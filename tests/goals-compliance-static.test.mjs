@@ -1,0 +1,26 @@
+import { readFileSync } from 'node:fs';
+
+const src = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
+const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
+
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+assert(src.includes("'goals'"), 'Route debe incluir goals para Metas Comerciales y Cumplimiento.');
+assert(src.includes('GoalsCompliance'), 'Debe existir componente GoalsCompliance.');
+assert(src.includes('goalStatusTone'), 'Debe existir función de semáforo goalStatusTone.');
+assert(src.includes('Trimestre acumulado'), 'La UI debe mostrar Trimestre acumulado, no trimestre futuro completo.');
+assert(src.includes('Semestre acumulado'), 'La UI debe mostrar Semestre acumulado.');
+assert(src.includes('Año acumulado'), 'La UI debe mostrar Año acumulado.');
+assert(src.includes('Presupuesto aprobado'), 'La tabla debe incluir el indicador financiero de presupuesto aprobado.');
+assert(src.includes('Prospectos nuevos'), 'La tabla debe incluir prospectos nuevos.');
+assert(src.includes('Propuestas / cotizaciones'), 'La tabla debe incluir propuestas/cotizaciones.');
+assert(src.includes('/api/goals'), 'La UI debe consumir endpoint /api/goals.');
+assert(server.includes("app.get('/api/goals'"), 'Servidor local debe exponer GET /api/goals.');
+assert(server.includes("app.put('/api/goals'"), 'Servidor local debe exponer PUT /api/goals para upsert.');
+assert(api.includes("app.get('/api/goals'"), 'Serverless debe exponer GET /api/goals.');
+assert(api.includes("app.put('/api/goals'"), 'Serverless debe exponer PUT /api/goals para upsert.');
+
+console.log('goals-compliance static checks passed');
