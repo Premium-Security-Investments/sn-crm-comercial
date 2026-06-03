@@ -92,6 +92,7 @@ function App() {
   const [route, setRoute] = useState<Route>(parseRoute());
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
   const [data, setData] = useState<Bootstrap | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -108,10 +109,11 @@ function App() {
       setApiAccessToken(data.session?.access_token || null);
       setAuthReady(true);
     });
-    const { data: listener } = supabaseBrowser.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: listener } = supabaseBrowser.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
       setSession(nextSession);
       setApiAccessToken(nextSession?.access_token || null);
-      if (!nextSession) setData(null);
+      if (!nextSession) { setData(null); setPasswordRecovery(false); }
     });
     return () => listener.subscription.unsubscribe();
   }, []);
@@ -123,6 +125,7 @@ function App() {
   }, []);
   if (!authReady) return <div className="app"><main><div className="notice">Verificando sesión…</div></main></div>;
   if (!session) return <LoginScreen />;
+  if (passwordRecovery) return <PasswordResetScreen onDone={() => setPasswordRecovery(false)} />;
   const currentProfile = data?.currentProfile || null;
   return <div className="app">
     <aside className="sidebar">
@@ -143,6 +146,35 @@ function App() {
     </main>
   </div>;
 }
+
+function PasswordResetScreen({ onDone }: { onDone: () => void }) {
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [status, setStatus] = useState('Define una nueva clave de mínimo 8 caracteres.');
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password.length < 8) { setStatus('La nueva clave debe tener mínimo 8 caracteres.'); return; }
+    if (password !== confirm) { setStatus('Las claves no coinciden.'); return; }
+    setStatus('Actualizando clave…');
+    const { error } = await supabaseBrowser.auth.updateUser({ password });
+    if (error) { setStatus(error.message); return; }
+    window.history.replaceState(null, '', window.location.origin);
+    setStatus('Clave actualizada. Ya puedes continuar en el CRM.');
+    onDone();
+  };
+  return <div className="login-shell">
+    <form className="login-card" onSubmit={submit}>
+      <span className="eyebrow">Seguridad Nacional Ltda</span>
+      <h1>Restablecer clave</h1>
+      <p>Ingresa la nueva clave para tu usuario del CRM Comercial.</p>
+      <label>Nueva clave<input type="password" required minLength={8} value={password} onChange={e=>setPassword(e.target.value)} placeholder="Mínimo 8 caracteres" /></label>
+      <label>Confirmar clave<input type="password" required minLength={8} value={confirm} onChange={e=>setConfirm(e.target.value)} placeholder="Repite la clave" /></label>
+      <button>Actualizar clave</button>
+      {status && <small>{status}</small>}
+    </form>
+  </div>;
+}
+
 function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
