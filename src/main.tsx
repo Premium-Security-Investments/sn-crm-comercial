@@ -147,11 +147,18 @@ function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState('');
+  const normalizedEmail = email.trim().toLowerCase();
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus('Ingresando…');
-    const { error } = await supabaseBrowser.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+    const { error } = await supabaseBrowser.auth.signInWithPassword({ email: normalizedEmail, password });
     setStatus(error ? error.message : 'Sesión iniciada.');
+  };
+  const resetPassword = async () => {
+    if (!normalizedEmail) { setStatus('Escribe tu email para enviarte el enlace de recuperación.'); return; }
+    setStatus('Enviando recuperación…');
+    const { error } = await supabaseBrowser.auth.resetPasswordForEmail(normalizedEmail, { redirectTo: window.location.origin });
+    setStatus(error ? error.message : 'Te enviamos un enlace para restablecer la clave. Revisa tu correo.');
   };
   return <div className="login-shell">
     <form className="login-card" onSubmit={submit}>
@@ -161,6 +168,7 @@ function LoginScreen() {
       <label>Email<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="correo@empresa.com" /></label>
       <label>Clave<input type="password" required value={password} onChange={e=>setPassword(e.target.value)} placeholder="Clave temporal" /></label>
       <button>Ingresar</button>
+      <button type="button" className="secondary" onClick={resetPassword}>Olvidé mi clave</button>
       {status && <small>{status}</small>}
     </form>
   </div>;
@@ -943,33 +951,46 @@ function monthName(month: number) {
 function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const [users, setUsers] = useState<Profile[]>([]);
   const [status, setStatus] = useState('');
-  const [form, setForm] = useState<UserPayload>({ full_name: '', microsoft_email: '', role: 'comercial', active: true, password: '' });
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const emptyUserForm: UserPayload = { full_name: '', microsoft_email: '', role: 'comercial', active: true, password: '' };
+  const [form, setForm] = useState<UserPayload>(emptyUserForm);
   const load = async () => { setUsers(await api<Profile[]>('/api/users')); };
   useEffect(() => { if (canManageUsers(currentProfile)) load().catch(e => setStatus(e instanceof Error ? e.message : String(e))); }, [currentProfile.id]);
   if (!canManageUsers(currentProfile)) return <div className="error">Solo admin puede administrar usuarios.</div>;
+  const startEdit = (user: Profile) => {
+    setEditingUserId(user.id);
+    setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, role: user.role, active: user.active, password: '' });
+    setStatus('Editando usuario existente. Deja la clave en blanco si no quieres cambiarla.');
+  };
+  const cancelEdit = () => {
+    setEditingUserId(null);
+    setForm(emptyUserForm);
+    setStatus('');
+  };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStatus('Creando usuario…');
+    setStatus(editingUserId ? 'Actualizando usuario…' : 'Creando usuario…');
     try {
-      await api<Profile>('/api/users', { method: 'POST', body: JSON.stringify(form) });
-      setForm({ full_name: '', microsoft_email: '', role: 'comercial', active: true, password: '' });
+      await api<Profile>(editingUserId ? `/api/users/${editingUserId}` : '/api/users', { method: editingUserId ? 'PATCH' : 'POST', body: JSON.stringify(form) });
+      setForm(emptyUserForm);
+      setEditingUserId(null);
       await load();
-      setStatus('Usuario/perfil guardado.');
+      setStatus(editingUserId ? 'Usuario actualizado.' : 'Usuario/perfil guardado.');
     } catch (err) { setStatus(err instanceof Error ? err.message : String(err)); }
   };
   return <section className="stack">
     <section className="executive-hero"><div><span className="eyebrow">Administración</span><h2>Usuarios y permisos</h2><p>Crea usuarios de acceso y asigna el rol comercial, dirección, gerencia o admin.</p></div><div className="hero-facts"><div><small>Usuarios</small><strong>{users.length}</strong></div><div><small>Administrador</small><strong>{currentProfile.full_name}</strong></div></div></section>
-    <Panel title="Crear usuario">
+    <Panel title={editingUserId ? 'Editar usuario' : 'Crear usuario'}>
       <form className="form gridform" onSubmit={submit}>
         <label>Nombre completo<input required value={form.full_name} onChange={e=>setForm({...form, full_name:e.target.value})}/></label>
         <label>Email<input type="email" required value={form.microsoft_email} onChange={e=>setForm({...form, microsoft_email:e.target.value})}/></label>
         <label>Rol<Select value={form.role} onChange={v=>setForm({...form, role:v})} options={[['comercial','Comercial'],['director','Director'],['gerencia','Gerencia'],['admin','Admin']]} empty="Rol"/></label>
         <label>Clave temporal<input type="password" minLength={8} value={form.password || ''} onChange={e=>setForm({...form, password:e.target.value})} placeholder="Mínimo 8 caracteres"/></label>
         <label>Estado<Select value={form.active ? 'true' : 'false'} onChange={v=>setForm({...form, active:v==='true'})} options={[['true','Activo'],['false','Inactivo']]} empty="Estado"/></label>
-        <div className="formactions"><button>Guardar usuario</button>{status && <span>{status}</span>}</div>
+        <div className="formactions"><button>{editingUserId ? 'Actualizar usuario' : 'Guardar usuario'}</button>{editingUserId && <button type="button" className="secondary" onClick={cancelEdit}>Cancelar edición</button>}{status && <span>{status}</span>}</div>
       </form>
     </Panel>
-    <Panel title="Perfiles actuales"><div className="tablewrap"><table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Estado</th></tr></thead><tbody>{users.map(u => <tr key={u.id}><td><strong>{u.full_name}</strong></td><td>{u.microsoft_email}</td><td><Badge>{u.role}</Badge></td><td>{u.active ? 'Activo' : 'Inactivo'}</td></tr>)}</tbody></table></div></Panel>
+    <Panel title="Perfiles actuales"><div className="tablewrap"><table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{users.map(u => <tr key={u.id}><td><strong>{u.full_name}</strong></td><td>{u.microsoft_email}</td><td><Badge>{u.role}</Badge></td><td>{u.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(u)}>Editar</button></td></tr>)}</tbody></table></div></Panel>
   </section>;
 }
 

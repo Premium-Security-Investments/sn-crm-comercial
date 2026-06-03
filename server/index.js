@@ -327,6 +327,13 @@ app.post('/api/opportunity-interactions', async (req, res) => {
 });
 
 
+
+async function findAuthUserByEmail(database, email) {
+  const { data: usersData, error } = await database.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (error) throw error;
+  return usersData?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase()) || null;
+}
+
 app.get('/api/users', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -355,13 +362,44 @@ app.post('/api/users', async (req, res) => {
       const { error: createError } = await database.auth.admin.createUser({ email: microsoft_email, password, email_confirm: true, user_metadata: { full_name, role } });
       if (createError && !/already|registered|exists/i.test(createError.message)) throw createError;
       if (createError && /already|registered|exists/i.test(createError.message)) {
-        const { data: usersData } = await database.auth.admin.listUsers({ page: 1, perPage: 1000 });
-        const existing = usersData?.users?.find(u => u.email?.toLowerCase() === microsoft_email);
+        const existing = await findAuthUserByEmail(database, microsoft_email);
         if (existing) await database.auth.admin.updateUserById(existing.id, { password, user_metadata: { full_name, role } });
       }
     }
     const row = await must(database.from('psi_sales_profiles').upsert({ full_name, microsoft_email, role, active }, { onConflict: 'microsoft_email' }).select('id,full_name,microsoft_email,role,active,created_at').single());
     res.status(201).json(row);
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.patch('/api/users/:id', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canManageUsers(currentProfile)) { const error = new Error('Solo admin puede administrar usuarios.'); error.status = 403; throw error; }
+    const database = requireDb();
+    const id = String(req.params.id || '').trim();
+    const existingProfile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active').eq('id', id).single());
+    if (!existingProfile) { const error = new Error('Usuario no encontrado.'); error.status = 404; throw error; }
+    const full_name = String(req.body.full_name || '').trim();
+    const microsoft_email = String(req.body.microsoft_email || '').trim().toLowerCase();
+    const role = String(req.body.role || 'comercial');
+    const password = String(req.body.password || '');
+    const active = req.body.active !== false;
+    if (!full_name) throw new Error('El nombre completo es obligatorio.');
+    if (!microsoft_email || !microsoft_email.includes('@')) throw new Error('Debe registrar un email válido.');
+    if (!['comercial','director','gerencia','admin'].includes(role)) throw new Error('Rol no válido.');
+    if (password && password.length < 8) throw new Error('La clave temporal debe tener mínimo 8 caracteres.');
+    const authUser = await findAuthUserByEmail(database, existingProfile.microsoft_email) || await findAuthUserByEmail(database, microsoft_email);
+    if (authUser) {
+      const updates = { email: microsoft_email, user_metadata: { full_name, role } };
+      if (password) updates.password = password;
+      const { error: updateAuthError } = await database.auth.admin.updateUserById(authUser.id, updates);
+      if (updateAuthError) throw updateAuthError;
+    } else if (password) {
+      const { error: createError } = await database.auth.admin.createUser({ email: microsoft_email, password, email_confirm: true, user_metadata: { full_name, role } });
+      if (createError) throw createError;
+    }
+    const row = await must(database.from('psi_sales_profiles').update({ full_name, microsoft_email, role, active }).eq('id', id).select('id,full_name,microsoft_email,role,active,created_at').single());
+    res.json(row);
   } catch (error) { sendAuthError(res, error); }
 });
 
