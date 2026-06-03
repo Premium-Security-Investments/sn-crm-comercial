@@ -371,12 +371,12 @@ app.post('/api/users', async (req, res) => {
   } catch (error) { sendAuthError(res, error); }
 });
 
-app.patch('/api/users/:id', async (req, res) => {
+app.patch('/api/users', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     if (!canManageUsers(currentProfile)) { const error = new Error('Solo admin puede administrar usuarios.'); error.status = 403; throw error; }
     const database = requireDb();
-    const id = String(req.params.id || '').trim();
+    const id = String(req.query.id || '').trim();
     const existingProfile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active').eq('id', id).single());
     if (!existingProfile) { const error = new Error('Usuario no encontrado.'); error.status = 404; throw error; }
     const full_name = String(req.body.full_name || '').trim();

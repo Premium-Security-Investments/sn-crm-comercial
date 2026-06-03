@@ -971,7 +971,7 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
     e.preventDefault();
     setStatus(editingUserId ? 'Actualizando usuario…' : 'Creando usuario…');
     try {
-      await api<Profile>(editingUserId ? `/api/users/${editingUserId}` : '/api/users', { method: editingUserId ? 'PATCH' : 'POST', body: JSON.stringify(form) });
+      await api<Profile>(editingUserId ? `/api/users?id=${encodeURIComponent(editingUserId)}` : '/api/users', { method: editingUserId ? 'PATCH' : 'POST', body: JSON.stringify(form) });
       setForm(emptyUserForm);
       setEditingUserId(null);
       await load();

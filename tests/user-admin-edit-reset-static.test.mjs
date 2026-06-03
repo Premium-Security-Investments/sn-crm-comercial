@@ -12,10 +12,11 @@ assert(src.includes('resetPasswordForEmail'), 'Login debe ofrecer recuperación 
 assert(src.includes('Olvidé mi clave'), 'Login debe mostrar acción visible "Olvidé mi clave".');
 assert(src.includes('editingUserId'), 'Usuarios y permisos debe permitir seleccionar un usuario existente para editar.');
 assert(src.includes("method: editingUserId ? 'PATCH' : 'POST'"), 'Formulario de usuarios debe usar PATCH al editar un perfil existente.');
+assert(src.includes("/api/users?id="), 'Frontend debe editar usuarios con /api/users?id=... para compatibilidad serverless Vercel.');
 assert(src.includes('Editar') && src.includes('Cancelar edición'), 'Tabla de usuarios debe tener acción Editar y opción Cancelar edición.');
 
 for (const file of [server, api]) {
-  assert(file.includes("app.patch('/api/users/:id'"), 'API debe exponer PATCH /api/users/:id para editar usuarios existentes.');
+  assert(file.includes("app.patch('/api/users'"), 'API debe exponer PATCH /api/users?id=... para editar usuarios existentes.');
   assert(file.includes('updateUserById'), 'API debe poder actualizar password/metadatos del usuario Auth existente.');
   assert(file.includes(".update({ full_name, microsoft_email, role, active })"), 'API debe actualizar psi_sales_profiles al editar usuario.');
 }
