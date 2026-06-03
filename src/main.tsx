@@ -1,5 +1,6 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
+import { createClient, type Session } from '@supabase/supabase-js';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
@@ -21,13 +22,20 @@ type Opportunity = {
 type Interaction = { id: string; opportunity_id: string; interaction_type: string; notes: string | null; occurred_at: string; created_at: string; created_by: string | null; psi_sales_profiles?: { full_name?: string } | null };
 type MonthlyKpi = { owner_id?: string | null; owner_name: string | null; period_month: string; prospectos: number; cotizaciones: number; ventas_aprobadas: number; comision_ganada: number; comision_proyectada: number };
 type SalesGoal = { id?: string; user_id: string | null; period_month: string; quote_target: number; prospect_target: number; sales_budget: number; created_at?: string; updated_at?: string };
-type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number } };
-type Route = { page: 'home' | 'opportunities' | 'detail' | 'new' | 'edit' | 'dashboard' | 'consultant' | 'goals' | 'alerts' | 'centinel'; id?: string };
+type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile };
+type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string };
+type Route = { page: 'home' | 'opportunities' | 'detail' | 'new' | 'edit' | 'dashboard' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
 
 type OpportunityPayload = Partial<Opportunity> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; };
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const dateFmt = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
 const interactionTypes = ['llamada','correo','reunion','whatsapp','nota','cambio_estado','documento'];
+const supabaseBrowser = createClient(import.meta.env.NEXT_PUBLIC_SUPABASE_URL, import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+let currentAccessToken: string | null = null;
+function setApiAccessToken(token: string | null) { currentAccessToken = token; }
+function isManagementRole(role?: string | null) { return ['director','gerencia','admin'].includes(role || ''); }
+function canManageUsers(profile?: Profile | null) { return profile?.role === 'admin'; }
+function canManageGoals(profile?: Profile | null) { return isManagementRole(profile?.role); }
 
 function parseRoute(): Route {
   const hash = window.location.hash.replace(/^#\/?/, '');
@@ -41,11 +49,13 @@ function parseRoute(): Route {
   if (page === 'goals') return { page: 'goals' };
   if (page === 'alerts') return { page: 'alerts' };
   if (page === 'centinel') return { page: 'centinel' };
+  if (page === 'users') return { page: 'users' };
   return { page: 'dashboard' };
 }
 function go(hash: string) { window.location.hash = hash; }
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...options });
+  const headers = { 'Content-Type': 'application/json', ...(currentAccessToken ? { Authorization: `Bearer ${currentAccessToken}` } : {}), ...(options?.headers || {}) };
+  const res = await fetch(url, { ...options, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `Error ${res.status}`);
@@ -80,26 +90,47 @@ function nextActionStatus(o: Pick<Opportunity, 'stage_code' | 'next_action_at' |
 
 function App() {
   const [route, setRoute] = useState<Route>(parseRoute());
+  const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [data, setData] = useState<Bootstrap | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const refresh = async () => {
+    if (!currentAccessToken) return;
     setLoading(true); setError(null);
     try { setData(await api<Bootstrap>('/api/bootstrap')); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setLoading(false); }
   };
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    supabaseBrowser.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setApiAccessToken(data.session?.access_token || null);
+      setAuthReady(true);
+    });
+    const { data: listener } = supabaseBrowser.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setApiAccessToken(nextSession?.access_token || null);
+      if (!nextSession) setData(null);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+  useEffect(() => { if (authReady && session) refresh(); }, [authReady, session?.access_token]);
   useEffect(() => {
     const onHash = () => setRoute(parseRoute());
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
+  if (!authReady) return <div className="app"><main><div className="notice">Verificando sesión…</div></main></div>;
+  if (!session) return <LoginScreen />;
+  const currentProfile = data?.currentProfile || null;
   return <div className="app">
     <aside className="sidebar">
       <div className="brand"><small>Seguridad Nacional Ltda</small><em>Dashboard Comercial</em></div>
-      <Nav route={route} />
+      <Nav route={route} currentProfile={currentProfile} />
+      <div className="session-card"><small>Sesión activa</small><strong>{currentProfile?.full_name || session.user.email}</strong><span>{currentProfile?.role || 'perfil'}</span></div>
       <button className="secondary full" onClick={refresh}>Actualizar datos</button>
+      <button className="secondary full" onClick={() => supabaseBrowser.auth.signOut()}>Cerrar sesión</button>
     </aside>
     <main>
       <header className="topbar">
@@ -112,6 +143,28 @@ function App() {
     </main>
   </div>;
 }
+function LoginScreen() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [status, setStatus] = useState('');
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStatus('Ingresando…');
+    const { error } = await supabaseBrowser.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+    setStatus(error ? error.message : 'Sesión iniciada.');
+  };
+  return <div className="login-shell">
+    <form className="login-card" onSubmit={submit}>
+      <span className="eyebrow">Seguridad Nacional Ltda</span>
+      <h1>Ingreso al CRM Comercial</h1>
+      <p>Ingresa con el usuario asignado para ver tus oportunidades y próximas acciones.</p>
+      <label>Email<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="correo@empresa.com" /></label>
+      <label>Clave<input type="password" required value={password} onChange={e=>setPassword(e.target.value)} placeholder="Clave temporal" /></label>
+      <button>Ingresar</button>
+      {status && <small>{status}</small>}
+    </form>
+  </div>;
+}
 function titleFor(route: Route) {
   if (route.page === 'opportunities') return 'Oportunidades';
   if (route.page === 'detail') return 'Detalle de oportunidad';
@@ -122,10 +175,12 @@ function titleFor(route: Route) {
   if (route.page === 'goals') return 'Metas comerciales y cumplimiento';
   if (route.page === 'alerts') return 'Alertas comerciales';
   if (route.page === 'centinel') return 'Pregúntale a Centinel';
+  if (route.page === 'users') return 'Usuarios y permisos';
   return 'Inicio comercial';
 }
-function Nav({ route }: { route: Route }) {
+function Nav({ route, currentProfile }: { route: Route; currentProfile: Profile | null }) {
   const items = [['#/dashboard','Dashboard gerencial'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades'],['#/goals','Metas y cumplimiento'],['#/new','Crear oportunidad'],['#/centinel','Centinel']];
+  if (canManageUsers(currentProfile)) items.push(['#/users','Usuarios y permisos']);
   return <nav>{items.map(([href,label]) => <a key={href} className={(route.page === 'home' && href==='#/') || href.includes(route.page) ? 'active' : ''} href={href}>{label}</a>)}</nav>;
 }
 function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; refresh: () => Promise<void> }) {
@@ -138,6 +193,7 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
   if (route.page === 'goals') return <GoalsCompliance data={data} refresh={refresh} />;
   if (route.page === 'alerts') return <CommercialAlerts data={data} />;
   if (route.page === 'centinel') return <CentinelAssistant data={data} />;
+  if (route.page === 'users') return <UsersAdmin currentProfile={data.currentProfile} />;
   return <Home data={data} />;
 }
 function stageTone(stageCode?: string | null) {
@@ -238,9 +294,9 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
 function Info({ label, value }: { label: string; value?: string | null }) { return <div className="card info"><small>{label}</small><strong>{value || '—'}</strong></div>; }
 function Dt({ label, value }: { label: string; value?: string | null }) { return <><dt>{label}</dt><dd>{value || '—'}</dd></>; }
 function FollowUpForm({ opportunityId, profiles, onSaved }: { opportunityId: string; profiles: Profile[]; onSaved: () => Promise<void> }) {
-  const [form, setForm] = useState({ interaction_type: 'nota', notes: '', occurred_at: new Date().toISOString().slice(0,16), created_by: '', next_action_at: '' }); const [status, setStatus] = useState('');
+  const [form, setForm] = useState({ interaction_type: 'nota', notes: '', occurred_at: new Date().toISOString().slice(0,16), created_by: profiles[0]?.id || '', next_action_at: '' }); const [status, setStatus] = useState('');
   const save = async (e: React.FormEvent) => { e.preventDefault(); setStatus('Guardando…'); try { await api(`/api/opportunity-interactions?id=${encodeURIComponent(opportunityId)}`, { method:'POST', body: JSON.stringify({ ...form, occurred_at: new Date(form.occurred_at).toISOString(), next_action_at: form.next_action_at ? new Date(form.next_action_at).toISOString() : null, created_by: form.created_by || null }) }); setForm({...form, notes:''}); setStatus('Seguimiento registrado.'); await onSaved(); } catch(err) { setStatus(err instanceof Error ? err.message : String(err)); } };
-  return <Panel title="Registrar seguimiento"><form onSubmit={save} className="form"><Select value={form.interaction_type} onChange={v=>setForm({...form, interaction_type:v})} options={interactionTypes.map(t=>[t,t])} empty="Tipo"/><Select value={form.created_by} onChange={v=>setForm({...form, created_by:v})} options={profiles.map(p=>[p.id,p.full_name])} empty="Quién registra"/><label>Fecha del seguimiento<input type="datetime-local" value={form.occurred_at} onChange={e=>setForm({...form, occurred_at:e.target.value})}/></label><label>Programar próxima gestión<input type="datetime-local" value={form.next_action_at} onChange={e=>setForm({...form, next_action_at:e.target.value})}/></label><textarea required placeholder="Nota del seguimiento" value={form.notes} onChange={e=>setForm({...form, notes:e.target.value})}/><button>Guardar seguimiento</button>{status && <small>{status}</small>}</form></Panel>;
+  return <Panel title="Registrar seguimiento"><form onSubmit={save} className="form"><Select value={form.interaction_type} onChange={v=>setForm({...form, interaction_type:v})} options={interactionTypes.map(t=>[t,t])} empty="Tipo"/>{profiles.length > 1 && <Select value={form.created_by} onChange={v=>setForm({...form, created_by:v})} options={profiles.map(p=>[p.id,p.full_name])} empty="Quién registra"/>}<label>Fecha del seguimiento<input type="datetime-local" value={form.occurred_at} onChange={e=>setForm({...form, occurred_at:e.target.value})}/></label><label>Programar próxima gestión<input type="datetime-local" value={form.next_action_at} onChange={e=>setForm({...form, next_action_at:e.target.value})}/></label><textarea required placeholder="Nota del seguimiento" value={form.notes} onChange={e=>setForm({...form, notes:e.target.value})}/><button>Guardar seguimiento</button>{status && <small>{status}</small>}</form></Panel>;
 }
 function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; refresh: () => Promise<void> }) {
   const existing = id ? data.opportunities.find(o => o.id === id) : undefined;
@@ -750,7 +806,8 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth() + 1);
-  const [ownerId, setOwnerId] = useState(data.profiles[0]?.id || '');
+  const [ownerId, setOwnerId] = useState(data.currentProfile.role === 'comercial' ? data.currentProfile.id : (data.profiles[0]?.id || ''));
+  const canEditGoals = canManageGoals(data.currentProfile);
   const [status, setStatus] = useState('');
   const periodMonth = `${year}-${String(month).padStart(2, '0')}-01`;
   const existing = data.goals.find(g => g.user_id === ownerId && String(g.period_month).slice(0, 7) === periodMonth.slice(0, 7));
@@ -790,7 +847,7 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
       <div>
         <span className="eyebrow">Metas Comerciales y Cumplimiento</span>
         <h2>Presupuesto, gestión y avance acumulado por asesor</h2>
-        <p>Configuración mensual para gerencia y lectura automática del cumplimiento contra ventas aprobadas, prospectos nuevos y propuestas/cotizaciones.</p>
+        <p>{canEditGoals ? 'Configuración mensual para gerencia y lectura automática del cumplimiento.' : 'Consulta de tus metas y cumplimiento comercial.'}</p>
       </div>
       <div className="hero-facts">
         <div><small>Asesor seleccionado</small><strong>{ownerName}</strong></div>
@@ -800,19 +857,19 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
     </section>
 
     <div className="grid goals-layout">
-      <Panel title="Panel de configuración gerencial">
+      <Panel title={canEditGoals ? 'Panel de configuración gerencial' : 'Mis metas'}>
         <form className="form goals-form" onSubmit={save}>
           <div className="grid three compact-grid">
             <label>Año<input type="number" min="2024" max="2035" value={year} onChange={e=>setYear(Number(e.target.value || today.getFullYear()))}/></label>
             <label>Mes<Select value={String(month)} onChange={v=>setMonth(Number(v))} options={Array.from({ length: 12 }, (_, i) => [String(i + 1), monthName(i + 1)])} empty="Mes"/></label>
             <label>Asesor comercial<Select value={ownerId} onChange={setOwnerId} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Seleccionar asesor"/></label>
           </div>
-          <label>Presupuesto aprobado / ventas<input type="number" min="0" value={form.sales_budget} onChange={e=>setForm({...form, sales_budget:e.target.value})} placeholder="Ej: 250000000"/></label>
-          <label>Prospectos nuevos<input type="number" min="0" value={form.prospect_target} onChange={e=>setForm({...form, prospect_target:e.target.value})} placeholder="Ej: 20"/></label>
-          <label>Propuestas / cotizaciones<input type="number" min="0" value={form.quote_target} onChange={e=>setForm({...form, quote_target:e.target.value})} placeholder="Ej: 12"/></label>
-          <button disabled={!ownerId}>Guardar Presupuesto</button>
+          <label>Presupuesto aprobado / ventas<input disabled={!canEditGoals} type="number" min="0" value={form.sales_budget} onChange={e=>setForm({...form, sales_budget:e.target.value})} placeholder="Ej: 250000000"/></label>
+          <label>Prospectos nuevos<input disabled={!canEditGoals} type="number" min="0" value={form.prospect_target} onChange={e=>setForm({...form, prospect_target:e.target.value})} placeholder="Ej: 20"/></label>
+          <label>Propuestas / cotizaciones<input disabled={!canEditGoals} type="number" min="0" value={form.quote_target} onChange={e=>setForm({...form, quote_target:e.target.value})} placeholder="Ej: 12"/></label>
+          {canEditGoals && <button disabled={!ownerId}>Guardar Presupuesto</button>}
           {status && <small>{status}</small>}
-          <p className="muted">MVP sin login: esta pantalla queda operativa para dirección; los permisos reales se conectan después con Microsoft OAuth o Supabase Auth.</p>
+          <p className="muted">Los permisos activos dependen del rol asignado al usuario autenticado.</p>
         </form>
       </Panel>
 
@@ -880,6 +937,40 @@ function formatGoalValue(kind: 'money' | 'count', value: number) { return kind =
 function monthName(month: number) {
   const name = new Date(2026, month - 1, 1).toLocaleDateString('es-CO', { month: 'long' });
   return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+
+function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
+  const [users, setUsers] = useState<Profile[]>([]);
+  const [status, setStatus] = useState('');
+  const [form, setForm] = useState<UserPayload>({ full_name: '', microsoft_email: '', role: 'comercial', active: true, password: '' });
+  const load = async () => { setUsers(await api<Profile[]>('/api/users')); };
+  useEffect(() => { if (canManageUsers(currentProfile)) load().catch(e => setStatus(e instanceof Error ? e.message : String(e))); }, [currentProfile.id]);
+  if (!canManageUsers(currentProfile)) return <div className="error">Solo admin puede administrar usuarios.</div>;
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setStatus('Creando usuario…');
+    try {
+      await api<Profile>('/api/users', { method: 'POST', body: JSON.stringify(form) });
+      setForm({ full_name: '', microsoft_email: '', role: 'comercial', active: true, password: '' });
+      await load();
+      setStatus('Usuario/perfil guardado.');
+    } catch (err) { setStatus(err instanceof Error ? err.message : String(err)); }
+  };
+  return <section className="stack">
+    <section className="executive-hero"><div><span className="eyebrow">Administración</span><h2>Usuarios y permisos</h2><p>Crea usuarios de acceso y asigna el rol comercial, dirección, gerencia o admin.</p></div><div className="hero-facts"><div><small>Usuarios</small><strong>{users.length}</strong></div><div><small>Administrador</small><strong>{currentProfile.full_name}</strong></div></div></section>
+    <Panel title="Crear usuario">
+      <form className="form gridform" onSubmit={submit}>
+        <label>Nombre completo<input required value={form.full_name} onChange={e=>setForm({...form, full_name:e.target.value})}/></label>
+        <label>Email<input type="email" required value={form.microsoft_email} onChange={e=>setForm({...form, microsoft_email:e.target.value})}/></label>
+        <label>Rol<Select value={form.role} onChange={v=>setForm({...form, role:v})} options={[['comercial','Comercial'],['director','Director'],['gerencia','Gerencia'],['admin','Admin']]} empty="Rol"/></label>
+        <label>Clave temporal<input type="password" minLength={8} value={form.password || ''} onChange={e=>setForm({...form, password:e.target.value})} placeholder="Mínimo 8 caracteres"/></label>
+        <label>Estado<Select value={form.active ? 'true' : 'false'} onChange={v=>setForm({...form, active:v==='true'})} options={[['true','Activo'],['false','Inactivo']]} empty="Estado"/></label>
+        <div className="formactions"><button>Guardar usuario</button>{status && <span>{status}</span>}</div>
+      </form>
+    </Panel>
+    <Panel title="Perfiles actuales"><div className="tablewrap"><table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Estado</th></tr></thead><tbody>{users.map(u => <tr key={u.id}><td><strong>{u.full_name}</strong></td><td>{u.microsoft_email}</td><td><Badge>{u.role}</Badge></td><td>{u.active ? 'Activo' : 'Inactivo'}</td></tr>)}</tbody></table></div></Panel>
+  </section>;
 }
 
 createRoot(document.getElementById('root')!).render(<App />);

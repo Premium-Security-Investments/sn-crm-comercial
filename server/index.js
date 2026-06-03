@@ -1,4 +1,3 @@
-
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -6,41 +5,130 @@ import { createClient } from '@supabase/supabase-js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
 if (!supabaseUrl || !serviceKey) {
   console.error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
   process.exit(1);
 }
+
 const db = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 
 function sendError(res, error, status = 500) {
   console.error(error);
   res.status(status).json({ error: error?.message || String(error) });
 }
+
 async function must(query) {
   const { data, error } = await query;
   if (error) throw error;
   return data;
 }
+
+function requireDb() {
+  if (!db) throw new Error('Server environment is missing Supabase credentials.');
+  return db;
+}
+
+
+const managementRoles = ['director','gerencia','admin'];
+function isManager(profile) { return managementRoles.includes(profile?.role); }
+function canManageUsers(profile) { return profile?.role === 'admin'; }
+function getBearerToken(req) {
+  const raw = req.headers.authorization || '';
+  const match = String(raw).match(/^Bearer\s+(.+)$/i);
+  return match ? match[1] : null;
+}
+async function getAuthContext(req) {
+  const database = requireDb();
+  const token = getBearerToken(req);
+  if (!token) {
+    const error = new Error('Debe iniciar sesión.');
+    error.status = 401;
+    throw error;
+  }
+  const { data: userData, error: userError } = await database.auth.getUser(token);
+  if (userError || !userData?.user?.email) {
+    const error = new Error('Sesión inválida o vencida.');
+    error.status = 401;
+    throw error;
+  }
+  const email = userData.user.email.toLowerCase();
+  const profile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active').ilike('microsoft_email', email).eq('active', true).single());
+  if (!profile) {
+    const error = new Error('El usuario no tiene perfil comercial activo.');
+    error.status = 403;
+    throw error;
+  }
+  return { user: userData.user, profile, token };
+}
+function sendAuthError(res, error) {
+  sendError(res, error, error?.status || 500);
+}
+function recomputeSummary(stages, opportunities) {
+  return stages.map(stage => {
+    const rows = opportunities.filter(o => o.stage_code === stage.code);
+    return {
+      stage_code: stage.code,
+      stage_name: stage.name,
+      stage_order: stage.stage_order,
+      opportunities_count: rows.length,
+      total_offer_value: rows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0),
+      weighted_pipeline_value: rows.reduce((sum, o) => sum + Number(o.weighted_pipeline_value || 0), 0)
+    };
+  });
+}
+function filterBootstrapForProfile(payload, currentProfile) {
+  const manager = isManager(currentProfile);
+  const opportunities = manager ? payload.opportunities : payload.opportunities.filter(o => o.owner_id === currentProfile.id);
+  const stages = payload.stages;
+  const summary = manager ? payload.summary : recomputeSummary(stages, opportunities);
+  const stalled = manager ? payload.stalled : payload.stalled.filter(o => o.owner_id === currentProfile.id);
+  const topClosing = manager ? payload.topClosing : payload.topClosing.filter(o => o.owner_id === currentProfile.id);
+  const monthlyKpis = manager ? payload.monthlyKpis : payload.monthlyKpis.filter(k => k.owner_id === currentProfile.id);
+  const goals = manager ? payload.goals : payload.goals.filter(g => !g.user_id || g.user_id === currentProfile.id);
+  const profiles = manager ? payload.profiles : payload.profiles.filter(p => p.id === currentProfile.id);
+  const totals = opportunities.reduce((acc, o) => {
+    acc.count += 1;
+    acc.pipeline += Number(o.offer_value || 0);
+    acc.weighted += Number(o.weighted_pipeline_value || 0);
+    if (o.stage_code === 'aprobado') acc.approved += Number(o.offer_value || 0);
+    return acc;
+  }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
+  return { ...payload, summary, opportunities, profiles, stalled, topClosing, monthlyKpis, goals, totals, currentProfile };
+}
+async function ensureOpportunityAccess(database, id, profile) {
+  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id').eq('id', id).single());
+  if (!isManager(profile) && opportunity.owner_id !== profile.id) {
+    const error = new Error('No tiene permisos sobre esta oportunidad.');
+    error.status = 403;
+    throw error;
+  }
+  return opportunity;
+}
+
 const opportunitySelect = '*';
 
-app.get('/api/bootstrap', async (_req, res) => {
+app.get('/api/bootstrap', async (req, res) => {
   try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
     const [summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals] = await Promise.all([
-      must(db.from('v_psi_sales_pipeline_summary').select('*').order('stage_order')),
-      must(db.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).order('updated_at', { ascending: false }).limit(1000)),
-      must(db.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active').eq('active', true).order('full_name')),
-      must(db.from('psi_sales_pipeline_stages').select('*').order('stage_order')),
-      must(db.from('psi_sales_service_types').select('*').eq('active', true).order('name')),
-      must(db.from('psi_sales_loss_reasons').select('*').eq('active', true).order('name')),
-      must(db.from('v_psi_sales_stalled_sustentacion').select(opportunitySelect).order('prioritization_date')),
-      must(db.from('v_psi_sales_top3_closing').select(opportunitySelect).order('owner_name')),
-      must(db.from('v_psi_sales_kpis_by_commercial_month').select('*').order('period_month', { ascending: false }).limit(80)),
-      must(db.from('psi_sales_goals').select('*').order('period_month', { ascending: false }).limit(500)),
+      must(database.from('v_psi_sales_pipeline_summary').select('*').order('stage_order')),
+      must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).order('updated_at', { ascending: false }).limit(1000)),
+      must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active').eq('active', true).order('full_name')),
+      must(database.from('psi_sales_pipeline_stages').select('*').order('stage_order')),
+      must(database.from('psi_sales_service_types').select('*').eq('active', true).order('name')),
+      must(database.from('psi_sales_loss_reasons').select('*').eq('active', true).order('name')),
+      must(database.from('v_psi_sales_stalled_sustentacion').select(opportunitySelect).order('prioritization_date')),
+      must(database.from('v_psi_sales_top3_closing').select(opportunitySelect).order('owner_name')),
+      must(database.from('v_psi_sales_kpis_by_commercial_month').select('*').order('period_month', { ascending: false }).limit(80)),
+      must(database.from('psi_sales_goals').select('*').order('period_month', { ascending: false }).limit(500)),
     ]);
     const totals = opportunities.reduce((acc, o) => {
       acc.count += 1;
@@ -49,15 +137,18 @@ app.get('/api/bootstrap', async (_req, res) => {
       if (o.stage_code === 'aprobado') acc.approved += Number(o.offer_value || 0);
       return acc;
     }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
-    res.json({ summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals, totals });
-  } catch (error) { sendError(res, error); }
+    res.json(filterBootstrapForProfile({ summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals, totals }, currentProfile));
+  } catch (error) { sendAuthError(res, error); }
 });
 
 app.get('/api/opportunities/:id', async (req, res) => {
   try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
     const id = req.params.id;
-    const opportunity = await must(db.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', id).single());
-    const interactions = await must(db.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
+    await ensureOpportunityAccess(database, id, currentProfile);
+    const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', id).single());
+    const interactions = await must(database.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
     res.json({ opportunity, interactions });
   } catch (error) { sendError(res, error); }
 });
@@ -97,16 +188,23 @@ function cleanOpportunity(body) {
 
 app.post('/api/opportunities', async (req, res) => {
   try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
     const payload = cleanOpportunity(req.body);
-    const data = await must(db.from('psi_sales_opportunities').insert(payload).select('id').single());
+    if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
+    const data = await must(database.from('psi_sales_opportunities').insert(payload).select('id').single());
     res.status(201).json(data);
   } catch (error) { sendError(res, error, 400); }
 });
 
 app.put('/api/opportunities/:id', async (req, res) => {
   try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureOpportunityAccess(database, req.params.id, currentProfile);
     const payload = cleanOpportunity(req.body);
-    const data = await must(db.from('psi_sales_opportunities').update(payload).eq('id', req.params.id).select('id').single());
+    if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
+    const data = await must(database.from('psi_sales_opportunities').update(payload).eq('id', req.params.id).select('id').single());
     res.json(data);
   } catch (error) { sendError(res, error, 400); }
 });
@@ -134,41 +232,142 @@ function cleanGoal(body) {
   return payload;
 }
 
-app.get('/api/goals', async (_req, res) => {
+app.get('/api/goals', async (req, res) => {
   try {
-    const data = await must(db.from('psi_sales_goals').select('*').order('period_month', { ascending: false }).limit(500));
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    let query = database.from('psi_sales_goals').select('*').order('period_month', { ascending: false }).limit(500);
+    if (currentProfile.role === 'comercial') query = query.or(`user_id.eq.${currentProfile.id},user_id.is.null`);
+    const data = await must(query);
     res.json(data);
-  } catch (error) { sendError(res, error); }
+  } catch (error) { sendAuthError(res, error); }
 });
 
 app.put('/api/goals', async (req, res) => {
   try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!isManager(currentProfile)) { const error = new Error('Solo gerencia/admin puede modificar metas.'); error.status = 403; throw error; }
+    const database = requireDb();
     const payload = cleanGoal(req.body);
-    const data = await must(db.from('psi_sales_goals').upsert(payload, { onConflict: 'user_id,period_month' }).select('*').single());
+    const data = await must(database.from('psi_sales_goals').upsert(payload, { onConflict: 'user_id,period_month' }).select('*').single());
     res.json(data);
   } catch (error) { sendError(res, error, 400); }
 });
 
 app.post('/api/opportunities/:id/interactions', async (req, res) => {
   try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureOpportunityAccess(database, req.params.id, currentProfile);
     const notes = String(req.body.notes || '').trim();
     if (!notes) throw new Error('La nota del seguimiento es obligatoria.');
     const occurred_at = req.body.occurred_at || new Date().toISOString();
     const interaction_type = req.body.interaction_type || 'nota';
-    const created_by = req.body.created_by || null;
+    const created_by = isManager(currentProfile) ? (req.body.created_by || currentProfile.id) : currentProfile.id;
     const next_action_at = req.body.next_action_at || null;
     const row = { opportunity_id: req.params.id, notes, occurred_at, interaction_type, created_by };
-    const data = await must(db.from('psi_sales_interactions').insert(row).select('id').single());
+    const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
     const update = { last_interaction_at: occurred_at };
     if (next_action_at) update.next_action_at = next_action_at;
-    await must(db.from('psi_sales_opportunities').update(update).eq('id', req.params.id).select('id').single());
+    await must(database.from('psi_sales_opportunities').update(update).eq('id', req.params.id).select('id').single());
     res.status(201).json(data);
   } catch (error) { sendError(res, error, 400); }
 });
 
-const dist = path.resolve(__dirname, '../dist');
-app.use(express.static(dist));
-app.get(/.*/, (_req, res) => res.sendFile(path.join(dist, 'index.html')));
 
-const port = Number(process.env.PORT || 4173);
-app.listen(port, '0.0.0.0', () => console.log(`Seguridad Nacional CRM server listening on http://0.0.0.0:${port}`));
+// Vercel-safe single-segment aliases. The catch-all function reliably serves /api/bootstrap,
+// but nested URLs like /api/opportunities/:id can resolve to Vercel 404 in production.
+app.get('/api/opportunity-detail', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    const id = String(req.query.id || '');
+    if (!id) throw new Error('Debe indicar la oportunidad.');
+    await ensureOpportunityAccess(database, id, currentProfile);
+    const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', id).single());
+    const interactions = await must(database.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
+    res.json({ opportunity, interactions });
+  } catch (error) { sendError(res, error); }
+});
+
+app.put('/api/opportunity', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    const id = String(req.query.id || '');
+    if (!id) throw new Error('Debe indicar la oportunidad.');
+    await ensureOpportunityAccess(database, id, currentProfile);
+    const payload = cleanOpportunity(req.body);
+    if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
+    const data = await must(database.from('psi_sales_opportunities').update(payload).eq('id', id).select('id').single());
+    res.json(data);
+  } catch (error) { sendError(res, error, 400); }
+});
+
+app.post('/api/opportunity-interactions', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    const id = String(req.query.id || '');
+    if (!id) throw new Error('Debe indicar la oportunidad.');
+    await ensureOpportunityAccess(database, id, currentProfile);
+    const notes = String(req.body.notes || '').trim();
+    if (!notes) throw new Error('La nota del seguimiento es obligatoria.');
+    const occurred_at = req.body.occurred_at || new Date().toISOString();
+    const interaction_type = req.body.interaction_type || 'nota';
+    const created_by = isManager(currentProfile) ? (req.body.created_by || currentProfile.id) : currentProfile.id;
+    const next_action_at = req.body.next_action_at || null;
+    const row = { opportunity_id: id, notes, occurred_at, interaction_type, created_by };
+    const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
+    const update = { last_interaction_at: occurred_at };
+    if (next_action_at) update.next_action_at = next_action_at;
+    await must(database.from('psi_sales_opportunities').update(update).eq('id', id).select('id').single());
+    res.status(201).json(data);
+  } catch (error) { sendError(res, error, 400); }
+});
+
+
+app.get('/api/users', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canManageUsers(currentProfile)) { const error = new Error('Solo admin puede administrar usuarios.'); error.status = 403; throw error; }
+    const database = requireDb();
+    const profiles = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,created_at').order('full_name'));
+    res.json(profiles);
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/users', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canManageUsers(currentProfile)) { const error = new Error('Solo admin puede administrar usuarios.'); error.status = 403; throw error; }
+    const database = requireDb();
+    const full_name = String(req.body.full_name || '').trim();
+    const microsoft_email = String(req.body.microsoft_email || '').trim().toLowerCase();
+    const role = String(req.body.role || 'comercial');
+    const password = String(req.body.password || '');
+    const active = req.body.active !== false;
+    if (!full_name) throw new Error('El nombre completo es obligatorio.');
+    if (!microsoft_email || !microsoft_email.includes('@')) throw new Error('Debe registrar un email válido.');
+    if (!['comercial','director','gerencia','admin'].includes(role)) throw new Error('Rol no válido.');
+    if (password && password.length < 8) throw new Error('La clave temporal debe tener mínimo 8 caracteres.');
+    if (password) {
+      const { error: createError } = await database.auth.admin.createUser({ email: microsoft_email, password, email_confirm: true, user_metadata: { full_name, role } });
+      if (createError && !/already|registered|exists/i.test(createError.message)) throw createError;
+      if (createError && /already|registered|exists/i.test(createError.message)) {
+        const { data: usersData } = await database.auth.admin.listUsers({ page: 1, perPage: 1000 });
+        const existing = usersData?.users?.find(u => u.email?.toLowerCase() === microsoft_email);
+        if (existing) await database.auth.admin.updateUserById(existing.id, { password, user_metadata: { full_name, role } });
+      }
+    }
+    const row = await must(database.from('psi_sales_profiles').upsert({ full_name, microsoft_email, role, active }, { onConflict: 'microsoft_email' }).select('id,full_name,microsoft_email,role,active,created_at').single());
+    res.status(201).json(row);
+  } catch (error) { sendAuthError(res, error); }
+});
+
+const distPath = path.join(__dirname, '..', 'dist');
+app.use(express.static(distPath));
+app.use((_req, res) => res.sendFile(path.join(distPath, 'index.html')));
+
+const port = process.env.PORT || 4173;
+app.listen(port, () => console.log(`CRM Comercial SN escuchando en http://localhost:${port}`));
