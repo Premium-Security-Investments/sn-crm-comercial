@@ -327,14 +327,14 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   return <section className="stack">
     <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p></div><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button></div>
     <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
-    <div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><FollowUpForm opportunityId={id} profiles={data.profiles} onSaved={async()=>{await load(); await refresh();}} /></div>
+    <div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div>
     <Panel title="Línea de seguimientos"><div className="timeline">{detail.interactions.length ? detail.interactions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel>
   </section>;
 }
 function Info({ label, value }: { label: string; value?: string | null }) { return <div className="card info"><small>{label}</small><strong>{value || '—'}</strong></div>; }
 function Dt({ label, value }: { label: string; value?: string | null }) { return <><dt>{label}</dt><dd>{value || '—'}</dd></>; }
-function FollowUpForm({ opportunityId, profiles, onSaved }: { opportunityId: string; profiles: Profile[]; onSaved: () => Promise<void> }) {
-  const [form, setForm] = useState({ interaction_type: 'nota', notes: '', occurred_at: new Date().toISOString().slice(0,16), created_by: profiles[0]?.id || '', next_action_at: '' }); const [status, setStatus] = useState('');
+function FollowUpForm({ opportunityId, profiles, currentProfile, onSaved }: { opportunityId: string; profiles: Profile[]; currentProfile: Profile; onSaved: () => Promise<void> }) {
+  const [form, setForm] = useState({ interaction_type: 'nota', notes: '', occurred_at: new Date().toISOString().slice(0,16), created_by: currentProfile.id, next_action_at: '' }); const [status, setStatus] = useState('');
   const save = async (e: React.FormEvent) => { e.preventDefault(); setStatus('Guardando…'); try { await api(`/api/opportunity-interactions?id=${encodeURIComponent(opportunityId)}`, { method:'POST', body: JSON.stringify({ ...form, occurred_at: new Date(form.occurred_at).toISOString(), next_action_at: form.next_action_at ? new Date(form.next_action_at).toISOString() : null, created_by: form.created_by || null }) }); setForm({...form, notes:''}); setStatus('Seguimiento registrado.'); await onSaved(); } catch(err) { setStatus(err instanceof Error ? err.message : String(err)); } };
   return <Panel title="Registrar seguimiento"><form onSubmit={save} className="form"><Select value={form.interaction_type} onChange={v=>setForm({...form, interaction_type:v})} options={interactionTypes.map(t=>[t,t])} empty="Tipo"/>{profiles.length > 1 && <Select value={form.created_by} onChange={v=>setForm({...form, created_by:v})} options={profiles.map(p=>[p.id,p.full_name])} empty="Quién registra"/>}<label>Fecha del seguimiento<input type="datetime-local" value={form.occurred_at} onChange={e=>setForm({...form, occurred_at:e.target.value})}/></label><label>Programar próxima gestión<input type="datetime-local" value={form.next_action_at} onChange={e=>setForm({...form, next_action_at:e.target.value})}/></label><textarea required placeholder="Nota del seguimiento" value={form.notes} onChange={e=>setForm({...form, notes:e.target.value})}/><button>Guardar seguimiento</button>{status && <small>{status}</small>}</form></Panel>;
 }
@@ -723,7 +723,7 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
 }
 
 
-type CentinelResult = { title: string; summary: string; rows: Opportunity[]; cards: Array<{ label: string; value: string; detail: string }>; mode: 'alerts' | 'pipeline' | 'goals' | 'stalled' | 'search' };
+type CentinelResult = { title: string; summary: string; rows: Opportunity[]; cards: Array<{ label: string; value: string; detail: string }>; mode: 'alerts' | 'pipeline' | 'goals' | 'stalled' | 'large' | 'risk' | 'search' };
 
 const centinelQuickActions = [
   { label: 'Oportunidades sin agenda', prompt: 'Muéstrame oportunidades sin agenda por comercial' },
@@ -733,6 +733,14 @@ const centinelQuickActions = [
   { label: 'Próximas gestiones', prompt: 'Muéstrame próximas gestiones de esta semana' },
   { label: 'Oportunidades grandes', prompt: 'Muéstrame oportunidades grandes en negociación o sustentación' },
 ];
+
+function isLargeOpportunityQuery(q: string) {
+  return q.includes('grande') || q.includes('mayor valor') || q.includes('más valor') || q.includes('mas valor') || q.includes('alto valor') || q.includes('top oportunidad') || q.includes('importante');
+}
+
+function isRiskFollowUpQuery(q: string) {
+  return q.includes('muchos días') || q.includes('muchos dias') || q.includes('sin seguimiento') || q.includes('abandonad') || q.includes('atrasad') || q.includes('riesgo') || q.includes('vencid');
+}
 
 function interpretCentinelQuery(query: string, data: Bootstrap): CentinelResult {
   const q = query.toLowerCase();
@@ -746,6 +754,32 @@ function interpretCentinelQuery(query: string, data: Bootstrap): CentinelResult 
       { label: 'Sin agenda', value: String(rows.length), detail: 'Requieren fecha de próxima gestión' },
       { label: 'Comercial con más casos', value: owners.label, detail: `${owners.count} oportunidades` },
       { label: 'Valor en revisión', value: fmtMoneyCompact(rows.reduce((s,o)=>s+Number(o.offer_value||0),0)), detail: 'Pipeline sin siguiente paso' },
+    ] };
+  }
+
+  if (isLargeOpportunityQuery(q)) {
+    const restrictAdvancedStages = q.includes('negociación') || q.includes('negociacion') || q.includes('sustentación') || q.includes('sustentacion');
+    const rows = active
+      .filter(o => !restrictAdvancedStages || ['negociacion','sustentacion'].includes(o.stage_code || ''))
+      .sort((a,b) => Number(b.offer_value || 0) - Number(a.offer_value || 0));
+    const stageLeader = topGroup(rows.slice(0, 20).map(o => o.stage_name || 'Sin etapa'));
+    return { mode: 'large', title: 'Oportunidades de mayor valor', summary: 'Oportunidades activas ordenadas por valor para priorizar revisión comercial y gerencial.', rows, cards: [
+      { label: 'Top oportunidades', value: String(rows.length), detail: restrictAdvancedStages ? 'En negociación o sustentación' : 'Activas ordenadas por valor' },
+      { label: 'Mayor oportunidad', value: fmtMoneyCompact(rows[0]?.offer_value || 0), detail: rows[0]?.company_name || 'Sin datos' },
+      { label: 'Etapa más común del top', value: stageLeader.label, detail: `${stageLeader.count} oportunidades en el top 20` },
+    ] };
+  }
+
+  if (isRiskFollowUpQuery(q)) {
+    const rows = baseRows
+      .filter(r => r.action.code === 'missing' || r.action.code === 'overdue' || Number(r.inactiveDays || 0) >= 5)
+      .sort((a,b) => Number(b.inactiveDays || 0) - Number(a.inactiveDays || 0) || Number(b.o.offer_value || 0) - Number(a.o.offer_value || 0))
+      .map(r => r.o);
+    const owners = topGroup(rows.map(o => o.owner_name || 'Sin comercial'));
+    return { mode: 'risk', title: 'Seguimiento en riesgo', summary: 'Oportunidades activas con señales de atraso: sin agenda, gestión vencida o varios días sin seguimiento.', rows, cards: [
+      { label: 'En riesgo', value: String(rows.length), detail: 'Sin agenda, vencidas o con 5+ días' },
+      { label: 'Vencidas', value: String(baseRows.filter(r => r.action.code === 'overdue').length), detail: 'Próxima gestión ya pasó' },
+      { label: 'Comercial con más casos', value: owners.label, detail: `${owners.count} oportunidades` },
     ] };
   }
 

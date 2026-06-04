@@ -17,6 +17,10 @@ const mainMarkers = [
   "pipeline por etapa",
   "cumplimiento de metas",
   "Clientes en sustentación",
+  "isLargeOpportunityQuery",
+  "isRiskFollowUpQuery",
+  "Oportunidades de mayor valor",
+  "Seguimiento en riesgo",
   "Solo lectura",
 ];
 

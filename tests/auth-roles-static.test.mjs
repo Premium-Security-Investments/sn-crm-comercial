@@ -20,10 +20,14 @@ assert(src.includes('UsersAdmin'), 'Frontend debe incluir módulo UsersAdmin.');
 assert(src.includes('canManageUsers'), 'Frontend debe ocultar administración a roles no autorizados.');
 assert(src.includes('Authorization'), 'Frontend debe enviar Authorization Bearer a la API.');
 assert(src.includes("['director','Directivo']"), 'Frontend debe mostrar el rol director como Directivo para usuarios ejecutivos.');
+assert(src.includes('currentProfile={data.currentProfile}'), 'Formulario de seguimiento debe recibir currentProfile para preseleccionar quien registra.');
+assert(src.includes('created_by: currentProfile.id'), 'Formulario de seguimiento debe preseleccionar al usuario logueado, no el primer perfil alfabético.');
 
 for (const file of [server, api]) {
   assert(file.includes('getAuthContext'), 'API debe validar sesión Supabase en getAuthContext.');
   assert(file.includes('filterBootstrapForProfile'), 'API debe filtrar bootstrap según perfil/rol.');
+  assert(file.includes('payload.opportunities.filter(o => o.owner_id === currentProfile.id)'), 'API debe limitar oportunidades de comerciales a su propio owner_id.');
+  assert(file.includes('opportunity.owner_id !== profile.id'), 'API debe impedir que comerciales abran/modifiquen oportunidades de otros.');
   assert(file.includes("app.get('/api/users'"), 'API debe exponer GET /api/users para admin.');
   assert(file.includes("app.post('/api/users'"), 'API debe exponer POST /api/users para crear usuarios.');
   assert(file.includes('auth.admin.createUser'), 'API debe crear usuarios con Supabase Auth admin.');
