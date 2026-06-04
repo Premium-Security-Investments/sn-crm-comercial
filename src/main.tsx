@@ -23,7 +23,7 @@ type Interaction = { id: string; opportunity_id: string; interaction_type: strin
 type MonthlyKpi = { owner_id?: string | null; owner_name: string | null; period_month: string; prospectos: number; cotizaciones: number; ventas_aprobadas: number; comision_ganada: number; comision_proyectada: number };
 type SalesGoal = { id?: string; user_id: string | null; period_month: string; quote_target: number; prospect_target: number; sales_budget: number; created_at?: string; updated_at?: string };
 type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile };
-type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string };
+type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string; send_invite?: boolean };
 type Route = { page: 'home' | 'opportunities' | 'detail' | 'new' | 'edit' | 'dashboard' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
 
 type OpportunityPayload = Partial<Opportunity> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; };
@@ -984,14 +984,14 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const [users, setUsers] = useState<Profile[]>([]);
   const [status, setStatus] = useState('');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const emptyUserForm: UserPayload = { full_name: '', microsoft_email: '', role: 'comercial', active: true, password: '' };
+  const emptyUserForm: UserPayload = { full_name: '', microsoft_email: '', role: 'comercial', active: true, password: '', send_invite: true };
   const [form, setForm] = useState<UserPayload>(emptyUserForm);
   const load = async () => { setUsers(await api<Profile[]>('/api/users')); };
   useEffect(() => { if (canManageUsers(currentProfile)) load().catch(e => setStatus(e instanceof Error ? e.message : String(e))); }, [currentProfile.id]);
   if (!canManageUsers(currentProfile)) return <div className="error">Solo admin puede administrar usuarios.</div>;
   const startEdit = (user: Profile) => {
     setEditingUserId(user.id);
-    setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, role: user.role, active: user.active, password: '' });
+    setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, role: user.role, active: user.active, password: '', send_invite: false });
     setStatus('Editando usuario existente. Deja la clave en blanco si no quieres cambiarla.');
   };
   const cancelEdit = () => {
@@ -1003,11 +1003,11 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
     e.preventDefault();
     setStatus(editingUserId ? 'Actualizando usuario…' : 'Creando usuario…');
     try {
-      await api<Profile>(editingUserId ? `/api/users?id=${encodeURIComponent(editingUserId)}` : '/api/users', { method: editingUserId ? 'PATCH' : 'POST', body: JSON.stringify(form) });
+      const saved = await api<Profile & { invited?: boolean }>(editingUserId ? `/api/users?id=${encodeURIComponent(editingUserId)}` : '/api/users', { method: editingUserId ? 'PATCH' : 'POST', body: JSON.stringify(form) });
       setForm(emptyUserForm);
       setEditingUserId(null);
       await load();
-      setStatus(editingUserId ? 'Usuario actualizado.' : 'Usuario/perfil guardado.');
+      setStatus(editingUserId ? 'Usuario actualizado.' : (saved.invited ? 'Usuario guardado. Invitación enviada por correo.' : 'Usuario/perfil guardado.'));
     } catch (err) { setStatus(err instanceof Error ? err.message : String(err)); }
   };
   return <section className="stack">
@@ -1017,8 +1017,9 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
         <label>Nombre completo<input required value={form.full_name} onChange={e=>setForm({...form, full_name:e.target.value})}/></label>
         <label>Email<input type="email" required value={form.microsoft_email} onChange={e=>setForm({...form, microsoft_email:e.target.value})}/></label>
         <label>Rol<Select value={form.role} onChange={v=>setForm({...form, role:v})} options={[['comercial','Comercial'],['director','Director'],['gerencia','Gerencia'],['admin','Admin']]} empty="Rol"/></label>
-        <label>Clave temporal<input type="password" minLength={8} value={form.password || ''} onChange={e=>setForm({...form, password:e.target.value})} placeholder="Mínimo 8 caracteres"/></label>
+        <label>Clave temporal<input type="password" minLength={8} value={form.password || ''} onChange={e=>setForm({...form, password:e.target.value})} placeholder={form.send_invite ? "Opcional si envías invitación" : "Mínimo 8 caracteres"}/></label>
         <label>Estado<Select value={form.active ? 'true' : 'false'} onChange={v=>setForm({...form, active:v==='true'})} options={[['true','Activo'],['false','Inactivo']]} empty="Estado"/></label>
+        <label className="checkline"><input type="checkbox" checked={!!form.send_invite} onChange={e=>setForm({...form, send_invite:e.target.checked})}/> Enviar correo de invitación para que el usuario active su acceso</label>
         <div className="formactions"><button>{editingUserId ? 'Actualizar usuario' : 'Guardar usuario'}</button>{editingUserId && <button type="button" className="secondary" onClick={cancelEdit}>Cancelar edición</button>}{status && <span>{status}</span>}</div>
       </form>
     </Panel>

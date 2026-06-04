@@ -66,6 +66,13 @@ async function getAuthContext(req) {
 function sendAuthError(res, error) {
   sendError(res, error, error?.status || 500);
 }
+function getPublicAppUrl(req) {
+  const configured = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
+  if (configured) return configured.startsWith('http') ? configured : `https://${configured}`;
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  const proto = req.headers['x-forwarded-proto'] || (host && String(host).includes('localhost') ? 'http' : 'https');
+  return host ? `${proto}://${host}` : 'https://seguridad-nacional-crm.vercel.app';
+}
 function recomputeSummary(stages, opportunities) {
   return stages.map(stage => {
     const rows = opportunities.filter(o => o.stage_code === stage.code);
@@ -350,20 +357,42 @@ app.post('/api/users', async (req, res) => {
     const role = String(req.body.role || 'comercial');
     const password = String(req.body.password || '');
     const active = req.body.active !== false;
+    const send_invite = req.body.send_invite !== false;
     if (!full_name) throw new Error('El nombre completo es obligatorio.');
     if (!microsoft_email || !microsoft_email.includes('@')) throw new Error('Debe registrar un email válido.');
     if (!['comercial','director','gerencia','admin'].includes(role)) throw new Error('Rol no válido.');
     if (password && password.length < 8) throw new Error('La clave temporal debe tener mínimo 8 caracteres.');
-    if (password) {
-      const { error: createError } = await database.auth.admin.createUser({ email: microsoft_email, password, email_confirm: true, user_metadata: { full_name, role } });
+    const userMetadata = { full_name, role };
+    let inviteSent = false;
+    if (send_invite && active) {
+      const existing = await findAuthUserByEmail(database, microsoft_email);
+      if (existing) {
+        const updates = { user_metadata: userMetadata };
+        if (password) updates.password = password;
+        const { error: updateError } = await database.auth.admin.updateUserById(existing.id, updates);
+        if (updateError) throw updateError;
+      }
+      const { error: inviteError } = await database.auth.admin.inviteUserByEmail(microsoft_email, {
+        redirectTo: getPublicAppUrl(req),
+        data: userMetadata
+      });
+      if (inviteError && /already|registered|exists/i.test(inviteError.message)) {
+        const { error: resetError } = await database.auth.resetPasswordForEmail(microsoft_email, { redirectTo: getPublicAppUrl(req) });
+        if (resetError) throw resetError;
+      } else if (inviteError) {
+        throw inviteError;
+      }
+      inviteSent = true;
+    } else if (password) {
+      const { error: createError } = await database.auth.admin.createUser({ email: microsoft_email, password, email_confirm: true, user_metadata: userMetadata });
       if (createError && !/already|registered|exists/i.test(createError.message)) throw createError;
       if (createError && /already|registered|exists/i.test(createError.message)) {
         const existing = await findAuthUserByEmail(database, microsoft_email);
-        if (existing) await database.auth.admin.updateUserById(existing.id, { password, user_metadata: { full_name, role } });
+        if (existing) await database.auth.admin.updateUserById(existing.id, { password, user_metadata: userMetadata });
       }
     }
     const row = await must(database.from('psi_sales_profiles').upsert({ full_name, microsoft_email, role, active }, { onConflict: 'microsoft_email' }).select('id,full_name,microsoft_email,role,active,created_at').single());
-    res.status(201).json(row);
+    res.status(201).json({ ...row, invited: inviteSent });
   } catch (error) { sendAuthError(res, error); }
 });
 
