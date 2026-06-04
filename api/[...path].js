@@ -35,6 +35,11 @@ function requireDb() {
 const managementRoles = ['director','gerencia','admin'];
 function isManager(profile) { return managementRoles.includes(profile?.role); }
 function canManageUsers(profile) { return profile?.role === 'admin'; }
+function normalizeUserRole(value) {
+  const raw = String(value || 'comercial').trim().toLowerCase();
+  if (raw === 'directivo') return 'director';
+  return raw;
+}
 function getBearerToken(req) {
   const raw = req.headers.authorization || '';
   const match = String(raw).match(/^Bearer\s+(.+)$/i);
@@ -354,7 +359,7 @@ app.post('/api/users', async (req, res) => {
     const database = requireDb();
     const full_name = String(req.body.full_name || '').trim();
     const microsoft_email = String(req.body.microsoft_email || '').trim().toLowerCase();
-    const role = String(req.body.role || 'comercial');
+    const role = normalizeUserRole(req.body.role);
     const password = String(req.body.password || '');
     const active = req.body.active !== false;
     const send_invite = req.body.send_invite !== false;
@@ -406,7 +411,7 @@ app.patch('/api/users', async (req, res) => {
     if (!existingProfile) { const error = new Error('Usuario no encontrado.'); error.status = 404; throw error; }
     const full_name = String(req.body.full_name || '').trim();
     const microsoft_email = String(req.body.microsoft_email || '').trim().toLowerCase();
-    const role = String(req.body.role || 'comercial');
+    const role = normalizeUserRole(req.body.role);
     const password = String(req.body.password || '');
     const active = req.body.active !== false;
     if (!full_name) throw new Error('El nombre completo es obligatorio.');

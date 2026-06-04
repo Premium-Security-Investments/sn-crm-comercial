@@ -1016,7 +1016,7 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
       <form className="form gridform" onSubmit={submit}>
         <label>Nombre completo<input required value={form.full_name} onChange={e=>setForm({...form, full_name:e.target.value})}/></label>
         <label>Email<input type="email" required value={form.microsoft_email} onChange={e=>setForm({...form, microsoft_email:e.target.value})}/></label>
-        <label>Rol<Select value={form.role} onChange={v=>setForm({...form, role:v})} options={[['comercial','Comercial'],['director','Director'],['gerencia','Gerencia'],['admin','Admin']]} empty="Rol"/></label>
+        <label>Rol<Select value={form.role} onChange={v=>setForm({...form, role:v})} options={[['comercial','Comercial'],['director','Directivo'],['gerencia','Gerencia'],['admin','Admin']]} empty="Rol"/></label>
         <label>Clave temporal<input type="password" minLength={8} value={form.password || ''} onChange={e=>setForm({...form, password:e.target.value})} placeholder={form.send_invite ? "Opcional si envías invitación" : "Mínimo 8 caracteres"}/></label>
         <label>Estado<Select value={form.active ? 'true' : 'false'} onChange={v=>setForm({...form, active:v==='true'})} options={[['true','Activo'],['false','Inactivo']]} empty="Estado"/></label>
         <label className="checkline"><input type="checkbox" checked={!!form.send_invite} onChange={e=>setForm({...form, send_invite:e.target.checked})}/> Enviar correo de invitación para que el usuario active su acceso</label>

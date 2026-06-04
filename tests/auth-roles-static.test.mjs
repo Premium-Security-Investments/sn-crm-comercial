@@ -19,6 +19,7 @@ assert(src.includes("'users'"), 'Frontend debe incluir ruta users para administr
 assert(src.includes('UsersAdmin'), 'Frontend debe incluir módulo UsersAdmin.');
 assert(src.includes('canManageUsers'), 'Frontend debe ocultar administración a roles no autorizados.');
 assert(src.includes('Authorization'), 'Frontend debe enviar Authorization Bearer a la API.');
+assert(src.includes("['director','Directivo']"), 'Frontend debe mostrar el rol director como Directivo para usuarios ejecutivos.');
 
 for (const file of [server, api]) {
   assert(file.includes('getAuthContext'), 'API debe validar sesión Supabase en getAuthContext.');
@@ -26,6 +27,8 @@ for (const file of [server, api]) {
   assert(file.includes("app.get('/api/users'"), 'API debe exponer GET /api/users para admin.');
   assert(file.includes("app.post('/api/users'"), 'API debe exponer POST /api/users para crear usuarios.');
   assert(file.includes('auth.admin.createUser'), 'API debe crear usuarios con Supabase Auth admin.');
+  assert(file.includes('normalizeUserRole'), 'API debe normalizar aliases de rol como directivo -> director.');
+  assert(file.includes("raw === 'directivo'"), 'API debe aceptar Directivo como alias compatible del rol director.');
   assert(file.includes("role === 'comercial'"), 'API debe tratar comercial como rol restringido.');
 }
 
