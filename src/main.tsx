@@ -30,7 +30,8 @@ type UserPayload = { full_name: string; microsoft_email: string; role: string; a
 type TenderSection = 'hacer' | 'revisar' | 'descartar';
 type TenderInternalStatus = 'nueva' | 'en_revision' | 'descartada' | 'convertida_oportunidad';
 type PublicTender = { id: string; stable_key?: string; source: string; section: TenderSection; internal_status?: TenderInternalStatus; converted_opportunity_id?: string | null; reviewed_at?: string | null; detected_at?: string | null; last_seen_at?: string | null; entity: string; dept?: string; city?: string; ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string; category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null; score: number; reasons: string[]; risks: string[]; url?: string };
-type TenderRadarPayload = { generatedAt: string; source?: string; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
+type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string; count?: number; message?: string };
+type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
 
 type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; };
@@ -349,7 +350,7 @@ function buildTenderOpportunityPayload(tender: PublicTender, data: Bootstrap): O
     `Ubicación: ${tender.city || tender.dept || '—'}`,
     `Score radar: ${tender.score}`,
     `Razones: ${tender.reasons.join(', ') || '—'}`,
-    tender.url ? `Link SECOP: ${tender.url}` : '',
+    tender.url ? `Link fuente: ${tender.url}` : '',
   ].filter(Boolean).join('\n');
   return {
     company_name: tender.entity,
@@ -438,8 +439,8 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
   const grouped = { hacer: rows.filter(t => t.section === 'hacer'), revisar: rows.filter(t => t.section === 'revisar'), descartar: rows.filter(t => t.section === 'descartar') };
   return <section className="stack tenders-page">
     <section className="executive-hero">
-      <div><span className="eyebrow">Radar público SECOP</span><h2>Licitaciones</h2><p>Procesos públicos priorizados, historizados y accionables: Katherine puede revisar, descartar o convertir a oportunidad sin duplicar.</p></div>
-      <div className="hero-facts"><div><small>Actualización</small><strong>{fmtDate(payload.generatedAt)}</strong></div><div><small>Fuente</small><strong>{payload.source === 'supabase' ? 'Supabase' : 'SECOP vivo'}</strong></div></div>
+      <div><span className="eyebrow">Radar de Licitaciones Públicas</span><h2>Licitaciones</h2><p>Procesos públicos y eventos TVEC priorizados, historizados y accionables: Katherine puede revisar, descartar o convertir a oportunidad sin duplicar.</p></div>
+      <div className="hero-facts"><div><small>Actualización</small><strong>{fmtDate(payload.generatedAt)}</strong></div><div><small>Fuente</small><strong>{payload.source === 'supabase' ? 'Supabase' : 'Fuentes vivas'}</strong></div></div>
     </section>
     <div className="grid kpis">
       <Kpi icon="!" tone="amber" label="Hacer hoy" value={payload.totals.hacer.toString()} hint="Revisión prioritaria" meta="Cierre cercano / alto encaje" />
@@ -447,7 +448,8 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
       <Kpi icon="$" tone="purple" label="Alto valor" value={payload.totals.highValue.toString()} hint="$500M+ COP" meta="Procesos de mayor impacto" />
       <Kpi icon="✓" tone="green" label="Convertidas" value={(payload.totals.convertidas || 0).toString()} hint="Ya son oportunidades" meta={`${payload.totals.descartadas || 0} descartadas`} />
     </div>
-    <div className="filters"><input placeholder="Buscar entidad, ciudad, objeto o referencia…" value={q} onChange={e=>setQ(e.target.value)} /><Select value={section} onChange={v=>setSection(v as TenderSection | 'todas')} options={[["hacer","Hacer hoy"],["revisar","Revisar"],["descartar","Descartar / validar"],["todas","Todas"]]} empty="Sección"/><Select value={internalStatus} onChange={v=>setInternalStatus(v as TenderInternalStatus | 'todas')} options={[["todas","Todos"],["nueva","Nueva"],["en_revision","En revisión"],["descartada","Descartada"],["convertida_oportunidad","Convertida"]]} empty="Estado interno"/><button className="secondary" onClick={load}>Actualizar</button><button onClick={refreshRadar} disabled={syncing}>{syncing ? 'Sincronizando…' : 'Sincronizar SECOP'}</button></div>
+    <div className="filters"><input placeholder="Buscar entidad, ciudad, objeto o referencia…" value={q} onChange={e=>setQ(e.target.value)} /><Select value={section} onChange={v=>setSection(v as TenderSection | 'todas')} options={[["hacer","Hacer hoy"],["revisar","Revisar"],["descartar","Descartar / validar"],["todas","Todas"]]} empty="Sección"/><Select value={internalStatus} onChange={v=>setInternalStatus(v as TenderInternalStatus | 'todas')} options={[["todas","Todos"],["nueva","Nueva"],["en_revision","En revisión"],["descartada","Descartada"],["convertida_oportunidad","Convertida"]]} empty="Estado interno"/><button className="secondary" onClick={load}>Actualizar</button><button onClick={refreshRadar} disabled={syncing}>{syncing ? 'Sincronizando…' : 'Sincronizar fuentes'}</button></div>
+    {payload.diagnostics?.length ? <div className="notice"><strong>Diagnóstico de fuentes:</strong> {payload.diagnostics.map(d => `${d.source}: ${d.message || d.status}`).join(' · ')}</div> : null}
     <p className="muted">Mostrando {rows.length} de {payload.tenders.length} licitaciones. Estado interno: {internalStatus === 'todas' ? 'todos' : tenderStatusLabel(internalStatus)}.</p>
     {section === 'todas' ? <TenderTable rows={rows} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} /> : <>
       <TenderSectionPanel title="Hacer hoy" rows={grouped.hacer} show={section === 'hacer'} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} />
@@ -468,7 +470,7 @@ function TenderCard({ tender, onCreate, onStatus, creating }: { tender: PublicTe
     <div className="tender-meta"><span>{fmtMoney(tender.value)}</span><span>Cierre: {fmtDate(tender.deadline)}</span><span>Ref: {tender.ref || '—'}</span></div>
     <small className="muted">{tender.reasons.slice(0,4).join(' · ')}</small>
     {tender.risks.length > 0 && <small className="muted">Riesgos: {tender.risks.slice(0,2).join(' · ')}</small>}
-    <div className="row-actions">{tender.url && <a className="button secondary" target="_blank" href={tender.url}>Abrir SECOP</a>}<button className="secondary" onClick={() => onStatus(tender, 'en_revision')} disabled={creating || converted}>En revisión</button><button className="secondary" onClick={() => onStatus(tender, 'descartada')} disabled={creating || converted}>Descartar</button><button onClick={() => onCreate(tender)} disabled={creating}>{creating ? 'Creando…' : converted ? 'Ver oportunidad' : 'Crear oportunidad'}</button></div>
+    <div className="row-actions">{tender.url && <a className="button secondary" target="_blank" href={tender.url}>Abrir fuente</a>}<button className="secondary" onClick={() => onStatus(tender, 'en_revision')} disabled={creating || converted}>En revisión</button><button className="secondary" onClick={() => onStatus(tender, 'descartada')} disabled={creating || converted}>Descartar</button><button onClick={() => onCreate(tender)} disabled={creating}>{creating ? 'Creando…' : converted ? 'Ver oportunidad' : 'Crear oportunidad'}</button></div>
   </article>;
 }
 function TenderTable({ rows, onCreate, onStatus, creatingId }: { rows: PublicTender[]; onCreate: (tender: PublicTender) => void; onStatus: (tender: PublicTender, status: TenderInternalStatus) => void; creatingId: string | null }) {

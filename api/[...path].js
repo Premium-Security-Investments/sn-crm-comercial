@@ -167,6 +167,19 @@ const tenderSources = {
     nameFields: ['objeto_a_contratar','detalle_del_objeto_a_contratar']
   }
 };
+const TVEC_EVENTS_URL = 'https://operaciones.colombiacompra.gov.co/eventos-cotizacion-tvec';
+const TVEC_RELEVANT_AGGREGATIONS = {
+  'Soluciones de videovigilancia': 90,
+  'Soluciones de Videovigilancia y sus mantenimientos II': 90,
+  'Video-vigilancia ciudadana': 90,
+  'Video Vigilancia': 85,
+  'Conectividad IV': 45,
+  'IAD Software por Catalogo II': 38,
+  'IAD Software por Catálogo II': 38,
+  'Nube pública V': 35,
+  'Nube Privada IV': 35,
+  'Productos y Servicios Electrónicos y Digitales de Confianza': 32
+};
 const tenderPositiveTerms = {
   'vigilancia y seguridad privada': 45, 'servicio de vigilancia': 40, 'vigilancia armada': 38, 'vigilancia privada': 38,
   'seguridad privada': 35, 'seguridad electronica': 35, 'seguridad electrónica': 35, 'cctv': 35,
@@ -237,10 +250,97 @@ async function fetchSecopSource(source, cfg) {
   const rows = await response.json();
   return rows.map(row => ({ row, scored: scoreTender(row) })).filter(x => x.scored.score >= 35).map(x => normalizeTender(x.row, source, x.scored));
 }
-async function fetchPublicTenderRadar() {
-  const batches = await Promise.all(Object.entries(tenderSources).map(([source, cfg]) => fetchSecopSource(source, cfg)));
+function stripTenderHtml(value) {
+  return String(value || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function parseTenderTableRows(html) {
+  const rows = [];
+  const trMatches = String(html || '').match(/<tr[\s\S]*?<\/tr>/gi) || [];
+  for (const tr of trMatches) {
+    const cells = [];
+    const re = /<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi;
+    let match;
+    while ((match = re.exec(tr))) cells.push(stripTenderHtml(match[1]));
+    if (cells.length) rows.push(cells);
+  }
+  return rows;
+}
+function normalizeTvecEvent(cells, aggregation, baseScore, url) {
+  const [ref, title, entity, start, end, status, instrument, _supplier, order, rawValue] = cells;
+  const deadline = end || null;
+  const days = tenderDaysUntil(deadline);
+  const rowText = normTenderText(`${entity} ${title} ${instrument} ${status} ${ref}`);
+  let score = baseScore;
+  const reasons = [`TVEC: ${instrument || aggregation}`];
+  const risks = ['evento TVEC/RFQ: validar requisitos en Coupa/TVEC; valor puede aparecer $0 hasta adjudicación'];
+  for (const [term, pts] of Object.entries(tenderFocusTerms)) if (rowText.includes(normTenderText(term))) { score += pts; reasons.push(`zona foco: ${term}`); }
+  for (const [term, pts] of Object.entries(tenderPositiveTerms)) if (rowText.includes(normTenderText(term))) { score += Math.min(pts, 25); reasons.push(term); }
+  const tender = {
+    source: 'TVEC',
+    entity: entity || 'Sin entidad',
+    dept: '', city: '', ref: ref || '', process_id: ref || '',
+    title: title || aggregation,
+    desc: `Instrumento: ${instrument || aggregation}; orden de compra asociada: ${order || '0'}`,
+    value: tenderMoney(rawValue),
+    status: status || '', category: instrument || aggregation,
+    published: start || null, deadline, days, window: tenderWindow(days),
+    score, reasons: [...new Set(reasons)].slice(0, 7), risks: [...new Set(risks)].slice(0, 5), url, raw: { ref, title, entity, start, end, status, instrument, order, rawValue, aggregation }
+  };
+  const withId = { ...tender, section: classifyTenderSection(tender) };
+  return { ...withId, id: stableTenderKey(withId), stable_key: stableTenderKey(withId), internal_status: 'nueva', converted_opportunity_id: null };
+}
+async function fetchTvecEvents() {
+  const candidates = [];
   const seen = new Set();
-  return batches.flat().filter(t => {
+  for (const [aggregation, baseScore] of Object.entries(TVEC_RELEVANT_AGGREGATIONS)) {
+    const url = `${TVEC_EVENTS_URL}?${new URLSearchParams({ Agregacion: aggregation }).toString()}`;
+    const response = await fetch(url, { headers: { 'User-Agent': 'SN-CRM-TVEC-Radar/1.0' } });
+    if (!response.ok) throw new Error(`TVEC respondió ${response.status}`);
+    const rows = parseTenderTableRows(await response.text());
+    for (const cells of rows.slice(1)) {
+      if (cells.length < 10) continue;
+      const [ref, title, entity, _start, _end, status] = cells;
+      const active = normTenderText(status).includes('produccion') || normTenderText(status).includes('producción');
+      if (!active) continue;
+      const key = `${ref}:${title}:${entity}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const tender = normalizeTvecEvent(cells, aggregation, baseScore, url);
+      if (tender.days !== null && tender.days < 0) continue;
+      candidates.push(tender);
+    }
+  }
+  return candidates.sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
+}
+async function fetchPublicTenderRadar() {
+  const tasks = [
+    ...Object.entries(tenderSources).map(([source, cfg]) => ({ source, run: () => fetchSecopSource(source, cfg) })),
+    { source: 'TVEC', run: fetchTvecEvents }
+  ];
+  const settled = await Promise.allSettled(tasks.map(t => t.run()));
+  const diagnostics = [];
+  const batches = [];
+  settled.forEach((result, index) => {
+    const source = tasks[index].source;
+    if (result.status === 'fulfilled') {
+      batches.push(result.value);
+      diagnostics.push({ source, status: 'ok', count: result.value.length, message: result.value.length ? `${result.value.length} candidato(s)` : 'Sin candidatos relevantes hoy' });
+    } else {
+      const message = source === 'TVEC' ? `TVEC no disponible temporalmente: ${result.reason?.message || result.reason}` : `${source} no disponible temporalmente: ${result.reason?.message || result.reason}`;
+      diagnostics.push({ source, status: 'error', count: 0, message });
+    }
+  });
+  const seen = new Set();
+  const tenders = batches.flat().filter(t => {
     if (t.days !== null && t.days < 0) return false;
     const key = t.stable_key || stableTenderKey(t);
     if (seen.has(key)) return false;
@@ -249,12 +349,14 @@ async function fetchPublicTenderRadar() {
     const sectionOrder = { hacer: 0, revisar: 1, descartar: 2 };
     return sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score || (a.days ?? 999) - (b.days ?? 999);
   }).slice(0, 80);
+  return { tenders, diagnostics };
 }
-function radarPayload(tenders, generatedAt = new Date().toISOString(), source = 'live') {
+function radarPayload(tenders, generatedAt = new Date().toISOString(), source = 'live', diagnostics = []) {
   const normalized = tenders.map(t => ({ ...t, id: t.stable_key || t.id || stableTenderKey(t), stable_key: t.stable_key || t.id || stableTenderKey(t) }));
   return {
     generatedAt,
     source,
+    diagnostics,
     totals: {
       all: normalized.length,
       hacer: normalized.filter(t => t.section === 'hacer').length,
@@ -305,7 +407,7 @@ async function readPersistedTenderRadar(database) {
     const sectionOrder = { hacer: 0, revisar: 1, descartar: 2 };
     return (statusOrder[a.internal_status] ?? 9) - (statusOrder[b.internal_status] ?? 9) || sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score;
   });
-  return radarPayload(rows, rows[0]?.last_seen_at || new Date().toISOString(), 'supabase');
+  return radarPayload(rows, rows[0]?.last_seen_at || new Date().toISOString(), 'supabase', [{ source: 'Supabase', status: 'ok', count: rows.length, message: 'Radar historizado' }]);
 }
 async function enrichLiveTendersWithConversions(database, tenders) {
   const keys = tenders.map(t => `secop_radar:${t.source}:${stableTenderKey(t)}`);
@@ -318,10 +420,12 @@ async function enrichLiveTendersWithConversions(database, tenders) {
   });
 }
 async function persistTenderRadar(database, actorProfile, mode = 'manual') {
-  const fetched = await fetchPublicTenderRadar();
+  const fetchedPayload = await fetchPublicTenderRadar();
+  const fetched = fetchedPayload.tenders;
+  const diagnostics = fetchedPayload.diagnostics;
   if (!(await tenderTableAvailable(database))) {
     const live = await enrichLiveTendersWithConversions(database, fetched);
-    return radarPayload(live, new Date().toISOString(), 'live_no_table');
+    return radarPayload(live, new Date().toISOString(), 'live_no_table', diagnostics);
   }
   const now = new Date().toISOString();
   const rows = fetched.map(t => ({
@@ -330,10 +434,13 @@ async function persistTenderRadar(database, actorProfile, mode = 'manual') {
     status: t.status || null, category: t.category || null, published_at: t.published || null, deadline_at: t.deadline || null,
     score: Number(t.score || 0), reasons: t.reasons || [], risks: t.risks || [], url: t.url || null, raw: t.raw || null, last_seen_at: now
   }));
-  const { error: upsertError } = await database.from('psi_public_tenders').upsert(rows, { onConflict: 'stable_key', defaultToNull: false });
-  if (upsertError) throw upsertError;
-  await database.from('psi_tender_radar_runs').insert({ run_at: now, triggered_by: actorProfile?.id || null, mode, count_total: rows.length, count_hacer: rows.filter(r => r.section === 'hacer').length, count_revisar: rows.filter(r => r.section === 'revisar').length, count_descartar: rows.filter(r => r.section === 'descartar').length, summary: `Radar SECOP sincronizado: ${rows.length} procesos.` });
-  return await readPersistedTenderRadar(database);
+  if (rows.length) {
+    const { error: upsertError } = await database.from('psi_public_tenders').upsert(rows, { onConflict: 'stable_key', defaultToNull: false });
+    if (upsertError) throw upsertError;
+  }
+  await database.from('psi_tender_radar_runs').insert({ run_at: now, triggered_by: actorProfile?.id || null, mode, count_total: rows.length, count_hacer: rows.filter(r => r.section === 'hacer').length, count_revisar: rows.filter(r => r.section === 'revisar').length, count_descartar: rows.filter(r => r.section === 'descartar').length, summary: `Radar multifuente sincronizado: ${rows.length} procesos/eventos. ${diagnostics.map(d => `${d.source}: ${d.status}`).join(' · ')}` });
+  const persisted = await readPersistedTenderRadar(database);
+  return { ...persisted, diagnostics };
 }
 async function buildTenderRadar(database, currentProfile, forceRefresh = false) {
   if (forceRefresh) return await persistTenderRadar(database, currentProfile, 'manual');
@@ -342,8 +449,9 @@ async function buildTenderRadar(database, currentProfile, forceRefresh = false) 
     if (persisted?.tenders?.length) return persisted;
     return await persistTenderRadar(database, currentProfile, 'auto_empty');
   }
-  const live = await enrichLiveTendersWithConversions(database, await fetchPublicTenderRadar());
-  return radarPayload(live, new Date().toISOString(), 'live_no_table');
+  const fetchedPayload = await fetchPublicTenderRadar();
+  const live = await enrichLiveTendersWithConversions(database, fetchedPayload.tenders);
+  return radarPayload(live, new Date().toISOString(), 'live_no_table', fetchedPayload.diagnostics);
 }
 async function findTenderOwner(database, currentProfile) {
   const { data } = await database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active').ilike('microsoft_email', 'directora.licitaciones@seguridadnacional.co').eq('active', true).maybeSingle();
@@ -358,7 +466,7 @@ function buildTenderOpportunityPayload(tender, owner) {
     `Ubicación: ${tender.city || tender.dept || '—'}`,
     `Score radar: ${tender.score}`,
     `Razones: ${(tender.reasons || []).join(', ') || '—'}`,
-    tender.url ? `Link SECOP: ${tender.url}` : '',
+    tender.url ? `Link fuente: ${tender.url}` : '',
   ].filter(Boolean).join('\n');
   return {
     company_name: tender.entity,

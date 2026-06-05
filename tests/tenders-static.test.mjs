@@ -26,7 +26,12 @@ assert(!src.includes('disabled title="Fase 2"'), 'El botón Crear oportunidad en
 assert(src.includes('TenderInternalStatus'), 'Frontend debe modelar estado interno de licitación.');
 assert(src.includes('markTenderStatus'), 'Frontend debe permitir marcar En revisión / Descartada.');
 assert(src.includes('converted_opportunity_id'), 'Frontend debe mostrar licitaciones ya convertidas con enlace a oportunidad.');
-assert(src.includes('Sincronizar SECOP'), 'Frontend debe tener acción explícita de sincronización.');
+assert(!src.includes('Radar público SECOP'), 'Frontend no debe amarrar el módulo solo a SECOP.');
+assert(src.includes('Radar de Licitaciones Públicas'), 'Frontend debe presentar el radar como multifuente.');
+assert(src.includes('Sincronizar fuentes'), 'Frontend debe tener acción explícita de sincronización multifuente.');
+assert(!src.includes('Sincronizar SECOP'), 'El botón ya no debe decir Sincronizar SECOP.');
+assert(src.includes('Abrir fuente'), 'Frontend debe abrir la fuente genérica, no solo SECOP.');
+assert(src.includes('diagnostics'), 'Frontend debe mostrar diagnóstico de fuentes, incluyendo TVEC temporalmente no disponible.');
 assert(src.includes('Estado interno'), 'Frontend debe mostrar/filtar estado interno.');
 
 for (const file of [server, api]) {
@@ -41,6 +46,10 @@ for (const file of [server, api]) {
   assert(file.includes('directora.licitaciones@seguridadnacional.co'), 'API debe autorizar a Katherine por email.');
   assert(file.includes('Solo dirección o licitaciones puede ver este radar.'), 'API debe responder 403 para perfiles no autorizados.');
   assert(file.includes('fetchSecopSource'), 'API debe consultar SECOP para poblar radar de licitaciones.');
+  assert(file.includes('fetchTvecEvents'), 'API debe consultar TVEC como tercera fuente activa.');
+  assert(file.includes('TVEC_RELEVANT_AGGREGATIONS'), 'API debe declarar instrumentos TVEC relevantes.');
+  assert(file.includes('TVEC no disponible temporalmente'), 'API debe diagnosticar falla temporal de TVEC sin tumbar SECOP.');
+  assert(file.includes('Promise.allSettled'), 'API debe tolerar errores por fuente sin romper todo el radar.');
   assert(file.includes('section: classifyTenderSection'), 'API debe clasificar licitaciones en hacer/revisar/descartar.');
   assert(file.includes('psi_public_tenders'), 'API debe usar tabla psi_public_tenders para historizar licitaciones.');
   assert(file.includes('psi_tender_radar_runs'), 'API debe registrar ejecuciones en psi_tender_radar_runs.');
