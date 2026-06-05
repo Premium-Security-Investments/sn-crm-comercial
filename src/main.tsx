@@ -25,8 +25,9 @@ type SalesGoal = { id?: string; user_id: string | null; period_month: string; qu
 type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile };
 type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string; send_invite?: boolean };
 type TenderSection = 'hacer' | 'revisar' | 'descartar';
-type PublicTender = { id: string; source: string; section: TenderSection; entity: string; dept?: string; city?: string; ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string; category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null; score: number; reasons: string[]; risks: string[]; url?: string };
-type TenderRadarPayload = { generatedAt: string; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number }; tenders: PublicTender[] };
+type TenderInternalStatus = 'nueva' | 'en_revision' | 'descartada' | 'convertida_oportunidad';
+type PublicTender = { id: string; stable_key?: string; source: string; section: TenderSection; internal_status?: TenderInternalStatus; converted_opportunity_id?: string | null; entity: string; dept?: string; city?: string; ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string; category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null; score: number; reasons: string[]; risks: string[]; url?: string };
+type TenderRadarPayload = { generatedAt: string; source?: string; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
 
 type OpportunityPayload = Partial<Opportunity> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; };
@@ -354,13 +355,27 @@ function buildTenderOpportunityPayload(tender: PublicTender, data: Bootstrap): O
     external_source: `secop_radar:${tender.source}`,
   };
 }
+function tenderStatusLabel(status?: TenderInternalStatus) {
+  if (status === 'en_revision') return 'En revisión';
+  if (status === 'descartada') return 'Descartada';
+  if (status === 'convertida_oportunidad') return 'Convertida';
+  return 'Nueva';
+}
+function tenderStatusTone(status?: TenderInternalStatus) {
+  if (status === 'convertida_oportunidad') return 'success';
+  if (status === 'descartada') return 'danger';
+  if (status === 'en_revision') return 'amber';
+  return 'blue';
+}
 function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) {
   const currentProfile = data.currentProfile;
   const [payload, setPayload] = useState<TenderRadarPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creatingId, setCreatingId] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
   const [section, setSection] = useState<TenderSection | 'todas'>('hacer');
+  const [internalStatus, setInternalStatus] = useState<TenderInternalStatus | 'todas'>('todas');
   const [q, setQ] = useState('');
   const load = async () => {
     setLoading(true); setError(null);
@@ -368,18 +383,37 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setLoading(false); }
   };
+  const refreshRadar = async () => {
+    setSyncing(true); setError(null);
+    try { setPayload(await api<TenderRadarPayload>('/api/tender-refresh', { method: 'POST' })); }
+    catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setSyncing(false); }
+  };
   useEffect(() => { load(); }, []);
   if (!canViewTenders(currentProfile)) return <div className="error">Solo dirección o licitaciones puede ver este radar.</div>;
   if (loading) return <div className="notice">Cargando radar de licitaciones…</div>;
   if (error) return <div className="error">{error}</div>;
   if (!payload) return <EmptyState title="Sin datos" text="No se pudo cargar el radar de licitaciones." />;
+  const markTenderStatus = async (tender: PublicTender, status: TenderInternalStatus) => {
+    setCreatingId(tender.id); setError(null);
+    try {
+      const updated = await api<PublicTender>(`/api/tender-status?id=${encodeURIComponent(tender.id)}`, { method: 'PATCH', body: JSON.stringify({ internal_status: status }) });
+      setPayload(current => current ? { ...current, tenders: current.tenders.map(t => t.id === tender.id ? { ...t, ...updated } : t) } : current);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCreatingId(null);
+    }
+  };
   const createOpportunityFromTender = async (tender: PublicTender) => {
+    if (tender.converted_opportunity_id) { go(`#/detail/${tender.converted_opportunity_id}`); return; }
     const owner = findTenderOwner(data);
     const ok = window.confirm(`¿Crear oportunidad para ${tender.entity} y asignarla a ${owner.full_name}?`);
     if (!ok) return;
     setCreatingId(tender.id); setError(null);
     try {
-      const saved = await api<{id:string}>('/api/opportunities', { method: 'POST', body: JSON.stringify(buildTenderOpportunityPayload(tender, data)) });
+      const saved = await api<{id:string}>('/api/tender-convert', { method: 'POST', body: JSON.stringify({ tender }) });
+      setPayload(current => current ? { ...current, tenders: current.tenders.map(t => t.id === tender.id ? { ...t, internal_status: 'convertida_oportunidad', converted_opportunity_id: saved.id } : t) } : current);
       await refresh();
       go(`#/detail/${saved.id}`);
     } catch (err) {
@@ -388,44 +422,46 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
       setCreatingId(null);
     }
   };
-  const rows = payload.tenders.filter(t => (section === 'todas' || t.section === section) && (!q || `${t.entity} ${t.city||''} ${t.title} ${t.ref||''}`.toLowerCase().includes(q.toLowerCase())));
+  const rows = payload.tenders.filter(t => (section === 'todas' || t.section === section) && (internalStatus === 'todas' || (t.internal_status || 'nueva') === internalStatus) && (!q || `${t.entity} ${t.city||''} ${t.title} ${t.ref||''}`.toLowerCase().includes(q.toLowerCase())));
   const grouped = { hacer: rows.filter(t => t.section === 'hacer'), revisar: rows.filter(t => t.section === 'revisar'), descartar: rows.filter(t => t.section === 'descartar') };
   return <section className="stack tenders-page">
     <section className="executive-hero">
-      <div><span className="eyebrow">Radar público SECOP</span><h2>Licitaciones</h2><p>Procesos públicos priorizados para Seguridad Nacional. V1 es solo lectura: primero validamos, después se convierte a oportunidad comercial.</p></div>
-      <div className="hero-facts"><div><small>Actualización</small><strong>{fmtDate(payload.generatedAt)}</strong></div><div><small>Acceso</small><strong>Dirección + Katherine</strong></div></div>
+      <div><span className="eyebrow">Radar público SECOP</span><h2>Licitaciones</h2><p>Procesos públicos priorizados, historizados y accionables: Katherine puede revisar, descartar o convertir a oportunidad sin duplicar.</p></div>
+      <div className="hero-facts"><div><small>Actualización</small><strong>{fmtDate(payload.generatedAt)}</strong></div><div><small>Fuente</small><strong>{payload.source === 'supabase' ? 'Supabase' : 'SECOP vivo'}</strong></div></div>
     </section>
     <div className="grid kpis">
       <Kpi icon="!" tone="amber" label="Hacer hoy" value={payload.totals.hacer.toString()} hint="Revisión prioritaria" meta="Cierre cercano / alto encaje" />
-      <Kpi icon="↗" tone="blue" label="Revisar" value={payload.totals.revisar.toString()} hint="Oportunidades adicionales" meta="Validar si hay capacidad" />
+      <Kpi icon="↗" tone="blue" label="En revisión" value={(payload.totals.enRevision || 0).toString()} hint="Marcadas por equipo" meta="Estado interno" />
       <Kpi icon="$" tone="purple" label="Alto valor" value={payload.totals.highValue.toString()} hint="$500M+ COP" meta="Procesos de mayor impacto" />
-      <Kpi icon="⚑" tone="green" label="Total radar" value={payload.totals.all.toString()} hint="SECOP I/II priorizado" meta={`${payload.totals.urgent} cierres próximos`} />
+      <Kpi icon="✓" tone="green" label="Convertidas" value={(payload.totals.convertidas || 0).toString()} hint="Ya son oportunidades" meta={`${payload.totals.descartadas || 0} descartadas`} />
     </div>
-    <div className="filters"><input placeholder="Buscar entidad, ciudad, objeto o referencia…" value={q} onChange={e=>setQ(e.target.value)} /><Select value={section} onChange={v=>setSection(v as TenderSection | 'todas')} options={[["hacer","Hacer hoy"],["revisar","Revisar"],["descartar","Descartar / validar"],["todas","Todas"]]} empty="Sección"/><button className="secondary" onClick={load}>Actualizar</button></div>
-    {section === 'todas' ? <TenderTable rows={rows} onCreate={createOpportunityFromTender} creatingId={creatingId} /> : <>
-      <TenderSectionPanel title="Hacer hoy" rows={grouped.hacer} show={section === 'hacer'} onCreate={createOpportunityFromTender} creatingId={creatingId} />
-      <TenderSectionPanel title="Revisar si hay tiempo" rows={grouped.revisar} show={section === 'revisar'} onCreate={createOpportunityFromTender} creatingId={creatingId} />
-      <TenderSectionPanel title="Descartar o validar con cuidado" rows={grouped.descartar} show={section === 'descartar'} onCreate={createOpportunityFromTender} creatingId={creatingId} />
+    <div className="filters"><input placeholder="Buscar entidad, ciudad, objeto o referencia…" value={q} onChange={e=>setQ(e.target.value)} /><Select value={section} onChange={v=>setSection(v as TenderSection | 'todas')} options={[["hacer","Hacer hoy"],["revisar","Revisar"],["descartar","Descartar / validar"],["todas","Todas"]]} empty="Sección"/><Select value={internalStatus} onChange={v=>setInternalStatus(v as TenderInternalStatus | 'todas')} options={[["todas","Todos"],["nueva","Nueva"],["en_revision","En revisión"],["descartada","Descartada"],["convertida_oportunidad","Convertida"]]} empty="Estado interno"/><button className="secondary" onClick={load}>Actualizar</button><button onClick={refreshRadar} disabled={syncing}>{syncing ? 'Sincronizando…' : 'Sincronizar SECOP'}</button></div>
+    <p className="muted">Mostrando {rows.length} de {payload.tenders.length} licitaciones. Estado interno: {internalStatus === 'todas' ? 'todos' : tenderStatusLabel(internalStatus)}.</p>
+    {section === 'todas' ? <TenderTable rows={rows} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} /> : <>
+      <TenderSectionPanel title="Hacer hoy" rows={grouped.hacer} show={section === 'hacer'} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} />
+      <TenderSectionPanel title="Revisar si hay tiempo" rows={grouped.revisar} show={section === 'revisar'} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} />
+      <TenderSectionPanel title="Descartar o validar con cuidado" rows={grouped.descartar} show={section === 'descartar'} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} />
     </>}
   </section>;
 }
-function TenderSectionPanel({ title, rows, show, onCreate, creatingId }: { title: string; rows: PublicTender[]; show: boolean; onCreate: (tender: PublicTender) => void; creatingId: string | null }) {
+function TenderSectionPanel({ title, rows, show, onCreate, onStatus, creatingId }: { title: string; rows: PublicTender[]; show: boolean; onCreate: (tender: PublicTender) => void; onStatus: (tender: PublicTender, status: TenderInternalStatus) => void; creatingId: string | null }) {
   if (!show) return null;
-  return <Panel title={title}>{rows.length ? <div className="tender-cards">{rows.map(t => <TenderCard key={t.id} tender={t} onCreate={onCreate} creating={creatingId === t.id} />)}</div> : <EmptyState title="Sin licitaciones" text="No hay procesos en esta sección con los filtros actuales." />}</Panel>;
+  return <Panel title={title}>{rows.length ? <div className="tender-cards">{rows.map(t => <TenderCard key={t.id} tender={t} onCreate={onCreate} onStatus={onStatus} creating={creatingId === t.id} />)}</div> : <EmptyState title="Sin licitaciones" text="No hay procesos en esta sección con los filtros actuales." />}</Panel>;
 }
-function TenderCard({ tender, onCreate, creating }: { tender: PublicTender; onCreate: (tender: PublicTender) => void; creating: boolean }) {
+function TenderCard({ tender, onCreate, onStatus, creating }: { tender: PublicTender; onCreate: (tender: PublicTender) => void; onStatus: (tender: PublicTender, status: TenderInternalStatus) => void; creating: boolean }) {
+  const converted = Boolean(tender.converted_opportunity_id);
   return <article className={`card tender-card tender-${tender.section}`}>
-    <div className="tender-head"><div><small>{tender.source} · Score {tender.score}</small><h3>{tender.entity} — {tender.city || tender.dept || 'Sin ciudad'}</h3></div><Badge tone={tender.section === 'hacer' ? 'amber' : tender.section === 'descartar' ? 'danger' : 'blue'}>{tender.section === 'hacer' ? 'Hacer hoy' : tender.section === 'revisar' ? 'Revisar' : 'Validar'}</Badge></div>
+    <div className="tender-head"><div><small>{tender.source} · Score {tender.score}</small><h3>{tender.entity} — {tender.city || tender.dept || 'Sin ciudad'}</h3></div><div className="badge-stack"><Badge tone={tender.section === 'hacer' ? 'amber' : tender.section === 'descartar' ? 'danger' : 'blue'}>{tender.section === 'hacer' ? 'Hacer hoy' : tender.section === 'revisar' ? 'Revisar' : 'Validar'}</Badge><Badge tone={tenderStatusTone(tender.internal_status)}>{tenderStatusLabel(tender.internal_status)}</Badge></div></div>
     <p>{tender.title}</p>
     <div className="tender-meta"><span>{fmtMoney(tender.value)}</span><span>Cierre: {fmtDate(tender.deadline)}</span><span>Ref: {tender.ref || '—'}</span></div>
     <small className="muted">{tender.reasons.slice(0,4).join(' · ')}</small>
     {tender.risks.length > 0 && <small className="muted">Riesgos: {tender.risks.slice(0,2).join(' · ')}</small>}
-    <div className="row-actions">{tender.url && <a className="button secondary" target="_blank" href={tender.url}>Abrir SECOP</a>}<button onClick={() => onCreate(tender)} disabled={creating}>{creating ? 'Creando…' : 'Crear oportunidad'}</button></div>
+    <div className="row-actions">{tender.url && <a className="button secondary" target="_blank" href={tender.url}>Abrir SECOP</a>}<button className="secondary" onClick={() => onStatus(tender, 'en_revision')} disabled={creating || converted}>En revisión</button><button className="secondary" onClick={() => onStatus(tender, 'descartada')} disabled={creating || converted}>Descartar</button><button onClick={() => onCreate(tender)} disabled={creating}>{creating ? 'Creando…' : converted ? 'Ver oportunidad' : 'Crear oportunidad'}</button></div>
   </article>;
 }
-function TenderTable({ rows, onCreate, creatingId }: { rows: PublicTender[]; onCreate: (tender: PublicTender) => void; creatingId: string | null }) {
+function TenderTable({ rows, onCreate, onStatus, creatingId }: { rows: PublicTender[]; onCreate: (tender: PublicTender) => void; onStatus: (tender: PublicTender, status: TenderInternalStatus) => void; creatingId: string | null }) {
   if (!rows.length) return <EmptyState title="Sin resultados" text="No hay licitaciones con esos filtros." />;
-  return <div className="tablewrap"><table><thead><tr><th>Entidad</th><th>Sección</th><th>Ubicación</th><th>Objeto</th><th>Valor</th><th>Cierre</th><th>Acción</th></tr></thead><tbody>{rows.map(t => <tr key={t.id}><td><strong>{t.entity}</strong><br/><small>{t.ref || t.process_id || '—'}</small></td><td><Badge>{t.section}</Badge></td><td>{t.dept || '—'} / {t.city || '—'}</td><td>{t.title}</td><td>{fmtMoney(t.value)}</td><td>{fmtDate(t.deadline)}</td><td><div className="row-actions table-actions">{t.url ? <a target="_blank" href={t.url}>Abrir</a> : null}<button onClick={() => onCreate(t)} disabled={creatingId === t.id}>{creatingId === t.id ? 'Creando…' : 'Crear'}</button></div></td></tr>)}</tbody></table></div>;
+  return <div className="tablewrap"><table><thead><tr><th>Entidad</th><th>Sección</th><th>Estado interno</th><th>Ubicación</th><th>Objeto</th><th>Valor</th><th>Cierre</th><th>Acción</th></tr></thead><tbody>{rows.map(t => { const converted = Boolean(t.converted_opportunity_id); return <tr key={t.id}><td><strong>{t.entity}</strong><br/><small>{t.ref || t.process_id || '—'}</small></td><td><Badge>{t.section}</Badge></td><td><Badge tone={tenderStatusTone(t.internal_status)}>{tenderStatusLabel(t.internal_status)}</Badge></td><td>{t.dept || '—'} / {t.city || '—'}</td><td>{t.title}</td><td>{fmtMoney(t.value)}</td><td>{fmtDate(t.deadline)}</td><td><div className="row-actions table-actions">{t.url ? <a target="_blank" href={t.url}>Abrir</a> : null}<button className="secondary" onClick={() => onStatus(t, 'en_revision')} disabled={creatingId === t.id || converted}>Revisar</button><button className="secondary" onClick={() => onStatus(t, 'descartada')} disabled={creatingId === t.id || converted}>Descartar</button><button onClick={() => onCreate(t)} disabled={creatingId === t.id}>{creatingId === t.id ? 'Creando…' : converted ? 'Ver' : 'Crear'}</button></div></td></tr>; })}</tbody></table></div>;
 }
 function Select({ value, onChange, options, empty }: { value: string; onChange: (v:string)=>void; options: string[][]; empty: string }) { return <select value={value} onChange={e=>onChange(e.target.value)}><option value="">{empty}</option>{options.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>; }
 function Badge({ children, tone }: { children: React.ReactNode; tone?: string }) { return <span className={`badge ${tone ? `badge-${tone}` : ''}`}>{children}</span>; }
