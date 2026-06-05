@@ -34,7 +34,12 @@ function requireDb() {
 
 
 const managementRoles = ['director','gerencia','admin'];
+const commercialAreas = ['seguridad_fisica','tecnologia','licitacion_publica'];
+const customerSegments = ['cliente_nuevo','cliente_actual'];
 function isManager(profile) { return managementRoles.includes(profile?.role); }
+function validateCommercialArea(value) { const area = value || null; if (area && !commercialAreas.includes(area)) throw new Error('Área comercial no válida.'); return area; }
+function validateCustomerSegment(value, required = false) { const segment = value || null; if (required && !segment) throw new Error('Debe clasificar la oportunidad como Cliente Nuevo o Cliente Actual.'); if (segment && !customerSegments.includes(segment)) throw new Error('Tipo de cliente no válido.'); return segment; }
+function canEditCustomerSegment(profile, opportunity) { return isManager(profile) || (profile?.can_edit_customer_segment && opportunity?.owner_id === profile.id); }
 function canManageUsers(profile) { return profile?.role === 'admin'; }
 function normalizeUserRole(value) {
   const raw = String(value || 'comercial').trim().toLowerCase();
@@ -61,7 +66,7 @@ async function getAuthContext(req) {
     throw error;
   }
   const email = userData.user.email.toLowerCase();
-  const profile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active').ilike('microsoft_email', email).eq('active', true).single());
+  const profile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment').ilike('microsoft_email', email).eq('active', true).single());
   if (!profile) {
     const error = new Error('El usuario no tiene perfil comercial activo.');
     error.status = 403;
@@ -112,7 +117,7 @@ function filterBootstrapForProfile(payload, currentProfile) {
   return { ...payload, summary, opportunities, profiles, stalled, topClosing, monthlyKpis, goals, totals, currentProfile };
 }
 async function ensureOpportunityAccess(database, id, profile) {
-  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id').eq('id', id).single());
+  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,customer_segment').eq('id', id).single());
   if (!isManager(profile) && opportunity.owner_id !== profile.id) {
     const error = new Error('No tiene permisos sobre esta oportunidad.');
     error.status = 403;
@@ -122,6 +127,29 @@ async function ensureOpportunityAccess(database, id, profile) {
 }
 
 const opportunitySelect = '*';
+async function attachCommercialMetadata(database, rows) {
+  const list = Array.isArray(rows) ? rows : [rows];
+  if (!list.length) return rows;
+  const ids = list.map(o => o?.id).filter(Boolean);
+  const ownerIds = Array.from(new Set(list.map(o => o?.owner_id).filter(Boolean)));
+  const [baseResult, profileResult] = await Promise.all([
+    ids.length ? database.from('psi_sales_opportunities').select('id,customer_segment').in('id', ids) : Promise.resolve({ data: [] }),
+    ownerIds.length ? database.from('psi_sales_profiles').select('id,commercial_area,can_edit_customer_segment').in('id', ownerIds) : Promise.resolve({ data: [] })
+  ]);
+  if (baseResult.error) throw baseResult.error;
+  if (profileResult.error) throw profileResult.error;
+  const segmentById = new Map((baseResult.data || []).map(o => [o.id, o.customer_segment || null]));
+  const profileById = new Map((profileResult.data || []).map(p => [p.id, p]));
+  const enriched = list.map(o => {
+    const owner = profileById.get(o.owner_id);
+    return { ...o, customer_segment: segmentById.get(o.id) ?? o.customer_segment ?? null, owner_commercial_area: owner?.commercial_area || null, owner_can_edit_customer_segment: !!owner?.can_edit_customer_segment };
+  });
+  return Array.isArray(rows) ? enriched : enriched[0];
+}
+async function logCustomerSegmentChange(database, opportunityId, actorId, oldValue, newValue) {
+  if ((oldValue || null) === (newValue || null)) return;
+  await database.from('psi_sales_opportunity_audit_logs').insert({ opportunity_id: opportunityId, changed_by: actorId, field_name: 'customer_segment', old_value: oldValue || null, new_value: newValue || null, notes: 'Cambio de Cliente Nuevo / Cliente Actual' });
+}
 
 
 
@@ -457,7 +485,7 @@ app.get('/api/bootstrap', async (req, res) => {
     const [summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals] = await Promise.all([
       must(database.from('v_psi_sales_pipeline_summary').select('*').order('stage_order')),
       must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).order('updated_at', { ascending: false }).limit(1000)),
-      must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active').eq('active', true).order('full_name')),
+      must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment').eq('active', true).order('full_name')),
       must(database.from('psi_sales_pipeline_stages').select('*').order('stage_order')),
       must(database.from('psi_sales_service_types').select('*').eq('active', true).order('name')),
       must(database.from('psi_sales_loss_reasons').select('*').eq('active', true).order('name')),
@@ -466,14 +494,17 @@ app.get('/api/bootstrap', async (req, res) => {
       must(database.from('v_psi_sales_kpis_by_commercial_month').select('*').order('period_month', { ascending: false }).limit(80)),
       must(database.from('psi_sales_goals').select('*').order('period_month', { ascending: false }).limit(500)),
     ]);
-    const totals = opportunities.reduce((acc, o) => {
+    const enrichedOpportunities = await attachCommercialMetadata(database, opportunities);
+    const enrichedStalled = await attachCommercialMetadata(database, stalled);
+    const enrichedTopClosing = await attachCommercialMetadata(database, topClosing);
+    const totals = enrichedOpportunities.reduce((acc, o) => {
       acc.count += 1;
       acc.pipeline += Number(o.offer_value || 0);
       acc.weighted += Number(o.weighted_pipeline_value || 0);
       if (o.stage_code === 'aprobado') acc.approved += Number(o.offer_value || 0);
       return acc;
     }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
-    res.json(filterBootstrapForProfile({ summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals, totals }, currentProfile));
+    res.json(filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, stages, services, lossReasons, stalled: enrichedStalled, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile));
   } catch (error) { sendAuthError(res, error); }
 });
 
@@ -483,7 +514,7 @@ app.get('/api/opportunities/:id', async (req, res) => {
     const database = requireDb();
     const id = req.params.id;
     await ensureOpportunityAccess(database, id, currentProfile);
-    const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', id).single());
+    const opportunity = await attachCommercialMetadata(database, await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', id).single()));
     const interactions = await must(database.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
     res.json({ opportunity, interactions });
   } catch (error) { sendError(res, error); }
@@ -511,6 +542,7 @@ function cleanOpportunity(body) {
     sede: body.sede || null,
     tipo_producto_original: body.tipo_producto_original || null,
     observaciones: body.observaciones || null,
+    customer_segment: validateCustomerSegment(body.customer_segment, true),
     external_source: body.external_source || 'web_mvp'
   };
   if (!payload.company_name) throw new Error('El cliente / empresa es obligatorio.');
@@ -537,10 +569,12 @@ app.put('/api/opportunities/:id', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
-    await ensureOpportunityAccess(database, req.params.id, currentProfile);
+    const existing = await ensureOpportunityAccess(database, req.params.id, currentProfile);
     const payload = cleanOpportunity(req.body);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
+    if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
     const data = await must(database.from('psi_sales_opportunities').update(payload).eq('id', req.params.id).select('id').single());
+    await logCustomerSegmentChange(database, req.params.id, currentProfile.id, existing.customer_segment, payload.customer_segment);
     res.json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -620,7 +654,7 @@ app.get('/api/opportunity-detail', async (req, res) => {
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
     await ensureOpportunityAccess(database, id, currentProfile);
-    const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', id).single());
+    const opportunity = await attachCommercialMetadata(database, await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', id).single()));
     const interactions = await must(database.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
     res.json({ opportunity, interactions });
   } catch (error) { sendError(res, error); }
@@ -632,10 +666,12 @@ app.put('/api/opportunity', async (req, res) => {
     const database = requireDb();
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
-    await ensureOpportunityAccess(database, id, currentProfile);
+    const existing = await ensureOpportunityAccess(database, id, currentProfile);
     const payload = cleanOpportunity(req.body);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
+    if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
     const data = await must(database.from('psi_sales_opportunities').update(payload).eq('id', id).select('id').single());
+    await logCustomerSegmentChange(database, id, currentProfile.id, existing.customer_segment, payload.customer_segment);
     res.json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -675,7 +711,7 @@ app.get('/api/users', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     if (!canManageUsers(currentProfile)) { const error = new Error('Solo admin puede administrar usuarios.'); error.status = 403; throw error; }
     const database = requireDb();
-    const profiles = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,created_at').order('full_name'));
+    const profiles = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,created_at').order('full_name'));
     res.json(profiles);
   } catch (error) { sendAuthError(res, error); }
 });
@@ -691,6 +727,8 @@ app.post('/api/users', async (req, res) => {
     const password = String(req.body.password || '');
     const active = req.body.active !== false;
     const send_invite = req.body.send_invite !== false;
+    const commercial_area = validateCommercialArea(req.body.commercial_area);
+    const can_edit_customer_segment = req.body.can_edit_customer_segment === true;
     if (!full_name) throw new Error('El nombre completo es obligatorio.');
     if (!microsoft_email || !microsoft_email.includes('@')) throw new Error('Debe registrar un email válido.');
     if (!['comercial','director','gerencia','admin'].includes(role)) throw new Error('Rol no válido.');
@@ -724,7 +762,7 @@ app.post('/api/users', async (req, res) => {
         if (existing) await database.auth.admin.updateUserById(existing.id, { password, user_metadata: userMetadata });
       }
     }
-    const row = await must(database.from('psi_sales_profiles').upsert({ full_name, microsoft_email, role, active }, { onConflict: 'microsoft_email' }).select('id,full_name,microsoft_email,role,active,created_at').single());
+    const row = await must(database.from('psi_sales_profiles').upsert({ full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }, { onConflict: 'microsoft_email' }).select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,created_at').single());
     res.status(201).json({ ...row, invited: inviteSent });
   } catch (error) { sendAuthError(res, error); }
 });
@@ -735,13 +773,15 @@ app.patch('/api/users', async (req, res) => {
     if (!canManageUsers(currentProfile)) { const error = new Error('Solo admin puede administrar usuarios.'); error.status = 403; throw error; }
     const database = requireDb();
     const id = String(req.query.id || '').trim();
-    const existingProfile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active').eq('id', id).single());
+    const existingProfile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment').eq('id', id).single());
     if (!existingProfile) { const error = new Error('Usuario no encontrado.'); error.status = 404; throw error; }
     const full_name = String(req.body.full_name || '').trim();
     const microsoft_email = String(req.body.microsoft_email || '').trim().toLowerCase();
     const role = normalizeUserRole(req.body.role);
     const password = String(req.body.password || '');
     const active = req.body.active !== false;
+    const commercial_area = validateCommercialArea(req.body.commercial_area);
+    const can_edit_customer_segment = req.body.can_edit_customer_segment === true;
     if (!full_name) throw new Error('El nombre completo es obligatorio.');
     if (!microsoft_email || !microsoft_email.includes('@')) throw new Error('Debe registrar un email válido.');
     if (!['comercial','director','gerencia','admin'].includes(role)) throw new Error('Rol no válido.');
@@ -756,7 +796,7 @@ app.patch('/api/users', async (req, res) => {
       const { error: createError } = await database.auth.admin.createUser({ email: microsoft_email, password, email_confirm: true, user_metadata: { full_name, role } });
       if (createError) throw createError;
     }
-    const row = await must(database.from('psi_sales_profiles').update({ full_name, microsoft_email, role, active }).eq('id', id).select('id,full_name,microsoft_email,role,active,created_at').single());
+    const row = await must(database.from('psi_sales_profiles').update({ full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }).eq('id', id).select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,created_at').single());
     res.json(row);
   } catch (error) { sendAuthError(res, error); }
 });

@@ -5,7 +5,9 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
-type Profile = { id: string; full_name: string; microsoft_email: string; role: string; active: boolean };
+type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
+type CustomerSegment = 'cliente_nuevo' | 'cliente_actual';
+type Profile = { id: string; full_name: string; microsoft_email: string; role: string; active: boolean; commercial_area?: CommercialArea | null; can_edit_customer_segment?: boolean };
 type ServiceType = { code: string; name: string };
 type LossReason = { code: string; name: string };
 type SummaryRow = { stage_code: string; stage_name: string; stage_order: number; opportunities_count: number; total_offer_value: number; weighted_pipeline_value: number };
@@ -17,20 +19,21 @@ type Opportunity = {
   last_interaction_at: string | null; next_action_at: string | null; prioritization_date: string | null; observaciones: string | null;
   economic_sector: string | null; decision_maker_name: string | null; decision_maker_email: string | null; decision_maker_phone: string | null;
   legacy_excel_id: string | null; excel_hoja_origen: string | null; estado_pipeline_original: string | null; valor_servicio: number | null; valor_proyecto: number | null;
-  loss_reason_code: string | null; loss_reason_name: string | null; loss_notes: string | null; commission_rate: number | null; created_at: string; updated_at: string;
+  loss_reason_code: string | null; loss_reason_name: string | null; loss_notes: string | null; commission_rate: number | null; created_at: string; updated_at: string; approved_at?: string | null;
+  customer_segment?: CustomerSegment | null; owner_commercial_area?: CommercialArea | null; owner_can_edit_customer_segment?: boolean | null;
 };
 type Interaction = { id: string; opportunity_id: string; interaction_type: string; notes: string | null; occurred_at: string; created_at: string; created_by: string | null; psi_sales_profiles?: { full_name?: string } | null };
 type MonthlyKpi = { owner_id?: string | null; owner_name: string | null; period_month: string; prospectos: number; cotizaciones: number; ventas_aprobadas: number; comision_ganada: number; comision_proyectada: number };
 type SalesGoal = { id?: string; user_id: string | null; period_month: string; quote_target: number; prospect_target: number; sales_budget: number; created_at?: string; updated_at?: string };
 type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile };
-type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string; send_invite?: boolean };
+type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string; send_invite?: boolean; commercial_area?: CommercialArea | ''; can_edit_customer_segment?: boolean };
 type TenderSection = 'hacer' | 'revisar' | 'descartar';
 type TenderInternalStatus = 'nueva' | 'en_revision' | 'descartada' | 'convertida_oportunidad';
 type PublicTender = { id: string; stable_key?: string; source: string; section: TenderSection; internal_status?: TenderInternalStatus; converted_opportunity_id?: string | null; reviewed_at?: string | null; detected_at?: string | null; last_seen_at?: string | null; entity: string; dept?: string; city?: string; ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string; category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null; score: number; reasons: string[]; risks: string[]; url?: string };
 type TenderRadarPayload = { generatedAt: string; source?: string; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
 
-type OpportunityPayload = Partial<Opportunity> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; };
+type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; };
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const dateFmt = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
 const interactionTypes = ['llamada','correo','reunion','whatsapp','nota','cambio_estado','documento'];
@@ -41,6 +44,15 @@ function isManagementRole(role?: string | null) { return ['director','gerencia',
 function canManageUsers(profile?: Profile | null) { return profile?.role === 'admin'; }
 function canManageGoals(profile?: Profile | null) { return isManagementRole(profile?.role); }
 function canViewTenders(profile?: Profile | null) { return isManagementRole(profile?.role) || profile?.microsoft_email?.toLowerCase() === 'directora.licitaciones@seguridadnacional.co'; }
+const customerSegmentOptions: Array<[CustomerSegment, string]> = [['cliente_nuevo','Cliente Nuevo'], ['cliente_actual','Cliente Actual']];
+const commercialAreaOptions: Array<[CommercialArea, string]> = [['seguridad_fisica','Seguridad Física'], ['tecnologia','Tecnología'], ['licitacion_publica','Licitación Pública']];
+function customerSegmentLabel(value?: string | null) { return value === 'cliente_nuevo' ? 'Cliente Nuevo' : value === 'cliente_actual' ? 'Cliente Actual' : 'Pendiente'; }
+function commercialAreaLabel(value?: string | null) { return value === 'seguridad_fisica' ? 'Seguridad Física' : value === 'tecnologia' ? 'Tecnología' : value === 'licitacion_publica' ? 'Licitación Pública' : 'Sin área'; }
+function isApprovedSale(o: Opportunity) { return o.stage_code === 'aprobado'; }
+function isPhysicalGoalOpportunity(o: Opportunity) { return o.owner_commercial_area === 'seguridad_fisica' && o.service_type_code === 'seguridad_fisica' && o.stage_code === 'aprobado'; }
+function isTechnologyMonitoringSale(o: Opportunity) { return o.owner_commercial_area === 'tecnologia' && o.service_type_code === 'monitoreo' && o.stage_code === 'aprobado'; }
+function isTechnologyProjectSale(o: Opportunity) { return o.owner_commercial_area === 'tecnologia' && o.service_type_code === 'proyecto' && o.stage_code === 'aprobado'; }
+function canEditOpportunitySegment(current: Profile, opportunity?: Opportunity | null) { return !opportunity || isManagementRole(current.role) || (current.can_edit_customer_segment && opportunity.owner_id === current.id); }
 
 function parseRoute(): Route {
   const hash = window.location.hash.replace(/^#\/?/, '');
@@ -321,7 +333,7 @@ function OpportunityList({ data }: { data: Bootstrap }) {
   return <section className="stack">
     <div className="filters"><input placeholder="Buscar cliente, sede o ID…" value={q} onChange={e=>setQ(e.target.value)} /> <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Todas las etapas"/> <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Todos los comerciales"/> <Select value={regional} onChange={setRegional} options={regionals.map(r=>[r,r])} empty="Todas las regionales"/> <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Todos los servicios"/></div>
     <p className="muted">Mostrando {filtered.length} de {data.opportunities.length} oportunidades.</p>
-    <div className="tablewrap"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Regional</th><th>Etapa</th><th>Tipo producto</th><th>Valor</th><th>Cierre estimado</th><th>Último seguimiento</th></tr></thead><tbody>{filtered.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{o.regional_nombre || '—'}</td><td><Badge>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDate(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td></tr>)}</tbody></table></div>
+    <div className="tablewrap"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Regional</th><th>Etapa</th><th>Tipo producto</th><th>Tipo cliente</th><th>Valor</th><th>Cierre estimado</th><th>Último seguimiento</th></tr></thead><tbody>{filtered.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{o.regional_nombre || '—'}</td><td><Badge>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td><Badge tone={o.customer_segment ? 'blue' : 'amber'}>{customerSegmentLabel(o.customer_segment)}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDate(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td></tr>)}</tbody></table></div>
   </section>;
 }
 function findTenderOwner(data: Bootstrap) {
@@ -463,7 +475,7 @@ function TenderTable({ rows, onCreate, onStatus, creatingId }: { rows: PublicTen
   if (!rows.length) return <EmptyState title="Sin resultados" text="No hay licitaciones con esos filtros." />;
   return <div className="tablewrap"><table><thead><tr><th>Entidad</th><th>Sección</th><th>Estado interno</th><th>Ubicación</th><th>Objeto</th><th>Valor</th><th>Cierre</th><th>Acción</th></tr></thead><tbody>{rows.map(t => { const converted = Boolean(t.converted_opportunity_id); return <tr key={t.id}><td><strong>{t.entity}</strong><br/><small>{t.ref || t.process_id || '—'}</small></td><td><Badge>{t.section}</Badge></td><td><Badge tone={tenderStatusTone(t.internal_status)}>{tenderStatusLabel(t.internal_status)}</Badge></td><td>{t.dept || '—'} / {t.city || '—'}</td><td>{t.title}</td><td>{fmtMoney(t.value)}</td><td>{fmtDate(t.deadline)}</td><td><div className="row-actions table-actions">{t.url ? <a target="_blank" href={t.url}>Abrir</a> : null}<button className="secondary" onClick={() => onStatus(t, 'en_revision')} disabled={creatingId === t.id || converted}>Revisar</button><button className="secondary" onClick={() => onStatus(t, 'descartada')} disabled={creatingId === t.id || converted}>Descartar</button><button onClick={() => onCreate(t)} disabled={creatingId === t.id}>{creatingId === t.id ? 'Creando…' : converted ? 'Ver' : 'Crear'}</button></div></td></tr>; })}</tbody></table></div>;
 }
-function Select({ value, onChange, options, empty }: { value: string; onChange: (v:string)=>void; options: string[][]; empty: string }) { return <select value={value} onChange={e=>onChange(e.target.value)}><option value="">{empty}</option>{options.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>; }
+function Select({ value, onChange, options, empty, disabled = false }: { value: string; onChange: (v:string)=>void; options: string[][]; empty: string; disabled?: boolean }) { return <select value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}><option value="">{empty}</option>{options.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>; }
 function Badge({ children, tone }: { children: React.ReactNode; tone?: string }) { return <span className={`badge ${tone ? `badge-${tone}` : ''}`}>{children}</span>; }
 function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap; refresh: () => Promise<void> }) {
   const [detail, setDetail] = useState<{ opportunity: Opportunity; interactions: Interaction[] } | null>(null); const [error, setError] = useState<string | null>(null);
@@ -475,7 +487,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   const lastDays = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
   return <section className="stack">
     <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p></div><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button></div>
-    <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
+    <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
     <div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div>
     <Panel title="Línea de seguimientos"><div className="timeline">{detail.interactions.length ? detail.interactions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel>
   </section>;
@@ -508,8 +520,10 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
     loss_notes: existing?.loss_notes || '',
     observaciones: existing?.observaciones || '',
     commission_rate: existing?.commission_rate || 0,
+    customer_segment: existing?.customer_segment || '',
   });
   const [status, setStatus] = useState('');
+  const canEditSegment = canEditOpportunitySegment(data.currentProfile, existing);
   const set = (key: keyof OpportunityPayload, value: string) => setForm(prev => ({ ...prev, [key]: value }));
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -532,6 +546,8 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
       <label>Comercial<Select value={String(form.owner_id || '')} onChange={v=>set('owner_id', v)} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Seleccionar"/></label>
       <label>Etapa<Select value={String(form.stage_code || '')} onChange={v=>set('stage_code', v)} options={data.stages.map(s=>[s.code,s.name])} empty="Seleccionar"/></label>
       <label>Servicio<Select value={String(form.service_type_code || '')} onChange={v=>set('service_type_code', v)} options={data.services.map(s=>[s.code,s.name])} empty="Seleccionar"/></label>
+      <label>Tipo de cliente<Select value={String(form.customer_segment || '')} onChange={v=>set('customer_segment', v)} options={customerSegmentOptions} empty="Seleccionar" disabled={id ? !canEditSegment : false}/></label>
+      {id && !canEditSegment && <p className="muted wide">Después de creada, esta clasificación solo la cambia Admin/Directivo o un comercial habilitado.</p>}
       <label>Valor oferta<input type="number" min="0" required value={String(form.offer_value || 0)} onChange={e=>set('offer_value', e.target.value)}/></label>
       <label>Cierre estimado<input type="date" value={String(form.expected_close_date || '')} onChange={e=>set('expected_close_date', e.target.value)}/></label>
       <label>Próxima acción<input type="datetime-local" value={String(form.next_action_at || '').slice(0,16)} onChange={e=>set('next_action_at', e.target.value)}/></label>
@@ -550,6 +566,28 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
     </form>
   </Panel>;
 }
+
+function BusinessRulesDashboard({ data }: { data: Bootstrap }) {
+  const physicalSales = data.opportunities.filter(isPhysicalGoalOpportunity);
+  const physicalNew = physicalSales.filter(o => o.customer_segment === 'cliente_nuevo');
+  const physicalCurrent = physicalSales.filter(o => o.customer_segment === 'cliente_actual');
+  const physicalPending = physicalSales.filter(o => !o.customer_segment);
+  const physicalProjectsOut = data.opportunities.filter(o => o.owner_commercial_area === 'seguridad_fisica' && o.service_type_code === 'proyecto' && o.stage_code === 'aprobado');
+  const techMonitoring = data.opportunities.filter(isTechnologyMonitoringSale);
+  const techProjects = data.opportunities.filter(isTechnologyProjectSale);
+  const carlos = data.profiles.find(p => p.microsoft_email?.toLowerCase() === 'analista2@seguridadnacional.co' || p.full_name?.toLowerCase().includes('carlos bedoya'));
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  const techMonitoringMonth = techMonitoring.filter(o => String(o.approved_at || o.updated_at || '').slice(0, 7) === currentMonth).length;
+  const techProjectsMonth = techProjects.filter(o => String(o.approved_at || o.updated_at || '').slice(0, 7) === currentMonth).length;
+  const sum = (rows: Opportunity[]) => rows.reduce((s,o)=>s+Number(o.offer_value||0),0);
+  return <Panel title="Reglas comerciales por área">
+    <div className="grid two business-rules-grid">
+      <div className="card business-rule-card"><small>Seguridad Física · Cliente Nuevo vs Cliente Actual</small><strong>{physicalSales.length} ventas aprobadas</strong><span>Solo servicio Seguridad Física; no incluye Escoltas ni Proyectos.</span><div className="segment-split"><span><b>{physicalNew.length}</b> Cliente Nuevo<br/><em>{fmtMoneyCompact(sum(physicalNew))}</em></span><span><b>{physicalCurrent.length}</b> Cliente Actual<br/><em>{fmtMoneyCompact(sum(physicalCurrent))}</em></span><span><b>{physicalPending.length}</b> Pendientes<br/><em>Clasificar</em></span></div></div>
+      <div className="card business-rule-card"><small>Tecnología · Metas Carlos Bedoya</small><strong>{carlos?.full_name || 'Carlos Bedoya'}</strong><span>Meta mensual: 7 monitoreos y 3 proyectos/equipos aprobados.</span><div className="segment-split"><span><b>{techMonitoringMonth}/7</b> Monitoreo<br/><em>{Math.round((techMonitoringMonth/7)*100)}%</em></span><span><b>{techProjectsMonth}/3</b> Proyectos<br/><em>{Math.round((techProjectsMonth/3)*100)}%</em></span><span><b>{physicalProjectsOut.length}</b> Proyectos Física<br/><em>Fuera de meta</em></span></div></div>
+    </div>
+  </Panel>;
+}
+
 function ManagerDashboard({ data }: { data: Bootstrap }) {
   const active = data.opportunities.filter(o => !['aprobado','perdido','descartado'].includes(o.stage_code)).length;
   const byOwner = useMemo(() => {
@@ -621,6 +659,8 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
         </div>
       </div>
     </section>
+
+    <BusinessRulesDashboard data={data} />
 
     <Panel title="Semáforos ejecutivos">
       <div className="executive-signals">
@@ -1257,14 +1297,14 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const [users, setUsers] = useState<Profile[]>([]);
   const [status, setStatus] = useState('');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
-  const emptyUserForm: UserPayload = { full_name: '', microsoft_email: '', role: 'comercial', active: true, password: '', send_invite: true };
+  const emptyUserForm: UserPayload = { full_name: '', microsoft_email: '', role: 'comercial', active: true, password: '', send_invite: true, commercial_area: '', can_edit_customer_segment: false };
   const [form, setForm] = useState<UserPayload>(emptyUserForm);
   const load = async () => { setUsers(await api<Profile[]>('/api/users')); };
   useEffect(() => { if (canManageUsers(currentProfile)) load().catch(e => setStatus(e instanceof Error ? e.message : String(e))); }, [currentProfile.id]);
   if (!canManageUsers(currentProfile)) return <div className="error">Solo admin puede administrar usuarios.</div>;
   const startEdit = (user: Profile) => {
     setEditingUserId(user.id);
-    setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, role: user.role, active: user.active, password: '', send_invite: false });
+    setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, role: user.role, active: user.active, password: '', send_invite: false, commercial_area: user.commercial_area || '', can_edit_customer_segment: !!user.can_edit_customer_segment });
     setStatus('Editando usuario existente. Deja la clave en blanco si no quieres cambiarla.');
   };
   const cancelEdit = () => {
@@ -1290,13 +1330,15 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
         <label>Nombre completo<input required value={form.full_name} onChange={e=>setForm({...form, full_name:e.target.value})}/></label>
         <label>Email<input type="email" required value={form.microsoft_email} onChange={e=>setForm({...form, microsoft_email:e.target.value})}/></label>
         <label>Rol<Select value={form.role} onChange={v=>setForm({...form, role:v})} options={[['comercial','Comercial'],['director','Directivo'],['gerencia','Gerencia'],['admin','Admin']]} empty="Rol"/></label>
+        <label>Área comercial<Select value={form.commercial_area || ''} onChange={v=>setForm({...form, commercial_area:v as CommercialArea | ''})} options={commercialAreaOptions} empty="Sin área"/></label>
+        <label className="checkline"><input type="checkbox" checked={!!form.can_edit_customer_segment} onChange={e=>setForm({...form, can_edit_customer_segment:e.target.checked})}/> Habilitar edición posterior de Cliente Nuevo / Cliente Actual</label>
         <label>Clave temporal<input type="password" minLength={8} value={form.password || ''} onChange={e=>setForm({...form, password:e.target.value})} placeholder={form.send_invite ? "Opcional si envías invitación" : "Mínimo 8 caracteres"}/></label>
         <label>Estado<Select value={form.active ? 'true' : 'false'} onChange={v=>setForm({...form, active:v==='true'})} options={[['true','Activo'],['false','Inactivo']]} empty="Estado"/></label>
         <label className="checkline"><input type="checkbox" checked={!!form.send_invite} onChange={e=>setForm({...form, send_invite:e.target.checked})}/> Enviar correo de invitación para que el usuario active su acceso</label>
         <div className="formactions"><button>{editingUserId ? 'Actualizar usuario' : 'Guardar usuario'}</button>{editingUserId && <button type="button" className="secondary" onClick={cancelEdit}>Cancelar edición</button>}{status && <span>{status}</span>}</div>
       </form>
     </Panel>
-    <Panel title="Perfiles actuales"><div className="tablewrap"><table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{users.map(u => <tr key={u.id}><td><strong>{u.full_name}</strong></td><td>{u.microsoft_email}</td><td><Badge>{u.role}</Badge></td><td>{u.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(u)}>Editar</button></td></tr>)}</tbody></table></div></Panel>
+    <Panel title="Perfiles actuales"><div className="tablewrap"><table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Área</th><th>Segmento</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{users.map(u => <tr key={u.id}><td><strong>{u.full_name}</strong></td><td>{u.microsoft_email}</td><td><Badge>{u.role}</Badge></td><td>{commercialAreaLabel(u.commercial_area)}</td><td>{u.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado'}</td><td>{u.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(u)}>Editar</button></td></tr>)}</tbody></table></div></Panel>
   </section>;
 }
 

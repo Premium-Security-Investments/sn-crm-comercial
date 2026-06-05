@@ -21,7 +21,7 @@ assert(src.includes('Editar') && src.includes('Cancelar edición'), 'Tabla de us
 for (const file of [server, api]) {
   assert(file.includes("app.patch('/api/users'"), 'API debe exponer PATCH /api/users?id=... para editar usuarios existentes.');
   assert(file.includes('updateUserById'), 'API debe poder actualizar password/metadatos del usuario Auth existente.');
-  assert(file.includes(".update({ full_name, microsoft_email, role, active })"), 'API debe actualizar psi_sales_profiles al editar usuario.');
+  assert(file.includes(".update({ full_name, microsoft_email, role, active") && file.includes('commercial_area') && file.includes('can_edit_customer_segment'), 'API debe actualizar psi_sales_profiles al editar usuario, incluyendo área y permiso de segmento.');
 }
 
 console.log('user-admin edit/reset static checks passed');
