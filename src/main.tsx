@@ -24,7 +24,10 @@ type MonthlyKpi = { owner_id?: string | null; owner_name: string | null; period_
 type SalesGoal = { id?: string; user_id: string | null; period_month: string; quote_target: number; prospect_target: number; sales_budget: number; created_at?: string; updated_at?: string };
 type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile };
 type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string; send_invite?: boolean };
-type Route = { page: 'home' | 'opportunities' | 'detail' | 'new' | 'edit' | 'dashboard' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
+type TenderSection = 'hacer' | 'revisar' | 'descartar';
+type PublicTender = { id: string; source: string; section: TenderSection; entity: string; dept?: string; city?: string; ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string; category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null; score: number; reasons: string[]; risks: string[]; url?: string };
+type TenderRadarPayload = { generatedAt: string; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number }; tenders: PublicTender[] };
+type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
 
 type OpportunityPayload = Partial<Opportunity> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; };
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
@@ -36,11 +39,13 @@ function setApiAccessToken(token: string | null) { currentAccessToken = token; }
 function isManagementRole(role?: string | null) { return ['director','gerencia','admin'].includes(role || ''); }
 function canManageUsers(profile?: Profile | null) { return profile?.role === 'admin'; }
 function canManageGoals(profile?: Profile | null) { return isManagementRole(profile?.role); }
+function canViewTenders(profile?: Profile | null) { return isManagementRole(profile?.role) || profile?.microsoft_email?.toLowerCase() === 'directora.licitaciones@seguridadnacional.co'; }
 
 function parseRoute(): Route {
   const hash = window.location.hash.replace(/^#\/?/, '');
   const [page, id] = hash.split('/');
   if (page === 'opportunities') return { page: 'opportunities' };
+  if (page === 'tenders') return { page: 'tenders' };
   if (page === 'detail' && id) return { page: 'detail', id: decodeURIComponent(id) };
   if (page === 'edit' && id) return { page: 'edit', id: decodeURIComponent(id) };
   if (page === 'consultant' && id) return { page: 'consultant', id: decodeURIComponent(id) };
@@ -207,6 +212,7 @@ function LoginScreen() {
 }
 function titleFor(route: Route) {
   if (route.page === 'opportunities') return 'Oportunidades';
+  if (route.page === 'tenders') return 'Licitaciones';
   if (route.page === 'detail') return 'Detalle de oportunidad';
   if (route.page === 'new') return 'Crear oportunidad';
   if (route.page === 'edit') return 'Editar oportunidad';
@@ -219,12 +225,15 @@ function titleFor(route: Route) {
   return 'Inicio comercial';
 }
 function Nav({ route, currentProfile }: { route: Route; currentProfile: Profile | null }) {
-  const items = [['#/dashboard','Dashboard gerencial'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades'],['#/goals','Metas y cumplimiento'],['#/new','Crear oportunidad'],['#/centinel','Centinel']];
+  const items = [['#/dashboard','Dashboard gerencial'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades']];
+  if (canViewTenders(currentProfile)) items.push(['#/tenders','Licitaciones']);
+  items.push(['#/goals','Metas y cumplimiento'],['#/new','Crear oportunidad'],['#/centinel','Centinel']);
   if (canManageUsers(currentProfile)) items.push(['#/users','Usuarios y permisos']);
   return <nav>{items.map(([href,label]) => <a key={href} className={(route.page === 'home' && href==='#/') || href.includes(route.page) ? 'active' : ''} href={href}>{label}</a>)}</nav>;
 }
 function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; refresh: () => Promise<void> }) {
   if (route.page === 'opportunities') return <OpportunityList data={data} />;
+  if (route.page === 'tenders') return <TendersRadar currentProfile={data.currentProfile} />;
   if (route.page === 'detail' && route.id) return <OpportunityDetail id={route.id} data={data} refresh={refresh} />;
   if (route.page === 'new') return <OpportunityForm data={data} refresh={refresh} />;
   if (route.page === 'edit' && route.id) return <OpportunityForm data={data} id={route.id} refresh={refresh} />;
@@ -313,6 +322,62 @@ function OpportunityList({ data }: { data: Bootstrap }) {
     <p className="muted">Mostrando {filtered.length} de {data.opportunities.length} oportunidades.</p>
     <div className="tablewrap"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Regional</th><th>Etapa</th><th>Tipo producto</th><th>Valor</th><th>Cierre estimado</th><th>Último seguimiento</th></tr></thead><tbody>{filtered.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{o.regional_nombre || '—'}</td><td><Badge>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDate(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td></tr>)}</tbody></table></div>
   </section>;
+}
+function TendersRadar({ currentProfile }: { currentProfile: Profile }) {
+  const [payload, setPayload] = useState<TenderRadarPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [section, setSection] = useState<TenderSection | 'todas'>('hacer');
+  const [q, setQ] = useState('');
+  const load = async () => {
+    setLoading(true); setError(null);
+    try { setPayload(await api<TenderRadarPayload>('/api/tenders')); }
+    catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+  if (!canViewTenders(currentProfile)) return <div className="error">Solo dirección o licitaciones puede ver este radar.</div>;
+  if (loading) return <div className="notice">Cargando radar de licitaciones…</div>;
+  if (error) return <div className="error">{error}</div>;
+  if (!payload) return <EmptyState title="Sin datos" text="No se pudo cargar el radar de licitaciones." />;
+  const rows = payload.tenders.filter(t => (section === 'todas' || t.section === section) && (!q || `${t.entity} ${t.city||''} ${t.title} ${t.ref||''}`.toLowerCase().includes(q.toLowerCase())));
+  const grouped = { hacer: rows.filter(t => t.section === 'hacer'), revisar: rows.filter(t => t.section === 'revisar'), descartar: rows.filter(t => t.section === 'descartar') };
+  return <section className="stack tenders-page">
+    <section className="executive-hero">
+      <div><span className="eyebrow">Radar público SECOP</span><h2>Licitaciones</h2><p>Procesos públicos priorizados para Seguridad Nacional. V1 es solo lectura: primero validamos, después se convierte a oportunidad comercial.</p></div>
+      <div className="hero-facts"><div><small>Actualización</small><strong>{fmtDate(payload.generatedAt)}</strong></div><div><small>Acceso</small><strong>Dirección + Katherine</strong></div></div>
+    </section>
+    <div className="grid kpis">
+      <Kpi icon="!" tone="amber" label="Hacer hoy" value={payload.totals.hacer.toString()} hint="Revisión prioritaria" meta="Cierre cercano / alto encaje" />
+      <Kpi icon="↗" tone="blue" label="Revisar" value={payload.totals.revisar.toString()} hint="Oportunidades adicionales" meta="Validar si hay capacidad" />
+      <Kpi icon="$" tone="purple" label="Alto valor" value={payload.totals.highValue.toString()} hint="$500M+ COP" meta="Procesos de mayor impacto" />
+      <Kpi icon="⚑" tone="green" label="Total radar" value={payload.totals.all.toString()} hint="SECOP I/II priorizado" meta={`${payload.totals.urgent} cierres próximos`} />
+    </div>
+    <div className="filters"><input placeholder="Buscar entidad, ciudad, objeto o referencia…" value={q} onChange={e=>setQ(e.target.value)} /><Select value={section} onChange={v=>setSection(v as TenderSection | 'todas')} options={[["hacer","Hacer hoy"],["revisar","Revisar"],["descartar","Descartar / validar"],["todas","Todas"]]} empty="Sección"/><button className="secondary" onClick={load}>Actualizar</button></div>
+    {section === 'todas' ? <TenderTable rows={rows} /> : <>
+      <TenderSectionPanel title="Hacer hoy" rows={grouped.hacer} show={section === 'hacer'} />
+      <TenderSectionPanel title="Revisar si hay tiempo" rows={grouped.revisar} show={section === 'revisar'} />
+      <TenderSectionPanel title="Descartar o validar con cuidado" rows={grouped.descartar} show={section === 'descartar'} />
+    </>}
+  </section>;
+}
+function TenderSectionPanel({ title, rows, show }: { title: string; rows: PublicTender[]; show: boolean }) {
+  if (!show) return null;
+  return <Panel title={title}>{rows.length ? <div className="tender-cards">{rows.map(t => <TenderCard key={t.id} tender={t} />)}</div> : <EmptyState title="Sin licitaciones" text="No hay procesos en esta sección con los filtros actuales." />}</Panel>;
+}
+function TenderCard({ tender }: { tender: PublicTender }) {
+  return <article className={`card tender-card tender-${tender.section}`}>
+    <div className="tender-head"><div><small>{tender.source} · Score {tender.score}</small><h3>{tender.entity} — {tender.city || tender.dept || 'Sin ciudad'}</h3></div><Badge tone={tender.section === 'hacer' ? 'amber' : tender.section === 'descartar' ? 'danger' : 'blue'}>{tender.section === 'hacer' ? 'Hacer hoy' : tender.section === 'revisar' ? 'Revisar' : 'Validar'}</Badge></div>
+    <p>{tender.title}</p>
+    <div className="tender-meta"><span>{fmtMoney(tender.value)}</span><span>Cierre: {fmtDate(tender.deadline)}</span><span>Ref: {tender.ref || '—'}</span></div>
+    <small className="muted">{tender.reasons.slice(0,4).join(' · ')}</small>
+    {tender.risks.length > 0 && <small className="muted">Riesgos: {tender.risks.slice(0,2).join(' · ')}</small>}
+    <div className="row-actions">{tender.url && <a className="button secondary" target="_blank" href={tender.url}>Abrir SECOP</a>}<button className="secondary" disabled title="Fase 2">Crear oportunidad</button></div>
+  </article>;
+}
+function TenderTable({ rows }: { rows: PublicTender[] }) {
+  if (!rows.length) return <EmptyState title="Sin resultados" text="No hay licitaciones con esos filtros." />;
+  return <div className="tablewrap"><table><thead><tr><th>Entidad</th><th>Sección</th><th>Ubicación</th><th>Objeto</th><th>Valor</th><th>Cierre</th><th>Link</th></tr></thead><tbody>{rows.map(t => <tr key={t.id}><td><strong>{t.entity}</strong><br/><small>{t.ref || t.process_id || '—'}</small></td><td><Badge>{t.section}</Badge></td><td>{t.dept || '—'} / {t.city || '—'}</td><td>{t.title}</td><td>{fmtMoney(t.value)}</td><td>{fmtDate(t.deadline)}</td><td>{t.url ? <a target="_blank" href={t.url}>Abrir</a> : '—'}</td></tr>)}</tbody></table></div>;
 }
 function Select({ value, onChange, options, empty }: { value: string; onChange: (v:string)=>void; options: string[][]; empty: string }) { return <select value={value} onChange={e=>onChange(e.target.value)}><option value="">{empty}</option>{options.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>; }
 function Badge({ children, tone }: { children: React.ReactNode; tone?: string }) { return <span className={`badge ${tone ? `badge-${tone}` : ''}`}>{children}</span>; }

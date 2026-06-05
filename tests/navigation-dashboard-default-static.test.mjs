@@ -8,14 +8,14 @@ assert.ok(!main.includes("['#/','Inicio']"), 'Inicio should be removed from side
 
 const navLine = main.split('\n').find(line => line.includes('const items = [['));
 assert.ok(navLine, 'Nav items should be declared inline');
-const labels = [...navLine.matchAll(/'([^']+)'\]/g)].map(match => match[1]);
-assert.deepEqual(labels, [
-  'Dashboard gerencial',
-  'Alertas comerciales',
-  'Oportunidades',
-  'Metas y cumplimiento',
-  'Crear oportunidad',
-  'Centinel',
-], 'sidebar nav order should match approved order');
+assert.ok(main.includes("['#/tenders','Licitaciones']"), 'authorized users should see Licitaciones after Oportunidades');
+assert.ok(main.includes('canViewTenders(currentProfile)'), 'Licitaciones tab should be gated by role/person.');
+const expectedOrder = ["['#/dashboard','Dashboard gerencial']", "['#/alerts','Alertas comerciales']", "['#/opportunities','Oportunidades']", "['#/tenders','Licitaciones']", "['#/goals','Metas y cumplimiento']", "['#/new','Crear oportunidad']", "['#/centinel','Centinel']"];
+let lastIndex = -1;
+for (const marker of expectedOrder) {
+  const idx = main.indexOf(marker);
+  assert.ok(idx > lastIndex, `${marker} should appear after previous nav marker`);
+  lastIndex = idx;
+}
 
 console.log('navigation dashboard default static checks passed');

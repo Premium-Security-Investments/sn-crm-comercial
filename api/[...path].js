@@ -122,6 +122,116 @@ async function ensureOpportunityAccess(database, id, profile) {
 
 const opportunitySelect = '*';
 
+
+const tenderSources = {
+  'SECOP II': {
+    base: 'https://www.datos.gov.co/resource/p6dx-8zbt.json',
+    dateField: 'fecha_de_publicacion_del',
+    select: 'entidad,departamento_entidad,ciudad_entidad,id_del_proceso,referencia_del_proceso,nombre_del_procedimiento,descripci_n_del_procedimiento,fase,estado_del_procedimiento,fecha_de_publicacion_del,fecha_de_recepcion_de,precio_base,codigo_principal_de_categoria,urlproceso',
+    nameFields: ['nombre_del_procedimiento','descripci_n_del_procedimiento']
+  },
+  'SECOP I': {
+    base: 'https://www.datos.gov.co/resource/f789-7hwg.json',
+    dateField: 'fecha_de_cargue_en_el_secop',
+    select: 'nombre_entidad,departamento_entidad,municipio_entidad,numero_de_proceso,objeto_a_contratar,detalle_del_objeto_a_contratar,estado_del_proceso,fecha_de_cargue_en_el_secop,cuantia_proceso,ruta_proceso_en_secop_i',
+    nameFields: ['objeto_a_contratar','detalle_del_objeto_a_contratar']
+  }
+};
+const tenderPositiveTerms = {
+  'vigilancia y seguridad privada': 45, 'servicio de vigilancia': 40, 'vigilancia armada': 38, 'vigilancia privada': 38,
+  'seguridad privada': 35, 'seguridad electronica': 35, 'seguridad electrónica': 35, 'cctv': 35,
+  'videovigilancia': 35, 'video vigilancia': 35, 'control de acceso': 30, 'biometrico': 22, 'biométrico': 22,
+  'alarma': 22, 'monitoreo': 22, 'circuito cerrado': 30, 'guardas': 28, 'cedi': 20, 'bodega': 10
+};
+const tenderNegativeTerms = { 'tecnovigilancia': 65, 'interventoria': 60, 'interventoría': 60, 'enfermera': 45, 'alimentacion': 25, 'aseo': 20, 'papeleria': 35, 'cámara de comercio': 55 };
+const tenderFocusTerms = { 'bogotá': 22, 'bogota': 22, 'distrito capital': 20, 'medellín': 22, 'medellin': 22, 'antioquia': 14 };
+function canViewTenders(profile) { return isManager(profile) || profile?.microsoft_email?.toLowerCase() === 'directora.licitaciones@seguridadnacional.co'; }
+function normTenderText(value) { return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+function tenderMoney(value) { const n = Number(String(value || '0').replace(/[^0-9.-]/g, '')); return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0; }
+function tenderDate(value) { if (!value) return null; const d = new Date(value); return Number.isNaN(d.getTime()) ? null : d; }
+function tenderDaysUntil(value) { const d = tenderDate(value); if (!d) return null; const today = new Date(); today.setHours(0,0,0,0); d.setHours(0,0,0,0); return Math.round((d.getTime() - today.getTime()) / 86400000); }
+function tenderWindow(days) { if (days === null) return 'sin fecha de cierre reportada'; if (days <= 7) return 'urgente (0-7 días)'; if (days <= 15) return 'revisar rápido (8-15 días)'; if (days <= 30) return 'buena ventana (16-30 días)'; return 'ventana amplia'; }
+function tenderText(row) { return normTenderText(Object.values(row || {}).filter(v => typeof v === 'string').join(' ')); }
+function scoreTender(row) {
+  const text = tenderText(row); let score = 0; const reasons = []; const risks = [];
+  for (const [term, pts] of Object.entries(tenderPositiveTerms)) if (text.includes(normTenderText(term))) { score += pts; reasons.push(term); }
+  for (const [term, pts] of Object.entries(tenderFocusTerms)) if (text.includes(normTenderText(term))) { score += pts; reasons.push(`zona foco: ${term}`); }
+  for (const [term, pts] of Object.entries(tenderNegativeTerms)) if (text.includes(normTenderText(term))) { score -= pts; risks.push(`posible falso positivo: ${term}`); }
+  const value = tenderMoney(row.precio_base || row.cuantia_proceso);
+  if (value >= 500000000) { score += 25; reasons.push('valor alto'); }
+  else if (value > 0 && value < 50000000) { score -= 15; risks.push('valor bajo'); }
+  if (!value) risks.push('valor no reportado / $0; validar');
+  return { score, reasons: [...new Set(reasons)].slice(0, 7), risks: [...new Set(risks)].slice(0, 5) };
+}
+function classifyTenderSection(tender) {
+  if (tender.score < 70 || (tender.value > 0 && tender.value < 50000000) || tender.risks.some(r => r.includes('falso positivo'))) return 'descartar';
+  if ((tender.days !== null && tender.days <= 10) || tender.score >= 180 || tender.value >= 1000000000) return 'hacer';
+  return 'revisar';
+}
+function normalizeTender(row, source, scored) {
+  const isSecop2 = source === 'SECOP II';
+  const deadline = isSecop2 ? row.fecha_de_recepcion_de : null;
+  const days = tenderDaysUntil(deadline);
+  const value = tenderMoney(isSecop2 ? row.precio_base : row.cuantia_proceso);
+  const url = isSecop2 ? (typeof row.urlproceso === 'object' ? row.urlproceso?.url : row.urlproceso) : row.ruta_proceso_en_secop_i;
+  const tender = {
+    id: `${source}:${isSecop2 ? row.id_del_proceso || row.referencia_del_proceso : row.numero_de_proceso}`,
+    source,
+    entity: isSecop2 ? row.entidad || 'Sin entidad' : row.nombre_entidad || 'Sin entidad',
+    dept: row.departamento_entidad || '', city: isSecop2 ? row.ciudad_entidad || '' : row.municipio_entidad || '',
+    ref: isSecop2 ? row.referencia_del_proceso || '' : row.numero_de_proceso || '', process_id: isSecop2 ? row.id_del_proceso || '' : '',
+    title: isSecop2 ? row.nombre_del_procedimiento || row.descripci_n_del_procedimiento || 'Sin objeto' : row.objeto_a_contratar || row.detalle_del_objeto_a_contratar || 'Sin objeto',
+    desc: isSecop2 ? row.descripci_n_del_procedimiento || '' : row.detalle_del_objeto_a_contratar || '',
+    value, status: isSecop2 ? row.fase || row.estado_del_procedimiento || '' : row.estado_del_proceso || '', category: isSecop2 ? row.codigo_principal_de_categoria || '' : '',
+    published: (isSecop2 ? row.fecha_de_publicacion_del : row.fecha_de_cargue_en_el_secop) || null, deadline: deadline || null, days, window: tenderWindow(days),
+    score: scored.score, reasons: scored.reasons, risks: scored.risks, url: url || ''
+  };
+  return { ...tender, section: classifyTenderSection(tender) };
+}
+function keywordWhere(fields) {
+  const terms = ['vigilancia','seguridad privada','cctv','videovigilancia','control de acceso','alarma','monitoreo','camaras','cámaras','biometrico','biométrico','incendio'];
+  const clauses = [];
+  for (const field of fields) for (const term of terms) clauses.push(`lower(${field}) like '%${term.toLowerCase()}%'`);
+  return clauses.join(' OR ');
+}
+async function fetchSecopSource(source, cfg) {
+  const start = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10) + 'T00:00:00';
+  const params = new URLSearchParams({ '$select': cfg.select, '$where': `${cfg.dateField} >= '${start}' AND (${keywordWhere(cfg.nameFields)})`, '$order': `${cfg.dateField} DESC`, '$limit': '120' });
+  const response = await fetch(`${cfg.base}?${params.toString()}`, { headers: { 'User-Agent': 'SN-CRM-Tenders-Radar/1.0' } });
+  if (!response.ok) throw new Error(`${source} respondió ${response.status}`);
+  const rows = await response.json();
+  return rows.map(row => ({ row, scored: scoreTender(row) })).filter(x => x.scored.score >= 35).map(x => normalizeTender(x.row, source, x.scored));
+}
+async function buildTenderRadar() {
+  const batches = await Promise.all(Object.entries(tenderSources).map(([source, cfg]) => fetchSecopSource(source, cfg)));
+  const seen = new Set();
+  const tenders = batches.flat().filter(t => {
+    if (t.days !== null && t.days < 0) return false;
+    const key = `${t.source}:${t.ref}:${t.entity}:${t.title}`;
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  }).sort((a,b) => {
+    const sectionOrder = { hacer: 0, revisar: 1, descartar: 2 };
+    return sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score || (a.days ?? 999) - (b.days ?? 999);
+  }).slice(0, 80);
+  return {
+    generatedAt: new Date().toISOString(),
+    totals: {
+      all: tenders.length, hacer: tenders.filter(t => t.section === 'hacer').length, revisar: tenders.filter(t => t.section === 'revisar').length,
+      descartar: tenders.filter(t => t.section === 'descartar').length, highValue: tenders.filter(t => t.value >= 500000000).length, urgent: tenders.filter(t => t.days !== null && t.days <= 7).length
+    },
+    tenders
+  };
+}
+
+app.get('/api/tenders', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver este radar.'); error.status = 403; throw error; }
+    res.json(await buildTenderRadar());
+  } catch (error) { sendAuthError(res, error); }
+});
+
 app.get('/api/bootstrap', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
