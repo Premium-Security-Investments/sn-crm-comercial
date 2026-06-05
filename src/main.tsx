@@ -26,7 +26,7 @@ type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles
 type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string; send_invite?: boolean };
 type TenderSection = 'hacer' | 'revisar' | 'descartar';
 type TenderInternalStatus = 'nueva' | 'en_revision' | 'descartada' | 'convertida_oportunidad';
-type PublicTender = { id: string; stable_key?: string; source: string; section: TenderSection; internal_status?: TenderInternalStatus; converted_opportunity_id?: string | null; entity: string; dept?: string; city?: string; ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string; category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null; score: number; reasons: string[]; risks: string[]; url?: string };
+type PublicTender = { id: string; stable_key?: string; source: string; section: TenderSection; internal_status?: TenderInternalStatus; converted_opportunity_id?: string | null; reviewed_at?: string | null; detected_at?: string | null; last_seen_at?: string | null; entity: string; dept?: string; city?: string; ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string; category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null; score: number; reasons: string[]; risks: string[]; url?: string };
 type TenderRadarPayload = { generatedAt: string; source?: string; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
 
@@ -872,7 +872,7 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
 }
 
 
-type CentinelResult = { title: string; summary: string; rows: Opportunity[]; cards: Array<{ label: string; value: string; detail: string }>; mode: 'alerts' | 'pipeline' | 'goals' | 'stalled' | 'large' | 'risk' | 'search' };
+type CentinelResult = { title: string; summary: string; rows: Opportunity[]; tenderRows?: PublicTender[]; cards: Array<{ label: string; value: string; detail: string }>; mode: 'alerts' | 'pipeline' | 'goals' | 'stalled' | 'large' | 'risk' | 'tenders' | 'search' };
 
 const centinelQuickActions = [
   { label: 'Oportunidades sin agenda', prompt: 'Muéstrame oportunidades sin agenda por comercial' },
@@ -881,6 +881,9 @@ const centinelQuickActions = [
   { label: 'Clientes en sustentación', prompt: 'Muéstrame clientes en sustentación con días sin seguimiento' },
   { label: 'Próximas gestiones', prompt: 'Muéstrame próximas gestiones de esta semana' },
   { label: 'Oportunidades grandes', prompt: 'Muéstrame oportunidades grandes en negociación o sustentación' },
+  { label: 'Licitaciones para revisar hoy', prompt: 'Qué licitaciones debe revisar Katherine hoy' },
+  { label: 'Licitaciones alto valor', prompt: 'Qué licitaciones de alto valor siguen sin decisión' },
+  { label: 'Licitaciones convertidas', prompt: 'Qué licitaciones se convirtieron en oportunidad' },
 ];
 
 function isLargeOpportunityQuery(q: string) {
@@ -891,8 +894,73 @@ function isRiskFollowUpQuery(q: string) {
   return q.includes('muchos días') || q.includes('muchos dias') || q.includes('sin seguimiento') || q.includes('abandonad') || q.includes('atrasad') || q.includes('riesgo') || q.includes('vencid');
 }
 
-function interpretCentinelQuery(query: string, data: Bootstrap): CentinelResult {
+function isTenderQuery(q: string) {
+  return q.includes('licitacion') || q.includes('licitación') || q.includes('licitaciones') || q.includes('secop') || q.includes('tvec') || q.includes('katherine');
+}
+
+function isConvertedTenderQuery(q: string) {
+  return q.includes('convertid') || q.includes('oportunidad');
+}
+
+function isHighValueTenderQuery(q: string) {
+  return q.includes('alto valor') || q.includes('mayor valor') || q.includes('más valor') || q.includes('mas valor') || q.includes('grande') || q.includes('sin decisión') || q.includes('sin decision');
+}
+
+function isOpenTender(tender: PublicTender) {
+  const status = tender.internal_status || 'nueva';
+  return status !== 'descartada' && status !== 'convertida_oportunidad' && !tender.converted_opportunity_id;
+}
+
+function tenderDecisionPriority(tender: PublicTender) {
+  const urgent = tender.days !== null && tender.days !== undefined && tender.days <= 7;
+  return (tender.section === 'hacer' ? 0 : tender.section === 'revisar' ? 1 : 2) + (urgent ? -1 : 0);
+}
+
+function interpretTenderCentinelQuery(query: string, centinelTenderPayload: TenderRadarPayload | null): CentinelResult {
   const q = query.toLowerCase();
+  if (!centinelTenderPayload) {
+    return { mode: 'tenders', title: 'Cargar licitaciones para Centinel', summary: 'Centinel necesita cargar el radar de licitaciones antes de responder esta pregunta. Usa el botón de recarga o abre la pestaña Licitaciones si no tienes permisos.', rows: [], tenderRows: [], cards: [
+      { label: 'Radar', value: 'Sin cargar', detail: 'Datos SECOP/Supabase no disponibles todavía' },
+      { label: 'Modo', value: 'Solo lectura', detail: 'No modifica estados ni oportunidades' },
+      { label: 'Siguiente paso', value: 'Licitaciones', detail: 'Abrir radar de licitaciones' },
+    ] };
+  }
+  const tenders = centinelTenderPayload.tenders || [];
+  const open = tenders.filter(isOpenTender);
+  const converted = tenders.filter(t => t.internal_status === 'convertida_oportunidad' || t.converted_opportunity_id);
+  const highOpen = open.filter(t => Number(t.value || 0) >= 500_000_000).sort((a,b) => Number(b.value || 0) - Number(a.value || 0));
+  const dueSoon = open.filter(t => t.days !== null && t.days !== undefined && t.days <= 7).length;
+
+  if (isConvertedTenderQuery(q)) {
+    const rows = converted.sort((a,b) => String(b.reviewed_at || b.last_seen_at || '').localeCompare(String(a.reviewed_at || a.last_seen_at || '')) || Number(b.value || 0) - Number(a.value || 0));
+    return { mode: 'tenders', title: 'Licitaciones convertidas', summary: 'Procesos públicos que ya fueron conectados con oportunidades comerciales para evitar doble creación.', rows: [], tenderRows: rows, cards: [
+      { label: 'Convertidas', value: String(rows.length), detail: 'Ya tienen oportunidad asociada' },
+      { label: 'Valor convertido', value: fmtMoneyCompact(rows.reduce((s,t)=>s+Number(t.value||0),0)), detail: 'Valor base de procesos convertidos' },
+      { label: 'Última conversión', value: rows[0] ? fmtDate(rows[0].reviewed_at || rows[0].last_seen_at) : '—', detail: rows[0]?.entity || 'Sin conversiones registradas' },
+    ] };
+  }
+
+  if (isHighValueTenderQuery(q)) {
+    return { mode: 'tenders', title: 'Licitaciones de alto valor sin decisión', summary: 'Procesos abiertos de $500M+ COP que todavía no están descartados ni convertidos. Prioridad para decisión gerencial o de Katherine.', rows: [], tenderRows: highOpen, cards: [
+      { label: 'Alto valor abiertas', value: String(highOpen.length), detail: '$500M+ COP sin decisión final' },
+      { label: 'Valor en decisión', value: fmtMoneyCompact(highOpen.reduce((s,t)=>s+Number(t.value||0),0)), detail: 'Suma de procesos abiertos de alto valor' },
+      { label: 'Con cierre cercano', value: String(highOpen.filter(t => t.days !== null && t.days !== undefined && t.days <= 7).length), detail: '7 días o menos' },
+    ] };
+  }
+
+  const rows = open
+    .filter(t => t.section === 'hacer' || t.internal_status === 'nueva' || t.internal_status === 'en_revision')
+    .sort((a,b) => tenderDecisionPriority(a) - tenderDecisionPriority(b) || Number(b.score || 0) - Number(a.score || 0) || Number(b.value || 0) - Number(a.value || 0));
+  return { mode: 'tenders', title: 'Licitaciones para revisar hoy', summary: 'Bandeja priorizada de procesos públicos abiertos: primero Hacer hoy, cierres cercanos, mayor score y mayor valor.', rows: [], tenderRows: rows, cards: [
+    { label: 'Para revisar', value: String(rows.length), detail: 'Abiertas sin decisión final' },
+    { label: 'Hacer hoy', value: String(open.filter(t => t.section === 'hacer').length), detail: 'Prioridad del radar' },
+    { label: 'Cierre cercano', value: String(dueSoon), detail: '7 días o menos' },
+  ] };
+}
+
+function interpretCentinelQuery(query: string, data: Bootstrap, centinelTenderPayload: TenderRadarPayload | null = null): CentinelResult {
+  const q = query.toLowerCase();
+  if (isTenderQuery(q)) return interpretTenderCentinelQuery(query, centinelTenderPayload);
   const active = data.opportunities.filter(o => !isTerminalStage(o.stage_code));
   const baseRows = active.map(o => ({ o, action: nextActionStatus(o), inactiveDays: daysSince(o.last_interaction_at || o.updated_at || o.created_at) }));
 
@@ -987,8 +1055,23 @@ function interpretCentinelQuery(query: string, data: Bootstrap): CentinelResult 
 function CentinelAssistant({ data }: { data: Bootstrap }) {
   const [query, setQuery] = useState('Muéstrame oportunidades sin agenda por comercial');
   const [submitted, setSubmitted] = useState(query);
-  const result = useMemo(() => interpretCentinelQuery(submitted, data), [submitted, data]);
+  const [centinelTenderPayload, setCentinelTenderPayload] = useState<TenderRadarPayload | null>(null);
+  const [centinelTenderStatus, setCentinelTenderStatus] = useState('');
+  const loadCentinelTenders = async () => {
+    if (!canViewTenders(data.currentProfile)) return;
+    setCentinelTenderStatus('Cargando licitaciones para Centinel…');
+    try {
+      setCentinelTenderPayload(await api<TenderRadarPayload>('/api/tenders'));
+      setCentinelTenderStatus('Licitaciones cargadas para Centinel.');
+    } catch (err) {
+      setCentinelTenderStatus(err instanceof Error ? err.message : String(err));
+    }
+  };
+  useEffect(() => { loadCentinelTenders(); }, [data.currentProfile.id]);
+  const result = useMemo(() => interpretCentinelQuery(submitted, data, centinelTenderPayload), [submitted, data, centinelTenderPayload]);
   const visibleRows = result.rows.slice(0, 25);
+  const visibleTenderRows = (result.tenderRows || []).slice(0, 25);
+  const isTenderResult = result.mode === 'tenders';
   return <section className="stack centinel-dashboard">
     <section className="centinel-topline"><h2>Pregúntale a Centinel</h2><p>Escribe lo que necesitas ver y Centinel te devuelve un reporte comercial seguro.</p></section>
     <section className="centinel-hero">
@@ -1003,17 +1086,24 @@ function CentinelAssistant({ data }: { data: Bootstrap }) {
         <div>{centinelQuickActions.map(action => <button className="centinel-chip" key={action.label} onClick={() => { setQuery(action.prompt); setSubmitted(action.prompt); }}>{action.label}</button>)}</div>
         <button onClick={() => setSubmitted(query)}>Construir reporte seguro</button>
       </div>
+      {canViewTenders(data.currentProfile) && <div className="centinel-tender-actions"><button className="secondary" onClick={loadCentinelTenders}>Cargar licitaciones para Centinel</button>{centinelTenderStatus && <small>{centinelTenderStatus}</small>}</div>}
     </section>
     <section className="centinel-result">
-      <div className="centinel-result-head"><div><span className="eyebrow">Resultado Centinel</span><h2>{result.title}</h2><p>{result.summary}</p></div><button className="secondary" onClick={() => go('#/alerts')}>Abrir alertas comerciales</button></div>
+      <div className="centinel-result-head"><div><span className="eyebrow">Resultado Centinel</span><h2>{result.title}</h2><p>{result.summary}</p></div><button className="secondary" onClick={() => go(isTenderResult ? '#/tenders' : '#/alerts')}>{isTenderResult ? 'Abrir radar de licitaciones' : 'Abrir alertas comerciales'}</button></div>
       <div className="centinel-result-grid">{result.cards.map(card => <div className="centinel-result-card" key={card.label}><small>{card.label}</small><strong>{card.value}</strong><span>{card.detail}</span></div>)}</div>
       {result.mode === 'pipeline' && <StageBars summary={data.summary} />}
-      <div className="tablewrap centinel-result-table"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Etapa</th><th>Valor</th><th>Próxima acción</th><th>Días sin seguimiento</th></tr></thead><tbody>{visibleRows.map(o => {
-        const action = nextActionStatus(o);
-        const inactive = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
-        return <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.regional_nombre || '—'}</small></td><td>{o.owner_name || 'Sin comercial'}</td><td><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td><Badge tone={action.tone}>{action.label}</Badge><br/><small>{o.next_action_at ? fmtDate(o.next_action_at) : action.detail}</small></td><td>{inactive === null ? '—' : `${inactive} día(s)`}</td></tr>;
-      })}</tbody></table></div>
-      <p className="muted">Mostrando {visibleRows.length} de {result.rows.length} coincidencias. Click en una fila para abrir el detalle.</p>
+      {isTenderResult ? (
+        <div className="tablewrap centinel-result-table"><table><thead><tr><th>Entidad</th><th>Sección</th><th>Estado interno</th><th>Valor</th><th>Cierre</th><th>Score</th></tr></thead><tbody>{visibleTenderRows.map(t => (
+          <tr key={t.id} className="clickable" onClick={() => go('#/tenders')}><td><strong>{t.entity}</strong><br/><small>{t.ref || t.process_id || t.city || '—'}</small></td><td><Badge tone={t.section === 'hacer' ? 'amber' : t.section === 'descartar' ? 'danger' : 'blue'}>{t.section === 'hacer' ? 'Hacer hoy' : t.section === 'revisar' ? 'Revisar' : 'Validar'}</Badge></td><td><Badge tone={tenderStatusTone(t.internal_status)}>{tenderStatusLabel(t.internal_status)}</Badge></td><td>{fmtMoney(t.value)}</td><td>{fmtDate(t.deadline)}</td><td>{t.score}</td></tr>
+        ))}</tbody></table></div>
+      ) : (
+        <div className="tablewrap centinel-result-table"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Etapa</th><th>Valor</th><th>Próxima acción</th><th>Días sin seguimiento</th></tr></thead><tbody>{visibleRows.map(o => {
+          const action = nextActionStatus(o);
+          const inactive = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
+          return <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.regional_nombre || '—'}</small></td><td>{o.owner_name || 'Sin comercial'}</td><td><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td><Badge tone={action.tone}>{action.label}</Badge><br/><small>{o.next_action_at ? fmtDate(o.next_action_at) : action.detail}</small></td><td>{inactive === null ? '—' : `${inactive} día(s)`}</td></tr>;
+        })}</tbody></table></div>
+      )}
+      <p className="muted">Mostrando {isTenderResult ? visibleTenderRows.length : visibleRows.length} de {isTenderResult ? (result.tenderRows || []).length : result.rows.length} coincidencias. Click en una fila para abrir el detalle.</p>
     </section>
   </section>;
 }

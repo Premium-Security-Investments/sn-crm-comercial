@@ -21,6 +21,14 @@ const mainMarkers = [
   "isRiskFollowUpQuery",
   "Oportunidades de mayor valor",
   "Seguimiento en riesgo",
+  "Licitaciones para revisar hoy",
+  "Licitaciones de alto valor sin decisión",
+  "Licitaciones convertidas",
+  "isTenderQuery",
+  "interpretTenderCentinelQuery",
+  "centinelTenderPayload",
+  "Cargar licitaciones para Centinel",
+  "Abrir radar de licitaciones",
   "Solo lectura",
 ];
 
