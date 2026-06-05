@@ -29,7 +29,7 @@ type PublicTender = { id: string; source: string; section: TenderSection; entity
 type TenderRadarPayload = { generatedAt: string; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number }; tenders: PublicTender[] };
 type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
 
-type OpportunityPayload = Partial<Opportunity> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; };
+type OpportunityPayload = Partial<Opportunity> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; };
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const dateFmt = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
 const interactionTypes = ['llamada','correo','reunion','whatsapp','nota','cambio_estado','documento'];
@@ -233,7 +233,7 @@ function Nav({ route, currentProfile }: { route: Route; currentProfile: Profile 
 }
 function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; refresh: () => Promise<void> }) {
   if (route.page === 'opportunities') return <OpportunityList data={data} />;
-  if (route.page === 'tenders') return <TendersRadar currentProfile={data.currentProfile} />;
+  if (route.page === 'tenders') return <TendersRadar data={data} refresh={refresh} />;
   if (route.page === 'detail' && route.id) return <OpportunityDetail id={route.id} data={data} refresh={refresh} />;
   if (route.page === 'new') return <OpportunityForm data={data} refresh={refresh} />;
   if (route.page === 'edit' && route.id) return <OpportunityForm data={data} id={route.id} refresh={refresh} />;
@@ -323,10 +323,43 @@ function OpportunityList({ data }: { data: Bootstrap }) {
     <div className="tablewrap"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Regional</th><th>Etapa</th><th>Tipo producto</th><th>Valor</th><th>Cierre estimado</th><th>Último seguimiento</th></tr></thead><tbody>{filtered.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{o.regional_nombre || '—'}</td><td><Badge>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDate(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td></tr>)}</tbody></table></div>
   </section>;
 }
-function TendersRadar({ currentProfile }: { currentProfile: Profile }) {
+function findTenderOwner(data: Bootstrap) {
+  return data.profiles.find(p => p.microsoft_email?.toLowerCase() === 'directora.licitaciones@seguridadnacional.co') || data.currentProfile;
+}
+function buildTenderOpportunityPayload(tender: PublicTender, data: Bootstrap): OpportunityPayload {
+  const owner = findTenderOwner(data);
+  const notes = [
+    `Origen: ${tender.source} / Radar Licitaciones`,
+    `Referencia: ${tender.ref || tender.process_id || '—'}`,
+    `Objeto: ${tender.title}`,
+    `Entidad: ${tender.entity}`,
+    `Ubicación: ${tender.city || tender.dept || '—'}`,
+    `Score radar: ${tender.score}`,
+    `Razones: ${tender.reasons.join(', ') || '—'}`,
+    tender.url ? `Link SECOP: ${tender.url}` : '',
+  ].filter(Boolean).join('\n');
+  return {
+    company_name: tender.entity,
+    owner_id: owner.id,
+    stage_code: 'prospecto',
+    service_type_code: 'licitacion_publica',
+    offer_value: tender.value || 0,
+    expected_close_date: tender.deadline || '',
+    quote_city: tender.city || tender.dept || '',
+    regional_nombre: tender.dept || '',
+    sede: tender.ref || tender.process_id || '',
+    economic_sector: 'Sector público',
+    tipo_producto_original: 'Licitación Pública',
+    observaciones: notes,
+    external_source: `secop_radar:${tender.source}`,
+  };
+}
+function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) {
+  const currentProfile = data.currentProfile;
   const [payload, setPayload] = useState<TenderRadarPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [creatingId, setCreatingId] = useState<string | null>(null);
   const [section, setSection] = useState<TenderSection | 'todas'>('hacer');
   const [q, setQ] = useState('');
   const load = async () => {
@@ -340,6 +373,21 @@ function TendersRadar({ currentProfile }: { currentProfile: Profile }) {
   if (loading) return <div className="notice">Cargando radar de licitaciones…</div>;
   if (error) return <div className="error">{error}</div>;
   if (!payload) return <EmptyState title="Sin datos" text="No se pudo cargar el radar de licitaciones." />;
+  const createOpportunityFromTender = async (tender: PublicTender) => {
+    const owner = findTenderOwner(data);
+    const ok = window.confirm(`¿Crear oportunidad para ${tender.entity} y asignarla a ${owner.full_name}?`);
+    if (!ok) return;
+    setCreatingId(tender.id); setError(null);
+    try {
+      const saved = await api<{id:string}>('/api/opportunities', { method: 'POST', body: JSON.stringify(buildTenderOpportunityPayload(tender, data)) });
+      await refresh();
+      go(`#/detail/${saved.id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCreatingId(null);
+    }
+  };
   const rows = payload.tenders.filter(t => (section === 'todas' || t.section === section) && (!q || `${t.entity} ${t.city||''} ${t.title} ${t.ref||''}`.toLowerCase().includes(q.toLowerCase())));
   const grouped = { hacer: rows.filter(t => t.section === 'hacer'), revisar: rows.filter(t => t.section === 'revisar'), descartar: rows.filter(t => t.section === 'descartar') };
   return <section className="stack tenders-page">
@@ -354,30 +402,30 @@ function TendersRadar({ currentProfile }: { currentProfile: Profile }) {
       <Kpi icon="⚑" tone="green" label="Total radar" value={payload.totals.all.toString()} hint="SECOP I/II priorizado" meta={`${payload.totals.urgent} cierres próximos`} />
     </div>
     <div className="filters"><input placeholder="Buscar entidad, ciudad, objeto o referencia…" value={q} onChange={e=>setQ(e.target.value)} /><Select value={section} onChange={v=>setSection(v as TenderSection | 'todas')} options={[["hacer","Hacer hoy"],["revisar","Revisar"],["descartar","Descartar / validar"],["todas","Todas"]]} empty="Sección"/><button className="secondary" onClick={load}>Actualizar</button></div>
-    {section === 'todas' ? <TenderTable rows={rows} /> : <>
-      <TenderSectionPanel title="Hacer hoy" rows={grouped.hacer} show={section === 'hacer'} />
-      <TenderSectionPanel title="Revisar si hay tiempo" rows={grouped.revisar} show={section === 'revisar'} />
-      <TenderSectionPanel title="Descartar o validar con cuidado" rows={grouped.descartar} show={section === 'descartar'} />
+    {section === 'todas' ? <TenderTable rows={rows} onCreate={createOpportunityFromTender} creatingId={creatingId} /> : <>
+      <TenderSectionPanel title="Hacer hoy" rows={grouped.hacer} show={section === 'hacer'} onCreate={createOpportunityFromTender} creatingId={creatingId} />
+      <TenderSectionPanel title="Revisar si hay tiempo" rows={grouped.revisar} show={section === 'revisar'} onCreate={createOpportunityFromTender} creatingId={creatingId} />
+      <TenderSectionPanel title="Descartar o validar con cuidado" rows={grouped.descartar} show={section === 'descartar'} onCreate={createOpportunityFromTender} creatingId={creatingId} />
     </>}
   </section>;
 }
-function TenderSectionPanel({ title, rows, show }: { title: string; rows: PublicTender[]; show: boolean }) {
+function TenderSectionPanel({ title, rows, show, onCreate, creatingId }: { title: string; rows: PublicTender[]; show: boolean; onCreate: (tender: PublicTender) => void; creatingId: string | null }) {
   if (!show) return null;
-  return <Panel title={title}>{rows.length ? <div className="tender-cards">{rows.map(t => <TenderCard key={t.id} tender={t} />)}</div> : <EmptyState title="Sin licitaciones" text="No hay procesos en esta sección con los filtros actuales." />}</Panel>;
+  return <Panel title={title}>{rows.length ? <div className="tender-cards">{rows.map(t => <TenderCard key={t.id} tender={t} onCreate={onCreate} creating={creatingId === t.id} />)}</div> : <EmptyState title="Sin licitaciones" text="No hay procesos en esta sección con los filtros actuales." />}</Panel>;
 }
-function TenderCard({ tender }: { tender: PublicTender }) {
+function TenderCard({ tender, onCreate, creating }: { tender: PublicTender; onCreate: (tender: PublicTender) => void; creating: boolean }) {
   return <article className={`card tender-card tender-${tender.section}`}>
     <div className="tender-head"><div><small>{tender.source} · Score {tender.score}</small><h3>{tender.entity} — {tender.city || tender.dept || 'Sin ciudad'}</h3></div><Badge tone={tender.section === 'hacer' ? 'amber' : tender.section === 'descartar' ? 'danger' : 'blue'}>{tender.section === 'hacer' ? 'Hacer hoy' : tender.section === 'revisar' ? 'Revisar' : 'Validar'}</Badge></div>
     <p>{tender.title}</p>
     <div className="tender-meta"><span>{fmtMoney(tender.value)}</span><span>Cierre: {fmtDate(tender.deadline)}</span><span>Ref: {tender.ref || '—'}</span></div>
     <small className="muted">{tender.reasons.slice(0,4).join(' · ')}</small>
     {tender.risks.length > 0 && <small className="muted">Riesgos: {tender.risks.slice(0,2).join(' · ')}</small>}
-    <div className="row-actions">{tender.url && <a className="button secondary" target="_blank" href={tender.url}>Abrir SECOP</a>}<button className="secondary" disabled title="Fase 2">Crear oportunidad</button></div>
+    <div className="row-actions">{tender.url && <a className="button secondary" target="_blank" href={tender.url}>Abrir SECOP</a>}<button onClick={() => onCreate(tender)} disabled={creating}>{creating ? 'Creando…' : 'Crear oportunidad'}</button></div>
   </article>;
 }
-function TenderTable({ rows }: { rows: PublicTender[] }) {
+function TenderTable({ rows, onCreate, creatingId }: { rows: PublicTender[]; onCreate: (tender: PublicTender) => void; creatingId: string | null }) {
   if (!rows.length) return <EmptyState title="Sin resultados" text="No hay licitaciones con esos filtros." />;
-  return <div className="tablewrap"><table><thead><tr><th>Entidad</th><th>Sección</th><th>Ubicación</th><th>Objeto</th><th>Valor</th><th>Cierre</th><th>Link</th></tr></thead><tbody>{rows.map(t => <tr key={t.id}><td><strong>{t.entity}</strong><br/><small>{t.ref || t.process_id || '—'}</small></td><td><Badge>{t.section}</Badge></td><td>{t.dept || '—'} / {t.city || '—'}</td><td>{t.title}</td><td>{fmtMoney(t.value)}</td><td>{fmtDate(t.deadline)}</td><td>{t.url ? <a target="_blank" href={t.url}>Abrir</a> : '—'}</td></tr>)}</tbody></table></div>;
+  return <div className="tablewrap"><table><thead><tr><th>Entidad</th><th>Sección</th><th>Ubicación</th><th>Objeto</th><th>Valor</th><th>Cierre</th><th>Acción</th></tr></thead><tbody>{rows.map(t => <tr key={t.id}><td><strong>{t.entity}</strong><br/><small>{t.ref || t.process_id || '—'}</small></td><td><Badge>{t.section}</Badge></td><td>{t.dept || '—'} / {t.city || '—'}</td><td>{t.title}</td><td>{fmtMoney(t.value)}</td><td>{fmtDate(t.deadline)}</td><td><div className="row-actions table-actions">{t.url ? <a target="_blank" href={t.url}>Abrir</a> : null}<button onClick={() => onCreate(t)} disabled={creatingId === t.id}>{creatingId === t.id ? 'Creando…' : 'Crear'}</button></div></td></tr>)}</tbody></table></div>;
 }
 function Select({ value, onChange, options, empty }: { value: string; onChange: (v:string)=>void; options: string[][]; empty: string }) { return <select value={value} onChange={e=>onChange(e.target.value)}><option value="">{empty}</option>{options.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>; }
 function Badge({ children, tone }: { children: React.ReactNode; tone?: string }) { return <span className={`badge ${tone ? `badge-${tone}` : ''}`}>{children}</span>; }

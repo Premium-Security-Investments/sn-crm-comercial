@@ -14,7 +14,13 @@ assert(src.includes('canViewTenders'), 'Frontend debe ocultar Licitaciones segú
 assert(src.includes('directora.licitaciones@seguridadnacional.co'), 'Katherine debe estar autorizada explícitamente para ver Licitaciones.');
 assert(src.includes('TendersRadar'), 'Frontend debe incluir componente TendersRadar.');
 assert(src.includes("api<TenderRadarPayload>('/api/tenders')"), 'Licitaciones debe cargar datos desde /api/tenders.');
-assert(src.includes('Crear oportunidad'), 'Licitaciones debe preparar la conexión futura con creación de oportunidad.');
+assert(src.includes('Crear oportunidad'), 'Licitaciones debe permitir convertir una licitación en oportunidad.');
+assert(src.includes('createOpportunityFromTender'), 'Frontend debe tener acción createOpportunityFromTender para convertir licitación.');
+assert(src.includes("service_type_code: 'licitacion_publica'"), 'La oportunidad creada desde licitación debe quedar como servicio Licitación Pública.');
+assert(src.includes("stage_code: 'prospecto'"), 'La oportunidad creada desde licitación debe entrar como Prospecto.');
+assert(src.includes('findTenderOwner'), 'Frontend debe asignar la oportunidad a Katherine o al usuario de licitaciones.');
+assert(src.includes("api<{id:string}>('/api/opportunities'"), 'La conversión debe usar el endpoint existente de creación de oportunidades.');
+assert(!src.includes('disabled title="Fase 2"'), 'El botón Crear oportunidad en Licitaciones ya no debe estar deshabilitado como fase futura.');
 
 for (const file of [server, api]) {
   assert(file.includes('canViewTenders'), 'API debe tener guard canViewTenders.');
