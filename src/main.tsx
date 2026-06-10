@@ -31,6 +31,7 @@ type TenderSection = 'hacer' | 'revisar' | 'descartar';
 type TenderInternalStatus = 'nueva' | 'en_revision' | 'convertida_oportunidad' | 'descartada';
 type TenderQuickFilter = 'hacer' | 'en_revision' | 'high_value' | 'convertidas' | null;
 type TenderFastFilter = 'hacer' | 'revisar' | 'nuevas' | 'urgentes' | 'alto_valor' | 'alto_encaje' | null;
+type TenderPrimaryFilter = 'todas' | TenderSection | Exclude<TenderFastFilter, null>;
 type TenderDeadlineFilter = 'todas' | '0_7' | '8_15' | '16_30' | 'vencida' | 'sin_fecha';
 type TenderValueFilter = 'todas' | 'sin_valor' | 'lt_50m' | '50m_500m' | '500m_plus' | '1000m_plus';
 type TenderScoreFilter = 'todas' | 'alto' | 'medio' | 'bajo';
@@ -53,6 +54,8 @@ function canManageGoals(profile?: Profile | null) { return isManagementRole(prof
 function canViewTenders(profile?: Profile | null) { return isManagementRole(profile?.role) || profile?.microsoft_email?.toLowerCase() === 'directora.licitaciones@seguridadnacional.co'; }
 const customerSegmentOptions: Array<[CustomerSegment, string]> = [['cliente_nuevo','Cliente Nuevo'], ['cliente_actual','Cliente Actual']];
 const commercialAreaOptions: Array<[CommercialArea, string]> = [['seguridad_fisica','Seguridad Física'], ['tecnologia','Tecnología'], ['licitacion_publica','Licitación Pública']];
+const TENDER_OFFICIAL_SOURCES = ['SECOP I', 'SECOP II', 'TVEC', 'ESU Contratación'];
+function placeholderOption(label: string, value = 'todas') { return [value, `${label}: Todas`]; }
 function customerSegmentLabel(value?: string | null) { return value === 'cliente_nuevo' ? 'Cliente Nuevo' : value === 'cliente_actual' ? 'Cliente Actual' : 'Pendiente'; }
 function commercialAreaLabel(value?: string | null) { return value === 'seguridad_fisica' ? 'Seguridad Física' : value === 'tecnologia' ? 'Tecnología' : value === 'licitacion_publica' ? 'Licitación Pública' : 'Sin área'; }
 function isApprovedSale(o: Opportunity) { return o.stage_code === 'aprobado'; }
@@ -609,14 +612,33 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
       setCreatingId(null);
     }
   };
-  const sourceOptions = Array.from(new Set(payload.tenders.map(t => t.source).filter(Boolean))).sort().map(s => [s, s]);
+  const sourceOptions = Array.from(new Set([...TENDER_OFFICIAL_SOURCES, ...payload.tenders.map(t => t.source).filter(Boolean)])).sort((a,b) => a.localeCompare(b)).map(s => [s, s]);
   const tenderFastFilterConfig: Record<Exclude<TenderFastFilter, null>, { label: string; section?: TenderSection | 'todas'; internalStatus?: TenderInternalStatus | 'todas'; deadlineFilter?: TenderDeadlineFilter; valueFilter?: TenderValueFilter; scoreFilter?: TenderScoreFilter }> = {
-    hacer: { label: 'Hacer', section: 'hacer' },
+    hacer: { label: 'Hacer hoy', section: 'hacer' },
     revisar: { label: 'Revisar', section: 'revisar' },
     nuevas: { label: 'Nuevas', internalStatus: 'nueva' },
     urgentes: { label: 'Urgentes', deadlineFilter: '0_7' },
     alto_valor: { label: 'Alto valor', valueFilter: '500m_plus' },
     alto_encaje: { label: 'Alto encaje', scoreFilter: 'alto' },
+  };
+  const primaryTenderFilter: TenderPrimaryFilter = fastFilter || (section !== 'todas' ? section : 'todas');
+  const applyPrimaryTenderFilter = (filter: TenderPrimaryFilter) => {
+    setQuickFilter(null);
+    setFastFilter(null);
+    setSection('todas');
+    setInternalStatus('todas');
+    setDeadlineFilter('todas');
+    setValueFilter('todas');
+    setScoreFilter('todas');
+    if (filter === 'todas') return;
+    if (filter === 'hacer' || filter === 'revisar' || filter === 'descartar') { setSection(filter); return; }
+    setFastFilter(filter);
+    const config = tenderFastFilterConfig[filter];
+    if (config?.section) setSection(config.section);
+    if (config?.internalStatus) setInternalStatus(config.internalStatus);
+    if (config?.deadlineFilter) setDeadlineFilter(config.deadlineFilter);
+    if (config?.valueFilter) setValueFilter(config.valueFilter);
+    if (config?.scoreFilter) setScoreFilter(config.scoreFilter);
   };
   const rows = payload.tenders.filter(t => {
     const status = t.internal_status || 'nueva';
@@ -653,21 +675,20 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
       <button className={`card kpi tender-kpi-filter ${quickFilter === 'high_value' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('high_value')}><Kpi icon="$" tone="purple" label="Alto valor" value={payload.totals.highValue.toString()} hint="$500M+ COP" meta="Ver procesos $500M+" /></button>
       <button className={`card kpi tender-kpi-filter ${quickFilter === 'convertidas' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('convertidas')}><Kpi icon="✓" tone="green" label="Convertidas" value={(payload.totals.convertidas || 0).toString()} hint="Ya son oportunidades" meta="Ver convertidas" /></button>
     </div>
-    <div className="filters tender-filters"><input placeholder="Buscar entidad, ciudad, objeto, fuente o referencia…" value={q} onChange={e=>setQ(e.target.value)} /><Select value={section} onChange={v=>{ setSection(v as TenderSection | 'todas'); setQuickFilter(null); setFastFilter(null); }} options={[["hacer","Hacer hoy"],["revisar","Revisar"],["descartar","Descartar / validar"],["todas","Todas"]]} empty="Sección"/><Select value={internalStatus} onChange={v=>{ setInternalStatus(v as TenderInternalStatus | 'todas'); setQuickFilter(null); setFastFilter(null); }} options={[["todas","Todos"],["nueva","Nueva"],["en_revision","En revisión"],["descartada","Descartada"],["convertida_oportunidad","Convertida"]]} empty="Estado interno"/><button className="secondary" onClick={clearTenderFilters}>Limpiar filtros</button><button className="secondary" onClick={load}>Recargar vista</button><button onClick={refreshRadar} disabled={syncing}>{syncing ? 'Sincronizando…' : 'Sincronizar fuentes oficiales'}</button></div>
+    <div className="filters tender-filters"><input placeholder="Buscar entidad, ciudad, objeto, fuente o referencia…" value={q} onChange={e=>setQ(e.target.value)} /><Select value={primaryTenderFilter} onChange={v=>applyPrimaryTenderFilter(v as TenderPrimaryFilter)} options={[placeholderOption('Prioridad / filtro'),["hacer","Prioridad / filtro: Hacer hoy"],["revisar","Prioridad / filtro: Revisar"],["descartar","Prioridad / filtro: Descartar / validar"],["nuevas","Prioridad: Nuevas"],["urgentes","Prioridad: Urgentes"],["alto_valor","Prioridad: Alto valor"],["alto_encaje","Prioridad: Alto encaje"]]} empty="Prioridad / filtro"/><Select value={internalStatus} onChange={v=>{ setInternalStatus(v as TenderInternalStatus | 'todas'); setQuickFilter(null); setFastFilter(null); }} options={[placeholderOption('Estado interno'),["nueva","Estado interno: Nueva"],["en_revision","Estado interno: En revisión"],["descartada","Estado interno: Descartada"],["convertida_oportunidad","Estado interno: Convertida"]]} empty="Estado interno"/><button className="secondary" onClick={clearTenderFilters}>Limpiar filtros</button><button className="secondary" onClick={load}>Recargar vista</button><button onClick={refreshRadar} disabled={syncing}>{syncing ? 'Sincronizando…' : 'Sincronizar fuentes oficiales'}</button></div>
     <div className="tender-fast-filters" aria-label="Filtros rápidos de licitaciones">
       {(Object.entries(tenderFastFilterConfig) as Array<[Exclude<TenderFastFilter, null>, { label: string }]>).map(([key, config]) => <button key={key} className={fastFilter === key ? 'active' : ''} onClick={() => applyTenderFastFilter(key)}>{config.label}</button>)}
     </div>
-    <div className="filters tender-advanced-filters"><span className="filter-label">Más filtros operativos</span><Select value={sourceFilter} onChange={setSourceFilter} options={[["todas","Todas"], ...sourceOptions]} empty="Fuente"/><Select value={deadlineFilter} onChange={v=>setDeadlineFilter(v as TenderDeadlineFilter)} options={[["todas","Todos"],["0_7","0-7 días"],["8_15","8-15 días"],["16_30","16-30 días"],["vencida","Vencida"],["sin_fecha","Sin fecha"]]} empty="Cierre"/><Select value={valueFilter} onChange={v=>setValueFilter(v as TenderValueFilter)} options={[["todas","Todos"],["sin_valor","Sin valor"],["lt_50m","<$50M"],["50m_500m","$50M-$500M"],["500m_plus","$500M+"],["1000m_plus","$1.000M+"]]} empty="Valor"/><Select value={scoreFilter} onChange={v=>setScoreFilter(v as TenderScoreFilter)} options={[["todas","Todos"],["alto","Alto"],["medio","Medio"],["bajo","Bajo / validar"]]} empty="Score / encaje"/></div>
+    <div className="filters tender-advanced-filters"><span className="filter-label">Más filtros operativos</span><Select value={sourceFilter} onChange={setSourceFilter} options={[placeholderOption('Fuente'), ...sourceOptions]} empty="Fuente"/><Select value={deadlineFilter} onChange={v=>setDeadlineFilter(v as TenderDeadlineFilter)} options={[placeholderOption('Cierre'),["0_7","Cierre: 0-7 días"],["8_15","Cierre: 8-15 días"],["16_30","Cierre: 16-30 días"],["vencida","Cierre: Vencida"],["sin_fecha","Cierre: Sin fecha"]]} empty="Cierre"/><Select value={valueFilter} onChange={v=>setValueFilter(v as TenderValueFilter)} options={[placeholderOption('Valor'),["sin_valor","Valor: Sin valor"],["lt_50m","Valor: <$50M"],["50m_500m","Valor: $50M-$500M"],["500m_plus","Valor: $500M+"],["1000m_plus","Valor: $1.000M+"]]} empty="Valor"/><Select value={scoreFilter} onChange={v=>setScoreFilter(v as TenderScoreFilter)} options={[placeholderOption('Encaje'),["alto","Encaje: Alto"],["medio","Encaje: Medio"],["bajo","Encaje: Bajo / validar"]]} empty="Encaje"/></div>
     <p className="muted action-explainer">Recargar vista actualiza los datos guardados en el CRM. Sincronizar fuentes oficiales consulta SECOP I, SECOP II, TVEC y ESU Contratación, persiste novedades y puede tardar más.</p>
     {payload.diagnostics?.length ? <div className="notice"><strong>Diagnóstico de fuentes:</strong> {payload.diagnostics.map(d => `${d.source}: ${d.message || d.status}`).join(' · ')}</div> : null}
     <div className="filter-summary"><span>Mostrando {rows.length} de {payload.tenders.length} procesos · Filtros activos: {activeTenderFilterChips.length ? activeTenderFilterChips.length : 'ninguno'}</span>{activeTenderFilterChips.length ? <div className="filter-chips">{activeTenderFilterChips.map(chip => <button className="filter-chip" key={chip.key} onClick={chip.clear}>{chip.label} ×</button>)}</div> : null}</div>
     <div className="notice tender-classification-note"><strong>Cómo leer la bandeja:</strong> “Hacer hoy” prioriza procesos con mejor encaje, valor o urgencia; “Revisar” reúne señales útiles que requieren validación; “Descartar” conserva trazabilidad de falsos positivos o bajo encaje.</div>
-    {section === 'todas' ? <TenderTable rows={rows} focusTenderId={focusTenderId} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} /> : <>
-      <TenderSectionPanel title="Hacer hoy" rows={grouped.hacer} show={section === 'hacer'} focusTenderId={focusTenderId} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} />
-      <TenderSectionPanel title="Revisar si hay tiempo" rows={grouped.revisar} show={section === 'revisar'} focusTenderId={focusTenderId} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} />
-      <TenderSectionPanel title="Descartar o validar con cuidado" rows={grouped.descartar} show={section === 'descartar'} focusTenderId={focusTenderId} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} />
-    </>}
+    <TenderUnifiedBoard rows={rows} focusTenderId={focusTenderId} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} />
   </section>;
+}
+function TenderUnifiedBoard({ rows, focusTenderId, onCreate, onStatus, creatingId }: { rows: PublicTender[]; focusTenderId?: string; onCreate: (tender: PublicTender) => void; onStatus: (tender: PublicTender, status: TenderInternalStatus) => void; creatingId: string | null }) {
+  return <Panel title="Vista unificada de licitaciones">{rows.length ? <div className="tender-cards">{rows.map(t => <TenderCard key={t.id} tender={t} focused={focusTenderId === t.id} onCreate={onCreate} onStatus={onStatus} creating={creatingId === t.id} />)}</div> : <EmptyState title="Sin licitaciones" text="No hay procesos con los filtros actuales." />}</Panel>;
 }
 function TenderSectionPanel({ title, rows, show, focusTenderId, onCreate, onStatus, creatingId }: { title: string; rows: PublicTender[]; show: boolean; focusTenderId?: string; onCreate: (tender: PublicTender) => void; onStatus: (tender: PublicTender, status: TenderInternalStatus) => void; creatingId: string | null }) {
   if (!show) return null;

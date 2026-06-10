@@ -71,6 +71,17 @@ assert(src.includes('tender-deadline-soon'), 'Las licitaciones próximas deben t
 assert(src.includes('tender-deadline-empty'), 'Las licitaciones sin fecha deben tener clase visual específica.');
 assert(!src.includes('Régimen especial web'), 'No se deben agregar fuentes web fijas si no existen en los datos.');
 assert(!src.includes('Privado web'), 'No se deben agregar fuentes privadas fijas si no existen en los datos.');
+assert(src.includes('TENDER_OFFICIAL_SOURCES'), 'El filtro de fuente debe incluir fuentes oficiales confirmadas aunque una fuente no devuelva resultados en la última corrida.');
+assert(src.includes('ESU Contratación'), 'El filtro de fuente debe mostrar ESU Contratación como fuente oficial confirmada.');
+assert(src.includes('placeholderOption'), 'Los dropdowns deben mostrar la categoría del filtro cuando están en valor predeterminado, no “Todos/Todas”.');
+assert(src.includes('Prioridad / filtro'), 'El filtro de sección debe renombrarse a una etiqueta operativa clara.');
+assert(src.includes('Prioridad: Urgentes'), 'El filtro principal debe incluir urgentes como opción operativa visible.');
+assert(src.includes('Prioridad: Alto valor'), 'El filtro principal debe incluir alto valor como opción operativa visible.');
+assert(src.includes('Prioridad: Alto encaje'), 'El filtro principal debe incluir alto encaje como opción operativa visible.');
+assert(src.includes('primaryTenderFilter'), 'La UI debe tener un filtro principal unificado para prioridad/operación.');
+assert(src.includes('TenderUnifiedBoard'), 'Licitaciones debe usar una sola vista unificada de tarjetas operativas.');
+assert(src.includes('Vista unificada de licitaciones'), 'La UI debe comunicar que la bandeja fue unificada.');
+assert(!src.includes('<TenderTable rows='), 'No debe alternar entre tabla y tarjetas según el filtro; usar una sola forma de mostrar datos.');
 
 for (const file of [server, api]) {
   assert(file.includes('canViewTenders'), 'API debe tener guard canViewTenders.');
