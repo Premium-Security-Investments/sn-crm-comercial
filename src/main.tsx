@@ -33,7 +33,7 @@ type PublicTender = { id: string; stable_key?: string; source: string; section: 
 type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string; count?: number; message?: string };
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
-type DashboardPeriodFilter = 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
+type DashboardPeriodFilter = '' | 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
 
 type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; };
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
@@ -97,7 +97,7 @@ function hashQueryParam(name: string) { return new URLSearchParams((window.locat
 function isTerminalStage(stageCode?: string | null) { return ['aprobado','perdido','descartado'].includes(stageCode || ''); }
 function dashboardOpportunityDate(o: Opportunity) { return o.expected_close_date || o.quote_date || o.approved_at || o.updated_at || o.created_at; }
 function matchesDashboardPeriod(o: Opportunity, period: DashboardPeriodFilter) {
-  if (period === 'todos') return true;
+  if (!period || period === 'todos') return true;
   const value = dashboardOpportunityDate(o);
   if (!value) return false;
   const d = new Date(value); if (Number.isNaN(d.getTime())) return false;
@@ -697,7 +697,7 @@ function businessUnitRuleRows(data: Bootstrap, periodMonth: string) {
 function CommercialPersonalDashboard({ data }: { data: Bootstrap }) { return <ConsultantDetail data={data} ownerId={data.currentProfile.id} personal />; }
 
 function ManagerDashboard({ data }: { data: Bootstrap }) {
-  const [period, setPeriod] = useState<DashboardPeriodFilter>('todos');
+  const [period, setPeriod] = useState<DashboardPeriodFilter>('');
   const [q, setQ] = useState('');
   const [owner, setOwner] = useState('');
   const [regional, setRegional] = useState('');
@@ -904,7 +904,7 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
         <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Todas las etapas"/>
         <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Todos los servicios"/>
         <label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label>
-        <button className="secondary" onClick={()=>{ setPeriod('todos'); setQ(''); setOwner(''); setRegional(''); setStage(''); setService(''); setOnlyActive(false); }}>Limpiar filtros</button>
+        <button className="secondary" onClick={()=>{ setPeriod(''); setQ(''); setOwner(''); setRegional(''); setStage(''); setService(''); setOnlyActive(false); }}>Limpiar filtros</button>
       </div>
       <div className="filter-summary"><strong>{scopedOpportunities.length}</strong> de {data.opportunities.length} oportunidades visibles · Última actualización: {lastUpdatedLabel(scopedOpportunities)}</div>
     </Panel>
@@ -1234,7 +1234,7 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
   const ownerOptions = data.profiles.filter(p => active.some(o => o.owner_id === p.id)).map(p => [p.id, p.full_name]);
   const alertRegionalOptions = uniq(active.map(o => o.regional_nombre)).map(r => [r, r]);
   const stageOptions = data.stages.filter(s => active.some(o => o.stage_code === s.code)).map(s => [s.code, s.name]);
-  const alertServiceOptions = data.services.filter(s => active.some(o => o.service_type_code === s.code)).map(s => [s.code, s.name]);
+  const alertServiceOptions = data.services.map(s => [s.code, s.name]);
   const statusOptions = [['missing','Sin agenda'],['overdue','Vencidas'],['closing_soon','Cierre próximo'],['high_value_stalled','Alto valor estancado'],['stalled','Sustentación estancada'],['today','Hoy'],['soon','Próximas'],['scheduled','Agendadas']];
   const filteredAlerts = alertRows.filter(row => {
     const o = row.opportunity;
