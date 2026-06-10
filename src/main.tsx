@@ -28,7 +28,11 @@ type SalesGoal = { id?: string; user_id: string | null; period_month: string; qu
 type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile };
 type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string; send_invite?: boolean; commercial_area?: CommercialArea | ''; can_edit_customer_segment?: boolean };
 type TenderSection = 'hacer' | 'revisar' | 'descartar';
-type TenderInternalStatus = 'nueva' | 'en_revision' | 'descartada' | 'convertida_oportunidad';
+type TenderInternalStatus = 'nueva' | 'en_revision' | 'convertida_oportunidad' | 'descartada';
+type TenderQuickFilter = 'hacer' | 'en_revision' | 'high_value' | 'convertidas' | null;
+type TenderDeadlineFilter = 'todas' | '0_7' | '8_15' | '16_30' | 'vencida' | 'sin_fecha';
+type TenderValueFilter = 'todas' | 'sin_valor' | 'lt_50m' | '50m_500m' | '500m_plus' | '1000m_plus';
+type TenderScoreFilter = 'todas' | 'alto' | 'medio' | 'bajo';
 type PublicTender = { id: string; stable_key?: string; source: string; section: TenderSection; internal_status?: TenderInternalStatus; converted_opportunity_id?: string | null; reviewed_at?: string | null; detected_at?: string | null; last_seen_at?: string | null; entity: string; dept?: string; city?: string; ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string; category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null; score: number; reasons: string[]; risks: string[]; url?: string };
 type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string; count?: number; message?: string };
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
@@ -88,6 +92,23 @@ function fmtMoneyCompact(n: number | null | undefined) {
   return '$ 0 M';
 }
 function fmtDate(value?: string | null) { return value ? dateFmt.format(new Date(value)) : '—'; }
+function fmtTenderDeadline(value?: string | null) {
+  if (!value) return 'sin fecha';
+  const target = new Date(value);
+  const today = new Date();
+  target.setHours(0,0,0,0); today.setHours(0,0,0,0);
+  const days = Math.ceil((target.getTime() - today.getTime()) / 86400000);
+  if (days < 0) return `vencida · ${fmtDate(value)}`;
+  if (days === 0) return `vence hoy · ${fmtDate(value)}`;
+  if (days <= 7) return `vence en ${days} día(s) · ${fmtDate(value)}`;
+  return fmtDate(value);
+}
+function tenderDeadlineDays(value?: string | null) {
+  if (!value) return null;
+  const target = new Date(value); const today = new Date();
+  target.setHours(0,0,0,0); today.setHours(0,0,0,0);
+  return Math.ceil((target.getTime() - today.getTime()) / 86400000);
+}
 function uniq(values: Array<string | null | undefined>) { return Array.from(new Set(values.filter(Boolean) as string[])).sort((a,b) => a.localeCompare(b)); }
 function ownerKey(o: Pick<Opportunity, 'owner_id'>) { return o.owner_id || '__sin_comercial__'; }
 function ownerRoute(ownerId: string) { return `#/consultant/${encodeURIComponent(ownerId)}`; }
@@ -436,6 +457,40 @@ function tenderStatusTone(status?: TenderInternalStatus) {
   if (status === 'en_revision') return 'amber';
   return 'blue';
 }
+function tenderDeadlineBucket(tender: PublicTender): TenderDeadlineFilter | '31_plus' {
+  if (!tender.deadline) return 'sin_fecha';
+  const target = new Date(tender.deadline);
+  target.setHours(0,0,0,0);
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const days = Math.ceil((target.getTime() - today.getTime()) / 86_400_000);
+  if (days < 0) return 'vencida';
+  if (days <= 7) return '0_7';
+  if (days <= 15) return '8_15';
+  if (days <= 30) return '16_30';
+  return '31_plus';
+}
+function tenderDeadlineTone(tender: PublicTender) {
+  const bucket = tenderDeadlineBucket(tender);
+  if (bucket === 'vencida') return 'danger';
+  if (bucket === '0_7') return 'amber';
+  if (bucket === '8_15') return 'blue';
+  if (bucket === 'sin_fecha') return 'muted';
+  return 'success';
+}
+function tenderSourceTone(source?: string) {
+  const s = (source || '').toLowerCase();
+  if (s.includes('esu')) return 'purple';
+  if (s.includes('tvec')) return 'green';
+  if (s.includes('ii')) return 'blue';
+  return 'amber';
+}
+function scoreLabel(score?: number) {
+  const value = Number(score || 0);
+  if (value >= 70) return 'Alto';
+  if (value >= 40) return 'Medio';
+  return 'Bajo / validar';
+}
 function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) {
   const currentProfile = data.currentProfile;
   const [payload, setPayload] = useState<TenderRadarPayload | null>(null);
@@ -446,6 +501,11 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
   const [section, setSection] = useState<TenderSection | 'todas'>('hacer');
   const [internalStatus, setInternalStatus] = useState<TenderInternalStatus | 'todas'>('todas');
   const [q, setQ] = useState('');
+  const [quickFilter, setQuickFilter] = useState<TenderQuickFilter>(null);
+  const [sourceFilter, setSourceFilter] = useState('todas');
+  const [deadlineFilter, setDeadlineFilter] = useState<TenderDeadlineFilter>('todas');
+  const [valueFilter, setValueFilter] = useState<TenderValueFilter>('todas');
+  const [scoreFilter, setScoreFilter] = useState<TenderScoreFilter>('todas');
   const focusTenderId = hashQueryParam('tender');
   const load = async () => {
     setLoading(true); setError(null);
@@ -467,12 +527,26 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     setSection(focused.section);
     setInternalStatus('todas');
     setQ('');
+    setQuickFilter(null);
+    setSourceFilter('todas');
+    setDeadlineFilter('todas');
+    setValueFilter('todas');
+    setScoreFilter('todas');
     window.setTimeout(() => document.getElementById(`tender-${focusTenderId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
   }, [focusTenderId, payload]);
   if (!canViewTenders(currentProfile)) return <div className="error">Solo dirección o licitaciones puede ver este radar.</div>;
   if (loading) return <div className="notice">Cargando radar de licitaciones…</div>;
   if (error) return <div className="error">{error}</div>;
   if (!payload) return <EmptyState title="Sin datos" text="No se pudo cargar el radar de licitaciones." />;
+  const clearTenderFilters = () => { setQuickFilter(null); setSection('todas'); setInternalStatus('todas'); setSourceFilter('todas'); setDeadlineFilter('todas'); setValueFilter('todas'); setScoreFilter('todas'); setQ(''); };
+  const applyTenderQuickFilter = (filter: TenderQuickFilter) => {
+    setQuickFilter(current => current === filter ? null : filter);
+    setQ('');
+    if (filter === 'hacer') { setSection('hacer'); setInternalStatus('todas'); setValueFilter('todas'); }
+    if (filter === 'en_revision') { setSection('todas'); setInternalStatus('en_revision'); setValueFilter('todas'); }
+    if (filter === 'high_value') { setSection('todas'); setInternalStatus('todas'); setValueFilter('500m_plus'); }
+    if (filter === 'convertidas') { setSection('todas'); setInternalStatus('convertida_oportunidad'); setValueFilter('todas'); }
+  };
   const markTenderStatus = async (tender: PublicTender, status: TenderInternalStatus) => {
     setCreatingId(tender.id); setError(null);
     try {
@@ -501,22 +575,45 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
       setCreatingId(null);
     }
   };
-  const rows = payload.tenders.filter(t => (section === 'todas' || t.section === section) && (internalStatus === 'todas' || (t.internal_status || 'nueva') === internalStatus) && (!q || `${t.entity} ${t.city||''} ${t.title} ${t.ref||''}`.toLowerCase().includes(q.toLowerCase())));
+  const sourceOptions = Array.from(new Set(payload.tenders.map(t => t.source).filter(Boolean))).sort().map(s => [s, s]);
+  const rows = payload.tenders.filter(t => {
+    const status = t.internal_status || 'nueva';
+    const value = Number(t.value || 0);
+    const score = Number(t.score || 0);
+    const deadlineBucket = tenderDeadlineBucket(t);
+    const matchesQuick = !quickFilter || (quickFilter === 'hacer' && t.section === 'hacer') || (quickFilter === 'en_revision' && status === 'en_revision') || (quickFilter === 'high_value' && value >= 500_000_000) || (quickFilter === 'convertidas' && status === 'convertida_oportunidad');
+    const matchesValue = valueFilter === 'todas' || (valueFilter === 'sin_valor' && value <= 0) || (valueFilter === 'lt_50m' && value > 0 && value < 50_000_000) || (valueFilter === '50m_500m' && value >= 50_000_000 && value < 500_000_000) || (valueFilter === '500m_plus' && value >= 500_000_000) || (valueFilter === '1000m_plus' && value >= 1_000_000_000);
+    const matchesScore = scoreFilter === 'todas' || (scoreFilter === 'alto' && score >= 70) || (scoreFilter === 'medio' && score >= 40 && score < 70) || (scoreFilter === 'bajo' && score < 40);
+    return matchesQuick && (section === 'todas' || t.section === section) && (internalStatus === 'todas' || status === internalStatus) && (sourceFilter === 'todas' || t.source === sourceFilter) && (deadlineFilter === 'todas' || deadlineBucket === deadlineFilter) && matchesValue && matchesScore && (!q || `${t.entity} ${t.city||''} ${t.dept||''} ${t.title} ${t.ref||''} ${t.source}`.toLowerCase().includes(q.toLowerCase()));
+  });
   const grouped = { hacer: rows.filter(t => t.section === 'hacer'), revisar: rows.filter(t => t.section === 'revisar'), descartar: rows.filter(t => t.section === 'descartar') };
+  const activeTenderFilterChips = [
+    quickFilter ? { key: 'quick', label: quickFilter === 'hacer' ? 'KPI: Hacer hoy' : quickFilter === 'en_revision' ? 'KPI: En revisión' : quickFilter === 'high_value' ? 'KPI: Alto valor' : 'KPI: Convertidas', clear: () => setQuickFilter(null) } : null,
+    section !== 'todas' ? { key: 'section', label: `Sección: ${section === 'hacer' ? 'Hacer hoy' : section === 'revisar' ? 'Revisar' : 'Descartar'}`, clear: () => setSection('todas') } : null,
+    internalStatus !== 'todas' ? { key: 'status', label: `Estado: ${tenderStatusLabel(internalStatus)}`, clear: () => setInternalStatus('todas') } : null,
+    sourceFilter !== 'todas' ? { key: 'source', label: `Fuente: ${sourceFilter}`, clear: () => setSourceFilter('todas') } : null,
+    deadlineFilter !== 'todas' ? { key: 'deadline', label: `Cierre: ${deadlineFilter === '0_7' ? '0-7 días' : deadlineFilter === '8_15' ? '8-15 días' : deadlineFilter === '16_30' ? '16-30 días' : deadlineFilter === 'vencida' ? 'Vencida' : 'Sin fecha'}`, clear: () => setDeadlineFilter('todas') } : null,
+    valueFilter !== 'todas' ? { key: 'value', label: `Valor: ${valueFilter === 'sin_valor' ? 'Sin valor' : valueFilter === 'lt_50m' ? '<$50M' : valueFilter === '50m_500m' ? '$50M-$500M' : valueFilter === '500m_plus' ? '$500M+' : '$1.000M+'}`, clear: () => setValueFilter('todas') } : null,
+    scoreFilter !== 'todas' ? { key: 'score', label: `Encaje: ${scoreFilter === 'alto' ? 'Alto' : scoreFilter === 'medio' ? 'Medio' : 'Bajo/validar'}`, clear: () => setScoreFilter('todas') } : null,
+    q ? { key: 'q', label: `Búsqueda: ${q}`, clear: () => setQ('') } : null,
+  ].filter(Boolean) as Array<{ key: string; label: string; clear: () => void }>;
   return <section className="stack tenders-page">
     <section className="executive-hero">
       <div><span className="eyebrow">Radar de Licitaciones Públicas</span><h2>Licitaciones</h2><p>Procesos públicos y eventos TVEC priorizados, historizados y accionables: Katherine puede revisar, descartar o convertir a oportunidad sin duplicar.</p></div>
       <div className="hero-facts"><div><small>Actualización</small><strong>{fmtDate(payload.generatedAt)}</strong></div><div><small>Fuente</small><strong>{payload.source === 'supabase' ? 'Supabase' : 'Fuentes vivas'}</strong></div></div>
     </section>
-    <div className="grid kpis">
-      <Kpi icon="!" tone="amber" label="Hacer hoy" value={payload.totals.hacer.toString()} hint="Revisión prioritaria" meta="Cierre cercano / alto encaje" />
-      <Kpi icon="↗" tone="blue" label="En revisión" value={(payload.totals.enRevision || 0).toString()} hint="Marcadas por equipo" meta="Estado interno" />
-      <Kpi icon="$" tone="purple" label="Alto valor" value={payload.totals.highValue.toString()} hint="$500M+ COP" meta="Procesos de mayor impacto" />
-      <Kpi icon="✓" tone="green" label="Convertidas" value={(payload.totals.convertidas || 0).toString()} hint="Ya son oportunidades" meta={`${payload.totals.descartadas || 0} descartadas`} />
+    <div className="grid kpis tender-kpi-grid">
+      <button className={`card kpi tender-kpi-filter ${quickFilter === 'hacer' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('hacer')}><Kpi icon="!" tone="amber" label="Hacer hoy" value={payload.totals.hacer.toString()} hint="Revisión prioritaria" meta="Ver procesos prioritarios" /></button>
+      <button className={`card kpi tender-kpi-filter ${quickFilter === 'en_revision' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('en_revision')}><Kpi icon="↗" tone="blue" label="En revisión" value={(payload.totals.enRevision || 0).toString()} hint="Marcadas por equipo" meta="Ver estado interno" /></button>
+      <button className={`card kpi tender-kpi-filter ${quickFilter === 'high_value' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('high_value')}><Kpi icon="$" tone="purple" label="Alto valor" value={payload.totals.highValue.toString()} hint="$500M+ COP" meta="Ver procesos $500M+" /></button>
+      <button className={`card kpi tender-kpi-filter ${quickFilter === 'convertidas' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('convertidas')}><Kpi icon="✓" tone="green" label="Convertidas" value={(payload.totals.convertidas || 0).toString()} hint="Ya son oportunidades" meta="Ver convertidas" /></button>
     </div>
-    <div className="filters"><input placeholder="Buscar entidad, ciudad, objeto o referencia…" value={q} onChange={e=>setQ(e.target.value)} /><Select value={section} onChange={v=>setSection(v as TenderSection | 'todas')} options={[["hacer","Hacer hoy"],["revisar","Revisar"],["descartar","Descartar / validar"],["todas","Todas"]]} empty="Sección"/><Select value={internalStatus} onChange={v=>setInternalStatus(v as TenderInternalStatus | 'todas')} options={[["todas","Todos"],["nueva","Nueva"],["en_revision","En revisión"],["descartada","Descartada"],["convertida_oportunidad","Convertida"]]} empty="Estado interno"/><button className="secondary" onClick={load}>Actualizar</button><button onClick={refreshRadar} disabled={syncing}>{syncing ? 'Sincronizando…' : 'Sincronizar fuentes'}</button></div>
+    <div className="filters tender-filters"><input placeholder="Buscar entidad, ciudad, objeto, fuente o referencia…" value={q} onChange={e=>setQ(e.target.value)} /><Select value={section} onChange={v=>{ setSection(v as TenderSection | 'todas'); setQuickFilter(null); }} options={[["hacer","Hacer hoy"],["revisar","Revisar"],["descartar","Descartar / validar"],["todas","Todas"]]} empty="Sección"/><Select value={internalStatus} onChange={v=>{ setInternalStatus(v as TenderInternalStatus | 'todas'); setQuickFilter(null); }} options={[["todas","Todos"],["nueva","Nueva"],["en_revision","En revisión"],["descartada","Descartada"],["convertida_oportunidad","Convertida"]]} empty="Estado interno"/><button className="secondary" onClick={clearTenderFilters}>Limpiar filtros</button><button className="secondary" onClick={load}>Recargar vista</button><button onClick={refreshRadar} disabled={syncing}>{syncing ? 'Sincronizando…' : 'Sincronizar fuentes oficiales'}</button></div>
+    <div className="filters tender-advanced-filters"><span className="filter-label">Más filtros operativos</span><Select value={sourceFilter} onChange={setSourceFilter} options={[["todas","Todas"], ...sourceOptions]} empty="Fuente"/><Select value={deadlineFilter} onChange={v=>setDeadlineFilter(v as TenderDeadlineFilter)} options={[["todas","Todos"],["0_7","0-7 días"],["8_15","8-15 días"],["16_30","16-30 días"],["vencida","Vencida"],["sin_fecha","Sin fecha"]]} empty="Cierre"/><Select value={valueFilter} onChange={v=>setValueFilter(v as TenderValueFilter)} options={[["todas","Todos"],["sin_valor","Sin valor"],["lt_50m","<$50M"],["50m_500m","$50M-$500M"],["500m_plus","$500M+"],["1000m_plus","$1.000M+"]]} empty="Valor"/><Select value={scoreFilter} onChange={v=>setScoreFilter(v as TenderScoreFilter)} options={[["todas","Todos"],["alto","Alto"],["medio","Medio"],["bajo","Bajo / validar"]]} empty="Score / encaje"/></div>
+    <p className="muted action-explainer">Recargar vista actualiza los datos guardados en el CRM. Sincronizar fuentes oficiales consulta SECOP I, SECOP II, TVEC y ESU Contratación, persiste novedades y puede tardar más.</p>
     {payload.diagnostics?.length ? <div className="notice"><strong>Diagnóstico de fuentes:</strong> {payload.diagnostics.map(d => `${d.source}: ${d.message || d.status}`).join(' · ')}</div> : null}
-    <p className="muted">Mostrando {rows.length} de {payload.tenders.length} licitaciones. Estado interno: {internalStatus === 'todas' ? 'todos' : tenderStatusLabel(internalStatus)}.</p>
+    <div className="filter-summary"><span>Mostrando {rows.length} de {payload.tenders.length} procesos · Filtros activos: {activeTenderFilterChips.length ? activeTenderFilterChips.length : 'ninguno'}</span>{activeTenderFilterChips.length ? <div className="filter-chips">{activeTenderFilterChips.map(chip => <button className="filter-chip" key={chip.key} onClick={chip.clear}>{chip.label} ×</button>)}</div> : null}</div>
+    <div className="notice tender-classification-note"><strong>Cómo leer la bandeja:</strong> “Hacer hoy” prioriza procesos con mejor encaje, valor o urgencia; “Revisar” reúne señales útiles que requieren validación; “Descartar” conserva trazabilidad de falsos positivos o bajo encaje.</div>
     {section === 'todas' ? <TenderTable rows={rows} focusTenderId={focusTenderId} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} /> : <>
       <TenderSectionPanel title="Hacer hoy" rows={grouped.hacer} show={section === 'hacer'} focusTenderId={focusTenderId} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} />
       <TenderSectionPanel title="Revisar si hay tiempo" rows={grouped.revisar} show={section === 'revisar'} focusTenderId={focusTenderId} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} />
@@ -531,23 +628,23 @@ function TenderSectionPanel({ title, rows, show, focusTenderId, onCreate, onStat
 function TenderCard({ tender, focused, onCreate, onStatus, creating }: { tender: PublicTender; focused?: boolean; onCreate: (tender: PublicTender) => void; onStatus: (tender: PublicTender, status: TenderInternalStatus) => void; creating: boolean }) {
   const converted = Boolean(tender.converted_opportunity_id);
   return <article id={`tender-${tender.id}`} className={`card tender-card tender-${tender.section} ${focused ? 'tender-highlight' : ''}`}>
-    <div className="tender-head"><div><small>{tender.source} · Score {tender.score}</small><h3>{tender.entity} — {tender.city || tender.dept || 'Sin ciudad'}</h3></div><div className="badge-stack"><Badge tone={tender.section === 'hacer' ? 'amber' : tender.section === 'descartar' ? 'danger' : 'blue'}>{tender.section === 'hacer' ? 'Hacer hoy' : tender.section === 'revisar' ? 'Revisar' : 'Validar'}</Badge><Badge tone={tenderStatusTone(tender.internal_status)}>{tenderStatusLabel(tender.internal_status)}</Badge></div></div>
+    <div className="tender-head"><div><div className="tender-card-kickers"><Badge tone={tenderSourceTone(tender.source)}><span className="tender-source-badge">{tender.source}</span></Badge><Badge tone={tenderDeadlineTone(tender)}><span className="tender-deadline-pill">{fmtTenderDeadline(tender.deadline)}</span></Badge><Badge>Score {tender.score} · {scoreLabel(tender.score)}</Badge></div><h3>{tender.entity} — {tender.city || tender.dept || 'Sin ciudad'}</h3></div><div className="badge-stack"><Badge tone={tender.section === 'hacer' ? 'amber' : tender.section === 'descartar' ? 'danger' : 'blue'}>{tender.section === 'hacer' ? 'Hacer hoy' : tender.section === 'revisar' ? 'Revisar' : 'Validar'}</Badge><Badge tone={tenderStatusTone(tender.internal_status)}>{tenderStatusLabel(tender.internal_status)}</Badge></div></div>
     <p>{tender.title}</p>
-    <div className="tender-meta"><span>{fmtMoney(tender.value)}</span><span>Cierre: {fmtDate(tender.deadline)}</span><span>Ref: {tender.ref || '—'}</span></div>
+    <div className="tender-meta"><span>{fmtMoneyCompact(tender.value)}</span><span>{fmtMoney(tender.value)}</span><span>Ref: {tender.ref || tender.process_id || '—'}</span></div>
     <small className="muted">{tender.reasons.slice(0,4).join(' · ')}</small>
     {tender.risks.length > 0 && <small className="muted">Riesgos: {tender.risks.slice(0,2).join(' · ')}</small>}
-    <div className="row-actions">{tender.url && <a className="button secondary" target="_blank" href={tender.url}>Abrir fuente</a>}<button className="secondary" onClick={() => onStatus(tender, 'en_revision')} disabled={creating || converted}>En revisión</button><button className="secondary" onClick={() => onStatus(tender, 'descartada')} disabled={creating || converted}>Descartar</button><button onClick={() => onCreate(tender)} disabled={creating}>{creating ? 'Creando…' : converted ? 'Ver oportunidad' : 'Crear oportunidad'}</button></div>
+    <div className="row-actions tender-card-actions">{tender.url && <a className="button secondary" target="_blank" href={tender.url}>Abrir fuente</a>}<button className="secondary" onClick={() => onStatus(tender, 'en_revision')} disabled={creating || converted}>En revisión</button><button className="secondary" onClick={() => onStatus(tender, 'descartada')} disabled={creating || converted}>Descartar</button><button onClick={() => onCreate(tender)} disabled={creating}>{creating ? 'Creando…' : converted ? 'Ver oportunidad' : 'Crear oportunidad'}</button></div>
   </article>;
 }
 function TenderTable({ rows, focusTenderId, onCreate, onStatus, creatingId }: { rows: PublicTender[]; focusTenderId?: string; onCreate: (tender: PublicTender) => void; onStatus: (tender: PublicTender, status: TenderInternalStatus) => void; creatingId: string | null }) {
-  const [tenderSortConfig, setTenderSortConfig] = useState<SortConfig<'entity'|'section'|'status'|'location'|'title'|'value'|'deadline'>>({ key: 'deadline', direction: 'asc' });
+  const [tenderSortConfig, setTenderSortConfig] = useState<SortConfig<'entity'|'section'|'status'|'location'|'title'|'value'|'deadline'|'source'|'score'>>({ key: 'deadline', direction: 'asc' });
   const sortedTenderRows = [...rows].sort((a,b) => {
-    const value = (t: PublicTender) => tenderSortConfig.key === 'entity' ? t.entity : tenderSortConfig.key === 'section' ? t.section : tenderSortConfig.key === 'status' ? tenderStatusLabel(t.internal_status) : tenderSortConfig.key === 'location' ? `${t.dept || ''} ${t.city || ''}` : tenderSortConfig.key === 'title' ? t.title : tenderSortConfig.key === 'value' ? Number(t.value || 0) : (t.deadline || '');
+    const value = (t: PublicTender) => tenderSortConfig.key === 'entity' ? t.entity : tenderSortConfig.key === 'section' ? t.section : tenderSortConfig.key === 'status' ? tenderStatusLabel(t.internal_status) : tenderSortConfig.key === 'location' ? `${t.dept || ''} ${t.city || ''}` : tenderSortConfig.key === 'title' ? t.title : tenderSortConfig.key === 'value' ? Number(t.value || 0) : tenderSortConfig.key === 'source' ? t.source : tenderSortConfig.key === 'score' ? Number(t.score || 0) : (t.deadline || '');
     return compareSortValues(value(a), value(b), tenderSortConfig.direction);
   });
   const sortTenderBy = (key: typeof tenderSortConfig.key) => setTenderSortConfig(current => nextSort(current, key));
   if (!rows.length) return <EmptyState title="Sin resultados" text="No hay licitaciones con esos filtros." />;
-  return <div className="tablewrap"><table><thead><tr><SortableTh label="Entidad" sortKey="entity" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Sección" sortKey="section" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Estado interno" sortKey="status" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Ubicación" sortKey="location" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Objeto" sortKey="title" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Valor" sortKey="value" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Cierre" sortKey="deadline" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><th>Acción</th></tr></thead><tbody>{sortedTenderRows.map(t => { const converted = Boolean(t.converted_opportunity_id); return <tr id={`tender-${t.id}`} className={focusTenderId === t.id ? 'tender-highlight' : ''} key={t.id}><td><strong>{t.entity}</strong><br/><small>{t.ref || t.process_id || '—'}</small></td><td><Badge>{t.section}</Badge></td><td><Badge tone={tenderStatusTone(t.internal_status)}>{tenderStatusLabel(t.internal_status)}</Badge></td><td>{t.dept || '—'} / {t.city || '—'}</td><td>{t.title}</td><td>{fmtMoney(t.value)}</td><td>{fmtDate(t.deadline)}</td><td><div className="row-actions table-actions">{t.url ? <a target="_blank" href={t.url}>Abrir</a> : null}<button className="secondary" onClick={() => onStatus(t, 'en_revision')} disabled={creatingId === t.id || converted}>Revisar</button><button className="secondary" onClick={() => onStatus(t, 'descartada')} disabled={creatingId === t.id || converted}>Descartar</button><button onClick={() => onCreate(t)} disabled={creatingId === t.id}>{creatingId === t.id ? 'Creando…' : converted ? 'Ver' : 'Crear'}</button></div></td></tr>; })}</tbody></table></div>;
+  return <div className="tablewrap"><table><thead><tr><SortableTh label="Entidad" sortKey="entity" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Fuente" sortKey="source" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Sección" sortKey="section" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Estado interno" sortKey="status" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Ubicación" sortKey="location" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Objeto" sortKey="title" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Valor" sortKey="value" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Cierre" sortKey="deadline" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Score" sortKey="score" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><th>Acción</th></tr></thead><tbody>{sortedTenderRows.map(t => { const converted = Boolean(t.converted_opportunity_id); return <tr id={`tender-${t.id}`} className={focusTenderId === t.id ? 'tender-highlight' : ''} key={t.id}><td><strong>{t.entity}</strong><br/><small>{t.ref || t.process_id || '—'}</small></td><td><Badge tone={tenderSourceTone(t.source)}><span className="tender-source-badge">{t.source}</span></Badge></td><td><Badge>{t.section}</Badge></td><td><Badge tone={tenderStatusTone(t.internal_status)}>{tenderStatusLabel(t.internal_status)}</Badge></td><td>{t.dept || '—'} / {t.city || '—'}</td><td>{t.title}</td><td><strong>{fmtMoneyCompact(t.value)}</strong><br/><small>{fmtMoney(t.value)}</small></td><td><Badge tone={tenderDeadlineTone(t)}><span className="tender-deadline-pill">{fmtTenderDeadline(t.deadline)}</span></Badge></td><td><strong>{t.score}</strong><br/><small>{scoreLabel(t.score)}</small></td><td><div className="row-actions table-actions tender-card-actions">{t.url ? <a target="_blank" href={t.url}>Abrir</a> : null}<button className="secondary" onClick={() => onStatus(t, 'en_revision')} disabled={creatingId === t.id || converted}>Revisar</button><button className="secondary" onClick={() => onStatus(t, 'descartada')} disabled={creatingId === t.id || converted}>Descartar</button><button onClick={() => onCreate(t)} disabled={creatingId === t.id}>{creatingId === t.id ? 'Creando…' : converted ? 'Ver' : 'Crear'}</button></div></td></tr>; })}</tbody></table></div>;
 }
 function Select({ value, onChange, options, empty, disabled = false }: { value: string; onChange: (v:string)=>void; options: string[][]; empty: string; disabled?: boolean }) { return <select value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}><option value="">{empty}</option>{options.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>; }
 function Badge({ children, tone }: { children: React.ReactNode; tone?: string }) { return <span className={`badge ${tone ? `badge-${tone}` : ''}`}>{children}</span>; }

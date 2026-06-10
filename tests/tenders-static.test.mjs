@@ -33,6 +33,27 @@ assert(!src.includes('Sincronizar SECOP'), 'El botón ya no debe decir Sincroniz
 assert(src.includes('Abrir fuente'), 'Frontend debe abrir la fuente genérica, no solo SECOP.');
 assert(src.includes('diagnostics'), 'Frontend debe mostrar diagnóstico de fuentes, incluyendo TVEC temporalmente no disponible.');
 assert(src.includes('Estado interno'), 'Frontend debe mostrar/filtar estado interno.');
+assert(src.includes('TenderQuickFilter'), 'Licitaciones debe tener tipo de filtro rápido para KPIs accionables.');
+assert(src.includes('applyTenderQuickFilter'), 'KPIs de Licitaciones deben filtrar la bandeja al hacer click.');
+assert(src.includes('tender-kpi-filter'), 'KPIs de Licitaciones deben tener estilo/estado clicable.');
+assert(src.includes('Ver procesos prioritarios'), 'KPI Hacer hoy debe comunicar que abre el filtro correspondiente.');
+assert(src.includes('Ver procesos $500M+'), 'KPI Alto valor debe abrir filtro por valor alto.');
+assert(src.includes('Recargar vista'), 'Botón ambiguo Actualizar debe renombrarse a Recargar vista.');
+assert(src.includes('Sincronizar fuentes oficiales'), 'Botón de sincronización debe explicar que consulta fuentes oficiales.');
+assert(src.includes('Recargar vista actualiza los datos guardados'), 'La UI debe explicar diferencia entre recargar y sincronizar.');
+assert(src.includes('Limpiar filtros'), 'Licitaciones debe permitir limpiar filtros.');
+assert(src.includes('sourceFilter'), 'Licitaciones debe filtrar por fuente.');
+assert(src.includes('deadlineFilter'), 'Licitaciones debe filtrar por cierre.');
+assert(src.includes('valueFilter'), 'Licitaciones debe filtrar por valor.');
+assert(src.includes('scoreFilter'), 'Licitaciones debe filtrar por encaje/score.');
+assert(src.includes('activeTenderFilterChips'), 'Licitaciones debe mostrar chips de filtros activos.');
+assert(src.includes('“Hacer hoy” prioriza procesos'), 'Licitaciones debe explicar cómo se clasifica la bandeja.');
+assert(src.includes('tender-source-badge'), 'Cada licitación debe resaltar la fuente.');
+assert(src.includes('tender-deadline-pill'), 'Cada licitación debe mostrar el cierre como pill operativo.');
+assert(src.includes('fmtTenderDeadline'), 'Frontend debe formatear cierre con vencida/vence en/sin fecha.');
+assert(src.includes('fmtMoneyCompact(tender.value)'), 'Cada licitación debe mostrar valor compacto.');
+assert(src.includes('tender-card-actions'), 'Acciones de cada licitación deben quedar agrupadas visualmente.');
+assert(src.includes('Más filtros operativos'), 'La barra debe distinguir filtros principales y operativos adicionales.');
 
 for (const file of [server, api]) {
   assert(file.includes('canViewTenders'), 'API debe tener guard canViewTenders.');
