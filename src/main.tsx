@@ -356,14 +356,40 @@ function MiniTable({ rows, empty = 'Sin registros' }: { rows: Opportunity[]; emp
 function EmptyState({ title, text }: { title: string; text: string }) {
   return <div className="empty-state"><div>✓</div><strong>{title}</strong><p>{text}</p></div>;
 }
+
+type SortDirection = 'asc' | 'desc';
+type SortConfig<K extends string> = { key: K; direction: SortDirection };
+function compareSortValues(a: string | number | null | undefined, b: string | number | null | undefined, direction: SortDirection) {
+  const emptyA = a === null || a === undefined || a === '';
+  const emptyB = b === null || b === undefined || b === '';
+  if (emptyA && emptyB) return 0;
+  if (emptyA) return 1;
+  if (emptyB) return -1;
+  const result = typeof a === 'number' && typeof b === 'number'
+    ? a - b
+    : String(a).localeCompare(String(b), 'es', { sensitivity: 'base', numeric: true });
+  return direction === 'asc' ? result : -result;
+}
+function SortableTh<K extends string>({ label, sortKey, sortConfig, onSort }: { label: string; sortKey: K; sortConfig: SortConfig<K>; onSort: (key: K) => void }) {
+  const active = sortConfig.key === sortKey;
+  return <th aria-sort={active ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}><button type="button" className={`sortable-th ${active ? 'active' : ''}`} onClick={() => onSort(sortKey)} title={`Ordenar por ${label}`}>{label}<span className="sort-indicator">{active ? (sortConfig.direction === 'asc' ? '▲' : '▼') : '↕'}</span></button></th>;
+}
+function nextSort<K extends string>(current: SortConfig<K>, key: K): SortConfig<K> { return current.key === key ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' }; }
+
 function OpportunityList({ data }: { data: Bootstrap }) {
   const [q, setQ] = useState(hashQueryParam('q')); const [stage, setStage] = useState(hashQueryParam('stage')); const [owner, setOwner] = useState(hashQueryParam('owner')); const [regional, setRegional] = useState(hashQueryParam('regional')); const [service, setService] = useState(hashQueryParam('service'));
+  const [sortConfig, setSortConfig] = useState<SortConfig<'client'|'owner'|'regional'|'stage'|'product'|'segment'|'value'|'close'|'last'>>({ key: 'client', direction: 'asc' });
   const regionals = useMemo(() => uniq(data.opportunities.map(o => o.regional_nombre)), [data.opportunities]);
   const filtered = data.opportunities.filter(o => (!q || `${o.company_name} ${o.sede||''} ${o.legacy_excel_id||''}`.toLowerCase().includes(q.toLowerCase())) && (!stage || o.stage_code===stage) && (!owner || o.owner_id===owner) && (!regional || o.regional_nombre===regional) && (!service || o.service_type_code===service));
+  const sortedOpportunities = [...filtered].sort((a,b) => {
+    const value = (o: Opportunity) => sortConfig.key === 'client' ? o.company_name : sortConfig.key === 'owner' ? (o.owner_name || '') : sortConfig.key === 'regional' ? (o.regional_nombre || '') : sortConfig.key === 'stage' ? (o.stage_order || 0) : sortConfig.key === 'product' ? (o.tipo_producto_original || o.service_type_name || '') : sortConfig.key === 'segment' ? customerSegmentLabel(o.customer_segment) : sortConfig.key === 'value' ? Number(o.offer_value || 0) : sortConfig.key === 'close' ? (o.expected_close_date || '') : (o.last_interaction_at || '');
+    return compareSortValues(value(a), value(b), sortConfig.direction);
+  });
+  const sortBy = (key: typeof sortConfig.key) => setSortConfig(current => nextSort(current, key));
   return <section className="stack">
     <div className="filters"><input placeholder="Buscar cliente, sede o ID…" value={q} onChange={e=>setQ(e.target.value)} /> <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Todas las etapas"/> <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Todos los comerciales"/> <Select value={regional} onChange={setRegional} options={regionals.map(r=>[r,r])} empty="Todas las regionales"/> <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Todos los servicios"/></div>
     <p className="muted">Mostrando {filtered.length} de {data.opportunities.length} oportunidades.</p>
-    <div className="tablewrap"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Regional</th><th>Etapa</th><th>Tipo producto</th><th>Tipo cliente</th><th>Valor</th><th>Cierre estimado</th><th>Último seguimiento</th></tr></thead><tbody>{filtered.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{o.regional_nombre || '—'}</td><td><Badge>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td><Badge tone={o.customer_segment ? 'blue' : 'amber'}>{customerSegmentLabel(o.customer_segment)}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDate(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td></tr>)}</tbody></table></div>
+    <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo cliente" sortKey="segment" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cierre estimado" sortKey="close" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Último seguimiento" sortKey="last" sortConfig={sortConfig} onSort={sortBy}/></tr></thead><tbody>{sortedOpportunities.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{o.regional_nombre || '—'}</td><td><Badge>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td><Badge tone={o.customer_segment ? 'blue' : 'amber'}>{customerSegmentLabel(o.customer_segment)}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDate(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td></tr>)}</tbody></table></div>
   </section>;
 }
 function findTenderOwner(data: Bootstrap) {
@@ -669,6 +695,7 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
   const [owner, setOwner] = useState('');
   const [stage, setStage] = useState('');
   const [service, setService] = useState('');
+  const [sortConfig, setSortConfig] = useState<SortConfig<'client'|'owner'|'value'|'stage'|'next'|'risk'>>({ key: 'value', direction: 'desc' });
   const scopedOpportunities = useMemo(() => data.opportunities.filter(o =>
     matchesDashboardPeriod(o, period) &&
     (!owner || ownerKey(o) === owner) &&
@@ -827,6 +854,11 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
     const risk = r.action.code === 'overdue' ? 'Gestión vencida' : r.action.code === 'missing' ? 'Sin próxima acción' : closingSoon ? 'Cierre próximo' : Number(r.inactiveDays || 0) >= 10 ? 'Sin seguimiento reciente' : 'Revisar avance';
     return { ...r, riskScore, risk };
   }).filter(r => ['overdue','missing'].includes(r.action.code) || closingSoonRows.some(o => o.id === r.opportunity.id) || Number(r.inactiveDays || 0) >= 10).sort((a,b)=>b.riskScore-a.riskScore).slice(0, 10);
+  const sortedCriticalOpportunityRows = [...criticalOpportunityRows].sort((a,b) => {
+    const value = (row: typeof criticalOpportunityRows[number]) => sortConfig.key === 'client' ? row.opportunity.company_name : sortConfig.key === 'owner' ? (row.opportunity.owner_name || '') : sortConfig.key === 'value' ? Number(row.opportunity.offer_value || 0) : sortConfig.key === 'stage' ? (row.opportunity.stage_order || 0) : sortConfig.key === 'next' ? (row.opportunity.next_action_at || '') : row.riskScore;
+    return compareSortValues(value(a), value(b), sortConfig.direction);
+  });
+  const sortBy = (key: typeof sortConfig.key) => setSortConfig(current => nextSort(current, key));
   const biggestAlertOwner = commercialHealthCards.find(o => o.missing || o.overdue) || commercialHealthCards[0];
   const actionTitle = overdueRows.length
     ? `${overdueRows.length} gestiones vencidas requieren decisión hoy`
@@ -903,7 +935,7 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
     </Panel>
 
     <Panel title="Top 10 oportunidades que requieren decisión">
-      <div className="tablewrap critical-opportunities-table"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Valor</th><th>Etapa</th><th>Próxima acción</th><th>Riesgo</th><th>Acción</th></tr></thead><tbody>{criticalOpportunityRows.map(row => {
+      <div className="tablewrap critical-opportunities-table"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Riesgo" sortKey="risk" sortConfig={sortConfig} onSort={sortBy}/><th>Acción</th></tr></thead><tbody>{sortedCriticalOpportunityRows.map(row => {
         const o = row.opportunity;
         return <tr key={o.id}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.regional_nombre || '—'}</small></td><td>{o.owner_name || 'Sin comercial'}</td><td><strong className="numeric-value">{fmtMoneyCompact(o.offer_value)}</strong></td><td><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td>{o.next_action_at ? fmtDate(o.next_action_at) : 'Sin agenda'}<br/><small>{row.action.detail}</small></td><td><Badge tone={row.action.tone}>{row.risk}</Badge></td><td><a className="button" href={`#/detail/${o.id}`}>Ver detalle</a><a className="button secondary" href={`#/detail/${o.id}`}>Registrar seguimiento</a></td></tr>;
       })}</tbody></table></div>
@@ -1112,6 +1144,7 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
   const [owner, setOwner] = useState(hashQueryParam('owner'));
   const [stage, setStage] = useState(hashQueryParam('stage'));
   const [hideClosed, setHideClosed] = useState(true);
+  const [sortConfig, setSortConfig] = useState<SortConfig<'alert'|'client'|'owner'|'stage'|'value'|'next'|'inactive'|'action'>>({ key: 'alert', direction: 'asc' });
 
   const active = data.opportunities.filter(o => !isTerminalStage(o.stage_code));
   const alertRows = active.map(o => {
@@ -1157,6 +1190,11 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
       && (!stage || o.stage_code === stage)
       && (!hideClosed || !isTerminalStage(o.stage_code));
   });
+  const sortedFilteredAlerts = [...filteredAlerts].sort((a,b) => {
+    const value = (row: typeof filteredAlerts[number]) => sortConfig.key === 'alert' ? row.priority : sortConfig.key === 'client' ? row.opportunity.company_name : sortConfig.key === 'owner' ? (row.opportunity.owner_name || '') : sortConfig.key === 'stage' ? (row.opportunity.stage_order || 0) : sortConfig.key === 'value' ? Number(row.opportunity.offer_value || 0) : sortConfig.key === 'next' ? (row.opportunity.next_action_at || '') : sortConfig.key === 'inactive' ? Number(row.inactiveDays || 0) : row.action.detail;
+    return compareSortValues(value(a), value(b), sortConfig.direction);
+  });
+  const sortBy = (key: typeof sortConfig.key) => setSortConfig(current => nextSort(current, key));
 
   return <section className="stack alerts-dashboard">
     <section className="executive-hero alerts-hero">
@@ -1185,7 +1223,7 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
     </Panel>
     <Panel title="Bandeja de alertas">
       <p className="muted">Mostrando {filteredAlerts.length} oportunidades. Click en una fila para abrir el detalle y registrar seguimiento.</p>
-      <div className="tablewrap alert-table"><table><thead><tr><th>Alerta</th><th>Cliente</th><th>Comercial</th><th>Etapa</th><th>Valor</th><th>Próxima acción</th><th>Días sin seguimiento</th><th>Acción sugerida</th></tr></thead><tbody>{filteredAlerts.map(row => {
+      <div className="tablewrap alert-table"><table><thead><tr><SortableTh label="Alerta" sortKey="alert" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Días sin seguimiento" sortKey="inactive" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Acción sugerida" sortKey="action" sortConfig={sortConfig} onSort={sortBy}/></tr></thead><tbody>{sortedFilteredAlerts.map(row => {
         const o = row.opportunity;
         return <tr key={o.id} className={`clickable alert-row alert-row-${row.alertCode}`} onClick={() => go(`#/detail/${o.id}`)}><td><Badge tone={row.alertTone}>{row.alertLabel}</Badge></td><td><strong>{o.company_name}</strong><br/><small>{o.regional_nombre || o.sede || '—'}</small></td><td>{o.owner_name || 'Sin comercial'}</td><td><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{o.next_action_at ? fmtDate(o.next_action_at) : 'Sin agenda'}</td><td>{row.inactiveDays === null ? '—' : `${row.inactiveDays} día(s)`}</td><td>{row.alertCode === 'missing' ? 'Programar próxima gestión' : row.alertCode === 'overdue' ? 'Gestionar vencida' : status === 'closing_soon' ? 'Preparar decisión / cierre' : status === 'high_value_stalled' ? 'Escalar bloqueo comercial' : row.alertCode === 'stalled' ? 'Revisar sustentación' : row.action.detail}</td></tr>;
       })}</tbody></table></div>
