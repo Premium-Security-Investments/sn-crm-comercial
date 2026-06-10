@@ -31,6 +31,14 @@ const requiredMainMarkers = [
   'Gestión vencida',
   'Cierre próximo',
   'Alto valor estancado',
+  'managerAlertRoute',
+  "managerAlertRoute('missing')",
+  "managerAlertRoute('overdue')",
+  "managerAlertRoute('closing_soon')",
+  "managerAlertRoute('high_value_stalled')",
+  'Disciplina de agenda',
+  'Forecast ponderado',
+  'Cumplimiento meta mes',
   'Pipeline total',
   'Pipeline gestionado',
   'Pipeline en riesgo',
@@ -93,6 +101,8 @@ assert.ok(main.includes('Math.max(58, Math.min(100, 46 + pct * 0.8))'), 'Funnel 
 assert.ok(main.includes('sales-meter'), 'Monthly pulse should include a visual sales meter');
 assert.ok(!main.includes('<h2>{actionText}</h2>'), 'Hero should not render the full action sentence as an oversized headline');
 assert.ok(!main.includes('<strong>{actionText}</strong>'), 'Right action panel should not duplicate the hero priority sentence');
+assert.ok(!main.includes('<small>Gestiones vencidas</small><strong className="numeric-value">{overdueRows.length}</strong>'), 'Executive signals should not repeat overdue count already shown in priority cards');
+assert.ok(!main.includes('<small>Oportunidades sin agenda</small><strong className="numeric-value">{missingAgendaRows.length}</strong>'), 'Executive signals should not repeat missing agenda count already shown in priority cards');
 assert.ok(css.includes('clamp(26px,2.4vw,38px)'), 'Command hero headline must use a readable bounded size, not billboard typography');
 
 console.log('manager-command-center static checks passed');
