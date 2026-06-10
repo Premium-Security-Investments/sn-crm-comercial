@@ -35,6 +35,7 @@ type TenderPrimaryFilter = 'todas' | TenderSection | Exclude<TenderFastFilter, n
 type TenderDeadlineFilter = 'todas' | '0_7' | '8_15' | '16_30' | 'vencida' | 'sin_fecha';
 type TenderValueFilter = 'todas' | 'sin_valor' | 'lt_50m' | '50m_500m' | '500m_plus' | '1000m_plus';
 type TenderScoreFilter = 'todas' | 'alto' | 'medio' | 'bajo';
+type TenderSortKey = 'deadline' | 'value' | 'score' | 'entity' | 'source';
 type PublicTender = { id: string; stable_key?: string; source: string; section: TenderSection; internal_status?: TenderInternalStatus; converted_opportunity_id?: string | null; reviewed_at?: string | null; detected_at?: string | null; last_seen_at?: string | null; entity: string; dept?: string; city?: string; ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string; category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null; score: number; reasons: string[]; risks: string[]; url?: string };
 type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string; count?: number; message?: string };
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
@@ -401,6 +402,16 @@ function SortableTh<K extends string>({ label, sortKey, sortConfig, onSort }: { 
   return <th aria-sort={active ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}><button type="button" className={`sortable-th ${active ? 'active' : ''}`} onClick={() => onSort(sortKey)} title={`Ordenar por ${label}`}>{label}<span className="sort-indicator">{active ? (sortConfig.direction === 'asc' ? '▲' : '▼') : '↕'}</span></button></th>;
 }
 function nextSort<K extends string>(current: SortConfig<K>, key: K): SortConfig<K> { return current.key === key ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' }; }
+function sortTenderCards(rows: PublicTender[], tenderSortKey: TenderSortKey, tenderSortDirection: SortDirection) {
+  const tenderSortValue = (t: PublicTender): string | number => {
+    if (tenderSortKey === 'value') return Number(t.value || 0);
+    if (tenderSortKey === 'score') return Number(t.score || 0);
+    if (tenderSortKey === 'entity') return t.entity || '';
+    if (tenderSortKey === 'source') return t.source || '';
+    return t.deadline || '';
+  };
+  return [...rows].sort((a, b) => compareSortValues(tenderSortValue(a), tenderSortValue(b), tenderSortDirection));
+}
 
 function OpportunityList({ data }: { data: Bootstrap }) {
   const [q, setQ] = useState(hashQueryParam('q')); const [owner, setOwner] = useState(hashQueryParam('owner')); const [regional, setRegional] = useState(hashQueryParam('regional')); const [stage, setStage] = useState(hashQueryParam('stage')); const [service, setService] = useState(hashQueryParam('service')); const [onlyActive, setOnlyActive] = useState(hashQueryParam('active') !== 'all');
@@ -523,6 +534,8 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
   const [deadlineFilter, setDeadlineFilter] = useState<TenderDeadlineFilter>('todas');
   const [valueFilter, setValueFilter] = useState<TenderValueFilter>('todas');
   const [scoreFilter, setScoreFilter] = useState<TenderScoreFilter>('todas');
+  const [tenderSortKey, setTenderSortKey] = useState<TenderSortKey>('deadline');
+  const [tenderSortDirection, setTenderSortDirection] = useState<SortDirection>('asc');
   const focusTenderId = hashQueryParam('tender');
   const load = async () => {
     setLoading(true); setError(null);
@@ -640,6 +653,11 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     if (config?.valueFilter) setValueFilter(config.valueFilter);
     if (config?.scoreFilter) setScoreFilter(config.scoreFilter);
   };
+  const applyTenderSortPreset = (preset: string) => {
+    const [key, direction] = preset.split(':') as [TenderSortKey, SortDirection];
+    setTenderSortKey(key);
+    setTenderSortDirection(direction);
+  };
   const rows = payload.tenders.filter(t => {
     const status = t.internal_status || 'nueva';
     const value = Number(t.value || 0);
@@ -652,7 +670,7 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     const matchesScore = scoreFilter === 'todas' || (scoreFilter === 'alto' && score >= 70) || (scoreFilter === 'medio' && score >= 40 && score < 70) || (scoreFilter === 'bajo' && score < 40);
     return (!priorityFilterActive || prioritizable) && matchesQuick && (section === 'todas' || t.section === section) && (internalStatus === 'todas' || status === internalStatus) && (sourceFilter === 'todas' || t.source === sourceFilter) && (deadlineFilter === 'todas' || deadlineBucket === deadlineFilter) && matchesValue && matchesScore && (!q || `${t.entity} ${t.city||''} ${t.dept||''} ${t.title} ${t.ref||''} ${t.source}`.toLowerCase().includes(q.toLowerCase()));
   });
-  const grouped = { hacer: rows.filter(t => t.section === 'hacer'), revisar: rows.filter(t => t.section === 'revisar'), descartar: rows.filter(t => t.section === 'descartar') };
+  const sortedRows = sortTenderCards(rows, tenderSortKey, tenderSortDirection);
   const activeTenderFilterChips = [
     quickFilter ? { key: 'quick', label: quickFilter === 'hacer' ? 'KPI: Hacer hoy' : quickFilter === 'en_revision' ? 'KPI: En revisión' : quickFilter === 'high_value' ? 'KPI: Alto valor' : 'KPI: Convertidas', clear: () => setQuickFilter(null) } : null,
     fastFilter ? { key: 'fast', label: `Rápido: ${tenderFastFilterConfig[fastFilter].label}`, clear: () => setFastFilter(null) } : null,
@@ -683,8 +701,9 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     <p className="muted action-explainer">Recargar vista actualiza los datos guardados en el CRM. Sincronizar fuentes oficiales consulta SECOP I, SECOP II, TVEC y ESU Contratación, persiste novedades y puede tardar más.</p>
     {payload.diagnostics?.length ? <div className="notice"><strong>Diagnóstico de fuentes:</strong> {payload.diagnostics.map(d => `${d.source}: ${d.message || d.status}`).join(' · ')}</div> : null}
     <div className="filter-summary"><span>Mostrando {rows.length} de {payload.tenders.length} procesos · Filtros activos: {activeTenderFilterChips.length ? activeTenderFilterChips.length : 'ninguno'}</span>{activeTenderFilterChips.length ? <div className="filter-chips">{activeTenderFilterChips.map(chip => <button className="filter-chip" key={chip.key} onClick={chip.clear}>{chip.label} ×</button>)}</div> : null}</div>
+    <div className="filters tender-sort-controls"><span className="filter-label">Ordenar por</span><Select value={`${tenderSortKey}:${tenderSortDirection}`} onChange={applyTenderSortPreset} options={[["deadline:asc","Cierre más próximo"],["deadline:desc","Cierre más lejano"],["value:desc","Mayor valor primero"],["value:asc","Menor valor primero"],["score:desc","Score alto primero"],["score:asc","Score bajo primero"],["entity:asc","Entidad A-Z"],["entity:desc","Entidad Z-A"],["source:asc","Fuente A-Z"]]} empty="Ordenar por"/><button className="secondary" type="button" onClick={() => setTenderSortDirection(current => current === 'asc' ? 'desc' : 'asc')}>{tenderSortDirection === 'asc' ? 'Ascendente' : 'Descendente'}</button></div>
     <div className="notice tender-classification-note"><strong>Cómo leer la bandeja:</strong> “Hacer hoy” prioriza procesos con mejor encaje, valor o urgencia; “Revisar” reúne señales útiles que requieren validación; “Descartar” conserva trazabilidad de falsos positivos o bajo encaje.</div>
-    <TenderUnifiedBoard rows={rows} focusTenderId={focusTenderId} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} />
+    <TenderUnifiedBoard rows={sortedRows} focusTenderId={focusTenderId} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} />
   </section>;
 }
 function TenderUnifiedBoard({ rows, focusTenderId, onCreate, onStatus, creatingId }: { rows: PublicTender[]; focusTenderId?: string; onCreate: (tender: PublicTender) => void; onStatus: (tender: PublicTender, status: TenderInternalStatus) => void; creatingId: string | null }) {

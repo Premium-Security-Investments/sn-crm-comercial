@@ -82,6 +82,15 @@ assert(src.includes('primaryTenderFilter'), 'La UI debe tener un filtro principa
 assert(src.includes('TenderUnifiedBoard'), 'Licitaciones debe usar una sola vista unificada de tarjetas operativas.');
 assert(src.includes('Vista unificada de licitaciones'), 'La UI debe comunicar que la bandeja fue unificada.');
 assert(!src.includes('<TenderTable rows='), 'No debe alternar entre tabla y tarjetas según el filtro; usar una sola forma de mostrar datos.');
+assert(src.includes('TenderSortKey'), 'Las tarjetas de licitaciones deben tener tipo de ordenamiento propio.');
+assert(src.includes('tenderSortKey'), 'La vista unificada debe guardar el campo por el que ordena tarjetas.');
+assert(src.includes('tenderSortDirection'), 'La vista unificada debe permitir alternar dirección ascendente/descendente.');
+assert(src.includes('sortTenderCards'), 'Debe existir función dedicada para ordenar tarjetas filtradas.');
+assert(src.includes('Ordenar por'), 'La UI debe mostrar controles de ordenamiento para las tarjetas.');
+assert(src.includes('Mayor valor primero'), 'Debe permitir ordenar por valor descendente.');
+assert(src.includes('Cierre más próximo'), 'Debe permitir ordenar por cierre próximo.');
+assert(src.includes('Entidad A-Z'), 'Debe permitir ordenar alfabéticamente por entidad.');
+assert(src.includes('Score alto primero'), 'Debe permitir ordenar por score descendente.');
 
 for (const file of [server, api]) {
   assert(file.includes('canViewTenders'), 'API debe tener guard canViewTenders.');
