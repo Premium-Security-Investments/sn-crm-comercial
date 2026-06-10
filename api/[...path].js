@@ -461,17 +461,28 @@ function dbTenderToPublic(row) {
   };
 }
 async function readPersistedTenderRadar(database) {
-  const { data, error } = await database.from('psi_public_tenders').select('*').order('last_seen_at', { ascending: false }).limit(250);
+  const latestRunResult = await database.from('psi_tender_radar_runs').select('run_at,mode').order('run_at', { ascending: false }).limit(1).maybeSingle();
+  if (latestRunResult.error && !isMissingTenderTable(latestRunResult.error)) throw latestRunResult.error;
+  const latestRunAt = latestRunResult.data?.run_at || null;
+  const cutoff = latestRunAt;
+  let query = database.from('psi_public_tenders').select('*').order('last_seen_at', { ascending: false }).limit(250);
+  if (cutoff) query = query.gte('last_seen_at', cutoff);
+  let { data, error } = await query;
   if (error) {
     if (isMissingTenderTable(error)) return null;
     throw error;
+  }
+  if ((!data || !data.length) && cutoff) {
+    const fallback = await database.from('psi_public_tenders').select('*').order('last_seen_at', { ascending: false }).limit(250);
+    if (fallback.error) throw fallback.error;
+    data = fallback.data || [];
   }
   const rows = (data || []).map(dbTenderToPublic).sort((a,b) => {
     const statusOrder = { nueva: 0, en_revision: 1, convertida_oportunidad: 2, descartada: 3 };
     const sectionOrder = { hacer: 0, revisar: 1, descartar: 2 };
     return (statusOrder[a.internal_status] ?? 9) - (statusOrder[b.internal_status] ?? 9) || sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score;
   });
-  return radarPayload(rows, rows[0]?.last_seen_at || new Date().toISOString(), 'supabase', [{ source: 'Supabase', status: 'ok', count: rows.length, message: 'Radar historizado' }]);
+  return radarPayload(rows, latestRunAt || rows[0]?.last_seen_at || new Date().toISOString(), 'supabase', [{ source: 'Supabase', status: 'ok', count: rows.length, message: latestRunAt ? `Radar historizado desde última corrida (${latestRunResult.data?.mode || 'run'})` : 'Radar historizado' }]);
 }
 async function enrichLiveTendersWithConversions(database, tenders) {
   const keys = tenders.map(t => `secop_radar:${t.source}:${stableTenderKey(t)}`);

@@ -31,6 +31,9 @@ El radar de licitaciones debe contemplar:
 - SECOP I
 - SECOP II
 - TVEC / Colombia Compra
+- ESU Contratación (`source: "ESU Contratación"`)
+
+Para ESU, incluir especialmente procesos de seguridad, vigilancia, tecnología, CCTV, software, radiocomunicaciones, CAD/SIES/123, movilidad, infraestructura tecnológica y soluciones urbanas. No confiar únicamente en estado “Convocado”: validar fecha de cierre y documentos asociados antes de recomendar Hacer/Revisar.
 
 ## Tablas principales en Supabase
 
@@ -140,14 +143,16 @@ Hermes debe:
 1. Ejecutar el cron diario.
 2. Llamar el motor oficial.
 3. Verificar que el motor guarde en Supabase.
-4. Preparar y enviar el resumen corto al canal de PSI Comercial.
+4. Preparar y enviar el resumen corto al canal de PSI Comercial `<#1507243583143673907>`.
 5. Reportar errores de ejecución si el radar falla.
+
+El canal Discord sigue siendo el punto de notificación diaria para Juan/equipo; no es la fuente maestra. La fuente maestra operativa es Supabase y el CRM.
 
 ## Flujo esperado de punta a punta
 
 ```text
 1. Cron diario de Hermes inicia el radar.
-2. El motor oficial consulta SECOP I, SECOP II y TVEC.
+2. El motor oficial consulta SECOP I, SECOP II, TVEC y ESU Contratación.
 3. El motor normaliza, clasifica y calcula stable_key.
 4. El motor hace upsert en psi_public_tenders.
 5. El motor registra corrida en psi_tender_radar_runs.
