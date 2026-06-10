@@ -1553,15 +1553,20 @@ function topGroup(values: string[]) {
 
 function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) {
   const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth() + 1);
-  const [ownerId, setOwnerId] = useState(data.currentProfile.role === 'comercial' ? data.currentProfile.id : (data.profiles[0]?.id || ''));
   const canEditGoals = canManageGoals(data.currentProfile);
+  const defaultEditOwnerId = data.currentProfile.role === 'comercial' ? data.currentProfile.id : (data.profiles[0]?.id || '');
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth() + 1);
+  const [viewOwnerId, setViewOwnerId] = useState(data.currentProfile.role === 'comercial' ? data.currentProfile.id : '');
+  const [editYear, setEditYear] = useState(today.getFullYear());
+  const [editMonth, setEditMonth] = useState(today.getMonth() + 1);
+  const [editOwnerId, setEditOwnerId] = useState(defaultEditOwnerId);
   const [status, setStatus] = useState('');
   const [businessUnitSortConfig, setBusinessUnitSortConfig] = useState<SortConfig<'unit'|'rule'|'team'|'sales'|'quotes'|'status'>>({ key: 'unit', direction: 'asc' });
   const [complianceSortConfig, setComplianceSortConfig] = useState<SortConfig<'indicator'|'month'|'quarter'|'semester'|'year'>>({ key: 'indicator', direction: 'asc' });
-  const periodMonth = `${year}-${String(month).padStart(2, '0')}-01`;
-  const existing = data.goals.find(g => g.user_id === ownerId && String(g.period_month).slice(0, 7) === periodMonth.slice(0, 7));
+  const viewPeriodMonth = `${viewYear}-${String(viewMonth).padStart(2, '0')}-01`;
+  const editPeriodMonth = `${editYear}-${String(editMonth).padStart(2, '0')}-01`;
+  const existing = data.goals.find(g => g.user_id === editOwnerId && String(g.period_month).slice(0, 7) === editPeriodMonth.slice(0, 7));
   const [form, setForm] = useState({ sales_budget: '', prospect_target: '', quote_target: '' });
 
   useEffect(() => {
@@ -1570,12 +1575,14 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
       prospect_target: existing ? String(Number(existing.prospect_target || 0)) : '',
       quote_target: existing ? String(Number(existing.quote_target || 0)) : '',
     });
-  }, [existing?.id, ownerId, year, month]);
+  }, [existing?.id, editOwnerId, editYear, editMonth]);
 
-  const ownerName = data.profiles.find(p => p.id === ownerId)?.full_name || 'Seleccionar asesor';
-  const periods = buildCompliancePeriods(year, month);
-  const rows = buildComplianceRows(data, ownerId, periods);
-  const businessUnitRows = businessUnitRuleRows(data, periodMonth);
+  const viewOwnerName = viewOwnerId ? (data.profiles.find(p => p.id === viewOwnerId)?.full_name || 'Seleccionar asesor') : 'Todos los asesores';
+  const editOwnerName = data.profiles.find(p => p.id === editOwnerId)?.full_name || 'Seleccionar asesor';
+  const periods = buildCompliancePeriods(viewYear, viewMonth);
+  const rows = buildComplianceRows(data, viewOwnerId, periods);
+  const businessUnitRows = businessUnitRuleRows(data, viewPeriodMonth);
+  const missingGoals = data.profiles.filter(profile => !data.goals.some(g => g.user_id === profile.id && String(g.period_month).slice(0, 7) === editPeriodMonth.slice(0, 7)));
   const sortedBusinessUnitRuleRows = [...businessUnitRows].sort((a,b) => {
     const value = (row: typeof businessUnitRows[number]) => businessUnitSortConfig.key === 'unit' ? row.label : businessUnitSortConfig.key === 'rule' ? row.rule : businessUnitSortConfig.key === 'team' ? row.profiles : businessUnitSortConfig.key === 'sales' ? row.sales : businessUnitSortConfig.key === 'quotes' ? row.quotes : Number(row.pct ?? -1);
     return compareSortValues(value(a), value(b), businessUnitSortConfig.direction);
@@ -1588,16 +1595,16 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
   const sortComplianceBy = (key: typeof complianceSortConfig.key) => setComplianceSortConfig(current => nextSort(current, key));
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    setStatus('Guardando presupuesto…');
+    setStatus('Guardando metas…');
     try {
       await api<SalesGoal>('/api/goals', { method: 'PUT', body: JSON.stringify({
-        user_id: ownerId,
-        period_month: periodMonth,
+        user_id: editOwnerId,
+        period_month: editPeriodMonth,
         sales_budget: Number(form.sales_budget || 0),
         prospect_target: Number(form.prospect_target || 0),
         quote_target: Number(form.quote_target || 0),
       }) });
-      setStatus('Presupuesto guardado.');
+      setStatus('Metas guardadas.');
       await refresh();
     } catch (err) {
       setStatus(err instanceof Error ? err.message : String(err));
@@ -1609,53 +1616,60 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
       <div>
         <span className="eyebrow">Metas Comerciales y Cumplimiento</span>
         <h2>Presupuesto, gestión y avance acumulado por asesor</h2>
-        <p>{canEditGoals ? 'Configuración mensual para gerencia y lectura automática del cumplimiento.' : 'Consulta de tus metas y cumplimiento comercial.'}</p>
+        <p>{canEditGoals ? 'Consulta gerencial separada de la carga administrativa de metas.' : 'Consulta de tus metas y cumplimiento comercial.'}</p>
       </div>
       <div className="hero-facts">
-        <div><small>Asesor seleccionado</small><strong>{ownerName}</strong></div>
-        <div><small>Periodo de carga</small><strong>{monthName(month)} {year}</strong></div>
+        <div><small>Vista seleccionada</small><strong>{viewOwnerName}</strong></div>
+        <div><small>Período de consulta</small><strong>{monthName(viewMonth)} {viewYear}</strong></div>
         <div><small>Metas cargadas</small><strong>{data.goals.length}</strong></div>
       </div>
     </section>
 
-    <div className="grid goals-layout">
-      <Panel title={canEditGoals ? 'Panel de configuración gerencial' : 'Mis metas'}>
-        <form className="form goals-form" onSubmit={save}>
-          <div className="grid three compact-grid">
-            <label>Año<input type="number" min="2024" max="2035" value={year} onChange={e=>setYear(Number(e.target.value || today.getFullYear()))}/></label>
-            <label>Mes<Select value={String(month)} onChange={v=>setMonth(Number(v))} options={Array.from({ length: 12 }, (_, i) => [String(i + 1), monthName(i + 1)])} empty="Mes"/></label>
-            <label>Asesor comercial<Select value={ownerId} onChange={setOwnerId} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Seleccionar asesor"/></label>
-          </div>
-          <label>Presupuesto aprobado / ventas<input disabled={!canEditGoals} type="number" min="0" value={form.sales_budget} onChange={e=>setForm({...form, sales_budget:e.target.value})} placeholder="Ej: 250000000"/></label>
-          <label>Prospectos nuevos<input disabled={!canEditGoals} type="number" min="0" value={form.prospect_target} onChange={e=>setForm({...form, prospect_target:e.target.value})} placeholder="Ej: 20"/></label>
-          <label>Propuestas / cotizaciones<input disabled={!canEditGoals} type="number" min="0" value={form.quote_target} onChange={e=>setForm({...form, quote_target:e.target.value})} placeholder="Ej: 12"/></label>
-          {canEditGoals && <button disabled={!ownerId}>Guardar Presupuesto</button>}
-          {status && <small>{status}</small>}
-          <p className="muted">Los permisos activos dependen del rol asignado al usuario autenticado.</p>
-        </form>
-      </Panel>
+    <Panel title="Filtros de consulta">
+      <div className="grid three compact-grid goals-view-filters">
+        <label>Año<input type="number" min="2024" max="2035" value={viewYear} onChange={e=>setViewYear(Number(e.target.value || today.getFullYear()))}/></label>
+        <label>Mes<Select value={String(viewMonth)} onChange={v=>setViewMonth(Number(v))} options={Array.from({ length: 12 }, (_, i) => [String(i + 1), monthName(i + 1)])} empty="Mes"/></label>
+        <label>Asesor comercial<Select value={viewOwnerId} onChange={setViewOwnerId} options={data.profiles.map(p=>[p.id,p.full_name])} empty={canEditGoals ? 'Todos los asesores' : 'Seleccionar asesor'} disabled={!canEditGoals && data.currentProfile.role === 'comercial'}/></label>
+      </div>
+      <p className="muted">Estos filtros solo cambian la lectura del cumplimiento; no modifican metas guardadas.</p>
+    </Panel>
 
-      <Panel title="Lectura de negocio">
-        <div className="insight-list">
-          <div><small>Real presupuesto</small><strong>Ventas aprobadas</strong><span>Oportunidades en estado Aprobado/Ganado.</span></div>
-          <div><small>Real gestión</small><strong>Prospectos nuevos</strong><span>Oportunidades del mes que están en etapa Prospecto.</span></div>
-          <div><small>Real preventa</small><strong>Propuestas / cotizaciones</strong><span>Oportunidades que llegaron a Envío de oferta o etapa posterior.</span></div>
-        </div>
-      </Panel>
-    </div>
+    <Panel title="Lectura de negocio">
+      <div className="insight-list">
+        <div><small>Real presupuesto</small><strong>Ventas aprobadas</strong><span>Oportunidades en estado Aprobado/Ganado.</span></div>
+        <div><small>Real gestión</small><strong>Prospectos nuevos</strong><span>Oportunidades del mes que están en etapa Prospecto.</span></div>
+        <div><small>Real preventa</small><strong>Propuestas / cotizaciones</strong><span>Oportunidades que llegaron a Envío de oferta o etapa posterior.</span></div>
+      </div>
+    </Panel>
 
     <Panel title="Reglas comerciales por unidad">
-      <p className="muted">Estas reglas viven en Metas y cumplimiento para evitar más ventanas. Usan las metas reales cargadas por asesor y se agrupan por área comercial.</p>
+      <p className="muted">Usan el período de consulta seleccionado y las metas reales cargadas por asesor, agrupadas por área comercial.</p>
       <div className="business-unit-rules tablewrap"><table><thead><tr><SortableTh label="Unidad" sortKey="unit" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/><SortableTh label="Regla operativa" sortKey="rule" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/><SortableTh label="Equipo" sortKey="team" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/><SortableTh label="Ventas vs meta" sortKey="sales" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/><SortableTh label="Cotizaciones vs meta" sortKey="quotes" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/><SortableTh label="Estado" sortKey="status" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/></tr></thead><tbody>{sortedBusinessUnitRuleRows.map(row => <tr key={row.area}><td><strong>{row.label}</strong></td><td>{row.rule}</td><td>{row.profiles} asesor(es)</td><td>{fmtMoneyCompact(row.sales)} / {fmtMoneyCompact(row.salesGoal)}</td><td>{row.quotes} / {row.quotesGoal}</td><td><Badge tone={goalStatusTone(row.pct)}>{row.pct === null ? 'Sin meta' : `${row.pct}%`}</Badge></td></tr>)}</tbody></table></div>
     </Panel>
 
-    <Panel title={`Panel de cumplimiento · ${ownerName}`}>
+    <Panel title={`Panel de cumplimiento · ${viewOwnerName}`}>
       <div className="compliance-legend"><span className="dot danger"/> Rojo &lt;80% <span className="dot warn"/> Amarillo 80–99% <span className="dot good"/> Verde ≥100%</div>
       <div className="tablewrap compliance-table"><table><thead><tr><SortableTh label="Indicador" sortKey="indicator" sortConfig={complianceSortConfig} onSort={sortComplianceBy}/>{periods.map(p => <SortableTh key={p.key} label={p.label} sortKey={p.key as typeof complianceSortConfig.key} sortConfig={complianceSortConfig} onSort={sortComplianceBy}/>)}</tr></thead><tbody>{sortedComplianceRows.map(row => <tr key={row.label}><td><strong>{row.label}</strong><br/><small>{row.description}</small></td>{periods.map(period => {
         const cell = row.values[period.key];
         return <td key={period.key} className={`compliance-cell ${goalStatusTone(cell.pct)}`}><strong>{formatGoalValue(row.kind, cell.goal)} / {formatGoalValue(row.kind, cell.actual)}</strong><span>{cell.pct === null ? 'Sin meta' : `${cell.pct}%`}</span></td>;
       })}</tr>)}</tbody></table></div>
     </Panel>
+
+    {canEditGoals && <Panel title="Cargar o editar metas">
+      <form className="form goals-form" onSubmit={save}>
+        <div className="grid three compact-grid">
+          <label>Año de la meta<input type="number" min="2024" max="2035" value={editYear} onChange={e=>setEditYear(Number(e.target.value || today.getFullYear()))}/></label>
+          <label>Mes de la meta<Select value={String(editMonth)} onChange={v=>setEditMonth(Number(v))} options={Array.from({ length: 12 }, (_, i) => [String(i + 1), monthName(i + 1)])} empty="Mes"/></label>
+          <label>Asesor a configurar<Select value={editOwnerId} onChange={setEditOwnerId} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Seleccionar asesor"/></label>
+        </div>
+        <p className="muted"><strong>{existing ? 'Editando meta existente' : 'Nueva meta'}</strong> para {editOwnerName} · {monthName(editMonth)} {editYear}.</p>
+        <label>Presupuesto aprobado / ventas<input type="number" min="0" value={form.sales_budget} onChange={e=>setForm({...form, sales_budget:e.target.value})} placeholder="Ej: 250000000"/></label>
+        <label>Prospectos nuevos<input type="number" min="0" value={form.prospect_target} onChange={e=>setForm({...form, prospect_target:e.target.value})} placeholder="Ej: 20"/></label>
+        <label>Propuestas / cotizaciones<input type="number" min="0" value={form.quote_target} onChange={e=>setForm({...form, quote_target:e.target.value})} placeholder="Ej: 12"/></label>
+        <div className="formactions"><button disabled={!editOwnerId}>Guardar metas</button>{status && <span>{status}</span>}</div>
+        <p className="muted">Metas pendientes de cargar para {monthName(editMonth)} {editYear}: <strong>{missingGoals.length}</strong>{missingGoals.length ? ` · ${missingGoals.slice(0, 4).map(p => p.full_name).join(', ')}${missingGoals.length > 4 ? '…' : ''}` : ''}</p>
+      </form>
+    </Panel>}
   </section>;
 }
 
@@ -1681,13 +1695,14 @@ function buildComplianceRows(data: Bootstrap, ownerId: string, periods: Complian
     { label: 'Prospectos nuevos', description: 'Clientes u oportunidades nuevas en etapa prospecto.', kind: 'count' as const, goalField: 'prospect_target' as const, actualField: 'prospectos' as const },
     { label: 'Propuestas / cotizaciones', description: 'Ofertas presentadas o etapas posteriores.', kind: 'count' as const, goalField: 'quote_target' as const, actualField: 'cotizaciones' as const },
   ];
+  const ownerName = data.profiles.find(p => p.id === ownerId)?.full_name || '';
   return rows.map(row => ({ ...row, values: Object.fromEntries(periods.map(period => {
     const goal = data.goals
-      .filter(g => g.user_id === ownerId && period.months.includes(String(g.period_month).slice(0, 7)))
+      .filter(g => (!ownerId || g.user_id === ownerId) && period.months.includes(String(g.period_month).slice(0, 7)))
       .reduce((sum, g) => sum + Number(g[row.goalField] || 0), 0);
     const actual = data.monthlyKpis
-      .filter(k => (k.owner_id ? k.owner_id === ownerId : true) && period.months.includes(String(k.period_month).slice(0, 7)))
-      .filter(k => k.owner_id || (data.profiles.find(p => p.id === ownerId)?.full_name || '') === (k.owner_name || ''))
+      .filter(k => period.months.includes(String(k.period_month).slice(0, 7)))
+      .filter(k => !ownerId || (k.owner_id ? k.owner_id === ownerId : ownerName === (k.owner_name || '')))
       .reduce((sum, k) => sum + Number(k[row.actualField] || 0), 0);
     const pct = goal > 0 ? Math.round((actual / goal) * 100) : null;
     return [period.key, { goal, actual, pct } as ComplianceCell];
