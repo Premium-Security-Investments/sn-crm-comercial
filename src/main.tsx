@@ -1296,18 +1296,26 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
 }
 
 
-type CentinelResult = { title: string; summary: string; rows: Opportunity[]; tenderRows?: PublicTender[]; cards: Array<{ label: string; value: string; detail: string }>; mode: 'alerts' | 'pipeline' | 'goals' | 'stalled' | 'large' | 'risk' | 'tenders' | 'search' };
+type CentinelOwnerSummaryRow = { owner: string; count: number; value: number; nextStep: string };
+type CentinelGoalComplianceRow = { owner: string; period: string; budget: number; approved: number; compliance: number; gap: number };
+type CentinelResult = { title: string; summary: string; rows: Opportunity[]; tenderRows?: PublicTender[]; ownerSummaryRows?: CentinelOwnerSummaryRow[]; goalComplianceRows?: CentinelGoalComplianceRow[]; cards: Array<{ label: string; value: string; detail: string }>; mode: 'alerts' | 'pipeline' | 'goals' | 'stalled' | 'large' | 'risk' | 'tenders' | 'search' };
 
-const centinelQuickActions = [
-  { label: 'Oportunidades sin agenda', prompt: 'Muéstrame oportunidades sin agenda por comercial' },
-  { label: 'Pipeline por etapa', prompt: 'Muéstrame pipeline por etapa y valor ponderado' },
-  { label: 'Cumplimiento de metas', prompt: 'Muéstrame cumplimiento de metas por comercial' },
-  { label: 'Clientes en sustentación', prompt: 'Muéstrame clientes en sustentación con días sin seguimiento' },
-  { label: 'Próximas gestiones', prompt: 'Muéstrame próximas gestiones de esta semana' },
-  { label: 'Oportunidades grandes', prompt: 'Muéstrame oportunidades grandes en negociación o sustentación' },
-  { label: 'Licitaciones para revisar hoy', prompt: 'Qué licitaciones debe revisar Katherine hoy' },
-  { label: 'Licitaciones alto valor', prompt: 'Qué licitaciones de alto valor siguen sin decisión' },
-  { label: 'Licitaciones convertidas', prompt: 'Qué licitaciones se convirtieron en oportunidad' },
+const centinelQuickActionGroups = [
+  { title: 'Consultas comerciales', actions: [
+    { label: 'Oportunidades sin agenda', prompt: 'Muéstrame oportunidades sin agenda por comercial' },
+    { label: 'Pipeline por etapa', prompt: 'Muéstrame pipeline por etapa y valor ponderado' },
+    { label: 'Clientes en sustentación', prompt: 'Muéstrame clientes en sustentación con días sin seguimiento' },
+    { label: 'Próximas gestiones', prompt: 'Muéstrame próximas gestiones de esta semana' },
+    { label: 'Oportunidades grandes', prompt: 'Muéstrame oportunidades grandes en negociación o sustentación' },
+  ]},
+  { title: 'Gestión gerencial', actions: [
+    { label: 'Cumplimiento de metas', prompt: 'Muéstrame cumplimiento de metas por comercial' },
+  ]},
+  { title: 'Licitaciones', actions: [
+    { label: 'Licitaciones para revisar hoy', prompt: 'Qué licitaciones debe revisar Katherine hoy' },
+    { label: 'Licitaciones alto valor', prompt: 'Qué licitaciones de alto valor siguen sin decisión' },
+    { label: 'Licitaciones convertidas', prompt: 'Qué licitaciones se convirtieron en oportunidad' },
+  ]},
 ];
 
 function isLargeOpportunityQuery(q: string) {
@@ -1343,7 +1351,7 @@ function tenderDecisionPriority(tender: PublicTender) {
 function interpretTenderCentinelQuery(query: string, centinelTenderPayload: TenderRadarPayload | null): CentinelResult {
   const q = query.toLowerCase();
   if (!centinelTenderPayload) {
-    return { mode: 'tenders', title: 'Cargar licitaciones para Vig-IA', summary: 'Vig-IA necesita cargar el radar de licitaciones antes de responder esta pregunta. Usa el botón de recarga o abre la pestaña Licitaciones si no tienes permisos.', rows: [], tenderRows: [], cards: [
+    return { mode: 'tenders', title: 'Radar de licitaciones no disponible', summary: 'Vig-IA no tiene el radar de licitaciones cargado todavía. La consulta comercial sigue disponible; para licitaciones intenta reintentar la carga o abre el radar.', rows: [], tenderRows: [], cards: [
       { label: 'Radar', value: 'Sin cargar', detail: 'Datos SECOP/Supabase no disponibles todavía' },
       { label: 'Modo', value: 'Solo lectura', detail: 'No modifica estados ni oportunidades' },
       { label: 'Siguiente paso', value: 'Licitaciones', detail: 'Abrir radar de licitaciones' },
@@ -1382,6 +1390,36 @@ function interpretTenderCentinelQuery(query: string, centinelTenderPayload: Tend
   ] };
 }
 
+function buildCentinelOwnerSummaryRows(rows: Opportunity[], nextStep = 'Programar próxima gestión'): CentinelOwnerSummaryRow[] {
+  const grouped = rows.reduce((map, opportunity) => {
+    const owner = opportunity.owner_name || 'Sin comercial';
+    const current = map.get(owner) || { owner, count: 0, value: 0, nextStep };
+    current.count += 1;
+    current.value += Number(opportunity.offer_value || 0);
+    map.set(owner, current);
+    return map;
+  }, new Map<string, CentinelOwnerSummaryRow>());
+  return Array.from(grouped.values()).sort((a,b) => b.count - a.count || b.value - a.value);
+}
+
+function buildCentinelGoalComplianceRows(data: Bootstrap): CentinelGoalComplianceRow[] {
+  return data.goals.map(goal => {
+    const period = String(goal.period_month).slice(0, 7);
+    const approved = data.monthlyKpis
+      .filter(kpi => kpi.owner_id === goal.user_id && String(kpi.period_month).slice(0, 7) === period)
+      .reduce((sum, kpi) => sum + Number(kpi.ventas_aprobadas || 0), 0);
+    const budget = Number(goal.sales_budget || 0);
+    return {
+      owner: data.profiles.find(profile => profile.id === goal.user_id)?.full_name || 'Sin comercial',
+      period,
+      budget,
+      approved,
+      compliance: budget ? Math.round((approved / budget) * 100) : 0,
+      gap: Math.max(0, budget - approved),
+    };
+  }).sort((a,b) => a.compliance - b.compliance || b.gap - a.gap);
+}
+
 function interpretCentinelQuery(query: string, data: Bootstrap, centinelTenderPayload: TenderRadarPayload | null = null): CentinelResult {
   const q = query.toLowerCase();
   if (isTenderQuery(q)) return interpretTenderCentinelQuery(query, centinelTenderPayload);
@@ -1391,7 +1429,7 @@ function interpretCentinelQuery(query: string, data: Bootstrap, centinelTenderPa
   if (q.includes('sin agenda') || q.includes('sin próxima') || q.includes('sin proxima')) {
     const rows = baseRows.filter(r => r.action.code === 'missing').map(r => r.o).sort((a,b) => Number(b.offer_value || 0) - Number(a.offer_value || 0));
     const owners = topGroup(rows.map(o => o.owner_name || 'Sin comercial'));
-    return { mode: 'alerts', title: 'Oportunidades sin agenda', summary: 'Oportunidades activas que todavía no tienen próxima gestión registrada.', rows, cards: [
+    return { mode: 'alerts', title: 'Oportunidades sin agenda', summary: 'Oportunidades activas que todavía no tienen próxima gestión registrada. Primero se muestra el resumen por comercial y luego el detalle.', rows, ownerSummaryRows: buildCentinelOwnerSummaryRows(rows), cards: [
       { label: 'Sin agenda', value: String(rows.length), detail: 'Requieren fecha de próxima gestión' },
       { label: 'Comercial con más casos', value: owners.label, detail: `${owners.count} oportunidades` },
       { label: 'Valor en revisión', value: fmtMoneyCompact(rows.reduce((s,o)=>s+Number(o.offer_value||0),0)), detail: 'Pipeline sin siguiente paso' },
@@ -1435,11 +1473,11 @@ function interpretCentinelQuery(query: string, data: Bootstrap, centinelTenderPa
   }
 
   if (q.includes('meta') || q.includes('cumplimiento') || q.includes('presupuesto')) {
-    const rows = [...active].sort((a,b) => Number(b.offer_value || 0) - Number(a.offer_value || 0)).slice(0, 20);
+    const goalComplianceRows = buildCentinelGoalComplianceRows(data);
     const goalCount = data.goals.length;
     const budget = data.goals.reduce((s,g)=>s+Number(g.sales_budget||0),0);
     const approved = data.monthlyKpis.reduce((s,k)=>s+Number(k.ventas_aprobadas||0),0);
-    return { mode: 'goals', title: 'Cumplimiento de metas', summary: 'Vista segura de metas cargadas y ventas aprobadas. Si faltan metas, Vig-IA lo deja explícito.', rows, cards: [
+    return { mode: 'goals', title: 'Cumplimiento de metas', summary: 'Vista segura de metas cargadas y ventas aprobadas por comercial. La tabla prioriza primero las brechas de cumplimiento.', rows: [], goalComplianceRows, cards: [
       { label: 'Metas cargadas', value: String(goalCount), detail: goalCount ? 'Registros de presupuesto disponibles' : 'Pendiente cargar metas reales' },
       { label: 'Presupuesto registrado', value: fmtMoneyCompact(budget), detail: 'Suma de metas comerciales' },
       { label: 'Ventas aprobadas', value: fmtMoneyCompact(approved), detail: 'Según KPIs mensuales' },
@@ -1456,8 +1494,10 @@ function interpretCentinelQuery(query: string, data: Bootstrap, centinelTenderPa
   }
 
   if (q.includes('próxima') || q.includes('proxima') || q.includes('semana') || q.includes('hoy')) {
-    const rows = baseRows.filter(r => ['today','soon','scheduled','overdue'].includes(r.action.code)).map(r => r.o).sort((a,b) => String(a.next_action_at||'9999').localeCompare(String(b.next_action_at||'9999')));
-    return { mode: 'alerts', title: 'Próximas gestiones', summary: 'Agenda comercial ordenada por fecha de próxima acción.', rows, cards: [
+    const limitToWeek = q.includes('semana');
+    const weekEnd = startOfToday(); weekEnd.setDate(weekEnd.getDate() + 7);
+    const rows = baseRows.filter(r => ['today','soon','scheduled','overdue'].includes(r.action.code) && (!limitToWeek || !r.o.next_action_at || new Date(r.o.next_action_at) <= weekEnd)).map(r => r.o).sort((a,b) => String(a.next_action_at||'9999').localeCompare(String(b.next_action_at||'9999')));
+    return { mode: 'alerts', title: 'Próximas gestiones', summary: limitToWeek ? 'Agenda comercial de esta semana, incluyendo vencidas y próximas gestiones.' : 'Agenda comercial ordenada por fecha de próxima acción.', rows, cards: [
       { label: 'Con agenda', value: String(rows.length), detail: 'Oportunidades con próxima acción' },
       { label: 'Para hoy', value: String(baseRows.filter(r => r.action.code === 'today').length), detail: 'Gestión inmediata' },
       { label: 'Vencidas', value: String(baseRows.filter(r => r.action.code === 'overdue').length), detail: 'Requieren acción urgente' },
@@ -1508,6 +1548,8 @@ function CentinelAssistant({ data }: { data: Bootstrap }) {
   const visibleRows = sortedCentinelOpportunityRows.slice(0, 25);
   const visibleTenderRows = sortedCentinelTenderRows.slice(0, 25);
   const isTenderResult = result.mode === 'tenders';
+  const tenderLoadFailed = canViewTenders(data.currentProfile) && !!centinelTenderStatus && !centinelTenderPayload && !centinelTenderStatus.includes('Cargando');
+  const tenderStatusText = !canViewTenders(data.currentProfile) ? 'Licitaciones sin permiso' : centinelTenderPayload ? 'Licitaciones cargadas' : centinelTenderStatus || 'Cargando licitaciones…';
   return <section className="stack centinel-dashboard">
     <section className="centinel-topline"><h2>Pregúntale a Vig-IA</h2><p>Escribe lo que necesitas ver y Vig-IA te devuelve un reporte comercial seguro.</p></section>
     <section className="centinel-hero">
@@ -1519,27 +1561,26 @@ function CentinelAssistant({ data }: { data: Bootstrap }) {
       <label>¿Qué quieres analizar?</label>
       <textarea className="centinel-textarea" value={query} onChange={e => setQuery(e.target.value)} rows={4} />
       <div className="centinel-actions">
-        <div>{centinelQuickActions.map(action => <button className="centinel-chip" key={action.label} onClick={() => { setQuery(action.prompt); setSubmitted(action.prompt); }}>{action.label}</button>)}</div>
-        <button onClick={() => setSubmitted(query)}>Construir reporte seguro</button>
+        <div className="centinel-action-groups">{centinelQuickActionGroups.map(group => <div className="centinel-action-group" key={group.title}><small>{group.title}</small><div>{group.actions.map(action => <button className={`centinel-chip ${submitted === action.prompt ? 'centinel-chip-active' : ''}`} key={action.label} onClick={() => { setQuery(action.prompt); setSubmitted(action.prompt); }}>{action.label}</button>)}</div></div>)}</div>
+        <button onClick={() => setSubmitted(query)}>Generar reporte</button>
       </div>
-      {canViewTenders(data.currentProfile) && <div className="centinel-tender-actions"><button className="secondary" onClick={loadCentinelTenders}>Cargar licitaciones para Vig-IA</button>{centinelTenderStatus && <small>{centinelTenderStatus}</small>}</div>}
+      <div className="centinel-data-status"><span>Estado de datos</span><strong>CRM actualizado</strong><span>·</span><strong>{tenderStatusText}</strong>{tenderLoadFailed && <button className="secondary" onClick={loadCentinelTenders}>Reintentar carga</button>}</div>
     </section>
     <section className="centinel-result">
       <div className="centinel-result-head"><div><span className="eyebrow">Resultado Vig-IA</span><h2>{result.title}</h2><p>{result.summary}</p></div><button className="secondary" onClick={() => go(isTenderResult ? '#/tenders' : '#/alerts')}>{isTenderResult ? 'Abrir radar de licitaciones' : 'Abrir alertas comerciales'}</button></div>
       <div className="centinel-result-grid">{result.cards.map(card => <div className="centinel-result-card" key={card.label}><small>{card.label}</small><strong>{card.value}</strong><span>{card.detail}</span></div>)}</div>
       {result.mode === 'pipeline' && <StageBars summary={data.summary} />}
-      {isTenderResult ? (
-        <div className="tablewrap centinel-result-table"><table><thead><tr><SortableTh label="Entidad" sortKey="entity" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Sección" sortKey="section" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Estado interno" sortKey="status" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Valor" sortKey="value" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Cierre" sortKey="deadline" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Score" sortKey="score" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/></tr></thead><tbody>{visibleTenderRows.map(t => (
-          <tr key={t.id} className="clickable" onClick={() => go('#/tenders')}><td><strong>{t.entity}</strong><br/><small>{t.ref || t.process_id || t.city || '—'}</small></td><td><Badge tone={t.section === 'hacer' ? 'amber' : t.section === 'descartar' ? 'danger' : 'blue'}>{t.section === 'hacer' ? 'Hacer hoy' : t.section === 'revisar' ? 'Revisar' : 'Validar'}</Badge></td><td><Badge tone={tenderStatusTone(t.internal_status)}>{tenderStatusLabel(t.internal_status)}</Badge></td><td>{fmtMoney(t.value)}</td><td>{fmtDate(t.deadline)}</td><td>{t.score}</td></tr>
-        ))}</tbody></table></div>
-      ) : (
-        <div className="tablewrap centinel-result-table"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Valor" sortKey="value" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Días sin seguimiento" sortKey="inactive" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/></tr></thead><tbody>{visibleRows.map(o => {
-          const action = nextActionStatus(o);
-          const inactive = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
-          return <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.regional_nombre || '—'}</small></td><td>{o.owner_name || 'Sin comercial'}</td><td><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td><Badge tone={action.tone}>{action.label}</Badge><br/><small>{o.next_action_at ? fmtDate(o.next_action_at) : action.detail}</small></td><td>{inactive === null ? '—' : `${inactive} día(s)`}</td></tr>;
-        })}</tbody></table></div>
-      )}
-      <p className="muted">Mostrando {isTenderResult ? visibleTenderRows.length : visibleRows.length} de {isTenderResult ? (result.tenderRows || []).length : result.rows.length} coincidencias. Click en una fila para abrir el detalle.</p>
+      {!!result.ownerSummaryRows?.length && <div className="tablewrap centinel-summary-table"><table><thead><tr><th>Comercial</th><th>Oportunidades</th><th>Valor asociado</th><th>Acción sugerida</th></tr></thead><tbody>{result.ownerSummaryRows.map(row => <tr key={row.owner}><td><strong>{row.owner}</strong></td><td>{row.count}</td><td>{fmtMoney(row.value)}</td><td>{row.nextStep}</td></tr>)}</tbody></table></div>}
+      {!!result.goalComplianceRows?.length && <div className="tablewrap centinel-summary-table"><table><thead><tr><th>Comercial</th><th>Mes</th><th>Meta</th><th>Ventas aprobadas</th><th>Cumplimiento</th><th>Brecha</th></tr></thead><tbody>{result.goalComplianceRows.map(row => <tr key={`${row.owner}-${row.period}`}><td><strong>{row.owner}</strong></td><td>{row.period}</td><td>{fmtMoney(row.budget)}</td><td>{fmtMoney(row.approved)}</td><td><Badge tone={row.compliance >= 100 ? 'success' : row.compliance >= 80 ? 'amber' : 'danger'}>{row.compliance}%</Badge></td><td>{row.gap ? fmtMoney(row.gap) : 'Superada'}</td></tr>)}</tbody></table></div>}
+      {isTenderResult && <div className="tablewrap centinel-result-table"><table><thead><tr><SortableTh label="Entidad" sortKey="entity" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Sección" sortKey="section" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Estado interno" sortKey="status" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Valor" sortKey="value" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Cierre" sortKey="deadline" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Score" sortKey="score" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/></tr></thead><tbody>{visibleTenderRows.map(t => (
+        <tr key={t.id} className="clickable" onClick={() => go('#/tenders')}><td><strong>{t.entity}</strong><br/><small>{t.ref || t.process_id || t.city || '—'}</small></td><td><Badge tone={t.section === 'hacer' ? 'amber' : t.section === 'descartar' ? 'danger' : 'blue'}>{t.section === 'hacer' ? 'Hacer hoy' : t.section === 'revisar' ? 'Revisar' : 'Validar'}</Badge></td><td><Badge tone={tenderStatusTone(t.internal_status)}>{tenderStatusLabel(t.internal_status)}</Badge></td><td>{fmtMoney(t.value)}</td><td>{fmtDate(t.deadline)}</td><td>{t.score}</td></tr>
+      ))}</tbody></table></div>}
+      {!isTenderResult && result.mode !== 'goals' && <div className="tablewrap centinel-result-table"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Valor" sortKey="value" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Días sin seguimiento" sortKey="inactive" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/></tr></thead><tbody>{visibleRows.map(o => {
+        const action = nextActionStatus(o);
+        const inactive = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
+        return <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.regional_nombre || '—'}</small></td><td>{o.owner_name || 'Sin comercial'}</td><td><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td><Badge tone={action.tone}>{action.label}</Badge><br/><small>{o.next_action_at ? fmtDate(o.next_action_at) : action.detail}</small></td><td>{inactive === null ? '—' : `${inactive} día(s)`}</td></tr>;
+      })}</tbody></table></div>}
+      <p className="muted">Mostrando {isTenderResult ? visibleTenderRows.length : result.mode === 'goals' ? (result.goalComplianceRows || []).length : visibleRows.length} de {isTenderResult ? (result.tenderRows || []).length : result.mode === 'goals' ? (result.goalComplianceRows || []).length : result.rows.length} coincidencias. Click en una fila para abrir el detalle.</p>
     </section>
   </section>;
 }
