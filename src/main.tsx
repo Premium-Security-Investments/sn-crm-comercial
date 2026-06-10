@@ -253,7 +253,7 @@ function titleFor(route: Route) {
   if (route.page === 'consultant') return 'Detalle de consultor';
   if (route.page === 'goals') return 'Metas comerciales y cumplimiento';
   if (route.page === 'alerts') return 'Alertas comerciales';
-  if (route.page === 'centinel') return 'Pregúntale a Vig-IA';
+  if (route.page === 'centinel') return 'Vig-IA — Reportes gerenciales';
   if (route.page === 'users') return 'Usuarios y permisos';
   return 'Inicio comercial';
 }
@@ -1551,19 +1551,23 @@ function CentinelAssistant({ data }: { data: Bootstrap }) {
   const tenderLoadFailed = canViewTenders(data.currentProfile) && !!centinelTenderStatus && !centinelTenderPayload && !centinelTenderStatus.includes('Cargando');
   const tenderStatusText = !canViewTenders(data.currentProfile) ? 'Licitaciones sin permiso' : centinelTenderPayload ? 'Licitaciones cargadas' : centinelTenderStatus || 'Cargando licitaciones…';
   return <section className="stack centinel-dashboard">
-    <section className="centinel-topline"><h2>Pregúntale a Vig-IA</h2><p>Escribe lo que necesitas ver y Vig-IA te devuelve un reporte comercial seguro.</p></section>
+    <section className="centinel-topline"><h2>Vig-IA — Reportes gerenciales asistidos</h2><p>Módulo en evolución: hoy organiza reportes seguros del CRM; no es un chat de IA abierto.</p></section>
     <section className="centinel-hero">
       <div className="centinel-orb"><span></span><span></span></div>
-      <div><span className="eyebrow">VIG-IA</span><h2>Pregunta en español. Recibe el resultado.</h2><p>Pide el reporte como lo dirías en comité comercial. Vig-IA consulta pipeline, alertas, metas y seguimiento sin modificar información.</p></div>
-      <div className="centinel-safe"><strong>Solo lectura</strong><small>Reporte seguro sobre datos del CRM</small></div>
+      <div><span className="eyebrow">VIG-IA</span><h2>Selecciona un reporte gerencial</h2><p>Usa los accesos rápidos para revisar pipeline, alertas, metas y licitaciones con una lectura ejecutiva. Vig-IA trabaja en modo solo lectura sobre datos del CRM.</p></div>
+      <div className="centinel-safe"><strong>Solo lectura</strong><small>Reportes asistidos, sin inteligencia generativa conectada todavía</small></div>
     </section>
     <section className="centinel-query-panel">
-      <label>¿Qué quieres analizar?</label>
-      <textarea className="centinel-textarea" value={query} onChange={e => setQuery(e.target.value)} rows={4} />
+      <div className="centinel-assisted-copy"><span className="eyebrow">Reportes disponibles</span><h3>Elige una consulta predefinida</h3><p>Estos botones son la fuente principal por ahora. Mantienen la experiencia honesta mientras conectamos una IA real al CRM.</p></div>
       <div className="centinel-actions">
         <div className="centinel-action-groups">{centinelQuickActionGroups.map(group => <div className="centinel-action-group" key={group.title}><small>{group.title}</small><div>{group.actions.map(action => <button className={`centinel-chip ${submitted === action.prompt ? 'centinel-chip-active' : ''}`} key={action.label} onClick={() => { setQuery(action.prompt); setSubmitted(action.prompt); }}>{action.label}</button>)}</div></div>)}</div>
-        <button onClick={() => setSubmitted(query)}>Generar reporte</button>
       </div>
+      <details className="centinel-manual-query">
+        <summary>Pregunta opcional</summary>
+        <label>Escribe una consulta si coincide con un reporte existente</label>
+        <textarea className="centinel-textarea" value={query} onChange={e => setQuery(e.target.value)} rows={3} />
+        <button onClick={() => setSubmitted(query)}>Generar reporte manual</button>
+      </details>
       <div className="centinel-data-status"><span>Estado de datos</span><strong>CRM actualizado</strong><span>·</span><strong>{tenderStatusText}</strong>{tenderLoadFailed && <button className="secondary" onClick={loadCentinelTenders}>Reintentar carga</button>}</div>
     </section>
     <section className="centinel-result">
