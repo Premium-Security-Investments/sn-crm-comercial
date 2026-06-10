@@ -54,6 +54,23 @@ assert(src.includes('fmtTenderDeadline'), 'Frontend debe formatear cierre con ve
 assert(src.includes('fmtMoneyCompact(tender.value)'), 'Cada licitación debe mostrar valor compacto.');
 assert(src.includes('tender-card-actions'), 'Acciones de cada licitación deben quedar agrupadas visualmente.');
 assert(src.includes('Más filtros operativos'), 'La barra debe distinguir filtros principales y operativos adicionales.');
+assert(src.includes('TenderFastFilter'), 'Licitaciones debe tener filtros rápidos operativos separados de KPIs.');
+assert(src.includes('applyTenderFastFilter'), 'Los filtros rápidos deben mapear a los tipos existentes sin crear taxonomía paralela.');
+assert(src.includes('tender-fast-filters'), 'La UI debe renderizar una fila visual de filtros rápidos.');
+assert(src.includes('Nuevas'), 'Filtros rápidos debe incluir Nuevas.');
+assert(src.includes('Urgentes'), 'Filtros rápidos debe incluir Urgentes.');
+assert(src.includes('Alto encaje'), 'Filtros rápidos debe incluir Alto encaje.');
+assert(src.includes("deadlineFilter: '0_7'"), 'Urgentes debe mapear al tipo existente 0_7.');
+assert(src.includes("valueFilter: '500m_plus'"), 'Alto valor debe mapear al tipo existente 500m_plus.');
+assert(src.includes("scoreFilter: 'alto'"), 'Alto encaje debe mapear al tipo existente alto.');
+assert(src.includes('isTenderPrioritizable'), 'Las descartadas/convertidas no deben aparecer como prioritarias.');
+assert(src.includes("status !== 'descartada'"), 'La priorización visual debe excluir licitaciones descartadas.');
+assert(src.includes('tender-deadline-overdue'), 'Las licitaciones vencidas deben tener clase visual específica.');
+assert(src.includes('tender-deadline-urgent'), 'Las licitaciones urgentes deben tener clase visual específica.');
+assert(src.includes('tender-deadline-soon'), 'Las licitaciones próximas deben tener clase visual específica.');
+assert(src.includes('tender-deadline-empty'), 'Las licitaciones sin fecha deben tener clase visual específica.');
+assert(!src.includes('Régimen especial web'), 'No se deben agregar fuentes web fijas si no existen en los datos.');
+assert(!src.includes('Privado web'), 'No se deben agregar fuentes privadas fijas si no existen en los datos.');
 
 for (const file of [server, api]) {
   assert(file.includes('canViewTenders'), 'API debe tener guard canViewTenders.');
