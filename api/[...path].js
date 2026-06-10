@@ -168,6 +168,7 @@ const tenderSources = {
   }
 };
 const TVEC_EVENTS_URL = 'https://operaciones.colombiacompra.gov.co/eventos-cotizacion-tvec';
+const ESU_CONTRATACION_URL = 'https://www.esucontratacion.com/procesos/index';
 const TVEC_RELEVANT_AGGREGATIONS = {
   'Soluciones de videovigilancia': 90,
   'Soluciones de Videovigilancia y sus mantenimientos II': 90,
@@ -321,10 +322,69 @@ async function fetchTvecEvents() {
   }
   return candidates.sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
 }
+function parseEsuProcessRows(html) {
+  const processes = [];
+  const trMatches = String(html || '').match(/<tr[\s\S]*?<\/tr>/gi) || [];
+  for (const tr of trMatches) {
+    const cells = [];
+    const re = /<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi;
+    let match;
+    while ((match = re.exec(tr))) cells.push(stripTenderHtml(match[1]));
+    if (cells.length < 8 || /^n[ºo°]?$/i.test(cells[0]) || normTenderText(cells[1]) === 'numero') continue;
+    const hrefMatch = tr.match(/href=["']([^"']*\/procesos\/view\/\d+)["']/i);
+    const href = hrefMatch ? new URL(hrefMatch[1], ESU_CONTRATACION_URL).toString() : ESU_CONTRATACION_URL;
+    processes.push({ cells, url: href });
+  }
+  return processes;
+}
+function normalizeEsuProcess(process) {
+  const cells = process.cells || [];
+  const [_rowNumber, numero, objeto, tipoProceso, fechaApertura, fechaCierre, estado, funcionario] = cells;
+  const row = {
+    nombre_entidad: 'Empresa para la Seguridad y Soluciones Urbanas - ESU',
+    departamento_entidad: 'Antioquia',
+    municipio_entidad: 'Medellín',
+    numero_de_proceso: numero || '',
+    objeto_a_contratar: objeto || '',
+    detalle_del_objeto_a_contratar: `${tipoProceso || ''} ${estado || ''} ${funcionario || ''}`.trim(),
+    estado_del_proceso: estado || '',
+    fecha_de_cargue_en_el_secop: fechaApertura || null,
+    cuantia_proceso: 0,
+    ruta_proceso_en_secop_i: process.url || ESU_CONTRATACION_URL
+  };
+  const scored = scoreTender(row);
+  if (normTenderText(estado).includes('convocado')) { scored.score += 20; scored.reasons = [...new Set([...(scored.reasons || []), 'ESU convocado'])]; }
+  const deadline = fechaCierre || null;
+  const days = tenderDaysUntil(deadline);
+  const tender = {
+    source: 'ESU Contratación',
+    entity: row.nombre_entidad, dept: row.departamento_entidad, city: row.municipio_entidad,
+    ref: numero || '', process_id: numero || '', title: objeto || 'Sin objeto', desc: row.detalle_del_objeto_a_contratar,
+    value: 0, status: estado || '', category: tipoProceso || '',
+    published: fechaApertura || null, deadline, days, window: tenderWindow(days),
+    score: scored.score, reasons: [...new Set(scored.reasons || [])].slice(0, 7), risks: [...new Set([...(scored.risks || []), 'ESU: validar documentos y presupuesto en detalle del proceso'])].slice(0, 5),
+    url: process.url || ESU_CONTRATACION_URL, raw: { numero, objeto, tipoProceso, fechaApertura, fechaCierre, estado, funcionario }
+  };
+  const withId = { ...tender, section: classifyTenderSection(tender) };
+  return { ...withId, id: stableTenderKey(withId), stable_key: stableTenderKey(withId), internal_status: 'nueva', converted_opportunity_id: null };
+}
+async function fetchEsuProcesses() {
+  const response = await fetch(ESU_CONTRATACION_URL, { headers: { 'User-Agent': 'SN-CRM-ESU-Tenders-Radar/1.0 (+https://seguridad-nacional-crm.vercel.app)', 'Accept': 'text/html,application/xhtml+xml' } });
+  if (!response.ok) throw new Error(`ESU Contratación respondió ${response.status}`);
+  const html = await response.text();
+  const rows = parseEsuProcessRows(html);
+  if (!rows.length && /Incapsula|_Incapsula_Resource/i.test(html)) throw new Error('bloqueo anti-bot de ESU Contratación');
+  return rows.slice(0, 80)
+    .map(normalizeEsuProcess)
+    .filter(t => t.score >= 35)
+    .filter(t => t.days === null || t.days >= 0)
+    .sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
+}
 async function fetchPublicTenderRadar() {
   const tasks = [
     ...Object.entries(tenderSources).map(([source, cfg]) => ({ source, run: () => fetchSecopSource(source, cfg) })),
-    { source: 'TVEC', run: fetchTvecEvents }
+    { source: 'TVEC', run: fetchTvecEvents },
+    { source: 'ESU Contratación', run: fetchEsuProcesses }
   ];
   const settled = await Promise.allSettled(tasks.map(t => t.run()));
   const diagnostics = [];
@@ -335,7 +395,11 @@ async function fetchPublicTenderRadar() {
       batches.push(result.value);
       diagnostics.push({ source, status: 'ok', count: result.value.length, message: result.value.length ? `${result.value.length} candidato(s)` : 'Sin candidatos relevantes hoy' });
     } else {
-      const message = source === 'TVEC' ? `TVEC no disponible temporalmente: ${result.reason?.message || result.reason}` : `${source} no disponible temporalmente: ${result.reason?.message || result.reason}`;
+      const message = source === 'TVEC'
+        ? `TVEC no disponible temporalmente: ${result.reason?.message || result.reason}`
+        : source === 'ESU Contratación'
+          ? `ESU Contratación no disponible temporalmente: ${result.reason?.message || result.reason}`
+          : `${source} no disponible temporalmente: ${result.reason?.message || result.reason}`;
       diagnostics.push({ source, status: 'error', count: 0, message });
     }
   });

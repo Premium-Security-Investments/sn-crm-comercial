@@ -48,6 +48,10 @@ for (const file of [server, api]) {
   assert(file.includes('fetchSecopSource'), 'API debe consultar SECOP para poblar radar de licitaciones.');
   assert(file.includes('fetchTvecEvents'), 'API debe consultar TVEC como tercera fuente activa.');
   assert(file.includes('TVEC_RELEVANT_AGGREGATIONS'), 'API debe declarar instrumentos TVEC relevantes.');
+  assert(file.includes('fetchEsuProcesses'), 'API debe consultar ESU Contratación como cuarta fuente activa.');
+  assert(file.includes('ESU_CONTRATACION_URL'), 'API debe declarar URL base de ESU Contratación.');
+  assert(file.includes("source: 'ESU Contratación'"), 'API debe normalizar procesos ESU con source ESU Contratación.');
+  assert(file.includes('ESU Contratación no disponible temporalmente'), 'API debe diagnosticar falla temporal de ESU sin tumbar otras fuentes.');
   assert(file.includes('TVEC no disponible temporalmente'), 'API debe diagnosticar falla temporal de TVEC sin tumbar SECOP.');
   assert(file.includes('Promise.allSettled'), 'API debe tolerar errores por fuente sin romper todo el radar.');
   assert(file.includes('section: classifyTenderSection'), 'API debe clasificar licitaciones en hacer/revisar/descartar.');
