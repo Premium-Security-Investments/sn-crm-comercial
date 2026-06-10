@@ -1,5 +1,5 @@
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient, type Session } from '@supabase/supabase-js';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
@@ -1946,6 +1946,7 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const [users, setUsers] = useState<Profile[]>([]);
   const [status, setStatus] = useState('');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const editFormRef = useRef<HTMLDivElement | null>(null);
   const emptyUserForm: UserPayload = { full_name: '', microsoft_email: '', role: 'comercial', active: true, password: '', send_invite: true, commercial_area: '', can_edit_customer_segment: false };
   const [form, setForm] = useState<UserPayload>(emptyUserForm);
   const [usersSortConfig, setUsersSortConfig] = useState<SortConfig<'name'|'email'|'role'|'area'|'segment'|'status'>>({ key: 'name', direction: 'asc' });
@@ -1961,6 +1962,7 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
     setEditingUserId(user.id);
     setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, role: user.role, active: user.active, password: '', send_invite: false, commercial_area: user.commercial_area || '', can_edit_customer_segment: !!user.can_edit_customer_segment });
     setStatus('Editando usuario existente. Deja la clave en blanco si no quieres cambiarla.');
+    window.setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
   };
   const cancelEdit = () => {
     setEditingUserId(null);
@@ -1980,7 +1982,8 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   };
   return <section className="stack">
     <section className="executive-hero"><div><span className="eyebrow">Administración</span><h2>Usuarios y permisos</h2><p>Crea usuarios de acceso y asigna el rol comercial, dirección, gerencia o admin.</p></div><div className="hero-facts"><div><small>Usuarios</small><strong>{users.length}</strong></div><div><small>Administrador</small><strong>{currentProfile.full_name}</strong></div></div></section>
-    <Panel title={editingUserId ? 'Editar usuario' : 'Crear usuario'}>
+    <div ref={editFormRef} className="users-edit-anchor">
+    <Panel title={editingUserId ? `Editar usuario · ${form.full_name || form.microsoft_email}` : 'Crear usuario'}>
       <form className="form gridform" onSubmit={submit}>
         <label>Nombre completo<input required value={form.full_name} onChange={e=>setForm({...form, full_name:e.target.value})}/></label>
         <label>Email<input type="email" required value={form.microsoft_email} onChange={e=>setForm({...form, microsoft_email:e.target.value})}/></label>
@@ -1993,6 +1996,7 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
         <div className="formactions"><button>{editingUserId ? 'Actualizar usuario' : 'Guardar usuario'}</button>{editingUserId && <button type="button" className="secondary" onClick={cancelEdit}>Cancelar edición</button>}{status && <span>{status}</span>}</div>
       </form>
     </Panel>
+    </div>
     <Panel title="Perfiles actuales"><div className="tablewrap"><table><thead><tr><SortableTh label="Nombre" sortKey="name" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Email" sortKey="email" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Rol" sortKey="role" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Área" sortKey="area" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Segmento" sortKey="segment" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Estado" sortKey="status" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Acciones</th></tr></thead><tbody>{sortedUsers.map(u => <tr key={u.id}><td><strong>{u.full_name}</strong></td><td>{u.microsoft_email}</td><td><Badge>{u.role}</Badge></td><td>{commercialAreaLabel(u.commercial_area)}</td><td>{u.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado'}</td><td>{u.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(u)}>Editar</button></td></tr>)}</tbody></table></div></Panel>
   </section>;
 }

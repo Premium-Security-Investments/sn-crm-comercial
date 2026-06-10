@@ -17,6 +17,8 @@ assert(src.includes('editingUserId'), 'Usuarios y permisos debe permitir selecci
 assert(src.includes("method: editingUserId ? 'PATCH' : 'POST'"), 'Formulario de usuarios debe usar PATCH al editar un perfil existente.');
 assert(src.includes("/api/users?id="), 'Frontend debe editar usuarios con /api/users?id=... para compatibilidad serverless Vercel.');
 assert(src.includes('Editar') && src.includes('Cancelar edición'), 'Tabla de usuarios debe tener acción Editar y opción Cancelar edición.');
+assert(src.includes('editFormRef') && src.includes('scrollIntoView'), 'Al hacer clic en Editar, la vista debe llevar al usuario al formulario de edición.');
+assert(src.includes('Editar usuario ·'), 'El formulario debe mostrar claramente qué usuario se está editando.');
 
 for (const file of [server, api]) {
   assert(file.includes("app.patch('/api/users'"), 'API debe exponer PATCH /api/users?id=... para editar usuarios existentes.');
