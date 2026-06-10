@@ -377,18 +377,18 @@ function SortableTh<K extends string>({ label, sortKey, sortConfig, onSort }: { 
 function nextSort<K extends string>(current: SortConfig<K>, key: K): SortConfig<K> { return current.key === key ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' } : { key, direction: 'asc' }; }
 
 function OpportunityList({ data }: { data: Bootstrap }) {
-  const [q, setQ] = useState(hashQueryParam('q')); const [stage, setStage] = useState(hashQueryParam('stage')); const [owner, setOwner] = useState(hashQueryParam('owner')); const [regional, setRegional] = useState(hashQueryParam('regional')); const [service, setService] = useState(hashQueryParam('service'));
+  const [q, setQ] = useState(hashQueryParam('q')); const [owner, setOwner] = useState(hashQueryParam('owner')); const [regional, setRegional] = useState(hashQueryParam('regional')); const [stage, setStage] = useState(hashQueryParam('stage')); const [service, setService] = useState(hashQueryParam('service')); const [onlyActive, setOnlyActive] = useState(hashQueryParam('active') !== 'all');
   const [sortConfig, setSortConfig] = useState<SortConfig<'client'|'owner'|'regional'|'stage'|'product'|'segment'|'value'|'close'|'last'>>({ key: 'client', direction: 'asc' });
   const regionals = useMemo(() => uniq(data.opportunities.map(o => o.regional_nombre)), [data.opportunities]);
-  const filtered = data.opportunities.filter(o => (!q || `${o.company_name} ${o.sede||''} ${o.legacy_excel_id||''}`.toLowerCase().includes(q.toLowerCase())) && (!stage || o.stage_code===stage) && (!owner || o.owner_id===owner) && (!regional || o.regional_nombre===regional) && (!service || o.service_type_code===service));
+  const filtered = data.opportunities.filter(o => (!q || `${o.company_name} ${o.owner_name||''} ${o.sede||''} ${o.quote_city||''} ${o.regional_nombre||''} ${o.tipo_producto_original||''} ${o.service_type_name||''} ${o.legacy_excel_id||''}`.toLowerCase().includes(q.toLowerCase())) && (!owner || o.owner_id===owner) && (!regional || o.regional_nombre===regional) && (!stage || o.stage_code===stage) && (!service || o.service_type_code===service) && (!onlyActive || !isTerminalStage(o.stage_code)));
   const sortedOpportunities = [...filtered].sort((a,b) => {
     const value = (o: Opportunity) => sortConfig.key === 'client' ? o.company_name : sortConfig.key === 'owner' ? (o.owner_name || '') : sortConfig.key === 'regional' ? (o.regional_nombre || '') : sortConfig.key === 'stage' ? (o.stage_order || 0) : sortConfig.key === 'product' ? (o.tipo_producto_original || o.service_type_name || '') : sortConfig.key === 'segment' ? customerSegmentLabel(o.customer_segment) : sortConfig.key === 'value' ? Number(o.offer_value || 0) : sortConfig.key === 'close' ? (o.expected_close_date || '') : (o.last_interaction_at || '');
     return compareSortValues(value(a), value(b), sortConfig.direction);
   });
   const sortBy = (key: typeof sortConfig.key) => setSortConfig(current => nextSort(current, key));
   return <section className="stack">
-    <div className="filters"><input placeholder="Buscar cliente, sede o ID…" value={q} onChange={e=>setQ(e.target.value)} /> <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Todas las etapas"/> <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Todos los comerciales"/> <Select value={regional} onChange={setRegional} options={regionals.map(r=>[r,r])} empty="Todas las regionales"/> <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Todos los servicios"/></div>
-    <p className="muted">Mostrando {filtered.length} de {data.opportunities.length} oportunidades.</p>
+    <div className="filters opportunity-filters"><input placeholder="Buscar cliente, sede, ciudad, servicio o ID…" value={q} onChange={e=>setQ(e.target.value)} /> <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Todos los comerciales"/> <Select value={regional} onChange={setRegional} options={regionals.map(r=>[r,r])} empty="Todas las regionales"/> <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Todas las etapas"/> <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Todos los servicios"/><label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Solo activas</label><button className="secondary" onClick={()=>{ setQ(''); setOwner(''); setRegional(''); setStage(''); setService(''); setOnlyActive(true); }}>Limpiar filtros</button></div>
+    <p className="muted filter-summary"><strong>{filtered.length}</strong> de {data.opportunities.length} oportunidades visibles.</p>
     <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo cliente" sortKey="segment" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cierre estimado" sortKey="close" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Último seguimiento" sortKey="last" sortConfig={sortConfig} onSort={sortBy}/></tr></thead><tbody>{sortedOpportunities.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{o.regional_nombre || '—'}</td><td><Badge>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td><Badge tone={o.customer_segment ? 'blue' : 'amber'}>{customerSegmentLabel(o.customer_segment)}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDate(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td></tr>)}</tbody></table></div>
   </section>;
 }
@@ -698,17 +698,24 @@ function CommercialPersonalDashboard({ data }: { data: Bootstrap }) { return <Co
 
 function ManagerDashboard({ data }: { data: Bootstrap }) {
   const [period, setPeriod] = useState<DashboardPeriodFilter>('todos');
+  const [q, setQ] = useState('');
   const [owner, setOwner] = useState('');
+  const [regional, setRegional] = useState('');
   const [stage, setStage] = useState('');
   const [service, setService] = useState('');
+  const [onlyActive, setOnlyActive] = useState(false);
   const [sortConfig, setSortConfig] = useState<SortConfig<'client'|'owner'|'value'|'stage'|'next'|'risk'>>({ key: 'value', direction: 'desc' });
   const [stageActionSortConfig, setStageActionSortConfig] = useState<SortConfig<'stage'|'value'|'count'|'share'|'weighted'|'risk'|'action'>>({ key: 'value', direction: 'desc' });
+  const managerRegionalOptions = useMemo(() => uniq(data.opportunities.map(o => o.regional_nombre)), [data.opportunities]);
   const scopedOpportunities = useMemo(() => data.opportunities.filter(o =>
     matchesDashboardPeriod(o, period) &&
+    (!q || `${o.company_name} ${o.owner_name||''} ${o.sede||''} ${o.quote_city||''} ${o.regional_nombre||''} ${o.tipo_producto_original||''} ${o.service_type_name||''} ${o.legacy_excel_id||''}`.toLowerCase().includes(q.toLowerCase())) &&
     (!owner || ownerKey(o) === owner) &&
+    (!regional || o.regional_nombre === regional) &&
     (!stage || o.stage_code === stage) &&
-    (!service || o.service_type_code === service)
-  ), [data.opportunities, period, owner, stage, service]);
+    (!service || o.service_type_code === service) &&
+    (!onlyActive || !isTerminalStage(o.stage_code))
+  ), [data.opportunities, period, q, owner, regional, stage, service, onlyActive]);
   const scopedIds = useMemo(() => new Set(scopedOpportunities.map(o => o.id)), [scopedOpportunities]);
   const filteredStalled = data.stalled.filter(o => scopedIds.has(o.id));
   const activeOpportunities = scopedOpportunities.filter(o => !isTerminalStage(o.stage_code));
@@ -891,10 +898,13 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
     <Panel title="Filtros gerenciales">
       <div className="filters manager-dashboard-filters">
         <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Período"/>
+        <input placeholder="Buscar cliente, comercial, sede, ciudad, servicio o ID…" value={q} onChange={e=>setQ(e.target.value)} />
         <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Todos los comerciales"/>
+        <Select value={regional} onChange={setRegional} options={managerRegionalOptions.map(r=>[r,r])} empty="Todas las regionales"/>
         <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Todas las etapas"/>
         <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Todos los servicios"/>
-        <button className="secondary" onClick={()=>{ setPeriod('todos'); setOwner(''); setStage(''); setService(''); }}>Limpiar filtros</button>
+        <label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label>
+        <button className="secondary" onClick={()=>{ setPeriod('todos'); setQ(''); setOwner(''); setRegional(''); setStage(''); setService(''); setOnlyActive(false); }}>Limpiar filtros</button>
       </div>
       <div className="filter-summary"><strong>{scopedOpportunities.length}</strong> de {data.opportunities.length} oportunidades visibles · Última actualización: {lastUpdatedLabel(scopedOpportunities)}</div>
     </Panel>
@@ -1032,6 +1042,7 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
 function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap; ownerId: string; personal?: boolean }) {
   const [q, setQ] = useState('');
   const [stage, setStage] = useState('');
+  const [service, setService] = useState('');
   const [actionFilter, setActionFilter] = useState('');
   const [onlyActive, setOnlyActive] = useState(true);
   const [personalCriticalSortConfig, setPersonalCriticalSortConfig] = useState<SortConfig<'client'|'stage'|'value'|'next'|'priority'>>({ key: 'value', direction: 'desc' });
@@ -1077,11 +1088,13 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
   const serviceLeader = topGroup(opportunities.map(o => o.tipo_producto_original || o.service_type_name || 'Sin servicio'));
   const nextActions = opportunities.filter(o => o.next_action_at && !isTerminalStage(o.stage_code)).sort((a,b)=>String(a.next_action_at).localeCompare(String(b.next_action_at)));
   const consultantStageOptions = data.stages.filter(s => opportunities.some(o => o.stage_code === s.code));
+  const consultantServiceOptions = data.services.filter(s => opportunities.some(o => o.service_type_code === s.code));
   const filteredOpportunities = opportunities.filter(o => {
     const action = nextActionStatus(o);
     const haystack = `${o.company_name} ${o.sede || ''} ${o.quote_city || ''} ${o.regional_nombre || ''} ${o.tipo_producto_original || ''}`.toLowerCase();
     return (!q || haystack.includes(q.toLowerCase()))
       && (!stage || o.stage_code === stage)
+      && (!service || o.service_type_code === service)
       && (!onlyActive || !isTerminalStage(o.stage_code))
       && (!actionFilter || action.code === actionFilter);
   });
@@ -1156,10 +1169,12 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
       <div className="consultant-opportunity-filters filters">
         <input placeholder="Buscar cliente, sede, ciudad o servicio…" value={q} onChange={e=>setQ(e.target.value)} />
         <Select value={stage} onChange={setStage} options={consultantStageOptions.map(s=>[s.code,s.name])} empty="Todas las etapas" />
+        <Select value={service} onChange={setService} options={consultantServiceOptions.map(s=>[s.code,s.name])} empty="Todos los servicios" />
         <Select value={actionFilter} onChange={setActionFilter} options={[["missing","Sin agenda"],["overdue","Vencidas"],["today","Hoy"],["soon","Próximas"],["scheduled","Agendadas"]]} empty="Todas las gestiones" />
         <label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Solo activas</label>
+        <button className="secondary" onClick={()=>{ setQ(''); setStage(''); setService(''); setActionFilter(''); setOnlyActive(true); }}>Limpiar filtros</button>
       </div>
-      <p className="muted">Mostrando {filteredOpportunities.length} de {opportunities.length} oportunidades del consultor.</p>
+      <p className="muted consultant-filter-summary"><strong>{filteredOpportunities.length}</strong> de {opportunities.length} oportunidades del consultor.</p>
       <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Valor" sortKey="value" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Días sin seguimiento" sortKey="inactive" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Prioridad" sortKey="priority" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/></tr></thead><tbody>{sortedConsultantOpportunities.map(o => {
         const action = nextActionStatus(o);
         const inactiveDays = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
@@ -1172,7 +1187,9 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState(hashQueryParam('status'));
   const [owner, setOwner] = useState(hashQueryParam('owner'));
+  const [regional, setRegional] = useState(hashQueryParam('regional'));
   const [stage, setStage] = useState(hashQueryParam('stage'));
+  const [service, setService] = useState(hashQueryParam('service'));
   const [hideClosed, setHideClosed] = useState(true);
   const [sortConfig, setSortConfig] = useState<SortConfig<'alert'|'client'|'owner'|'stage'|'value'|'next'|'inactive'|'action'>>({ key: 'alert', direction: 'asc' });
   const [lowGoalSortConfig, setLowGoalSortConfig] = useState<SortConfig<'owner'|'month'|'sales'|'goal'|'status'>>({ key: 'status', direction: 'asc' });
@@ -1215,7 +1232,9 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
   ];
 
   const ownerOptions = data.profiles.filter(p => active.some(o => o.owner_id === p.id)).map(p => [p.id, p.full_name]);
+  const alertRegionalOptions = uniq(active.map(o => o.regional_nombre)).map(r => [r, r]);
   const stageOptions = data.stages.filter(s => active.some(o => o.stage_code === s.code)).map(s => [s.code, s.name]);
+  const alertServiceOptions = data.services.filter(s => active.some(o => o.service_type_code === s.code)).map(s => [s.code, s.name]);
   const statusOptions = [['missing','Sin agenda'],['overdue','Vencidas'],['closing_soon','Cierre próximo'],['high_value_stalled','Alto valor estancado'],['stalled','Sustentación estancada'],['today','Hoy'],['soon','Próximas'],['scheduled','Agendadas']];
   const filteredAlerts = alertRows.filter(row => {
     const o = row.opportunity;
@@ -1223,7 +1242,9 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
     return (!q || haystack.includes(q.toLowerCase()))
       && (!status || row.alertCode === status || (status === 'closing_soon' && row.closingSoon) || (status === 'high_value_stalled' && row.highValueStalled))
       && (!owner || o.owner_id === owner)
+      && (!regional || o.regional_nombre === regional)
       && (!stage || o.stage_code === stage)
+      && (!service || o.service_type_code === service)
       && (!hideClosed || !isTerminalStage(o.stage_code));
   });
   const sortedFilteredAlerts = [...filteredAlerts].sort((a,b) => {
@@ -1253,9 +1274,13 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
         <input placeholder="Buscar cliente, comercial, sede, ciudad o servicio…" value={q} onChange={e=>setQ(e.target.value)} />
         <Select value={status} onChange={setStatus} options={statusOptions} empty="Todas las alertas" />
         <Select value={owner} onChange={setOwner} options={ownerOptions} empty="Todos los comerciales" />
+        <Select value={regional} onChange={setRegional} options={alertRegionalOptions} empty="Todas las regionales" />
         <Select value={stage} onChange={setStage} options={stageOptions} empty="Todas las etapas" />
+        <Select value={service} onChange={setService} options={alertServiceOptions} empty="Todos los servicios" />
         <label className="check-filter"><input type="checkbox" checked={hideClosed} onChange={e=>setHideClosed(e.target.checked)} /> Solo activas</label>
+        <button className="secondary" onClick={()=>{ setQ(''); setStatus(''); setOwner(''); setRegional(''); setStage(''); setService(''); setHideClosed(true); }}>Limpiar filtros</button>
       </div>
+      <div className="filter-summary alert-filter-summary"><strong>{filteredAlerts.length}</strong> alertas visibles · {active.length} oportunidades activas base</div>
     </Panel>
     <Panel title="Bandeja de alertas">
       <p className="muted">Mostrando {filteredAlerts.length} oportunidades. Click en una fila para abrir el detalle y registrar seguimiento.</p>
