@@ -529,8 +529,14 @@ function TenderCard({ tender, onCreate, onStatus, creating }: { tender: PublicTe
   </article>;
 }
 function TenderTable({ rows, onCreate, onStatus, creatingId }: { rows: PublicTender[]; onCreate: (tender: PublicTender) => void; onStatus: (tender: PublicTender, status: TenderInternalStatus) => void; creatingId: string | null }) {
+  const [tenderSortConfig, setTenderSortConfig] = useState<SortConfig<'entity'|'section'|'status'|'location'|'title'|'value'|'deadline'>>({ key: 'deadline', direction: 'asc' });
+  const sortedTenderRows = [...rows].sort((a,b) => {
+    const value = (t: PublicTender) => tenderSortConfig.key === 'entity' ? t.entity : tenderSortConfig.key === 'section' ? t.section : tenderSortConfig.key === 'status' ? tenderStatusLabel(t.internal_status) : tenderSortConfig.key === 'location' ? `${t.dept || ''} ${t.city || ''}` : tenderSortConfig.key === 'title' ? t.title : tenderSortConfig.key === 'value' ? Number(t.value || 0) : (t.deadline || '');
+    return compareSortValues(value(a), value(b), tenderSortConfig.direction);
+  });
+  const sortTenderBy = (key: typeof tenderSortConfig.key) => setTenderSortConfig(current => nextSort(current, key));
   if (!rows.length) return <EmptyState title="Sin resultados" text="No hay licitaciones con esos filtros." />;
-  return <div className="tablewrap"><table><thead><tr><th>Entidad</th><th>Sección</th><th>Estado interno</th><th>Ubicación</th><th>Objeto</th><th>Valor</th><th>Cierre</th><th>Acción</th></tr></thead><tbody>{rows.map(t => { const converted = Boolean(t.converted_opportunity_id); return <tr key={t.id}><td><strong>{t.entity}</strong><br/><small>{t.ref || t.process_id || '—'}</small></td><td><Badge>{t.section}</Badge></td><td><Badge tone={tenderStatusTone(t.internal_status)}>{tenderStatusLabel(t.internal_status)}</Badge></td><td>{t.dept || '—'} / {t.city || '—'}</td><td>{t.title}</td><td>{fmtMoney(t.value)}</td><td>{fmtDate(t.deadline)}</td><td><div className="row-actions table-actions">{t.url ? <a target="_blank" href={t.url}>Abrir</a> : null}<button className="secondary" onClick={() => onStatus(t, 'en_revision')} disabled={creatingId === t.id || converted}>Revisar</button><button className="secondary" onClick={() => onStatus(t, 'descartada')} disabled={creatingId === t.id || converted}>Descartar</button><button onClick={() => onCreate(t)} disabled={creatingId === t.id}>{creatingId === t.id ? 'Creando…' : converted ? 'Ver' : 'Crear'}</button></div></td></tr>; })}</tbody></table></div>;
+  return <div className="tablewrap"><table><thead><tr><SortableTh label="Entidad" sortKey="entity" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Sección" sortKey="section" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Estado interno" sortKey="status" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Ubicación" sortKey="location" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Objeto" sortKey="title" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Valor" sortKey="value" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Cierre" sortKey="deadline" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><th>Acción</th></tr></thead><tbody>{sortedTenderRows.map(t => { const converted = Boolean(t.converted_opportunity_id); return <tr key={t.id}><td><strong>{t.entity}</strong><br/><small>{t.ref || t.process_id || '—'}</small></td><td><Badge>{t.section}</Badge></td><td><Badge tone={tenderStatusTone(t.internal_status)}>{tenderStatusLabel(t.internal_status)}</Badge></td><td>{t.dept || '—'} / {t.city || '—'}</td><td>{t.title}</td><td>{fmtMoney(t.value)}</td><td>{fmtDate(t.deadline)}</td><td><div className="row-actions table-actions">{t.url ? <a target="_blank" href={t.url}>Abrir</a> : null}<button className="secondary" onClick={() => onStatus(t, 'en_revision')} disabled={creatingId === t.id || converted}>Revisar</button><button className="secondary" onClick={() => onStatus(t, 'descartada')} disabled={creatingId === t.id || converted}>Descartar</button><button onClick={() => onCreate(t)} disabled={creatingId === t.id}>{creatingId === t.id ? 'Creando…' : converted ? 'Ver' : 'Crear'}</button></div></td></tr>; })}</tbody></table></div>;
 }
 function Select({ value, onChange, options, empty, disabled = false }: { value: string; onChange: (v:string)=>void; options: string[][]; empty: string; disabled?: boolean }) { return <select value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}><option value="">{empty}</option>{options.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>; }
 function Badge({ children, tone }: { children: React.ReactNode; tone?: string }) { return <span className={`badge ${tone ? `badge-${tone}` : ''}`}>{children}</span>; }
@@ -696,6 +702,7 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
   const [stage, setStage] = useState('');
   const [service, setService] = useState('');
   const [sortConfig, setSortConfig] = useState<SortConfig<'client'|'owner'|'value'|'stage'|'next'|'risk'>>({ key: 'value', direction: 'desc' });
+  const [stageActionSortConfig, setStageActionSortConfig] = useState<SortConfig<'stage'|'value'|'count'|'share'|'weighted'|'risk'|'action'>>({ key: 'value', direction: 'desc' });
   const scopedOpportunities = useMemo(() => data.opportunities.filter(o =>
     matchesDashboardPeriod(o, period) &&
     (!owner || ownerKey(o) === owner) &&
@@ -808,6 +815,11 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
             : 'Ordenar gestión';
     return { ...s, value, weighted, pct, riskTone, riskLabel, actionLabel, terminal };
   });
+  const sortedStageActionRows = [...stageActionRows].sort((a,b) => {
+    const value = (row: typeof stageActionRows[number]) => stageActionSortConfig.key === 'stage' ? row.stage_name : stageActionSortConfig.key === 'value' ? row.value : stageActionSortConfig.key === 'count' ? row.opportunities_count : stageActionSortConfig.key === 'share' ? row.pct : stageActionSortConfig.key === 'weighted' ? row.weighted : stageActionSortConfig.key === 'risk' ? row.riskLabel : row.actionLabel;
+    return compareSortValues(value(a), value(b), stageActionSortConfig.direction);
+  });
+  const sortStageActionBy = (key: typeof stageActionSortConfig.key) => setStageActionSortConfig(current => nextSort(current, key));
   const staleCount = filteredStalled.length;
   const commercialCards = byOwner.map(o => {
     const share = scopedTotals.pipeline ? Math.round((o.value / scopedTotals.pipeline) * 100) : 0;
@@ -947,7 +959,7 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
         <div><small>Lectura ejecutiva</small><strong>{stageLeader ? `${concentration}% del pipeline está en ${stageLeader.stage_name}` : 'Sin etapa dominante'}</strong><span>{stageLeader && concentration >= 55 ? 'Prioridad: destrabar esa etapa y revisar siguientes acciones.' : 'Distribución sin concentración crítica con los filtros actuales.'}</span></div>
         <a className="button secondary" href={`#/opportunities?stage=${encodeURIComponent(stageLeader?.stage_code || '')}`}>Ver etapa dominante</a>
       </div>
-      <div className="tablewrap stage-action-table"><table><thead><tr><th>Etapa</th><th>Valor total</th><th>Ops</th><th>% pipeline</th><th>Valor ponderado</th><th>Riesgo / lectura</th><th>Acción</th></tr></thead><tbody>{stageActionRows.map(s => <tr key={s.stage_code}>
+      <div className="tablewrap stage-action-table"><table><thead><tr><SortableTh label="Etapa" sortKey="stage" sortConfig={stageActionSortConfig} onSort={sortStageActionBy}/><SortableTh label="Valor total" sortKey="value" sortConfig={stageActionSortConfig} onSort={sortStageActionBy}/><SortableTh label="Ops" sortKey="count" sortConfig={stageActionSortConfig} onSort={sortStageActionBy}/><SortableTh label="% pipeline" sortKey="share" sortConfig={stageActionSortConfig} onSort={sortStageActionBy}/><SortableTh label="Valor ponderado" sortKey="weighted" sortConfig={stageActionSortConfig} onSort={sortStageActionBy}/><SortableTh label="Riesgo / lectura" sortKey="risk" sortConfig={stageActionSortConfig} onSort={sortStageActionBy}/><SortableTh label="Acción" sortKey="action" sortConfig={stageActionSortConfig} onSort={sortStageActionBy}/></tr></thead><tbody>{sortedStageActionRows.map(s => <tr key={s.stage_code}>
         <td><strong>{s.stage_name}</strong><br/><small>{s.terminal ? 'Resultado del proceso' : 'Pipeline activo'}</small></td>
         <td><strong className="numeric-value">{fmtMoneyCompact(s.value)}</strong></td>
         <td>{s.opportunities_count}</td>
@@ -1022,11 +1034,19 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
   const [stage, setStage] = useState('');
   const [actionFilter, setActionFilter] = useState('');
   const [onlyActive, setOnlyActive] = useState(true);
+  const [personalCriticalSortConfig, setPersonalCriticalSortConfig] = useState<SortConfig<'client'|'stage'|'value'|'next'|'priority'>>({ key: 'value', direction: 'desc' });
+  const [consultantMonthlySortConfig, setConsultantMonthlySortConfig] = useState<SortConfig<'month'|'prospects'|'quotes'|'sales'|'commission'>>({ key: 'month', direction: 'desc' });
+  const [consultantOpportunitySortConfig, setConsultantOpportunitySortConfig] = useState<SortConfig<'client'|'regional'|'stage'|'product'|'value'|'next'|'inactive'|'priority'>>({ key: 'stage', direction: 'asc' });
   const opportunities = useMemo(() => data.opportunities
     .filter(o => ownerKey(o) === ownerId)
     .sort((a,b) => a.stage_order - b.stage_order || Number(b.offer_value || 0) - Number(a.offer_value || 0)), [data.opportunities, ownerId]);
   const ownerName = opportunities[0]?.owner_name || data.profiles.find(p => p.id === ownerId)?.full_name || 'Sin comercial';
   const monthly = data.monthlyKpis.filter(k => (k.owner_name || 'Sin comercial') === ownerName);
+  const sortedConsultantMonthlyRows = [...monthly].sort((a,b) => {
+    const value = (k: MonthlyKpi) => consultantMonthlySortConfig.key === 'month' ? (k.period_month || '') : consultantMonthlySortConfig.key === 'prospects' ? Number(k.prospectos || 0) : consultantMonthlySortConfig.key === 'quotes' ? Number(k.cotizaciones || 0) : consultantMonthlySortConfig.key === 'sales' ? Number(k.ventas_aprobadas || 0) : Number(k.comision_proyectada || 0);
+    return compareSortValues(value(a), value(b), consultantMonthlySortConfig.direction);
+  });
+  const sortConsultantMonthlyBy = (key: typeof consultantMonthlySortConfig.key) => setConsultantMonthlySortConfig(current => nextSort(current, key));
   const totals = opportunities.reduce((acc, o) => {
     const value = Number(o.offer_value || 0);
     acc.pipeline += value;
@@ -1071,6 +1091,16 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
     .filter(row => !isTerminalStage(row.opportunity.stage_code) && (['overdue','missing','today','soon'].includes(row.action.code) || Number(row.inactiveDays || 0) >= 7))
     .sort((a,b) => (a.action.code === 'overdue' ? -1 : b.action.code === 'overdue' ? 1 : 0) || Number(b.opportunity.offer_value || 0) - Number(a.opportunity.offer_value || 0))
     .slice(0, 8);
+  const sortedPersonalCriticalRows = [...personalCriticalRows].sort((a,b) => {
+    const value = (row: typeof personalCriticalRows[number]) => personalCriticalSortConfig.key === 'client' ? row.opportunity.company_name : personalCriticalSortConfig.key === 'stage' ? row.opportunity.stage_order : personalCriticalSortConfig.key === 'value' ? Number(row.opportunity.offer_value || 0) : personalCriticalSortConfig.key === 'next' ? (row.opportunity.next_action_at || '') : row.action.label;
+    return compareSortValues(value(a), value(b), personalCriticalSortConfig.direction);
+  });
+  const sortPersonalCriticalBy = (key: typeof personalCriticalSortConfig.key) => setPersonalCriticalSortConfig(current => nextSort(current, key));
+  const sortedConsultantOpportunities = [...filteredOpportunities].sort((a,b) => {
+    const value = (o: Opportunity) => consultantOpportunitySortConfig.key === 'client' ? o.company_name : consultantOpportunitySortConfig.key === 'regional' ? (o.regional_nombre || '') : consultantOpportunitySortConfig.key === 'stage' ? o.stage_order : consultantOpportunitySortConfig.key === 'product' ? (o.tipo_producto_original || o.service_type_name || '') : consultantOpportunitySortConfig.key === 'value' ? Number(o.offer_value || 0) : consultantOpportunitySortConfig.key === 'next' ? (o.next_action_at || '') : consultantOpportunitySortConfig.key === 'inactive' ? Number(daysSince(o.last_interaction_at || o.updated_at || o.created_at) || 0) : nextActionStatus(o).detail;
+    return compareSortValues(value(a), value(b), consultantOpportunitySortConfig.direction);
+  });
+  const sortConsultantOpportunityBy = (key: typeof consultantOpportunitySortConfig.key) => setConsultantOpportunitySortConfig(current => nextSort(current, key));
   const personalGoalRows = buildGoalVsActualRows(data, [new Date().toISOString().slice(0, 7)], ownerId);
   const personalPriorityText = totals.overdue
     ? `Resolver ${totals.overdue} gestiones vencidas antes de crear nuevo pipeline.`
@@ -1099,7 +1129,7 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
     {personal && <div className="personal-dashboard">
       <Panel title="Mi prioridad de hoy"><div className="personal-priority-grid"><div><small>Acción recomendada</small><strong>{personalPriorityText}</strong></div><div><small>Gestión pendiente</small><strong>{totals.overdue} vencidas · {totals.missingAgenda} sin agenda</strong></div></div></Panel>
       <Panel title="Mi avance contra meta"><GoalVsActualDashboard rows={personalGoalRows} /></Panel>
-      <Panel title="Mis oportunidades críticas">{personalCriticalRows.length ? <div className="tablewrap"><table><thead><tr><th>Cliente</th><th>Etapa</th><th>Valor</th><th>Próxima acción</th><th>Prioridad</th></tr></thead><tbody>{personalCriticalRows.map(row => <tr key={row.opportunity.id} className="clickable" onClick={() => go(`#/detail/${row.opportunity.id}`)}><td><strong>{row.opportunity.company_name}</strong></td><td><Badge tone={stageTone(row.opportunity.stage_code)}>{row.opportunity.stage_name}</Badge></td><td>{fmtMoneyCompact(row.opportunity.offer_value)}</td><td>{row.opportunity.next_action_at ? fmtDate(row.opportunity.next_action_at) : 'Sin agenda'}</td><td><Badge tone={row.action.tone}>{row.action.label}</Badge></td></tr>)}</tbody></table></div> : <EmptyState title="Sin críticas inmediatas" text="No hay vencidas, sin agenda ni gestiones urgentes con tus filtros actuales." />}</Panel>
+      <Panel title="Mis oportunidades críticas">{personalCriticalRows.length ? <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Valor" sortKey="value" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Prioridad" sortKey="priority" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/></tr></thead><tbody>{sortedPersonalCriticalRows.map(row => <tr key={row.opportunity.id} className="clickable" onClick={() => go(`#/detail/${row.opportunity.id}`)}><td><strong>{row.opportunity.company_name}</strong></td><td><Badge tone={stageTone(row.opportunity.stage_code)}>{row.opportunity.stage_name}</Badge></td><td>{fmtMoneyCompact(row.opportunity.offer_value)}</td><td>{row.opportunity.next_action_at ? fmtDate(row.opportunity.next_action_at) : 'Sin agenda'}</td><td><Badge tone={row.action.tone}>{row.action.label}</Badge></td></tr>)}</tbody></table></div> : <EmptyState title="Sin críticas inmediatas" text="No hay vencidas, sin agenda ni gestiones urgentes con tus filtros actuales." />}</Panel>
     </div>}
 
     <div className="grid kpis manager-kpis consultant-kpis">
@@ -1120,7 +1150,7 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
       </Panel>
     </div>
     <Panel title="KPIs mensuales del consultor">
-      {monthly.length ? <div className="tablewrap"><table><thead><tr><th>Mes</th><th>Prospectos</th><th>Cotizaciones</th><th>Ventas aprobadas</th><th>Comisión proyectada</th></tr></thead><tbody>{monthly.slice(0,12).map((k,i)=><tr key={`${k.owner_name}-${k.period_month}-${i}`}><td>{fmtDate(k.period_month)}</td><td>{k.prospectos}</td><td>{k.cotizaciones}</td><td>{fmtMoneyCompact(k.ventas_aprobadas)}</td><td>{fmtMoneyCompact(k.comision_proyectada)}</td></tr>)}</tbody></table></div> : <p className="muted">Sin KPIs mensuales para este consultor.</p>}
+      {monthly.length ? <div className="tablewrap"><table><thead><tr><SortableTh label="Mes" sortKey="month" sortConfig={consultantMonthlySortConfig} onSort={sortConsultantMonthlyBy}/><SortableTh label="Prospectos" sortKey="prospects" sortConfig={consultantMonthlySortConfig} onSort={sortConsultantMonthlyBy}/><SortableTh label="Cotizaciones" sortKey="quotes" sortConfig={consultantMonthlySortConfig} onSort={sortConsultantMonthlyBy}/><SortableTh label="Ventas aprobadas" sortKey="sales" sortConfig={consultantMonthlySortConfig} onSort={sortConsultantMonthlyBy}/><SortableTh label="Comisión proyectada" sortKey="commission" sortConfig={consultantMonthlySortConfig} onSort={sortConsultantMonthlyBy}/></tr></thead><tbody>{sortedConsultantMonthlyRows.slice(0,12).map((k,i)=><tr key={`${k.owner_name}-${k.period_month}-${i}`}><td>{fmtDate(k.period_month)}</td><td>{k.prospectos}</td><td>{k.cotizaciones}</td><td>{fmtMoneyCompact(k.ventas_aprobadas)}</td><td>{fmtMoneyCompact(k.comision_proyectada)}</td></tr>)}</tbody></table></div> : <p className="muted">Sin KPIs mensuales para este consultor.</p>}
     </Panel>
     <Panel title="Oportunidades del consultor">
       <div className="consultant-opportunity-filters filters">
@@ -1130,7 +1160,7 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
         <label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Solo activas</label>
       </div>
       <p className="muted">Mostrando {filteredOpportunities.length} de {opportunities.length} oportunidades del consultor.</p>
-      <div className="tablewrap"><table><thead><tr><th>Cliente</th><th>Regional</th><th>Etapa</th><th>Tipo producto</th><th>Valor</th><th>Próxima acción</th><th>Días sin seguimiento</th><th>Prioridad</th></tr></thead><tbody>{filteredOpportunities.map(o => {
+      <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Valor" sortKey="value" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Días sin seguimiento" sortKey="inactive" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Prioridad" sortKey="priority" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/></tr></thead><tbody>{sortedConsultantOpportunities.map(o => {
         const action = nextActionStatus(o);
         const inactiveDays = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
         return <tr key={o.id} className={`clickable action-${action.code}`} onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.regional_nombre || '—'}</td><td><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td>{fmtMoney(o.offer_value)}</td><td><Badge tone={action.tone}>{action.label}</Badge><br/><small>{o.next_action_at ? fmtDate(o.next_action_at) : action.detail}</small></td><td>{inactiveDays === null ? '—' : `${inactiveDays} día(s)`}</td><td>{action.detail}</td></tr>;
@@ -1145,6 +1175,7 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
   const [stage, setStage] = useState(hashQueryParam('stage'));
   const [hideClosed, setHideClosed] = useState(true);
   const [sortConfig, setSortConfig] = useState<SortConfig<'alert'|'client'|'owner'|'stage'|'value'|'next'|'inactive'|'action'>>({ key: 'alert', direction: 'asc' });
+  const [lowGoalSortConfig, setLowGoalSortConfig] = useState<SortConfig<'owner'|'month'|'sales'|'goal'|'status'>>({ key: 'status', direction: 'asc' });
 
   const active = data.opportunities.filter(o => !isTerminalStage(o.stage_code));
   const alertRows = active.map(o => {
@@ -1169,6 +1200,11 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
     const pct = budget ? Math.round((sales / budget) * 100) : null;
     return { goal: g, profile, sales, budget, pct };
   }).filter(r => r.pct !== null && Number(r.pct) < 80);
+  const sortedLowGoalRows = [...lowGoalRows].sort((a,b) => {
+    const value = (row: typeof lowGoalRows[number]) => lowGoalSortConfig.key === 'owner' ? (row.profile?.full_name || '') : lowGoalSortConfig.key === 'month' ? (row.goal.period_month || '') : lowGoalSortConfig.key === 'sales' ? row.sales : lowGoalSortConfig.key === 'goal' ? row.budget : Number(row.pct || 0);
+    return compareSortValues(value(a), value(b), lowGoalSortConfig.direction);
+  });
+  const sortLowGoalBy = (key: typeof lowGoalSortConfig.key) => setLowGoalSortConfig(current => nextSort(current, key));
 
   const alertCards = [
     { label: 'Acciones críticas', value: alertRows.filter(r => ['overdue','missing','stalled'].includes(r.alertCode)).length, detail: 'Vencidas, sin agenda o estancadas', tone: 'danger' },
@@ -1229,7 +1265,7 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
       })}</tbody></table></div>
     </Panel>
     <Panel title="Cumplimiento bajo 80%">
-      {lowGoalRows.length ? <div className="tablewrap"><table><thead><tr><th>Comercial</th><th>Mes</th><th>Ventas</th><th>Meta</th><th>Cumplimiento</th></tr></thead><tbody>{lowGoalRows.map(row => <tr key={`${row.goal.user_id}-${row.goal.period_month}`}><td>{row.profile?.full_name || 'Sin comercial'}</td><td>{fmtDate(row.goal.period_month)}</td><td>{fmtMoney(row.sales)}</td><td>{fmtMoney(row.budget)}</td><td><Badge tone="amber">{row.pct}%</Badge></td></tr>)}</tbody></table></div> : <EmptyState title="Sin alertas de cumplimiento" text="Cuando se carguen metas reales, aquí aparecerán comerciales por debajo del 80%." />}
+      {lowGoalRows.length ? <div className="tablewrap"><table><thead><tr><SortableTh label="Comercial" sortKey="owner" sortConfig={lowGoalSortConfig} onSort={sortLowGoalBy}/><SortableTh label="Mes" sortKey="month" sortConfig={lowGoalSortConfig} onSort={sortLowGoalBy}/><SortableTh label="Ventas" sortKey="sales" sortConfig={lowGoalSortConfig} onSort={sortLowGoalBy}/><SortableTh label="Meta" sortKey="goal" sortConfig={lowGoalSortConfig} onSort={sortLowGoalBy}/><SortableTh label="Cumplimiento" sortKey="status" sortConfig={lowGoalSortConfig} onSort={sortLowGoalBy}/></tr></thead><tbody>{sortedLowGoalRows.map(row => <tr key={`${row.goal.user_id}-${row.goal.period_month}`}><td>{row.profile?.full_name || 'Sin comercial'}</td><td>{fmtDate(row.goal.period_month)}</td><td>{fmtMoney(row.sales)}</td><td>{fmtMoney(row.budget)}</td><td><Badge tone="amber">{row.pct}%</Badge></td></tr>)}</tbody></table></div> : <EmptyState title="Sin alertas de cumplimiento" text="Cuando se carguen metas reales, aquí aparecerán comerciales por debajo del 80%." />}
     </Panel>
   </section>;
 }
@@ -1420,6 +1456,8 @@ function CentinelAssistant({ data }: { data: Bootstrap }) {
   const [submitted, setSubmitted] = useState(query);
   const [centinelTenderPayload, setCentinelTenderPayload] = useState<TenderRadarPayload | null>(null);
   const [centinelTenderStatus, setCentinelTenderStatus] = useState('');
+  const [centinelOpportunitySortConfig, setCentinelOpportunitySortConfig] = useState<SortConfig<'client'|'owner'|'stage'|'value'|'next'|'inactive'>>({ key: 'value', direction: 'desc' });
+  const [centinelTenderSortConfig, setCentinelTenderSortConfig] = useState<SortConfig<'entity'|'section'|'status'|'value'|'deadline'|'score'>>({ key: 'score', direction: 'desc' });
   const loadCentinelTenders = async () => {
     if (!canViewTenders(data.currentProfile)) return;
     setCentinelTenderStatus('Cargando licitaciones para Centinel…');
@@ -1432,8 +1470,18 @@ function CentinelAssistant({ data }: { data: Bootstrap }) {
   };
   useEffect(() => { loadCentinelTenders(); }, [data.currentProfile.id]);
   const result = useMemo(() => interpretCentinelQuery(submitted, data, centinelTenderPayload), [submitted, data, centinelTenderPayload]);
-  const visibleRows = result.rows.slice(0, 25);
-  const visibleTenderRows = (result.tenderRows || []).slice(0, 25);
+  const sortedCentinelOpportunityRows = [...result.rows].sort((a,b) => {
+    const value = (o: Opportunity) => centinelOpportunitySortConfig.key === 'client' ? o.company_name : centinelOpportunitySortConfig.key === 'owner' ? (o.owner_name || '') : centinelOpportunitySortConfig.key === 'stage' ? o.stage_order : centinelOpportunitySortConfig.key === 'value' ? Number(o.offer_value || 0) : centinelOpportunitySortConfig.key === 'next' ? (o.next_action_at || '') : Number(daysSince(o.last_interaction_at || o.updated_at || o.created_at) || 0);
+    return compareSortValues(value(a), value(b), centinelOpportunitySortConfig.direction);
+  });
+  const sortedCentinelTenderRows = [...(result.tenderRows || [])].sort((a,b) => {
+    const value = (t: PublicTender) => centinelTenderSortConfig.key === 'entity' ? t.entity : centinelTenderSortConfig.key === 'section' ? t.section : centinelTenderSortConfig.key === 'status' ? tenderStatusLabel(t.internal_status) : centinelTenderSortConfig.key === 'value' ? Number(t.value || 0) : centinelTenderSortConfig.key === 'deadline' ? (t.deadline || '') : Number(t.score || 0);
+    return compareSortValues(value(a), value(b), centinelTenderSortConfig.direction);
+  });
+  const sortCentinelOpportunityBy = (key: typeof centinelOpportunitySortConfig.key) => setCentinelOpportunitySortConfig(current => nextSort(current, key));
+  const sortCentinelTenderBy = (key: typeof centinelTenderSortConfig.key) => setCentinelTenderSortConfig(current => nextSort(current, key));
+  const visibleRows = sortedCentinelOpportunityRows.slice(0, 25);
+  const visibleTenderRows = sortedCentinelTenderRows.slice(0, 25);
   const isTenderResult = result.mode === 'tenders';
   return <section className="stack centinel-dashboard">
     <section className="centinel-topline"><h2>Pregúntale a Centinel</h2><p>Escribe lo que necesitas ver y Centinel te devuelve un reporte comercial seguro.</p></section>
@@ -1456,11 +1504,11 @@ function CentinelAssistant({ data }: { data: Bootstrap }) {
       <div className="centinel-result-grid">{result.cards.map(card => <div className="centinel-result-card" key={card.label}><small>{card.label}</small><strong>{card.value}</strong><span>{card.detail}</span></div>)}</div>
       {result.mode === 'pipeline' && <StageBars summary={data.summary} />}
       {isTenderResult ? (
-        <div className="tablewrap centinel-result-table"><table><thead><tr><th>Entidad</th><th>Sección</th><th>Estado interno</th><th>Valor</th><th>Cierre</th><th>Score</th></tr></thead><tbody>{visibleTenderRows.map(t => (
+        <div className="tablewrap centinel-result-table"><table><thead><tr><SortableTh label="Entidad" sortKey="entity" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Sección" sortKey="section" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Estado interno" sortKey="status" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Valor" sortKey="value" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Cierre" sortKey="deadline" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Score" sortKey="score" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/></tr></thead><tbody>{visibleTenderRows.map(t => (
           <tr key={t.id} className="clickable" onClick={() => go('#/tenders')}><td><strong>{t.entity}</strong><br/><small>{t.ref || t.process_id || t.city || '—'}</small></td><td><Badge tone={t.section === 'hacer' ? 'amber' : t.section === 'descartar' ? 'danger' : 'blue'}>{t.section === 'hacer' ? 'Hacer hoy' : t.section === 'revisar' ? 'Revisar' : 'Validar'}</Badge></td><td><Badge tone={tenderStatusTone(t.internal_status)}>{tenderStatusLabel(t.internal_status)}</Badge></td><td>{fmtMoney(t.value)}</td><td>{fmtDate(t.deadline)}</td><td>{t.score}</td></tr>
         ))}</tbody></table></div>
       ) : (
-        <div className="tablewrap centinel-result-table"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Etapa</th><th>Valor</th><th>Próxima acción</th><th>Días sin seguimiento</th></tr></thead><tbody>{visibleRows.map(o => {
+        <div className="tablewrap centinel-result-table"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Valor" sortKey="value" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Días sin seguimiento" sortKey="inactive" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/></tr></thead><tbody>{visibleRows.map(o => {
           const action = nextActionStatus(o);
           const inactive = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
           return <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.regional_nombre || '—'}</small></td><td>{o.owner_name || 'Sin comercial'}</td><td><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td><Badge tone={action.tone}>{action.label}</Badge><br/><small>{o.next_action_at ? fmtDate(o.next_action_at) : action.detail}</small></td><td>{inactive === null ? '—' : `${inactive} día(s)`}</td></tr>;
@@ -1485,6 +1533,8 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
   const [ownerId, setOwnerId] = useState(data.currentProfile.role === 'comercial' ? data.currentProfile.id : (data.profiles[0]?.id || ''));
   const canEditGoals = canManageGoals(data.currentProfile);
   const [status, setStatus] = useState('');
+  const [businessUnitSortConfig, setBusinessUnitSortConfig] = useState<SortConfig<'unit'|'rule'|'team'|'sales'|'quotes'|'status'>>({ key: 'unit', direction: 'asc' });
+  const [complianceSortConfig, setComplianceSortConfig] = useState<SortConfig<'indicator'|'month'|'quarter'|'semester'|'year'>>({ key: 'indicator', direction: 'asc' });
   const periodMonth = `${year}-${String(month).padStart(2, '0')}-01`;
   const existing = data.goals.find(g => g.user_id === ownerId && String(g.period_month).slice(0, 7) === periodMonth.slice(0, 7));
   const [form, setForm] = useState({ sales_budget: '', prospect_target: '', quote_target: '' });
@@ -1500,6 +1550,17 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
   const ownerName = data.profiles.find(p => p.id === ownerId)?.full_name || 'Seleccionar asesor';
   const periods = buildCompliancePeriods(year, month);
   const rows = buildComplianceRows(data, ownerId, periods);
+  const businessUnitRows = businessUnitRuleRows(data, periodMonth);
+  const sortedBusinessUnitRuleRows = [...businessUnitRows].sort((a,b) => {
+    const value = (row: typeof businessUnitRows[number]) => businessUnitSortConfig.key === 'unit' ? row.label : businessUnitSortConfig.key === 'rule' ? row.rule : businessUnitSortConfig.key === 'team' ? row.profiles : businessUnitSortConfig.key === 'sales' ? row.sales : businessUnitSortConfig.key === 'quotes' ? row.quotes : Number(row.pct ?? -1);
+    return compareSortValues(value(a), value(b), businessUnitSortConfig.direction);
+  });
+  const sortedComplianceRows = [...rows].sort((a,b) => {
+    const value = (row: typeof rows[number]) => complianceSortConfig.key === 'indicator' ? row.label : Number(row.values[complianceSortConfig.key]?.pct ?? -1);
+    return compareSortValues(value(a), value(b), complianceSortConfig.direction);
+  });
+  const sortBusinessUnitBy = (key: typeof businessUnitSortConfig.key) => setBusinessUnitSortConfig(current => nextSort(current, key));
+  const sortComplianceBy = (key: typeof complianceSortConfig.key) => setComplianceSortConfig(current => nextSort(current, key));
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus('Guardando presupuesto…');
@@ -1560,12 +1621,12 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
 
     <Panel title="Reglas comerciales por unidad">
       <p className="muted">Estas reglas viven en Metas y cumplimiento para evitar más ventanas. Usan las metas reales cargadas por asesor y se agrupan por área comercial.</p>
-      <div className="business-unit-rules tablewrap"><table><thead><tr><th>Unidad</th><th>Regla operativa</th><th>Equipo</th><th>Ventas vs meta</th><th>Cotizaciones vs meta</th><th>Estado</th></tr></thead><tbody>{businessUnitRuleRows(data, periodMonth).map(row => <tr key={row.area}><td><strong>{row.label}</strong></td><td>{row.rule}</td><td>{row.profiles} asesor(es)</td><td>{fmtMoneyCompact(row.sales)} / {fmtMoneyCompact(row.salesGoal)}</td><td>{row.quotes} / {row.quotesGoal}</td><td><Badge tone={goalStatusTone(row.pct)}>{row.pct === null ? 'Sin meta' : `${row.pct}%`}</Badge></td></tr>)}</tbody></table></div>
+      <div className="business-unit-rules tablewrap"><table><thead><tr><SortableTh label="Unidad" sortKey="unit" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/><SortableTh label="Regla operativa" sortKey="rule" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/><SortableTh label="Equipo" sortKey="team" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/><SortableTh label="Ventas vs meta" sortKey="sales" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/><SortableTh label="Cotizaciones vs meta" sortKey="quotes" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/><SortableTh label="Estado" sortKey="status" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/></tr></thead><tbody>{sortedBusinessUnitRuleRows.map(row => <tr key={row.area}><td><strong>{row.label}</strong></td><td>{row.rule}</td><td>{row.profiles} asesor(es)</td><td>{fmtMoneyCompact(row.sales)} / {fmtMoneyCompact(row.salesGoal)}</td><td>{row.quotes} / {row.quotesGoal}</td><td><Badge tone={goalStatusTone(row.pct)}>{row.pct === null ? 'Sin meta' : `${row.pct}%`}</Badge></td></tr>)}</tbody></table></div>
     </Panel>
 
     <Panel title={`Panel de cumplimiento · ${ownerName}`}>
       <div className="compliance-legend"><span className="dot danger"/> Rojo &lt;80% <span className="dot warn"/> Amarillo 80–99% <span className="dot good"/> Verde ≥100%</div>
-      <div className="tablewrap compliance-table"><table><thead><tr><th>Indicador</th>{periods.map(p => <th key={p.key}>{p.label}</th>)}</tr></thead><tbody>{rows.map(row => <tr key={row.label}><td><strong>{row.label}</strong><br/><small>{row.description}</small></td>{periods.map(period => {
+      <div className="tablewrap compliance-table"><table><thead><tr><SortableTh label="Indicador" sortKey="indicator" sortConfig={complianceSortConfig} onSort={sortComplianceBy}/>{periods.map(p => <SortableTh key={p.key} label={p.label} sortKey={p.key as typeof complianceSortConfig.key} sortConfig={complianceSortConfig} onSort={sortComplianceBy}/>)}</tr></thead><tbody>{sortedComplianceRows.map(row => <tr key={row.label}><td><strong>{row.label}</strong><br/><small>{row.description}</small></td>{periods.map(period => {
         const cell = row.values[period.key];
         return <td key={period.key} className={`compliance-cell ${goalStatusTone(cell.pct)}`}><strong>{formatGoalValue(row.kind, cell.goal)} / {formatGoalValue(row.kind, cell.actual)}</strong><span>{cell.pct === null ? 'Sin meta' : `${cell.pct}%`}</span></td>;
       })}</tr>)}</tbody></table></div>
@@ -1627,7 +1688,13 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const emptyUserForm: UserPayload = { full_name: '', microsoft_email: '', role: 'comercial', active: true, password: '', send_invite: true, commercial_area: '', can_edit_customer_segment: false };
   const [form, setForm] = useState<UserPayload>(emptyUserForm);
+  const [usersSortConfig, setUsersSortConfig] = useState<SortConfig<'name'|'email'|'role'|'area'|'segment'|'status'>>({ key: 'name', direction: 'asc' });
   const load = async () => { setUsers(await api<Profile[]>('/api/users')); };
+  const sortedUsers = [...users].sort((a,b) => {
+    const value = (u: Profile) => usersSortConfig.key === 'name' ? u.full_name : usersSortConfig.key === 'email' ? u.microsoft_email : usersSortConfig.key === 'role' ? u.role : usersSortConfig.key === 'area' ? commercialAreaLabel(u.commercial_area) : usersSortConfig.key === 'segment' ? (u.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado') : (u.active ? 'Activo' : 'Inactivo');
+    return compareSortValues(value(a), value(b), usersSortConfig.direction);
+  });
+  const sortUsersBy = (key: typeof usersSortConfig.key) => setUsersSortConfig(current => nextSort(current, key));
   useEffect(() => { if (canManageUsers(currentProfile)) load().catch(e => setStatus(e instanceof Error ? e.message : String(e))); }, [currentProfile.id]);
   if (!canManageUsers(currentProfile)) return <div className="error">Solo admin puede administrar usuarios.</div>;
   const startEdit = (user: Profile) => {
@@ -1666,7 +1733,7 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
         <div className="formactions"><button>{editingUserId ? 'Actualizar usuario' : 'Guardar usuario'}</button>{editingUserId && <button type="button" className="secondary" onClick={cancelEdit}>Cancelar edición</button>}{status && <span>{status}</span>}</div>
       </form>
     </Panel>
-    <Panel title="Perfiles actuales"><div className="tablewrap"><table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Área</th><th>Segmento</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>{users.map(u => <tr key={u.id}><td><strong>{u.full_name}</strong></td><td>{u.microsoft_email}</td><td><Badge>{u.role}</Badge></td><td>{commercialAreaLabel(u.commercial_area)}</td><td>{u.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado'}</td><td>{u.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(u)}>Editar</button></td></tr>)}</tbody></table></div></Panel>
+    <Panel title="Perfiles actuales"><div className="tablewrap"><table><thead><tr><SortableTh label="Nombre" sortKey="name" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Email" sortKey="email" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Rol" sortKey="role" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Área" sortKey="area" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Segmento" sortKey="segment" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Estado" sortKey="status" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Acciones</th></tr></thead><tbody>{sortedUsers.map(u => <tr key={u.id}><td><strong>{u.full_name}</strong></td><td>{u.microsoft_email}</td><td><Badge>{u.role}</Badge></td><td>{commercialAreaLabel(u.commercial_area)}</td><td>{u.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado'}</td><td>{u.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(u)}>Editar</button></td></tr>)}</tbody></table></div></Panel>
   </section>;
 }
 
