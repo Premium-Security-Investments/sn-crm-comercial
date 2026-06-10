@@ -12,11 +12,9 @@ for (const code of [src, api, server, migration]) {
   assert(code.includes('can_edit_customer_segment'), 'Debe existir permiso can_edit_customer_segment para comerciales.');
 }
 
-assert(src.includes('Seguridad Física · Cliente Nuevo vs Cliente Actual'), 'Dashboard debe mostrar desglose de Seguridad Física por tipo de cliente.');
-assert(src.includes('Tecnología · Metas Carlos Bedoya'), 'Dashboard debe mostrar metas de tecnología para Carlos Bedoya.');
-assert(src.includes("service_type_code === 'seguridad_fisica'"), 'Regla de Física debe contar solo servicio seguridad_fisica.');
-assert(!src.includes("'escoltas','seguridad_fisica'") && !src.includes("seguridad_fisica','escoltas"), 'Regla de Física no debe incluir Escoltas.');
-assert(src.includes("stage_code === 'aprobado'"), 'Regla de ventas debe usar etapa aprobado.');
+assert(!src.includes('Reglas comerciales por área'), 'Dashboard gerencial no debe mostrar reglas comerciales por área.');
+assert(!src.includes('Seguridad Física · Cliente Nuevo vs Cliente Actual'), 'La regla de Seguridad Física no debe ocupar espacio en el dashboard.');
+assert(!src.includes('Tecnología · Metas Carlos Bedoya'), 'La meta individual de tecnología no debe ocupar espacio en el dashboard.');
 assert(src.includes('Cliente Nuevo') && src.includes('Cliente Actual'), 'UI debe etiquetar Cliente Nuevo / Cliente Actual.');
 
 assert(api.includes('canEditCustomerSegment') && server.includes('canEditCustomerSegment'), 'Backend debe tener función de permiso para editar segmento.');

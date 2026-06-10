@@ -33,6 +33,7 @@ type PublicTender = { id: string; stable_key?: string; source: string; section: 
 type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string; count?: number; message?: string };
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
+type DashboardPeriodFilter = 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
 
 type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; };
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
@@ -50,9 +51,6 @@ const commercialAreaOptions: Array<[CommercialArea, string]> = [['seguridad_fisi
 function customerSegmentLabel(value?: string | null) { return value === 'cliente_nuevo' ? 'Cliente Nuevo' : value === 'cliente_actual' ? 'Cliente Actual' : 'Pendiente'; }
 function commercialAreaLabel(value?: string | null) { return value === 'seguridad_fisica' ? 'Seguridad Física' : value === 'tecnologia' ? 'Tecnología' : value === 'licitacion_publica' ? 'Licitación Pública' : 'Sin área'; }
 function isApprovedSale(o: Opportunity) { return o.stage_code === 'aprobado'; }
-function isPhysicalGoalOpportunity(o: Opportunity) { return o.owner_commercial_area === 'seguridad_fisica' && o.service_type_code === 'seguridad_fisica' && o.stage_code === 'aprobado'; }
-function isTechnologyMonitoringSale(o: Opportunity) { return o.owner_commercial_area === 'tecnologia' && o.service_type_code === 'monitoreo' && o.stage_code === 'aprobado'; }
-function isTechnologyProjectSale(o: Opportunity) { return o.owner_commercial_area === 'tecnologia' && o.service_type_code === 'proyecto' && o.stage_code === 'aprobado'; }
 function canEditOpportunitySegment(current: Profile, opportunity?: Opportunity | null) { return !opportunity || isManagementRole(current.role) || (current.can_edit_customer_segment && opportunity.owner_id === current.id); }
 
 function parseRoute(): Route {
@@ -93,6 +91,23 @@ function uniq(values: Array<string | null | undefined>) { return Array.from(new 
 function ownerKey(o: Pick<Opportunity, 'owner_id'>) { return o.owner_id || '__sin_comercial__'; }
 function ownerRoute(ownerId: string) { return `#/consultant/${encodeURIComponent(ownerId)}`; }
 function isTerminalStage(stageCode?: string | null) { return ['aprobado','perdido','descartado'].includes(stageCode || ''); }
+function dashboardOpportunityDate(o: Opportunity) { return o.expected_close_date || o.quote_date || o.approved_at || o.updated_at || o.created_at; }
+function matchesDashboardPeriod(o: Opportunity, period: DashboardPeriodFilter) {
+  if (period === 'todos') return true;
+  const value = dashboardOpportunityDate(o);
+  if (!value) return false;
+  const d = new Date(value); if (Number.isNaN(d.getTime())) return false;
+  const today = startOfToday();
+  if (period === 'mes_actual') return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth();
+  if (period === 'proximos_30') { const max = new Date(today); max.setDate(max.getDate() + 30); return d >= today && d <= max; }
+  if (period === 'trimestre_actual') return d.getFullYear() === today.getFullYear() && Math.floor(d.getMonth()/3) === Math.floor(today.getMonth()/3);
+  if (period === 'anio_actual') return d.getFullYear() === today.getFullYear();
+  return true;
+}
+function lastUpdatedLabel(rows: Opportunity[]) {
+  const timestamps = rows.map(o => new Date(o.updated_at || o.created_at).getTime()).filter(Number.isFinite);
+  return timestamps.length ? fmtDate(new Date(Math.max(...timestamps)).toISOString()) : 'Sin fecha';
+}
 function startOfToday() { const d = new Date(); d.setHours(0,0,0,0); return d; }
 function daysSince(value?: string | null) { if (!value) return null; const diff = startOfToday().getTime() - new Date(value).getTime(); return Math.max(0, Math.floor(diff / 86_400_000)); }
 function nextActionStatus(o: Pick<Opportunity, 'stage_code' | 'next_action_at' | 'last_interaction_at' | 'updated_at' | 'created_at'>) {
@@ -319,6 +334,15 @@ function StageBars({ summary }: { summary: SummaryRow[] }) {
       <small><b>{fmtMoney(s.total_offer_value)}</b><br/>{fmtMoney(s.weighted_pipeline_value)} ponderado</small>
     </div>;
   })}</div>;
+}
+function ServicePipelineBreakdown({ rows }: { rows: Array<{ key: string; label: string; count: number; value: number; weighted: number; share: number }> }) {
+  if (!rows.length) return <EmptyState title="Sin pipeline activo" text="No hay oportunidades activas para agrupar por servicio." />;
+  const max = Math.max(...rows.map(r => r.value), 1);
+  return <div className="service-pipeline-list">{rows.map(row => <div className="service-pipeline-row" key={row.key}>
+    <div className="service-pipeline-label"><strong>{row.label}</strong><span>{row.count} oportunidades activas · {row.share}% del pipeline activo por servicio</span></div>
+    <div className="service-pipeline-track"><span style={{ width: `${Math.max(4, row.value / max * 100)}%` }} /></div>
+    <div className="service-pipeline-meta"><strong>{fmtMoneyCompact(row.value)}</strong><span>{fmtMoneyCompact(row.weighted)} forecast</span></div>
+  </div>)}</div>;
 }
 function MiniTable({ rows, empty = 'Sin registros' }: { rows: Opportunity[]; empty?: string }) {
   if (!rows.length) return <p className="muted">{empty}</p>;
@@ -569,60 +593,89 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
   </Panel>;
 }
 
-function BusinessRulesDashboard({ data }: { data: Bootstrap }) {
-  const physicalSales = data.opportunities.filter(isPhysicalGoalOpportunity);
-  const physicalNew = physicalSales.filter(o => o.customer_segment === 'cliente_nuevo');
-  const physicalCurrent = physicalSales.filter(o => o.customer_segment === 'cliente_actual');
-  const physicalPending = physicalSales.filter(o => !o.customer_segment);
-  const physicalProjectsOut = data.opportunities.filter(o => o.owner_commercial_area === 'seguridad_fisica' && o.service_type_code === 'proyecto' && o.stage_code === 'aprobado');
-  const techMonitoring = data.opportunities.filter(isTechnologyMonitoringSale);
-  const techProjects = data.opportunities.filter(isTechnologyProjectSale);
-  const carlos = data.profiles.find(p => p.microsoft_email?.toLowerCase() === 'analista2@seguridadnacional.co' || p.full_name?.toLowerCase().includes('carlos bedoya'));
-  const currentMonth = new Date().toISOString().slice(0, 7);
-  const techMonitoringMonth = techMonitoring.filter(o => String(o.approved_at || o.updated_at || '').slice(0, 7) === currentMonth).length;
-  const techProjectsMonth = techProjects.filter(o => String(o.approved_at || o.updated_at || '').slice(0, 7) === currentMonth).length;
-  const sum = (rows: Opportunity[]) => rows.reduce((s,o)=>s+Number(o.offer_value||0),0);
-  return <Panel title="Reglas comerciales por área">
-    <div className="grid two business-rules-grid">
-      <div className="card business-rule-card"><small>Seguridad Física · Cliente Nuevo vs Cliente Actual</small><strong>{physicalSales.length} ventas aprobadas</strong><span>Solo servicio Seguridad Física; no incluye Escoltas ni Proyectos.</span><div className="segment-split"><span><b>{physicalNew.length}</b> Cliente Nuevo<br/><em>{fmtMoneyCompact(sum(physicalNew))}</em></span><span><b>{physicalCurrent.length}</b> Cliente Actual<br/><em>{fmtMoneyCompact(sum(physicalCurrent))}</em></span><span><b>{physicalPending.length}</b> Pendientes<br/><em>Clasificar</em></span></div></div>
-      <div className="card business-rule-card"><small>Tecnología · Metas Carlos Bedoya</small><strong>{carlos?.full_name || 'Carlos Bedoya'}</strong><span>Meta mensual: 7 monitoreos y 3 proyectos/equipos aprobados.</span><div className="segment-split"><span><b>{techMonitoringMonth}/7</b> Monitoreo<br/><em>{Math.round((techMonitoringMonth/7)*100)}%</em></span><span><b>{techProjectsMonth}/3</b> Proyectos<br/><em>{Math.round((techProjectsMonth/3)*100)}%</em></span><span><b>{physicalProjectsOut.length}</b> Proyectos Física<br/><em>Fuera de meta</em></span></div></div>
-    </div>
-  </Panel>;
-}
-
 function ManagerDashboard({ data }: { data: Bootstrap }) {
-  const active = data.opportunities.filter(o => !['aprobado','perdido','descartado'].includes(o.stage_code)).length;
+  const [period, setPeriod] = useState<DashboardPeriodFilter>('todos');
+  const [owner, setOwner] = useState('');
+  const [stage, setStage] = useState('');
+  const [service, setService] = useState('');
+  const scopedOpportunities = useMemo(() => data.opportunities.filter(o =>
+    matchesDashboardPeriod(o, period) &&
+    (!owner || ownerKey(o) === owner) &&
+    (!stage || o.stage_code === stage) &&
+    (!service || o.service_type_code === service)
+  ), [data.opportunities, period, owner, stage, service]);
+  const scopedIds = useMemo(() => new Set(scopedOpportunities.map(o => o.id)), [scopedOpportunities]);
+  const filteredStalled = data.stalled.filter(o => scopedIds.has(o.id));
+  const active = scopedOpportunities.filter(o => !isTerminalStage(o.stage_code)).length;
+  const scopedTotals = useMemo(() => scopedOpportunities.reduce((acc, o) => {
+    const value = Number(o.offer_value || 0);
+    acc.count++;
+    acc.pipeline += value;
+    acc.weighted += Number(o.weighted_pipeline_value || 0);
+    if (isApprovedSale(o)) acc.approved += value;
+    return acc;
+  }, { count: 0, pipeline: 0, weighted: 0, approved: 0 }), [scopedOpportunities]);
   const byOwner = useMemo(() => {
     const map = new Map<string, { ownerId: string; owner: string; count: number; value: number; weighted: number; approved: number; active: number }>();
-    data.opportunities.forEach(o => {
+    scopedOpportunities.forEach(o => {
       const key = ownerKey(o);
       const row = map.get(key) || { ownerId: key, owner: o.owner_name || 'Sin comercial', count: 0, value: 0, weighted: 0, approved: 0, active: 0 };
       row.count++;
       row.value += Number(o.offer_value || 0);
       row.weighted += Number(o.weighted_pipeline_value || 0);
-      if (!['aprobado','perdido','descartado'].includes(o.stage_code)) row.active++;
-      if (o.stage_code === 'aprobado') row.approved += Number(o.offer_value || 0);
+      if (!isTerminalStage(o.stage_code)) row.active++;
+      if (isApprovedSale(o)) row.approved += Number(o.offer_value || 0);
       map.set(key,row);
     });
     return Array.from(map.values()).sort((a,b)=>b.value-a.value);
-  }, [data.opportunities]);
+  }, [scopedOpportunities]);
   const leader = byOwner[0];
   const maxOwnerValue = Math.max(...byOwner.map(o=>o.value),1);
-  const conversion = data.totals.pipeline ? Math.round((data.totals.approved / data.totals.pipeline) * 100) : 0;
-  const stageRows = [...data.summary].sort((a,b)=>a.stage_order-b.stage_order);
-  const stageLeader = [...data.summary].sort((a,b)=>Number(b.total_offer_value)-Number(a.total_offer_value))[0];
-  const concentration = stageLeader && data.totals.pipeline ? Math.round((Number(stageLeader.total_offer_value || 0) / data.totals.pipeline) * 100) : 0;
-  const staleCount = data.stalled.length;
+  const conversion = scopedTotals.pipeline ? Math.round((scopedTotals.approved / scopedTotals.pipeline) * 100) : 0;
+  const stageRows = useMemo(() => {
+    const map = new Map<string, SummaryRow>();
+    scopedOpportunities.forEach(o => {
+      const row = map.get(o.stage_code) || { stage_code: o.stage_code, stage_name: o.stage_name, stage_order: o.stage_order, opportunities_count: 0, total_offer_value: 0, weighted_pipeline_value: 0 };
+      row.opportunities_count++;
+      row.total_offer_value += Number(o.offer_value || 0);
+      row.weighted_pipeline_value += Number(o.weighted_pipeline_value || 0);
+      map.set(o.stage_code, row);
+    });
+    return Array.from(map.values()).sort((a,b)=>a.stage_order-b.stage_order);
+  }, [scopedOpportunities]);
+  const activeOpportunities = scopedOpportunities.filter(o => !isTerminalStage(o.stage_code));
+  const activePipelineValue = activeOpportunities.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
+  const servicePipelineRows = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; count: number; value: number; weighted: number }>();
+    scopedOpportunities.filter(o => !isTerminalStage(o.stage_code)).forEach(o => {
+      const key = o.service_type_code || o.tipo_producto_original || '__sin_servicio__';
+      const label = o.service_type_name || o.tipo_producto_original || 'Sin servicio clasificado';
+      const row = map.get(key) || { key, label, count: 0, value: 0, weighted: 0 };
+      row.count++;
+      row.value += Number(o.offer_value || 0);
+      row.weighted += Number(o.weighted_pipeline_value || 0);
+      map.set(key, row);
+    });
+    const total = Array.from(map.values()).reduce((sum, row) => sum + row.value, 0) || 1;
+    return Array.from(map.values())
+      .map(row => ({ ...row, share: Math.round((row.value / total) * 100) }))
+      .sort((a,b)=>b.value-a.value || b.count-a.count);
+  }, [scopedOpportunities]);
+  const serviceLeader = servicePipelineRows[0];
+  const stageLeader = [...stageRows].sort((a,b)=>Number(b.total_offer_value)-Number(a.total_offer_value))[0];
+  const concentration = stageLeader && scopedTotals.pipeline ? Math.round((Number(stageLeader.total_offer_value || 0) / scopedTotals.pipeline) * 100) : 0;
+  const staleCount = filteredStalled.length;
   const commercialCards = byOwner.map(o => {
-    const share = data.totals.pipeline ? Math.round((o.value / data.totals.pipeline) * 100) : 0;
+    const share = scopedTotals.pipeline ? Math.round((o.value / scopedTotals.pipeline) * 100) : 0;
     const winRate = o.value ? Math.round((o.approved / o.value) * 100) : 0;
     const status = winRate >= 20 ? 'green' : winRate >= 8 ? 'amber' : 'red';
     const statusLabel = winRate >= 20 ? 'Cierre fuerte' : winRate >= 8 ? 'En observación' : 'Requiere foco';
     return { ...o, share, winRate, status, statusLabel };
   });
   const monthlyByOwner = useMemo(() => {
+    const selectedOwnerName = owner ? data.profiles.find(p => p.id === owner)?.full_name : '';
     const map = new Map<string, { owner: string; prospectos: number; cotizaciones: number; ventas: number; comision: number }>();
-    data.monthlyKpis.slice(0, 30).forEach(k => {
+    data.monthlyKpis.slice(0, 30).filter(k => !selectedOwnerName || (k.owner_name || 'Sin comercial') === selectedOwnerName).forEach(k => {
       const owner = k.owner_name || 'Sin comercial';
       const row = map.get(owner) || { owner, prospectos: 0, cotizaciones: 0, ventas: 0, comision: 0 };
       row.prospectos += Number(k.prospectos || 0);
@@ -632,23 +685,34 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
       map.set(owner, row);
     });
     return Array.from(map.values()).sort((a,b)=>b.ventas-a.ventas || b.cotizaciones-a.cotizaciones);
-  }, [data.monthlyKpis]);
+  }, [data.monthlyKpis, data.profiles, owner]);
   const maxMonthly = Math.max(...monthlyByOwner.map(o=>Math.max(o.prospectos, o.cotizaciones, o.ventas / 10_000_000)), 1);
   const maxMonthlySales = Math.max(...monthlyByOwner.map(o=>o.ventas), 1);
   const actionText = stageLeader
-    ? `Priorizar avance de ${stageLeader.stage_name}: concentra ${concentration}% del pipeline y puede liberar ${fmtMoneyCompact(stageLeader.weighted_pipeline_value)} ponderados.`
+    ? `Priorizar avance de ${stageLeader.stage_name}: concentra ${concentration}% del pipeline filtrado y puede liberar ${fmtMoneyCompact(stageLeader.weighted_pipeline_value)} ponderados.`
     : 'Mantener seguimiento semanal del pipeline y las oportunidades activas.';
 
   return <section className="stack manager-dashboard command-center">
+    <Panel title="Filtros gerenciales">
+      <div className="filters manager-dashboard-filters">
+        <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Período"/>
+        <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Todos los comerciales"/>
+        <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Todas las etapas"/>
+        <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Todos los servicios"/>
+        <button className="secondary" onClick={()=>{ setPeriod('todos'); setOwner(''); setStage(''); setService(''); }}>Limpiar filtros</button>
+      </div>
+      <div className="filter-summary"><strong>{scopedOpportunities.length}</strong> de {data.opportunities.length} oportunidades visibles · Última actualización: {lastUpdatedLabel(scopedOpportunities)}</div>
+    </Panel>
+
     <section className="command-center-hero">
       <div className="command-copy">
         <div className="command-title-row"><span className="eyebrow">Sala de control comercial</span></div>
-        <h2>{fmtMoneyCompact(data.totals.pipeline)} en pipeline comercial</h2>
-        <p>{stageLeader ? `El ${concentration}% del valor está concentrado en ${stageLeader.stage_name}. La prioridad gerencial es mover ese valor hacia cierre sin perder visibilidad por comercial.` : 'Lectura ejecutiva del pipeline, forecast, concentración y riesgos comerciales.'}</p>
+        <h2><span className="numeric-value">{fmtMoneyCompact(scopedTotals.pipeline)}</span> en pipeline comercial</h2>
+        <p>{stageLeader ? `El ${concentration}% del valor filtrado está concentrado en ${stageLeader.stage_name}. La prioridad gerencial es mover ese valor hacia cierre sin perder visibilidad por comercial.` : 'Lectura ejecutiva del pipeline, forecast, concentración y riesgos comerciales.'}</p>
         <div className="command-metrics">
-          <div><small>Forecast ponderado</small><strong>{fmtMoneyCompact(data.totals.weighted)}</strong><span>{fmtMoney(data.totals.weighted)}</span></div>
-          <div><small>Ganado</small><strong>{fmtMoneyCompact(data.totals.approved)}</strong><span>{conversion}% de conversión</span></div>
-          <div><small>Oportunidades activas</small><strong>{active}</strong><span>{data.totals.count} oportunidades totales</span></div>
+          <div><small>Forecast ponderado</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.weighted)}</strong><span>{fmtMoney(scopedTotals.weighted)}</span></div>
+          <div><small>Ganado</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.approved)}</strong><span>{conversion}% de conversión</span></div>
+          <div><small>Pipeline activo</small><strong className="numeric-value">{fmtMoneyCompact(activePipelineValue)}</strong><span>{active} oportunidades en gestión</span></div>
         </div>
       </div>
       <div className="manager-action-panel">
@@ -657,33 +721,36 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
         <div className="signal-grid">
           <span><b>{leader?.owner || '—'}</b><em>Líder pipeline</em></span>
           <span><b>{stageLeader?.stage_name || '—'}</b><em>Etapa crítica</em></span>
+          <span><b>{serviceLeader?.label || '—'}</b><em>Servicio líder</em></span>
           <span><b>{staleCount ? staleCount : '0'}</b><em>Alertas</em></span>
         </div>
       </div>
     </section>
 
-    <BusinessRulesDashboard data={data} />
-
     <Panel title="Semáforos ejecutivos">
       <div className="executive-signals">
-        <div className={concentration >= 55 ? 'signal-card warn' : 'signal-card ok'}><small>Concentración</small><strong>{concentration}%</strong><span>{stageLeader?.stage_name || 'Sin etapa dominante'}</span><em>{concentration >= 55 ? 'Alto peso en una sola etapa' : 'Distribución saludable'}</em></div>
-        <div className={conversion >= 15 ? 'signal-card ok' : 'signal-card warn'}><small>Conversión aprobada</small><strong>{conversion}%</strong><span>{fmtMoneyCompact(data.totals.approved)} ganado</span><em>{conversion >= 15 ? 'Ritmo positivo' : 'Revisar avance a cierre'}</em></div>
-        <div className={staleCount ? 'signal-card danger' : 'signal-card ok'}><small>Seguimientos críticos</small><strong>{staleCount}</strong><span>Sustentación &gt; 5 días</span><em>{staleCount ? 'Requiere acción inmediata' : 'Sin alertas activas'}</em></div>
-        <div className="signal-card info"><small>Base activa</small><strong>{active}</strong><span>{data.totals.count} oportunidades totales</span><em>Operación comercial vigente</em></div>
+        <div className={concentration >= 55 ? 'signal-card warn' : 'signal-card ok'}><small>Concentración</small><strong className="numeric-value">{concentration}%</strong><span>{stageLeader?.stage_name || 'Sin etapa dominante'}</span><em>{concentration >= 55 ? 'Alto peso en una sola etapa' : 'Distribución saludable'}</em></div>
+        <div className={conversion >= 15 ? 'signal-card ok' : 'signal-card warn'}><small>Conversión aprobada</small><strong className="numeric-value">{conversion}%</strong><span>{fmtMoneyCompact(scopedTotals.approved)} ganado</span><em>{conversion >= 15 ? 'Ritmo positivo' : 'Revisar avance a cierre'}</em></div>
+        <div className={staleCount ? 'signal-card danger' : 'signal-card ok'}><small>Seguimientos críticos</small><strong className="numeric-value">{staleCount}</strong><span>Sustentación &gt; 5 días</span><em>{staleCount ? 'Requiere acción inmediata' : 'Sin alertas activas'}</em></div>
+        <div className="signal-card info"><small>Base activa</small><strong className="numeric-value">{active}</strong><span>{scopedTotals.count} oportunidades filtradas</span><em>Operación comercial vigente</em></div>
       </div>
     </Panel>
 
     <Panel title="Embudo visual de valor por etapa">
       <div className="visual-funnel">{stageRows.map(s => {
         const value = Number(s.total_offer_value || 0);
-        const pct = data.totals.pipeline ? Math.round((value / data.totals.pipeline) * 100) : 0;
+        const pct = scopedTotals.pipeline ? Math.round((value / scopedTotals.pipeline) * 100) : 0;
         const width = Math.max(58, Math.min(100, 46 + pct * 0.8));
         return <div className={`funnel-segment stage-${stageTone(s.stage_code)}`} key={s.stage_code} style={{ width: `${width}%` }}>
-          <div><small>{s.stage_name}</small><strong>{fmtMoneyCompact(value)}</strong></div>
+          <div><small>{s.stage_name}</small><strong className="numeric-value">{fmtMoneyCompact(value)}</strong></div>
           <span>{s.opportunities_count} ops · {pct}% del pipeline</span>
           <em>{fmtMoneyCompact(s.weighted_pipeline_value)} ponderado</em>
         </div>;
       })}</div>
+    </Panel>
+
+    <Panel title="Pipeline por tipo de servicio">
+      <ServicePipelineBreakdown rows={servicePipelineRows} />
     </Panel>
 
     <Panel title="Ranking comercial ejecutivo">
@@ -691,7 +758,7 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
       <div className="commercial-scorecards">{commercialCards.map((o, index) => <a className={`commercial-scorecard status-${o.status}`} key={o.ownerId} href={ownerRoute(o.ownerId)}>
         <div className="scorecard-top"><span className="owner-rank">#{index + 1}</span><span className={`status-pill ${o.status}`}>{o.statusLabel}</span></div>
         <div className="scorecard-name"><strong>{o.owner}</strong><small>{o.count} oportunidades · {o.active} activas</small></div>
-        <div className="scorecard-value"><small>Pipeline</small><strong>{fmtMoneyCompact(o.value)}</strong><span>{o.share}% del total</span></div>
+        <div className="scorecard-value"><small>Pipeline</small><strong className="numeric-value">{fmtMoneyCompact(o.value)}</strong><span>{o.share}% del total filtrado</span></div>
         <div className="scorecard-bars">
           <div><span>Participación</span><b>{o.share}%</b></div><div className="mini-progress"><span style={{ width: `${Math.max(3, o.value/maxOwnerValue*100)}%` }} /></div>
         </div>
@@ -707,16 +774,16 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
     <div className="grid manager-layout command-lower">
       <Panel title="Lectura gerencial de riesgos y concentración">
         <div className="insight-list command-insights">
-          <div><small>Mayor concentración</small><strong>{leader?.owner || '—'}</strong><span>{leader ? `${fmtMoneyCompact(leader.value)} en pipeline total` : 'Sin datos'}</span></div>
-          <div><small>Etapa crítica</small><strong>{stageLeader?.stage_name || '—'}</strong><span>{stageLeader ? `${concentration}% del valor total concentrado` : 'Sin datos'}</span></div>
-          <div><small>Riesgo operativo</small><strong>{data.stalled.length ? `${data.stalled.length} por revisar` : 'Sin alertas'}</strong><span>{data.stalled.length ? 'Requiere seguimiento comercial' : 'Sustentación al día'}</span></div>
+          <div><small>Mayor concentración</small><strong>{leader?.owner || '—'}</strong><span>{leader ? `${fmtMoneyCompact(leader.value)} en pipeline filtrado` : 'Sin datos'}</span></div>
+          <div><small>Etapa crítica</small><strong>{stageLeader?.stage_name || '—'}</strong><span>{stageLeader ? `${concentration}% del valor filtrado concentrado` : 'Sin datos'}</span></div>
+          <div><small>Riesgo operativo</small><strong>{filteredStalled.length ? `${filteredStalled.length} por revisar` : 'Sin alertas'}</strong><span>{filteredStalled.length ? 'Requiere seguimiento comercial' : 'Sustentación al día'}</span></div>
         </div>
       </Panel>
       <Panel title="Pulso mensual por comercial">
         <div className="pulse-header"><span>Comercial</span><span>Ventas aprobadas</span><span>Prospectos</span><span>Cotizaciones</span></div>
         <div className="monthly-bars">{monthlyByOwner.map(row => <div className="monthly-row" key={row.owner}>
           <div className="monthly-name"><strong>{row.owner}</strong><span>{fmtMoneyCompact(row.comision)} comisión proyectada</span></div>
-          <div className="pulse-value"><strong>{fmtMoneyCompact(row.ventas)}</strong><small>ventas aprobadas</small><div className="sales-meter"><span style={{ width: `${Math.max(3, row.ventas/maxMonthlySales*100)}%` }} /></div></div>
+          <div className="pulse-value"><strong className="numeric-value">{fmtMoneyCompact(row.ventas)}</strong><small>ventas aprobadas</small><div className="sales-meter"><span style={{ width: `${Math.max(3, row.ventas/maxMonthlySales*100)}%` }} /></div></div>
           <div className="monthly-track"><small>Prospectos</small><div className="mini-progress"><span style={{ width: `${Math.max(3, row.prospectos/maxMonthly*100)}%` }} /></div><b>{row.prospectos}</b></div>
           <div className="monthly-track quote"><small>Cotizaciones</small><div className="mini-progress"><span style={{ width: `${Math.max(3, row.cotizaciones/maxMonthly*100)}%` }} /></div><b>{row.cotizaciones}</b></div>
         </div>)}</div>
