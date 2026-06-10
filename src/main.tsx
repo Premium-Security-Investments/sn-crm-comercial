@@ -725,13 +725,20 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
     return { ...r, riskScore, risk };
   }).filter(r => ['overdue','missing'].includes(r.action.code) || closingSoonRows.some(o => o.id === r.opportunity.id) || Number(r.inactiveDays || 0) >= 10).sort((a,b)=>b.riskScore-a.riskScore).slice(0, 10);
   const biggestAlertOwner = commercialHealthCards.find(o => o.missing || o.overdue) || commercialHealthCards[0];
-  const actionText = overdueRows.length
-    ? `Prioridad gerencial de hoy: resolver ${overdueRows.length} gestiones vencidas y recuperar ${fmtMoneyCompact(sumValue(overdueRows))} en pipeline en riesgo.`
+  const actionTitle = overdueRows.length
+    ? `${overdueRows.length} gestiones vencidas requieren decisión hoy`
     : missingAgendaRows.length
-      ? `Prioridad gerencial de hoy: asignar próxima acción a ${missingAgendaRows.length} oportunidades sin agenda por ${fmtMoneyCompact(sumValue(missingAgendaRows))}.`
+      ? `${missingAgendaRows.length} oportunidades están sin próxima acción`
       : closingSoonRows.length
-        ? `Prioridad gerencial de hoy: empujar ${closingSoonRows.length} cierres próximos por ${fmtMoneyCompact(sumValue(closingSoonRows))}.`
-        : 'Prioridad gerencial de hoy: mantener disciplina de seguimiento y sostener avance del pipeline activo.';
+        ? `${closingSoonRows.length} cierres próximos necesitan empuje gerencial`
+        : 'Disciplina comercial activa y pipeline bajo control';
+  const actionInstruction = overdueRows.length
+    ? `Resolver las gestiones vencidas y recuperar ${fmtMoneyCompact(sumValue(overdueRows))} en pipeline en riesgo.`
+    : missingAgendaRows.length
+      ? `Asignar responsable, fecha y siguiente paso a oportunidades por ${fmtMoneyCompact(sumValue(missingAgendaRows))}.`
+      : closingSoonRows.length
+        ? `Preparar decisión de cierre para ${fmtMoneyCompact(sumValue(closingSoonRows))} en los próximos 30 días.`
+        : 'Mantener seguimiento vigente y sostener avance del pipeline activo.';
 
   return <section className="stack manager-dashboard command-center">
     <Panel title="Filtros gerenciales">
@@ -748,7 +755,7 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
     <section className="command-center-hero">
       <div className="command-copy">
         <div className="command-title-row"><span className="eyebrow">Sala de control comercial · Comando gerencial del día</span></div>
-        <h2>{actionText}</h2>
+        <h2 className="command-priority-title">{actionTitle}</h2>
         <p>{stageLeader ? `Revisar forecast: ${concentration}% del valor filtrado está concentrado en ${stageLeader.stage_name}. Comercial a revisar: ${biggestAlertOwner?.owner || '—'}.` : 'Lectura ejecutiva del pipeline, forecast, concentración y riesgos comerciales.'}</p>
         <div className="command-metrics pipeline-discipline-grid">
           <div><small>Pipeline total</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.pipeline)}</strong><span>{scopedTotals.count} oportunidades filtradas</span></div>
@@ -759,7 +766,8 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
       </div>
       <div className="manager-action-panel">
         <small>Acción gerencial sugerida</small>
-        <strong>{actionText}</strong>
+        <strong>{actionInstruction}</strong>
+        <p className="manager-action-context">Enfoque de revisión: comercial, etapa y servicio con mayor impacto en el pipeline filtrado.</p>
         <div className="signal-grid">
           <span><b>{leader?.owner || '—'}</b><em>Líder pipeline</em></span>
           <span><b>{stageLeader?.stage_name || '—'}</b><em>Etapa crítica</em></span>

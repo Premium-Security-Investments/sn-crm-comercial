@@ -39,6 +39,10 @@ const requiredMainMarkers = [
   'Registrar seguimiento',
   'criticalOpportunityRows',
   'commercialHealthCards',
+  'actionTitle',
+  'actionInstruction',
+  'command-priority-title',
+  'manager-action-context',
 ];
 
 for (const marker of requiredMainMarkers) {
@@ -70,6 +74,8 @@ const requiredCssMarkers = [
   '.pipeline-discipline-grid',
   '.critical-opportunities-table',
   '.health-score',
+  '.command-priority-title',
+  '.manager-action-context',
 ];
 
 for (const marker of requiredCssMarkers) {
@@ -85,5 +91,8 @@ assert.ok(!main.includes('<BusinessRulesDashboard data={data} />'), 'Manager das
 assert.ok(!main.includes('Panel title="Reglas comerciales por área"'), 'Business rules panel should be removed from dashboard source');
 assert.ok(main.includes('Math.max(58, Math.min(100, 46 + pct * 0.8))'), 'Funnel widths should use readable proportional scaling with enough label room');
 assert.ok(main.includes('sales-meter'), 'Monthly pulse should include a visual sales meter');
+assert.ok(!main.includes('<h2>{actionText}</h2>'), 'Hero should not render the full action sentence as an oversized headline');
+assert.ok(!main.includes('<strong>{actionText}</strong>'), 'Right action panel should not duplicate the hero priority sentence');
+assert.ok(css.includes('clamp(26px,2.4vw,38px)'), 'Command hero headline must use a readable bounded size, not billboard typography');
 
 console.log('manager-command-center static checks passed');
