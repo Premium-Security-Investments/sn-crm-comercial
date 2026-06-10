@@ -77,10 +77,14 @@ assert(!src.includes('Privado web'), 'No se deben agregar fuentes privadas fijas
 assert(src.includes('TENDER_OFFICIAL_SOURCES'), 'El filtro de fuente debe incluir fuentes oficiales confirmadas aunque una fuente no devuelva resultados en la última corrida.');
 assert(src.includes('ESU Contratación'), 'El filtro de fuente debe mostrar ESU Contratación como fuente oficial confirmada.');
 assert(src.includes('placeholderOption'), 'Los dropdowns deben mostrar la categoría del filtro cuando están en valor predeterminado, no “Todos/Todas”.');
-assert(src.includes('Prioridad / filtro'), 'El filtro de sección debe renombrarse a una etiqueta operativa clara.');
-assert(src.includes('Prioridad: Urgentes'), 'El filtro principal debe incluir urgentes como opción operativa visible.');
-assert(src.includes('Prioridad: Alto valor'), 'El filtro principal debe incluir alto valor como opción operativa visible.');
-assert(src.includes('Prioridad: Alto encaje'), 'El filtro principal debe incluir alto encaje como opción operativa visible.');
+assert(src.includes('<span>Prioridad</span>'), 'El filtro principal debe llamarse solo Prioridad.');
+assert(src.includes('["urgentes","Urgentes"]'), 'El filtro principal debe mostrar Urgentes sin repetir el nombre del filtro.');
+assert(src.includes('["alto_valor","Alto valor"]'), 'El filtro principal debe mostrar Alto valor sin repetir el nombre del filtro.');
+assert(src.includes('["alto_encaje","Alto encaje"]'), 'El filtro principal debe mostrar Alto encaje sin repetir el nombre del filtro.');
+assert(src.includes('tender-filter-field'), 'Cada dropdown de licitaciones debe tener etiqueta externa para evitar opciones redundantes.');
+assert(!src.includes('Prioridad / filtro: Todas'), 'Las opciones del dropdown no deben repetir Prioridad / filtro en Todas.');
+assert(!src.includes('Estado interno: Todas'), 'Las opciones del dropdown no deben repetir Estado interno en Todas.');
+assert(!src.includes('Cierre: Todas'), 'Las opciones del dropdown no deben repetir Cierre en Todas.');
 assert(src.includes('primaryTenderFilter'), 'La UI debe tener un filtro principal unificado para prioridad/operación.');
 assert(src.includes('TenderUnifiedBoard'), 'Licitaciones debe usar una sola vista unificada de tarjetas operativas.');
 assert(src.includes('Vista unificada de licitaciones'), 'La UI debe comunicar que la bandeja fue unificada.');
