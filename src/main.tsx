@@ -755,6 +755,32 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
   const serviceLeader = servicePipelineRows[0];
   const stageLeader = [...stageRows].sort((a,b)=>Number(b.total_offer_value)-Number(a.total_offer_value))[0];
   const concentration = stageLeader && scopedTotals.pipeline ? Math.round((Number(stageLeader.total_offer_value || 0) / scopedTotals.pipeline) * 100) : 0;
+  const stageActionRows = stageRows.map(s => {
+    const value = Number(s.total_offer_value || 0);
+    const weighted = Number(s.weighted_pipeline_value || 0);
+    const pct = scopedTotals.pipeline ? Math.round((value / scopedTotals.pipeline) * 100) : 0;
+    const terminal = isTerminalStage(s.stage_code);
+    const riskTone = terminal ? (s.stage_code === 'aprobado' ? 'green' : 'red') : pct >= 55 ? 'red' : pct >= 25 ? 'amber' : 'green';
+    const riskLabel = terminal
+      ? (s.stage_code === 'aprobado' ? 'Resultado ganado' : 'Resultado perdido')
+      : pct >= 55
+        ? 'Concentración alta'
+        : pct >= 25
+          ? 'Revisar avance'
+          : weighted >= value * 0.45
+            ? 'Potencial cercano'
+            : 'Seguimiento normal';
+    const actionLabel = terminal
+      ? (s.stage_code === 'aprobado' ? 'Ver aprobadas' : 'Revisar razones')
+      : s.stage_code === 'envio_oferta'
+        ? 'Destrabar ofertas'
+        : s.stage_code === 'negociacion'
+          ? 'Empujar cierre'
+          : s.stage_code === 'sustentacion'
+            ? 'Preparar sustentación'
+            : 'Ordenar gestión';
+    return { ...s, value, weighted, pct, riskTone, riskLabel, actionLabel, terminal };
+  });
   const staleCount = filteredStalled.length;
   const commercialCards = byOwner.map(o => {
     const share = scopedTotals.pipeline ? Math.round((o.value / scopedTotals.pipeline) * 100) : 0;
@@ -884,17 +910,20 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
       {!criticalOpportunityRows.length ? <EmptyState title="Sin oportunidades críticas" text="No hay vencidas, sin agenda, próximas a cierre o estancadas con los filtros actuales." /> : null}
     </Panel>
 
-    <Panel title="Embudo visual de valor por etapa">
-      <div className="visual-funnel">{stageRows.map(s => {
-        const value = Number(s.total_offer_value || 0);
-        const pct = scopedTotals.pipeline ? Math.round((value / scopedTotals.pipeline) * 100) : 0;
-        const width = Math.max(58, Math.min(100, 46 + pct * 0.8));
-        return <div className={`funnel-segment stage-${stageTone(s.stage_code)}`} key={s.stage_code} style={{ width: `${width}%` }}>
-          <div><small>{s.stage_name}</small><strong className="numeric-value">{fmtMoneyCompact(value)}</strong></div>
-          <span>{s.opportunities_count} ops · {pct}% del pipeline</span>
-          <em>{fmtMoneyCompact(s.weighted_pipeline_value)} ponderado</em>
-        </div>;
-      })}</div>
+    <Panel title="Concentración y avance del pipeline">
+      <div className="stage-action-summary">
+        <div><small>Lectura ejecutiva</small><strong>{stageLeader ? `${concentration}% del pipeline está en ${stageLeader.stage_name}` : 'Sin etapa dominante'}</strong><span>{stageLeader && concentration >= 55 ? 'Prioridad: destrabar esa etapa y revisar siguientes acciones.' : 'Distribución sin concentración crítica con los filtros actuales.'}</span></div>
+        <a className="button secondary" href={`#/opportunities?stage=${encodeURIComponent(stageLeader?.stage_code || '')}`}>Ver etapa dominante</a>
+      </div>
+      <div className="tablewrap stage-action-table"><table><thead><tr><th>Etapa</th><th>Valor total</th><th>Ops</th><th>% pipeline</th><th>Valor ponderado</th><th>Riesgo / lectura</th><th>Acción</th></tr></thead><tbody>{stageActionRows.map(s => <tr key={s.stage_code}>
+        <td><strong>{s.stage_name}</strong><br/><small>{s.terminal ? 'Resultado del proceso' : 'Pipeline activo'}</small></td>
+        <td><strong className="numeric-value">{fmtMoneyCompact(s.value)}</strong></td>
+        <td>{s.opportunities_count}</td>
+        <td><strong>{s.pct}%</strong><div className="mini-progress stage-share-meter"><span style={{ width: `${Math.max(3, s.pct)}%` }} /></div></td>
+        <td><strong className="numeric-value">{fmtMoneyCompact(s.weighted)}</strong></td>
+        <td><span className={`stage-risk-pill ${s.riskTone}`}>{s.riskLabel}</span></td>
+        <td><a className="button" href={`#/opportunities?stage=${encodeURIComponent(s.stage_code)}`}>{s.actionLabel}</a><br/><small>Ver etapa</small></td>
+      </tr>)}</tbody></table></div>
     </Panel>
 
     <Panel title="Pipeline por tipo de servicio">

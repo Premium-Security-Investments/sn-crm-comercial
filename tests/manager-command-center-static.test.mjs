@@ -6,7 +6,11 @@ const css = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8
 
 const requiredMainMarkers = [
   'command-center-hero',
-  'visual-funnel',
+  'stage-action-table',
+  'Concentración y avance del pipeline',
+  'Lectura ejecutiva',
+  'Riesgo / lectura',
+  'Ver etapa',
   'commercial-scorecards',
   'manager-action-panel',
   'monthly-bars',
@@ -59,8 +63,9 @@ for (const marker of requiredMainMarkers) {
 
 const requiredCssMarkers = [
   '.command-center-hero',
-  '.visual-funnel',
-  '.funnel-segment',
+  '.stage-action-summary',
+  '.stage-action-table',
+  '.stage-risk-pill',
   '.commercial-scorecards',
   '.commercial-scorecard',
   '.manager-action-panel',
@@ -97,7 +102,9 @@ assert.ok(main.includes('ownerRoute(o.ownerId)'), 'Commercial scorecards must pr
 assert.ok(!main.includes('label="Pipeline total"'), 'Manager dashboard should not duplicate hero KPIs in a separate KPI row');
 assert.ok(!main.includes('<BusinessRulesDashboard data={data} />'), 'Manager dashboard should not show business rules by area in the command center');
 assert.ok(!main.includes('Panel title="Reglas comerciales por área"'), 'Business rules panel should be removed from dashboard source');
-assert.ok(main.includes('Math.max(58, Math.min(100, 46 + pct * 0.8))'), 'Funnel widths should use readable proportional scaling with enough label room');
+assert.ok(!main.includes('Panel title="Embudo visual de valor por etapa"'), 'Dashboard should replace the unclear visual funnel with an actionable executive table');
+assert.ok(!main.includes('Math.max(58, Math.min(100, 46 + pct * 0.8))'), 'Dashboard should not rely on pseudo-funnel bar widths for executive interpretation');
+assert.ok(main.includes('stageActionRows'), 'Dashboard should compute actionable stage rows with diagnostic text');
 assert.ok(main.includes('sales-meter'), 'Monthly pulse should include a visual sales meter');
 assert.ok(!main.includes('<h2>{actionText}</h2>'), 'Hero should not render the full action sentence as an oversized headline');
 assert.ok(!main.includes('<strong>{actionText}</strong>'), 'Right action panel should not duplicate the hero priority sentence');
