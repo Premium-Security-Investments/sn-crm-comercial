@@ -24,6 +24,21 @@ const requiredMainMarkers = [
   'DashboardPeriodFilter',
   'Última actualización',
   'numeric-value',
+  'Comando gerencial del día',
+  'Prioridad gerencial de hoy',
+  'operational-command-grid',
+  'Sin próxima acción',
+  'Gestión vencida',
+  'Cierre próximo',
+  'Alto valor estancado',
+  'Pipeline total',
+  'Pipeline gestionado',
+  'Pipeline en riesgo',
+  'Ranking por salud comercial',
+  'Top 10 oportunidades que requieren decisión',
+  'Registrar seguimiento',
+  'criticalOpportunityRows',
+  'commercialHealthCards',
 ];
 
 for (const marker of requiredMainMarkers) {
@@ -50,6 +65,11 @@ const requiredCssMarkers = [
   '.filter-summary',
   '.numeric-value',
   'font-variant-numeric:tabular-nums',
+  '.operational-command-grid',
+  '.operational-card',
+  '.pipeline-discipline-grid',
+  '.critical-opportunities-table',
+  '.health-score',
 ];
 
 for (const marker of requiredCssMarkers) {

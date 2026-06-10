@@ -606,7 +606,25 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
   ), [data.opportunities, period, owner, stage, service]);
   const scopedIds = useMemo(() => new Set(scopedOpportunities.map(o => o.id)), [scopedOpportunities]);
   const filteredStalled = data.stalled.filter(o => scopedIds.has(o.id));
-  const active = scopedOpportunities.filter(o => !isTerminalStage(o.stage_code)).length;
+  const activeOpportunities = scopedOpportunities.filter(o => !isTerminalStage(o.stage_code));
+  const active = activeOpportunities.length;
+  const actionRows = activeOpportunities.map(o => ({ opportunity: o, action: nextActionStatus(o), inactiveDays: daysSince(o.last_interaction_at || o.updated_at || o.created_at) }));
+  const missingAgendaRows = actionRows.filter(r => r.action.code === 'missing');
+  const overdueRows = actionRows.filter(r => r.action.code === 'overdue');
+  const todayRows = actionRows.filter(r => r.action.code === 'today');
+  const soonRows = actionRows.filter(r => r.action.code === 'soon');
+  const closingSoonRows = activeOpportunities.filter(o => {
+    if (!o.expected_close_date) return false;
+    const d = new Date(o.expected_close_date); if (Number.isNaN(d.getTime())) return false;
+    const today = startOfToday(); const max = new Date(today); max.setDate(max.getDate() + 30);
+    return d >= today && d <= max;
+  });
+  const averageActiveValue = activeOpportunities.length ? activeOpportunities.reduce((s,o)=>s+Number(o.offer_value||0),0) / activeOpportunities.length : 0;
+  const highValueFloor = Math.max(200_000_000, averageActiveValue);
+  const highValueStalledRows = actionRows.filter(r => Number(r.opportunity.offer_value || 0) >= highValueFloor && Number(r.inactiveDays || 0) >= 10);
+  const pipelineManagedRows = actionRows.filter(r => r.opportunity.next_action_at && !['overdue','missing'].includes(r.action.code));
+  const pipelineRiskRows = Array.from(new Map([...missingAgendaRows, ...overdueRows, ...highValueStalledRows].map(r => [r.opportunity.id, r])).values());
+  const sumValue = (rows: Array<Opportunity> | Array<{ opportunity: Opportunity }>) => rows.reduce((sum, row) => sum + Number('opportunity' in row ? row.opportunity.offer_value || 0 : row.offer_value || 0), 0);
   const scopedTotals = useMemo(() => scopedOpportunities.reduce((acc, o) => {
     const value = Number(o.offer_value || 0);
     acc.count++;
@@ -616,14 +634,19 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
     return acc;
   }, { count: 0, pipeline: 0, weighted: 0, approved: 0 }), [scopedOpportunities]);
   const byOwner = useMemo(() => {
-    const map = new Map<string, { ownerId: string; owner: string; count: number; value: number; weighted: number; approved: number; active: number }>();
+    const map = new Map<string, { ownerId: string; owner: string; count: number; value: number; weighted: number; approved: number; active: number; missing: number; overdue: number }>();
     scopedOpportunities.forEach(o => {
       const key = ownerKey(o);
-      const row = map.get(key) || { ownerId: key, owner: o.owner_name || 'Sin comercial', count: 0, value: 0, weighted: 0, approved: 0, active: 0 };
+      const row = map.get(key) || { ownerId: key, owner: o.owner_name || 'Sin comercial', count: 0, value: 0, weighted: 0, approved: 0, active: 0, missing: 0, overdue: 0 };
       row.count++;
       row.value += Number(o.offer_value || 0);
       row.weighted += Number(o.weighted_pipeline_value || 0);
-      if (!isTerminalStage(o.stage_code)) row.active++;
+      if (!isTerminalStage(o.stage_code)) {
+        row.active++;
+        const action = nextActionStatus(o);
+        if (action.code === 'missing') row.missing++;
+        if (action.code === 'overdue') row.overdue++;
+      }
       if (isApprovedSale(o)) row.approved += Number(o.offer_value || 0);
       map.set(key,row);
     });
@@ -643,11 +666,10 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
     });
     return Array.from(map.values()).sort((a,b)=>a.stage_order-b.stage_order);
   }, [scopedOpportunities]);
-  const activeOpportunities = scopedOpportunities.filter(o => !isTerminalStage(o.stage_code));
   const activePipelineValue = activeOpportunities.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
   const servicePipelineRows = useMemo(() => {
     const map = new Map<string, { key: string; label: string; count: number; value: number; weighted: number }>();
-    scopedOpportunities.filter(o => !isTerminalStage(o.stage_code)).forEach(o => {
+    activeOpportunities.forEach(o => {
       const key = o.service_type_code || o.tipo_producto_original || '__sin_servicio__';
       const label = o.service_type_name || o.tipo_producto_original || 'Sin servicio clasificado';
       const row = map.get(key) || { key, label, count: 0, value: 0, weighted: 0 };
@@ -657,10 +679,8 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
       map.set(key, row);
     });
     const total = Array.from(map.values()).reduce((sum, row) => sum + row.value, 0) || 1;
-    return Array.from(map.values())
-      .map(row => ({ ...row, share: Math.round((row.value / total) * 100) }))
-      .sort((a,b)=>b.value-a.value || b.count-a.count);
-  }, [scopedOpportunities]);
+    return Array.from(map.values()).map(row => ({ ...row, share: Math.round((row.value / total) * 100) })).sort((a,b)=>b.value-a.value || b.count-a.count);
+  }, [activeOpportunities]);
   const serviceLeader = servicePipelineRows[0];
   const stageLeader = [...stageRows].sort((a,b)=>Number(b.total_offer_value)-Number(a.total_offer_value))[0];
   const concentration = stageLeader && scopedTotals.pipeline ? Math.round((Number(stageLeader.total_offer_value || 0) / scopedTotals.pipeline) * 100) : 0;
@@ -688,9 +708,30 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
   }, [data.monthlyKpis, data.profiles, owner]);
   const maxMonthly = Math.max(...monthlyByOwner.map(o=>Math.max(o.prospectos, o.cotizaciones, o.ventas / 10_000_000)), 1);
   const maxMonthlySales = Math.max(...monthlyByOwner.map(o=>o.ventas), 1);
-  const actionText = stageLeader
-    ? `Priorizar avance de ${stageLeader.stage_name}: concentra ${concentration}% del pipeline filtrado y puede liberar ${fmtMoneyCompact(stageLeader.weighted_pipeline_value)} ponderados.`
-    : 'Mantener seguimiento semanal del pipeline y las oportunidades activas.';
+  const monthlyByOwnerMap = new Map(monthlyByOwner.map(row => [row.owner, row]));
+  const commercialHealthCards = byOwner.map(o => {
+    const monthly = monthlyByOwnerMap.get(o.owner);
+    const winRate = o.value ? Math.round((o.approved / o.value) * 100) : 0;
+    const disciplinePenalty = (o.missing * 4) + (o.overdue * 6);
+    const score = Math.max(0, Math.min(100, Math.round((o.active * 2) + (o.weighted / Math.max(scopedTotals.weighted,1) * 30) + (winRate * .35) + Number(monthly?.cotizaciones || 0) + Number(monthly?.prospectos || 0) - disciplinePenalty)));
+    const tone = score >= 70 ? 'green' : score >= 45 ? 'amber' : 'red';
+    return { ...o, score, tone, winRate, prospectos: monthly?.prospectos || 0, cotizaciones: monthly?.cotizaciones || 0 };
+  }).sort((a,b)=>b.score-a.score || b.approved-a.approved);
+  const criticalOpportunityRows = actionRows.map(r => {
+    const value = Number(r.opportunity.offer_value || 0);
+    const closingSoon = closingSoonRows.some(o => o.id === r.opportunity.id);
+    const riskScore = value + (r.action.code === 'overdue' ? 600_000_000 : 0) + (r.action.code === 'missing' ? 450_000_000 : 0) + (closingSoon ? 350_000_000 : 0) + (Number(r.inactiveDays || 0) >= 10 ? 250_000_000 : 0);
+    const risk = r.action.code === 'overdue' ? 'Gestión vencida' : r.action.code === 'missing' ? 'Sin próxima acción' : closingSoon ? 'Cierre próximo' : Number(r.inactiveDays || 0) >= 10 ? 'Sin seguimiento reciente' : 'Revisar avance';
+    return { ...r, riskScore, risk };
+  }).filter(r => ['overdue','missing'].includes(r.action.code) || closingSoonRows.some(o => o.id === r.opportunity.id) || Number(r.inactiveDays || 0) >= 10).sort((a,b)=>b.riskScore-a.riskScore).slice(0, 10);
+  const biggestAlertOwner = commercialHealthCards.find(o => o.missing || o.overdue) || commercialHealthCards[0];
+  const actionText = overdueRows.length
+    ? `Prioridad gerencial de hoy: resolver ${overdueRows.length} gestiones vencidas y recuperar ${fmtMoneyCompact(sumValue(overdueRows))} en pipeline en riesgo.`
+    : missingAgendaRows.length
+      ? `Prioridad gerencial de hoy: asignar próxima acción a ${missingAgendaRows.length} oportunidades sin agenda por ${fmtMoneyCompact(sumValue(missingAgendaRows))}.`
+      : closingSoonRows.length
+        ? `Prioridad gerencial de hoy: empujar ${closingSoonRows.length} cierres próximos por ${fmtMoneyCompact(sumValue(closingSoonRows))}.`
+        : 'Prioridad gerencial de hoy: mantener disciplina de seguimiento y sostener avance del pipeline activo.';
 
   return <section className="stack manager-dashboard command-center">
     <Panel title="Filtros gerenciales">
@@ -706,13 +747,14 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
 
     <section className="command-center-hero">
       <div className="command-copy">
-        <div className="command-title-row"><span className="eyebrow">Sala de control comercial</span></div>
-        <h2><span className="numeric-value">{fmtMoneyCompact(scopedTotals.pipeline)}</span> en pipeline comercial</h2>
-        <p>{stageLeader ? `El ${concentration}% del valor filtrado está concentrado en ${stageLeader.stage_name}. La prioridad gerencial es mover ese valor hacia cierre sin perder visibilidad por comercial.` : 'Lectura ejecutiva del pipeline, forecast, concentración y riesgos comerciales.'}</p>
-        <div className="command-metrics">
-          <div><small>Forecast ponderado</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.weighted)}</strong><span>{fmtMoney(scopedTotals.weighted)}</span></div>
-          <div><small>Ganado</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.approved)}</strong><span>{conversion}% de conversión</span></div>
+        <div className="command-title-row"><span className="eyebrow">Sala de control comercial · Comando gerencial del día</span></div>
+        <h2>{actionText}</h2>
+        <p>{stageLeader ? `Revisar forecast: ${concentration}% del valor filtrado está concentrado en ${stageLeader.stage_name}. Comercial a revisar: ${biggestAlertOwner?.owner || '—'}.` : 'Lectura ejecutiva del pipeline, forecast, concentración y riesgos comerciales.'}</p>
+        <div className="command-metrics pipeline-discipline-grid">
+          <div><small>Pipeline total</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.pipeline)}</strong><span>{scopedTotals.count} oportunidades filtradas</span></div>
           <div><small>Pipeline activo</small><strong className="numeric-value">{fmtMoneyCompact(activePipelineValue)}</strong><span>{active} oportunidades en gestión</span></div>
+          <div><small>Pipeline gestionado</small><strong className="numeric-value">{fmtMoneyCompact(sumValue(pipelineManagedRows))}</strong><span>{pipelineManagedRows.length} con próxima acción vigente</span></div>
+          <div><small>Pipeline en riesgo</small><strong className="numeric-value">{fmtMoneyCompact(sumValue(pipelineRiskRows))}</strong><span>{pipelineRiskRows.length} sin control suficiente</span></div>
         </div>
       </div>
       <div className="manager-action-panel">
@@ -722,18 +764,35 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
           <span><b>{leader?.owner || '—'}</b><em>Líder pipeline</em></span>
           <span><b>{stageLeader?.stage_name || '—'}</b><em>Etapa crítica</em></span>
           <span><b>{serviceLeader?.label || '—'}</b><em>Servicio líder</em></span>
-          <span><b>{staleCount ? staleCount : '0'}</b><em>Alertas</em></span>
+          <span><b>{biggestAlertOwner?.owner || '—'}</b><em>Comercial a revisar</em></span>
         </div>
       </div>
     </section>
 
+    <Panel title="Prioridad gerencial de hoy">
+      <div className="operational-command-grid">
+        <div className="operational-card danger"><small>Sin próxima acción</small><strong className="numeric-value">{missingAgendaRows.length}</strong><span>{fmtMoneyCompact(sumValue(missingAgendaRows))} sin agenda</span><em>Asignar responsable y fecha</em></div>
+        <div className="operational-card danger"><small>Gestión vencida</small><strong className="numeric-value">{overdueRows.length}</strong><span>{fmtMoneyCompact(sumValue(overdueRows))} vencido</span><em>Resolver antes de nueva prospección</em></div>
+        <div className="operational-card warn"><small>Cierre próximo</small><strong className="numeric-value">{closingSoonRows.length}</strong><span>{fmtMoneyCompact(sumValue(closingSoonRows))} próximos 30 días</span><em>Preparar decisión / cierre</em></div>
+        <div className="operational-card warn"><small>Alto valor estancado</small><strong className="numeric-value">{highValueStalledRows.length}</strong><span>{fmtMoneyCompact(sumValue(highValueStalledRows))} sin seguimiento reciente</span><em>Escalar bloqueo comercial</em></div>
+      </div>
+    </Panel>
+
     <Panel title="Semáforos ejecutivos">
       <div className="executive-signals">
-        <div className={concentration >= 55 ? 'signal-card warn' : 'signal-card ok'}><small>Concentración</small><strong className="numeric-value">{concentration}%</strong><span>{stageLeader?.stage_name || 'Sin etapa dominante'}</span><em>{concentration >= 55 ? 'Alto peso en una sola etapa' : 'Distribución saludable'}</em></div>
-        <div className={conversion >= 15 ? 'signal-card ok' : 'signal-card warn'}><small>Conversión aprobada</small><strong className="numeric-value">{conversion}%</strong><span>{fmtMoneyCompact(scopedTotals.approved)} ganado</span><em>{conversion >= 15 ? 'Ritmo positivo' : 'Revisar avance a cierre'}</em></div>
-        <div className={staleCount ? 'signal-card danger' : 'signal-card ok'}><small>Seguimientos críticos</small><strong className="numeric-value">{staleCount}</strong><span>Sustentación &gt; 5 días</span><em>{staleCount ? 'Requiere acción inmediata' : 'Sin alertas activas'}</em></div>
-        <div className="signal-card info"><small>Base activa</small><strong className="numeric-value">{active}</strong><span>{scopedTotals.count} oportunidades filtradas</span><em>Operación comercial vigente</em></div>
+        <div className={concentration >= 55 ? 'signal-card warn' : 'signal-card ok'}><small>Riesgo de concentración del pipeline</small><strong className="numeric-value">{concentration}%</strong><span>{stageLeader?.stage_name || 'Sin etapa dominante'}</span><em>{concentration >= 55 ? 'Alto peso en una sola etapa' : 'Distribución saludable'}</em></div>
+        <div className={conversion >= 15 ? 'signal-card ok' : 'signal-card warn'}><small>Efectividad de cierre</small><strong className="numeric-value">{conversion}%</strong><span>{fmtMoneyCompact(scopedTotals.approved)} ganado</span><em>{conversion >= 15 ? 'Ritmo positivo' : 'Revisar avance a cierre'}</em></div>
+        <div className={overdueRows.length ? 'signal-card danger' : 'signal-card ok'}><small>Gestiones vencidas</small><strong className="numeric-value">{overdueRows.length}</strong><span>{todayRows.length} hoy · {soonRows.length} próximos 3 días</span><em>{overdueRows.length ? 'Requiere acción inmediata' : 'Sin vencidas activas'}</em></div>
+        <div className={missingAgendaRows.length ? 'signal-card danger' : 'signal-card ok'}><small>Oportunidades sin agenda</small><strong className="numeric-value">{missingAgendaRows.length}</strong><span>{fmtMoneyCompact(sumValue(missingAgendaRows))}</span><em>{missingAgendaRows.length ? 'Pipeline en el aire' : 'Disciplina de agenda activa'}</em></div>
       </div>
+    </Panel>
+
+    <Panel title="Top 10 oportunidades que requieren decisión">
+      <div className="tablewrap critical-opportunities-table"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Valor</th><th>Etapa</th><th>Próxima acción</th><th>Riesgo</th><th>Acción</th></tr></thead><tbody>{criticalOpportunityRows.map(row => {
+        const o = row.opportunity;
+        return <tr key={o.id}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.regional_nombre || '—'}</small></td><td>{o.owner_name || 'Sin comercial'}</td><td><strong className="numeric-value">{fmtMoneyCompact(o.offer_value)}</strong></td><td><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td>{o.next_action_at ? fmtDate(o.next_action_at) : 'Sin agenda'}<br/><small>{row.action.detail}</small></td><td><Badge tone={row.action.tone}>{row.risk}</Badge></td><td><a className="button" href={`#/detail/${o.id}`}>Ver detalle</a><a className="button secondary" href={`#/detail/${o.id}`}>Registrar seguimiento</a></td></tr>;
+      })}</tbody></table></div>
+      {!criticalOpportunityRows.length ? <EmptyState title="Sin oportunidades críticas" text="No hay vencidas, sin agenda, próximas a cierre o estancadas con los filtros actuales." /> : null}
     </Panel>
 
     <Panel title="Embudo visual de valor por etapa">
@@ -751,6 +810,21 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
 
     <Panel title="Pipeline por tipo de servicio">
       <ServicePipelineBreakdown rows={servicePipelineRows} />
+    </Panel>
+
+    <Panel title="Ranking por salud comercial">
+      <div className="commercial-scorecards">{commercialHealthCards.map((o, index) => <a className={`commercial-scorecard status-${o.tone}`} key={o.ownerId} href={ownerRoute(o.ownerId)}>
+        <div className="scorecard-top"><span className="owner-rank">#{index + 1}</span><span className={`status-pill ${o.tone}`}>Salud {o.score}/100</span></div>
+        <div className="scorecard-name"><strong>{o.owner}</strong><small>{o.active} activas · {o.missing} sin agenda · {o.overdue} vencidas</small></div>
+        <div className="health-score"><strong className="numeric-value">{o.score}</strong><span>score gestión + cierre</span></div>
+        <div className="scorecard-metrics">
+          <span><small>Forecast</small><b>{fmtMoneyCompact(o.weighted)}</b></span>
+          <span><small>Aprobado</small><b>{fmtMoneyCompact(o.approved)}</b></span>
+          <span><small>Conversión</small><b>{o.winRate}%</b></span>
+          <span><small>Cotizaciones</small><b>{o.cotizaciones}</b></span>
+        </div>
+        <em>Ver detalle →</em>
+      </a>)}</div>
     </Panel>
 
     <Panel title="Ranking comercial ejecutivo">
@@ -776,10 +850,10 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
         <div className="insight-list command-insights">
           <div><small>Mayor concentración</small><strong>{leader?.owner || '—'}</strong><span>{leader ? `${fmtMoneyCompact(leader.value)} en pipeline filtrado` : 'Sin datos'}</span></div>
           <div><small>Etapa crítica</small><strong>{stageLeader?.stage_name || '—'}</strong><span>{stageLeader ? `${concentration}% del valor filtrado concentrado` : 'Sin datos'}</span></div>
-          <div><small>Riesgo operativo</small><strong>{filteredStalled.length ? `${filteredStalled.length} por revisar` : 'Sin alertas'}</strong><span>{filteredStalled.length ? 'Requiere seguimiento comercial' : 'Sustentación al día'}</span></div>
+          <div><small>Riesgo operativo</small><strong>{pipelineRiskRows.length ? `${pipelineRiskRows.length} por revisar` : 'Sin alertas'}</strong><span>{pipelineRiskRows.length ? 'Requiere seguimiento comercial' : 'Sustentación al día'}</span></div>
         </div>
       </Panel>
-      <Panel title="Pulso mensual por comercial">
+      <Panel title="Actividad comercial del mes">
         <div className="pulse-header"><span>Comercial</span><span>Ventas aprobadas</span><span>Prospectos</span><span>Cotizaciones</span></div>
         <div className="monthly-bars">{monthlyByOwner.map(row => <div className="monthly-row" key={row.owner}>
           <div className="monthly-name"><strong>{row.owner}</strong><span>{fmtMoneyCompact(row.comision)} comisión proyectada</span></div>
