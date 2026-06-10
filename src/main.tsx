@@ -1988,11 +1988,13 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
     e.preventDefault();
     setStatus(editingUserId ? 'Actualizando usuario…' : 'Creando usuario…');
     try {
-      const saved = await api<Profile & { invited?: boolean }>(editingUserId ? `/api/users?id=${encodeURIComponent(editingUserId)}` : '/api/users', { method: editingUserId ? 'PATCH' : 'POST', body: JSON.stringify(form) });
+      const saved = await api<(Profile & { invited?: boolean; access_link?: string | null })>(editingUserId ? `/api/users?id=${encodeURIComponent(editingUserId)}` : '/api/users', { method: editingUserId ? 'PATCH' : 'POST', body: JSON.stringify(form) });
+      const wasEditing = !!editingUserId;
       setForm(emptyUserForm);
       setEditingUserId(null);
       await load();
-      setStatus(editingUserId ? 'Usuario actualizado.' : (saved.invited ? 'Usuario guardado. Invitación enviada por correo.' : 'Usuario/perfil guardado.'));
+      const mailStatus = saved.access_link ? ` Si el correo no llega, comparte este enlace de acceso: ${saved.access_link}` : (saved.invited ? ' Invitación enviada por correo.' : '');
+      setStatus(wasEditing ? `Usuario actualizado.${mailStatus}` : `Usuario/perfil guardado.${mailStatus}`);
     } catch (err) { setStatus(err instanceof Error ? err.message : String(err)); }
   };
   return <section className="stack">

@@ -893,6 +893,28 @@ async function findAuthUserByEmail(database, email) {
   return usersData?.users?.find(u => u.email?.toLowerCase() === email.toLowerCase()) || null;
 }
 
+async function confirmAuthUserIfNeeded(database, user) {
+  if (!user || user.email_confirmed_at || user.confirmed_at) return user;
+  const { data, error } = await database.auth.admin.updateUserById(user.id, { email_confirm: true });
+  if (error) throw error;
+  return data?.user || user;
+}
+
+async function generateAccessLink(database, email, req, userMetadata = {}) {
+  const { data, error } = await database.auth.admin.generateLink({
+    type: 'recovery',
+    email,
+    options: { redirectTo: getPublicAppUrl(req), data: userMetadata }
+  });
+  if (error) return null;
+  return data?.properties?.action_link || data?.action_link || null;
+}
+
+async function sendAccessEmail(database, email, req) {
+  const { error } = await database.auth.resetPasswordForEmail(email, { redirectTo: getPublicAppUrl(req) });
+  return { sent: !error, error };
+}
+
 app.get('/api/users', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -922,35 +944,44 @@ app.post('/api/users', async (req, res) => {
     if (password && password.length < 8) throw new Error('La clave temporal debe tener mínimo 8 caracteres.');
     const userMetadata = { full_name, role };
     let inviteSent = false;
+    let accessLink = null;
+    let authUser = await findAuthUserByEmail(database, microsoft_email);
     if (send_invite && active) {
-      const existing = await findAuthUserByEmail(database, microsoft_email);
-      if (existing) {
-        const updates = { user_metadata: userMetadata };
+      if (authUser) {
+        const updates = { user_metadata: userMetadata, email_confirm: true };
         if (password) updates.password = password;
-        const { error: updateError } = await database.auth.admin.updateUserById(existing.id, updates);
+        const { data: updatedAuth, error: updateError } = await database.auth.admin.updateUserById(authUser.id, updates);
         if (updateError) throw updateError;
+        authUser = updatedAuth?.user || authUser;
+      } else if (password) {
+        const { data: createdAuth, error: createError } = await database.auth.admin.createUser({ email: microsoft_email, password, email_confirm: true, user_metadata: userMetadata });
+        if (createError && !/already|registered|exists/i.test(createError.message)) throw createError;
+        authUser = createError ? await findAuthUserByEmail(database, microsoft_email) : createdAuth?.user;
+      } else {
+        const { error: inviteError } = await database.auth.admin.inviteUserByEmail(microsoft_email, {
+          redirectTo: getPublicAppUrl(req),
+          data: userMetadata
+        });
+        if (inviteError && !/already|registered|exists/i.test(inviteError.message)) throw inviteError;
+        authUser = await findAuthUserByEmail(database, microsoft_email);
       }
-      const { error: inviteError } = await database.auth.admin.inviteUserByEmail(microsoft_email, {
-        redirectTo: getPublicAppUrl(req),
-        data: userMetadata
-      });
-      if (inviteError && /already|registered|exists/i.test(inviteError.message)) {
-        const { error: resetError } = await database.auth.resetPasswordForEmail(microsoft_email, { redirectTo: getPublicAppUrl(req) });
-        if (resetError) throw resetError;
-      } else if (inviteError) {
-        throw inviteError;
-      }
-      inviteSent = true;
+      if (authUser) await confirmAuthUserIfNeeded(database, authUser);
+      const emailResult = await sendAccessEmail(database, microsoft_email, req);
+      if (emailResult.error) console.error('Supabase access email failed', emailResult.error);
+      accessLink = await generateAccessLink(database, microsoft_email, req, userMetadata);
+      inviteSent = emailResult.sent;
     } else if (password) {
-      const { error: createError } = await database.auth.admin.createUser({ email: microsoft_email, password, email_confirm: true, user_metadata: userMetadata });
+      const { data: createdAuth, error: createError } = await database.auth.admin.createUser({ email: microsoft_email, password, email_confirm: true, user_metadata: userMetadata });
       if (createError && !/already|registered|exists/i.test(createError.message)) throw createError;
       if (createError && /already|registered|exists/i.test(createError.message)) {
         const existing = await findAuthUserByEmail(database, microsoft_email);
-        if (existing) await database.auth.admin.updateUserById(existing.id, { password, user_metadata: userMetadata });
+        if (existing) await database.auth.admin.updateUserById(existing.id, { password, email_confirm: true, user_metadata: userMetadata });
+      } else if (createdAuth?.user) {
+        await confirmAuthUserIfNeeded(database, createdAuth.user);
       }
     }
     const row = await must(database.from('psi_sales_profiles').upsert({ full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }, { onConflict: 'microsoft_email' }).select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,created_at').single());
-    res.status(201).json({ ...row, invited: inviteSent });
+    res.status(201).json({ ...row, invited: inviteSent, access_link: accessLink });
   } catch (error) { sendAuthError(res, error); }
 });
 
@@ -967,6 +998,7 @@ app.patch('/api/users', async (req, res) => {
     const role = normalizeUserRole(req.body.role);
     const password = String(req.body.password || '');
     const active = req.body.active !== false;
+    const send_invite = req.body.send_invite === true;
     const commercial_area = validateCommercialArea(req.body.commercial_area);
     const can_edit_customer_segment = req.body.can_edit_customer_segment === true;
     if (!full_name) throw new Error('El nombre completo es obligatorio.');
@@ -980,19 +1012,31 @@ app.patch('/api/users', async (req, res) => {
     if (emailChanged && authUserByNewEmail && (!authUserByOldEmail || authUserByNewEmail.id !== authUserByOldEmail.id)) {
       throw new Error('El email ya pertenece a otro usuario de acceso.');
     }
-    const authUser = authUserByOldEmail || authUserByNewEmail;
+    let authUser = authUserByOldEmail || authUserByNewEmail;
+    const userMetadata = { full_name, role };
+    let accessLink = null;
+    let inviteSent = false;
     if (authUser) {
-      const updates = { user_metadata: { full_name, role } };
+      const updates = { user_metadata: userMetadata, email_confirm: true };
       if (emailChanged) updates.email = microsoft_email;
       if (password) updates.password = password;
-      const { error: updateAuthError } = await database.auth.admin.updateUserById(authUser.id, updates);
+      const { data: updatedAuth, error: updateAuthError } = await database.auth.admin.updateUserById(authUser.id, updates);
       if (updateAuthError) throw updateAuthError;
+      authUser = updatedAuth?.user || authUser;
     } else if (password) {
-      const { error: createError } = await database.auth.admin.createUser({ email: microsoft_email, password, email_confirm: true, user_metadata: { full_name, role } });
+      const { data: createdAuth, error: createError } = await database.auth.admin.createUser({ email: microsoft_email, password, email_confirm: true, user_metadata: userMetadata });
       if (createError) throw createError;
+      authUser = createdAuth?.user || null;
+    }
+    if (send_invite && active) {
+      if (authUser) await confirmAuthUserIfNeeded(database, authUser);
+      const emailResult = await sendAccessEmail(database, microsoft_email, req);
+      if (emailResult.error) console.error('Supabase access email failed', emailResult.error);
+      accessLink = await generateAccessLink(database, microsoft_email, req, userMetadata);
+      inviteSent = emailResult.sent;
     }
     const row = await must(database.from('psi_sales_profiles').update({ full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }).eq('id', id).select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,created_at').single());
-    res.json(row);
+    res.json({ ...row, invited: inviteSent, access_link: accessLink });
   } catch (error) { sendAuthError(res, error); }
 });
 
