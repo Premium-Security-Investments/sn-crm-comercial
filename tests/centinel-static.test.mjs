@@ -41,6 +41,10 @@ const mainMarkers = [
   "centinelTenderPayload",
   "Radar de licitaciones no disponible",
   "Abrir radar de licitaciones",
+  "tenderDeepLink",
+  "focusTenderId",
+  "tender-highlight",
+  "#/tenders?tender=",
   "Solo lectura",
 ];
 
