@@ -272,6 +272,7 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
   if (route.page === 'alerts') return <CommercialAlerts data={data} />;
   if (route.page === 'centinel') return <CentinelAssistant data={data} />;
   if (route.page === 'users') return <UsersAdmin currentProfile={data.currentProfile} />;
+  if (data.currentProfile.role === 'comercial') return <CommercialPersonalDashboard data={data} />;
   return <Home data={data} />;
 }
 function stageTone(stageCode?: string | null) {
@@ -593,6 +594,72 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
   </Panel>;
 }
 
+
+function GoalVsActualDashboard({ rows }: { rows: ReturnType<typeof buildGoalVsActualRows> }) {
+  const visibleRows = rows.filter(row => row.goal > 0 || row.actual > 0);
+  if (!visibleRows.length) return <EmptyState title="Sin metas reales cargadas" text="Carga metas en Metas y cumplimiento para comparar presupuesto, prospectos y cotizaciones contra resultados reales." />;
+  return <div className="goal-vs-actual-grid">{visibleRows.map(row => <div className={`goal-progress-card ${goalStatusTone(row.pct)}`} key={row.label}>
+    <small>{row.label}</small>
+    <strong className="numeric-value">{row.pct === null ? 'Sin meta' : `${row.pct}%`}</strong>
+    <div className="goal-progress-track"><span style={{ width: `${Math.min(100, Math.max(3, row.pct || 0))}%` }} /></div>
+    <span>Real: {formatGoalValue(row.kind, row.actual)} · Meta: {formatGoalValue(row.kind, row.goal)}</span>
+  </div>)}</div>;
+}
+
+function buildGoalVsActualRows(data: Bootstrap, months: string[], ownerId?: string) {
+  const ownerName = ownerId ? data.profiles.find(p => p.id === ownerId)?.full_name || '' : '';
+  const spec = [
+    { label: 'Ventas aprobadas', kind: 'money' as const, goalField: 'sales_budget' as const, actualField: 'ventas_aprobadas' as const },
+    { label: 'Prospectos', kind: 'count' as const, goalField: 'prospect_target' as const, actualField: 'prospectos' as const },
+    { label: 'Cotizaciones', kind: 'count' as const, goalField: 'quote_target' as const, actualField: 'cotizaciones' as const },
+  ];
+  return spec.map(row => {
+    const goals = data.goals.filter(g => (!ownerId || g.user_id === ownerId) && months.includes(String(g.period_month).slice(0, 7)));
+    const kpis = data.monthlyKpis.filter(k => months.includes(String(k.period_month).slice(0, 7)) && (!ownerId || k.owner_id === ownerId || (!k.owner_id && (k.owner_name || '') === ownerName)));
+    const goal = goals.reduce((sum, g) => sum + Number(g[row.goalField] || 0), 0);
+    const actual = kpis.reduce((sum, k) => sum + Number(k[row.actualField] || 0), 0);
+    const pct = goal > 0 ? Math.round((actual / goal) * 100) : null;
+    return { ...row, goal, actual, pct };
+  });
+}
+
+function buildMonthlyTrendRows(data: Bootstrap) {
+  const map = new Map<string, { period: string; prospectos: number; cotizaciones: number; ventas: number; comision: number }>();
+  data.monthlyKpis.forEach(k => {
+    const period = String(k.period_month).slice(0, 7);
+    const row = map.get(period) || { period, prospectos: 0, cotizaciones: 0, ventas: 0, comision: 0 };
+    row.prospectos += Number(k.prospectos || 0);
+    row.cotizaciones += Number(k.cotizaciones || 0);
+    row.ventas += Number(k.ventas_aprobadas || 0);
+    row.comision += Number(k.comision_proyectada || 0);
+    map.set(period, row);
+  });
+  return Array.from(map.values()).sort((a,b)=>b.period.localeCompare(a.period)).slice(0, 6).reverse();
+}
+
+function trendAvailabilityNote(rows: Array<{ period: string }>) {
+  if (rows.length < 2) return 'Histórico limitado: todavía no hay suficientes meses comparables; esta vista se irá llenando automáticamente con los KPIs mensuales.';
+  return `Comparativo disponible para ${rows.length} meses con información registrada.`;
+}
+
+function businessUnitRuleRows(data: Bootstrap, periodMonth: string) {
+  return commercialAreaOptions.map(([area, label]) => {
+    const profiles = data.profiles.filter(p => p.commercial_area === area);
+    const ids = new Set(profiles.map(p => p.id));
+    const goals = data.goals.filter(g => g.user_id && ids.has(g.user_id) && String(g.period_month).slice(0, 7) === periodMonth.slice(0, 7));
+    const kpis = data.monthlyKpis.filter(k => ((k.owner_id && ids.has(k.owner_id)) || profiles.some(p => p.full_name === (k.owner_name || ''))) && String(k.period_month).slice(0, 7) === periodMonth.slice(0, 7));
+    const salesGoal = goals.reduce((s,g)=>s+Number(g.sales_budget||0),0);
+    const sales = kpis.reduce((s,k)=>s+Number(k.ventas_aprobadas||0),0);
+    const quotesGoal = goals.reduce((s,g)=>s+Number(g.quote_target||0),0);
+    const quotes = kpis.reduce((s,k)=>s+Number(k.cotizaciones||0),0);
+    const pct = salesGoal ? Math.round((sales / salesGoal) * 100) : null;
+    const rule = area === 'licitacion_publica' ? 'Revisar, decidir y convertir procesos públicos con trazabilidad.' : area === 'tecnologia' ? 'Priorizar proyectos, licencias, monitoreo y soluciones con forecast claro.' : 'Mantener volumen de prospectos, cotizaciones y cierre recurrente.';
+    return { area, label, profiles: profiles.length, rule, salesGoal, sales, quotesGoal, quotes, pct };
+  });
+}
+
+function CommercialPersonalDashboard({ data }: { data: Bootstrap }) { return <ConsultantDetail data={data} ownerId={data.currentProfile.id} personal />; }
+
 function ManagerDashboard({ data }: { data: Bootstrap }) {
   const [period, setPeriod] = useState<DashboardPeriodFilter>('todos');
   const [owner, setOwner] = useState('');
@@ -709,6 +776,9 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
   const maxMonthly = Math.max(...monthlyByOwner.map(o=>Math.max(o.prospectos, o.cotizaciones, o.ventas / 10_000_000)), 1);
   const maxMonthlySales = Math.max(...monthlyByOwner.map(o=>o.ventas), 1);
   const monthlyByOwnerMap = new Map(monthlyByOwner.map(row => [row.owner, row]));
+  const trendRows = buildMonthlyTrendRows(data);
+  const currentMonthKey = new Date().toISOString().slice(0, 7);
+  const goalVsActualRows = buildGoalVsActualRows(data, [currentMonthKey]);
   const commercialHealthCards = byOwner.map(o => {
     const monthly = monthlyByOwnerMap.get(o.owner);
     const winRate = o.value ? Math.round((o.approved / o.value) * 100) : 0;
@@ -795,6 +865,10 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
       </div>
     </Panel>
 
+    <Panel title="Avance contra meta comercial">
+      <GoalVsActualDashboard rows={goalVsActualRows} />
+    </Panel>
+
     <Panel title="Top 10 oportunidades que requieren decisión">
       <div className="tablewrap critical-opportunities-table"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Valor</th><th>Etapa</th><th>Próxima acción</th><th>Riesgo</th><th>Acción</th></tr></thead><tbody>{criticalOpportunityRows.map(row => {
         const o = row.opportunity;
@@ -861,10 +935,11 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
           <div><small>Riesgo operativo</small><strong>{pipelineRiskRows.length ? `${pipelineRiskRows.length} por revisar` : 'Sin alertas'}</strong><span>{pipelineRiskRows.length ? 'Requiere seguimiento comercial' : 'Sustentación al día'}</span></div>
         </div>
       </Panel>
-      <Panel title="Actividad comercial del mes">
-        <div className="pulse-header"><span>Comercial</span><span>Ventas aprobadas</span><span>Prospectos</span><span>Cotizaciones</span></div>
-        <div className="monthly-bars">{monthlyByOwner.map(row => <div className="monthly-row" key={row.owner}>
-          <div className="monthly-name"><strong>{row.owner}</strong><span>{fmtMoneyCompact(row.comision)} comisión proyectada</span></div>
+      <Panel title="Tendencia comercial disponible">
+        <p className="trend-availability-note">{trendAvailabilityNote(trendRows)}</p>
+        <div className="pulse-header"><span>Mes</span><span>Ventas aprobadas</span><span>Prospectos</span><span>Cotizaciones</span></div>
+        <div className="monthly-bars">{trendRows.map(row => <div className="monthly-row" key={row.period}>
+          <div className="monthly-name"><strong>{row.period}</strong><span>{fmtMoneyCompact(row.comision)} comisión proyectada</span></div>
           <div className="pulse-value"><strong className="numeric-value">{fmtMoneyCompact(row.ventas)}</strong><small>ventas aprobadas</small><div className="sales-meter"><span style={{ width: `${Math.max(3, row.ventas/maxMonthlySales*100)}%` }} /></div></div>
           <div className="monthly-track"><small>Prospectos</small><div className="mini-progress"><span style={{ width: `${Math.max(3, row.prospectos/maxMonthly*100)}%` }} /></div><b>{row.prospectos}</b></div>
           <div className="monthly-track quote"><small>Cotizaciones</small><div className="mini-progress"><span style={{ width: `${Math.max(3, row.cotizaciones/maxMonthly*100)}%` }} /></div><b>{row.cotizaciones}</b></div>
@@ -874,7 +949,7 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
   </section>;
 }
 
-function ConsultantDetail({ data, ownerId }: { data: Bootstrap; ownerId: string }) {
+function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap; ownerId: string; personal?: boolean }) {
   const [q, setQ] = useState('');
   const [stage, setStage] = useState('');
   const [actionFilter, setActionFilter] = useState('');
@@ -923,14 +998,28 @@ function ConsultantDetail({ data, ownerId }: { data: Bootstrap; ownerId: string 
       && (!actionFilter || action.code === actionFilter);
   });
 
+  const personalCriticalRows = opportunities
+    .map(o => ({ opportunity: o, action: nextActionStatus(o), inactiveDays: daysSince(o.last_interaction_at || o.updated_at || o.created_at) }))
+    .filter(row => !isTerminalStage(row.opportunity.stage_code) && (['overdue','missing','today','soon'].includes(row.action.code) || Number(row.inactiveDays || 0) >= 7))
+    .sort((a,b) => (a.action.code === 'overdue' ? -1 : b.action.code === 'overdue' ? 1 : 0) || Number(b.opportunity.offer_value || 0) - Number(a.opportunity.offer_value || 0))
+    .slice(0, 8);
+  const personalGoalRows = buildGoalVsActualRows(data, [new Date().toISOString().slice(0, 7)], ownerId);
+  const personalPriorityText = totals.overdue
+    ? `Resolver ${totals.overdue} gestiones vencidas antes de crear nuevo pipeline.`
+    : totals.missingAgenda
+      ? `Asignar próxima acción a ${totals.missingAgenda} oportunidades sin agenda.`
+      : personalCriticalRows.length
+        ? `Revisar ${personalCriticalRows.length} oportunidades críticas de hoy.`
+        : 'Mantener seguimiento vigente y avanzar cierres próximos.';
+
   if (!opportunities.length) return <section className="stack"><div className="notice">No encontré oportunidades asociadas a este consultor.</div><button className="secondary" onClick={() => go('#/dashboard')}>Volver al dashboard gerencial</button></section>;
 
   return <section className="stack consultant-dashboard">
     <section className="executive-hero consultant-hero">
       <div>
-        <span className="eyebrow">Detalle por consultor</span>
-        <h2>{ownerName}</h2>
-        <p>Vista consolidada de lo cotizado, prospectos, oportunidades activas, ventas aprobadas, forecast, próxima gestión e indicadores operativos del consultor.</p>
+        <span className="eyebrow">{personal ? 'Mi tablero comercial' : 'Detalle por consultor'}</span>
+        <h2>{personal ? 'Mi gestión comercial' : ownerName}</h2>
+        <p>{personal ? `Hola ${ownerName}. Este tablero prioriza tus gestiones de hoy, tus oportunidades críticas, tu avance contra meta y tu pipeline activo.` : 'Vista consolidada de lo cotizado, prospectos, oportunidades activas, ventas aprobadas, forecast, próxima gestión e indicadores operativos del consultor.'}</p>
       </div>
       <div className="hero-facts">
         <div><small>Total pipeline</small><strong>{fmtMoneyCompact(totals.pipeline)}</strong></div>
@@ -938,7 +1027,13 @@ function ConsultantDetail({ data, ownerId }: { data: Bootstrap; ownerId: string 
         <div><small>Conversión aprobada</small><strong>{conversion}%</strong></div>
       </div>
     </section>
-    <div className="actions-row"><button className="secondary" onClick={() => go('#/dashboard')}>← Dashboard gerencial</button><button onClick={() => go(`#/opportunities`)}>Ver listado general</button></div>
+    <div className="actions-row">{!personal && <button className="secondary" onClick={() => go('#/dashboard')}>← Dashboard gerencial</button>}<button onClick={() => go(`#/opportunities`)}>Ver mis oportunidades</button><button className="secondary" onClick={() => go('#/goals')}>Ver mis metas</button></div>
+    {personal && <div className="personal-dashboard">
+      <Panel title="Mi prioridad de hoy"><div className="personal-priority-grid"><div><small>Acción recomendada</small><strong>{personalPriorityText}</strong></div><div><small>Gestión pendiente</small><strong>{totals.overdue} vencidas · {totals.missingAgenda} sin agenda</strong></div></div></Panel>
+      <Panel title="Mi avance contra meta"><GoalVsActualDashboard rows={personalGoalRows} /></Panel>
+      <Panel title="Mis oportunidades críticas">{personalCriticalRows.length ? <div className="tablewrap"><table><thead><tr><th>Cliente</th><th>Etapa</th><th>Valor</th><th>Próxima acción</th><th>Prioridad</th></tr></thead><tbody>{personalCriticalRows.map(row => <tr key={row.opportunity.id} className="clickable" onClick={() => go(`#/detail/${row.opportunity.id}`)}><td><strong>{row.opportunity.company_name}</strong></td><td><Badge tone={stageTone(row.opportunity.stage_code)}>{row.opportunity.stage_name}</Badge></td><td>{fmtMoneyCompact(row.opportunity.offer_value)}</td><td>{row.opportunity.next_action_at ? fmtDate(row.opportunity.next_action_at) : 'Sin agenda'}</td><td><Badge tone={row.action.tone}>{row.action.label}</Badge></td></tr>)}</tbody></table></div> : <EmptyState title="Sin críticas inmediatas" text="No hay vencidas, sin agenda ni gestiones urgentes con tus filtros actuales." />}</Panel>
+    </div>}
+
     <div className="grid kpis manager-kpis consultant-kpis">
       <Kpi icon="Σ" tone="blue" label="Total oportunidades" value={String(opportunities.length)} hint={`${totals.active} activas`} meta="Asignadas al consultor" />
       <Kpi icon="◎" tone="indigo" label="Prospectos" value={String(totals.prospectos)} hint={fmtMoneyCompact(totals.prospectValue)} meta={fmtMoney(totals.prospectValue)} />
@@ -1385,6 +1480,11 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
         </div>
       </Panel>
     </div>
+
+    <Panel title="Reglas comerciales por unidad">
+      <p className="muted">Estas reglas viven en Metas y cumplimiento para evitar más ventanas. Usan las metas reales cargadas por asesor y se agrupan por área comercial.</p>
+      <div className="business-unit-rules tablewrap"><table><thead><tr><th>Unidad</th><th>Regla operativa</th><th>Equipo</th><th>Ventas vs meta</th><th>Cotizaciones vs meta</th><th>Estado</th></tr></thead><tbody>{businessUnitRuleRows(data, periodMonth).map(row => <tr key={row.area}><td><strong>{row.label}</strong></td><td>{row.rule}</td><td>{row.profiles} asesor(es)</td><td>{fmtMoneyCompact(row.sales)} / {fmtMoneyCompact(row.salesGoal)}</td><td>{row.quotes} / {row.quotesGoal}</td><td><Badge tone={goalStatusTone(row.pct)}>{row.pct === null ? 'Sin meta' : `${row.pct}%`}</Badge></td></tr>)}</tbody></table></div>
+    </Panel>
 
     <Panel title={`Panel de cumplimiento · ${ownerName}`}>
       <div className="compliance-legend"><span className="dot danger"/> Rojo &lt;80% <span className="dot warn"/> Amarillo 80–99% <span className="dot good"/> Verde ≥100%</div>
