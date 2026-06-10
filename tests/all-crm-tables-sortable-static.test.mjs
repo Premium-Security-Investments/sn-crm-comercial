@@ -21,8 +21,6 @@ const requiredMarkers = [
   "sortedCentinelOpportunityRows",
   "centinelTenderSortConfig",
   "sortedCentinelTenderRows",
-  "businessUnitSortConfig",
-  "sortedBusinessUnitRuleRows",
   "complianceSortConfig",
   "sortedComplianceRows",
   "usersSortConfig",

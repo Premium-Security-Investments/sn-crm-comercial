@@ -1562,9 +1562,7 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
   const [editMonth, setEditMonth] = useState(today.getMonth() + 1);
   const [editOwnerId, setEditOwnerId] = useState(defaultEditOwnerId);
   const [status, setStatus] = useState('');
-  const [businessUnitSortConfig, setBusinessUnitSortConfig] = useState<SortConfig<'unit'|'rule'|'team'|'sales'|'quotes'|'status'>>({ key: 'unit', direction: 'asc' });
   const [complianceSortConfig, setComplianceSortConfig] = useState<SortConfig<'indicator'|'month'|'quarter'|'semester'|'year'>>({ key: 'indicator', direction: 'asc' });
-  const viewPeriodMonth = `${viewYear}-${String(viewMonth).padStart(2, '0')}-01`;
   const editPeriodMonth = `${editYear}-${String(editMonth).padStart(2, '0')}-01`;
   const existing = data.goals.find(g => g.user_id === editOwnerId && String(g.period_month).slice(0, 7) === editPeriodMonth.slice(0, 7));
   const [form, setForm] = useState({ sales_budget: '', prospect_target: '', quote_target: '' });
@@ -1581,17 +1579,11 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
   const editOwnerName = data.profiles.find(p => p.id === editOwnerId)?.full_name || 'Seleccionar asesor';
   const periods = buildCompliancePeriods(viewYear, viewMonth);
   const rows = buildComplianceRows(data, viewOwnerId, periods);
-  const businessUnitRows = businessUnitRuleRows(data, viewPeriodMonth);
   const missingGoals = data.profiles.filter(profile => !data.goals.some(g => g.user_id === profile.id && String(g.period_month).slice(0, 7) === editPeriodMonth.slice(0, 7)));
-  const sortedBusinessUnitRuleRows = [...businessUnitRows].sort((a,b) => {
-    const value = (row: typeof businessUnitRows[number]) => businessUnitSortConfig.key === 'unit' ? row.label : businessUnitSortConfig.key === 'rule' ? row.rule : businessUnitSortConfig.key === 'team' ? row.profiles : businessUnitSortConfig.key === 'sales' ? row.sales : businessUnitSortConfig.key === 'quotes' ? row.quotes : Number(row.pct ?? -1);
-    return compareSortValues(value(a), value(b), businessUnitSortConfig.direction);
-  });
   const sortedComplianceRows = [...rows].sort((a,b) => {
     const value = (row: typeof rows[number]) => complianceSortConfig.key === 'indicator' ? row.label : Number(row.values[complianceSortConfig.key]?.pct ?? -1);
     return compareSortValues(value(a), value(b), complianceSortConfig.direction);
   });
-  const sortBusinessUnitBy = (key: typeof businessUnitSortConfig.key) => setBusinessUnitSortConfig(current => nextSort(current, key));
   const sortComplianceBy = (key: typeof complianceSortConfig.key) => setComplianceSortConfig(current => nextSort(current, key));
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1632,19 +1624,6 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
         <label>Asesor comercial<Select value={viewOwnerId} onChange={setViewOwnerId} options={data.profiles.map(p=>[p.id,p.full_name])} empty={canEditGoals ? 'Todos los asesores' : 'Seleccionar asesor'} disabled={!canEditGoals && data.currentProfile.role === 'comercial'}/></label>
       </div>
       <p className="muted">Estos filtros solo cambian la lectura del cumplimiento; no modifican metas guardadas.</p>
-    </Panel>
-
-    <Panel title="Lectura de negocio">
-      <div className="insight-list">
-        <div><small>Real presupuesto</small><strong>Ventas aprobadas</strong><span>Oportunidades en estado Aprobado/Ganado.</span></div>
-        <div><small>Real gestión</small><strong>Prospectos nuevos</strong><span>Oportunidades del mes que están en etapa Prospecto.</span></div>
-        <div><small>Real preventa</small><strong>Propuestas / cotizaciones</strong><span>Oportunidades que llegaron a Envío de oferta o etapa posterior.</span></div>
-      </div>
-    </Panel>
-
-    <Panel title="Reglas comerciales por unidad">
-      <p className="muted">Usan el período de consulta seleccionado y las metas reales cargadas por asesor, agrupadas por área comercial.</p>
-      <div className="business-unit-rules tablewrap"><table><thead><tr><SortableTh label="Unidad" sortKey="unit" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/><SortableTh label="Regla operativa" sortKey="rule" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/><SortableTh label="Equipo" sortKey="team" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/><SortableTh label="Ventas vs meta" sortKey="sales" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/><SortableTh label="Cotizaciones vs meta" sortKey="quotes" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/><SortableTh label="Estado" sortKey="status" sortConfig={businessUnitSortConfig} onSort={sortBusinessUnitBy}/></tr></thead><tbody>{sortedBusinessUnitRuleRows.map(row => <tr key={row.area}><td><strong>{row.label}</strong></td><td>{row.rule}</td><td>{row.profiles} asesor(es)</td><td>{fmtMoneyCompact(row.sales)} / {fmtMoneyCompact(row.salesGoal)}</td><td>{row.quotes} / {row.quotesGoal}</td><td><Badge tone={goalStatusTone(row.pct)}>{row.pct === null ? 'Sin meta' : `${row.pct}%`}</Badge></td></tr>)}</tbody></table></div>
     </Panel>
 
     <Panel title={`Panel de cumplimiento · ${viewOwnerName}`}>

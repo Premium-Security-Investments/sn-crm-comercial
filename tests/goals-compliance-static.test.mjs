@@ -23,6 +23,8 @@ assert(src.includes('Guardar metas'), 'El botón debe guardar metas, no solo pre
 assert(src.includes('viewOwnerId'), 'La consulta debe usar estado independiente para asesor visualizado.');
 assert(src.includes('editOwnerId'), 'La carga de metas debe usar estado independiente para asesor editado.');
 assert(src.includes('Todos los asesores'), 'Gerencia debe poder consultar metas agregadas de todos los asesores.');
+assert(!src.includes('Lectura de negocio'), 'Metas no debe mostrar panel explicativo Lectura de negocio.');
+assert(!src.includes('Reglas comerciales por unidad'), 'Metas no debe mostrar Reglas comerciales por unidad.');
 assert(src.includes('/api/goals'), 'La UI debe consumir endpoint /api/goals.');
 assert(server.includes("app.get('/api/goals'"), 'Servidor local debe exponer GET /api/goals.');
 assert(server.includes("app.put('/api/goals'"), 'Servidor local debe exponer PUT /api/goals para upsert.');

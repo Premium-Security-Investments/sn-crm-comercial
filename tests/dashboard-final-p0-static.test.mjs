@@ -15,8 +15,6 @@ const requiredMainMarkers = [
   'Mi prioridad de hoy',
   'Mis oportunidades críticas',
   'Mi avance contra meta',
-  'Reglas comerciales por unidad',
-  'businessUnitRuleRows',
   'Metas y cumplimiento',
   'data.currentProfile.role === \'comercial\'',
 ];
