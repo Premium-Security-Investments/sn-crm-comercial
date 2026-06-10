@@ -117,4 +117,13 @@ assert.ok(!main.includes('<small>Gestiones vencidas</small><strong className="nu
 assert.ok(!main.includes('<small>Oportunidades sin agenda</small><strong className="numeric-value">{missingAgendaRows.length}</strong>'), 'Executive signals should not repeat missing agenda count already shown in priority cards');
 assert.ok(css.includes('clamp(26px,2.4vw,38px)'), 'Command hero headline must use a readable bounded size, not billboard typography');
 
+const heroIndex = main.indexOf('<section className="command-center-hero">');
+const filtersIndex = main.indexOf('<Panel title="Filtros gerenciales">');
+const priorityIndex = main.indexOf('<Panel title="Prioridad gerencial de hoy">');
+assert.ok(heroIndex !== -1, 'Manager dashboard must render the top command hero');
+assert.ok(filtersIndex !== -1, 'Manager dashboard must render the filters panel');
+assert.ok(priorityIndex !== -1, 'Manager dashboard must render the daily priority panel');
+assert.ok(heroIndex < filtersIndex, 'Filters must sit below the top command banner');
+assert.ok(filtersIndex < priorityIndex, 'Filters must sit above Prioridad gerencial de hoy');
+
 console.log('manager-command-center static checks passed');

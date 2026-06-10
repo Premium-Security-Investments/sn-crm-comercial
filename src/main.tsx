@@ -906,20 +906,6 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
         : 'Mantener seguimiento vigente y sostener avance del pipeline activo.';
 
   return <section className="stack manager-dashboard command-center">
-    <Panel title="Filtros gerenciales">
-      <div className="filters manager-dashboard-filters">
-        <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Período"/>
-        <input placeholder="Buscar cliente, comercial, sede, ciudad, servicio o ID…" value={q} onChange={e=>setQ(e.target.value)} />
-        <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Todos los comerciales"/>
-        <Select value={regional} onChange={setRegional} options={managerRegionalOptions.map(r=>[r,r])} empty="Todas las regionales"/>
-        <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Todas las etapas"/>
-        <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Todos los servicios"/>
-        <label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label>
-        <button className="secondary" onClick={()=>{ setPeriod(''); setQ(''); setOwner(''); setRegional(''); setStage(''); setService(''); setOnlyActive(false); }}>Limpiar filtros</button>
-      </div>
-      <div className="filter-summary"><strong>{scopedOpportunities.length}</strong> de {data.opportunities.length} oportunidades visibles · Última actualización: {lastUpdatedLabel(scopedOpportunities)}</div>
-    </Panel>
-
     <section className="command-center-hero">
       <div className="command-copy">
         <div className="command-title-row"><span className="eyebrow">Sala de control comercial · Comando gerencial del día</span></div>
@@ -944,6 +930,20 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
         </div>
       </div>
     </section>
+
+    <Panel title="Filtros gerenciales">
+      <div className="filters manager-dashboard-filters">
+        <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Período"/>
+        <input placeholder="Buscar cliente, comercial, sede, ciudad, servicio o ID…" value={q} onChange={e=>setQ(e.target.value)} />
+        <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Todos los comerciales"/>
+        <Select value={regional} onChange={setRegional} options={managerRegionalOptions.map(r=>[r,r])} empty="Todas las regionales"/>
+        <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Todas las etapas"/>
+        <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Todos los servicios"/>
+        <label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label>
+        <button className="secondary" onClick={()=>{ setPeriod(''); setQ(''); setOwner(''); setRegional(''); setStage(''); setService(''); setOnlyActive(false); }}>Limpiar filtros</button>
+      </div>
+      <div className="filter-summary"><strong>{scopedOpportunities.length}</strong> de {data.opportunities.length} oportunidades visibles · Última actualización: {lastUpdatedLabel(scopedOpportunities)}</div>
+    </Panel>
 
     <Panel title="Prioridad gerencial de hoy">
       <div className="operational-command-grid">
