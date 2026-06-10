@@ -10,7 +10,7 @@ const navLine = main.split('\n').find(line => line.includes('const items = [['))
 assert.ok(navLine, 'Nav items should be declared inline');
 assert.ok(main.includes("['#/tenders','Licitaciones']"), 'authorized users should see Licitaciones after Oportunidades');
 assert.ok(main.includes('canViewTenders(currentProfile)'), 'Licitaciones tab should be gated by role/person.');
-const expectedOrder = ["['#/dashboard','Dashboard gerencial']", "['#/alerts','Alertas comerciales']", "['#/opportunities','Oportunidades']", "['#/tenders','Licitaciones']", "['#/goals','Metas y cumplimiento']", "['#/new','Crear oportunidad']", "['#/centinel','Centinel']"];
+const expectedOrder = ["['#/dashboard','Dashboard gerencial']", "['#/alerts','Alertas comerciales']", "['#/opportunities','Oportunidades']", "['#/tenders','Licitaciones']", "['#/goals','Metas y cumplimiento']", "['#/new','Crear oportunidad']", "['#/vig-ia','Vig-IA']"];
 let lastIndex = -1;
 for (const marker of expectedOrder) {
   const idx = main.indexOf(marker);

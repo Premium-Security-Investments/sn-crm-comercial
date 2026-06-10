@@ -1,18 +1,18 @@
-# Centinel Avanzado — Diseño funcional
+# Vig-IA Avanzado — Diseño funcional
 
 Fecha: 2026-06-04  
 Proyecto: CRM Comercial Seguridad Nacional  
-Alcance aprobado: habilitar Centinel avanzado para roles `admin`, `director`/Directivo y `gerencia`.
+Alcance aprobado: habilitar Vig-IA avanzado para roles `admin`, `director`/Directivo y `gerencia`.
 
 ## Objetivo
 
-Convertir Centinel de una sección de consulta/búsqueda segura a un copiloto ejecutivo comercial que ayude a dirección a priorizar riesgos, preparar comités y decidir qué oportunidades o comerciales necesitan intervención.
+Convertir Vig-IA de una sección de consulta/búsqueda segura a un copiloto ejecutivo comercial que ayude a dirección a priorizar riesgos, preparar comités y decidir qué oportunidades o comerciales necesitan intervención.
 
 La primera versión avanzada debe seguir siendo **solo lectura**: no cambia etapas, no crea seguimientos, no envía correos y no modifica datos. Su valor está en interpretar el estado del CRM, ordenar prioridades y explicar por qué una oportunidad/comercial requiere atención.
 
 ## Usuarios y permisos
 
-### Roles con Centinel avanzado
+### Roles con Vig-IA avanzado
 
 - `admin`
 - `director` — etiqueta visible: Directivo
@@ -20,14 +20,14 @@ La primera versión avanzada debe seguir siendo **solo lectura**: no cambia etap
 
 Estos roles ven el radar ejecutivo completo sobre todas las oportunidades y comerciales visibles en el bootstrap gerencial.
 
-### Roles sin Centinel avanzado
+### Roles sin Vig-IA avanzado
 
 - `comercial`: mantiene acceso limitado a vistas operativas propias si se decide mantener la navegación, pero no recibe radar gerencial global.
-- Cualquier otro rol futuro: por defecto no recibe Centinel avanzado hasta que se autorice.
+- Cualquier otro rol futuro: por defecto no recibe Vig-IA avanzado hasta que se autorice.
 
 ## Concepto de producto
 
-Centinel Avanzado se presenta como un **Radar Gerencial Comercial** con cuatro modos principales:
+Vig-IA Avanzado se presenta como un **Radar Gerencial Comercial** con cuatro modos principales:
 
 1. **Qué revisar hoy**
 2. **Oportunidades en riesgo**
@@ -44,7 +44,7 @@ Cada modo debe entregar:
 
 ## Motor de riesgo comercial
 
-La base de Centinel Avanzado será un motor determinístico, no IA libre. Calcula un score por oportunidad con señales claras y auditables.
+La base de Vig-IA Avanzado será un motor determinístico, no IA libre. Calcula un score por oportunidad con señales claras y auditables.
 
 ### Señales de riesgo por oportunidad
 
@@ -205,20 +205,20 @@ Si se quiere minimizar refactor inicial, puede implementarse dentro de `main.tsx
 
 Para V1 no se requiere nueva API. El frontend puede usar el `Bootstrap` existente porque ya recibe oportunidades, perfiles, metas, KPIs y totales filtrados por rol.
 
-Más adelante, si Centinel requiere IA o consultas profundas, se debe crear una API dedicada:
+Más adelante, si Vig-IA requiere IA o consultas profundas, se debe crear una API dedicada:
 
-- `POST /api/centinel/analyze`
+- `POST /api/vig-ia/analyze`
 
 Esa API debería validar rol y solo responder a `admin`, `director` y `gerencia`.
 
 ## Data flow
 
-1. Usuario entra a `#/centinel`.
+1. Usuario entra a `#/vig-ia`.
 2. La app ya tiene `Bootstrap` cargado desde `/api/bootstrap`.
 3. Se valida si el rol actual tiene acceso avanzado.
-4. Centinel calcula riesgos y resúmenes localmente sobre los datos visibles.
+4. Vig-IA calcula riesgos y resúmenes localmente sobre los datos visibles.
 5. La UI renderiza modos ejecutivos.
-6. El usuario puede abrir detalle de oportunidad, pero Centinel no modifica datos.
+6. El usuario puede abrir detalle de oportunidad, pero Vig-IA no modifica datos.
 
 ## Estado vacío y errores
 
@@ -237,7 +237,7 @@ Agregar o ampliar `tests/centinel-static.test.mjs` para validar:
 - Existen los cuatro modos: revisar hoy, riesgo, brief comercial, comité.
 - Existe motor de score de riesgo.
 - Existen motivos y acciones sugeridas.
-- Centinel mantiene texto “solo lectura”.
+- Vig-IA mantiene texto “solo lectura”.
 
 ### Pruebas de build
 
@@ -275,7 +275,7 @@ Cada acción debe requerir confirmación explícita.
 
 ## Decisiones cerradas
 
-- Centinel avanzado aplica a `admin`, `director`/Directivo y `gerencia`.
+- Vig-IA avanzado aplica a `admin`, `director`/Directivo y `gerencia`.
 - V1 es solo lectura.
 - V1 prioriza radar gerencial, riesgo, brief por comercial y resumen de comité.
 - La IA generativa queda para una fase posterior, después de tener datos y score confiables.

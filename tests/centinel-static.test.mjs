@@ -6,8 +6,8 @@ const css = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8
 
 const mainMarkers = [
   "'centinel'",
-  "#/centinel",
-  "Pregúntale a Centinel",
+  "#/vig-ia",
+  "Pregúntale a Vig-IA",
   "function CentinelAssistant",
   "Construir reporte seguro",
   "centinelQuickActions",
@@ -27,7 +27,7 @@ const mainMarkers = [
   "isTenderQuery",
   "interpretTenderCentinelQuery",
   "centinelTenderPayload",
-  "Cargar licitaciones para Centinel",
+  "Cargar licitaciones para Vig-IA",
   "Abrir radar de licitaciones",
   "Solo lectura",
 ];

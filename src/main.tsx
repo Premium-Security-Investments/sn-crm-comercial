@@ -66,7 +66,7 @@ function parseRoute(): Route {
   if (page === 'dashboard') return { page: 'dashboard' };
   if (page === 'goals') return { page: 'goals' };
   if (page === 'alerts') return { page: 'alerts' };
-  if (page === 'centinel') return { page: 'centinel' };
+  if (page === 'centinel' || page === 'vig-ia') return { page: 'centinel' };
   if (page === 'users') return { page: 'users' };
   return { page: 'dashboard' };
 }
@@ -253,16 +253,16 @@ function titleFor(route: Route) {
   if (route.page === 'consultant') return 'Detalle de consultor';
   if (route.page === 'goals') return 'Metas comerciales y cumplimiento';
   if (route.page === 'alerts') return 'Alertas comerciales';
-  if (route.page === 'centinel') return 'Pregúntale a Centinel';
+  if (route.page === 'centinel') return 'Pregúntale a Vig-IA';
   if (route.page === 'users') return 'Usuarios y permisos';
   return 'Inicio comercial';
 }
 function Nav({ route, currentProfile }: { route: Route; currentProfile: Profile | null }) {
   const items = [['#/dashboard','Dashboard gerencial'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades']];
   if (canViewTenders(currentProfile)) items.push(['#/tenders','Licitaciones']);
-  items.push(['#/goals','Metas y cumplimiento'],['#/new','Crear oportunidad'],['#/centinel','Centinel']);
+  items.push(['#/goals','Metas y cumplimiento'],['#/new','Crear oportunidad'],['#/vig-ia','Vig-IA']);
   if (canManageUsers(currentProfile)) items.push(['#/users','Usuarios y permisos']);
-  return <nav>{items.map(([href,label]) => <a key={href} className={(route.page === 'home' && href==='#/') || href.includes(route.page) ? 'active' : ''} href={href}>{label}</a>)}</nav>;
+  return <nav>{items.map(([href,label]) => <a key={href} className={(route.page === 'home' && href==='#/') || href.includes(route.page) || (route.page === 'centinel' && href === '#/vig-ia') ? 'active' : ''} href={href}>{label}</a>)}</nav>;
 }
 function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; refresh: () => Promise<void> }) {
   if (route.page === 'opportunities') return <OpportunityList data={data} />;
@@ -1343,7 +1343,7 @@ function tenderDecisionPriority(tender: PublicTender) {
 function interpretTenderCentinelQuery(query: string, centinelTenderPayload: TenderRadarPayload | null): CentinelResult {
   const q = query.toLowerCase();
   if (!centinelTenderPayload) {
-    return { mode: 'tenders', title: 'Cargar licitaciones para Centinel', summary: 'Centinel necesita cargar el radar de licitaciones antes de responder esta pregunta. Usa el botón de recarga o abre la pestaña Licitaciones si no tienes permisos.', rows: [], tenderRows: [], cards: [
+    return { mode: 'tenders', title: 'Cargar licitaciones para Vig-IA', summary: 'Vig-IA necesita cargar el radar de licitaciones antes de responder esta pregunta. Usa el botón de recarga o abre la pestaña Licitaciones si no tienes permisos.', rows: [], tenderRows: [], cards: [
       { label: 'Radar', value: 'Sin cargar', detail: 'Datos SECOP/Supabase no disponibles todavía' },
       { label: 'Modo', value: 'Solo lectura', detail: 'No modifica estados ni oportunidades' },
       { label: 'Siguiente paso', value: 'Licitaciones', detail: 'Abrir radar de licitaciones' },
@@ -1439,7 +1439,7 @@ function interpretCentinelQuery(query: string, data: Bootstrap, centinelTenderPa
     const goalCount = data.goals.length;
     const budget = data.goals.reduce((s,g)=>s+Number(g.sales_budget||0),0);
     const approved = data.monthlyKpis.reduce((s,k)=>s+Number(k.ventas_aprobadas||0),0);
-    return { mode: 'goals', title: 'Cumplimiento de metas', summary: 'Vista segura de metas cargadas y ventas aprobadas. Si faltan metas, Centinel lo deja explícito.', rows, cards: [
+    return { mode: 'goals', title: 'Cumplimiento de metas', summary: 'Vista segura de metas cargadas y ventas aprobadas. Si faltan metas, Vig-IA lo deja explícito.', rows, cards: [
       { label: 'Metas cargadas', value: String(goalCount), detail: goalCount ? 'Registros de presupuesto disponibles' : 'Pendiente cargar metas reales' },
       { label: 'Presupuesto registrado', value: fmtMoneyCompact(budget), detail: 'Suma de metas comerciales' },
       { label: 'Ventas aprobadas', value: fmtMoneyCompact(approved), detail: 'Según KPIs mensuales' },
@@ -1469,7 +1469,7 @@ function interpretCentinelQuery(query: string, data: Bootstrap, centinelTenderPa
     const haystack = `${o.company_name} ${o.owner_name || ''} ${o.stage_name} ${o.regional_nombre || ''} ${o.sede || ''} ${o.tipo_producto_original || ''}`.toLowerCase();
     return terms.length ? terms.some(t => haystack.includes(t)) : true;
   }).sort((a,b) => Number(b.offer_value || 0) - Number(a.offer_value || 0));
-  return { mode: 'search', title: 'Búsqueda comercial segura', summary: 'Centinel encontró coincidencias en clientes, comerciales, etapas, regionales y tipo de producto.', rows, cards: [
+  return { mode: 'search', title: 'Búsqueda comercial segura', summary: 'Vig-IA encontró coincidencias en clientes, comerciales, etapas, regionales y tipo de producto.', rows, cards: [
     { label: 'Coincidencias', value: String(rows.length), detail: 'Oportunidades activas encontradas' },
     { label: 'Valor asociado', value: fmtMoneyCompact(rows.reduce((s,o)=>s+Number(o.offer_value||0),0)), detail: 'Pipeline filtrado' },
     { label: 'Modo', value: 'Solo lectura', detail: 'No modifica datos ni agenda' },
@@ -1485,10 +1485,10 @@ function CentinelAssistant({ data }: { data: Bootstrap }) {
   const [centinelTenderSortConfig, setCentinelTenderSortConfig] = useState<SortConfig<'entity'|'section'|'status'|'value'|'deadline'|'score'>>({ key: 'score', direction: 'desc' });
   const loadCentinelTenders = async () => {
     if (!canViewTenders(data.currentProfile)) return;
-    setCentinelTenderStatus('Cargando licitaciones para Centinel…');
+    setCentinelTenderStatus('Cargando licitaciones para Vig-IA…');
     try {
       setCentinelTenderPayload(await api<TenderRadarPayload>('/api/tenders'));
-      setCentinelTenderStatus('Licitaciones cargadas para Centinel.');
+      setCentinelTenderStatus('Licitaciones cargadas para Vig-IA.');
     } catch (err) {
       setCentinelTenderStatus(err instanceof Error ? err.message : String(err));
     }
@@ -1509,10 +1509,10 @@ function CentinelAssistant({ data }: { data: Bootstrap }) {
   const visibleTenderRows = sortedCentinelTenderRows.slice(0, 25);
   const isTenderResult = result.mode === 'tenders';
   return <section className="stack centinel-dashboard">
-    <section className="centinel-topline"><h2>Pregúntale a Centinel</h2><p>Escribe lo que necesitas ver y Centinel te devuelve un reporte comercial seguro.</p></section>
+    <section className="centinel-topline"><h2>Pregúntale a Vig-IA</h2><p>Escribe lo que necesitas ver y Vig-IA te devuelve un reporte comercial seguro.</p></section>
     <section className="centinel-hero">
       <div className="centinel-orb"><span></span><span></span></div>
-      <div><span className="eyebrow">CENTINEL</span><h2>Pregunta en español. Recibe el resultado.</h2><p>Pide el reporte como lo dirías en comité comercial. Centinel consulta pipeline, alertas, metas y seguimiento sin modificar información.</p></div>
+      <div><span className="eyebrow">VIG-IA</span><h2>Pregunta en español. Recibe el resultado.</h2><p>Pide el reporte como lo dirías en comité comercial. Vig-IA consulta pipeline, alertas, metas y seguimiento sin modificar información.</p></div>
       <div className="centinel-safe"><strong>Solo lectura</strong><small>Reporte seguro sobre datos del CRM</small></div>
     </section>
     <section className="centinel-query-panel">
@@ -1522,10 +1522,10 @@ function CentinelAssistant({ data }: { data: Bootstrap }) {
         <div>{centinelQuickActions.map(action => <button className="centinel-chip" key={action.label} onClick={() => { setQuery(action.prompt); setSubmitted(action.prompt); }}>{action.label}</button>)}</div>
         <button onClick={() => setSubmitted(query)}>Construir reporte seguro</button>
       </div>
-      {canViewTenders(data.currentProfile) && <div className="centinel-tender-actions"><button className="secondary" onClick={loadCentinelTenders}>Cargar licitaciones para Centinel</button>{centinelTenderStatus && <small>{centinelTenderStatus}</small>}</div>}
+      {canViewTenders(data.currentProfile) && <div className="centinel-tender-actions"><button className="secondary" onClick={loadCentinelTenders}>Cargar licitaciones para Vig-IA</button>{centinelTenderStatus && <small>{centinelTenderStatus}</small>}</div>}
     </section>
     <section className="centinel-result">
-      <div className="centinel-result-head"><div><span className="eyebrow">Resultado Centinel</span><h2>{result.title}</h2><p>{result.summary}</p></div><button className="secondary" onClick={() => go(isTenderResult ? '#/tenders' : '#/alerts')}>{isTenderResult ? 'Abrir radar de licitaciones' : 'Abrir alertas comerciales'}</button></div>
+      <div className="centinel-result-head"><div><span className="eyebrow">Resultado Vig-IA</span><h2>{result.title}</h2><p>{result.summary}</p></div><button className="secondary" onClick={() => go(isTenderResult ? '#/tenders' : '#/alerts')}>{isTenderResult ? 'Abrir radar de licitaciones' : 'Abrir alertas comerciales'}</button></div>
       <div className="centinel-result-grid">{result.cards.map(card => <div className="centinel-result-card" key={card.label}><small>{card.label}</small><strong>{card.value}</strong><span>{card.detail}</span></div>)}</div>
       {result.mode === 'pipeline' && <StageBars summary={data.summary} />}
       {isTenderResult ? (
