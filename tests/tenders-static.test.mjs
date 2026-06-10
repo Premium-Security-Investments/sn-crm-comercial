@@ -53,7 +53,10 @@ assert(src.includes('tender-deadline-pill'), 'Cada licitación debe mostrar el c
 assert(src.includes('fmtTenderDeadline'), 'Frontend debe formatear cierre con vencida/vence en/sin fecha.');
 assert(src.includes('fmtMoneyCompact(tender.value)'), 'Cada licitación debe mostrar valor compacto.');
 assert(src.includes('tender-card-actions'), 'Acciones de cada licitación deben quedar agrupadas visualmente.');
-assert(src.includes('Más filtros operativos'), 'La barra debe distinguir filtros principales y operativos adicionales.');
+assert(src.includes('Refinar resultados'), 'La barra debe distinguir filtros principales y refinamiento operativo adicional.');
+assert(src.includes('tender-control-panel'), 'Licitaciones debe agrupar búsqueda, acciones y filtros en un panel de control claro.');
+assert(src.includes('tender-results-toolbar'), 'Licitaciones debe separar resumen/ordenamiento del panel de filtros.');
+assert(src.includes('tender-help-panel'), 'La explicación larga y diagnóstico deben quedar en un panel colapsable.');
 assert(src.includes('TenderFastFilter'), 'Licitaciones debe tener filtros rápidos operativos separados de KPIs.');
 assert(src.includes('applyTenderFastFilter'), 'Los filtros rápidos deben mapear a los tipos existentes sin crear taxonomía paralela.');
 assert(src.includes('tender-fast-filters'), 'La UI debe renderizar una fila visual de filtros rápidos.');
