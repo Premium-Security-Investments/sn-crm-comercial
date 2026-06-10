@@ -260,7 +260,7 @@ function titleFor(route: Route) {
 function Nav({ route, currentProfile }: { route: Route; currentProfile: Profile | null }) {
   const items = [['#/dashboard','Dashboard gerencial'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades']];
   if (canViewTenders(currentProfile)) items.push(['#/tenders','Licitaciones']);
-  items.push(['#/goals','Metas y cumplimiento'],['#/new','Crear oportunidad'],['#/vig-ia','Vig-IA']);
+  items.push(['#/vig-ia','Vig-IA'],['#/new','Crear oportunidad'],['#/goals','Metas y cumplimiento']);
   if (canManageUsers(currentProfile)) items.push(['#/users','Usuarios y permisos']);
   return <nav>{items.map(([href,label]) => <a key={href} className={(route.page === 'home' && href==='#/') || href.includes(route.page) || (route.page === 'centinel' && href === '#/vig-ia') ? 'active' : ''} href={href}>{label}</a>)}</nav>;
 }
