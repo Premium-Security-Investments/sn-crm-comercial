@@ -21,6 +21,9 @@ assert(src.includes('Editar') && src.includes('Cancelar edición'), 'Tabla de us
 for (const file of [server, api]) {
   assert(file.includes("app.patch('/api/users'"), 'API debe exponer PATCH /api/users?id=... para editar usuarios existentes.');
   assert(file.includes('updateUserById'), 'API debe poder actualizar password/metadatos del usuario Auth existente.');
+  assert(file.includes('emailChanged'), 'PATCH de usuarios debe detectar si el email realmente cambió antes de tocar Auth.');
+  assert(file.includes('updates.email = microsoft_email'), 'PATCH solo debe enviar email a Supabase Auth cuando el correo cambió.');
+  assert(file.includes('El email ya pertenece a otro usuario de acceso.'), 'PATCH debe dar error claro si el nuevo email pertenece a otro Auth user.');
   assert(file.includes(".update({ full_name, microsoft_email, role, active") && file.includes('commercial_area') && file.includes('can_edit_customer_segment'), 'API debe actualizar psi_sales_profiles al editar usuario, incluyendo área y permiso de segmento.');
 }
 

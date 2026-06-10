@@ -973,9 +973,17 @@ app.patch('/api/users', async (req, res) => {
     if (!microsoft_email || !microsoft_email.includes('@')) throw new Error('Debe registrar un email válido.');
     if (!['comercial','director','gerencia','admin'].includes(role)) throw new Error('Rol no válido.');
     if (password && password.length < 8) throw new Error('La clave temporal debe tener mínimo 8 caracteres.');
-    const authUser = await findAuthUserByEmail(database, existingProfile.microsoft_email) || await findAuthUserByEmail(database, microsoft_email);
+    const existingEmail = String(existingProfile.microsoft_email || '').trim().toLowerCase();
+    const emailChanged = microsoft_email !== existingEmail;
+    const authUserByOldEmail = await findAuthUserByEmail(database, existingEmail);
+    const authUserByNewEmail = emailChanged ? await findAuthUserByEmail(database, microsoft_email) : authUserByOldEmail;
+    if (emailChanged && authUserByNewEmail && (!authUserByOldEmail || authUserByNewEmail.id !== authUserByOldEmail.id)) {
+      throw new Error('El email ya pertenece a otro usuario de acceso.');
+    }
+    const authUser = authUserByOldEmail || authUserByNewEmail;
     if (authUser) {
-      const updates = { email: microsoft_email, user_metadata: { full_name, role } };
+      const updates = { user_metadata: { full_name, role } };
+      if (emailChanged) updates.email = microsoft_email;
       if (password) updates.password = password;
       const { error: updateAuthError } = await database.auth.admin.updateUserById(authUser.id, updates);
       if (updateAuthError) throw updateAuthError;
