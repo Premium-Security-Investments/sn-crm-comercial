@@ -78,6 +78,12 @@ assert(src.includes('TENDER_OFFICIAL_SOURCES'), 'El filtro de fuente debe inclui
 assert(src.includes('ESU Contratación'), 'El filtro de fuente debe mostrar ESU Contratación como fuente oficial confirmada.');
 assert(src.includes('placeholderOption'), 'Los dropdowns deben mostrar la categoría del filtro cuando están en valor predeterminado, no “Todos/Todas”.');
 assert(src.includes('<span>Prioridad</span>'), 'El filtro principal debe llamarse solo Prioridad.');
+assert(src.includes('["todas","Prioridad"]'), 'El estado inicial del dropdown debe mostrar Prioridad, no Todas.');
+assert(src.includes('["todas","Estado interno"]'), 'El estado inicial del dropdown debe mostrar Estado interno, no Todas.');
+assert(src.includes('["todas","Fuente"]'), 'El estado inicial del dropdown debe mostrar Fuente, no Todas.');
+assert(src.includes('["todas","Cierre"]'), 'El estado inicial del dropdown debe mostrar Cierre, no Todas.');
+assert(src.includes('["todas","Valor"]'), 'El estado inicial del dropdown debe mostrar Valor, no Todas.');
+assert(src.includes('["todas","Encaje"]'), 'El estado inicial del dropdown debe mostrar Encaje, no Todas.');
 assert(src.includes('["urgentes","Urgentes"]'), 'El filtro principal debe mostrar Urgentes sin repetir el nombre del filtro.');
 assert(src.includes('["alto_valor","Alto valor"]'), 'El filtro principal debe mostrar Alto valor sin repetir el nombre del filtro.');
 assert(src.includes('["alto_encaje","Alto encaje"]'), 'El filtro principal debe mostrar Alto encaje sin repetir el nombre del filtro.');
@@ -85,6 +91,7 @@ assert(src.includes('tender-filter-field'), 'Cada dropdown de licitaciones debe 
 assert(!src.includes('Prioridad / filtro: Todas'), 'Las opciones del dropdown no deben repetir Prioridad / filtro en Todas.');
 assert(!src.includes('Estado interno: Todas'), 'Las opciones del dropdown no deben repetir Estado interno en Todas.');
 assert(!src.includes('Cierre: Todas'), 'Las opciones del dropdown no deben repetir Cierre en Todas.');
+assert(!src.includes('["todas","Todas"]'), 'Ningún dropdown de licitaciones debe entrar mostrando Todas como texto predeterminado.');
 assert(src.includes('primaryTenderFilter'), 'La UI debe tener un filtro principal unificado para prioridad/operación.');
 assert(src.includes('TenderUnifiedBoard'), 'Licitaciones debe usar una sola vista unificada de tarjetas operativas.');
 assert(src.includes('Vista unificada de licitaciones'), 'La UI debe comunicar que la bandeja fue unificada.');
