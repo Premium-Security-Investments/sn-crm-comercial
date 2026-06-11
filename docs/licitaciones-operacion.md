@@ -32,6 +32,8 @@ El radar de licitaciones debe contemplar:
 - SECOP II
 - TVEC / Colombia Compra
 - ESU Contratación (`source: "ESU Contratación"`)
+  - Portal propio: `https://www.esucontratacion.com/procesos/index` cuando no esté bloqueado por SiteLock/Incapsula.
+  - Respaldo estable: `datos.gov.co` / SECOP I-II buscando la entidad `EMPRESA PARA LA SEGURIDAD URBANA` o `EMPRESA PARA LA SEGURIDAD Y SOLUCIONES URBANAS`; estos registros también se guardan con `source: "ESU Contratación"` y `source_origin: "datos.gov.co / SECOP I|II"`.
 
 Para ESU, incluir especialmente procesos de seguridad, vigilancia, tecnología, CCTV, software, radiocomunicaciones, CAD/SIES/123, movilidad, infraestructura tecnológica y soluciones urbanas. No confiar únicamente en estado “Convocado”: validar fecha de cierre y documentos asociados antes de recomendar Hacer/Revisar.
 

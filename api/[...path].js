@@ -169,6 +169,7 @@ const tenderSources = {
 };
 const TVEC_EVENTS_URL = 'https://operaciones.colombiacompra.gov.co/eventos-cotizacion-tvec';
 const ESU_CONTRATACION_URL = 'https://www.esucontratacion.com/procesos/index';
+const ESU_DATOS_GOV_ENTITY_TERMS = ['EMPRESA PARA LA SEGURIDAD URBANA', 'EMPRESA PARA LA SEGURIDAD Y SOLUCIONES URBANAS'];
 const TVEC_RELEVANT_AGGREGATIONS = {
   'Soluciones de videovigilancia': 90,
   'Soluciones de Videovigilancia y sus mantenimientos II': 90,
@@ -237,6 +238,28 @@ function normalizeTender(row, source, scored) {
   const withId = { ...tender, section: classifyTenderSection(tender) };
   return { ...withId, id: stableTenderKey(withId), stable_key: stableTenderKey(withId), internal_status: 'nueva', converted_opportunity_id: null };
 }
+function esuEntityField(source) { return source === 'SECOP II' ? 'entidad' : 'nombre_entidad'; }
+function isEsuEntityRow(row, source) {
+  const entity = normTenderText(row?.[esuEntityField(source)] || row?.entity || '');
+  return entity.includes('empresa para la seguridad urbana')
+    || entity.includes('empresa para la seguridad y soluciones urbanas')
+    || /\bseguridad\b.*\burbana\b.*\besu\b/.test(entity);
+}
+function normalizeEsuDatosGovProcess(row, originalSource) {
+  const scored = scoreTender(row);
+  scored.score += 20;
+  scored.reasons = [...new Set([`ESU vía datos.gov.co / ${originalSource}`, ...(scored.reasons || [])])];
+  scored.risks = [...new Set([...(scored.risks || []), 'ESU vía datos.gov.co: validar fecha de cierre en SECOP/portal ESU', 'ESU vía datos.gov.co: validar documentos asociados y presupuesto antes de recomendar'])];
+  const tender = normalizeTender(row, originalSource, scored);
+  const withSource = {
+    ...tender,
+    source: 'ESU Contratación',
+    source_origin: `datos.gov.co / ${originalSource}`,
+    crm_next_step: 'Validar fecha de cierre y documentos en SECOP/portal ESU; si encaja, marcar en revisión o convertir desde CRM.',
+    raw: { ...(tender.raw || row), source_origin: originalSource, discovery: 'datos.gov.co' }
+  };
+  return { ...withSource, id: stableTenderKey(withSource), stable_key: stableTenderKey(withSource), section: classifyTenderSection(withSource) };
+}
 function keywordWhere(fields) {
   const terms = ['vigilancia','seguridad privada','cctv','videovigilancia','control de acceso','alarma','monitoreo','camaras','cámaras','biometrico','biométrico','incendio'];
   const clauses = [];
@@ -249,7 +272,7 @@ async function fetchSecopSource(source, cfg) {
   const response = await fetch(`${cfg.base}?${params.toString()}`, { headers: { 'User-Agent': 'SN-CRM-Tenders-Radar/2.0' } });
   if (!response.ok) throw new Error(`${source} respondió ${response.status}`);
   const rows = await response.json();
-  return rows.map(row => ({ row, scored: scoreTender(row) })).filter(x => x.scored.score >= 35).map(x => normalizeTender(x.row, source, x.scored));
+  return rows.filter(row => !isEsuEntityRow(row, source)).map(row => ({ row, scored: scoreTender(row) })).filter(x => x.scored.score >= 35).map(x => normalizeTender(x.row, source, x.scored));
 }
 function stripTenderHtml(value) {
   return String(value || '')
@@ -380,11 +403,35 @@ async function fetchEsuProcesses() {
     .filter(t => t.days === null || t.days >= 0)
     .sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
 }
+async function fetchEsuDatosGovProcesses() {
+  const start = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10) + 'T00:00:00';
+  const candidates = [];
+  const seen = new Set();
+  for (const [source, cfg] of Object.entries(tenderSources)) {
+    for (const term of ESU_DATOS_GOV_ENTITY_TERMS) {
+      const params = new URLSearchParams({ '$select': cfg.select, '$q': term, '$where': `${cfg.dateField} >= '${start}'`, '$order': `${cfg.dateField} DESC`, '$limit': '500' });
+      const response = await fetch(`${cfg.base}?${params.toString()}`, { headers: { 'User-Agent': 'SN-CRM-ESU-DatosGov-Radar/1.0' } });
+      if (!response.ok) throw new Error(`ESU vía datos.gov.co ${source} respondió ${response.status}`);
+      const rows = await response.json();
+      for (const row of rows) {
+        if (!isEsuEntityRow(row, source)) continue;
+        const tender = normalizeEsuDatosGovProcess(row, source);
+        if (tender.score < 35 || (tender.days !== null && tender.days < 0)) continue;
+        const key = `${tender.source_origin}:${tender.ref}:${tender.title}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        candidates.push(tender);
+      }
+    }
+  }
+  return candidates.sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
+}
 async function fetchPublicTenderRadar() {
   const tasks = [
     ...Object.entries(tenderSources).map(([source, cfg]) => ({ source, run: () => fetchSecopSource(source, cfg) })),
     { source: 'TVEC', run: fetchTvecEvents },
-    { source: 'ESU Contratación', run: fetchEsuProcesses }
+    { source: 'ESU Contratación', run: fetchEsuProcesses },
+    { source: 'ESU vía datos.gov.co', run: fetchEsuDatosGovProcesses }
   ];
   const settled = await Promise.allSettled(tasks.map(t => t.run()));
   const diagnostics = [];

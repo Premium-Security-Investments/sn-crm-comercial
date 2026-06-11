@@ -117,6 +117,9 @@ for (const file of [server, api]) {
   assert(file.includes('TVEC_RELEVANT_AGGREGATIONS'), 'API debe declarar instrumentos TVEC relevantes.');
   assert(file.includes('fetchEsuProcesses'), 'API debe consultar ESU Contratación como cuarta fuente activa.');
   assert(file.includes('ESU_CONTRATACION_URL'), 'API debe declarar URL base de ESU Contratación.');
+  assert(file.includes('ESU_DATOS_GOV_ENTITY_TERMS'), 'API debe declarar búsqueda ESU por entidad en datos.gov.co.');
+  assert(file.includes('fetchEsuDatosGovProcesses'), 'API debe consultar procesos ESU vía datos.gov.co como respaldo sin hCaptcha.');
+  assert(file.includes('datos.gov.co /'), 'API debe marcar el origen de procesos ESU encontrados en datos.gov.co.');
   assert(file.includes("source: 'ESU Contratación'"), 'API debe normalizar procesos ESU con source ESU Contratación.');
   assert(file.includes('ESU Contratación no disponible temporalmente'), 'API debe diagnosticar falla temporal de ESU sin tumbar otras fuentes.');
   assert(file.includes('TVEC no disponible temporalmente'), 'API debe diagnosticar falla temporal de TVEC sin tumbar SECOP.');
