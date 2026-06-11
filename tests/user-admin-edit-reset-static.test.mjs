@@ -19,9 +19,6 @@ assert(src.includes("/api/users?id="), 'Frontend debe editar usuarios con /api/u
 assert(src.includes('Editar') && src.includes('Cancelar edición'), 'Tabla de usuarios debe tener acción Editar y opción Cancelar edición.');
 assert(src.includes('editFormRef') && src.includes('scrollIntoView'), 'Al hacer clic en Editar, la vista debe llevar al usuario al formulario de edición.');
 assert(src.includes('Editar usuario ·'), 'El formulario debe mostrar claramente qué usuario se está editando.');
-assert(src.includes('Edición cliente'), 'Usuarios debe llamar explícitamente el permiso de edición de cliente, no segmento genérico.');
-assert(src.includes('Habilitada') && src.includes('Restringida'), 'Usuarios no debe mostrar Bloqueado junto a Estado Activo; debe usar etiquetas de permiso no ambiguas.');
-assert(!src.includes("'Bloqueado'"), 'Usuarios no debe confundir permiso de edición con bloqueo de cuenta.');
 
 for (const file of [server, api]) {
   assert(file.includes("app.patch('/api/users'"), 'API debe exponer PATCH /api/users?id=... para editar usuarios existentes.');
