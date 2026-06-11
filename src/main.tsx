@@ -685,16 +685,15 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
   const diagnosticAlerts = (payload.diagnostics || []).filter(d => d.status === 'error' || /bloqueo|error|no disponible/i.test(d.message || d.status || ''));
   const diagnosticsLabel = payload.diagnostics?.length ? `${payload.diagnostics.length - diagnosticAlerts.length} fuente(s) OK · ${diagnosticAlerts.length} alerta(s)` : 'Sin diagnóstico reciente';
   return <section className="stack tenders-page">
-    <section className="executive-hero">
-      <div><span className="eyebrow">Radar de Licitaciones Públicas</span><h2>Licitaciones</h2><p>Procesos públicos y eventos TVEC priorizados, historizados y accionables: Katherine puede revisar, descartar o convertir a oportunidad sin duplicar.</p></div>
-      <div className="hero-facts"><div><small>Actualización</small><strong>{fmtDate(payload.generatedAt)}</strong></div><div><small>Fuente</small><strong>{payload.source === 'supabase' ? 'Supabase' : 'Fuentes vivas'}</strong></div></div>
+    <section className="compact-tender-command">
+      <div className="compact-tender-summary"><span className="eyebrow">Radar de Licitaciones Públicas</span><h2>Procesos priorizados</h2><p>SECOP I, SECOP II, TVEC y ESU Contratación priorizados para revisar, descartar o convertir sin duplicar oportunidades.</p><div className="tender-command-meta"><span>Actualización <strong>{fmtDate(payload.generatedAt)}</strong></span><span>Fuente <strong>{payload.source === 'supabase' ? 'Supabase' : 'Fuentes vivas'}</strong></span></div></div>
+      <div className="compact-tender-kpis" aria-label="Indicadores accionables de licitaciones">
+        <button className={`tender-kpi-filter tender-kpi-filter-amber ${quickFilter === 'hacer' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('hacer')}><span>Hacer hoy</span><strong>{payload.totals.hacer}</strong><em>prioritarias</em><small>Ver procesos prioritarios</small></button>
+        <button className={`tender-kpi-filter tender-kpi-filter-purple ${quickFilter === 'high_value' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('high_value')}><span>Alto valor</span><strong>{payload.totals.highValue}</strong><em>$500M+ COP</em><small>Ver procesos $500M+</small></button>
+        <button className={`tender-kpi-filter tender-kpi-filter-green ${quickFilter === 'convertidas' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('convertidas')}><span>Convertidas</span><strong>{payload.totals.convertidas || 0}</strong><em>ya son oport.</em><small>Ver convertidas</small></button>
+        <button className={`tender-kpi-filter tender-kpi-filter-blue ${quickFilter === 'en_revision' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('en_revision')}><span>En revisión</span><strong>{payload.totals.enRevision || 0}</strong><em>marcadas</em><small>Ver estado interno</small></button>
+      </div>
     </section>
-    <div className="grid kpis tender-kpi-grid">
-      <button className={`card kpi tender-kpi-filter ${quickFilter === 'hacer' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('hacer')}><Kpi icon="!" tone="amber" label="Hacer hoy" value={payload.totals.hacer.toString()} hint="Revisión prioritaria" meta="Ver procesos prioritarios" /></button>
-      <button className={`card kpi tender-kpi-filter ${quickFilter === 'en_revision' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('en_revision')}><Kpi icon="↗" tone="blue" label="En revisión" value={(payload.totals.enRevision || 0).toString()} hint="Marcadas por equipo" meta="Ver estado interno" /></button>
-      <button className={`card kpi tender-kpi-filter ${quickFilter === 'high_value' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('high_value')}><Kpi icon="$" tone="purple" label="Alto valor" value={payload.totals.highValue.toString()} hint="$500M+ COP" meta="Ver procesos $500M+" /></button>
-      <button className={`card kpi tender-kpi-filter ${quickFilter === 'convertidas' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('convertidas')}><Kpi icon="✓" tone="green" label="Convertidas" value={(payload.totals.convertidas || 0).toString()} hint="Ya son oportunidades" meta="Ver convertidas" /></button>
-    </div>
     <section className="tender-control-panel" aria-label="Controles de licitaciones">
       <div className="tender-control-top">
         <input className="tender-search-input" placeholder="Buscar entidad, ciudad, objeto, fuente o referencia…" value={q} onChange={e=>setQ(e.target.value)} />
