@@ -1232,20 +1232,6 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
       <ServicePipelineBreakdown rows={servicePipelineRows} />
     </Panel>
 
-    <Panel title="Ranking por salud comercial">
-      <div className="commercial-scorecards">{commercialHealthCards.map((o, index) => <a className={`commercial-scorecard status-${o.tone}`} key={o.ownerId} href={ownerRoute(o.ownerId)}>
-        <div className="scorecard-top"><span className="owner-rank">#{index + 1}</span><span className={`status-pill ${o.tone}`}>Salud {o.score}/100</span></div>
-        <div className="scorecard-name"><strong>{o.owner}</strong><small>{o.active} activas · {o.missing} sin agenda · {o.overdue} vencidas</small></div>
-        <div className="health-score"><strong className="numeric-value">{o.score}</strong><span>score gestión + cierre</span></div>
-        <div className="scorecard-metrics">
-          <span><small>Forecast</small><b>{fmtMoneyCompact(o.weighted)}</b></span>
-          <span><small>Aprobado</small><b>{fmtMoneyCompact(o.approved)}</b></span>
-          <span><small>Conversión</small><b>{o.winRate}%</b></span>
-          <span><small>Cotizaciones</small><b>{o.cotizaciones}</b></span>
-        </div>
-        <em>Ver detalle →</em>
-      </a>)}</div>
-    </Panel>
 
     <Panel title="Ranking comercial ejecutivo">
       <div className="status-legend"><span><i className="dot good"/> Cierre fuerte ≥20%</span><span><i className="dot warn"/> En observación 8–19%</span><span><i className="dot danger"/> Requiere foco &lt;8%</span></div>
