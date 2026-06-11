@@ -192,18 +192,18 @@ function App() {
   if (!session) return <LoginScreen />;
   if (passwordRecovery) return <PasswordResetScreen onDone={() => setPasswordRecovery(false)} />;
   const currentProfile = data?.currentProfile || null;
-  return <div className="app">
+  return <div className="app crm-v2-shell">
     <aside className="sidebar">
-      <div className="brand"><small>Seguridad Nacional Ltda</small><em>Dashboard Comercial</em></div>
-      <Nav route={route} currentProfile={currentProfile} />
-      <div className="session-card"><small>Sesión activa</small><strong>{currentProfile?.full_name || session.user.email}</strong><span>{currentProfile?.role || 'perfil'}</span></div>
+      <div className="brand"><span className="sidebar-logo-mark">SN</span><div><small>Seguridad Nacional</small><em>CRM Comercial</em></div></div>
+      <Nav route={route} currentProfile={currentProfile} tenderCount={data?.totals.count || 0} opportunityCount={data?.opportunities.length || 0} />
+      <div className="session-card"><span className="avatar-initials">{(currentProfile?.full_name || session.user.email || 'SN').split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase()}</span><div><small>Sesión activa</small><strong>{currentProfile?.full_name || session.user.email}</strong><span>{currentProfile?.role || 'perfil'}</span></div></div>
       <button className="secondary full" onClick={refresh}>Actualizar datos</button>
       <button className="secondary full" onClick={() => supabaseBrowser.auth.signOut()}>Cerrar sesión</button>
     </aside>
     <main>
       <header className="topbar">
-        <div><h1>{titleFor(route)}</h1><p>CRM comercial · Seguridad Nacional</p></div>
-        <button onClick={() => go('#/new')}>Nueva oportunidad</button>
+        <div><p className="breadcrumb" aria-label="CRM · Seguridad Nacional">CRM comercial · Seguridad Nacional</p><h1>{titleFor(route)}</h1></div>
+        <div className="topbar-actions"><span className="topbar-status"><i/> Actualizado</span><button onClick={() => go('#/new')}>+ Nueva oportunidad</button></div>
       </header>
       {loading && <div className="notice">Cargando información comercial…</div>}
       {error && <div className="error">{error}</div>}
@@ -284,12 +284,26 @@ function titleFor(route: Route) {
   if (route.page === 'users') return 'Usuarios y permisos';
   return 'Inicio comercial';
 }
-function Nav({ route, currentProfile }: { route: Route; currentProfile: Profile | null }) {
+function Nav({ route, currentProfile, tenderCount, opportunityCount }: { route: Route; currentProfile: Profile | null; tenderCount?: number; opportunityCount?: number }) {
   const items = [['#/dashboard','Dashboard gerencial'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades']];
   if (canViewTenders(currentProfile)) items.push(['#/tenders','Licitaciones']);
   items.push(['#/vig-ia','Vig-IA'],['#/new','Crear oportunidad'],['#/goals','Metas y cumplimiento']);
   if (canManageUsers(currentProfile)) items.push(['#/users','Usuarios y permisos']);
-  return <nav>{items.map(([href,label]) => <a key={href} className={(route.page === 'home' && href==='#/') || href.includes(route.page) || (route.page === 'centinel' && href === '#/vig-ia') ? 'active' : ''} href={href}>{label}</a>)}</nav>;
+  void items;
+  const isActive = (href: string) => (route.page === 'home' && href === '#/') || href.includes(route.page) || (route.page === 'centinel' && href === '#/vig-ia');
+  const item = (href: string, label: string, icon: string, count?: number) => <a key={href} className={isActive(href) ? 'active' : ''} href={href}><span className="nav-item-main"><b>{icon}</b>{label}</span>{typeof count === 'number' ? <em>{count}</em> : null}</a>;
+  return <nav>
+    <span className="nav-section-label">Comercial</span>
+    {item('#/dashboard','Dashboard','⊞')}
+    {item('#/alerts','Alertas','!')}
+    {item('#/opportunities','Oportunidades','≡', opportunityCount)}
+    {canViewTenders(currentProfile) ? item('#/tenders','Licitaciones','○', tenderCount) : null}
+    <span className="nav-section-label">Inteligencia</span>
+    {item('#/vig-ia','Vig-IA','◉')}
+    {item('#/new','Crear oportunidad','+')}
+    {item('#/goals','Metas y cumplimiento','◇')}
+    {canManageUsers(currentProfile) ? <><span className="nav-section-label">Administración</span>{item('#/users','Usuarios y permisos','👤')}</> : null}
+  </nav>;
 }
 function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; refresh: () => Promise<void> }) {
   if (route.page === 'opportunities') return <OpportunityList data={data} />;
@@ -730,13 +744,26 @@ function TenderSectionPanel({ title, rows, show, focusTenderId, onCreate, onStat
 }
 function TenderCard({ tender, focused, onCreate, onStatus, creating }: { tender: PublicTender; focused?: boolean; onCreate: (tender: PublicTender) => void; onStatus: (tender: PublicTender, status: TenderInternalStatus) => void; creating: boolean }) {
   const converted = Boolean(tender.converted_opportunity_id);
-  return <article id={`tender-${tender.id}`} className={`card tender-card tender-${tender.section} ${focused ? 'tender-highlight' : ''}`}>
-    <div className="tender-head"><div><div className="tender-card-kickers"><Badge tone={tenderSourceTone(tender.source)}><span className="tender-source-badge">{tender.source}</span></Badge><Badge tone={tenderDeadlineTone(tender)}><span className={`tender-deadline-pill ${tenderDeadlineClass(tender)}`}>{fmtTenderDeadline(tender.deadline)}</span></Badge><Badge>Score {tender.score} · {scoreLabel(tender.score)}</Badge></div><h3>{tender.entity} — {tender.city || tender.dept || 'Sin ciudad'}</h3></div><div className="badge-stack"><Badge tone={tender.section === 'hacer' ? 'amber' : tender.section === 'descartar' ? 'danger' : 'blue'}>{tender.section === 'hacer' ? 'Hacer hoy' : tender.section === 'revisar' ? 'Revisar' : 'Validar'}</Badge><Badge tone={tenderStatusTone(tender.internal_status)}>{tenderStatusLabel(tender.internal_status)}</Badge></div></div>
+  const score = Math.max(0, Math.min(100, Number(tender.score || 0)));
+  const scoreTone = score >= 80 ? 'high' : score >= 60 ? 'mid' : 'low';
+  const deadlineBucket = tenderDeadlineBucket(tender);
+  const deadlineLabel = deadlineBucket === '0_7' ? '0–7 días' : deadlineBucket === '8_15' ? '8–15 días' : deadlineBucket === '16_30' ? '16–30 días' : deadlineBucket === 'vencida' ? 'Vencida' : deadlineBucket === 'sin_fecha' ? 'Sin fecha' : '30+ días';
+  return <article id={`tender-${tender.id}`} className={`card tender-card lic-card tender-${tender.section} ${focused ? 'tender-highlight' : ''}`}>
+    <div className="tender-head">
+      <div className="tender-card-main">
+        <div className="tender-card-kickers"><Badge tone={tenderSourceTone(tender.source)}><span className="tender-source-badge">{tender.source}</span></Badge><Badge tone={tenderDeadlineTone(tender)}><span className={`tender-deadline-pill ${tenderDeadlineClass(tender)}`}>{deadlineLabel}</span></Badge><Badge tone={scoreTone === 'high' ? 'success' : scoreTone === 'mid' ? 'amber' : 'danger'}>{scoreLabel(tender.score).replace(' / validar','')}</Badge></div>
+        <h3>{tender.entity} — {tender.city || tender.dept || 'Sin ciudad'}</h3>
+      </div>
+      <div className={`tender-score-ring score-${scoreTone}`} aria-label={`Score ${score}`}>
+        <svg className="score-ring-svg" viewBox="0 0 44 44"><circle className="score-ring-bg" cx="22" cy="22" r="18"/><circle className="score-ring-progress" cx="22" cy="22" r="18" pathLength="100" style={{ strokeDasharray: `${score} 100` }} /></svg>
+        <strong>{score}</strong><span>SCORE</span>
+      </div>
+    </div>
     <p>{tender.title}</p>
-    <div className="tender-meta"><span>{fmtMoneyCompact(tender.value)}</span><span>{fmtMoney(tender.value)}</span><span>Ref: {tender.ref || tender.process_id || '—'}</span></div>
+    <div className="tender-meta lic-metrics"><span><b>{fmtMoneyCompact(tender.value)}</b><small>{fmtMoney(tender.value)}</small></span><span>Ref: {tender.ref || tender.process_id || '—'}</span><span className={tenderDeadlineClass(tender)}>◷ {fmtTenderDeadline(tender.deadline)}</span></div>
     <small className="muted">{tender.reasons.slice(0,4).join(' · ')}</small>
     {tender.risks.length > 0 && <small className="muted">Riesgos: {tender.risks.slice(0,2).join(' · ')}</small>}
-    <div className="row-actions tender-card-actions">{tender.url && <a className="button secondary" target="_blank" href={tender.url}>Abrir fuente</a>}<button className="secondary" onClick={() => onStatus(tender, 'en_revision')} disabled={creating || converted}>En revisión</button><button className="secondary" onClick={() => onStatus(tender, 'descartada')} disabled={creating || converted}>Descartar</button><button onClick={() => onCreate(tender)} disabled={creating}>{creating ? 'Creando…' : converted ? 'Ver oportunidad' : 'Crear oportunidad'}</button></div>
+    <div className="row-actions tender-card-actions">{tender.url && <a className="button secondary" target="_blank" href={tender.url}>Abrir fuente</a>}<button className="secondary" onClick={() => onStatus(tender, 'en_revision')} disabled={creating || converted}>Marcar en revisión</button><button className="secondary" onClick={() => window.confirm('¿Descartar esta licitación?') && onStatus(tender, 'descartada')} disabled={creating || converted}>Descartar</button><button onClick={() => onCreate(tender)} disabled={creating}>{creating ? 'Creando…' : converted ? 'Ver oportunidad' : 'Crear oportunidad'}</button></div>
   </article>;
 }
 function TenderTable({ rows, focusTenderId, onCreate, onStatus, creatingId }: { rows: PublicTender[]; focusTenderId?: string; onCreate: (tender: PublicTender) => void; onStatus: (tender: PublicTender, status: TenderInternalStatus) => void; creatingId: string | null }) {
