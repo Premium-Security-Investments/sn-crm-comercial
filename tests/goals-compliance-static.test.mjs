@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
-const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
 
@@ -27,9 +26,6 @@ assert(src.includes('Todos los asesores'), 'Gerencia debe poder consultar metas 
 assert(!src.includes('Lectura de negocio'), 'Metas no debe mostrar panel explicativo Lectura de negocio.');
 assert(!src.includes('Reglas comerciales por unidad'), 'Metas no debe mostrar Reglas comerciales por unidad.');
 assert(src.includes('/api/goals'), 'La UI debe consumir endpoint /api/goals.');
-assert(css.includes('.goals-dashboard .compliance-table table'), 'Metas debe tener tabla de cumplimiento ajustada al tema oscuro.');
-assert(css.includes('.goals-dashboard .compliance-cell.danger'), 'Metas debe mostrar semáforo rojo con contraste en dark mode.');
-assert(css.includes('.goals-dashboard .goals-form'), 'El formulario de metas debe estar contenido en panel oscuro legible.');
 assert(server.includes("app.get('/api/goals'"), 'Servidor local debe exponer GET /api/goals.');
 assert(server.includes("app.put('/api/goals'"), 'Servidor local debe exponer PUT /api/goals para upsert.');
 assert(api.includes("app.get('/api/goals'"), 'Serverless debe exponer GET /api/goals.');

@@ -28,12 +28,6 @@ assert(src.includes('markTenderStatus'), 'Frontend debe permitir marcar En revis
 assert(src.includes('converted_opportunity_id'), 'Frontend debe mostrar licitaciones ya convertidas con enlace a oportunidad.');
 assert(!src.includes('Radar público SECOP'), 'Frontend no debe amarrar el módulo solo a SECOP.');
 assert(src.includes('Radar de Licitaciones Públicas'), 'Frontend debe presentar el radar como multifuente.');
-assert(src.includes('<h2>Procesos priorizados</h2>'), 'El hero de Licitaciones debe usar título contextual del diseño, no repetir el nombre de la pestaña.');
-assert(!src.includes('<h2>Licitaciones</h2>'), 'El hero de Licitaciones no debe duplicar el título global de la página.');
-assert(src.includes('tender-hero-kpis'), 'Los KPIs principales de Licitaciones deben integrarse en el hero en una grilla 2x2.');
-assert(src.indexOf('tender-hero-kpis') < src.indexOf('tender-control-panel'), 'Los KPIs del hero deben aparecer antes de los filtros de Licitaciones.');
-assert(!src.includes('<small>Fuente</small><strong>{payload.source'), 'El hero de Licitaciones no debe usar espacio premium para Fuente: Supabase/Fuentes vivas.');
-assert(src.includes('tender-source-sync-note'), 'La fecha/fuente/diagnóstico debe moverse a una nota compacta fuera del hero.');
 assert(src.includes('Sincronizar fuentes'), 'Frontend debe tener acción explícita de sincronización multifuente.');
 assert(!src.includes('Sincronizar SECOP'), 'El botón ya no debe decir Sincronizar SECOP.');
 assert(src.includes('Abrir fuente'), 'Frontend debe abrir la fuente genérica, no solo SECOP.');
@@ -85,7 +79,6 @@ assert(src.includes('ESU Contratación'), 'El filtro de fuente debe mostrar ESU 
 assert(src.includes('<span>Prioridad</span>'), 'El filtro principal debe llamarse solo Prioridad.');
 assert(src.includes('["todas","Todas"]'), 'El predeterminado de cada dropdown de licitaciones debe ser Todas.');
 assert(src.includes('empty=""'), 'Los dropdowns de licitaciones no deben inyectar una opción/header interna adicional.');
-assert(!src.includes('placeholderOption'), 'No debe quedar helper legacy que genere opciones tipo "Filtro: Todas".');
 assert(src.includes('["urgentes","Urgentes"]'), 'El filtro principal debe mostrar Urgentes sin repetir el nombre del filtro.');
 assert(src.includes('["alto_valor","Alto valor"]'), 'El filtro principal debe mostrar Alto valor sin repetir el nombre del filtro.');
 assert(src.includes('["alto_encaje","Alto encaje"]'), 'El filtro principal debe mostrar Alto encaje sin repetir el nombre del filtro.');

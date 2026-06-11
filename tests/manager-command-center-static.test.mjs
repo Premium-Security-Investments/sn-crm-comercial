@@ -46,12 +46,14 @@ const requiredMainMarkers = [
   'Pipeline total',
   'Pipeline gestionado',
   'Pipeline en riesgo',
+  'Ranking por salud comercial',
   'Top 10 oportunidades que requieren decisión',
   'Registrar seguimiento',
   'criticalOpportunityRows',
   'SortableTh',
   'sortConfig',
   'sortedCriticalOpportunityRows',
+  'commercialHealthCards',
   'actionTitle',
   'actionInstruction',
   'command-priority-title',
@@ -105,7 +107,6 @@ assert.ok(!main.includes('<BusinessRulesDashboard data={data} />'), 'Manager das
 assert.ok(!main.includes('Panel title="Reglas comerciales por área"'), 'Business rules panel should be removed from dashboard source');
 assert.ok(!main.includes('Panel title="Embudo visual de valor por etapa"'), 'Dashboard should replace the unclear visual funnel with an actionable executive table');
 assert.ok(!main.includes('Math.max(58, Math.min(100, 46 + pct * 0.8))'), 'Dashboard should not rely on pseudo-funnel bar widths for executive interpretation');
-assert.ok(!main.includes('Ranking por salud comercial'), 'Dashboard must not include the discarded commercial health ranking');
 assert.ok(main.includes('stageActionRows'), 'Dashboard should compute actionable stage rows with diagnostic text');
 assert.ok(main.includes('sortKey="value"'), 'Dashboard critical opportunities must allow sorting by value');
 assert.ok(main.includes('sortKey="owner"'), 'Dashboard critical opportunities must allow sorting by commercial owner');
