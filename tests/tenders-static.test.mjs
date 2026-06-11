@@ -28,6 +28,12 @@ assert(src.includes('markTenderStatus'), 'Frontend debe permitir marcar En revis
 assert(src.includes('converted_opportunity_id'), 'Frontend debe mostrar licitaciones ya convertidas con enlace a oportunidad.');
 assert(!src.includes('Radar público SECOP'), 'Frontend no debe amarrar el módulo solo a SECOP.');
 assert(src.includes('Radar de Licitaciones Públicas'), 'Frontend debe presentar el radar como multifuente.');
+assert(src.includes('<h2>Procesos priorizados</h2>'), 'El hero de Licitaciones debe usar título contextual del diseño, no repetir el nombre de la pestaña.');
+assert(!src.includes('<h2>Licitaciones</h2>'), 'El hero de Licitaciones no debe duplicar el título global de la página.');
+assert(src.includes('tender-hero-kpis'), 'Los KPIs principales de Licitaciones deben integrarse en el hero en una grilla 2x2.');
+assert(src.indexOf('tender-hero-kpis') < src.indexOf('tender-control-panel'), 'Los KPIs del hero deben aparecer antes de los filtros de Licitaciones.');
+assert(!src.includes('<small>Fuente</small><strong>{payload.source'), 'El hero de Licitaciones no debe usar espacio premium para Fuente: Supabase/Fuentes vivas.');
+assert(src.includes('tender-source-sync-note'), 'La fecha/fuente/diagnóstico debe moverse a una nota compacta fuera del hero.');
 assert(src.includes('Sincronizar fuentes'), 'Frontend debe tener acción explícita de sincronización multifuente.');
 assert(!src.includes('Sincronizar SECOP'), 'El botón ya no debe decir Sincronizar SECOP.');
 assert(src.includes('Abrir fuente'), 'Frontend debe abrir la fuente genérica, no solo SECOP.');
