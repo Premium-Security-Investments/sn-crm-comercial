@@ -41,4 +41,6 @@ for (const marker of requiredCssMarkers) {
   assert.ok(css.includes(marker), `styles.css missing visual v2 marker: ${marker}`);
 }
 
+assert(css.includes('.login-shell{background:radial-gradient(circle at 78% 0%'), 'Login debe quedar alineado al sistema visual oscuro V2, no mixto claro/oscuro.');
+assert(css.includes('.login-card h1{color:#fff'), 'Login debe usar títulos claros sobre tarjeta oscura.');
 console.log('visual v2 handoff static checks passed');

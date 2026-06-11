@@ -56,7 +56,6 @@ function canViewTenders(profile?: Profile | null) { return isManagementRole(prof
 const customerSegmentOptions: Array<[CustomerSegment, string]> = [['cliente_nuevo','Cliente Nuevo'], ['cliente_actual','Cliente Actual']];
 const commercialAreaOptions: Array<[CommercialArea, string]> = [['seguridad_fisica','Seguridad Física'], ['tecnologia','Tecnología'], ['licitacion_publica','Licitación Pública']];
 const TENDER_OFFICIAL_SOURCES = ['SECOP I', 'SECOP II', 'TVEC', 'ESU Contratación'];
-function placeholderOption(label: string, value = 'todas') { return [value, `${label}: Todas`]; }
 function customerSegmentLabel(value?: string | null) { return value === 'cliente_nuevo' ? 'Cliente Nuevo' : value === 'cliente_actual' ? 'Cliente Actual' : 'Pendiente'; }
 function commercialAreaLabel(value?: string | null) { return value === 'seguridad_fisica' ? 'Seguridad Física' : value === 'tecnologia' ? 'Tecnología' : value === 'licitacion_publica' ? 'Licitación Pública' : 'Sin área'; }
 function isApprovedSale(o: Opportunity) { return o.stage_code === 'aprobado'; }

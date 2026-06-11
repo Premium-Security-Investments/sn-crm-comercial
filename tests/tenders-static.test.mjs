@@ -79,6 +79,7 @@ assert(src.includes('ESU Contratación'), 'El filtro de fuente debe mostrar ESU 
 assert(src.includes('<span>Prioridad</span>'), 'El filtro principal debe llamarse solo Prioridad.');
 assert(src.includes('["todas","Todas"]'), 'El predeterminado de cada dropdown de licitaciones debe ser Todas.');
 assert(src.includes('empty=""'), 'Los dropdowns de licitaciones no deben inyectar una opción/header interna adicional.');
+assert(!src.includes('placeholderOption'), 'No debe quedar helper legacy que genere opciones tipo "Filtro: Todas".');
 assert(src.includes('["urgentes","Urgentes"]'), 'El filtro principal debe mostrar Urgentes sin repetir el nombre del filtro.');
 assert(src.includes('["alto_valor","Alto valor"]'), 'El filtro principal debe mostrar Alto valor sin repetir el nombre del filtro.');
 assert(src.includes('["alto_encaje","Alto encaje"]'), 'El filtro principal debe mostrar Alto encaje sin repetir el nombre del filtro.');
