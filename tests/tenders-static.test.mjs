@@ -65,7 +65,12 @@ assert(src.includes('tender-results-toolbar'), 'Licitaciones debe separar resume
 assert(src.includes('tender-help-panel'), 'La explicación larga y diagnóstico deben quedar en un panel colapsable.');
 assert(src.includes('TenderFastFilter'), 'Licitaciones debe tener filtros rápidos operativos separados de KPIs.');
 assert(src.includes('applyTenderFastFilter'), 'Los filtros rápidos deben mapear a los tipos existentes sin crear taxonomía paralela.');
+assert(src.includes('tender-quick-views-panel'), 'Las vistas rápidas deben estar en una banda propia fuera del panel de filtros.');
+assert(src.includes('Vistas operativas'), 'Las vistas rápidas deben tener una etiqueta ejecutiva con más jerarquía.');
+assert(src.includes('Accesos directos para priorizar la bandeja antes de buscar o refinar.'), 'La banda de vistas rápidas debe explicar su función antes del buscador.');
 assert(src.includes('tender-fast-filters'), 'La UI debe renderizar una fila visual de filtros rápidos.');
+assert(!src.includes('className="tender-control-section"'), 'Las vistas rápidas ya no deben vivir dentro del panel de filtros.');
+assert(src.indexOf('tender-quick-views-panel') < src.indexOf('tender-control-panel'), 'Las vistas rápidas deben aparecer antes del buscador/refinamiento.');
 assert(src.includes('Nuevas'), 'Filtros rápidos debe incluir Nuevas.');
 assert(src.includes('Urgentes'), 'Filtros rápidos debe incluir Urgentes.');
 assert(src.includes('Alto encaje'), 'Filtros rápidos debe incluir Alto encaje.');

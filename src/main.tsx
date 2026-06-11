@@ -694,16 +694,16 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
         <button className={`tender-kpi-filter tender-kpi-filter-blue ${quickFilter === 'en_revision' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('en_revision')}><span>En revisión</span><strong>{payload.totals.enRevision || 0}</strong><em>marcadas</em><small>Ver estado interno</small></button>
       </div>
     </section>
+    <section className="tender-quick-views-panel" aria-label="Vistas rápidas de licitaciones">
+      <div className="tender-quick-views-copy"><span className="filter-label">Vistas operativas</span><strong>Accesos directos para priorizar la bandeja antes de buscar o refinar.</strong></div>
+      <div className="tender-fast-filters" aria-label="Filtros rápidos de licitaciones">
+        {(Object.entries(tenderFastFilterConfig) as Array<[Exclude<TenderFastFilter, null>, { label: string }]>).map(([key, config]) => <button key={key} className={fastFilter === key ? 'active' : ''} onClick={() => applyTenderFastFilter(key)}>{config.label}</button>)}
+      </div>
+    </section>
     <section className="tender-control-panel" aria-label="Controles de licitaciones">
       <div className="tender-control-top">
         <input className="tender-search-input" placeholder="Buscar entidad, ciudad, objeto, fuente o referencia…" value={q} onChange={e=>setQ(e.target.value)} />
         <div className="tender-control-actions"><button className="secondary" onClick={load}>Recargar vista</button><button onClick={refreshRadar} disabled={syncing}>{syncing ? 'Sincronizando…' : 'Sincronizar fuentes oficiales'}</button></div>
-      </div>
-      <div className="tender-control-section">
-        <span className="filter-label">Vistas rápidas</span>
-        <div className="tender-fast-filters" aria-label="Filtros rápidos de licitaciones">
-          {(Object.entries(tenderFastFilterConfig) as Array<[Exclude<TenderFastFilter, null>, { label: string }]>).map(([key, config]) => <button key={key} className={fastFilter === key ? 'active' : ''} onClick={() => applyTenderFastFilter(key)}>{config.label}</button>)}
-        </div>
       </div>
       <div className="filters tender-refine-filters"><span className="filter-label">Refinar resultados</span><label className="tender-filter-field"><span>Prioridad</span><Select value={primaryTenderFilter} onChange={v=>applyPrimaryTenderFilter(v as TenderPrimaryFilter)} options={[["todas","Todas"],["hacer","Hacer hoy"],["revisar","Revisar"],["descartar","Descartar / validar"],["nuevas","Nuevas"],["urgentes","Urgentes"],["alto_valor","Alto valor"],["alto_encaje","Alto encaje"]]} empty=""/></label><label className="tender-filter-field"><span>Estado interno</span><Select value={internalStatus} onChange={v=>{ setInternalStatus(v as TenderInternalStatus | 'todas'); setQuickFilter(null); setFastFilter(null); }} options={[["todas","Todas"],["nueva","Nueva"],["en_revision","En revisión"],["descartada","Descartada"],["convertida_oportunidad","Convertida"]]} empty=""/></label><label className="tender-filter-field"><span>Fuente</span><Select value={sourceFilter} onChange={setSourceFilter} options={[["todas","Todas"], ...sourceOptions]} empty=""/></label><label className="tender-filter-field"><span>Cierre</span><Select value={deadlineFilter} onChange={v=>setDeadlineFilter(v as TenderDeadlineFilter)} options={[["todas","Todas"],["0_7","0-7 días"],["8_15","8-15 días"],["16_30","16-30 días"],["vencida","Vencida"],["sin_fecha","Sin fecha"]]} empty=""/></label><label className="tender-filter-field"><span>Valor</span><Select value={valueFilter} onChange={v=>setValueFilter(v as TenderValueFilter)} options={[["todas","Todas"],["sin_valor","Sin valor"],["lt_50m","<$50M"],["50m_500m","$50M-$500M"],["500m_plus","$500M+"],["1000m_plus","$1.000M+"]]} empty=""/></label><label className="tender-filter-field"><span>Encaje</span><Select value={scoreFilter} onChange={v=>setScoreFilter(v as TenderScoreFilter)} options={[["todas","Todas"],["alto","Alto"],["medio","Medio"],["bajo","Bajo / validar"]]} empty=""/></label><button className="secondary" onClick={clearTenderFilters}>Limpiar filtros</button></div>
     </section>
