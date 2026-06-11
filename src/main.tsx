@@ -53,6 +53,16 @@ function isManagementRole(role?: string | null) { return ['director','gerencia',
 function canManageUsers(profile?: Profile | null) { return profile?.role === 'admin'; }
 function canManageGoals(profile?: Profile | null) { return isManagementRole(profile?.role); }
 function canViewTenders(profile?: Profile | null) { return isManagementRole(profile?.role) || profile?.microsoft_email?.toLowerCase() === 'directora.licitaciones@seguridadnacional.co'; }
+function alertOpportunityCount(opportunities: Opportunity[]) {
+  return opportunities.filter(o => {
+    if (isTerminalStage(o.stage_code)) return false;
+    const action = nextActionStatus(o);
+    const inactiveDays = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
+    return ['missing','overdue','today','soon'].includes(action.code)
+      || (o.stage_code === 'sustentacion' && Number(inactiveDays || 0) > 5)
+      || (Number(o.offer_value || 0) >= 250_000_000 && Number(inactiveDays || 0) >= 10);
+  }).length;
+}
 const customerSegmentOptions: Array<[CustomerSegment, string]> = [['cliente_nuevo','Cliente Nuevo'], ['cliente_actual','Cliente Actual']];
 const commercialAreaOptions: Array<[CommercialArea, string]> = [['seguridad_fisica','Seguridad Física'], ['tecnologia','Tecnología'], ['licitacion_publica','Licitación Pública']];
 const TENDER_OFFICIAL_SOURCES = ['SECOP I', 'SECOP II', 'TVEC', 'ESU Contratación'];
@@ -194,7 +204,7 @@ function App() {
   return <div className="app crm-v2-shell">
     <aside className="sidebar">
       <div className="brand"><span className="sidebar-logo-mark">SN</span><div><small>Seguridad Nacional</small><em>CRM Comercial</em></div></div>
-      <Nav route={route} currentProfile={currentProfile} tenderCount={data?.totals.count || 0} opportunityCount={data?.opportunities.length || 0} />
+      <Nav route={route} currentProfile={currentProfile} tenderCount={data?.totals.count || 0} opportunityCount={data?.opportunities.length || 0} alertCount={data ? alertOpportunityCount(data.opportunities) : 0} />
       <div className="session-card"><span className="avatar-initials">{(currentProfile?.full_name || session.user.email || 'SN').split(' ').map(x=>x[0]).join('').slice(0,2).toUpperCase()}</span><div><small>Sesión activa</small><strong>{currentProfile?.full_name || session.user.email}</strong><span>{currentProfile?.role || 'perfil'}</span></div></div>
       <button className="secondary full" onClick={refresh}>Actualizar datos</button>
       <button className="secondary full" onClick={() => supabaseBrowser.auth.signOut()}>Cerrar sesión</button>
@@ -283,7 +293,7 @@ function titleFor(route: Route) {
   if (route.page === 'users') return 'Usuarios y permisos';
   return 'Inicio comercial';
 }
-function Nav({ route, currentProfile, tenderCount, opportunityCount }: { route: Route; currentProfile: Profile | null; tenderCount?: number; opportunityCount?: number }) {
+function Nav({ route, currentProfile, tenderCount, opportunityCount, alertCount }: { route: Route; currentProfile: Profile | null; tenderCount?: number; opportunityCount?: number; alertCount?: number }) {
   const items = [['#/dashboard','Dashboard gerencial'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades']];
   if (canViewTenders(currentProfile)) items.push(['#/tenders','Licitaciones']);
   items.push(['#/vig-ia','Vig-IA'],['#/new','Crear oportunidad'],['#/goals','Metas y cumplimiento']);
@@ -294,7 +304,7 @@ function Nav({ route, currentProfile, tenderCount, opportunityCount }: { route: 
   return <nav>
     <span className="nav-section-label">Comercial</span>
     {item('#/dashboard','Dashboard','⊞')}
-    {item('#/alerts','Alertas','!')}
+    {item('#/alerts','Alertas','!', alertCount)}
     {item('#/opportunities','Oportunidades','≡', opportunityCount)}
     {canViewTenders(currentProfile) ? item('#/tenders','Licitaciones','○', tenderCount) : null}
     <span className="nav-section-label">Inteligencia</span>
@@ -1476,13 +1486,15 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
   const filteredAlerts = alertRows.filter(row => {
     const o = row.opportunity;
     const haystack = `${o.company_name} ${o.owner_name || ''} ${o.regional_nombre || ''} ${o.sede || ''} ${o.quote_city || ''} ${o.tipo_producto_original || ''}`.toLowerCase();
+    const isOperationalAlert = ['missing','overdue','stalled','today','soon'].includes(row.alertCode) || row.closingSoon || row.highValueStalled;
     return (!q || haystack.includes(q.toLowerCase()))
       && (!status || row.alertCode === status || (status === 'closing_soon' && row.closingSoon) || (status === 'high_value_stalled' && row.highValueStalled))
       && (!owner || o.owner_id === owner)
       && (!regional || o.regional_nombre === regional)
       && (!stage || o.stage_code === stage)
       && (!service || o.service_type_code === service)
-      && (!hideClosed || !isTerminalStage(o.stage_code));
+      && (!hideClosed || !isTerminalStage(o.stage_code))
+      && (status === 'scheduled' || isOperationalAlert);
   });
   const sortedFilteredAlerts = [...filteredAlerts].sort((a,b) => {
     const value = (row: typeof filteredAlerts[number]) => sortConfig.key === 'alert' ? row.priority : sortConfig.key === 'client' ? row.opportunity.company_name : sortConfig.key === 'owner' ? (row.opportunity.owner_name || '') : sortConfig.key === 'stage' ? (row.opportunity.stage_order || 0) : sortConfig.key === 'value' ? Number(row.opportunity.offer_value || 0) : sortConfig.key === 'next' ? (row.opportunity.next_action_at || '') : sortConfig.key === 'inactive' ? Number(row.inactiveDays || 0) : row.action.detail;
@@ -1517,13 +1529,13 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
         <label className="check-filter"><input type="checkbox" checked={hideClosed} onChange={e=>setHideClosed(e.target.checked)} /> Solo activas</label>
         <button className="secondary" onClick={()=>{ setQ(''); setStatus(''); setOwner(''); setRegional(''); setStage(''); setService(''); setHideClosed(true); }}>Limpiar filtros</button>
       </div>
-      <div className="filter-summary alert-filter-summary"><strong>{filteredAlerts.length}</strong> alertas visibles · {active.length} oportunidades activas base</div>
+      <div className="filter-summary alert-filter-summary"><strong>{filteredAlerts.length}</strong> alertas operativas visibles · {active.length} oportunidades activas base</div>
     </Panel>
     <Panel title="Bandeja de alertas">
-      <p className="muted">Mostrando {filteredAlerts.length} oportunidades. Click en una fila para abrir el detalle y registrar seguimiento.</p>
+      <p className="muted">Mostrando {filteredAlerts.length} oportunidades que requieren decisión o seguimiento. Click en una fila para abrir el detalle.</p>
       <div className="tablewrap alert-table"><table><thead><tr><SortableTh label="Alerta" sortKey="alert" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Días sin seguimiento" sortKey="inactive" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Acción sugerida" sortKey="action" sortConfig={sortConfig} onSort={sortBy}/></tr></thead><tbody>{sortedFilteredAlerts.map(row => {
         const o = row.opportunity;
-        return <tr key={o.id} className={`clickable alert-row alert-row-${row.alertCode}`} onClick={() => go(`#/detail/${o.id}`)}><td><Badge tone={row.alertTone}>{row.alertLabel}</Badge></td><td><strong>{o.company_name}</strong><br/><small>{o.regional_nombre || o.sede || '—'}</small></td><td>{o.owner_name || 'Sin comercial'}</td><td><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{o.next_action_at ? fmtDate(o.next_action_at) : 'Sin agenda'}</td><td>{row.inactiveDays === null ? '—' : `${row.inactiveDays} día(s)`}</td><td>{row.alertCode === 'missing' ? 'Programar próxima gestión' : row.alertCode === 'overdue' ? 'Gestionar vencida' : status === 'closing_soon' ? 'Preparar decisión / cierre' : status === 'high_value_stalled' ? 'Escalar bloqueo comercial' : row.alertCode === 'stalled' ? 'Revisar sustentación' : row.action.detail}</td></tr>;
+        return <tr key={o.id} className={`clickable alert-row alert-row-${row.alertCode}`} onClick={() => go(`#/detail/${o.id}`)}><td><Badge tone={row.alertTone}>{row.alertLabel}</Badge></td><td><strong>{o.company_name || 'Sin cliente'}</strong><br/><small>{o.regional_nombre || o.sede || o.quote_city || 'Sin regional/sede'}</small></td><td>{o.owner_name || 'Sin comercial'}</td><td><Badge tone={stageTone(o.stage_code)}>{o.stage_name || 'Sin etapa'}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{o.next_action_at ? fmtDate(o.next_action_at) : 'Sin agenda'}</td><td>{row.inactiveDays === null ? '—' : `${row.inactiveDays} día(s)`}</td><td>{row.alertCode === 'missing' ? 'Programar próxima gestión' : row.alertCode === 'overdue' ? 'Gestionar vencida' : status === 'closing_soon' ? 'Preparar decisión / cierre' : status === 'high_value_stalled' ? 'Escalar bloqueo comercial' : row.alertCode === 'stalled' ? 'Revisar sustentación' : row.action.detail}</td></tr>;
       })}</tbody></table></div>
     </Panel>
     <Panel title="Cumplimiento bajo 80%">
