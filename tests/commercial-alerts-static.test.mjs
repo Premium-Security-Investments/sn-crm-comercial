@@ -20,6 +20,10 @@ const mainMarkers = [
   "filteredAlerts",
   "nextActionStatus(o)",
   "daysSince(o.last_interaction_at",
+  "['managed','Gestión vigente']",
+  "['risk','Pipeline en riesgo']",
+  "status === 'managed' && hasManagedAction",
+  "status === 'risk' && isRiskPipeline",
 ];
 
 for (const marker of mainMarkers) {

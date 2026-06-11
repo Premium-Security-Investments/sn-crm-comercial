@@ -1117,10 +1117,10 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
         </div>
       </div>
       <div className="command-metrics compact-command-kpis pipeline-discipline-grid">
-        <div><small>Pipeline total</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.pipeline)}</strong><span>{scopedTotals.count} oportunidades</span></div>
-        <div><small>Pipeline activo</small><strong className="numeric-value">{fmtMoneyCompact(activePipelineValue)}</strong><span>{active} en gestión</span></div>
-        <div><small>Forecast ponderado</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.weighted)}</strong><span>{pipelineManagedRows.length} con acción vigente</span></div>
-        <div><small>Pipeline en riesgo</small><strong className="numeric-value">{fmtMoneyCompact(sumValue(pipelineRiskRows))}</strong><span>{pipelineRiskRows.length} sin control</span></div>
+        <a className="clickable-card" href="#/opportunities?active=all"><small>Pipeline total</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.pipeline)}</strong><span>{scopedTotals.count} oportunidades</span><em>Ver oportunidades →</em></a>
+        <a className="clickable-card" href="#/opportunities"><small>Pipeline activo</small><strong className="numeric-value">{fmtMoneyCompact(activePipelineValue)}</strong><span>{active} en gestión</span><em>Ver activas →</em></a>
+        <a className="clickable-card" href={managerAlertRoute('managed')}><small>Forecast ponderado</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.weighted)}</strong><span>{pipelineManagedRows.length} con acción vigente</span><em>Ver gestión vigente →</em></a>
+        <a className="clickable-card" href={managerAlertRoute('risk')}><small>Pipeline en riesgo</small><strong className="numeric-value">{fmtMoneyCompact(sumValue(pipelineRiskRows))}</strong><span>{pipelineRiskRows.length} sin control</span><em>Ver riesgo →</em></a>
       </div>
     </section>
 
@@ -1439,12 +1439,14 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
   const alertRegionalOptions = uniq(active.map(o => o.regional_nombre)).map(r => [r, r]);
   const stageOptions = data.stages.filter(s => active.some(o => o.stage_code === s.code)).map(s => [s.code, s.name]);
   const alertServiceOptions = data.services.map(s => [s.code, s.name]);
-  const statusOptions = [['missing','Sin agenda'],['overdue','Vencidas'],['closing_soon','Cierre próximo'],['high_value_stalled','Alto valor estancado'],['stalled','Sustentación estancada'],['today','Hoy'],['soon','Próximas'],['scheduled','Agendadas']];
+  const statusOptions = [['managed','Gestión vigente'],['risk','Pipeline en riesgo'],['missing','Sin agenda'],['overdue','Vencidas'],['closing_soon','Cierre próximo'],['high_value_stalled','Alto valor estancado'],['stalled','Sustentación estancada'],['today','Hoy'],['soon','Próximas'],['scheduled','Agendadas']];
   const filteredAlerts = alertRows.filter(row => {
     const o = row.opportunity;
     const haystack = `${o.company_name} ${o.owner_name || ''} ${o.regional_nombre || ''} ${o.sede || ''} ${o.quote_city || ''} ${o.tipo_producto_original || ''}`.toLowerCase();
+    const hasManagedAction = Boolean(o.next_action_at) && !['overdue','missing'].includes(row.action.code);
+    const isRiskPipeline = ['overdue','missing'].includes(row.alertCode) || row.highValueStalled;
     return (!q || haystack.includes(q.toLowerCase()))
-      && (!status || row.alertCode === status || (status === 'closing_soon' && row.closingSoon) || (status === 'high_value_stalled' && row.highValueStalled))
+      && (!status || row.alertCode === status || (status === 'managed' && hasManagedAction) || (status === 'risk' && isRiskPipeline) || (status === 'closing_soon' && row.closingSoon) || (status === 'high_value_stalled' && row.highValueStalled))
       && (!owner || o.owner_id === owner)
       && (!regional || o.regional_nombre === regional)
       && (!stage || o.stage_code === stage)
