@@ -1471,24 +1471,24 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
   const sortLowGoalBy = (key: typeof lowGoalSortConfig.key) => setLowGoalSortConfig(current => nextSort(current, key));
 
   const alertCards = [
-    { label: 'Acciones críticas', value: alertRows.filter(r => ['overdue','missing','stalled'].includes(r.alertCode)).length, detail: 'Vencidas, sin agenda o estancadas', tone: 'danger' },
-    { label: 'Sin próxima acción', value: alertRows.filter(r => r.alertCode === 'missing').length, detail: 'Oportunidades activas sin agenda', tone: 'amber' },
-    { label: 'Vencidas', value: alertRows.filter(r => r.alertCode === 'overdue').length, detail: 'Gestión programada ya vencida', tone: 'danger' },
-    { label: 'Sustentación estancada', value: alertRows.filter(r => r.alertCode === 'stalled').length, detail: 'Más de 5 días sin gestión', tone: 'danger' },
-    { label: 'Bajo cumplimiento', value: lowGoalRows.length, detail: 'Metas por debajo de 80%', tone: lowGoalRows.length ? 'amber' : 'success' },
+    { label: 'Acciones críticas', value: alertRows.filter(r => ['overdue','missing','stalled'].includes(r.alertCode)).length, detail: 'Vencidas, sin agenda o estancadas', tone: 'danger', status: 'critical' },
+    { label: 'Sin próxima acción', value: alertRows.filter(r => r.alertCode === 'missing').length, detail: 'Oportunidades activas sin agenda', tone: 'amber', status: 'missing' },
+    { label: 'Vencidas', value: alertRows.filter(r => r.alertCode === 'overdue').length, detail: 'Gestión programada ya vencida', tone: 'danger', status: 'overdue' },
+    { label: 'Sustentación estancada', value: alertRows.filter(r => r.alertCode === 'stalled').length, detail: 'Más de 5 días sin gestión', tone: 'danger', status: 'stalled' },
+    { label: 'Bajo cumplimiento', value: lowGoalRows.length, detail: 'Metas por debajo de 80%', tone: lowGoalRows.length ? 'amber' : 'success', href: '#/goals' },
   ];
 
   const ownerOptions = data.profiles.filter(p => active.some(o => o.owner_id === p.id)).map(p => [p.id, p.full_name]);
   const alertRegionalOptions = uniq(active.map(o => o.regional_nombre)).map(r => [r, r]);
   const stageOptions = data.stages.filter(s => active.some(o => o.stage_code === s.code)).map(s => [s.code, s.name]);
   const alertServiceOptions = data.services.map(s => [s.code, s.name]);
-  const statusOptions = [['missing','Sin agenda'],['overdue','Vencidas'],['closing_soon','Cierre próximo'],['high_value_stalled','Alto valor estancado'],['stalled','Sustentación estancada'],['today','Hoy'],['soon','Próximas'],['scheduled','Agendadas']];
+  const statusOptions = [['critical','Críticas'],['missing','Sin agenda'],['overdue','Vencidas'],['closing_soon','Cierre próximo'],['high_value_stalled','Alto valor estancado'],['stalled','Sustentación estancada'],['today','Hoy'],['soon','Próximas'],['scheduled','Agendadas']];
   const filteredAlerts = alertRows.filter(row => {
     const o = row.opportunity;
     const haystack = `${o.company_name} ${o.owner_name || ''} ${o.regional_nombre || ''} ${o.sede || ''} ${o.quote_city || ''} ${o.tipo_producto_original || ''}`.toLowerCase();
     const isOperationalAlert = ['missing','overdue','stalled','today','soon'].includes(row.alertCode) || row.closingSoon || row.highValueStalled;
     return (!q || haystack.includes(q.toLowerCase()))
-      && (!status || row.alertCode === status || (status === 'closing_soon' && row.closingSoon) || (status === 'high_value_stalled' && row.highValueStalled))
+      && (!status || row.alertCode === status || (status === 'critical' && ['overdue','missing','stalled'].includes(row.alertCode)) || (status === 'closing_soon' && row.closingSoon) || (status === 'high_value_stalled' && row.highValueStalled))
       && (!owner || o.owner_id === owner)
       && (!regional || o.regional_nombre === regional)
       && (!stage || o.stage_code === stage)
@@ -1516,7 +1516,11 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
       </div>
     </section>
     <div className="alert-cards">
-      {alertCards.map(card => <div className={`alert-card alert-${card.tone}`} key={card.label}><small>{card.label}</small><strong>{card.value}</strong><span>{card.detail}</span></div>)}
+      {alertCards.map(card => <button type="button" className={`alert-card alert-${card.tone} clickable-card ${status === card.status ? 'active' : ''}`} key={card.label} onClick={() => {
+        if ('href' in card && card.href) { go(card.href); return; }
+        if ('status' in card && card.status) setStatus(current => current === card.status ? '' : card.status);
+        window.setTimeout(() => document.querySelector('.alert-filter-summary')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+      }}><small>{card.label}</small><strong>{card.value}</strong><span>{card.detail}</span><em>{'href' in card && card.href ? 'Ver metas →' : status === card.status ? 'Filtro activo' : 'Filtrar bandeja →'}</em></button>)}
     </div>
     <Panel title="Filtros de gestión">
       <div className="filters alerts-filters">
