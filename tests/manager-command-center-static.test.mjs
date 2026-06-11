@@ -12,7 +12,6 @@ const requiredMainMarkers = [
   'Riesgo / lectura',
   'Ver etapa',
   'commercial-scorecards',
-  'manager-action-panel',
   'monthly-bars',
   'executive-signals',
   'status-legend',
@@ -28,7 +27,7 @@ const requiredMainMarkers = [
   'DashboardPeriodFilter',
   'Última actualización',
   'numeric-value',
-  'Comando gerencial del día',
+  'Sala de control comercial · Hoy',
   'Prioridad gerencial de hoy',
   'operational-command-grid',
   'Sin próxima acción',
@@ -44,7 +43,7 @@ const requiredMainMarkers = [
   'Forecast ponderado',
   'Cumplimiento meta mes',
   'Pipeline total',
-  'Pipeline gestionado',
+  'con acción vigente',
   'Pipeline en riesgo',
   'Ranking por salud comercial',
   'Top 10 oportunidades que requieren decisión',
@@ -58,6 +57,10 @@ const requiredMainMarkers = [
   'actionInstruction',
   'command-priority-title',
   'manager-action-context',
+  'compact-command-summary',
+  'compact-command-kpis',
+  'command-action-strip',
+  'Resumen ejecutivo compacto',
 ];
 
 for (const marker of requiredMainMarkers) {
@@ -92,6 +95,10 @@ const requiredCssMarkers = [
   '.health-score',
   '.command-priority-title',
   '.manager-action-context',
+  '.compact-command-summary',
+  '.compact-command-kpis',
+  '.command-action-strip',
+  'grid-template-columns:minmax(0,1.05fr) minmax(430px,.95fr)',
 ];
 
 for (const marker of requiredCssMarkers) {
@@ -115,9 +122,11 @@ assert.ok(!main.includes('<h2>{actionText}</h2>'), 'Hero should not render the f
 assert.ok(!main.includes('<strong>{actionText}</strong>'), 'Right action panel should not duplicate the hero priority sentence');
 assert.ok(!main.includes('<small>Gestiones vencidas</small><strong className="numeric-value">{overdueRows.length}</strong>'), 'Executive signals should not repeat overdue count already shown in priority cards');
 assert.ok(!main.includes('<small>Oportunidades sin agenda</small><strong className="numeric-value">{missingAgendaRows.length}</strong>'), 'Executive signals should not repeat missing agenda count already shown in priority cards');
-assert.ok(css.includes('clamp(26px,2.4vw,38px)'), 'Command hero headline must use a readable bounded size, not billboard typography');
+assert.ok(css.includes('clamp(24px,2vw,32px)'), 'Compact command hero headline must stay below billboard size');
+assert.ok(!main.includes('<div className="manager-action-panel">'), 'Manager dashboard should not keep a tall right-side action panel in the compact hero');
+assert.ok(main.indexOf('compact-command-kpis') < main.indexOf('<Panel title="Filtros gerenciales">'), 'Compact KPIs must sit in the top command area above filters');
 
-const heroIndex = main.indexOf('<section className="command-center-hero">');
+const heroIndex = main.indexOf('<section className="command-center-hero" aria-label="Resumen ejecutivo compacto">');
 const filtersIndex = main.indexOf('<Panel title="Filtros gerenciales">');
 const priorityIndex = main.indexOf('<Panel title="Prioridad gerencial de hoy">');
 assert.ok(heroIndex !== -1, 'Manager dashboard must render the top command hero');

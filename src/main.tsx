@@ -1106,28 +1106,21 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
         : 'Mantener seguimiento vigente y sostener avance del pipeline activo.';
 
   return <section className="stack manager-dashboard command-center">
-    <section className="command-center-hero">
-      <div className="command-copy">
-        <div className="command-title-row"><span className="eyebrow">Sala de control comercial · Comando gerencial del día</span></div>
+    <section className="command-center-hero" aria-label="Resumen ejecutivo compacto">
+      <div className="command-copy compact-command-summary">
+        <div className="command-title-row"><span className="eyebrow">Sala de control comercial · Hoy</span></div>
         <h2 className="command-priority-title">{actionTitle}</h2>
-        <p>{stageLeader ? `Revisar forecast: ${concentration}% del valor filtrado está concentrado en ${stageLeader.stage_name}. Comercial a revisar: ${biggestAlertOwner?.owner || '—'}.` : 'Lectura ejecutiva del pipeline, forecast, concentración y riesgos comerciales.'}</p>
-        <div className="command-metrics pipeline-discipline-grid">
-          <div><small>Pipeline total</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.pipeline)}</strong><span>{scopedTotals.count} oportunidades filtradas</span></div>
-          <div><small>Pipeline activo</small><strong className="numeric-value">{fmtMoneyCompact(activePipelineValue)}</strong><span>{active} oportunidades en gestión</span></div>
-          <div><small>Forecast ponderado</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.weighted)}</strong><span>Pipeline gestionado: {pipelineManagedRows.length} con próxima acción vigente</span></div>
-          <div><small>Pipeline en riesgo</small><strong className="numeric-value">{fmtMoneyCompact(sumValue(pipelineRiskRows))}</strong><span>{pipelineRiskRows.length} sin control suficiente</span></div>
+        <div className="command-action-strip">
+          <small>Acción gerencial sugerida</small>
+          <strong>{actionInstruction}</strong>
+          <p className="manager-action-context">Foco: {biggestAlertOwner?.owner || 'comercial'} · {stageLeader?.stage_name || 'etapa crítica'} · {serviceLeader?.label || 'servicio líder'}</p>
         </div>
       </div>
-      <div className="manager-action-panel">
-        <small>Acción gerencial sugerida</small>
-        <strong>{actionInstruction}</strong>
-        <p className="manager-action-context">Enfoque de revisión: comercial, etapa y servicio con mayor impacto en el pipeline filtrado.</p>
-        <div className="signal-grid">
-          <span><b>{leader?.owner || '—'}</b><em>Líder pipeline</em></span>
-          <span><b>{stageLeader?.stage_name || '—'}</b><em>Etapa crítica</em></span>
-          <span><b>{serviceLeader?.label || '—'}</b><em>Servicio líder</em></span>
-          <span><b>{biggestAlertOwner?.owner || '—'}</b><em>Comercial a revisar</em></span>
-        </div>
+      <div className="command-metrics compact-command-kpis pipeline-discipline-grid">
+        <div><small>Pipeline total</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.pipeline)}</strong><span>{scopedTotals.count} oportunidades</span></div>
+        <div><small>Pipeline activo</small><strong className="numeric-value">{fmtMoneyCompact(activePipelineValue)}</strong><span>{active} en gestión</span></div>
+        <div><small>Forecast ponderado</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.weighted)}</strong><span>{pipelineManagedRows.length} con acción vigente</span></div>
+        <div><small>Pipeline en riesgo</small><strong className="numeric-value">{fmtMoneyCompact(sumValue(pipelineRiskRows))}</strong><span>{pipelineRiskRows.length} sin control</span></div>
       </div>
     </section>
 
