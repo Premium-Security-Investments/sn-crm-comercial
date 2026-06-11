@@ -35,9 +35,15 @@ assert(src.includes('diagnostics'), 'Frontend debe mostrar diagnóstico de fuent
 assert(src.includes('Estado interno'), 'Frontend debe mostrar/filtar estado interno.');
 assert(src.includes('TenderQuickFilter'), 'Licitaciones debe tener tipo de filtro rápido para KPIs accionables.');
 assert(src.includes('applyTenderQuickFilter'), 'KPIs de Licitaciones deben filtrar la bandeja al hacer click.');
+assert(src.includes('compact-tender-command'), 'Licitaciones debe usar hero compacto oscuro tipo sala de control.');
+assert(src.includes('compact-tender-summary'), 'Hero de Licitaciones debe tener bloque ejecutivo compacto a la izquierda.');
+assert(src.includes('compact-tender-kpis'), 'Hero de Licitaciones debe mover los KPIs a una grilla compacta dentro del banner.');
 assert(src.includes('tender-kpi-filter'), 'KPIs de Licitaciones deben tener estilo/estado clicable.');
+assert(src.includes('Procesos priorizados'), 'Hero compacto debe cambiar el título operativo a Procesos priorizados.');
 assert(src.includes('Ver procesos prioritarios'), 'KPI Hacer hoy debe comunicar que abre el filtro correspondiente.');
 assert(src.includes('Ver procesos $500M+'), 'KPI Alto valor debe abrir filtro por valor alto.');
+assert(src.includes('ya son oport.'), 'KPI Convertidas debe quedar compacto dentro del banner.');
+assert(!src.includes('className="grid kpis tender-kpi-grid"'), 'Los KPIs de Licitaciones no deben quedar como tarjetas blancas separadas debajo del hero.');
 assert(src.includes('Recargar vista'), 'Botón ambiguo Actualizar debe renombrarse a Recargar vista.');
 assert(src.includes('Sincronizar fuentes oficiales'), 'Botón de sincronización debe explicar que consulta fuentes oficiales.');
 assert(src.includes('Recargar vista actualiza los datos guardados'), 'La UI debe explicar diferencia entre recargar y sincronizar.');
