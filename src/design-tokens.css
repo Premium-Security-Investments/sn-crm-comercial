@@ -25,3 +25,19 @@
   --ff-mono: JetBrains Mono, ui-monospace, monospace;
   --transition: 0.18s ease;
 }
+/* === Bridge: legacy vars → design tokens === */
+:root {
+  --text: #ECF1FB;
+  --muted: #6B7A99;
+  --line: rgba(255,255,255,.07);
+  --card: #0E1426;
+  --navy: #070B16;
+  --blue: #3D7BFF;
+  --cyan: #38BDF8;
+  --green: #22C55E;
+  --amber: #F59E0B;
+  --purple: #A78BFA;
+  --indigo: #6366F1;
+  color: #ECF1FB;
+  background: #070B16;
+}
