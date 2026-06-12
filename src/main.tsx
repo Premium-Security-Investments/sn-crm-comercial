@@ -1459,16 +1459,21 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
   const sortBy = (key: typeof sortConfig.key) => setSortConfig(current => nextSort(current, key));
 
   return <section className="stack alerts-dashboard">
-    <section className="executive-hero alerts-hero">
-      <div>
+    <section className="compact-alert-command" aria-label="Resumen operativo de alertas comerciales">
+      <div className="compact-alert-summary">
         <span className="eyebrow">Estado de gestión</span>
         <h2>Alertas comerciales</h2>
-        <p>Centro operativo para priorizar oportunidades activas: vencidas, sin próxima acción, próximas gestiones, sustentación estancada y cumplimiento bajo meta.</p>
+        <p>Centro operativo para priorizar oportunidades activas con foco en agenda, vencimientos, sustentación y cumplimiento.</p>
+        <div className="alert-command-meta">
+          <span><strong>{alertCards[0].value}</strong> acciones críticas</span>
+          <span><strong>{alertCards[1].value}</strong> sin próxima acción</span>
+          <span><strong>{alertCards[2].value}</strong> vencidas</span>
+        </div>
       </div>
-      <div className="hero-facts">
-        <div><small>Alertas visibles</small><strong>{filteredAlerts.length}</strong></div>
-        <div><small>Oportunidades activas</small><strong>{active.length}</strong></div>
-        <div><small>Bajo cumplimiento</small><strong>{lowGoalRows.length}</strong></div>
+      <div className="compact-alert-kpis">
+        <div className="alert-kpi-card"><small>Alertas visibles</small><strong className="numeric-value">{filteredAlerts.length}</strong><span>Según filtros activos</span></div>
+        <div className="alert-kpi-card"><small>Oportunidades activas</small><strong className="numeric-value">{active.length}</strong><span>Base operacional</span></div>
+        <div className="alert-kpi-card"><small>Bajo cumplimiento</small><strong className="numeric-value">{lowGoalRows.length}</strong><span>Metas por debajo de 80%</span></div>
       </div>
     </section>
     <div className="alert-cards">
