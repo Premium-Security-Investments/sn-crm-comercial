@@ -10,6 +10,11 @@ const mainMarkers = [
   "#/alerts",
   "Alertas comerciales",
   "function CommercialAlerts",
+  "compact-alert-command",
+  "compact-alert-summary",
+  "compact-alert-kpis",
+  "alert-command-meta",
+  "alert-kpi-card",
   "Estado de gestión",
   "Acciones críticas",
   "Sin próxima acción",
@@ -32,6 +37,10 @@ for (const marker of mainMarkers) {
 
 const cssMarkers = [
   '.alerts-dashboard',
+  '.compact-alert-command',
+  '.compact-alert-summary',
+  '.compact-alert-kpis',
+  '.alert-kpi-card',
   '.alert-cards',
   '.alert-card',
   '.alert-table',
