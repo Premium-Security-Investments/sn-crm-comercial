@@ -512,8 +512,10 @@ async function readPersistedTenderRadar(database) {
   if (latestRunResult.error && !isMissingTenderTable(latestRunResult.error)) throw latestRunResult.error;
   const latestRunAt = latestRunResult.data?.run_at || null;
   const cutoff = latestRunAt;
+  const activeDeadlineCutoff = new Date();
+  activeDeadlineCutoff.setUTCHours(0, 0, 0, 0);
   let query = database.from('psi_public_tenders').select('*').order('last_seen_at', { ascending: false }).limit(250);
-  if (cutoff) query = query.gte('last_seen_at', cutoff);
+  if (cutoff) query = query.or(`last_seen_at.gte.${cutoff},deadline_at.gte.${activeDeadlineCutoff.toISOString()}`);
   let { data, error } = await query;
   if (error) {
     if (isMissingTenderTable(error)) return null;

@@ -138,6 +138,8 @@ for (const file of [server, api]) {
   assert(file.includes('section: classifyTenderSection'), 'API debe clasificar licitaciones en hacer/revisar/descartar.');
   assert(file.includes('psi_public_tenders'), 'API debe usar tabla psi_public_tenders para historizar licitaciones.');
   assert(file.includes('psi_tender_radar_runs'), 'API debe registrar ejecuciones en psi_tender_radar_runs.');
+  assert(file.includes('activeDeadlineCutoff'), 'La vista CRM debe conservar licitaciones activas con cierre futuro aunque no hayan reaparecido en la última corrida.');
+  assert(file.includes('deadline_at.gte'), 'La consulta persistida debe incluir cierres futuros para no ocultar procesos vigentes por el corte de última corrida.');
   assert(file.includes('tenderTableAvailable'), 'API debe tener fallback si la migración aún no existe.');
   assert(file.includes('external_source: `secop_radar:${tender.source}:${stableTenderKey(tender)}`'), 'Conversión debe usar external_source estable para prevenir duplicados.');
   assert(file.includes('converted_opportunity_id'), 'Conversión debe marcar la licitación con opportunity_id.');
