@@ -139,6 +139,7 @@ function lastUpdatedLabel(rows: Opportunity[]) {
   const timestamps = rows.map(o => new Date(o.updated_at || o.created_at).getTime()).filter(Number.isFinite);
   return timestamps.length ? fmtDate(new Date(Math.max(...timestamps)).toISOString()) : 'Sin fecha';
 }
+function todayDateInputValue() { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0,10); }
 function startOfToday() { const d = new Date(); d.setHours(0,0,0,0); return d; }
 function daysSince(value?: string | null) { if (!value) return null; const diff = startOfToday().getTime() - new Date(value).getTime(); return Math.max(0, Math.floor(diff / 86_400_000)); }
 function nextActionStatus(o: Pick<Opportunity, 'stage_code' | 'next_action_at' | 'last_interaction_at' | 'updated_at' | 'created_at'>) {
@@ -789,7 +790,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   const lastDays = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
   return <section className="stack">
     <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p></div><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button></div>
-    <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
+    <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Fecha creación" value={fmtDate(o.created_at)}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
     <div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div>
     <Panel title="Línea de seguimientos"><div className="timeline">{detail.interactions.length ? detail.interactions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel>
   </section>;
@@ -826,6 +827,7 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
   });
   const [status, setStatus] = useState('');
   const canEditSegment = canEditOpportunitySegment(data.currentProfile, existing);
+  const creationDateValue = existing?.created_at ? String(existing.created_at).slice(0,10) : todayDateInputValue();
   const set = (key: keyof OpportunityPayload, value: string) => setForm(prev => ({ ...prev, [key]: value }));
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -845,6 +847,7 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
   return <Panel title={id ? 'Editar oportunidad' : 'Nueva oportunidad'}>
     <form onSubmit={submit} className="form gridform">
       <label>Cliente / empresa<input required value={form.company_name || ''} onChange={e=>set('company_name', e.target.value)}/></label>
+      <label>Fecha creación oportunidad<input type="date" value={creationDateValue} readOnly disabled/><small>Se asigna automáticamente con la fecha del día en que se crea la oportunidad.</small></label>
       <label>Comercial<Select value={String(form.owner_id || '')} onChange={v=>set('owner_id', v)} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Seleccionar"/></label>
       <label>Etapa<Select value={String(form.stage_code || '')} onChange={v=>set('stage_code', v)} options={data.stages.map(s=>[s.code,s.name])} empty="Seleccionar"/></label>
       <label>Servicio<Select value={String(form.service_type_code || '')} onChange={v=>set('service_type_code', v)} options={data.services.map(s=>[s.code,s.name])} empty="Seleccionar"/></label>
