@@ -1116,10 +1116,10 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
         </div>
       </div>
       <div className="command-metrics compact-command-kpis pipeline-discipline-grid">
-        <a className="clickable-card" href="#/opportunities?active=all"><small>Pipeline total</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.pipeline)}</strong><span>{scopedTotals.count} oportunidades</span><em>Ver oportunidades →</em></a>
-        <a className="clickable-card" href="#/opportunities"><small>Pipeline activo</small><strong className="numeric-value">{fmtMoneyCompact(activePipelineValue)}</strong><span>{active} en gestión</span><em>Ver activas →</em></a>
-        <a className="clickable-card" href={managerAlertRoute('managed')}><small>Forecast ponderado</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.weighted)}</strong><span>{pipelineManagedRows.length} con acción vigente</span><em>Ver gestión vigente →</em></a>
-        <a className="clickable-card" href={managerAlertRoute('risk')}><small>Pipeline en riesgo</small><strong className="numeric-value">{fmtMoneyCompact(sumValue(pipelineRiskRows))}</strong><span>{pipelineRiskRows.length} sin control</span><em>Ver riesgo →</em></a>
+        <a className="clickable-card manager-kpi-card manager-kpi-total" href="#/opportunities?active=all"><small>Pipeline total</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.pipeline)}</strong><span>{scopedTotals.count} oportunidades</span><em>Ver oportunidades →</em></a>
+        <a className="clickable-card manager-kpi-card manager-kpi-active" href="#/opportunities"><small>Pipeline activo</small><strong className="numeric-value">{fmtMoneyCompact(activePipelineValue)}</strong><span>{active} en gestión</span><em>Ver activas →</em></a>
+        <a className="clickable-card manager-kpi-card manager-kpi-forecast" href={managerAlertRoute('managed')}><small>Forecast ponderado</small><strong className="numeric-value">{fmtMoneyCompact(scopedTotals.weighted)}</strong><span>{pipelineManagedRows.length} con acción vigente</span><em>Ver gestión vigente →</em></a>
+        <a className="clickable-card manager-kpi-card manager-kpi-risk" href={managerAlertRoute('risk')}><small>Pipeline en riesgo</small><strong className="numeric-value">{fmtMoneyCompact(sumValue(pipelineRiskRows))}</strong><span>{pipelineRiskRows.length} sin control</span><em>Ver riesgo →</em></a>
       </div>
     </section>
 
