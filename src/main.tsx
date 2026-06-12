@@ -1409,7 +1409,9 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
     const alertLabel = alertCode === 'stalled' ? 'Sustentación estancada' : action.label;
     const alertTone = alertCode === 'stalled' ? 'danger' : action.tone;
     const priority = alertCode === 'overdue' ? 1 : alertCode === 'missing' ? 2 : alertCode === 'stalled' ? 3 : alertCode === 'today' ? 4 : alertCode === 'soon' ? 5 : 9;
-    return { opportunity: o, action, inactiveDays, stalledSustentacion, closingSoon, highValueStalled, alertCode, alertLabel, alertTone, priority };
+    const hasManagedAction = Boolean(o.next_action_at) && !['overdue','missing'].includes(action.code);
+    const isRiskPipeline = ['overdue','missing'].includes(alertCode) || highValueStalled;
+    return { opportunity: o, action, inactiveDays, stalledSustentacion, closingSoon, highValueStalled, hasManagedAction, isRiskPipeline, alertCode, alertLabel, alertTone, priority };
   }).sort((a,b) => a.priority - b.priority || Number(b.opportunity.offer_value || 0) - Number(a.opportunity.offer_value || 0));
 
   const lowGoalRows = data.goals.map(g => {
@@ -1439,13 +1441,17 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
   const stageOptions = data.stages.filter(s => active.some(o => o.stage_code === s.code)).map(s => [s.code, s.name]);
   const alertServiceOptions = data.services.map(s => [s.code, s.name]);
   const statusOptions = [['managed','Gestión vigente'],['risk','Pipeline en riesgo'],['missing','Sin agenda'],['overdue','Vencidas'],['closing_soon','Cierre próximo'],['high_value_stalled','Alto valor estancado'],['stalled','Sustentación estancada'],['today','Hoy'],['soon','Próximas'],['scheduled','Agendadas']];
+  const alertFilterTabs = [
+    { status: 'risk', label: 'Pipeline en riesgo', value: alertRows.filter(r => r.isRiskPipeline).length, detail: 'sin control', action: 'Ver riesgo →', tone: 'danger' },
+    { status: 'missing', label: 'Sin próxima acción', value: alertRows.filter(r => r.alertCode === 'missing').length, detail: 'sin agenda', action: 'Ver sin agenda →', tone: 'amber' },
+    { status: 'overdue', label: 'Vencidas', value: alertRows.filter(r => r.alertCode === 'overdue').length, detail: 'gestión atrasada', action: 'Ver vencidas →', tone: 'danger' },
+    { status: 'managed', label: 'Gestión vigente', value: alertRows.filter(r => r.hasManagedAction).length, detail: 'con agenda activa', action: 'Ver gestión vigente →', tone: 'success' },
+  ];
   const filteredAlerts = alertRows.filter(row => {
     const o = row.opportunity;
     const haystack = `${o.company_name} ${o.owner_name || ''} ${o.regional_nombre || ''} ${o.sede || ''} ${o.quote_city || ''} ${o.tipo_producto_original || ''}`.toLowerCase();
-    const hasManagedAction = Boolean(o.next_action_at) && !['overdue','missing'].includes(row.action.code);
-    const isRiskPipeline = ['overdue','missing'].includes(row.alertCode) || row.highValueStalled;
     return (!q || haystack.includes(q.toLowerCase()))
-      && (!status || row.alertCode === status || (status === 'managed' && hasManagedAction) || (status === 'risk' && isRiskPipeline) || (status === 'closing_soon' && row.closingSoon) || (status === 'high_value_stalled' && row.highValueStalled))
+      && (!status || row.alertCode === status || (status === 'managed' && row.hasManagedAction) || (status === 'risk' && row.isRiskPipeline) || (status === 'closing_soon' && row.closingSoon) || (status === 'high_value_stalled' && row.highValueStalled))
       && (!owner || o.owner_id === owner)
       && (!regional || o.regional_nombre === regional)
       && (!stage || o.stage_code === stage)
@@ -1470,10 +1476,13 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
           <span><strong>{alertCards[2].value}</strong> vencidas</span>
         </div>
       </div>
-      <div className="compact-alert-kpis">
-        <div className="alert-kpi-card"><small>Alertas visibles</small><strong className="numeric-value">{filteredAlerts.length}</strong><span>Según filtros activos</span></div>
-        <div className="alert-kpi-card"><small>Oportunidades activas</small><strong className="numeric-value">{active.length}</strong><span>Base operacional</span></div>
-        <div className="alert-kpi-card"><small>Bajo cumplimiento</small><strong className="numeric-value">{lowGoalRows.length}</strong><span>Metas por debajo de 80%</span></div>
+      <div className="compact-alert-kpis" aria-label="Filtros rápidos de alertas comerciales">
+        {alertFilterTabs.map(tab => <button key={tab.status} type="button" className={`alert-kpi-card alert-filter-tab alert-filter-${tab.tone}${status === tab.status ? ' active' : ''}`} onClick={() => setStatus(status === tab.status ? '' : tab.status)}>
+          <span className="alert-filter-label"><span className="alert-filter-dot" />{tab.label}</span>
+          <strong className="numeric-value">{tab.value}</strong>
+          <span>{tab.detail}</span>
+          <em>{tab.action}</em>
+        </button>)}
       </div>
     </section>
     <div className="alert-cards">
