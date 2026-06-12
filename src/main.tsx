@@ -1428,19 +1428,10 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
   });
   const sortLowGoalBy = (key: typeof lowGoalSortConfig.key) => setLowGoalSortConfig(current => nextSort(current, key));
 
-  const alertCards = [
-    { label: 'Acciones críticas', value: alertRows.filter(r => ['overdue','missing','stalled'].includes(r.alertCode)).length, detail: 'Vencidas, sin agenda o estancadas', tone: 'danger' },
-    { label: 'Sin próxima acción', value: alertRows.filter(r => r.alertCode === 'missing').length, detail: 'Oportunidades activas sin agenda', tone: 'amber' },
-    { label: 'Vencidas', value: alertRows.filter(r => r.alertCode === 'overdue').length, detail: 'Gestión programada ya vencida', tone: 'danger' },
-    { label: 'Sustentación estancada', value: alertRows.filter(r => r.alertCode === 'stalled').length, detail: 'Más de 5 días sin gestión', tone: 'danger' },
-    { label: 'Bajo cumplimiento', value: lowGoalRows.length, detail: 'Metas por debajo de 80%', tone: lowGoalRows.length ? 'amber' : 'success' },
-  ];
-
   const ownerOptions = data.profiles.filter(p => active.some(o => o.owner_id === p.id)).map(p => [p.id, p.full_name]);
   const alertRegionalOptions = uniq(active.map(o => o.regional_nombre)).map(r => [r, r]);
   const stageOptions = data.stages.filter(s => active.some(o => o.stage_code === s.code)).map(s => [s.code, s.name]);
   const alertServiceOptions = data.services.map(s => [s.code, s.name]);
-  const statusOptions = [['managed','Gestión vigente'],['risk','Pipeline en riesgo'],['missing','Sin agenda'],['overdue','Vencidas'],['closing_soon','Cierre próximo'],['high_value_stalled','Alto valor estancado'],['stalled','Sustentación estancada'],['today','Hoy'],['soon','Próximas'],['scheduled','Agendadas']];
   const alertFilterTabs = [
     { status: 'risk', label: 'Pipeline en riesgo', value: alertRows.filter(r => r.isRiskPipeline).length, detail: 'sin control', action: 'Ver riesgo →', tone: 'danger' },
     { status: 'missing', label: 'Sin próxima acción', value: alertRows.filter(r => r.alertCode === 'missing').length, detail: 'sin agenda', action: 'Ver sin agenda →', tone: 'amber' },
@@ -1470,11 +1461,6 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
         <span className="eyebrow">Estado de gestión</span>
         <h2>Alertas comerciales</h2>
         <p>Centro operativo para priorizar oportunidades activas con foco en agenda, vencimientos, sustentación y cumplimiento.</p>
-        <div className="alert-command-meta">
-          <span><strong>{alertCards[0].value}</strong> acciones críticas</span>
-          <span><strong>{alertCards[1].value}</strong> sin próxima acción</span>
-          <span><strong>{alertCards[2].value}</strong> vencidas</span>
-        </div>
       </div>
       <div className="compact-alert-kpis" aria-label="Filtros rápidos de alertas comerciales">
         {alertFilterTabs.map(tab => <button key={tab.status} type="button" className={`alert-kpi-card alert-filter-tab alert-filter-${tab.tone}${status === tab.status ? ' active' : ''}`} onClick={() => setStatus(status === tab.status ? '' : tab.status)}>
@@ -1485,13 +1471,9 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
         </button>)}
       </div>
     </section>
-    <div className="alert-cards">
-      {alertCards.map(card => <div className={`alert-card alert-${card.tone}`} key={card.label}><small>{card.label}</small><strong>{card.value}</strong><span>{card.detail}</span></div>)}
-    </div>
     <Panel title="Filtros de gestión">
       <div className="filters alerts-filters">
         <input placeholder="Buscar cliente, comercial, sede, ciudad o servicio…" value={q} onChange={e=>setQ(e.target.value)} />
-        <Select value={status} onChange={setStatus} options={statusOptions} empty="Todas las alertas" />
         <Select value={owner} onChange={setOwner} options={ownerOptions} empty="Todos los comerciales" />
         <Select value={regional} onChange={setRegional} options={alertRegionalOptions} empty="Todas las regionales" />
         <Select value={stage} onChange={setStage} options={stageOptions} empty="Todas las etapas" />

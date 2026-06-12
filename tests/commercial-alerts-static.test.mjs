@@ -13,7 +13,6 @@ const mainMarkers = [
   "compact-alert-command",
   "compact-alert-summary",
   "compact-alert-kpis",
-  "alert-command-meta",
   "alert-kpi-card",
   "alert-filter-tab",
   "alertFilterTabs",
@@ -23,17 +22,11 @@ const mainMarkers = [
   "Ver vencidas →",
   "Ver gestión vigente →",
   "Estado de gestión",
-  "Acciones críticas",
   "Sin próxima acción",
   "Vencidas",
-  "Sustentación estancada",
-  "Bajo cumplimiento",
-  "alertCards",
   "filteredAlerts",
   "nextActionStatus(o)",
   "daysSince(o.last_interaction_at",
-  "['managed','Gestión vigente']",
-  "['risk','Pipeline en riesgo']",
   "status === 'managed' && row.hasManagedAction",
   "status === 'risk' && row.isRiskPipeline",
 ];
@@ -51,8 +44,6 @@ const cssMarkers = [
   '.alert-filter-tab',
   '.alert-filter-tab.active',
   '.alert-filter-dot',
-  '.alert-cards',
-  '.alert-card',
   '.alert-table',
   '.alert-danger',
   '.alert-amber',
@@ -61,6 +52,27 @@ const cssMarkers = [
 
 for (const marker of cssMarkers) {
   assert.ok(css.includes(marker), `styles.css missing marker: ${marker}`);
+}
+
+const forbiddenMainMarkers = [
+  'alert-command-meta',
+  'const alertCards =',
+  'className="alert-cards"',
+  'empty="Todas las alertas"',
+];
+
+for (const marker of forbiddenMainMarkers) {
+  assert.ok(!main.includes(marker), `main.tsx still has duplicate alert filter marker: ${marker}`);
+}
+
+const forbiddenCssMarkers = [
+  '.alert-command-meta',
+  '.alert-cards',
+  '.alert-card',
+];
+
+for (const marker of forbiddenCssMarkers) {
+  assert.ok(!css.includes(marker), `styles.css still has duplicate alert card marker: ${marker}`);
 }
 
 console.log('commercial-alerts static checks passed');
