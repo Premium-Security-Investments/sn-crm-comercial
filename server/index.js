@@ -187,7 +187,8 @@ const TVEC_RELEVANT_AGGREGATIONS = {
   'Productos y Servicios Electrónicos y Digitales de Confianza': 32
 };
 const tenderPositiveTerms = {
-  'vigilancia y seguridad privada': 45, 'servicio de vigilancia': 40, 'vigilancia armada': 38, 'vigilancia privada': 38,
+  'vigilancia y seguridad privada': 45, 'vigilancia y seguridad': 42, 'servicios de vigilancia': 40, 'servicio de vigilancia': 40,
+  'vigilancia armada': 38, 'vigilancia privada': 38, 'vigilancia': 35,
   'seguridad privada': 35, 'seguridad electronica': 35, 'seguridad electrónica': 35, 'cctv': 35,
   'videovigilancia': 35, 'video vigilancia': 35, 'control de acceso': 30, 'biometrico': 22, 'biométrico': 22,
   'alarma': 22, 'monitoreo': 22, 'circuito cerrado': 30, 'guardas': 28, 'cedi': 20, 'bodega': 10
@@ -228,13 +229,22 @@ function stableTenderKey(tender) {
   return createHash('sha1').update(base).digest('hex').slice(0, 20);
 }
 const tenderPositiveReasonSet = new Set(Object.keys(tenderPositiveTerms).map(term => normTenderText(term)));
+const tenderPositiveEntries = Object.entries(tenderPositiveTerms).map(([term, pts]) => [term, pts, normTenderText(term)]).sort((a, b) => b[2].length - a[2].length);
 function hasTenderServiceSignal(item) {
   const reasons = item?.reasons || [];
-  return reasons.some(reason => tenderPositiveReasonSet.has(normTenderText(reason)));
+  const text = item?.raw ? tenderText(item.raw) : tenderText(item);
+  return reasons.some(reason => tenderPositiveReasonSet.has(normTenderText(reason))) || tenderPositiveEntries.some(([, , term]) => text.includes(term));
 }
 function scoreTender(row) {
   const text = tenderText(row); let score = 0; const reasons = []; const risks = [];
-  for (const [term, pts] of Object.entries(tenderPositiveTerms)) if (text.includes(normTenderText(term))) { score += pts; reasons.push(term); }
+  const matchedPositiveTerms = [];
+  for (const [term, pts, normalizedTerm] of tenderPositiveEntries) {
+    if (text.includes(normalizedTerm) && !matchedPositiveTerms.some(matched => matched.includes(normalizedTerm) || normalizedTerm.includes(matched))) {
+      matchedPositiveTerms.push(normalizedTerm);
+      score += pts;
+      reasons.push(term);
+    }
+  }
   const matchedFocusTerms = new Set();
   for (const [term, pts] of Object.entries(tenderFocusTerms)) {
     const normalizedTerm = normTenderText(term);
@@ -346,7 +356,7 @@ function normalizeTvecEvent(cells, aggregation, baseScore, url) {
   const reasons = [`TVEC: ${instrument || aggregation}`];
   const risks = ['evento TVEC/RFQ: validar requisitos en Coupa/TVEC; valor puede aparecer $0 hasta adjudicación'];
   for (const [term, pts] of Object.entries(tenderFocusTerms)) if (rowText.includes(normTenderText(term))) { score += pts; reasons.push(`zona foco: ${term}`); }
-  for (const [term, pts] of Object.entries(tenderPositiveTerms)) if (rowText.includes(normTenderText(term))) { score += Math.min(pts, 25); reasons.push(term); }
+  for (const [term, pts, normalizedTerm] of tenderPositiveEntries) if (rowText.includes(normalizedTerm)) { score += Math.min(pts, 25); reasons.push(term); }
   const tender = {
     source: 'TVEC',
     entity: entity || 'Sin entidad',
