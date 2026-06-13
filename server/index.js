@@ -227,10 +227,23 @@ function stableTenderKey(tender) {
   const base = [tender.source, tender.process_id || tender.ref, tender.entity, tender.title].map(v => normTenderText(v)).join('|');
   return createHash('sha1').update(base).digest('hex').slice(0, 20);
 }
+const tenderPositiveReasonSet = new Set(Object.keys(tenderPositiveTerms).map(term => normTenderText(term)));
+function hasTenderServiceSignal(item) {
+  const reasons = item?.reasons || [];
+  return reasons.some(reason => tenderPositiveReasonSet.has(normTenderText(reason)));
+}
 function scoreTender(row) {
   const text = tenderText(row); let score = 0; const reasons = []; const risks = [];
   for (const [term, pts] of Object.entries(tenderPositiveTerms)) if (text.includes(normTenderText(term))) { score += pts; reasons.push(term); }
-  for (const [term, pts] of Object.entries(tenderFocusTerms)) if (text.includes(normTenderText(term))) { score += pts; reasons.push(`zona foco: ${term}`); }
+  const matchedFocusTerms = new Set();
+  for (const [term, pts] of Object.entries(tenderFocusTerms)) {
+    const normalizedTerm = normTenderText(term);
+    if (!matchedFocusTerms.has(normalizedTerm) && text.includes(normalizedTerm)) {
+      matchedFocusTerms.add(normalizedTerm);
+      score += pts;
+      reasons.push(`zona foco: ${term}`);
+    }
+  }
   for (const term of tenderDisqualifyingTerms) if (text.includes(normTenderText(term))) risks.push(`no ofertable: ${term}`);
   const value = tenderMoney(row.precio_base || row.cuantia_proceso);
   if (value >= 500000000) { score += 25; reasons.push('valor alto'); }
@@ -287,7 +300,7 @@ function normalizeEsuDatosGovProcess(row, originalSource) {
   return { ...withSource, id: stableTenderKey(withSource), stable_key: stableTenderKey(withSource), section: classifyTenderSection(withSource) };
 }
 function keywordWhere(fields) {
-  const terms = ['vigilancia','seguridad privada','cctv','videovigilancia','control de acceso','alarma','monitoreo','camaras','cámaras','biometrico','biométrico','incendio'];
+  const terms = ['vigilancia','seguridad privada','cctv','videovigilancia','control de acceso','alarma','monitoreo','camaras','cámaras','biometrico','biométrico'];
   const clauses = [];
   for (const field of fields) for (const term of terms) clauses.push(`lower(${field}) like '%${term.toLowerCase()}%'`);
   return clauses.join(' OR ');
@@ -298,7 +311,7 @@ async function fetchSecopSource(source, cfg) {
   const response = await fetch(`${cfg.base}?${params.toString()}`, { headers: { 'User-Agent': 'SN-CRM-Tenders-Radar/2.0' } });
   if (!response.ok) throw new Error(`${source} respondió ${response.status}`);
   const rows = await response.json();
-  return rows.filter(row => !isEsuEntityRow(row, source) && isTenderTrackable(row)).map(row => ({ row, scored: scoreTender(row) })).filter(x => x.scored.score >= 35).map(x => normalizeTender(x.row, source, x.scored));
+  return rows.filter(row => !isEsuEntityRow(row, source) && isTenderTrackable(row)).map(row => ({ row, scored: scoreTender(row) })).filter(x => x.scored.score >= 35 && hasTenderServiceSignal(x.scored)).map(x => normalizeTender(x.row, source, x.scored));
 }
 function stripTenderHtml(value) {
   return String(value || '')
@@ -553,7 +566,7 @@ async function readPersistedTenderRadar(database) {
     if (fallback.error) throw fallback.error;
     data = fallback.data || [];
   }
-  const rows = (data || []).filter(isTenderTrackable).map(dbTenderToPublic).sort((a,b) => {
+  const rows = (data || []).filter(isTenderTrackable).map(dbTenderToPublic).filter(t => !['SECOP I','SECOP II'].includes(t.source) || hasTenderServiceSignal(t)).sort((a,b) => {
     const statusOrder = { nueva: 0, en_revision: 1, convertida_oportunidad: 2, descartada: 3 };
     const sectionOrder = { hacer: 0, revisar: 1, descartar: 2 };
     return (statusOrder[a.internal_status] ?? 9) - (statusOrder[b.internal_status] ?? 9) || sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score;
