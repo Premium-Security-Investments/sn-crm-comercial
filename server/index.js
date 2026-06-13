@@ -192,7 +192,12 @@ const tenderPositiveTerms = {
   'videovigilancia': 35, 'video vigilancia': 35, 'control de acceso': 30, 'biometrico': 22, 'biométrico': 22,
   'alarma': 22, 'monitoreo': 22, 'circuito cerrado': 30, 'guardas': 28, 'cedi': 20, 'bodega': 10
 };
-const tenderNegativeTerms = { 'tecnovigilancia': 65, 'interventoria': 60, 'interventoría': 60, 'enfermera': 45, 'alimentacion': 25, 'aseo': 20, 'papeleria': 35, 'cámara de comercio': 55 };
+const tenderDisqualifyingTerms = [
+  'interventoria', 'interventoría',
+  'vehiculo blindado', 'vehículo blindado', 'vehiculos blindados', 'vehículos blindados',
+  'transporte blindado', 'camioneta blindada', 'camionetas blindadas', 'carro blindado',
+  'blindaje vehicular', 'blindaje de vehiculos', 'blindaje de vehículos', 'blindados'
+];
 const tenderFocusTerms = { 'bogotá': 22, 'bogota': 22, 'distrito capital': 20, 'medellín': 22, 'medellin': 22, 'antioquia': 14 };
 const tenderInternalStatuses = ['nueva','en_revision','descartada','convertida_oportunidad'];
 function canViewTenders(profile) { return isManager(profile) || profile?.microsoft_email?.toLowerCase() === 'directora.licitaciones@seguridadnacional.co'; }
@@ -209,7 +214,10 @@ function tenderStatusSearchText(item) {
     raw.descripcion_estado, raw.estado_resumen, raw.resultado, raw.comentario_entidad_estatal
   ].filter(Boolean).join(' ');
 }
-function isTenderTrackable(item) { return !isTenderTerminalStatus(tenderStatusSearchText(item)); }
+function isTenderTrackable(item) {
+  const text = tenderText(item?.raw || item || {});
+  return !isTenderTerminalStatus(tenderStatusSearchText(item)) && !tenderDisqualifyingTerms.some(term => text.includes(normTenderText(term)));
+}
 function tenderMoney(value) { const n = Number(String(value || '0').replace(/[^0-9.-]/g, '')); return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0; }
 function tenderDate(value) { if (!value) return null; const d = new Date(value); return Number.isNaN(d.getTime()) ? null : d; }
 function tenderDaysUntil(value) { const d = tenderDate(value); if (!d) return null; const today = new Date(); today.setHours(0,0,0,0); d.setHours(0,0,0,0); return Math.round((d.getTime() - today.getTime()) / 86400000); }
@@ -223,7 +231,7 @@ function scoreTender(row) {
   const text = tenderText(row); let score = 0; const reasons = []; const risks = [];
   for (const [term, pts] of Object.entries(tenderPositiveTerms)) if (text.includes(normTenderText(term))) { score += pts; reasons.push(term); }
   for (const [term, pts] of Object.entries(tenderFocusTerms)) if (text.includes(normTenderText(term))) { score += pts; reasons.push(`zona foco: ${term}`); }
-  for (const [term, pts] of Object.entries(tenderNegativeTerms)) if (text.includes(normTenderText(term))) { score -= pts; risks.push(`posible falso positivo: ${term}`); }
+  for (const term of tenderDisqualifyingTerms) if (text.includes(normTenderText(term))) risks.push(`no ofertable: ${term}`);
   const value = tenderMoney(row.precio_base || row.cuantia_proceso);
   if (value >= 500000000) { score += 25; reasons.push('valor alto'); }
   else if (value > 0 && value < 50000000) { score -= 15; risks.push('valor bajo'); }
@@ -231,7 +239,8 @@ function scoreTender(row) {
   return { score, reasons: [...new Set(reasons)].slice(0, 7), risks: [...new Set(risks)].slice(0, 5) };
 }
 function classifyTenderSection(tender) {
-  if (tender.score < 70 || (tender.value > 0 && tender.value < 50000000) || tender.risks.some(r => r.includes('falso positivo'))) return 'descartar';
+  if (tender.risks.some(r => r.includes('no ofertable'))) return 'descartar';
+  if (tender.score < 70 || (tender.value > 0 && tender.value < 50000000)) return 'descartar';
   if ((tender.days !== null && tender.days <= 10) || tender.score >= 180 || tender.value >= 1000000000) return 'hacer';
   return 'revisar';
 }
