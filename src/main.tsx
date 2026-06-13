@@ -564,8 +564,8 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
   const [deadlineFilter, setDeadlineFilter] = useState<TenderDeadlineFilter>('todas');
   const [valueFilter, setValueFilter] = useState<TenderValueFilter>('todas');
   const [scoreFilter, setScoreFilter] = useState<TenderScoreFilter>('todas');
-  const [tenderSortKey, setTenderSortKey] = useState<TenderSortKey>('deadline');
-  const [tenderSortDirection, setTenderSortDirection] = useState<SortDirection>('asc');
+  const [tenderSortKey, setTenderSortKey] = useState<TenderSortKey>('value');
+  const [tenderSortDirection, setTenderSortDirection] = useState<SortDirection>('desc');
   const focusTenderId = hashQueryParam('tender');
   const load = async () => {
     setLoading(true); setError(null);
@@ -762,7 +762,7 @@ function TenderCard({ tender, focused, onCreate, onStatus, creating }: { tender:
   return <article id={`tender-${tender.id}`} className={`card tender-card tender-${tender.section} ${focused ? 'tender-highlight' : ''}`}>
     <div className="tender-head"><div><div className="tender-card-kickers"><Badge tone={tenderSourceTone(tender.source)}><span className="tender-source-badge">{tender.source}</span></Badge><Badge tone={tenderDeadlineTone(tender)}><span className={`tender-deadline-pill ${tenderDeadlineClass(tender)}`}>{fmtTenderDeadline(tender.deadline)}</span></Badge><Badge>Score {tender.score} · {scoreLabel(tender.score)}</Badge></div><h3>{tender.entity} — {tender.city || tender.dept || 'Sin ciudad'}</h3></div><div className="badge-stack"><Badge tone={tender.section === 'hacer' ? 'amber' : tender.section === 'descartar' ? 'danger' : 'blue'}>{tender.section === 'hacer' ? 'Hacer hoy' : tender.section === 'revisar' ? 'Revisar' : 'Validar'}</Badge><Badge tone={tenderStatusTone(tender.internal_status)}>{tenderStatusLabel(tender.internal_status)}</Badge></div></div>
     <p>{tender.title}</p>
-    <div className="tender-meta"><span>{fmtMoneyCompact(tender.value)}</span><span>{fmtMoney(tender.value)}</span><span>Ref: {tender.ref || tender.process_id || '—'}</span></div>
+    <div className="tender-meta"><span>{fmtMoneyCompact(tender.value)}</span><span>Ref: {tender.ref || tender.process_id || '—'}</span></div>
     <small className="muted">{tender.reasons.slice(0,4).join(' · ')}</small>
     {tender.risks.length > 0 && <small className="muted">Riesgos: {tender.risks.slice(0,2).join(' · ')}</small>}
     <div className="row-actions tender-card-actions">{tender.url && <a className="button secondary" target="_blank" href={tender.url}>Abrir fuente</a>}<button className="secondary" onClick={() => onStatus(tender, 'en_revision')} disabled={creating || converted}>En revisión</button><button className="secondary" onClick={() => onStatus(tender, 'descartada')} disabled={creating || converted}>Descartar</button><button onClick={() => onCreate(tender)} disabled={creating}>{creating ? 'Creando…' : converted ? 'Ver oportunidad' : 'Crear oportunidad'}</button></div>

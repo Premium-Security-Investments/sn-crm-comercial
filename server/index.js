@@ -197,6 +197,19 @@ const tenderFocusTerms = { 'bogotá': 22, 'bogota': 22, 'distrito capital': 20, 
 const tenderInternalStatuses = ['nueva','en_revision','descartada','convertida_oportunidad'];
 function canViewTenders(profile) { return isManager(profile) || profile?.microsoft_email?.toLowerCase() === 'directora.licitaciones@seguridadnacional.co'; }
 function normTenderText(value) { return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
+const tenderTerminalStatusTerms = ['revocado', 'declarado desierto', 'desierto', 'cancelado', 'cancelada'];
+function isTenderTerminalStatus(value) {
+  const text = normTenderText(value);
+  return tenderTerminalStatusTerms.some(term => text.includes(normTenderText(term)));
+}
+function tenderStatusSearchText(item) {
+  const raw = item?.raw || item || {};
+  return [
+    item?.status, raw.fase, raw.estado_del_procedimiento, raw.estado_del_proceso, raw.estado,
+    raw.descripcion_estado, raw.estado_resumen, raw.resultado, raw.comentario_entidad_estatal
+  ].filter(Boolean).join(' ');
+}
+function isTenderTrackable(item) { return !isTenderTerminalStatus(tenderStatusSearchText(item)); }
 function tenderMoney(value) { const n = Number(String(value || '0').replace(/[^0-9.-]/g, '')); return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0; }
 function tenderDate(value) { if (!value) return null; const d = new Date(value); return Number.isNaN(d.getTime()) ? null : d; }
 function tenderDaysUntil(value) { const d = tenderDate(value); if (!d) return null; const today = new Date(); today.setHours(0,0,0,0); d.setHours(0,0,0,0); return Math.round((d.getTime() - today.getTime()) / 86400000); }
@@ -276,7 +289,7 @@ async function fetchSecopSource(source, cfg) {
   const response = await fetch(`${cfg.base}?${params.toString()}`, { headers: { 'User-Agent': 'SN-CRM-Tenders-Radar/2.0' } });
   if (!response.ok) throw new Error(`${source} respondió ${response.status}`);
   const rows = await response.json();
-  return rows.filter(row => !isEsuEntityRow(row, source)).map(row => ({ row, scored: scoreTender(row) })).filter(x => x.scored.score >= 35).map(x => normalizeTender(x.row, source, x.scored));
+  return rows.filter(row => !isEsuEntityRow(row, source) && isTenderTrackable(row)).map(row => ({ row, scored: scoreTender(row) })).filter(x => x.scored.score >= 35).map(x => normalizeTender(x.row, source, x.scored));
 }
 function stripTenderHtml(value) {
   return String(value || '')
@@ -420,7 +433,7 @@ async function fetchEsuDatosGovProcesses() {
       for (const row of rows) {
         if (!isEsuEntityRow(row, source)) continue;
         const tender = normalizeEsuDatosGovProcess(row, source);
-        if (tender.score < 35 || (tender.days !== null && tender.days < 0)) continue;
+        if (tender.score < 35 || (tender.days !== null && tender.days < 0) || !isTenderTrackable(tender)) continue;
         const key = `${tender.source_origin}:${tender.ref}:${tender.title}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -457,6 +470,7 @@ async function fetchPublicTenderRadar() {
   const seen = new Set();
   const tenders = batches.flat().filter(t => {
     if (t.days !== null && t.days < 0) return false;
+    if (!isTenderTrackable(t)) return false;
     const key = t.stable_key || stableTenderKey(t);
     if (seen.has(key)) return false;
     seen.add(key); return true;
@@ -530,7 +544,7 @@ async function readPersistedTenderRadar(database) {
     if (fallback.error) throw fallback.error;
     data = fallback.data || [];
   }
-  const rows = (data || []).map(dbTenderToPublic).sort((a,b) => {
+  const rows = (data || []).filter(isTenderTrackable).map(dbTenderToPublic).sort((a,b) => {
     const statusOrder = { nueva: 0, en_revision: 1, convertida_oportunidad: 2, descartada: 3 };
     const sectionOrder = { hacer: 0, revisar: 1, descartar: 2 };
     return (statusOrder[a.internal_status] ?? 9) - (statusOrder[b.internal_status] ?? 9) || sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score;
