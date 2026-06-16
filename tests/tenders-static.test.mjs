@@ -143,6 +143,10 @@ for (const file of [server, api]) {
   assert(file.includes('tenderTableAvailable'), 'API debe tener fallback si la migración aún no existe.');
   assert(file.includes('external_source: `secop_radar:${tender.source}:${stableTenderKey(tender)}`'), 'Conversión debe usar external_source estable para prevenir duplicados.');
   assert(file.includes('converted_opportunity_id'), 'Conversión debe marcar la licitación con opportunity_id.');
+  assert(file.includes('soporte y mantenimiento'), 'Radar debe descartar contratos técnicos de soporte/mantenimiento de equipos.');
+  assert(file.includes('radiocomunicaciones'), 'Radar debe descartar procesos de radiocomunicaciones que no son core SN/PSI.');
+  assert(file.includes('repuestos'), 'Radar debe descartar contratos centrados en repuestos/equipos.');
 }
+assert(src.includes('contratos técnicos de mantenimiento/soporte de equipos como radiocomunicaciones'), 'La ayuda de Licitaciones debe documentar la regla de descarte por mantenimiento/soporte técnico.');
 
 console.log('tenders static checks passed');

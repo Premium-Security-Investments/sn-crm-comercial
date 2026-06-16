@@ -193,7 +193,13 @@ const tenderDisqualifyingTerms = [
   'interventoria', 'interventoría',
   'vehiculo blindado', 'vehículo blindado', 'vehiculos blindados', 'vehículos blindados',
   'transporte blindado', 'camioneta blindada', 'camionetas blindadas', 'carro blindado',
-  'blindaje vehicular', 'blindaje de vehiculos', 'blindaje de vehículos', 'blindados'
+  'blindaje vehicular', 'blindaje de vehiculos', 'blindaje de vehículos', 'blindados',
+  // Regla de descarte SN/PSI: no somos empresa de mantenimiento/soporte técnico de equipos.
+  'soporte y mantenimiento', 'mantenimiento y soporte', 'mantenimiento preventivo', 'mantenimiento correctivo',
+  'soporte tecnico', 'soporte técnico', 'mesa de ayuda', 'repuestos', 'calibracion', 'calibración',
+  'radiocomunicaciones', 'radiocomunicacion', 'radio comunicaciones', 'radio comunicación',
+  'sistema de radiocomunicaciones', 'equipos de comunicacion', 'equipos de comunicación',
+  'red de comunicaciones', 'telecomunicaciones'
 ];
 const tenderFocusTerms = { 'bogotá': 22, 'bogota': 22, 'distrito capital': 20, 'medellín': 22, 'medellin': 22, 'antioquia': 14 };
 const tenderInternalStatuses = ['nueva','en_revision','descartada','convertida_oportunidad'];
