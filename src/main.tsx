@@ -1321,18 +1321,32 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     return { ...o, probability, expected, share };
   }).sort((a,b)=>b.expected-a.expected || Number(b.offer_value || 0)-Number(a.offer_value || 0)).slice(0, 5);
   const topCloseTotal = topCloseRowsV2.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
+  const v2HeroTitle = compliancePct === null
+    ? 'Meta comercial pendiente de cargar para leer cumplimiento'
+    : compliancePct < 50
+      ? 'Cumplimiento bajo meta, con pipeline activo para recuperar'
+      : compliancePct < 80
+        ? 'Cumplimiento en recuperación, foco en cierres prioritarios'
+        : 'Cumplimiento saludable con foco en sostener cierres';
+  const v2HeroSubtitle = 'Prioridad gerencial: convertir cierres top, proteger forecast y recuperar cumplimiento sin abrir tablas completas.';
+  const v2HeroMetrics = [
+    { label: 'Cumplimiento', value: compliancePct === null ? '—' : `${compliancePct}%`, detail: totalBudget ? `${fmtMoneyCompact(totalApproved)} / ${fmtMoneyCompact(totalBudget)}` : 'Meta pendiente', tone: compliancePct === null ? 'amber' : compliancePct >= 80 ? 'green' : compliancePct >= 40 ? 'amber' : 'red' },
+    { label: 'Pipeline activo', value: fmtMoneyCompact(totalPipeline), detail: `${activeRows.length} ofertas activas`, tone: 'blue' },
+    { label: 'Cierres prioritarios', value: fmtMoneyCompact(topCloseTotal), detail: `${topCloseRowsV2.length} oportunidades top`, tone: 'green' },
+    { label: 'Forecast ponderado', value: fmtMoneyCompact(weightedPipeline), detail: 'Según probabilidad de etapa', tone: 'purple' },
+  ];
 
   return <section className="stack manager-dashboard dashboard-v2">
-    <section className="gerencial-v2-hero">
-      <div>
-        <span className="eyebrow">Prototipo basado en la presentación 2026</span>
-        <h2>Dashboard Gerencial 2</h2>
-        <p>Versión para definir: menos tabla completa, más lectura ejecutiva de Seguridad Física con cumplimiento, pipeline activo y oportunidades prioritarias.</p>
+    <section className="gerencial-v2-hero" aria-label="Resumen ejecutivo compacto de Dashboard Gerencial 2">
+      <div className="gerencial-v2-hero-copy">
+        <div className="command-title-row"><span className="eyebrow">Resumen ejecutivo · Seguridad Física</span><span className="period-pill">Datos CRM en vivo</span></div>
+        <h2>{v2HeroTitle}</h2>
+        <p>{v2HeroSubtitle}</p>
       </div>
-      <div className="gerencial-v2-hero-facts">
-        <div><small>Foco</small><strong>Seguridad Física</strong></div>
-        <div><small>Ofertas activas</small><strong>{activeRows.length}</strong></div>
-        <div><small>Top cierre</small><strong>{fmtMoneyCompact(topCloseTotal)}</strong></div>
+      <div className="gerencial-v2-hero-facts" aria-label="Métricas ejecutivas principales">
+        {v2HeroMetrics.map(metric => <div className={`v2-hero-metric ${metric.tone}`} key={metric.label}>
+          <small>{metric.label}</small><strong className="numeric-value">{metric.value}</strong><span>{metric.detail}</span>
+        </div>)}
       </div>
     </section>
 
