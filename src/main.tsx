@@ -1276,6 +1276,8 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
 }
 
 function ManagerDashboardV2({ data }: { data: Bootstrap }) {
+  type V2HeroMetricKey = 'cumplimiento' | 'pipeline' | 'cierres' | 'forecast';
+  const [activeV2Metric, setActiveV2Metric] = useState<V2HeroMetricKey>('cumplimiento');
   const seguridadFisica = data.opportunities.filter(o => o.service_type_code === 'seguridad_fisica' || o.service_type_name === 'Seguridad Física' || o.owner_commercial_area === 'seguridad_fisica');
   const sourceRows = seguridadFisica.length ? seguridadFisica : data.opportunities;
   const activeRows = sourceRows.filter(o => !isTerminalStage(o.stage_code));
@@ -1321,6 +1323,15 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     return { ...o, probability, expected, share };
   }).sort((a,b)=>b.expected-a.expected || Number(b.offer_value || 0)-Number(a.offer_value || 0)).slice(0, 5);
   const topCloseTotal = topCloseRowsV2.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
+  const stageRowsV2 = Array.from(activeRows.reduce((map, o) => {
+    const key = o.stage_code || 'sin_etapa';
+    const row = map.get(key) || { stageCode: key, stageName: o.stage_name || 'Sin etapa', count: 0, value: 0, weighted: 0 };
+    row.count++;
+    row.value += Number(o.offer_value || 0);
+    row.weighted += Number(o.weighted_pipeline_value || 0);
+    map.set(key, row);
+    return map;
+  }, new Map<string, { stageCode: string; stageName: string; count: number; value: number; weighted: number }>()).values()).sort((a,b)=>b.weighted-a.weighted || b.value-a.value);
   const v2HeroTitle = compliancePct === null
     ? 'Meta comercial pendiente de cargar para leer cumplimiento'
     : compliancePct < 50
@@ -1329,12 +1340,35 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
         ? 'Cumplimiento en recuperación, foco en cierres prioritarios'
         : 'Cumplimiento saludable con foco en sostener cierres';
   const v2HeroSubtitle = 'Prioridad gerencial: convertir cierres top, proteger forecast y recuperar cumplimiento sin abrir tablas completas.';
-  const v2HeroMetrics = [
-    { label: 'Cumplimiento', value: compliancePct === null ? '—' : `${compliancePct}%`, detail: totalBudget ? `${fmtMoneyCompact(totalApproved)} / ${fmtMoneyCompact(totalBudget)}` : 'Meta pendiente', tone: compliancePct === null ? 'amber' : compliancePct >= 80 ? 'green' : compliancePct >= 40 ? 'amber' : 'red' },
-    { label: 'Pipeline activo', value: fmtMoneyCompact(totalPipeline), detail: `${activeRows.length} ofertas activas`, tone: 'blue' },
-    { label: 'Cierres prioritarios', value: fmtMoneyCompact(topCloseTotal), detail: `${topCloseRowsV2.length} oportunidades top`, tone: 'green' },
-    { label: 'Forecast ponderado', value: fmtMoneyCompact(weightedPipeline), detail: 'Según probabilidad de etapa', tone: 'purple' },
+  const v2HeroMetrics: Array<{ key: V2HeroMetricKey; label: string; value: string; detail: string; tone: string }> = [
+    { key: 'cumplimiento', label: 'Cumplimiento', value: compliancePct === null ? '—' : `${compliancePct}%`, detail: totalBudget ? `${fmtMoneyCompact(totalApproved)} / ${fmtMoneyCompact(totalBudget)}` : 'Meta pendiente', tone: compliancePct === null ? 'amber' : compliancePct >= 80 ? 'green' : compliancePct >= 40 ? 'amber' : 'red' },
+    { key: 'pipeline', label: 'Pipeline activo', value: fmtMoneyCompact(totalPipeline), detail: `${activeRows.length} ofertas activas`, tone: 'blue' },
+    { key: 'cierres', label: 'Cierres prioritarios', value: fmtMoneyCompact(topCloseTotal), detail: `${topCloseRowsV2.length} oportunidades top`, tone: 'green' },
+    { key: 'forecast', label: 'Forecast ponderado', value: fmtMoneyCompact(weightedPipeline), detail: 'Según probabilidad de etapa', tone: 'purple' },
   ];
+  const v2HeroMetricDetails: Record<V2HeroMetricKey, { title: string; summary: string; rows: Array<{ label: string; value: string; detail: string; href?: string }> }> = {
+    cumplimiento: {
+      title: 'Datos de cumplimiento vs meta',
+      summary: totalBudget ? `Ventas aprobadas por ${fmtMoneyCompact(totalApproved)} contra meta cargada de ${fmtMoneyCompact(totalBudget)}.` : 'Todavía no hay meta cargada para leer cumplimiento completo.',
+      rows: rankingRowsV2.slice(0, 5).map(row => ({ label: row.owner, value: `${row.pct}%`, detail: `${fmtMoneyCompact(row.approved)} aprobado · ${row.count} oportunidades`, href: ownerRoute(row.ownerId) })),
+    },
+    pipeline: {
+      title: 'Datos del pipeline activo',
+      summary: `${activeRows.length} ofertas activas suman ${fmtMoneyCompact(totalPipeline)} en Seguridad Física.`,
+      rows: pipelineRowsV2.slice(0, 5).map(row => ({ label: row.owner, value: fmtMoneyCompact(row.value), detail: `${row.offers} ofertas · promedio ${fmtMoneyCompact(row.avgOffer)}`, href: ownerRoute(row.ownerId) })),
+    },
+    cierres: {
+      title: 'Datos de cierres prioritarios',
+      summary: `Top ${topCloseRowsV2.length} oportunidades concentran ${fmtMoneyCompact(topCloseTotal)} para revisión gerencial inmediata.`,
+      rows: topCloseRowsV2.map(o => ({ label: o.company_name, value: fmtMoneyCompact(o.offer_value), detail: `${o.owner_name || 'Sin comercial'} · ${o.stage_name} · ${Math.round(o.probability * 100)}%`, href: `#/detail/${o.id}` })),
+    },
+    forecast: {
+      title: 'Datos del forecast ponderado',
+      summary: `Forecast calculado por probabilidad de etapa: ${fmtMoneyCompact(weightedPipeline)} sobre ${fmtMoneyCompact(totalPipeline)} activo.`,
+      rows: stageRowsV2.slice(0, 5).map(row => ({ label: row.stageName, value: fmtMoneyCompact(row.weighted), detail: `${row.count} ofertas · ${fmtMoneyCompact(row.value)} valor total`, href: `#/opportunities?stage=${encodeURIComponent(row.stageCode)}` })),
+    },
+  };
+  const v2MetricDetailRows = v2HeroMetricDetails[activeV2Metric];
 
   return <section className="stack manager-dashboard dashboard-v2">
     <section className="gerencial-v2-hero" aria-label="Resumen ejecutivo compacto de Dashboard Gerencial 2">
@@ -1344,9 +1378,23 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
         <p>{v2HeroSubtitle}</p>
       </div>
       <div className="gerencial-v2-hero-facts" aria-label="Métricas ejecutivas principales">
-        {v2HeroMetrics.map(metric => <div className={`v2-hero-metric ${metric.tone}`} key={metric.label}>
-          <small>{metric.label}</small><strong className="numeric-value">{metric.value}</strong><span>{metric.detail}</span>
-        </div>)}
+        {v2HeroMetrics.map(metric => <button type="button" className={`v2-hero-metric v2-hero-metric-button ${metric.tone}${activeV2Metric === metric.key ? ' active' : ''}`} key={metric.key} aria-pressed={activeV2Metric === metric.key} onClick={() => setActiveV2Metric(metric.key)}>
+          <small>{metric.label}</small><strong className="numeric-value">{metric.value}</strong><span>{metric.detail}</span><em>{activeV2Metric === metric.key ? 'Mostrando datos' : 'Ver datos'}</em>
+        </button>)}
+      </div>
+    </section>
+
+    <section className="v2-hero-detail-panel" aria-label="Datos de la métrica seleccionada">
+      <div className="v2-hero-detail-copy">
+        <span className="eyebrow">Datos de la métrica seleccionada</span>
+        <h3>{v2MetricDetailRows.title}</h3>
+        <p>{v2MetricDetailRows.summary}</p>
+      </div>
+      <div className="v2-hero-detail-list">
+        {v2MetricDetailRows.rows.length ? v2MetricDetailRows.rows.map(row => <a className="v2-hero-detail-row" key={`${activeV2Metric}-${row.label}`} href={row.href || '#/dashboard2'}>
+          <div><strong>{row.label}</strong><small>{row.detail}</small></div>
+          <span className="numeric-value">{row.value}</span>
+        </a>) : <div className="v2-hero-detail-empty">Sin datos suficientes para esta métrica.</div>}
       </div>
     </section>
 
