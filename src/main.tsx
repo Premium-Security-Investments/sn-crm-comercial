@@ -1120,13 +1120,7 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
     return compareSortValues(value(a), value(b), sortConfig.direction);
   });
   const sortBy = (key: typeof sortConfig.key) => setSortConfig(current => nextSort(current, key));
-  const biggestAlertOwner = commercialHealthCards.find(o => o.missing || o.overdue) || commercialHealthCards[0];
-  const serviceScopeLabel = service ? data.services.find(s => s.code === service)?.name || service : 'Todos los servicios';
-  const ownerScopeLabel = owner ? data.profiles.find(p => p.id === owner)?.full_name || 'Comercial seleccionado' : 'Todos los comerciales';
-  const stageScopeLabel = stage ? data.stages.find(s => s.code === stage)?.name || 'Etapa seleccionada' : 'Todas las etapas';
-  const periodScopeLabel = period === 'mes_actual' ? 'Mes actual' : period === 'proximos_30' ? 'Próximos 30 días' : period === 'trimestre_actual' ? 'Trimestre actual' : period === 'anio_actual' ? 'Año actual' : 'Todo el pipeline';
   const managerScopeLabel = service === 'seguridad_fisica' && !owner && !regional && !stage && !q && !onlyActive ? 'Seguridad Física primero' : 'Vista filtrada';
-  const managerScopeExplanation = `Mostrando la lectura gerencial para ${serviceScopeLabel} · ${periodScopeLabel} · ${ownerScopeLabel}${regional ? ` · Regional ${regional}` : ''} · ${stageScopeLabel}${onlyActive ? ' · Solo pipeline activo' : ''}${q ? ` · Búsqueda: ${q}` : ''}. Cambia los filtros y este banner recalcula prioridad, riesgo, forecast y foco comercial.`;
   const actionTitle = overdueRows.length
     ? `${overdueRows.length} gestiones vencidas requieren decisión hoy`
     : missingAgendaRows.length
@@ -1148,10 +1142,7 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
         <div className="command-title-row"><span className="eyebrow">Sala de control comercial · Hoy</span><span className="period-pill">{managerScopeLabel}</span></div>
         <h2 className="command-priority-title">{actionTitle}</h2>
         <div className="command-action-strip">
-          <small>Vista filtrada · Acción gerencial sugerida</small>
           <strong>{actionInstruction}</strong>
-          <p className="manager-action-context">Foco: {biggestAlertOwner?.owner || 'comercial'} · {stageLeader?.stage_name || 'etapa crítica'} · {serviceLeader?.label || 'servicio líder'}</p>
-          <p className="manager-action-context">{managerScopeExplanation}</p>
         </div>
       </div>
       <div className="command-metrics compact-command-kpis pipeline-discipline-grid">

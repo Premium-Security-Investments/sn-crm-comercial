@@ -17,7 +17,6 @@ const requiredMainMarkers = [
   'status-legend',
   'pulse-header',
   'Sala de control comercial',
-  'Acción gerencial sugerida',
   'Ver detalle →',
   'Pipeline por tipo de servicio',
   'ServicePipelineBreakdown',
@@ -67,7 +66,6 @@ const requiredMainMarkers = [
   'actionTitle',
   'actionInstruction',
   'command-priority-title',
-  'manager-action-context',
   'compact-command-summary',
   'compact-command-kpis',
   'manager-kpi-card manager-kpi-total',
@@ -78,15 +76,24 @@ const requiredMainMarkers = [
   'Resumen ejecutivo compacto',
   "useState('seguridad_fisica')",
   'managerScopeLabel',
-  'managerScopeExplanation',
   'Vista filtrada',
   'Seguridad Física primero',
-  'Mostrando la lectura gerencial para',
   "setService('seguridad_fisica')",
+];
+
+const removedMainMarkers = [
+  'Mostrando la lectura gerencial para',
+  'Foco: {biggestAlertOwner?.owner',
+  'Vista filtrada · Acción gerencial sugerida',
+  'managerScopeExplanation',
 ];
 
 for (const marker of requiredMainMarkers) {
   assert.ok(main.includes(marker), `main.tsx missing marker: ${marker}`);
+}
+
+for (const marker of removedMainMarkers) {
+  assert.ok(!main.includes(marker), `main.tsx still contains removed banner copy: ${marker}`);
 }
 
 const requiredCssMarkers = [
@@ -163,10 +170,10 @@ assert.ok(css.includes('clamp(24px,2vw,32px)'), 'Compact command hero headline m
 assert.ok(!main.includes('<div className="manager-action-panel">'), 'Manager dashboard should not keep a tall right-side action panel in the compact hero');
 assert.ok(main.indexOf('compact-command-kpis') < main.indexOf('<Panel title="Filtros gerenciales">'), 'Compact KPIs must sit in the top command area above filters');
 assert.ok(main.includes("const [service, setService] = useState('seguridad_fisica');"), 'Manager dashboard must land pre-filtered to Seguridad Física');
-assert.ok(main.includes("service ? data.services.find(s => s.code === service)?.name || service : 'Todos los servicios'"), 'Banner context must explain the selected service scope');
+assert.ok(!main.includes("service ? data.services.find(s => s.code === service)?.name || service : 'Todos los servicios'"), 'Banner should not keep verbose selected-service explanation');
 assert.ok(main.includes("setService('seguridad_fisica')"), 'Clear filters should return the manager dashboard to the Seguridad Física default');
 assert.ok(main.indexOf('managerScopeLabel') < main.indexOf('<h2 className="command-priority-title">'), 'Banner scope label should be computed before hero title renders');
-assert.ok(main.indexOf('managerScopeExplanation') < main.indexOf('<div className="command-metrics compact-command-kpis'), 'Banner explanation should render before hero KPI cards');
+assert.ok(!main.includes('managerScopeExplanation'), 'Banner should not render extra explanatory context under the action');
 
 const heroIndex = main.indexOf('<section className="command-center-hero" aria-label="Resumen ejecutivo compacto">');
 const filtersIndex = main.indexOf('<Panel title="Filtros gerenciales">');
