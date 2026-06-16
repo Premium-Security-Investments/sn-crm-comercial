@@ -143,10 +143,12 @@ for (const file of [server, api]) {
   assert(file.includes('tenderTableAvailable'), 'API debe tener fallback si la migración aún no existe.');
   assert(file.includes('external_source: `secop_radar:${tender.source}:${stableTenderKey(tender)}`'), 'Conversión debe usar external_source estable para prevenir duplicados.');
   assert(file.includes('converted_opportunity_id'), 'Conversión debe marcar la licitación con opportunity_id.');
-  assert(file.includes('soporte y mantenimiento'), 'Radar debe descartar contratos técnicos de soporte/mantenimiento de equipos.');
-  assert(file.includes('radiocomunicaciones'), 'Radar debe descartar procesos de radiocomunicaciones que no son core SN/PSI.');
-  assert(file.includes('repuestos'), 'Radar debe descartar contratos centrados en repuestos/equipos.');
+  assert(file.includes('soporte y mantenimiento'), 'Radar no debe publicar contratos técnicos de soporte/mantenimiento de equipos.');
+  assert(file.includes('radiocomunicaciones'), 'Radar no debe publicar procesos de radiocomunicaciones que no son core SN/PSI.');
+  assert(file.includes('repuestos'), 'Radar no debe publicar contratos centrados en repuestos/equipos.');
+  assert(file.includes('if (!isTenderTrackable(t)) return false;'), 'Radar debe filtrar no ofertables antes de publicar el payload.');
+  assert(file.includes('(data || []).filter(isTenderTrackable).map(dbTenderToPublic)'), 'Radar debe filtrar no ofertables ya historizados antes de mostrarlos.');
 }
-assert(src.includes('contratos técnicos de mantenimiento/soporte de equipos como radiocomunicaciones'), 'La ayuda de Licitaciones debe documentar la regla de descarte por mantenimiento/soporte técnico.');
+assert(!src.includes('contratos técnicos de mantenimiento/soporte de equipos como radiocomunicaciones'), 'La UI no debe publicar ni explicar oportunidades técnicas no relevantes; deben filtrarse antes.');
 
 console.log('tenders static checks passed');

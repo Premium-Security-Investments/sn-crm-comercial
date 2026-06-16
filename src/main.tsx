@@ -745,7 +745,7 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
       <summary>Estado de fuentes y ayuda · {diagnosticsLabel}</summary>
       <p className="muted action-explainer">Recargar vista actualiza los datos guardados en el CRM. Sincronizar fuentes oficiales consulta SECOP I, SECOP II, TVEC y ESU Contratación, persiste novedades y puede tardar más.</p>
       {payload.diagnostics?.length ? <div className="tender-diagnostics"><strong>Diagnóstico de fuentes:</strong> {payload.diagnostics.map(d => `${d.source}: ${d.message || d.status}`).join(' · ')}</div> : null}
-      <p className="muted tender-classification-note"><strong>Cómo leer la bandeja:</strong> “Hacer hoy” prioriza procesos con mejor encaje, valor o urgencia; “Revisar” reúne señales útiles que requieren validación; “Descartar” conserva trazabilidad de falsos positivos, bajo encaje o contratos técnicos de mantenimiento/soporte de equipos como radiocomunicaciones, repuestos, calibración o telecomunicaciones.</p>
+      <p className="muted tender-classification-note"><strong>Cómo leer la bandeja:</strong> “Hacer hoy” prioriza procesos con mejor encaje, valor o urgencia; “Revisar” reúne señales útiles que requieren validación; “Descartar” conserva trazabilidad de falsos positivos o bajo encaje.</p>
     </details>
     <TenderUnifiedBoard rows={sortedRows} focusTenderId={focusTenderId} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} />
   </section>;
