@@ -39,7 +39,7 @@ type TenderSortKey = 'deadline' | 'value' | 'score' | 'entity' | 'source';
 type PublicTender = { id: string; stable_key?: string; source: string; section: TenderSection; internal_status?: TenderInternalStatus; converted_opportunity_id?: string | null; reviewed_at?: string | null; detected_at?: string | null; last_seen_at?: string | null; entity: string; dept?: string; city?: string; ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string; category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null; score: number; reasons: string[]; risks: string[]; url?: string };
 type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string; count?: number; message?: string };
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
-type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
+type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
 type DashboardPeriodFilter = '' | 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
 
 type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; };
@@ -73,6 +73,7 @@ function parseRoute(): Route {
   if (page === 'consultant' && id) return { page: 'consultant', id: decodeURIComponent(id) };
   if (page === 'new') return { page: 'new' };
   if (page === 'dashboard') return { page: 'dashboard' };
+  if (page === 'dashboard2') return { page: 'dashboard2' };
   if (page === 'goals') return { page: 'goals' };
   if (page === 'alerts') return { page: 'alerts' };
   if (page === 'centinel' || page === 'vig-ia') return { page: 'centinel' };
@@ -278,6 +279,7 @@ function titleFor(route: Route) {
   if (route.page === 'new') return 'Crear oportunidad';
   if (route.page === 'edit') return 'Editar oportunidad';
   if (route.page === 'dashboard') return 'Dashboard gerencial';
+  if (route.page === 'dashboard2') return 'Dashboard gerencial 2';
   if (route.page === 'consultant') return 'Detalle de consultor';
   if (route.page === 'goals') return 'Metas comerciales y cumplimiento';
   if (route.page === 'alerts') return 'Alertas comerciales';
@@ -286,7 +288,7 @@ function titleFor(route: Route) {
   return 'Inicio comercial';
 }
 function Nav({ route, currentProfile }: { route: Route; currentProfile: Profile | null }) {
-  const items = [['#/dashboard','Dashboard gerencial'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades']];
+  const items = [['#/dashboard','Dashboard gerencial'],['#/dashboard2','Dashboard gerencial 2'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades']];
   if (canViewTenders(currentProfile)) items.push(['#/tenders','Licitaciones']);
   items.push(['#/vig-ia','Vig-IA'],['#/new','Crear oportunidad'],['#/goals','Metas y cumplimiento']);
   if (canManageUsers(currentProfile)) items.push(['#/users','Usuarios y permisos']);
@@ -299,6 +301,7 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
   if (route.page === 'new') return <OpportunityForm data={data} refresh={refresh} />;
   if (route.page === 'edit' && route.id) return <OpportunityForm data={data} id={route.id} refresh={refresh} />;
   if (route.page === 'dashboard') return <ManagerDashboard data={data} />;
+  if (route.page === 'dashboard2') return <ManagerDashboardV2 data={data} />;
   if (route.page === 'consultant' && route.id) return <ConsultantDetail data={data} ownerId={route.id} />;
   if (route.page === 'goals') return <GoalsCompliance data={data} refresh={refresh} />;
   if (route.page === 'alerts') return <CommercialAlerts data={data} />;
@@ -1269,6 +1272,103 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
         </div>)}</div>
       </Panel>
     </div>
+  </section>;
+}
+
+function ManagerDashboardV2({ data }: { data: Bootstrap }) {
+  const seguridadFisica = data.opportunities.filter(o => o.service_type_code === 'seguridad_fisica' || o.service_type_name === 'Seguridad Física' || o.owner_commercial_area === 'seguridad_fisica');
+  const sourceRows = seguridadFisica.length ? seguridadFisica : data.opportunities;
+  const activeRows = sourceRows.filter(o => !isTerminalStage(o.stage_code));
+  const approvedRows = sourceRows.filter(isApprovedSale);
+  const stageProbability = new Map(data.stages.map(s => [s.code, Number(s.close_probability || 0)]));
+  const totalPipeline = activeRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
+  const totalApproved = approvedRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
+  const weightedPipeline = activeRows.reduce((sum, o) => sum + Number(o.weighted_pipeline_value || 0), 0);
+  const totalBudget = data.goals.reduce((sum, goal) => sum + Number(goal.sales_budget || 0), 0);
+  const compliancePct = totalBudget ? Math.round((totalApproved / totalBudget) * 100) : null;
+  const projectionCardsV2 = [
+    { label: 'Ventas aprobadas', value: fmtMoneyCompact(totalApproved), detail: `${approvedRows.length} cierres registrados`, tone: 'green' },
+    { label: 'Pipeline activo', value: fmtMoneyCompact(totalPipeline), detail: `${activeRows.length} ofertas activas`, tone: 'blue' },
+    { label: 'Forecast ponderado', value: fmtMoneyCompact(weightedPipeline), detail: 'Ajustado por probabilidad de etapa', tone: 'purple' },
+    { label: 'Cumplimiento vs meta', value: compliancePct === null ? '—' : `${compliancePct}%`, detail: totalBudget ? `${fmtMoneyCompact(totalBudget)} presupuesto cargado` : 'Meta pendiente de cargar', tone: compliancePct === null ? 'amber' : compliancePct >= 80 ? 'green' : compliancePct >= 40 ? 'amber' : 'red' },
+  ];
+  const rankingRowsV2 = Array.from(sourceRows.reduce((map, o) => {
+    const key = ownerKey(o);
+    const row = map.get(key) || { ownerId: key, owner: o.owner_name || 'Sin comercial', regional: o.regional_nombre || 'Sin regional', count: 0, active: 0, approved: 0, pipeline: 0, weighted: 0 };
+    row.count++;
+    if (!isTerminalStage(o.stage_code)) { row.active++; row.pipeline += Number(o.offer_value || 0); row.weighted += Number(o.weighted_pipeline_value || 0); }
+    if (isApprovedSale(o)) row.approved += Number(o.offer_value || 0);
+    map.set(key, row);
+    return map;
+  }, new Map<string, { ownerId: string; owner: string; regional: string; count: number; active: number; approved: number; pipeline: number; weighted: number }>()).values()).map(row => {
+    const pct = totalBudget ? Math.round((row.approved / totalBudget) * 100) : Math.round((row.weighted / Math.max(weightedPipeline, 1)) * 100);
+    const tone = pct >= 80 ? 'green' : pct >= 40 ? 'amber' : pct > 0 ? 'red' : 'slate';
+    return { ...row, pct, tone };
+  }).sort((a,b)=>b.approved-a.approved || b.weighted-a.weighted || b.pipeline-a.pipeline).slice(0, 6);
+  const pipelineRowsV2 = Array.from(activeRows.reduce((map, o) => {
+    const key = ownerKey(o);
+    const row = map.get(key) || { ownerId: key, owner: o.owner_name || 'Sin comercial', regional: o.regional_nombre || 'Sin regional', offers: 0, value: 0 };
+    row.offers++;
+    row.value += Number(o.offer_value || 0);
+    map.set(key, row);
+    return map;
+  }, new Map<string, { ownerId: string; owner: string; regional: string; offers: number; value: number }>()).values()).map(row => ({ ...row, avgOffer: row.offers ? row.value / row.offers : 0 })).sort((a,b)=>b.value-a.value).slice(0, 6);
+  const maxPipelineValue = Math.max(...pipelineRowsV2.map(r => r.value), 1);
+  const topCloseRowsV2 = [...activeRows].map(o => {
+    const probability = stageProbability.get(o.stage_code) || 0;
+    const expected = Number(o.weighted_pipeline_value || 0) || Number(o.offer_value || 0) * probability;
+    const share = totalPipeline ? Math.round((Number(o.offer_value || 0) / totalPipeline) * 100) : 0;
+    return { ...o, probability, expected, share };
+  }).sort((a,b)=>b.expected-a.expected || Number(b.offer_value || 0)-Number(a.offer_value || 0)).slice(0, 5);
+  const topCloseTotal = topCloseRowsV2.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
+
+  return <section className="stack manager-dashboard dashboard-v2">
+    <section className="gerencial-v2-hero">
+      <div>
+        <span className="eyebrow">Prototipo basado en la presentación 2026</span>
+        <h2>Dashboard Gerencial 2</h2>
+        <p>Versión para definir: menos tabla completa, más lectura ejecutiva de Seguridad Física con cumplimiento, pipeline activo y oportunidades prioritarias.</p>
+      </div>
+      <div className="gerencial-v2-hero-facts">
+        <div><small>Foco</small><strong>Seguridad Física</strong></div>
+        <div><small>Ofertas activas</small><strong>{activeRows.length}</strong></div>
+        <div><small>Top cierre</small><strong>{fmtMoneyCompact(topCloseTotal)}</strong></div>
+      </div>
+    </section>
+
+    <Panel title="Resumen Comercial 2026">
+      <div className="v2-kpi-grid">{projectionCardsV2.map(card => <div className={`v2-kpi-card ${card.tone}`} key={card.label}>
+        <small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>
+      </div>)}</div>
+    </Panel>
+
+    <div className="v2-executive-grid single-focus">
+      <Panel title="Cumplimiento comercial">
+        <div className="v2-ranking-list">{rankingRowsV2.map((row, index) => <a className={`v2-ranking-row ${row.tone}`} key={row.ownerId} href={ownerRoute(row.ownerId)}>
+          <span className="owner-rank">#{index + 1}</span>
+          <div className="v2-ranking-main"><strong>{row.owner}</strong><small>{row.regional} · {row.count} oportunidades</small><div className="v2-progress-track"><span style={{ width: `${Math.max(3, row.pct)}%` }} /></div></div>
+          <div className="v2-ranking-value"><strong>{row.pct}%</strong><small>{fmtMoneyCompact(row.approved || row.weighted || row.pipeline)}</small></div>
+        </a>)}</div>
+        {!rankingRowsV2.length ? <EmptyState title="Sin ranking disponible" text="Cuando existan oportunidades de Seguridad Física aparecerá el ranking ejecutivo." /> : null}
+      </Panel>
+    </div>
+
+    <Panel title="Pipeline / prospección activa">
+      <div className="v2-pipeline-summary"><strong>{fmtMoneyCompact(totalPipeline)}</strong><span>{activeRows.length} ofertas activas · Valor promedio por oferta: {fmtMoneyCompact(activeRows.length ? totalPipeline / activeRows.length : 0)}</span></div>
+      <div className="tablewrap v2-pipeline-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Ofertas</th><th>Valor</th><th>Valor promedio por oferta</th><th>Peso</th></tr></thead><tbody>{pipelineRowsV2.map(row => {
+        const share = Math.round((row.value / maxPipelineValue) * 100);
+        return <tr key={row.ownerId}><td><strong>{row.owner}</strong></td><td>{row.regional}</td><td>{row.offers}</td><td><strong className="numeric-value">{fmtMoneyCompact(row.value)}</strong></td><td>{fmtMoneyCompact(row.avgOffer)}</td><td><div className="v2-weight-bar"><span style={{ width: `${Math.max(4, share)}%` }} /></div></td></tr>;
+      })}</tbody></table></div>
+    </Panel>
+
+    <Panel title="Top oportunidades de cierre">
+      <div className="v2-deal-list">{topCloseRowsV2.map(o => <a className="v2-deal-row" key={o.id} href={`#/detail/${o.id}`}>
+        <div><strong>{o.company_name}</strong><small>{o.owner_name || 'Sin comercial'} · {o.stage_name}</small></div>
+        <div className="v2-deal-value"><strong>{fmtMoneyCompact(o.offer_value)}</strong><small>{o.share}% del pipeline</small><div className="v2-weight-bar"><span style={{ width: `${Math.max(4, o.share)}%` }} /></div></div>
+        <Badge tone={stageTone(o.stage_code)}>{Math.round(o.probability * 100)}%</Badge>
+      </a>)}</div>
+      {!topCloseRowsV2.length ? <EmptyState title="Sin oportunidades priorizadas" text="No hay ofertas activas para priorizar con los filtros de Seguridad Física." /> : null}
+    </Panel>
   </section>;
 }
 
