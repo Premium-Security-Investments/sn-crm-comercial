@@ -121,26 +121,7 @@ function ownerRoute(ownerId: string) { return `#/consultant/${encodeURIComponent
 function alertRoute(status: string) { return `#/alerts?status=${encodeURIComponent(status)}`; }
 function managerAlertRoute(status: string) { return alertRoute(status); }
 function tenderDeepLink(tender: PublicTender) { return `#/tenders?tender=${encodeURIComponent(tender.id)}`; }
-function currentHash() { return window.location.hash || '#/dashboard'; }
-function withReturnTo(baseHash: string, from = currentHash()) {
-  const separator = baseHash.includes('?') ? '&' : '?';
-  return `${baseHash}${separator}from=${encodeURIComponent(from || '#/dashboard')}`;
-}
-function detailRoute(id: string, from = currentHash()) { return withReturnTo(`#/detail/${encodeURIComponent(id)}`, from); }
-function editRoute(id: string, from = currentHash()) { return withReturnTo(`#/edit/${encodeURIComponent(id)}`, from); }
 function hashQueryParam(name: string) { return new URLSearchParams((window.location.hash.split('?')[1] || '')).get(name) || ''; }
-function safeReturnRoute(fallback = '#/alerts') {
-  const from = hashQueryParam('from');
-  return from.startsWith('#/') ? from : fallback;
-}
-function returnRouteLabel(route: string) {
-  if (route.startsWith('#/vig-ia')) return 'Centro de monitoreo';
-  if (route.startsWith('#/alerts')) return 'Bandeja de alertas';
-  if (route.startsWith('#/opportunities')) return 'Listado de oportunidades';
-  if (route.startsWith('#/tenders')) return 'Radar de licitaciones';
-  if (route.startsWith('#/consultant')) return 'Detalle del consultor';
-  return 'vista anterior';
-}
 function isTerminalStage(stageCode?: string | null) { return ['aprobado','perdido','descartado'].includes(stageCode || ''); }
 function dashboardOpportunityDate(o: Opportunity) { return o.expected_close_date || o.quote_date || o.approved_at || o.updated_at || o.created_at; }
 function matchesDashboardPeriod(o: Opportunity, period: DashboardPeriodFilter) {
@@ -401,7 +382,7 @@ function ServicePipelineBreakdown({ rows }: { rows: Array<{ key: string; label: 
 }
 function MiniTable({ rows, empty = 'Sin registros' }: { rows: Opportunity[]; empty?: string }) {
   if (!rows.length) return <p className="muted">{empty}</p>;
-  return <table className="mini-table"><tbody>{rows.map(o => <tr key={o.id} onClick={() => go(detailRoute(o.id))} className="clickable"><td><strong>{o.company_name}</strong><br/><small>{o.owner_name || 'Sin comercial'} · <Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></small></td><td>{fmtMoney(o.offer_value)}</td></tr>)}</tbody></table>;
+  return <table className="mini-table"><tbody>{rows.map(o => <tr key={o.id} onClick={() => go(`#/detail/${o.id}`)} className="clickable"><td><strong>{o.company_name}</strong><br/><small>{o.owner_name || 'Sin comercial'} · <Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></small></td><td>{fmtMoney(o.offer_value)}</td></tr>)}</tbody></table>;
 }
 function EmptyState({ title, text }: { title: string; text: string }) {
   return <div className="empty-state"><div>✓</div><strong>{title}</strong><p>{text}</p></div>;
@@ -478,7 +459,7 @@ function OpportunityList({ data }: { data: Bootstrap }) {
     <div className="filters opportunity-filters"><input placeholder="Buscar cliente, sede, ciudad, servicio o ID…" value={q} onChange={e=>setQ(e.target.value)} /> <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Todos los comerciales"/> <Select value={regional} onChange={setRegional} options={regionals.map(r=>[r,r])} empty="Todas las regionales"/> <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Todas las etapas"/> <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Todos los servicios"/><Select value={customerSegmentFilter} onChange={setCustomerSegmentFilter} options={customerSegmentOptions} empty="Todos los tipos de cliente"/><label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Solo activas</label><button className="secondary" onClick={()=>{ setQ(''); setOwner(''); setRegional(''); setStage(''); setService(''); setCustomerSegmentFilter(''); setOnlyActive(true); }}>Limpiar filtros</button></div>
     <p className="muted filter-summary"><strong>{filtered.length}</strong> de {data.opportunities.length} oportunidades visibles.</p>
     <div className="opportunity-insight-grid" aria-label="Indicadores de oportunidades filtradas">{opportunityInsightCards.map(card => <div key={card.label} className={`opportunity-insight-card ${card.tone}`}><small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>{card.label === 'Ticket promedio' && topFilteredOpportunity ? <em>Oportunidad líder: {fmtMoneyCompact(topFilteredOpportunity.offer_value)}</em> : null}</div>)}</div>
-    <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo cliente" sortKey="segment" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cierre estimado" sortKey="close" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Último seguimiento" sortKey="last" sortConfig={sortConfig} onSort={sortBy}/></tr></thead><tbody>{sortedOpportunities.map(o => <tr key={o.id} className="clickable" onClick={() => go(detailRoute(o.id))}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{o.regional_nombre || '—'}</td><td><Badge>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td><Badge tone={o.customer_segment ? 'blue' : 'amber'}>{customerSegmentLabel(o.customer_segment)}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDate(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td></tr>)}</tbody></table></div>
+    <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo cliente" sortKey="segment" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cierre estimado" sortKey="close" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Último seguimiento" sortKey="last" sortConfig={sortConfig} onSort={sortBy}/></tr></thead><tbody>{sortedOpportunities.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{o.regional_nombre || '—'}</td><td><Badge>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td><Badge tone={o.customer_segment ? 'blue' : 'amber'}>{customerSegmentLabel(o.customer_segment)}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDate(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td></tr>)}</tbody></table></div>
   </section>;
 }
 function findTenderOwner(data: Bootstrap) {
@@ -661,7 +642,7 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     }
   };
   const createOpportunityFromTender = async (tender: PublicTender) => {
-    if (tender.converted_opportunity_id) { go(detailRoute(tender.converted_opportunity_id)); return; }
+    if (tender.converted_opportunity_id) { go(`#/detail/${tender.converted_opportunity_id}`); return; }
     const owner = findTenderOwner(data);
     const ok = window.confirm(`¿Crear oportunidad para ${tender.entity} y asignarla a ${owner.full_name}?`);
     if (!ok) return;
@@ -670,7 +651,7 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
       const saved = await api<{id:string}>('/api/tender-convert', { method: 'POST', body: JSON.stringify({ tender }) });
       setPayload(current => current ? { ...current, tenders: current.tenders.map(t => t.id === tender.id ? { ...t, internal_status: 'convertida_oportunidad', converted_opportunity_id: saved.id } : t) } : current);
       await refresh();
-      go(detailRoute(saved.id));
+      go(`#/detail/${saved.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -810,10 +791,8 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   const o = detail.opportunity;
   const action = nextActionStatus(o);
   const lastDays = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
-  const returnTo = safeReturnRoute('#/alerts');
-  const returnLabel = returnRouteLabel(returnTo);
   return <section className="stack">
-    <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p></div><div className="hero-actions"><button className="secondary" onClick={() => go(returnTo)}>← Volver a {returnLabel}</button><button onClick={() => go(editRoute(o.id, returnTo))}>Editar caso</button></div></div>
+    <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p></div><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button></div>
     <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Fecha creación" value={fmtDate(o.created_at)}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
     <div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div>
     <Panel title="Línea de seguimientos"><div className="timeline">{detail.interactions.length ? detail.interactions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel>
@@ -863,7 +842,7 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
       });
       await refresh();
       setStatus('Guardado.');
-      go(detailRoute(saved.id, safeReturnRoute('#/opportunities')));
+      go(`#/detail/${saved.id}`);
     } catch(err) {
       setStatus(err instanceof Error ? err.message : String(err));
     }
@@ -1216,7 +1195,7 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
     <Panel title="Top 10 oportunidades que requieren decisión">
       <div className="tablewrap critical-opportunities-table crm-readable-table decision-readable-table"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Riesgo" sortKey="risk" sortConfig={sortConfig} onSort={sortBy}/><th>Acción</th></tr></thead><tbody>{sortedCriticalOpportunityRows.map(row => {
         const o = row.opportunity;
-        return <tr key={o.id}><td className="client-cell"><strong>{o.company_name}</strong><br/><small>{o.sede || o.regional_nombre || '—'}</small></td><td className="owner-cell">{o.owner_name || 'Sin comercial'}</td><td className="money-cell numeric-value"><strong>{fmtMoneyCompact(o.offer_value)}</strong></td><td className="stage-cell"><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td className="next-action-cell">{o.next_action_at ? fmtDate(o.next_action_at) : 'Sin agenda'}<br/><small>{row.action.detail}</small></td><td className="risk-cell"><Badge tone={row.action.tone}>{row.risk}</Badge></td><td className="table-actions-cell"><a className="button" href={detailRoute(o.id, '#/dashboard')}>Ver detalle</a><a className="button secondary" href={detailRoute(o.id, '#/dashboard')}>Registrar seguimiento</a></td></tr>;
+        return <tr key={o.id}><td className="client-cell"><strong>{o.company_name}</strong><br/><small>{o.sede || o.regional_nombre || '—'}</small></td><td className="owner-cell">{o.owner_name || 'Sin comercial'}</td><td className="money-cell numeric-value"><strong>{fmtMoneyCompact(o.offer_value)}</strong></td><td className="stage-cell"><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td className="next-action-cell">{o.next_action_at ? fmtDate(o.next_action_at) : 'Sin agenda'}<br/><small>{row.action.detail}</small></td><td className="risk-cell"><Badge tone={row.action.tone}>{row.risk}</Badge></td><td className="table-actions-cell"><a className="button" href={`#/detail/${o.id}`}>Ver detalle</a><a className="button secondary" href={`#/detail/${o.id}`}>Registrar seguimiento</a></td></tr>;
       })}</tbody></table></div>
       {!criticalOpportunityRows.length ? <EmptyState title="Sin oportunidades críticas" text="No hay vencidas, sin agenda, próximas a cierre o estancadas con los filtros actuales." /> : null}
     </Panel>
@@ -1381,7 +1360,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     cierres: {
       title: 'Datos de cierres prioritarios',
       summary: `Top ${topCloseRowsV2.length} oportunidades concentran ${fmtMoneyCompact(topCloseTotal)} para revisión gerencial inmediata.`,
-      rows: topCloseRowsV2.map(o => ({ label: o.company_name, value: fmtMoneyCompact(o.offer_value), detail: `${o.owner_name || 'Sin comercial'} · ${o.stage_name} · ${Math.round(o.probability * 100)}%`, href: detailRoute(o.id, '#/dashboard2') })),
+      rows: topCloseRowsV2.map(o => ({ label: o.company_name, value: fmtMoneyCompact(o.offer_value), detail: `${o.owner_name || 'Sin comercial'} · ${o.stage_name} · ${Math.round(o.probability * 100)}%`, href: `#/detail/${o.id}` })),
     },
     forecast: {
       title: 'Datos del forecast ponderado',
@@ -1445,7 +1424,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     </Panel>
 
     <Panel title="Top oportunidades de cierre">
-      <div className="v2-deal-list">{topCloseRowsV2.map(o => <a className="v2-deal-row" key={o.id} href={detailRoute(o.id, '#/dashboard2')}>
+      <div className="v2-deal-list">{topCloseRowsV2.map(o => <a className="v2-deal-row" key={o.id} href={`#/detail/${o.id}`}>
         <div><strong>{o.company_name}</strong><small>{o.owner_name || 'Sin comercial'} · {o.stage_name}</small></div>
         <div className="v2-deal-value"><strong>{fmtMoneyCompact(o.offer_value)}</strong><small>{o.share}% del pipeline</small><div className="v2-weight-bar"><span style={{ width: `${Math.max(4, o.share)}%` }} /></div></div>
         <Badge tone={stageTone(o.stage_code)}>{Math.round(o.probability * 100)}%</Badge>
@@ -1558,7 +1537,7 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
     {personal && <div className="personal-dashboard">
       <Panel title="Mi prioridad de hoy"><div className="personal-priority-grid"><div><small>Acción recomendada</small><strong>{personalPriorityText}</strong></div><div><small>Gestión pendiente</small><strong>{totals.overdue} vencidas · {totals.missingAgenda} sin agenda</strong></div></div></Panel>
       <Panel title="Mi avance contra meta"><GoalVsActualDashboard rows={personalGoalRows} /></Panel>
-      <Panel title="Mis oportunidades críticas">{personalCriticalRows.length ? <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Valor" sortKey="value" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Prioridad" sortKey="priority" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/></tr></thead><tbody>{sortedPersonalCriticalRows.map(row => <tr key={row.opportunity.id} className="clickable" onClick={() => go(detailRoute(row.opportunity.id))}><td><strong>{row.opportunity.company_name}</strong></td><td><Badge tone={stageTone(row.opportunity.stage_code)}>{row.opportunity.stage_name}</Badge></td><td>{fmtMoneyCompact(row.opportunity.offer_value)}</td><td>{row.opportunity.next_action_at ? fmtDate(row.opportunity.next_action_at) : 'Sin agenda'}</td><td><Badge tone={row.action.tone}>{row.action.label}</Badge></td></tr>)}</tbody></table></div> : <EmptyState title="Sin críticas inmediatas" text="No hay vencidas, sin agenda ni gestiones urgentes con tus filtros actuales." />}</Panel>
+      <Panel title="Mis oportunidades críticas">{personalCriticalRows.length ? <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Valor" sortKey="value" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Prioridad" sortKey="priority" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/></tr></thead><tbody>{sortedPersonalCriticalRows.map(row => <tr key={row.opportunity.id} className="clickable" onClick={() => go(`#/detail/${row.opportunity.id}`)}><td><strong>{row.opportunity.company_name}</strong></td><td><Badge tone={stageTone(row.opportunity.stage_code)}>{row.opportunity.stage_name}</Badge></td><td>{fmtMoneyCompact(row.opportunity.offer_value)}</td><td>{row.opportunity.next_action_at ? fmtDate(row.opportunity.next_action_at) : 'Sin agenda'}</td><td><Badge tone={row.action.tone}>{row.action.label}</Badge></td></tr>)}</tbody></table></div> : <EmptyState title="Sin críticas inmediatas" text="No hay vencidas, sin agenda ni gestiones urgentes con tus filtros actuales." />}</Panel>
     </div>}
 
     <div className="grid kpis manager-kpis consultant-kpis">
@@ -1594,7 +1573,7 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
       <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Valor" sortKey="value" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Días sin seguimiento" sortKey="inactive" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/><SortableTh label="Prioridad" sortKey="priority" sortConfig={consultantOpportunitySortConfig} onSort={sortConsultantOpportunityBy}/></tr></thead><tbody>{sortedConsultantOpportunities.map(o => {
         const action = nextActionStatus(o);
         const inactiveDays = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
-        return <tr key={o.id} className={`clickable action-${action.code}`} onClick={() => go(detailRoute(o.id))}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.regional_nombre || '—'}</td><td><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td>{fmtMoney(o.offer_value)}</td><td><Badge tone={action.tone}>{action.label}</Badge><br/><small>{o.next_action_at ? fmtDate(o.next_action_at) : action.detail}</small></td><td>{inactiveDays === null ? '—' : `${inactiveDays} día(s)`}</td><td>{action.detail}</td></tr>;
+        return <tr key={o.id} className={`clickable action-${action.code}`} onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.regional_nombre || '—'}</td><td><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td>{fmtMoney(o.offer_value)}</td><td><Badge tone={action.tone}>{action.label}</Badge><br/><small>{o.next_action_at ? fmtDate(o.next_action_at) : action.detail}</small></td><td>{inactiveDays === null ? '—' : `${inactiveDays} día(s)`}</td><td>{action.detail}</td></tr>;
       })}</tbody></table></div>
     </Panel>
   </section>;
@@ -1703,7 +1682,7 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
       <p className="muted">Mostrando {filteredAlerts.length} oportunidades. Click en una fila para abrir el detalle y registrar seguimiento.</p>
       <div className="tablewrap alert-table crm-readable-table alert-readable-table"><table><thead><tr><SortableTh label="Alerta" sortKey="alert" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Días sin seguimiento" sortKey="inactive" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Acción sugerida" sortKey="action" sortConfig={sortConfig} onSort={sortBy}/></tr></thead><tbody>{sortedFilteredAlerts.map(row => {
         const o = row.opportunity;
-        return <tr key={o.id} className={`clickable alert-row alert-row-${row.alertCode}`} onClick={() => go(detailRoute(o.id))}><td className="alert-type-cell"><Badge tone={row.alertTone}>{row.alertLabel}</Badge></td><td className="client-cell"><strong>{o.company_name}</strong><br/><small>{o.regional_nombre || o.sede || '—'}</small></td><td className="owner-cell">{o.owner_name || 'Sin comercial'}</td><td className="stage-cell"><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td className="money-cell numeric-value">{fmtMoney(o.offer_value)}</td><td className="date-cell">{o.next_action_at ? fmtDate(o.next_action_at) : 'Sin agenda'}</td><td className="days-cell numeric-value">{row.inactiveDays === null ? '—' : `${row.inactiveDays} día(s)`}</td><td className="action-suggestion-cell">{row.alertCode === 'missing' ? 'Programar próxima gestión' : row.alertCode === 'overdue' ? 'Gestionar vencida' : status === 'closing_soon' ? 'Preparar decisión / cierre' : status === 'high_value_stalled' ? 'Escalar bloqueo comercial' : row.alertCode === 'stalled' ? 'Revisar sustentación' : row.action.detail}</td></tr>;
+        return <tr key={o.id} className={`clickable alert-row alert-row-${row.alertCode}`} onClick={() => go(`#/detail/${o.id}`)}><td className="alert-type-cell"><Badge tone={row.alertTone}>{row.alertLabel}</Badge></td><td className="client-cell"><strong>{o.company_name}</strong><br/><small>{o.regional_nombre || o.sede || '—'}</small></td><td className="owner-cell">{o.owner_name || 'Sin comercial'}</td><td className="stage-cell"><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td className="money-cell numeric-value">{fmtMoney(o.offer_value)}</td><td className="date-cell">{o.next_action_at ? fmtDate(o.next_action_at) : 'Sin agenda'}</td><td className="days-cell numeric-value">{row.inactiveDays === null ? '—' : `${row.inactiveDays} día(s)`}</td><td className="action-suggestion-cell">{row.alertCode === 'missing' ? 'Programar próxima gestión' : row.alertCode === 'overdue' ? 'Gestionar vencida' : status === 'closing_soon' ? 'Preparar decisión / cierre' : status === 'high_value_stalled' ? 'Escalar bloqueo comercial' : row.alertCode === 'stalled' ? 'Revisar sustentación' : row.action.detail}</td></tr>;
       })}</tbody></table></div>
     </Panel>
     <Panel title="Cumplimiento bajo 80%">
@@ -1999,7 +1978,7 @@ function CentinelAssistant({ data }: { data: Bootstrap }) {
       {!isTenderResult && result.mode !== 'goals' && <div className="tablewrap centinel-result-table"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Valor" sortKey="value" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Días sin seguimiento" sortKey="inactive" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/></tr></thead><tbody>{visibleRows.map(o => {
         const action = nextActionStatus(o);
         const inactive = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
-        return <tr key={o.id} className="clickable" onClick={() => go(detailRoute(o.id))}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.regional_nombre || '—'}</small></td><td>{o.owner_name || 'Sin comercial'}</td><td><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td><Badge tone={action.tone}>{action.label}</Badge><br/><small>{o.next_action_at ? fmtDate(o.next_action_at) : action.detail}</small></td><td>{inactive === null ? '—' : `${inactive} día(s)`}</td></tr>;
+        return <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.regional_nombre || '—'}</small></td><td>{o.owner_name || 'Sin comercial'}</td><td><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td><Badge tone={action.tone}>{action.label}</Badge><br/><small>{o.next_action_at ? fmtDate(o.next_action_at) : action.detail}</small></td><td>{inactive === null ? '—' : `${inactive} día(s)`}</td></tr>;
       })}</tbody></table></div>}
       <p className="muted">Mostrando {isTenderResult ? visibleTenderRows.length : result.mode === 'goals' ? (result.goalComplianceRows || []).length : visibleRows.length} de {isTenderResult ? (result.tenderRows || []).length : result.mode === 'goals' ? (result.goalComplianceRows || []).length : result.rows.length} coincidencias. Click en una fila para abrir el detalle.</p>
     </section>
