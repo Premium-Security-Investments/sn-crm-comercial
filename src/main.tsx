@@ -1516,6 +1516,14 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     map.set(key, row);
     return map;
   }, new Map<string, { stageCode: string; stageName: string; count: number; value: number; weighted: number }>()).values()).sort((a,b)=>b.weighted-a.weighted || b.value-a.value);
+  const v2HeroTitle = compliancePct === null
+    ? 'Meta comercial pendiente de cargar para leer cumplimiento'
+    : compliancePct < 50
+      ? 'Cumplimiento bajo meta, con pipeline activo para recuperar'
+      : compliancePct < 80
+        ? 'Cumplimiento en recuperación, foco en cierres prioritarios'
+        : 'Cumplimiento saludable con foco en sostener cierres';
+  const v2HeroSubtitle = 'Prioridad gerencial: convertir cierres top, proteger forecast y recuperar cumplimiento.';
   const v2HeroMetrics: Array<{ key: V2HeroMetricKey; label: string; value: string; detail: string; tone: string }> = [
     { key: 'cumplimiento', label: 'Cumplimiento', value: compliancePct === null ? '—' : `${compliancePct}%`, detail: totalBudget ? `${fmtMoneyCompact(totalApproved)} / ${fmtMoneyCompact(totalBudget)}` : 'Meta pendiente', tone: compliancePct === null ? 'amber' : compliancePct >= 80 ? 'green' : compliancePct >= 40 ? 'amber' : 'red' },
     { key: 'pipeline', label: 'Pipeline activo', value: fmtMoneyCompact(totalPipeline), detail: `${activeRows.length} ofertas activas`, tone: 'blue' },
@@ -1561,6 +1569,8 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     <section className="gerencial-v2-hero" aria-label="Resumen ejecutivo compacto de Dashboard Gerencial 2">
       <div className="gerencial-v2-hero-copy compact-service-context">
         <div className="command-title-row"><span className="service-context-pill">{v2HeroLabel}</span></div>
+        <h2>{v2HeroTitle}</h2>
+        <p>{v2HeroSubtitle}</p>
       </div>
       <div className="gerencial-v2-hero-facts" aria-label="Métricas ejecutivas principales">
         {v2HeroMetrics.map(metric => <button type="button" className={`v2-hero-metric v2-hero-metric-button ${metric.tone}${activeV2Metric === metric.key ? ' active' : ''}`} key={metric.key} aria-pressed={activeV2Metric === metric.key} onClick={() => setActiveV2Metric(metric.key)}>
