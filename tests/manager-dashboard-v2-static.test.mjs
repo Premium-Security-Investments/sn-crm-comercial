@@ -7,13 +7,13 @@ const css = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8
 const requiredMainMarkers = [
   "'dashboard2'",
   "if (page === 'dashboard2') return { page: 'dashboard2' };",
-  "if (route.page === 'dashboard2') return 'Dashboard gerencial 2';",
-  "['#/dashboard2','Dashboard gerencial 2']",
-  "if (route.page === 'dashboard2') return <ManagerDashboardV2 data={data} />;",
+  "if (route.page === 'dashboard2') return 'Dashboard gerencial';",
+  "['#/dashboard2','Dashboard gerencial']",
+  "if (route.page === 'dashboard' || route.page === 'dashboard2') return <ManagerDashboardV2 data={data} />;",
   'function ManagerDashboardV2({ data }: { data: Bootstrap })',
   'dashboard-v2',
   'gerencial-v2-hero',
-  'Dashboard Gerencial 2',
+  'dashboard-v2-six-components',
   'v2ServiceName',
   'v2HeroLabel',
   'Servicio: ${v2ServiceName}',
@@ -106,13 +106,13 @@ for (const marker of requiredCssMarkers) {
   assert.ok(css.includes(marker), `styles.css missing dashboard v2 marker: ${marker}`);
 }
 
-assert.ok(main.indexOf("['#/dashboard','Dashboard gerencial']") < main.indexOf("['#/dashboard2','Dashboard gerencial 2']"), 'Dashboard v2 tab should sit immediately after the current dashboard in nav');
+assert.ok(main.indexOf("['#/dashboard','Dashboard gerencial']") < main.indexOf("['#/dashboard2','Dashboard gerencial']"), 'Dashboard v2 tab should sit immediately after the current dashboard in nav');
 assert.ok(main.indexOf('Panel title="Cumplimiento comercial"') < main.indexOf('Panel title="Pipeline / prospección activa"'), 'Dashboard v2 should prioritize compliance before prospecting detail');
 assert.ok(main.indexOf('Panel title="Pipeline / prospección activa"') < main.indexOf('Panel title="Top oportunidades de cierre"'), 'Dashboard v2 should end with prioritized close opportunities');
 assert.ok(!main.includes('Proyección 2026 — tabla completa'), 'Dashboard v2 should not copy the full PowerPoint tables into the first level');
-assert.ok(!main.includes('<th>Comercial</th><th>Cargo</th><th>Regional</th><th>Unidad proyectada</th>'), 'Projection table should remove redundant Cargo column');
+assert.ok(main.includes('<th>Comercial</th><th>Cargo</th><th>Regional</th><th>Unidad proyectada</th>'), 'Projection table should include Cargo to match the 2026 projection source table');
 assert.ok(!main.includes('<th>Comercial</th><th>Cargo</th><th>Regional</th><th>Clientes</th>'), 'Monthly sales table should remove redundant Cargo column');
-assert.ok(main.includes('<th>Comercial</th><th>Regional</th><th>Unidad proyectada</th>'), 'Projection table should keep Regional directly after Comercial');
+assert.ok(main.includes('<th>Comercial</th><th>Cargo</th><th>Regional</th><th>Unidad proyectada</th>'), 'Projection table should keep Regional directly after Comercial');
 assert.ok(main.includes('<th>Comercial</th><th>Regional</th><th>Clientes</th>'), 'Monthly sales table should keep Regional directly after Comercial');
 assert.ok(!main.includes('Resumen ejecutivo · {v2ServiceName}'), 'Dashboard v2 hero should not repeat the long resumen ejecutivo label');
 assert.ok(!main.includes('Datos CRM en vivo'), 'Dashboard v2 hero should not include redundant CRM-live pill');

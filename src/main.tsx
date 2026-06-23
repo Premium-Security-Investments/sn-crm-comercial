@@ -91,6 +91,7 @@ function productOperationalUnit(serviceCode?: string | null, serviceName?: strin
   return PRODUCT_OPERATIONAL_UNITS[codeKey] || PRODUCT_OPERATIONAL_UNITS_BY_NAME[nameKey] || 'Unidad comercial';
 }
 function isApprovedSale(o: Opportunity) { return o.stage_code === 'aprobado'; }
+function monthReferenceDate(o: Opportunity) { return o.approved_at || o.created_at || o.quote_date || o.updated_at; }
 function canEditOpportunitySegment(current: Profile, opportunity?: Opportunity | null) { return !opportunity || isManagementRole(current.role) || (current.can_edit_customer_segment && opportunity.owner_id === current.id); }
 
 function parseRoute(): Route {
@@ -322,7 +323,7 @@ function titleFor(route: Route) {
   if (route.page === 'new') return 'Crear oportunidad';
   if (route.page === 'edit') return 'Editar oportunidad';
   if (route.page === 'dashboard') return 'Dashboard gerencial';
-  if (route.page === 'dashboard2') return 'Dashboard gerencial 2';
+  if (route.page === 'dashboard2') return 'Dashboard gerencial';
   if (route.page === 'consultant') return 'Detalle de consultor';
   if (route.page === 'goals') return 'Metas comerciales y cumplimiento';
   if (route.page === 'alerts') return 'Alertas comerciales';
@@ -331,7 +332,7 @@ function titleFor(route: Route) {
   return 'Inicio comercial';
 }
 function Nav({ route, currentProfile }: { route: Route; currentProfile: Profile | null }) {
-  const items = [['#/dashboard','Dashboard gerencial'],['#/dashboard2','Dashboard gerencial 2'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades']];
+  const items = [['#/dashboard2','Dashboard gerencial'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades']];
   if (canViewTenders(currentProfile)) items.push(['#/tenders','Licitaciones']);
   items.push(['#/vig-ia','Vig-IA'],['#/new','Crear oportunidad'],['#/goals','Metas y cumplimiento']);
   if (canManageUsers(currentProfile)) items.push(['#/users','Usuarios y permisos']);
@@ -343,8 +344,7 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
   if (route.page === 'detail' && route.id) return <OpportunityDetail id={route.id} data={data} refresh={refresh} />;
   if (route.page === 'new') return <OpportunityForm data={data} refresh={refresh} />;
   if (route.page === 'edit' && route.id) return <OpportunityForm data={data} id={route.id} refresh={refresh} />;
-  if (route.page === 'dashboard') return <ManagerDashboard data={data} />;
-  if (route.page === 'dashboard2') return <ManagerDashboardV2 data={data} />;
+  if (route.page === 'dashboard' || route.page === 'dashboard2') return <ManagerDashboardV2 data={data} />;
   if (route.page === 'consultant' && route.id) return <ConsultantDetail data={data} ownerId={route.id} />;
   if (route.page === 'goals') return <GoalsCompliance data={data} refresh={refresh} />;
   if (route.page === 'alerts') return <CommercialAlerts data={data} />;
@@ -1462,22 +1462,27 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     const approved = ownerApprovedRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
     const pipeline = ownerRows.filter(o => !isTerminalStage(o.stage_code)).reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
     const clients = new Set(ownerApprovedRows.map(o => o.company_name).filter(Boolean)).size;
-    const regional = (topGroup(ownerRows.map(o => o.regional_nombre || 'Regional pendiente')).label) || ownerGoals.find(goal => goal.regional_nombre && goal.regional_nombre !== 'todas')?.regional_nombre || 'Regional pendiente';
-    const projectedUnits = ownerGoals.reduce((sum, goal) => sum + Number(goal.operational_unit_target || 0), 0);
+    const regional = ownerGoals.find(goal => goal.regional_nombre && goal.regional_nombre !== 'todas')?.regional_nombre || (topGroup(ownerRows.map(o => o.regional_nombre || 'Regional pendiente')).label) || 'Regional pendiente';
+    const monthlyProjectedUnits = Math.max(0, ...ownerGoals.map(goal => Number(goal.operational_unit_target || 0)));
+    const projectedUnits = monthlyProjectedUnits;
     return { ownerId: profile.id, owner: profile.full_name, cargo: roleLabel(profile.role), regional, budget, approved, pipeline, clients, projectedUnits, compliance: budget ? Math.round((approved / budget) * 100) : null };
   }).filter(row => row.budget || row.approved || row.pipeline || row.projectedUnits).sort((a,b)=>b.approved-a.approved || b.pipeline-a.pipeline || b.budget-a.budget);
   const totalBudget = serviceScopedBudgetRowsV2.reduce((sum, row) => sum + Number(row.budget || 0), 0);
   const compliancePct = totalBudget ? Math.round((totalApproved / totalBudget) * 100) : null;
-  const projectionRowsV2 = serviceScopedBudgetRowsV2.map(row => ({ ...row, projectedUnits: row.projectedUnits || (row.budget ? Math.max(1, Math.round(row.budget / 18_818_714)) : row.pipeline ? row.clients || 1 : 0), monthlyBudget: row.budget ? row.budget / 12 : 0 }));
+  const projectionRowsV2 = serviceScopedBudgetRowsV2.map(row => {
+    const monthlyBudget = row.budget ? row.budget / 12 : 0;
+    const estimatedMonthlyUnits = monthlyBudget ? Math.max(1, Math.round(monthlyBudget / 18_818_714)) : row.pipeline ? row.clients || 1 : 0;
+    return { ...row, projectedUnits: row.projectedUnits || estimatedMonthlyUnits, monthlyBudget };
+  });
   const visibleProjectionRowsV2 = projectionRowsV2.slice(0, 8);
   const monthlySalesRowsV2 = serviceScopedBudgetRowsV2.slice(0, 8).map(row => {
     const ownerApprovedRows = approvedRows.filter(o => ownerKey(o) === row.ownerId);
     const monthValue = (month: number) => ownerApprovedRows.filter(o => {
-      const rawDate = o.approved_at || o.quote_date || o.updated_at || o.created_at;
+      const rawDate = monthReferenceDate(o);
       const d = rawDate ? new Date(rawDate) : null;
       return d && d.getFullYear() === 2026 && d.getMonth() === month;
     }).reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
-    const months = [0,1,2,3,4].map(monthValue);
+    const months = [0,1,2,3,4,5].map(monthValue);
     return { ...row, months, accumulated: months.reduce((sum, value) => sum + value, 0) || row.approved };
   });
   const projectionCardsV2 = [
@@ -1497,7 +1502,8 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     map.set(key, row);
     return map;
   }, new Map<string, { ownerId: string; owner: string; regional: string; count: number; active: number; approved: number; pipeline: number; weighted: number }>()).values()).map(row => {
-    const pct = totalBudget ? Math.round((row.approved / totalBudget) * 100) : Math.round((row.weighted / Math.max(weightedPipeline, 1)) * 100);
+    const ownerBudget = serviceScopedBudgetRowsV2.find(b => b.ownerId === row.ownerId)?.budget || 0;
+    const pct = ownerBudget ? Math.round((row.approved / ownerBudget) * 100) : totalBudget ? Math.round((row.approved / totalBudget) * 100) : Math.round((row.weighted / Math.max(weightedPipeline, 1)) * 100);
     const tone = pct >= 80 ? 'green' : pct >= 40 ? 'amber' : pct > 0 ? 'red' : 'slate';
     return { ...row, pct, tone };
   }).sort((a,b)=>b.approved-a.approved || b.weighted-a.weighted || b.pipeline-a.pipeline).slice(0, 6);
@@ -1573,114 +1579,219 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     { label: 'Normalizar regional', value: String(missingRegionalRows.length), detail: missingRegionalRows.length ? 'Datos incompletos reducen confianza gerencial' : 'Regional completa en ranking visible', tone: missingRegionalRows.length ? 'amber' : 'green', href: '#/dashboard2' },
     { label: 'Proteger forecast', value: fmtMoneyCompact(weightedPipeline), detail: `${fmtMoneyCompact(totalPipeline)} activos ponderados por etapa`, tone: 'purple', href: '#/dashboard2' },
   ];
+  const v2ActionRows = activeRows.map(o => ({ opportunity: o, action: nextActionStatus(o), inactiveDays: daysSince(o.last_interaction_at || o.updated_at || o.created_at) }));
+  const v2MissingAgendaRows = v2ActionRows.filter(r => r.action.code === 'missing');
+  const v2OverdueRows = v2ActionRows.filter(r => r.action.code === 'overdue');
+  const v2ManagedRows = v2ActionRows.filter(r => r.opportunity.next_action_at && !['overdue','missing'].includes(r.action.code));
+  const v2ManagedRatio = activeRows.length ? Math.round((v2ManagedRows.length / activeRows.length) * 100) : 100;
+  const currentMonthKeyV2 = new Date().toISOString().slice(0, 7);
+  const v2GoalRowsFromV1 = buildGoalVsActualRows(data, [currentMonthKeyV2]);
+  const v2GoalRowsWithTargets = v2GoalRowsFromV1.filter(row => row.pct !== null);
+  const v2GoalAveragePct = v2GoalRowsWithTargets.length ? Math.round(v2GoalRowsWithTargets.reduce((sum,row)=>sum+Number(row.pct||0),0)/v2GoalRowsWithTargets.length) : null;
+  const v2StageLeader = stageRowsV2[0];
+  const v2Concentration = v2StageLeader && totalPipeline ? Math.round((Number(v2StageLeader.value || 0) / totalPipeline) * 100) : 0;
+  const v2ServicePipelineRows = Array.from(activeRows.reduce((map, o) => {
+    const key = o.service_type_code || o.tipo_producto_original || '__sin_servicio__';
+    const label = o.service_type_name || o.tipo_producto_original || 'Sin servicio clasificado';
+    const row = map.get(key) || { key, label, count: 0, value: 0, weighted: 0 };
+    row.count++;
+    row.value += Number(o.offer_value || 0);
+    row.weighted += Number(o.weighted_pipeline_value || 0);
+    map.set(key, row);
+    return map;
+  }, new Map<string, { key: string; label: string; count: number; value: number; weighted: number }>()).values()).map(row => ({ ...row, share: Math.round((row.value / Math.max(totalPipeline, 1)) * 100) })).sort((a,b)=>b.value-a.value || b.count-a.count);
+  const v2ServiceLeader = v2ServicePipelineRows[0];
+  const v2CriticalOpportunityRows = v2ActionRows.map(r => {
+    const value = Number(r.opportunity.offer_value || 0);
+    const riskScore = value + (r.action.code === 'overdue' ? 600_000_000 : 0) + (r.action.code === 'missing' ? 450_000_000 : 0) + (Number(r.inactiveDays || 0) >= 10 ? 250_000_000 : 0);
+    const risk = r.action.code === 'overdue' ? 'Gestión vencida' : r.action.code === 'missing' ? 'Sin próxima acción' : Number(r.inactiveDays || 0) >= 10 ? 'Sin seguimiento reciente' : 'Revisar avance';
+    return { ...r, riskScore, risk };
+  }).filter(r => ['overdue','missing'].includes(r.action.code) || Number(r.inactiveDays || 0) >= 10).sort((a,b)=>b.riskScore-a.riskScore).slice(0, 10);
+  const v2CommercialHealthCards = rankingRowsV2.map(row => {
+    const ownerActiveRows = v2ActionRows.filter(r => ownerKey(r.opportunity) === row.ownerId);
+    const missing = ownerActiveRows.filter(r => r.action.code === 'missing').length;
+    const overdue = ownerActiveRows.filter(r => r.action.code === 'overdue').length;
+    const disciplinePenalty = (missing * 4) + (overdue * 6);
+    const score = Math.max(0, Math.min(100, Math.round((row.active * 2) + (row.weighted / Math.max(weightedPipeline,1) * 35) + (row.pct * .35) - disciplinePenalty)));
+    const tone = score >= 70 ? 'green' : score >= 45 ? 'amber' : 'red';
+    return { ...row, score, tone, missing, overdue };
+  }).sort((a,b)=>b.score-a.score || b.approved-a.approved).slice(0, 6);
+  const v2TrendRowsFromV1 = buildMonthlyTrendRows(data);
+  const v2MaxTrendActivity = Math.max(...v2TrendRowsFromV1.map(o=>Math.max(o.prospectos, o.cotizaciones, o.ventas / 10_000_000)), 1);
+  const v2MaxTrendSales = Math.max(...v2TrendRowsFromV1.map(o=>o.ventas), 1);
 
-  return <section className="stack manager-dashboard dashboard-v2">
-    <section className="gerencial-v2-hero" aria-label="Resumen ejecutivo compacto de Dashboard Gerencial 2">
-      <div className="gerencial-v2-hero-copy compact-service-context">
-        <div className="command-title-row"><span className="service-context-pill">{v2HeroLabel}</span></div>
-        <h2>{v2HeroTitle}</h2>
-        <p>{v2HeroSubtitle}</p>
-      </div>
-      <div className="gerencial-v2-hero-facts" aria-label="Métricas ejecutivas principales">
-        {v2HeroMetrics.map(metric => <button type="button" className={`v2-hero-metric v2-hero-metric-button ${metric.tone}${activeV2Metric === metric.key ? ' active' : ''}`} key={metric.key} aria-pressed={activeV2Metric === metric.key} onClick={() => setActiveV2Metric(metric.key)}>
-          <small>{metric.label}</small><strong className="numeric-value">{metric.value}</strong><span>{metric.detail}</span><em>{activeV2Metric === metric.key ? 'Detalle visible' : 'Ver detalle'}</em>
-        </button>)}
-      </div>
-    </section>
+  return <section className="stack manager-dashboard dashboard-v2 dashboard-v2-six-components">
+    <section className="v2-component-block resumen-ejecutivo" aria-label="1. Resumen ejecutivo">
+      <div className="v2-section-heading"><span>1. Resumen ejecutivo</span><h2>Cómo vamos hoy</h2><p>Lectura rápida de cumplimiento, pipeline, forecast y prioridades gerenciales.</p></div>
+      <section className="gerencial-v2-hero" aria-label="Resumen ejecutivo compacto de Dashboard Gerencial 2">
+        <div className="gerencial-v2-hero-copy compact-service-context">
+          <div className="command-title-row"><span className="service-context-pill">{v2HeroLabel}</span></div>
+          <h2>{v2HeroTitle}</h2>
+          <p>{v2HeroSubtitle}</p>
+        </div>
+        <div className="gerencial-v2-hero-facts" aria-label="Métricas ejecutivas principales">
+          {v2HeroMetrics.map(metric => <button type="button" className={`v2-hero-metric v2-hero-metric-button ${metric.tone}${activeV2Metric === metric.key ? ' active' : ''}`} key={metric.key} aria-pressed={activeV2Metric === metric.key} onClick={() => setActiveV2Metric(metric.key)}>
+            <small>{metric.label}</small><strong className="numeric-value">{metric.value}</strong><span>{metric.detail}</span><em>{activeV2Metric === metric.key ? 'Detalle visible' : 'Ver detalle'}</em>
+          </button>)}
+        </div>
+      </section>
 
-    <Panel title="Filtros gerenciales">
-      <div className="filters manager-dashboard-filters v2-dashboard-filters">
-        <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Período"/>
-        <input placeholder="Buscar cliente, comercial, sede, ciudad, servicio o ID…" value={q} onChange={e=>setQ(e.target.value)} />
-        <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Todos los comerciales"/>
-        <Select value={regional} onChange={setRegional} options={managerRegionalOptions.map(r=>[r,r])} empty="Todas las regionales"/>
-        <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Todas las etapas"/>
-        <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Todos los servicios"/>
-        <label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label>
-        <button className="secondary" onClick={()=>setService('')}>Ver todos los productos</button>
-        <button className="secondary" onClick={()=>{ setPeriod(''); setQ(''); setOwner(''); setRegional(''); setStage(''); setService('seguridad_fisica'); setOnlyActive(false); }}>Limpiar filtros</button>
-      </div>
-      <div className="filter-summary"><strong>{sourceRows.length}</strong> de {data.opportunities.length} oportunidades visibles · Última actualización: {lastUpdatedLabel(sourceRows)}</div>
-    </Panel>
-
-    <section className="v2-hero-detail-panel" aria-label="Datos de la métrica seleccionada">
-      <div className="v2-hero-detail-copy">
-        <span className="eyebrow">Datos de la métrica seleccionada</span>
-        <h3>{v2MetricDetailRows.title}</h3>
-        <p>{v2MetricDetailRows.summary}</p>
-      </div>
-      <div className="v2-hero-detail-list">
-        {v2MetricDetailRows.rows.length ? v2MetricDetailRows.rows.map(row => <a className="v2-hero-detail-row" key={`${activeV2Metric}-${row.label}`} href={row.href || '#/dashboard2'}>
-          <div><strong>{row.label}</strong><small>{row.detail}</small></div>
-          <span className="numeric-value">{row.value}</span>
-        </a>) : <div className="v2-hero-detail-empty">Sin datos suficientes para esta métrica.</div>}
-      </div>
-    </section>
-
-    <Panel title="Prioridades gerenciales de hoy">
-      <div className="v2-priority-grid">{v2ManagementPriorities.map(priority => <a className={`v2-priority-card ${priority.tone}`} key={priority.label} href={priority.href}>
-        <small>{priority.label}</small><strong className="numeric-value">{priority.value}</strong><span>{priority.detail}</span>
-      </a>)}</div>
-    </Panel>
-
-    <Panel title="Desempeño comercial 2026 por producto">
-      <p className="v2-panel-note">Presupuesto, ventas y prospección 2026 para el producto seleccionado. La unidad operativa se adapta por producto; en Seguridad Física se lee como puestos 24H.</p>
-      <div className="v2-kpi-grid">{projectionCardsV2.map(card => <div className={`v2-kpi-card ${card.tone}`} key={card.label}>
-        <small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>
-      </div>)}</div>
-    </Panel>
-
-    <Panel title="Proyección / presupuesto 2026">
-      <div className="tablewrap crm-readable-table v2-projection-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Unidad proyectada</th><th>Presupuesto mensual</th><th>Presupuesto anual</th></tr></thead><tbody>{visibleProjectionRowsV2.map(row => <tr key={row.ownerId}>
-        <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td><strong>{row.projectedUnits}</strong><small> {productOperationalUnitLabel}</small></td><td className="money-cell">{fmtMoney(row.monthlyBudget)}</td><td className="money-cell">{fmtMoney(row.budget)}</td>
-      </tr>)}</tbody></table></div>
-      {!visibleProjectionRowsV2.length ? <EmptyState title="Sin presupuesto visible" text="Cuando existan metas o pipeline del producto seleccionado aparecerá la proyección por comercial." /> : <p className="muted">Unidad meta tomada del campo de cantidad unidades / puestos 24H cuando esté cargado.</p>}
-    </Panel>
-
-    <Panel title="Ventas acumuladas por comercial">
-      <div className="tablewrap crm-readable-table v2-sales-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Clientes</th><th>Ene</th><th>Feb</th><th>Mar</th><th>Abr</th><th>May</th><th>Ventas acumuladas</th><th>Cumplimiento individual</th><th>Presupuesto</th></tr></thead><tbody>{monthlySalesRowsV2.map(row => <tr key={row.ownerId}>
-        <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td>{row.clients}</td>{row.months.map((value, index) => <td className="money-cell" key={`${row.ownerId}-${index}`}>{value ? fmtMoneyCompact(value) : '—'}</td>)}<td className="money-cell"><strong>{fmtMoney(row.accumulated)}</strong></td><td><strong className="numeric-value">{row.compliance === null ? '—' : `${row.compliance}%`}</strong></td><td className="money-cell">{fmtMoney(row.budget)}</td>
-      </tr>)}</tbody></table></div>
-      {!monthlySalesRowsV2.length ? <EmptyState title="Sin ventas acumuladas" text="Cuando existan ventas aprobadas o presupuesto individual del producto seleccionado aparecerá el acumulado 2026." /> : null}
-    </Panel>
-
-    <div className="v2-executive-grid single-focus">
-      <Panel title="Cumplimiento comercial">
-        <div className="v2-ranking-list">{rankingRowsV2.map((row, index) => <a className={`v2-ranking-row ${row.tone}`} key={row.ownerId} href={ownerRoute(row.ownerId)}>
-          <span className="owner-rank">#{index + 1}</span>
-          <div className="v2-ranking-main"><strong>{formatDisplayName(row.owner)}</strong><small>{formatRegionalLabel(row.regional)} · {row.count} oportunidades{formatRegionalLabel(row.regional) === 'Regional pendiente' ? ' · requiere normalizar regional' : ''}</small><div className="v2-progress-track"><span style={{ width: `${Math.max(3, row.pct)}%` }} /></div></div>
-          <div className="v2-ranking-value"><strong>{row.pct}%</strong><small>{fmtMoneyCompact(row.approved || row.weighted || row.pipeline)}</small></div>
-        </a>)}</div>
-        {!rankingRowsV2.length ? <EmptyState title="Sin ranking disponible" text="Cuando existan oportunidades de Seguridad Física aparecerá el ranking ejecutivo." /> : null}
+      <Panel title="Filtros gerenciales">
+        <div className="filters manager-dashboard-filters v2-dashboard-filters">
+          <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Período"/>
+          <input placeholder="Buscar cliente, comercial, sede, ciudad, servicio o ID…" value={q} onChange={e=>setQ(e.target.value)} />
+          <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Todos los comerciales"/>
+          <Select value={regional} onChange={setRegional} options={managerRegionalOptions.map(r=>[r,r])} empty="Todas las regionales"/>
+          <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Todas las etapas"/>
+          <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Todos los servicios"/>
+          <label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label>
+          <button className="secondary" onClick={()=>setService('')}>Ver todos los productos</button>
+          <button className="secondary" onClick={()=>{ setPeriod(''); setQ(''); setOwner(''); setRegional(''); setStage(''); setService('seguridad_fisica'); setOnlyActive(false); }}>Limpiar filtros</button>
+        </div>
+        <div className="filter-summary"><strong>{sourceRows.length}</strong> de {data.opportunities.length} oportunidades visibles · Última actualización: {lastUpdatedLabel(sourceRows)}</div>
       </Panel>
-      <Panel title="Lectura gerencial">
-        <div className="v2-alert-list">
-          <div><small>Riesgo de conversión</small><strong>{lowComplianceRows.length ? `${lowComplianceRows.length} comerciales bajo 8%` : 'Sin alerta crítica'}</strong><span>{lowComplianceRows.length ? 'Priorizar revisión de calidad de pipeline y próximas acciones.' : 'El ranking visible no muestra brecha crítica bajo 8%.'}</span></div>
-          <div><small>Calidad de datos</small><strong>{missingRegionalRows.length ? `${missingRegionalRows.length} con regional pendiente` : 'Regional completa'}</strong><span>{missingRegionalRows.length ? 'Normalizar regional para lectura confiable por zona.' : 'Datos regionales listos para lectura ejecutiva.'}</span></div>
-          <div><small>Criterio de ranking</small><strong>Ordenado por aprobado</strong><span>Desempata por forecast y pipeline activo.</span></div>
+
+      <section className="v2-hero-detail-panel" aria-label="Datos de la métrica seleccionada">
+        <div className="v2-hero-detail-copy">
+          <span className="eyebrow">Datos de la métrica seleccionada</span>
+          <h3>{v2MetricDetailRows.title}</h3>
+          <p>{v2MetricDetailRows.summary}</p>
+        </div>
+        <div className="v2-hero-detail-list">
+          {v2MetricDetailRows.rows.length ? v2MetricDetailRows.rows.map(row => <a className="v2-hero-detail-row" key={`${activeV2Metric}-${row.label}`} href={row.href || '#/dashboard2'}>
+            <div><strong>{row.label}</strong><small>{row.detail}</small></div>
+            <span className="numeric-value">{row.value}</span>
+          </a>) : <div className="v2-hero-detail-empty">Sin datos suficientes para esta métrica.</div>}
+        </div>
+      </section>
+
+      <Panel title="Prioridades gerenciales de hoy">
+        <div className="v2-priority-grid">{v2ManagementPriorities.map(priority => <a className={`v2-priority-card ${priority.tone}`} key={priority.label} href={priority.href}>
+          <small>{priority.label}</small><strong className="numeric-value">{priority.value}</strong><span>{priority.detail}</span>
+        </a>)}</div>
+      </Panel>
+    </section>
+
+    <section className="v2-component-block presupuesto-ventas" aria-label="2. Presupuesto y ventas 2026">
+      <div className="v2-section-heading"><span>2. Presupuesto y ventas 2026</span><h2>Meta, presupuesto y avance real</h2><p>Bloque equivalente a las tablas compartidas, resumido para lectura gerencial.</p></div>
+      <Panel title="Desempeño comercial 2026 por producto">
+        <p className="v2-panel-note">Presupuesto, ventas y prospección 2026 para el producto seleccionado. La unidad operativa se adapta por producto; en Seguridad Física se lee como puestos 24H.</p>
+        <div className="v2-kpi-grid">{projectionCardsV2.map(card => <div className={`v2-kpi-card ${card.tone}`} key={card.label}>
+          <small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>
+        </div>)}</div>
+      </Panel>
+      <Panel title="Proyección / presupuesto 2026">
+        <div className="tablewrap crm-readable-table v2-projection-table"><table><thead><tr><th>Comercial</th><th>Cargo</th><th>Regional</th><th>Unidad proyectada</th><th>Presupuesto mensual</th><th>Presupuesto anual</th></tr></thead><tbody>{visibleProjectionRowsV2.map(row => <tr key={row.ownerId}>
+          <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{row.cargo}</td><td>{formatRegionalLabel(row.regional)}</td><td><strong>{row.projectedUnits}</strong><small> {productOperationalUnitLabel}</small></td><td className="money-cell">{fmtMoney(row.monthlyBudget)}</td><td className="money-cell">{fmtMoney(row.budget)}</td>
+        </tr>)}</tbody></table></div>
+        {!visibleProjectionRowsV2.length ? <EmptyState title="Sin presupuesto visible" text="Cuando existan metas o pipeline del producto seleccionado aparecerá la proyección por comercial." /> : <p className="muted">Unidad meta tomada del campo de cantidad unidades / puestos 24H cuando esté cargado; si falta, se estima desde presupuesto mensual.</p>}
+      </Panel>
+      <Panel title="Ventas acumuladas por comercial">
+        <div className="tablewrap crm-readable-table v2-sales-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Clientes</th><th>Ene</th><th>Feb</th><th>Mar</th><th>Abr</th><th>May</th><th>Jun</th><th>Ventas acumuladas</th><th>Cumplimiento individual</th><th>Presupuesto</th></tr></thead><tbody>{monthlySalesRowsV2.map(row => <tr key={row.ownerId}>
+          <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td>{row.clients}</td>{row.months.map((value, index) => <td className="money-cell" key={`${row.ownerId}-${index}`}>{value ? fmtMoneyCompact(value) : '—'}</td>)}<td className="money-cell"><strong>{fmtMoney(row.accumulated)}</strong></td><td><strong className="numeric-value">{row.compliance === null ? '—' : `${row.compliance}%`}</strong></td><td className="money-cell">{fmtMoney(row.budget)}</td>
+        </tr>)}</tbody></table></div>
+        {!monthlySalesRowsV2.length ? <EmptyState title="Sin ventas acumuladas" text="Cuando existan ventas aprobadas o presupuesto individual del producto seleccionado aparecerá el acumulado 2026." /> : null}
+      </Panel>
+    </section>
+
+    <section className="v2-component-block cumplimiento-comercial" aria-label="3. Cumplimiento por comercial">
+      <div className="v2-section-heading"><span>3. Cumplimiento por comercial</span><h2>Quién cumple y quién requiere foco</h2><p>Ranking calculado contra presupuesto individual cuando está cargado.</p></div>
+      <div className="v2-executive-grid single-focus">
+        <Panel title="Cumplimiento comercial">
+          <div className="v2-ranking-list">{rankingRowsV2.map((row, index) => <a className={`v2-ranking-row ${row.tone}`} key={row.ownerId} href={ownerRoute(row.ownerId)}>
+            <span className="owner-rank">#{index + 1}</span>
+            <div className="v2-ranking-main"><strong>{formatDisplayName(row.owner)}</strong><small>{formatRegionalLabel(row.regional)} · {row.count} oportunidades{formatRegionalLabel(row.regional) === 'Regional pendiente' ? ' · requiere normalizar regional' : ''}</small><div className="v2-progress-track"><span style={{ width: `${Math.max(3, Math.min(row.pct, 100))}%` }} /></div></div>
+            <div className="v2-ranking-value"><strong>{row.pct}%</strong><small>{fmtMoneyCompact(row.approved || row.weighted || row.pipeline)}</small></div>
+          </a>)}</div>
+          {!rankingRowsV2.length ? <EmptyState title="Sin ranking disponible" text="Cuando existan oportunidades de Seguridad Física aparecerá el ranking ejecutivo." /> : null}
+        </Panel>
+        <Panel title="Lectura gerencial">
+          <div className="v2-alert-list">
+            <div><small>Riesgo de conversión</small><strong>{lowComplianceRows.length ? `${lowComplianceRows.length} comerciales bajo 8%` : 'Sin alerta crítica'}</strong><span>{lowComplianceRows.length ? 'Priorizar revisión de calidad de pipeline y próximas acciones.' : 'El ranking visible no muestra brecha crítica bajo 8%.'}</span></div>
+            <div><small>Calidad de datos</small><strong>{missingRegionalRows.length ? `${missingRegionalRows.length} con regional pendiente` : 'Regional completa'}</strong><span>{missingRegionalRows.length ? 'Normalizar regional para lectura confiable por zona.' : 'Datos regionales listos para lectura ejecutiva.'}</span></div>
+            <div><small>Criterio de ranking</small><strong>Meta individual</strong><span>Ordenado por aprobado; cumplimiento contra presupuesto del comercial cuando existe.</span></div>
+          </div>
+        </Panel>
+      </div>
+    </section>
+
+    <section className="v2-component-block pipeline-prioridades" aria-label="4. Pipeline y oportunidades prioritarias">
+      <div className="v2-section-heading"><span>4. Pipeline y oportunidades prioritarias</span><h2>Dónde está el dinero futuro</h2><p>Pipeline activo, concentración por etapa y oportunidades con mayor valor esperado.</p></div>
+      <Panel title="Pipeline / prospección activa">
+        <div className="v2-pipeline-summary"><strong>{fmtMoneyCompact(totalPipeline)}</strong><span>{activeRows.length} ofertas activas · Valor promedio por oferta: {fmtMoneyCompact(activeRows.length ? totalPipeline / activeRows.length : 0)} · barras = participación real sobre el pipeline</span></div>
+        <div className="tablewrap v2-pipeline-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Ofertas</th><th>Valor</th><th>Promedio por oferta</th><th>Participación del pipeline</th></tr></thead><tbody>{pipelineRowsV2.map(row => {
+          const share = Math.round((row.value / Math.max(totalPipeline, 1)) * 100);
+          return <tr key={row.ownerId}><td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td>{row.offers}</td><td><strong className="numeric-value">{fmtMoneyCompact(row.value)}</strong></td><td>{fmtMoneyCompact(row.avgOffer)}</td><td><div className="v2-weight-bar"><span style={{ width: `${Math.max(4, share)}%` }} /></div><small>{share}% del pipeline</small></td></tr>;
+        })}</tbody></table></div>
+      </Panel>
+      <Panel title="Top oportunidades de cierre">
+        <p className="v2-panel-note">Ordenado por valor esperado: valor de la oportunidad × probabilidad de etapa.</p>
+        <div className="v2-deal-list">{topCloseRowsV2.map((o, index) => <a className="v2-deal-row" key={o.id} href={`#/detail/${o.id}`}>
+          <span className="owner-rank">#{index + 1}</span>
+          <div><strong>{formatDisplayName(o.company_name)}</strong><small>{formatDisplayName(o.owner_name || 'Sin comercial')} · {o.stage_name}</small></div>
+          <div className="v2-deal-value"><strong>{fmtMoneyCompact(o.offer_value)}</strong><small>{o.share}% del pipeline</small><div className="v2-weight-bar"><span style={{ width: `${Math.max(4, o.share)}%` }} /></div></div>
+          <div className="v2-expected-value"><small>Valor esperado</small><strong>{fmtMoneyCompact(o.expected)}</strong></div>
+          <Badge tone={stageTone(o.stage_code)}>{Math.round(o.probability * 100)}%</Badge>
+        </a>)}</div>
+        {!topCloseRowsV2.length ? <EmptyState title="Sin oportunidades priorizadas" text="No hay ofertas activas para priorizar con los filtros de Seguridad Física." /> : null}
+      </Panel>
+      <Panel title="Concentración y avance del pipeline">
+        <div className="stage-action-summary"><div><small>Lectura ejecutiva</small><strong>{v2StageLeader ? `${v2Concentration}% del pipeline está en ${v2StageLeader.stageName}` : 'Sin etapa dominante'}</strong><span>{v2StageLeader && v2Concentration >= 55 ? 'Prioridad: destrabar esa etapa y revisar siguientes acciones.' : 'Distribución sin concentración crítica con los filtros actuales.'}</span></div><a className="button secondary" href={`#/opportunities?stage=${encodeURIComponent(v2StageLeader?.stageCode || '')}`}>Ver etapa dominante</a></div>
+        <div className="tablewrap stage-action-table"><table><thead><tr><th>Etapa</th><th>Valor total</th><th>Ops</th><th>% pipeline</th><th>Valor ponderado</th></tr></thead><tbody>{stageRowsV2.map(s => {
+          const pct = totalPipeline ? Math.round((s.value / totalPipeline) * 100) : 0;
+          return <tr key={s.stageCode}><td><strong>{s.stageName}</strong><br/><small>Pipeline activo</small></td><td><strong className="numeric-value">{fmtMoneyCompact(s.value)}</strong></td><td>{s.count}</td><td><strong>{pct}%</strong><div className="mini-progress stage-share-meter"><span style={{ width: `${Math.max(3, pct)}%` }} /></div></td><td><strong className="numeric-value">{fmtMoneyCompact(s.weighted)}</strong></td></tr>;
+        })}</tbody></table></div>
+      </Panel>
+    </section>
+
+    <section className="v2-component-block diagnostico-alertas" aria-label="5. Diagnóstico operativo / alertas">
+      <div className="v2-section-heading"><span>5. Diagnóstico operativo / alertas</span><h2>Riesgos de gestión que requieren acción</h2><p>Agenda vencida, oportunidades sin próxima acción, concentración y señales de control.</p></div>
+      <Panel title="Semáforos ejecutivos">
+        <div className="executive-signals">
+          <a className={v2Concentration >= 55 ? 'signal-card warn clickable-card' : 'signal-card ok clickable-card'} href={`#/opportunities?stage=${encodeURIComponent(v2StageLeader?.stageCode || '')}`}><small>Riesgo de concentración del pipeline</small><strong className="numeric-value">{v2Concentration}%</strong><span>{v2StageLeader?.stageName || 'Sin etapa dominante'}</span><em>{v2Concentration >= 55 ? 'Ver etapa dominante →' : 'Distribución saludable'}</em></a>
+          <a className={compliancePct === null ? 'signal-card warn clickable-card' : compliancePct >= 80 ? 'signal-card ok clickable-card' : 'signal-card danger clickable-card'} href="#/goals"><small>Cumplimiento vs presupuesto</small><strong className="numeric-value">{compliancePct === null ? '—' : `${compliancePct}%`}</strong><span>{fmtMoneyCompact(totalApproved)} aprobado</span><em>Ver metas →</em></a>
+          <a className={v2ManagedRatio >= 70 ? 'signal-card ok clickable-card' : v2ManagedRatio >= 45 ? 'signal-card warn clickable-card' : 'signal-card danger clickable-card'} href="#/alerts"><small>Disciplina de agenda</small><strong className="numeric-value">{v2ManagedRatio}%</strong><span>{v2MissingAgendaRows.length + v2OverdueRows.length} sin control</span><em>Ver alertas →</em></a>
+          <a className={v2GoalAveragePct === null ? 'signal-card warn clickable-card' : v2GoalAveragePct >= 100 ? 'signal-card ok clickable-card' : v2GoalAveragePct >= 80 ? 'signal-card warn clickable-card' : 'signal-card danger clickable-card'} href="#/goals"><small>Cumplimiento meta mes</small><strong className="numeric-value">{v2GoalAveragePct === null ? '—' : `${v2GoalAveragePct}%`}</strong><span>Ventas, prospectos y cotizaciones</span><em>{v2GoalAveragePct === null ? 'Cargar metas reales →' : 'Ver cumplimiento →'}</em></a>
         </div>
       </Panel>
-    </div>
+      <Panel title="Top oportunidades que requieren decisión">
+        <div className="tablewrap critical-opportunities-table crm-readable-table decision-readable-table"><table><thead><tr><th>Cliente</th><th>Comercial</th><th>Valor</th><th>Etapa</th><th>Próxima acción</th><th>Riesgo</th><th>Acción</th></tr></thead><tbody>{v2CriticalOpportunityRows.map(row => {
+          const o = row.opportunity;
+          return <tr key={o.id}><td className="client-cell"><strong>{o.company_name}</strong><br/><small>{o.sede || o.regional_nombre || '—'}</small></td><td className="owner-cell">{o.owner_name || 'Sin comercial'}</td><td className="money-cell numeric-value"><strong>{fmtMoneyCompact(o.offer_value)}</strong></td><td className="stage-cell"><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td className="next-action-cell">{o.next_action_at ? fmtDate(o.next_action_at) : 'Sin agenda'}<br/><small>{row.action.detail}</small></td><td className="risk-cell"><Badge tone={row.action.tone}>{row.risk}</Badge></td><td className="table-actions-cell"><a className="button" href={`#/detail/${o.id}`}>Ver detalle</a></td></tr>;
+        })}</tbody></table></div>
+        {!v2CriticalOpportunityRows.length ? <EmptyState title="Sin oportunidades críticas" text="No hay vencidas, sin agenda o estancadas con los filtros actuales." /> : null}
+      </Panel>
+    </section>
 
-    <Panel title="Pipeline / prospección activa">
-      <div className="v2-pipeline-summary"><strong>{fmtMoneyCompact(totalPipeline)}</strong><span>{activeRows.length} ofertas activas · Valor promedio por oferta: {fmtMoneyCompact(activeRows.length ? totalPipeline / activeRows.length : 0)} · barras = participación real sobre el pipeline</span></div>
-      <div className="tablewrap v2-pipeline-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Ofertas</th><th>Valor</th><th>Promedio por oferta</th><th>Participación del pipeline</th></tr></thead><tbody>{pipelineRowsV2.map(row => {
-        const share = Math.round((row.value / Math.max(totalPipeline, 1)) * 100);
-        return <tr key={row.ownerId}><td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td>{row.offers}</td><td><strong className="numeric-value">{fmtMoneyCompact(row.value)}</strong></td><td>{fmtMoneyCompact(row.avgOffer)}</td><td><div className="v2-weight-bar"><span style={{ width: `${Math.max(4, share)}%` }} /></div><small>{share}% del pipeline</small></td></tr>;
-      })}</tbody></table></div>
-    </Panel>
-
-    <Panel title="Top oportunidades de cierre">
-      <p className="v2-panel-note">Ordenado por valor esperado: valor de la oportunidad × probabilidad de etapa.</p>
-      <div className="v2-deal-list">{topCloseRowsV2.map((o, index) => <a className="v2-deal-row" key={o.id} href={`#/detail/${o.id}`}>
-        <span className="owner-rank">#{index + 1}</span>
-        <div><strong>{formatDisplayName(o.company_name)}</strong><small>{formatDisplayName(o.owner_name || 'Sin comercial')} · {o.stage_name}</small></div>
-        <div className="v2-deal-value"><strong>{fmtMoneyCompact(o.offer_value)}</strong><small>{o.share}% del pipeline</small><div className="v2-weight-bar"><span style={{ width: `${Math.max(4, o.share)}%` }} /></div></div>
-        <div className="v2-expected-value"><small>Valor esperado</small><strong>{fmtMoneyCompact(o.expected)}</strong></div>
-        <Badge tone={stageTone(o.stage_code)}>{Math.round(o.probability * 100)}%</Badge>
-      </a>)}</div>
-      {!topCloseRowsV2.length ? <EmptyState title="Sin oportunidades priorizadas" text="No hay ofertas activas para priorizar con los filtros de Seguridad Física." /> : null}
-    </Panel>
+    <section className="v2-component-block tendencia-salud" aria-label="6. Tendencia y salud comercial">
+      <div className="v2-section-heading"><span>6. Tendencia y salud comercial</span><h2>Cómo evoluciona el negocio</h2><p>Tendencia mensual, salud comercial y composición del pipeline por servicio.</p></div>
+      <Panel title="Avance contra meta comercial">
+        <GoalVsActualDashboard rows={v2GoalRowsFromV1} />
+      </Panel>
+      <Panel title="Ranking por salud comercial">
+        <div className="commercial-scorecards">{v2CommercialHealthCards.map((o, index) => <a className={`commercial-scorecard status-${o.tone}`} key={o.ownerId} href={ownerRoute(o.ownerId)}>
+          <div className="scorecard-top"><span className="owner-rank">#{index + 1}</span><span className={`status-pill ${o.tone}`}>Salud {o.score}/100</span></div>
+          <div className="scorecard-name"><strong>{formatDisplayName(o.owner)}</strong><small>{o.active} activas · {o.missing} sin agenda · {o.overdue} vencidas</small></div>
+          <div className="health-score"><strong className="numeric-value">{o.score}</strong><span>score gestión + cierre</span></div>
+          <div className="scorecard-metrics"><span><small>Forecast</small><b>{fmtMoneyCompact(o.weighted)}</b></span><span><small>Aprobado</small><b>{fmtMoneyCompact(o.approved)}</b></span><span><small>Cumplimiento</small><b>{o.pct}%</b></span></div>
+          <em>Ver detalle →</em>
+        </a>)}</div>
+      </Panel>
+      <Panel title={service ? "Pipeline por etapa / regional" : "Pipeline por tipo de servicio"}>
+        <ServicePipelineBreakdown rows={v2ServicePipelineRows} />
+        {!v2ServicePipelineRows.length ? <EmptyState title="Sin pipeline activo" text="No hay servicios activos con los filtros actuales." /> : <p className="muted">Servicio dominante: {v2ServiceLeader?.label || '—'} · {v2ServiceLeader?.share || 0}% del pipeline activo.</p>}
+      </Panel>
+      <Panel title="Tendencia comercial disponible">
+        <p className="trend-availability-note">{trendAvailabilityNote(v2TrendRowsFromV1)}</p>
+        <div className="pulse-header"><span>Mes</span><span>Ventas aprobadas</span><span>Prospectos</span><span>Cotizaciones</span></div>
+        <div className="monthly-bars">{v2TrendRowsFromV1.map(row => <div className="monthly-row" key={row.period}>
+          <div className="monthly-name"><strong>{row.period}</strong><span>{fmtMoneyCompact(row.comision)} comisión proyectada</span></div>
+          <div className="pulse-value"><strong className="numeric-value">{fmtMoneyCompact(row.ventas)}</strong><small>ventas aprobadas</small><div className="sales-meter"><span style={{ width: `${Math.max(3, row.ventas/v2MaxTrendSales*100)}%` }} /></div></div>
+          <div className="monthly-track"><small>Prospectos</small><div className="mini-progress"><span style={{ width: `${Math.max(3, row.prospectos/v2MaxTrendActivity*100)}%` }} /></div><b>{row.prospectos}</b></div>
+          <div className="monthly-track quote"><small>Cotizaciones</small><div className="mini-progress"><span style={{ width: `${Math.max(3, row.cotizaciones/v2MaxTrendActivity*100)}%` }} /></div><b>{row.cotizaciones}</b></div>
+        </div>)}</div>
+      </Panel>
+    </section>
   </section>;
 }
 
