@@ -1607,6 +1607,36 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     const risk = r.action.code === 'overdue' ? 'Gestión vencida' : r.action.code === 'missing' ? 'Sin próxima acción' : Number(r.inactiveDays || 0) >= 10 ? 'Sin seguimiento reciente' : 'Revisar avance';
     return { ...r, riskScore, risk };
   }).filter(r => ['overdue','missing'].includes(r.action.code) || Number(r.inactiveDays || 0) >= 10).sort((a,b)=>b.riskScore-a.riskScore).slice(0, 10);
+  const v2CommercialAlertRows = Array.from(v2ActionRows.reduce((map, row) => {
+    const key = ownerKey(row.opportunity);
+    const existing = map.get(key) || {
+      ownerId: key,
+      owner: row.opportunity.owner_name || 'Sin comercial',
+      regional: row.opportunity.regional_nombre || 'Regional pendiente',
+      active: 0,
+      overdue: 0,
+      missing: 0,
+      stale: 0,
+      overdueValue: 0,
+      missingValue: 0,
+      staleValue: 0,
+      riskValue: 0,
+    };
+    const value = Number(row.opportunity.offer_value || 0);
+    const isStale = Number(row.inactiveDays || 0) >= 10 && !['overdue','missing'].includes(row.action.code);
+    existing.active++;
+    if (row.action.code === 'overdue') { existing.overdue++; existing.overdueValue += value; existing.riskValue += value; }
+    if (row.action.code === 'missing') { existing.missing++; existing.missingValue += value; existing.riskValue += value; }
+    if (isStale) { existing.stale++; existing.staleValue += value; existing.riskValue += value; }
+    map.set(key, existing);
+    return map;
+  }, new Map<string, { ownerId: string; owner: string; regional: string; active: number; overdue: number; missing: number; stale: number; overdueValue: number; missingValue: number; staleValue: number; riskValue: number }>()).values()).filter(row => row.overdue || row.missing || row.stale).sort((a,b)=>b.riskValue-a.riskValue || (b.overdue+b.missing+b.stale)-(a.overdue+a.missing+a.stale)).slice(0, 8);
+  const v2RiskSummaryCards = [
+    { label: 'Valor en riesgo', value: v2CommercialAlertRows.reduce((sum,row)=>sum+row.riskValue,0), detail: `${v2CommercialAlertRows.length} comerciales con alertas`, tone: v2CommercialAlertRows.length ? 'red' : 'green' },
+    { label: 'Vencidas', value: v2CommercialAlertRows.reduce((sum,row)=>sum+row.overdueValue,0), detail: `${v2OverdueRows.length} oportunidades vencidas`, tone: v2OverdueRows.length ? 'red' : 'green' },
+    { label: 'Sin agenda', value: v2CommercialAlertRows.reduce((sum,row)=>sum+row.missingValue,0), detail: `${v2MissingAgendaRows.length} oportunidades sin próxima acción`, tone: v2MissingAgendaRows.length ? 'amber' : 'green' },
+    { label: 'Sin seguimiento', value: v2CommercialAlertRows.reduce((sum,row)=>sum+row.staleValue,0), detail: `${v2CriticalOpportunityRows.filter(row => Number(row.inactiveDays || 0) >= 10 && !['overdue','missing'].includes(row.action.code)).length} oportunidades estancadas`, tone: v2CommercialAlertRows.some(row => row.stale) ? 'amber' : 'green' },
+  ];
   const v2CommercialHealthCards = rankingRowsV2.map(row => {
     const ownerActiveRows = v2ActionRows.filter(r => ownerKey(r.opportunity) === row.ownerId);
     const missing = ownerActiveRows.filter(r => r.action.code === 'missing').length;
@@ -1744,8 +1774,19 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
       </Panel>
     </section>
 
-    <section className="v2-component-block diagnostico-alertas" aria-label="5. Diagnóstico operativo / alertas">
-      <div className="v2-section-heading"><span>5. Diagnóstico operativo / alertas</span><h2>Riesgos de gestión que requieren acción</h2><p>Agenda vencida, oportunidades sin próxima acción, concentración y señales de control.</p></div>
+    <section className="v2-component-block diagnostico-alertas" aria-label="5. Gestión comercial que requiere atención">
+      <div className="v2-section-heading"><span>5. Gestión comercial que requiere atención</span><h2>Quién necesita apoyo hoy</h2><p>Alertas agrupadas por comercial: vencidas, sin agenda, sin seguimiento reciente y valor en riesgo.</p></div>
+      <Panel title="Valor en riesgo por gestión comercial">
+        <div className="commercial-risk-summary">{v2RiskSummaryCards.map(card => <a className={`commercial-risk-card ${card.tone}`} key={card.label} href="#/alerts">
+          <small>{card.label}</small><strong className="numeric-value">{fmtMoneyCompact(card.value)}</strong><span>{card.detail}</span>
+        </a>)}</div>
+      </Panel>
+      <Panel title="Alertas por comercial">
+        <div className="tablewrap commercial-risk-table crm-readable-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Vencidas</th><th>Sin agenda</th><th>Sin seguimiento</th><th>Valor en riesgo</th><th>Acción</th></tr></thead><tbody>{v2CommercialAlertRows.map(row => <tr key={row.ownerId}>
+          <td><strong>{formatDisplayName(row.owner)}</strong><br/><small>{row.active} oportunidades activas</small></td><td>{formatRegionalLabel(row.regional)}</td><td><a href={ownerRoute(row.ownerId)}><strong>{row.overdue}</strong><small>{fmtMoneyCompact(row.overdueValue)}</small></a></td><td><a href={ownerRoute(row.ownerId)}><strong>{row.missing}</strong><small>{fmtMoneyCompact(row.missingValue)}</small></a></td><td><strong>{row.stale}</strong><small>{fmtMoneyCompact(row.staleValue)}</small></td><td className="money-cell"><strong>{fmtMoneyCompact(row.riskValue)}</strong></td><td><a className="button" href={ownerRoute(row.ownerId)}>Ver perfil</a></td>
+        </tr>)}</tbody></table></div>
+        {!v2CommercialAlertRows.length ? <EmptyState title="Sin alertas por comercial" text="No hay oportunidades vencidas, sin agenda o sin seguimiento reciente con los filtros actuales." /> : <p className="muted">Valor en riesgo suma oportunidades vencidas, sin próxima acción o con 10+ días sin seguimiento reciente. Use Ver perfil para entrar al tablero individual.</p>}
+      </Panel>
       <Panel title="Semáforos ejecutivos">
         <div className="executive-signals">
           <a className={v2Concentration >= 55 ? 'signal-card warn clickable-card' : 'signal-card ok clickable-card'} href={`#/opportunities?stage=${encodeURIComponent(v2StageLeader?.stageCode || '')}`}><small>Riesgo de concentración del pipeline</small><strong className="numeric-value">{v2Concentration}%</strong><span>{v2StageLeader?.stageName || 'Sin etapa dominante'}</span><em>{v2Concentration >= 55 ? 'Ver etapa dominante →' : 'Distribución saludable'}</em></a>

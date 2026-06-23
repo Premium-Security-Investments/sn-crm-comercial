@@ -78,6 +78,15 @@ const requiredMainMarkers = [
   'Presupuesto individual cargado en CRM',
   'setService(\'\')',
   'producto seleccionado',
+  'Gestión comercial que requiere atención',
+  'v2CommercialAlertRows',
+  'Valor en riesgo',
+  'Vencidas',
+  'Sin agenda',
+  'Sin seguimiento',
+  'Ver perfil',
+  'v2RiskSummaryCards',
+  'commercial-risk-table',
 ];
 
 const requiredCssMarkers = [
