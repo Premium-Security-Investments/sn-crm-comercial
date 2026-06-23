@@ -24,7 +24,8 @@ const requiredMainMarkers = [
   'v2MetricDetailRows',
   'v2-hero-metric-button',
   'v2-hero-detail-panel',
-  'Ver datos',
+  'Ver detalle',
+  'Detalle visible',
   'Datos de la métrica seleccionada',
   'Cumplimiento comercial',
   'Pipeline / prospección activa',
@@ -37,6 +38,15 @@ const requiredMainMarkers = [
   'v2-progress-track',
   'v2-weight-bar',
   'Seguridad Física',
+  'Área activa: Seguridad Física',
+  'Corte 2026',
+  'Prioridades gerenciales de hoy',
+  'Normalizar regional',
+  'Ordenado por valor esperado',
+  'Valor esperado',
+  'formatDisplayName',
+  'formatRegionalLabel',
+  'row.value / Math.max(totalPipeline, 1)',
 ];
 
 const requiredCssMarkers = [

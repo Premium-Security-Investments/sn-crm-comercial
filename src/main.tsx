@@ -102,6 +102,18 @@ function fmtMoneyCompact(n: number | null | undefined) {
   return '$ 0 M';
 }
 function fmtDate(value?: string | null) { return value ? dateFmt.format(new Date(value)) : '—'; }
+function formatDisplayName(value?: string | null) {
+  const cleaned = String(value || '').trim().replace(/\s+/g, ' ');
+  if (!cleaned) return '—';
+  const lower = cleaned.toLocaleLowerCase('es-CO');
+  const keepLower = new Set(['de', 'del', 'la', 'las', 'los', 'y', 'el']);
+  return lower.split(' ').map((part, index) => index > 0 && keepLower.has(part) ? part : part.charAt(0).toLocaleUpperCase('es-CO') + part.slice(1)).join(' ');
+}
+function formatRegionalLabel(value?: string | null) {
+  const cleaned = String(value || '').trim();
+  if (!cleaned || cleaned.toLocaleLowerCase('es-CO') === 'sin regional') return 'Regional pendiente';
+  return formatDisplayName(cleaned);
+}
 function fmtTenderDeadline(value?: string | null) {
   if (!value) return 'sin fecha';
   const target = new Date(value);
@@ -1418,7 +1430,6 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     map.set(key, row);
     return map;
   }, new Map<string, { ownerId: string; owner: string; regional: string; offers: number; value: number }>()).values()).map(row => ({ ...row, avgOffer: row.offers ? row.value / row.offers : 0 })).sort((a,b)=>b.value-a.value).slice(0, 6);
-  const maxPipelineValue = Math.max(...pipelineRowsV2.map(r => r.value), 1);
   const topCloseRowsV2 = [...activeRows].map(o => {
     const probability = stageProbability.get(o.stage_code) || 0;
     const expected = Number(o.weighted_pipeline_value || 0) || Number(o.offer_value || 0) * probability;
@@ -1453,17 +1464,17 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     cumplimiento: {
       title: 'Datos de cumplimiento vs meta',
       summary: totalBudget ? `Ventas aprobadas por ${fmtMoneyCompact(totalApproved)} contra meta cargada de ${fmtMoneyCompact(totalBudget)}.` : 'Todavía no hay meta cargada para leer cumplimiento completo.',
-      rows: rankingRowsV2.slice(0, 5).map(row => ({ label: row.owner, value: `${row.pct}%`, detail: `${fmtMoneyCompact(row.approved)} aprobado · ${row.count} oportunidades`, href: ownerRoute(row.ownerId) })),
+      rows: rankingRowsV2.slice(0, 5).map(row => ({ label: formatDisplayName(row.owner), value: `${row.pct}%`, detail: `${fmtMoneyCompact(row.approved)} aprobado · ${row.count} oportunidades · ${formatRegionalLabel(row.regional)}`, href: ownerRoute(row.ownerId) })),
     },
     pipeline: {
       title: 'Datos del pipeline activo',
       summary: `${activeRows.length} ofertas activas suman ${fmtMoneyCompact(totalPipeline)} en Seguridad Física.`,
-      rows: pipelineRowsV2.slice(0, 5).map(row => ({ label: row.owner, value: fmtMoneyCompact(row.value), detail: `${row.offers} ofertas · promedio ${fmtMoneyCompact(row.avgOffer)}`, href: ownerRoute(row.ownerId) })),
+      rows: pipelineRowsV2.slice(0, 5).map(row => ({ label: formatDisplayName(row.owner), value: fmtMoneyCompact(row.value), detail: `${row.offers} ofertas · promedio ${fmtMoneyCompact(row.avgOffer)} · ${formatRegionalLabel(row.regional)}`, href: ownerRoute(row.ownerId) })),
     },
     cierres: {
       title: 'Datos de cierres prioritarios',
       summary: `Top ${topCloseRowsV2.length} oportunidades concentran ${fmtMoneyCompact(topCloseTotal)} para revisión gerencial inmediata.`,
-      rows: topCloseRowsV2.map(o => ({ label: o.company_name, value: fmtMoneyCompact(o.offer_value), detail: `${o.owner_name || 'Sin comercial'} · ${o.stage_name} · ${Math.round(o.probability * 100)}%`, href: `#/detail/${o.id}` })),
+      rows: topCloseRowsV2.map(o => ({ label: formatDisplayName(o.company_name), value: fmtMoneyCompact(o.expected), detail: `${formatDisplayName(o.owner_name || 'Sin comercial')} · ${o.stage_name} · ${Math.round(o.probability * 100)}% prob.`, href: `#/detail/${o.id}` })),
     },
     forecast: {
       title: 'Datos del forecast ponderado',
@@ -1472,17 +1483,25 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     },
   };
   const v2MetricDetailRows = v2HeroMetricDetails[activeV2Metric];
+  const lowComplianceRows = rankingRowsV2.filter(row => row.pct < 8 && row.count >= 10);
+  const missingRegionalRows = rankingRowsV2.filter(row => formatRegionalLabel(row.regional) === 'Regional pendiente');
+  const v2ManagementPriorities = [
+    { label: 'Cerrar oportunidades top', value: fmtMoneyCompact(topCloseTotal), detail: `${topCloseRowsV2.length} negocios priorizados por valor esperado`, tone: 'green', href: '#/dashboard2' },
+    { label: 'Recuperar bajo cumplimiento', value: String(lowComplianceRows.length), detail: lowComplianceRows.length ? `${lowComplianceRows.map(row => formatDisplayName(row.owner)).slice(0, 2).join(', ')} requieren foco` : 'Sin alertas críticas bajo 8%', tone: lowComplianceRows.length ? 'red' : 'green', href: '#/dashboard2' },
+    { label: 'Normalizar regional', value: String(missingRegionalRows.length), detail: missingRegionalRows.length ? 'Datos incompletos reducen confianza gerencial' : 'Regional completa en ranking visible', tone: missingRegionalRows.length ? 'amber' : 'green', href: '#/dashboard2' },
+    { label: 'Proteger forecast', value: fmtMoneyCompact(weightedPipeline), detail: `${fmtMoneyCompact(totalPipeline)} activos ponderados por etapa`, tone: 'purple', href: '#/dashboard2' },
+  ];
 
   return <section className="stack manager-dashboard dashboard-v2">
     <section className="gerencial-v2-hero" aria-label="Resumen ejecutivo compacto de Dashboard Gerencial 2">
       <div className="gerencial-v2-hero-copy">
-        <div className="command-title-row"><span className="eyebrow">Resumen ejecutivo · Seguridad Física</span><span className="period-pill">Datos CRM en vivo</span></div>
+        <div className="command-title-row"><span className="eyebrow">Resumen ejecutivo · Seguridad Física</span><span className="period-pill">Área activa: Seguridad Física</span><span className="period-pill">Corte 2026</span><span className="period-pill">Datos CRM en vivo</span></div>
         <h2>{v2HeroTitle}</h2>
         <p>{v2HeroSubtitle}</p>
       </div>
       <div className="gerencial-v2-hero-facts" aria-label="Métricas ejecutivas principales">
         {v2HeroMetrics.map(metric => <button type="button" className={`v2-hero-metric v2-hero-metric-button ${metric.tone}${activeV2Metric === metric.key ? ' active' : ''}`} key={metric.key} aria-pressed={activeV2Metric === metric.key} onClick={() => setActiveV2Metric(metric.key)}>
-          <small>{metric.label}</small><strong className="numeric-value">{metric.value}</strong><span>{metric.detail}</span><em>{activeV2Metric === metric.key ? 'Mostrando datos' : 'Ver datos'}</em>
+          <small>{metric.label}</small><strong className="numeric-value">{metric.value}</strong><span>{metric.detail}</span><em>{activeV2Metric === metric.key ? 'Detalle visible' : 'Ver detalle'}</em>
         </button>)}
       </div>
     </section>
@@ -1501,35 +1520,45 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
       </div>
     </section>
 
-    <Panel title="Resumen Comercial 2026">
-      <div className="v2-kpi-grid">{projectionCardsV2.map(card => <div className={`v2-kpi-card ${card.tone}`} key={card.label}>
-        <small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>
-      </div>)}</div>
+    <Panel title="Prioridades gerenciales de hoy">
+      <div className="v2-priority-grid">{v2ManagementPriorities.map(priority => <a className={`v2-priority-card ${priority.tone}`} key={priority.label} href={priority.href}>
+        <small>{priority.label}</small><strong className="numeric-value">{priority.value}</strong><span>{priority.detail}</span>
+      </a>)}</div>
     </Panel>
 
     <div className="v2-executive-grid single-focus">
       <Panel title="Cumplimiento comercial">
         <div className="v2-ranking-list">{rankingRowsV2.map((row, index) => <a className={`v2-ranking-row ${row.tone}`} key={row.ownerId} href={ownerRoute(row.ownerId)}>
           <span className="owner-rank">#{index + 1}</span>
-          <div className="v2-ranking-main"><strong>{row.owner}</strong><small>{row.regional} · {row.count} oportunidades</small><div className="v2-progress-track"><span style={{ width: `${Math.max(3, row.pct)}%` }} /></div></div>
+          <div className="v2-ranking-main"><strong>{formatDisplayName(row.owner)}</strong><small>{formatRegionalLabel(row.regional)} · {row.count} oportunidades{formatRegionalLabel(row.regional) === 'Regional pendiente' ? ' · requiere normalizar regional' : ''}</small><div className="v2-progress-track"><span style={{ width: `${Math.max(3, row.pct)}%` }} /></div></div>
           <div className="v2-ranking-value"><strong>{row.pct}%</strong><small>{fmtMoneyCompact(row.approved || row.weighted || row.pipeline)}</small></div>
         </a>)}</div>
         {!rankingRowsV2.length ? <EmptyState title="Sin ranking disponible" text="Cuando existan oportunidades de Seguridad Física aparecerá el ranking ejecutivo." /> : null}
       </Panel>
+      <Panel title="Lectura gerencial">
+        <div className="v2-alert-list">
+          <div><small>Riesgo de conversión</small><strong>{lowComplianceRows.length ? `${lowComplianceRows.length} comerciales bajo 8%` : 'Sin alerta crítica'}</strong><span>{lowComplianceRows.length ? 'Priorizar revisión de calidad de pipeline y próximas acciones.' : 'El ranking visible no muestra brecha crítica bajo 8%.'}</span></div>
+          <div><small>Calidad de datos</small><strong>{missingRegionalRows.length ? `${missingRegionalRows.length} con regional pendiente` : 'Regional completa'}</strong><span>{missingRegionalRows.length ? 'Normalizar regional para lectura confiable por zona.' : 'Datos regionales listos para lectura ejecutiva.'}</span></div>
+          <div><small>Criterio de ranking</small><strong>Ordenado por aprobado</strong><span>Desempata por forecast y pipeline activo.</span></div>
+        </div>
+      </Panel>
     </div>
 
     <Panel title="Pipeline / prospección activa">
-      <div className="v2-pipeline-summary"><strong>{fmtMoneyCompact(totalPipeline)}</strong><span>{activeRows.length} ofertas activas · Valor promedio por oferta: {fmtMoneyCompact(activeRows.length ? totalPipeline / activeRows.length : 0)}</span></div>
-      <div className="tablewrap v2-pipeline-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Ofertas</th><th>Valor</th><th>Valor promedio por oferta</th><th>Peso</th></tr></thead><tbody>{pipelineRowsV2.map(row => {
-        const share = Math.round((row.value / maxPipelineValue) * 100);
-        return <tr key={row.ownerId}><td><strong>{row.owner}</strong></td><td>{row.regional}</td><td>{row.offers}</td><td><strong className="numeric-value">{fmtMoneyCompact(row.value)}</strong></td><td>{fmtMoneyCompact(row.avgOffer)}</td><td><div className="v2-weight-bar"><span style={{ width: `${Math.max(4, share)}%` }} /></div></td></tr>;
+      <div className="v2-pipeline-summary"><strong>{fmtMoneyCompact(totalPipeline)}</strong><span>{activeRows.length} ofertas activas · Valor promedio por oferta: {fmtMoneyCompact(activeRows.length ? totalPipeline / activeRows.length : 0)} · barras = participación real sobre el pipeline</span></div>
+      <div className="tablewrap v2-pipeline-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Ofertas</th><th>Valor</th><th>Promedio por oferta</th><th>Participación del pipeline</th></tr></thead><tbody>{pipelineRowsV2.map(row => {
+        const share = Math.round((row.value / Math.max(totalPipeline, 1)) * 100);
+        return <tr key={row.ownerId}><td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td>{row.offers}</td><td><strong className="numeric-value">{fmtMoneyCompact(row.value)}</strong></td><td>{fmtMoneyCompact(row.avgOffer)}</td><td><div className="v2-weight-bar"><span style={{ width: `${Math.max(4, share)}%` }} /></div><small>{share}% del pipeline</small></td></tr>;
       })}</tbody></table></div>
     </Panel>
 
     <Panel title="Top oportunidades de cierre">
-      <div className="v2-deal-list">{topCloseRowsV2.map(o => <a className="v2-deal-row" key={o.id} href={`#/detail/${o.id}`}>
-        <div><strong>{o.company_name}</strong><small>{o.owner_name || 'Sin comercial'} · {o.stage_name}</small></div>
+      <p className="v2-panel-note">Ordenado por valor esperado: valor de la oportunidad × probabilidad de etapa.</p>
+      <div className="v2-deal-list">{topCloseRowsV2.map((o, index) => <a className="v2-deal-row" key={o.id} href={`#/detail/${o.id}`}>
+        <span className="owner-rank">#{index + 1}</span>
+        <div><strong>{formatDisplayName(o.company_name)}</strong><small>{formatDisplayName(o.owner_name || 'Sin comercial')} · {o.stage_name}</small></div>
         <div className="v2-deal-value"><strong>{fmtMoneyCompact(o.offer_value)}</strong><small>{o.share}% del pipeline</small><div className="v2-weight-bar"><span style={{ width: `${Math.max(4, o.share)}%` }} /></div></div>
+        <div className="v2-expected-value"><small>Valor esperado</small><strong>{fmtMoneyCompact(o.expected)}</strong></div>
         <Badge tone={stageTone(o.stage_code)}>{Math.round(o.probability * 100)}%</Badge>
       </a>)}</div>
       {!topCloseRowsV2.length ? <EmptyState title="Sin oportunidades priorizadas" text="No hay ofertas activas para priorizar con los filtros de Seguridad Física." /> : null}
