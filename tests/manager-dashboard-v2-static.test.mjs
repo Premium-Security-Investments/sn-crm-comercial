@@ -14,7 +14,8 @@ const requiredMainMarkers = [
   'dashboard-v2',
   'gerencial-v2-hero',
   'Dashboard Gerencial 2',
-  'Resumen ejecutivo · Seguridad Física',
+  'v2ServiceName',
+  'Resumen ejecutivo · ',
   'Datos CRM en vivo',
   'v2HeroTitle',
   'v2HeroSubtitle',
@@ -47,6 +48,15 @@ const requiredMainMarkers = [
   'formatDisplayName',
   'formatRegionalLabel',
   'row.value / Math.max(totalPipeline, 1)',
+  'Panel title="Filtros gerenciales"',
+  'manager-dashboard-filters v2-dashboard-filters',
+  'setService(\'seguridad_fisica\')',
+  'matchesDashboardPeriod(o, period)',
+  'Todos los servicios',
+  'Pipeline activo',
+  'Limpiar filtros',
+  'Última actualización',
+  'sourceRows = scopedOpportunities',
 ];
 
 const requiredCssMarkers = [

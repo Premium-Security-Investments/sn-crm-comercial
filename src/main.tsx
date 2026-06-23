@@ -1393,8 +1393,24 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
 function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   type V2HeroMetricKey = 'cumplimiento' | 'pipeline' | 'cierres' | 'forecast';
   const [activeV2Metric, setActiveV2Metric] = useState<V2HeroMetricKey>('cumplimiento');
-  const seguridadFisica = data.opportunities.filter(o => o.service_type_code === 'seguridad_fisica' || o.service_type_name === 'Seguridad Física' || o.owner_commercial_area === 'seguridad_fisica');
-  const sourceRows = seguridadFisica.length ? seguridadFisica : data.opportunities;
+  const [period, setPeriod] = useState<DashboardPeriodFilter>('');
+  const [q, setQ] = useState('');
+  const [owner, setOwner] = useState('');
+  const [regional, setRegional] = useState('');
+  const [stage, setStage] = useState('');
+  const [service, setService] = useState('seguridad_fisica');
+  const [onlyActive, setOnlyActive] = useState(false);
+  const managerRegionalOptions = useMemo(() => uniq(data.opportunities.map(o => o.regional_nombre)), [data.opportunities]);
+  const scopedOpportunities = useMemo(() => data.opportunities.filter(o =>
+    matchesDashboardPeriod(o, period) &&
+    (!q || `${o.company_name} ${o.owner_name||''} ${o.sede||''} ${o.quote_city||''} ${o.regional_nombre||''} ${o.tipo_producto_original||''} ${o.service_type_name||''} ${o.legacy_excel_id||''}`.toLowerCase().includes(q.toLowerCase())) &&
+    (!owner || ownerKey(o) === owner) &&
+    (!regional || o.regional_nombre === regional) &&
+    (!stage || o.stage_code === stage) &&
+    (!service || o.service_type_code === service) &&
+    (!onlyActive || !isTerminalStage(o.stage_code))
+  ), [data.opportunities, period, q, owner, regional, stage, service, onlyActive]);
+  const sourceRows = scopedOpportunities;
   const activeRows = sourceRows.filter(o => !isTerminalStage(o.stage_code));
   const approvedRows = sourceRows.filter(isApprovedSale);
   const stageProbability = new Map(data.stages.map(s => [s.code, Number(s.close_probability || 0)]));
@@ -1483,6 +1499,8 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     },
   };
   const v2MetricDetailRows = v2HeroMetricDetails[activeV2Metric];
+  const v2ServiceName = service ? data.services.find(s => s.code === service)?.name || 'Seguridad Física' : 'Todos los servicios';
+  const v2ScopeLabel = service === 'seguridad_fisica' && !owner && !regional && !stage && !q && !onlyActive ? 'Área activa: Seguridad Física' : 'Vista filtrada';
   const lowComplianceRows = rankingRowsV2.filter(row => row.pct < 8 && row.count >= 10);
   const missingRegionalRows = rankingRowsV2.filter(row => formatRegionalLabel(row.regional) === 'Regional pendiente');
   const v2ManagementPriorities = [
@@ -1495,7 +1513,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   return <section className="stack manager-dashboard dashboard-v2">
     <section className="gerencial-v2-hero" aria-label="Resumen ejecutivo compacto de Dashboard Gerencial 2">
       <div className="gerencial-v2-hero-copy">
-        <div className="command-title-row"><span className="eyebrow">Resumen ejecutivo · Seguridad Física</span><span className="period-pill">Área activa: Seguridad Física</span><span className="period-pill">Corte 2026</span><span className="period-pill">Datos CRM en vivo</span></div>
+        <div className="command-title-row"><span className="eyebrow">Resumen ejecutivo · {v2ServiceName}</span><span className="period-pill">{v2ScopeLabel}</span><span className="period-pill">Corte 2026</span><span className="period-pill">Datos CRM en vivo</span></div>
         <h2>{v2HeroTitle}</h2>
         <p>{v2HeroSubtitle}</p>
       </div>
@@ -1505,6 +1523,20 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
         </button>)}
       </div>
     </section>
+
+    <Panel title="Filtros gerenciales">
+      <div className="filters manager-dashboard-filters v2-dashboard-filters">
+        <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Período"/>
+        <input placeholder="Buscar cliente, comercial, sede, ciudad, servicio o ID…" value={q} onChange={e=>setQ(e.target.value)} />
+        <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Todos los comerciales"/>
+        <Select value={regional} onChange={setRegional} options={managerRegionalOptions.map(r=>[r,r])} empty="Todas las regionales"/>
+        <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Todas las etapas"/>
+        <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Todos los servicios"/>
+        <label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label>
+        <button className="secondary" onClick={()=>{ setPeriod(''); setQ(''); setOwner(''); setRegional(''); setStage(''); setService('seguridad_fisica'); setOnlyActive(false); }}>Limpiar filtros</button>
+      </div>
+      <div className="filter-summary"><strong>{sourceRows.length}</strong> de {data.opportunities.length} oportunidades visibles · Última actualización: {lastUpdatedLabel(sourceRows)}</div>
+    </Panel>
 
     <section className="v2-hero-detail-panel" aria-label="Datos de la métrica seleccionada">
       <div className="v2-hero-detail-copy">
