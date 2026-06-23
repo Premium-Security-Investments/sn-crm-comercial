@@ -1658,14 +1658,14 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     <section className="v2-filter-strip panel" aria-label="Filtros gerenciales">
       <div className="v2-filter-strip-title">Filtros gerenciales</div>
       <div className="filters manager-dashboard-filters v2-dashboard-filters">
-        <input placeholder="Buscar cliente, comercial, sede, ciudad, servicio o ID…" value={q} onChange={e=>setQ(e.target.value)} />
+        <input placeholder="Buscar cliente, sede, ciudad o ID…" value={q} onChange={e=>setQ(e.target.value)} />
         <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Período"/>
-        <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Todos los productos"/>
-        <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Todos los comerciales"/>
-        <Select value={regional} onChange={setRegional} options={managerRegionalOptions.map(r=>[r,r])} empty="Todas las regionales"/>
-        <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Todas las etapas"/>
+        <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Productos"/>
+        <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Comerciales"/>
+        <Select value={regional} onChange={setRegional} options={managerRegionalOptions.map(r=>[r,r])} empty="Regiones"/>
+        <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Etapas"/>
         <label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label>
-        <button className="secondary" onClick={()=>{ setPeriod(''); setQ(''); setOwner(''); setRegional(''); setStage(''); setService('seguridad_fisica'); setOnlyActive(false); }}>Limpiar filtros</button>
+        <button className="secondary" onClick={()=>{ setPeriod(''); setQ(''); setOwner(''); setRegional(''); setStage(''); setService('seguridad_fisica'); setOnlyActive(false); }}>Limpiar</button>
       </div>
     </section>
 

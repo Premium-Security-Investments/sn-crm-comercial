@@ -56,9 +56,12 @@ const requiredMainMarkers = [
   'manager-dashboard-filters v2-dashboard-filters',
   'setService(\'seguridad_fisica\')',
   'matchesDashboardPeriod(o, period)',
-  'Todos los productos',
+  'Productos',
+  'Comerciales',
+  'Regiones',
+  'Etapas',
   'Pipeline activo',
-  'Limpiar filtros',
+  'Limpiar',
   'v2ScopeSummary',
   'sourceRows = scopedOpportunities',
   'PRODUCT_OPERATIONAL_UNITS',
@@ -129,13 +132,14 @@ assert.ok(!main.includes('Corte 2026'), 'Dashboard v2 hero should not include re
 assert.ok(!main.includes('Área activa: Seguridad Física'), 'Dashboard v2 hero should use concise Servicio label instead of area wording');
 assert.ok(!main.includes("onClick={()=>setService('')}>Ver todos los productos"), 'Dashboard v2 should not keep a separate Ver todos los productos button; all products should be an option in the product dropdown');
 assert.ok(main.indexOf('v2-filter-strip') < main.indexOf('gerencial-v2-hero'), 'Dashboard v2 filters should appear above the main executive banner');
-assert.ok(main.includes("empty=\"Todos los productos\""), 'Product selector should expose Todos los productos as the empty/all option');
+assert.ok(main.includes("empty=\"Productos\""), 'Product selector should expose Productos as the compact empty/all option');
 const v2FilterStart = main.indexOf('<section className="v2-filter-strip panel"');
 const v2FilterEnd = main.indexOf('</section>', v2FilterStart);
 const v2FilterMarkup = main.slice(v2FilterStart, v2FilterEnd);
-assert.ok(v2FilterMarkup.includes('<input placeholder="Buscar cliente, comercial, sede, ciudad, servicio o ID…"') && v2FilterMarkup.indexOf('<input placeholder="Buscar cliente, comercial, sede, ciudad, servicio o ID…"') < v2FilterMarkup.indexOf('empty="Período"') && v2FilterMarkup.indexOf('empty="Período"') < v2FilterMarkup.indexOf('empty="Todos los productos"') && v2FilterMarkup.indexOf('empty="Todos los productos"') < v2FilterMarkup.indexOf('empty="Todos los comerciales"') && v2FilterMarkup.indexOf('empty="Todos los comerciales"') < v2FilterMarkup.indexOf('empty="Todas las regionales"') && v2FilterMarkup.indexOf('empty="Todas las regionales"') < v2FilterMarkup.indexOf('empty="Todas las etapas"'), 'Dashboard v2 filter order should be Buscar, Período, Producto/servicio, Comercial, Regional, Etapa');
-assert.ok(v2FilterMarkup.indexOf('Pipeline activo') > v2FilterMarkup.indexOf('empty="Todas las etapas"') && v2FilterMarkup.indexOf('Limpiar filtros') > v2FilterMarkup.indexOf('Pipeline activo'), 'Pipeline activo and Limpiar filtros should remain visible after the primary filters');
-assert.ok(css.includes('.v2-dashboard-filters{grid-template-columns:minmax(240px,1.5fr) minmax(135px,.75fr) minmax(190px,1fr) minmax(180px,1fr) minmax(170px,.95fr) minmax(160px,.85fr) minmax(145px,auto) minmax(120px,auto);'), 'Dashboard v2 filters need professional column widths so controls do not look cut off');
+assert.ok(v2FilterMarkup.includes('<input placeholder="Buscar cliente, sede, ciudad o ID…"') && v2FilterMarkup.indexOf('<input placeholder="Buscar cliente, sede, ciudad o ID…"') < v2FilterMarkup.indexOf('empty="Período"') && v2FilterMarkup.indexOf('empty="Período"') < v2FilterMarkup.indexOf('empty="Productos"') && v2FilterMarkup.indexOf('empty="Productos"') < v2FilterMarkup.indexOf('empty="Comerciales"') && v2FilterMarkup.indexOf('empty="Comerciales"') < v2FilterMarkup.indexOf('empty="Regiones"') && v2FilterMarkup.indexOf('empty="Regiones"') < v2FilterMarkup.indexOf('empty="Etapas"'), 'Dashboard v2 filter order should be Buscar, Período, Producto/servicio, Comercial, Regional, Etapa with compact labels');
+assert.ok(v2FilterMarkup.indexOf('Pipeline activo') > v2FilterMarkup.indexOf('empty="Etapas"') && v2FilterMarkup.indexOf('>Limpiar<') > v2FilterMarkup.indexOf('Pipeline activo'), 'Pipeline activo and Limpiar should remain visible after the primary filters');
+assert.ok(css.includes('.v2-dashboard-filters{grid-template-columns:minmax(220px,1.35fr) minmax(116px,.7fr) minmax(145px,.9fr) minmax(145px,.9fr) minmax(125px,.75fr) minmax(120px,.7fr) minmax(132px,auto) minmax(84px,auto);'), 'Dashboard v2 filters need compact column widths so controls can fit on one row when there is room');
+assert.ok(css.includes('@media(max-width:1320px){.v2-filter-strip{grid-template-columns:1fr}.v2-dashboard-filters{grid-template-columns:minmax(220px,1.25fr) repeat(3,minmax(130px,1fr));}'), 'Dashboard v2 filters should gracefully wrap to two rows when the viewport is too narrow for one line');
 assert.ok(css.includes('overflow:visible'), 'Dashboard v2 filter strip should not clip the right-side controls');
 assert.ok(main.includes('v2ScopeSummary') && main.includes('${sourceRows.length}/${data.opportunities.length} oportunidades visibles'), 'Visible opportunity counter should move into the hero scope summary');
 assert.ok(!main.includes('<div className="filter-summary"><strong>{sourceRows.length}</strong> de {data.opportunities.length} oportunidades visibles'), 'Dashboard v2 filter bar should not carry the thick visible-opportunity footer');
