@@ -1516,14 +1516,6 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     map.set(key, row);
     return map;
   }, new Map<string, { stageCode: string; stageName: string; count: number; value: number; weighted: number }>()).values()).sort((a,b)=>b.weighted-a.weighted || b.value-a.value);
-  const v2HeroTitle = compliancePct === null
-    ? 'Meta comercial pendiente de cargar para leer cumplimiento'
-    : compliancePct < 50
-      ? 'Cumplimiento bajo meta, con pipeline activo para recuperar'
-      : compliancePct < 80
-        ? 'Cumplimiento en recuperación, foco en cierres prioritarios'
-        : 'Cumplimiento saludable con foco en sostener cierres';
-  const v2HeroSubtitle = 'Prioridad gerencial: convertir cierres top, proteger forecast y recuperar cumplimiento sin abrir tablas completas.';
   const v2HeroMetrics: Array<{ key: V2HeroMetricKey; label: string; value: string; detail: string; tone: string }> = [
     { key: 'cumplimiento', label: 'Cumplimiento', value: compliancePct === null ? '—' : `${compliancePct}%`, detail: totalBudget ? `${fmtMoneyCompact(totalApproved)} / ${fmtMoneyCompact(totalBudget)}` : 'Meta pendiente', tone: compliancePct === null ? 'amber' : compliancePct >= 80 ? 'green' : compliancePct >= 40 ? 'amber' : 'red' },
     { key: 'pipeline', label: 'Pipeline activo', value: fmtMoneyCompact(totalPipeline), detail: `${activeRows.length} ofertas activas`, tone: 'blue' },
@@ -1554,7 +1546,8 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   };
   const v2MetricDetailRows = v2HeroMetricDetails[activeV2Metric];
   const v2ServiceName = service ? data.services.find(s => s.code === service)?.name || 'Seguridad Física' : 'Todos los servicios';
-  const v2ScopeLabel = service === 'seguridad_fisica' && !owner && !regional && !stage && !q && !onlyActive ? 'Área activa: Seguridad Física' : 'Vista filtrada';
+  const hasNonServiceFilters = Boolean(period || q || owner || regional || stage || onlyActive);
+  const v2HeroLabel = service && !hasNonServiceFilters ? `Servicio: ${v2ServiceName}` : 'Vista filtrada';
   const lowComplianceRows = rankingRowsV2.filter(row => row.pct < 8 && row.count >= 10);
   const missingRegionalRows = rankingRowsV2.filter(row => formatRegionalLabel(row.regional) === 'Regional pendiente');
   const v2ManagementPriorities = [
@@ -1566,10 +1559,8 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
 
   return <section className="stack manager-dashboard dashboard-v2">
     <section className="gerencial-v2-hero" aria-label="Resumen ejecutivo compacto de Dashboard Gerencial 2">
-      <div className="gerencial-v2-hero-copy">
-        <div className="command-title-row"><span className="eyebrow">Resumen ejecutivo · {v2ServiceName}</span><span className="period-pill">{v2ScopeLabel}</span><span className="period-pill">Corte 2026</span><span className="period-pill">Datos CRM en vivo</span></div>
-        <h2>{v2HeroTitle}</h2>
-        <p>{v2HeroSubtitle}</p>
+      <div className="gerencial-v2-hero-copy compact-service-context">
+        <div className="command-title-row"><span className="service-context-pill">{v2HeroLabel}</span></div>
       </div>
       <div className="gerencial-v2-hero-facts" aria-label="Métricas ejecutivas principales">
         {v2HeroMetrics.map(metric => <button type="button" className={`v2-hero-metric v2-hero-metric-button ${metric.tone}${activeV2Metric === metric.key ? ' active' : ''}`} key={metric.key} aria-pressed={activeV2Metric === metric.key} onClick={() => setActiveV2Metric(metric.key)}>

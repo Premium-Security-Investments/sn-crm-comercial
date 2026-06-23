@@ -15,10 +15,10 @@ const requiredMainMarkers = [
   'gerencial-v2-hero',
   'Dashboard Gerencial 2',
   'v2ServiceName',
-  'Resumen ejecutivo · ',
-  'Datos CRM en vivo',
-  'v2HeroTitle',
-  'v2HeroSubtitle',
+  'v2HeroLabel',
+  'Servicio: ${v2ServiceName}',
+  'Vista filtrada',
+  'hasNonServiceFilters',
   'v2HeroMetrics',
   'activeV2Metric',
   'v2HeroMetricDetails',
@@ -39,8 +39,7 @@ const requiredMainMarkers = [
   'v2-progress-track',
   'v2-weight-bar',
   'Seguridad Física',
-  'Área activa: Seguridad Física',
-  'Corte 2026',
+  'service-context-pill',
   'Prioridades gerenciales de hoy',
   'Normalizar regional',
   'Ordenado por valor esperado',
@@ -79,6 +78,7 @@ const requiredMainMarkers = [
 const requiredCssMarkers = [
   '.dashboard-v2',
   '.gerencial-v2-hero',
+  '.service-context-pill',
   '.v2-kpi-grid',
   '.v2-kpi-card',
   '.v2-executive-grid',
@@ -103,5 +103,9 @@ assert.ok(main.indexOf("['#/dashboard','Dashboard gerencial']") < main.indexOf("
 assert.ok(main.indexOf('Panel title="Cumplimiento comercial"') < main.indexOf('Panel title="Pipeline / prospección activa"'), 'Dashboard v2 should prioritize compliance before prospecting detail');
 assert.ok(main.indexOf('Panel title="Pipeline / prospección activa"') < main.indexOf('Panel title="Top oportunidades de cierre"'), 'Dashboard v2 should end with prioritized close opportunities');
 assert.ok(!main.includes('Proyección 2026 — tabla completa'), 'Dashboard v2 should not copy the full PowerPoint tables into the first level');
+assert.ok(!main.includes('Resumen ejecutivo · {v2ServiceName}'), 'Dashboard v2 hero should not repeat the long resumen ejecutivo label');
+assert.ok(!main.includes('Datos CRM en vivo'), 'Dashboard v2 hero should not include redundant CRM-live pill');
+assert.ok(!main.includes('Corte 2026'), 'Dashboard v2 hero should not include redundant 2026 pill');
+assert.ok(!main.includes('Área activa: Seguridad Física'), 'Dashboard v2 hero should use concise Servicio label instead of area wording');
 
 console.log('manager-dashboard-v2 static checks passed');
