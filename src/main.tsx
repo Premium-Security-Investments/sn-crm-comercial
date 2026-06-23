@@ -401,7 +401,7 @@ function Kpi({ label, value, hint, tone, icon, meta }: { label: string; value: s
     {meta && <em>{meta}</em>}
   </div>;
 }
-function Panel({ title, children }: { title: string; children: React.ReactNode }) { return <section className="panel"><h2>{title}</h2>{children}</section>; }
+function Panel({ title, children, id }: { title: string; children: React.ReactNode; id?: string }) { return <section id={id} className="panel"><h2>{title}</h2>{children}</section>; }
 function StageBars({ summary }: { summary: SummaryRow[] }) {
   const max = Math.max(...summary.map(s => Number(s.total_offer_value)), 1);
   const total = summary.reduce((acc, s) => acc + Number(s.total_offer_value || 0), 0) || 1;
@@ -1574,10 +1574,10 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   const lowComplianceRows = rankingRowsV2.filter(row => row.pct < 8 && row.count >= 10);
   const missingRegionalRows = rankingRowsV2.filter(row => formatRegionalLabel(row.regional) === 'Regional pendiente');
   const v2ManagementPriorities = [
-    { label: 'Cerrar oportunidades top', value: fmtMoneyCompact(topCloseTotal), detail: `${topCloseRowsV2.length} negocios priorizados por valor esperado`, tone: 'green', href: '#/dashboard2' },
-    { label: 'Recuperar bajo cumplimiento', value: String(lowComplianceRows.length), detail: lowComplianceRows.length ? `${lowComplianceRows.map(row => formatDisplayName(row.owner)).slice(0, 2).join(', ')} requieren foco` : 'Sin alertas críticas bajo 8%', tone: lowComplianceRows.length ? 'red' : 'green', href: '#/dashboard2' },
-    { label: 'Normalizar regional', value: String(missingRegionalRows.length), detail: missingRegionalRows.length ? 'Datos incompletos reducen confianza gerencial' : 'Regional completa en ranking visible', tone: missingRegionalRows.length ? 'amber' : 'green', href: '#/dashboard2' },
-    { label: 'Proteger forecast', value: fmtMoneyCompact(weightedPipeline), detail: `${fmtMoneyCompact(totalPipeline)} activos ponderados por etapa`, tone: 'purple', href: '#/dashboard2' },
+    { label: 'Cerrar oportunidades top', value: fmtMoneyCompact(topCloseTotal), detail: `${topCloseRowsV2.length} negocios priorizados por valor esperado`, tone: 'green', targetId: 'v2-top-close-opportunities' },
+    { label: 'Recuperar bajo cumplimiento', value: String(lowComplianceRows.length), detail: lowComplianceRows.length ? `${lowComplianceRows.map(row => formatDisplayName(row.owner)).slice(0, 2).join(', ')} requieren foco` : 'Sin alertas críticas bajo 8%', tone: lowComplianceRows.length ? 'red' : 'green', targetId: 'v2-commercial-compliance' },
+    { label: 'Normalizar regional', value: String(missingRegionalRows.length), detail: missingRegionalRows.length ? 'Datos incompletos reducen confianza gerencial' : 'Regional completa en ranking visible', tone: missingRegionalRows.length ? 'amber' : 'green', targetId: 'v2-management-alerts' },
+    { label: 'Proteger forecast', value: fmtMoneyCompact(weightedPipeline), detail: `${fmtMoneyCompact(totalPipeline)} activos ponderados por etapa`, tone: 'purple', targetId: 'v2-pipeline-priorities' },
   ];
   const v2ActionRows = activeRows.map(o => ({ opportunity: o, action: nextActionStatus(o), inactiveDays: daysSince(o.last_interaction_at || o.updated_at || o.created_at) }));
   const v2MissingAgendaRows = v2ActionRows.filter(r => r.action.code === 'missing');
@@ -1649,6 +1649,9 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   const v2TrendRowsFromV1 = buildMonthlyTrendRows(data);
   const v2MaxTrendActivity = Math.max(...v2TrendRowsFromV1.map(o=>Math.max(o.prospectos, o.cotizaciones, o.ventas / 10_000_000)), 1);
   const v2MaxTrendSales = Math.max(...v2TrendRowsFromV1.map(o=>o.ventas), 1);
+  const focusDashboardSection = (targetId: string) => {
+    document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   return <section className="stack manager-dashboard dashboard-v2 dashboard-v2-six-components">
     <section className="v2-component-block resumen-ejecutivo" aria-label="1. Resumen ejecutivo">
@@ -1696,9 +1699,9 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
       </section>
 
       <Panel title="Prioridades gerenciales de hoy">
-        <div className="v2-priority-grid">{v2ManagementPriorities.map(priority => <a className={`v2-priority-card ${priority.tone}`} key={priority.label} href={priority.href}>
-          <small>{priority.label}</small><strong className="numeric-value">{priority.value}</strong><span>{priority.detail}</span>
-        </a>)}</div>
+        <div className="v2-priority-grid">{v2ManagementPriorities.map(priority => <button type="button" className={`v2-priority-card ${priority.tone}`} key={priority.label} onClick={() => focusDashboardSection(priority.targetId)}>
+          <small>{priority.label}</small><strong className="numeric-value">{priority.value}</strong><span>{priority.detail}</span><em>Ir al detalle →</em>
+        </button>)}</div>
       </Panel>
     </section>
 
@@ -1724,7 +1727,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
       </Panel>
     </section>
 
-    <section className="v2-component-block cumplimiento-comercial" aria-label="3. Cumplimiento por comercial">
+    <section id="v2-commercial-compliance" className="v2-component-block cumplimiento-comercial" aria-label="3. Cumplimiento por comercial">
       <div className="v2-section-heading"><span>3. Cumplimiento por comercial</span><h2>Quién cumple y quién requiere foco</h2><p>Ranking calculado contra presupuesto individual cuando está cargado.</p></div>
       <div className="v2-executive-grid single-focus">
         <Panel title="Cumplimiento comercial">
@@ -1745,7 +1748,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
       </div>
     </section>
 
-    <section className="v2-component-block pipeline-prioridades" aria-label="4. Pipeline y oportunidades prioritarias">
+    <section id="v2-pipeline-priorities" className="v2-component-block pipeline-prioridades" aria-label="4. Pipeline y oportunidades prioritarias">
       <div className="v2-section-heading"><span>4. Pipeline y oportunidades prioritarias</span><h2>Dónde está el dinero futuro</h2><p>Pipeline activo, concentración por etapa y oportunidades con mayor valor esperado.</p></div>
       <Panel title="Pipeline / prospección activa">
         <div className="v2-pipeline-summary"><strong>{fmtMoneyCompact(totalPipeline)}</strong><span>{activeRows.length} ofertas activas · Valor promedio por oferta: {fmtMoneyCompact(activeRows.length ? totalPipeline / activeRows.length : 0)} · barras = participación real sobre el pipeline</span></div>
@@ -1754,7 +1757,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
           return <tr key={row.ownerId}><td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td>{row.offers}</td><td><strong className="numeric-value">{fmtMoneyCompact(row.value)}</strong></td><td>{fmtMoneyCompact(row.avgOffer)}</td><td><div className="v2-weight-bar"><span style={{ width: `${Math.max(4, share)}%` }} /></div><small>{share}% del pipeline</small></td></tr>;
         })}</tbody></table></div>
       </Panel>
-      <Panel title="Top oportunidades de cierre">
+      <Panel title="Top oportunidades de cierre" id="v2-top-close-opportunities">
         <p className="v2-panel-note">Ordenado por valor esperado: valor de la oportunidad × probabilidad de etapa.</p>
         <div className="v2-deal-list">{topCloseRowsV2.map((o, index) => <a className="v2-deal-row" key={o.id} href={`#/detail/${o.id}`}>
           <span className="owner-rank">#{index + 1}</span>
@@ -1774,7 +1777,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
       </Panel>
     </section>
 
-    <section className="v2-component-block diagnostico-alertas" aria-label="5. Gestión comercial que requiere atención">
+    <section id="v2-management-alerts" className="v2-component-block diagnostico-alertas" aria-label="5. Gestión comercial que requiere atención">
       <div className="v2-section-heading"><span>5. Gestión comercial que requiere atención</span><h2>Quién necesita apoyo hoy</h2><p>Alertas agrupadas por comercial: vencidas, sin agenda, sin seguimiento reciente y valor en riesgo.</p></div>
       <Panel title="Valor en riesgo por gestión comercial">
         <div className="commercial-risk-summary">{v2RiskSummaryCards.map(card => <a className={`commercial-risk-card ${card.tone}`} key={card.label} href="#/alerts">

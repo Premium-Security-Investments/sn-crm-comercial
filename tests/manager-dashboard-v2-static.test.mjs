@@ -127,5 +127,10 @@ assert.ok(!main.includes('Resumen ejecutivo · {v2ServiceName}'), 'Dashboard v2 
 assert.ok(!main.includes('Datos CRM en vivo'), 'Dashboard v2 hero should not include redundant CRM-live pill');
 assert.ok(!main.includes('Corte 2026'), 'Dashboard v2 hero should not include redundant 2026 pill');
 assert.ok(!main.includes('Área activa: Seguridad Física'), 'Dashboard v2 hero should use concise Servicio label instead of area wording');
+assert.ok(!main.includes("href: '#/dashboard2'"), 'Management priority cards should not link back to the same dashboard with no visible action');
+assert.ok(main.includes("targetId: 'v2-top-close-opportunities'"), 'Cerrar oportunidades top should scroll to the prioritized close opportunities section');
+assert.ok(main.includes("targetId: 'v2-commercial-compliance'"), 'Recuperar bajo cumplimiento should scroll to commercial compliance');
+assert.ok(main.includes("targetId: 'v2-management-alerts'"), 'Normalizar regional should scroll to management alerts / data quality');
+assert.ok(main.includes("targetId: 'v2-pipeline-priorities'"), 'Proteger forecast should scroll to pipeline priorities');
 
 console.log('manager-dashboard-v2 static checks passed');
