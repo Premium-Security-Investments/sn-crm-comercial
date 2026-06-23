@@ -1860,6 +1860,21 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
     .filter(row => !isTerminalStage(row.opportunity.stage_code) && (['overdue','missing','today','soon'].includes(row.action.code) || Number(row.inactiveDays || 0) >= 7))
     .sort((a,b) => (a.action.code === 'overdue' ? -1 : b.action.code === 'overdue' ? 1 : 0) || Number(b.opportunity.offer_value || 0) - Number(a.opportunity.offer_value || 0))
     .slice(0, 8);
+  const followUpPriority = (row: { action: { code: string } }) => row.action.code === 'overdue' ? 1 : row.action.code === 'today' ? 2 : row.action.code === 'missing' ? 3 : 4;
+  const personalFollowUpRows = opportunities
+    .map(o => ({ opportunity: o, action: nextActionStatus(o), inactiveDays: daysSince(o.last_interaction_at || o.updated_at || o.created_at) }))
+    .filter(row => !isTerminalStage(row.opportunity.stage_code) && (['overdue','missing','today'].includes(row.action.code) || Number(row.inactiveDays || 0) >= 7))
+    .sort((a,b) => followUpPriority(a) - followUpPriority(b) || Number(b.opportunity.offer_value || 0) - Number(a.opportunity.offer_value || 0))
+    .slice(0, 6);
+  const personalStaleRows = opportunities.filter(o => !isTerminalStage(o.stage_code) && Number(daysSince(o.last_interaction_at || o.updated_at || o.created_at) || 0) >= 7);
+  const personalRiskValue = personalFollowUpRows.reduce((sum, row) => sum + Number(row.opportunity.offer_value || 0), 0);
+  const personalFollowUpCards = [
+    { label: 'Vencidas', value: totals.overdue, detail: 'Próxima acción ya vencida', tone: totals.overdue ? 'red' : 'green', filter: 'overdue' },
+    { label: 'Para hoy', value: personalFollowUpRows.filter(row => row.action.code === 'today').length, detail: 'Gestiones agendadas hoy', tone: personalFollowUpRows.some(row => row.action.code === 'today') ? 'amber' : 'blue', filter: 'today' },
+    { label: 'Sin agenda', value: totals.missingAgenda, detail: 'Requieren próxima acción', tone: totals.missingAgenda ? 'amber' : 'green', filter: 'missing' },
+    { label: 'Valor en riesgo', value: fmtMoneyCompact(personalRiskValue), detail: `${personalStaleRows.length} sin seguimiento reciente`, tone: personalRiskValue ? 'purple' : 'green', filter: '' },
+  ];
+  const focusFollowUpFilter = (filter: string) => { setOnlyActive(true); setQ(''); setStage(''); setService(''); setActionFilter(filter); };
   const sortedPersonalCriticalRows = [...personalCriticalRows].sort((a,b) => {
     const value = (row: typeof personalCriticalRows[number]) => personalCriticalSortConfig.key === 'client' ? row.opportunity.company_name : personalCriticalSortConfig.key === 'stage' ? row.opportunity.stage_order : personalCriticalSortConfig.key === 'value' ? Number(row.opportunity.offer_value || 0) : personalCriticalSortConfig.key === 'next' ? (row.opportunity.next_action_at || '') : row.action.label;
     return compareSortValues(value(a), value(b), personalCriticalSortConfig.direction);
@@ -1896,6 +1911,24 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
     </section>
     <div className="actions-row">{!personal && <button className="secondary" onClick={() => go('#/dashboard')}>← Dashboard gerencial</button>}<button onClick={() => go(`#/opportunities`)}>Ver mis oportunidades</button><button className="secondary" onClick={() => go('#/goals')}>Ver mis metas</button></div>
     {personal && <div className="personal-dashboard">
+      <section className="commercial-followup-banner" aria-label="Gestión comercial de hoy">
+        <div className="commercial-followup-copy">
+          <span className="eyebrow">Gestión comercial de hoy</span>
+          <h3>{personalFollowUpRows.length ? `Tienes ${personalFollowUpRows.length} oportunidades que requieren atención` : 'Tu agenda comercial está al día'}</h3>
+          <p>{personalFollowUpRows.length ? 'Este es el mismo resumen que luego puede salir por correo: vencidas, gestiones de hoy, oportunidades sin agenda y casos sin seguimiento reciente.' : 'No hay vencidas, sin agenda ni alertas de seguimiento reciente en tus oportunidades activas.'}</p>
+        </div>
+        <div className="commercial-followup-cards">
+          {personalFollowUpCards.map(card => <button type="button" key={card.label} className={`commercial-followup-card ${card.tone}`} onClick={() => focusFollowUpFilter(card.filter)}>
+            <small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>
+          </button>)}
+        </div>
+        <div className="commercial-followup-list">
+          {personalFollowUpRows.length ? personalFollowUpRows.map(row => <a className={`commercial-followup-row ${row.action.tone}`} key={row.opportunity.id} href={`#/detail/${row.opportunity.id}`}>
+            <div><strong>{row.opportunity.company_name}</strong><small>{row.opportunity.stage_name} · {fmtMoneyCompact(row.opportunity.offer_value)} · {row.opportunity.next_action_at ? fmtDate(row.opportunity.next_action_at) : 'Sin agenda'}</small></div>
+            <span><Badge tone={row.action.tone}>{row.action.label}</Badge><em>Registrar seguimiento →</em></span>
+          </a>) : <div className="commercial-followup-empty"><strong>Sin alertas inmediatas</strong><span>Mantén actualizada la próxima acción después de cada llamada, correo o reunión.</span></div>}
+        </div>
+      </section>
       <Panel title="Mi prioridad de hoy"><div className="personal-priority-grid"><div><small>Acción recomendada</small><strong>{personalPriorityText}</strong></div><div><small>Gestión pendiente</small><strong>{totals.overdue} vencidas · {totals.missingAgenda} sin agenda</strong></div></div></Panel>
       <Panel title="Mi avance contra meta"><GoalVsActualDashboard rows={personalGoalRows} /></Panel>
       <Panel title="Mis oportunidades críticas">{personalCriticalRows.length ? <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Valor" sortKey="value" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Prioridad" sortKey="priority" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/></tr></thead><tbody>{sortedPersonalCriticalRows.map(row => <tr key={row.opportunity.id} className="clickable" onClick={() => go(`#/detail/${row.opportunity.id}`)}><td><strong>{row.opportunity.company_name}</strong></td><td><Badge tone={stageTone(row.opportunity.stage_code)}>{row.opportunity.stage_name}</Badge></td><td>{fmtMoneyCompact(row.opportunity.offer_value)}</td><td>{row.opportunity.next_action_at ? fmtDate(row.opportunity.next_action_at) : 'Sin agenda'}</td><td><Badge tone={row.action.tone}>{row.action.label}</Badge></td></tr>)}</tbody></table></div> : <EmptyState title="Sin críticas inmediatas" text="No hay vencidas, sin agenda ni gestiones urgentes con tus filtros actuales." />}</Panel>
