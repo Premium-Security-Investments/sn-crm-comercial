@@ -38,7 +38,9 @@ type TenderScoreFilter = 'todas' | 'alto' | 'medio' | 'bajo';
 type TenderSortKey = 'deadline' | 'value' | 'score' | 'entity' | 'source';
 type PublicTender = { id: string; stable_key?: string; source: string; section: TenderSection; internal_status?: TenderInternalStatus; converted_opportunity_id?: string | null; reviewed_at?: string | null; detected_at?: string | null; last_seen_at?: string | null; entity: string; dept?: string; city?: string; ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string; category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null; score: number; reasons: string[]; risks: string[]; url?: string };
 type TenderDocumentStatus = 'pendiente_documentos' | 'documentos_cargados' | 'analisis_generado';
-type TenderDocumentDraft = { id: string; name: string; size: number; type: string; current: boolean; uploadedAt: string };
+type TenderDocumentRecord = { id: string; name: string; size: number; mime_type?: string | null; document_type: string; current: boolean; storage_path?: string; uploaded_at: string; uploaded_by?: string | null; signed_url?: string | null; extracted_text?: string | null };
+type TenderDocumentAnalysis = { recommendation: string; risk: string; summary: string; generated_at: string; findings?: string[]; detected_values?: Record<string, string[]>; matrix?: Array<{ category: string; status: string; detail: string }>; checklist?: string[] };
+type TenderDocumentsPayload = { documents: TenderDocumentRecord[]; analysis: TenderDocumentAnalysis | null; analyses: TenderDocumentAnalysis[] };
 type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string; count?: number; message?: string };
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
@@ -791,6 +793,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   useEffect(() => { load(); }, [id]);
   if (error) return <div className="error">{error}</div>; if (!detail) return <div className="notice">Cargando detalle…</div>;
   const o = detail.opportunity;
+  const visibleInteractions = detail.interactions.filter(i => i.interaction_type !== 'documento');
   const action = nextActionStatus(o);
   const lastDays = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
   return <section className="stack">
@@ -798,7 +801,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Fecha creación" value={fmtDate(o.created_at)}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
     {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel opportunity={o} />}
     <div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div>
-    <Panel title="Línea de seguimientos"><div className="timeline">{detail.interactions.length ? detail.interactions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel>
+    <Panel title="Línea de seguimientos"><div className="timeline">{visibleInteractions.length ? visibleInteractions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel>
   </section>;
 }
 const tenderDocumentTypeOptions = [
@@ -814,62 +817,80 @@ function fmtFileSize(bytes: number) {
   if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toLocaleString('es-CO', { maximumFractionDigits: 1 })} MB`;
   return `${Math.max(1, Math.round(bytes / 1000)).toLocaleString('es-CO')} KB`;
 }
+function fileToBase64(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+    reader.onerror = () => reject(reader.error || new Error('No fue posible leer el archivo.'));
+    reader.readAsDataURL(file);
+  });
+}
 function TenderDocumentReviewPanel({ opportunity }: { opportunity: Opportunity }) {
-  const [documents, setDocuments] = useState<TenderDocumentDraft[]>([]);
-  const [analyzed, setAnalyzed] = useState(false);
-  const status: TenderDocumentStatus = analyzed ? 'analisis_generado' : documents.length ? 'documentos_cargados' : 'pendiente_documentos';
-  const currentDocs = documents.filter(d => d.current);
-  const hasAdenda = currentDocs.some(d => d.type === 'adenda' || /adenda/i.test(d.name));
-  const hasTechnical = currentDocs.some(d => d.type === 'anexo_tecnico' || /anexo|tecnico|técnico/i.test(d.name));
-  const hasPliego = currentDocs.some(d => d.type === 'pliego' || /pliego/i.test(d.name));
-  const documentRisk = !documents.length ? 'Pendiente' : !analyzed ? 'Medio' : hasPliego && hasTechnical ? 'Controlado' : 'Alto';
-  const addFiles = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.currentTarget.files || []);
-    if (!files.length) return;
-    const now = new Date().toISOString();
-    setDocuments(current => [...current, ...files.map((file, index) => ({ id: `${now}-${index}-${file.name}`, name: file.name, size: file.size, type: inferTenderDocumentType(file.name), current: true, uploadedAt: now }))]);
-    setAnalyzed(false);
+  const [payload, setPayload] = useState<TenderDocumentsPayload>({ documents: [], analysis: null, analyses: [] });
+  const [statusText, setStatusText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const documents = payload.documents || [];
+  const analysis = payload.analysis;
+  const status: TenderDocumentStatus = analysis ? 'analisis_generado' : documents.length ? 'documentos_cargados' : 'pendiente_documentos';
+  const documentRisk = analysis?.risk || (!documents.length ? 'Pendiente' : 'Medio');
+  const loadDocuments = async () => {
+    const data = await api<TenderDocumentsPayload>(`/api/tender-documents?id=${encodeURIComponent(opportunity.id)}`);
+    setPayload(data);
+  };
+  useEffect(() => { loadDocuments().catch(err => setStatusText(err instanceof Error ? err.message : String(err))); }, [opportunity.id]);
+  const addFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(event.currentTarget.files || []);
     event.currentTarget.value = '';
+    if (!selected.length) return;
+    setBusy(true); setStatusText('Subiendo y extrayendo texto…');
+    try {
+      const files = await Promise.all(selected.slice(0, 8).map(async file => ({
+        name: file.name,
+        mime_type: file.type || 'application/octet-stream',
+        document_type: inferTenderDocumentType(file.name),
+        current: true,
+        content_base64: await fileToBase64(file)
+      })));
+      const data = await api<TenderDocumentsPayload>('/api/tender-documents-upload', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, files }) });
+      setPayload(data); setStatusText('Documentos guardados en Supabase y texto extraído.');
+    } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
   };
-  const updateDocument = (id: string, changes: Partial<TenderDocumentDraft>) => {
-    setDocuments(current => current.map(doc => doc.id === id ? { ...doc, ...changes } : doc));
-    setAnalyzed(false);
+  const analyzeDocuments = async () => {
+    setBusy(true); setStatusText('Generando análisis documental…');
+    try {
+      const data = await api<TenderDocumentsPayload>('/api/tender-documents-analyze', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
+      setPayload(data); setStatusText('Análisis persistente generado y compartido.');
+    } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
   };
-  const removeDocument = (id: string) => {
-    setDocuments(current => current.filter(doc => doc.id !== id));
-    setAnalyzed(false);
-  };
-  const matrix = [
-    { category: 'Jurídico', check: hasPliego ? 'Pliego cargado para revisar causales de rechazo y requisitos habilitantes.' : 'Falta pliego para validar causales de rechazo.', tone: hasPliego ? 'success' : 'amber' },
-    { category: 'Técnico', check: hasTechnical ? 'Anexo técnico disponible para extraer puestos, CCTV, ANS y personal.' : 'Falta anexo técnico para validar operación.', tone: hasTechnical ? 'success' : 'amber' },
-    { category: 'Versiones', check: hasAdenda ? 'Hay adenda cargada: validar que sea la versión vigente antes de ofertar.' : 'Sin adendas cargadas; confirmar si hubo modificaciones posteriores.', tone: hasAdenda ? 'amber' : 'blue' },
-    { category: 'Financiero', check: 'Validar capital de trabajo, liquidez, endeudamiento, rentabilidad y experiencia en SMMLV.', tone: analyzed ? 'amber' : 'blue' },
-    { category: 'Formatos', check: currentDocs.some(d => d.type === 'formatos') ? 'Formatos cargados para checklist de entrega.' : 'Cargar formatos anexos antes de preparar oferta.', tone: currentDocs.some(d => d.type === 'formatos') ? 'success' : 'blue' },
-  ];
   return <Panel title="Revisión documental" >
     <div className="tender-document-panel">
       <div className="document-review-head">
-        <div><span className="eyebrow">Oportunidad de licitación</span><h3>Documentos del proceso</h3><p>Subir pliego, estudios previos, anexo técnico, adendas, formatos u otros. El análisis se ejecuta solo cuando presionas el botón.</p></div>
+        <div><span className="eyebrow">Oportunidad de licitación</span><h3>Documentos del proceso</h3><p>Subir pliego, estudios previos, anexo técnico, adendas, formatos u otros. El análisis se guarda en Supabase y queda compartido para el equipo.</p></div>
         <div className="document-status-card"><small>Estado documental</small><Badge tone={documentStatusTone(status)}>{documentStatusLabel(status)}</Badge><strong>{documents.length} archivo(s)</strong></div>
-        <div className="document-risk-meter"><small>Riesgo documental</small><strong>{documentRisk}</strong><span>Separado del score radar</span></div>
+        <div className="document-risk-meter"><small>Riesgo documental</small><strong>{documentRisk}</strong><span>Persistente y separado del score radar</span></div>
       </div>
       <div className="document-upload-row">
-        <label className="document-upload-box">Subir documentos<input multiple type="file" accept=".pdf,.doc,.docx,.zip,.txt,.xlsx,.xls" onChange={addFiles}/><small>PDF, Word, ZIP, Excel o texto. No analiza automáticamente al subir.</small></label>
-        <button onClick={() => setAnalyzed(true)} disabled={!documents.length}>Analizar documentos</button>
+        <label className="document-upload-box">Subir documentos<input multiple type="file" accept=".pdf,.docx,.zip,.txt,.csv,.xlsx,.xls" onChange={addFiles} disabled={busy}/><small>PDF/Word/TXT/ZIP. El texto se extrae en servidor y se guarda con la oportunidad.</small></label>
+        <button onClick={analyzeDocuments} disabled={busy || !documents.length}>Analizar documentos</button>
       </div>
+      {statusText && <div className="notice">{statusText}</div>}
       {documents.length ? <div className="document-list">{documents.map(doc => <div className="document-row" key={doc.id}>
-        <div><strong>{doc.name}</strong><small>{fmtFileSize(doc.size)} · {fmtDate(doc.uploadedAt)}</small></div>
-        <Select value={doc.type} onChange={value => updateDocument(doc.id, { type: value })} options={tenderDocumentTypeOptions} empty="Tipo" />
-        <label className="document-current"><input type="checkbox" checked={doc.current} onChange={e => updateDocument(doc.id, { current: e.target.checked })}/> Vigente</label>
-        <button className="secondary" onClick={() => removeDocument(doc.id)}>Quitar</button>
+        <div><strong>{doc.signed_url ? <a href={doc.signed_url} target="_blank" rel="noreferrer">{doc.name}</a> : doc.name}</strong><small>{fmtFileSize(doc.size)} · {fmtDate(doc.uploaded_at)} · {doc.uploaded_by || 'Sistema'}</small></div>
+        <Badge tone="blue">{tenderDocumentTypeLabel(doc.document_type)}</Badge>
+        <span className="document-current">{doc.current ? 'Vigente' : 'No vigente'}</span>
       </div>)}</div> : <div className="document-empty-state"><strong>Pendiente de documentos</strong><span>Después de crear la oportunidad, carga los archivos oficiales para pasar a análisis documental.</span></div>}
-      {analyzed && <div className="document-analysis-grid">
-        <section className="document-analysis-card"><small>Resumen ejecutivo documental</small><strong>{hasPliego && hasTechnical ? 'GO condicionado' : 'Validación incompleta'}</strong><p>{hasPliego && hasTechnical ? `Hay base suficiente para revisar ${opportunity.company_name}. Confirmar versión vigente, experiencia, indicadores financieros y costos operativos antes de ofertar.` : 'El resumen queda incompleto hasta cargar pliego y anexo técnico vigentes.'}</p></section>
-        <section className="document-analysis-card"><small>Matriz de cumplimiento</small><div className="document-matrix">{matrix.map(row => <div key={row.category}><Badge tone={row.tone}>{row.category}</Badge><span>{row.check}</span></div>)}</div></section>
-        <section className="document-analysis-card"><small>Checklist SN</small><ul><li>Confirmar coordinador / supervisor exigido y antigüedad con SN.</li><li>Validar experiencia certificada en RUP y SMMLV exigidos.</li><li>Revisar CCTV, medios tecnológicos, almacenamiento y ANS.</li><li>Listar formatos obligatorios y pólizas antes de oferta.</li></ul></section>
+      {analysis && <div className="document-analysis-grid">
+        <section className="document-analysis-card"><small>Resumen ejecutivo documental</small><strong>{analysis.recommendation}</strong><p>{analysis.summary}</p>{analysis.findings?.length ? <ul>{analysis.findings.map(item => <li key={item}>{item}</li>)}</ul> : null}</section>
+        <section className="document-analysis-card"><small>Matriz de cumplimiento</small><div className="document-matrix">{(analysis.matrix || []).map(row => <div key={`${row.category}-${row.status}`}><Badge tone={row.status === 'Pendiente' ? 'amber' : 'blue'}>{row.category}</Badge><span><strong>{row.status}</strong> · {row.detail}</span></div>)}</div></section>
+        <section className="document-analysis-card"><small>Checklist SN</small><ul>{(analysis.checklist || []).map(item => <li key={item}>{item}</li>)}</ul><small>Generado: {fmtDate(analysis.generated_at)}</small></section>
       </div>}
     </div>
   </Panel>;
+}
+function tenderDocumentTypeLabel(value: string) {
+  return tenderDocumentTypeOptions.find(([code]) => code === value)?.[1] || 'Otro';
 }
 function inferTenderDocumentType(name: string) {
   const normalized = name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');

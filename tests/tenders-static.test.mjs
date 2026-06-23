@@ -118,6 +118,10 @@ assert(src.includes('Documentos cargados'), 'El módulo debe indicar cuando ya h
 assert(src.includes('Análisis generado'), 'El módulo debe mostrar estado Análisis generado después de correr análisis.');
 assert(src.includes('Subir pliego, estudios previos, anexo técnico, adendas, formatos u otros'), 'El módulo debe guiar la carga manual de documentos.');
 assert(src.includes('Analizar documentos'), 'Debe existir botón explícito para analizar, no automático al subir.');
+assert(src.includes('Supabase'), 'El módulo debe comunicar persistencia compartida en Supabase.');
+assert(src.includes('/api/tender-documents-upload'), 'La carga documental debe ir al backend para guardado persistente.');
+assert(src.includes('/api/tender-documents-analyze'), 'El análisis documental debe ir al backend para generar resultado persistente.');
+assert(src.includes('fileToBase64'), 'El frontend debe enviar archivos reales al backend para extracción, no solo nombres.');
 assert(src.includes('Resumen ejecutivo documental'), 'El análisis debe tener resumen ejecutivo documental.');
 assert(src.includes('Matriz de cumplimiento'), 'El análisis debe presentar matriz de cumplimiento.');
 assert(src.includes('Checklist SN'), 'El análisis debe listar checklist interno para SN.');
@@ -161,6 +165,12 @@ for (const file of [server, api]) {
   assert(file.includes('repuestos'), 'Radar no debe publicar contratos centrados en repuestos/equipos.');
   assert(file.includes('if (!isTenderTrackable(t)) return false;'), 'Radar debe filtrar no ofertables antes de publicar el payload.');
   assert(file.includes('(data || []).filter(isTenderTrackable).map(dbTenderToPublic)'), 'Radar debe filtrar no ofertables ya historizados antes de mostrarlos.');
+  assert(file.includes("app.post('/api/tender-documents-upload'"), 'API debe subir documentos reales al servidor para licitaciones.');
+  assert(file.includes("app.post('/api/tender-documents-analyze'"), 'API debe generar análisis documental persistente.');
+  assert(file.includes('tender-documents'), 'API debe usar Supabase Storage para archivos documentales.');
+  assert(file.includes('pdfParse(buffer)'), 'API debe extraer texto real de PDFs.');
+  assert(file.includes('mammoth.extractRawText'), 'API debe extraer texto real de Word/docx.');
+  assert(file.includes('psi_sales_interactions'), 'API debe persistir documentos/análisis en Supabase compartido.');
 }
 assert(!src.includes('contratos técnicos de mantenimiento/soporte de equipos como radiocomunicaciones'), 'La UI no debe publicar ni explicar oportunidades técnicas no relevantes; deben filtrarse antes.');
 

@@ -3,12 +3,15 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createHash } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
+import pdfParse from 'pdf-parse/lib/pdf-parse.js';
+import mammoth from 'mammoth';
+import AdmZip from 'adm-zip';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '25mb' }));
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -806,6 +809,177 @@ app.get('/api/opportunities/:id', async (req, res) => {
     const interactions = await must(database.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
     res.json({ opportunity, interactions });
   } catch (error) { sendError(res, error); }
+});
+
+
+const tenderDocumentBucket = 'tender-documents';
+const tenderDocumentTypes = ['pliego','estudios_previos','anexo_tecnico','adenda','formatos','otro'];
+function parseInteractionJson(notes) {
+  try { return JSON.parse(notes || '{}'); } catch { return null; }
+}
+function normalizeDocumentType(value, filename = '') {
+  if (tenderDocumentTypes.includes(value)) return value;
+  const name = normTenderText(filename);
+  if (name.includes('adenda')) return 'adenda';
+  if (name.includes('estudio')) return 'estudios_previos';
+  if (name.includes('anexo') || name.includes('tecnico')) return 'anexo_tecnico';
+  if (name.includes('formato') || name.endsWith('.zip')) return 'formatos';
+  if (name.includes('pliego')) return 'pliego';
+  return 'otro';
+}
+function cleanFileName(name) { return String(name || 'documento').replace(/[^a-zA-Z0-9._ -]/g, '_').slice(0, 140); }
+async function ensureTenderBucket(database) {
+  const existing = await database.storage.getBucket(tenderDocumentBucket);
+  if (!existing.error) return;
+  const { error } = await database.storage.createBucket(tenderDocumentBucket, { public: false, fileSizeLimit: 20 * 1024 * 1024 });
+  if (error && !String(error.message || '').toLowerCase().includes('already')) throw error;
+}
+async function extractTextFromTenderFile(buffer, filename, mime = '') {
+  const lower = filename.toLowerCase();
+  try {
+    if (lower.endsWith('.pdf') || mime.includes('pdf')) {
+      const result = await pdfParse(buffer);
+      return (result?.text || '').slice(0, 90000);
+    }
+    if (lower.endsWith('.docx') || mime.includes('wordprocessingml')) {
+      const result = await mammoth.extractRawText({ buffer });
+      return (result?.value || '').slice(0, 90000);
+    }
+    if (lower.endsWith('.txt') || mime.startsWith('text/')) return buffer.toString('utf8').slice(0, 90000);
+    if (lower.endsWith('.zip')) {
+      const zip = new AdmZip(buffer);
+      const parts = [];
+      for (const entry of zip.getEntries().filter(e => !e.isDirectory).slice(0, 30)) {
+        const entryName = entry.entryName;
+        const data = entry.getData();
+        if (/\.(txt|csv|xml|html?)$/i.test(entryName)) parts.push(`--- ${entryName} ---\n${data.toString('utf8').slice(0, 12000)}`);
+        else parts.push(`--- ${entryName} ---\nArchivo incluido en ZIP para checklist de formatos.`);
+      }
+      return parts.join('\n\n').slice(0, 90000);
+    }
+  } catch (error) {
+    return `No fue posible extraer texto automáticamente de ${filename}: ${error?.message || error}`;
+  }
+  return `Archivo ${filename} cargado. Tipo no soportado para extracción profunda automática.`;
+}
+function buildTenderDocumentAnalysis(opportunity, documents) {
+  const text = documents.map(d => `\n--- ${d.document_type}: ${d.name} ---\n${d.extracted_text || ''}`).join('\n').slice(0, 220000);
+  const normalized = normTenderText(text);
+  const hasPliego = documents.some(d => d.document_type === 'pliego' || normTenderText(d.name).includes('pliego'));
+  const hasTechnical = documents.some(d => d.document_type === 'anexo_tecnico' || /anexo|tecnico/i.test(normTenderText(d.name)));
+  const hasAdenda = documents.some(d => d.document_type === 'adenda' || normTenderText(d.name).includes('adenda'));
+  const hasFormats = documents.some(d => d.document_type === 'formatos');
+  const finds = {
+    smmlv: Array.from(text.matchAll(/(\d{2,4}(?:[.,]\d+)?)\s*SMMLV/gi)).slice(0, 5).map(m => m[0]),
+    money: Array.from(text.matchAll(/\$\s?[0-9][0-9.]{5,}(?:,[0-9]{1,2})?/g)).slice(0, 5).map(m => m[0]),
+    years: Array.from(text.matchAll(/(\d+)\s*años?/gi)).slice(0, 5).map(m => m[0]),
+  };
+  const signals = [
+    normalized.includes('coordinador') ? 'Menciona coordinador / supervisor operativo.' : 'No se detectó coordinador en el texto extraído.',
+    normalized.includes('capital de trabajo') ? 'Menciona capital de trabajo.' : 'Validar capital de trabajo en documentos financieros.',
+    normalized.includes('rup') ? 'Menciona RUP / experiencia habilitante.' : 'No se detectó RUP en el texto extraído.',
+    normalized.includes('cctv') || normalized.includes('videovigilancia') ? 'Incluye componente CCTV / videovigilancia.' : 'No se detectó componente CCTV explícito.',
+    normalized.includes('poliza') || normalized.includes('póliza') ? 'Menciona pólizas / seriedad de oferta.' : 'Validar pólizas requeridas.'
+  ];
+  const missingCritical = [!hasPliego && 'pliego', !hasTechnical && 'anexo técnico'].filter(Boolean);
+  const recommendation = missingCritical.length ? 'Validación incompleta' : 'GO condicionado';
+  const risk = missingCritical.length ? 'Alto' : 'Medio';
+  const matrix = [
+    { category: 'Jurídico', status: hasPliego ? 'Cumplimiento por validar' : 'Pendiente', detail: hasPliego ? 'Pliego disponible para revisar causales de rechazo y habilitantes.' : 'Falta pliego vigente.' },
+    { category: 'Técnico', status: hasTechnical ? 'Cumplimiento por validar' : 'Pendiente', detail: hasTechnical ? 'Anexo técnico disponible para puestos, ANS, equipos y personal.' : 'Falta anexo técnico vigente.' },
+    { category: 'Versiones', status: hasAdenda ? 'Revisión prioritaria' : 'Confirmar', detail: hasAdenda ? 'Hay adenda: usar siempre la versión más reciente.' : 'Confirmar si existen adendas posteriores.' },
+    { category: 'Financiero', status: 'Validar', detail: finds.money.length ? `Valores detectados: ${finds.money.join(' · ')}` : 'Extraer presupuesto, indicadores y capital de trabajo.' },
+    { category: 'Experiencia', status: 'Validar', detail: finds.smmlv.length ? `SMMLV detectados: ${finds.smmlv.join(' · ')}` : 'Validar experiencia exigida en SMMLV / contratos similares.' },
+    { category: 'Formatos', status: hasFormats ? 'Cargados' : 'Pendiente', detail: hasFormats ? 'Formatos disponibles para checklist de entrega.' : 'Cargar formatos anexos antes de ofertar.' },
+  ];
+  return {
+    kind: 'tender_document_analysis', status: 'analisis_generado', recommendation, risk, generated_at: new Date().toISOString(),
+    summary: `${recommendation} para ${opportunity.company_name}. ${missingCritical.length ? `Faltan documentos críticos: ${missingCritical.join(', ')}.` : 'Hay base documental mínima para revisión comercial y licitatoria.'} ${hasAdenda ? 'Priorizar Adenda como versión vigente.' : 'Confirmar si existen adendas.'}`,
+    findings: signals, detected_values: finds, matrix,
+    checklist: [
+      'Confirmar versión vigente de pliego/adendas antes de preparar oferta.',
+      'Validar experiencia certificada/RUP y equivalencia en SMMLV.',
+      'Revisar indicadores financieros: capital de trabajo, liquidez, endeudamiento y rentabilidad.',
+      'Confirmar coordinador, supervisores, puestos, turnos, ANS y medios tecnológicos.',
+      'Completar formatos obligatorios, pólizas y anexos firmados.'
+    ],
+    documents: documents.map(d => ({ id: d.id, name: d.name, type: d.document_type, current: d.current }))
+  };
+}
+async function getTenderDocumentRecords(database, opportunityId) {
+  const interactions = await must(database.from('psi_sales_interactions').select('id,notes,occurred_at,created_at,created_by,psi_sales_profiles(full_name)').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true }));
+  const documents = [];
+  const analyses = [];
+  for (const row of interactions) {
+    const payload = parseInteractionJson(row.notes);
+    if (payload?.kind === 'tender_document_upload') documents.push(...(payload.documents || []).map(doc => ({ ...doc, interaction_id: row.id, uploaded_by: row.psi_sales_profiles?.full_name || null })));
+    if (payload?.kind === 'tender_document_analysis') analyses.push({ ...payload, interaction_id: row.id, created_at: row.created_at, created_by_name: row.psi_sales_profiles?.full_name || null });
+  }
+  const signed = await Promise.all(documents.map(async doc => {
+    const { data } = await database.storage.from(tenderDocumentBucket).createSignedUrl(doc.storage_path, 3600);
+    return { ...doc, signed_url: data?.signedUrl || null };
+  }));
+  return { documents: signed, analysis: analyses.at(-1) || null, analyses };
+}
+async function ensureTenderOpportunity(database, id, profile) {
+  await ensureOpportunityAccess(database, id, profile);
+  const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', id).single());
+  if (opportunity.service_type_code !== 'licitacion_publica') { const error = new Error('La revisión documental aplica solo para oportunidades de licitación pública.'); error.status = 400; throw error; }
+  return opportunity;
+}
+
+app.get('/api/tender-documents', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    const id = String(req.query.id || '');
+    if (!id) throw new Error('Debe indicar la oportunidad.');
+    await ensureTenderOpportunity(database, id, currentProfile);
+    res.json(await getTenderDocumentRecords(database, id));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-documents-upload', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    const opportunityId = String(req.body.opportunity_id || '');
+    const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const files = Array.isArray(req.body.files) ? req.body.files : [];
+    if (!files.length) throw new Error('Debe adjuntar al menos un documento.');
+    await ensureTenderBucket(database);
+    const uploaded = [];
+    for (const file of files.slice(0, 8)) {
+      const name = cleanFileName(file.name);
+      const buffer = Buffer.from(String(file.content_base64 || ''), 'base64');
+      if (!buffer.length) throw new Error(`Archivo vacío: ${name}`);
+      if (buffer.length > 20 * 1024 * 1024) throw new Error(`Archivo supera 20MB: ${name}`);
+      const id = createHash('sha256').update(`${opportunityId}:${Date.now()}:${name}:${buffer.length}`).digest('hex').slice(0, 24);
+      const storagePath = `${opportunityId}/${id}-${name}`;
+      const documentType = normalizeDocumentType(file.document_type, name);
+      const extractedText = await extractTextFromTenderFile(buffer, name, file.mime_type || '');
+      const { error: uploadError } = await database.storage.from(tenderDocumentBucket).upload(storagePath, buffer, { contentType: file.mime_type || 'application/octet-stream', upsert: false });
+      if (uploadError) throw uploadError;
+      uploaded.push({ id, name, size: buffer.length, mime_type: file.mime_type || null, document_type: documentType, current: file.current !== false, storage_path: storagePath, uploaded_at: new Date().toISOString(), extracted_text: extractedText });
+    }
+    await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_upload', opportunity: opportunity.company_name, documents: uploaded }) }).select('id').single());
+    res.status(201).json(await getTenderDocumentRecords(database, opportunityId));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-documents-analyze', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    const opportunityId = String(req.body.opportunity_id || '');
+    const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const records = await getTenderDocumentRecords(database, opportunityId);
+    const currentDocs = records.documents.filter(d => d.current !== false);
+    if (!currentDocs.length) throw new Error('Debe cargar documentos antes de analizar.');
+    const analysis = buildTenderDocumentAnalysis(opportunity, currentDocs);
+    await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify(analysis) }).select('id').single());
+    res.json(await getTenderDocumentRecords(database, opportunityId));
+  } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
 function cleanOpportunity(body) {

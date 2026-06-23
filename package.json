@@ -13,11 +13,14 @@
   "dependencies": {
     "@supabase/supabase-js": "latest",
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "typescript": "latest",
+    "adm-zip": "^0.5.17",
+    "express": "latest",
+    "mammoth": "^1.12.0",
+    "pdf-parse": "^1.1.1",
     "react": "latest",
     "react-dom": "latest",
-    "express": "latest"
+    "typescript": "latest",
+    "vite": "latest"
   },
   "devDependencies": {
     "@types/express": "latest",
