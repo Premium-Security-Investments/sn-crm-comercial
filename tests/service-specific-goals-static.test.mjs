@@ -24,7 +24,6 @@ const requiredServerMarkers = [
   'regional_nombre: body.regional_nombre || null',
   'operational_unit_target: Number(body.operational_unit_target || 0)',
   "onConflict: 'user_id,period_month,service_type_code,regional_nombre'",
-  "select('*, psi_sales_service_types(code,name)')",
 ];
 
 const requiredMigrationMarkers = [

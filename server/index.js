@@ -783,7 +783,7 @@ app.get('/api/bootstrap', async (req, res) => {
       must(database.from('v_psi_sales_stalled_sustentacion').select(opportunitySelect).order('prioritization_date')),
       must(database.from('v_psi_sales_top3_closing').select(opportunitySelect).order('owner_name')),
       must(database.from('v_psi_sales_kpis_by_commercial_month').select('*').order('period_month', { ascending: false }).limit(80)),
-      must(database.from('psi_sales_goals').select('*, psi_sales_service_types(code,name)').order('period_month', { ascending: false }).limit(500)),
+      must(database.from('psi_sales_goals').select('*').order('period_month', { ascending: false }).limit(500)),
     ]);
     const enrichedOpportunities = await attachCommercialMetadata(database, opportunities);
     const enrichedStalled = await attachCommercialMetadata(database, stalled);
@@ -1073,7 +1073,7 @@ app.get('/api/goals', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
-    let query = database.from('psi_sales_goals').select('*, psi_sales_service_types(code,name)').order('period_month', { ascending: false }).limit(500);
+    let query = database.from('psi_sales_goals').select('*').order('period_month', { ascending: false }).limit(500);
     if (currentProfile.role === 'comercial') query = query.or(`user_id.eq.${currentProfile.id},user_id.is.null`);
     const data = await must(query);
     res.json(data);
