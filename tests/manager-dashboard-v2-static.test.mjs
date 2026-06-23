@@ -57,6 +57,23 @@ const requiredMainMarkers = [
   'Limpiar filtros',
   'Última actualización',
   'sourceRows = scopedOpportunities',
+  'PRODUCT_OPERATIONAL_UNITS',
+  'productOperationalUnit',
+  'Desempeño comercial 2026 por producto',
+  'Presupuesto, ventas y prospección 2026',
+  'Proyección / presupuesto 2026',
+  'Ventas acumuladas por comercial',
+  'projectionRowsV2',
+  'monthlySalesRowsV2',
+  'serviceScopedBudgetRowsV2',
+  'Unidad proyectada',
+  'Presupuesto anual',
+  'Ventas acumuladas',
+  'Clientes',
+  'Cumplimiento individual',
+  'Presupuesto individual cargado en CRM',
+  'setService(\'\')',
+  'producto seleccionado',
 ];
 
 const requiredCssMarkers = [

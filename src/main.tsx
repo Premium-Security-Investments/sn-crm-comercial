@@ -59,10 +59,37 @@ function canManageGoals(profile?: Profile | null) { return isManagementRole(prof
 function canViewTenders(profile?: Profile | null) { return isManagementRole(profile?.role) || profile?.microsoft_email?.toLowerCase() === 'directora.licitaciones@seguridadnacional.co'; }
 const customerSegmentOptions: Array<[CustomerSegment, string]> = [['cliente_nuevo','Cliente Nuevo'], ['cliente_actual','Cliente Actual']];
 const commercialAreaOptions: Array<[CommercialArea, string]> = [['seguridad_fisica','Seguridad Física'], ['tecnologia','Tecnología'], ['licitacion_publica','Licitación Pública']];
+const PRODUCT_OPERATIONAL_UNITS: Record<string, string> = {
+  escoltas: 'Servicios / contratos',
+  licitacion_publica: 'Procesos / licitaciones',
+  mantenimiento: 'Contratos / servicios',
+  monitoreo: 'Cuentas / servicios',
+  porteria_virtual: 'Proyectos / sedes',
+  proyecto: 'Proyectos',
+  seguridad_fisica: 'Puestos 24H',
+};
+const PRODUCT_OPERATIONAL_UNITS_BY_NAME: Record<string, string> = {
+  'escoltas': 'Servicios / contratos',
+  'licitación pública': 'Procesos / licitaciones',
+  'licitacion publica': 'Procesos / licitaciones',
+  'mantenimiento': 'Contratos / servicios',
+  'monitoreo': 'Cuentas / servicios',
+  'portería virtual': 'Proyectos / sedes',
+  'porteria virtual': 'Proyectos / sedes',
+  'proyecto': 'Proyectos',
+  'seguridad física': 'Puestos 24H',
+  'seguridad fisica': 'Puestos 24H',
+};
 const TENDER_OFFICIAL_SOURCES = ['SECOP I', 'SECOP II', 'TVEC', 'ESU Contratación'];
 function placeholderOption(label: string, value = 'todas') { return [value, `${label}: Todas`]; }
 function customerSegmentLabel(value?: string | null) { return value === 'cliente_nuevo' ? 'Cliente Nuevo' : value === 'cliente_actual' ? 'Cliente Actual' : 'Pendiente'; }
 function commercialAreaLabel(value?: string | null) { return value === 'seguridad_fisica' ? 'Seguridad Física' : value === 'tecnologia' ? 'Tecnología' : value === 'licitacion_publica' ? 'Licitación Pública' : 'Sin área'; }
+function roleLabel(value?: string | null) { return value === 'director' ? 'Dirección Comercial' : value === 'gerencia' ? 'Gerencia' : value === 'admin' ? 'Administración' : value === 'comercial' ? 'Comercial' : value ? formatDisplayName(value) : 'Cargo pendiente'; }
+function productOperationalUnit(serviceCode?: string | null, serviceName?: string | null) {
+  const codeKey = String(serviceCode || '').toLowerCase();
+  const nameKey = String(serviceName || '').toLowerCase();
+  return PRODUCT_OPERATIONAL_UNITS[codeKey] || PRODUCT_OPERATIONAL_UNITS_BY_NAME[nameKey] || 'Unidad comercial';
+}
 function isApprovedSale(o: Opportunity) { return o.stage_code === 'aprobado'; }
 function canEditOpportunitySegment(current: Profile, opportunity?: Opportunity | null) { return !opportunity || isManagementRole(current.role) || (current.can_edit_customer_segment && opportunity.owner_id === current.id); }
 
@@ -1417,13 +1444,40 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   const totalPipeline = activeRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
   const totalApproved = approvedRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
   const weightedPipeline = activeRows.reduce((sum, o) => sum + Number(o.weighted_pipeline_value || 0), 0);
-  const totalBudget = data.goals.reduce((sum, goal) => sum + Number(goal.sales_budget || 0), 0);
+  const selectedService = service ? data.services.find(s => s.code === service) : null;
+  const productOperationalUnitLabel = productOperationalUnit(service, selectedService?.name || (service ? 'producto seleccionado' : ''));
+  const ownerProfilesInScope = data.profiles.filter(profile => sourceRows.some(o => ownerKey(o) === profile.id) || data.goals.some(goal => goal.user_id === profile.id));
+  const serviceScopedBudgetRowsV2 = ownerProfilesInScope.map(profile => {
+    const ownerRows = sourceRows.filter(o => ownerKey(o) === profile.id);
+    const ownerApprovedRows = ownerRows.filter(isApprovedSale);
+    const budget = data.goals.filter(goal => goal.user_id === profile.id).reduce((sum, goal) => sum + Number(goal.sales_budget || 0), 0);
+    const approved = ownerApprovedRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
+    const pipeline = ownerRows.filter(o => !isTerminalStage(o.stage_code)).reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
+    const clients = new Set(ownerApprovedRows.map(o => o.company_name).filter(Boolean)).size;
+    const regional = (topGroup(ownerRows.map(o => o.regional_nombre || 'Regional pendiente')).label) || 'Regional pendiente';
+    return { ownerId: profile.id, owner: profile.full_name, cargo: roleLabel(profile.role), regional, budget, approved, pipeline, clients, compliance: budget ? Math.round((approved / budget) * 100) : null };
+  }).filter(row => row.budget || row.approved || row.pipeline).sort((a,b)=>b.approved-a.approved || b.pipeline-a.pipeline || b.budget-a.budget);
+  const totalBudget = serviceScopedBudgetRowsV2.reduce((sum, row) => sum + Number(row.budget || 0), 0) || data.goals.reduce((sum, goal) => sum + Number(goal.sales_budget || 0), 0);
   const compliancePct = totalBudget ? Math.round((totalApproved / totalBudget) * 100) : null;
+  const projectionRowsV2 = serviceScopedBudgetRowsV2.map(row => ({ ...row, projectedUnits: row.budget ? Math.max(1, Math.round(row.budget / 18_818_714)) : row.pipeline ? row.clients || 1 : 0, monthlyBudget: row.budget ? row.budget / 12 : 0 }));
+  const visibleProjectionRowsV2 = projectionRowsV2.slice(0, 8);
+  const monthlySalesRowsV2 = serviceScopedBudgetRowsV2.slice(0, 8).map(row => {
+    const ownerApprovedRows = approvedRows.filter(o => ownerKey(o) === row.ownerId);
+    const monthValue = (month: number) => ownerApprovedRows.filter(o => {
+      const rawDate = o.approved_at || o.quote_date || o.updated_at || o.created_at;
+      const d = rawDate ? new Date(rawDate) : null;
+      return d && d.getFullYear() === 2026 && d.getMonth() === month;
+    }).reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
+    const months = [0,1,2,3,4].map(monthValue);
+    return { ...row, months, accumulated: months.reduce((sum, value) => sum + value, 0) || row.approved };
+  });
   const projectionCardsV2 = [
     { label: 'Ventas aprobadas', value: fmtMoneyCompact(totalApproved), detail: `${approvedRows.length} cierres registrados`, tone: 'green' },
+    { label: 'Presupuesto anual', value: fmtMoneyCompact(totalBudget), detail: 'Presupuesto individual cargado en CRM', tone: totalBudget ? 'blue' : 'amber' },
     { label: 'Pipeline activo', value: fmtMoneyCompact(totalPipeline), detail: `${activeRows.length} ofertas activas`, tone: 'blue' },
     { label: 'Forecast ponderado', value: fmtMoneyCompact(weightedPipeline), detail: 'Ajustado por probabilidad de etapa', tone: 'purple' },
     { label: 'Cumplimiento vs meta', value: compliancePct === null ? '—' : `${compliancePct}%`, detail: totalBudget ? `${fmtMoneyCompact(totalBudget)} presupuesto cargado` : 'Meta pendiente de cargar', tone: compliancePct === null ? 'amber' : compliancePct >= 80 ? 'green' : compliancePct >= 40 ? 'amber' : 'red' },
+    { label: 'Unidad operativa', value: productOperationalUnitLabel, detail: service ? 'Según producto seleccionado' : 'Producto seleccionado: todos', tone: 'purple' },
   ];
   const rankingRowsV2 = Array.from(sourceRows.reduce((map, o) => {
     const key = ownerKey(o);
@@ -1533,6 +1587,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
         <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Todas las etapas"/>
         <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Todos los servicios"/>
         <label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label>
+        <button className="secondary" onClick={()=>setService('')}>Ver todos los productos</button>
         <button className="secondary" onClick={()=>{ setPeriod(''); setQ(''); setOwner(''); setRegional(''); setStage(''); setService('seguridad_fisica'); setOnlyActive(false); }}>Limpiar filtros</button>
       </div>
       <div className="filter-summary"><strong>{sourceRows.length}</strong> de {data.opportunities.length} oportunidades visibles · Última actualización: {lastUpdatedLabel(sourceRows)}</div>
@@ -1556,6 +1611,27 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
       <div className="v2-priority-grid">{v2ManagementPriorities.map(priority => <a className={`v2-priority-card ${priority.tone}`} key={priority.label} href={priority.href}>
         <small>{priority.label}</small><strong className="numeric-value">{priority.value}</strong><span>{priority.detail}</span>
       </a>)}</div>
+    </Panel>
+
+    <Panel title="Desempeño comercial 2026 por producto">
+      <p className="v2-panel-note">Presupuesto, ventas y prospección 2026 para el producto seleccionado. La unidad operativa se adapta por producto; en Seguridad Física se lee como puestos 24H.</p>
+      <div className="v2-kpi-grid">{projectionCardsV2.map(card => <div className={`v2-kpi-card ${card.tone}`} key={card.label}>
+        <small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>
+      </div>)}</div>
+    </Panel>
+
+    <Panel title="Proyección / presupuesto 2026">
+      <div className="tablewrap crm-readable-table"><table><thead><tr><th>Comercial</th><th>Cargo</th><th>Regional</th><th>Unidad proyectada</th><th>Presupuesto mensual</th><th>Presupuesto anual</th></tr></thead><tbody>{visibleProjectionRowsV2.map(row => <tr key={row.ownerId}>
+        <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{row.cargo}</td><td>{formatRegionalLabel(row.regional)}</td><td><strong>{row.projectedUnits}</strong><small> {productOperationalUnitLabel}</small></td><td className="money-cell">{fmtMoney(row.monthlyBudget)}</td><td className="money-cell">{fmtMoney(row.budget)}</td>
+      </tr>)}</tbody></table></div>
+      {!visibleProjectionRowsV2.length ? <EmptyState title="Sin presupuesto visible" text="Cuando existan metas o pipeline del producto seleccionado aparecerá la proyección por comercial." /> : null}
+    </Panel>
+
+    <Panel title="Ventas acumuladas por comercial">
+      <div className="tablewrap crm-readable-table"><table><thead><tr><th>Comercial</th><th>Cargo</th><th>Regional</th><th>Clientes</th><th>Ene</th><th>Feb</th><th>Mar</th><th>Abr</th><th>May</th><th>Ventas acumuladas</th><th>Cumplimiento individual</th><th>Presupuesto</th></tr></thead><tbody>{monthlySalesRowsV2.map(row => <tr key={row.ownerId}>
+        <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{row.cargo}</td><td>{formatRegionalLabel(row.regional)}</td><td>{row.clients}</td>{row.months.map((value, index) => <td className="money-cell" key={`${row.ownerId}-${index}`}>{value ? fmtMoneyCompact(value) : '—'}</td>)}<td className="money-cell"><strong>{fmtMoney(row.accumulated)}</strong></td><td><strong className="numeric-value">{row.compliance === null ? '—' : `${row.compliance}%`}</strong></td><td className="money-cell">{fmtMoney(row.budget)}</td>
+      </tr>)}</tbody></table></div>
+      {!monthlySalesRowsV2.length ? <EmptyState title="Sin ventas acumuladas" text="Cuando existan ventas aprobadas o presupuesto individual del producto seleccionado aparecerá el acumulado 2026." /> : null}
     </Panel>
 
     <div className="v2-executive-grid single-focus">
