@@ -1612,15 +1612,15 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     </Panel>
 
     <Panel title="Proyección / presupuesto 2026">
-      <div className="tablewrap crm-readable-table"><table><thead><tr><th>Comercial</th><th>Cargo</th><th>Regional</th><th>Unidad proyectada</th><th>Presupuesto mensual</th><th>Presupuesto anual</th></tr></thead><tbody>{visibleProjectionRowsV2.map(row => <tr key={row.ownerId}>
-        <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{row.cargo}</td><td>{formatRegionalLabel(row.regional)}</td><td><strong>{row.projectedUnits}</strong><small> {productOperationalUnitLabel}</small></td><td className="money-cell">{fmtMoney(row.monthlyBudget)}</td><td className="money-cell">{fmtMoney(row.budget)}</td>
+      <div className="tablewrap crm-readable-table v2-projection-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Unidad proyectada</th><th>Presupuesto mensual</th><th>Presupuesto anual</th></tr></thead><tbody>{visibleProjectionRowsV2.map(row => <tr key={row.ownerId}>
+        <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td><strong>{row.projectedUnits}</strong><small> {productOperationalUnitLabel}</small></td><td className="money-cell">{fmtMoney(row.monthlyBudget)}</td><td className="money-cell">{fmtMoney(row.budget)}</td>
       </tr>)}</tbody></table></div>
       {!visibleProjectionRowsV2.length ? <EmptyState title="Sin presupuesto visible" text="Cuando existan metas o pipeline del producto seleccionado aparecerá la proyección por comercial." /> : null}
     </Panel>
 
     <Panel title="Ventas acumuladas por comercial">
-      <div className="tablewrap crm-readable-table"><table><thead><tr><th>Comercial</th><th>Cargo</th><th>Regional</th><th>Clientes</th><th>Ene</th><th>Feb</th><th>Mar</th><th>Abr</th><th>May</th><th>Ventas acumuladas</th><th>Cumplimiento individual</th><th>Presupuesto</th></tr></thead><tbody>{monthlySalesRowsV2.map(row => <tr key={row.ownerId}>
-        <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{row.cargo}</td><td>{formatRegionalLabel(row.regional)}</td><td>{row.clients}</td>{row.months.map((value, index) => <td className="money-cell" key={`${row.ownerId}-${index}`}>{value ? fmtMoneyCompact(value) : '—'}</td>)}<td className="money-cell"><strong>{fmtMoney(row.accumulated)}</strong></td><td><strong className="numeric-value">{row.compliance === null ? '—' : `${row.compliance}%`}</strong></td><td className="money-cell">{fmtMoney(row.budget)}</td>
+      <div className="tablewrap crm-readable-table v2-sales-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Clientes</th><th>Ene</th><th>Feb</th><th>Mar</th><th>Abr</th><th>May</th><th>Ventas acumuladas</th><th>Cumplimiento individual</th><th>Presupuesto</th></tr></thead><tbody>{monthlySalesRowsV2.map(row => <tr key={row.ownerId}>
+        <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td>{row.clients}</td>{row.months.map((value, index) => <td className="money-cell" key={`${row.ownerId}-${index}`}>{value ? fmtMoneyCompact(value) : '—'}</td>)}<td className="money-cell"><strong>{fmtMoney(row.accumulated)}</strong></td><td><strong className="numeric-value">{row.compliance === null ? '—' : `${row.compliance}%`}</strong></td><td className="money-cell">{fmtMoney(row.budget)}</td>
       </tr>)}</tbody></table></div>
       {!monthlySalesRowsV2.length ? <EmptyState title="Sin ventas acumuladas" text="Cuando existan ventas aprobadas o presupuesto individual del producto seleccionado aparecerá el acumulado 2026." /> : null}
     </Panel>

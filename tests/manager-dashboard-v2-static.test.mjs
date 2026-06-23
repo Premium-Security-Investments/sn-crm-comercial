@@ -38,6 +38,8 @@ const requiredMainMarkers = [
   'projectionCardsV2',
   'v2-progress-track',
   'v2-weight-bar',
+  'v2-projection-table',
+  'v2-sales-table',
   'Seguridad Física',
   'service-context-pill',
   'Prioridades gerenciales de hoy',
@@ -89,6 +91,8 @@ const requiredCssMarkers = [
   '.v2-deal-list',
   '.v2-deal-row',
   '.v2-pipeline-table',
+  '.v2-projection-table table',
+  '.v2-sales-table table',
 ];
 
 for (const marker of requiredMainMarkers) {
@@ -103,6 +107,10 @@ assert.ok(main.indexOf("['#/dashboard','Dashboard gerencial']") < main.indexOf("
 assert.ok(main.indexOf('Panel title="Cumplimiento comercial"') < main.indexOf('Panel title="Pipeline / prospección activa"'), 'Dashboard v2 should prioritize compliance before prospecting detail');
 assert.ok(main.indexOf('Panel title="Pipeline / prospección activa"') < main.indexOf('Panel title="Top oportunidades de cierre"'), 'Dashboard v2 should end with prioritized close opportunities');
 assert.ok(!main.includes('Proyección 2026 — tabla completa'), 'Dashboard v2 should not copy the full PowerPoint tables into the first level');
+assert.ok(!main.includes('<th>Comercial</th><th>Cargo</th><th>Regional</th><th>Unidad proyectada</th>'), 'Projection table should remove redundant Cargo column');
+assert.ok(!main.includes('<th>Comercial</th><th>Cargo</th><th>Regional</th><th>Clientes</th>'), 'Monthly sales table should remove redundant Cargo column');
+assert.ok(main.includes('<th>Comercial</th><th>Regional</th><th>Unidad proyectada</th>'), 'Projection table should keep Regional directly after Comercial');
+assert.ok(main.includes('<th>Comercial</th><th>Regional</th><th>Clientes</th>'), 'Monthly sales table should keep Regional directly after Comercial');
 assert.ok(!main.includes('Resumen ejecutivo · {v2ServiceName}'), 'Dashboard v2 hero should not repeat the long resumen ejecutivo label');
 assert.ok(!main.includes('Datos CRM en vivo'), 'Dashboard v2 hero should not include redundant CRM-live pill');
 assert.ok(!main.includes('Corte 2026'), 'Dashboard v2 hero should not include redundant 2026 pill');
