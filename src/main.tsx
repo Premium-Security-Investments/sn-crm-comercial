@@ -1568,9 +1568,10 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     },
   };
   const v2MetricDetailRows = v2HeroMetricDetails[activeV2Metric];
-  const v2ServiceName = service ? data.services.find(s => s.code === service)?.name || 'Seguridad Física' : 'Todos los servicios';
+  const v2ServiceName = service ? data.services.find(s => s.code === service)?.name || 'Seguridad Física' : 'Todos los productos';
   const hasNonServiceFilters = Boolean(period || q || owner || regional || stage || onlyActive);
   const v2HeroLabel = service && !hasNonServiceFilters ? `Servicio: ${v2ServiceName}` : 'Vista filtrada';
+  const v2ScopeSummary = `${v2ServiceName} · ${sourceRows.length}/${data.opportunities.length} oportunidades visibles · Actualizado ${lastUpdatedLabel(sourceRows)}`;
   const lowComplianceRows = rankingRowsV2.filter(row => row.pct < 8 && row.count >= 10);
   const missingRegionalRows = rankingRowsV2.filter(row => formatRegionalLabel(row.regional) === 'Regional pendiente');
   const v2ManagementPriorities = [
@@ -1654,11 +1655,26 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   };
 
   return <section className="stack manager-dashboard dashboard-v2 dashboard-v2-six-components">
+    <section className="v2-filter-strip panel" aria-label="Filtros gerenciales">
+      <div className="v2-filter-strip-title">Filtros gerenciales</div>
+      <div className="filters manager-dashboard-filters v2-dashboard-filters">
+        <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Período"/>
+        <input placeholder="Buscar cliente, comercial, sede, ciudad, servicio o ID…" value={q} onChange={e=>setQ(e.target.value)} />
+        <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Todos los comerciales"/>
+        <Select value={regional} onChange={setRegional} options={managerRegionalOptions.map(r=>[r,r])} empty="Todas las regionales"/>
+        <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Todas las etapas"/>
+        <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Todos los productos"/>
+        <label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label>
+        <button className="secondary" onClick={()=>{ setPeriod(''); setQ(''); setOwner(''); setRegional(''); setStage(''); setService('seguridad_fisica'); setOnlyActive(false); }}>Limpiar filtros</button>
+      </div>
+    </section>
+
     <section className="v2-component-block resumen-ejecutivo" aria-label="1. Resumen ejecutivo">
       <div className="v2-section-heading"><span>1. Resumen ejecutivo</span><h2>Cómo vamos hoy</h2><p>Lectura rápida de cumplimiento, pipeline, forecast y prioridades gerenciales.</p></div>
       <section className="gerencial-v2-hero" aria-label="Resumen ejecutivo compacto de Dashboard Gerencial 2">
         <div className="gerencial-v2-hero-copy compact-service-context">
           <div className="command-title-row"><span className="service-context-pill">{v2HeroLabel}</span></div>
+          <span className="v2-hero-scope-summary">{v2ScopeSummary}</span>
           <h2>{v2HeroTitle}</h2>
           <p>{v2HeroSubtitle}</p>
         </div>
@@ -1668,21 +1684,6 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
           </button>)}
         </div>
       </section>
-
-      <Panel title="Filtros gerenciales">
-        <div className="filters manager-dashboard-filters v2-dashboard-filters">
-          <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Período"/>
-          <input placeholder="Buscar cliente, comercial, sede, ciudad, servicio o ID…" value={q} onChange={e=>setQ(e.target.value)} />
-          <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Todos los comerciales"/>
-          <Select value={regional} onChange={setRegional} options={managerRegionalOptions.map(r=>[r,r])} empty="Todas las regionales"/>
-          <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Todas las etapas"/>
-          <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Todos los servicios"/>
-          <label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label>
-          <button className="secondary" onClick={()=>setService('')}>Ver todos los productos</button>
-          <button className="secondary" onClick={()=>{ setPeriod(''); setQ(''); setOwner(''); setRegional(''); setStage(''); setService('seguridad_fisica'); setOnlyActive(false); }}>Limpiar filtros</button>
-        </div>
-        <div className="filter-summary"><strong>{sourceRows.length}</strong> de {data.opportunities.length} oportunidades visibles · Última actualización: {lastUpdatedLabel(sourceRows)}</div>
-      </Panel>
 
       <section className="v2-hero-detail-panel" aria-label="Datos de la métrica seleccionada">
         <div className="v2-hero-detail-copy">

@@ -13,7 +13,7 @@ const sectionMarkers = [
   'v2-component-block pipeline-prioridades',
   '4. Pipeline y oportunidades prioritarias',
   'v2-component-block diagnostico-alertas',
-  '5. Diagnóstico operativo / alertas',
+  '5. Gestión comercial que requiere atención',
   'v2-component-block tendencia-salud',
   '6. Tendencia y salud comercial',
 ];
@@ -25,8 +25,8 @@ for (const marker of sectionMarkers) {
 assert.ok(main.indexOf('1. Resumen ejecutivo') < main.indexOf('2. Presupuesto y ventas 2026'), 'Resumen must appear before presupuesto');
 assert.ok(main.indexOf('2. Presupuesto y ventas 2026') < main.indexOf('3. Cumplimiento por comercial'), 'Presupuesto must appear before cumplimiento');
 assert.ok(main.indexOf('3. Cumplimiento por comercial') < main.indexOf('4. Pipeline y oportunidades prioritarias'), 'Cumplimiento must appear before pipeline');
-assert.ok(main.indexOf('4. Pipeline y oportunidades prioritarias') < main.indexOf('5. Diagnóstico operativo / alertas'), 'Pipeline must appear before diagnostico');
-assert.ok(main.indexOf('5. Diagnóstico operativo / alertas') < main.indexOf('6. Tendencia y salud comercial'), 'Diagnostico must appear before tendencia');
+assert.ok(main.indexOf('4. Pipeline y oportunidades prioritarias') < main.indexOf('5. Gestión comercial que requiere atención'), 'Pipeline must appear before diagnostico');
+assert.ok(main.indexOf('5. Gestión comercial que requiere atención') < main.indexOf('6. Tendencia y salud comercial'), 'Diagnostico must appear before tendencia');
 
 assert.ok(!main.includes('Secciones traídas del Dashboard 1'), 'Final dashboard should not expose internal Dashboard 1 handoff language');
 assert.ok(!main.includes('Traído del Dashboard 1'), 'Final dashboard should not label sections as imported from Dashboard 1');

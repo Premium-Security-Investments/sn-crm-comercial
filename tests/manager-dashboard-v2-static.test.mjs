@@ -52,14 +52,14 @@ const requiredMainMarkers = [
   'formatDisplayName',
   'formatRegionalLabel',
   'row.value / Math.max(totalPipeline, 1)',
-  'Panel title="Filtros gerenciales"',
+  'v2-filter-strip',
   'manager-dashboard-filters v2-dashboard-filters',
   'setService(\'seguridad_fisica\')',
   'matchesDashboardPeriod(o, period)',
-  'Todos los servicios',
+  'Todos los productos',
   'Pipeline activo',
   'Limpiar filtros',
-  'Última actualización',
+  'v2ScopeSummary',
   'sourceRows = scopedOpportunities',
   'PRODUCT_OPERATIONAL_UNITS',
   'productOperationalUnit',
@@ -127,7 +127,11 @@ assert.ok(!main.includes('Resumen ejecutivo · {v2ServiceName}'), 'Dashboard v2 
 assert.ok(!main.includes('Datos CRM en vivo'), 'Dashboard v2 hero should not include redundant CRM-live pill');
 assert.ok(!main.includes('Corte 2026'), 'Dashboard v2 hero should not include redundant 2026 pill');
 assert.ok(!main.includes('Área activa: Seguridad Física'), 'Dashboard v2 hero should use concise Servicio label instead of area wording');
-assert.ok(!main.includes("href: '#/dashboard2'"), 'Management priority cards should not link back to the same dashboard with no visible action');
+assert.ok(!main.includes("onClick={()=>setService('')}>Ver todos los productos"), 'Dashboard v2 should not keep a separate Ver todos los productos button; all products should be an option in the product dropdown');
+assert.ok(main.indexOf('v2-filter-strip') < main.indexOf('gerencial-v2-hero'), 'Dashboard v2 filters should appear above the main executive banner');
+assert.ok(main.includes("empty=\"Todos los productos\""), 'Product selector should expose Todos los productos as the empty/all option');
+assert.ok(main.includes('v2ScopeSummary') && main.includes('${sourceRows.length}/${data.opportunities.length} oportunidades visibles'), 'Visible opportunity counter should move into the hero scope summary');
+assert.ok(!main.includes('<div className="filter-summary"><strong>{sourceRows.length}</strong> de {data.opportunities.length} oportunidades visibles'), 'Dashboard v2 filter bar should not carry the thick visible-opportunity footer');
 assert.ok(main.includes("targetId: 'v2-top-close-opportunities'"), 'Cerrar oportunidades top should scroll to the prioritized close opportunities section');
 assert.ok(main.includes("targetId: 'v2-commercial-compliance'"), 'Recuperar bajo cumplimiento should scroll to commercial compliance');
 assert.ok(main.includes("targetId: 'v2-management-alerts'"), 'Normalizar regional should scroll to management alerts / data quality');
