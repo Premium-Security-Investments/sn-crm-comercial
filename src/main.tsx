@@ -1681,8 +1681,8 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
         </div>)}</div>
       </Panel>
       <Panel title="Proyección / presupuesto 2026">
-        <div className="tablewrap crm-readable-table v2-projection-table"><table><thead><tr><th>Comercial</th><th>Cargo</th><th>Regional</th><th>Unidad proyectada</th><th>Presupuesto mensual</th><th>Presupuesto anual</th></tr></thead><tbody>{visibleProjectionRowsV2.map(row => <tr key={row.ownerId}>
-          <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{row.cargo}</td><td>{formatRegionalLabel(row.regional)}</td><td><strong>{row.projectedUnits}</strong><small> {productOperationalUnitLabel}</small></td><td className="money-cell">{fmtMoney(row.monthlyBudget)}</td><td className="money-cell">{fmtMoney(row.budget)}</td>
+        <div className="tablewrap crm-readable-table v2-projection-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Unidad proyectada</th><th>Presupuesto mensual</th><th>Presupuesto anual</th></tr></thead><tbody>{visibleProjectionRowsV2.map(row => <tr key={row.ownerId}>
+          <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td><strong>{row.projectedUnits}</strong><small> {productOperationalUnitLabel}</small></td><td className="money-cell">{fmtMoney(row.monthlyBudget)}</td><td className="money-cell">{fmtMoney(row.budget)}</td>
         </tr>)}</tbody></table></div>
         {!visibleProjectionRowsV2.length ? <EmptyState title="Sin presupuesto visible" text="Cuando existan metas o pipeline del producto seleccionado aparecerá la proyección por comercial." /> : <p className="muted">Unidad meta tomada del campo de cantidad unidades / puestos 24H cuando esté cargado; si falta, se estima desde presupuesto mensual.</p>}
       </Panel>
