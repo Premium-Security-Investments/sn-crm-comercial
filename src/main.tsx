@@ -24,7 +24,7 @@ type Opportunity = {
 };
 type Interaction = { id: string; opportunity_id: string; interaction_type: string; notes: string | null; occurred_at: string; created_at: string; created_by: string | null; psi_sales_profiles?: { full_name?: string } | null };
 type MonthlyKpi = { owner_id?: string | null; owner_name: string | null; period_month: string; prospectos: number; cotizaciones: number; ventas_aprobadas: number; comision_ganada: number; comision_proyectada: number };
-type SalesGoal = { id?: string; user_id: string | null; period_month: string; quote_target: number; prospect_target: number; sales_budget: number; created_at?: string; updated_at?: string };
+type SalesGoal = { id?: string; user_id: string | null; period_month: string; service_type_code: string | null; regional_nombre?: string | null; operational_unit_target?: number; quote_target: number; prospect_target: number; sales_budget: number; created_at?: string; updated_at?: string };
 type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile };
 type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string; send_invite?: boolean; commercial_area?: CommercialArea | ''; can_edit_customer_segment?: boolean };
 type TenderSection = 'hacer' | 'revisar' | 'descartar';
@@ -1417,6 +1417,12 @@ function ManagerDashboard({ data }: { data: Bootstrap }) {
   </section>;
 }
 
+function goalMatchesV2Scope(goal: SalesGoal, service: string, regional: string) {
+  const goalService = goal.service_type_code || 'seguridad_fisica';
+  const goalRegional = goal.regional_nombre || 'todas';
+  return (!service || goalService === service) && (!regional || goalRegional === regional || goalRegional === 'todas');
+}
+
 function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   type V2HeroMetricKey = 'cumplimiento' | 'pipeline' | 'cierres' | 'forecast';
   const [activeV2Metric, setActiveV2Metric] = useState<V2HeroMetricKey>('cumplimiento');
@@ -1446,20 +1452,23 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   const weightedPipeline = activeRows.reduce((sum, o) => sum + Number(o.weighted_pipeline_value || 0), 0);
   const selectedService = service ? data.services.find(s => s.code === service) : null;
   const productOperationalUnitLabel = productOperationalUnit(service, selectedService?.name || (service ? 'producto seleccionado' : ''));
-  const ownerProfilesInScope = data.profiles.filter(profile => sourceRows.some(o => ownerKey(o) === profile.id) || data.goals.some(goal => goal.user_id === profile.id));
+  const serviceScopedGoalsV2 = data.goals.filter(goal => goalMatchesV2Scope(goal, service, regional));
+  const ownerProfilesInScope = data.profiles.filter(profile => sourceRows.some(o => ownerKey(o) === profile.id) || serviceScopedGoalsV2.some(goal => goal.user_id === profile.id));
   const serviceScopedBudgetRowsV2 = ownerProfilesInScope.map(profile => {
     const ownerRows = sourceRows.filter(o => ownerKey(o) === profile.id);
     const ownerApprovedRows = ownerRows.filter(isApprovedSale);
-    const budget = data.goals.filter(goal => goal.user_id === profile.id).reduce((sum, goal) => sum + Number(goal.sales_budget || 0), 0);
+    const ownerGoals = serviceScopedGoalsV2.filter(goal => goal.user_id === profile.id);
+    const budget = ownerGoals.reduce((sum, goal) => sum + Number(goal.sales_budget || 0), 0);
     const approved = ownerApprovedRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
     const pipeline = ownerRows.filter(o => !isTerminalStage(o.stage_code)).reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
     const clients = new Set(ownerApprovedRows.map(o => o.company_name).filter(Boolean)).size;
-    const regional = (topGroup(ownerRows.map(o => o.regional_nombre || 'Regional pendiente')).label) || 'Regional pendiente';
-    return { ownerId: profile.id, owner: profile.full_name, cargo: roleLabel(profile.role), regional, budget, approved, pipeline, clients, compliance: budget ? Math.round((approved / budget) * 100) : null };
-  }).filter(row => row.budget || row.approved || row.pipeline).sort((a,b)=>b.approved-a.approved || b.pipeline-a.pipeline || b.budget-a.budget);
-  const totalBudget = serviceScopedBudgetRowsV2.reduce((sum, row) => sum + Number(row.budget || 0), 0) || data.goals.reduce((sum, goal) => sum + Number(goal.sales_budget || 0), 0);
+    const regional = (topGroup(ownerRows.map(o => o.regional_nombre || 'Regional pendiente')).label) || ownerGoals.find(goal => goal.regional_nombre && goal.regional_nombre !== 'todas')?.regional_nombre || 'Regional pendiente';
+    const projectedUnits = ownerGoals.reduce((sum, goal) => sum + Number(goal.operational_unit_target || 0), 0);
+    return { ownerId: profile.id, owner: profile.full_name, cargo: roleLabel(profile.role), regional, budget, approved, pipeline, clients, projectedUnits, compliance: budget ? Math.round((approved / budget) * 100) : null };
+  }).filter(row => row.budget || row.approved || row.pipeline || row.projectedUnits).sort((a,b)=>b.approved-a.approved || b.pipeline-a.pipeline || b.budget-a.budget);
+  const totalBudget = serviceScopedBudgetRowsV2.reduce((sum, row) => sum + Number(row.budget || 0), 0);
   const compliancePct = totalBudget ? Math.round((totalApproved / totalBudget) * 100) : null;
-  const projectionRowsV2 = serviceScopedBudgetRowsV2.map(row => ({ ...row, projectedUnits: row.budget ? Math.max(1, Math.round(row.budget / 18_818_714)) : row.pipeline ? row.clients || 1 : 0, monthlyBudget: row.budget ? row.budget / 12 : 0 }));
+  const projectionRowsV2 = serviceScopedBudgetRowsV2.map(row => ({ ...row, projectedUnits: row.projectedUnits || (row.budget ? Math.max(1, Math.round(row.budget / 18_818_714)) : row.pipeline ? row.clients || 1 : 0), monthlyBudget: row.budget ? row.budget / 12 : 0 }));
   const visibleProjectionRowsV2 = projectionRowsV2.slice(0, 8);
   const monthlySalesRowsV2 = serviceScopedBudgetRowsV2.slice(0, 8).map(row => {
     const ownerApprovedRows = approvedRows.filter(o => ownerKey(o) === row.ownerId);
@@ -1625,7 +1634,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
       <div className="tablewrap crm-readable-table v2-projection-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Unidad proyectada</th><th>Presupuesto mensual</th><th>Presupuesto anual</th></tr></thead><tbody>{visibleProjectionRowsV2.map(row => <tr key={row.ownerId}>
         <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td><strong>{row.projectedUnits}</strong><small> {productOperationalUnitLabel}</small></td><td className="money-cell">{fmtMoney(row.monthlyBudget)}</td><td className="money-cell">{fmtMoney(row.budget)}</td>
       </tr>)}</tbody></table></div>
-      {!visibleProjectionRowsV2.length ? <EmptyState title="Sin presupuesto visible" text="Cuando existan metas o pipeline del producto seleccionado aparecerá la proyección por comercial." /> : null}
+      {!visibleProjectionRowsV2.length ? <EmptyState title="Sin presupuesto visible" text="Cuando existan metas o pipeline del producto seleccionado aparecerá la proyección por comercial." /> : <p className="muted">Unidad meta tomada del campo de cantidad unidades / puestos 24H cuando esté cargado.</p>}
     </Panel>
 
     <Panel title="Ventas acumuladas por comercial">
@@ -2243,19 +2252,23 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
   const [editYear, setEditYear] = useState(today.getFullYear());
   const [editMonth, setEditMonth] = useState(today.getMonth() + 1);
   const [editOwnerId, setEditOwnerId] = useState(defaultEditOwnerId);
+  const [editServiceCode, setEditServiceCode] = useState('seguridad_fisica');
+  const [editRegionalNombre, setEditRegionalNombre] = useState('todas');
   const [status, setStatus] = useState('');
   const [complianceSortConfig, setComplianceSortConfig] = useState<SortConfig<'indicator'|'month'|'quarter'|'semester'|'year'>>({ key: 'indicator', direction: 'asc' });
   const editPeriodMonth = `${editYear}-${String(editMonth).padStart(2, '0')}-01`;
-  const existing = data.goals.find(g => g.user_id === editOwnerId && String(g.period_month).slice(0, 7) === editPeriodMonth.slice(0, 7));
-  const [form, setForm] = useState({ sales_budget: '', prospect_target: '', quote_target: '' });
+  const existing = data.goals.find(g => g.user_id === editOwnerId && String(g.period_month).slice(0, 7) === editPeriodMonth.slice(0, 7) && (g.service_type_code || 'seguridad_fisica') === editServiceCode && (g.regional_nombre || 'todas') === editRegionalNombre);
+  const regionalOptions = Array.from(new Set(['todas', ...data.opportunities.map(o => o.regional_nombre || '').filter(Boolean), ...data.goals.map(g => g.regional_nombre || '').filter(Boolean)])).map(value => [value, value === 'todas' ? 'Todas las regionales' : formatRegionalLabel(value)] as [string, string]);
+  const [form, setForm] = useState({ sales_budget: '', prospect_target: '', quote_target: '', operational_unit_target: '' });
 
   useEffect(() => {
     setForm({
       sales_budget: existing ? String(Number(existing.sales_budget || 0)) : '',
       prospect_target: existing ? String(Number(existing.prospect_target || 0)) : '',
       quote_target: existing ? String(Number(existing.quote_target || 0)) : '',
+      operational_unit_target: existing ? String(Number(existing.operational_unit_target || 0)) : '',
     });
-  }, [existing?.id, editOwnerId, editYear, editMonth]);
+  }, [existing?.id, editOwnerId, editYear, editMonth, editServiceCode, editRegionalNombre]);
 
   const viewOwnerName = viewOwnerId ? (data.profiles.find(p => p.id === viewOwnerId)?.full_name || 'Seleccionar asesor') : 'Todos los asesores';
   const editOwnerName = data.profiles.find(p => p.id === editOwnerId)?.full_name || 'Seleccionar asesor';
@@ -2274,6 +2287,9 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
       await api<SalesGoal>('/api/goals', { method: 'PUT', body: JSON.stringify({
         user_id: editOwnerId,
         period_month: editPeriodMonth,
+        service_type_code: editServiceCode,
+        regional_nombre: editRegionalNombre,
+        operational_unit_target: Number(form.operational_unit_target || 0),
         sales_budget: Number(form.sales_budget || 0),
         prospect_target: Number(form.prospect_target || 0),
         quote_target: Number(form.quote_target || 0),
@@ -2322,9 +2338,12 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
           <label>Año de la meta<input type="number" min="2024" max="2035" value={editYear} onChange={e=>setEditYear(Number(e.target.value || today.getFullYear()))}/></label>
           <label>Mes de la meta<Select value={String(editMonth)} onChange={v=>setEditMonth(Number(v))} options={Array.from({ length: 12 }, (_, i) => [String(i + 1), monthName(i + 1)])} empty="Mes"/></label>
           <label>Asesor a configurar<Select value={editOwnerId} onChange={setEditOwnerId} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Seleccionar asesor"/></label>
+          <label>Servicio / producto de la meta<Select value={editServiceCode} onChange={setEditServiceCode} options={data.services.map(s=>[s.code,s.name])} empty="Producto / servicio"/></label>
+          <label>Regional de la meta<Select value={editRegionalNombre} onChange={setEditRegionalNombre} options={regionalOptions} empty="Regional"/></label>
         </div>
         <p className="muted"><strong>{existing ? 'Editando meta existente' : 'Nueva meta'}</strong> para {editOwnerName} · {monthName(editMonth)} {editYear}.</p>
         <label>Presupuesto aprobado / ventas<input type="number" min="0" value={form.sales_budget} onChange={e=>setForm({...form, sales_budget:e.target.value})} placeholder="Ej: 250000000"/></label>
+        <label>Cantidad unidades / puestos 24H<input type="number" min="0" value={form.operational_unit_target} onChange={e=>setForm({...form, operational_unit_target:e.target.value})} placeholder="Ej: 6"/></label>
         <label>Prospectos nuevos<input type="number" min="0" value={form.prospect_target} onChange={e=>setForm({...form, prospect_target:e.target.value})} placeholder="Ej: 20"/></label>
         <label>Propuestas / cotizaciones<input type="number" min="0" value={form.quote_target} onChange={e=>setForm({...form, quote_target:e.target.value})} placeholder="Ej: 12"/></label>
         <div className="formactions"><button disabled={!editOwnerId}>Guardar metas</button>{status && <span>{status}</span>}</div>

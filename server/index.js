@@ -783,7 +783,7 @@ app.get('/api/bootstrap', async (req, res) => {
       must(database.from('v_psi_sales_stalled_sustentacion').select(opportunitySelect).order('prioritization_date')),
       must(database.from('v_psi_sales_top3_closing').select(opportunitySelect).order('owner_name')),
       must(database.from('v_psi_sales_kpis_by_commercial_month').select('*').order('period_month', { ascending: false }).limit(80)),
-      must(database.from('psi_sales_goals').select('*').order('period_month', { ascending: false }).limit(500)),
+      must(database.from('psi_sales_goals').select('*, psi_sales_service_types(code,name)').order('period_month', { ascending: false }).limit(500)),
     ]);
     const enrichedOpportunities = await attachCommercialMetadata(database, opportunities);
     const enrichedStalled = await attachCommercialMetadata(database, stalled);
@@ -1051,16 +1051,21 @@ function cleanGoal(body) {
   const payload = {
     user_id: body.user_id || null,
     period_month: normalizePeriodMonth(body.period_month),
+    service_type_code: body.service_type_code || null,
+    regional_nombre: body.regional_nombre || null,
+    operational_unit_target: Number(body.operational_unit_target || 0),
     sales_budget: Number(body.sales_budget || 0),
     prospect_target: Number(body.prospect_target || 0),
     quote_target: Number(body.quote_target || 0),
   };
   if (!payload.user_id) throw new Error('Debe seleccionar un asesor comercial.');
+  if (!payload.service_type_code) throw new Error('Debe seleccionar el producto / servicio de la meta.');
   for (const [key, value] of Object.entries(payload)) {
-    if (['sales_budget','prospect_target','quote_target'].includes(key) && (Number.isNaN(value) || Number(value) < 0)) {
+    if (['sales_budget','prospect_target','quote_target','operational_unit_target'].includes(key) && (Number.isNaN(value) || Number(value) < 0)) {
       throw new Error('Las metas deben ser numéricas y positivas.');
     }
   }
+  payload.regional_nombre = payload.regional_nombre || 'todas';
   return payload;
 }
 
@@ -1068,7 +1073,7 @@ app.get('/api/goals', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
-    let query = database.from('psi_sales_goals').select('*').order('period_month', { ascending: false }).limit(500);
+    let query = database.from('psi_sales_goals').select('*, psi_sales_service_types(code,name)').order('period_month', { ascending: false }).limit(500);
     if (currentProfile.role === 'comercial') query = query.or(`user_id.eq.${currentProfile.id},user_id.is.null`);
     const data = await must(query);
     res.json(data);
@@ -1081,7 +1086,7 @@ app.put('/api/goals', async (req, res) => {
     if (!isManager(currentProfile)) { const error = new Error('Solo gerencia/admin puede modificar metas.'); error.status = 403; throw error; }
     const database = requireDb();
     const payload = cleanGoal(req.body);
-    const data = await must(database.from('psi_sales_goals').upsert(payload, { onConflict: 'user_id,period_month' }).select('*').single());
+    const data = await must(database.from('psi_sales_goals').upsert(payload, { onConflict: 'user_id,period_month,service_type_code,regional_nombre' }).select('*').single());
     res.json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
