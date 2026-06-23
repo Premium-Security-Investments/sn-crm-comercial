@@ -111,6 +111,19 @@ assert(src.includes('Mayor valor primero'), 'Debe permitir ordenar por valor des
 assert(src.includes('Cierre más próximo'), 'Debe permitir ordenar por cierre próximo.');
 assert(src.includes('Entidad A-Z'), 'Debe permitir ordenar alfabéticamente por entidad.');
 assert(src.includes('Score alto primero'), 'Debe permitir ordenar por score descendente.');
+assert(src.includes('TenderDocumentReviewPanel'), 'El detalle de oportunidad debe incluir módulo documental para licitaciones convertidas.');
+assert(src.includes('Estado documental'), 'El módulo debe mostrar estado documental separado del estado comercial.');
+assert(src.includes('Pendiente de documentos'), 'El módulo debe iniciar como Pendiente de documentos cuando no hay archivos.');
+assert(src.includes('Documentos cargados'), 'El módulo debe indicar cuando ya hay documentos cargados antes de analizar.');
+assert(src.includes('Análisis generado'), 'El módulo debe mostrar estado Análisis generado después de correr análisis.');
+assert(src.includes('Subir pliego, estudios previos, anexo técnico, adendas, formatos u otros'), 'El módulo debe guiar la carga manual de documentos.');
+assert(src.includes('Analizar documentos'), 'Debe existir botón explícito para analizar, no automático al subir.');
+assert(src.includes('Resumen ejecutivo documental'), 'El análisis debe tener resumen ejecutivo documental.');
+assert(src.includes('Matriz de cumplimiento'), 'El análisis debe presentar matriz de cumplimiento.');
+assert(src.includes('Checklist SN'), 'El análisis debe listar checklist interno para SN.');
+assert(src.includes('tender-document-panel'), 'El módulo documental debe tener clase visual propia.');
+assert(src.includes('document-risk-meter'), 'El módulo debe separar riesgo documental del score radar.');
+assert(src.includes('service_type_code === \'licitacion_publica\''), 'El módulo documental debe aparecer solo para oportunidades de licitación pública.');
 
 for (const file of [server, api]) {
   assert(file.includes('canViewTenders'), 'API debe tener guard canViewTenders.');
