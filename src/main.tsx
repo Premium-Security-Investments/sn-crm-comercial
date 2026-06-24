@@ -1531,14 +1531,8 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     map.set(key, row);
     return map;
   }, new Map<string, { stageCode: string; stageName: string; count: number; value: number; weighted: number }>()).values()).sort((a,b)=>b.weighted-a.weighted || b.value-a.value);
-  const v2HeroTitle = compliancePct === null
-    ? 'Meta comercial pendiente de cargar para leer cumplimiento'
-    : compliancePct < 50
-      ? 'Cumplimiento bajo meta, con pipeline activo para recuperar'
-      : compliancePct < 80
-        ? 'Cumplimiento en recuperación, foco en cierres prioritarios'
-        : 'Cumplimiento saludable con foco en sostener cierres';
-  const v2HeroSubtitle = 'Prioridad gerencial: convertir cierres top, proteger forecast y recuperar cumplimiento.';
+  const v2HeroTitle = 'Cumplimiento por debajo de meta';
+  const v2HeroSubtitle = 'Priorizar cierres de mayor valor esperado, comerciales rezagados y oportunidades sin seguimiento.';
   const v2HeroMetrics: Array<{ key: V2HeroMetricKey; label: string; value: string; detail: string; tone: string }> = [
     { key: 'cumplimiento', label: 'Cumplimiento', value: compliancePct === null ? '—' : `${compliancePct}%`, detail: totalBudget ? `${fmtMoneyCompact(totalApproved)} / ${fmtMoneyCompact(totalBudget)}` : 'Meta pendiente', tone: compliancePct === null ? 'amber' : compliancePct >= 80 ? 'green' : compliancePct >= 40 ? 'amber' : 'red' },
     { key: 'pipeline', label: 'Pipeline activo', value: fmtMoneyCompact(totalPipeline), detail: `${activeRows.length} ofertas activas`, tone: 'blue' },
@@ -1571,7 +1565,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   const v2ServiceName = service ? data.services.find(s => s.code === service)?.name || 'Seguridad Física' : 'Todos los productos';
   const hasNonServiceFilters = Boolean(period || q || owner || regional || stage || onlyActive);
   const v2HeroLabel = service && !hasNonServiceFilters ? `Servicio: ${v2ServiceName}` : 'Vista filtrada';
-  const v2ScopeSummary = `${v2ServiceName} · ${sourceRows.length}/${data.opportunities.length} oportunidades visibles · Actualizado ${lastUpdatedLabel(sourceRows)}`;
+  const v2ScopeSummary = `${sourceRows.length}/${data.opportunities.length} oportunidades visibles`;
   const lowComplianceRows = rankingRowsV2.filter(row => row.pct < 8 && row.count >= 10);
   const missingRegionalRows = rankingRowsV2.filter(row => formatRegionalLabel(row.regional) === 'Regional pendiente');
   const v2ManagementPriorities = [
@@ -1677,6 +1671,11 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
           <span className="v2-hero-scope-summary">{v2ScopeSummary}</span>
           <h2>{v2HeroTitle}</h2>
           <p>{v2HeroSubtitle}</p>
+          <div className="v2-hero-actions" aria-label="Acciones rápidas">
+            <button type="button" onClick={() => focusDashboardSection('v2-top-close-opportunities')}>Cerrar oportunidades top</button>
+            <button type="button" onClick={() => focusDashboardSection('v2-commercial-compliance')}>Recuperar bajo cumplimiento</button>
+            <button type="button" onClick={() => focusDashboardSection('v2-pipeline-priorities')}>Proteger forecast</button>
+          </div>
         </div>
         <div className="gerencial-v2-hero-facts" aria-label="Métricas ejecutivas principales">
           {v2HeroMetrics.map(metric => <button type="button" className={`v2-hero-metric v2-hero-metric-button ${metric.tone}${activeV2Metric === metric.key ? ' active' : ''}`} key={metric.key} aria-pressed={activeV2Metric === metric.key} onClick={() => setActiveV2Metric(metric.key)}>

@@ -21,7 +21,9 @@ const requiredMainMarkers = [
   'hasNonServiceFilters',
   'v2HeroTitle',
   'v2HeroSubtitle',
-  'Prioridad gerencial: convertir cierres top, proteger forecast y recuperar cumplimiento.',
+  'Cumplimiento por debajo de meta',
+  'Priorizar cierres de mayor valor esperado, comerciales rezagados y oportunidades sin seguimiento.',
+  'v2-hero-actions',
   'v2HeroMetrics',
   'activeV2Metric',
   'v2HeroMetricDetails',
@@ -142,6 +144,8 @@ assert.ok(css.includes('.v2-dashboard-filters{grid-template-columns:minmax(220px
 assert.ok(css.includes('@media(max-width:1320px){.v2-filter-strip{grid-template-columns:1fr}.v2-dashboard-filters{grid-template-columns:minmax(220px,1.25fr) repeat(3,minmax(130px,1fr));}'), 'Dashboard v2 filters should gracefully wrap to two rows when the viewport is too narrow for one line');
 assert.ok(css.includes('overflow:visible'), 'Dashboard v2 filter strip should not clip the right-side controls');
 assert.ok(main.includes('v2ScopeSummary') && main.includes('${sourceRows.length}/${data.opportunities.length} oportunidades visibles'), 'Visible opportunity counter should move into the hero scope summary');
+assert.ok(!main.includes('Actualizado ${lastUpdatedLabel(sourceRows)}'), 'Dashboard v2 hero scope summary should not spend banner space on the update date');
+assert.ok(main.indexOf('v2HeroTitle') < main.indexOf('v2HeroSubtitle') && main.indexOf('v2HeroSubtitle') < main.indexOf('v2-hero-actions'), 'Dashboard v2 banner should read as diagnosis, submessage, then quick actions');
 assert.ok(!main.includes('<div className="filter-summary"><strong>{sourceRows.length}</strong> de {data.opportunities.length} oportunidades visibles'), 'Dashboard v2 filter bar should not carry the thick visible-opportunity footer');
 assert.ok(main.includes("targetId: 'v2-top-close-opportunities'"), 'Cerrar oportunidades top should scroll to the prioritized close opportunities section');
 assert.ok(main.includes("targetId: 'v2-commercial-compliance'"), 'Recuperar bajo cumplimiento should scroll to commercial compliance');
