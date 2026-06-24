@@ -1569,10 +1569,10 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   const lowComplianceRows = rankingRowsV2.filter(row => row.pct < 8 && row.count >= 10);
   const missingRegionalRows = rankingRowsV2.filter(row => formatRegionalLabel(row.regional) === 'Regional pendiente');
   const v2ManagementPriorities = [
-    { label: 'Cerrar oportunidades top', value: fmtMoneyCompact(topCloseTotal), detail: `${topCloseRowsV2.length} negocios priorizados por valor esperado`, tone: 'green', targetId: 'v2-top-close-opportunities' },
-    { label: 'Recuperar bajo cumplimiento', value: String(lowComplianceRows.length), detail: lowComplianceRows.length ? `${lowComplianceRows.map(row => formatDisplayName(row.owner)).slice(0, 2).join(', ')} requieren foco` : 'Sin alertas críticas bajo 8%', tone: lowComplianceRows.length ? 'red' : 'green', targetId: 'v2-commercial-compliance' },
-    { label: 'Normalizar regional', value: String(missingRegionalRows.length), detail: missingRegionalRows.length ? 'Datos incompletos reducen confianza gerencial' : 'Regional completa en ranking visible', tone: missingRegionalRows.length ? 'amber' : 'green', targetId: 'v2-management-alerts' },
-    { label: 'Proteger forecast', value: fmtMoneyCompact(weightedPipeline), detail: `${fmtMoneyCompact(totalPipeline)} activos ponderados por etapa`, tone: 'purple', targetId: 'v2-pipeline-priorities' },
+    { label: 'Cerrar oportunidades top', value: fmtMoneyCompact(topCloseTotal), detail: `${topCloseRowsV2.length} negocios por valor esperado`, tone: 'green', targetId: 'v2-top-close-opportunities', action: 'Ver lista priorizada' },
+    { label: 'Recuperar bajo cumplimiento', value: String(lowComplianceRows.length), detail: lowComplianceRows.length ? `${lowComplianceRows.map(row => formatDisplayName(row.owner)).slice(0, 2).join(', ')} requieren foco` : 'Sin alertas bajo 8%', tone: lowComplianceRows.length ? 'red' : 'green', targetId: 'v2-low-compliance-focus', action: 'Ver lectura de riesgo' },
+    { label: 'Normalizar regional', value: String(missingRegionalRows.length), detail: missingRegionalRows.length ? 'Comerciales con regional pendiente' : 'Regional completa', tone: missingRegionalRows.length ? 'amber' : 'green', targetId: 'v2-regional-normalization-focus', action: 'Ver calidad de datos' },
+    { label: 'Proteger forecast', value: fmtMoneyCompact(weightedPipeline), detail: `${fmtMoneyCompact(totalPipeline)} activos por etapa`, tone: 'purple', targetId: 'v2-forecast-focus', action: 'Ver concentración' },
   ];
   const v2ActionRows = activeRows.map(o => ({ opportunity: o, action: nextActionStatus(o), inactiveDays: daysSince(o.last_interaction_at || o.updated_at || o.created_at) }));
   const v2MissingAgendaRows = v2ActionRows.filter(r => r.action.code === 'missing');
@@ -1645,7 +1645,12 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   const v2MaxTrendActivity = Math.max(...v2TrendRowsFromV1.map(o=>Math.max(o.prospectos, o.cotizaciones, o.ventas / 10_000_000)), 1);
   const v2MaxTrendSales = Math.max(...v2TrendRowsFromV1.map(o=>o.ventas), 1);
   const focusDashboardSection = (targetId: string) => {
-    document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const element = document.getElementById(targetId);
+    if (!element) return;
+    document.querySelectorAll('.dashboard-focus-target').forEach(node => node.classList.remove('dashboard-focus-target'));
+    element.classList.add('dashboard-focus-target');
+    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.setTimeout(() => element.classList.remove('dashboard-focus-target'), 2600);
   };
 
   return <section className="stack manager-dashboard dashboard-v2 dashboard-v2-six-components">
@@ -1699,7 +1704,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
 
       <Panel title="Prioridades gerenciales de hoy">
         <div className="v2-priority-grid">{v2ManagementPriorities.map(priority => <button type="button" className={`v2-priority-card ${priority.tone}`} key={priority.label} onClick={() => focusDashboardSection(priority.targetId)}>
-          <small>{priority.label}</small><strong className="numeric-value">{priority.value}</strong><span>{priority.detail}</span><em>Ir al detalle →</em>
+          <small>{priority.label}</small><strong className="numeric-value">{priority.value}</strong><span>{priority.detail}</span><em>{priority.action} →</em>
         </button>)}</div>
       </Panel>
     </section>
@@ -1729,7 +1734,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     <section id="v2-commercial-compliance" className="v2-component-block cumplimiento-comercial" aria-label="3. Cumplimiento por comercial">
       <div className="v2-section-heading"><span>3. Cumplimiento por comercial</span><h2>Quién cumple y quién requiere foco</h2><p>Ranking calculado contra presupuesto individual cuando está cargado.</p></div>
       <div className="v2-executive-grid single-focus">
-        <Panel title="Cumplimiento comercial">
+        <Panel title="Cumplimiento comercial" id="v2-commercial-ranking">
           <div className="v2-ranking-list">{rankingRowsV2.map((row, index) => <a className={`v2-ranking-row ${row.tone}`} key={row.ownerId} href={ownerRoute(row.ownerId)}>
             <span className="owner-rank">#{index + 1}</span>
             <div className="v2-ranking-main"><strong>{formatDisplayName(row.owner)}</strong><small>{formatRegionalLabel(row.regional)} · {row.count} oportunidades{formatRegionalLabel(row.regional) === 'Regional pendiente' ? ' · requiere normalizar regional' : ''}</small><div className="v2-progress-track"><span style={{ width: `${Math.max(3, Math.min(row.pct, 100))}%` }} /></div></div>
@@ -1739,8 +1744,8 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
         </Panel>
         <Panel title="Lectura gerencial">
           <div className="v2-alert-list">
-            <div><small>Riesgo de conversión</small><strong>{lowComplianceRows.length ? `${lowComplianceRows.length} comerciales bajo 8%` : 'Sin alerta crítica'}</strong><span>{lowComplianceRows.length ? 'Priorizar revisión de calidad de pipeline y próximas acciones.' : 'El ranking visible no muestra brecha crítica bajo 8%.'}</span></div>
-            <div><small>Calidad de datos</small><strong>{missingRegionalRows.length ? `${missingRegionalRows.length} con regional pendiente` : 'Regional completa'}</strong><span>{missingRegionalRows.length ? 'Normalizar regional para lectura confiable por zona.' : 'Datos regionales listos para lectura ejecutiva.'}</span></div>
+            <div id="v2-low-compliance-focus"><small>Riesgo de conversión</small><strong>{lowComplianceRows.length ? `${lowComplianceRows.length} comerciales bajo 8%` : 'Sin alerta crítica'}</strong><span>{lowComplianceRows.length ? `Priorizar revisión de ${lowComplianceRows.map(row => formatDisplayName(row.owner)).slice(0, 3).join(', ')}.` : 'El ranking visible no muestra brecha crítica bajo 8%.'}</span></div>
+            <div id="v2-regional-normalization-focus"><small>Calidad de datos</small><strong>{missingRegionalRows.length ? `${missingRegionalRows.length} con regional pendiente` : 'Regional completa'}</strong><span>{missingRegionalRows.length ? `Normalizar regional para ${missingRegionalRows.map(row => formatDisplayName(row.owner)).slice(0, 3).join(', ')}.` : 'Datos regionales listos para lectura ejecutiva.'}</span></div>
             <div><small>Criterio de ranking</small><strong>Meta individual</strong><span>Ordenado por aprobado; cumplimiento contra presupuesto del comercial cuando existe.</span></div>
           </div>
         </Panel>
@@ -1767,7 +1772,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
         </a>)}</div>
         {!topCloseRowsV2.length ? <EmptyState title="Sin oportunidades priorizadas" text="No hay ofertas activas para priorizar con los filtros de Seguridad Física." /> : null}
       </Panel>
-      <Panel title="Concentración y avance del pipeline">
+      <Panel title="Concentración y avance del pipeline" id="v2-forecast-focus">
         <div className="stage-action-summary"><div><small>Lectura ejecutiva</small><strong>{v2StageLeader ? `${v2Concentration}% del pipeline está en ${v2StageLeader.stageName}` : 'Sin etapa dominante'}</strong><span>{v2StageLeader && v2Concentration >= 55 ? 'Prioridad: destrabar esa etapa y revisar siguientes acciones.' : 'Distribución sin concentración crítica con los filtros actuales.'}</span></div><a className="button secondary" href={`#/opportunities?stage=${encodeURIComponent(v2StageLeader?.stageCode || '')}`}>Ver etapa dominante</a></div>
         <div className="tablewrap stage-action-table"><table><thead><tr><th>Etapa</th><th>Valor total</th><th>Ops</th><th>% pipeline</th><th>Valor ponderado</th></tr></thead><tbody>{stageRowsV2.map(s => {
           const pct = totalPipeline ? Math.round((s.value / totalPipeline) * 100) : 0;

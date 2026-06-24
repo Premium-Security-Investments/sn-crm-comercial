@@ -149,8 +149,10 @@ assert.ok(!main.includes('Actualizado ${lastUpdatedLabel(sourceRows)}'), 'Dashbo
 assert.ok(main.indexOf('v2HeroTitle') < main.indexOf('v2HeroSubtitle') && main.indexOf('v2HeroSubtitle') < main.indexOf('v2-hero-actions'), 'Dashboard v2 banner should read as diagnosis, submessage, then quick actions');
 assert.ok(!main.includes('<div className="filter-summary"><strong>{sourceRows.length}</strong> de {data.opportunities.length} oportunidades visibles'), 'Dashboard v2 filter bar should not carry the thick visible-opportunity footer');
 assert.ok(main.includes("targetId: 'v2-top-close-opportunities'"), 'Cerrar oportunidades top should scroll to the prioritized close opportunities section');
-assert.ok(main.includes("targetId: 'v2-commercial-compliance'"), 'Recuperar bajo cumplimiento should scroll to commercial compliance');
-assert.ok(main.includes("targetId: 'v2-management-alerts'"), 'Normalizar regional should scroll to management alerts / data quality');
-assert.ok(main.includes("targetId: 'v2-pipeline-priorities'"), 'Proteger forecast should scroll to pipeline priorities');
+assert.ok(main.includes("targetId: 'v2-low-compliance-focus'"), 'Recuperar bajo cumplimiento should scroll to the exact low-compliance explanation');
+assert.ok(main.includes("targetId: 'v2-regional-normalization-focus'"), 'Normalizar regional should scroll to the exact data-quality explanation');
+assert.ok(main.includes("targetId: 'v2-forecast-focus'"), 'Proteger forecast should scroll to the exact forecast concentration panel');
+assert.ok(main.includes('dashboard-focus-target'), 'Priority cards should visually highlight the destination after scroll');
+assert.ok(css.includes('repeat(auto-fit,minmax(260px,1fr))'), 'Priority cards should use wider responsive columns for readability');
 
 console.log('manager-dashboard-v2 static checks passed');
