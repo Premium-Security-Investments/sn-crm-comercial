@@ -1565,7 +1565,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   const v2ServiceName = service ? data.services.find(s => s.code === service)?.name || 'Seguridad Física' : 'Todos los productos';
   const hasNonServiceFilters = Boolean(period || q || owner || regional || stage || onlyActive);
   const v2HeroLabel = service && !hasNonServiceFilters ? `Servicio: ${v2ServiceName}` : 'Vista filtrada';
-  const v2ScopeSummary = `${sourceRows.length}/${data.opportunities.length} oportunidades visibles`;
+  const v2ScopeSummary = `${sourceRows.length}/${data.opportunities.length} oportunidades`;
   const lowComplianceRows = rankingRowsV2.filter(row => row.pct < 8 && row.count >= 10);
   const missingRegionalRows = rankingRowsV2.filter(row => formatRegionalLabel(row.regional) === 'Regional pendiente');
   const v2ManagementPriorities = [
@@ -1667,8 +1667,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
       <div className="v2-section-heading"><span>1. Resumen ejecutivo</span><h2>Cómo vamos hoy</h2><p>Lectura rápida de cumplimiento, pipeline, forecast y prioridades gerenciales.</p></div>
       <section className="gerencial-v2-hero" aria-label="Resumen ejecutivo compacto de Dashboard Gerencial 2">
         <div className="gerencial-v2-hero-copy compact-service-context">
-          <div className="command-title-row"><span className="service-context-pill">{v2HeroLabel}</span></div>
-          <span className="v2-hero-scope-summary">{v2ScopeSummary}</span>
+          <div className="command-title-row"><span className="service-context-pill">{v2HeroLabel}</span><span className="v2-hero-scope-summary">{v2ScopeSummary}</span></div>
           <h2>{v2HeroTitle}</h2>
           <p>{v2HeroSubtitle}</p>
           <div className="v2-hero-actions" aria-label="Acciones rápidas">
