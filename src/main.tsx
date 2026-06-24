@@ -1486,12 +1486,12 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     return { ...row, months, accumulated: months.reduce((sum, value) => sum + value, 0) || row.approved };
   });
   const projectionCardsV2 = [
-    { label: 'Ventas aprobadas', value: fmtMoneyCompact(totalApproved), detail: `${approvedRows.length} cierres registrados`, tone: 'green' },
-    { label: 'Presupuesto anual', value: fmtMoneyCompact(totalBudget), detail: 'Presupuesto individual cargado en CRM', tone: totalBudget ? 'blue' : 'amber' },
-    { label: 'Pipeline activo', value: fmtMoneyCompact(totalPipeline), detail: `${activeRows.length} ofertas activas`, tone: 'blue' },
-    { label: 'Forecast ponderado', value: fmtMoneyCompact(weightedPipeline), detail: 'Ajustado por probabilidad de etapa', tone: 'purple' },
-    { label: 'Cumplimiento vs meta', value: compliancePct === null ? '—' : `${compliancePct}%`, detail: totalBudget ? `${fmtMoneyCompact(totalBudget)} presupuesto cargado` : 'Meta pendiente de cargar', tone: compliancePct === null ? 'amber' : compliancePct >= 80 ? 'green' : compliancePct >= 40 ? 'amber' : 'red' },
-    { label: 'Unidad operativa', value: productOperationalUnitLabel, detail: service ? 'Según producto seleccionado' : 'Producto seleccionado: todos', tone: 'purple' },
+    { label: 'Ventas aprobadas', value: fmtMoneyCompact(totalApproved), detail: `${approvedRows.length} cierres registrados`, tone: 'green', targetId: 'v2-sales-accumulated-focus', action: 'Ver ventas' },
+    { label: 'Presupuesto anual', value: fmtMoneyCompact(totalBudget), detail: 'Presupuesto individual cargado en CRM', tone: totalBudget ? 'blue' : 'amber', targetId: 'v2-annual-budget-focus', action: 'Ver presupuesto' },
+    { label: 'Pipeline activo', value: fmtMoneyCompact(totalPipeline), detail: `${activeRows.length} ofertas activas`, tone: 'blue', targetId: 'v2-active-pipeline-focus', action: 'Ver pipeline' },
+    { label: 'Forecast ponderado', value: fmtMoneyCompact(weightedPipeline), detail: 'Ajustado por probabilidad de etapa', tone: 'purple', targetId: 'v2-forecast-focus', action: 'Ver forecast' },
+    { label: 'Cumplimiento vs meta', value: compliancePct === null ? '—' : `${compliancePct}%`, detail: totalBudget ? `${fmtMoneyCompact(totalBudget)} presupuesto cargado` : 'Meta pendiente de cargar', tone: compliancePct === null ? 'amber' : compliancePct >= 80 ? 'green' : compliancePct >= 40 ? 'amber' : 'red', targetId: 'v2-commercial-ranking', action: 'Ver ranking' },
+    { label: 'Unidad operativa', value: productOperationalUnitLabel, detail: service ? 'Según producto seleccionado' : 'Producto seleccionado: todos', tone: 'purple', targetId: 'v2-annual-budget-focus', action: 'Ver unidades' },
   ];
   const rankingRowsV2 = Array.from(sourceRows.reduce((map, o) => {
     const key = ownerKey(o);
@@ -1713,17 +1713,17 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
       <div className="v2-section-heading"><span>2. Presupuesto y ventas 2026</span><h2>Meta, presupuesto y avance real</h2><p>Bloque equivalente a las tablas compartidas, resumido para lectura gerencial.</p></div>
       <Panel title="Desempeño comercial 2026 por producto">
         <p className="v2-panel-note">Presupuesto, ventas y prospección 2026 para el producto seleccionado. La unidad operativa se adapta por producto; en Seguridad Física se lee como puestos 24H.</p>
-        <div className="v2-kpi-grid">{projectionCardsV2.map(card => <div className={`v2-kpi-card ${card.tone}`} key={card.label}>
-          <small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>
-        </div>)}</div>
+        <div className="v2-kpi-grid">{projectionCardsV2.map(card => <button type="button" className={`v2-kpi-card v2-kpi-button ${card.tone}`} key={card.label} onClick={() => focusDashboardSection(card.targetId)}>
+          <small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span><em>{card.action} →</em>
+        </button>)}</div>
       </Panel>
-      <Panel title="Proyección / presupuesto 2026">
+      <Panel title="Proyección / presupuesto 2026" id="v2-annual-budget-focus">
         <div className="tablewrap crm-readable-table v2-projection-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Unidad proyectada</th><th>Presupuesto mensual</th><th>Presupuesto anual</th></tr></thead><tbody>{visibleProjectionRowsV2.map(row => <tr key={row.ownerId}>
           <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td><strong>{row.projectedUnits}</strong><small> {productOperationalUnitLabel}</small></td><td className="money-cell">{fmtMoney(row.monthlyBudget)}</td><td className="money-cell">{fmtMoney(row.budget)}</td>
         </tr>)}</tbody></table></div>
         {!visibleProjectionRowsV2.length ? <EmptyState title="Sin presupuesto visible" text="Cuando existan metas o pipeline del producto seleccionado aparecerá la proyección por comercial." /> : <p className="muted">Unidad meta tomada del campo de cantidad unidades / puestos 24H cuando esté cargado; si falta, se estima desde presupuesto mensual.</p>}
       </Panel>
-      <Panel title="Ventas acumuladas por comercial">
+      <Panel title="Ventas acumuladas por comercial" id="v2-sales-accumulated-focus">
         <div className="tablewrap crm-readable-table v2-sales-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Clientes</th><th>Ene</th><th>Feb</th><th>Mar</th><th>Abr</th><th>May</th><th>Jun</th><th>Ventas acumuladas</th><th>Cumplimiento individual</th><th>Presupuesto</th></tr></thead><tbody>{monthlySalesRowsV2.map(row => <tr key={row.ownerId}>
           <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td>{row.clients}</td>{row.months.map((value, index) => <td className="money-cell" key={`${row.ownerId}-${index}`}>{value ? fmtMoneyCompact(value) : '—'}</td>)}<td className="money-cell"><strong>{fmtMoney(row.accumulated)}</strong></td><td><strong className="numeric-value">{row.compliance === null ? '—' : `${row.compliance}%`}</strong></td><td className="money-cell">{fmtMoney(row.budget)}</td>
         </tr>)}</tbody></table></div>
@@ -1754,7 +1754,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
 
     <section id="v2-pipeline-priorities" className="v2-component-block pipeline-prioridades" aria-label="4. Pipeline y oportunidades prioritarias">
       <div className="v2-section-heading"><span>4. Pipeline y oportunidades prioritarias</span><h2>Dónde está el dinero futuro</h2><p>Pipeline activo, concentración por etapa y oportunidades con mayor valor esperado.</p></div>
-      <Panel title="Pipeline / prospección activa">
+      <Panel title="Pipeline / prospección activa" id="v2-active-pipeline-focus">
         <div className="v2-pipeline-summary"><strong>{fmtMoneyCompact(totalPipeline)}</strong><span>{activeRows.length} ofertas activas · Valor promedio por oferta: {fmtMoneyCompact(activeRows.length ? totalPipeline / activeRows.length : 0)} · barras = participación real sobre el pipeline</span></div>
         <div className="tablewrap v2-pipeline-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Ofertas</th><th>Valor</th><th>Promedio por oferta</th><th>Participación del pipeline</th></tr></thead><tbody>{pipelineRowsV2.map(row => {
           const share = Math.round((row.value / Math.max(totalPipeline, 1)) * 100);

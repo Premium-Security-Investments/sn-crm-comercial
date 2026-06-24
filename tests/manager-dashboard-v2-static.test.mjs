@@ -154,5 +154,10 @@ assert.ok(main.includes("targetId: 'v2-regional-normalization-focus'"), 'Normali
 assert.ok(main.includes("targetId: 'v2-forecast-focus'"), 'Proteger forecast should scroll to the exact forecast concentration panel');
 assert.ok(main.includes('dashboard-focus-target'), 'Priority cards should visually highlight the destination after scroll');
 assert.ok(css.includes('repeat(auto-fit,minmax(260px,1fr))'), 'Priority cards should use wider responsive columns for readability');
+assert.ok(main.includes('v2-kpi-button'), 'Desempeño comercial KPI cards should be clickable buttons');
+assert.ok(main.includes("targetId: 'v2-sales-accumulated-focus'"), 'Ventas aprobadas KPI should scroll to accumulated sales table');
+assert.ok(main.includes("targetId: 'v2-annual-budget-focus'"), 'Presupuesto/unidad KPIs should scroll to budget projection table');
+assert.ok(main.includes("targetId: 'v2-active-pipeline-focus'"), 'Pipeline activo KPI should scroll to active pipeline table');
+assert.ok(css.includes('.v2-kpi-button:hover'), 'Clickable KPI cards should have visible hover/focus affordance');
 
 console.log('manager-dashboard-v2 static checks passed');
