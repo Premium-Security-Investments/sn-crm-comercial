@@ -1647,10 +1647,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   const focusDashboardSection = (targetId: string) => {
     const element = document.getElementById(targetId);
     if (!element) return;
-    document.querySelectorAll('.dashboard-focus-target').forEach(node => node.classList.remove('dashboard-focus-target'));
-    element.classList.add('dashboard-focus-target');
-    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    window.setTimeout(() => element.classList.remove('dashboard-focus-target'), 2600);
+    element.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   return <section className="stack manager-dashboard dashboard-v2 dashboard-v2-six-components">
