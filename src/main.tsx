@@ -1435,18 +1435,22 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   const [service, setService] = useState('seguridad_fisica');
   const [onlyActive, setOnlyActive] = useState(false);
   const managerRegionalOptions = useMemo(() => uniq(data.opportunities.map(o => o.regional_nombre)), [data.opportunities]);
-  const scopedOpportunities = useMemo(() => data.opportunities.filter(o =>
+  const v2BaseScopeMatches = (o: Opportunity) =>
     matchesDashboardPeriod(o, period) &&
     (!q || `${o.company_name} ${o.owner_name||''} ${o.sede||''} ${o.quote_city||''} ${o.regional_nombre||''} ${o.tipo_producto_original||''} ${o.service_type_name||''} ${o.legacy_excel_id||''}`.toLowerCase().includes(q.toLowerCase())) &&
     (!owner || ownerKey(o) === owner) &&
     (!regional || o.regional_nombre === regional) &&
+    (!service || o.service_type_code === service);
+  const scopedOpportunities = useMemo(() => data.opportunities.filter(o =>
+    v2BaseScopeMatches(o) &&
     (!stage || o.stage_code === stage) &&
-    (!service || o.service_type_code === service) &&
     (!onlyActive || !isTerminalStage(o.stage_code))
   ), [data.opportunities, period, q, owner, regional, stage, service, onlyActive]);
+  const performanceRows = useMemo(() => data.opportunities.filter(v2BaseScopeMatches), [data.opportunities, period, q, owner, regional, service]);
   const sourceRows = scopedOpportunities;
   const activeRows = sourceRows.filter(o => !isTerminalStage(o.stage_code));
-  const approvedRows = sourceRows.filter(isApprovedSale);
+  const performanceActiveRows = performanceRows.filter(o => !isTerminalStage(o.stage_code));
+  const approvedRows = performanceRows.filter(isApprovedSale);
   const stageProbability = new Map(data.stages.map(s => [s.code, Number(s.close_probability || 0)]));
   const totalPipeline = activeRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
   const totalApproved = approvedRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
@@ -1454,14 +1458,14 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   const selectedService = service ? data.services.find(s => s.code === service) : null;
   const productOperationalUnitLabel = productOperationalUnit(service, selectedService?.name || (service ? 'producto seleccionado' : ''));
   const serviceScopedGoalsV2 = data.goals.filter(goal => goalMatchesV2Scope(goal, service, regional));
-  const ownerProfilesInScope = data.profiles.filter(profile => sourceRows.some(o => ownerKey(o) === profile.id) || serviceScopedGoalsV2.some(goal => goal.user_id === profile.id));
+  const ownerProfilesInScope = data.profiles.filter(profile => performanceRows.some(o => ownerKey(o) === profile.id) || serviceScopedGoalsV2.some(goal => goal.user_id === profile.id));
   const serviceScopedBudgetRowsV2 = ownerProfilesInScope.map(profile => {
-    const ownerRows = sourceRows.filter(o => ownerKey(o) === profile.id);
+    const ownerRows = performanceRows.filter(o => ownerKey(o) === profile.id);
     const ownerApprovedRows = ownerRows.filter(isApprovedSale);
     const ownerGoals = serviceScopedGoalsV2.filter(goal => goal.user_id === profile.id);
     const budget = ownerGoals.reduce((sum, goal) => sum + Number(goal.sales_budget || 0), 0);
     const approved = ownerApprovedRows.reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
-    const pipeline = ownerRows.filter(o => !isTerminalStage(o.stage_code)).reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
+    const pipeline = performanceActiveRows.filter(o => ownerKey(o) === profile.id).reduce((sum, o) => sum + Number(o.offer_value || 0), 0);
     const clients = new Set(ownerApprovedRows.map(o => o.company_name).filter(Boolean)).size;
     const regional = ownerGoals.find(goal => goal.regional_nombre && goal.regional_nombre !== 'todas')?.regional_nombre || (topGroup(ownerRows.map(o => o.regional_nombre || 'Regional pendiente')).label) || 'Regional pendiente';
     const monthlyProjectedUnits = Math.max(0, ...ownerGoals.map(goal => Number(goal.operational_unit_target || 0)));
@@ -1494,7 +1498,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     { label: 'Cumplimiento vs meta', value: compliancePct === null ? '—' : `${compliancePct}%`, detail: totalBudget ? `${fmtMoneyCompact(totalBudget)} presupuesto cargado` : 'Meta pendiente de cargar', tone: compliancePct === null ? 'amber' : compliancePct >= 80 ? 'green' : compliancePct >= 40 ? 'amber' : 'red', targetId: 'v2-commercial-ranking', action: 'Ver ranking' },
     { label: 'Unidad operativa', value: productOperationalUnitLabel, detail: service ? 'Según producto seleccionado' : 'Producto seleccionado: todos', tone: 'purple', targetId: 'v2-annual-budget-focus', action: 'Ver unidades' },
   ];
-  const rankingRowsV2 = Array.from(sourceRows.reduce((map, o) => {
+  const rankingRowsV2 = Array.from(performanceRows.reduce((map, o) => {
     const key = ownerKey(o);
     const row = map.get(key) || { ownerId: key, owner: o.owner_name || 'Sin comercial', regional: o.regional_nombre || 'Sin regional', count: 0, active: 0, approved: 0, pipeline: 0, weighted: 0 };
     row.count++;

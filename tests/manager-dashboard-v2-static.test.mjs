@@ -66,6 +66,8 @@ const requiredMainMarkers = [
   'Limpiar',
   'v2ScopeSummary',
   'sourceRows = scopedOpportunities',
+  'performanceRows = useMemo(() => data.opportunities.filter(v2BaseScopeMatches)',
+  'approvedRows = performanceRows.filter(isApprovedSale)',
   'PRODUCT_OPERATIONAL_UNITS',
   'productOperationalUnit',
   'Desempeño comercial 2026 por producto',
@@ -152,12 +154,18 @@ assert.ok(main.includes("targetId: 'v2-top-close-opportunities'"), 'Cerrar oport
 assert.ok(main.includes("targetId: 'v2-low-compliance-focus'"), 'Recuperar bajo cumplimiento should scroll to the exact low-compliance explanation');
 assert.ok(main.includes("targetId: 'v2-regional-normalization-focus'"), 'Normalizar regional should scroll to the exact data-quality explanation');
 assert.ok(main.includes("targetId: 'v2-forecast-focus'"), 'Proteger forecast should scroll to the exact forecast concentration panel');
-assert.ok(main.includes('dashboard-focus-target'), 'Priority cards should visually highlight the destination after scroll');
-assert.ok(css.includes('repeat(auto-fit,minmax(260px,1fr))'), 'Priority cards should use wider responsive columns for readability');
+assert.ok(main.includes('dashboard-focus-hit'), 'Priority cards should visually highlight the destination after scroll');
+assert.ok(css.includes('.dashboard-v2 .v2-priority-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:stretch}'), 'Priority cards should use readable dashboard-specific columns');
 assert.ok(main.includes('v2-kpi-button'), 'Desempeño comercial KPI cards should be clickable buttons');
 assert.ok(main.includes("targetId: 'v2-sales-accumulated-focus'"), 'Ventas aprobadas KPI should scroll to accumulated sales table');
 assert.ok(main.includes("targetId: 'v2-annual-budget-focus'"), 'Presupuesto/unidad KPIs should scroll to budget projection table');
 assert.ok(main.includes("targetId: 'v2-active-pipeline-focus'"), 'Pipeline activo KPI should scroll to active pipeline table');
 assert.ok(css.includes('.v2-kpi-button:hover'), 'Clickable KPI cards should have visible hover/focus affordance');
+
+assert.ok(main.includes('const scopedOpportunities = useMemo(() => data.opportunities.filter(o =>\n    v2BaseScopeMatches(o) &&\n    (!stage || o.stage_code === stage) &&\n    (!onlyActive || !isTerminalStage(o.stage_code))'), 'Stage and Pipeline activo should only narrow the visible opportunity/pipeline scope');
+assert.ok(main.includes('const performanceRows = useMemo(() => data.opportunities.filter(v2BaseScopeMatches), [data.opportunities, period, q, owner, regional, service]);'), 'Performance scope should keep approved sales when stage or Pipeline activo filters are used');
+assert.ok(main.includes('const approvedRows = performanceRows.filter(isApprovedSale);'), 'Compliance must be based on performanceRows, not active-only sourceRows');
+assert.ok(main.includes('const rankingRowsV2 = Array.from(performanceRows.reduce'), 'Commercial compliance ranking should ignore stage/active-only filters that would remove approved sales');
+assert.ok(main.includes('const pipelineRowsV2 = Array.from(activeRows.reduce'), 'Pipeline tables should continue to use active visible rows');
 
 console.log('manager-dashboard-v2 static checks passed');
