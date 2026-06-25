@@ -34,6 +34,15 @@ const mainMarkers = [
   "daysSince(o.last_interaction_at",
   "status === 'managed' && row.hasManagedAction",
   "status === 'risk' && row.isRiskPipeline",
+  "alerts-filter-panel",
+  "filters alerts-filters v2-dashboard-filters",
+  "empty=\"Comerciales\"",
+  "empty=\"Regiones\"",
+  "empty=\"Etapas\"",
+  "empty=\"Productos\"",
+  "empty=\"Clientes\"",
+  "Pipeline activo",
+  ">Limpiar<",
 ];
 
 for (const marker of mainMarkers) {
@@ -85,6 +94,17 @@ const forbiddenCssMarkers = [
 
 for (const marker of forbiddenCssMarkers) {
   assert.ok(!css.includes(marker), `styles.css still has duplicate alert card marker: ${marker}`);
+}
+
+const alertFilterStart = main.indexOf('<Panel title="Filtros de gestión" className="alerts-filter-panel">');
+const alertFilterEnd = main.indexOf('</Panel>', alertFilterStart);
+const alertFilterMarkup = main.slice(alertFilterStart, alertFilterEnd);
+assert.ok(alertFilterStart >= 0 && alertFilterMarkup.includes('filters alerts-filters v2-dashboard-filters'), 'Alert filters should reuse the compact dashboard filter layout');
+for (const marker of ['empty="Comerciales"', 'empty="Regiones"', 'empty="Etapas"', 'empty="Productos"', 'empty="Clientes"', 'Pipeline activo', '>Limpiar<']) {
+  assert.ok(alertFilterMarkup.includes(marker), `Alert filter markup missing compact dashboard-style marker: ${marker}`);
+}
+for (const marker of ['empty="Todos los comerciales"', 'empty="Todas las regionales"', 'empty="Todas las etapas"', 'empty="Todos los servicios"', 'empty="Todos los tipos de cliente"', 'Solo activas', '>Limpiar filtros<']) {
+  assert.ok(!alertFilterMarkup.includes(marker), `Alert filter markup still has inconsistent copy: ${marker}`);
 }
 
 console.log('commercial-alerts static checks passed');

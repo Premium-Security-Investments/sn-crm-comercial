@@ -2114,16 +2114,16 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
         </button>)}
       </div>
     </section>
-    <Panel title="Filtros de gestión">
-      <div className="filters alerts-filters">
-        <input placeholder="Buscar cliente, comercial, sede, ciudad o servicio…" value={q} onChange={e=>setQ(e.target.value)} />
-        <Select value={owner} onChange={setOwner} options={ownerOptions} empty="Todos los comerciales" />
-        <Select value={regional} onChange={setRegional} options={alertRegionalOptions} empty="Todas las regionales" />
-        <Select value={stage} onChange={setStage} options={stageOptions} empty="Todas las etapas" />
-        <Select value={service} onChange={setService} options={alertServiceOptions} empty="Todos los servicios" />
-        <Select value={customerSegmentFilter} onChange={setCustomerSegmentFilter} options={customerSegmentOptions} empty="Todos los tipos de cliente" />
-        <label className="check-filter"><input type="checkbox" checked={hideClosed} onChange={e=>setHideClosed(e.target.checked)} /> Solo activas</label>
-        <button className="secondary" onClick={()=>{ setQ(''); setStatus(''); setOwner(''); setRegional(''); setStage(''); setService(''); setCustomerSegmentFilter(''); setHideClosed(true); }}>Limpiar filtros</button>
+    <Panel title="Filtros de gestión" className="alerts-filter-panel">
+      <div className="filters alerts-filters v2-dashboard-filters">
+        <input placeholder="Buscar cliente, sede, ciudad o ID…" value={q} onChange={e=>setQ(e.target.value)} />
+        <Select value={owner} onChange={setOwner} options={ownerOptions} empty="Comerciales" />
+        <Select value={regional} onChange={setRegional} options={alertRegionalOptions} empty="Regiones" />
+        <Select value={stage} onChange={setStage} options={stageOptions} empty="Etapas" />
+        <Select value={service} onChange={setService} options={alertServiceOptions} empty="Productos" />
+        <Select value={customerSegmentFilter} onChange={setCustomerSegmentFilter} options={customerSegmentOptions} empty="Clientes" />
+        <label className="check-filter"><input type="checkbox" checked={hideClosed} onChange={e=>setHideClosed(e.target.checked)} /> Pipeline activo</label>
+        <button className="secondary" onClick={()=>{ setQ(''); setStatus(''); setOwner(''); setRegional(''); setStage(''); setService(''); setCustomerSegmentFilter(''); setHideClosed(true); }}>Limpiar</button>
       </div>
       <div className="filter-summary alert-filter-summary"><strong>{filteredAlerts.length}</strong> alertas visibles · {active.length} oportunidades activas base</div>
     </Panel>
