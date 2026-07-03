@@ -594,6 +594,39 @@ function scoreLabel(score?: number) {
   if (value >= 40) return 'Medio';
   return 'Bajo / validar';
 }
+const companyComplianceItems = [
+  { area: 'RUP', status: 'Mantener vigente', detail: 'Registro Único de Proponentes actualizado con experiencia, códigos UNSPSC, capacidad financiera y organizacional antes de presentar oferta.' },
+  { area: 'capacidad jurídica', status: 'Validar por proceso', detail: 'Existencia y representación legal, facultades del representante, objeto social compatible y autorizaciones internas cuando el valor lo exija.' },
+  { area: 'capacidad financiera', status: 'Cruzar con pliego', detail: 'Índices de liquidez, endeudamiento, razón de cobertura y demás indicadores solicitados por la entidad contratante.' },
+  { area: 'capacidad organizacional', status: 'Cruzar con pliego', detail: 'Rentabilidad del patrimonio/activo y demás indicadores que la entidad tome del RUP o de estados financieros.' },
+  { area: 'experiencia habilitante', status: 'Actualizar soportes', detail: 'Contratos ejecutados, certificaciones, cuantías, objetos similares y experiencia específica en vigilancia, seguridad electrónica o tecnología.' },
+  { area: 'inhabilidades e incompatibilidades', status: 'Declaración obligatoria', detail: 'Revisión de causales legales, conflictos de interés, sanciones, multas, caducidades, antecedentes y beneficiarios finales.' },
+  { area: 'Superintendencia de Vigilancia', status: 'Sectorial crítico', detail: 'Licencia, modalidades autorizadas, permisos, pólizas, medios tecnológicos y condiciones propias de vigilancia y seguridad privada.' },
+  { area: 'documentos recurrentes', status: 'Carpeta viva', detail: 'Cámara de Comercio, RUT, certificaciones tributarias/parafiscales, estados financieros, pólizas, certificaciones ISO/sectoriales y formatos de la entidad.' },
+];
+const procurementLegalFramework = [
+  { name: 'Ley 80 de 1993', role: 'Estatuto General de Contratación: capacidad, selección objetiva, inhabilidades, deberes y principios.' },
+  { name: 'Ley 1150 de 2007', role: 'Reforma de contratación: modalidades de selección, RUP, reglas de eficiencia y transparencia.' },
+  { name: 'Decreto 1082 de 2015', role: 'Decreto único reglamentario: planeación, estudios previos, RUP, requisitos habilitantes y Colombia Compra.' },
+  { name: 'Ley 1474 de 2011', role: 'Estatuto anticorrupción: riesgos disciplinarios, fiscales, penales y deberes de transparencia.' },
+  { name: 'Ley 1882 de 2018', role: 'Ajustes a pliegos tipo, infraestructura y reglas de selección objetiva aplicables como referencia.' },
+  { name: 'Ley 2195 de 2022', role: 'Transparencia, prevención de corrupción, beneficiarios finales y responsabilidad empresarial.' },
+];
+function TenderCompanyCompliancePanel() {
+  const readyCount = companyComplianceItems.filter(item => !/Cruzar|Validar/i.test(item.status)).length;
+  return <section className="company-compliance-panel" aria-label="Perfil de habilitación de la empresa para licitar">
+    <div className="company-compliance-head">
+      <div><span className="eyebrow">Empresa licitante</span><h2>Perfil de habilitación de la empresa</h2><p>Base ejecutiva para decidir si Seguridad Nacional puede aplicar a un proceso: no basta con que el objeto encaje; también deben cerrar requisitos jurídicos, RUP, capacidad financiera, experiencia y habilitación sectorial.</p></div>
+      <div className="company-compliance-score"><small>Control CEO</small><strong>{readyCount}/{companyComplianceItems.length}</strong><span>frentes documentales con base lista; cada pliego puede exigir validación adicional.</span></div>
+    </div>
+    <div className="compliance-matrix">{companyComplianceItems.map(item => <article key={item.area} className="compliance-item"><small>{item.area}</small><strong>{item.status}</strong><p>{item.detail}</p></article>)}</div>
+    <details className="legal-framework-panel">
+      <summary>Marco normativo Colombia para analizar requisitos habilitantes</summary>
+      <div className="legal-framework-grid">{procurementLegalFramework.map(rule => <div key={rule.name}><strong>{rule.name}</strong><span>{rule.role}</span></div>)}</div>
+      <p className="muted">Uso recomendado: al subir pliegos o estudios previos, comparar requisitos habilitantes contra esta matriz y marcar el proceso como aplicable, subsanable o no aplicable antes de invertir tiempo comercial.</p>
+    </details>
+  </section>;
+}
 function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) {
   const currentProfile = data.currentProfile;
   const [payload, setPayload] = useState<TenderRadarPayload | null>(null);
@@ -776,6 +809,7 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
         {(Object.entries(tenderFastFilterConfig) as Array<[Exclude<TenderFastFilter, null>, { label: string }]>).map(([key, config]) => <button key={key} className={fastFilter === key ? 'active' : ''} onClick={() => applyTenderFastFilter(key)}>{config.label}</button>)}
       </div>
     </section>
+    <TenderCompanyCompliancePanel />
     <section className="tender-control-panel" aria-label="Controles de licitaciones">
       <div className="tender-control-top">
         <input className="tender-search-input" placeholder="Buscar entidad, ciudad, objeto, fuente o referencia…" value={q} onChange={e=>setQ(e.target.value)} />
