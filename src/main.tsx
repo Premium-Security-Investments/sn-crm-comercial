@@ -43,6 +43,7 @@ type TenderDocumentAnalysis = { recommendation: string; risk: string; summary: s
 type TenderDocumentsPayload = { documents: TenderDocumentRecord[]; analysis: TenderDocumentAnalysis | null; analyses: TenderDocumentAnalysis[] };
 type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string; count?: number; message?: string };
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
+type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; rup_status?: string | null; rup_updated_at?: string | null; rup_unspsc_codes?: string | null; authorized_services?: string | null; supervigilancia_license?: string | null; financial_capacity?: string | null; organizational_capacity?: string | null; experience_summary?: string | null; certifications?: string | null; recurring_documents?: string | null; disqualifications_notes?: string | null; useful_company_info?: string | null; updated_at?: string | null; updated_by_name?: string | null };
 type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
 type DashboardPeriodFilter = '' | 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
 
@@ -594,37 +595,55 @@ function scoreLabel(score?: number) {
   if (value >= 40) return 'Medio';
   return 'Bajo / validar';
 }
-const companyComplianceItems = [
-  { area: 'RUP', status: 'Mantener vigente', detail: 'Registro Único de Proponentes actualizado con experiencia, códigos UNSPSC, capacidad financiera y organizacional antes de presentar oferta.' },
-  { area: 'capacidad jurídica', status: 'Validar por proceso', detail: 'Existencia y representación legal, facultades del representante, objeto social compatible y autorizaciones internas cuando el valor lo exija.' },
-  { area: 'capacidad financiera', status: 'Cruzar con pliego', detail: 'Índices de liquidez, endeudamiento, razón de cobertura y demás indicadores solicitados por la entidad contratante.' },
-  { area: 'capacidad organizacional', status: 'Cruzar con pliego', detail: 'Rentabilidad del patrimonio/activo y demás indicadores que la entidad tome del RUP o de estados financieros.' },
-  { area: 'experiencia habilitante', status: 'Actualizar soportes', detail: 'Contratos ejecutados, certificaciones, cuantías, objetos similares y experiencia específica en vigilancia, seguridad electrónica o tecnología.' },
-  { area: 'inhabilidades e incompatibilidades', status: 'Declaración obligatoria', detail: 'Revisión de causales legales, conflictos de interés, sanciones, multas, caducidades, antecedentes y beneficiarios finales.' },
-  { area: 'Superintendencia de Vigilancia', status: 'Sectorial crítico', detail: 'Licencia, modalidades autorizadas, permisos, pólizas, medios tecnológicos y condiciones propias de vigilancia y seguridad privada.' },
-  { area: 'documentos recurrentes', status: 'Carpeta viva', detail: 'Cámara de Comercio, RUT, certificaciones tributarias/parafiscales, estados financieros, pólizas, certificaciones ISO/sectoriales y formatos de la entidad.' },
+const emptyTenderCompanyProfile: TenderCompanyProfile = { legal_name: '', nit: '', rup_status: '', rup_updated_at: '', rup_unspsc_codes: '', authorized_services: '', supervigilancia_license: '', financial_capacity: '', organizational_capacity: '', experience_summary: '', certifications: '', recurring_documents: '', disqualifications_notes: '', useful_company_info: '' };
+const tenderCompanyProfileFields: Array<{ key: keyof TenderCompanyProfile; label: string; placeholder: string; rows?: number }> = [
+  { key: 'legal_name', label: 'Nombre legal', placeholder: 'Ej: Seguridad Nacional Ltda.' },
+  { key: 'nit', label: 'NIT', placeholder: 'NIT con dígito de verificación' },
+  { key: 'rup_status', label: 'Estado RUP', placeholder: 'Vigente / en renovación / pendiente; cámara de comercio; fecha de firmeza' },
+  { key: 'rup_updated_at', label: 'Fecha última actualización RUP', placeholder: 'AAAA-MM-DD' },
+  { key: 'rup_unspsc_codes', label: 'RUP / códigos UNSPSC', placeholder: 'Códigos, segmentos, cuantías y clasificaciones relevantes', rows: 3 },
+  { key: 'authorized_services', label: 'Servicios autorizados', placeholder: 'Vigilancia fija/móvil, escoltas, medios tecnológicos, monitoreo, consultoría, seguridad electrónica...', rows: 3 },
+  { key: 'supervigilancia_license', label: 'Licencia SuperVigilancia', placeholder: 'Resolución, vigencia, modalidades autorizadas, limitaciones', rows: 3 },
+  { key: 'financial_capacity', label: 'Capacidad financiera', placeholder: 'Liquidez, endeudamiento, cobertura, patrimonio, ingresos, notas financieras útiles para pliegos', rows: 4 },
+  { key: 'organizational_capacity', label: 'Capacidad organizacional', placeholder: 'Rentabilidad, estructura operativa, cobertura regional, personal, sedes, tecnología', rows: 4 },
+  { key: 'experience_summary', label: 'Experiencia habilitante', placeholder: 'Contratos comparables, entidades, cuantías, objetos, fechas, certificaciones disponibles', rows: 5 },
+  { key: 'certifications', label: 'Certificaciones / pólizas / permisos', placeholder: 'ISO, BASC, pólizas, certificaciones tributarias/parafiscales, permisos especiales', rows: 3 },
+  { key: 'recurring_documents', label: 'Documentos recurrentes', placeholder: 'Cámara de Comercio, RUT, antecedentes, paz y salvo, estados financieros, formatos usuales y fecha de vencimiento', rows: 4 },
+  { key: 'disqualifications_notes', label: 'Alertas / restricciones', placeholder: 'Inhabilidades, sanciones, conflictos, restricciones contractuales, temas por validar antes de ofertar', rows: 3 },
+  { key: 'useful_company_info', label: 'Información útil para cruzar contra pliegos', placeholder: 'Todo lo que deba usar el análisis: fortalezas, límites, diferenciales, zonas donde sí/no operamos, aliados, topes, experiencia por sector...', rows: 6 },
 ];
-const procurementLegalFramework = [
-  { name: 'Ley 80 de 1993', role: 'Estatuto General de Contratación: capacidad, selección objetiva, inhabilidades, deberes y principios.' },
-  { name: 'Ley 1150 de 2007', role: 'Reforma de contratación: modalidades de selección, RUP, reglas de eficiencia y transparencia.' },
-  { name: 'Decreto 1082 de 2015', role: 'Decreto único reglamentario: planeación, estudios previos, RUP, requisitos habilitantes y Colombia Compra.' },
-  { name: 'Ley 1474 de 2011', role: 'Estatuto anticorrupción: riesgos disciplinarios, fiscales, penales y deberes de transparencia.' },
-  { name: 'Ley 1882 de 2018', role: 'Ajustes a pliegos tipo, infraestructura y reglas de selección objetiva aplicables como referencia.' },
-  { name: 'Ley 2195 de 2022', role: 'Transparencia, prevención de corrupción, beneficiarios finales y responsabilidad empresarial.' },
-];
-function TenderCompanyCompliancePanel() {
-  const readyCount = companyComplianceItems.filter(item => !/Cruzar|Validar/i.test(item.status)).length;
-  return <section className="company-compliance-panel" aria-label="Perfil de habilitación de la empresa para licitar">
+function TenderCompanyProfilePanel() {
+  const [profile, setProfile] = useState<TenderCompanyProfile>(emptyTenderCompanyProfile);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileStatus, setProfileStatus] = useState('');
+  const loadProfile = async () => {
+    setLoadingProfile(true); setProfileStatus('');
+    try { setProfile({ ...emptyTenderCompanyProfile, ...(await api<TenderCompanyProfile>('/api/tender-company-profile')) }); }
+    catch (err) { setProfileStatus(err instanceof Error ? err.message : String(err)); }
+    finally { setLoadingProfile(false); }
+  };
+  useEffect(() => { loadProfile(); }, []);
+  const updateField = (key: keyof TenderCompanyProfile, value: string) => setProfile(current => ({ ...current, [key]: value }));
+  const saveProfile = async () => {
+    setSavingProfile(true); setProfileStatus('Guardando información de empresa…');
+    try {
+      const saved = await api<TenderCompanyProfile>('/api/tender-company-profile', { method: 'PUT', body: JSON.stringify(profile) });
+      setProfile({ ...emptyTenderCompanyProfile, ...saved });
+      setProfileStatus('Información de empresa guardada. Ya queda disponible para cruzar contra pliegos y oportunidades.');
+    } catch (err) { setProfileStatus(err instanceof Error ? err.message : String(err)); }
+    finally { setSavingProfile(false); }
+  };
+  const filled = tenderCompanyProfileFields.filter(field => String(profile[field.key] || '').trim()).length;
+  return <section className="company-compliance-panel company-profile-panel" aria-label="Información real de la empresa para analizar licitaciones">
     <div className="company-compliance-head">
-      <div><span className="eyebrow">Empresa licitante</span><h2>Perfil de habilitación de la empresa</h2><p>Base ejecutiva para decidir si Seguridad Nacional puede aplicar a un proceso: no basta con que el objeto encaje; también deben cerrar requisitos jurídicos, RUP, capacidad financiera, experiencia y habilitación sectorial.</p></div>
-      <div className="company-compliance-score"><small>Control CEO</small><strong>{readyCount}/{companyComplianceItems.length}</strong><span>frentes documentales con base lista; cada pliego puede exigir validación adicional.</span></div>
+      <div><span className="eyebrow">Empresa licitante</span><h2>Información real de la empresa</h2><p>Cargue aquí la información útil de Seguridad Nacional. Esta ficha será la base para cruzar requisitos de pliegos, experiencia, RUP, capacidad financiera y habilitaciones contra cada oportunidad de licitación.</p></div>
+      <div className="company-compliance-score"><small>Ficha cargada</small><strong>{filled}/{tenderCompanyProfileFields.length}</strong><span>{profile.updated_at ? `Actualizada ${fmtDate(profile.updated_at)}${profile.updated_by_name ? ` por ${profile.updated_by_name}` : ''}` : 'Pendiente de alimentar'}</span></div>
     </div>
-    <div className="compliance-matrix">{companyComplianceItems.map(item => <article key={item.area} className="compliance-item"><small>{item.area}</small><strong>{item.status}</strong><p>{item.detail}</p></article>)}</div>
-    <details className="legal-framework-panel">
-      <summary>Marco normativo Colombia para analizar requisitos habilitantes</summary>
-      <div className="legal-framework-grid">{procurementLegalFramework.map(rule => <div key={rule.name}><strong>{rule.name}</strong><span>{rule.role}</span></div>)}</div>
-      <p className="muted">Uso recomendado: al subir pliegos o estudios previos, comparar requisitos habilitantes contra esta matriz y marcar el proceso como aplicable, subsanable o no aplicable antes de invertir tiempo comercial.</p>
-    </details>
+    {loadingProfile ? <div className="notice">Cargando información de empresa…</div> : <div className="company-profile-form">
+      {tenderCompanyProfileFields.map(field => <label key={field.key} className={field.rows ? 'wide' : ''}><span>{field.label}</span>{field.rows ? <textarea rows={field.rows} value={String(profile[field.key] || '')} onChange={e=>updateField(field.key, e.target.value)} placeholder={field.placeholder} /> : <input value={String(profile[field.key] || '')} onChange={e=>updateField(field.key, e.target.value)} placeholder={field.placeholder} />}</label>)}
+    </div>}
+    <div className="row-actions"><button onClick={saveProfile} disabled={savingProfile || loadingProfile}>{savingProfile ? 'Guardando…' : 'Guardar información de empresa'}</button><button className="secondary" onClick={loadProfile} disabled={savingProfile}>Recargar ficha</button>{profileStatus && <span className="muted">{profileStatus}</span>}</div>
   </section>;
 }
 function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) {
@@ -809,7 +828,7 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
         {(Object.entries(tenderFastFilterConfig) as Array<[Exclude<TenderFastFilter, null>, { label: string }]>).map(([key, config]) => <button key={key} className={fastFilter === key ? 'active' : ''} onClick={() => applyTenderFastFilter(key)}>{config.label}</button>)}
       </div>
     </section>
-    <TenderCompanyCompliancePanel />
+    <TenderCompanyProfilePanel />
     <section className="tender-control-panel" aria-label="Controles de licitaciones">
       <div className="tender-control-top">
         <input className="tender-search-input" placeholder="Buscar entidad, ciudad, objeto, fuente o referencia…" value={q} onChange={e=>setQ(e.target.value)} />

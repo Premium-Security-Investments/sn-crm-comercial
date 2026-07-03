@@ -211,6 +211,44 @@ const tenderDisqualifyingTerms = [
 const tenderFocusTerms = { 'bogotá': 22, 'bogota': 22, 'distrito capital': 20, 'medellín': 22, 'medellin': 22, 'antioquia': 14 };
 const tenderInternalStatuses = ['nueva','en_revision','descartada','convertida_oportunidad'];
 function canViewTenders(profile) { return isManager(profile) || profile?.microsoft_email?.toLowerCase() === 'directora.licitaciones@seguridadnacional.co'; }
+const tenderCompanyProfileFields = ['legal_name','nit','rup_status','rup_updated_at','rup_unspsc_codes','authorized_services','supervigilancia_license','financial_capacity','organizational_capacity','experience_summary','certifications','recurring_documents','disqualifications_notes','useful_company_info'];
+function cleanTenderCompanyProfile(body, profile) {
+  const payload = { singleton_key: 'seguridad_nacional', updated_by: profile.id };
+  for (const field of tenderCompanyProfileFields) {
+    const value = body?.[field];
+    payload[field] = value === undefined || value === null ? null : String(value).trim() || null;
+  }
+  if (payload.rup_updated_at && !/^\d{4}-\d{2}-\d{2}$/.test(payload.rup_updated_at)) payload.rup_updated_at = null;
+  return payload;
+}
+async function getTenderCompanyProfile(database) {
+  const { data, error } = await database.from('psi_company_procurement_profile').select('*').eq('singleton_key', 'seguridad_nacional').maybeSingle();
+  if (!error && data) return await attachTenderCompanyProfileUpdater(database, data, data.updated_at, data.updated_by);
+  if (error && !['PGRST205','42P01'].includes(error.code)) throw error;
+  const fallback = await database.from('psi_tender_radar_runs').select('summary,run_at,triggered_by').eq('mode', 'company_profile').order('run_at', { ascending: false }).limit(1).maybeSingle();
+  if (fallback.error) throw fallback.error;
+  if (!fallback.data?.summary) return {};
+  let parsed = {};
+  try { parsed = JSON.parse(fallback.data.summary); } catch { parsed = { useful_company_info: fallback.data.summary }; }
+  return await attachTenderCompanyProfileUpdater(database, parsed, fallback.data.run_at, fallback.data.triggered_by);
+}
+async function attachTenderCompanyProfileUpdater(database, data, updatedAt, updatedBy) {
+  let updatedByName = null;
+  if (updatedBy) {
+    const result = await database.from('psi_sales_profiles').select('full_name').eq('id', updatedBy).maybeSingle();
+    updatedByName = result.data?.full_name || null;
+  }
+  return { ...data, updated_at: data.updated_at || updatedAt || null, updated_by_name: updatedByName };
+}
+async function saveTenderCompanyProfile(database, payload) {
+  const result = await database.from('psi_company_procurement_profile').upsert(payload, { onConflict: 'singleton_key' }).select('id').single();
+  if (!result.error) return;
+  if (!['PGRST205','42P01'].includes(result.error.code)) throw result.error;
+  const fallbackPayload = { ...payload };
+  delete fallbackPayload.singleton_key;
+  delete fallbackPayload.updated_by;
+  await must(database.from('psi_tender_radar_runs').insert({ triggered_by: payload.updated_by, mode: 'company_profile', summary: JSON.stringify(fallbackPayload) }).select('id').single());
+}
 function normTenderText(value) { return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
 const tenderTerminalStatusTerms = ['revocado', 'declarado desierto', 'desierto', 'cancelado', 'cancelada'];
 function isTenderTerminalStatus(value) {
@@ -685,6 +723,24 @@ app.get('/api/tenders', async (req, res) => {
     if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver este radar.'); error.status = 403; throw error; }
     const database = requireDb();
     res.json(await buildTenderRadar(database, currentProfile, req.query.refresh === '1'));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.get('/api/tender-company-profile', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver esta ficha.'); error.status = 403; throw error; }
+    res.json(await getTenderCompanyProfile(requireDb()));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.put('/api/tender-company-profile', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede editar esta ficha.'); error.status = 403; throw error; }
+    const database = requireDb();
+    await saveTenderCompanyProfile(database, cleanTenderCompanyProfile(req.body, currentProfile));
+    res.json(await getTenderCompanyProfile(database));
   } catch (error) { sendAuthError(res, error); }
 });
 
