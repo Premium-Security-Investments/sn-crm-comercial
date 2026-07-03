@@ -787,6 +787,44 @@ app.put('/api/tender-company-profile', async (req, res) => {
   } catch (error) { sendAuthError(res, error); }
 });
 
+app.post('/api/tender-company-profile-upload-url', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede cargar el RUP.'); error.status = 403; throw error; }
+    const database = requireDb();
+    const name = cleanFileName(req.body?.name || 'rup-actualizado.pdf');
+    const size = Number(req.body?.size || 0);
+    if (!size) throw new Error('Debe seleccionar un archivo RUP válido.');
+    if (size > 20 * 1024 * 1024) throw new Error('El RUP supera 20MB. Reduzca el archivo o cargue una versión PDF/DOCX más liviana.');
+    await ensureTenderBucket(database);
+    const id = createHash('sha256').update(`company-profile:${Date.now()}:${name}:${size}`).digest('hex').slice(0, 24);
+    const storagePath = `company-profile/rup/${id}-${name}`;
+    const { data, error } = await database.storage.from(tenderDocumentBucket).createSignedUploadUrl(storagePath);
+    if (error) throw error;
+    res.json({ path: storagePath, token: data.token });
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-profile-process-upload', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede procesar el RUP.'); error.status = 403; throw error; }
+    const database = requireDb();
+    const storagePath = String(req.body?.storage_path || '');
+    if (!storagePath.startsWith('company-profile/rup/')) throw new Error('Ruta de RUP inválida.');
+    const name = cleanFileName(req.body?.name || storagePath.split('/').at(-1) || 'rup-actualizado.pdf');
+    const { data, error } = await database.storage.from(tenderDocumentBucket).download(storagePath);
+    if (error) throw error;
+    const buffer = Buffer.from(await data.arrayBuffer());
+    if (!buffer.length) throw new Error('El RUP cargado está vacío.');
+    const extractedText = await extractTextFromTenderFile(buffer, name, req.body?.mime_type || '');
+    const existing = await getTenderCompanyProfile(database);
+    const payload = cleanTenderCompanyProfile(parseRupCompanyProfile(extractedText, existing, name), currentProfile);
+    await saveTenderCompanyProfile(database, payload);
+    res.json(await getTenderCompanyProfile(database));
+  } catch (error) { sendAuthError(res, error); }
+});
+
 app.post('/api/tender-company-profile-upload', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);

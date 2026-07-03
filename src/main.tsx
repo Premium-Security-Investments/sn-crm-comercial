@@ -637,10 +637,14 @@ function TenderCompanyProfilePanel() {
   };
   const uploadRup = async (file?: File) => {
     if (!file) return;
-    setUploadingRup(true); setProfileStatus('Leyendo RUP actualizado…');
+    setUploadingRup(true); setProfileStatus('Preparando carga segura del RUP…');
     try {
-      const content_base64 = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result || '').split(',')[1] || ''); reader.onerror = reject; reader.readAsDataURL(file); });
-      const saved = await api<TenderCompanyProfile>('/api/tender-company-profile-upload', { method: 'POST', body: JSON.stringify({ name: file.name, mime_type: file.type, content_base64 }) });
+      const uploadTicket = await api<{ path: string; token: string }>('/api/tender-company-profile-upload-url', { method: 'POST', body: JSON.stringify({ name: file.name, mime_type: file.type, size: file.size }) });
+      setProfileStatus('Subiendo RUP a almacenamiento seguro…');
+      const uploadResult = await supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(uploadTicket.path, uploadTicket.token, file);
+      if (uploadResult.error) throw uploadResult.error;
+      setProfileStatus('Procesando RUP actualizado…');
+      const saved = await api<TenderCompanyProfile>('/api/tender-company-profile-process-upload', { method: 'POST', body: JSON.stringify({ storage_path: uploadTicket.path, name: file.name, mime_type: file.type }) });
       setProfile({ ...emptyTenderCompanyProfile, ...saved });
       setProfileStatus('RUP cargado y ficha actualizada. Revise los campos y ajuste manualmente lo que haga falta.');
     } catch (err) { setProfileStatus(err instanceof Error ? err.message : String(err)); }
@@ -649,7 +653,7 @@ function TenderCompanyProfilePanel() {
   const filled = tenderCompanyProfileFields.filter(field => String(profile[field.key] || '').trim()).length;
   return <section className="company-compliance-panel company-profile-panel" aria-label="Información real de la empresa para analizar licitaciones">
     <details className="company-profile-details">
-      <summary><div><span className="eyebrow">Empresa licitante</span><strong>Abrir / editar ficha de empresa</strong><p>Información real de la empresa para cruzar RUP, experiencia, capacidad financiera y habilitaciones contra licitaciones.</p></div><div className="company-compliance-score compact"><small>Ficha cargada</small><strong>{filled}/{tenderCompanyProfileFields.length}</strong><span>{profile.updated_at ? `Actualizada ${fmtDate(profile.updated_at)}${profile.updated_by_name ? ` por ${profile.updated_by_name}` : ''}` : 'Pendiente de alimentar'}</span></div></summary>
+      <summary><div><span className="eyebrow">Empresa licitante</span><strong>Abrir / editar ficha de empresa</strong><p>Información real de la empresa para cruzar RUP, experiencia, capacidad financiera y habilitaciones contra licitaciones.</p></div><div className="company-compliance-score compact"><small>Campos completos</small><strong>{filled}/{tenderCompanyProfileFields.length}</strong><span>{profile.updated_at ? `Actualizada ${fmtDate(profile.updated_at)}${profile.updated_by_name ? ` por ${profile.updated_by_name}` : ''}` : 'Sin información cargada'}</span></div></summary>
       <div className="company-profile-body">
         <div className="company-compliance-head"><div><h2>Información real de la empresa</h2><p>Lo ideal es cargar aquí el RUP actualizado cada vez que cambie. El sistema extrae una primera versión de los campos y usted puede ajustar manualmente antes de guardar.</p>{profile.rup_import_notes ? <pre className="rup-import-notes">{profile.rup_import_notes}</pre> : null}</div><label className="rup-upload-card"><span>Cargar RUP actualizado</span><input type="file" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" disabled={uploadingRup || loadingProfile} onChange={e=>uploadRup(e.target.files?.[0])}/><small>{uploadingRup ? 'Procesando documento…' : 'PDF, DOCX o TXT. Reemplaza/actualiza la ficha con la información extraída.'}</small></label></div>
         {loadingProfile ? <div className="notice">Cargando información de empresa…</div> : <div className="company-profile-form">
