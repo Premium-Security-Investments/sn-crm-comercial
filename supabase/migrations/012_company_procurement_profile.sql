@@ -18,6 +18,8 @@ create table if not exists public.psi_company_procurement_profile (
   recurring_documents text,
   disqualifications_notes text,
   useful_company_info text,
+  source_document_name text,
+  rup_import_notes text,
   updated_by uuid references public.psi_sales_profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
