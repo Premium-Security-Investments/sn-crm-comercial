@@ -637,7 +637,7 @@ function TenderCompanyProfilePanel() {
   };
   const uploadRup = async (file?: File) => {
     if (!file) return;
-    if (file.size > 20 * 1024 * 1024) { setProfileStatus('Error: el RUP supera 20MB. Cargue una versión PDF/DOCX más liviana.'); return; }
+    if (file.size > 50 * 1024 * 1024) { setProfileStatus('Error: el RUP supera 50MB. Cargue una versión PDF/DOCX más liviana.'); return; }
     setUploadingRup(true); setProfileStatus('Preparando carga segura del RUP…');
     try {
       const uploadTicket = await api<{ path: string; token: string }>('/api/tender-company-profile-upload-url', { method: 'POST', body: JSON.stringify({ name: file.name, mime_type: file.type, size: file.size }) });

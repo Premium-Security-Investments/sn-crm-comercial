@@ -1,9 +1,14 @@
 import express from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { createHash } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import mammoth from 'mammoth';
 import AdmZip from 'adm-zip';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(express.json({ limit: '25mb' }));
@@ -13,11 +18,10 @@ const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !serviceKey) {
   console.error('Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+  process.exit(1);
 }
 
-const db = supabaseUrl && serviceKey
-  ? createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } })
-  : null;
+const db = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 
 function sendError(res, error, status = 500) {
   console.error(error);
@@ -207,6 +211,87 @@ const tenderDisqualifyingTerms = [
 const tenderFocusTerms = { 'bogotá': 22, 'bogota': 22, 'distrito capital': 20, 'medellín': 22, 'medellin': 22, 'antioquia': 14 };
 const tenderInternalStatuses = ['nueva','en_revision','descartada','convertida_oportunidad'];
 function canViewTenders(profile) { return isManager(profile) || profile?.microsoft_email?.toLowerCase() === 'directora.licitaciones@seguridadnacional.co'; }
+const tenderCompanyProfileFields = ['legal_name','nit','rup_status','rup_updated_at','rup_unspsc_codes','authorized_services','supervigilancia_license','financial_capacity','organizational_capacity','experience_summary','certifications','recurring_documents','disqualifications_notes','useful_company_info','source_document_name','rup_import_notes'];
+function cleanTenderCompanyProfile(body, profile) {
+  const payload = { singleton_key: 'seguridad_nacional', updated_by: profile.id };
+  for (const field of tenderCompanyProfileFields) {
+    const value = body?.[field];
+    payload[field] = value === undefined || value === null ? null : String(value).trim() || null;
+  }
+  if (payload.rup_updated_at && !/^\d{4}-\d{2}-\d{2}$/.test(payload.rup_updated_at)) payload.rup_updated_at = null;
+  return payload;
+}
+function firstRupMatch(text, patterns) {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) return match[1].replace(/\s+/g, ' ').trim().slice(0, 1200);
+  }
+  return null;
+}
+function uniqueLinesFromMatches(text, regex, limit = 30) {
+  const found = new Set();
+  for (const match of text.matchAll(regex)) {
+    const value = String(match[0] || match[1] || '').replace(/\s+/g, ' ').trim();
+    if (value) found.add(value.slice(0, 220));
+    if (found.size >= limit) break;
+  }
+  return [...found].join('\n') || null;
+}
+function parseRupCompanyProfile(extractedText, existing = {}, sourceDocumentName = '') {
+  const text = String(extractedText || '').replace(/\r/g, '\n');
+  const compact = text.replace(/\s+/g, ' ');
+  const payload = { ...existing, source_document_name: sourceDocumentName || existing.source_document_name || null };
+  payload.legal_name = firstRupMatch(compact, [/Raz[oó]n social\s*[:\-]?\s*([^\n]{5,160}?)(?:\s+NIT|\s+Identificaci[oó]n|\s+C[áa]mara|$)/i, /Nombre\s*[:\-]?\s*([^\n]{5,160}?)(?:\s+NIT|\s+Identificaci[oó]n|$)/i]) || payload.legal_name || null;
+  payload.nit = firstRupMatch(compact, [/(?:NIT|Identificaci[oó]n)\s*[:\-]?\s*([0-9][0-9.\- ]{7,20})/i]) || payload.nit || null;
+  const date = firstRupMatch(compact, [/(?:Fecha\s+de\s+(?:expedici[oó]n|renovaci[oó]n|actualizaci[oó]n|inscripci[oó]n))\s*[:\-]?\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4})/i]);
+  if (date) {
+    const parts = date.replace(/\//g, '-').split('-');
+    payload.rup_updated_at = parts[0].length === 4 ? `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}` : `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+  }
+  payload.rup_status = firstRupMatch(compact, [/(?:Estado\s+del\s+proponente|Estado\s+RUP|Estado)\s*[:\-]?\s*([^\n]{4,120}?)(?:\s+Fecha|\s+Clasificaci[oó]n|$)/i]) || payload.rup_status || 'Información extraída de RUP cargado; validar vigencia/firmeza.';
+  payload.rup_unspsc_codes = uniqueLinesFromMatches(text, /\b\d{8}\b[^\n]{0,180}/g, 80) || payload.rup_unspsc_codes || null;
+  payload.financial_capacity = firstRupMatch(compact, [/(Capacidad\s+financiera.{0,2200}?)(?:Capacidad\s+organizacional|Experiencia|Clasificaci[oó]n|$)/i]) || payload.financial_capacity || null;
+  payload.organizational_capacity = firstRupMatch(compact, [/(Capacidad\s+organizacional.{0,1800}?)(?:Experiencia|Clasificaci[oó]n|Contratos|$)/i]) || payload.organizational_capacity || null;
+  payload.experience_summary = firstRupMatch(compact, [/(Experiencia.{0,2600}?)(?:Capacidad\s+financiera|Capacidad\s+organizacional|Clasificaci[oó]n|$)/i]) || payload.experience_summary || null;
+  const detected = tenderCompanyProfileFields.filter(field => !['source_document_name','rup_import_notes'].includes(field) && String(payload[field] || '').trim()).length;
+  const snippet = compact.slice(0, 2500);
+  payload.rup_import_notes = [
+    `Documento RUP procesado: ${sourceDocumentName || 'archivo cargado'}`,
+    `Caracteres de texto extraídos: ${compact.length}`,
+    `Campos con información después de importar: ${detected}`,
+    compact.length < 80 ? 'Advertencia: el archivo parece escaneado o sin texto seleccionable; cargue un PDF de texto/DOCX para extracción automática.' : 'Texto extraído del RUP disponible para validar y completar manualmente.'
+  ].join('\n');
+  payload.useful_company_info = [`RUP cargado para análisis de licitaciones (${new Date().toISOString().slice(0,10)}).`, payload.useful_company_info || '', snippet ? `Texto extraído del RUP:\n${snippet}` : 'No se obtuvo texto útil del RUP; validar manualmente con el documento fuente.'].filter(Boolean).join('\n\n');
+  return payload;
+}
+async function getTenderCompanyProfile(database) {
+  const { data, error } = await database.from('psi_company_procurement_profile').select('*').eq('singleton_key', 'seguridad_nacional').maybeSingle();
+  if (!error && data) return await attachTenderCompanyProfileUpdater(database, data, data.updated_at, data.updated_by);
+  if (error && !['PGRST205','42P01'].includes(error.code)) throw error;
+  const fallback = await database.from('psi_tender_radar_runs').select('summary,run_at,triggered_by').eq('mode', 'company_profile').order('run_at', { ascending: false }).limit(1).maybeSingle();
+  if (fallback.error) throw fallback.error;
+  if (!fallback.data?.summary) return {};
+  let parsed = {};
+  try { parsed = JSON.parse(fallback.data.summary); } catch { parsed = { useful_company_info: fallback.data.summary }; }
+  return await attachTenderCompanyProfileUpdater(database, parsed, fallback.data.run_at, fallback.data.triggered_by);
+}
+async function attachTenderCompanyProfileUpdater(database, data, updatedAt, updatedBy) {
+  let updatedByName = null;
+  if (updatedBy) {
+    const result = await database.from('psi_sales_profiles').select('full_name').eq('id', updatedBy).maybeSingle();
+    updatedByName = result.data?.full_name || null;
+  }
+  return { ...data, updated_at: data.updated_at || updatedAt || null, updated_by_name: updatedByName };
+}
+async function saveTenderCompanyProfile(database, payload) {
+  const result = await database.from('psi_company_procurement_profile').upsert(payload, { onConflict: 'singleton_key' }).select('id').single();
+  if (!result.error) return;
+  if (!['PGRST205','42P01'].includes(result.error.code)) throw result.error;
+  const fallbackPayload = { ...payload };
+  delete fallbackPayload.singleton_key;
+  delete fallbackPayload.updated_by;
+  await must(database.from('psi_tender_radar_runs').insert({ triggered_by: payload.updated_by, mode: 'company_profile', summary: JSON.stringify(fallbackPayload) }).select('id').single());
+}
 function normTenderText(value) { return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
 const tenderTerminalStatusTerms = ['revocado', 'declarado desierto', 'desierto', 'cancelado', 'cancelada'];
 function isTenderTerminalStatus(value) {
@@ -684,6 +769,79 @@ app.get('/api/tenders', async (req, res) => {
   } catch (error) { sendAuthError(res, error); }
 });
 
+app.get('/api/tender-company-profile', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver esta ficha.'); error.status = 403; throw error; }
+    res.json(await getTenderCompanyProfile(requireDb()));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.put('/api/tender-company-profile', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede editar esta ficha.'); error.status = 403; throw error; }
+    const database = requireDb();
+    await saveTenderCompanyProfile(database, cleanTenderCompanyProfile(req.body, currentProfile));
+    res.json(await getTenderCompanyProfile(database));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-profile-upload-url', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede cargar el RUP.'); error.status = 403; throw error; }
+    const database = requireDb();
+    const name = cleanFileName(req.body?.name || 'rup-actualizado.pdf');
+    const size = Number(req.body?.size || 0);
+    if (!size) throw new Error('Debe seleccionar un archivo RUP válido.');
+    if (size > RUP_MAX_BYTES) throw new Error('El RUP supera 50MB. Reduzca el archivo o cargue una versión PDF/DOCX más liviana.');
+    await ensureTenderBucket(database);
+    const id = createHash('sha256').update(`company-profile:${Date.now()}:${name}:${size}`).digest('hex').slice(0, 24);
+    const storagePath = `company-profile/rup/${id}-${name}`;
+    const { data, error } = await database.storage.from(tenderDocumentBucket).createSignedUploadUrl(storagePath);
+    if (error) throw error;
+    res.json({ path: storagePath, token: data.token });
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-profile-process-upload', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede procesar el RUP.'); error.status = 403; throw error; }
+    const database = requireDb();
+    const storagePath = String(req.body?.storage_path || '');
+    if (!storagePath.startsWith('company-profile/rup/')) throw new Error('Ruta de RUP inválida.');
+    const name = cleanFileName(req.body?.name || storagePath.split('/').at(-1) || 'rup-actualizado.pdf');
+    const { data, error } = await database.storage.from(tenderDocumentBucket).download(storagePath);
+    if (error) throw error;
+    const buffer = Buffer.from(await data.arrayBuffer());
+    if (!buffer.length) throw new Error('El RUP cargado está vacío.');
+    const extractedText = await extractTextFromTenderFile(buffer, name, req.body?.mime_type || '');
+    const existing = await getTenderCompanyProfile(database);
+    const payload = cleanTenderCompanyProfile(parseRupCompanyProfile(extractedText, existing, name), currentProfile);
+    await saveTenderCompanyProfile(database, payload);
+    res.json(await getTenderCompanyProfile(database));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-profile-upload', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede cargar el RUP.'); error.status = 403; throw error; }
+    const database = requireDb();
+    const name = cleanFileName(req.body?.name || 'rup-actualizado.pdf');
+    const buffer = Buffer.from(String(req.body?.content_base64 || ''), 'base64');
+    if (!buffer.length) throw new Error('Debe cargar un archivo RUP válido.');
+    if (buffer.length > RUP_MAX_BYTES) throw new Error('El RUP supera 50MB.');
+    const extractedText = await extractTextFromTenderFile(buffer, name, req.body?.mime_type || '');
+    const existing = await getTenderCompanyProfile(database);
+    const payload = cleanTenderCompanyProfile(parseRupCompanyProfile(extractedText, existing, name), currentProfile);
+    await saveTenderCompanyProfile(database, payload);
+    res.json(await getTenderCompanyProfile(database));
+  } catch (error) { sendAuthError(res, error); }
+});
+
 app.post('/api/tenders/refresh', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -809,6 +967,7 @@ app.get('/api/opportunities/:id', async (req, res) => {
 
 
 const tenderDocumentBucket = 'tender-documents';
+const RUP_MAX_BYTES = 50 * 1024 * 1024;
 const tenderDocumentTypes = ['pliego','estudios_previos','anexo_tecnico','adenda','formatos','otro'];
 function parseInteractionJson(notes) {
   try { return JSON.parse(notes || '{}'); } catch { return null; }
@@ -826,8 +985,15 @@ function normalizeDocumentType(value, filename = '') {
 function cleanFileName(name) { return String(name || 'documento').replace(/[^a-zA-Z0-9._ -]/g, '_').slice(0, 140); }
 async function ensureTenderBucket(database) {
   const existing = await database.storage.getBucket(tenderDocumentBucket);
-  if (!existing.error) return;
-  const { error } = await database.storage.createBucket(tenderDocumentBucket, { public: false, fileSizeLimit: 20 * 1024 * 1024 });
+  if (!existing.error) {
+    const currentLimit = Number(existing.data?.file_size_limit || existing.data?.fileSizeLimit || 0);
+    if (currentLimit && currentLimit < RUP_MAX_BYTES) {
+      const { error: updateError } = await database.storage.updateBucket(tenderDocumentBucket, { public: false, fileSizeLimit: RUP_MAX_BYTES });
+      if (updateError) throw updateError;
+    }
+    return;
+  }
+  const { error } = await database.storage.createBucket(tenderDocumentBucket, { public: false, fileSizeLimit: RUP_MAX_BYTES });
   if (error && !String(error.message || '').toLowerCase().includes('already')) throw error;
 }
 async function extractTextFromTenderFile(buffer, filename, mime = '') {
@@ -949,7 +1115,7 @@ app.post('/api/tender-documents-upload', async (req, res) => {
       const name = cleanFileName(file.name);
       const buffer = Buffer.from(String(file.content_base64 || ''), 'base64');
       if (!buffer.length) throw new Error(`Archivo vacío: ${name}`);
-      if (buffer.length > 20 * 1024 * 1024) throw new Error(`Archivo supera 20MB: ${name}`);
+      if (buffer.length > RUP_MAX_BYTES) throw new Error(`Archivo supera 50MB: ${name}`);
       const id = createHash('sha256').update(`${opportunityId}:${Date.now()}:${name}:${buffer.length}`).digest('hex').slice(0, 24);
       const storagePath = `${opportunityId}/${id}-${name}`;
       const documentType = normalizeDocumentType(file.document_type, name);
@@ -1047,16 +1213,21 @@ function cleanGoal(body) {
   const payload = {
     user_id: body.user_id || null,
     period_month: normalizePeriodMonth(body.period_month),
+    service_type_code: body.service_type_code || null,
+    regional_nombre: body.regional_nombre || null,
+    operational_unit_target: Number(body.operational_unit_target || 0),
     sales_budget: Number(body.sales_budget || 0),
     prospect_target: Number(body.prospect_target || 0),
     quote_target: Number(body.quote_target || 0),
   };
   if (!payload.user_id) throw new Error('Debe seleccionar un asesor comercial.');
+  if (!payload.service_type_code) throw new Error('Debe seleccionar el producto / servicio de la meta.');
   for (const [key, value] of Object.entries(payload)) {
-    if (['sales_budget','prospect_target','quote_target'].includes(key) && (Number.isNaN(value) || Number(value) < 0)) {
+    if (['sales_budget','prospect_target','quote_target','operational_unit_target'].includes(key) && (Number.isNaN(value) || Number(value) < 0)) {
       throw new Error('Las metas deben ser numéricas y positivas.');
     }
   }
+  payload.regional_nombre = payload.regional_nombre || 'todas';
   return payload;
 }
 
@@ -1077,7 +1248,7 @@ app.put('/api/goals', async (req, res) => {
     if (!isManager(currentProfile)) { const error = new Error('Solo gerencia/admin puede modificar metas.'); error.status = 403; throw error; }
     const database = requireDb();
     const payload = cleanGoal(req.body);
-    const data = await must(database.from('psi_sales_goals').upsert(payload, { onConflict: 'user_id,period_month' }).select('*').single());
+    const data = await must(database.from('psi_sales_goals').upsert(payload, { onConflict: 'user_id,period_month,service_type_code,regional_nombre' }).select('*').single());
     res.json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -1310,5 +1481,9 @@ app.patch('/api/users', async (req, res) => {
     res.json({ ...row, invited: inviteSent, access_link: accessLink });
   } catch (error) { sendAuthError(res, error); }
 });
+
+const distPath = path.join(__dirname, '..', 'dist');
+app.use(express.static(distPath));
+app.use((_req, res) => res.sendFile(path.join(distPath, 'index.html')));
 
 export default app;

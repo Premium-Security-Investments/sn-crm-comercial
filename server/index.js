@@ -795,7 +795,7 @@ app.post('/api/tender-company-profile-upload-url', async (req, res) => {
     const name = cleanFileName(req.body?.name || 'rup-actualizado.pdf');
     const size = Number(req.body?.size || 0);
     if (!size) throw new Error('Debe seleccionar un archivo RUP válido.');
-    if (size > 20 * 1024 * 1024) throw new Error('El RUP supera 20MB. Reduzca el archivo o cargue una versión PDF/DOCX más liviana.');
+    if (size > RUP_MAX_BYTES) throw new Error('El RUP supera 50MB. Reduzca el archivo o cargue una versión PDF/DOCX más liviana.');
     await ensureTenderBucket(database);
     const id = createHash('sha256').update(`company-profile:${Date.now()}:${name}:${size}`).digest('hex').slice(0, 24);
     const storagePath = `company-profile/rup/${id}-${name}`;
@@ -833,7 +833,7 @@ app.post('/api/tender-company-profile-upload', async (req, res) => {
     const name = cleanFileName(req.body?.name || 'rup-actualizado.pdf');
     const buffer = Buffer.from(String(req.body?.content_base64 || ''), 'base64');
     if (!buffer.length) throw new Error('Debe cargar un archivo RUP válido.');
-    if (buffer.length > 20 * 1024 * 1024) throw new Error('El RUP supera 20MB.');
+    if (buffer.length > RUP_MAX_BYTES) throw new Error('El RUP supera 50MB.');
     const extractedText = await extractTextFromTenderFile(buffer, name, req.body?.mime_type || '');
     const existing = await getTenderCompanyProfile(database);
     const payload = cleanTenderCompanyProfile(parseRupCompanyProfile(extractedText, existing, name), currentProfile);
@@ -967,6 +967,7 @@ app.get('/api/opportunities/:id', async (req, res) => {
 
 
 const tenderDocumentBucket = 'tender-documents';
+const RUP_MAX_BYTES = 50 * 1024 * 1024;
 const tenderDocumentTypes = ['pliego','estudios_previos','anexo_tecnico','adenda','formatos','otro'];
 function parseInteractionJson(notes) {
   try { return JSON.parse(notes || '{}'); } catch { return null; }
@@ -984,8 +985,15 @@ function normalizeDocumentType(value, filename = '') {
 function cleanFileName(name) { return String(name || 'documento').replace(/[^a-zA-Z0-9._ -]/g, '_').slice(0, 140); }
 async function ensureTenderBucket(database) {
   const existing = await database.storage.getBucket(tenderDocumentBucket);
-  if (!existing.error) return;
-  const { error } = await database.storage.createBucket(tenderDocumentBucket, { public: false, fileSizeLimit: 20 * 1024 * 1024 });
+  if (!existing.error) {
+    const currentLimit = Number(existing.data?.file_size_limit || existing.data?.fileSizeLimit || 0);
+    if (currentLimit && currentLimit < RUP_MAX_BYTES) {
+      const { error: updateError } = await database.storage.updateBucket(tenderDocumentBucket, { public: false, fileSizeLimit: RUP_MAX_BYTES });
+      if (updateError) throw updateError;
+    }
+    return;
+  }
+  const { error } = await database.storage.createBucket(tenderDocumentBucket, { public: false, fileSizeLimit: RUP_MAX_BYTES });
   if (error && !String(error.message || '').toLowerCase().includes('already')) throw error;
 }
 async function extractTextFromTenderFile(buffer, filename, mime = '') {
@@ -1107,7 +1115,7 @@ app.post('/api/tender-documents-upload', async (req, res) => {
       const name = cleanFileName(file.name);
       const buffer = Buffer.from(String(file.content_base64 || ''), 'base64');
       if (!buffer.length) throw new Error(`Archivo vacío: ${name}`);
-      if (buffer.length > 20 * 1024 * 1024) throw new Error(`Archivo supera 20MB: ${name}`);
+      if (buffer.length > RUP_MAX_BYTES) throw new Error(`Archivo supera 50MB: ${name}`);
       const id = createHash('sha256').update(`${opportunityId}:${Date.now()}:${name}:${buffer.length}`).digest('hex').slice(0, 24);
       const storagePath = `${opportunityId}/${id}-${name}`;
       const documentType = normalizeDocumentType(file.document_type, name);
