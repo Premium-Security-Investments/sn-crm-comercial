@@ -221,6 +221,41 @@ function cleanTenderCompanyProfile(body, profile) {
   if (payload.rup_updated_at && !/^\d{4}-\d{2}-\d{2}$/.test(payload.rup_updated_at)) payload.rup_updated_at = null;
   return payload;
 }
+function firstRupMatch(text, patterns) {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1]) return match[1].replace(/\s+/g, ' ').trim().slice(0, 1200);
+  }
+  return null;
+}
+function uniqueLinesFromMatches(text, regex, limit = 30) {
+  const found = new Set();
+  for (const match of text.matchAll(regex)) {
+    const value = String(match[0] || match[1] || '').replace(/\s+/g, ' ').trim();
+    if (value) found.add(value.slice(0, 220));
+    if (found.size >= limit) break;
+  }
+  return [...found].join('\n') || null;
+}
+function parseRupCompanyProfile(extractedText, existing = {}) {
+  const text = String(extractedText || '').replace(/\r/g, '\n');
+  const compact = text.replace(/\s+/g, ' ');
+  const payload = { ...existing };
+  payload.legal_name = firstRupMatch(compact, [/Raz[oó]n social\s*[:\-]?\s*([^\n]{5,160}?)(?:\s+NIT|\s+Identificaci[oó]n|\s+C[áa]mara|$)/i, /Nombre\s*[:\-]?\s*([^\n]{5,160}?)(?:\s+NIT|\s+Identificaci[oó]n|$)/i]) || payload.legal_name || null;
+  payload.nit = firstRupMatch(compact, [/(?:NIT|Identificaci[oó]n)\s*[:\-]?\s*([0-9][0-9.\- ]{7,20})/i]) || payload.nit || null;
+  const date = firstRupMatch(compact, [/(?:Fecha\s+de\s+(?:expedici[oó]n|renovaci[oó]n|actualizaci[oó]n|inscripci[oó]n))\s*[:\-]?\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4})/i]);
+  if (date) {
+    const parts = date.replace(/\//g, '-').split('-');
+    payload.rup_updated_at = parts[0].length === 4 ? `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}` : `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+  }
+  payload.rup_status = firstRupMatch(compact, [/(?:Estado\s+del\s+proponente|Estado\s+RUP|Estado)\s*[:\-]?\s*([^\n]{4,120}?)(?:\s+Fecha|\s+Clasificaci[oó]n|$)/i]) || payload.rup_status || 'Información extraída de RUP cargado; validar vigencia/firmeza.';
+  payload.rup_unspsc_codes = uniqueLinesFromMatches(text, /\b\d{8}\b[^\n]{0,180}/g, 80) || payload.rup_unspsc_codes || null;
+  payload.financial_capacity = firstRupMatch(compact, [/(Capacidad\s+financiera.{0,2200}?)(?:Capacidad\s+organizacional|Experiencia|Clasificaci[oó]n|$)/i]) || payload.financial_capacity || null;
+  payload.organizational_capacity = firstRupMatch(compact, [/(Capacidad\s+organizacional.{0,1800}?)(?:Experiencia|Clasificaci[oó]n|Contratos|$)/i]) || payload.organizational_capacity || null;
+  payload.experience_summary = firstRupMatch(compact, [/(Experiencia.{0,2600}?)(?:Capacidad\s+financiera|Capacidad\s+organizacional|Clasificaci[oó]n|$)/i]) || payload.experience_summary || null;
+  payload.useful_company_info = [`RUP cargado para análisis de licitaciones (${new Date().toISOString().slice(0,10)}).`, payload.useful_company_info || '', 'Texto extraído parcialmente para validar códigos UNSPSC, experiencia, capacidad financiera y organizacional.'].filter(Boolean).join('\n');
+  return payload;
+}
 async function getTenderCompanyProfile(database) {
   const { data, error } = await database.from('psi_company_procurement_profile').select('*').eq('singleton_key', 'seguridad_nacional').maybeSingle();
   if (!error && data) return await attachTenderCompanyProfileUpdater(database, data, data.updated_at, data.updated_by);
@@ -740,6 +775,24 @@ app.put('/api/tender-company-profile', async (req, res) => {
     if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede editar esta ficha.'); error.status = 403; throw error; }
     const database = requireDb();
     await saveTenderCompanyProfile(database, cleanTenderCompanyProfile(req.body, currentProfile));
+    res.json(await getTenderCompanyProfile(database));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-profile-upload', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede cargar el RUP.'); error.status = 403; throw error; }
+    const database = requireDb();
+    const name = cleanFileName(req.body?.name || 'rup-actualizado.pdf');
+    const buffer = Buffer.from(String(req.body?.content_base64 || ''), 'base64');
+    if (!buffer.length) throw new Error('Debe cargar un archivo RUP válido.');
+    if (buffer.length > 20 * 1024 * 1024) throw new Error('El RUP supera 20MB.');
+    const extractedText = await extractTextFromTenderFile(buffer, name, req.body?.mime_type || '');
+    if (!extractedText || extractedText.trim().length < 80) throw new Error('No fue posible extraer texto suficiente del RUP. Intente con PDF de texto o DOCX.');
+    const existing = await getTenderCompanyProfile(database);
+    const payload = cleanTenderCompanyProfile(parseRupCompanyProfile(extractedText, existing), currentProfile);
+    await saveTenderCompanyProfile(database, payload);
     res.json(await getTenderCompanyProfile(database));
   } catch (error) { sendAuthError(res, error); }
 });

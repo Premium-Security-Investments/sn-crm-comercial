@@ -616,6 +616,7 @@ function TenderCompanyProfilePanel() {
   const [profile, setProfile] = useState<TenderCompanyProfile>(emptyTenderCompanyProfile);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [uploadingRup, setUploadingRup] = useState(false);
   const [profileStatus, setProfileStatus] = useState('');
   const loadProfile = async () => {
     setLoadingProfile(true); setProfileStatus('');
@@ -634,16 +635,29 @@ function TenderCompanyProfilePanel() {
     } catch (err) { setProfileStatus(err instanceof Error ? err.message : String(err)); }
     finally { setSavingProfile(false); }
   };
+  const uploadRup = async (file?: File) => {
+    if (!file) return;
+    setUploadingRup(true); setProfileStatus('Leyendo RUP actualizado…');
+    try {
+      const content_base64 = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result || '').split(',')[1] || ''); reader.onerror = reject; reader.readAsDataURL(file); });
+      const saved = await api<TenderCompanyProfile>('/api/tender-company-profile-upload', { method: 'POST', body: JSON.stringify({ name: file.name, mime_type: file.type, content_base64 }) });
+      setProfile({ ...emptyTenderCompanyProfile, ...saved });
+      setProfileStatus('RUP cargado y ficha actualizada. Revise los campos y ajuste manualmente lo que haga falta.');
+    } catch (err) { setProfileStatus(err instanceof Error ? err.message : String(err)); }
+    finally { setUploadingRup(false); }
+  };
   const filled = tenderCompanyProfileFields.filter(field => String(profile[field.key] || '').trim()).length;
   return <section className="company-compliance-panel company-profile-panel" aria-label="Información real de la empresa para analizar licitaciones">
-    <div className="company-compliance-head">
-      <div><span className="eyebrow">Empresa licitante</span><h2>Información real de la empresa</h2><p>Cargue aquí la información útil de Seguridad Nacional. Esta ficha será la base para cruzar requisitos de pliegos, experiencia, RUP, capacidad financiera y habilitaciones contra cada oportunidad de licitación.</p></div>
-      <div className="company-compliance-score"><small>Ficha cargada</small><strong>{filled}/{tenderCompanyProfileFields.length}</strong><span>{profile.updated_at ? `Actualizada ${fmtDate(profile.updated_at)}${profile.updated_by_name ? ` por ${profile.updated_by_name}` : ''}` : 'Pendiente de alimentar'}</span></div>
-    </div>
-    {loadingProfile ? <div className="notice">Cargando información de empresa…</div> : <div className="company-profile-form">
-      {tenderCompanyProfileFields.map(field => <label key={field.key} className={field.rows ? 'wide' : ''}><span>{field.label}</span>{field.rows ? <textarea rows={field.rows} value={String(profile[field.key] || '')} onChange={e=>updateField(field.key, e.target.value)} placeholder={field.placeholder} /> : <input value={String(profile[field.key] || '')} onChange={e=>updateField(field.key, e.target.value)} placeholder={field.placeholder} />}</label>)}
-    </div>}
-    <div className="row-actions"><button onClick={saveProfile} disabled={savingProfile || loadingProfile}>{savingProfile ? 'Guardando…' : 'Guardar información de empresa'}</button><button className="secondary" onClick={loadProfile} disabled={savingProfile}>Recargar ficha</button>{profileStatus && <span className="muted">{profileStatus}</span>}</div>
+    <details className="company-profile-details">
+      <summary><div><span className="eyebrow">Empresa licitante</span><strong>Abrir / editar ficha de empresa</strong><p>Información real de la empresa para cruzar RUP, experiencia, capacidad financiera y habilitaciones contra licitaciones.</p></div><div className="company-compliance-score compact"><small>Ficha cargada</small><strong>{filled}/{tenderCompanyProfileFields.length}</strong><span>{profile.updated_at ? `Actualizada ${fmtDate(profile.updated_at)}${profile.updated_by_name ? ` por ${profile.updated_by_name}` : ''}` : 'Pendiente de alimentar'}</span></div></summary>
+      <div className="company-profile-body">
+        <div className="company-compliance-head"><div><h2>Información real de la empresa</h2><p>Lo ideal es cargar aquí el RUP actualizado cada vez que cambie. El sistema extrae una primera versión de los campos y usted puede ajustar manualmente antes de guardar.</p></div><label className="rup-upload-card"><span>Cargar RUP actualizado</span><input type="file" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" disabled={uploadingRup || loadingProfile} onChange={e=>uploadRup(e.target.files?.[0])}/><small>{uploadingRup ? 'Procesando documento…' : 'PDF, DOCX o TXT. Reemplaza/actualiza la ficha con la información extraída.'}</small></label></div>
+        {loadingProfile ? <div className="notice">Cargando información de empresa…</div> : <div className="company-profile-form">
+          {tenderCompanyProfileFields.map(field => <label key={field.key} className={field.rows ? 'wide' : ''}><span>{field.label}</span>{field.rows ? <textarea rows={field.rows} value={String(profile[field.key] || '')} onChange={e=>updateField(field.key, e.target.value)} placeholder={field.placeholder} /> : <input value={String(profile[field.key] || '')} onChange={e=>updateField(field.key, e.target.value)} placeholder={field.placeholder} />}</label>)}
+        </div>}
+        <div className="row-actions"><button onClick={saveProfile} disabled={savingProfile || loadingProfile || uploadingRup}>{savingProfile ? 'Guardando…' : 'Guardar información de empresa'}</button><button className="secondary" onClick={loadProfile} disabled={savingProfile || uploadingRup}>Recargar ficha</button>{profileStatus && <span className="muted">{profileStatus}</span>}</div>
+      </div>
+    </details>
   </section>;
 }
 function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) {
