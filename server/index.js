@@ -177,7 +177,10 @@ const tenderSources = {
 const SECOP_PROCESSES_RESOURCE = 'https://www.datos.gov.co/resource/p6dx-8zbt.json';
 const SECOP_DOCUMENTS_RESOURCE = 'https://www.datos.gov.co/resource/dmgg-8hin.json';
 const TVEC_EVENTS_URL = 'https://operaciones.colombiacompra.gov.co/eventos-cotizacion-tvec';
-const ESU_CONTRATACION_URL = 'https://www.esucontratacion.com/procesos/index';
+const ESU_CONTRATACION_ORIGIN = 'https://esucontratacion.com';
+const ESU_CONTRATACION_URL = `${ESU_CONTRATACION_ORIGIN}/procesos/index`;
+const ESU_RELEVANT_CATEGORY_IDS = { '7': 'Tecnología', '8': 'Sistemas integrales de seguridad', '9': 'Vigilancia física' };
+const ESU_RELEVANT_KEYWORDS = ['vigilancia', 'seguridad', 'cctv', 'videovigilancia', 'control de acceso', 'alarma'];
 const ESU_DATOS_GOV_ENTITY_TERMS = ['EMPRESA PARA LA SEGURIDAD URBANA', 'EMPRESA PARA LA SEGURIDAD Y SOLUCIONES URBANAS'];
 const TVEC_RELEVANT_AGGREGATIONS = {
   'Soluciones de videovigilancia': 90,
@@ -496,21 +499,44 @@ function parseEsuProcessRows(html) {
     while ((match = re.exec(tr))) cells.push(stripTenderHtml(match[1]));
     if (cells.length < 8 || /^n[ºo°]?$/i.test(cells[0]) || normTenderText(cells[1]) === 'numero') continue;
     const hrefMatch = tr.match(/href=["']([^"']*\/procesos\/view\/\d+)["']/i);
-    const href = hrefMatch ? new URL(hrefMatch[1], ESU_CONTRATACION_URL).toString() : ESU_CONTRATACION_URL;
+    const href = hrefMatch ? new URL(hrefMatch[1], ESU_CONTRATACION_ORIGIN).toString() : ESU_CONTRATACION_URL;
     processes.push({ cells, url: href });
   }
   return processes;
 }
-function normalizeEsuProcess(process) {
+function parseEsuProcessId(url) {
+  const match = String(url || '').match(/\/procesos\/view\/(\d+)/i);
+  return match ? match[1] : '';
+}
+function htmlDecodeBasic(value) {
+  return String(value || '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&aacute;/g, 'á').replace(/&eacute;/g, 'é').replace(/&iacute;/g, 'í').replace(/&oacute;/g, 'ó').replace(/&uacute;/g, 'ú').replace(/&ntilde;/g, 'ñ');
+}
+function parseEsuProcessDetail(html, url) {
+  const clean = String(html || '');
+  const plain = stripTenderHtml(clean.replace(/<br\s*\/?\s*>/gi, '\n'));
+  const documents = [];
+  for (const match of clean.matchAll(/href=["']([^"']*\/procesos\/descargar\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    const href = new URL(match[1], ESU_CONTRATACION_ORIGIN).toString();
+    const fileName = decodeURIComponent(href.split('/').pop() || '').replace(/\+/g, ' ');
+    documents.push({ name: fileName || stripTenderHtml(match[2]) || 'Documento ESU', url: href, type: normalizeDocumentType('', fileName || match[2]) });
+  }
+  const email = (clean.match(/[A-Z0-9._%+-]+@esu\.com\.co/i) || [null])[0];
+  const ciiu = Array.from(clean.matchAll(/>(\d{6}\s*-\s*[^<]+)</g)).slice(0, 12).map(m => stripTenderHtml(m[1]));
+  const lines = [];
+  for (const label of Object.values(ESU_RELEVANT_CATEGORY_IDS)) if (normTenderText(plain).includes(normTenderText(label))) lines.push(label);
+  return { url, email, ciiu, lines: [...new Set(lines)], documents, text: htmlDecodeBasic(plain).slice(0, 4000) };
+}
+function normalizeEsuProcess(process, detail = null) {
   const cells = process.cells || [];
   const [_rowNumber, numero, objeto, tipoProceso, fechaApertura, fechaCierre, estado, funcionario] = cells;
+  const detailText = detail?.text || '';
   const row = {
     nombre_entidad: 'Empresa para la Seguridad y Soluciones Urbanas - ESU',
     departamento_entidad: 'Antioquia',
     municipio_entidad: 'Medellín',
     numero_de_proceso: numero || '',
     objeto_a_contratar: objeto || '',
-    detalle_del_objeto_a_contratar: `${tipoProceso || ''} ${estado || ''} ${funcionario || ''}`.trim(),
+    detalle_del_objeto_a_contratar: `${tipoProceso || ''} ${estado || ''} ${funcionario || ''} ${(detail?.lines || []).join(' ')} ${(detail?.ciiu || []).join(' ')}`.trim(),
     estado_del_proceso: estado || '',
     fecha_de_cargue_en_el_secop: fechaApertura || null,
     cuantia_proceso: 0,
@@ -518,31 +544,83 @@ function normalizeEsuProcess(process) {
   };
   const scored = scoreTender(row);
   if (normTenderText(estado).includes('convocado')) { scored.score += 20; scored.reasons = [...new Set([...(scored.reasons || []), 'ESU convocado'])]; }
+  if ((detail?.documents || []).length) scored.reasons = [...new Set([...(scored.reasons || []), 'documentos ESU disponibles'])];
   const deadline = fechaCierre || null;
   const days = tenderDaysUntil(deadline);
   const tender = {
     source: 'ESU Contratación',
     entity: row.nombre_entidad, dept: row.departamento_entidad, city: row.municipio_entidad,
-    ref: numero || '', process_id: numero || '', title: objeto || 'Sin objeto', desc: row.detalle_del_objeto_a_contratar,
-    value: 0, status: estado || '', category: tipoProceso || '',
+    ref: numero || '', process_id: numero || '', title: objeto || 'Sin objeto', desc: [row.detalle_del_objeto_a_contratar, detail?.email ? `Responsable: ${funcionario || ''} (${detail.email})` : ''].filter(Boolean).join(' · '),
+    value: 0, status: estado || '', category: (detail?.lines || []).join(', ') || tipoProceso || '',
     published: fechaApertura || null, deadline, days, window: tenderWindow(days),
-    score: scored.score, reasons: [...new Set(scored.reasons || [])].slice(0, 7), risks: [...new Set([...(scored.risks || []), 'ESU: validar documentos y presupuesto en detalle del proceso'])].slice(0, 5),
-    url: process.url || ESU_CONTRATACION_URL, raw: { numero, objeto, tipoProceso, fechaApertura, fechaCierre, estado, funcionario }
+    score: scored.score, reasons: [...new Set(scored.reasons || [])].slice(0, 7), risks: [...new Set([...(scored.risks || []), 'ESU: validar pliego/anexos en detalle del proceso'])].slice(0, 5),
+    url: process.url || ESU_CONTRATACION_URL, raw: { numero, objeto, tipoProceso, fechaApertura, fechaCierre, estado, funcionario, ciiu: detail?.ciiu || [], lines: detail?.lines || [], documents: detail ? detail.documents || [] : [], documents_count: detail?.documents?.length || 0 }
   };
   const withId = { ...tender, section: classifyTenderSection(tender) };
   return { ...withId, id: stableTenderKey(withId), stable_key: stableTenderKey(withId), internal_status: 'nueva', converted_opportunity_id: null };
 }
-async function fetchEsuProcesses() {
-  const response = await fetch(ESU_CONTRATACION_URL, { headers: { 'User-Agent': 'SN-CRM-ESU-Tenders-Radar/1.0 (+https://seguridad-nacional-crm.vercel.app)', 'Accept': 'text/html,application/xhtml+xml' } });
-  if (!response.ok) throw new Error(`ESU Contratación respondió ${response.status}`);
+async function fetchEsuHtml(url, options = {}) {
+  const response = await fetch(url, { ...options, headers: { 'User-Agent': 'SN-CRM-ESU-Tenders-Radar/1.0', ...(options.headers || {}) } });
+  if (!response.ok) throw new Error(`ESU Contratación directo respondió ${response.status}`);
   const html = await response.text();
-  const rows = parseEsuProcessRows(html);
-  if (!rows.length && /Incapsula|_Incapsula_Resource/i.test(html)) throw new Error('bloqueo anti-bot de ESU Contratación');
-  return rows.slice(0, 80)
-    .map(normalizeEsuProcess)
-    .filter(t => t.score >= 35)
-    .filter(t => t.days === null || t.days >= 0)
-    .sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
+  if (/Not Acceptable|Mod_Security|Incapsula|_Incapsula_Resource/i.test(html)) throw new Error('bloqueo anti-bot/mod_security de ESU Contratación directo');
+  return html;
+}
+async function fetchEsuIndexPages(maxPages = 5) {
+  const rows = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const url = page === 1 ? ESU_CONTRATACION_URL : `${ESU_CONTRATACION_URL}/page:${page}`;
+    const pageRows = parseEsuProcessRows(await fetchEsuHtml(url));
+    if (!pageRows.length) break;
+    rows.push(...pageRows);
+    if (pageRows.length < 20) break;
+  }
+  return rows;
+}
+function esuSearchBody({ estadoId = '0', categoryIds = [], keyword = '' } = {}) {
+  const body = new URLSearchParams();
+  body.set('_method', 'POST');
+  body.set('data[Proceso][estado_id]', estadoId);
+  if (keyword) body.set('data[Proceso][objeto]', keyword);
+  for (const id of categoryIds) body.append('data[Categoria][Categoria][]', id);
+  return body;
+}
+async function searchEsuProcesses(params) {
+  const html = await fetchEsuHtml(`${ESU_CONTRATACION_ORIGIN}/procesos/buscar#resultados`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': `${ESU_CONTRATACION_ORIGIN}/procesos/buscar` }, body: esuSearchBody(params) });
+  return parseEsuProcessRows(html);
+}
+async function fetchEsuProcessDetail(process) {
+  if (!process?.url || !parseEsuProcessId(process.url)) return null;
+  try {
+    return parseEsuProcessDetail(await fetchEsuHtml(process.url), process.url);
+  } catch {
+    return null;
+  }
+}
+async function fetchEsuProcesses() {
+  const seen = new Map();
+  const addRows = rows => {
+    for (const row of rows || []) {
+      const key = parseEsuProcessId(row.url) || `${row.cells?.[1]}:${row.cells?.[2]}`;
+      if (!seen.has(key)) seen.set(key, row);
+    }
+  };
+  const tryAddRows = async label => {
+    try { addRows(await label.run()); }
+    catch (error) { console.warn(`ESU recorrido omitido (${label.name}): ${error?.message || error}`); }
+  };
+  await tryAddRows({ name: 'índice paginado', run: () => fetchEsuIndexPages(5) });
+  await tryAddRows({ name: 'convocados', run: () => searchEsuProcesses({ estadoId: '19' }) });
+  await tryAddRows({ name: 'categorías relevantes', run: () => searchEsuProcesses({ estadoId: '19', categoryIds: Object.keys(ESU_RELEVANT_CATEGORY_IDS) }) });
+  for (const keyword of ESU_RELEVANT_KEYWORDS) await tryAddRows({ name: `keyword ${keyword}`, run: () => searchEsuProcesses({ estadoId: '19', keyword }) });
+  const preliminary = Array.from(seen.values()).map(row => normalizeEsuProcess(row)).filter(t => t.score >= 35).filter(t => t.days === null || t.days >= 0).filter(isTenderTrackable).sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999)).slice(0, 40);
+  const enriched = [];
+  for (const tender of preliminary) {
+    const sourceRow = seen.get(parseEsuProcessId(tender.url));
+    const detail = await fetchEsuProcessDetail(sourceRow);
+    enriched.push(normalizeEsuProcess(sourceRow, detail));
+  }
+  return enriched.filter(t => t.score >= 35).filter(t => t.days === null || t.days >= 0).filter(isTenderTrackable).sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
 }
 async function fetchEsuDatosGovProcesses() {
   const start = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10) + 'T00:00:00';
@@ -571,7 +649,7 @@ async function fetchPublicTenderRadar() {
   const tasks = [
     ...Object.entries(tenderSources).map(([source, cfg]) => ({ source, run: () => fetchSecopSource(source, cfg) })),
     { source: 'TVEC', run: fetchTvecEvents },
-    { source: 'ESU Contratación', run: fetchEsuProcesses },
+    { source: 'ESU Contratación directo', run: fetchEsuProcesses },
     { source: 'ESU vía datos.gov.co', run: fetchEsuDatosGovProcesses }
   ];
   const settled = await Promise.allSettled(tasks.map(t => t.run()));
@@ -585,8 +663,8 @@ async function fetchPublicTenderRadar() {
     } else {
       const message = source === 'TVEC'
         ? `TVEC no disponible temporalmente: ${result.reason?.message || result.reason}`
-        : source === 'ESU Contratación'
-          ? `ESU Contratación no disponible temporalmente: ${result.reason?.message || result.reason}`
+        : source === 'ESU Contratación directo'
+          ? `ESU Contratación no disponible temporalmente (directo): ${result.reason?.message || result.reason}`
           : `${source} no disponible temporalmente: ${result.reason?.message || result.reason}`;
       diagnostics.push({ source, status: 'error', count: 0, message });
     }
