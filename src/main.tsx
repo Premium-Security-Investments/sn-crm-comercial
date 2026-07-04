@@ -41,6 +41,9 @@ type TenderDocumentStatus = 'pendiente_documentos' | 'documentos_cargados' | 'an
 type TenderDocumentRecord = { id: string; name: string; size: number; mime_type?: string | null; document_type: string; current: boolean; storage_path?: string; uploaded_at: string; uploaded_by?: string | null; signed_url?: string | null; extracted_text?: string | null };
 type TenderDocumentAnalysis = { recommendation: string; risk: string; summary: string; generated_at: string; findings?: string[]; detected_values?: Record<string, string[]>; matrix?: Array<{ category: string; status: string; detail: string }>; checklist?: string[]; report_title?: string; executive_semaphore?: Array<{ label: string; value: string; tone?: string }>; commercial_fit?: { status?: string; positives?: string[]; concerns?: string[] }; company_profile_crosscheck?: { status?: string; matches?: string[]; gaps?: string[]; profile_source?: string }; habilitating_requirements?: Array<{ front: string; status: string; action: string }>; committee_summary?: string; next_action?: string; go_no_go?: { decision?: string; risk?: string; blockers?: string[] } };
 type TenderDocumentsPayload = { documents: TenderDocumentRecord[]; analysis: TenderDocumentAnalysis | null; analyses: TenderDocumentAnalysis[] };
+type TenderOfferPreparationDoc = { key: string; name: string; folder: string; status: string; owner: string; output?: string; reusable?: boolean; title?: string; priority?: string; reason?: string };
+type TenderOfferPreparation = { status: string; approved_at: string; approved_by?: string; control_message?: string; sharepoint_folder?: { status: string; provider: string; url?: string | null; root_name?: string; folders?: string[] }; generic_documents?: TenderOfferPreparationDoc[]; auto_generated_documents?: TenderOfferPreparationDoc[]; human_required_items?: TenderOfferPreparationDoc[]; assistant_notes?: string[]; checklist_summary?: { total: number; auto_generated: number; human_required: number; official_documents: number; has_analysis: boolean } };
+type TenderOfferPreparationPayload = { preparation: TenderOfferPreparation | null; preparations: TenderOfferPreparation[]; notes: Array<{ note: string; status?: string; created_at?: string; created_by?: string; created_by_name?: string }> };
 type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string; count?: number; message?: string };
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; rup_status?: string | null; rup_updated_at?: string | null; rup_unspsc_codes?: string | null; authorized_services?: string | null; supervigilancia_license?: string | null; financial_capacity?: string | null; organizational_capacity?: string | null; experience_summary?: string | null; certifications?: string | null; recurring_documents?: string | null; disqualifications_notes?: string | null; useful_company_info?: string | null; source_document_name?: string | null; rup_import_notes?: string | null; updated_at?: string | null; updated_by_name?: string | null };
@@ -919,6 +922,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p></div><div className="row-actions"><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>{o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <button className="danger" onClick={discardTenderOpportunity}>Sacar de oportunidad</button>}</div></div>
     <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Fecha creación" value={fmtDate(o.created_at)}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
     {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel opportunity={o} onReload={async()=>{await load(); await refresh();}} />}
+    {o.service_type_code === 'licitacion_publica' && <TenderOfferPreparationPanel opportunity={o} onReload={async()=>{await load(); await refresh();}} />}
     <div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div>
     <Panel title="Línea de seguimientos"><div className="timeline">{visibleInteractions.length ? visibleInteractions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel>
   </section>;
@@ -1018,6 +1022,56 @@ function TenderDocumentReviewPanel({ opportunity, onReload }: { opportunity: Opp
         <section className="document-analysis-card"><small>Matriz de cumplimiento</small><div className="document-matrix">{(analysis.matrix || []).map(row => <div key={`${row.category}-${row.status}`}><Badge tone={row.status === 'Pendiente' ? 'amber' : 'blue'}>{row.category}</Badge><span><strong>{row.status}</strong> · {row.detail}</span></div>)}</div></section>
         <section className="document-analysis-card"><small>Resumen para comité</small><p>{analysis.committee_summary || analysis.summary}</p><small>Siguiente acción recomendada</small><strong>{analysis.next_action || 'Revisar con licitaciones'}</strong><small>Checklist SN</small>{analysis.checklist?.length ? <ul>{analysis.checklist.slice(0, 3).map(item => <li key={item}>{item}</li>)}</ul> : null}<small>Generado: {fmtDate(analysis.generated_at)}</small></section>
       </div>}
+    </div>
+  </Panel>;
+}
+function TenderOfferPreparationPanel({ opportunity, onReload }: { opportunity: Opportunity; onReload?: () => Promise<void> }) {
+  const [payload, setPayload] = useState<TenderOfferPreparationPayload>({ preparation: null, preparations: [], notes: [] });
+  const [statusText, setStatusText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+  const preparation = payload.preparation;
+  const loadPreparation = async () => {
+    const data = await api<TenderOfferPreparationPayload>(`/api/tender-offer-preparation?id=${encodeURIComponent(opportunity.id)}`);
+    setPayload(data);
+  };
+  useEffect(() => { loadPreparation().catch(err => setStatusText(err instanceof Error ? err.message : String(err))); }, [opportunity.id]);
+  const approvePreparation = async () => {
+    setBusy(true); setStatusText('Generando paquete inicial de preparación…');
+    try {
+      const data = await api<TenderOfferPreparationPayload>('/api/tender-offer-preparation-approve', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
+      setPayload(data); setStatusText('Expediente de Oferta creado. Se generaron documentos automáticos y pendientes humanos.');
+      await onReload?.();
+    } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
+  };
+  const saveAssistantNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!note.trim()) return;
+    setBusy(true); setStatusText('Guardando nota para el asistente…');
+    try {
+      const data = await api<TenderOfferPreparationPayload>('/api/tender-offer-preparation-note', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, note }) });
+      setPayload(data); setNote(''); setStatusText('Nota guardada en el expediente.');
+    } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
+  };
+  return <Panel title="Expediente de Oferta">
+    <div className="tender-document-panel">
+      <div className="document-review-head">
+        <div><span className="eyebrow">Preparación después del GO</span><h3>Expediente de Oferta</h3><p>Al aprobar la presentación, el sistema genera automáticamente el paquete inicial, documentos genéricos y pendientes humanos. El asistente queda para intervenir donde falte criterio, archivos o aprobación.</p></div>
+        <div className="document-status-card"><small>Estado expediente</small><Badge tone={preparation ? 'green' : 'amber'}>{preparation ? 'Preparación aprobada' : 'Pendiente aprobación'}</Badge><strong>{preparation?.checklist_summary?.total || 0} ítems</strong></div>
+        <div className="document-risk-meter"><small>Carpeta SharePoint / OneDrive</small><strong>{preparation?.sharepoint_folder?.status || 'Pendiente'}</strong><span>{preparation?.sharepoint_folder?.root_name || 'Se creará al configurar integración Graph'}</span></div>
+      </div>
+      <div className="document-upload-row"><button onClick={approvePreparation} disabled={busy}>Aprobar preparación de oferta</button>{preparation?.sharepoint_folder?.url ? <a className="button" href={preparation.sharepoint_folder.url} target="_blank" rel="noreferrer">Abrir carpeta</a> : <small className="muted">Carpeta SharePoint / OneDrive: vínculo pendiente de integración automática.</small>}</div>
+      {statusText && <div className="notice">{statusText}</div>}
+      {preparation ? <div className="document-analysis-grid">
+        <section className="document-analysis-card"><small>Generar paquete inicial de preparación</small><strong>{preparation.control_message || 'Paquete creado'}</strong><p>Documentos oficiales: {preparation.checklist_summary?.official_documents || 0} · Automáticos: {preparation.checklist_summary?.auto_generated || 0} · Requiere humano: {preparation.checklist_summary?.human_required || 0}</p></section>
+        <section className="document-analysis-card"><small>Documentos genéricos automáticos</small><ul>{(preparation.auto_generated_documents || []).map(doc => <li key={doc.key}><strong>{doc.name}</strong> · {doc.folder} · {doc.owner}</li>)}</ul></section>
+        <section className="document-analysis-card"><small>Requiere intervención humana</small><ul>{(preparation.human_required_items || []).map(item => <li key={item.key}><strong>{item.title || item.name}</strong> · {item.owner}<br/><span className="muted">{item.reason}</span></li>)}</ul></section>
+        <section className="document-analysis-card"><small>Carpeta SharePoint / OneDrive</small><strong>{preparation.sharepoint_folder?.root_name}</strong><div className="document-matrix">{(preparation.sharepoint_folder?.folders || []).slice(0, 8).map(folder => <div key={folder}><Badge tone="blue">carpeta</Badge><span>{folder}</span></div>)}</div></section>
+        <section className="document-analysis-card"><small>Notas para el asistente</small><ul>{(preparation.assistant_notes || []).map(item => <li key={item}>{item}</li>)}</ul>{payload.notes?.length ? <div className="timeline">{payload.notes.slice(-4).map((n, idx) => <div className="event" key={`${n.created_at}-${idx}`}><strong>{n.status || 'nota'}</strong><span>{fmtDate(n.created_at)} · {n.created_by_name || n.created_by || 'Usuario'}</span><p>{n.note}</p></div>)}</div> : null}</section>
+        <section className="document-analysis-card"><small>Informar qué necesitamos para seguir adelante</small><form onSubmit={saveAssistantNote} className="form"><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Ej: necesitamos que contabilidad confirme capital de trabajo y cargue estados financieros 2025…"/><button disabled={busy || !note.trim()}>Guardar nota para el asistente</button></form></section>
+      </div> : <div className="document-empty-state"><strong>Preparación aún no aprobada</strong><span>Cuando gerencia decida presentarse, use “Aprobar preparación de oferta” para crear el expediente, documentos genéricos automáticos y pendientes humanos.</span></div>}
     </div>
   </Panel>;
 }
