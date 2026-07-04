@@ -12,7 +12,7 @@ const mainMarkers = [
   'next_action_at: existing?.next_action_at',
   'consultant-opportunity-filters',
   'filteredOpportunities',
-  'Solo activas',
+  'Pipeline activo',
   'Gestión pendiente',
   'action-${action.code}',
 ];

@@ -7,7 +7,7 @@ const css = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8
 const requiredMainMarkers = [
   'customerSegmentFilter',
   'setCustomerSegmentFilter',
-  'empty="Todos los tipos de cliente"',
+  'empty="Clientes"',
   'o.customer_segment === customerSegmentFilter',
   'setCustomerSegmentFilter(\'\')',
   'opportunityInsightCards',
@@ -47,7 +47,7 @@ for (const marker of requiredCssMarkers) {
   assert.ok(css.includes(marker), `styles.css missing opportunity insight marker: ${marker}`);
 }
 
-const filtersIndex = main.indexOf('className="filters opportunity-filters"');
+const filtersIndex = main.indexOf('className="filters opportunity-filters compact-dashboard-filters"');
 const cardsIndex = main.indexOf('opportunity-insight-grid');
 const tableIndex = main.indexOf('className="tablewrap"');
 assert.ok(filtersIndex !== -1, 'Opportunity filters must exist');

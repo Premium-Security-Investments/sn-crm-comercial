@@ -907,10 +907,18 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   const visibleInteractions = detail.interactions.filter(i => i.interaction_type !== 'documento');
   const action = nextActionStatus(o);
   const lastDays = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
+  const discardTenderOpportunity = async () => {
+    const reason = window.prompt('Motivo para sacar de oportunidad / descartar esta licitación:', 'No óptima después del análisis documental');
+    if (reason === null) return;
+    try {
+      await api('/api/tender-opportunity-discard', { method: 'POST', body: JSON.stringify({ opportunity_id: o.id, reason }) });
+      await load(); await refresh();
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+  };
   return <section className="stack">
-    <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p></div><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button></div>
+    <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p></div><div className="row-actions"><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>{o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <button className="danger" onClick={discardTenderOpportunity}>Sacar de oportunidad</button>}</div></div>
     <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Fecha creación" value={fmtDate(o.created_at)}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
-    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel opportunity={o} />}
+    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel opportunity={o} onReload={async()=>{await load(); await refresh();}} />}
     <div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div>
     <Panel title="Línea de seguimientos"><div className="timeline">{visibleInteractions.length ? visibleInteractions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel>
   </section>;
@@ -936,7 +944,7 @@ function fileToBase64(file: File) {
     reader.readAsDataURL(file);
   });
 }
-function TenderDocumentReviewPanel({ opportunity }: { opportunity: Opportunity }) {
+function TenderDocumentReviewPanel({ opportunity, onReload }: { opportunity: Opportunity; onReload?: () => Promise<void> }) {
   const [payload, setPayload] = useState<TenderDocumentsPayload>({ documents: [], analysis: null, analyses: [] });
   const [statusText, setStatusText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -975,15 +983,25 @@ function TenderDocumentReviewPanel({ opportunity }: { opportunity: Opportunity }
     } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }
   };
+  const importOfficialDocuments = async () => {
+    setBusy(true); setStatusText('Importando documentos oficiales desde SECOP y generando análisis…');
+    try {
+      const data = await api<TenderDocumentsPayload>('/api/tender-documents-import', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
+      setPayload(data); setStatusText('Documentos oficiales importados automáticamente desde SECOP. Puede cargar documentos complementarios si hace falta.');
+      await onReload?.();
+    } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
+  };
   return <Panel title="Revisión documental" >
     <div className="tender-document-panel">
       <div className="document-review-head">
-        <div><span className="eyebrow">Oportunidad de licitación</span><h3>Documentos del proceso</h3><p>Subir pliego, estudios previos, anexo técnico, adendas, formatos u otros. El análisis se guarda en Supabase y queda compartido para el equipo.</p></div>
+        <div><span className="eyebrow">Oportunidad de licitación</span><h3>Documentos del proceso</h3><p>Al convertir desde el radar, el sistema importa los documentos oficiales SECOP y genera el análisis. La carga manual queda para documentos complementarios, adendas o archivos internos.</p></div>
         <div className="document-status-card"><small>Estado documental</small><Badge tone={documentStatusTone(status)}>{documentStatusLabel(status)}</Badge><strong>{documents.length} archivo(s)</strong></div>
         <div className="document-risk-meter"><small>Riesgo documental</small><strong>{documentRisk}</strong><span>Persistente y separado del score radar</span></div>
       </div>
       <div className="document-upload-row">
-        <label className="document-upload-box">Subir documentos<input multiple type="file" accept=".pdf,.docx,.zip,.txt,.csv,.xlsx,.xls" onChange={addFiles} disabled={busy}/><small>PDF/Word/TXT/ZIP. El texto se extrae en servidor y se guarda con la oportunidad.</small></label>
+        <button onClick={importOfficialDocuments} disabled={busy}>Importar/Reintentar documentos SECOP</button>
+        <label className="document-upload-box">Subir documentos complementarios<input multiple type="file" accept=".pdf,.docx,.zip,.txt,.csv,.xlsx,.xls" onChange={addFiles} disabled={busy}/><small>PDF/Word/TXT/ZIP. Subir pliego, estudios previos, anexo técnico, adendas, formatos u otros solo como documentos complementarios si SECOP falla o falta algo.</small></label>
         <button onClick={analyzeDocuments} disabled={busy || !documents.length}>Analizar documentos</button>
       </div>
       {statusText && <div className="notice">{statusText}</div>}
@@ -991,7 +1009,7 @@ function TenderDocumentReviewPanel({ opportunity }: { opportunity: Opportunity }
         <div><strong>{doc.signed_url ? <a href={doc.signed_url} target="_blank" rel="noreferrer">{doc.name}</a> : doc.name}</strong><small>{fmtFileSize(doc.size)} · {fmtDate(doc.uploaded_at)} · {doc.uploaded_by || 'Sistema'}</small></div>
         <Badge tone="blue">{tenderDocumentTypeLabel(doc.document_type)}</Badge>
         <span className="document-current">{doc.current ? 'Vigente' : 'No vigente'}</span>
-      </div>)}</div> : <div className="document-empty-state"><strong>Pendiente de documentos</strong><span>Después de crear la oportunidad, carga los archivos oficiales para pasar a análisis documental.</span></div>}
+      </div>)}</div> : <div className="document-empty-state"><strong>Pendiente de documentos</strong><span>Documentos oficiales importados automáticamente al convertir; si falta algo, cargue documentos complementarios.</span></div>}
       {analysis && <div className="document-analysis-grid">
         <section className="document-analysis-card"><small>Resumen ejecutivo documental</small><strong>{analysis.recommendation}</strong><p>{analysis.summary}</p>{analysis.findings?.length ? <ul>{analysis.findings.map(item => <li key={item}>{item}</li>)}</ul> : null}</section>
         <section className="document-analysis-card"><small>Matriz de cumplimiento</small><div className="document-matrix">{(analysis.matrix || []).map(row => <div key={`${row.category}-${row.status}`}><Badge tone={row.status === 'Pendiente' ? 'amber' : 'blue'}>{row.category}</Badge><span><strong>{row.status}</strong> · {row.detail}</span></div>)}</div></section>

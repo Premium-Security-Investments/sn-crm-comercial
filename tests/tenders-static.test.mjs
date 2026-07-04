@@ -47,7 +47,7 @@ assert(!src.includes('className="grid kpis tender-kpi-grid"'), 'Los KPIs de Lici
 assert(src.includes('Recargar vista'), 'Botón ambiguo Actualizar debe renombrarse a Recargar vista.');
 assert(src.includes('Sincronizar fuentes oficiales'), 'Botón de sincronización debe explicar que consulta fuentes oficiales.');
 assert(src.includes('Recargar vista actualiza los datos guardados'), 'La UI debe explicar diferencia entre recargar y sincronizar.');
-assert(src.includes('Limpiar filtros'), 'Licitaciones debe permitir limpiar filtros.');
+assert(src.includes('Limpiar'), 'Licitaciones debe permitir limpiar filtros.');
 assert(src.includes('sourceFilter'), 'Licitaciones debe filtrar por fuente.');
 assert(src.includes('deadlineFilter'), 'Licitaciones debe filtrar por cierre.');
 assert(src.includes('valueFilter'), 'Licitaciones debe filtrar por valor.');
