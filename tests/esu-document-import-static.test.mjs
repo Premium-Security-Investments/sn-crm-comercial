@@ -16,7 +16,7 @@ for (const file of [server, api]) {
   assert(file.includes('community.secop.gov.co') && file.includes('esucontratacion.com'), 'El importador oficial debe soportar SECOP II y ESU, no solo SECOP.');
   assert(!file.includes('La importación automática solo está disponible para enlaces SECOP II'), 'El mensaje no debe bloquear ESU como carga manual.');
   assert(file.includes('Error al importar desde ESU'), 'Los errores por documento ESU deben quedar visibles sin tumbar todo el lote.');
-  assert(file.includes('buildTenderDocumentAnalysis(opportunity, currentDocs)'), 'ESU debe reutilizar el análisis documental persistente existente.');
+  assert(file.includes('buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile)'), 'ESU debe reutilizar el análisis documental persistente existente con ficha/RUP.');
 }
 
 assert(src.includes('Importar/Reintentar documentos oficiales'), 'La UI debe hablar de documentos oficiales, no solo SECOP.');

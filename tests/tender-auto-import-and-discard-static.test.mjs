@@ -13,7 +13,7 @@ for (const file of [server, api]) {
   assert(file.includes('resolveSecopProcessByExactUrl'), 'La importación SECOP debe resolver por urlproceso/noticeUID exacto, no por número suelto.');
   assert(file.includes('SECOP_DOCUMENTS_RESOURCE'), 'Debe consultar el dataset oficial de documentos SECOP II.');
   assert(file.includes('auto_import: true'), 'Los documentos importados automáticamente deben quedar marcados como auto_import.');
-  assert(file.includes('buildTenderDocumentAnalysis(opportunity, currentDocs)'), 'La conversión debe reutilizar el análisis documental persistente existente.');
+  assert(file.includes('buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile)'), 'La conversión debe reutilizar el análisis documental persistente existente con ficha/RUP.');
   assert(file.includes("app.post('/api/tender-documents-import'"), 'Debe existir endpoint para reintentar importación automática desde el detalle.');
   assert(file.includes("app.post('/api/tender-opportunity-discard'"), 'Debe existir endpoint Vercel-safe para sacar/descartar una licitación ya convertida a oportunidad.');
   assert(file.includes('markTenderOpportunityDiscarded'), 'Descartar oportunidad debe marcar oportunidad y licitación de origen sin borrar trazabilidad.');

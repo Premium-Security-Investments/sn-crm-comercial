@@ -1084,7 +1084,67 @@ async function extractTextFromTenderFile(buffer, filename, mime = '') {
   }
   return `Archivo ${filename} cargado. Tipo no soportado para extracción profunda automática.`;
 }
-function buildTenderDocumentAnalysis(opportunity, documents) {
+function tenderProfileSearchText(companyProfile = {}) {
+  return normTenderText(Object.entries(companyProfile || {}).filter(([key]) => !['id','updated_by','updated_at','singleton_key'].includes(key)).map(([, value]) => Array.isArray(value) ? value.join(' ') : String(value || '')).join(' '));
+}
+function buildTenderGoNoGoVerdict(opportunity, documents, context = {}) {
+  const text = context.text || documents.map(d => `\n--- ${d.document_type}: ${d.name} ---\n${d.extracted_text || ''}`).join('\n').slice(0, 220000);
+  const normalized = context.normalized || normTenderText(text);
+  const companyProfile = context.companyProfile || {};
+  const profileText = tenderProfileSearchText(companyProfile);
+  const hasPliego = !!context.hasPliego;
+  const hasTechnical = !!context.hasTechnical;
+  const hasAdenda = !!context.hasAdenda;
+  const hasFormats = !!context.hasFormats;
+  const finds = context.finds || { smmlv: [], money: [], years: [] };
+  const serviceSignals = ['vigilancia','seguridad privada','seguridad fisica','seguridad física','cctv','videovigilancia','monitoreo','control de acceso','alarma','sistema de seguridad','supervision','supervisión'];
+  const positiveSignals = serviceSignals.filter(term => normalized.includes(normTenderText(term))).slice(0, 8);
+  const profileHits = serviceSignals.filter(term => normalized.includes(normTenderText(term)) && profileText.includes(normTenderText(term))).slice(0, 8);
+  const profileGaps = [];
+  if (!profileText) profileGaps.push('Ficha/RUP SN no disponible o sin texto suficiente para cruce automático.');
+  if (normalized.includes('rup') && !profileText.includes('rup')) profileGaps.push('El proceso menciona RUP; confirmar que la ficha/RUP SN cargada esté vigente y completa.');
+  if (finds.smmlv.length && !/(smmlv|experiencia)/.test(profileText)) profileGaps.push('Hay SMMLV/experiencia exigida; falta evidencia automática equivalente en ficha/RUP.');
+  if (normalized.includes('capital de trabajo') && !profileText.includes('capital de trabajo')) profileGaps.push('Validar capital de trabajo exigido contra capacidad financiera SN.');
+  const blockers = [];
+  if (!hasPliego) blockers.push('Falta pliego vigente para validar causales de rechazo.');
+  if (!hasTechnical) blockers.push('Falta anexo técnico para validar alcance, puestos, equipos y ANS.');
+  const hasCoreFit = positiveSignals.length > 0;
+  const urgencyText = opportunity?.expected_close_date ? `Cierre ${opportunity.expected_close_date}` : 'Fecha de cierre por confirmar';
+  let finalDecision = 'REVISAR CON LICITACIONES';
+  if (blockers.length >= 2) finalDecision = 'NO GO temporal / completar documentos';
+  else if (!hasCoreFit) finalDecision = 'DESCARTAR salvo señal comercial externa';
+  else if (profileGaps.length >= 2 || finds.smmlv.length) finalDecision = 'GO condicionado a validación RUP/financiera';
+  else finalDecision = 'GO condicionado';
+  const risk = blockers.length ? 'Alto' : profileGaps.length >= 2 ? 'Medio-Alto' : hasAdenda ? 'Medio' : 'Medio';
+  const executive_semaphore = [
+    { label: 'Decisión', value: finalDecision, tone: finalDecision.startsWith('GO') ? 'green' : finalDecision.startsWith('DESCARTAR') ? 'red' : 'amber' },
+    { label: 'Riesgo', value: risk, tone: risk.includes('Alto') ? 'red' : 'amber' },
+    { label: 'Urgencia', value: urgencyText, tone: 'blue' },
+    { label: 'Documentos', value: `${documents.length} archivo(s)`, tone: documents.length ? 'green' : 'red' }
+  ];
+  const commercial_fit = {
+    status: hasCoreFit ? 'Encaje detectado' : 'Encaje débil',
+    positives: positiveSignals.length ? positiveSignals.map(s => `Objeto/documentos mencionan ${s}.`) : ['No se detectaron términos fuertes de seguridad, vigilancia o tecnología.'],
+    concerns: [!hasCoreFit && 'Objeto podría estar fuera del core SN.', hasAdenda && 'Existe adenda: usar versión vigente antes de decidir.'].filter(Boolean)
+  };
+  const company_profile_crosscheck = {
+    status: profileHits.length ? 'Cruce parcial positivo' : profileText ? 'Cruce pendiente/manual' : 'Sin ficha suficiente',
+    matches: profileHits.length ? profileHits.map(s => `Documento y ficha/RUP comparten señal: ${s}.`) : ['No hay coincidencias automáticas suficientes; revisar ficha/RUP manualmente.'],
+    gaps: profileGaps.length ? profileGaps : ['Cruce automático sin alertas críticas; validar manualmente antes de oferta.'],
+    profile_source: companyProfile?.source_document_name || 'Ficha/RUP SN cargada en CRM'
+  };
+  const habilitating_requirements = [
+    { front: 'Jurídico', status: hasPliego ? 'Validar' : 'Pendiente', action: hasPliego ? 'Revisar causales de rechazo, inhabilidades y cronograma.' : 'Cargar/descargar pliego vigente.' },
+    { front: 'Técnico', status: hasTechnical ? 'Validar' : 'Pendiente', action: hasTechnical ? 'Extraer alcance, puestos, equipos, ANS y personal mínimo.' : 'Ubicar anexo técnico o especificaciones.' },
+    { front: 'Financiero', status: normalized.includes('capital de trabajo') || finds.money.length ? 'Validar contra RUP' : 'Confirmar', action: 'Cruzar capital de trabajo, liquidez, endeudamiento y presupuesto contra ficha SN.' },
+    { front: 'Experiencia', status: normalized.includes('experiencia') || finds.smmlv.length ? 'Validar contra RUP' : 'Confirmar', action: finds.smmlv.length ? `Revisar equivalencia de ${finds.smmlv.join(' / ')} en contratos SN.` : 'Confirmar contratos similares exigidos.' },
+    { front: 'Formatos y pólizas', status: hasFormats ? 'Cargados/parcial' : 'Pendiente', action: 'Listar formatos obligatorios, póliza de seriedad y anexos firmables.' }
+  ];
+  const next_action = finalDecision.startsWith('DESCARTAR') ? 'Marcar como descartada si no hay señal comercial adicional.' : blockers.length ? 'Completar documentos críticos y regenerar dictamen.' : 'Enviar a revisión de licitaciones con pliego, anexos y cruce RUP/financiero.';
+  const committee_summary = `GO / NO GO SN — ${finalDecision}. ${opportunity.company_name}: ${hasCoreFit ? 'encaje preliminar con servicios SN' : 'encaje comercial débil'}; riesgo ${risk}. ${blockers.length ? `Bloqueadores: ${blockers.join(' ')}` : 'Base documental mínima disponible.'} Siguiente acción: ${next_action}`;
+  return { decision: finalDecision, risk, executive_semaphore, commercial_fit, company_profile_crosscheck, habilitating_requirements, blockers, next_action, committee_summary };
+}
+function buildTenderDocumentAnalysis(opportunity, documents, companyProfile = {}) {
   const text = documents.map(d => `\n--- ${d.document_type}: ${d.name} ---\n${d.extracted_text || ''}`).join('\n').slice(0, 220000);
   const normalized = normTenderText(text);
   const hasPliego = documents.some(d => d.document_type === 'pliego' || normTenderText(d.name).includes('pliego'));
@@ -1104,8 +1164,9 @@ function buildTenderDocumentAnalysis(opportunity, documents) {
     normalized.includes('poliza') || normalized.includes('póliza') ? 'Menciona pólizas / seriedad de oferta.' : 'Validar pólizas requeridas.'
   ];
   const missingCritical = [!hasPliego && 'pliego', !hasTechnical && 'anexo técnico'].filter(Boolean);
-  const recommendation = missingCritical.length ? 'Validación incompleta' : 'GO condicionado';
-  const risk = missingCritical.length ? 'Alto' : 'Medio';
+  const goNoGo = buildTenderGoNoGoVerdict(opportunity, documents, { text, normalized, hasPliego, hasTechnical, hasAdenda, hasFormats, finds, companyProfile });
+  const recommendation = goNoGo.decision;
+  const risk = goNoGo.risk;
   const matrix = [
     { category: 'Jurídico', status: hasPliego ? 'Cumplimiento por validar' : 'Pendiente', detail: hasPliego ? 'Pliego disponible para revisar causales de rechazo y habilitantes.' : 'Falta pliego vigente.' },
     { category: 'Técnico', status: hasTechnical ? 'Cumplimiento por validar' : 'Pendiente', detail: hasTechnical ? 'Anexo técnico disponible para puestos, ANS, equipos y personal.' : 'Falta anexo técnico vigente.' },
@@ -1115,9 +1176,15 @@ function buildTenderDocumentAnalysis(opportunity, documents) {
     { category: 'Formatos', status: hasFormats ? 'Cargados' : 'Pendiente', detail: hasFormats ? 'Formatos disponibles para checklist de entrega.' : 'Cargar formatos anexos antes de ofertar.' },
   ];
   return {
-    kind: 'tender_document_analysis', status: 'analisis_generado', recommendation, risk, generated_at: new Date().toISOString(),
+    kind: 'tender_document_analysis', report_title: 'Dictamen GO / NO GO SN', status: 'analisis_generado', recommendation, risk, generated_at: new Date().toISOString(),
     summary: `${recommendation} para ${opportunity.company_name}. ${missingCritical.length ? `Faltan documentos críticos: ${missingCritical.join(', ')}.` : 'Hay base documental mínima para revisión comercial y licitatoria.'} ${hasAdenda ? 'Priorizar Adenda como versión vigente.' : 'Confirmar si existen adendas.'}`,
-    findings: signals, detected_values: finds, matrix,
+    findings: signals, detected_values: finds, matrix, go_no_go: goNoGo,
+    executive_semaphore: goNoGo.executive_semaphore,
+    commercial_fit: goNoGo.commercial_fit,
+    company_profile_crosscheck: goNoGo.company_profile_crosscheck,
+    habilitating_requirements: goNoGo.habilitating_requirements,
+    committee_summary: goNoGo.committee_summary,
+    next_action: goNoGo.next_action,
     checklist: [
       'Confirmar versión vigente de pliego/adendas antes de preparar oferta.',
       'Validar experiencia certificada/RUP y equivalencia en SMMLV.',
@@ -1279,7 +1346,8 @@ async function importTenderDocumentsFromOfficialSource(database, opportunityId, 
     const records = await getTenderDocumentRecords(database, opportunityId);
     const currentDocs = records.documents.filter(d => d.current !== false);
     if (currentDocs.length) {
-      const analysis = buildTenderDocumentAnalysis(opportunity, currentDocs);
+      const companyProfile = await getTenderCompanyProfile(database);
+      const analysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
       await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ ...analysis, auto_import: true, source: sourceLabel }) }).select('id').single());
     }
   }
@@ -1360,7 +1428,8 @@ app.post('/api/tender-documents-analyze', async (req, res) => {
     const records = await getTenderDocumentRecords(database, opportunityId);
     const currentDocs = records.documents.filter(d => d.current !== false);
     if (!currentDocs.length) throw new Error('Debe cargar documentos antes de analizar.');
-    const analysis = buildTenderDocumentAnalysis(opportunity, currentDocs);
+    const companyProfile = await getTenderCompanyProfile(database);
+    const analysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
     await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify(analysis) }).select('id').single());
     res.json(await getTenderDocumentRecords(database, opportunityId));
   } catch (error) { sendError(res, error, error?.status || 400); }
