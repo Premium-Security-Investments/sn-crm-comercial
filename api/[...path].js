@@ -1189,6 +1189,28 @@ async function downloadSecopDocument(doc, referer) {
   const arrayBuffer = await response.arrayBuffer();
   return Buffer.from(arrayBuffer);
 }
+function selectPriorityTenderDocuments(docs, nameGetter = d => d?.nombre_archivo || d?.name || '') {
+  const priority = ['pliego','estudio','previo','especificacion','especificación','tecnico','técnico','anexo','formato','indicador','financier','experiencia','matriz','riesgo','convocatoria','minuta'];
+  const selected = (docs || []).filter(d => priority.some(term => String(nameGetter(d) || '').toLowerCase().includes(term))).slice(0, 40);
+  return selected.length ? selected : (docs || []).slice(0, 40);
+}
+async function listEsuDocumentsFromProcessUrl(sourceUrl) {
+  const processUrl = String(sourceUrl || '');
+  if (!/^https:\/\/esucontratacion\.com\/procesos\/view\/\d+/i.test(processUrl)) throw new Error('La oportunidad no tiene enlace ESU /procesos/view/<id> para importar documentos automáticamente.');
+  const html = await fetchEsuHtml(processUrl);
+  const detail = parseEsuProcessDetail(html, processUrl);
+  return (detail.documents || []).filter(d => d.url && /\/procesos\/descargar\//i.test(d.url));
+}
+async function downloadEsuDocument(doc, referer) {
+  const response = await fetch(doc.url, { headers: { 'User-Agent': 'SN-CRM-ESU-Documents/1.0', 'Accept': 'application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/zip,application/octet-stream,*/*', 'Referer': referer } });
+  if (!response.ok) throw new Error(`Documento ${doc.name} respondió ${response.status}`);
+  const arrayBuffer = await response.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+function esuDocumentId(doc) {
+  const match = String(doc?.url || '').match(/\/procesos\/descargar\/(\d+)/i);
+  return match ? `esu-${match[1]}` : createHash('sha256').update(String(doc?.url || doc?.name || Date.now())).digest('hex').slice(0, 16);
+}
 async function saveTenderDocumentBuffer(database, opportunityId, file, currentProfile, sourceMeta = {}) {
   const name = cleanFileName(file.name);
   const buffer = file.buffer;
@@ -1206,30 +1228,59 @@ async function importTenderDocumentsFromOfficialSource(database, opportunityId, 
   const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
   const sourceUrl = getTenderSourceUrlFromOpportunity(opportunity);
   const officialUrl = secopOfficialUrl(sourceUrl);
-  if (!/community\.secop\.gov\.co/i.test(officialUrl)) throw new Error('La importación automática solo está disponible para enlaces SECOP II. Use carga manual para otras fuentes.');
   await ensureTenderBucket(database);
-  const process = await resolveSecopProcessByExactUrl(officialUrl);
-  const docs = await listSecopDocumentsByPortfolio(process.id_del_portafolio);
-  if (!docs.length) throw new Error('SECOP no retornó documentos para este portafolio.');
-  const priority = ['pliego','estudio','previo','especificacion','especificación','tecnico','técnico','anexo','formato','indicador','financier','experiencia','matriz','riesgo','convocatoria','minuta'];
-  const selected = docs.filter(d => priority.some(term => String(d.nombre_archivo || '').toLowerCase().includes(term))).slice(0, 40);
-  const toDownload = selected.length ? selected : docs.slice(0, 40);
+  let sourceLabel = '';
+  let sourceContext = {};
+  let toDownload = [];
+  if (/community\.secop\.gov\.co/i.test(officialUrl)) {
+    const process = await resolveSecopProcessByExactUrl(officialUrl);
+    const docs = await listSecopDocumentsByPortfolio(process.id_del_portafolio);
+    if (!docs.length) throw new Error('SECOP no retornó documentos para este portafolio.');
+    sourceLabel = 'SECOP II';
+    sourceContext = { source: 'SECOP II', process_id: process.id_del_proceso, portfolio_id: process.id_del_portafolio, notice_uid: noticeUidFromSecopUrl(officialUrl) };
+    toDownload = selectPriorityTenderDocuments(docs, d => d.nombre_archivo).map(doc => ({
+      name: doc.nombre_archivo,
+      mime_type: doc.extensi_n === 'pdf' ? 'application/pdf' : 'application/octet-stream',
+      document_type: normalizeDocumentType('', doc.nombre_archivo),
+      source_url: doc.url_descarga_documento.url,
+      source_document_id: doc.id_documento,
+      download: () => downloadSecopDocument(doc, officialUrl),
+      errorPrefix: 'SECOP'
+    }));
+  } else if (/^https:\/\/esucontratacion\.com\/procesos\/view\/\d+/i.test(sourceUrl)) {
+    const docs = await listEsuDocumentsFromProcessUrl(sourceUrl);
+    if (!docs.length) throw new Error('ESU no retornó documentos descargables para este proceso.');
+    sourceLabel = 'ESU Contratación';
+    sourceContext = { source: 'ESU Contratación', process_url: sourceUrl, process_id: parseEsuProcessId(sourceUrl) };
+    toDownload = selectPriorityTenderDocuments(docs, d => d.name).map(doc => ({
+      name: doc.name,
+      mime_type: doc.name?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream',
+      document_type: normalizeDocumentType(doc.type, doc.name),
+      source_url: doc.url,
+      source_document_id: esuDocumentId(doc),
+      download: () => downloadEsuDocument(doc, sourceUrl),
+      errorPrefix: 'ESU'
+    }));
+  } else {
+    throw new Error('La importación automática solo está disponible para enlaces oficiales SECOP II o ESU Contratación. Use carga manual para otras fuentes.');
+  }
   const uploaded = [];
   for (const doc of toDownload) {
     try {
-      const buffer = await downloadSecopDocument(doc, officialUrl);
-      uploaded.push(await saveTenderDocumentBuffer(database, opportunityId, { name: doc.nombre_archivo, buffer, mime_type: doc.extensi_n === 'pdf' ? 'application/pdf' : 'application/octet-stream', document_type: normalizeDocumentType('', doc.nombre_archivo), current: true }, currentProfile, { auto_import: true, source_url: doc.url_descarga_documento.url, source_document_id: doc.id_documento }));
+      const buffer = await doc.download();
+      uploaded.push(await saveTenderDocumentBuffer(database, opportunityId, { name: doc.name, buffer, mime_type: doc.mime_type, document_type: doc.document_type, current: true }, currentProfile, { auto_import: true, source_url: doc.source_url, source_document_id: doc.source_document_id }));
     } catch (error) {
-      uploaded.push({ id: `error-${doc.id_documento}`, name: doc.nombre_archivo, size: 0, mime_type: null, document_type: normalizeDocumentType('', doc.nombre_archivo), current: false, storage_path: null, uploaded_at: new Date().toISOString(), extracted_text: `Error al importar desde SECOP: ${error?.message || error}`, auto_import: true, source_url: doc.url_descarga_documento?.url || null, source_document_id: doc.id_documento });
+      const importErrorText = doc.errorPrefix === 'ESU' ? `Error al importar desde ESU: ${error?.message || error}` : `Error al importar desde SECOP: ${error?.message || error}`;
+      uploaded.push({ id: `error-${doc.source_document_id}`, name: doc.name, size: 0, mime_type: null, document_type: normalizeDocumentType(doc.document_type, doc.name), current: false, storage_path: null, uploaded_at: new Date().toISOString(), extracted_text: importErrorText, auto_import: true, source_url: doc.source_url || null, source_document_id: doc.source_document_id });
     }
   }
-  await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_upload', auto_import: true, source: 'SECOP II', process_id: process.id_del_proceso, portfolio_id: process.id_del_portafolio, notice_uid: noticeUidFromSecopUrl(officialUrl), opportunity: opportunity.company_name, documents: uploaded }) }).select('id').single());
+  await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_upload', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, documents: uploaded }) }).select('id').single());
   if (analyze) {
     const records = await getTenderDocumentRecords(database, opportunityId);
     const currentDocs = records.documents.filter(d => d.current !== false);
     if (currentDocs.length) {
       const analysis = buildTenderDocumentAnalysis(opportunity, currentDocs);
-      await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ ...analysis, auto_import: true, source: 'SECOP II' }) }).select('id').single());
+      await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ ...analysis, auto_import: true, source: sourceLabel }) }).select('id').single());
     }
   }
   return await getTenderDocumentRecords(database, opportunityId);
@@ -1244,14 +1295,14 @@ async function convertTenderToOpportunity(database, tender, currentProfile) {
   await markTenderConverted(database, tender, opportunityId, currentProfile.id);
   let document_import_status = 'no_aplica';
   let document_import_error = null;
-  if (tender.source === 'SECOP II' && tender.url) {
+  if ((tender.source === 'SECOP II' || tender.source === 'ESU Contratación') && tender.url) {
     try {
       await importTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze: true });
       document_import_status = 'analisis_generado';
     } catch (error) {
       document_import_status = 'fallo_importacion';
       document_import_error = error?.message || String(error);
-      await database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_import_error', auto_import: true, source: 'SECOP II', error: document_import_error }) });
+      await database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_import_error', auto_import: true, source: tender.source, error: document_import_error }) });
     }
   }
   return { id: opportunityId, duplicate: !!existing.data?.id, document_import_status, document_import_error };

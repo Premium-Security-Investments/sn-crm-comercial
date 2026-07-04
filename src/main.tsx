@@ -984,10 +984,10 @@ function TenderDocumentReviewPanel({ opportunity, onReload }: { opportunity: Opp
     finally { setBusy(false); }
   };
   const importOfficialDocuments = async () => {
-    setBusy(true); setStatusText('Importando documentos oficiales desde SECOP y generando análisis…');
+    setBusy(true); setStatusText('Importando documentos oficiales desde SECOP/ESU y generando análisis…');
     try {
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-import', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
-      setPayload(data); setStatusText('Documentos oficiales importados automáticamente desde SECOP. Puede cargar documentos complementarios si hace falta.');
+      setPayload(data); setStatusText('Documentos oficiales importados automáticamente. Puede cargar documentos complementarios si hace falta.');
       await onReload?.();
     } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }
@@ -995,13 +995,13 @@ function TenderDocumentReviewPanel({ opportunity, onReload }: { opportunity: Opp
   return <Panel title="Revisión documental" >
     <div className="tender-document-panel">
       <div className="document-review-head">
-        <div><span className="eyebrow">Oportunidad de licitación</span><h3>Documentos del proceso</h3><p>Al convertir desde el radar, el sistema importa los documentos oficiales SECOP y genera el análisis. La carga manual queda para documentos complementarios, adendas o archivos internos.</p></div>
+        <div><span className="eyebrow">Oportunidad de licitación</span><h3>Documentos del proceso</h3><p>Al convertir desde el radar, el sistema importa los documentos oficiales SECOP/ESU y genera el análisis. La carga manual queda para documentos complementarios, adendas o archivos internos.</p></div>
         <div className="document-status-card"><small>Estado documental</small><Badge tone={documentStatusTone(status)}>{documentStatusLabel(status)}</Badge><strong>{documents.length} archivo(s)</strong></div>
         <div className="document-risk-meter"><small>Riesgo documental</small><strong>{documentRisk}</strong><span>Persistente y separado del score radar</span></div>
       </div>
       <div className="document-upload-row">
-        <button onClick={importOfficialDocuments} disabled={busy}>Importar/Reintentar documentos SECOP</button>
-        <label className="document-upload-box">Subir documentos complementarios<input multiple type="file" accept=".pdf,.docx,.zip,.txt,.csv,.xlsx,.xls" onChange={addFiles} disabled={busy}/><small>PDF/Word/TXT/ZIP. Subir pliego, estudios previos, anexo técnico, adendas, formatos u otros solo como documentos complementarios si SECOP falla o falta algo.</small></label>
+        <button onClick={importOfficialDocuments} disabled={busy}>Importar/Reintentar documentos oficiales</button>
+        <label className="document-upload-box">Subir documentos complementarios<input multiple type="file" accept=".pdf,.docx,.zip,.txt,.csv,.xlsx,.xls" onChange={addFiles} disabled={busy}/><small>PDF/Word/TXT/ZIP. Subir pliego, estudios previos, anexo técnico, adendas, formatos u otros solo como documentos complementarios si la fuente oficial falla o falta algo.</small></label>
         <button onClick={analyzeDocuments} disabled={busy || !documents.length}>Analizar documentos</button>
       </div>
       {statusText && <div className="notice">{statusText}</div>}

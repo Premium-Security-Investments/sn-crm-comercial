@@ -21,7 +21,7 @@ for (const file of [server, api]) {
   assert(file.includes("internal_status: 'descartada'"), 'Sacar de oportunidad debe regresar la licitación a estado descartada.');
 }
 
-assert(src.includes('Importar/Reintentar documentos SECOP'), 'El detalle debe permitir reintentar importación automática desde SECOP.');
+assert(src.includes('Importar/Reintentar documentos oficiales'), 'El detalle debe permitir reintentar importación automática desde fuentes oficiales SECOP/ESU.');
 assert(src.includes('/api/tender-documents-import'), 'El frontend debe llamar el endpoint de importación automática/manual.');
 assert(src.includes('Sacar de oportunidad'), 'El detalle debe tener acción para sacar una licitación no óptima de oportunidades.');
 assert(src.includes('/api/tender-opportunity-discard'), 'El frontend debe llamar el endpoint seguro para descartar oportunidad de licitación.');
