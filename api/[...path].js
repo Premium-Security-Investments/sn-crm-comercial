@@ -216,6 +216,59 @@ const tenderDisqualifyingTerms = [
 const tenderFocusTerms = { 'bogotá': 22, 'bogota': 22, 'distrito capital': 20, 'medellín': 22, 'medellin': 22, 'antioquia': 14 };
 const tenderInternalStatuses = ['nueva','en_revision','descartada','convertida_oportunidad'];
 function canViewTenders(profile) { return isManager(profile) || profile?.microsoft_email?.toLowerCase() === 'directora.licitaciones@seguridadnacional.co'; }
+const tenderRegionKeys = ['todas','bog_cundinamarca','med_antioquia','eje_cafetero','cali_valle','costa_caribe','santanderes','sur_occidente','otros'];
+const tenderSectionFilters = ['todas','hacer','revisar','descartar'];
+const tenderDeadlineFilters = ['todas','0_7','8_15','16_30','vencida','sin_fecha'];
+const tenderValueFilters = ['todas','sin_valor','lt_50m','50m_500m','500m_plus','1000m_plus'];
+const tenderScoreFilters = ['todas','alto','medio','bajo'];
+function pickTenderFilter(value, allowed, fallback = 'todas') { const clean = String(value || fallback).trim(); return allowed.includes(clean) ? clean : fallback; }
+function cleanTenderSearchProfile(body, profile) {
+  const name = String(body?.name || '').trim().slice(0, 120);
+  if (!name) throw new Error('Debe indicar un nombre para el perfil de búsqueda.');
+  return {
+    name,
+    description: String(body?.description || '').trim().slice(0, 500) || null,
+    region_key: pickTenderFilter(body?.region_key, tenderRegionKeys),
+    source_filter: String(body?.source_filter || 'todas').trim().slice(0, 120) || 'todas',
+    section_filter: pickTenderFilter(body?.section_filter, tenderSectionFilters),
+    internal_status_filter: pickTenderFilter(body?.internal_status_filter, ['todas', ...tenderInternalStatuses]),
+    deadline_filter: pickTenderFilter(body?.deadline_filter, tenderDeadlineFilters),
+    value_filter: pickTenderFilter(body?.value_filter, tenderValueFilters),
+    score_filter: pickTenderFilter(body?.score_filter, tenderScoreFilters),
+    query_text: String(body?.query_text || '').trim().slice(0, 250) || null,
+    is_default: Boolean(body?.is_default),
+    updated_by: profile.id,
+  };
+}
+function isMissingTenderSearchProfilesTable(error) {
+  const msg = `${error?.code || ''} ${error?.message || ''}`.toLowerCase();
+  return msg.includes('42p01') || msg.includes('psi_tender_search_profiles');
+}
+async function tenderSearchProfilesTableAvailable(database) {
+  const { error } = await database.from('psi_tender_search_profiles').select('id').limit(1);
+  if (!error) return true;
+  if (isMissingTenderSearchProfilesTable(error)) return false;
+  throw error;
+}
+async function listTenderSearchProfiles(database) {
+  if (!(await tenderSearchProfilesTableAvailable(database))) return [];
+  const { data, error } = await database.from('psi_tender_search_profiles').select('*').order('is_default', { ascending: false }).order('name');
+  if (error) throw error;
+  return data || [];
+}
+async function saveTenderSearchProfile(database, body, profile) {
+  if (!(await tenderSearchProfilesTableAvailable(database))) throw new Error('La tabla psi_tender_search_profiles aún no existe. Aplica la migración 013 para guardar perfiles de búsqueda.');
+  const payload = { ...cleanTenderSearchProfile(body, profile), created_by: profile.id };
+  const { data, error } = await database.from('psi_tender_search_profiles').upsert(payload, { onConflict: 'name', defaultToNull: false }).select('*').single();
+  if (error) throw error;
+  return data;
+}
+async function deleteTenderSearchProfile(database, id) {
+  if (!(await tenderSearchProfilesTableAvailable(database))) throw new Error('La tabla psi_tender_search_profiles aún no existe.');
+  const { error } = await database.from('psi_tender_search_profiles').delete().eq('id', id);
+  if (error) throw error;
+  return { ok: true };
+}
 const tenderCompanyProfileFields = ['legal_name','nit','rup_status','rup_updated_at','rup_unspsc_codes','authorized_services','supervigilancia_license','financial_capacity','organizational_capacity','experience_summary','certifications','recurring_documents','disqualifications_notes','useful_company_info','source_document_name','rup_import_notes'];
 function cleanTenderCompanyProfile(body, profile) {
   const payload = { singleton_key: 'seguridad_nacional', updated_by: profile.id };
@@ -847,6 +900,30 @@ app.get('/api/tenders', async (req, res) => {
     const database = requireDb();
     res.json(await buildTenderRadar(database, currentProfile, req.query.refresh === '1'));
   } catch (error) { sendAuthError(res, error); }
+});
+
+app.get('/api/tender-search-profiles', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver perfiles de búsqueda.'); error.status = 403; throw error; }
+    res.json(await listTenderSearchProfiles(requireDb()));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-search-profiles', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede guardar perfiles de búsqueda.'); error.status = 403; throw error; }
+    res.status(201).json(await saveTenderSearchProfile(requireDb(), req.body, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.delete('/api/tender-search-profiles/:id', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede eliminar perfiles de búsqueda.'); error.status = 403; throw error; }
+    res.json(await deleteTenderSearchProfile(requireDb(), req.params.id));
+  } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
 app.get('/api/tender-company-profile', async (req, res) => {

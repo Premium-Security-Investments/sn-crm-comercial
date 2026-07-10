@@ -36,6 +36,8 @@ type TenderDeadlineFilter = 'todas' | '0_7' | '8_15' | '16_30' | 'vencida' | 'si
 type TenderValueFilter = 'todas' | 'sin_valor' | 'lt_50m' | '50m_500m' | '500m_plus' | '1000m_plus';
 type TenderScoreFilter = 'todas' | 'alto' | 'medio' | 'bajo';
 type TenderSortKey = 'deadline' | 'value' | 'score' | 'entity' | 'source';
+type TenderModuleView = 'radar' | 'seguimiento' | 'expedientes' | 'perfiles';
+type TenderRegionKey = 'todas' | 'bog_cundinamarca' | 'med_antioquia' | 'eje_cafetero' | 'cali_valle' | 'costa_caribe' | 'santanderes' | 'sur_occidente' | 'otros';
 type PublicTender = { id: string; stable_key?: string; source: string; section: TenderSection; internal_status?: TenderInternalStatus; converted_opportunity_id?: string | null; reviewed_at?: string | null; detected_at?: string | null; last_seen_at?: string | null; entity: string; dept?: string; city?: string; ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string; category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null; score: number; reasons: string[]; risks: string[]; url?: string };
 type TenderDocumentStatus = 'pendiente_documentos' | 'documentos_cargados' | 'analisis_generado';
 type TenderDocumentRecord = { id: string; name: string; size: number; mime_type?: string | null; document_type: string; current: boolean; storage_path?: string; uploaded_at: string; uploaded_by?: string | null; signed_url?: string | null; extracted_text?: string | null };
@@ -46,6 +48,7 @@ type TenderOfferPreparation = { status: string; approved_at: string; approved_by
 type TenderOfferPreparationPayload = { preparation: TenderOfferPreparation | null; preparations: TenderOfferPreparation[]; notes: Array<{ note: string; status?: string; created_at?: string; created_by?: string; created_by_name?: string }> };
 type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string; count?: number; message?: string };
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
+type TenderSearchProfile = { id: string; name: string; description?: string | null; region_key: TenderRegionKey; source_filter: string; section_filter: TenderSection | 'todas'; internal_status_filter: TenderInternalStatus | 'todas'; deadline_filter: TenderDeadlineFilter; value_filter: TenderValueFilter; score_filter: TenderScoreFilter; query_text?: string | null; is_default?: boolean; created_at?: string; updated_at?: string };
 type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; rup_status?: string | null; rup_updated_at?: string | null; rup_unspsc_codes?: string | null; authorized_services?: string | null; supervigilancia_license?: string | null; financial_capacity?: string | null; organizational_capacity?: string | null; experience_summary?: string | null; certifications?: string | null; recurring_documents?: string | null; disqualifications_notes?: string | null; useful_company_info?: string | null; source_document_name?: string | null; rup_import_notes?: string | null; updated_at?: string | null; updated_by_name?: string | null };
 type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
 type DashboardPeriodFilter = '' | 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
@@ -85,6 +88,25 @@ const PRODUCT_OPERATIONAL_UNITS_BY_NAME: Record<string, string> = {
   'seguridad fisica': 'Puestos 24H',
 };
 const TENDER_OFFICIAL_SOURCES = ['SECOP I', 'SECOP II', 'TVEC', 'ESU Contratación'];
+const TENDER_SN_REGIONS: Array<{ key: TenderRegionKey; label: string; aliases: string[]; focus: string }> = [
+  { key: 'todas', label: 'Todas las regiones', aliases: [], focus: 'Sin limitar cobertura' },
+  { key: 'bog_cundinamarca', label: 'BOG - Bogotá/Cundinamarca', aliases: ['bogota','bogotá','cundinamarca','soacha','mosquera','chia','chía','funza','facatativa','zipaquira','zipaquirá'], focus: 'Presencia fuerte SN y alto volumen de procesos' },
+  { key: 'med_antioquia', label: 'MED - Medellín/Antioquia', aliases: ['medellin','medellín','antioquia','envigado','bello','itagui','itagüí','sabaneta','rio negro','rionegro'], focus: 'Cobertura regional Medellín y Antioquia' },
+  { key: 'eje_cafetero', label: 'EJE C - Eje Cafetero', aliases: ['caldas','manizales','risaralda','pereira','quindio','quindío','armenia'], focus: 'Procesos en Caldas, Risaralda y Quindío' },
+  { key: 'cali_valle', label: 'CALI - Valle del Cauca', aliases: ['valle del cauca','cali','palmira','yumbo','buenaventura','tulua','tuluá'], focus: 'Presencia en Cali y corredor Valle' },
+  { key: 'costa_caribe', label: 'Costa Caribe', aliases: ['atlantico','atlántico','barranquilla','bolivar','bolívar','cartagena','magdalena','santa marta','cesar','cordoba','córdoba','sucre','la guajira'], focus: 'Oportunidades regionales Caribe' },
+  { key: 'santanderes', label: 'Santanderes', aliases: ['santander','bucaramanga','norte de santander','cucuta','cúcuta'], focus: 'Santander y Norte de Santander' },
+  { key: 'sur_occidente', label: 'Sur occidente', aliases: ['cauca','popayan','popayán','nariño','narino','pasto','huila','neiva','putumayo'], focus: 'Sur occidente y zonas de expansión' },
+  { key: 'otros', label: 'Otros / validar cobertura', aliases: [], focus: 'Procesos fuera de plazas principales; validar operación antes de ofertar' },
+];
+function normalizeTenderText(value?: string | null) { return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+function tenderMatchesRegion(tender: PublicTender, regionKey: TenderRegionKey) {
+  if (regionKey === 'todas') return true;
+  const haystack = normalizeTenderText(`${tender.dept || ''} ${tender.city || ''} ${tender.entity || ''} ${tender.title || ''}`);
+  const knownRegionMatch = TENDER_SN_REGIONS.filter(r => r.key !== 'todas' && r.key !== 'otros').some(region => region.aliases.some(alias => haystack.includes(normalizeTenderText(alias))));
+  if (regionKey === 'otros') return !knownRegionMatch;
+  return TENDER_SN_REGIONS.find(region => region.key === regionKey)?.aliases.some(alias => haystack.includes(normalizeTenderText(alias))) || false;
+}
 function placeholderOption(label: string, value = 'todas') { return [value, `${label}: Todas`]; }
 function customerSegmentLabel(value?: string | null) { return value === 'cliente_nuevo' ? 'Cliente Nuevo' : value === 'cliente_actual' ? 'Cliente Actual' : 'Pendiente'; }
 function commercialAreaLabel(value?: string | null) { return value === 'seguridad_fisica' ? 'Seguridad Física' : value === 'tecnologia' ? 'Tecnología' : value === 'licitacion_publica' ? 'Licitación Pública' : 'Sin área'; }
@@ -337,10 +359,10 @@ function titleFor(route: Route) {
 }
 function Nav({ route, currentProfile }: { route: Route; currentProfile: Profile | null }) {
   const items = [['#/dashboard2','Dashboard gerencial'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades']];
-  if (canViewTenders(currentProfile)) items.push(['#/tenders','Licitaciones']);
+  const tenderSubnav: Array<[string, string]> = [['#/tenders?view=radar','Radar de oportunidades'],['#/tenders?view=seguimiento','Seguimiento'],['#/tenders?view=expedientes','Expedientes'],['#/tenders?view=perfiles','Perfiles de búsqueda']];
   items.push(['#/vig-ia','Vig-IA'],['#/new','Crear oportunidad'],['#/goals','Metas y cumplimiento']);
   if (canManageUsers(currentProfile)) items.push(['#/users','Usuarios y permisos']);
-  return <nav>{items.map(([href,label]) => <a key={href} className={(route.page === 'home' && href==='#/') || href.includes(route.page) || (route.page === 'centinel' && href === '#/vig-ia') ? 'active' : ''} href={href}>{label}</a>)}</nav>;
+  return <nav>{items.slice(0,3).map(([href,label]) => <a key={href} className={(route.page === 'home' && href==='#/') || href.includes(route.page) || (route.page === 'centinel' && href === '#/vig-ia') ? 'active' : ''} href={href}>{label}</a>)}{canViewTenders(currentProfile) && <div className={`nav-group tender-subnav ${route.page === 'tenders' ? 'open active' : ''}`}><a className={`nav-parent ${route.page === 'tenders' ? 'active' : ''}`} href="#/tenders?view=radar">Licitaciones <span>▾</span></a><div className="nav-subitems">{tenderSubnav.map(([href,label]) => <a key={href} href={href} className={route.page === 'tenders' && (hashQueryParam('view') || 'radar') === new URLSearchParams(href.split('?')[1]).get('view') ? 'active' : ''}>{label}</a>)}</div></div>}{items.slice(3).map(([href,label]) => <a key={href} className={(route.page === 'home' && href==='#/') || href.includes(route.page) || (route.page === 'centinel' && href === '#/vig-ia') ? 'active' : ''} href={href}>{label}</a>)}</nav>;
 }
 function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; refresh: () => Promise<void> }) {
   if (route.page === 'opportunities') return <OpportunityList data={data} />;
@@ -669,6 +691,9 @@ function TenderCompanyProfilePanel() {
     </details>
   </section>;
 }
+function TenderSearchProfilesPanel({ regionFilter, setRegionFilter, profiles, profileName, setProfileName, profileStatus, savingProfile, onSave, onApply, onDelete }: { regionFilter: TenderRegionKey; setRegionFilter: (value: TenderRegionKey) => void; profiles: TenderSearchProfile[]; profileName: string; setProfileName: (value: string) => void; profileStatus: string; savingProfile: boolean; onSave: () => void; onApply: (profile: TenderSearchProfile) => void; onDelete: (profile: TenderSearchProfile) => void }) {
+  return <section className="panel tender-search-profiles-panel"><div className="tender-profile-head"><div><span className="eyebrow">Perfiles de búsqueda SN</span><h2>Filtrar por regiones donde tenemos presencia</h2><p>Los perfiles combinan servicio, fuente, cuantía y cobertura. La prioridad es enfocar el radar en ciudades/regiones donde Seguridad Nacional puede operar o donde vale la pena validar cobertura antes de ofertar.</p></div><label><span>Región SN</span><Select value={regionFilter} onChange={v=>setRegionFilter(v as TenderRegionKey)} options={TENDER_SN_REGIONS.map(region => [region.key, region.label])} empty=""/></label></div><div className="tender-region-grid">{TENDER_SN_REGIONS.filter(region => region.key !== 'todas').map(region => <button key={region.key} className={regionFilter === region.key ? 'active' : ''} onClick={() => setRegionFilter(region.key)}><strong>{region.label}</strong><span>{region.focus}</span><small>{region.key === 'otros' ? 'Bandeja de validación' : region.aliases.slice(0,5).join(' · ')}</small></button>)}</div><div className="tender-profile-save"><input placeholder="Nombre del perfil, ej. CCTV Bogotá $500M+" value={profileName} onChange={e=>setProfileName(e.target.value)} /><button onClick={onSave} disabled={savingProfile}>{savingProfile ? 'Guardando…' : 'Guardar perfil actual'}</button>{profileStatus && <span>{profileStatus}</span>}</div><div className="tender-saved-profiles"><strong>Perfiles guardados</strong>{profiles.length ? profiles.map(profile => <div key={profile.id} className="tender-saved-profile-row"><button className="secondary" onClick={() => onApply(profile)}><b>{profile.name}</b><small>{TENDER_SN_REGIONS.find(region => region.key === profile.region_key)?.label || profile.region_key} · {profile.source_filter || 'todas'} · {profile.value_filter || 'todas'}</small></button><button className="secondary" onClick={() => onDelete(profile)}>Eliminar</button></div>) : <span className="muted">Aún no hay perfiles guardados en la base de datos.</span>}</div><div className="tender-profile-examples"><strong>Perfiles sugeridos iniciales</strong><span>Vigilancia física + BOG/Cundinamarca</span><span>Seguridad electrónica + Medellín/Antioquia</span><span>ESU + Antioquia</span><span>CCTV / monitoreo + ciudades principales</span><span>Grandes cuantías + regiones con cobertura confirmada</span></div></section>;
+}
 function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) {
   const currentProfile = data.currentProfile;
   const [payload, setPayload] = useState<TenderRadarPayload | null>(null);
@@ -682,9 +707,14 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
   const [quickFilter, setQuickFilter] = useState<TenderQuickFilter>(null);
   const [fastFilter, setFastFilter] = useState<TenderFastFilter>(null);
   const [sourceFilter, setSourceFilter] = useState('todas');
+  const [regionFilter, setRegionFilter] = useState<TenderRegionKey>('todas');
   const [deadlineFilter, setDeadlineFilter] = useState<TenderDeadlineFilter>('todas');
   const [valueFilter, setValueFilter] = useState<TenderValueFilter>('todas');
   const [scoreFilter, setScoreFilter] = useState<TenderScoreFilter>('todas');
+  const [searchProfiles, setSearchProfiles] = useState<TenderSearchProfile[]>([]);
+  const [profileName, setProfileName] = useState('');
+  const [profileStatus, setProfileStatus] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
   const [tenderSortKey, setTenderSortKey] = useState<TenderSortKey>('value');
   const [tenderSortDirection, setTenderSortDirection] = useState<SortDirection>('desc');
   const focusTenderId = hashQueryParam('tender');
@@ -694,13 +724,17 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setLoading(false); }
   };
+  const loadSearchProfiles = async () => {
+    try { setSearchProfiles(await api<TenderSearchProfile[]>('/api/tender-search-profiles')); }
+    catch (err) { setProfileStatus(err instanceof Error ? err.message : String(err)); }
+  };
   const refreshRadar = async () => {
     setSyncing(true); setError(null);
     try { setPayload(await api<TenderRadarPayload>('/api/tender-refresh', { method: 'POST' })); }
     catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setSyncing(false); }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadSearchProfiles(); }, []);
   useEffect(() => {
     if (!focusTenderId || !payload) return;
     const focused = payload.tenders.find(t => t.id === focusTenderId);
@@ -711,6 +745,7 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     setQuickFilter(null);
     setFastFilter(null);
     setSourceFilter('todas');
+    setRegionFilter('todas');
     setDeadlineFilter('todas');
     setValueFilter('todas');
     setScoreFilter('todas');
@@ -720,7 +755,7 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
   if (loading) return <div className="notice">Cargando radar de licitaciones…</div>;
   if (error) return <div className="error">{error}</div>;
   if (!payload) return <EmptyState title="Sin datos" text="No se pudo cargar el radar de licitaciones." />;
-  const clearTenderFilters = () => { setQuickFilter(null); setFastFilter(null); setSection('todas'); setInternalStatus('todas'); setSourceFilter('todas'); setDeadlineFilter('todas'); setValueFilter('todas'); setScoreFilter('todas'); setQ(''); };
+  const clearTenderFilters = () => { setQuickFilter(null); setFastFilter(null); setSection('todas'); setInternalStatus('todas'); setSourceFilter('todas'); setRegionFilter('todas'); setDeadlineFilter('todas'); setValueFilter('todas'); setScoreFilter('todas'); setQ(''); };
   const applyTenderQuickFilter = (filter: TenderQuickFilter) => {
     setQuickFilter(current => current === filter ? null : filter);
     setFastFilter(null);
@@ -777,6 +812,14 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     }
   };
   const sourceOptions = Array.from(new Set([...TENDER_OFFICIAL_SOURCES, ...payload.tenders.map(t => t.source).filter(Boolean)])).sort((a,b) => a.localeCompare(b)).map(s => [s, s]);
+  const regionOptions = TENDER_SN_REGIONS.map(region => [region.key, region.label]);
+  const tenderView = (['radar','seguimiento','expedientes','perfiles'].includes(hashQueryParam('view')) ? hashQueryParam('view') : 'radar') as TenderModuleView;
+  const tenderViewCopy: Record<TenderModuleView, { title: string; text: string }> = {
+    radar: { title: 'Radar de oportunidades', text: 'Bandeja principal para detectar, priorizar y clasificar procesos nuevos.' },
+    seguimiento: { title: 'Seguimiento', text: 'Procesos marcados para revisión activa, cambios de estado y alertas documentales.' },
+    expedientes: { title: 'Expedientes', text: 'Procesos convertidos o listos para preparar documentos, GO/NO GO y oferta.' },
+    perfiles: { title: 'Perfiles de búsqueda', text: 'Criterios SN por servicio, cuantía, fuente y región donde tenemos presencia.' },
+  };
   const tenderFastFilterConfig: Record<Exclude<TenderFastFilter, null>, { label: string; section?: TenderSection | 'todas'; internalStatus?: TenderInternalStatus | 'todas'; deadlineFilter?: TenderDeadlineFilter; valueFilter?: TenderValueFilter; scoreFilter?: TenderScoreFilter }> = {
     hacer: { label: 'Hacer hoy', section: 'hacer' },
     revisar: { label: 'Revisar', section: 'revisar' },
@@ -809,6 +852,31 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     setTenderSortKey(key);
     setTenderSortDirection(direction);
   };
+  const applySearchProfile = (profile: TenderSearchProfile) => {
+    setQuickFilter(null); setFastFilter(null);
+    setRegionFilter(profile.region_key || 'todas'); setSourceFilter(profile.source_filter || 'todas');
+    setSection(profile.section_filter || 'todas'); setInternalStatus(profile.internal_status_filter || 'todas');
+    setDeadlineFilter(profile.deadline_filter || 'todas'); setValueFilter(profile.value_filter || 'todas'); setScoreFilter(profile.score_filter || 'todas');
+    setQ(profile.query_text || ''); setProfileName(profile.name); setProfileStatus(`Perfil aplicado: ${profile.name}`);
+  };
+  const saveCurrentSearchProfile = async () => {
+    const name = profileName.trim();
+    if (!name) { setProfileStatus('Escriba un nombre para guardar el perfil.'); return; }
+    setSavingProfile(true); setProfileStatus('Guardando perfil de búsqueda…');
+    try {
+      const saved = await api<TenderSearchProfile>('/api/tender-search-profiles', { method: 'POST', body: JSON.stringify({ name, region_key: regionFilter, source_filter: sourceFilter, section_filter: section, internal_status_filter: internalStatus, deadline_filter: deadlineFilter, value_filter: valueFilter, score_filter: scoreFilter, query_text: q }) });
+      setSearchProfiles(current => [saved, ...current.filter(profile => profile.id !== saved.id && profile.name !== saved.name)].sort((a,b) => Number(Boolean(b.is_default)) - Number(Boolean(a.is_default)) || a.name.localeCompare(b.name)));
+      setProfileStatus(`Perfil guardado: ${saved.name}`);
+    } catch (err) { setProfileStatus(err instanceof Error ? err.message : String(err)); }
+    finally { setSavingProfile(false); }
+  };
+  const deleteSearchProfile = async (profile: TenderSearchProfile) => {
+    const ok = window.confirm(`¿Eliminar el perfil "${profile.name}"?`);
+    if (!ok) return;
+    setProfileStatus('Eliminando perfil…');
+    try { await api(`/api/tender-search-profiles/${encodeURIComponent(profile.id)}`, { method: 'DELETE' }); setSearchProfiles(current => current.filter(item => item.id !== profile.id)); setProfileStatus(`Perfil eliminado: ${profile.name}`); }
+    catch (err) { setProfileStatus(err instanceof Error ? err.message : String(err)); }
+  };
   const rows = payload.tenders.filter(t => {
     const status = t.internal_status || 'nueva';
     const value = Number(t.value || 0);
@@ -819,7 +887,9 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     const matchesQuick = !quickFilter || (quickFilter === 'hacer' && prioritizable && t.section === 'hacer') || (quickFilter === 'en_revision' && status === 'en_revision') || (quickFilter === 'high_value' && prioritizable && value >= 500_000_000) || (quickFilter === 'convertidas' && status === 'convertida_oportunidad');
     const matchesValue = valueFilter === 'todas' || (valueFilter === 'sin_valor' && value <= 0) || (valueFilter === 'lt_50m' && value > 0 && value < 50_000_000) || (valueFilter === '50m_500m' && value >= 50_000_000 && value < 500_000_000) || (valueFilter === '500m_plus' && value >= 500_000_000) || (valueFilter === '1000m_plus' && value >= 1_000_000_000);
     const matchesScore = scoreFilter === 'todas' || (scoreFilter === 'alto' && score >= 70) || (scoreFilter === 'medio' && score >= 40 && score < 70) || (scoreFilter === 'bajo' && score < 40);
-    return (!priorityFilterActive || prioritizable) && matchesQuick && (section === 'todas' || t.section === section) && (internalStatus === 'todas' || status === internalStatus) && (sourceFilter === 'todas' || t.source === sourceFilter) && (deadlineFilter === 'todas' || deadlineBucket === deadlineFilter) && matchesValue && matchesScore && (!q || `${t.entity} ${t.city||''} ${t.dept||''} ${t.title} ${t.ref||''} ${t.source}`.toLowerCase().includes(q.toLowerCase()));
+    const matchesRegion = tenderMatchesRegion(t, regionFilter);
+    const matchesView = tenderView === 'radar' || tenderView === 'perfiles' || (tenderView === 'seguimiento' && status === 'en_revision') || (tenderView === 'expedientes' && status === 'convertida_oportunidad');
+    return matchesView && matchesRegion && (!priorityFilterActive || prioritizable) && matchesQuick && (section === 'todas' || t.section === section) && (internalStatus === 'todas' || status === internalStatus) && (sourceFilter === 'todas' || t.source === sourceFilter) && (deadlineFilter === 'todas' || deadlineBucket === deadlineFilter) && matchesValue && matchesScore && (!q || `${t.entity} ${t.city||''} ${t.dept||''} ${t.title} ${t.ref||''} ${t.source}`.toLowerCase().includes(q.toLowerCase()));
   });
   const sortedRows = sortTenderCards(rows, tenderSortKey, tenderSortDirection);
   const activeTenderFilterChips = [
@@ -828,6 +898,7 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     section !== 'todas' ? { key: 'section', label: `Sección: ${section === 'hacer' ? 'Hacer hoy' : section === 'revisar' ? 'Revisar' : 'Descartar'}`, clear: () => setSection('todas') } : null,
     internalStatus !== 'todas' ? { key: 'status', label: `Estado: ${tenderStatusLabel(internalStatus)}`, clear: () => setInternalStatus('todas') } : null,
     sourceFilter !== 'todas' ? { key: 'source', label: `Fuente: ${sourceFilter}`, clear: () => setSourceFilter('todas') } : null,
+    regionFilter !== 'todas' ? { key: 'region', label: `Región SN: ${TENDER_SN_REGIONS.find(r => r.key === regionFilter)?.label || regionFilter}`, clear: () => setRegionFilter('todas') } : null,
     deadlineFilter !== 'todas' ? { key: 'deadline', label: `Cierre: ${deadlineFilter === '0_7' ? '0-7 días' : deadlineFilter === '8_15' ? '8-15 días' : deadlineFilter === '16_30' ? '16-30 días' : deadlineFilter === 'vencida' ? 'Vencida' : 'Sin fecha'}`, clear: () => setDeadlineFilter('todas') } : null,
     valueFilter !== 'todas' ? { key: 'value', label: `Valor: ${valueFilter === 'sin_valor' ? 'Sin valor' : valueFilter === 'lt_50m' ? '<$50M' : valueFilter === '50m_500m' ? '$50M-$500M' : valueFilter === '500m_plus' ? '$500M+' : '$1.000M+'}`, clear: () => setValueFilter('todas') } : null,
     scoreFilter !== 'todas' ? { key: 'score', label: `Encaje: ${scoreFilter === 'alto' ? 'Alto' : scoreFilter === 'medio' ? 'Medio' : 'Bajo/validar'}`, clear: () => setScoreFilter('todas') } : null,
@@ -835,7 +906,7 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
   ].filter(Boolean) as Array<{ key: string; label: string; clear: () => void }>;
   return <section className="stack tenders-page">
     <section className="compact-tender-command">
-      <div className="compact-tender-summary"><span className="eyebrow">Radar de Licitaciones Públicas</span><h2>Procesos priorizados</h2><p>SECOP I, SECOP II, TVEC y ESU Contratación priorizados para revisar, descartar o convertir sin duplicar oportunidades.</p><div className="tender-command-meta"><span>Actualización <strong>{fmtDate(payload.generatedAt)}</strong></span><span>Fuente <strong>{payload.source === 'supabase' ? 'Supabase' : 'Fuentes vivas'}</strong></span></div></div>
+      <div className="compact-tender-summary"><span className="eyebrow">Radar de Licitaciones Públicas</span><h2>{tenderViewCopy[tenderView].title}</h2><p>{tenderViewCopy[tenderView].text} SECOP I, SECOP II, TVEC y ESU Contratación priorizados para revisar, descartar o convertir sin duplicar oportunidades.</p><div className="tender-command-meta"><span>Actualización <strong>{fmtDate(payload.generatedAt)}</strong></span><span>Fuente <strong>{payload.source === 'supabase' ? 'Supabase' : 'Fuentes vivas'}</strong></span></div></div>
       <div className="compact-tender-kpis" aria-label="Indicadores accionables de licitaciones">
         <button className={`tender-kpi-filter tender-kpi-filter-amber ${quickFilter === 'hacer' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('hacer')}><span>Hacer hoy</span><strong>{payload.totals.hacer}</strong><em>prioritarias</em><small>Ver procesos prioritarios</small></button>
         <button className={`tender-kpi-filter tender-kpi-filter-purple ${quickFilter === 'high_value' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('high_value')}><span>Alto valor</span><strong>{payload.totals.highValue}</strong><em>$500M+ COP</em><small>Ver procesos $500M+</small></button>
@@ -843,6 +914,7 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
         <button className={`tender-kpi-filter tender-kpi-filter-blue ${quickFilter === 'en_revision' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('en_revision')}><span>En revisión</span><strong>{payload.totals.enRevision || 0}</strong><em>marcadas</em><small>Ver estado interno</small></button>
       </div>
     </section>
+    <section className="tender-module-tabs" aria-label="Submódulos de licitaciones">{(['radar','seguimiento','expedientes','perfiles'] as TenderModuleView[]).map(view => <a key={view} className={tenderView === view ? 'active' : ''} href={`#/tenders?view=${view}`}>{tenderViewCopy[view].title}</a>)}</section>
     <section className="tender-quick-views-panel" aria-label="Vistas rápidas de licitaciones">
       <div className="tender-quick-views-copy"><span className="filter-label">Vistas operativas</span><strong>Accesos directos para priorizar la bandeja antes de buscar o refinar.</strong></div>
       <div className="tender-fast-filters" aria-label="Filtros rápidos de licitaciones">
@@ -850,12 +922,13 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
       </div>
     </section>
     <TenderCompanyProfilePanel />
+    {tenderView === 'perfiles' && <TenderSearchProfilesPanel regionFilter={regionFilter} setRegionFilter={setRegionFilter} profiles={searchProfiles} profileName={profileName} setProfileName={setProfileName} profileStatus={profileStatus} savingProfile={savingProfile} onSave={saveCurrentSearchProfile} onApply={applySearchProfile} onDelete={deleteSearchProfile} />}
     <section className="tender-control-panel" aria-label="Controles de licitaciones">
       <div className="tender-control-top">
         <input className="tender-search-input" placeholder="Buscar entidad, ciudad, objeto, fuente o referencia…" value={q} onChange={e=>setQ(e.target.value)} />
         <div className="tender-control-actions"><button className="secondary" onClick={load}>Recargar vista</button><button onClick={refreshRadar} disabled={syncing}>{syncing ? 'Sincronizando…' : 'Sincronizar fuentes oficiales'}</button></div>
       </div>
-      <div className="filters tender-refine-filters"><span className="filter-label">Refinar resultados</span><label className="tender-filter-field"><span>Prioridad</span><Select value={primaryTenderFilter} onChange={v=>applyPrimaryTenderFilter(v as TenderPrimaryFilter)} options={[["todas","Todas"],["hacer","Hacer hoy"],["revisar","Revisar"],["descartar","Descartar / validar"],["nuevas","Nuevas"],["urgentes","Urgentes"],["alto_valor","Alto valor"],["alto_encaje","Alto encaje"]]} empty=""/></label><label className="tender-filter-field"><span>Estado interno</span><Select value={internalStatus} onChange={v=>{ setInternalStatus(v as TenderInternalStatus | 'todas'); setQuickFilter(null); setFastFilter(null); }} options={[["todas","Todas"],["nueva","Nueva"],["en_revision","En revisión"],["descartada","Descartada"],["convertida_oportunidad","Convertida"]]} empty=""/></label><label className="tender-filter-field"><span>Fuente</span><Select value={sourceFilter} onChange={setSourceFilter} options={[["todas","Todas"], ...sourceOptions]} empty=""/></label><label className="tender-filter-field"><span>Cierre</span><Select value={deadlineFilter} onChange={v=>setDeadlineFilter(v as TenderDeadlineFilter)} options={[["todas","Todas"],["0_7","0-7 días"],["8_15","8-15 días"],["16_30","16-30 días"],["vencida","Vencida"],["sin_fecha","Sin fecha"]]} empty=""/></label><label className="tender-filter-field"><span>Valor</span><Select value={valueFilter} onChange={v=>setValueFilter(v as TenderValueFilter)} options={[["todas","Todas"],["sin_valor","Sin valor"],["lt_50m","<$50M"],["50m_500m","$50M-$500M"],["500m_plus","$500M+"],["1000m_plus","$1.000M+"]]} empty=""/></label><label className="tender-filter-field"><span>Encaje</span><Select value={scoreFilter} onChange={v=>setScoreFilter(v as TenderScoreFilter)} options={[["todas","Todas"],["alto","Alto"],["medio","Medio"],["bajo","Bajo / validar"]]} empty=""/></label><button className="secondary" onClick={clearTenderFilters}>Limpiar</button></div>
+      <div className="filters tender-refine-filters"><span className="filter-label">Refinar resultados</span><label className="tender-filter-field"><span>Prioridad</span><Select value={primaryTenderFilter} onChange={v=>applyPrimaryTenderFilter(v as TenderPrimaryFilter)} options={[["todas","Todas"],["hacer","Hacer hoy"],["revisar","Revisar"],["descartar","Descartar / validar"],["nuevas","Nuevas"],["urgentes","Urgentes"],["alto_valor","Alto valor"],["alto_encaje","Alto encaje"]]} empty=""/></label><label className="tender-filter-field"><span>Estado interno</span><Select value={internalStatus} onChange={v=>{ setInternalStatus(v as TenderInternalStatus | 'todas'); setQuickFilter(null); setFastFilter(null); }} options={[["todas","Todas"],["nueva","Nueva"],["en_revision","En revisión"],["descartada","Descartada"],["convertida_oportunidad","Convertida"]]} empty=""/></label><label className="tender-filter-field"><span>Fuente</span><Select value={sourceFilter} onChange={setSourceFilter} options={[["todas","Todas"], ...sourceOptions]} empty=""/></label><label className="tender-filter-field"><span>Región SN</span><Select value={regionFilter} onChange={v=>setRegionFilter(v as TenderRegionKey)} options={regionOptions} empty=""/></label><label className="tender-filter-field"><span>Cierre</span><Select value={deadlineFilter} onChange={v=>setDeadlineFilter(v as TenderDeadlineFilter)} options={[["todas","Todas"],["0_7","0-7 días"],["8_15","8-15 días"],["16_30","16-30 días"],["vencida","Vencida"],["sin_fecha","Sin fecha"]]} empty=""/></label><label className="tender-filter-field"><span>Valor</span><Select value={valueFilter} onChange={v=>setValueFilter(v as TenderValueFilter)} options={[["todas","Todas"],["sin_valor","Sin valor"],["lt_50m","<$50M"],["50m_500m","$50M-$500M"],["500m_plus","$500M+"],["1000m_plus","$1.000M+"]]} empty=""/></label><label className="tender-filter-field"><span>Encaje</span><Select value={scoreFilter} onChange={v=>setScoreFilter(v as TenderScoreFilter)} options={[["todas","Todas"],["alto","Alto"],["medio","Medio"],["bajo","Bajo / validar"]]} empty=""/></label><button className="secondary" onClick={clearTenderFilters}>Limpiar</button></div>
     </section>
     <div className="tender-results-toolbar">
       <div className="filter-summary"><strong>{rows.length}</strong><span>de {payload.tenders.length} procesos</span>{activeTenderFilterChips.length ? <div className="filter-chips">{activeTenderFilterChips.map(chip => <button className="filter-chip" key={chip.key} onClick={chip.clear}>{chip.label} ×</button>)}</div> : <span className="muted">Sin filtros activos</span>}</div>
