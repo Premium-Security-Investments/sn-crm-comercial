@@ -914,7 +914,6 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
         <button className={`tender-kpi-filter tender-kpi-filter-blue ${quickFilter === 'en_revision' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('en_revision')}><span>En revisión</span><strong>{payload.totals.enRevision || 0}</strong><em>marcadas</em><small>Ver estado interno</small></button>
       </div>
     </section>
-    <section className="tender-module-tabs" aria-label="Submódulos de licitaciones">{(['radar','seguimiento','expedientes','perfiles'] as TenderModuleView[]).map(view => <a key={view} className={tenderView === view ? 'active' : ''} href={`#/tenders?view=${view}`}>{tenderViewCopy[view].title}</a>)}</section>
     <section className="tender-quick-views-panel" aria-label="Vistas rápidas de licitaciones">
       <div className="tender-quick-views-copy"><span className="filter-label">Vistas operativas</span><strong>Accesos directos para priorizar la bandeja antes de buscar o refinar.</strong></div>
       <div className="tender-fast-filters" aria-label="Filtros rápidos de licitaciones">
