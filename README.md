@@ -46,6 +46,35 @@ Vite proxya `/api` hacia `http://localhost:4173`.
 - `server/index.js`: API Express + conexión Supabase server-side.
 - `.env.local.example`: variables necesarias.
 
+## Repositorio oficial y remotos
+
+Desde julio de 2026 el repositorio oficial del CRM vive en la organización empresarial de Premium Security Investments:
+
+```text
+https://github.com/Premium-Security-Investments/sn-crm-comercial
+```
+
+El remoto principal local debe apuntar a ese repositorio:
+
+```bash
+git remote set-url origin https://github.com/Premium-Security-Investments/sn-crm-comercial.git
+git branch --set-upstream-to=origin/main main
+```
+
+El repositorio anterior de `jmb-max` queda únicamente como respaldo histórico / backup personal:
+
+```text
+https://github.com/jmb-max/seguridad-nacional-crm
+```
+
+Si se conserva localmente, usarlo con un nombre explícito para evitar pushes accidentales:
+
+```bash
+git remote add personal-backup https://github.com/jmb-max/seguridad-nacional-crm.git
+```
+
+Regla operativa: todo cambio nuevo del CRM debe entrar por `origin` hacia `Premium-Security-Investments/sn-crm-comercial`; no subir nuevas ramas de trabajo al repo personal salvo respaldo explícito.
+
 ## Verificación realizada
 
 - `npm run build` pasa.
