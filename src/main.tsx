@@ -50,8 +50,14 @@ type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string;
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type TenderSearchProfile = { id: string; name: string; description?: string | null; region_key: TenderRegionKey; source_filter: string; section_filter: TenderSection | 'todas'; internal_status_filter: TenderInternalStatus | 'todas'; deadline_filter: TenderDeadlineFilter; value_filter: TenderValueFilter; score_filter: TenderScoreFilter; query_text?: string | null; is_default?: boolean; created_at?: string; updated_at?: string };
 type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; rup_status?: string | null; rup_updated_at?: string | null; rup_unspsc_codes?: string | null; authorized_services?: string | null; supervigilancia_license?: string | null; financial_capacity?: string | null; organizational_capacity?: string | null; experience_summary?: string | null; certifications?: string | null; recurring_documents?: string | null; disqualifications_notes?: string | null; useful_company_info?: string | null; source_document_name?: string | null; rup_import_notes?: string | null; updated_at?: string | null; updated_by_name?: string | null };
-type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
+type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users' | 'siio'; id?: string };
 type DashboardPeriodFilter = '' | 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
+type SiioFront = { id: string; name: string; description?: string; status?: string; owner_role?: string | null };
+type SiioRecord = { id: string; front_id: string; title: string; record_type?: string; owner?: string | null; decision_owner?: string | null; status?: string; priority?: string; semaforo?: 'verde' | 'amarillo' | 'rojo' | string; next_action?: string | null; blockers?: string | null; risks?: string | null; decision_required?: string | null; source_ids?: string[] };
+type SiioSource = { id: string; name: string; source_type?: string; trust_level?: string; status?: string; restrictions?: string | null; related_fronts?: string[]; url?: string | null };
+type SiioDecision = { id: string; item_type: 'decision' | 'compromiso' | 'bloqueo' | 'riesgo' | string; description: string; owner?: string | null; due_date?: string | null; status?: string; impact?: string | null; related_record_id?: string | null };
+type SiioBoardReport = { id: string; period_month: string; status: string; summary?: string; generated_at?: string; source_ids?: string[] };
+type SiioBootstrap = { fronts: SiioFront[]; records: SiioRecord[]; sources: SiioSource[]; decisions: SiioDecision[]; boardReports: SiioBoardReport[]; boardSections: Array<{ id?: string; name: string; section_order?: number; human_review_required?: boolean }>; financialMetrics: any[]; commercialSignals: any[]; payrollAggregates: any[]; strategicOpportunities: any[]; currentProfile: Profile };
 
 type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; };
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
@@ -132,6 +138,7 @@ function parseRoute(): Route {
   if (page === 'new') return { page: 'new' };
   if (page === 'dashboard') return { page: 'dashboard' };
   if (page === 'dashboard2') return { page: 'dashboard2' };
+  if (page === 'siio' || page === 'f2') return { page: 'siio' };
   if (page === 'goals') return { page: 'goals' };
   if (page === 'alerts') return { page: 'alerts' };
   if (page === 'centinel' || page === 'vig-ia') return { page: 'centinel' };
@@ -350,6 +357,7 @@ function titleFor(route: Route) {
   if (route.page === 'edit') return 'Editar oportunidad';
   if (route.page === 'dashboard') return 'Dashboard gerencial';
   if (route.page === 'dashboard2') return 'Dashboard gerencial';
+  if (route.page === 'siio') return 'SIIO / F2 Control Gerencial';
   if (route.page === 'consultant') return 'Detalle de consultor';
   if (route.page === 'goals') return 'Metas comerciales y cumplimiento';
   if (route.page === 'alerts') return 'Alertas comerciales';
@@ -358,7 +366,7 @@ function titleFor(route: Route) {
   return 'Inicio comercial';
 }
 function Nav({ route, currentProfile }: { route: Route; currentProfile: Profile | null }) {
-  const items = [['#/dashboard2','Dashboard gerencial'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades']];
+  const items = [['#/dashboard2','Dashboard gerencial'],['#/siio','SIIO / F2'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades']];
   const tenderSubnav: Array<[string, string]> = [['#/tenders?view=radar','Radar de oportunidades'],['#/tenders?view=seguimiento','Seguimiento'],['#/tenders?view=expedientes','Expedientes'],['#/tenders?view=perfiles','Perfiles de búsqueda']];
   items.push(['#/vig-ia','Vig-IA'],['#/new','Crear oportunidad'],['#/goals','Metas y cumplimiento']);
   if (canManageUsers(currentProfile)) items.push(['#/users','Usuarios y permisos']);
@@ -371,6 +379,7 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
   if (route.page === 'new') return <OpportunityForm data={data} refresh={refresh} />;
   if (route.page === 'edit' && route.id) return <OpportunityForm data={data} id={route.id} refresh={refresh} />;
   if (route.page === 'dashboard' || route.page === 'dashboard2') return <ManagerDashboardV2 data={data} />;
+  if (route.page === 'siio') return <SiioDashboard currentProfile={data.currentProfile} />;
   if (route.page === 'consultant' && route.id) return <ConsultantDetail data={data} ownerId={route.id} />;
   if (route.page === 'goals') return <GoalsCompliance data={data} refresh={refresh} />;
   if (route.page === 'alerts') return <CommercialAlerts data={data} />;
@@ -418,6 +427,70 @@ function ExecutiveSummary({ data, active, largestStage }: { data: Bootstrap; act
       <div><small>Base</small><strong>{data.totals.count} registros</strong></div>
     </div>
   </section>;
+}
+function SiioDashboard({ currentProfile }: { currentProfile: Profile }) {
+  const [payload, setPayload] = useState<SiioBootstrap | null>(null);
+  const [status, setStatus] = useState('Cargando SIIO / F2…');
+  const [activeTab, setActiveTab] = useState<'inicio' | 'frentes' | 'registros' | 'decisiones' | 'fuentes' | 'junta'>('inicio');
+  const load = async () => {
+    setStatus('Cargando SIIO / F2…');
+    try { setPayload(await api<SiioBootstrap>('/api/siio/bootstrap')); setStatus(''); }
+    catch (e) { setStatus(e instanceof Error ? e.message : String(e)); }
+  };
+  useEffect(() => { load(); }, []);
+  if (!isManagementRole(currentProfile.role)) return <section className="stack"><div className="error">SIIO / F2 es una visual gerencial. Tu perfil actual no tiene acceso.</div></section>;
+  const records = payload?.records || [];
+  const sources = payload?.sources || [];
+  const decisions = payload?.decisions || [];
+  const reports = payload?.boardReports || [];
+  const red = records.filter(r => r.semaforo === 'rojo').length;
+  const blockers = decisions.filter(d => d.item_type === 'bloqueo' || d.status === 'bloqueado').length + records.filter(r => r.blockers).length;
+  const pendingDecisions = decisions.filter(d => d.item_type === 'decision' && !['cerrado'].includes(d.status || '')).length + records.filter(r => r.decision_required).length;
+  return <section className="stack siio-dashboard">
+    <section className="executive-hero">
+      <div><span className="eyebrow">SIIO / F2 · visual para gerencia</span><h2>Centro de Control Gerencial</h2><p>Estado de frentes, bloqueos, decisiones, fuentes F4 y preparación de junta mensual. Comercial entra solo como señal ejecutiva desde F1/CRM.</p></div>
+      <div className="hero-facts"><div><small>Perfil</small><strong>{roleLabel(currentProfile.role)}</strong></div><div><small>Modo</small><strong>MVP branch</strong></div><div><small>Fuente</small><strong>SIIO/F2</strong></div></div>
+    </section>
+    {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}
+    <div className="grid kpis">
+      <Kpi icon="◎" tone="blue" label="Registros gerenciales" value={records.length.toString()} hint="Proyectos, frentes e iniciativas F2" meta="No duplica CRM" />
+      <Kpi icon="!" tone={red ? 'amber' : 'green'} label="Frentes/registros en rojo" value={red.toString()} hint="Semáforo ejecutivo" meta={red ? 'Requiere revisión' : 'Sin rojos'} />
+      <Kpi icon="◆" tone={blockers ? 'amber' : 'green'} label="Bloqueos/riesgos" value={blockers.toString()} hint="Items que impiden avanzar" meta="Vista gerencial" />
+      <Kpi icon="?" tone={pendingDecisions ? 'purple' : 'green'} label="Decisiones pendientes" value={pendingDecisions.toString()} hint="Para dirección/junta" meta="Accionable" />
+      <Kpi icon="F4" tone="indigo" label="Fuentes trazables" value={sources.length.toString()} hint="Documentos/sistemas con restricciones" meta="Capa F4" />
+    </div>
+    <div className="tabs siio-tabs">
+      {([['inicio','Inicio'],['frentes','Frentes'],['registros','Registro gerencial'],['decisiones','Decisiones/Bloqueos'],['fuentes','Fuentes F4'],['junta','Junta mensual']] as const).map(([key,label]) => <button key={key} className={activeTab===key ? 'active' : ''} onClick={() => setActiveTab(key)}>{label}</button>)}
+    </div>
+    {activeTab === 'inicio' && <div className="grid two dashboard-panels"><Panel title="Lectura ejecutiva"><ul className="clean-list"><li><strong>{records.length}</strong> registros vivos para seguimiento gerencial.</li><li><strong>{pendingDecisions}</strong> decisiones pendientes o declaradas en registros.</li><li><strong>{blockers}</strong> bloqueos/riesgos visibles.</li><li><strong>{sources.length}</strong> fuentes F4 para trazabilidad.</li></ul></Panel><Panel title="Reglas de diseño"><ul className="clean-list"><li>F2 es visual gerencial, no comercial.</li><li>CRM Comercial SN sigue siendo fuente de verdad F1.</li><li>Nómina solo se mostrará agregada.</li><li>PYG requiere validación humana antes de junta.</li></ul></Panel></div>}
+    {activeTab === 'frentes' && <SiioFrontsView fronts={payload?.fronts || []} records={records} />}
+    {activeTab === 'registros' && <SiioRecordsView records={records} />}
+    {activeTab === 'decisiones' && <SiioDecisionsView decisions={decisions} records={records} />}
+    {activeTab === 'fuentes' && <SiioSourcesView sources={sources} />}
+    {activeTab === 'junta' && <SiioBoardView reports={reports} sections={payload?.boardSections || []} onGenerate={load} />}
+  </section>;
+}
+function SiioFrontsView({ fronts, records }: { fronts: SiioFront[]; records: SiioRecord[] }) {
+  if (!fronts.length) return <EmptyState title="Sin frentes SIIO cargados" text="Ejecuta la migración y seed aprobado para ver F1-F6 en esta vista." />;
+  return <div className="grid two">{fronts.map(f => { const rows = records.filter(r => r.front_id === f.id); return <Panel key={f.id} title={`${f.id} · ${f.name}`}><p>{f.description || 'Frente SIIO'}</p><div className="pill-row"><span>{rows.length} registros</span><span>{f.status || 'diseño'}</span></div></Panel>; })}</div>;
+}
+function SiioRecordsView({ records }: { records: SiioRecord[] }) {
+  if (!records.length) return <EmptyState title="Sin registros F2" text="La visual está lista; falta aplicar migración y cargar seed aprobado." />;
+  return <Panel title="Registro Gerencial F2"><div className="table-wrap"><table><thead><tr><th>ID</th><th>Frente</th><th>Registro</th><th>Estado</th><th>Semáforo</th><th>Próxima acción</th></tr></thead><tbody>{records.map(r => <tr key={r.id}><td>{r.id}</td><td>{r.front_id}</td><td><strong>{r.title}</strong><br/><small>{r.owner || 'Responsable pendiente'}</small></td><td>{r.status || '—'}</td><td><span className={`badge ${r.semaforo || 'amarillo'}`}>{r.semaforo || 'amarillo'}</span></td><td>{r.next_action || 'Pendiente'}</td></tr>)}</tbody></table></div></Panel>;
+}
+function SiioDecisionsView({ decisions, records }: { decisions: SiioDecision[]; records: SiioRecord[] }) {
+  const recordItems = records.filter(r => r.decision_required || r.blockers || r.risks).map(r => ({ id: r.id, item_type: r.blockers ? 'bloqueo' : r.risks ? 'riesgo' : 'decision', description: r.decision_required || r.blockers || r.risks || '', owner: r.decision_owner || r.owner, status: r.blockers ? 'bloqueado' : 'pendiente' } as SiioDecision));
+  const rows = [...decisions, ...recordItems];
+  if (!rows.length) return <EmptyState title="Sin decisiones o bloqueos" text="Cuando existan decisiones, compromisos o riesgos, aparecerán aquí." />;
+  return <Panel title="Decisiones, compromisos, bloqueos y riesgos"><div className="table-wrap"><table><thead><tr><th>Tipo</th><th>Descripción</th><th>Responsable</th><th>Estado</th></tr></thead><tbody>{rows.map((d, i) => <tr key={d.id || i}><td>{d.item_type}</td><td>{d.description}</td><td>{d.owner || 'Pendiente'}</td><td>{d.status || 'pendiente'}</td></tr>)}</tbody></table></div></Panel>;
+}
+function SiioSourcesView({ sources }: { sources: SiioSource[] }) {
+  if (!sources.length) return <EmptyState title="Sin fuentes F4" text="F4 se cargará desde la matriz aprobada de fuentes." />;
+  return <Panel title="Fuentes F4"><div className="table-wrap"><table><thead><tr><th>ID</th><th>Fuente</th><th>Tipo</th><th>Confianza</th><th>Restricciones</th></tr></thead><tbody>{sources.map(s => <tr key={s.id}><td>{s.id}</td><td>{s.url ? <a href={s.url} target="_blank">{s.name}</a> : s.name}</td><td>{s.source_type || '—'}</td><td>{s.trust_level || 'pendiente'}</td><td>{s.restrictions || '—'}</td></tr>)}</tbody></table></div></Panel>;
+}
+function SiioBoardView({ reports, sections, onGenerate }: { reports: SiioBoardReport[]; sections: SiioBootstrap['boardSections']; onGenerate: () => Promise<void> }) {
+  const generate = async () => { await api('/api/siio/board-reports/generate-draft', { method: 'POST', body: JSON.stringify({ period: new Date().toISOString().slice(0,7) }) }); await onGenerate(); };
+  return <div className="grid two"><Panel title="Junta mensual"><p>Prepara el borrador mensual desde F2. Las cifras financieras quedan marcadas para validación humana.</p><button onClick={generate}>Generar borrador del mes</button><ul className="clean-list">{reports.map(r => <li key={r.id}><strong>{r.id}</strong> · {r.status}<br/><small>{r.summary || 'Sin resumen'}</small></li>)}</ul></Panel><Panel title="Secciones plantilla"><ul className="clean-list">{sections.length ? sections.map((s,i) => <li key={s.id || i}>{s.section_order || i+1}. {s.name} {s.human_review_required ? '· revisión humana' : ''}</li>) : <li>Sin secciones cargadas todavía.</li>}</ul></Panel></div>;
 }
 function Kpi({ label, value, hint, tone, icon, meta }: { label: string; value: string; hint: string; tone?: 'warn'|'ok'|'blue'|'purple'|'indigo'|'green'|'amber'; icon?: string; meta?: string }) {
   return <div className={`card kpi ${tone||''}`}>
