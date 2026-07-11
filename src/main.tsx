@@ -357,7 +357,7 @@ function titleFor(route: Route) {
   if (route.page === 'edit') return 'Editar oportunidad';
   if (route.page === 'dashboard') return 'Dashboard gerencial';
   if (route.page === 'dashboard2') return 'Dashboard gerencial';
-  if (route.page === 'siio') return 'SIIO / F2 Control Gerencial';
+  if (route.page === 'siio') return 'SIIO Gerencial';
   if (route.page === 'consultant') return 'Detalle de consultor';
   if (route.page === 'goals') return 'Metas comerciales y cumplimiento';
   if (route.page === 'alerts') return 'Alertas comerciales';
@@ -366,7 +366,7 @@ function titleFor(route: Route) {
   return 'Inicio comercial';
 }
 function Nav({ route, currentProfile }: { route: Route; currentProfile: Profile | null }) {
-  const items = [['#/dashboard2','Dashboard gerencial'],['#/siio','SIIO / F2'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades']];
+  const items = [['#/dashboard2','Dashboard gerencial'],['#/siio','SIIO Gerencial'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades']];
   const tenderSubnav: Array<[string, string]> = [['#/tenders?view=radar','Radar de oportunidades'],['#/tenders?view=seguimiento','Seguimiento'],['#/tenders?view=expedientes','Expedientes'],['#/tenders?view=perfiles','Perfiles de búsqueda']];
   items.push(['#/vig-ia','Vig-IA'],['#/new','Crear oportunidad'],['#/goals','Metas y cumplimiento']);
   if (canManageUsers(currentProfile)) items.push(['#/users','Usuarios y permisos']);
@@ -448,7 +448,7 @@ function SiioDashboard({ currentProfile }: { currentProfile: Profile }) {
   const pendingDecisions = decisions.filter(d => d.item_type === 'decision' && !['cerrado'].includes(d.status || '')).length + records.filter(r => r.decision_required).length;
   return <section className="stack siio-dashboard">
     <section className="executive-hero">
-      <div><span className="eyebrow">SIIO / F2 · visual para gerencia</span><h2>Centro de Control Gerencial</h2><p>Estado de frentes, bloqueos, decisiones, fuentes F4 y preparación de junta mensual. Comercial entra solo como señal ejecutiva desde F1/CRM.</p></div>
+      <div><span className="eyebrow">Plataforma PSI · SIIO Gerencial</span><h2>Centro de Control Gerencial</h2><p>Vista directiva para decisiones, riesgos, fuentes F4, frentes internos y preparación de junta. F1/CRM Comercial entra solo como fuente ejecutiva, no como alcance del módulo.</p></div>
       <div className="hero-facts"><div><small>Perfil</small><strong>{roleLabel(currentProfile.role)}</strong></div><div><small>Modo</small><strong>MVP branch</strong></div><div><small>Fuente</small><strong>SIIO/F2</strong></div></div>
     </section>
     {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}
