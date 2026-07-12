@@ -267,13 +267,17 @@ function App() {
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
+  useEffect(() => {
+    document.title = route.page === 'siio' ? 'SIIO Gerencial | Plataforma PSI' : 'Seguridad Nacional | Seguimiento Comercial';
+  }, [route.page]);
+  const siioShell = route.page === 'siio';
   if (!authReady) return <div className="app"><main><div className="notice">Verificando sesión…</div></main></div>;
-  if (!session) return <LoginScreen />;
+  if (!session) return <LoginScreen siioMode={siioShell} />;
   if (passwordRecovery) return <PasswordResetScreen onDone={() => setPasswordRecovery(false)} />;
   const currentProfile = data?.currentProfile || null;
   return <div className="app">
     <aside className="sidebar">
-      <div className="brand"><small>Seguridad Nacional Ltda</small><em>Dashboard Comercial</em></div>
+      <div className="brand"><small>Seguridad Nacional Ltda</small><em>{siioShell ? 'SIIO Gerencial' : 'Dashboard Comercial'}</em></div>
       <Nav route={route} currentProfile={currentProfile} />
       <div className="session-card"><small>Sesión activa</small><strong>{currentProfile?.full_name || session.user.email}</strong><span>{currentProfile?.role || 'perfil'}</span></div>
       <button className="secondary full" onClick={refresh}>Actualizar datos</button>
@@ -281,10 +285,10 @@ function App() {
     </aside>
     <main>
       <header className="topbar">
-        <div><h1>{titleFor(route)}</h1><p>CRM comercial · Seguridad Nacional</p></div>
-        <button onClick={() => go('#/new')}>Nueva oportunidad</button>
+        <div><h1>{titleFor(route)}</h1><p>{siioShell ? 'Plataforma PSI · Control gerencial' : 'CRM comercial · Seguridad Nacional'}</p></div>
+        {!siioShell && <button onClick={() => go('#/new')}>Nueva oportunidad</button>}
       </header>
-      {loading && <div className="notice">Cargando información comercial…</div>}
+      {loading && <div className="notice">{siioShell ? 'Cargando SIIO Gerencial…' : 'Cargando información comercial…'}</div>}
       {error && <div className="error">{error}</div>}
       {!loading && data && <RouterView route={route} data={data} refresh={refresh} />}
     </main>
@@ -319,7 +323,7 @@ function PasswordResetScreen({ onDone }: { onDone: () => void }) {
   </div>;
 }
 
-function LoginScreen() {
+function LoginScreen({ siioMode = false }: { siioMode?: boolean }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState('');
@@ -338,9 +342,9 @@ function LoginScreen() {
   };
   return <div className="login-shell">
     <form className="login-card" onSubmit={submit}>
-      <span className="eyebrow">Seguridad Nacional Ltda</span>
-      <h1>Ingreso al CRM Comercial</h1>
-      <p>Ingresa con el usuario asignado para ver tus oportunidades y próximas acciones.</p>
+      <span className="eyebrow">{siioMode ? 'Plataforma PSI' : 'Seguridad Nacional Ltda'}</span>
+      <h1>{siioMode ? 'Ingreso a SIIO Gerencial' : 'Ingreso al CRM Comercial'}</h1>
+      <p>{siioMode ? 'Ingresa con tu usuario autorizado para revisar control gerencial, fuentes, decisiones y junta.' : 'Ingresa con el usuario asignado para ver tus oportunidades y próximas acciones.'}</p>
       <label>Email<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="correo@empresa.com" /></label>
       <label>Clave<input type="password" required value={password} onChange={e=>setPassword(e.target.value)} placeholder="Clave temporal" /></label>
       <button>Ingresar</button>
