@@ -7,7 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "server": "node --env-file=.env.local server/index.js",
     "build": "tsc && vite build",
-    "check:permissions": "node scripts/check_nav_permissions.mjs && node scripts/check_backend_permission_guards.mjs && node scripts/check_sensitive_confirmations.mjs && node scripts/check_tender_sensitive_confirmations.mjs",
+    "check:permissions": "node scripts/check_nav_permissions.mjs && node scripts/check_backend_permission_guards.mjs && node scripts/check_sensitive_confirmations.mjs && node scripts/check_tender_sensitive_confirmations.mjs && node scripts/check_siio_official_fronts.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "start": "node --env-file=.env.local server/index.js"
   },
@@ -20,13 +20,14 @@
     "pdf-parse": "^1.1.1",
     "react": "latest",
     "react-dom": "latest",
-    "typescript": "latest",
+    "typescript": "7.0.2",
     "vite": "latest"
   },
   "devDependencies": {
     "@types/express": "latest",
     "@types/node": "latest",
     "@types/react": "latest",
-    "@types/react-dom": "latest"
+    "@types/react-dom": "latest",
+    "esbuild": "^0.28.1"
   }
 }

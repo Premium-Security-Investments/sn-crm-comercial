@@ -2,19 +2,21 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import ts from 'typescript';
+import { transformSync } from 'esbuild';
 
 const sourcePath = new URL('../src/navPermissions.ts', import.meta.url);
 assert.ok(existsSync(sourcePath), 'src/navPermissions.ts must exist');
 
 const source = readFileSync(sourcePath, 'utf8');
-const compiled = ts.transpileModule(source, {
-  compilerOptions: { module: ts.ModuleKind.ES2020, target: ts.ScriptTarget.ES2020, strict: true },
-  fileName: 'navPermissions.ts'
+const compiled = transformSync(source, {
+  loader: 'ts',
+  format: 'esm',
+  target: 'es2020',
+  sourcefile: 'navPermissions.ts',
 });
 const tempDir = mkdtempSync(join(tmpdir(), 'nav-permissions-'));
 const outPath = join(tempDir, 'navPermissions.mjs');
-writeFileSync(outPath, compiled.outputText);
+writeFileSync(outPath, compiled.code);
 const mod = await import(`file://${outPath}`);
 
 assert.equal(typeof mod.getVisibleNavGroups, 'function', 'getVisibleNavGroups must be exported');

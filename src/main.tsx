@@ -59,6 +59,7 @@ type SiioSource = { id: string; name: string; source_type?: string; trust_level?
 type SiioDecision = { id: string; item_type: 'decision' | 'compromiso' | 'bloqueo' | 'riesgo' | string; description: string; owner?: string | null; due_date?: string | null; status?: string; impact?: string | null; related_record_id?: string | null };
 type SiioBoardReport = { id: string; period_month: string; status: string; summary?: string; generated_at?: string; source_ids?: string[] };
 type SiioBootstrap = { fronts: SiioFront[]; records: SiioRecord[]; sources: SiioSource[]; decisions: SiioDecision[]; boardReports: SiioBoardReport[]; boardSections: Array<{ id?: string; name: string; section_order?: number; human_review_required?: boolean }>; financialMetrics: any[]; commercialSignals: any[]; payrollAggregates: any[]; strategicOpportunities: any[]; currentProfile: Profile };
+type SiioTab = 'inicio' | 'frentes' | 'registros' | 'decisiones' | 'archivo' | 'razonamiento' | 'agentes' | 'junta';
 
 type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; };
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
@@ -452,15 +453,15 @@ function ExecutiveSummary({ data, active, largestStage }: { data: Bootstrap; act
 }
 function SiioDashboard({ currentProfile }: { currentProfile: Profile }) {
   const [payload, setPayload] = useState<SiioBootstrap | null>(null);
-  const [status, setStatus] = useState('Cargando SIIO / F2…');
-  const [activeTab, setActiveTab] = useState<'inicio' | 'frentes' | 'registros' | 'decisiones' | 'fuentes' | 'junta'>('inicio');
+  const [status, setStatus] = useState('Cargando SIIO / Gestión Gerencial y Control…');
+  const [activeTab, setActiveTab] = useState<SiioTab>('inicio');
   const load = async () => {
-    setStatus('Cargando SIIO / F2…');
+    setStatus('Cargando SIIO / Gestión Gerencial y Control…');
     try { setPayload(await api<SiioBootstrap>('/api/siio/bootstrap')); setStatus(''); }
     catch (e) { setStatus(e instanceof Error ? e.message : String(e)); }
   };
   useEffect(() => { load(); }, []);
-  if (!isManagementRole(currentProfile.role)) return <section className="stack"><div className="error">SIIO / F2 es una visual gerencial. Tu perfil actual no tiene acceso.</div></section>;
+  if (!isManagementRole(currentProfile.role)) return <section className="stack"><div className="error">SIIO / Gestión Gerencial y Control es una visual gerencial. Tu perfil actual no tiene acceso.</div></section>;
   const records = payload?.records || [];
   const sources = payload?.sources || [];
   const decisions = payload?.decisions || [];
@@ -468,27 +469,39 @@ function SiioDashboard({ currentProfile }: { currentProfile: Profile }) {
   const red = records.filter(r => r.semaforo === 'rojo').length;
   const blockers = decisions.filter(d => d.item_type === 'bloqueo' || d.status === 'bloqueado').length + records.filter(r => r.blockers).length;
   const pendingDecisions = decisions.filter(d => d.item_type === 'decision' && !['cerrado'].includes(d.status || '')).length + records.filter(r => r.decision_required).length;
+  const siioTabs: Array<{ key: SiioTab; label: string }> = [
+    { key: 'inicio', label: 'Inicio' },
+    { key: 'frentes', label: 'Frentes F1-F6' },
+    { key: 'registros', label: 'Registro F2' },
+    { key: 'decisiones', label: 'Decisiones/Bloqueos' },
+    { key: 'archivo', label: 'Archivo F4' },
+    { key: 'razonamiento', label: 'Razonamiento F5' },
+    { key: 'agentes', label: 'Agentes F6' },
+    { key: 'junta', label: 'Salida junta' },
+  ];
   return <section className="stack siio-dashboard">
     <section className="executive-hero">
-      <div><span className="eyebrow">Plataforma PSI · SIIO Gerencial</span><h2>Centro de Control Gerencial</h2><p>Vista directiva para decisiones, riesgos, fuentes F4, frentes internos y preparación de junta. F1/CRM Comercial entra solo como fuente ejecutiva, no como alcance del módulo.</p></div>
-      <div className="hero-facts"><div><small>Perfil</small><strong>{roleLabel(currentProfile.role)}</strong></div><div><small>Modo</small><strong>MVP branch</strong></div><div><small>Fuente</small><strong>SIIO/F2</strong></div></div>
+      <div><span className="eyebrow">Plataforma PSI · SIIO Gerencial</span><h2>Centro de Control Gerencial</h2><p>Vista directiva alineada con los frentes oficiales: F1 Gestión Comercial Inteligente, F2 Gestión Gerencial y Control, F3 Gestión Operativa — F3A Personal activo y operación diaria y F3B Reclutamiento, selección y contratación permanente —, F4 Archivo Corporativo Inteligente, F5 Motor Interno de Razonamiento y F6 Catálogo Institucional de Agentes.</p></div>
+      <div className="hero-facts"><div><small>Perfil</small><strong>{roleLabel(currentProfile.role)}</strong></div><div><small>Modo</small><strong>MVP branch</strong></div><div><small>Frente base</small><strong>F2 Gerencial</strong></div></div>
     </section>
     {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}
     <div className="grid kpis">
-      <Kpi icon="◎" tone="blue" label="Registros gerenciales" value={records.length.toString()} hint="Proyectos, frentes e iniciativas F2" meta="No duplica CRM" />
+      <Kpi icon="◎" tone="blue" label="Registros gerenciales" value={records.length.toString()} hint="Proyectos, frentes e iniciativas F2" meta="Gestión Gerencial y Control" />
       <Kpi icon="!" tone={red ? 'amber' : 'green'} label="Frentes/registros en rojo" value={red.toString()} hint="Semáforo ejecutivo" meta={red ? 'Requiere revisión' : 'Sin rojos'} />
       <Kpi icon="◆" tone={blockers ? 'amber' : 'green'} label="Bloqueos/riesgos" value={blockers.toString()} hint="Items que impiden avanzar" meta="Vista gerencial" />
       <Kpi icon="?" tone={pendingDecisions ? 'purple' : 'green'} label="Decisiones pendientes" value={pendingDecisions.toString()} hint="Para dirección/junta" meta="Accionable" />
-      <Kpi icon="F4" tone="indigo" label="Fuentes trazables" value={sources.length.toString()} hint="Documentos/sistemas con restricciones" meta="Capa F4" />
+      <Kpi icon="F4" tone="indigo" label="Archivo Corporativo Inteligente" value={sources.length.toString()} hint="Fuentes, documentos y restricciones" meta="Capa F4" />
     </div>
     <div className="tabs siio-tabs">
-      {([['inicio','Inicio'],['frentes','Frentes'],['registros','Registro gerencial'],['decisiones','Decisiones/Bloqueos'],['fuentes','Fuentes F4'],['junta','Junta mensual']] as const).map(([key,label]) => <button key={key} className={activeTab===key ? 'active' : ''} onClick={() => setActiveTab(key)}>{label}</button>)}
+      {siioTabs.map(({ key, label }) => <button key={key} className={activeTab===key ? 'active' : ''} onClick={() => setActiveTab(key)}>{label}</button>)}
     </div>
-    {activeTab === 'inicio' && <div className="grid two dashboard-panels"><Panel title="Lectura ejecutiva"><ul className="clean-list"><li><strong>{records.length}</strong> registros vivos para seguimiento gerencial.</li><li><strong>{pendingDecisions}</strong> decisiones pendientes o declaradas en registros.</li><li><strong>{blockers}</strong> bloqueos/riesgos visibles.</li><li><strong>{sources.length}</strong> fuentes F4 para trazabilidad.</li></ul></Panel><Panel title="Reglas de diseño"><ul className="clean-list"><li>F2 es visual gerencial, no comercial.</li><li>CRM Comercial SN sigue siendo fuente de verdad F1.</li><li>Nómina solo se mostrará agregada.</li><li>PYG requiere validación humana antes de junta.</li></ul></Panel></div>}
+    {activeTab === 'inicio' && <div className="grid two dashboard-panels"><Panel title="Lectura ejecutiva"><ul className="clean-list"><li><strong>{records.length}</strong> registros vivos para seguimiento gerencial.</li><li><strong>{pendingDecisions}</strong> decisiones pendientes o declaradas en registros.</li><li><strong>{blockers}</strong> bloqueos/riesgos visibles.</li><li><strong>{sources.length}</strong> fuentes/documentos registrados en Archivo Corporativo Inteligente.</li></ul></Panel><Panel title="Reglas de diseño"><ul className="clean-list"><li>F1 Gestión Comercial Inteligente vive en el CRM comercial y alimenta señales ejecutivas.</li><li>F2 Gestión Gerencial y Control es la vista base de dirección.</li><li>F4 Archivo Corporativo Inteligente gobierna fuentes, documentos y restricciones.</li><li>F5 Motor Interno de Razonamiento y F6 Catálogo Institucional de Agentes se diseñan como capas separadas, no como junta ni backlog genérico.</li></ul></Panel></div>}
     {activeTab === 'frentes' && <SiioFrontsView fronts={payload?.fronts || []} records={records} />}
     {activeTab === 'registros' && <SiioRecordsView records={records} />}
     {activeTab === 'decisiones' && <SiioDecisionsView decisions={decisions} records={records} />}
-    {activeTab === 'fuentes' && <SiioSourcesView sources={sources} />}
+    {activeTab === 'archivo' && <SiioSourcesView sources={sources} />}
+    {activeTab === 'razonamiento' && <SiioReasoningView />}
+    {activeTab === 'agentes' && <SiioAgentsCatalogView />}
     {activeTab === 'junta' && <SiioBoardView reports={reports} sections={payload?.boardSections || []} onGenerate={load} />}
   </section>;
 }
@@ -507,8 +520,14 @@ function SiioDecisionsView({ decisions, records }: { decisions: SiioDecision[]; 
   return <Panel title="Decisiones, compromisos, bloqueos y riesgos"><div className="table-wrap"><table><thead><tr><th>Tipo</th><th>Descripción</th><th>Responsable</th><th>Estado</th></tr></thead><tbody>{rows.map((d, i) => <tr key={d.id || i}><td>{d.item_type}</td><td>{d.description}</td><td>{d.owner || 'Pendiente'}</td><td>{d.status || 'pendiente'}</td></tr>)}</tbody></table></div></Panel>;
 }
 function SiioSourcesView({ sources }: { sources: SiioSource[] }) {
-  if (!sources.length) return <EmptyState title="Sin fuentes F4" text="F4 se cargará desde la matriz aprobada de fuentes." />;
-  return <Panel title="Fuentes F4"><div className="table-wrap"><table><thead><tr><th>ID</th><th>Fuente</th><th>Tipo</th><th>Confianza</th><th>Restricciones</th></tr></thead><tbody>{sources.map(s => <tr key={s.id}><td>{s.id}</td><td>{s.url ? <a href={s.url} target="_blank">{s.name}</a> : s.name}</td><td>{s.source_type || '—'}</td><td>{s.trust_level || 'pendiente'}</td><td>{s.restrictions || '—'}</td></tr>)}</tbody></table></div></Panel>;
+  if (!sources.length) return <EmptyState title="Sin Archivo Corporativo Inteligente cargado" text="F4 se cargará desde la matriz aprobada de fuentes, documentos, permisos y restricciones." />;
+  return <Panel title="F4 · Archivo Corporativo Inteligente"><p>Inventario de fuentes, documentos, evidencia, permisos de uso, restricciones e histórico institucional que puede soportar decisiones y agentes.</p><div className="table-wrap"><table><thead><tr><th>ID</th><th>Fuente / documento</th><th>Tipo</th><th>Confianza</th><th>Restricciones</th></tr></thead><tbody>{sources.map(s => <tr key={s.id}><td>{s.id}</td><td>{s.url ? <a href={s.url} target="_blank">{s.name}</a> : s.name}</td><td>{s.source_type || '—'}</td><td>{s.trust_level || 'pendiente'}</td><td>{s.restrictions || '—'}</td></tr>)}</tbody></table></div></Panel>;
+}
+function SiioReasoningView() {
+  return <Panel title="F5 · Motor Interno de Razonamiento"><p>Esta capa no es la junta mensual: es el motor que debe cruzar F1-F4 para priorizar, inferir, explicar riesgos, preparar decisiones y generar alertas auditables.</p><ul className="clean-list"><li>Estado actual: diseño, con piezas iniciales en análisis documental y borradores ejecutivos.</li><li>Próximo diseño: reglas, inferencias, recomendaciones, fuentes usadas y trazabilidad humana.</li><li>Salida natural: resúmenes, alertas, preparación de comité/junta y decisiones sugeridas.</li></ul></Panel>;
+}
+function SiioAgentsCatalogView() {
+  return <Panel title="F6 · Catálogo Institucional de Agentes"><p>Inventario y gobierno de agentes IA institucionales: propósito, dueño, rol, permisos, fuentes F4 autorizadas, acciones permitidas, canal, auditoría y estado.</p><ul className="clean-list"><li>Estado actual: pendiente de estructura propia dentro de SIIO.</li><li>Primer candidato: Agente Gerencial MVP sobre F2/F4.</li><li>Regla: ningún agente debe operar sin fuente autorizada, límites de acción y trazabilidad.</li></ul></Panel>;
 }
 function SiioBoardView({ reports, sections, onGenerate }: { reports: SiioBoardReport[]; sections: SiioBootstrap['boardSections']; onGenerate: () => Promise<void> }) {
   const generate = async () => {
