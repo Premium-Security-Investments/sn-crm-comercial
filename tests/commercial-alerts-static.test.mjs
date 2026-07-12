@@ -15,11 +15,6 @@ const mainMarkers = [
   "compact-alert-kpis",
   "alert-kpi-card",
   "alert-filter-tab",
-  "crm-readable-table alert-readable-table",
-  "className=\"money-cell numeric-value\"",
-  "className=\"date-cell\"",
-  "className=\"days-cell numeric-value\"",
-  "className=\"action-suggestion-cell\"",
   "alertFilterTabs",
   "setStatus(status === tab.status ? '' : tab.status)",
   "Ver riesgo →",
@@ -43,6 +38,17 @@ const mainMarkers = [
   "empty=\"Clientes\"",
   "Pipeline activo",
   ">Limpiar<",
+  "const ALERT_INBOX_LIMIT = 20",
+  "const [reviewedAlertIds, setReviewedAlertIds]",
+  "const actionInboxRows = sortedFilteredAlerts.filter(row => !reviewedAlertIds.has(row.opportunity.id)).slice(0, ALERT_INBOX_LIMIT)",
+  "Panel title=\"Bandeja de acción\"",
+  "Mostrando las 20 alertas más críticas",
+  "alert-action-inbox",
+  "alert-action-card",
+  "Ver oportunidad",
+  "Registrar seguimiento",
+  "Marcar revisada",
+  "setReviewedAlertIds",
 ];
 
 for (const marker of mainMarkers) {
@@ -58,14 +64,12 @@ const cssMarkers = [
   '.alert-filter-tab',
   '.alert-filter-tab.active',
   '.alert-filter-dot',
-  '.alert-table',
-  '.crm-readable-table',
-  '.crm-readable-table table',
-  '.crm-readable-table .money-cell',
-  '.crm-readable-table .numeric-value',
-  '.alert-readable-table table',
-  '.alert-readable-table th:nth-child(5)',
-  '.alert-readable-table td:nth-child(8)',
+  '.alert-action-inbox',
+  '.alert-action-card',
+  '.alert-action-card.alert-row-overdue',
+  '.alert-action-card.alert-row-missing',
+  '.alert-action-card .alert-action-footer',
+  '.alert-action-card .alert-action-buttons',
   '.alert-danger',
   '.alert-amber',
   '.alert-success',
@@ -80,20 +84,31 @@ const forbiddenMainMarkers = [
   'const alertCards =',
   'className="alert-cards"',
   'empty="Todas las alertas"',
+  'crm-readable-table alert-readable-table',
+  'className="money-cell numeric-value"',
+  'className="date-cell"',
+  'className="days-cell numeric-value"',
+  'className="action-suggestion-cell"',
+  '<Panel title="Bandeja de alertas">',
 ];
 
+const alertComponentStart = main.indexOf('function CommercialAlerts');
+const alertComponentEnd = main.indexOf('type CentinelOwnerSummaryRow', alertComponentStart);
+const alertComponent = main.slice(alertComponentStart, alertComponentEnd);
+
 for (const marker of forbiddenMainMarkers) {
-  assert.ok(!main.includes(marker), `main.tsx still has duplicate alert filter marker: ${marker}`);
+  assert.ok(!alertComponent.includes(marker), `CommercialAlerts still has table/log alert marker: ${marker}`);
 }
 
 const forbiddenCssMarkers = [
   '.alert-command-meta',
   '.alert-cards',
-  '.alert-card',
+  '.alert-card{',
+  '.alert-readable-table table',
 ];
 
 for (const marker of forbiddenCssMarkers) {
-  assert.ok(!css.includes(marker), `styles.css still has duplicate alert card marker: ${marker}`);
+  assert.ok(!css.includes(marker), `styles.css still has duplicate alert/table marker: ${marker}`);
 }
 
 const alertFilterStart = main.indexOf('<Panel title="Filtros de gestión" className="alerts-filter-panel">');
@@ -107,4 +122,4 @@ for (const marker of ['empty="Todos los comerciales"', 'empty="Todas las regiona
   assert.ok(!alertFilterMarkup.includes(marker), `Alert filter markup still has inconsistent copy: ${marker}`);
 }
 
-console.log('commercial-alerts static checks passed');
+console.log('commercial-alerts action inbox static checks passed');

@@ -2266,6 +2266,8 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
     </Panel>
   </section>;
 }
+const ALERT_INBOX_LIMIT = 20;
+
 function CommercialAlerts({ data }: { data: Bootstrap }) {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState(hashQueryParam('status'));
@@ -2277,6 +2279,7 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
   const [hideClosed, setHideClosed] = useState(true);
   const [sortConfig, setSortConfig] = useState<SortConfig<'alert'|'client'|'owner'|'stage'|'value'|'next'|'inactive'|'action'>>({ key: 'alert', direction: 'asc' });
   const [lowGoalSortConfig, setLowGoalSortConfig] = useState<SortConfig<'owner'|'month'|'sales'|'goal'|'status'>>({ key: 'status', direction: 'asc' });
+  const [reviewedAlertIds, setReviewedAlertIds] = useState<Set<string>>(new Set());
 
   const active = data.opportunities.filter(o => !isTerminalStage(o.stage_code));
   const alertRows = active.map(o => {
@@ -2335,6 +2338,7 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
     const value = (row: typeof filteredAlerts[number]) => sortConfig.key === 'alert' ? row.priority : sortConfig.key === 'client' ? row.opportunity.company_name : sortConfig.key === 'owner' ? (row.opportunity.owner_name || '') : sortConfig.key === 'stage' ? (row.opportunity.stage_order || 0) : sortConfig.key === 'value' ? Number(row.opportunity.offer_value || 0) : sortConfig.key === 'next' ? (row.opportunity.next_action_at || '') : sortConfig.key === 'inactive' ? Number(row.inactiveDays || 0) : row.action.detail;
     return compareSortValues(value(a), value(b), sortConfig.direction);
   });
+  const actionInboxRows = sortedFilteredAlerts.filter(row => !reviewedAlertIds.has(row.opportunity.id)).slice(0, ALERT_INBOX_LIMIT);
   const sortBy = (key: typeof sortConfig.key) => setSortConfig(current => nextSort(current, key));
 
   return <section className="stack alerts-dashboard">
@@ -2366,12 +2370,17 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
       </div>
       <div className="filter-summary alert-filter-summary"><strong>{filteredAlerts.length}</strong> alertas visibles · {active.length} oportunidades activas base</div>
     </Panel>
-    <Panel title="Bandeja de alertas">
-      <p className="muted">Mostrando {filteredAlerts.length} oportunidades. Click en una fila para abrir el detalle y registrar seguimiento.</p>
-      <div className="tablewrap alert-table crm-readable-table alert-readable-table"><table><thead><tr><SortableTh label="Alerta" sortKey="alert" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Días sin seguimiento" sortKey="inactive" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Acción sugerida" sortKey="action" sortConfig={sortConfig} onSort={sortBy}/></tr></thead><tbody>{sortedFilteredAlerts.map(row => {
+    <Panel title="Bandeja de acción">
+      <p className="muted">Mostrando las 20 alertas más críticas de {filteredAlerts.length} visibles. Use filtros para acotar por comercial, región, etapa o producto; “Marcar revisada” solo oculta la tarjeta en esta sesión.</p>
+      {actionInboxRows.length ? <div className="alert-action-inbox">{actionInboxRows.map(row => {
         const o = row.opportunity;
-        return <tr key={o.id} className={`clickable alert-row alert-row-${row.alertCode}`} onClick={() => go(`#/detail/${o.id}`)}><td className="alert-type-cell"><Badge tone={row.alertTone}>{row.alertLabel}</Badge></td><td className="client-cell"><strong>{o.company_name}</strong><br/><small>{o.regional_nombre || o.sede || '—'}</small></td><td className="owner-cell">{o.owner_name || 'Sin comercial'}</td><td className="stage-cell"><Badge tone={stageTone(o.stage_code)}>{o.stage_name}</Badge></td><td className="money-cell numeric-value">{fmtMoney(o.offer_value)}</td><td className="date-cell">{o.next_action_at ? fmtDate(o.next_action_at) : 'Sin agenda'}</td><td className="days-cell numeric-value">{row.inactiveDays === null ? '—' : `${row.inactiveDays} día(s)`}</td><td className="action-suggestion-cell">{row.alertCode === 'missing' ? 'Programar próxima gestión' : row.alertCode === 'overdue' ? 'Gestionar vencida' : status === 'closing_soon' ? 'Preparar decisión / cierre' : status === 'high_value_stalled' ? 'Escalar bloqueo comercial' : row.alertCode === 'stalled' ? 'Revisar sustentación' : row.action.detail}</td></tr>;
-      })}</tbody></table></div>
+        const suggestedAction = row.alertCode === 'missing' ? 'Programar próxima gestión' : row.alertCode === 'overdue' ? 'Gestionar vencida' : status === 'closing_soon' ? 'Preparar decisión / cierre' : status === 'high_value_stalled' ? 'Escalar bloqueo comercial' : row.alertCode === 'stalled' ? 'Revisar sustentación' : row.action.detail;
+        return <article key={o.id} className={`alert-action-card alert-row-${row.alertCode}`}>
+          <div className="alert-action-main"><Badge tone={row.alertTone}>{row.alertLabel}</Badge><h3>{o.company_name}</h3><p>{suggestedAction}</p><div className="alert-action-meta"><span>{o.owner_name || 'Sin comercial'}</span><span>{o.regional_nombre || o.sede || 'Sin regional'}</span><span>{o.stage_name}</span></div></div>
+          <div className="alert-action-side"><strong className="numeric-value">{fmtMoney(o.offer_value)}</strong><small>{o.next_action_at ? `Próxima acción: ${fmtDate(o.next_action_at)}` : 'Sin agenda'}</small><small>{row.inactiveDays === null ? 'Sin historial' : `${row.inactiveDays} día(s) sin seguimiento`}</small></div>
+          <div className="alert-action-footer"><div><small>Acción sugerida</small><strong>{suggestedAction}</strong></div><div className="alert-action-buttons"><button type="button" className="secondary" onClick={() => go(`#/detail/${o.id}`)}>Ver oportunidad</button><button type="button" onClick={() => go(`#/detail/${o.id}`)}>Registrar seguimiento</button><button type="button" className="secondary" onClick={() => setReviewedAlertIds(current => new Set([...current, o.id]))}>Marcar revisada</button></div></div>
+        </article>;
+      })}</div> : <EmptyState title="Sin alertas pendientes" text="No hay oportunidades críticas con los filtros actuales o ya fueron marcadas como revisadas en esta sesión." />}
     </Panel>
     <Panel title="Cumplimiento bajo 80%">
       {lowGoalRows.length ? <div className="tablewrap"><table><thead><tr><SortableTh label="Comercial" sortKey="owner" sortConfig={lowGoalSortConfig} onSort={sortLowGoalBy}/><SortableTh label="Mes" sortKey="month" sortConfig={lowGoalSortConfig} onSort={sortLowGoalBy}/><SortableTh label="Ventas" sortKey="sales" sortConfig={lowGoalSortConfig} onSort={sortLowGoalBy}/><SortableTh label="Meta" sortKey="goal" sortConfig={lowGoalSortConfig} onSort={sortLowGoalBy}/><SortableTh label="Cumplimiento" sortKey="status" sortConfig={lowGoalSortConfig} onSort={sortLowGoalBy}/></tr></thead><tbody>{sortedLowGoalRows.map(row => <tr key={`${row.goal.user_id}-${row.goal.period_month}`}><td>{row.profile?.full_name || 'Sin comercial'}</td><td>{fmtDate(row.goal.period_month)}</td><td>{fmtMoney(row.sales)}</td><td>{fmtMoney(row.budget)}</td><td><Badge tone="amber">{row.pct}%</Badge></td></tr>)}</tbody></table></div> : <EmptyState title="Sin alertas de cumplimiento" text="Cuando se carguen metas reales, aquí aparecerán comerciales por debajo del 80%." />}
