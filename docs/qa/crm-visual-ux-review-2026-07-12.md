@@ -364,3 +364,20 @@ Resultado:
 ```
 
 También se validó en navegador local con sesión admin temporal y consola sin errores visibles durante la revisión inicial del Dashboard.
+
+## 12. Complemento SIIO / navegación
+
+Se incorporó como anexo el reporte específico de navegación CRM / SIIO Gerencial:
+
+```text
+docs/qa/crm-siio-navigation-qa-report-v1-2026-07-12.md
+```
+
+Ese complemento aterriza la revisión sobre la preview `feature/siio-f2-mvp`, especialmente:
+
+- Diferencia entre `Dashboard gerencial` comercial y `SIIO Gerencial`.
+- Estado pre-login de SIIO.
+- Matriz de rutas principales.
+- Botones sensibles que requieren clasificación visual y confirmación.
+- Recomendación de agrupar navegación por dominios: Gerencia, Comercial, Licitaciones y Administración.
+
