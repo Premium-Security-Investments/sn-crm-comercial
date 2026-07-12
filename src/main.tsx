@@ -64,6 +64,7 @@ type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment'>> & { com
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const dateFmt = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
 const interactionTypes = ['llamada','correo','reunion','whatsapp','nota','cambio_estado','documento'];
+const SIIO_BOARD_DRAFT_CONFIRMATION = 'Esto creará o actualizará un borrador de junta mensual con los datos actuales de SIIO. El borrador requiere validación humana antes de usarse en comité o junta. ¿Deseas continuar?';
 const supabaseBrowser = createClient(import.meta.env.NEXT_PUBLIC_SUPABASE_URL, import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 let currentAccessToken: string | null = null;
 function setApiAccessToken(token: string | null) { currentAccessToken = token; }
@@ -504,8 +505,13 @@ function SiioSourcesView({ sources }: { sources: SiioSource[] }) {
   return <Panel title="Fuentes F4"><div className="table-wrap"><table><thead><tr><th>ID</th><th>Fuente</th><th>Tipo</th><th>Confianza</th><th>Restricciones</th></tr></thead><tbody>{sources.map(s => <tr key={s.id}><td>{s.id}</td><td>{s.url ? <a href={s.url} target="_blank">{s.name}</a> : s.name}</td><td>{s.source_type || '—'}</td><td>{s.trust_level || 'pendiente'}</td><td>{s.restrictions || '—'}</td></tr>)}</tbody></table></div></Panel>;
 }
 function SiioBoardView({ reports, sections, onGenerate }: { reports: SiioBoardReport[]; sections: SiioBootstrap['boardSections']; onGenerate: () => Promise<void> }) {
-  const generate = async () => { await api('/api/siio/board-reports/generate-draft', { method: 'POST', body: JSON.stringify({ period: new Date().toISOString().slice(0,7) }) }); await onGenerate(); };
-  return <div className="grid two"><Panel title="Junta mensual"><p>Prepara el borrador mensual desde F2. Las cifras financieras quedan marcadas para validación humana.</p><button onClick={generate}>Generar borrador del mes</button><ul className="clean-list">{reports.map(r => <li key={r.id}><strong>{r.id}</strong> · {r.status}<br/><small>{r.summary || 'Sin resumen'}</small></li>)}</ul></Panel><Panel title="Secciones plantilla"><ul className="clean-list">{sections.length ? sections.map((s,i) => <li key={s.id || i}>{s.section_order || i+1}. {s.name} {s.human_review_required ? '· revisión humana' : ''}</li>) : <li>Sin secciones cargadas todavía.</li>}</ul></Panel></div>;
+  const generate = async () => {
+    const confirmed = window.confirm(SIIO_BOARD_DRAFT_CONFIRMATION);
+    if (!confirmed) return;
+    await api('/api/siio/board-reports/generate-draft', { method: 'POST', body: JSON.stringify({ period: new Date().toISOString().slice(0,7) }) });
+    await onGenerate();
+  };
+  return <div className="grid two"><Panel title="Junta mensual"><p>Prepara el borrador mensual desde F2. Las cifras financieras quedan marcadas para validación humana.</p><button onClick={generate}>Generar borrador del mes</button><ul className="clean-list">{reports.map(r => <li key={r.id}><strong>{r.id}</strong> · {r.status}<br/><small>{r.summary || 'Sin resumen'}</small></li>)}</ul></Panel><Panel title="Secciones plantilla"><ul className="clean-list">{sections.length ? sections.map((s,i) => <li key={s.id || i}><strong>{s.name}</strong>{s.human_review_required && <Badge tone="amber">Revisión humana</Badge>}</li>) : <li>Sin plantilla cargada.</li>}</ul></Panel></div>;
 }
 function Kpi({ label, value, hint, tone, icon, meta }: { label: string; value: string; hint: string; tone?: 'warn'|'ok'|'blue'|'purple'|'indigo'|'green'|'amber'; icon?: string; meta?: string }) {
   return <div className={`card kpi ${tone||''}`}>
