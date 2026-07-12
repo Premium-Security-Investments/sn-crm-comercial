@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient, type Session } from '@supabase/supabase-js';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
+import { canAccessRoute, canAccessSiio as navCanAccessSiio, canManageUsers as navCanManageUsers, canViewTenders as navCanViewTenders, getVisibleNavGroups, isManagementRole as navIsManagementRole, type NavRoutePage } from './navPermissions';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
@@ -66,10 +67,11 @@ const interactionTypes = ['llamada','correo','reunion','whatsapp','nota','cambio
 const supabaseBrowser = createClient(import.meta.env.NEXT_PUBLIC_SUPABASE_URL, import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 let currentAccessToken: string | null = null;
 function setApiAccessToken(token: string | null) { currentAccessToken = token; }
-function isManagementRole(role?: string | null) { return ['director','gerencia','admin'].includes(role || ''); }
-function canManageUsers(profile?: Profile | null) { return profile?.role === 'admin'; }
-function canManageGoals(profile?: Profile | null) { return isManagementRole(profile?.role); }
-function canViewTenders(profile?: Profile | null) { return isManagementRole(profile?.role) || profile?.microsoft_email?.toLowerCase() === 'directora.licitaciones@seguridadnacional.co'; }
+function isManagementRole(role?: string | null) { return navIsManagementRole(role); }
+function canManageUsers(profile?: Profile | null) { return navCanManageUsers(profile); }
+function canManageGoals(profile?: Profile | null) { return ['admin', 'gerencia', 'director', 'comercial'].includes(profile?.role || ''); }
+function canViewTenders(profile?: Profile | null) { return navCanViewTenders(profile); }
+function canAccessSiio(profile?: Profile | null) { return navCanAccessSiio(profile); }
 const customerSegmentOptions: Array<[CustomerSegment, string]> = [['cliente_nuevo','Cliente Nuevo'], ['cliente_actual','Cliente Actual']];
 const commercialAreaOptions: Array<[CommercialArea, string]> = [['seguridad_fisica','Seguridad Física'], ['tecnologia','Tecnología'], ['licitacion_publica','Licitación Pública']];
 const PRODUCT_OPERATIONAL_UNITS: Record<string, string> = {
@@ -370,13 +372,22 @@ function titleFor(route: Route) {
   return 'Inicio comercial';
 }
 function Nav({ route, currentProfile }: { route: Route; currentProfile: Profile | null }) {
-  const items = [['#/dashboard2','Dashboard gerencial'],['#/siio','SIIO Gerencial'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades']];
-  const tenderSubnav: Array<[string, string]> = [['#/tenders?view=radar','Radar de oportunidades'],['#/tenders?view=seguimiento','Seguimiento'],['#/tenders?view=expedientes','Expedientes'],['#/tenders?view=perfiles','Perfiles de búsqueda']];
-  items.push(['#/vig-ia','Vig-IA'],['#/new','Crear oportunidad'],['#/goals','Metas y cumplimiento']);
-  if (canManageUsers(currentProfile)) items.push(['#/users','Usuarios y permisos']);
-  return <nav>{items.slice(0,3).map(([href,label]) => <a key={href} className={(route.page === 'home' && href==='#/') || href.includes(route.page) || (route.page === 'centinel' && href === '#/vig-ia') ? 'active' : ''} href={href}>{label}</a>)}{canViewTenders(currentProfile) && <div className={`nav-group tender-subnav ${route.page === 'tenders' ? 'open active' : ''}`}><a className={`nav-parent ${route.page === 'tenders' ? 'active' : ''}`} href="#/tenders?view=radar">Licitaciones <span>▾</span></a><div className="nav-subitems">{tenderSubnav.map(([href,label]) => <a key={href} href={href} className={route.page === 'tenders' && (hashQueryParam('view') || 'radar') === new URLSearchParams(href.split('?')[1]).get('view') ? 'active' : ''}>{label}</a>)}</div></div>}{items.slice(3).map(([href,label]) => <a key={href} className={(route.page === 'home' && href==='#/') || href.includes(route.page) || (route.page === 'centinel' && href === '#/vig-ia') ? 'active' : ''} href={href}>{label}</a>)}</nav>;
+  const currentTenderView = hashQueryParam('view') || 'radar';
+  const isActiveItem = (href: string, page: NavRoutePage) => {
+    if (page === 'tenders') return route.page === 'tenders' && currentTenderView === (new URLSearchParams(href.split('?')[1] || '').get('view') || 'radar');
+    if (page === 'dashboard2') return route.page === 'dashboard' || route.page === 'dashboard2';
+    if (page === 'centinel') return route.page === 'centinel';
+    return route.page === page || (route.page === 'home' && href === '#/');
+  };
+  return <nav className="nav-domain-groups">
+    {getVisibleNavGroups(currentProfile).map(group => <div key={group.title} className={`nav-section nav-section-${group.title.toLowerCase()}`}>
+      <span className="nav-section-title">{group.title}</span>
+      {group.items.map(item => <a key={item.href} className={isActiveItem(item.href, item.page) ? 'active' : ''} href={item.href}>{item.label}</a>)}
+    </div>)}
+  </nav>;
 }
 function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; refresh: () => Promise<void> }) {
+  if (!canAccessRoute(data.currentProfile, route.page)) return <div className="error">No tienes permiso para ver esta sección.</div>;
   if (route.page === 'opportunities') return <OpportunityList data={data} />;
   if (route.page === 'tenders') return <TendersRadar data={data} refresh={refresh} />;
   if (route.page === 'detail' && route.id) return <OpportunityDetail id={route.id} data={data} refresh={refresh} />;
