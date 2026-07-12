@@ -9,7 +9,7 @@ function assert(condition, message) {
 }
 
 assert(src.includes("'tenders'"), 'Frontend debe incluir ruta tenders/licitaciones.');
-assert(src.includes("#/tenders','Licitaciones'"), 'Sidebar debe incluir pestaña Licitaciones.');
+assert(src.includes('nav-section-title">Licitaciones') && src.includes("#/tenders?view=radar"), 'Sidebar debe incluir grupo Licitaciones con radar.');
 assert(src.includes('canViewTenders'), 'Frontend debe ocultar Licitaciones según rol/persona autorizada.');
 assert(src.includes('directora.licitaciones@seguridadnacional.co'), 'Katherine debe estar autorizada explícitamente para ver Licitaciones.');
 assert(src.includes('TendersRadar'), 'Frontend debe incluir componente TendersRadar.');
@@ -39,7 +39,7 @@ assert(src.includes('compact-tender-command'), 'Licitaciones debe usar hero comp
 assert(src.includes('compact-tender-summary'), 'Hero de Licitaciones debe tener bloque ejecutivo compacto a la izquierda.');
 assert(src.includes('compact-tender-kpis'), 'Hero de Licitaciones debe mover los KPIs a una grilla compacta dentro del banner.');
 assert(src.includes('tender-kpi-filter'), 'KPIs de Licitaciones deben tener estilo/estado clicable.');
-assert(src.includes('Procesos priorizados'), 'Hero compacto debe cambiar el título operativo a Procesos priorizados.');
+assert(src.includes('tenderViewCopy') && src.includes('Radar de oportunidades') && src.includes('Perfiles de búsqueda'), 'Hero compacto debe titularse según la subvista activa.');
 assert(src.includes('Ver procesos prioritarios'), 'KPI Hacer hoy debe comunicar que abre el filtro correspondiente.');
 assert(src.includes('Ver procesos $500M+'), 'KPI Alto valor debe abrir filtro por valor alto.');
 assert(src.includes('ya son oport.'), 'KPI Convertidas debe quedar compacto dentro del banner.');

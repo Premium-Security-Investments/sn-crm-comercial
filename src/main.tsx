@@ -192,6 +192,16 @@ function alertRoute(status: string) { return `#/alerts?status=${encodeURICompone
 function managerAlertRoute(status: string) { return alertRoute(status); }
 function tenderDeepLink(tender: PublicTender) { return `#/tenders?tender=${encodeURIComponent(tender.id)}`; }
 function hashQueryParam(name: string) { return new URLSearchParams((window.location.hash.split('?')[1] || '')).get(name) || ''; }
+function tenderViewFromHash(): TenderModuleView { return (['radar','seguimiento','expedientes','perfiles'].includes(hashQueryParam('view')) ? hashQueryParam('view') : 'radar') as TenderModuleView; }
+function tenderDefaultFiltersForView(view: TenderModuleView): { section: TenderSection | 'todas'; internalStatus: TenderInternalStatus | 'todas' } {
+  const defaults: Record<TenderModuleView, { section: TenderSection | 'todas'; internalStatus: TenderInternalStatus | 'todas' }> = {
+    radar: { section: 'todas', internalStatus: 'todas' },
+    seguimiento: { section: 'todas', internalStatus: 'en_revision' },
+    expedientes: { section: 'todas', internalStatus: 'convertida_oportunidad' },
+    perfiles: { section: 'todas', internalStatus: 'todas' },
+  };
+  return defaults[view];
+}
 function isTerminalStage(stageCode?: string | null) { return ['aprobado','perdido','descartado'].includes(stageCode || ''); }
 function dashboardOpportunityDate(o: Opportunity) { return o.expected_close_date || o.quote_date || o.approved_at || o.updated_at || o.created_at; }
 function matchesDashboardPeriod(o: Opportunity, period: DashboardPeriodFilter) {
@@ -358,11 +368,14 @@ function titleFor(route: Route) {
   return 'Inicio comercial';
 }
 function Nav({ route, currentProfile }: { route: Route; currentProfile: Profile | null }) {
-  const items = [['#/dashboard2','Dashboard gerencial'],['#/alerts','Alertas comerciales'],['#/opportunities','Oportunidades']];
+  const isActiveHref = (href: string) => (route.page === 'home' && href === '#/') || href.includes(route.page) || (route.page === 'centinel' && href === '#/vig-ia');
   const tenderSubnav: Array<[string, string]> = [['#/tenders?view=radar','Radar de oportunidades'],['#/tenders?view=seguimiento','Seguimiento'],['#/tenders?view=expedientes','Expedientes'],['#/tenders?view=perfiles','Perfiles de búsqueda']];
-  items.push(['#/vig-ia','Vig-IA'],['#/new','Crear oportunidad'],['#/goals','Metas y cumplimiento']);
-  if (canManageUsers(currentProfile)) items.push(['#/users','Usuarios y permisos']);
-  return <nav>{items.slice(0,3).map(([href,label]) => <a key={href} className={(route.page === 'home' && href==='#/') || href.includes(route.page) || (route.page === 'centinel' && href === '#/vig-ia') ? 'active' : ''} href={href}>{label}</a>)}{canViewTenders(currentProfile) && <div className={`nav-group tender-subnav ${route.page === 'tenders' ? 'open active' : ''}`}><a className={`nav-parent ${route.page === 'tenders' ? 'active' : ''}`} href="#/tenders?view=radar">Licitaciones <span>▾</span></a><div className="nav-subitems">{tenderSubnav.map(([href,label]) => <a key={href} href={href} className={route.page === 'tenders' && (hashQueryParam('view') || 'radar') === new URLSearchParams(href.split('?')[1]).get('view') ? 'active' : ''}>{label}</a>)}</div></div>}{items.slice(3).map(([href,label]) => <a key={href} className={(route.page === 'home' && href==='#/') || href.includes(route.page) || (route.page === 'centinel' && href === '#/vig-ia') ? 'active' : ''} href={href}>{label}</a>)}</nav>;
+  return <nav className="nav-domain-groups">
+    <div className="nav-section"><span className="nav-section-title">Gerencia</span><a className={route.page === 'dashboard' || route.page === 'dashboard2' ? 'active' : ''} href="#/dashboard2">Dashboard comercial</a><a className={route.page === 'centinel' ? 'active' : ''} href="#/vig-ia">Vig-IA</a></div>
+    <div className="nav-section"><span className="nav-section-title">Comercial</span><a className={isActiveHref('#/alerts') ? 'active' : ''} href="#/alerts">Alertas comerciales</a><a className={isActiveHref('#/opportunities') ? 'active' : ''} href="#/opportunities">Oportunidades</a></div>
+    {canViewTenders(currentProfile) && <div className={`nav-section nav-group tender-subnav ${route.page === 'tenders' ? 'open active' : ''}`}><span className="nav-section-title">Licitaciones</span><a className={`nav-parent ${route.page === 'tenders' ? 'active' : ''}`} href="#/tenders?view=radar">Radar de oportunidades <span>▾</span></a><div className="nav-subitems">{tenderSubnav.slice(1).map(([href,label]) => <a key={href} href={href} className={route.page === 'tenders' && (hashQueryParam('view') || 'radar') === new URLSearchParams(href.split('?')[1]).get('view') ? 'active' : ''}>{label}</a>)}</div></div>}
+    <div className="nav-section"><span className="nav-section-title">Administración</span>{canManageGoals(currentProfile) && <a className={isActiveHref('#/goals') ? 'active' : ''} href="#/goals">Metas y cumplimiento</a>}{canManageUsers(currentProfile) && <a className={isActiveHref('#/users') ? 'active' : ''} href="#/users">Usuarios y permisos</a>}</div>
+  </nav>;
 }
 function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; refresh: () => Promise<void> }) {
   if (route.page === 'opportunities') return <OpportunityList data={data} />;
@@ -696,13 +709,15 @@ function TenderSearchProfilesPanel({ regionFilter, setRegionFilter, profiles, pr
 }
 function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) {
   const currentProfile = data.currentProfile;
+  const tenderView = tenderViewFromHash();
+  const initialTenderFilters = tenderDefaultFiltersForView(tenderView);
   const [payload, setPayload] = useState<TenderRadarPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creatingId, setCreatingId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [section, setSection] = useState<TenderSection | 'todas'>('hacer');
-  const [internalStatus, setInternalStatus] = useState<TenderInternalStatus | 'todas'>('todas');
+  const [section, setSection] = useState<TenderSection | 'todas'>(initialTenderFilters.section);
+  const [internalStatus, setInternalStatus] = useState<TenderInternalStatus | 'todas'>(initialTenderFilters.internalStatus);
   const [q, setQ] = useState('');
   const [quickFilter, setQuickFilter] = useState<TenderQuickFilter>(null);
   const [fastFilter, setFastFilter] = useState<TenderFastFilter>(null);
@@ -734,7 +749,18 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     catch (err) { setError(err instanceof Error ? err.message : String(err)); }
     finally { setSyncing(false); }
   };
+  const setRouteViewDefaults = (view: TenderModuleView) => {
+    const defaults = tenderDefaultFiltersForView(view);
+    setQuickFilter(null);
+    setFastFilter(null);
+    setSection(defaults.section);
+    setInternalStatus(defaults.internalStatus);
+    setDeadlineFilter('todas');
+    setValueFilter('todas');
+    setScoreFilter('todas');
+  };
   useEffect(() => { load(); loadSearchProfiles(); }, []);
+  useEffect(() => { if (!focusTenderId) setRouteViewDefaults(tenderView); }, [tenderView, focusTenderId]);
   useEffect(() => {
     if (!focusTenderId || !payload) return;
     const focused = payload.tenders.find(t => t.id === focusTenderId);
@@ -813,7 +839,6 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
   };
   const sourceOptions = Array.from(new Set([...TENDER_OFFICIAL_SOURCES, ...payload.tenders.map(t => t.source).filter(Boolean)])).sort((a,b) => a.localeCompare(b)).map(s => [s, s]);
   const regionOptions = TENDER_SN_REGIONS.map(region => [region.key, region.label]);
-  const tenderView = (['radar','seguimiento','expedientes','perfiles'].includes(hashQueryParam('view')) ? hashQueryParam('view') : 'radar') as TenderModuleView;
   const tenderViewCopy: Record<TenderModuleView, { title: string; text: string }> = {
     radar: { title: 'Radar de oportunidades', text: 'Bandeja principal para detectar, priorizar y clasificar procesos nuevos.' },
     seguimiento: { title: 'Seguimiento', text: 'Procesos marcados para revisión activa, cambios de estado y alertas documentales.' },
@@ -926,6 +951,7 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
       <div className="tender-control-top">
         <input className="tender-search-input" placeholder="Buscar entidad, ciudad, objeto, fuente o referencia…" value={q} onChange={e=>setQ(e.target.value)} />
         <div className="tender-control-actions"><button className="secondary" onClick={load}>Recargar vista</button><button onClick={refreshRadar} disabled={syncing}>{syncing ? 'Sincronizando…' : 'Sincronizar fuentes oficiales'}</button></div>
+        <p className="muted tender-action-help">Recargar vista actualiza los datos guardados; Sincronizar fuentes oficiales consulta SECOP/TVEC/ESU y puede tardar más.</p>
       </div>
       <div className="filters tender-refine-filters"><span className="filter-label">Refinar resultados</span><label className="tender-filter-field"><span>Prioridad</span><Select value={primaryTenderFilter} onChange={v=>applyPrimaryTenderFilter(v as TenderPrimaryFilter)} options={[["todas","Todas"],["hacer","Hacer hoy"],["revisar","Revisar"],["descartar","Descartar / validar"],["nuevas","Nuevas"],["urgentes","Urgentes"],["alto_valor","Alto valor"],["alto_encaje","Alto encaje"]]} empty=""/></label><label className="tender-filter-field"><span>Estado interno</span><Select value={internalStatus} onChange={v=>{ setInternalStatus(v as TenderInternalStatus | 'todas'); setQuickFilter(null); setFastFilter(null); }} options={[["todas","Todas"],["nueva","Nueva"],["en_revision","En revisión"],["descartada","Descartada"],["convertida_oportunidad","Convertida"]]} empty=""/></label><label className="tender-filter-field"><span>Fuente</span><Select value={sourceFilter} onChange={setSourceFilter} options={[["todas","Todas"], ...sourceOptions]} empty=""/></label><label className="tender-filter-field"><span>Región SN</span><Select value={regionFilter} onChange={v=>setRegionFilter(v as TenderRegionKey)} options={regionOptions} empty=""/></label><label className="tender-filter-field"><span>Cierre</span><Select value={deadlineFilter} onChange={v=>setDeadlineFilter(v as TenderDeadlineFilter)} options={[["todas","Todas"],["0_7","0-7 días"],["8_15","8-15 días"],["16_30","16-30 días"],["vencida","Vencida"],["sin_fecha","Sin fecha"]]} empty=""/></label><label className="tender-filter-field"><span>Valor</span><Select value={valueFilter} onChange={v=>setValueFilter(v as TenderValueFilter)} options={[["todas","Todas"],["sin_valor","Sin valor"],["lt_50m","<$50M"],["50m_500m","$50M-$500M"],["500m_plus","$500M+"],["1000m_plus","$1.000M+"]]} empty=""/></label><label className="tender-filter-field"><span>Encaje</span><Select value={scoreFilter} onChange={v=>setScoreFilter(v as TenderScoreFilter)} options={[["todas","Todas"],["alto","Alto"],["medio","Medio"],["bajo","Bajo / validar"]]} empty=""/></label><button className="secondary" onClick={clearTenderFilters}>Limpiar</button></div>
     </section>
@@ -933,6 +959,7 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
       <div className="filter-summary"><strong>{rows.length}</strong><span>de {payload.tenders.length} procesos</span>{activeTenderFilterChips.length ? <div className="filter-chips">{activeTenderFilterChips.map(chip => <button className="filter-chip" key={chip.key} onClick={chip.clear}>{chip.label} ×</button>)}</div> : <span className="muted">Sin filtros activos</span>}</div>
       <div className="filters tender-sort-controls"><span className="filter-label">Orden</span><Select value={`${tenderSortKey}:${tenderSortDirection}`} onChange={applyTenderSortPreset} options={[["deadline:asc","Cierre más próximo"],["deadline:desc","Cierre más lejano"],["value:desc","Mayor valor primero"],["value:asc","Menor valor primero"],["score:desc","Score alto primero"],["score:asc","Score bajo primero"],["entity:asc","Entidad A-Z"],["entity:desc","Entidad Z-A"],["source:asc","Fuente A-Z"]]} empty="Ordenar por"/></div>
     </div>
+    <details className="tender-help-panel"><summary>Cómo se clasifica esta bandeja</summary><p className="action-explainer">“Hacer hoy” prioriza procesos con mayor encaje, valor y urgencia de cierre; “Revisar” agrupa procesos que requieren validación documental/comercial; “Descartar” deja visibles los casos de bajo encaje para trazabilidad.</p><p className="tender-classification-note">Use Radar para detectar, Seguimiento para procesos marcados en revisión, Expedientes para convertidas/preparación de oferta y Perfiles para guardar criterios de búsqueda.</p></details>
     <TenderUnifiedBoard rows={sortedRows} focusTenderId={focusTenderId} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} />
   </section>;
 }

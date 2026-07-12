@@ -8,7 +8,7 @@ const requiredMainMarkers = [
   "'dashboard2'",
   "if (page === 'dashboard2') return { page: 'dashboard2' };",
   "if (route.page === 'dashboard2') return 'Dashboard gerencial';",
-  "['#/dashboard2','Dashboard gerencial']",
+  "href=\"#/dashboard2\">Dashboard comercial",
   "if (route.page === 'dashboard' || route.page === 'dashboard2') return <ManagerDashboardV2 data={data} />;",
   'function ManagerDashboardV2({ data }: { data: Bootstrap })',
   'dashboard-v2',
@@ -122,7 +122,7 @@ for (const marker of requiredCssMarkers) {
   assert.ok(css.includes(marker), `styles.css missing dashboard v2 marker: ${marker}`);
 }
 
-assert.ok(main.indexOf("['#/dashboard','Dashboard gerencial']") < main.indexOf("['#/dashboard2','Dashboard gerencial']"), 'Dashboard v2 tab should sit immediately after the current dashboard in nav');
+assert.ok(main.indexOf('nav-section-title">Gerencia') < main.indexOf('href="#/dashboard2">Dashboard comercial'), 'Dashboard comercial debe quedar dentro del grupo Gerencia del sidebar');
 assert.ok(main.indexOf('Panel title="Cumplimiento comercial"') < main.indexOf('Panel title="Pipeline / prospección activa"'), 'Dashboard v2 should prioritize compliance before prospecting detail');
 assert.ok(main.indexOf('Panel title="Pipeline / prospección activa"') < main.indexOf('Panel title="Top oportunidades de cierre"'), 'Dashboard v2 should end with prioritized close opportunities');
 assert.ok(!main.includes('Proyección 2026 — tabla completa'), 'Dashboard v2 should not copy the full PowerPoint tables into the first level');
