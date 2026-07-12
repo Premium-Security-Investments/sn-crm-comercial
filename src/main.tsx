@@ -65,6 +65,12 @@ const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP
 const dateFmt = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
 const interactionTypes = ['llamada','correo','reunion','whatsapp','nota','cambio_estado','documento'];
 const SIIO_BOARD_DRAFT_CONFIRMATION = 'Esto creará o actualizará un borrador de junta mensual con los datos actuales de SIIO. El borrador requiere validación humana antes de usarse en comité o junta. ¿Deseas continuar?';
+const TENDER_SYNC_CONFIRMATION = 'Esto sincronizará fuentes oficiales de licitaciones y puede actualizar la bandeja del radar. ¿Deseas continuar?';
+const TENDER_DISCARD_CONFIRMATION = 'Esto marcará esta licitación como descartada en el radar interno. No elimina la fuente oficial, pero sí cambia la decisión operativa. ¿Deseas continuar?';
+const TENDER_IMPORT_DOCUMENTS_CONFIRMATION = 'Esto importará o reintentará documentos oficiales desde SECOP/ESU y puede generar análisis documental persistente. ¿Deseas continuar?';
+const TENDER_ANALYZE_DOCUMENTS_CONFIRMATION = 'Esto generará un análisis documental persistente sobre los documentos cargados. Debe revisarse por un humano antes de tomar decisión GO / NO GO. ¿Deseas continuar?';
+const TENDER_APPROVE_PREPARATION_CONFIRMATION = 'Esto aprobará la preparación y creará/actualizará el Expediente de Oferta con documentos automáticos y pendientes humanos. ¿Deseas continuar?';
+const TENDER_OPPORTUNITY_DISCARD_CONFIRMATION = 'Sacar de oportunidad cambiará esta licitación/oportunidad a descartada y registrará el motivo. ¿Deseas continuar?';
 const supabaseBrowser = createClient(import.meta.env.NEXT_PUBLIC_SUPABASE_URL, import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 let currentAccessToken: string | null = null;
 function setApiAccessToken(token: string | null) { currentAccessToken = token; }
@@ -823,6 +829,8 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     catch (err) { setProfileStatus(err instanceof Error ? err.message : String(err)); }
   };
   const refreshRadar = async () => {
+    const ok = window.confirm(TENDER_SYNC_CONFIRMATION);
+    if (!ok) return;
     setSyncing(true); setError(null);
     try { setPayload(await api<TenderRadarPayload>('/api/tender-refresh', { method: 'POST' })); }
     catch (err) { setError(err instanceof Error ? err.message : String(err)); }
@@ -878,6 +886,10 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     if (config?.scoreFilter) setScoreFilter(config.scoreFilter);
   };
   const markTenderStatus = async (tender: PublicTender, status: TenderInternalStatus) => {
+    if (status === 'descartada') {
+      const ok = window.confirm(TENDER_DISCARD_CONFIRMATION);
+      if (!ok) return;
+    }
     setCreatingId(tender.id); setError(null);
     try {
       const updated = await api<PublicTender>(`/api/tender-status?id=${encodeURIComponent(tender.id)}`, { method: 'PATCH', body: JSON.stringify({ internal_status: status }) });
@@ -1070,6 +1082,8 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   const action = nextActionStatus(o);
   const lastDays = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
   const discardTenderOpportunity = async () => {
+    const ok = window.confirm(TENDER_OPPORTUNITY_DISCARD_CONFIRMATION);
+    if (!ok) return;
     const reason = window.prompt('Motivo para sacar de oportunidad / descartar esta licitación:', 'No óptima después del análisis documental');
     if (reason === null) return;
     try {
@@ -1139,6 +1153,8 @@ function TenderDocumentReviewPanel({ opportunity, onReload }: { opportunity: Opp
     finally { setBusy(false); }
   };
   const analyzeDocuments = async () => {
+    const ok = window.confirm(TENDER_ANALYZE_DOCUMENTS_CONFIRMATION);
+    if (!ok) return;
     setBusy(true); setStatusText('Generando análisis documental…');
     try {
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-analyze', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
@@ -1147,6 +1163,8 @@ function TenderDocumentReviewPanel({ opportunity, onReload }: { opportunity: Opp
     finally { setBusy(false); }
   };
   const importOfficialDocuments = async () => {
+    const ok = window.confirm(TENDER_IMPORT_DOCUMENTS_CONFIRMATION);
+    if (!ok) return;
     setBusy(true); setStatusText('Importando documentos oficiales desde SECOP/ESU y generando análisis…');
     try {
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-import', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
@@ -1196,6 +1214,8 @@ function TenderOfferPreparationPanel({ opportunity, onReload }: { opportunity: O
   };
   useEffect(() => { loadPreparation().catch(err => setStatusText(err instanceof Error ? err.message : String(err))); }, [opportunity.id]);
   const approvePreparation = async () => {
+    const ok = window.confirm(TENDER_APPROVE_PREPARATION_CONFIRMATION);
+    if (!ok) return;
     setBusy(true); setStatusText('Generando paquete inicial de preparación…');
     try {
       const data = await api<TenderOfferPreparationPayload>('/api/tender-offer-preparation-approve', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
