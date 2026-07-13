@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createClient, type Session } from '@supabase/supabase-js';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
+import { canAccessRoute, canAccessSiio as navCanAccessSiio, canManageUsers as navCanManageUsers, canViewTenders as navCanViewTenders, isManagementRole as navIsManagementRole } from './navPermissions';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
@@ -50,20 +51,35 @@ type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string;
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type TenderSearchProfile = { id: string; name: string; description?: string | null; region_key: TenderRegionKey; source_filter: string; section_filter: TenderSection | 'todas'; internal_status_filter: TenderInternalStatus | 'todas'; deadline_filter: TenderDeadlineFilter; value_filter: TenderValueFilter; score_filter: TenderScoreFilter; query_text?: string | null; is_default?: boolean; created_at?: string; updated_at?: string };
 type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; rup_status?: string | null; rup_updated_at?: string | null; rup_unspsc_codes?: string | null; authorized_services?: string | null; supervigilancia_license?: string | null; financial_capacity?: string | null; organizational_capacity?: string | null; experience_summary?: string | null; certifications?: string | null; recurring_documents?: string | null; disqualifications_notes?: string | null; useful_company_info?: string | null; source_document_name?: string | null; rup_import_notes?: string | null; updated_at?: string | null; updated_by_name?: string | null };
-type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users'; id?: string };
+type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users' | 'siio'; id?: string };
 type DashboardPeriodFilter = '' | 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
+type SiioFront = { id: string; name: string; description?: string; status?: string; owner_role?: string | null };
+type SiioRecord = { id: string; front_id: string; title: string; record_type?: string; owner?: string | null; decision_owner?: string | null; status?: string; priority?: string; semaforo?: 'verde' | 'amarillo' | 'rojo' | string; next_action?: string | null; blockers?: string | null; risks?: string | null; decision_required?: string | null; source_ids?: string[] };
+type SiioSource = { id: string; name: string; source_type?: string; trust_level?: string; status?: string; restrictions?: string | null; related_fronts?: string[]; url?: string | null };
+type SiioDecision = { id: string; item_type: 'decision' | 'compromiso' | 'bloqueo' | 'riesgo' | string; description: string; owner?: string | null; due_date?: string | null; status?: string; impact?: string | null; related_record_id?: string | null };
+type SiioBoardReport = { id: string; period_month: string; status: string; summary?: string; generated_at?: string; source_ids?: string[] };
+type SiioBootstrap = { fronts: SiioFront[]; records: SiioRecord[]; sources: SiioSource[]; decisions: SiioDecision[]; boardReports: SiioBoardReport[]; boardSections: Array<{ id?: string; name: string; section_order?: number; human_review_required?: boolean }>; financialMetrics: any[]; commercialSignals: any[]; payrollAggregates: any[]; strategicOpportunities: any[]; currentProfile: Profile };
+type SiioTab = 'inicio' | 'frentes' | 'registros' | 'decisiones' | 'archivo' | 'razonamiento' | 'agentes' | 'junta';
 
 type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; };
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const dateFmt = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
 const interactionTypes = ['llamada','correo','reunion','whatsapp','nota','cambio_estado','documento'];
+const SIIO_BOARD_DRAFT_CONFIRMATION = 'Esto creará o actualizará un borrador de junta mensual con los datos actuales de SIIO. El borrador requiere validación humana antes de usarse en comité o junta. ¿Deseas continuar?';
+const TENDER_SYNC_CONFIRMATION = 'Esto sincronizará fuentes oficiales de licitaciones y puede actualizar la bandeja del radar. ¿Deseas continuar?';
+const TENDER_DISCARD_CONFIRMATION = 'Esto marcará esta licitación como descartada en el radar interno. No elimina la fuente oficial, pero sí cambia la decisión operativa. ¿Deseas continuar?';
+const TENDER_IMPORT_DOCUMENTS_CONFIRMATION = 'Esto importará o reintentará documentos oficiales desde SECOP/ESU y puede generar análisis documental persistente. ¿Deseas continuar?';
+const TENDER_ANALYZE_DOCUMENTS_CONFIRMATION = 'Esto generará un análisis documental persistente sobre los documentos cargados. Debe revisarse por un humano antes de tomar decisión GO / NO GO. ¿Deseas continuar?';
+const TENDER_APPROVE_PREPARATION_CONFIRMATION = 'Esto aprobará la preparación y creará/actualizará el Expediente de Oferta con documentos automáticos y pendientes humanos. ¿Deseas continuar?';
+const TENDER_OPPORTUNITY_DISCARD_CONFIRMATION = 'Sacar de oportunidad cambiará esta licitación/oportunidad a descartada y registrará el motivo. ¿Deseas continuar?';
 const supabaseBrowser = createClient(import.meta.env.NEXT_PUBLIC_SUPABASE_URL, import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 let currentAccessToken: string | null = null;
 function setApiAccessToken(token: string | null) { currentAccessToken = token; }
-function isManagementRole(role?: string | null) { return ['director','gerencia','admin'].includes(role || ''); }
-function canManageUsers(profile?: Profile | null) { return profile?.role === 'admin'; }
-function canManageGoals(profile?: Profile | null) { return isManagementRole(profile?.role); }
-function canViewTenders(profile?: Profile | null) { return isManagementRole(profile?.role) || profile?.microsoft_email?.toLowerCase() === 'directora.licitaciones@seguridadnacional.co'; }
+function isManagementRole(role?: string | null) { return navIsManagementRole(role); }
+function canManageUsers(profile?: Profile | null) { return navCanManageUsers(profile); }
+function canManageGoals(profile?: Profile | null) { return ['admin', 'gerencia', 'director', 'comercial'].includes(profile?.role || ''); }
+function canViewTenders(profile?: Profile | null) { return navCanViewTenders(profile); }
+function canAccessSiio(profile?: Profile | null) { return navCanAccessSiio(profile); }
 const customerSegmentOptions: Array<[CustomerSegment, string]> = [['cliente_nuevo','Cliente Nuevo'], ['cliente_actual','Cliente Actual']];
 const commercialAreaOptions: Array<[CommercialArea, string]> = [['seguridad_fisica','Seguridad Física'], ['tecnologia','Tecnología'], ['licitacion_publica','Licitación Pública']];
 const PRODUCT_OPERATIONAL_UNITS: Record<string, string> = {
@@ -132,6 +148,7 @@ function parseRoute(): Route {
   if (page === 'new') return { page: 'new' };
   if (page === 'dashboard') return { page: 'dashboard' };
   if (page === 'dashboard2') return { page: 'dashboard2' };
+  if (page === 'siio' || page === 'f2') return { page: 'siio' };
   if (page === 'goals') return { page: 'goals' };
   if (page === 'alerts') return { page: 'alerts' };
   if (page === 'centinel' || page === 'vig-ia') return { page: 'centinel' };
@@ -270,13 +287,17 @@ function App() {
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
+  useEffect(() => {
+    document.title = route.page === 'siio' ? 'SIIO Gerencial | Plataforma PSI' : 'Seguridad Nacional | Seguimiento Comercial';
+  }, [route.page]);
+  const siioShell = route.page === 'siio';
   if (!authReady) return <div className="app"><main><div className="notice">Verificando sesión…</div></main></div>;
-  if (!session) return <LoginScreen />;
+  if (!session) return <LoginScreen siioMode={siioShell} />;
   if (passwordRecovery) return <PasswordResetScreen onDone={() => setPasswordRecovery(false)} />;
   const currentProfile = data?.currentProfile || null;
   return <div className="app">
     <aside className="sidebar">
-      <div className="brand"><small>Seguridad Nacional Ltda</small><em>Dashboard Comercial</em></div>
+      <div className="brand"><small>Seguridad Nacional Ltda</small><em>{siioShell ? 'SIIO Gerencial' : 'Dashboard Comercial'}</em></div>
       <Nav route={route} currentProfile={currentProfile} />
       <div className="session-card"><small>Sesión activa</small><strong>{currentProfile?.full_name || session.user.email}</strong><span>{currentProfile?.role || 'perfil'}</span></div>
       <button className="secondary full" onClick={refresh}>Actualizar datos</button>
@@ -284,10 +305,10 @@ function App() {
     </aside>
     <main>
       <header className="topbar">
-        <div><h1>{titleFor(route)}</h1><p>CRM comercial · Seguridad Nacional</p></div>
-        <button onClick={() => go('#/new')}>Nueva oportunidad</button>
+        <div><h1>{titleFor(route)}</h1><p>{siioShell ? 'Plataforma PSI · Control gerencial' : 'CRM comercial · Seguridad Nacional'}</p></div>
+        {!siioShell && <button onClick={() => go('#/new')}>Nueva oportunidad</button>}
       </header>
-      {loading && <div className="notice">Cargando información comercial…</div>}
+      {loading && <div className="notice">{siioShell ? 'Cargando SIIO Gerencial…' : 'Cargando información comercial…'}</div>}
       {error && <div className="error">{error}</div>}
       {!loading && data && <RouterView route={route} data={data} refresh={refresh} />}
     </main>
@@ -322,7 +343,7 @@ function PasswordResetScreen({ onDone }: { onDone: () => void }) {
   </div>;
 }
 
-function LoginScreen() {
+function LoginScreen({ siioMode = false }: { siioMode?: boolean }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [status, setStatus] = useState('');
@@ -341,9 +362,9 @@ function LoginScreen() {
   };
   return <div className="login-shell">
     <form className="login-card" onSubmit={submit}>
-      <span className="eyebrow">Seguridad Nacional Ltda</span>
-      <h1>Ingreso al CRM Comercial</h1>
-      <p>Ingresa con el usuario asignado para ver tus oportunidades y próximas acciones.</p>
+      <span className="eyebrow">{siioMode ? 'Plataforma PSI' : 'Seguridad Nacional Ltda'}</span>
+      <h1>{siioMode ? 'Ingreso a SIIO Gerencial' : 'Ingreso al CRM Comercial'}</h1>
+      <p>{siioMode ? 'Ingresa con tu usuario autorizado para revisar control gerencial, fuentes, decisiones y junta.' : 'Ingresa con el usuario asignado para ver tus oportunidades y próximas acciones.'}</p>
       <label>Email<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="correo@empresa.com" /></label>
       <label>Clave<input type="password" required value={password} onChange={e=>setPassword(e.target.value)} placeholder="Clave temporal" /></label>
       <button>Ingresar</button>
@@ -360,6 +381,7 @@ function titleFor(route: Route) {
   if (route.page === 'edit') return 'Editar oportunidad';
   if (route.page === 'dashboard') return 'Dashboard gerencial';
   if (route.page === 'dashboard2') return 'Dashboard gerencial';
+  if (route.page === 'siio') return 'SIIO Gerencial';
   if (route.page === 'consultant') return 'Detalle de consultor';
   if (route.page === 'goals') return 'Metas comerciales y cumplimiento';
   if (route.page === 'alerts') return 'Alertas comerciales';
@@ -371,19 +393,21 @@ function Nav({ route, currentProfile }: { route: Route; currentProfile: Profile 
   const isActiveHref = (href: string) => (route.page === 'home' && href === '#/') || href.includes(route.page) || (route.page === 'centinel' && href === '#/vig-ia');
   const tenderSubnav: Array<[string, string]> = [['#/tenders?view=radar','Radar de oportunidades'],['#/tenders?view=seguimiento','Seguimiento'],['#/tenders?view=expedientes','Expedientes'],['#/tenders?view=perfiles','Perfiles de búsqueda']];
   return <nav className="nav-domain-groups">
-    <div className="nav-section"><span className="nav-section-title">Gerencia</span><a className={route.page === 'dashboard' || route.page === 'dashboard2' ? 'active' : ''} href="#/dashboard2">Dashboard comercial</a><a className={route.page === 'centinel' ? 'active' : ''} href="#/vig-ia">Vig-IA</a></div>
+    {isManagementRole(currentProfile?.role) && <div className="nav-section"><span className="nav-section-title">Gerencia</span><a className={route.page === 'siio' ? 'active' : ''} href="#/siio">SIIO Gerencial</a><a className={route.page === 'dashboard' || route.page === 'dashboard2' ? 'active' : ''} href="#/dashboard2">Dashboard comercial</a><a className={route.page === 'centinel' ? 'active' : ''} href="#/vig-ia">Vig-IA</a></div>}
     <div className="nav-section"><span className="nav-section-title">Comercial</span><a className={isActiveHref('#/alerts') ? 'active' : ''} href="#/alerts">Alertas comerciales</a><a className={isActiveHref('#/opportunities') ? 'active' : ''} href="#/opportunities">Oportunidades</a></div>
     {canViewTenders(currentProfile) && <div className={`nav-section nav-group tender-subnav ${route.page === 'tenders' ? 'open active' : ''}`}><span className="nav-section-title">Licitaciones</span><a className={`nav-parent ${route.page === 'tenders' ? 'active' : ''}`} href="#/tenders?view=radar">Radar de oportunidades <span>▾</span></a><div className="nav-subitems">{tenderSubnav.slice(1).map(([href,label]) => <a key={href} href={href} className={route.page === 'tenders' && (hashQueryParam('view') || 'radar') === new URLSearchParams(href.split('?')[1]).get('view') ? 'active' : ''}>{label}</a>)}</div></div>}
     <div className="nav-section"><span className="nav-section-title">Administración</span>{canManageGoals(currentProfile) && <a className={isActiveHref('#/goals') ? 'active' : ''} href="#/goals">Metas y cumplimiento</a>}{canManageUsers(currentProfile) && <a className={isActiveHref('#/users') ? 'active' : ''} href="#/users">Usuarios y permisos</a>}</div>
   </nav>;
 }
 function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; refresh: () => Promise<void> }) {
+  if (!canAccessRoute(data.currentProfile, route.page)) return <div className="error">No tienes permiso para ver esta sección.</div>;
   if (route.page === 'opportunities') return <OpportunityList data={data} />;
   if (route.page === 'tenders') return <TendersRadar data={data} refresh={refresh} />;
   if (route.page === 'detail' && route.id) return <OpportunityDetail id={route.id} data={data} refresh={refresh} />;
   if (route.page === 'new') return <OpportunityForm data={data} refresh={refresh} />;
   if (route.page === 'edit' && route.id) return <OpportunityForm data={data} id={route.id} refresh={refresh} />;
   if (route.page === 'dashboard' || route.page === 'dashboard2') return <ManagerDashboardV2 data={data} />;
+  if (route.page === 'siio') return <SiioDashboard currentProfile={data.currentProfile} />;
   if (route.page === 'consultant' && route.id) return <ConsultantDetail data={data} ownerId={route.id} />;
   if (route.page === 'goals') return <GoalsCompliance data={data} refresh={refresh} />;
   if (route.page === 'alerts') return <CommercialAlerts data={data} />;
@@ -431,6 +455,93 @@ function ExecutiveSummary({ data, active, largestStage }: { data: Bootstrap; act
       <div><small>Base</small><strong>{data.totals.count} registros</strong></div>
     </div>
   </section>;
+}
+function SiioDashboard({ currentProfile }: { currentProfile: Profile }) {
+  const [payload, setPayload] = useState<SiioBootstrap | null>(null);
+  const [status, setStatus] = useState('Cargando SIIO / Gestión Gerencial y Control…');
+  const [activeTab, setActiveTab] = useState<SiioTab>('inicio');
+  const load = async () => {
+    setStatus('Cargando SIIO / Gestión Gerencial y Control…');
+    try { setPayload(await api<SiioBootstrap>('/api/siio/bootstrap')); setStatus(''); }
+    catch (e) { setStatus(e instanceof Error ? e.message : String(e)); }
+  };
+  useEffect(() => { load(); }, []);
+  if (!isManagementRole(currentProfile.role)) return <section className="stack"><div className="error">SIIO / Gestión Gerencial y Control es una visual gerencial. Tu perfil actual no tiene acceso.</div></section>;
+  const records = payload?.records || [];
+  const sources = payload?.sources || [];
+  const decisions = payload?.decisions || [];
+  const reports = payload?.boardReports || [];
+  const red = records.filter(r => r.semaforo === 'rojo').length;
+  const blockers = decisions.filter(d => d.item_type === 'bloqueo' || d.status === 'bloqueado').length + records.filter(r => r.blockers).length;
+  const pendingDecisions = decisions.filter(d => d.item_type === 'decision' && !['cerrado'].includes(d.status || '')).length + records.filter(r => r.decision_required).length;
+  const siioTabs: Array<{ key: SiioTab; label: string }> = [
+    { key: 'inicio', label: 'Inicio' },
+    { key: 'frentes', label: 'Frentes F1-F6' },
+    { key: 'registros', label: 'Registro F2' },
+    { key: 'decisiones', label: 'Decisiones/Bloqueos' },
+    { key: 'archivo', label: 'Archivo F4' },
+    { key: 'razonamiento', label: 'Razonamiento F5' },
+    { key: 'agentes', label: 'Agentes F6' },
+    { key: 'junta', label: 'Salida junta' },
+  ];
+  return <section className="stack siio-dashboard">
+    <section className="executive-hero">
+      <div><span className="eyebrow">Plataforma PSI · SIIO Gerencial</span><h2>Centro de Control Gerencial</h2><p>Vista directiva alineada con los frentes oficiales: F1 Gestión Comercial Inteligente, F2 Gestión Gerencial y Control, F3 Gestión Operativa — F3A Personal activo y operación diaria y F3B Reclutamiento, selección y contratación permanente —, F4 Archivo Corporativo Inteligente, F5 Motor Interno de Razonamiento y F6 Catálogo Institucional de Agentes.</p></div>
+      <div className="hero-facts"><div><small>Perfil</small><strong>{roleLabel(currentProfile.role)}</strong></div><div><small>Modo</small><strong>MVP branch</strong></div><div><small>Frente base</small><strong>F2 Gerencial</strong></div></div>
+    </section>
+    {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}
+    <div className="grid kpis">
+      <Kpi icon="◎" tone="blue" label="Registros gerenciales" value={records.length.toString()} hint="Proyectos, frentes e iniciativas F2" meta="Gestión Gerencial y Control" />
+      <Kpi icon="!" tone={red ? 'amber' : 'green'} label="Frentes/registros en rojo" value={red.toString()} hint="Semáforo ejecutivo" meta={red ? 'Requiere revisión' : 'Sin rojos'} />
+      <Kpi icon="◆" tone={blockers ? 'amber' : 'green'} label="Bloqueos/riesgos" value={blockers.toString()} hint="Items que impiden avanzar" meta="Vista gerencial" />
+      <Kpi icon="?" tone={pendingDecisions ? 'purple' : 'green'} label="Decisiones pendientes" value={pendingDecisions.toString()} hint="Para dirección/junta" meta="Accionable" />
+      <Kpi icon="F4" tone="indigo" label="Archivo Corporativo Inteligente" value={sources.length.toString()} hint="Fuentes, documentos y restricciones" meta="Capa F4" />
+    </div>
+    <div className="tabs siio-tabs">
+      {siioTabs.map(({ key, label }) => <button key={key} className={activeTab===key ? 'active' : ''} onClick={() => setActiveTab(key)}>{label}</button>)}
+    </div>
+    {activeTab === 'inicio' && <div className="grid two dashboard-panels"><Panel title="Lectura ejecutiva"><ul className="clean-list"><li><strong>{records.length}</strong> registros vivos para seguimiento gerencial.</li><li><strong>{pendingDecisions}</strong> decisiones pendientes o declaradas en registros.</li><li><strong>{blockers}</strong> bloqueos/riesgos visibles.</li><li><strong>{sources.length}</strong> fuentes/documentos registrados en Archivo Corporativo Inteligente.</li></ul></Panel><Panel title="Reglas de diseño"><ul className="clean-list"><li>F1 Gestión Comercial Inteligente vive en el CRM comercial y alimenta señales ejecutivas.</li><li>F2 Gestión Gerencial y Control es la vista base de dirección.</li><li>F4 Archivo Corporativo Inteligente gobierna fuentes, documentos y restricciones.</li><li>F5 Motor Interno de Razonamiento y F6 Catálogo Institucional de Agentes se diseñan como capas separadas, no como junta ni backlog genérico.</li></ul></Panel></div>}
+    {activeTab === 'frentes' && <SiioFrontsView fronts={payload?.fronts || []} records={records} />}
+    {activeTab === 'registros' && <SiioRecordsView records={records} />}
+    {activeTab === 'decisiones' && <SiioDecisionsView decisions={decisions} records={records} />}
+    {activeTab === 'archivo' && <SiioSourcesView sources={sources} />}
+    {activeTab === 'razonamiento' && <SiioReasoningView />}
+    {activeTab === 'agentes' && <SiioAgentsCatalogView />}
+    {activeTab === 'junta' && <SiioBoardView reports={reports} sections={payload?.boardSections || []} onGenerate={load} />}
+  </section>;
+}
+function SiioFrontsView({ fronts, records }: { fronts: SiioFront[]; records: SiioRecord[] }) {
+  if (!fronts.length) return <EmptyState title="Sin frentes SIIO cargados" text="Ejecuta la migración y seed aprobado para ver F1-F6 en esta vista." />;
+  return <div className="grid two">{fronts.map(f => { const rows = records.filter(r => r.front_id === f.id); return <Panel key={f.id} title={`${f.id} · ${f.name}`}><p>{f.description || 'Frente SIIO'}</p><div className="pill-row"><span>{rows.length} registros</span><span>{f.status || 'diseño'}</span></div></Panel>; })}</div>;
+}
+function SiioRecordsView({ records }: { records: SiioRecord[] }) {
+  if (!records.length) return <EmptyState title="Sin registros F2" text="La visual está lista; falta aplicar migración y cargar seed aprobado." />;
+  return <Panel title="Registro Gerencial F2"><div className="table-wrap"><table><thead><tr><th>ID</th><th>Frente</th><th>Registro</th><th>Estado</th><th>Semáforo</th><th>Próxima acción</th></tr></thead><tbody>{records.map(r => <tr key={r.id}><td>{r.id}</td><td>{r.front_id}</td><td><strong>{r.title}</strong><br/><small>{r.owner || 'Responsable pendiente'}</small></td><td>{r.status || '—'}</td><td><span className={`badge ${r.semaforo || 'amarillo'}`}>{r.semaforo || 'amarillo'}</span></td><td>{r.next_action || 'Pendiente'}</td></tr>)}</tbody></table></div></Panel>;
+}
+function SiioDecisionsView({ decisions, records }: { decisions: SiioDecision[]; records: SiioRecord[] }) {
+  const recordItems = records.filter(r => r.decision_required || r.blockers || r.risks).map(r => ({ id: r.id, item_type: r.blockers ? 'bloqueo' : r.risks ? 'riesgo' : 'decision', description: r.decision_required || r.blockers || r.risks || '', owner: r.decision_owner || r.owner, status: r.blockers ? 'bloqueado' : 'pendiente' } as SiioDecision));
+  const rows = [...decisions, ...recordItems];
+  if (!rows.length) return <EmptyState title="Sin decisiones o bloqueos" text="Cuando existan decisiones, compromisos o riesgos, aparecerán aquí." />;
+  return <Panel title="Decisiones, compromisos, bloqueos y riesgos"><div className="table-wrap"><table><thead><tr><th>Tipo</th><th>Descripción</th><th>Responsable</th><th>Estado</th></tr></thead><tbody>{rows.map((d, i) => <tr key={d.id || i}><td>{d.item_type}</td><td>{d.description}</td><td>{d.owner || 'Pendiente'}</td><td>{d.status || 'pendiente'}</td></tr>)}</tbody></table></div></Panel>;
+}
+function SiioSourcesView({ sources }: { sources: SiioSource[] }) {
+  if (!sources.length) return <EmptyState title="Sin Archivo Corporativo Inteligente cargado" text="F4 se cargará desde la matriz aprobada de fuentes, documentos, permisos y restricciones." />;
+  return <Panel title="F4 · Archivo Corporativo Inteligente"><p>Inventario de fuentes, documentos, evidencia, permisos de uso, restricciones e histórico institucional que puede soportar decisiones y agentes.</p><div className="table-wrap"><table><thead><tr><th>ID</th><th>Fuente / documento</th><th>Tipo</th><th>Confianza</th><th>Restricciones</th></tr></thead><tbody>{sources.map(s => <tr key={s.id}><td>{s.id}</td><td>{s.url ? <a href={s.url} target="_blank">{s.name}</a> : s.name}</td><td>{s.source_type || '—'}</td><td>{s.trust_level || 'pendiente'}</td><td>{s.restrictions || '—'}</td></tr>)}</tbody></table></div></Panel>;
+}
+function SiioReasoningView() {
+  return <Panel title="F5 · Motor Interno de Razonamiento"><p>Esta capa no es la junta mensual: es el motor que debe cruzar F1-F4 para priorizar, inferir, explicar riesgos, preparar decisiones y generar alertas auditables.</p><ul className="clean-list"><li>Estado actual: diseño, con piezas iniciales en análisis documental y borradores ejecutivos.</li><li>Próximo diseño: reglas, inferencias, recomendaciones, fuentes usadas y trazabilidad humana.</li><li>Salida natural: resúmenes, alertas, preparación de comité/junta y decisiones sugeridas.</li></ul></Panel>;
+}
+function SiioAgentsCatalogView() {
+  return <Panel title="F6 · Catálogo Institucional de Agentes"><p>Inventario y gobierno de agentes IA institucionales: propósito, dueño, rol, permisos, fuentes F4 autorizadas, acciones permitidas, canal, auditoría y estado.</p><ul className="clean-list"><li>Estado actual: pendiente de estructura propia dentro de SIIO.</li><li>Primer candidato: Agente Gerencial MVP sobre F2/F4.</li><li>Regla: ningún agente debe operar sin fuente autorizada, límites de acción y trazabilidad.</li></ul></Panel>;
+}
+function SiioBoardView({ reports, sections, onGenerate }: { reports: SiioBoardReport[]; sections: SiioBootstrap['boardSections']; onGenerate: () => Promise<void> }) {
+  const generate = async () => {
+    const confirmed = window.confirm(SIIO_BOARD_DRAFT_CONFIRMATION);
+    if (!confirmed) return;
+    await api('/api/siio/board-reports/generate-draft', { method: 'POST', body: JSON.stringify({ period: new Date().toISOString().slice(0,7) }) });
+    await onGenerate();
+  };
+  return <div className="grid two"><Panel title="Junta mensual"><p>Prepara el borrador mensual desde F2. Las cifras financieras quedan marcadas para validación humana.</p><button onClick={generate}>Generar borrador del mes</button><ul className="clean-list">{reports.map(r => <li key={r.id}><strong>{r.id}</strong> · {r.status}<br/><small>{r.summary || 'Sin resumen'}</small></li>)}</ul></Panel><Panel title="Secciones plantilla"><ul className="clean-list">{sections.length ? sections.map((s,i) => <li key={s.id || i}><strong>{s.name}</strong>{s.human_review_required && <Badge tone="amber">Revisión humana</Badge>}</li>) : <li>Sin plantilla cargada.</li>}</ul></Panel></div>;
 }
 function Kpi({ label, value, hint, tone, icon, meta }: { label: string; value: string; hint: string; tone?: 'warn'|'ok'|'blue'|'purple'|'indigo'|'green'|'amber'; icon?: string; meta?: string }) {
   return <div className={`card kpi ${tone||''}`}>
@@ -744,6 +855,8 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     catch (err) { setProfileStatus(err instanceof Error ? err.message : String(err)); }
   };
   const refreshRadar = async () => {
+    const ok = window.confirm(TENDER_SYNC_CONFIRMATION);
+    if (!ok) return;
     setSyncing(true); setError(null);
     try { setPayload(await api<TenderRadarPayload>('/api/tender-refresh', { method: 'POST' })); }
     catch (err) { setError(err instanceof Error ? err.message : String(err)); }
@@ -810,6 +923,10 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     if (config?.scoreFilter) setScoreFilter(config.scoreFilter);
   };
   const markTenderStatus = async (tender: PublicTender, status: TenderInternalStatus) => {
+    if (status === 'descartada') {
+      const ok = window.confirm(TENDER_DISCARD_CONFIRMATION);
+      if (!ok) return;
+    }
     setCreatingId(tender.id); setError(null);
     try {
       const updated = await api<PublicTender>(`/api/tender-status?id=${encodeURIComponent(tender.id)}`, { method: 'PATCH', body: JSON.stringify({ internal_status: status }) });
@@ -1003,6 +1120,8 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   const action = nextActionStatus(o);
   const lastDays = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
   const discardTenderOpportunity = async () => {
+    const ok = window.confirm(TENDER_OPPORTUNITY_DISCARD_CONFIRMATION);
+    if (!ok) return;
     const reason = window.prompt('Motivo para sacar de oportunidad / descartar esta licitación:', 'No óptima después del análisis documental');
     if (reason === null) return;
     try {
@@ -1072,6 +1191,8 @@ function TenderDocumentReviewPanel({ opportunity, onReload }: { opportunity: Opp
     finally { setBusy(false); }
   };
   const analyzeDocuments = async () => {
+    const ok = window.confirm(TENDER_ANALYZE_DOCUMENTS_CONFIRMATION);
+    if (!ok) return;
     setBusy(true); setStatusText('Generando análisis documental…');
     try {
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-analyze', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
@@ -1080,6 +1201,8 @@ function TenderDocumentReviewPanel({ opportunity, onReload }: { opportunity: Opp
     finally { setBusy(false); }
   };
   const importOfficialDocuments = async () => {
+    const ok = window.confirm(TENDER_IMPORT_DOCUMENTS_CONFIRMATION);
+    if (!ok) return;
     setBusy(true); setStatusText('Importando documentos oficiales desde SECOP/ESU y generando análisis…');
     try {
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-import', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
@@ -1129,6 +1252,8 @@ function TenderOfferPreparationPanel({ opportunity, onReload }: { opportunity: O
   };
   useEffect(() => { loadPreparation().catch(err => setStatusText(err instanceof Error ? err.message : String(err))); }, [opportunity.id]);
   const approvePreparation = async () => {
+    const ok = window.confirm(TENDER_APPROVE_PREPARATION_CONFIRMATION);
+    if (!ok) return;
     setBusy(true); setStatusText('Generando paquete inicial de preparación…');
     try {
       const data = await api<TenderOfferPreparationPayload>('/api/tender-offer-preparation-approve', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
