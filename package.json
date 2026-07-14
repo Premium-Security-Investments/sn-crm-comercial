@@ -7,6 +7,10 @@
     "dev": "vite --host 0.0.0.0",
     "server": "node --env-file=.env.local server/index.js",
     "build": "tsc && vite build",
+    "check:siio-integration": "node tests/siio-main-integration-static.test.mjs",
+    "check:siio-executive": "node scripts/check_siio_executive_snapshot.mjs",
+    "check:siio-agents": "node scripts/check_siio_agent_catalog.mjs",
+    "check:nav-permissions": "node scripts/check_nav_permissions.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "start": "node --env-file=.env.local server/index.js"
   },
@@ -20,12 +24,13 @@
     "react": "latest",
     "react-dom": "latest",
     "typescript": "latest",
-    "vite": "latest"
+    "vite": "^8.1.4"
   },
   "devDependencies": {
     "@types/express": "latest",
     "@types/node": "latest",
     "@types/react": "latest",
-    "@types/react-dom": "latest"
+    "@types/react-dom": "latest",
+    "esbuild": "^0.28.1"
   }
 }
