@@ -16,4 +16,16 @@ assert.match(main, /import \{ SiioDashboard \} from '\.\/siio\/SiioDashboard';/)
 assert.match(main, /if \(route\.page === 'siio'\) return <SiioDashboard currentProfile=\{data\.currentProfile\} \/>/);
 assert.doesNotMatch(main, /function SiioDashboard\(/);
 
+const executive = readFileSync('src/siio/SiioExecutiveView.tsx', 'utf8');
+const tracking = readFileSync('src/siio/SiioManagementTrackingView.tsx', 'utf8');
+assert.match(executive, /period/);
+assert.match(executive, /area/);
+assert.match(tracking, /kind/);
+assert.match(tracking, /semaphore/);
+assert.match(tracking, /owner/);
+assert.match(tracking, /Todos.*Decisiones.*Bloqueos.*Riesgos.*Compromisos/s);
+assert.match(executive, /navigateSiioView\('seguimiento'/);
+assert.match(executive, /navigateSiioView\('inteligencia'/);
+assert.doesNotMatch(dashboard, /global.*filter/i);
+
 console.log('SIIO managerial navigation shell contract OK');

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { api } from '../apiClient';
 import { isManagementRole } from '../navPermissions';
 import { navigateSiioView, parseSiioRouteState, toSiioHash } from './selectors';
+import { SiioExecutiveView } from './SiioExecutiveView';
+import { SiioManagementTrackingView } from './SiioManagementTrackingView';
 import { SiioNavigation } from './SiioNavigation';
 import type { SiioBootstrapPayload, SiioCurrentProfile, SiioRouteState, SiioView } from './types';
 
@@ -34,6 +36,9 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
   const selectView = (view: SiioView) => {
     window.location.hash = toSiioHash(navigateSiioView(view));
   };
+  const onNavigate = (state: SiioRouteState) => {
+    window.location.hash = toSiioHash(state);
+  };
 
   if (!isManagementRole(currentProfile.role)) {
     return <section className="stack"><div className="error">SIIO / Gestión Gerencial y Control es una visual gerencial. Tu perfil actual no tiene acceso.</div></section>;
@@ -46,6 +51,10 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
     </section>
     {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}
     <SiioNavigation activeView={routeState.view} onSelect={selectView} />
-    {!payload ? <div className="notice">Cargando vista gerencial…</div> : <div className="notice">La vista seleccionada se compondrá con los módulos SIIO extraídos.</div>}
+    {!payload ? <div className="notice">Cargando vista gerencial…</div> : routeState.view === 'resumen'
+      ? <SiioExecutiveView payload={payload} routeState={routeState} onNavigate={onNavigate} />
+      : routeState.view === 'seguimiento'
+        ? <SiioManagementTrackingView payload={payload} routeState={routeState} onNavigate={onNavigate} />
+        : <div className="notice">La vista seleccionada se compondrá con los módulos SIIO extraídos.</div>}
   </section>;
 }
