@@ -1,6 +1,6 @@
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TRACKING_STATUSES = new Set(['pendiente_revision', 'analizando', 'esperando_informacion', 'listo_para_decision', 'bloqueado']);
-const TERMINAL_STATUSES = new Set(['nueva', 'descartada', 'convertida_oportunidad']);
+const GENERIC_TRANSITION_STATUSES = new Set(['nueva', 'descartada']);
 
 function trackingError(message, status = 400) {
   const error = new Error(message);
@@ -106,18 +106,21 @@ export async function callTenderTrackingTransition(database, tenderId, input, cu
   const actorId = requireUuid(currentProfile?.id, 'un actor válido');
   rejectClientEventType(input);
   const internalStatus = String(input?.internal_status || '').trim();
-  if (!TERMINAL_STATUSES.has(internalStatus)) throw trackingError('Transición de seguimiento inválida.');
-  const opportunityId = internalStatus === 'convertida_oportunidad'
-    ? requireUuid(input?.converted_opportunity_id, 'una oportunidad válida')
-    : null;
+  if (internalStatus === 'convertida_oportunidad') {
+    throw trackingError('La conversión debe usar el flujo de convertir a oportunidad.');
+  }
+  if (!GENERIC_TRANSITION_STATUSES.has(internalStatus)) throw trackingError('Transición de seguimiento inválida.');
+  if (input?.converted_opportunity_id !== undefined && input?.converted_opportunity_id !== null && input?.converted_opportunity_id !== '') {
+    throw trackingError('La transición de seguimiento no admite una oportunidad convertida.');
+  }
 
   return rpc(database, 'psi_transition_tender_tracking', {
     p_tender_id: id,
     p_actor_id: actorId,
     p_internal_status: internalStatus,
-    p_converted_opportunity_id: opportunityId,
+    p_converted_opportunity_id: null,
     p_note: nullableText(input?.note),
-    // Initial nueva → descartada/convertida_oportunidad transitions intentionally carry
+    // Initial nueva → descartada transitions intentionally carry
     // a null token; the transactional RPC validates token requirements by source state.
     p_expected_tracking_updated_at: nullableTimestamp(input?.expected_tracking_updated_at),
   });

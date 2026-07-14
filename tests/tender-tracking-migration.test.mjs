@@ -32,21 +32,19 @@ assert.match(sql, /p\.role in \('admin', 'director', 'gerencia'\)/);
 assert.match(sql, /lower\(p\.microsoft_email\) = 'directora\.licitaciones@seguridadnacional\.co'/);
 assert.match(sql, /p_expected_tracking_updated_at is distinct from v_tender\.tracking_updated_at/);
 assert.match(sql, /if p_tracking_status is null or p_tracking_status not in \('pendiente_revision', 'analizando', 'esperando_informacion', 'listo_para_decision', 'bloqueado'\) then/);
-assert.match(sql, /if p_internal_status is null or p_internal_status not in \('nueva', 'descartada', 'convertida_oportunidad'\) then/);
-assert.match(sql, /p_internal_status not in \('nueva', 'descartada', 'convertida_oportunidad'\)/);
+assert.match(sql, /if p_internal_status is null or p_internal_status not in \('nueva', 'descartada'\) then/);
 assert.match(sql, /from public\.psi_sales_profiles where id = p_tracking_owner_id and active = true/);
-assert.match(sql, /from public\.psi_sales_opportunities where id = p_converted_opportunity_id/);
+
 assert.match(sql, /v_event_type := 'entered_tracking'/);
 assert.match(sql, /v_event_type := 'assigned'/);
 assert.match(sql, /v_event_type := 'blocked'/);
 assert.match(sql, /v_event_type := 'unblocked'/);
 assert.match(sql, /v_event_type := 'tracking_updated'/);
-assert.match(sql, /v_event_type := case p_internal_status when 'nueva' then 'returned_to_radar' when 'descartada' then 'discarded' when 'convertida_oportunidad' then 'converted' end/);
+
 assert.match(sql, /p_expected_tracking_updated_at is null/);
 assert.match(sql, /v_tender\.internal_status = 'convertida_oportunidad'/);
-assert.match(sql, /p_internal_status = 'convertida_oportunidad' and p_converted_opportunity_id = v_tender\.converted_opportunity_id/);
 assert.match(sql, /p_internal_status is distinct from 'descartada'/);
-assert.match(sql, /v_tender\.internal_status = 'en_revision' and p_internal_status in \('nueva', 'descartada', 'convertida_oportunidad'\)/);
+assert.match(sql, /v_tender\.internal_status = 'en_revision' and p_internal_status in \('nueva', 'descartada'\)/);
 
 for (const functionName of ['psi_update_tender_tracking', 'psi_transition_tender_tracking']) {
   const body = sql.slice(sql.indexOf(`create or replace function public.${functionName}`), sql.indexOf(`grant execute on function public.${functionName}`));
@@ -62,6 +60,14 @@ assert.match(updateBody, /v_tender\.internal_status is distinct from 'en_revisio
 
 const transitionBody = sql.slice(sql.indexOf('create or replace function public.psi_transition_tender_tracking'), sql.indexOf('grant execute on function public.psi_transition_tender_tracking'));
 assert.match(transitionBody, /v_tender\.internal_status is distinct from 'en_revision' and v_tender\.internal_status is distinct from 'convertida_oportunidad'/, 'transition RPC must route NULL lifecycle states to its invalid-origin guard.');
+assert.doesNotMatch(transitionBody, /p_internal_status = 'convertida_oportunidad'/, 'generic transition must not branch to converted.');
+assert.doesNotMatch(transitionBody, /p_internal_status in \('nueva', 'descartada', 'convertida_oportunidad'\)/, 'generic transition must not allow converted as a target.');
+assert.doesNotMatch(transitionBody, /when 'convertida_oportunidad' then 'converted'/, 'generic transition must not emit converted events.');
+assert.doesNotMatch(transitionBody, /converted_opportunity_id = case/, 'generic transition must not assign converted opportunity links.');
+
+const conversionBody = sql.slice(sql.indexOf('create or replace function public.psi_convert_tender_to_opportunity'), sql.indexOf('grant execute on function public.psi_convert_tender_to_opportunity'));
+assert.match(conversionBody, /set internal_status = 'convertida_oportunidad', converted_opportunity_id = v_opportunity\.id/);
+assert.match(conversionBody, /p_tender_id, 'converted', 'convertida a oportunidad desde radar\.'/);
 
 for (const [table, policies] of [
   ['psi_public_tenders', ['psi_public_tenders_modify']],

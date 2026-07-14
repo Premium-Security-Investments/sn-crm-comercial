@@ -173,7 +173,6 @@ declare
   v_tender public.psi_public_tenders%rowtype;
   v_updated public.psi_public_tenders%rowtype;
   v_actor_allowed boolean;
-  v_opportunity_exists boolean;
   v_event_type text;
   v_now timestamptz := now();
 begin
@@ -196,22 +195,11 @@ begin
     raise exception 'La licitación no existe.' using errcode = 'P0002';
   end if;
 
-  if p_internal_status is null or p_internal_status not in ('nueva', 'descartada', 'convertida_oportunidad') then
+  if p_internal_status is null or p_internal_status not in ('nueva', 'descartada') then
     raise exception 'Transición de seguimiento inválida.' using errcode = '22023';
   end if;
-
-  if p_internal_status = 'convertida_oportunidad' then
-    if p_converted_opportunity_id is null then
-      raise exception 'Debe indicar la oportunidad convertida.' using errcode = '22023';
-    end if;
-    select exists (
-      select 1 from public.psi_sales_opportunities where id = p_converted_opportunity_id
-    ) into v_opportunity_exists;
-    if not v_opportunity_exists then
-      raise exception 'La oportunidad convertida no existe.' using errcode = '22023';
-    end if;
-  elsif p_converted_opportunity_id is not null then
-    raise exception 'Solo una conversión puede indicar oportunidad.' using errcode = '22023';
+  if p_converted_opportunity_id is not null then
+    raise exception 'La transición de seguimiento no admite una oportunidad convertida.' using errcode = '22023';
   end if;
 
   -- The source state owns both the allowed targets and whether its token is null.
@@ -220,8 +208,8 @@ begin
     if p_expected_tracking_updated_at is not null then
       raise exception 'La versión inicial de seguimiento debe ser nula.' using errcode = 'P0001';
     end if;
-    if p_internal_status not in ('descartada', 'convertida_oportunidad') then
-      raise exception 'Una licitación nueva solo puede descartarse o convertirse.' using errcode = 'P0001';
+    if p_internal_status <> 'descartada' then
+      raise exception 'Una licitación nueva solo puede descartarse.' using errcode = 'P0001';
     end if;
   elsif v_tender.internal_status is distinct from 'en_revision'
     and v_tender.internal_status is distinct from 'convertida_oportunidad' then
@@ -233,7 +221,7 @@ begin
     if p_expected_tracking_updated_at is distinct from v_tender.tracking_updated_at then
       raise exception 'Seguimiento desactualizado.' using errcode = 'P0001';
     end if;
-    if not (v_tender.internal_status = 'en_revision' and p_internal_status in ('nueva', 'descartada', 'convertida_oportunidad')) then
+    if not (v_tender.internal_status = 'en_revision' and p_internal_status in ('nueva', 'descartada')) then
       raise exception 'Transición de seguimiento inválida.' using errcode = 'P0001';
     end if;
   elsif v_tender.internal_status = 'convertida_oportunidad' then
@@ -243,9 +231,6 @@ begin
     if p_expected_tracking_updated_at is distinct from v_tender.tracking_updated_at then
       raise exception 'Seguimiento desactualizado.' using errcode = 'P0001';
     end if;
-    if p_internal_status = 'convertida_oportunidad' and p_converted_opportunity_id = v_tender.converted_opportunity_id then
-      return to_jsonb(v_tender);
-    end if;
     if p_internal_status is distinct from 'descartada' then
       raise exception 'Una licitación convertida solo puede descartarse.' using errcode = 'P0001';
     end if;
@@ -253,11 +238,11 @@ begin
     raise exception 'Estado de origen inválido para transición de seguimiento.' using errcode = 'P0001';
   end if;
 
-  v_event_type := case p_internal_status when 'nueva' then 'returned_to_radar' when 'descartada' then 'discarded' when 'convertida_oportunidad' then 'converted' end;
+  v_event_type := case p_internal_status when 'nueva' then 'returned_to_radar' when 'descartada' then 'discarded' end;
 
   update public.psi_public_tenders
   set internal_status = p_internal_status,
-      converted_opportunity_id = case when p_internal_status = 'convertida_oportunidad' then p_converted_opportunity_id else null end,
+      converted_opportunity_id = null,
       tracking_owner_id = null,
       tracking_status = null,
       tracking_next_action = null,

@@ -153,6 +153,27 @@ await (async function rollsBackConversionWhenConvertedEventFails() {
   await db.close();
 })();
 
+await (async function rejectsGenericConvertedTransitionWithoutWritingOpportunityTenderOrEvent() {
+  const db = await createDatabase();
+  await db.exec(`insert into public.psi_sales_opportunities (id, company_name, stage_code, service_type_code, external_source)
+    values ('${ids.opportunity}', 'Entidad existente', 'prospecto', 'licitacion_publica', 'manual:generic-transition');
+    insert into public.psi_public_tenders (id, stable_key, internal_status)
+    values ('${ids.tender}', 'generic-conversion', 'nueva');`);
+  await assert.rejects(
+    () => db.query(`select public.psi_transition_tender_tracking(
+      '${ids.tender}'::uuid, '${ids.actor}'::uuid, 'convertida_oportunidad', '${ids.opportunity}'::uuid, 'No debe convertir', null
+    )`),
+    /transición de seguimiento inválida/i,
+  );
+  assert.equal(await count(db, 'psi_sales_opportunities'), 1);
+  assert.deepEqual(
+    await scalar(db, `select internal_status, converted_opportunity_id from public.psi_public_tenders where id = '${ids.tender}'`),
+    { internal_status: 'nueva', converted_opportunity_id: null },
+  );
+  assert.equal(await count(db, 'psi_tender_tracking_events'), 0);
+  await db.close();
+})();
+
 await (async function convertsAndRetriesIdempotently() {
   const db = await createDatabase();
   await db.exec(`insert into public.psi_public_tenders (id, stable_key, internal_status)

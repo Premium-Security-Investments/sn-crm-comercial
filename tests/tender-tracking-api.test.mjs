@@ -8,6 +8,8 @@ assert.match(shared, /export async function callTenderOpportunityDiscard/);
 assert.match(shared, /rpc\(database, 'psi_update_tender_tracking'/);
 assert.match(shared, /rpc\(database, 'psi_transition_tender_tracking'/);
 assert.match(shared, /rpc\(database, 'psi_discard_tender_opportunity'/);
+assert.match(shared, /internalStatus === 'convertida_oportunidad'/);
+assert.match(shared, /La conversión debe usar el flujo de convertir a oportunidad\./);
 assert.doesNotMatch(shared, /psi_tender_tracking_events/);
 assert.doesNotMatch(shared, /trackingRollbackPatch/);
 
@@ -20,6 +22,7 @@ for (const path of ['../api/[...path].js', '../server/index.js']) {
   assert.match(source, /app\.post\('\/api\/tender-tracking-transition'/);
   assert.match(source, /callTenderTrackingUpdate\(requireDb\(\), tenderId, req\.body \|\| \{\}, currentProfile\)/);
   assert.match(source, /callTenderTrackingTransition\(requireDb\(\), tenderId, req\.body \|\| \{\}, currentProfile\)/);
+  assert.match(source, /app\.post\('\/api\/tender-tracking-transition'[\s\S]*?callTenderTrackingTransition\(requireDb\(\), tenderId, req\.body \|\| \{\}, currentProfile\)/);
   assert.doesNotMatch(source, /trackingRollbackPatch/);
   assert.doesNotMatch(source, /\.from\('psi_tender_tracking_events'\)\.insert/);
 

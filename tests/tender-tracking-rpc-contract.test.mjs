@@ -67,12 +67,11 @@ await (async function rejectsInvalidUpdateIdsStatusesAndClientSelectedEvents() {
   assert.equal(db.calls.length, 0);
 })();
 
-await (async function callsTransitionRpcWithOnlySupportedTargetAndExpectedTimestamp() {
+await (async function callsTransitionRpcWithDiscardTargetAndNullOpportunityArgument() {
   const db = fakeRpcDb();
   await callTenderTrackingTransition(db, tenderId, {
-    internal_status: 'convertida_oportunidad',
-    converted_opportunity_id: opportunityId,
-    note: 'Creada en CRM',
+    internal_status: 'descartada',
+    note: 'No cumple el margen',
     expected_tracking_updated_at: expectedAt,
   }, { id: actorId });
 
@@ -81,18 +80,25 @@ await (async function callsTransitionRpcWithOnlySupportedTargetAndExpectedTimest
     args: {
       p_tender_id: tenderId,
       p_actor_id: actorId,
-      p_internal_status: 'convertida_oportunidad',
-      p_converted_opportunity_id: opportunityId,
-      p_note: 'Creada en CRM',
+      p_internal_status: 'descartada',
+      p_converted_opportunity_id: null,
+      p_note: 'No cumple el margen',
       p_expected_tracking_updated_at: expectedAt,
     },
   }]);
 })();
 
-await (async function rejectsInvalidTransitionUuidStatusAndClientSelectedEventBeforeRpc() {
+await (async function rejectsGenericConversionBeforeRpcAndDirectsToAtomicConversionFlow() {
   const db = fakeRpcDb();
+  await assert.rejects(
+    () => callTenderTrackingTransition(db, tenderId, { internal_status: 'convertida_oportunidad', converted_opportunity_id: opportunityId, expected_tracking_updated_at: expectedAt }, { id: actorId }),
+    /conversión debe usar el flujo de convertir a oportunidad/i,
+  );
+  await assert.rejects(
+    () => callTenderTrackingTransition(db, tenderId, { internal_status: 'descartada', converted_opportunity_id: opportunityId, expected_tracking_updated_at: expectedAt }, { id: actorId }),
+    /no admite una oportunidad convertida/i,
+  );
   await assert.rejects(() => callTenderTrackingTransition(db, tenderId, { internal_status: 'en_revision', expected_tracking_updated_at: expectedAt }, { id: actorId }), /Transición de seguimiento inválida/i);
-  await assert.rejects(() => callTenderTrackingTransition(db, tenderId, { internal_status: 'convertida_oportunidad', converted_opportunity_id: 'bad', expected_tracking_updated_at: expectedAt }, { id: actorId }), /oportunidad válida/i);
   await assert.rejects(() => callTenderTrackingTransition(db, tenderId, { internal_status: 'descartada', event_type: 'discarded', expected_tracking_updated_at: expectedAt }, { id: actorId }), /no se selecciona desde el cliente/i);
   assert.equal(db.calls.length, 0);
 })();
@@ -100,14 +106,8 @@ await (async function rejectsInvalidTransitionUuidStatusAndClientSelectedEventBe
 await (async function allowsNullExpectedTrackingTokenForInitialLifecycleTransitions() {
   const db = fakeRpcDb();
   await callTenderTrackingTransition(db, tenderId, { internal_status: 'descartada', expected_tracking_updated_at: null }, { id: actorId });
-  await callTenderTrackingTransition(db, tenderId, {
-    internal_status: 'convertida_oportunidad',
-    converted_opportunity_id: opportunityId,
-    expected_tracking_updated_at: null,
-  }, { id: actorId });
-  assert.equal(db.calls.length, 2);
+  assert.equal(db.calls.length, 1);
   assert.equal(db.calls[0].args.p_expected_tracking_updated_at, null);
-  assert.equal(db.calls[1].args.p_expected_tracking_updated_at, null);
 })();
 
 await (async function propagatesStaleTrackingTokenRpcErrorForHandlers() {
