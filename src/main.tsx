@@ -87,6 +87,62 @@ const PRODUCT_OPERATIONAL_UNITS_BY_NAME: Record<string, string> = {
   'seguridad física': 'Puestos 24H',
   'seguridad fisica': 'Puestos 24H',
 };
+const OPPORTUNITIES_PAGE_SIZE = 25;
+const TENDERS_PAGE_SIZE = 24;
+const ROLE_LABELS: Record<string, string> = { director: 'Directivo', gerencia: 'Gerencia', admin: 'Admin', comercial: 'Comercial' };
+const REGION_ALIAS_CANONICAL: Record<string, string> = {
+  'bogota': 'Bogotá', 'bogotá': 'Bogotá', 'distrito capital de bogota': 'Bogotá', 'distrito capital de bogotá': 'Bogotá',
+  'medellin': 'Medellín', 'medellín': 'Medellín',
+  'antioquia': 'Antioquia',
+  'eje cafetero': 'Eje Cafetero',
+  'risaralda': 'Risaralda',
+  'valle del cauca': 'Valle del Cauca',
+};
+function normalizeRegion(value?: string | null): string {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const stripped = raw.replace(/[.]+$/, '').replace(/\s+/g, ' ').trim();
+  const key = stripped.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const canonical = REGION_ALIAS_CANONICAL[key];
+  if (canonical) return canonical;
+  const lower = stripped.toLocaleLowerCase('es-CO');
+  const keepLower = new Set(['de', 'del', 'la', 'las', 'los', 'y', 'el']);
+  return lower.split(' ').map((part, index) => index > 0 && keepLower.has(part) ? part : part.charAt(0).toLocaleUpperCase('es-CO') + part.slice(1)).join(' ');
+}
+function isCommercialProfile(profile: Profile): boolean {
+  return Boolean(profile) && profile.role === 'comercial' && profile.active !== false;
+}
+function canonicalTenderKey(tender: PublicTender): string {
+  const source = String(tender.source || '').trim().toLowerCase();
+  const entity = normalizeTenderText(tender.entity || '').replace(/\s+/g, ' ').trim();
+  const rawRef = String(tender.ref || tender.process_id || tender.id || '');
+  const ref = rawRef
+    .replace(/\(presentación de oferta\)/gi, '')
+    .replace(/\(presentacion de oferta\)/gi, '')
+    .replace(/[.\s]+$/g, '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .trim();
+  return `${source}|${entity}|${ref}`;
+}
+function deduplicateTenders(tenders: PublicTender[]): PublicTender[] {
+  if (!Array.isArray(tenders)) return [];
+  const tenderStatusRank = (tender: PublicTender) => tender.converted_opportunity_id || tender.internal_status === 'convertida_oportunidad' ? 4 : tender.internal_status === 'en_revision' ? 3 : tender.internal_status === 'nueva' ? 2 : tender.internal_status === 'descartada' ? 1 : 0;
+  const byKey = new Map<string, PublicTender>();
+  const order: string[] = [];
+  for (const tender of tenders) {
+    const key = canonicalTenderKey(tender);
+    if (!byKey.has(key)) { byKey.set(key, tender); order.push(key); continue; }
+    const current = byKey.get(key)!;
+    const currentDate = String(current.last_seen_at || current.detected_at || current.published || '');
+    const nextDate = String(tender.last_seen_at || tender.detected_at || tender.published || '');
+    const currentRank = tenderStatusRank(current);
+    const nextRank = tenderStatusRank(tender);
+    if (nextRank > currentRank || (nextRank === currentRank && nextDate > currentDate)) byKey.set(key, tender);
+  }
+  return order.map(k => byKey.get(k)!).filter(Boolean);
+}
 const TENDER_OFFICIAL_SOURCES = ['SECOP I', 'SECOP II', 'TVEC', 'ESU Contratación'];
 const TENDER_SN_REGIONS: Array<{ key: TenderRegionKey; label: string; aliases: string[]; focus: string }> = [
   { key: 'todas', label: 'Todas las regiones', aliases: [], focus: 'Sin limitar cobertura' },
@@ -110,7 +166,7 @@ function tenderMatchesRegion(tender: PublicTender, regionKey: TenderRegionKey) {
 function placeholderOption(label: string, value = 'todas') { return [value, `${label}: Todas`]; }
 function customerSegmentLabel(value?: string | null) { return value === 'cliente_nuevo' ? 'Cliente Nuevo' : value === 'cliente_actual' ? 'Cliente Actual' : 'Pendiente'; }
 function commercialAreaLabel(value?: string | null) { return value === 'seguridad_fisica' ? 'Seguridad Física' : value === 'tecnologia' ? 'Tecnología' : value === 'licitacion_publica' ? 'Licitación Pública' : 'Sin área'; }
-function roleLabel(value?: string | null) { return value === 'director' ? 'Dirección Comercial' : value === 'gerencia' ? 'Gerencia' : value === 'admin' ? 'Administración' : value === 'comercial' ? 'Comercial' : value ? formatDisplayName(value) : 'Cargo pendiente'; }
+function roleLabel(value?: string | null) { return ROLE_LABELS[value || ''] || (value ? formatDisplayName(value) : 'Cargo pendiente'); }
 function productOperationalUnit(serviceCode?: string | null, serviceName?: string | null) {
   const codeKey = String(serviceCode || '').toLowerCase();
   const nameKey = String(serviceName || '').toLowerCase();
@@ -270,20 +326,25 @@ function App() {
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  useEffect(() => { setSidebarOpen(false); }, [route.page, route.id]);
   if (!authReady) return <div className="app"><main><div className="notice">Verificando sesión…</div></main></div>;
   if (!session) return <LoginScreen />;
   if (passwordRecovery) return <PasswordResetScreen onDone={() => setPasswordRecovery(false)} />;
   const currentProfile = data?.currentProfile || null;
-  return <div className="app">
-    <aside className="sidebar">
+  const closeSidebar = () => setSidebarOpen(false);
+  return <div className={`app ${sidebarOpen ? 'sidebar-visible' : ''}`}>
+    {sidebarOpen && <div className="sidebar-backdrop" onClick={closeSidebar} aria-hidden="true" />}
+    <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`} aria-hidden={!sidebarOpen ? undefined : 'false'}>
       <div className="brand"><small>Seguridad Nacional Ltda</small><em>Dashboard Comercial</em></div>
-      <Nav route={route} currentProfile={currentProfile} />
+      <Nav route={route} currentProfile={currentProfile} onNavigate={closeSidebar} />
       <div className="session-card"><small>Sesión activa</small><strong>{currentProfile?.full_name || session.user.email}</strong><span>{currentProfile?.role || 'perfil'}</span></div>
       <button className="secondary full" onClick={refresh}>Actualizar datos</button>
       <button className="secondary full" onClick={() => supabaseBrowser.auth.signOut()}>Cerrar sesión</button>
     </aside>
     <main>
       <header className="topbar">
+        <button type="button" className="topbar-menu-toggle" aria-label="Abrir menú de navegación" aria-expanded={sidebarOpen} aria-controls="app-sidebar" onClick={() => setSidebarOpen(open => !open)}>☰</button>
         <div><h1>{titleFor(route)}</h1><p>CRM comercial · Seguridad Nacional</p></div>
         <button onClick={() => go('#/new')}>Nueva oportunidad</button>
       </header>
@@ -367,14 +428,15 @@ function titleFor(route: Route) {
   if (route.page === 'users') return 'Usuarios y permisos';
   return 'Inicio comercial';
 }
-function Nav({ route, currentProfile }: { route: Route; currentProfile: Profile | null }) {
+function Nav({ route, currentProfile, onNavigate }: { route: Route; currentProfile: Profile | null; onNavigate?: () => void }) {
   const isActiveHref = (href: string) => (route.page === 'home' && href === '#/') || href.includes(route.page) || (route.page === 'centinel' && href === '#/vig-ia');
   const tenderSubnav: Array<[string, string]> = [['#/tenders?view=radar','Radar de oportunidades'],['#/tenders?view=seguimiento','Seguimiento'],['#/tenders?view=expedientes','Expedientes'],['#/tenders?view=perfiles','Perfiles de búsqueda']];
-  return <nav className="nav-domain-groups">
-    <div className="nav-section"><span className="nav-section-title">Gerencia</span><a className={route.page === 'dashboard' || route.page === 'dashboard2' ? 'active' : ''} href="#/dashboard2">Dashboard comercial</a><a className={route.page === 'centinel' ? 'active' : ''} href="#/vig-ia">Vig-IA</a></div>
-    <div className="nav-section"><span className="nav-section-title">Comercial</span><a className={isActiveHref('#/alerts') ? 'active' : ''} href="#/alerts">Alertas comerciales</a><a className={isActiveHref('#/opportunities') ? 'active' : ''} href="#/opportunities">Oportunidades</a></div>
-    {canViewTenders(currentProfile) && <div className={`nav-section nav-group tender-subnav ${route.page === 'tenders' ? 'open active' : ''}`}><span className="nav-section-title">Licitaciones</span><a className={`nav-parent ${route.page === 'tenders' ? 'active' : ''}`} href="#/tenders?view=radar">Radar de oportunidades <span>▾</span></a><div className="nav-subitems">{tenderSubnav.slice(1).map(([href,label]) => <a key={href} href={href} className={route.page === 'tenders' && (hashQueryParam('view') || 'radar') === new URLSearchParams(href.split('?')[1]).get('view') ? 'active' : ''}>{label}</a>)}</div></div>}
-    <div className="nav-section"><span className="nav-section-title">Administración</span>{canManageGoals(currentProfile) && <a className={isActiveHref('#/goals') ? 'active' : ''} href="#/goals">Metas y cumplimiento</a>}{canManageUsers(currentProfile) && <a className={isActiveHref('#/users') ? 'active' : ''} href="#/users">Usuarios y permisos</a>}</div>
+  const handleNav = () => { if (onNavigate) onNavigate(); };
+  return <nav className="nav-domain-groups" id="app-sidebar">
+    <div className="nav-section"><span className="nav-section-title">Gerencia</span><a onClick={handleNav} className={route.page === 'dashboard' || route.page === 'dashboard2' ? 'active' : ''} href="#/dashboard2">Dashboard comercial</a><a onClick={handleNav} className={route.page === 'centinel' ? 'active' : ''} href="#/vig-ia">Vig-IA</a></div>
+    <div className="nav-section"><span className="nav-section-title">Comercial</span><a onClick={handleNav} className={isActiveHref('#/alerts') ? 'active' : ''} href="#/alerts">Alertas comerciales</a><a onClick={handleNav} className={isActiveHref('#/opportunities') ? 'active' : ''} href="#/opportunities">Oportunidades</a></div>
+    {canViewTenders(currentProfile) && <div className={`nav-section nav-group tender-subnav ${route.page === 'tenders' ? 'open active' : ''}`}><span className="nav-section-title">Licitaciones</span><a onClick={handleNav} className={`nav-parent ${route.page === 'tenders' ? 'active' : ''}`} href="#/tenders?view=radar">Radar de oportunidades <span>▾</span></a><div className="nav-subitems">{tenderSubnav.slice(1).map(([href,label]) => <a key={href} onClick={handleNav} href={href} className={route.page === 'tenders' && (hashQueryParam('view') || 'radar') === new URLSearchParams(href.split('?')[1]).get('view') ? 'active' : ''}>{label}</a>)}</div></div>}
+    <div className="nav-section"><span className="nav-section-title">Administración</span>{canManageGoals(currentProfile) && <a onClick={handleNav} className={isActiveHref('#/goals') ? 'active' : ''} href="#/goals">Metas y cumplimiento</a>}{canManageUsers(currentProfile) && <a onClick={handleNav} className={isActiveHref('#/users') ? 'active' : ''} href="#/users">Usuarios y permisos</a>}</div>
   </nav>;
 }
 function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; refresh: () => Promise<void> }) {
@@ -502,8 +564,15 @@ function sortTenderCards(rows: PublicTender[], tenderSortKey: TenderSortKey, ten
 function OpportunityList({ data }: { data: Bootstrap }) {
   const [q, setQ] = useState(hashQueryParam('q')); const [owner, setOwner] = useState(hashQueryParam('owner')); const [regional, setRegional] = useState(hashQueryParam('regional')); const [stage, setStage] = useState(hashQueryParam('stage')); const [service, setService] = useState(hashQueryParam('service')); const [customerSegmentFilter, setCustomerSegmentFilter] = useState(hashQueryParam('segment')); const [onlyActive, setOnlyActive] = useState(hashQueryParam('active') !== 'all');
   const [sortConfig, setSortConfig] = useState<SortConfig<'client'|'owner'|'regional'|'stage'|'product'|'segment'|'value'|'close'|'last'>>({ key: 'client', direction: 'asc' });
-  const regionals = useMemo(() => uniq(data.opportunities.map(o => o.regional_nombre)), [data.opportunities]);
-  const filtered = data.opportunities.filter(o => (!q || `${o.company_name} ${o.owner_name||''} ${o.sede||''} ${o.quote_city||''} ${o.regional_nombre||''} ${o.tipo_producto_original||''} ${o.service_type_name||''} ${o.legacy_excel_id||''}`.toLowerCase().includes(q.toLowerCase())) && (!owner || o.owner_id===owner) && (!regional || o.regional_nombre===regional) && (!stage || o.stage_code===stage) && (!service || o.service_type_code===service) && (!customerSegmentFilter || o.customer_segment === customerSegmentFilter) && (!onlyActive || !isTerminalStage(o.stage_code)));
+  const [opportunitiesPage, setOpportunitiesPage] = useState(1);
+  const commercialProfiles = data.profiles.filter(isCommercialProfile);
+  const regionals = useMemo(() => {
+    const canonical = new Map<string, string>();
+    data.opportunities.forEach(o => { const c = normalizeRegion(o.regional_nombre); if (c && !canonical.has(c)) canonical.set(c, c); });
+    return Array.from(canonical.values()).sort((a,b) => a.localeCompare(b));
+  }, [data.opportunities]);
+  const filtered = data.opportunities.filter(o => (!q || `${o.company_name} ${o.owner_name||''} ${o.sede||''} ${o.quote_city||''} ${o.regional_nombre||''} ${o.tipo_producto_original||''} ${o.service_type_name||''} ${o.legacy_excel_id||''}`.toLowerCase().includes(q.toLowerCase())) && (!owner || o.owner_id===owner) && (!regional || normalizeRegion(o.regional_nombre) === regional) && (!stage || o.stage_code===stage) && (!service || o.service_type_code===service) && (!customerSegmentFilter || o.customer_segment === customerSegmentFilter) && (!onlyActive || !isTerminalStage(o.stage_code)));
+  useEffect(() => { setOpportunitiesPage(1); }, [q, owner, regional, stage, service, customerSegmentFilter, onlyActive, sortConfig.key, sortConfig.direction]);
   const filteredTotals = filtered.reduce((acc, o) => {
     const value = Number(o.offer_value || 0);
     acc.pipeline += value;
@@ -537,11 +606,13 @@ function OpportunityList({ data }: { data: Bootstrap }) {
     return compareSortValues(value(a), value(b), sortConfig.direction);
   });
   const sortBy = (key: typeof sortConfig.key) => setSortConfig(current => nextSort(current, key));
+  const pagedOpportunities = sortedOpportunities.slice((opportunitiesPage - 1) * OPPORTUNITIES_PAGE_SIZE, opportunitiesPage * OPPORTUNITIES_PAGE_SIZE);
   return <section className="stack">
-    <div className="filters opportunity-filters compact-dashboard-filters"><input placeholder="Buscar cliente, sede, ciudad o ID…" value={q} onChange={e=>setQ(e.target.value)} /> <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Comerciales"/> <Select value={regional} onChange={setRegional} options={regionals.map(r=>[r,r])} empty="Regiones"/> <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Etapas"/> <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Productos"/><Select value={customerSegmentFilter} onChange={setCustomerSegmentFilter} options={customerSegmentOptions} empty="Clientes"/><label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label><button className="secondary" onClick={()=>{ setQ(''); setOwner(''); setRegional(''); setStage(''); setService(''); setCustomerSegmentFilter(''); setOnlyActive(true); }}>Limpiar</button></div>
+    <div className="filters opportunity-filters compact-dashboard-filters"><input placeholder="Buscar cliente, sede, ciudad o ID…" value={q} onChange={e=>setQ(e.target.value)} /> <Select value={owner} onChange={setOwner} options={commercialProfiles.map(p=>[p.id,p.full_name])} empty="Comerciales"/> <Select value={regional} onChange={setRegional} options={regionals.map(r=>[r,r])} empty="Regiones"/> <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Etapas"/> <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Productos"/><Select value={customerSegmentFilter} onChange={setCustomerSegmentFilter} options={customerSegmentOptions} empty="Clientes"/><label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label><button className="secondary" onClick={()=>{ setQ(''); setOwner(''); setRegional(''); setStage(''); setService(''); setCustomerSegmentFilter(''); setOnlyActive(true); }}>Limpiar</button></div>
     <p className="muted filter-summary"><strong>{filtered.length}</strong> de {data.opportunities.length} oportunidades visibles.</p>
     <div className="opportunity-insight-grid" aria-label="Indicadores de oportunidades filtradas">{opportunityInsightCards.map(card => <div key={card.label} className={`opportunity-insight-card ${card.tone}`}><small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>{card.label === 'Ticket promedio' && topFilteredOpportunity ? <em>Oportunidad líder: {fmtMoneyCompact(topFilteredOpportunity.offer_value)}</em> : null}</div>)}</div>
-    <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo cliente" sortKey="segment" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cierre estimado" sortKey="close" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Último seguimiento" sortKey="last" sortConfig={sortConfig} onSort={sortBy}/></tr></thead><tbody>{sortedOpportunities.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{o.regional_nombre || '—'}</td><td><Badge>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td><Badge tone={o.customer_segment ? 'blue' : 'amber'}>{customerSegmentLabel(o.customer_segment)}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDate(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td></tr>)}</tbody></table></div>
+    <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo cliente" sortKey="segment" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cierre estimado" sortKey="close" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Último seguimiento" sortKey="last" sortConfig={sortConfig} onSort={sortBy}/></tr></thead><tbody>{pagedOpportunities.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{normalizeRegion(o.regional_nombre) || '—'}</td><td><Badge>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td><Badge tone={o.customer_segment ? 'blue' : 'amber'}>{customerSegmentLabel(o.customer_segment)}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDate(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td></tr>)}</tbody></table></div>
+    <Pagination page={opportunitiesPage} pageSize={OPPORTUNITIES_PAGE_SIZE} total={filtered.length} onChange={setOpportunitiesPage} label="Paginación de oportunidades" />
   </section>;
 }
 function findTenderOwner(data: Bootstrap) {
@@ -732,6 +803,8 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
   const [savingProfile, setSavingProfile] = useState(false);
   const [tenderSortKey, setTenderSortKey] = useState<TenderSortKey>('value');
   const [tenderSortDirection, setTenderSortDirection] = useState<SortDirection>('desc');
+  const [tenderPage, setTenderPage] = useState(1);
+  const applyingSearchProfileRef = useRef(false);
   const focusTenderId = hashQueryParam('tender');
   const load = async () => {
     setLoading(true); setError(null);
@@ -760,7 +833,10 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     setScoreFilter('todas');
   };
   useEffect(() => { load(); loadSearchProfiles(); }, []);
-  useEffect(() => { if (!focusTenderId) setRouteViewDefaults(tenderView); }, [tenderView, focusTenderId]);
+  useEffect(() => {
+    if (applyingSearchProfileRef.current) { applyingSearchProfileRef.current = false; return; }
+    if (!focusTenderId) setRouteViewDefaults(tenderView);
+  }, [tenderView, focusTenderId]);
   useEffect(() => {
     if (!focusTenderId || !payload) return;
     const focused = payload.tenders.find(t => t.id === focusTenderId);
@@ -777,6 +853,7 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     setScoreFilter('todas');
     window.setTimeout(() => document.getElementById(`tender-${focusTenderId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
   }, [focusTenderId, payload]);
+  useEffect(() => { setTenderPage(1); }, [tenderView, quickFilter, fastFilter, section, internalStatus, sourceFilter, regionFilter, deadlineFilter, valueFilter, scoreFilter, q, tenderSortKey, tenderSortDirection]);
   if (!canViewTenders(currentProfile)) return <div className="error">Solo dirección o licitaciones puede ver este radar.</div>;
   if (loading) return <div className="notice">Cargando radar de licitaciones…</div>;
   if (error) return <div className="error">{error}</div>;
@@ -882,7 +959,8 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     setRegionFilter(profile.region_key || 'todas'); setSourceFilter(profile.source_filter || 'todas');
     setSection(profile.section_filter || 'todas'); setInternalStatus(profile.internal_status_filter || 'todas');
     setDeadlineFilter(profile.deadline_filter || 'todas'); setValueFilter(profile.value_filter || 'todas'); setScoreFilter(profile.score_filter || 'todas');
-    setQ(profile.query_text || ''); setProfileName(profile.name); setProfileStatus(`Perfil aplicado: ${profile.name}`);
+    setQ(profile.query_text || ''); setProfileName(profile.name); setProfileStatus(`Perfil aplicado: ${profile.name}. Abriendo Radar…`);
+    if (tenderView === 'perfiles') { applyingSearchProfileRef.current = true; window.setTimeout(() => go('#/tenders?view=radar'), 60); }
   };
   const saveCurrentSearchProfile = async () => {
     const name = profileName.trim();
@@ -902,7 +980,8 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     try { await api(`/api/tender-search-profiles/${encodeURIComponent(profile.id)}`, { method: 'DELETE' }); setSearchProfiles(current => current.filter(item => item.id !== profile.id)); setProfileStatus(`Perfil eliminado: ${profile.name}`); }
     catch (err) { setProfileStatus(err instanceof Error ? err.message : String(err)); }
   };
-  const rows = payload.tenders.filter(t => {
+  const dedupedTenders = deduplicateTenders(payload.tenders);
+  const rows = dedupedTenders.filter(t => {
     const status = t.internal_status || 'nueva';
     const value = Number(t.value || 0);
     const score = Number(t.score || 0);
@@ -929,6 +1008,19 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
     scoreFilter !== 'todas' ? { key: 'score', label: `Encaje: ${scoreFilter === 'alto' ? 'Alto' : scoreFilter === 'medio' ? 'Medio' : 'Bajo/validar'}`, clear: () => setScoreFilter('todas') } : null,
     q ? { key: 'q', label: `Búsqueda: ${q}`, clear: () => setQ('') } : null,
   ].filter(Boolean) as Array<{ key: string; label: string; clear: () => void }>;
+  if (tenderView === 'perfiles') {
+    return <section className="stack tenders-page tender-profiles-only">
+      <section className="compact-tender-command">
+        <div className="compact-tender-summary"><span className="eyebrow">Perfiles de búsqueda</span><h2>{tenderViewCopy[tenderView].title}</h2><p>{tenderViewCopy[tenderView].text} Configure aquí los criterios y luego aplíquelos sobre el Radar para revisar procesos.</p></div>
+      </section>
+      <TenderCompanyProfilePanel />
+      <TenderSearchProfilesPanel regionFilter={regionFilter} setRegionFilter={setRegionFilter} profiles={searchProfiles} profileName={profileName} setProfileName={setProfileName} profileStatus={profileStatus} savingProfile={savingProfile} onSave={saveCurrentSearchProfile} onApply={applySearchProfile} onDelete={deleteSearchProfile} />
+      <p className="muted">Aplicar un perfil abre el Radar con los filtros seleccionados; los procesos no se listan en esta pantalla.</p>
+    </section>;
+  }
+  const totalTenderPages = Math.max(1, Math.ceil(sortedRows.length / TENDERS_PAGE_SIZE));
+  const currentTenderPage = Math.min(Math.max(1, tenderPage), totalTenderPages);
+  const pagedTenderRows = sortedRows.slice((currentTenderPage - 1) * TENDERS_PAGE_SIZE, currentTenderPage * TENDERS_PAGE_SIZE);
   return <section className="stack tenders-page">
     <section className="compact-tender-command">
       <div className="compact-tender-summary"><span className="eyebrow">Radar de Licitaciones Públicas</span><h2>{tenderViewCopy[tenderView].title}</h2><p>{tenderViewCopy[tenderView].text} SECOP I, SECOP II, TVEC y ESU Contratación priorizados para revisar, descartar o convertir sin duplicar oportunidades.</p><div className="tender-command-meta"><span>Actualización <strong>{fmtDate(payload.generatedAt)}</strong></span><span>Fuente <strong>{payload.source === 'supabase' ? 'Supabase' : 'Fuentes vivas'}</strong></span></div></div>
@@ -946,7 +1038,6 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
       </div>
     </section>
     <TenderCompanyProfilePanel />
-    {tenderView === 'perfiles' && <TenderSearchProfilesPanel regionFilter={regionFilter} setRegionFilter={setRegionFilter} profiles={searchProfiles} profileName={profileName} setProfileName={setProfileName} profileStatus={profileStatus} savingProfile={savingProfile} onSave={saveCurrentSearchProfile} onApply={applySearchProfile} onDelete={deleteSearchProfile} />}
     <section className="tender-control-panel" aria-label="Controles de licitaciones">
       <div className="tender-control-top">
         <input className="tender-search-input" placeholder="Buscar entidad, ciudad, objeto, fuente o referencia…" value={q} onChange={e=>setQ(e.target.value)} />
@@ -956,11 +1047,12 @@ function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promi
       <div className="filters tender-refine-filters"><span className="filter-label">Refinar resultados</span><label className="tender-filter-field"><span>Prioridad</span><Select value={primaryTenderFilter} onChange={v=>applyPrimaryTenderFilter(v as TenderPrimaryFilter)} options={[["todas","Todas"],["hacer","Hacer hoy"],["revisar","Revisar"],["descartar","Descartar / validar"],["nuevas","Nuevas"],["urgentes","Urgentes"],["alto_valor","Alto valor"],["alto_encaje","Alto encaje"]]} empty=""/></label><label className="tender-filter-field"><span>Estado interno</span><Select value={internalStatus} onChange={v=>{ setInternalStatus(v as TenderInternalStatus | 'todas'); setQuickFilter(null); setFastFilter(null); }} options={[["todas","Todas"],["nueva","Nueva"],["en_revision","En revisión"],["descartada","Descartada"],["convertida_oportunidad","Convertida"]]} empty=""/></label><label className="tender-filter-field"><span>Fuente</span><Select value={sourceFilter} onChange={setSourceFilter} options={[["todas","Todas"], ...sourceOptions]} empty=""/></label><label className="tender-filter-field"><span>Región SN</span><Select value={regionFilter} onChange={v=>setRegionFilter(v as TenderRegionKey)} options={regionOptions} empty=""/></label><label className="tender-filter-field"><span>Cierre</span><Select value={deadlineFilter} onChange={v=>setDeadlineFilter(v as TenderDeadlineFilter)} options={[["todas","Todas"],["0_7","0-7 días"],["8_15","8-15 días"],["16_30","16-30 días"],["vencida","Vencida"],["sin_fecha","Sin fecha"]]} empty=""/></label><label className="tender-filter-field"><span>Valor</span><Select value={valueFilter} onChange={v=>setValueFilter(v as TenderValueFilter)} options={[["todas","Todas"],["sin_valor","Sin valor"],["lt_50m","<$50M"],["50m_500m","$50M-$500M"],["500m_plus","$500M+"],["1000m_plus","$1.000M+"]]} empty=""/></label><label className="tender-filter-field"><span>Encaje</span><Select value={scoreFilter} onChange={v=>setScoreFilter(v as TenderScoreFilter)} options={[["todas","Todas"],["alto","Alto"],["medio","Medio"],["bajo","Bajo / validar"]]} empty=""/></label><button className="secondary" onClick={clearTenderFilters}>Limpiar</button></div>
     </section>
     <div className="tender-results-toolbar">
-      <div className="filter-summary"><strong>{rows.length}</strong><span>de {payload.tenders.length} procesos</span>{activeTenderFilterChips.length ? <div className="filter-chips">{activeTenderFilterChips.map(chip => <button className="filter-chip" key={chip.key} onClick={chip.clear}>{chip.label} ×</button>)}</div> : <span className="muted">Sin filtros activos</span>}</div>
+      <div className="filter-summary"><strong>{rows.length}</strong><span>de {dedupedTenders.length} procesos únicos ({payload.tenders.length} entradas fuente)</span>{activeTenderFilterChips.length ? <div className="filter-chips">{activeTenderFilterChips.map(chip => <button className="filter-chip" key={chip.key} onClick={chip.clear}>{chip.label} ×</button>)}</div> : <span className="muted">Sin filtros activos</span>}</div>
       <div className="filters tender-sort-controls"><span className="filter-label">Orden</span><Select value={`${tenderSortKey}:${tenderSortDirection}`} onChange={applyTenderSortPreset} options={[["deadline:asc","Cierre más próximo"],["deadline:desc","Cierre más lejano"],["value:desc","Mayor valor primero"],["value:asc","Menor valor primero"],["score:desc","Score alto primero"],["score:asc","Score bajo primero"],["entity:asc","Entidad A-Z"],["entity:desc","Entidad Z-A"],["source:asc","Fuente A-Z"]]} empty="Ordenar por"/></div>
     </div>
     <details className="tender-help-panel"><summary>Cómo se clasifica esta bandeja</summary><p className="action-explainer">“Hacer hoy” prioriza procesos con mayor encaje, valor y urgencia de cierre; “Revisar” agrupa procesos que requieren validación documental/comercial; “Descartar” deja visibles los casos de bajo encaje para trazabilidad.</p><p className="tender-classification-note">Use Radar para detectar, Seguimiento para procesos marcados en revisión, Expedientes para convertidas/preparación de oferta y Perfiles para guardar criterios de búsqueda.</p></details>
-    <TenderUnifiedBoard rows={sortedRows} focusTenderId={focusTenderId} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} />
+    <TenderUnifiedBoard rows={pagedTenderRows} focusTenderId={focusTenderId} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} />
+    <Pagination page={currentTenderPage} pageSize={TENDERS_PAGE_SIZE} total={sortedRows.length} onChange={setTenderPage} label="Paginación de licitaciones" />
   </section>;
 }
 function TenderUnifiedBoard({ rows, focusTenderId, onCreate, onStatus, creatingId }: { rows: PublicTender[]; focusTenderId?: string; onCreate: (tender: PublicTender) => void; onStatus: (tender: PublicTender, status: TenderInternalStatus) => void; creatingId: string | null }) {
@@ -993,6 +1085,19 @@ function TenderTable({ rows, focusTenderId, onCreate, onStatus, creatingId }: { 
 }
 function Select({ value, onChange, options, empty, disabled = false }: { value: string; onChange: (v:string)=>void; options: string[][]; empty: string; disabled?: boolean }) { return <select value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{empty ? <option value="">{empty}</option> : null}{options.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>; }
 function Badge({ children, tone }: { children: React.ReactNode; tone?: string }) { return <span className={`badge ${tone ? `badge-${tone}` : ''}`}>{children}</span>; }
+function Pagination({ page, pageSize, total, onChange, label }: { page: number; pageSize: number; total: number; onChange: (page: number) => void; label?: string }) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const current = Math.min(Math.max(1, page), totalPages);
+  const from = total === 0 ? 0 : (current - 1) * pageSize + 1;
+  const to = Math.min(current * pageSize, total);
+  return <nav className="pagination" aria-label={label || 'Paginación'}>
+    <button type="button" className="secondary" onClick={() => onChange(1)} disabled={current <= 1}>«</button>
+    <button type="button" className="secondary" onClick={() => onChange(current - 1)} disabled={current <= 1}>Anterior</button>
+    <span className="pagination-status"><strong>{from}</strong>-<strong>{to}</strong> de <strong>{total}</strong> · página {current} de {totalPages}</span>
+    <button type="button" className="secondary" onClick={() => onChange(current + 1)} disabled={current >= totalPages}>Siguiente</button>
+    <button type="button" className="secondary" onClick={() => onChange(totalPages)} disabled={current >= totalPages}>»</button>
+  </nav>;
+}
 function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap; refresh: () => Promise<void> }) {
   const [detail, setDetail] = useState<{ opportunity: Opportunity; interactions: Interaction[] } | null>(null); const [error, setError] = useState<string | null>(null);
   const load = async () => { try { setDetail(await api(`/api/opportunity-detail?id=${encodeURIComponent(id)}`)); } catch(e) { setError(e instanceof Error ? e.message : String(e)); } };
@@ -1232,7 +1337,7 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
     <form onSubmit={submit} className="form gridform">
       <label>Cliente / empresa<input required value={form.company_name || ''} onChange={e=>set('company_name', e.target.value)}/></label>
       <label>Fecha creación oportunidad<input type="date" value={creationDateValue} readOnly disabled/><small>Se asigna automáticamente con la fecha del día en que se crea la oportunidad.</small></label>
-      <label>Comercial<Select value={String(form.owner_id || '')} onChange={v=>set('owner_id', v)} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Seleccionar"/></label>
+      <label>Comercial<Select value={String(form.owner_id || '')} onChange={v=>set('owner_id', v)} options={data.profiles.filter(isCommercialProfile).map(p=>[p.id,p.full_name])} empty="Seleccionar"/></label>
       <label>Etapa<Select value={String(form.stage_code || '')} onChange={v=>set('stage_code', v)} options={data.stages.map(s=>[s.code,s.name])} empty="Seleccionar"/></label>
       <label>Servicio<Select value={String(form.service_type_code || '')} onChange={v=>set('service_type_code', v)} options={data.services.map(s=>[s.code,s.name])} empty="Seleccionar"/></label>
       <label>Tipo de cliente<Select value={String(form.customer_segment || '')} onChange={v=>set('customer_segment', v)} options={customerSegmentOptions} empty="Seleccionar" disabled={id ? !canEditSegment : false}/></label>
@@ -1673,12 +1778,17 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   const [stage, setStage] = useState('');
   const [service, setService] = useState('seguridad_fisica');
   const [onlyActive, setOnlyActive] = useState(false);
-  const managerRegionalOptions = useMemo(() => uniq(data.opportunities.map(o => o.regional_nombre)), [data.opportunities]);
+  const commercialProfiles = data.profiles.filter(isCommercialProfile);
+  const managerRegionalOptions = useMemo(() => {
+    const canonical = new Map<string, string>();
+    data.opportunities.forEach(o => { const c = normalizeRegion(o.regional_nombre); if (c && !canonical.has(c)) canonical.set(c, c); });
+    return Array.from(canonical.values()).sort((a,b) => a.localeCompare(b));
+  }, [data.opportunities]);
   const v2BaseScopeMatches = (o: Opportunity) =>
     matchesDashboardPeriod(o, period) &&
     (!q || `${o.company_name} ${o.owner_name||''} ${o.sede||''} ${o.quote_city||''} ${o.regional_nombre||''} ${o.tipo_producto_original||''} ${o.service_type_name||''} ${o.legacy_excel_id||''}`.toLowerCase().includes(q.toLowerCase())) &&
     (!owner || ownerKey(o) === owner) &&
-    (!regional || o.regional_nombre === regional) &&
+    (!regional || normalizeRegion(o.regional_nombre) === regional) &&
     (!service || o.service_type_code === service);
   const scopedOpportunities = useMemo(() => data.opportunities.filter(o =>
     v2BaseScopeMatches(o) &&
@@ -1906,7 +2016,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
         <input placeholder="Buscar cliente, sede, ciudad o ID…" value={q} onChange={e=>setQ(e.target.value)} />
         <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Período"/>
         <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Productos"/>
-        <Select value={owner} onChange={setOwner} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Comerciales"/>
+        <Select value={owner} onChange={setOwner} options={commercialProfiles.map(p=>[p.id,p.full_name])} empty="Comerciales"/>
         <Select value={regional} onChange={setRegional} options={managerRegionalOptions.map(r=>[r,r])} empty="Regiones"/>
         <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Etapas"/>
         <label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label>
@@ -2312,8 +2422,11 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
   });
   const sortLowGoalBy = (key: typeof lowGoalSortConfig.key) => setLowGoalSortConfig(current => nextSort(current, key));
 
-  const ownerOptions = data.profiles.filter(p => active.some(o => o.owner_id === p.id)).map(p => [p.id, p.full_name]);
-  const alertRegionalOptions = uniq(active.map(o => o.regional_nombre)).map(r => [r, r]);
+  const commercialProfiles = data.profiles.filter(isCommercialProfile);
+  const ownerOptions = commercialProfiles.filter(p => active.some(o => o.owner_id === p.id)).map(p => [p.id, p.full_name]);
+  const alertRegionCanonical = new Map<string, string>();
+  active.forEach(o => { const c = normalizeRegion(o.regional_nombre); if (c && !alertRegionCanonical.has(c)) alertRegionCanonical.set(c, c); });
+  const alertRegionalOptions = Array.from(alertRegionCanonical.values()).sort((a,b)=>a.localeCompare(b)).map(r => [r, r]);
   const stageOptions = data.stages.filter(s => active.some(o => o.stage_code === s.code)).map(s => [s.code, s.name]);
   const alertServiceOptions = data.services.map(s => [s.code, s.name]);
   const alertFilterTabs = [
@@ -2328,7 +2441,7 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
     return (!q || haystack.includes(q.toLowerCase()))
       && (!status || row.alertCode === status || (status === 'managed' && row.hasManagedAction) || (status === 'risk' && row.isRiskPipeline) || (status === 'closing_soon' && row.closingSoon) || (status === 'high_value_stalled' && row.highValueStalled))
       && (!owner || o.owner_id === owner)
-      && (!regional || o.regional_nombre === regional)
+      && (!regional || normalizeRegion(o.regional_nombre) === regional)
       && (!stage || o.stage_code === stage)
       && (!service || o.service_type_code === service)
       && (!customerSegmentFilter || o.customer_segment === customerSegmentFilter)
@@ -2382,8 +2495,16 @@ function CommercialAlerts({ data }: { data: Bootstrap }) {
         </article>;
       })}</div> : <EmptyState title="Sin alertas pendientes" text="No hay oportunidades críticas con los filtros actuales o ya fueron marcadas como revisadas en esta sesión." />}
     </Panel>
-    <Panel title="Cumplimiento bajo 80%">
-      {lowGoalRows.length ? <div className="tablewrap"><table><thead><tr><SortableTh label="Comercial" sortKey="owner" sortConfig={lowGoalSortConfig} onSort={sortLowGoalBy}/><SortableTh label="Mes" sortKey="month" sortConfig={lowGoalSortConfig} onSort={sortLowGoalBy}/><SortableTh label="Ventas" sortKey="sales" sortConfig={lowGoalSortConfig} onSort={sortLowGoalBy}/><SortableTh label="Meta" sortKey="goal" sortConfig={lowGoalSortConfig} onSort={sortLowGoalBy}/><SortableTh label="Cumplimiento" sortKey="status" sortConfig={lowGoalSortConfig} onSort={sortLowGoalBy}/></tr></thead><tbody>{sortedLowGoalRows.map(row => <tr key={`${row.goal.user_id}-${row.goal.period_month}`}><td>{row.profile?.full_name || 'Sin comercial'}</td><td>{fmtDate(row.goal.period_month)}</td><td>{fmtMoney(row.sales)}</td><td>{fmtMoney(row.budget)}</td><td><Badge tone="amber">{row.pct}%</Badge></td></tr>)}</tbody></table></div> : <EmptyState title="Sin alertas de cumplimiento" text="Cuando se carguen metas reales, aquí aparecerán comerciales por debajo del 80%." />}
+    <Panel title="Cumplimiento por debajo de meta">
+      {lowGoalRows.length ? <div className="low-goal-summary">
+        <div className="low-goal-summary-figures">
+          <div><small>Comerciales bajo 80%</small><strong className="numeric-value">{lowGoalRows.length}</strong><span>Casos detectados en el período consultado</span></div>
+          <div><small>Brecha total contra meta</small><strong className="numeric-value">{fmtMoneyCompact(lowGoalRows.reduce((sum,row)=>sum+Math.max(0, row.budget - row.sales),0))}</strong><span>Diferencia entre meta cargada y ventas aprobadas</span></div>
+          <div><small>Cumplimiento promedio</small><strong className="numeric-value">{Math.round(lowGoalRows.reduce((sum,row)=>sum+Number(row.pct||0),0)/lowGoalRows.length)}%</strong><span>Promedio de los casos bajo 80%</span></div>
+        </div>
+        <p className="muted">El detalle completo por comercial y período se mantiene en Metas y cumplimiento para evitar duplicar la lectura operativa en Alertas.</p>
+        <div className="row-actions"><a className="button" href="#/goals">Ver detalle en Metas y cumplimiento</a></div>
+      </div> : <EmptyState title="Sin alertas de cumplimiento" text="Cuando se carguen metas reales, aquí aparecerá el resumen de comerciales por debajo del 80%. Ver detalle en Metas y cumplimiento." />}
     </Panel>
   </section>;
 }
@@ -2692,7 +2813,8 @@ function topGroup(values: string[]) {
 function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) {
   const today = new Date();
   const canEditGoals = canManageGoals(data.currentProfile);
-  const defaultEditOwnerId = data.currentProfile.role === 'comercial' ? data.currentProfile.id : (data.profiles[0]?.id || '');
+  const goalCommercialProfiles = data.profiles.filter(isCommercialProfile);
+  const defaultEditOwnerId = data.currentProfile.role === 'comercial' ? data.currentProfile.id : (goalCommercialProfiles[0]?.id || '');
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth() + 1);
   const [viewOwnerId, setViewOwnerId] = useState(data.currentProfile.role === 'comercial' ? data.currentProfile.id : '');
@@ -2721,7 +2843,7 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
   const editOwnerName = data.profiles.find(p => p.id === editOwnerId)?.full_name || 'Seleccionar asesor';
   const periods = buildCompliancePeriods(viewYear, viewMonth);
   const rows = buildComplianceRows(data, viewOwnerId, periods);
-  const missingGoals = data.profiles.filter(profile => !data.goals.some(g => g.user_id === profile.id && String(g.period_month).slice(0, 7) === editPeriodMonth.slice(0, 7)));
+  const missingGoals = goalCommercialProfiles.filter(profile => !data.goals.some(g => g.user_id === profile.id && String(g.period_month).slice(0, 7) === editPeriodMonth.slice(0, 7)));
   const sortedComplianceRows = [...rows].sort((a,b) => {
     const value = (row: typeof rows[number]) => complianceSortConfig.key === 'indicator' ? row.label : Number(row.values[complianceSortConfig.key]?.pct ?? -1);
     return compareSortValues(value(a), value(b), complianceSortConfig.direction);
@@ -2766,7 +2888,7 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
       <div className="grid three compact-grid goals-view-filters">
         <label>Año<input type="number" min="2024" max="2035" value={viewYear} onChange={e=>setViewYear(Number(e.target.value || today.getFullYear()))}/></label>
         <label>Mes<Select value={String(viewMonth)} onChange={v=>setViewMonth(Number(v))} options={Array.from({ length: 12 }, (_, i) => [String(i + 1), monthName(i + 1)])} empty="Mes"/></label>
-        <label>Asesor comercial<Select value={viewOwnerId} onChange={setViewOwnerId} options={data.profiles.map(p=>[p.id,p.full_name])} empty={canEditGoals ? 'Todos los asesores' : 'Seleccionar asesor'} disabled={!canEditGoals && data.currentProfile.role === 'comercial'}/></label>
+        <label>Asesor comercial<Select value={viewOwnerId} onChange={setViewOwnerId} options={goalCommercialProfiles.map(p=>[p.id,p.full_name])} empty={canEditGoals ? 'Todos los asesores' : 'Seleccionar asesor'} disabled={!canEditGoals && data.currentProfile.role === 'comercial'}/></label>
       </div>
       <p className="muted">Estos filtros solo cambian la lectura del cumplimiento; no modifican metas guardadas.</p>
     </Panel>
@@ -2784,7 +2906,7 @@ function GoalsCompliance({ data, refresh }: { data: Bootstrap; refresh: () => Pr
         <div className="grid three compact-grid">
           <label>Año de la meta<input type="number" min="2024" max="2035" value={editYear} onChange={e=>setEditYear(Number(e.target.value || today.getFullYear()))}/></label>
           <label>Mes de la meta<Select value={String(editMonth)} onChange={v=>setEditMonth(Number(v))} options={Array.from({ length: 12 }, (_, i) => [String(i + 1), monthName(i + 1)])} empty="Mes"/></label>
-          <label>Asesor a configurar<Select value={editOwnerId} onChange={setEditOwnerId} options={data.profiles.map(p=>[p.id,p.full_name])} empty="Seleccionar asesor"/></label>
+          <label>Asesor a configurar<Select value={editOwnerId} onChange={setEditOwnerId} options={goalCommercialProfiles.map(p=>[p.id,p.full_name])} empty="Seleccionar asesor"/></label>
           <label>Servicio / producto de la meta<Select value={editServiceCode} onChange={setEditServiceCode} options={data.services.map(s=>[s.code,s.name])} empty="Producto / servicio"/></label>
           <label>Regional de la meta<Select value={editRegionalNombre} onChange={setEditRegionalNombre} options={regionalOptions} empty="Regional"/></label>
         </div>
@@ -2906,7 +3028,7 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
       </form>
     </Panel>
     </div>
-    <Panel title="Perfiles actuales"><div className="tablewrap"><table><thead><tr><SortableTh label="Nombre" sortKey="name" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Email" sortKey="email" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Rol" sortKey="role" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Área" sortKey="area" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Segmento" sortKey="segment" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Estado" sortKey="status" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Acciones</th></tr></thead><tbody>{sortedUsers.map(u => <tr key={u.id}><td><strong>{u.full_name}</strong></td><td>{u.microsoft_email}</td><td><Badge>{u.role}</Badge></td><td>{commercialAreaLabel(u.commercial_area)}</td><td>{u.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado'}</td><td>{u.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(u)}>Editar</button></td></tr>)}</tbody></table></div></Panel>
+    <Panel title="Perfiles actuales"><div className="tablewrap"><table><thead><tr><SortableTh label="Nombre" sortKey="name" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Email" sortKey="email" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Rol" sortKey="role" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Área" sortKey="area" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Segmento" sortKey="segment" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Estado" sortKey="status" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Acciones</th></tr></thead><tbody>{sortedUsers.map(p => <tr key={p.id}><td><strong>{p.full_name}</strong></td><td>{p.microsoft_email}</td><td><Badge>{roleLabel(p.role)}</Badge></td><td>{commercialAreaLabel(p.commercial_area)}</td><td>{p.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado'}</td><td>{p.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(p)}>Editar</button></td></tr>)}</tbody></table></div></Panel>
   </section>;
 }
 
