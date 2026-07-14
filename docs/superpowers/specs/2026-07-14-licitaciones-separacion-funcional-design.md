@@ -334,6 +334,35 @@ convertida_oportunidad
 
 Una transición debe escribir el snapshot actual y un evento de historial cuando corresponda.
 
+### 10.1 Contrato crítico de conversión documental
+
+El comportamiento existente de conversión es una capacidad protegida y no puede convertirse en una acción manual:
+
+```text
+POST /api/tender-convert
+→ crear o reutilizar oportunidad sin duplicarla
+→ marcar licitación como convertida
+→ para SECOP II o ESU con URL oficial: resolver el proceso exacto
+→ descargar documentos oficiales prioritarios
+→ extraer texto de cada archivo
+→ guardar archivos y metadatos en Supabase
+→ construir análisis con ficha/RUP de Seguridad Nacional
+→ persistir análisis y trazabilidad en psi_sales_interactions
+→ responder únicamente después de terminar el intento de importación/análisis
+```
+
+Condiciones obligatorias:
+
+- la conversión seguirá invocando `importTenderDocumentsFromOfficialSource(..., { analyze: true })` dentro del backend;
+- abrir el detalle o pulsar “Analizar documentos” no será requisito para el primer análisis;
+- la carga manual seguirá siendo complementaria o mecanismo de recuperación;
+- el endpoint devolverá `analisis_generado` solo cuando exista al menos un documento vigente y un análisis persistido;
+- si todas las descargas fallan, devolverá `fallo_importacion` y conservará el detalle del error;
+- SECOP I y TVEC conservarán `no_aplica` mientras no exista un importador oficial compatible;
+- el frontend conservará la navegación a la oportunidad y expondrá el estado real de la importación;
+- el reintento manual desde el expediente/detalle seguirá disponible;
+- las dos entradas de backend, `api/[...path].js` y `server/index.js`, deberán mantener comportamiento equivalente.
+
 ## 11. Manejo de errores y estados vacíos
 
 ### Radar
