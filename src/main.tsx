@@ -7,6 +7,7 @@ import { canAccessRoute, canAccessSiio as navCanAccessSiio, canManageUsers as na
 import { deriveSiioExecutiveSnapshot, type SiioFinancialMetric, type SiioPayrollAggregate } from './siioExecutive';
 import { SIIO_AGENT_CATALOG, type SiioInstitutionalAgent } from './siioAgents';
 import { TendersModule } from './tenders/TendersModule';
+import type { TenderModuleView } from './tenders/types';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
@@ -40,7 +41,6 @@ type TenderDeadlineFilter = 'todas' | '0_7' | '8_15' | '16_30' | 'vencida' | 'si
 type TenderValueFilter = 'todas' | 'sin_valor' | 'lt_50m' | '50m_500m' | '500m_plus' | '1000m_plus';
 type TenderScoreFilter = 'todas' | 'alto' | 'medio' | 'bajo';
 type TenderSortKey = 'deadline' | 'value' | 'score' | 'entity' | 'source';
-type TenderModuleView = 'radar' | 'seguimiento' | 'expedientes' | 'perfiles';
 type TenderRegionKey = 'todas' | 'bog_cundinamarca' | 'med_antioquia' | 'eje_cafetero' | 'cali_valle' | 'costa_caribe' | 'santanderes' | 'sur_occidente' | 'otros';
 type PublicTender = { id: string; stable_key?: string; source: string; section: TenderSection; internal_status?: TenderInternalStatus; converted_opportunity_id?: string | null; reviewed_at?: string | null; detected_at?: string | null; last_seen_at?: string | null; entity: string; dept?: string; city?: string; ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string; category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null; score: number; reasons: string[]; risks: string[]; url?: string };
 type TenderDocumentStatus = 'pendiente_documentos' | 'documentos_cargados' | 'analisis_generado';
@@ -456,12 +456,11 @@ function titleFor(route: Route) {
 }
 function Nav({ route, currentProfile, onNavigate }: { route: Route; currentProfile: Profile | null; onNavigate?: () => void }) {
   const isActiveHref = (href: string) => (route.page === 'home' && href === '#/') || href.includes(route.page) || (route.page === 'centinel' && href === '#/vig-ia');
-  const tenderSubnav: Array<[string, string]> = [['#/tenders?view=radar','Radar de oportunidades'],['#/tenders?view=seguimiento','Seguimiento'],['#/tenders?view=expedientes','Expedientes'],['#/tenders?view=perfiles','Perfiles de búsqueda']];
   const handleNav = () => { if (onNavigate) onNavigate(); };
   return <nav className="nav-domain-groups">
     {isManagementRole(currentProfile?.role) && <div className="nav-section"><span className="nav-section-title">Gerencia</span><a onClick={handleNav} className={route.page === 'siio' ? 'active' : ''} href="#/siio">SIIO Gerencial</a><a onClick={handleNav} className={route.page === 'centinel' ? 'active' : ''} href="#/vig-ia">Vig-IA</a></div>}
     <div className="nav-section"><span className="nav-section-title">Comercial</span>{isManagementRole(currentProfile?.role) && <a onClick={handleNav} className={route.page === 'dashboard' || route.page === 'dashboard2' ? 'active' : ''} href="#/dashboard2">Dashboard comercial</a>}<a onClick={handleNav} className={isActiveHref('#/alerts') ? 'active' : ''} href="#/alerts">Alertas comerciales</a><a onClick={handleNav} className={isActiveHref('#/opportunities') ? 'active' : ''} href="#/opportunities">Oportunidades</a></div>
-    {canViewTenders(currentProfile) && <div className={`nav-section nav-group tender-subnav ${route.page === 'tenders' ? 'open active' : ''}`}><span className="nav-section-title">Licitaciones</span><a onClick={handleNav} className={`nav-parent ${route.page === 'tenders' ? 'active' : ''}`} href="#/tenders?view=radar">Radar de oportunidades <span>▾</span></a><div className="nav-subitems">{tenderSubnav.slice(1).map(([href,label]) => <a key={href} onClick={handleNav} href={href} className={route.page === 'tenders' && (hashQueryParam('view') || 'radar') === new URLSearchParams(href.split('?')[1]).get('view') ? 'active' : ''}>{label}</a>)}</div></div>}
+    {canViewTenders(currentProfile) && <div className="nav-section"><span className="nav-section-title">Licitaciones</span><a onClick={handleNav} className={`nav-parent ${route.page === 'tenders' ? 'active' : ''}`} href="#/tenders?view=radar">Radar de oportunidades</a></div>}
     <div className="nav-section"><span className="nav-section-title">Administración</span>{canManageGoals(currentProfile) && <a onClick={handleNav} className={isActiveHref('#/goals') ? 'active' : ''} href="#/goals">Metas y cumplimiento</a>}{canManageUsers(currentProfile) && <a onClick={handleNav} className={isActiveHref('#/users') ? 'active' : ''} href="#/users">Usuarios y permisos</a>}</div>
   </nav>;
 }

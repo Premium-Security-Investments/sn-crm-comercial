@@ -70,10 +70,7 @@ export function getVisibleNavGroups(profile?: NavProfile): NavGroup[] {
   groups.push({ title: 'Comercial', items: commercialItems });
   if (canViewTenders(profile)) {
     groups.push({ title: 'Licitaciones', items: [
-      { href: '#/tenders?view=radar', label: 'Radar de oportunidades', page: 'tenders' },
-      { href: '#/tenders?view=seguimiento', label: 'Seguimiento', page: 'tenders' },
-      { href: '#/tenders?view=expedientes', label: 'Expedientes', page: 'tenders' },
-      { href: '#/tenders?view=perfiles', label: 'Perfiles de búsqueda', page: 'tenders' }
+      { href: '#/tenders?view=radar', label: 'Radar de oportunidades', page: 'tenders' }
     ] });
   }
   const adminItems: NavItem[] = [{ href: '#/goals', label: 'Metas y cumplimiento', page: 'goals' }];

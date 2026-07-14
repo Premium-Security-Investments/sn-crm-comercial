@@ -35,9 +35,9 @@ assert.deepEqual(gerenciaGroups[0], {
   ],
 });
 assert.deepEqual(gerenciaGroups[1].items.map(item => item.label), ['Dashboard comercial', 'Alertas comerciales', 'Oportunidades']);
-assert.deepEqual(labelsFor('gerencia'), ['SIIO Gerencial', 'Vig-IA', 'Dashboard comercial', 'Alertas comerciales', 'Oportunidades', 'Radar de oportunidades', 'Seguimiento', 'Expedientes', 'Perfiles de búsqueda', 'Metas y cumplimiento']);
+assert.deepEqual(labelsFor('gerencia'), ['SIIO Gerencial', 'Vig-IA', 'Dashboard comercial', 'Alertas comerciales', 'Oportunidades', 'Radar de oportunidades', 'Metas y cumplimiento']);
 assert.deepEqual(labelsFor('director'), labelsFor('gerencia'));
-assert.deepEqual(labelsFor('admin'), ['SIIO Gerencial', 'Vig-IA', 'Dashboard comercial', 'Alertas comerciales', 'Oportunidades', 'Radar de oportunidades', 'Seguimiento', 'Expedientes', 'Perfiles de búsqueda', 'Metas y cumplimiento', 'Usuarios y permisos']);
+assert.deepEqual(labelsFor('admin'), ['SIIO Gerencial', 'Vig-IA', 'Dashboard comercial', 'Alertas comerciales', 'Oportunidades', 'Radar de oportunidades', 'Metas y cumplimiento', 'Usuarios y permisos']);
 
 assert.ok(mod.canAccessRoute(profile('admin'), 'siio'));
 assert.ok(mod.canAccessRoute(profile('gerencia'), 'siio'));

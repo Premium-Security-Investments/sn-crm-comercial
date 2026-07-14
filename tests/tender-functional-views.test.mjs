@@ -22,6 +22,8 @@ assert.match(tabsSource, /Expedientes/);
 assert.match(tabsSource, /Perfiles de búsqueda/);
 assert.match(main, /<TendersModule/);
 assert.match(main, /renderLegacy=\{\(\) => <TendersRadar/);
+assert.match(main, /import type \{ TenderModuleView \} from '\.\/tenders\/types';/, 'main must use the tender module view type from the authoritative module types.');
+assert.doesNotMatch(main, /type TenderModuleView =/, 'main must not redeclare the tender module view union locally.');
 assert.doesNotMatch(moduleSource, /TenderUnifiedBoard/);
 
 console.log('tender functional composition passed');
