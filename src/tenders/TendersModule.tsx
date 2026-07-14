@@ -15,7 +15,7 @@ export function TendersModule(props: TendersModuleProps) {
   return <section className="stack tenders-page" aria-label="Módulo de licitaciones">
     <TenderModuleTabs active={props.view} navigate={props.navigate} />
     {props.view === 'radar' && <TenderRadarView {...props} renderLegacy={renderLegacy} />}
-    {props.view === 'seguimiento' && <TenderTrackingView {...props} renderLegacy={renderLegacy} />}
+    {props.view === 'seguimiento' && <TenderTrackingView {...props} />}
     {props.view === 'expedientes' && <TenderDossiersView {...props} renderLegacy={renderLegacy} />}
     {props.view === 'perfiles' && <TenderProfilesView {...props} renderLegacy={renderLegacy} />}
   </section>;
