@@ -23,6 +23,8 @@ const mainMarkers = [
   'tender-profiles-only',
   'Ver detalle en Metas y cumplimiento',
   'setSidebarOpen',
+  'event.key === \'Escape\'',
+  '<aside id="app-sidebar"',
   'topbar-menu-toggle',
   'sidebar-backdrop',
 ];

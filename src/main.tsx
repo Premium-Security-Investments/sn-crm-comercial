@@ -328,6 +328,12 @@ function App() {
   }, []);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   useEffect(() => { setSidebarOpen(false); }, [route.page, route.id]);
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setSidebarOpen(false); };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [sidebarOpen]);
   if (!authReady) return <div className="app"><main><div className="notice">Verificando sesión…</div></main></div>;
   if (!session) return <LoginScreen />;
   if (passwordRecovery) return <PasswordResetScreen onDone={() => setPasswordRecovery(false)} />;
@@ -335,7 +341,7 @@ function App() {
   const closeSidebar = () => setSidebarOpen(false);
   return <div className={`app ${sidebarOpen ? 'sidebar-visible' : ''}`}>
     {sidebarOpen && <div className="sidebar-backdrop" onClick={closeSidebar} aria-hidden="true" />}
-    <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`} aria-hidden={!sidebarOpen ? undefined : 'false'}>
+    <aside id="app-sidebar" className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`} aria-label="Navegación principal">
       <div className="brand"><small>Seguridad Nacional Ltda</small><em>Dashboard Comercial</em></div>
       <Nav route={route} currentProfile={currentProfile} onNavigate={closeSidebar} />
       <div className="session-card"><small>Sesión activa</small><strong>{currentProfile?.full_name || session.user.email}</strong><span>{currentProfile?.role || 'perfil'}</span></div>
@@ -432,7 +438,7 @@ function Nav({ route, currentProfile, onNavigate }: { route: Route; currentProfi
   const isActiveHref = (href: string) => (route.page === 'home' && href === '#/') || href.includes(route.page) || (route.page === 'centinel' && href === '#/vig-ia');
   const tenderSubnav: Array<[string, string]> = [['#/tenders?view=radar','Radar de oportunidades'],['#/tenders?view=seguimiento','Seguimiento'],['#/tenders?view=expedientes','Expedientes'],['#/tenders?view=perfiles','Perfiles de búsqueda']];
   const handleNav = () => { if (onNavigate) onNavigate(); };
-  return <nav className="nav-domain-groups" id="app-sidebar">
+  return <nav className="nav-domain-groups">
     <div className="nav-section"><span className="nav-section-title">Gerencia</span><a onClick={handleNav} className={route.page === 'dashboard' || route.page === 'dashboard2' ? 'active' : ''} href="#/dashboard2">Dashboard comercial</a><a onClick={handleNav} className={route.page === 'centinel' ? 'active' : ''} href="#/vig-ia">Vig-IA</a></div>
     <div className="nav-section"><span className="nav-section-title">Comercial</span><a onClick={handleNav} className={isActiveHref('#/alerts') ? 'active' : ''} href="#/alerts">Alertas comerciales</a><a onClick={handleNav} className={isActiveHref('#/opportunities') ? 'active' : ''} href="#/opportunities">Oportunidades</a></div>
     {canViewTenders(currentProfile) && <div className={`nav-section nav-group tender-subnav ${route.page === 'tenders' ? 'open active' : ''}`}><span className="nav-section-title">Licitaciones</span><a onClick={handleNav} className={`nav-parent ${route.page === 'tenders' ? 'active' : ''}`} href="#/tenders?view=radar">Radar de oportunidades <span>▾</span></a><div className="nav-subitems">{tenderSubnav.slice(1).map(([href,label]) => <a key={href} onClick={handleNav} href={href} className={route.page === 'tenders' && (hashQueryParam('view') || 'radar') === new URLSearchParams(href.split('?')[1]).get('view') ? 'active' : ''}>{label}</a>)}</div></div>}
