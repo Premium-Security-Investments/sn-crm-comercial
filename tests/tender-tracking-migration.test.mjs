@@ -1,67 +1,39 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { strict as assert } from 'node:assert';
 
-const migrationPath = new URL('../supabase/migrations/017_tender_tracking_workflow.sql', import.meta.url);
-assert.equal(
-  existsSync(migrationPath),
-  true,
-  'La migración debe usar la siguiente versión disponible (017); 014 ya pertenece a SIIO.'
-);
+const migrationPath = new URL('../supabase/migrations/018_tender_tracking_rpc.sql', import.meta.url);
+assert.equal(existsSync(migrationPath), true, 'La migración 018 preparada debe crear los RPC transaccionales.');
 
 const sql = readFileSync(migrationPath, 'utf8').toLowerCase().replace(/\s+/g, ' ');
-
-for (const [column, definition] of [
-  ['tracking_owner_id', 'uuid references public.psi_sales_profiles(id) on delete set null'],
-  ['tracking_status', 'text'],
-  ['tracking_next_action', 'text'],
-  ['tracking_due_at', 'timestamptz'],
-  ['tracking_blocker', 'text'],
-  ['tracking_last_note', 'text'],
-  ['tracking_started_at', 'timestamptz'],
-  ['tracking_updated_at', 'timestamptz'],
-]) {
-  assert.ok(
-    sql.includes(`add column if not exists ${column} ${definition}`),
-    `Debe agregar idempotentemente ${column}`
-  );
+for (const functionName of ['psi_update_tender_tracking', 'psi_transition_tender_tracking']) {
+  assert.match(sql, new RegExp(`create or replace function public\\.${functionName}\\(`));
+  assert.match(sql, new RegExp(`revoke all on function public\\.${functionName}[^;]+ from public`));
+  assert.match(sql, new RegExp(`revoke all on function public\\.${functionName}[^;]+ from authenticated`));
+  assert.match(sql, new RegExp(`grant execute on function public\\.${functionName}[^;]+ to service_role`));
 }
 
-assert.match(sql, /create table if not exists public\.psi_tender_tracking_events/);
-for (const definition of [
-  'id uuid primary key default gen_random_uuid()',
-  'tender_id uuid not null references public.psi_public_tenders(id) on delete cascade',
-  "event_type text not null check (event_type in ('entered_tracking','tracking_updated','assigned','blocked','unblocked','returned_to_radar','converted','discarded'))",
-  'assigned_to uuid references public.psi_sales_profiles(id) on delete set null',
-  'created_by uuid references public.psi_sales_profiles(id) on delete set null',
-  'created_at timestamptz not null default now()',
-]) {
-  assert.match(sql, new RegExp(definition.replace(/[()]/g, '\\$&')));
+assert.match(sql, /select \* into v_tender from public\.psi_public_tenders where id = p_tender_id for update/);
+assert.match(sql, /from public\.psi_sales_profiles p where p\.id = p_actor_id and p\.active = true/);
+assert.match(sql, /p\.role in \('admin', 'director', 'gerencia'\)/);
+assert.match(sql, /p\.microsoft_email = 'directora\.licitaciones@seguridadnacional\.co'/);
+assert.match(sql, /p_expected_tracking_updated_at is distinct from v_tender\.tracking_updated_at/);
+assert.match(sql, /coalesce\(v_tender\.internal_status, 'nueva'\) = 'nueva'/);
+assert.match(sql, /v_tender\.internal_status <> 'en_revision'/);
+assert.match(sql, /p_internal_status not in \('nueva', 'descartada', 'convertida_oportunidad'\)/);
+assert.match(sql, /from public\.psi_sales_profiles where id = p_tracking_owner_id and active = true/);
+assert.match(sql, /from public\.psi_sales_opportunities where id = p_converted_opportunity_id/);
+assert.match(sql, /v_event_type := 'entered_tracking'/);
+assert.match(sql, /v_event_type := 'assigned'/);
+assert.match(sql, /v_event_type := 'blocked'/);
+assert.match(sql, /v_event_type := 'unblocked'/);
+assert.match(sql, /v_event_type := 'tracking_updated'/);
+assert.match(sql, /v_event_type := case p_internal_status when 'nueva' then 'returned_to_radar' when 'descartada' then 'discarded' when 'convertida_oportunidad' then 'converted' end/);
+
+for (const functionName of ['psi_update_tender_tracking', 'psi_transition_tender_tracking']) {
+  const body = sql.slice(sql.indexOf(`create or replace function public.${functionName}`), sql.indexOf(`grant execute on function public.${functionName}`));
+  assert.match(body, /update public\.psi_public_tenders/);
+  assert.match(body, /insert into public\.psi_tender_tracking_events/);
+  assert.match(body, /return to_jsonb\(v_updated\)/);
 }
 
-assert.match(sql, /alter table public\.psi_tender_tracking_events enable row level security/);
-assert.match(sql, /create index if not exists idx_tender_tracking_events_tender_created on public\.psi_tender_tracking_events\(tender_id, created_at desc\)/);
-assert.match(sql, /create index if not exists idx_public_tenders_tracking_queue on public\.psi_public_tenders\(internal_status, tracking_due_at, tracking_updated_at desc\)/);
-
-for (const policy of ['psi_tender_tracking_events_select', 'psi_tender_tracking_events_insert']) {
-  assert.match(sql, new RegExp(`drop policy if exists ${policy} on public\\.psi_tender_tracking_events`));
-  assert.match(sql, new RegExp(`create policy ${policy} on public\\.psi_tender_tracking_events`));
-}
-assert.match(sql, /drop policy if exists psi_tender_tracking_events_modify on public\.psi_tender_tracking_events/);
-assert.match(sql, /for select to authenticated using \( exists \( select 1 from public\.psi_sales_profiles p/);
-assert.match(sql, /for insert to authenticated with check \( exists \( select 1 from public\.psi_sales_profiles p/);
-assert.doesNotMatch(sql, /create policy [^;]* on public\.psi_tender_tracking_events for all/);
-assert.doesNotMatch(sql, /create policy [^;]* on public\.psi_tender_tracking_events for update/);
-assert.doesNotMatch(sql, /create policy [^;]* on public\.psi_tender_tracking_events for delete/);
-assert.match(sql, /created_by is not null/);
-assert.match(sql, /created_by = p\.id/);
-assert.match(sql, /lower\(p\.microsoft_email\) = lower\(auth\.jwt\(\) ->> 'email'\)/);
-assert.match(sql, /p\.active = true/);
-assert.match(sql, /p\.role in \('admin','director','gerencia'\)/);
-assert.match(sql, /lower\(p\.microsoft_email\) = 'directora\.licitaciones@seguridadnacional\.co'/);
-assert.match(sql, /grant select, insert on public\.psi_tender_tracking_events to authenticated/);
-assert.match(sql, /revoke update, delete on public\.psi_tender_tracking_events from authenticated/);
-assert.doesNotMatch(sql, /grant\s+all(?:\s+privileges)?\s+on public\.psi_tender_tracking_events to authenticated/);
-assert.doesNotMatch(sql, /grant[^;]*\bupdate\b[^;]*on public\.psi_tender_tracking_events to authenticated/);
-assert.doesNotMatch(sql, /grant[^;]*\bdelete\b[^;]*on public\.psi_tender_tracking_events to authenticated/);
-
-console.log('tender tracking migration contract passed');
+console.log('tender tracking migration RPC contract passed');
