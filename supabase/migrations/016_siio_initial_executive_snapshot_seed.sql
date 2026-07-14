@@ -12,32 +12,64 @@ create unique index if not exists uq_siio_financial_metric_period_concept_source
 create unique index if not exists uq_siio_payroll_period_area_source
   on public.siio_payroll_aggregates(period_month, area, source_id);
 
-update public.siio_sources
-set
-  trust_level = 'oficial_requiere_validacion',
-  restrictions = 'Información financiera agregada. Validar cifras y periodo con el responsable financiero antes de publicación ejecutiva.',
-  update_frequency = 'mensual',
-  related_fronts = array['F2','F4','F5'],
-  updated_at = now()
-where id = 'SRC-011';
-
-update public.siio_sources
-set
-  trust_level = 'restringida',
-  restrictions = 'Contiene datos personales y compensación individual en origen. SIIO solo puede almacenar y mostrar agregados por área; prohibido exponer nombres, cédulas, cargos o valores individuales.',
-  update_frequency = 'mensual',
-  related_fronts = array['F2','F4','F5'],
-  updated_at = now()
-where id = 'SRC-012';
-
-update public.siio_sources
-set
-  trust_level = 'referencia',
-  restrictions = 'Salida histórica de Junta. No es fuente de verdad para cifras; se utiliza como referencia de estructura y narrativa.',
-  update_frequency = 'mensual',
-  related_fronts = array['F2','F4'],
-  updated_at = now()
-where id = 'SRC-013';
+insert into public.siio_sources
+  (id, name, source_type, related_fronts, owner, responsible_area, trust_level, status, permissions, allowed_agent_use, restrictions, update_frequency)
+values
+  (
+    'SRC-011',
+    'PYG_ABRIL_2026_V6.xlsm',
+    'Archivo Excel financiero / PYG mensual',
+    array['F2','F4','F5'],
+    'Financiera / Gerencia',
+    'Financiera / Gerencia',
+    'oficial_requiere_validacion',
+    'activa',
+    'Gerencia; Financiera; Hermes / agentes autorizados',
+    'Extraer indicadores; Comparar periodos; Resumir variaciones; Alimentar reporte junta',
+    'Información financiera agregada. Validar cifras y periodo con el responsable financiero antes de publicación ejecutiva.',
+    'mensual'
+  ),
+  (
+    'SRC-012',
+    'Nomina_Administrativa_26-06.xlsx',
+    'Archivo Excel nómina / Datos sensibles',
+    array['F2','F4','F5'],
+    'Gestión Humana / Gerencia',
+    'Gestión Humana / Financiera / Gerencia',
+    'restringida',
+    'activa',
+    'Restringido: Gerencia; Gestión Humana; Financiera; Hermes autorizado',
+    'Calcular agregados; Resumir variaciones; Alertar tendencias; Alimentar reporte junta sin datos personales',
+    'Contiene datos personales y compensación individual en origen. SIIO solo puede almacenar y mostrar agregados por área; prohibido exponer nombres, cédulas, cargos o valores individuales.',
+    'mensual'
+  ),
+  (
+    'SRC-013',
+    'Abril_2026.pptx',
+    'Presentación PowerPoint / Salida histórica junta',
+    array['F2','F4'],
+    'Gerencia / Financiera',
+    'Gerencia / Financiera',
+    'referencia',
+    'activa',
+    'Gerencia; Hermes / agentes autorizados',
+    'Analizar estructura; Usar como patrón de reporte; Comparar secciones; Diseñar salida futura',
+    'Salida histórica de Junta. No es fuente de verdad para cifras; se utiliza como referencia de estructura y narrativa.',
+    'mensual'
+  )
+on conflict (id) do update set
+  name = excluded.name,
+  source_type = excluded.source_type,
+  related_fronts = excluded.related_fronts,
+  owner = excluded.owner,
+  responsible_area = excluded.responsible_area,
+  trust_level = excluded.trust_level,
+  status = excluded.status,
+  permissions = excluded.permissions,
+  allowed_agent_use = excluded.allowed_agent_use,
+  restrictions = excluded.restrictions,
+  update_frequency = excluded.update_frequency,
+  updated_at = now();
 
 insert into public.siio_financial_metrics
   (period_month, category, concept, value_current, value_comparison, variation_abs, variation_pct, source_id, validated_by, notes)
