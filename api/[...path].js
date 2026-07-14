@@ -1234,20 +1234,6 @@ app.get('/api/siio/board-reports', async (req, res) => {
   try { const { profile } = await getAuthContext(req); requireSiioAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.boardReports, '*', 'period_month')); }
   catch (error) { sendAuthError(res, error); }
 });
-app.post('/api/siio/board-reports/generate-draft', async (req, res) => {
-  try {
-    const { profile } = await getAuthContext(req); requireSiioAccess(profile);
-    const period = String(req.body?.period || new Date().toISOString().slice(0, 7));
-    const reportId = `JUNTA-${period}`;
-    const records = await optionalSiioList(requireDb(), siioTables.records, '*', 'updated_at');
-    const decisions = await optionalSiioList(requireDb(), siioTables.decisions, '*', 'created_at');
-    const sources = await optionalSiioList(requireDb(), siioTables.sources, '*', 'id');
-    const summary = `Borrador SIIO/F2 ${period}: ${records.length} registros gerenciales, ${decisions.length} decisiones/compromisos y ${sources.length} fuentes trazables. Cifras financieras requieren validación humana.`;
-    const payload = { id: reportId, period_month: `${period}-01`, status: 'borrador', generated_at: new Date().toISOString(), summary, source_ids: sources.map(s => s.id).filter(Boolean), created_by: profile.id, updated_by: profile.id };
-    const report = await must(requireDb().from(siioTables.boardReports).upsert(payload).select('*').single());
-    res.json({ report, summary, counts: { records: records.length, decisions: decisions.length, sources: sources.length } });
-  } catch (error) { sendError(res, error, error?.status || 400); }
-});
 
 app.get('/api/bootstrap', async (req, res) => {
   try {

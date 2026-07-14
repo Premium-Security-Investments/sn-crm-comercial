@@ -10,6 +10,9 @@ assert.match(main, /Periodo financiero/, 'Dashboard must label the financial per
 assert.match(main, /Nómina agregada/, 'Dashboard must show aggregate payroll only');
 assert.match(main, /Vigencia de fuentes/, 'Dashboard must expose source freshness');
 assert.match(main, /Modo Junta/, 'Board report must remain a separate view');
+assert.match(main, /Exportar vista de Junta/, 'Board view must provide a non-persistent export action');
+assert.match(main, /window\.print\(\)/, 'Board export must use the browser print/export surface');
+assert.doesNotMatch(main, /\/api\/siio\/board-reports\/generate-draft/, 'Board view must not write draft reports');
 assert.match(main, /Lectura gerencial automática/, 'Dashboard must show deterministic F5 management insights');
 assert.match(main, /Evidencia/, 'Each insight must expose evidence');
 assert.match(main, /Acción recomendada/, 'Each insight must propose an explicit action');

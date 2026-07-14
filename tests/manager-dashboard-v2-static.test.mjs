@@ -7,8 +7,10 @@ const css = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8
 const requiredMainMarkers = [
   "'dashboard2'",
   "if (page === 'dashboard2') return { page: 'dashboard2' };",
-  "if (route.page === 'dashboard2') return 'Dashboard gerencial';",
+  "if (route.page === 'dashboard') return 'Dashboard comercial';",
+  "if (route.page === 'dashboard2') return 'Dashboard comercial';",
   "href=\"#/dashboard2\">Dashboard comercial",
+  '← Dashboard comercial',
   "if (route.page === 'dashboard' || route.page === 'dashboard2') return <ManagerDashboardV2 data={data} />;",
   'function ManagerDashboardV2({ data }: { data: Bootstrap })',
   'dashboard-v2',

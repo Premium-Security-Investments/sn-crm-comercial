@@ -67,7 +67,7 @@ type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment'>> & { com
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const dateFmt = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
 const interactionTypes = ['llamada','correo','reunion','whatsapp','nota','cambio_estado','documento'];
-const SIIO_BOARD_DRAFT_CONFIRMATION = 'Esto creará o actualizará un borrador de junta mensual con los datos actuales de SIIO. El borrador requiere validación humana antes de usarse en comité o junta. ¿Deseas continuar?';
+
 const supabaseBrowser = createClient(import.meta.env.NEXT_PUBLIC_SUPABASE_URL, import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 let currentAccessToken: string | null = null;
 function setApiAccessToken(token: string | null) { currentAccessToken = token; }
@@ -443,8 +443,8 @@ function titleFor(route: Route) {
   if (route.page === 'detail') return 'Detalle de oportunidad';
   if (route.page === 'new') return 'Crear oportunidad';
   if (route.page === 'edit') return 'Editar oportunidad';
-  if (route.page === 'dashboard') return 'Dashboard gerencial';
-  if (route.page === 'dashboard2') return 'Dashboard gerencial';
+  if (route.page === 'dashboard') return 'Dashboard comercial';
+  if (route.page === 'dashboard2') return 'Dashboard comercial';
   if (route.page === 'siio') return 'SIIO Gerencial';
   if (route.page === 'consultant') return 'Detalle de consultor';
   if (route.page === 'goals') return 'Metas comerciales y cumplimiento';
@@ -578,7 +578,7 @@ function SiioDashboard({ currentProfile }: { currentProfile: Profile }) {
     {activeTab === 'archivo' && <SiioSourcesView sources={sources} />}
     {activeTab === 'razonamiento' && <SiioReasoningView insights={executive.managementInsights} />}
     {activeTab === 'agentes' && <SiioAgentsCatalogView />}
-    {activeTab === 'junta' && <SiioBoardView reports={reports} sections={payload?.boardSections || []} onGenerate={load} />}
+    {activeTab === 'junta' && <SiioBoardView reports={reports} sections={payload?.boardSections || []} />}
   </section>;
 }
 function SiioExecutiveHome({ executive, records, decisions, red, blockers, pendingDecisions }: { executive: ReturnType<typeof deriveSiioExecutiveSnapshot>; records: SiioRecord[]; decisions: SiioDecision[]; red: number; blockers: number; pendingDecisions: number }) {
@@ -682,14 +682,8 @@ function SiioAgentGovernanceCard({ agent }: { agent: SiioInstitutionalAgent }) {
     <footer><div><strong>Regla de auditoría</strong><span>{agent.audit_rule}</span></div><div><strong>Siguiente gate</strong><span>{agent.next_gate}</span></div><div className="siio-agent-gates"><Badge tone="amber">Revisión humana obligatoria</Badge><Badge tone="red">Sin escritura automática en producción</Badge></div></footer>
   </article>;
 }
-function SiioBoardView({ reports, sections, onGenerate }: { reports: SiioBoardReport[]; sections: SiioBootstrap['boardSections']; onGenerate: () => Promise<void> }) {
-  const generate = async () => {
-    const confirmed = window.confirm(SIIO_BOARD_DRAFT_CONFIRMATION);
-    if (!confirmed) return;
-    await api('/api/siio/board-reports/generate-draft', { method: 'POST', body: JSON.stringify({ period: new Date().toISOString().slice(0,7) }) });
-    await onGenerate();
-  };
-  return <div className="grid two"><Panel title="Junta mensual"><p>Prepara el borrador mensual desde F2. Las cifras financieras quedan marcadas para validación humana.</p><button onClick={generate}>Generar borrador del mes</button><ul className="clean-list">{reports.map(r => <li key={r.id}><strong>{r.id}</strong> · {r.status}<br/><small>{r.summary || 'Sin resumen'}</small></li>)}</ul></Panel><Panel title="Secciones plantilla"><ul className="clean-list">{sections.length ? sections.map((s,i) => <li key={s.id || i}><strong>{s.name}</strong>{s.human_review_required && <Badge tone="amber">Revisión humana</Badge>}</li>) : <li>Sin plantilla cargada.</li>}</ul></Panel></div>;
+function SiioBoardView({ reports, sections }: { reports: SiioBoardReport[]; sections: SiioBootstrap['boardSections'] }) {
+  return <div className="grid two"><Panel title="Junta mensual"><p>Vista de solo lectura para consultar y exportar información previamente gobernada por SIIO. Las cifras financieras requieren validación humana.</p><button onClick={() => window.print()}>Exportar vista de Junta</button><ul className="clean-list">{reports.length ? reports.map(r => <li key={r.id}><strong>{r.id}</strong> · {r.status}<br/><small>{r.summary || 'Sin resumen'}</small></li>) : <li>Sin informes de Junta registrados.</li>}</ul></Panel><Panel title="Secciones plantilla"><ul className="clean-list">{sections.length ? sections.map((s,i) => <li key={s.id || i}><strong>{s.name}</strong>{s.human_review_required && <Badge tone="amber">Revisión humana</Badge>}</li>) : <li>Sin plantilla cargada.</li>}</ul></Panel></div>;
 }
 function Kpi({ label, value, hint, tone, icon, meta }: { label: string; value: string; hint: string; tone?: 'warn'|'ok'|'blue'|'purple'|'indigo'|'green'|'amber'; icon?: string; meta?: string }) {
   return <div className={`card kpi ${tone||''}`}>
@@ -2510,7 +2504,7 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
         <div><small>Conversión aprobada</small><strong>{conversion}%</strong></div>
       </div>
     </section>
-    <div className="actions-row">{!personal && <button className="secondary" onClick={() => go('#/dashboard')}>← Dashboard gerencial</button>}<button onClick={() => go(`#/opportunities`)}>Ver mis oportunidades</button><button className="secondary" onClick={() => go('#/goals')}>Ver mis metas</button></div>
+    <div className="actions-row">{!personal && <button className="secondary" onClick={() => go('#/dashboard')}>← Dashboard comercial</button>}<button onClick={() => go(`#/opportunities`)}>Ver mis oportunidades</button><button className="secondary" onClick={() => go('#/goals')}>Ver mis metas</button></div>
     {personal && <div className="personal-dashboard">
       <section className="commercial-followup-banner" aria-label="Gestión comercial de hoy">
         <div className="commercial-followup-copy">
