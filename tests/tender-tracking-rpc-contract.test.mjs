@@ -97,10 +97,17 @@ await (async function rejectsInvalidTransitionUuidStatusAndClientSelectedEventBe
   assert.equal(db.calls.length, 0);
 })();
 
-await (async function rejectsMissingExpectedTrackingTokenBeforeTransitionRpc() {
+await (async function allowsNullExpectedTrackingTokenForInitialLifecycleTransitions() {
   const db = fakeRpcDb();
-  await assert.rejects(() => callTenderTrackingTransition(db, tenderId, { internal_status: 'descartada' }, { id: actorId }), /versión de seguimiento/i);
-  assert.equal(db.calls.length, 0);
+  await callTenderTrackingTransition(db, tenderId, { internal_status: 'descartada', expected_tracking_updated_at: null }, { id: actorId });
+  await callTenderTrackingTransition(db, tenderId, {
+    internal_status: 'convertida_oportunidad',
+    converted_opportunity_id: opportunityId,
+    expected_tracking_updated_at: null,
+  }, { id: actorId });
+  assert.equal(db.calls.length, 2);
+  assert.equal(db.calls[0].args.p_expected_tracking_updated_at, null);
+  assert.equal(db.calls[1].args.p_expected_tracking_updated_at, null);
 })();
 
 await (async function propagatesStaleTrackingTokenRpcErrorForHandlers() {

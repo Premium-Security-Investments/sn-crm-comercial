@@ -77,6 +77,8 @@ export async function callTenderTrackingTransition(database, tenderId, input, cu
     p_internal_status: internalStatus,
     p_converted_opportunity_id: opportunityId,
     p_note: nullableText(input?.note),
-    p_expected_tracking_updated_at: nullableTimestamp(input?.expected_tracking_updated_at, true),
+    // Initial nueva → descartada/convertida_oportunidad transitions intentionally carry
+    // a null token; the transactional RPC validates token requirements by source state.
+    p_expected_tracking_updated_at: nullableTimestamp(input?.expected_tracking_updated_at),
   });
 }

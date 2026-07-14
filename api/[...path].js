@@ -890,16 +890,41 @@ function buildTenderOpportunityPayload(tender, owner) {
     external_source: `secop_radar:${tender.source}:${stableTenderKey(tender)}`
   };
 }
+async function getPersistedTenderByStableKey(database, stableKey) {
+  const { data, error } = await database.from('psi_public_tenders')
+    .select('id,stable_key,internal_status,converted_opportunity_id,tracking_updated_at')
+    .eq('stable_key', stableKey)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw trackingError('La licitación persistida no existe; no se puede omitir la trazabilidad de seguimiento.', 409);
+  return data;
+}
 async function markTenderConverted(database, tender, opportunityId, profileId) {
-  if (!(await tenderTableAvailable(database))) return;
-  await database.from('psi_public_tenders').update({ internal_status: 'convertida_oportunidad', converted_opportunity_id: opportunityId, reviewed_by: profileId, reviewed_at: new Date().toISOString() }).eq('stable_key', stableTenderKey(tender));
+  if (!(await tenderTableAvailable(database))) return null;
+  const tenderRecord = await getPersistedTenderByStableKey(database, stableTenderKey(tender));
+  return await callTenderTrackingTransition(database, tenderRecord.id, {
+    internal_status: 'convertida_oportunidad',
+    converted_opportunity_id: opportunityId,
+    note: 'Convertida a oportunidad desde Radar.',
+    expected_tracking_updated_at: tenderRecord.tracking_updated_at,
+  }, { id: profileId });
 }
 async function setTenderStatus(database, stableKey, internalStatus, currentProfile) {
   if (!tenderInternalStatuses.includes(internalStatus)) throw new Error('Estado interno de licitación inválido.');
   if (!(await tenderTableAvailable(database))) throw new Error('La tabla psi_public_tenders aún no existe. Aplica la migración para guardar estados internos.');
-  const { data, error } = await database.from('psi_public_tenders').update({ internal_status: internalStatus, reviewed_by: currentProfile.id, reviewed_at: new Date().toISOString() }).eq('stable_key', stableKey).select('*').single();
-  if (error) throw error;
-  return dbTenderToPublic(data);
+  if (internalStatus === 'convertida_oportunidad') throw trackingError('La conversión debe usar el flujo de convertir a oportunidad.', 400);
+  const tender = await getPersistedTenderByStableKey(database, stableKey);
+  const updated = internalStatus === 'en_revision'
+    ? await callTenderTrackingUpdate(database, tender.id, {
+      tracking_owner_id: currentProfile.id,
+      tracking_status: 'pendiente_revision',
+      expected_tracking_updated_at: tender.internal_status === 'nueva' ? null : tender.tracking_updated_at,
+    }, currentProfile)
+    : await callTenderTrackingTransition(database, tender.id, {
+      internal_status: internalStatus,
+      expected_tracking_updated_at: tender.tracking_updated_at,
+    }, currentProfile);
+  return dbTenderToPublic(updated);
 }
 
 const tenderTrackingIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -1778,10 +1803,25 @@ async function markTenderOpportunityDiscarded(database, opportunityId, currentPr
   const notes = String(reason || 'Descartada después de revisión documental / comercial.').trim();
   await must(database.from('psi_sales_opportunities').update({ stage_code: 'descartado', loss_notes: notes, next_action_at: null }).eq('id', opportunityId).select('id').single());
   await database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'nota', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: `Sacar de oportunidad / descartada: ${notes}` });
-  if (await tenderTableAvailable(database)) {
-    await database.from('psi_public_tenders').update({ internal_status: 'descartada', converted_opportunity_id: null, reviewed_by: currentProfile.id, reviewed_at: new Date().toISOString() }).eq('converted_opportunity_id', opportunityId);
+  // A manually-created tender opportunity has no persisted Radar link; preserve its discard
+  // while reporting that no lifecycle transition was required.
+  if (!(await tenderTableAvailable(database))) {
+    return { id: opportunityId, stage_code: 'descartado', internal_status: 'descartada', linked_tender_status: 'tracking_unavailable' };
   }
-  return { id: opportunityId, stage_code: 'descartado', internal_status: 'descartada' };
+  const { data: tender, error } = await database.from('psi_public_tenders')
+    .select('id,tracking_updated_at')
+    .eq('converted_opportunity_id', opportunityId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!tender) {
+    return { id: opportunityId, stage_code: 'descartado', internal_status: 'descartada', linked_tender_status: 'not_found' };
+  }
+  const updatedTender = await callTenderTrackingTransition(database, tender.id, {
+    internal_status: 'descartada',
+    note: notes,
+    expected_tracking_updated_at: tender.tracking_updated_at,
+  }, currentProfile);
+  return { id: opportunityId, stage_code: 'descartado', internal_status: 'descartada', linked_tender_status: 'discarded', tender: dbTenderToPublic(updatedTender) };
 }
 
 app.get('/api/tender-offer-preparation', async (req, res) => {

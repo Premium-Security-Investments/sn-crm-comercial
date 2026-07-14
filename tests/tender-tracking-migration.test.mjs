@@ -18,7 +18,7 @@ assert.match(sql, /p\.role in \('admin', 'director', 'gerencia'\)/);
 assert.match(sql, /lower\(p\.microsoft_email\) = 'directora\.licitaciones@seguridadnacional\.co'/);
 assert.match(sql, /p_expected_tracking_updated_at is distinct from v_tender\.tracking_updated_at/);
 assert.match(sql, /coalesce\(v_tender\.internal_status, 'nueva'\) = 'nueva'/);
-assert.match(sql, /v_tender\.internal_status <> 'en_revision'/);
+assert.match(sql, /v_tender\.internal_status is distinct from 'en_revision'/);
 assert.match(sql, /if p_tracking_status is null or p_tracking_status not in \('pendiente_revision', 'analizando', 'esperando_informacion', 'listo_para_decision', 'bloqueado'\) then/);
 assert.match(sql, /if p_internal_status is null or p_internal_status not in \('nueva', 'descartada', 'convertida_oportunidad'\) then/);
 assert.match(sql, /p_internal_status not in \('nueva', 'descartada', 'convertida_oportunidad'\)/);
@@ -30,6 +30,12 @@ assert.match(sql, /v_event_type := 'blocked'/);
 assert.match(sql, /v_event_type := 'unblocked'/);
 assert.match(sql, /v_event_type := 'tracking_updated'/);
 assert.match(sql, /v_event_type := case p_internal_status when 'nueva' then 'returned_to_radar' when 'descartada' then 'discarded' when 'convertida_oportunidad' then 'converted' end/);
+assert.match(sql, /coalesce\(v_tender\.internal_status, 'nueva'\) = 'nueva'/);
+assert.match(sql, /p_expected_tracking_updated_at is null/);
+assert.match(sql, /v_tender\.internal_status = 'convertida_oportunidad'/);
+assert.match(sql, /p_internal_status = 'convertida_oportunidad' and p_converted_opportunity_id = v_tender\.converted_opportunity_id/);
+assert.match(sql, /p_internal_status is distinct from 'descartada'/);
+assert.match(sql, /v_tender\.internal_status = 'en_revision' and p_internal_status in \('nueva', 'descartada', 'convertida_oportunidad'\)/);
 
 for (const functionName of ['psi_update_tender_tracking', 'psi_transition_tender_tracking']) {
   const body = sql.slice(sql.indexOf(`create or replace function public.${functionName}`), sql.indexOf(`grant execute on function public.${functionName}`));
