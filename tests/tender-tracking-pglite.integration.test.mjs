@@ -153,24 +153,81 @@ await (async function rollsBackConversionWhenConvertedEventFails() {
   await db.close();
 })();
 
-await (async function rejectsGenericConvertedTransitionWithoutWritingOpportunityTenderOrEvent() {
+await (async function rejectsGenericDiscardOfConvertedTenderUntilCombinedOpportunityDiscard() {
   const db = await createDatabase();
   await db.exec(`insert into public.psi_sales_opportunities (id, company_name, stage_code, service_type_code, external_source)
-    values ('${ids.opportunity}', 'Entidad existente', 'prospecto', 'licitacion_publica', 'manual:generic-transition');
-    insert into public.psi_public_tenders (id, stable_key, internal_status)
-    values ('${ids.tender}', 'generic-conversion', 'nueva');`);
+    values ('${ids.opportunity}', 'Entidad existente', 'calificada', 'licitacion_publica', 'secop_radar:generic-transition');
+    insert into public.psi_public_tenders (id, stable_key, internal_status, converted_opportunity_id, tracking_updated_at)
+    values ('${ids.tender}', 'generic-conversion', 'convertida_oportunidad', '${ids.opportunity}', '2026-07-14T12:00:00.000Z');`);
   await assert.rejects(
     () => db.query(`select public.psi_transition_tender_tracking(
-      '${ids.tender}'::uuid, '${ids.actor}'::uuid, 'convertida_oportunidad', '${ids.opportunity}'::uuid, 'No debe convertir', null
+      '${ids.tender}'::uuid, '${ids.actor}'::uuid, 'descartada', null, 'No debe descartar por transición genérica', '2026-07-14T12:00:00.000Z'::timestamptz
     )`),
-    /transición de seguimiento inválida/i,
+    /sacar de oportunidad/i,
   );
   assert.equal(await count(db, 'psi_sales_opportunities'), 1);
+  assert.deepEqual(
+    await scalar(db, `select stage_code from public.psi_sales_opportunities where id = '${ids.opportunity}'`),
+    { stage_code: 'calificada' },
+  );
+  assert.deepEqual(
+    await scalar(db, `select internal_status, converted_opportunity_id from public.psi_public_tenders where id = '${ids.tender}'`),
+    { internal_status: 'convertida_oportunidad', converted_opportunity_id: ids.opportunity },
+  );
+  assert.equal(await count(db, 'psi_sales_interactions'), 0);
+  assert.equal(await count(db, 'psi_tender_tracking_events'), 0);
+  const combined = (await discard(db, ids.opportunity)).result;
+  assert.equal(combined.linked_tender_status, 'discarded');
+  assert.deepEqual(
+    await scalar(db, `select stage_code from public.psi_sales_opportunities where id = '${ids.opportunity}'`),
+    { stage_code: 'descartado' },
+  );
+  assert.deepEqual(
+    await scalar(db, `select internal_status, converted_opportunity_id from public.psi_public_tenders where id = '${ids.tender}'`),
+    { internal_status: 'descartada', converted_opportunity_id: null },
+  );
+  assert.equal(await count(db, 'psi_sales_interactions'), 1);
+  assert.equal(await count(db, 'psi_tender_tracking_events'), 1);
+  await db.close();
+})();
+
+await (async function permitsGenericNuevaDiscardWithNullVersionToken() {
+  const db = await createDatabase();
+  await db.exec(`insert into public.psi_public_tenders (id, stable_key, internal_status)
+    values ('${ids.tender}', 'generic-nueva-discard', 'nueva');`);
+  await db.query(`select public.psi_transition_tender_tracking(
+    '${ids.tender}'::uuid, '${ids.actor}'::uuid, 'descartada', null, 'Descartada desde Radar', null
+  )`);
+  assert.deepEqual(
+    await scalar(db, `select internal_status, converted_opportunity_id from public.psi_public_tenders where id = '${ids.tender}'`),
+    { internal_status: 'descartada', converted_opportunity_id: null },
+  );
+  assert.equal(await count(db, 'psi_tender_tracking_events'), 1);
+  await db.close();
+})();
+
+await (async function permitsGenericEnRevisionReturnAndDiscardWithMatchingVersionToken() {
+  const db = await createDatabase();
+  await db.exec(`insert into public.psi_public_tenders (id, stable_key, internal_status, tracking_updated_at)
+    values ('${ids.tender}', 'generic-en-revision-return', 'en_revision', '2026-07-14T12:00:00.000Z');`);
+  await db.query(`select public.psi_transition_tender_tracking(
+    '${ids.tender}'::uuid, '${ids.actor}'::uuid, 'nueva', null, 'Devolver al Radar', '2026-07-14T12:00:00.000Z'::timestamptz
+  )`);
   assert.deepEqual(
     await scalar(db, `select internal_status, converted_opportunity_id from public.psi_public_tenders where id = '${ids.tender}'`),
     { internal_status: 'nueva', converted_opportunity_id: null },
   );
-  assert.equal(await count(db, 'psi_tender_tracking_events'), 0);
+  await db.exec(`update public.psi_public_tenders
+    set internal_status = 'en_revision', tracking_updated_at = '2026-07-14T13:00:00.000Z'
+    where id = '${ids.tender}';`);
+  await db.query(`select public.psi_transition_tender_tracking(
+    '${ids.tender}'::uuid, '${ids.actor}'::uuid, 'descartada', null, 'Descartar tras revisión', '2026-07-14T13:00:00.000Z'::timestamptz
+  )`);
+  assert.deepEqual(
+    await scalar(db, `select internal_status, converted_opportunity_id from public.psi_public_tenders where id = '${ids.tender}'`),
+    { internal_status: 'descartada', converted_opportunity_id: null },
+  );
+  assert.equal(await count(db, 'psi_tender_tracking_events'), 2);
   await db.close();
 })();
 

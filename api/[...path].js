@@ -904,6 +904,9 @@ async function setTenderStatus(database, stableKey, internalStatus, currentProfi
   if (!(await tenderTableAvailable(database))) throw new Error('La tabla psi_public_tenders aún no existe. Aplica la migración para guardar estados internos.');
   if (internalStatus === 'convertida_oportunidad') throw trackingError('La conversión debe usar el flujo de convertir a oportunidad.', 400);
   const tender = await getPersistedTenderByStableKey(database, stableKey);
+  if (tender.internal_status === 'convertida_oportunidad' && (internalStatus === 'descartada' || internalStatus === 'nueva')) {
+    throw trackingError('Una licitación convertida debe descartarse con Sacar de oportunidad.', 409);
+  }
   const updated = internalStatus === 'en_revision'
     ? await callTenderTrackingUpdate(database, tender.id, {
       tracking_owner_id: currentProfile.id,

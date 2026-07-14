@@ -211,8 +211,9 @@ begin
     if p_internal_status <> 'descartada' then
       raise exception 'Una licitación nueva solo puede descartarse.' using errcode = 'P0001';
     end if;
-  elsif v_tender.internal_status is distinct from 'en_revision'
-    and v_tender.internal_status is distinct from 'convertida_oportunidad' then
+  elsif v_tender.internal_status = 'convertida_oportunidad' then
+    raise exception 'Una licitación convertida debe descartarse con Sacar de oportunidad.' using errcode = 'P0001';
+  elsif v_tender.internal_status is distinct from 'en_revision' then
     raise exception 'Estado de origen inválido para transición de seguimiento.' using errcode = 'P0001';
   elsif v_tender.internal_status = 'en_revision' then
     if p_expected_tracking_updated_at is null then
@@ -223,16 +224,6 @@ begin
     end if;
     if not (v_tender.internal_status = 'en_revision' and p_internal_status in ('nueva', 'descartada')) then
       raise exception 'Transición de seguimiento inválida.' using errcode = 'P0001';
-    end if;
-  elsif v_tender.internal_status = 'convertida_oportunidad' then
-    if p_expected_tracking_updated_at is null then
-      raise exception 'Debe indicar la versión de seguimiento para evitar conflictos.' using errcode = 'P0001';
-    end if;
-    if p_expected_tracking_updated_at is distinct from v_tender.tracking_updated_at then
-      raise exception 'Seguimiento desactualizado.' using errcode = 'P0001';
-    end if;
-    if p_internal_status is distinct from 'descartada' then
-      raise exception 'Una licitación convertida solo puede descartarse.' using errcode = 'P0001';
     end if;
   else
     raise exception 'Estado de origen inválido para transición de seguimiento.' using errcode = 'P0001';

@@ -32,6 +32,9 @@ for (const path of ['../api/[...path].js', '../server/index.js']) {
   assert.match(statusHandler[0], /callTenderTrackingTransition\(database, tender\.id,/);
   assert.doesNotMatch(statusHandler[0], /\.from\('psi_public_tenders'\)\.update/);
   assert.match(statusHandler[0], /convertida_oportunidad.*conversión/i);
+  assert.match(statusHandler[0], /tender\.internal_status === 'convertida_oportunidad'/);
+  assert.match(statusHandler[0], /internalStatus === 'descartada' \|\| internalStatus === 'nueva'/);
+  assert.match(statusHandler[0], /Sacar de oportunidad/i);
 
   const conversionHandler = source.match(/async function convertTenderToOpportunity\([\s\S]*?\n}\nasync function markTenderOpportunityDiscarded/);
   assert.ok(conversionHandler, 'convertTenderToOpportunity must be present');
