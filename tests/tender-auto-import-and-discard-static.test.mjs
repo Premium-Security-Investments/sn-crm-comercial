@@ -17,8 +17,9 @@ for (const file of [server, api]) {
   assert(file.includes("app.post('/api/tender-documents-import'"), 'Debe existir endpoint para reintentar importación automática desde el detalle.');
   assert(file.includes("app.post('/api/tender-opportunity-discard'"), 'Debe existir endpoint Vercel-safe para sacar/descartar una licitación ya convertida a oportunidad.');
   assert(file.includes('markTenderOpportunityDiscarded'), 'Descartar oportunidad debe marcar oportunidad y licitación de origen sin borrar trazabilidad.');
-  assert(file.includes("stage_code: 'descartado'"), 'Sacar de oportunidad debe mover la oportunidad a etapa descartado.');
-  assert(file.includes("internal_status: 'descartada'"), 'Sacar de oportunidad debe regresar la licitación a estado descartada.');
+  assert(file.includes('callTenderOpportunityDiscard'), 'Sacar de oportunidad debe usar el RPC combinado atómico.');
+  assert(!file.includes("markTenderOpportunityDiscarded(database, opportunityId, currentProfile, reason) {\n  await ensureTenderOpportunity(database, opportunityId, currentProfile);\n  const notes = String(reason || 'Descartada después de revisión documental / comercial.').trim();\n  await must(database.from('psi_sales_opportunities').update"), 'Sacar de oportunidad no puede actualizar la oportunidad fuera del RPC atómico.');
+  assert(file.includes('expected_tracking_updated_at: tender?.tracking_updated_at ?? null'), 'Sacar de oportunidad debe pasar el último token de seguimiento al RPC atómico.');
 }
 
 assert(src.includes('Importar/Reintentar documentos oficiales'), 'El detalle debe permitir reintentar importación automática desde fuentes oficiales SECOP/ESU.');

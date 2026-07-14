@@ -5,7 +5,7 @@ const migrationPath = new URL('../supabase/migrations/018_tender_tracking_rpc.sq
 assert.equal(existsSync(migrationPath), true, 'La migración 018 preparada debe crear los RPC transaccionales.');
 
 const sql = readFileSync(migrationPath, 'utf8').toLowerCase().replace(/\s+/g, ' ');
-for (const functionName of ['psi_update_tender_tracking', 'psi_transition_tender_tracking']) {
+for (const functionName of ['psi_update_tender_tracking', 'psi_transition_tender_tracking', 'psi_discard_tender_opportunity']) {
   assert.match(sql, new RegExp(`create or replace function public\\.${functionName}\\(`));
   assert.match(sql, new RegExp(`revoke all on function public\\.${functionName}[^;]+ from public`));
   assert.match(sql, new RegExp(`revoke all on function public\\.${functionName}[^;]+ from authenticated`));
@@ -64,5 +64,18 @@ for (const [table, policies] of [
 
 assert.match(sql, /grant select on public\.psi_public_tenders to authenticated/);
 assert.match(sql, /grant select on public\.psi_tender_tracking_events to authenticated/);
+
+const discardBody = sql.slice(sql.indexOf('create or replace function public.psi_discard_tender_opportunity'), sql.indexOf('grant execute on function public.psi_discard_tender_opportunity'));
+assert.match(discardBody, /security definer/);
+assert.match(discardBody, /set search_path = public, pg_temp/);
+assert.match(discardBody, /from public\.psi_sales_opportunities where id = p_opportunity_id for update/);
+assert.match(discardBody, /from public\.psi_public_tenders where converted_opportunity_id = p_opportunity_id for update/);
+assert.match(discardBody, /v_tender\.internal_status is distinct from 'convertida_oportunidad'/);
+assert.match(discardBody, /p_expected_tracking_updated_at is distinct from v_tender\.tracking_updated_at/);
+assert.match(discardBody, /update public\.psi_sales_opportunities/);
+assert.match(discardBody, /insert into public\.psi_sales_interactions/);
+assert.match(discardBody, /update public\.psi_public_tenders/);
+assert.match(discardBody, /insert into public\.psi_tender_tracking_events/);
+assert.match(discardBody, /linked_tender_status/);
 
 console.log('tender tracking migration RPC contract passed');

@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import mammoth from 'mammoth';
 import AdmZip from 'adm-zip';
-import { callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
+import { callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1801,27 +1801,15 @@ async function convertTenderToOpportunity(database, tender, currentProfile) {
 async function markTenderOpportunityDiscarded(database, opportunityId, currentProfile, reason) {
   await ensureTenderOpportunity(database, opportunityId, currentProfile);
   const notes = String(reason || 'Descartada después de revisión documental / comercial.').trim();
-  await must(database.from('psi_sales_opportunities').update({ stage_code: 'descartado', loss_notes: notes, next_action_at: null }).eq('id', opportunityId).select('id').single());
-  await database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'nota', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: `Sacar de oportunidad / descartada: ${notes}` });
-  // A manually-created tender opportunity has no persisted Radar link; preserve its discard
-  // while reporting that no lifecycle transition was required.
-  if (!(await tenderTableAvailable(database))) {
-    return { id: opportunityId, stage_code: 'descartado', internal_status: 'descartada', linked_tender_status: 'tracking_unavailable' };
-  }
   const { data: tender, error } = await database.from('psi_public_tenders')
     .select('id,tracking_updated_at')
     .eq('converted_opportunity_id', opportunityId)
     .maybeSingle();
   if (error) throw error;
-  if (!tender) {
-    return { id: opportunityId, stage_code: 'descartado', internal_status: 'descartada', linked_tender_status: 'not_found' };
-  }
-  const updatedTender = await callTenderTrackingTransition(database, tender.id, {
-    internal_status: 'descartada',
+  return await callTenderOpportunityDiscard(database, opportunityId, {
     note: notes,
-    expected_tracking_updated_at: tender.tracking_updated_at,
+    expected_tracking_updated_at: tender?.tracking_updated_at ?? null,
   }, currentProfile);
-  return { id: opportunityId, stage_code: 'descartado', internal_status: 'descartada', linked_tender_status: 'discarded', tender: dbTenderToPublic(updatedTender) };
 }
 
 app.get('/api/tender-offer-preparation', async (req, res) => {

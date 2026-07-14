@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
+import { callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 
 const tenderId = '11111111-1111-4111-8111-111111111111';
 const actorId = '22222222-2222-4222-8222-222222222222';
@@ -116,6 +116,35 @@ await (async function propagatesStaleTrackingTokenRpcErrorForHandlers() {
     () => callTenderTrackingTransition(db, tenderId, { internal_status: 'descartada', expected_tracking_updated_at: expectedAt }, { id: actorId }),
     error => error.message === 'Seguimiento desactualizado.' && error.code === 'P0001',
   );
+})();
+
+await (async function callsCombinedDiscardRpcWithCurrentActorAndLatestLinkedTenderToken() {
+  const db = fakeRpcDb({ data: { id: opportunityId, linked_tender_status: 'discarded' } });
+  const data = await callTenderOpportunityDiscard(db, opportunityId, {
+    note: 'No cumple el margen mínimo',
+    expected_tracking_updated_at: expectedAt,
+  }, { id: actorId });
+
+  assert.deepEqual(data, { id: opportunityId, linked_tender_status: 'discarded' });
+  assert.deepEqual(db.calls, [{
+    name: 'psi_discard_tender_opportunity',
+    args: {
+      p_opportunity_id: opportunityId,
+      p_actor_id: actorId,
+      p_note: 'No cumple el margen mínimo',
+      p_expected_tracking_updated_at: expectedAt,
+    },
+  }]);
+})();
+
+await (async function propagatesCombinedDiscardRpcErrorsWithoutFallbackWrites() {
+  const stale = { message: 'Seguimiento desactualizado.', code: 'P0001' };
+  const db = fakeRpcDb({ error: stale });
+  await assert.rejects(
+    () => callTenderOpportunityDiscard(db, opportunityId, { note: 'Descartar', expected_tracking_updated_at: expectedAt }, { id: actorId }),
+    error => error === stale,
+  );
+  assert.equal(db.calls.length, 1);
 })();
 
 console.log('tender tracking RPC backend contract passed');

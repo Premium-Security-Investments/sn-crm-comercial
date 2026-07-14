@@ -61,6 +61,19 @@ export async function callTenderTrackingUpdate(database, tenderId, input, curren
   });
 }
 
+export async function callTenderOpportunityDiscard(database, opportunityId, input, currentProfile) {
+  const id = requireUuid(opportunityId, 'una oportunidad válida');
+  const actorId = requireUuid(currentProfile?.id, 'un actor válido');
+  rejectClientEventType(input);
+
+  return rpc(database, 'psi_discard_tender_opportunity', {
+    p_opportunity_id: id,
+    p_actor_id: actorId,
+    p_note: nullableText(input?.note),
+    p_expected_tracking_updated_at: nullableTimestamp(input?.expected_tracking_updated_at),
+  });
+}
+
 export async function callTenderTrackingTransition(database, tenderId, input, currentProfile) {
   const id = requireUuid(tenderId, 'una licitación válida');
   const actorId = requireUuid(currentProfile?.id, 'un actor válido');

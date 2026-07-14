@@ -254,3 +254,141 @@ grant execute on function public.psi_update_tender_tracking(uuid, uuid, uuid, te
 revoke all on function public.psi_transition_tender_tracking(uuid, uuid, text, uuid, text, timestamptz) from public;
 revoke all on function public.psi_transition_tender_tracking(uuid, uuid, text, uuid, text, timestamptz) from authenticated;
 grant execute on function public.psi_transition_tender_tracking(uuid, uuid, text, uuid, text, timestamptz) to service_role;
+
+-- Discarding a tender opportunity must not split opportunity, interaction, Radar state,
+-- and immutable event writes across client/backend round trips. This function is deliberately
+-- the only mutation boundary for that operation: PL/pgSQL executes it as one transaction.
+create or replace function public.psi_discard_tender_opportunity(
+  p_opportunity_id uuid,
+  p_actor_id uuid,
+  p_note text,
+  p_expected_tracking_updated_at timestamptz
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_opportunity public.psi_sales_opportunities%rowtype;
+  v_tender public.psi_public_tenders%rowtype;
+  v_updated_tender public.psi_public_tenders%rowtype;
+  v_actor_active boolean;
+  v_actor_tender_manager boolean;
+  v_has_linked_tender boolean := false;
+  v_now timestamptz := now();
+  v_note text := nullif(btrim(p_note), '');
+begin
+  select exists (
+    select 1
+    from public.psi_sales_profiles p
+    where p.id = p_actor_id and p.active = true
+  ) into v_actor_active;
+  if not v_actor_active then
+    raise exception 'No tiene permisos sobre esta oportunidad.' using errcode = '42501';
+  end if;
+
+  select * into v_opportunity
+  from public.psi_sales_opportunities
+  where id = p_opportunity_id
+  for update;
+  if not found then
+    raise exception 'La oportunidad no existe.' using errcode = 'P0002';
+  end if;
+
+  select exists (
+    select 1
+    from public.psi_sales_profiles p
+    where p.id = p_actor_id
+      and p.active = true
+      and (p.role in ('admin', 'director', 'gerencia') or lower(p.microsoft_email) = 'directora.licitaciones@seguridadnacional.co')
+  ) into v_actor_tender_manager;
+  if not v_actor_tender_manager and v_opportunity.owner_id is distinct from p_actor_id then
+    raise exception 'No tiene permisos sobre esta oportunidad.' using errcode = '42501';
+  end if;
+
+  if v_opportunity.service_type_code is distinct from 'licitacion_publica' then
+    raise exception 'La revisión documental aplica solo para oportunidades de licitación pública.' using errcode = '22023';
+  end if;
+
+  select * into v_tender
+  from public.psi_public_tenders
+  where converted_opportunity_id = p_opportunity_id
+  for update;
+  v_has_linked_tender := found;
+
+  if v_has_linked_tender then
+    if v_tender.internal_status is distinct from 'convertida_oportunidad' then
+      raise exception 'La licitación vinculada no está convertida a esta oportunidad.' using errcode = 'P0001';
+    end if;
+    if p_expected_tracking_updated_at is null
+      or p_expected_tracking_updated_at is distinct from v_tender.tracking_updated_at then
+      raise exception 'Seguimiento desactualizado.' using errcode = 'P0001';
+    end if;
+  end if;
+
+  update public.psi_sales_opportunities
+  set stage_code = 'descartado',
+      loss_notes = coalesce(v_note, 'Descartada después de revisión documental / comercial.'),
+      next_action_at = null
+  where id = p_opportunity_id;
+
+  insert into public.psi_sales_interactions (
+    opportunity_id, interaction_type, created_by, occurred_at, notes
+  ) values (
+    p_opportunity_id,
+    'nota',
+    p_actor_id,
+    v_now,
+    format('Sacar de oportunidad / descartada: %s', coalesce(v_note, 'Descartada después de revisión documental / comercial.'))
+  );
+
+  if v_has_linked_tender then
+    update public.psi_public_tenders
+    set internal_status = 'descartada',
+        converted_opportunity_id = null,
+        tracking_owner_id = null,
+        tracking_status = null,
+        tracking_next_action = null,
+        tracking_due_at = null,
+        tracking_blocker = null,
+        tracking_last_note = null,
+        tracking_started_at = null,
+        tracking_updated_at = null,
+        reviewed_by = p_actor_id,
+        reviewed_at = v_now
+    where id = v_tender.id
+    returning * into v_updated_tender;
+
+    insert into public.psi_tender_tracking_events (
+      tender_id, event_type, note, from_status, to_status, assigned_to, next_action, due_at, blocker, created_by
+    ) values (
+      v_tender.id,
+      'discarded',
+      v_note,
+      v_tender.internal_status,
+      'descartada',
+      null, null, null, null,
+      p_actor_id
+    );
+
+    return jsonb_build_object(
+      'id', p_opportunity_id,
+      'stage_code', 'descartado',
+      'internal_status', 'descartada',
+      'linked_tender_status', 'discarded',
+      'tender', to_jsonb(v_updated_tender)
+    );
+  end if;
+
+  return jsonb_build_object(
+    'id', p_opportunity_id,
+    'stage_code', 'descartado',
+    'internal_status', 'descartada',
+    'linked_tender_status', 'not_found'
+  );
+end;
+$$;
+
+revoke all on function public.psi_discard_tender_opportunity(uuid, uuid, text, timestamptz) from public;
+revoke all on function public.psi_discard_tender_opportunity(uuid, uuid, text, timestamptz) from authenticated;
+grant execute on function public.psi_discard_tender_opportunity(uuid, uuid, text, timestamptz) to service_role;
