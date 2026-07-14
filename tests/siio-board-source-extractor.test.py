@@ -45,7 +45,7 @@ class SiioBoardSourceExtractorTest(unittest.TestCase):
         ws.title = "Hoja1"
         headers = ["Cedula", "Descripcion"] + [f"C{i}" for i in range(3, 20)] + ["DEV.", "DED.", "TOTAL", None, "Codigo", "Nombre Empleados", "Cargo", "Area", "DEV.", None, None]
         ws.append(headers)
-        ws.append(["111", "Persona Uno"] + [None] * 17 + [100, 10, 90, None, "A", "Persona Uno", "Analista", "Finanzas", None, None, None])
+        ws.append(["111", "Persona Uno"] + [None] * 17 + [100, 10, 50, None, "A", "Persona Uno", "Analista", "Finanzas", None, None, None])
         ws.append(["222", "Persona Dos"] + [None] * 17 + [200, 20, 180, None, "B", "Persona Dos", "Analista", "Finanzas", None, None, None])
         ws.append(["333", "Persona Tres"] + [None] * 17 + [150, 15, 135, None, "C", "Persona Tres", "Coordinador", "Operaciones", None, None, None])
         wb.save(path)
@@ -70,6 +70,7 @@ class SiioBoardSourceExtractorTest(unittest.TestCase):
         self.assertEqual(finance["total_accrued"], 300)
         self.assertEqual(finance["total_deductions"], 30)
         self.assertEqual(finance["net_total"], 270)
+        self.assertIn("no coincide", finance["alert"].lower())
         self.assertEqual(finance["visibility_level"], "junta_agregado")
         serialized = json.dumps(rows, ensure_ascii=False).lower()
         for forbidden in ["cedula", "persona uno", "persona dos", "nombre empleados", "cargo"]:

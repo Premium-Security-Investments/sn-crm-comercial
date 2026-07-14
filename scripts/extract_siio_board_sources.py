@@ -93,7 +93,7 @@ def payroll_columns(headers: tuple[Any, ...]) -> dict[str, int]:
 
 def extract_payroll_aggregates(path: str | Path, period_month: str, source_id: str) -> list[dict[str, Any]]:
     workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
-    aggregates: dict[str, dict[str, float]] = defaultdict(lambda: {"total_people": 0, "total_accrued": 0.0, "total_deductions": 0.0, "net_total": 0.0})
+    aggregates: dict[str, dict[str, float]] = defaultdict(lambda: {"total_people": 0, "total_accrued": 0.0, "total_deductions": 0.0, "source_net_total": 0.0})
     found_sheet = False
     for sheet in workbook.worksheets:
         rows = sheet.iter_rows(values_only=True)
@@ -113,24 +113,31 @@ def extract_payroll_aggregates(path: str | Path, period_month: str, source_id: s
             item["total_people"] += 1
             item["total_accrued"] += number(row[columns["accrued"]] if len(row) > columns["accrued"] else None)
             item["total_deductions"] += number(row[columns["deductions"]] if len(row) > columns["deductions"] else None)
-            item["net_total"] += number(row[columns["net"]] if len(row) > columns["net"] else None)
+            item["source_net_total"] += number(row[columns["net"]] if len(row) > columns["net"] else None)
     if not found_sheet:
         raise ValueError("required payroll columns not found: Area, DEV., DED., TOTAL")
-    return [
-        {
+    output_rows: list[dict[str, Any]] = []
+    for area, values in sorted(aggregates.items()):
+        computed_net = round(values["total_accrued"] - values["total_deductions"], 2)
+        source_net = round(values["source_net_total"], 2)
+        discrepancy = round(source_net - computed_net, 2)
+        output_rows.append({
             "period_month": period_month,
             "area": area,
             "total_people": int(values["total_people"]),
             "total_accrued": round(values["total_accrued"], 2),
             "total_deductions": round(values["total_deductions"], 2),
-            "net_total": round(values["net_total"], 2),
+            "net_total": computed_net,
             "variation_abs": None,
-            "alert": None,
+            "alert": (
+                f"El total neto de origen no coincide con devengado menos deducciones; diferencia {discrepancy:.2f}. Validar fuente."
+                if abs(discrepancy) > 1
+                else None
+            ),
             "source_id": source_id,
             "visibility_level": "junta_agregado",
-        }
-        for area, values in sorted(aggregates.items())
-    ]
+        })
+    return output_rows
 
 
 def build_snapshot(
