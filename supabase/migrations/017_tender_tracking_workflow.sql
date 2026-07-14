@@ -2,7 +2,7 @@
 -- Version 017 is used because 014_siio_f2_foundation.sql already owns version 014.
 
 alter table public.psi_public_tenders
-  add column if not exists tracking_owner_id uuid references public.psi_sales_profiles(id),
+  add column if not exists tracking_owner_id uuid references public.psi_sales_profiles(id) on delete set null,
   add column if not exists tracking_status text,
   add column if not exists tracking_next_action text,
   add column if not exists tracking_due_at timestamptz,
@@ -18,11 +18,11 @@ create table if not exists public.psi_tender_tracking_events (
   note text,
   from_status text,
   to_status text,
-  assigned_to uuid references public.psi_sales_profiles(id),
+  assigned_to uuid references public.psi_sales_profiles(id) on delete set null,
   next_action text,
   due_at timestamptz,
   blocker text,
-  created_by uuid references public.psi_sales_profiles(id),
+  created_by uuid references public.psi_sales_profiles(id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -46,22 +46,18 @@ using (
 );
 
 drop policy if exists psi_tender_tracking_events_modify on public.psi_tender_tracking_events;
-create policy psi_tender_tracking_events_modify on public.psi_tender_tracking_events for all to authenticated
-using (
-  exists (
-    select 1 from public.psi_sales_profiles p
-    where lower(p.microsoft_email) = lower(auth.jwt() ->> 'email')
-      and p.active = true
-      and (p.role in ('admin','director','gerencia') or lower(p.microsoft_email) = 'directora.licitaciones@seguridadnacional.co')
-  )
-)
+drop policy if exists psi_tender_tracking_events_insert on public.psi_tender_tracking_events;
+create policy psi_tender_tracking_events_insert on public.psi_tender_tracking_events for insert to authenticated
 with check (
   exists (
     select 1 from public.psi_sales_profiles p
     where lower(p.microsoft_email) = lower(auth.jwt() ->> 'email')
       and p.active = true
       and (p.role in ('admin','director','gerencia') or lower(p.microsoft_email) = 'directora.licitaciones@seguridadnacional.co')
+      and created_by is not null
+      and created_by = p.id
   )
 );
 
-grant select, insert, update, delete on public.psi_tender_tracking_events to authenticated;
+grant select, insert on public.psi_tender_tracking_events to authenticated;
+revoke update, delete on public.psi_tender_tracking_events from authenticated;
