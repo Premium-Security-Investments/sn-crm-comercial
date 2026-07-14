@@ -35,7 +35,13 @@ export type TenderRadarPayload = {
   totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number };
   tenders: PublicTender[];
 };
-export type TenderConversionResult = { id: string; document_import_status?: string | null; document_import_error?: string | null };
+export type TenderDocumentImportStatus = 'analisis_generado' | 'fallo_importacion' | 'no_aplica';
+export type TenderConversionResult = {
+  id: string;
+  duplicate: boolean;
+  document_import_status: TenderDocumentImportStatus;
+  document_import_error: string | null;
+};
 
 export type TenderModuleData = {
   currentProfile: { id: string; full_name: string; role: string; microsoft_email?: string | null };

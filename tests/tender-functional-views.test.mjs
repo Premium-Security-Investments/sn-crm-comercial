@@ -4,6 +4,7 @@ import { buildSync } from 'esbuild';
 
 const moduleSource = readFileSync(new URL('../src/tenders/TendersModule.tsx', import.meta.url), 'utf8');
 const tracking = readFileSync(new URL('../src/tenders/TenderTrackingView.tsx', import.meta.url), 'utf8');
+const radar = readFileSync(new URL('../src/tenders/TenderRadarView.tsx', import.meta.url), 'utf8');
 const apiSource = readFileSync(new URL('../src/tenders/api.ts', import.meta.url), 'utf8');
 const tabsSource = readFileSync(new URL('../src/tenders/components/TenderModuleTabs.tsx', import.meta.url), 'utf8');
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
@@ -32,6 +33,9 @@ assert.doesNotMatch(moduleSource, /TenderUnifiedBoard/);
 for (const label of ['Responsable', 'Última revisión', 'Próxima acción', 'Fecha compromiso', 'Días sin gestión', 'Bloqueo', 'Nota', 'Historial']) {
   assert.ok(tracking.includes(label), `Seguimiento debe mostrar ${label}`);
 }
+for (const label of ['Referencia', 'Inicio de seguimiento', 'Cierre del proceso', 'Prioridad / score', 'Riesgos']) {
+  assert.ok(tracking.includes(label), `Seguimiento debe mostrar ${label} para que la fila sea operable sin volver a Radar.`);
+}
 assert.match(apiSource, /\/api\/tender-tracking/);
 assert.match(apiSource, /\/api\/tender-tracking-update/);
 assert.match(apiSource, /\/api\/tender-tracking-events/);
@@ -39,6 +43,16 @@ assert.match(tracking, /\/api\/tender-convert/);
 assert.match(tracking, /expected_tracking_updated_at/);
 assert.match(tracking, /document_import_status/);
 assert.match(tracking, /document_import_error/);
+assert.match(tracking, /Abrir oportunidad/, 'La conversión debe dejar una acción explícita para abrir la oportunidad una vez confirmado el estado documental.');
+assert.doesNotMatch(tracking, /sessionStorage\./, 'El estado documental no debe escribirse sin un lector; debe mostrarse antes de navegar.');
+const trackingConvert = tracking.match(/const convert = async \(tender: PublicTender\) => \{[\s\S]*?\n  \};\n\n  if \(loading\)/);
+assert.ok(trackingConvert, 'Seguimiento debe conservar su flujo de conversión.');
+assert.doesNotMatch(trackingConvert[0], /navigate\(`#\/detail\/\$\{result\.id\}`\)/, 'Seguimiento no debe navegar automáticamente antes de que el usuario lea el resultado documental.');
+assert.match(radar, /Abrir oportunidad/, 'Radar debe dejar una acción explícita para abrir la oportunidad tras confirmar el resultado documental.');
+assert.doesNotMatch(radar, /sessionStorage\./, 'Radar tampoco debe escribir estado documental sin un lector.');
+const radarConvert = radar.match(/const convert = async \(tender: PublicTender\) => \{[\s\S]*?\n  \};\n\n  const deduped/);
+assert.ok(radarConvert, 'Radar debe conservar su flujo de conversión.');
+assert.doesNotMatch(radarConvert[0], /navigate\(`#\/detail\/\$\{result\.id\}`\)/, 'Radar no debe navegar automáticamente antes de que el usuario lea el resultado documental.');
 assert.match(tracking, /No hay procesos en seguimiento\. Selecciónelos desde Radar\./);
 assert.match(tracking, /Seguimiento desactualizado/);
 assert.doesNotMatch(tracking, /renderLegacy|Sincronizar fuentes oficiales|TenderCard/);
