@@ -1664,6 +1664,7 @@ async function importTenderDocumentsFromOfficialSource(database, opportunityId, 
     }
   }
   await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_upload', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, documents: uploaded }) }).select('id').single());
+  let analysisGenerated = false;
   if (analyze) {
     const records = await getTenderDocumentRecords(database, opportunityId);
     const currentDocs = records.documents.filter(d => d.current !== false);
@@ -1671,9 +1672,16 @@ async function importTenderDocumentsFromOfficialSource(database, opportunityId, 
       const companyProfile = await getTenderCompanyProfile(database);
       const analysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
       await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ ...analysis, auto_import: true, source: sourceLabel }) }).select('id').single());
+      analysisGenerated = true;
     }
   }
-  return await getTenderDocumentRecords(database, opportunityId);
+  const records = await getTenderDocumentRecords(database, opportunityId);
+  return {
+    ...records,
+    imported_count: uploaded.filter(doc => doc.current !== false).length,
+    failed_count: uploaded.filter(doc => doc.current === false).length,
+    analysis_generated: analysisGenerated && Boolean(records.analysis)
+  };
 }
 async function convertTenderToOpportunity(database, tender, currentProfile) {
   if (!tender?.source || !tender?.entity || !tender?.title) throw new Error('Licitación inválida para convertir.');
@@ -1687,8 +1695,12 @@ async function convertTenderToOpportunity(database, tender, currentProfile) {
   let document_import_error = null;
   if ((tender.source === 'SECOP II' || tender.source === 'ESU Contratación') && tender.url) {
     try {
-      await importTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze: true });
-      document_import_status = 'analisis_generado';
+      const importResult = await importTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze: true });
+      document_import_status = importResult.analysis_generated ? 'analisis_generado' : 'fallo_importacion';
+      if (!importResult.analysis_generated) {
+        document_import_error = `No se pudo generar análisis: ${importResult.imported_count} documentos vigentes, ${importResult.failed_count} fallidos.`;
+        await database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_import_error', auto_import: true, source: tender.source, error: document_import_error }) });
+      }
     } catch (error) {
       document_import_status = 'fallo_importacion';
       document_import_error = error?.message || String(error);
