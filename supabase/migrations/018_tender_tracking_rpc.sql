@@ -2,6 +2,16 @@
 -- The service backend authenticates the caller, while these functions atomically enforce
 -- workflow, actor, optimistic-concurrency, and immutable-event invariants.
 
+-- Authenticated clients may read tracked tenders and their immutable history, but every
+-- write must pass through these service-role RPCs after backend authentication.
+drop policy if exists psi_public_tenders_modify on public.psi_public_tenders;
+revoke insert, update, delete on public.psi_public_tenders from authenticated;
+grant select on public.psi_public_tenders to authenticated;
+
+drop policy if exists psi_tender_tracking_events_insert on public.psi_tender_tracking_events;
+revoke insert, update, delete on public.psi_tender_tracking_events from authenticated;
+grant select on public.psi_tender_tracking_events to authenticated;
+
 create or replace function public.psi_update_tender_tracking(
   p_tender_id uuid,
   p_actor_id uuid,
@@ -30,7 +40,7 @@ begin
     from public.psi_sales_profiles p
     where p.id = p_actor_id
       and p.active = true
-      and (p.role in ('admin', 'director', 'gerencia') or p.microsoft_email = 'directora.licitaciones@seguridadnacional.co')
+      and (p.role in ('admin', 'director', 'gerencia') or lower(p.microsoft_email) = 'directora.licitaciones@seguridadnacional.co')
   ) into v_actor_allowed;
   if not v_actor_allowed then
     raise exception 'No tiene permisos para gestionar seguimiento.' using errcode = '42501';
@@ -44,7 +54,7 @@ begin
     raise exception 'La licitación no existe.' using errcode = 'P0002';
   end if;
 
-  if p_tracking_status not in ('pendiente_revision', 'analizando', 'esperando_informacion', 'listo_para_decision', 'bloqueado') then
+  if p_tracking_status is null or p_tracking_status not in ('pendiente_revision', 'analizando', 'esperando_informacion', 'listo_para_decision', 'bloqueado') then
     raise exception 'Estado de seguimiento inválido.' using errcode = '22023';
   end if;
 
@@ -135,7 +145,7 @@ begin
     from public.psi_sales_profiles p
     where p.id = p_actor_id
       and p.active = true
-      and (p.role in ('admin', 'director', 'gerencia') or p.microsoft_email = 'directora.licitaciones@seguridadnacional.co')
+      and (p.role in ('admin', 'director', 'gerencia') or lower(p.microsoft_email) = 'directora.licitaciones@seguridadnacional.co')
   ) into v_actor_allowed;
   if not v_actor_allowed then
     raise exception 'No tiene permisos para gestionar seguimiento.' using errcode = '42501';
@@ -152,7 +162,7 @@ begin
   if v_tender.internal_status <> 'en_revision' then
     raise exception 'Solo las licitaciones en seguimiento pueden cambiar de estado.' using errcode = 'P0001';
   end if;
-  if p_internal_status not in ('nueva', 'descartada', 'convertida_oportunidad') then
+  if p_internal_status is null or p_internal_status not in ('nueva', 'descartada', 'convertida_oportunidad') then
     raise exception 'Transición de seguimiento inválida.' using errcode = '22023';
   end if;
   if p_expected_tracking_updated_at is null then

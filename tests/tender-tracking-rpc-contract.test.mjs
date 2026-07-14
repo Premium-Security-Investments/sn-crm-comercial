@@ -7,7 +7,7 @@ const ownerId = '33333333-3333-4333-8333-333333333333';
 const opportunityId = '44444444-4444-4444-8444-444444444444';
 const expectedAt = '2026-07-14T12:00:00.000Z';
 
-function fakeDb({ data = { id: tenderId }, error = null } = {}) {
+function fakeRpcDb({ data = { id: tenderId }, error = null } = {}) {
   const calls = [];
   return {
     calls,
@@ -19,7 +19,7 @@ function fakeDb({ data = { id: tenderId }, error = null } = {}) {
 }
 
 await (async function callsTheUpdateRpcWithActorOwnedAndOptimisticArguments() {
-  const db = fakeDb();
+  const db = fakeRpcDb();
   const data = await callTenderTrackingUpdate(db, tenderId, {
     tracking_owner_id: ownerId,
     tracking_status: 'bloqueado',
@@ -48,7 +48,7 @@ await (async function callsTheUpdateRpcWithActorOwnedAndOptimisticArguments() {
 })();
 
 await (async function defaultsInitialOwnerToAuthenticatedActorAndAllowsNullExpectedTimestamp() {
-  const db = fakeDb();
+  const db = fakeRpcDb();
   await callTenderTrackingUpdate(db, tenderId, {
     tracking_status: 'pendiente_revision',
     expected_tracking_updated_at: null,
@@ -59,7 +59,7 @@ await (async function defaultsInitialOwnerToAuthenticatedActorAndAllowsNullExpec
 })();
 
 await (async function rejectsInvalidUpdateIdsStatusesAndClientSelectedEvents() {
-  const db = fakeDb();
+  const db = fakeRpcDb();
   await assert.rejects(() => callTenderTrackingUpdate(db, 'not-a-uuid', {}, { id: actorId }), /licitación válida/i);
   await assert.rejects(() => callTenderTrackingUpdate(db, tenderId, { tracking_status: 'invalid' }, { id: actorId }), /Estado de seguimiento inválido/i);
   await assert.rejects(() => callTenderTrackingUpdate(db, tenderId, { tracking_owner_id: 'not-a-uuid' }, { id: actorId }), /responsable válido/i);
@@ -68,7 +68,7 @@ await (async function rejectsInvalidUpdateIdsStatusesAndClientSelectedEvents() {
 })();
 
 await (async function callsTransitionRpcWithOnlySupportedTargetAndExpectedTimestamp() {
-  const db = fakeDb();
+  const db = fakeRpcDb();
   await callTenderTrackingTransition(db, tenderId, {
     internal_status: 'convertida_oportunidad',
     converted_opportunity_id: opportunityId,
@@ -89,17 +89,22 @@ await (async function callsTransitionRpcWithOnlySupportedTargetAndExpectedTimest
   }]);
 })();
 
-await (async function rejectsInvalidTransitionUuidStatusEventAndStaleTokenBeforeRpc() {
-  const db = fakeDb();
+await (async function rejectsInvalidTransitionUuidStatusAndClientSelectedEventBeforeRpc() {
+  const db = fakeRpcDb();
   await assert.rejects(() => callTenderTrackingTransition(db, tenderId, { internal_status: 'en_revision', expected_tracking_updated_at: expectedAt }, { id: actorId }), /Transición de seguimiento inválida/i);
   await assert.rejects(() => callTenderTrackingTransition(db, tenderId, { internal_status: 'convertida_oportunidad', converted_opportunity_id: 'bad', expected_tracking_updated_at: expectedAt }, { id: actorId }), /oportunidad válida/i);
   await assert.rejects(() => callTenderTrackingTransition(db, tenderId, { internal_status: 'descartada', event_type: 'discarded', expected_tracking_updated_at: expectedAt }, { id: actorId }), /no se selecciona desde el cliente/i);
+  assert.equal(db.calls.length, 0);
+})();
+
+await (async function rejectsMissingExpectedTrackingTokenBeforeTransitionRpc() {
+  const db = fakeRpcDb();
   await assert.rejects(() => callTenderTrackingTransition(db, tenderId, { internal_status: 'descartada' }, { id: actorId }), /versión de seguimiento/i);
   assert.equal(db.calls.length, 0);
 })();
 
-await (async function preservesRpcErrorsForHandlers() {
-  const db = fakeDb({ error: { message: 'Seguimiento desactualizado.', code: 'P0001' } });
+await (async function propagatesStaleTrackingTokenRpcErrorForHandlers() {
+  const db = fakeRpcDb({ error: { message: 'Seguimiento desactualizado.', code: 'P0001' } });
   await assert.rejects(
     () => callTenderTrackingTransition(db, tenderId, { internal_status: 'descartada', expected_tracking_updated_at: expectedAt }, { id: actorId }),
     error => error.message === 'Seguimiento desactualizado.' && error.code === 'P0001',
