@@ -1,10 +1,14 @@
 # SIIO Executive Dashboard — Loop 1 Verification
 
-**Fecha:** 2026-07-14 00:53 UTC  
-**Rama:** `feature/siio-main-integration`  
-**PR:** #12  
-**Producción:** sin cambios  
-**Supabase:** migración/seed 016 preparada, no aplicada
+**Fecha:** 2026-07-14 01:07 UTC
+
+**Rama:** `feature/siio-main-integration`
+
+**PR:** #12
+
+**Producción:** Supabase migración 016 aplicada; aplicación Vercel productiva sin deploy
+
+**Supabase:** migración/seed 016 aplicada y verificada el 2026-07-14 01:07 UTC
 
 ## Objetivo verificado
 
@@ -47,7 +51,7 @@ Convertir los tres archivos históricos de Junta en un flujo inicial para el Das
 - Franja compacta con F1–F6 oficiales.
 - `Modo Junta` separado como vista/salida del Dashboard.
 - Estado explícito `pendiente de validación financiera` cuando corresponda.
-- Estado `sin datos publicados` mientras 016 no esté aplicada; no se muestran ceros engañosos.
+- Mientras 016 no estuviera aplicada, la interfaz mostraba `sin datos publicados`; después de su aplicación consume el snapshot real sin usar ceros engañosos.
 
 ## Evidencias mecánicas
 
@@ -61,10 +65,41 @@ Pruebas *.test.mjs                                32 PASS / 1 FAIL heredado
 
 La única prueba fallida es `tests/tender-company-profile-editable-static.test.mjs`, por el literal `Cargar RUP actualizado`. La misma prueba falla en `main`; no es regresión de este loop.
 
+## Aplicación de migración 016
+
+Autorizada por Juan y ejecutada mediante la RPC administrativa `exec_sql`, en una sola transacción PostgreSQL.
+
+Respaldo previo:
+
+```text
+/root/psi-comercial/backups/siio/016_preapply_20260714T005900Z.json
+SHA-256: a72a161dbda19c43da0d63191e85dae93d2685c71944e6f060d0f501e08d4aaf
+```
+
+Verificación posterior desde la base:
+
+```text
+Columna net_total                                  presente
+Índices únicos 016                                 2/2
+Métricas financieras abril 2026                    9
+Ingresos                                           51,845,041,733.93
+Utilidad neta                                      1,266,594,904.78
+Margen neto                                        2.4430%
+Métricas pendientes de validación financiera       9
+Agregados nómina junio 2026                        12 áreas / 157 personas
+Devengado agregado                                 589,005,147.00
+Deducciones agregadas                              80,418,102.88
+Neto calculado                                     508,587,044.12
+Alertas de calidad                                 1
+Nivel de visibilidad                               junta_agregado
+Columnas personales en tabla agregada              0
+PostgREST financial/payroll                        200 / contrato completo
+Preview Vercel                                     Ready
+```
+
 ## Gates pendientes
 
-1. **Gate DB:** aprobar o rechazar aplicación de migración 016 en Supabase producción.
-2. **Validación financiera:** confirmar cifras y periodos con el responsable financiero.
-3. **Control nómina:** revisar la diferencia agregada de Agencia Medellín en el archivo fuente.
-4. **QA autenticado:** ejecutar matriz por roles cuando Juan decida retomarlo.
-5. **Gate merge/deploy:** PR #12 continúa draft; no merge ni deploy productivo sin aprobación.
+1. **Validación financiera:** confirmar cifras y periodos con el responsable financiero.
+2. **Control nómina:** revisar la diferencia agregada de Agencia Medellín en el archivo fuente.
+3. **QA autenticado:** ejecutar matriz por roles cuando Juan decida retomarlo.
+4. **Gate merge/deploy:** PR #12 continúa draft; no merge ni deploy productivo sin aprobación.
