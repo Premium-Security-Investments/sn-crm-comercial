@@ -74,6 +74,33 @@ export async function callTenderOpportunityDiscard(database, opportunityId, inpu
   });
 }
 
+export async function callTenderOpportunityConversion(database, tenderId, payload, expectedTrackingUpdatedAt, currentProfile) {
+  const id = requireUuid(tenderId, 'una licitación válida');
+  const actorId = requireUuid(currentProfile?.id, 'un actor válido');
+  const ownerId = requireUuid(payload?.owner_id, 'un responsable válido');
+  const externalSource = String(payload?.external_source || '').trim();
+  if (!externalSource.startsWith('secop_radar:')) throw trackingError('El origen externo de la licitación es inválido.');
+
+  return rpc(database, 'psi_convert_tender_to_opportunity', {
+    p_tender_id: id,
+    p_actor_id: actorId,
+    p_external_source: payload.external_source,
+    p_company_name: payload.company_name,
+    p_owner_id: ownerId,
+    p_stage_code: payload.stage_code,
+    p_service_type_code: payload.service_type_code,
+    p_offer_value: payload.offer_value,
+    p_expected_close_date: payload.expected_close_date,
+    p_quote_city: payload.quote_city,
+    p_regional_nombre: payload.regional_nombre,
+    p_sede: payload.sede,
+    p_economic_sector: payload.economic_sector,
+    p_tipo_producto_original: payload.tipo_producto_original,
+    p_observaciones: payload.observaciones,
+    p_expected_tracking_updated_at: nullableTimestamp(expectedTrackingUpdatedAt),
+  });
+}
+
 export async function callTenderTrackingTransition(database, tenderId, input, currentProfile) {
   const id = requireUuid(tenderId, 'una licitación válida');
   const actorId = requireUuid(currentProfile?.id, 'un actor válido');

@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import mammoth from 'mammoth';
 import AdmZip from 'adm-zip';
-import { callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
+import { callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -899,16 +899,6 @@ async function getPersistedTenderByStableKey(database, stableKey) {
   if (!data) throw trackingError('La licitación persistida no existe; no se puede omitir la trazabilidad de seguimiento.', 409);
   return data;
 }
-async function markTenderConverted(database, tender, opportunityId, profileId) {
-  if (!(await tenderTableAvailable(database))) return null;
-  const tenderRecord = await getPersistedTenderByStableKey(database, stableTenderKey(tender));
-  return await callTenderTrackingTransition(database, tenderRecord.id, {
-    internal_status: 'convertida_oportunidad',
-    converted_opportunity_id: opportunityId,
-    note: 'Convertida a oportunidad desde Radar.',
-    expected_tracking_updated_at: tenderRecord.tracking_updated_at,
-  }, { id: profileId });
-}
 async function setTenderStatus(database, stableKey, internalStatus, currentProfile) {
   if (!tenderInternalStatuses.includes(internalStatus)) throw new Error('Estado interno de licitación inválido.');
   if (!(await tenderTableAvailable(database))) throw new Error('La tabla psi_public_tenders aún no existe. Aplica la migración para guardar estados internos.');
@@ -1774,12 +1764,12 @@ async function importTenderDocumentsFromOfficialSource(database, opportunityId, 
 }
 async function convertTenderToOpportunity(database, tender, currentProfile) {
   if (!tender?.source || !tender?.entity || !tender?.title) throw new Error('Licitación inválida para convertir.');
+  if (!(await tenderTableAvailable(database))) throw new Error('La tabla psi_public_tenders aún no existe. Aplica la migración para convertir licitaciones.');
   const owner = await findTenderOwner(database, currentProfile);
   const payload = buildTenderOpportunityPayload(tender, currentProfile.role === 'comercial' ? currentProfile : owner);
-  const existing = await database.from('psi_sales_opportunities').select('id').eq('external_source', payload.external_source).maybeSingle();
-  if (existing.error) throw existing.error;
-  const opportunityId = existing.data?.id || (await must(database.from('psi_sales_opportunities').insert(payload).select('id').single())).id;
-  await markTenderConverted(database, tender, opportunityId, currentProfile.id);
+  const tenderRecord = await getPersistedTenderByStableKey(database, stableTenderKey(tender));
+  const conversion = await callTenderOpportunityConversion(database, tenderRecord.id, payload, tenderRecord.tracking_updated_at, currentProfile);
+  const opportunityId = conversion.opportunity_id;
   let document_import_status = 'no_aplica';
   let document_import_error = null;
   if ((tender.source === 'SECOP II' || tender.source === 'ESU Contratación') && tender.url) {
@@ -1796,7 +1786,7 @@ async function convertTenderToOpportunity(database, tender, currentProfile) {
       await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_import_error', auto_import: true, source: tender.source, error: document_import_error }) }).select('id').single());
     }
   }
-  return { id: opportunityId, duplicate: !!existing.data?.id, document_import_status, document_import_error };
+  return { id: opportunityId, duplicate: !!conversion.duplicate, document_import_status, document_import_error };
 }
 async function markTenderOpportunityDiscarded(database, opportunityId, currentProfile, reason) {
   await ensureTenderOpportunity(database, opportunityId, currentProfile);

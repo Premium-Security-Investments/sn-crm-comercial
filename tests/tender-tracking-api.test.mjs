@@ -13,7 +13,7 @@ assert.doesNotMatch(shared, /trackingRollbackPatch/);
 
 for (const path of ['../api/[...path].js', '../server/index.js']) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-  assert.match(source, /import \{ callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate \} from '\.\.\/tender-tracking-rpc\.js';/);
+  assert.match(source, /import \{ callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate \} from '\.\.\/tender-tracking-rpc\.js';/);
   assert.match(source, /app\.get\('\/api\/tender-tracking'/);
   assert.match(source, /app\.get\('\/api\/tender-tracking-events'/);
   assert.match(source, /app\.post\('\/api\/tender-tracking-update'/);
@@ -30,9 +30,10 @@ for (const path of ['../api/[...path].js', '../server/index.js']) {
   assert.doesNotMatch(statusHandler[0], /\.from\('psi_public_tenders'\)\.update/);
   assert.match(statusHandler[0], /convertida_oportunidad.*conversión/i);
 
-  const conversionHandler = source.match(/async function markTenderConverted\([\s\S]*?\n}\nasync function setTenderStatus/);
-  assert.ok(conversionHandler, 'markTenderConverted must be present');
-  assert.match(conversionHandler[0], /callTenderTrackingTransition\(database, tenderRecord\.id,/);
+  const conversionHandler = source.match(/async function convertTenderToOpportunity\([\s\S]*?\n}\nasync function markTenderOpportunityDiscarded/);
+  assert.ok(conversionHandler, 'convertTenderToOpportunity must be present');
+  assert.match(conversionHandler[0], /callTenderOpportunityConversion\(database, tenderRecord\.id, payload,/);
+  assert.doesNotMatch(conversionHandler[0], /\.from\('psi_sales_opportunities'\)\.insert/);
   assert.doesNotMatch(conversionHandler[0], /\.from\('psi_public_tenders'\)\.update/);
 
   const discardStart = source.indexOf('async function markTenderOpportunityDiscarded');

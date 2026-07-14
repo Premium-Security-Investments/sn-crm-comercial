@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
+import { callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 
 const tenderId = '11111111-1111-4111-8111-111111111111';
 const actorId = '22222222-2222-4222-8222-222222222222';
@@ -145,6 +145,24 @@ await (async function propagatesCombinedDiscardRpcErrorsWithoutFallbackWrites() 
     error => error === stale,
   );
   assert.equal(db.calls.length, 1);
+})();
+
+await (async function callsAtomicConversionRpcWithPersistedTenderPayloadAndToken() {
+  const db = fakeRpcDb({ data: { opportunity_id: opportunityId, duplicate: false } });
+  await callTenderOpportunityConversion(db, tenderId, {
+    external_source: 'secop_radar:SECOP II:one', company_name: 'Entidad', owner_id: ownerId,
+    stage_code: 'prospecto', service_type_code: 'licitacion_publica', offer_value: 123,
+    expected_close_date: '2026-07-20', quote_city: 'Bogotá', regional_nombre: 'Cundinamarca', sede: 'REF-1',
+    economic_sector: 'Sector público', tipo_producto_original: 'Licitación Pública', observaciones: 'Radar',
+  }, expectedAt, { id: actorId });
+  assert.equal(db.calls[0].name, 'psi_convert_tender_to_opportunity');
+  assert.deepEqual(db.calls[0].args, {
+    p_tender_id: tenderId, p_actor_id: actorId, p_external_source: 'secop_radar:SECOP II:one',
+    p_company_name: 'Entidad', p_owner_id: ownerId, p_stage_code: 'prospecto', p_service_type_code: 'licitacion_publica',
+    p_offer_value: 123, p_expected_close_date: '2026-07-20', p_quote_city: 'Bogotá', p_regional_nombre: 'Cundinamarca',
+    p_sede: 'REF-1', p_economic_sector: 'Sector público', p_tipo_producto_original: 'Licitación Pública',
+    p_observaciones: 'Radar', p_expected_tracking_updated_at: expectedAt,
+  });
 })();
 
 console.log('tender tracking RPC backend contract passed');

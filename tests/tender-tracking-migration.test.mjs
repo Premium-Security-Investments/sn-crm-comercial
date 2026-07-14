@@ -5,7 +5,7 @@ const migrationPath = new URL('../supabase/migrations/018_tender_tracking_rpc.sq
 assert.equal(existsSync(migrationPath), true, 'La migración 018 preparada debe crear los RPC transaccionales.');
 
 const sql = readFileSync(migrationPath, 'utf8').toLowerCase().replace(/\s+/g, ' ');
-for (const functionName of ['psi_update_tender_tracking', 'psi_transition_tender_tracking', 'psi_discard_tender_opportunity']) {
+for (const functionName of ['psi_update_tender_tracking', 'psi_transition_tender_tracking', 'psi_discard_tender_opportunity', 'psi_convert_tender_to_opportunity']) {
   assert.match(sql, new RegExp(`create or replace function public\\.${functionName}\\(`));
   assert.match(sql, new RegExp(`revoke all on function public\\.${functionName}[^;]+ from public`));
   assert.match(sql, new RegExp(`revoke all on function public\\.${functionName}[^;]+ from authenticated`));
@@ -77,5 +77,12 @@ assert.match(discardBody, /insert into public\.psi_sales_interactions/);
 assert.match(discardBody, /update public\.psi_public_tenders/);
 assert.match(discardBody, /insert into public\.psi_tender_tracking_events/);
 assert.match(discardBody, /linked_tender_status/);
+
+assert.match(sql, /create unique index if not exists psi_public_tenders_converted_opportunity_id_unique on public\.psi_public_tenders \(converted_opportunity_id\) where converted_opportunity_id is not null/);
+assert.match(sql, /create unique index if not exists psi_sales_opportunities_secop_radar_external_source_unique on public\.psi_sales_opportunities \(external_source\) where external_source like 'secop_radar:%'/);
+assert.match(sql, /existen varias licitaciones vinculadas a la misma oportunidad/);
+assert.match(sql, /on conflict \(external_source\) where external_source like 'secop_radar:%' do nothing/);
+assert.match(sql, /linked_tender_status', 'already_discarded'/);
+assert.match(sql, /linked_tender_status', case when v_opportunity\.stage_code = 'descartado' then 'reconciled' else 'discarded' end/);
 
 console.log('tender tracking migration RPC contract passed');
