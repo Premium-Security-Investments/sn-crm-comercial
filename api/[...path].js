@@ -1171,7 +1171,7 @@ app.get('/api/siio/bootstrap', async (req, res) => {
       optionalSiioList(database, siioTables.boardSections, '*', 'section_order'),
       optionalSiioList(database, siioTables.financialMetrics, '*', 'period_month'),
       optionalSiioList(database, siioTables.commercialSignals, '*', 'period_month'),
-      optionalSiioList(database, siioTables.payrollAggregates, '*', 'period_month'),
+      optionalSiioList(database, siioTables.payrollAggregates, 'id,period_month,area,total_people,total_accrued,total_deductions,net_total,variation_abs,alert,source_id,visibility_level', 'period_month'),
       optionalSiioList(database, siioTables.strategicOpportunities, '*', 'id')
     ]);
     res.json({ fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates, strategicOpportunities, currentProfile: profile });
