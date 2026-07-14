@@ -67,7 +67,7 @@ console.log('siio main integration static checks passed');
 
 - [ ] **Step 3: Verificar RED**
 
-Run: `node tests/siio-main-integration-static.test.mjs`  
+Run: `node tests/siio-main-integration-static.test.mjs`
 Expected: FAIL en el primer marcador SIIO ausente; confirma que el test detecta la integración faltante.
 
 - [ ] **Step 4: Registrar script**
@@ -150,7 +150,7 @@ Add:
 
 - [ ] **Step 5: Verificar GREEN**
 
-Run the three commands from Step 2.  
+Run the three commands from Step 2.
 Expected: PASS para snapshot, agentes y navegación.
 
 - [ ] **Step 6: Commit**

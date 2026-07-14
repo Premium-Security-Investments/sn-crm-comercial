@@ -1,8 +1,8 @@
 # Integración de SIIO Gerencial en `main`
 
-**Fecha:** 2026-07-14  
-**Estado:** Diseño aprobado para especificación  
-**Base:** `main` en `937aed5`  
+**Fecha:** 2026-07-14
+**Estado:** Diseño aprobado para especificación
+**Base:** `main` en `937aed5`
 **Fuente funcional a recuperar:** `feature/siio-main-integration` en `d1f1052`
 
 ## 1. Problema y causa raíz
