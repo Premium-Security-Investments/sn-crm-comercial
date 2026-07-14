@@ -360,10 +360,11 @@ function App() {
     {sidebarOpen && <div className="sidebar-backdrop" onClick={closeSidebar} aria-hidden="true" />}
     <aside id="app-sidebar" className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`} aria-label="Navegación principal">
       <div className="brand"><small>Seguridad Nacional Ltda</small><em>{siioShell ? 'SIIO Gerencial' : 'Dashboard Comercial'}</em></div>
-      <Nav route={route} currentProfile={currentProfile} onNavigate={closeSidebar} />
-      <div className="session-card"><small>Sesión activa</small><strong>{currentProfile?.full_name || session.user.email}</strong><span>{currentProfile?.role || 'perfil'}</span></div>
-      <button className="secondary full" onClick={refresh}>Actualizar datos</button>
-      <button className="secondary full" onClick={() => supabaseBrowser.auth.signOut()}>Cerrar sesión</button>
+      <div className="sidebar-nav-scroll"><Nav route={route} currentProfile={currentProfile} onNavigate={closeSidebar} /></div>
+      <div className="sidebar-footer-compact">
+        <div className="session-card"><small>Sesión activa</small><strong>{currentProfile?.full_name || session.user.email}</strong><span>{currentProfile?.role || 'perfil'}</span></div>
+        <div className="sidebar-footer-actions"><button className="secondary full" onClick={refresh}>Actualizar</button><button className="secondary full" onClick={() => supabaseBrowser.auth.signOut()}>Salir</button></div>
+      </div>
     </aside>
     <main>
       <header className="topbar">

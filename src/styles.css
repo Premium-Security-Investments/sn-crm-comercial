@@ -10,11 +10,15 @@
 }
 *{box-sizing:border-box}
 body{margin:0;background:radial-gradient(circle at top right,#dceaff 0,#f3f6fb 34%,#eef3fa 100%)}
-.app{min-height:100vh;display:grid;grid-template-columns:260px minmax(0,1fr)}
-.sidebar{background:linear-gradient(180deg,#0b1728,#12243c 68%,#0f1b2d);color:white;padding:24px;display:flex;flex-direction:column;gap:22px;position:sticky;top:0;height:100vh;box-shadow:20px 0 45px rgba(15,27,45,.12)}
-.brand{border-bottom:1px solid rgba(255,255,255,.12);padding-bottom:18px}
-.brand small{display:block;color:#fff;margin-top:2px;font-weight:900;font-size:22px;line-height:1.12;letter-spacing:-.02em}
-.brand em{display:block;color:#9db0ca;font-style:normal;font-size:14px;font-weight:700;margin-top:8px;letter-spacing:.02em}
+.app{min-height:100vh;display:grid;grid-template-columns:232px minmax(0,1fr)}
+.sidebar{overflow-y:auto;background:linear-gradient(180deg,#0b1728,#12243c 68%,#0f1b2d);color:white;padding:16px;display:flex;flex-direction:column;gap:12px;position:sticky;top:0;height:100vh;box-shadow:20px 0 45px rgba(15,27,45,.12)}
+.brand{flex:0 0 auto;border-bottom:1px solid rgba(255,255,255,.12);padding:2px 2px 12px}
+.brand small{display:block;color:#fff;margin-top:0;font-weight:900;font-size:17px;line-height:1.12;letter-spacing:-.02em}
+.brand em{display:block;color:#9db0ca;font-style:normal;font-size:12px;font-weight:700;margin-top:5px;letter-spacing:.02em}
+.sidebar-nav-scroll{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-right:3px;scrollbar-width:thin}
+.sidebar-footer-compact{flex:0 0 auto;display:grid;gap:8px;padding-top:10px;border-top:1px solid rgba(255,255,255,.1)}
+.sidebar-footer-compact .session-card{padding:10px 11px;border-radius:12px;gap:2px}.sidebar-footer-compact .session-card small{font-size:9px}.sidebar-footer-compact .session-card strong{font-size:12px;line-height:1.2}.sidebar-footer-compact .session-card span{font-size:11px}
+.sidebar-footer-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}.sidebar-footer-actions button{padding:8px 7px;font-size:11px;border-radius:9px}
 nav{display:flex;flex-direction:column;gap:8px}
 nav a{color:#c7d5e9;text-decoration:none;padding:12px 14px;border-radius:12px;transition:.18s ease}
 nav a.active,nav a:hover{background:rgba(255,255,255,.1);color:#fff;box-shadow:inset 3px 0 0 #4db6ff}
