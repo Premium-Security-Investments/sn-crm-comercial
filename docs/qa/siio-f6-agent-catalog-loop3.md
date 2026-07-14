@@ -69,10 +69,10 @@ node scripts/check_siio_agent_catalog.mjs          PASS
 node tests/siio-agent-catalog-static.test.mjs      PASS
 npm run check:permissions                          PASS
 npm run build                                      PASS
-Pruebas *.test.mjs                                 33 PASS / 1 FAIL heredado
+Pruebas *.test.mjs                                 34 PASS / 0 FAIL
 ```
 
-La falla heredada sigue siendo `tests/tender-company-profile-editable-static.test.mjs`; también falla en `main` y no está relacionada con F6.
+El contrato RUP heredado también quedó restaurado: la interfaz vuelve a mostrar de forma explícita `Cargar RUP actualizado`, `Abrir / editar ficha de empresa` e `Información real de la empresa`.
 
 ## Límites
 
