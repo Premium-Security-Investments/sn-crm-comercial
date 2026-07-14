@@ -7,7 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "server": "node --env-file=.env.local server/index.js",
     "build": "tsc && vite build",
-    "check:permissions": "node scripts/check_nav_permissions.mjs && node scripts/check_backend_permission_guards.mjs && node scripts/check_sensitive_confirmations.mjs && node scripts/check_tender_sensitive_confirmations.mjs && node scripts/check_siio_official_fronts.mjs && node scripts/check_siio_executive_snapshot.mjs",
+    "check:permissions": "node scripts/check_nav_permissions.mjs && node scripts/check_backend_permission_guards.mjs && node scripts/check_sensitive_confirmations.mjs && node scripts/check_tender_sensitive_confirmations.mjs && node scripts/check_siio_official_fronts.mjs && node scripts/check_siio_executive_snapshot.mjs && node scripts/check_siio_agent_catalog.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "start": "node --env-file=.env.local server/index.js"
   },

@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 import { canAccessRoute, canAccessSiio as navCanAccessSiio, canManageUsers as navCanManageUsers, canViewTenders as navCanViewTenders, isManagementRole as navIsManagementRole } from './navPermissions';
 import { deriveSiioExecutiveSnapshot, type SiioFinancialMetric, type SiioPayrollAggregate } from './siioExecutive';
+import { SIIO_AGENT_CATALOG, type SiioInstitutionalAgent } from './siioAgents';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
@@ -594,7 +595,29 @@ function SiioReasoningView({ insights }: { insights: ReturnType<typeof deriveSii
   return <Panel title="F5 · Motor Interno de Razonamiento"><p>Reglas determinísticas activas: cruzan F2 y F4 para priorizar, explicar riesgos y proponer acciones auditables sin ejecutar decisiones automáticamente.</p><div className="pill-row"><span>{insights.length} lecturas vigentes</span><span>Evidencia y recomendación trazables</span></div>{insights.length ? <ul className="clean-list">{insights.map(insight => <li key={insight.id}><strong>{insight.title}</strong> · prioridad {insight.priority}<br/><small>{insight.evidence}</small></li>)}</ul> : <EmptyState title="Sin reglas activadas" text="El motor no encontró evidencia suficiente para emitir una lectura." />}</Panel>;
 }
 function SiioAgentsCatalogView() {
-  return <Panel title="F6 · Catálogo Institucional de Agentes"><p>Inventario y gobierno de agentes IA institucionales: propósito, dueño, rol, permisos, fuentes F4 autorizadas, acciones permitidas, canal, auditoría y estado.</p><ul className="clean-list"><li>Estado actual: pendiente de estructura propia dentro de SIIO.</li><li>Primer candidato: Agente Gerencial MVP sobre F2/F4.</li><li>Regla: ningún agente debe operar sin fuente autorizada, límites de acción y trazabilidad.</li></ul></Panel>;
+  const pilots = SIIO_AGENT_CATALOG.filter(agent => agent.status === 'piloto').length;
+  const partial = SIIO_AGENT_CATALOG.filter(agent => agent.status === 'operativo_parcial').length;
+  const design = SIIO_AGENT_CATALOG.filter(agent => agent.status === 'diseño').length;
+  return <div className="stack">
+    <Panel title="F6 · Catálogo Institucional de Agentes">
+      <p>Inventario institucional gobernado. Registrar un agente aquí no lo vuelve autónomo ni le concede permisos adicionales.</p>
+      <div className="siio-agent-summary"><div><span>Total catalogados</span><strong>{SIIO_AGENT_CATALOG.length}</strong></div><div><span>Piloto</span><strong>{pilots}</strong></div><div><span>Operativo parcial</span><strong>{partial}</strong></div><div><span>Diseño</span><strong>{design}</strong></div></div>
+    </Panel>
+    <div className="siio-agent-grid">{SIIO_AGENT_CATALOG.map(agent => <SiioAgentGovernanceCard key={agent.id} agent={agent} />)}</div>
+  </div>;
+}
+function SiioAgentGovernanceCard({ agent }: { agent: SiioInstitutionalAgent }) {
+  const statusLabel = agent.status === 'operativo_parcial' ? 'Operativo parcial' : agent.status === 'diseño' ? 'Diseño' : 'Piloto';
+  const statusTone = agent.status === 'operativo_parcial' ? 'blue' : agent.status === 'piloto' ? 'amber' : 'purple';
+  return <article className="siio-agent-card">
+    <header><div><span className="eyebrow">{agent.id}</span><h3>{agent.name}</h3><small>Responsable institucional: {agent.owner_role}</small></div><Badge tone={statusTone}>{statusLabel}</Badge></header>
+    <section><strong>Propósito</strong><p>{agent.purpose}</p></section>
+    <section><strong>Capacidad actual</strong><p>{agent.current_capability}</p></section>
+    <div className="siio-agent-tags"><strong>Frentes autorizados</strong><div>{agent.authorized_fronts.map(front => <span key={front}>{front}</span>)}</div></div>
+    <div className="siio-agent-tags"><strong>Fuentes autorizadas</strong><div>{agent.authorized_sources.map(source => <span key={source}>{source}</span>)}</div></div>
+    <div className="siio-agent-action-grid"><section><strong>Acciones permitidas</strong><ul>{agent.permitted_actions.map(action => <li key={action}>{action}</li>)}</ul></section><section className="forbidden"><strong>Acciones prohibidas</strong><ul>{agent.forbidden_actions.map(action => <li key={action}>{action}</li>)}</ul></section></div>
+    <footer><div><strong>Regla de auditoría</strong><span>{agent.audit_rule}</span></div><div><strong>Siguiente gate</strong><span>{agent.next_gate}</span></div><div className="siio-agent-gates"><Badge tone="amber">Revisión humana obligatoria</Badge><Badge tone="red">Sin escritura automática en producción</Badge></div></footer>
+  </article>;
 }
 function SiioBoardView({ reports, sections, onGenerate }: { reports: SiioBoardReport[]; sections: SiioBootstrap['boardSections']; onGenerate: () => Promise<void> }) {
   const generate = async () => {
