@@ -901,6 +901,200 @@ async function setTenderStatus(database, stableKey, internalStatus, currentProfi
   return dbTenderToPublic(data);
 }
 
+const tenderTrackingStatuses = new Set(['pendiente_revision', 'analizando', 'esperando_informacion', 'listo_para_decision', 'bloqueado']);
+const tenderTrackingEventTypes = new Set(['entered_tracking', 'tracking_updated', 'assigned', 'blocked', 'unblocked', 'returned_to_radar', 'converted', 'discarded']);
+const tenderTrackingTransitions = {
+  nueva: 'returned_to_radar',
+  descartada: 'discarded',
+  convertida_oportunidad: 'converted'
+};
+const tenderTrackingIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function trackingError(message, status = 400) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+function requireTenderTrackingId(value) {
+  const tenderId = String(value || '').trim();
+  if (!tenderTrackingIdPattern.test(tenderId)) throw trackingError('Debe indicar una licitación válida.');
+  return tenderId;
+}
+
+function cleanTrackingText(value, max = 1200) {
+  return String(value || '').trim().slice(0, max) || null;
+}
+
+function validateTenderTrackingEventType(value, fallback) {
+  const eventType = String(value || fallback || '').trim();
+  if (!tenderTrackingEventTypes.has(eventType)) throw trackingError('Tipo de evento de seguimiento inválido.');
+  return eventType;
+}
+
+async function getTenderTrackingTender(database, tenderId) {
+  const { data, error } = await database.from('psi_public_tenders').select('*').eq('id', tenderId).maybeSingle();
+  if (error) throw error;
+  if (!data) throw trackingError('La licitación no existe.', 404);
+  return data;
+}
+
+function trackingRollbackPatch(tender) {
+  return {
+    internal_status: tender.internal_status,
+    tracking_owner_id: tender.tracking_owner_id,
+    tracking_status: tender.tracking_status,
+    tracking_next_action: tender.tracking_next_action,
+    tracking_due_at: tender.tracking_due_at,
+    tracking_blocker: tender.tracking_blocker,
+    tracking_last_note: tender.tracking_last_note,
+    tracking_started_at: tender.tracking_started_at,
+    tracking_updated_at: tender.tracking_updated_at,
+    reviewed_by: tender.reviewed_by,
+    reviewed_at: tender.reviewed_at,
+    converted_opportunity_id: tender.converted_opportunity_id
+  };
+}
+
+async function updateTenderTracking(database, tenderId, input, currentProfile) {
+  const currentTender = await getTenderTrackingTender(database, tenderId);
+  const now = new Date().toISOString();
+  const trackingStatus = String(input?.tracking_status || 'pendiente_revision').trim();
+  if (!tenderTrackingStatuses.has(trackingStatus)) throw trackingError('Estado de seguimiento inválido.');
+  const eventType = validateTenderTrackingEventType(input?.event_type, 'tracking_updated');
+  const patch = {
+    internal_status: 'en_revision',
+    tracking_owner_id: input?.tracking_owner_id || currentProfile.id,
+    tracking_status: trackingStatus,
+    tracking_next_action: cleanTrackingText(input?.tracking_next_action, 500),
+    tracking_due_at: input?.tracking_due_at || null,
+    tracking_blocker: cleanTrackingText(input?.tracking_blocker),
+    tracking_last_note: cleanTrackingText(input?.note),
+    tracking_started_at: currentTender.tracking_started_at || input?.tracking_started_at || now,
+    tracking_updated_at: now,
+    reviewed_by: currentProfile.id,
+    reviewed_at: now
+  };
+  const tender = await must(database.from('psi_public_tenders').update(patch).eq('id', tenderId).select('*').single());
+  try {
+    await must(database.from('psi_tender_tracking_events').insert({
+      tender_id: tenderId,
+      event_type: eventType,
+      note: patch.tracking_last_note,
+      from_status: currentTender.tracking_status,
+      to_status: trackingStatus,
+      assigned_to: patch.tracking_owner_id,
+      next_action: patch.tracking_next_action,
+      due_at: patch.tracking_due_at,
+      blocker: patch.tracking_blocker,
+      created_by: currentProfile.id
+    }).select('id').single());
+  } catch (eventError) {
+    try {
+      await must(database.from('psi_public_tenders').update(trackingRollbackPatch(currentTender)).eq('id', tenderId).eq('tracking_updated_at', now).select('id').single());
+    } catch (rollbackError) {
+      const error = trackingError('No se pudo registrar el historial y tampoco revertir el seguimiento. Requiere revisión manual.', 500);
+      error.cause = rollbackError;
+      throw error;
+    }
+    throw trackingError('No se pudo registrar el historial; la actualización de seguimiento fue revertida.', 500);
+  }
+  return tender;
+}
+
+async function transitionTenderTracking(database, tenderId, input, currentProfile) {
+  const currentTender = await getTenderTrackingTender(database, tenderId);
+  const targetStatus = String(input?.internal_status || '').trim();
+  const expectedEventType = tenderTrackingTransitions[targetStatus];
+  if (!expectedEventType) throw trackingError('Transición de seguimiento inválida.');
+  if (currentTender.internal_status !== 'en_revision') throw trackingError('Solo las licitaciones en seguimiento pueden cambiar de estado.');
+  const eventType = validateTenderTrackingEventType(input?.event_type, expectedEventType);
+  if (eventType !== expectedEventType) throw trackingError('El tipo de evento no corresponde a la transición.');
+  if (targetStatus === 'convertida_oportunidad' && !input?.converted_opportunity_id) throw trackingError('Debe indicar la oportunidad convertida.');
+  const now = new Date().toISOString();
+  const patch = {
+    internal_status: targetStatus,
+    tracking_owner_id: null,
+    tracking_status: null,
+    tracking_next_action: null,
+    tracking_due_at: null,
+    tracking_blocker: null,
+    tracking_last_note: cleanTrackingText(input?.note) || currentTender.tracking_last_note,
+    tracking_started_at: null,
+    tracking_updated_at: now,
+    reviewed_by: currentProfile.id,
+    reviewed_at: now,
+    ...(targetStatus === 'convertida_oportunidad' ? { converted_opportunity_id: input.converted_opportunity_id } : {})
+  };
+  const tender = await must(database.from('psi_public_tenders').update(patch).eq('id', tenderId).select('*').single());
+  try {
+    await must(database.from('psi_tender_tracking_events').insert({
+      tender_id: tenderId,
+      event_type: eventType,
+      note: cleanTrackingText(input?.note),
+      from_status: currentTender.internal_status,
+      to_status: targetStatus,
+      assigned_to: null,
+      next_action: null,
+      due_at: null,
+      blocker: null,
+      created_by: currentProfile.id
+    }).select('id').single());
+  } catch (eventError) {
+    try {
+      await must(database.from('psi_public_tenders').update(trackingRollbackPatch(currentTender)).eq('id', tenderId).eq('tracking_updated_at', now).select('id').single());
+    } catch (rollbackError) {
+      const error = trackingError('No se pudo registrar el historial y tampoco revertir la transición. Requiere revisión manual.', 500);
+      error.cause = rollbackError;
+      throw error;
+    }
+    throw trackingError('No se pudo registrar el historial; la transición fue revertida.', 500);
+  }
+  return tender;
+}
+
+function requireTenderTrackingAccess(profile) {
+  if (!canViewTenders(profile)) throw trackingError('Solo dirección o licitaciones puede gestionar seguimiento.', 403);
+}
+
+app.get('/api/tender-tracking', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireTenderTrackingAccess(currentProfile);
+    const tenders = await must(requireDb().from('psi_public_tenders').select('*').eq('internal_status', 'en_revision').order('tracking_due_at', { ascending: true, nullsFirst: false }).order('tracking_updated_at', { ascending: false }));
+    res.json(tenders || []);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.get('/api/tender-tracking-events', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireTenderTrackingAccess(currentProfile);
+    const database = requireDb();
+    const tenderId = requireTenderTrackingId(req.query.id);
+    await getTenderTrackingTender(database, tenderId);
+    res.json(await must(database.from('psi_tender_tracking_events').select('*').eq('tender_id', tenderId).order('created_at', { ascending: false })) || []);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-tracking-update', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireTenderTrackingAccess(currentProfile);
+    const tenderId = requireTenderTrackingId(req.body?.id);
+    res.json(await updateTenderTracking(requireDb(), tenderId, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-tracking-transition', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireTenderTrackingAccess(currentProfile);
+    const tenderId = requireTenderTrackingId(req.body?.id);
+    res.json(await transitionTenderTracking(requireDb(), tenderId, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 app.get('/api/tenders', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
