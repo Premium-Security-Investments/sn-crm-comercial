@@ -68,11 +68,13 @@ begin
     raise exception 'El responsable de seguimiento no existe o está inactivo.' using errcode = '22023';
   end if;
 
-  if coalesce(v_tender.internal_status, 'nueva') = 'nueva' then
+  if v_tender.internal_status = 'nueva' then
     if p_expected_tracking_updated_at is not null then
       raise exception 'La versión inicial de seguimiento debe ser nula.' using errcode = 'P0001';
     end if;
     v_event_type := 'entered_tracking';
+  elsif v_tender.internal_status is distinct from 'en_revision' then
+    raise exception 'Solo se puede iniciar seguimiento desde una licitación nueva o actualizar una en revisión.' using errcode = 'P0001';
   elsif v_tender.internal_status = 'en_revision' then
     if p_expected_tracking_updated_at is null then
       raise exception 'Debe indicar la versión de seguimiento para evitar conflictos.' using errcode = 'P0001';
@@ -178,8 +180,8 @@ begin
   end if;
 
   -- The source state owns both the allowed targets and whether its token is null.
-  -- Use NULL-safe comparisons because older persisted rows may have a null status.
-  if coalesce(v_tender.internal_status, 'nueva') = 'nueva' then
+  -- Persisted NULL lifecycle states must reach the NULL-safe invalid-origin guard.
+  if v_tender.internal_status = 'nueva' then
     if p_expected_tracking_updated_at is not null then
       raise exception 'La versión inicial de seguimiento debe ser nula.' using errcode = 'P0001';
     end if;
