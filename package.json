@@ -7,6 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "server": "node --env-file=.env.local server/index.js",
     "build": "tsc && vite build",
+    "check:siio-integration": "node tests/siio-main-integration-static.test.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "start": "node --env-file=.env.local server/index.js"
   },
