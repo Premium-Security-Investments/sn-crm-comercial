@@ -48,6 +48,14 @@ function validateCommercialArea(value) { const area = value || null; if (area &&
 function validateCustomerSegment(value, required = false) { const segment = value || null; if (required && !segment) throw new Error('Debe clasificar la oportunidad como Cliente Nuevo o Cliente Actual.'); if (segment && !customerSegments.includes(segment)) throw new Error('Tipo de cliente no válido.'); return segment; }
 function canEditCustomerSegment(profile, opportunity) { return isManager(profile) || (profile?.can_edit_customer_segment && opportunity?.owner_id === profile.id); }
 function canManageUsers(profile) { return profile?.role === 'admin'; }
+function canAccessSiio(profile) { return ['admin','gerencia','director'].includes(profile?.role); }
+function requireSiioAccess(profile) {
+  if (!canAccessSiio(profile)) {
+    const error = new Error('No tiene permisos para acceder al SIIO / F2 gerencial.');
+    error.status = 403;
+    throw error;
+  }
+}
 function normalizeUserRole(value) {
   const raw = String(value || 'comercial').trim().toLowerCase();
   if (raw === 'directivo') return 'director';
@@ -1057,6 +1065,187 @@ app.post('/api/tender-convert', async (req, res) => {
     const tender = req.body?.tender || req.body;
     const result = await convertTenderToOpportunity(database, tender, currentProfile);
     res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+const siioTables = {
+  fronts: 'siio_fronts',
+  sources: 'siio_sources',
+  records: 'siio_gerencial_records',
+  decisions: 'siio_decisions_commitments',
+  boardReports: 'siio_monthly_board_reports',
+  boardSections: 'siio_board_sections',
+  financialMetrics: 'siio_financial_metrics',
+  commercialSignals: 'siio_commercial_signals',
+  payrollAggregates: 'siio_payroll_aggregates',
+  strategicOpportunities: 'siio_strategic_opportunities'
+};
+async function optionalSiioList(database, table, select = '*', order = 'created_at') {
+  const query = database.from(table).select(select).limit(1000);
+  if (order) query.order(order, { ascending: table === 'siio_board_sections' });
+  const { data, error } = await query;
+  if (error) {
+    const message = String(error.message || '').toLowerCase();
+    if (message.includes('does not exist') || message.includes('schema cache')) return [];
+    throw error;
+  }
+  return data || [];
+}
+function cleanSiioRecord(body = {}, profile) {
+  const allowedPriority = ['crítica','alta','media','baja'];
+  const allowedSemaforo = ['verde','amarillo','rojo'];
+  const priority = allowedPriority.includes(body.priority) ? body.priority : 'media';
+  const semaforo = allowedSemaforo.includes(body.semaforo) ? body.semaforo : 'amarillo';
+  return {
+    id: String(body.id || '').trim(),
+    front_id: String(body.front_id || 'F2').trim(),
+    title: String(body.title || '').trim(),
+    record_type: String(body.record_type || 'iniciativa').trim(),
+    objective: String(body.objective || '').trim(),
+    area: body.area || null,
+    owner: body.owner || null,
+    sponsor: body.sponsor || null,
+    status: String(body.status || 'diseño').trim(),
+    priority,
+    semaforo,
+    next_milestone: body.next_milestone || null,
+    next_action: body.next_action || null,
+    commitment_date: body.commitment_date || null,
+    blockers: body.blockers || null,
+    risks: body.risks || null,
+    decision_required: body.decision_required || null,
+    decision_owner: body.decision_owner || null,
+    source_ids: Array.isArray(body.source_ids) ? body.source_ids : [],
+    executive_notes: body.executive_notes || null,
+    updated_by: profile.id
+  };
+}
+function cleanSiioSource(body = {}) {
+  return {
+    id: String(body.id || '').trim(),
+    name: String(body.name || '').trim(),
+    source_type: String(body.source_type || 'documento').trim(),
+    related_fronts: Array.isArray(body.related_fronts) ? body.related_fronts : [],
+    related_records: Array.isArray(body.related_records) ? body.related_records : [],
+    url: body.url || null,
+    owner: body.owner || null,
+    responsible_area: body.responsible_area || null,
+    trust_level: body.trust_level || 'pendiente',
+    status: body.status || 'activa',
+    permissions: body.permissions || '',
+    allowed_agent_use: body.allowed_agent_use || '',
+    restrictions: body.restrictions || '',
+    update_frequency: body.update_frequency || 'bajo demanda'
+  };
+}
+function cleanSiioDecision(body = {}, profile) {
+  const allowedTypes = ['decision','compromiso','bloqueo','riesgo'];
+  const allowedStatus = ['pendiente','en_proceso','bloqueado','cerrado','vencido'];
+  const item_type = allowedTypes.includes(body.item_type) ? body.item_type : 'decision';
+  const status = allowedStatus.includes(body.status) ? body.status : 'pendiente';
+  return {
+    item_type,
+    origin: body.origin || 'gerencia',
+    related_record_id: body.related_record_id || null,
+    description: String(body.description || '').trim(),
+    owner: body.owner || null,
+    due_date: body.due_date || null,
+    status,
+    impact: body.impact || null,
+    source_ids: Array.isArray(body.source_ids) ? body.source_ids : [],
+    updated_by: profile.id
+  };
+}
+
+app.get('/api/siio/bootstrap', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioAccess(profile);
+    const database = requireDb();
+    const [fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates, strategicOpportunities] = await Promise.all([
+      optionalSiioList(database, siioTables.fronts, '*', 'id'),
+      optionalSiioList(database, siioTables.records, '*', 'updated_at'),
+      optionalSiioList(database, siioTables.sources, '*', 'id'),
+      optionalSiioList(database, siioTables.decisions, '*', 'created_at'),
+      optionalSiioList(database, siioTables.boardReports, '*', 'period_month'),
+      optionalSiioList(database, siioTables.boardSections, '*', 'section_order'),
+      optionalSiioList(database, siioTables.financialMetrics, '*', 'period_month'),
+      optionalSiioList(database, siioTables.commercialSignals, '*', 'period_month'),
+      optionalSiioList(database, siioTables.payrollAggregates, '*', 'period_month'),
+      optionalSiioList(database, siioTables.strategicOpportunities, '*', 'id')
+    ]);
+    res.json({ fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates, strategicOpportunities, currentProfile: profile });
+  } catch (error) { sendAuthError(res, error); }
+});
+app.get('/api/siio/fronts', async (req, res) => {
+  try { const { profile } = await getAuthContext(req); requireSiioAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.fronts, '*', 'id')); }
+  catch (error) { sendAuthError(res, error); }
+});
+app.get('/api/siio/records', async (req, res) => {
+  try { const { profile } = await getAuthContext(req); requireSiioAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.records, '*', 'updated_at')); }
+  catch (error) { sendAuthError(res, error); }
+});
+app.post('/api/siio/records', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req); requireSiioAccess(profile);
+    const payload = { ...cleanSiioRecord(req.body, profile), created_by: profile.id };
+    if (!payload.id || !payload.title) throw new Error('ID y título son obligatorios.');
+    res.json(await must(requireDb().from(siioTables.records).insert(payload).select('*').single()));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.patch('/api/siio/records/:id', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req); requireSiioAccess(profile);
+    const payload = cleanSiioRecord({ ...req.body, id: req.params.id }, profile); delete payload.id; delete payload.created_by;
+    res.json(await must(requireDb().from(siioTables.records).update(payload).eq('id', req.params.id).select('*').single()));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.get('/api/siio/sources', async (req, res) => {
+  try { const { profile } = await getAuthContext(req); requireSiioAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.sources, '*', 'id')); }
+  catch (error) { sendAuthError(res, error); }
+});
+app.post('/api/siio/sources', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req); requireSiioAccess(profile);
+    const payload = cleanSiioSource(req.body);
+    if (!payload.id || !payload.name) throw new Error('ID y nombre de fuente son obligatorios.');
+    res.json(await must(requireDb().from(siioTables.sources).upsert(payload).select('*').single()));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.get('/api/siio/decisions', async (req, res) => {
+  try { const { profile } = await getAuthContext(req); requireSiioAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.decisions, '*', 'created_at')); }
+  catch (error) { sendAuthError(res, error); }
+});
+app.post('/api/siio/decisions', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req); requireSiioAccess(profile);
+    const payload = { ...cleanSiioDecision(req.body, profile), created_by: profile.id };
+    if (!payload.description) throw new Error('La descripción es obligatoria.');
+    res.json(await must(requireDb().from(siioTables.decisions).insert(payload).select('*').single()));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.patch('/api/siio/decisions/:id', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req); requireSiioAccess(profile);
+    res.json(await must(requireDb().from(siioTables.decisions).update(cleanSiioDecision(req.body, profile)).eq('id', req.params.id).select('*').single()));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+app.get('/api/siio/board-reports', async (req, res) => {
+  try { const { profile } = await getAuthContext(req); requireSiioAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.boardReports, '*', 'period_month')); }
+  catch (error) { sendAuthError(res, error); }
+});
+app.post('/api/siio/board-reports/generate-draft', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req); requireSiioAccess(profile);
+    const period = String(req.body?.period || new Date().toISOString().slice(0, 7));
+    const reportId = `JUNTA-${period}`;
+    const records = await optionalSiioList(requireDb(), siioTables.records, '*', 'updated_at');
+    const decisions = await optionalSiioList(requireDb(), siioTables.decisions, '*', 'created_at');
+    const sources = await optionalSiioList(requireDb(), siioTables.sources, '*', 'id');
+    const summary = `Borrador SIIO/F2 ${period}: ${records.length} registros gerenciales, ${decisions.length} decisiones/compromisos y ${sources.length} fuentes trazables. Cifras financieras requieren validación humana.`;
+    const payload = { id: reportId, period_month: `${period}-01`, status: 'borrador', generated_at: new Date().toISOString(), summary, source_ids: sources.map(s => s.id).filter(Boolean), created_by: profile.id, updated_by: profile.id };
+    const report = await must(requireDb().from(siioTables.boardReports).upsert(payload).select('*').single());
+    res.json({ report, summary, counts: { records: records.length, decisions: decisions.length, sources: sources.length } });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
