@@ -24,7 +24,7 @@
     "react": "latest",
     "react-dom": "latest",
     "typescript": "latest",
-    "vite": "latest"
+    "vite": "^8.1.4"
   },
   "devDependencies": {
     "@types/express": "latest",
