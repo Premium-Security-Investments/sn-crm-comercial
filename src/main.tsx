@@ -6,6 +6,7 @@ import './styles.css';
 import { canAccessRoute, canAccessSiio as navCanAccessSiio, canManageUsers as navCanManageUsers, canViewTenders as navCanViewTenders, isManagementRole as navIsManagementRole } from './navPermissions';
 import { deriveSiioExecutiveSnapshot, type SiioFinancialMetric, type SiioPayrollAggregate } from './siioExecutive';
 import { SIIO_AGENT_CATALOG, type SiioInstitutionalAgent } from './siioAgents';
+import { TendersModule } from './tenders/TendersModule';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
@@ -467,7 +468,7 @@ function Nav({ route, currentProfile, onNavigate }: { route: Route; currentProfi
 function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; refresh: () => Promise<void> }) {
   if (!canAccessRoute(data.currentProfile, route.page)) return <div className="error">No tienes permiso para ver esta sección.</div>;
   if (route.page === 'opportunities') return <OpportunityList data={data} />;
-  if (route.page === 'tenders') return <TendersRadar data={data} refresh={refresh} />;
+  if (route.page === 'tenders') return <TendersModule view={tenderViewFromHash()} data={data} refresh={refresh} request={api} navigate={go} renderLegacy={() => <TendersRadar data={data} refresh={refresh} />} />;
   if (route.page === 'detail' && route.id) return <OpportunityDetail id={route.id} data={data} refresh={refresh} />;
   if (route.page === 'new') return <OpportunityForm data={data} refresh={refresh} />;
   if (route.page === 'edit' && route.id) return <OpportunityForm data={data} id={route.id} refresh={refresh} />;
