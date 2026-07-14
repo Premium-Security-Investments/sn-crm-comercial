@@ -4,6 +4,7 @@ import { createClient, type Session } from '@supabase/supabase-js';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 import { canAccessRoute, canAccessSiio as navCanAccessSiio, canManageUsers as navCanManageUsers, canViewTenders as navCanViewTenders, isManagementRole as navIsManagementRole } from './navPermissions';
+import { deriveSiioExecutiveSnapshot, type SiioFinancialMetric, type SiioPayrollAggregate } from './siioExecutive';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
@@ -55,10 +56,10 @@ type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | '
 type DashboardPeriodFilter = '' | 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
 type SiioFront = { id: string; name: string; description?: string; status?: string; owner_role?: string | null };
 type SiioRecord = { id: string; front_id: string; title: string; record_type?: string; owner?: string | null; decision_owner?: string | null; status?: string; priority?: string; semaforo?: 'verde' | 'amarillo' | 'rojo' | string; next_action?: string | null; blockers?: string | null; risks?: string | null; decision_required?: string | null; source_ids?: string[] };
-type SiioSource = { id: string; name: string; source_type?: string; trust_level?: string; status?: string; restrictions?: string | null; related_fronts?: string[]; url?: string | null };
+type SiioSource = { id: string; name: string; source_type?: string; trust_level?: string; status?: string; restrictions?: string | null; related_fronts?: string[]; url?: string | null; last_reviewed_at?: string | null; next_review_at?: string | null; update_frequency?: string | null };
 type SiioDecision = { id: string; item_type: 'decision' | 'compromiso' | 'bloqueo' | 'riesgo' | string; description: string; owner?: string | null; due_date?: string | null; status?: string; impact?: string | null; related_record_id?: string | null };
 type SiioBoardReport = { id: string; period_month: string; status: string; summary?: string; generated_at?: string; source_ids?: string[] };
-type SiioBootstrap = { fronts: SiioFront[]; records: SiioRecord[]; sources: SiioSource[]; decisions: SiioDecision[]; boardReports: SiioBoardReport[]; boardSections: Array<{ id?: string; name: string; section_order?: number; human_review_required?: boolean }>; financialMetrics: any[]; commercialSignals: any[]; payrollAggregates: any[]; strategicOpportunities: any[]; currentProfile: Profile };
+type SiioBootstrap = { fronts: SiioFront[]; records: SiioRecord[]; sources: SiioSource[]; decisions: SiioDecision[]; boardReports: SiioBoardReport[]; boardSections: Array<{ id?: string; name: string; section_order?: number; human_review_required?: boolean }>; financialMetrics: SiioFinancialMetric[]; commercialSignals: any[]; payrollAggregates: SiioPayrollAggregate[]; strategicOpportunities: any[]; currentProfile: Profile };
 type SiioTab = 'inicio' | 'frentes' | 'registros' | 'decisiones' | 'archivo' | 'razonamiento' | 'agentes' | 'junta';
 
 type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; };
@@ -456,6 +457,14 @@ function ExecutiveSummary({ data, active, largestStage }: { data: Bootstrap; act
     </div>
   </section>;
 }
+function formatSiioPeriod(period?: string | null) {
+  if (!period) return 'Sin datos publicados';
+  return new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${period}T12:00:00Z`));
+}
+function siioFinancialValue(metric?: SiioFinancialMetric, percent = false) {
+  if (!metric || metric.value_current === null || metric.value_current === undefined) return 'Sin datos';
+  return percent ? new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(metric.value_current) : money.format(metric.value_current);
+}
 function SiioDashboard({ currentProfile }: { currentProfile: Profile }) {
   const [payload, setPayload] = useState<SiioBootstrap | null>(null);
   const [status, setStatus] = useState('Cargando SIIO / Gestión Gerencial y Control…');
@@ -466,6 +475,11 @@ function SiioDashboard({ currentProfile }: { currentProfile: Profile }) {
     catch (e) { setStatus(e instanceof Error ? e.message : String(e)); }
   };
   useEffect(() => { load(); }, []);
+  const executive = useMemo(() => deriveSiioExecutiveSnapshot({
+    financialMetrics: payload?.financialMetrics || [],
+    payrollAggregates: payload?.payrollAggregates || [],
+    sources: payload?.sources || [],
+  }), [payload]);
   if (!isManagementRole(currentProfile.role)) return <section className="stack"><div className="error">SIIO / Gestión Gerencial y Control es una visual gerencial. Tu perfil actual no tiene acceso.</div></section>;
   const records = payload?.records || [];
   const sources = payload?.sources || [];
@@ -475,32 +489,25 @@ function SiioDashboard({ currentProfile }: { currentProfile: Profile }) {
   const blockers = decisions.filter(d => d.item_type === 'bloqueo' || d.status === 'bloqueado').length + records.filter(r => r.blockers).length;
   const pendingDecisions = decisions.filter(d => d.item_type === 'decision' && !['cerrado'].includes(d.status || '')).length + records.filter(r => r.decision_required).length;
   const siioTabs: Array<{ key: SiioTab; label: string }> = [
-    { key: 'inicio', label: 'Inicio' },
+    { key: 'inicio', label: 'Resumen ejecutivo' },
     { key: 'frentes', label: 'Frentes F1-F6' },
     { key: 'registros', label: 'Registro F2' },
     { key: 'decisiones', label: 'Decisiones/Bloqueos' },
     { key: 'archivo', label: 'Archivo F4' },
     { key: 'razonamiento', label: 'Razonamiento F5' },
     { key: 'agentes', label: 'Agentes F6' },
-    { key: 'junta', label: 'Salida junta' },
+    { key: 'junta', label: 'Modo Junta' },
   ];
   return <section className="stack siio-dashboard">
     <section className="executive-hero">
-      <div><span className="eyebrow">Plataforma PSI · SIIO Gerencial</span><h2>Centro de Control Gerencial</h2><p>Vista directiva alineada con los frentes oficiales: F1 Gestión Comercial Inteligente, F2 Gestión Gerencial y Control, F3 Gestión Operativa — F3A Personal activo y operación diaria y F3B Reclutamiento, selección y contratación permanente —, F4 Archivo Corporativo Inteligente, F5 Motor Interno de Razonamiento y F6 Catálogo Institucional de Agentes.</p></div>
-      <div className="hero-facts"><div><small>Perfil</small><strong>{roleLabel(currentProfile.role)}</strong></div><div><small>Modo</small><strong>MVP branch</strong></div><div><small>Frente base</small><strong>F2 Gerencial</strong></div></div>
+      <div><span className="eyebrow">Plataforma PSI · SIIO Gerencial</span><h2>Centro de Control Gerencial</h2><p>Información permanente para dirección: resultados financieros, nómina agregada, señales comerciales, riesgos, decisiones, fuentes y trazabilidad. Modo Junta es una salida del sistema, no su fuente de verdad.</p></div>
+      <div className="hero-facts"><div><small>Perfil</small><strong>{roleLabel(currentProfile.role)}</strong></div><div><small>Periodo financiero</small><strong>{formatSiioPeriod(executive.financialPeriod)}</strong></div><div><small>Periodo nómina</small><strong>{formatSiioPeriod(executive.payrollPeriod)}</strong></div></div>
     </section>
     {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}
-    <div className="grid kpis">
-      <Kpi icon="◎" tone="blue" label="Registros gerenciales" value={records.length.toString()} hint="Proyectos, frentes e iniciativas F2" meta="Gestión Gerencial y Control" />
-      <Kpi icon="!" tone={red ? 'amber' : 'green'} label="Frentes/registros en rojo" value={red.toString()} hint="Semáforo ejecutivo" meta={red ? 'Requiere revisión' : 'Sin rojos'} />
-      <Kpi icon="◆" tone={blockers ? 'amber' : 'green'} label="Bloqueos/riesgos" value={blockers.toString()} hint="Items que impiden avanzar" meta="Vista gerencial" />
-      <Kpi icon="?" tone={pendingDecisions ? 'purple' : 'green'} label="Decisiones pendientes" value={pendingDecisions.toString()} hint="Para dirección/junta" meta="Accionable" />
-      <Kpi icon="F4" tone="indigo" label="Archivo Corporativo Inteligente" value={sources.length.toString()} hint="Fuentes, documentos y restricciones" meta="Capa F4" />
-    </div>
     <div className="tabs siio-tabs">
       {siioTabs.map(({ key, label }) => <button key={key} className={activeTab===key ? 'active' : ''} onClick={() => setActiveTab(key)}>{label}</button>)}
     </div>
-    {activeTab === 'inicio' && <div className="grid two dashboard-panels"><Panel title="Lectura ejecutiva"><ul className="clean-list"><li><strong>{records.length}</strong> registros vivos para seguimiento gerencial.</li><li><strong>{pendingDecisions}</strong> decisiones pendientes o declaradas en registros.</li><li><strong>{blockers}</strong> bloqueos/riesgos visibles.</li><li><strong>{sources.length}</strong> fuentes/documentos registrados en Archivo Corporativo Inteligente.</li></ul></Panel><Panel title="Reglas de diseño"><ul className="clean-list"><li>F1 Gestión Comercial Inteligente vive en el CRM comercial y alimenta señales ejecutivas.</li><li>F2 Gestión Gerencial y Control es la vista base de dirección.</li><li>F4 Archivo Corporativo Inteligente gobierna fuentes, documentos y restricciones.</li><li>F5 Motor Interno de Razonamiento y F6 Catálogo Institucional de Agentes se diseñan como capas separadas, no como junta ni backlog genérico.</li></ul></Panel></div>}
+    {activeTab === 'inicio' && <SiioExecutiveHome executive={executive} records={records} decisions={decisions} red={red} blockers={blockers} pendingDecisions={pendingDecisions} />}
     {activeTab === 'frentes' && <SiioFrontsView fronts={payload?.fronts || []} records={records} />}
     {activeTab === 'registros' && <SiioRecordsView records={records} />}
     {activeTab === 'decisiones' && <SiioDecisionsView decisions={decisions} records={records} />}
@@ -509,6 +516,54 @@ function SiioDashboard({ currentProfile }: { currentProfile: Profile }) {
     {activeTab === 'agentes' && <SiioAgentsCatalogView />}
     {activeTab === 'junta' && <SiioBoardView reports={reports} sections={payload?.boardSections || []} onGenerate={load} />}
   </section>;
+}
+function SiioExecutiveHome({ executive, records, decisions, red, blockers, pendingDecisions }: { executive: ReturnType<typeof deriveSiioExecutiveSnapshot>; records: SiioRecord[]; decisions: SiioDecision[]; red: number; blockers: number; pendingDecisions: number }) {
+  const income = executive.financialByConcept['INGRESOS'];
+  const operatingProfit = executive.financialByConcept['UTILIDAD OPERACIONAL'];
+  const netProfit = executive.financialByConcept['UTILIDAD NETA'];
+  const netMargin = executive.financialByConcept['MARGEN NETO'];
+  const payrollReady = Boolean(executive.payrollPeriod);
+  const boardSources = executive.sourceFreshness.filter(source => ['SRC-011', 'SRC-012', 'SRC-013'].includes(source.id));
+  const validationLabel = executive.financialValidationStatus === 'validado' ? 'Validado por Finanzas' : executive.financialValidationStatus === 'sin_datos' ? 'Sin datos publicados' : 'Pendiente de validación financiera';
+  return <div className="stack">
+    <div className="siio-executive-status">
+      <div><span className="eyebrow">Resumen ejecutivo permanente</span><strong>Información disponible sin reconstruir la presentación mensual</strong></div>
+      <Badge tone={executive.financialValidationStatus === 'validado' ? 'green' : 'amber'}>{validationLabel}</Badge>
+    </div>
+    <div className="siio-front-strip" aria-label="Frentes oficiales SIIO">
+      <span><strong>F1</strong> Gestión Comercial Inteligente</span><span><strong>F2</strong> Gestión Gerencial y Control</span><span><strong>F3</strong> Gestión Operativa</span><span><strong>F3A</strong> Personal activo y operación diaria</span><span><strong>F3B</strong> Reclutamiento, selección y contratación permanente</span><span><strong>F4</strong> Archivo Corporativo Inteligente</span><span><strong>F5</strong> Motor Interno de Razonamiento</span><span><strong>F6</strong> Catálogo Institucional de Agentes</span>
+    </div>
+    <div className="siio-executive-grid">
+      <Kpi icon="$" tone="blue" label="Ingresos" value={siioFinancialValue(income)} hint={`Periodo financiero: ${formatSiioPeriod(executive.financialPeriod)}`} meta={income ? `${new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(income.variation_pct || 0)} vs. comparativo` : 'Seed 016 pendiente'} />
+      <Kpi icon="OP" tone="indigo" label="Utilidad operacional" value={siioFinancialValue(operatingProfit)} hint="Resultado operativo" meta={operatingProfit ? 'Fuente SRC-011' : 'Sin datos publicados'} />
+      <Kpi icon="UN" tone="green" label="Utilidad neta" value={siioFinancialValue(netProfit)} hint="Resultado después de impuestos" meta={netProfit ? `${new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(netProfit.variation_pct || 0)} vs. comparativo` : 'Sin datos publicados'} />
+      <Kpi icon="%" tone="purple" label="Margen neto" value={siioFinancialValue(netMargin, true)} hint="Rentabilidad neta" meta={`Periodo: ${formatSiioPeriod(executive.financialPeriod)}`} />
+      <Kpi icon="TH" tone="amber" label="Nómina agregada" value={payrollReady ? money.format(executive.payrollTotals.totalAccrued) : 'Sin datos'} hint={payrollReady ? `${executive.payrollTotals.totalPeople} personas · ${formatSiioPeriod(executive.payrollPeriod)}` : 'Seed 016 pendiente'} meta="Sin nombres, cédulas ni salarios individuales" />
+      <Kpi icon="!" tone={executive.payrollTotals.alerts || red || blockers ? 'amber' : 'green'} label="Alertas ejecutivas" value={(executive.payrollTotals.alerts + red + blockers).toString()} hint="Datos, semáforos y bloqueos" meta={`${pendingDecisions} decisiones pendientes`} />
+    </div>
+    <div className="grid two siio-dashboard-sections">
+      <Panel title="Resultado financiero">
+        <div className="siio-period-line"><span>Periodo financiero</span><strong>{formatSiioPeriod(executive.financialPeriod)}</strong></div>
+        {!executive.financialRows.length ? <EmptyState title="Sin métricas financieras publicadas" text="El extractor y la migración 016 están preparados. La publicación en Supabase requiere aprobación." /> : <div className="table-wrap"><table><thead><tr><th>Indicador</th><th>Actual</th><th>Comparativo</th><th>Variación</th></tr></thead><tbody>{executive.financialRows.map(metric => <tr key={metric.concept}><td><strong>{metric.concept}</strong></td><td>{siioFinancialValue(metric, metric.category === 'margen')}</td><td>{metric.value_comparison === null || metric.value_comparison === undefined ? '—' : metric.category === 'margen' ? new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(metric.value_comparison) : money.format(metric.value_comparison)}</td><td>{new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(metric.variation_pct || 0)}</td></tr>)}</tbody></table></div>}
+      </Panel>
+      <Panel title="Lectura gerencial permanente">
+        <div className="siio-management-signals">
+          <div><span>Registros activos F2</span><strong>{records.length}</strong></div>
+          <div><span>Decisiones y compromisos</span><strong>{decisions.length}</strong></div>
+          <div><span>Decisiones pendientes</span><strong>{pendingDecisions}</strong></div>
+          <div><span>Bloqueos y riesgos</span><strong>{blockers}</strong></div>
+        </div>
+        <p className="muted">Esta sección crecerá con señales comerciales F1, operación F3, oportunidades estratégicas y recomendaciones auditables F5. El informe de Junta será una vista filtrada de esta misma información.</p>
+      </Panel>
+    </div>
+    <Panel title="Nómina agregada">
+      <div className="siio-period-line"><span>Periodo de nómina</span><strong>{formatSiioPeriod(executive.payrollPeriod)}</strong></div>
+      {!executive.payrollRows.length ? <EmptyState title="Sin agregados de nómina publicados" text="No se muestran datos individuales. El snapshot redacted está preparado y pendiente de aprobación para publicación." /> : <div className="table-wrap"><table><thead><tr><th>Área</th><th>Personas</th><th>Devengado agregado</th><th>Deducciones agregadas</th><th>Neto calculado</th><th>Control</th></tr></thead><tbody>{executive.payrollRows.map(row => <tr key={row.area || 'sin-area'}><td><strong>{row.area || 'Área pendiente'}</strong></td><td>{row.total_people || 0}</td><td>{money.format(row.total_accrued || 0)}</td><td>{money.format(row.total_deductions || 0)}</td><td>{money.format(row.net_total || 0)}</td><td>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</td></tr>)}</tbody><tfoot><tr><th>Total</th><th>{executive.payrollTotals.totalPeople}</th><th>{money.format(executive.payrollTotals.totalAccrued)}</th><th>{money.format(executive.payrollTotals.totalDeductions)}</th><th>{money.format(executive.payrollTotals.netTotal)}</th><th>{executive.payrollTotals.alerts} alertas</th></tr></tfoot></table></div>}
+    </Panel>
+    <Panel title="Vigencia de fuentes">
+      <div className="siio-source-freshness">{boardSources.length ? boardSources.map(source => <article key={source.id}><div><strong>{source.id} · {source.name}</strong><span>{source.update_frequency || 'Frecuencia por definir'} · {source.status || 'Estado pendiente'}</span></div><div><small>Última revisión</small><strong>{source.last_reviewed_at ? dateFmt.format(new Date(source.last_reviewed_at)) : 'Pendiente'}</strong><Badge tone={source.trust_level === 'restringida' ? 'amber' : 'blue'}>{source.trust_level || 'Por clasificar'}</Badge></div></article>) : <EmptyState title="Fuentes de Junta no publicadas" text="SRC-011 PYG, SRC-012 nómina y SRC-013 presentación quedarán visibles aquí con periodo, confianza y restricciones." />}</div>
+    </Panel>
+  </div>;
 }
 function SiioFrontsView({ fronts, records }: { fronts: SiioFront[]; records: SiioRecord[] }) {
   if (!fronts.length) return <EmptyState title="Sin frentes SIIO cargados" text="Ejecuta la migración y seed aprobado para ver F1-F6 en esta vista." />;
