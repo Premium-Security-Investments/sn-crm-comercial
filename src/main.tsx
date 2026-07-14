@@ -512,7 +512,7 @@ function SiioDashboard({ currentProfile }: { currentProfile: Profile }) {
     {activeTab === 'registros' && <SiioRecordsView records={records} />}
     {activeTab === 'decisiones' && <SiioDecisionsView decisions={decisions} records={records} />}
     {activeTab === 'archivo' && <SiioSourcesView sources={sources} />}
-    {activeTab === 'razonamiento' && <SiioReasoningView />}
+    {activeTab === 'razonamiento' && <SiioReasoningView insights={executive.managementInsights} />}
     {activeTab === 'agentes' && <SiioAgentsCatalogView />}
     {activeTab === 'junta' && <SiioBoardView reports={reports} sections={payload?.boardSections || []} onGenerate={load} />}
   </section>;
@@ -541,6 +541,13 @@ function SiioExecutiveHome({ executive, records, decisions, red, blockers, pendi
       <Kpi icon="TH" tone="amber" label="Nómina agregada" value={payrollReady ? money.format(executive.payrollTotals.totalAccrued) : 'Sin datos'} hint={payrollReady ? `${executive.payrollTotals.totalPeople} personas · ${formatSiioPeriod(executive.payrollPeriod)}` : 'Seed 016 pendiente'} meta="Sin nombres, cédulas ni salarios individuales" />
       <Kpi icon="!" tone={executive.payrollTotals.alerts || red || blockers ? 'amber' : 'green'} label="Alertas ejecutivas" value={(executive.payrollTotals.alerts + red + blockers).toString()} hint="Datos, semáforos y bloqueos" meta={`${pendingDecisions} decisiones pendientes`} />
     </div>
+    <Panel title="F5 · Lectura gerencial automática">
+      {executive.managementInsights.length ? <div className="siio-insight-list">{executive.managementInsights.map(insight => <article key={insight.id} className={`siio-insight siio-insight-${insight.tone}`}>
+        <header><div><span className="eyebrow">{insight.front} · Prioridad {insight.priority}</span><h3>{insight.title}</h3></div><Badge tone={insight.tone}>{insight.priority}</Badge></header>
+        <p>{insight.finding}</p>
+        <div className="siio-insight-detail"><div><strong>Evidencia</strong><span>{insight.evidence}</span></div><div><strong>Acción recomendada</strong><span>{insight.action}</span></div></div>
+      </article>)}</div> : <EmptyState title="Sin lecturas automáticas" text="F5 no emitirá conclusiones hasta contar con evidencia suficiente." />}
+    </Panel>
     <div className="grid two siio-dashboard-sections">
       <Panel title="Resultado financiero">
         <div className="siio-period-line"><span>Periodo financiero</span><strong>{formatSiioPeriod(executive.financialPeriod)}</strong></div>
@@ -583,8 +590,8 @@ function SiioSourcesView({ sources }: { sources: SiioSource[] }) {
   if (!sources.length) return <EmptyState title="Sin Archivo Corporativo Inteligente cargado" text="F4 se cargará desde la matriz aprobada de fuentes, documentos, permisos y restricciones." />;
   return <Panel title="F4 · Archivo Corporativo Inteligente"><p>Inventario de fuentes, documentos, evidencia, permisos de uso, restricciones e histórico institucional que puede soportar decisiones y agentes.</p><div className="table-wrap"><table><thead><tr><th>ID</th><th>Fuente / documento</th><th>Tipo</th><th>Confianza</th><th>Restricciones</th></tr></thead><tbody>{sources.map(s => <tr key={s.id}><td>{s.id}</td><td>{s.url ? <a href={s.url} target="_blank">{s.name}</a> : s.name}</td><td>{s.source_type || '—'}</td><td>{s.trust_level || 'pendiente'}</td><td>{s.restrictions || '—'}</td></tr>)}</tbody></table></div></Panel>;
 }
-function SiioReasoningView() {
-  return <Panel title="F5 · Motor Interno de Razonamiento"><p>Esta capa no es la junta mensual: es el motor que debe cruzar F1-F4 para priorizar, inferir, explicar riesgos, preparar decisiones y generar alertas auditables.</p><ul className="clean-list"><li>Estado actual: diseño, con piezas iniciales en análisis documental y borradores ejecutivos.</li><li>Próximo diseño: reglas, inferencias, recomendaciones, fuentes usadas y trazabilidad humana.</li><li>Salida natural: resúmenes, alertas, preparación de comité/junta y decisiones sugeridas.</li></ul></Panel>;
+function SiioReasoningView({ insights }: { insights: ReturnType<typeof deriveSiioExecutiveSnapshot>['managementInsights'] }) {
+  return <Panel title="F5 · Motor Interno de Razonamiento"><p>Reglas determinísticas activas: cruzan F2 y F4 para priorizar, explicar riesgos y proponer acciones auditables sin ejecutar decisiones automáticamente.</p><div className="pill-row"><span>{insights.length} lecturas vigentes</span><span>Evidencia y recomendación trazables</span></div>{insights.length ? <ul className="clean-list">{insights.map(insight => <li key={insight.id}><strong>{insight.title}</strong> · prioridad {insight.priority}<br/><small>{insight.evidence}</small></li>)}</ul> : <EmptyState title="Sin reglas activadas" text="El motor no encontró evidencia suficiente para emitir una lectura." />}</Panel>;
 }
 function SiioAgentsCatalogView() {
   return <Panel title="F6 · Catálogo Institucional de Agentes"><p>Inventario y gobierno de agentes IA institucionales: propósito, dueño, rol, permisos, fuentes F4 autorizadas, acciones permitidas, canal, auditoría y estado.</p><ul className="clean-list"><li>Estado actual: pendiente de estructura propia dentro de SIIO.</li><li>Primer candidato: Agente Gerencial MVP sobre F2/F4.</li><li>Regla: ningún agente debe operar sin fuente autorizada, límites de acción y trazabilidad.</li></ul></Panel>;

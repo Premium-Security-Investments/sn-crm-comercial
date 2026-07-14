@@ -17,6 +17,8 @@ const snapshot = mod.deriveSiioExecutiveSnapshot({
   financialMetrics: [
     { period_month: '2026-03-01', concept: 'INGRESOS', value_current: 90, variation_pct: 0.1, validated_by: 'Finanzas' },
     { period_month: '2026-04-01', concept: 'INGRESOS', value_current: 100, variation_pct: 0.2, validated_by: null },
+    { period_month: '2026-04-01', concept: 'COSTOS', value_current: 70, variation_pct: 0.3, validated_by: null },
+    { period_month: '2026-04-01', concept: 'NO OPERACIONAL', value_current: -8, variation_abs: -3, variation_pct: 0.6, validated_by: null },
     { period_month: '2026-04-01', concept: 'UTILIDAD NETA', value_current: 10, variation_pct: 0.5, validated_by: null },
     { period_month: '2026-04-01', concept: 'MARGEN NETO', value_current: 0.1, variation_pct: 0, validated_by: null },
   ],
@@ -44,10 +46,19 @@ assert.deepEqual(snapshot.payrollRows.map(row => row.area), ['Operaciones', 'Fin
 assert.equal(snapshot.financialValidationStatus, 'pendiente_validacion');
 assert.equal(snapshot.sourceFreshness.length, 2);
 assert.ok(!JSON.stringify(snapshot).toLowerCase().includes('cedula'));
+assert.deepEqual(snapshot.managementInsights.map(insight => insight.id), [
+  'financial-validation-pending',
+  'cost-growth-pressure',
+  'non-operating-drag',
+  'payroll-source-alert',
+]);
+assert.equal(snapshot.managementInsights[0].front, 'F5');
+assert.ok(snapshot.managementInsights.every(insight => insight.evidence && insight.action));
 
 const empty = mod.deriveSiioExecutiveSnapshot({ financialMetrics: [], payrollAggregates: [], sources: [] });
 assert.equal(empty.financialPeriod, null);
 assert.equal(empty.payrollPeriod, null);
 assert.equal(empty.payrollTotals.totalPeople, 0);
+assert.deepEqual(empty.managementInsights, []);
 
 console.log('SIIO executive snapshot derivation OK');
