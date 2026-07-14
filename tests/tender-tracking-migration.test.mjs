@@ -5,11 +5,25 @@ const migrationPath = new URL('../supabase/migrations/018_tender_tracking_rpc.sq
 assert.equal(existsSync(migrationPath), true, 'La migración 018 preparada debe crear los RPC transaccionales.');
 
 const sql = readFileSync(migrationPath, 'utf8').toLowerCase().replace(/\s+/g, ' ');
-for (const functionName of ['psi_update_tender_tracking', 'psi_transition_tender_tracking', 'psi_discard_tender_opportunity', 'psi_convert_tender_to_opportunity']) {
+const rpcFunctionNames = ['psi_update_tender_tracking', 'psi_transition_tender_tracking', 'psi_discard_tender_opportunity', 'psi_convert_tender_to_opportunity'];
+for (const functionName of rpcFunctionNames) {
   assert.match(sql, new RegExp(`create or replace function public\\.${functionName}\\(`));
   assert.match(sql, new RegExp(`revoke all on function public\\.${functionName}[^;]+ from public`));
   assert.match(sql, new RegExp(`revoke all on function public\\.${functionName}[^;]+ from authenticated`));
   assert.match(sql, new RegExp(`grant execute on function public\\.${functionName}[^;]+ to service_role`));
+}
+
+for (const functionName of rpcFunctionNames) {
+  const definitions = [...sql.matchAll(new RegExp(`create or replace function public\\.${functionName}\\(`, 'g'))];
+  assert.equal(definitions.length, 1, `${functionName} must have exactly one auditable create-or-replace definition.`);
+
+  const bodyEnd = sql.indexOf('$$;', definitions[0].index) + '$$;'.length;
+  const revokePublicIndex = sql.indexOf(`revoke all on function public.${functionName}`, bodyEnd);
+  const revokeAuthenticatedIndex = sql.indexOf(`revoke all on function public.${functionName}`, revokePublicIndex + 1);
+  const grantIndex = sql.indexOf(`grant execute on function public.${functionName}`, bodyEnd);
+  assert.ok(revokePublicIndex > bodyEnd, `${functionName} must revoke public access after its body.`);
+  assert.ok(revokeAuthenticatedIndex > revokePublicIndex, `${functionName} must revoke authenticated access after its public revoke.`);
+  assert.ok(grantIndex > revokeAuthenticatedIndex, `${functionName} must grant service_role access after revokes.`);
 }
 
 assert.match(sql, /select \* into v_tender from public\.psi_public_tenders where id = p_tender_id for update/);
