@@ -27,7 +27,7 @@ for (const field of ['query_text', 'source_filter', 'region_key', 'deadline_filt
 }
 assert.match(radar, /section_filter/, 'Radar debe aplicar la sección persistida del perfil.');
 assert.match(radar, /internal_status_filter/, 'Radar debe aplicar el estado interno persistido del perfil.');
-assert.match(radar, /Las oportunidades convertidas se gestionan en Expedientes/, 'Radar debe explicar dónde viven las oportunidades convertidas.');
+assert.match(radar, /Mostrando procesos convertidos/, 'Radar debe explicar que las oportunidades convertidas permanecen visibles.');
 assert.match(radar, /view=expedientes/, 'Radar debe ofrecer navegación explícita a Expedientes para convertidas.');
 assert.doesNotMatch(main, /loadSearchProfiles|saveCurrentSearchProfile|applySearchProfile/, 'main no debe retener la lógica de perfiles migrada.');
 
@@ -45,6 +45,6 @@ const candidates = [
 const baseFilters = { query: '', source: 'todas', region: 'todas', deadline: 'todas', value: 'todas', score: 'todas', section: 'todas', internalStatus: 'todas' };
 assert.deepEqual(filterRadarTenders(candidates, { ...baseFilters, section: 'revisar', internalStatus: 'en_revision' }).map(item => item.id), ['review-revisar'], 'El perfil debe aplicar sección y estado interno conjuntamente.');
 assert.deepEqual(filterRadarTenders(candidates, { ...baseFilters, internalStatus: 'descartada' }).map(item => item.id), ['discard-descartar'], 'El perfil debe poder recuperar descartadas.');
-assert.deepEqual(filterRadarTenders(candidates, { ...baseFilters, internalStatus: 'convertida_oportunidad' }), [], 'Radar conserva la frontera: convertidas nunca aparecen aunque el perfil las solicite.');
+assert.deepEqual(filterRadarTenders(candidates, { ...baseFilters, internalStatus: 'convertida_oportunidad' }).map(item => item.id), ['converted'], 'Un perfil debe poder recuperar procesos convertidos dentro del Radar.');
 
 console.log('Tender search profile isolation and URL handoff passed');

@@ -9,7 +9,7 @@ const api = readFileSync(new URL('../src/tenders/api.ts', import.meta.url), 'utf
 assert.match(radar, /Sincronizar fuentes oficiales/);
 assert.match(radar, /Pasar a seguimiento/);
 assert.match(radar, /Convertir en oportunidad/);
-assert.doesNotMatch(radar, /Abrir expediente/);
+assert.match(radar, /Abrir expediente/);
 assert.doesNotMatch(radar, /TenderUnifiedBoard/);
 assert.doesNotMatch(radar, /renderLegacy/);
 assert.match(radar, /expected_tracking_updated_at/);

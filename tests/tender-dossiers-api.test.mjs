@@ -172,6 +172,7 @@ const fakeSupabase = http.createServer((req, res) => {
 const fakePort = await listen(fakeSupabase);
 process.env.NEXT_PUBLIC_SUPABASE_URL = `http://127.0.0.1:${fakePort}`;
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
+process.env.VERCEL = '1';
 
 const { buildTenderDossierSummary, default: app } = await import('../server/index.js');
 

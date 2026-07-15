@@ -80,11 +80,10 @@ export type RadarFilters = {
 
 export function filterRadarTenders(tenders: PublicTender[], filters: RadarFilters): PublicTender[] {
   return tenders.filter(tender => {
-    const internal = tender.internal_status || 'nueva';
+    const internal = tender.converted_opportunity_id ? 'convertida_oportunidad' : tender.internal_status || 'nueva';
     const amount = Number(tender.value || 0);
     const fit = Number(tender.score || 0);
-    return internal !== 'convertida_oportunidad' && !tender.converted_opportunity_id &&
-      (filters.section === 'todas' || tender.section === filters.section) &&
+    return (filters.section === 'todas' || tender.section === filters.section) &&
       (filters.internalStatus === 'todas' || internal === filters.internalStatus) &&
       (filters.source === 'todas' || tender.source === filters.source) &&
       tenderMatchesRegion(tender, filters.region) &&

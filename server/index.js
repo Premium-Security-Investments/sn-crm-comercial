@@ -789,6 +789,9 @@ function dbTenderToPublic(row) {
     reviewed_by: row.reviewed_by || null, reviewed_at: row.reviewed_at || null, detected_at: row.detected_at || row.created_at || null, last_seen_at: row.last_seen_at || null
   };
 }
+function isConvertedTenderRecord(row) {
+  return row?.internal_status === 'convertida_oportunidad' || Boolean(row?.converted_opportunity_id);
+}
 async function readPersistedTenderRadar(database) {
   const latestRunResult = await database.from('psi_tender_radar_runs').select('run_at,mode').order('run_at', { ascending: false }).limit(1).maybeSingle();
   if (latestRunResult.error && !isMissingTenderTable(latestRunResult.error)) throw latestRunResult.error;
@@ -797,7 +800,7 @@ async function readPersistedTenderRadar(database) {
   const activeDeadlineCutoff = new Date();
   activeDeadlineCutoff.setUTCHours(0, 0, 0, 0);
   let query = database.from('psi_public_tenders').select('*').order('last_seen_at', { ascending: false }).limit(250);
-  if (cutoff) query = query.or(`last_seen_at.gte.${cutoff},deadline_at.gte.${activeDeadlineCutoff.toISOString()}`);
+  if (cutoff) query = query.or(`last_seen_at.gte.${cutoff},deadline_at.gte.${activeDeadlineCutoff.toISOString()},internal_status.eq.convertida_oportunidad,converted_opportunity_id.not.is.null`);
   let { data, error } = await query;
   if (error) {
     if (isMissingTenderTable(error)) return null;
@@ -808,7 +811,7 @@ async function readPersistedTenderRadar(database) {
     if (fallback.error) throw fallback.error;
     data = fallback.data || [];
   }
-  const rows = (data || []).filter(isTenderTrackable).map(dbTenderToPublic).filter(t => !['SECOP I','SECOP II'].includes(t.source) || hasTenderServiceSignal(t)).sort((a,b) => {
+  const rows = (data || []).filter(row => isConvertedTenderRecord(row) || isTenderTrackable(row)).map(dbTenderToPublic).filter(t => isConvertedTenderRecord(t) || !['SECOP I','SECOP II'].includes(t.source) || hasTenderServiceSignal(t)).sort((a,b) => {
     const statusOrder = { nueva: 0, en_revision: 1, convertida_oportunidad: 2, descartada: 3 };
     const sectionOrder = { hacer: 0, revisar: 1, descartar: 2 };
     return (statusOrder[a.internal_status] ?? 9) - (statusOrder[b.internal_status] ?? 9) || sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score;
