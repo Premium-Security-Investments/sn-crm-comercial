@@ -1,4 +1,7 @@
 import { useEffect, useRef, type KeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
+import { SIIO_AGENT_CATALOG } from '../siioAgents';
+import { createBoardDraftGovernance, focusTrapTargetIndex } from './boardDraftPolicy';
 import { sourceFreshness } from './selectors';
 import { Badge, EmptyState, fmtSiioMoney } from './SiioUi';
 import type { SiioBootstrapPayload, SiioRecommendation, SiioTrackingItem } from './types';
@@ -38,12 +41,14 @@ function focusableElements(dialog: HTMLElement) {
 
 export function SiioBoardDraftAction({ open, onClose, payload, snapshot, trackingItems, recommendations }: SiioBoardDraftActionProps) {
   const dialogRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previouslyFocusedElement = useRef<HTMLElement | null>(null);
+  const governance = createBoardDraftGovernance(SIIO_AGENT_CATALOG, { sources: payload.sources, recommendations, trackingItems });
 
   useEffect(() => {
     if (!open) return;
     previouslyFocusedElement.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    dialogRef.current?.focus();
+    closeButtonRef.current?.focus();
     return () => previouslyFocusedElement.current?.focus();
   }, [open]);
 
@@ -62,23 +67,20 @@ export function SiioBoardDraftAction({ open, onClose, payload, snapshot, trackin
       dialogRef.current.focus();
       return;
     }
-    const first = elements[0];
-    const last = elements[elements.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
+    const targetIndex = focusTrapTargetIndex(elements.length, elements.indexOf(document.activeElement as HTMLElement), event.shiftKey);
+    if (targetIndex !== null) {
       event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
+      elements[targetIndex].focus();
     }
   };
 
   const groupedTracking = ['decisiones', 'bloqueos', 'riesgos', 'compromisos'].map(kind => ({
     kind,
-    items: trackingItems.filter(item => item.kind === kind),
+    items: governance.eligibleTrackingItems.filter(item => item.kind === kind),
   }));
+  const excludedItems = [...governance.excludedRecommendations, ...governance.excludedTrackingItems];
 
-  return <div className="siio-board-backdrop" onMouseDown={onClose}>
+  return createPortal(<div className="siio-board-backdrop" onMouseDown={onClose}>
     <section
       ref={dialogRef}
       className="siio-board-dialog"
@@ -91,12 +93,14 @@ export function SiioBoardDraftAction({ open, onClose, payload, snapshot, trackin
     >
       <header className="siio-board-header">
         <div><span className="eyebrow">SIIO · Borrador de Junta</span><h2 id="siio-board-title">Preparar informe de Junta</h2></div>
-        <button type="button" className="secondary" aria-label="Cerrar borrador de Junta" onClick={onClose}>Cerrar</button>
+        <button ref={closeButtonRef} type="button" className="secondary" aria-label="Cerrar borrador de Junta" onClick={onClose}>Cerrar</button>
       </header>
       <div className="notice"><strong>Borrador sujeto a revisión humana</strong><br />Consulta local de información ya cargada; no publica, aprueba, crea fuentes ni ejecuta decisiones.</div>
+      <div className="notice siio-board-governance"><strong>{governance.agent.id} · {governance.agent.name}</strong><br />Evidencia elegible únicamente desde fuentes autorizadas cargadas: {governance.authorizedSourceIds.join(', ')}. {governance.agent.audit_rule}</div>
 
       <section className="panel">
         <h3>Estado financiero y nómina agregada</h3>
+        <p className="siio-board-policy-note">Lectura agregada local: no se marca como evidencia elegible hasta que la fuente de Junta quede vinculada y autorizada.</p>
         <div className="siio-insight-detail">
           <div><strong>Periodo financiero</strong><span>{formatPeriod(snapshot.financialPeriod)}</span></div>
           <div><strong>Validación financiera</strong><span>{validationLabel(snapshot.financialValidationStatus)}</span></div>
@@ -111,19 +115,26 @@ export function SiioBoardDraftAction({ open, onClose, payload, snapshot, trackin
       </section>
 
       <section className="panel">
-        <h3>Prioridades, decisiones, riesgos y compromisos</h3>
-        {groupedTracking.every(group => !group.items.length) ? <EmptyState title="Sin asuntos de seguimiento" text="No hay decisiones, bloqueos, riesgos ni compromisos cargados." /> : groupedTracking.map(group => group.items.length ? <article key={group.kind} className="siio-board-group"><h4>{group.kind}</h4><ul>{group.items.map(item => <li key={item.id}><strong>{item.title}</strong> · {item.status} · {item.owner || 'Responsable pendiente'}{item.nextAction ? ` · Próxima acción: ${item.nextAction}` : ''}</li>)}</ul></article> : null)}
+        <h3>Prioridades, decisiones, riesgos y compromisos elegibles</h3>
+        {groupedTracking.every(group => !group.items.length) ? <EmptyState title="Sin asuntos de seguimiento con fuente autorizada" text="Los asuntos sin fuente vinculada o con fuentes fuera de AGT-001 quedan excluidos como evidencia de Junta." /> : groupedTracking.map(group => group.items.length ? <article key={group.kind} className="siio-board-group"><h4>{group.kind}</h4><ul>{group.items.map(item => <li key={item.id}><strong>{item.title}</strong> · {item.status} · {item.owner || 'Responsable pendiente'}{item.nextAction ? ` · Próxima acción: ${item.nextAction}` : ''}</li>)}</ul></article> : null)}
       </section>
 
       <section className="panel">
-        <h3>Recomendaciones y evidencia</h3>
-        {!recommendations.length ? <EmptyState title="Sin recomendaciones" text="No hay recomendaciones derivadas de la información cargada." /> : <div className="siio-insight-list">{recommendations.map(recommendation => <article key={recommendation.id} className={`siio-insight siio-insight-${recommendation.tone}`}><strong>{recommendation.title}</strong><p>{recommendation.finding}</p><div className="siio-insight-detail"><div><strong>Evidencia</strong><span>{recommendation.evidence || 'Pendiente de evidencia'}</span></div><div><strong>Fuente</strong><span>{recommendation.sourceIds.map(sourceId => sourceId === 'Pendiente de evidencia' ? sourceId : `${sourceNameById(payload.sources, sourceId)} (${sourceId})`).join(', ')}</span></div><div><strong>Periodo</strong><span>{formatPeriod(recommendation.period)}</span></div><div><strong>Prioridad</strong><span>{recommendation.priority}</span></div><div><strong>Acción recomendada</strong><span>{recommendation.action}</span></div></div></article>)}</div>}
+        <h3>Recomendaciones y evidencia elegible</h3>
+        {!governance.eligibleRecommendations.length ? <EmptyState title="Sin recomendaciones con evidencia autorizada" text="No hay recomendaciones derivadas de fuentes autorizadas y cargadas." /> : <div className="siio-insight-list">{governance.eligibleRecommendations.map(recommendation => <article key={recommendation.id} className={`siio-insight siio-insight-${recommendation.tone}`}><strong>{recommendation.title}</strong><p>{recommendation.finding}</p><div className="siio-insight-detail"><div><strong>Evidencia</strong><span>{recommendation.evidence || 'Pendiente de evidencia'}</span></div><div><strong>Fuente</strong><span>{recommendation.sourceIds.map(sourceId => `${sourceNameById(governance.eligibleSources, sourceId)} (${sourceId})`).join(', ')}</span></div><div><strong>Periodo</strong><span>{formatPeriod(recommendation.period)}</span></div><div><strong>Prioridad</strong><span>{recommendation.priority}</span></div><div><strong>Acción recomendada</strong><span>{recommendation.action}</span></div></div></article>)}</div>}
       </section>
 
       <section className="panel">
-        <h3>Fuentes, vigencia y restricciones</h3>
-        {!payload.sources.length ? <EmptyState title="Sin fuentes cargadas" text="No hay fuentes autorizadas disponibles para este borrador." /> : <div className="siio-insight-list">{payload.sources.map(source => <article key={source.id} className="siio-insight"><strong>{source.name}</strong><div className="siio-insight-detail"><div><strong>Vigencia</strong><span><Badge tone={sourceFreshness(source) === 'vencida' ? 'danger' : sourceFreshness(source) === 'próxima_a_vencer' ? 'amber' : 'green'}>{sourceFreshness(source)}</Badge></span></div><div><strong>Restricciones</strong><span>{source.restrictions || 'Sin restricciones registradas'}</span></div><div><strong>Estado</strong><span>{source.status || 'Pendiente'}</span></div></div></article>)}</div>}
+        <h3>Fuentes autorizadas, vigencia y restricciones</h3>
+        {!governance.eligibleSources.length ? <EmptyState title="Sin fuentes autorizadas cargadas" text="No hay fuentes de AGT-001 disponibles para este borrador." /> : <div className="siio-insight-list">{governance.eligibleSources.map(source => <article key={source.id} className="siio-insight"><strong>{source.name}</strong><div className="siio-insight-detail"><div><strong>Vigencia</strong><span><Badge tone={sourceFreshness(source) === 'vencida' ? 'danger' : sourceFreshness(source) === 'próxima_a_vencer' ? 'amber' : 'green'}>{sourceFreshness(source)}</Badge></span></div><div><strong>Restricciones</strong><span>{source.restrictions || 'Sin restricciones registradas'}</span></div><div><strong>Estado</strong><span>{source.status || 'Pendiente'}</span></div></div></article>)}</div>}
       </section>
+
+      {(governance.excludedSources.length || excludedItems.length) ? <section className="panel siio-board-excluded" aria-label="Contenido excluido por política de fuentes">
+        <h3>Contenido excluido por política de fuentes</h3>
+        <p>Se mantiene visible para trazabilidad, pero no se presenta como evidencia válida ni se incorpora a recomendaciones elegibles.</p>
+        {governance.excludedSources.length ? <ul>{governance.excludedSources.map(source => <li key={source.id}><strong>{source.name} ({source.id})</strong> · Fuente no autorizada para {governance.agent.id}.</li>)}</ul> : null}
+        {excludedItems.length ? <ul>{excludedItems.map(item => <li key={`${item.id}:${item.exclusionReason}`}><strong>{item.title}</strong> · {item.exclusionReason}</li>)}</ul> : null}
+      </section> : null}
 
       <section className="panel">
         <h3>Secciones y reportes existentes de Junta</h3>
@@ -133,5 +144,5 @@ export function SiioBoardDraftAction({ open, onClose, payload, snapshot, trackin
 
       <footer className="siio-board-footer"><button type="button" onClick={() => window.print()}>Imprimir / exportar borrador</button></footer>
     </section>
-  </div>;
+  </div>, document.body);
 }
