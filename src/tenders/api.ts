@@ -1,6 +1,6 @@
 import type { TenderRequest, TenderTrackingEvent, TenderTrackingUpdate } from './types';
 
-/** Explicit resource loaders for future isolated tender views. */
+/** Explicit resource loaders: each tender view owns only the data it needs. */
 export async function loadRadar<T>(request: TenderRequest): Promise<T> {
   return request<T>('/api/tenders');
 }
@@ -18,8 +18,6 @@ export async function updateTracking<T>(request: TenderRequest, update: TenderTr
 }
 
 export type TenderDossierPage = { limit?: number; offset?: number };
-
-/** Dedicated, bounded dossier API loader for the future expediente view. */
 export async function loadDossiers<T>(request: TenderRequest, page: TenderDossierPage = {}): Promise<T> {
   const limit = Math.min(100, Math.max(1, Math.trunc(page.limit ?? 50)));
   const offset = Math.min(10000, Math.max(0, Math.trunc(page.offset ?? 0)));
@@ -28,4 +26,8 @@ export async function loadDossiers<T>(request: TenderRequest, page: TenderDossie
 
 export async function loadProfiles<T>(request: TenderRequest): Promise<T> {
   return request<T>('/api/tender-search-profiles');
+}
+
+export async function loadCompanyProfile<T>(request: TenderRequest): Promise<T> {
+  return request<T>('/api/tender-company-profile');
 }

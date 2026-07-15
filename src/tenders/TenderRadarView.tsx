@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { loadRadar } from './api';
+import { loadProfiles, loadRadar } from './api';
 import { TENDER_OFFICIAL_SOURCES, TENDER_SN_REGIONS, deduplicateTenders, sortTenderCards, tenderDeadlineBucket, tenderMatchesRegion } from './radarUtils';
-import type { PublicTender, TenderConversionResult, TenderDeadlineFilter, TenderRadarPayload, TenderRegionKey, TenderScoreFilter, TenderSortKey, TenderValueFilter, TendersModuleProps } from './types';
+import type { PublicTender, TenderConversionResult, TenderDeadlineFilter, TenderRadarPayload, TenderRegionKey, TenderScoreFilter, TenderSearchProfile, TenderSortKey, TenderValueFilter, TendersModuleProps } from './types';
 
 const PAGE_SIZE = 24;
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
@@ -32,6 +32,8 @@ export function TenderRadarView({ data, refresh, request, navigate }: TendersMod
   const [sort, setSort] = useState<TenderSortKey>('deadline');
   const [direction, setDirection] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
+  const profileId = new URLSearchParams(window.location.hash.split('?')[1] || '').get('profile') || '';
+  const focusTenderId = new URLSearchParams(window.location.hash.split('?')[1] || '').get('tender') || '';
 
   const load = async () => {
     setLoading(true); setError(null);
@@ -40,6 +42,18 @@ export function TenderRadarView({ data, refresh, request, navigate }: TendersMod
     finally { setLoading(false); }
   };
   useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    if (!profileId) return;
+    let active = true;
+    void loadProfiles<TenderSearchProfile[]>(request).then(profiles => {
+      const profile = profiles.find(item => item.id === profileId);
+      if (!active || !profile) return;
+      setQuery(profile.query_text || ''); setSource(profile.source_filter || 'todas'); setRegion(profile.region_key || 'todas');
+      setDeadline(profile.deadline_filter || 'todas'); setValue(profile.value_filter || 'todas'); setScore(profile.score_filter || 'todas'); setPage(1);
+      setNotice(`Perfil aplicado: ${profile.name}`);
+    }).catch(cause => { if (active) setError(cause instanceof Error ? cause.message : String(cause)); });
+    return () => { active = false; };
+  }, [profileId, request]);
   useEffect(() => { setPage(1); }, [query, source, region, deadline, value, score, sort, direction]);
 
   const synchronize = async () => {
@@ -101,7 +115,7 @@ export function TenderRadarView({ data, refresh, request, navigate }: TendersMod
     <section className="tender-control-panel" aria-label="Filtros del Radar"><div className="tender-control-top"><input className="tender-search-input" placeholder="Buscar entidad, ciudad, objeto, fuente o referencia…" value={query} onChange={event => setQuery(event.target.value)} /><label>Fuente<select value={source} onChange={event => setSource(event.target.value)}><option value="todas">Todas</option>{sourceOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></label><label>Región SN<select value={region} onChange={event => setRegion(event.target.value as TenderRegionKey)}>{TENDER_SN_REGIONS.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}</select></label><label>Cierre<select value={deadline} onChange={event => setDeadline(event.target.value as TenderDeadlineFilter)}><option value="todas">Todos</option><option value="0_7">0-7 días</option><option value="8_15">8-15 días</option><option value="16_30">16-30 días</option><option value="vencida">Vencida</option><option value="sin_fecha">Sin fecha</option></select></label><label>Valor<select value={value} onChange={event => setValue(event.target.value as TenderValueFilter)}><option value="todas">Todos</option><option value="sin_valor">Sin valor</option><option value="lt_50m">&lt;$50M</option><option value="50m_500m">$50M-$500M</option><option value="500m_plus">$500M+</option><option value="1000m_plus">$1.000M+</option></select></label><label>Encaje<select value={score} onChange={event => setScore(event.target.value as TenderScoreFilter)}><option value="todas">Todos</option><option value="alto">Alto</option><option value="medio">Medio</option><option value="bajo">Bajo</option></select></label><label>Orden<select value={`${sort}:${direction}`} onChange={event => { const [nextSort, nextDirection] = event.target.value.split(':') as [TenderSortKey, 'asc' | 'desc']; setSort(nextSort); setDirection(nextDirection); }}><option value="deadline:asc">Cierre más próximo</option><option value="value:desc">Mayor valor primero</option><option value="score:desc">Mayor encaje primero</option><option value="entity:asc">Entidad A-Z</option><option value="source:asc">Fuente A-Z</option></select></label></div></section>
     <section className="tender-source-diagnostics" aria-label="Diagnóstico de fuentes"><strong>Diagnóstico de fuentes</strong>{payload.diagnostics?.length ? payload.diagnostics.map(diagnostic => <span key={diagnostic.source} className={`badge badge-${diagnostic.status === 'ok' ? 'success' : 'danger'}`}>{diagnostic.source}: {diagnostic.status}{typeof diagnostic.count === 'number' ? ` (${diagnostic.count})` : ''}{diagnostic.message ? ` · ${diagnostic.message}` : ''}</span>) : <span className="muted">Sin diagnósticos reportados.</span>}</section>
     <div className="tender-results-toolbar"><div className="filter-summary"><strong>{rows.length}</strong><span> de {deduped.length} procesos únicos ({payload.tenders.length} entradas fuente)</span></div></div>
-    <div className="tender-cards">{visible.map(tender => <article key={tender.id} id={`tender-${tender.id}`} className={`card tender-card tender-${tender.section}`}><div className="tender-head"><div><div className="tender-card-kickers"><span className="badge">{tender.source}</span><span className="badge">Cierre: {deadlineLabel(tender.deadline)}</span><span className="badge">Score {tender.score}</span></div><h3>{tender.entity} — {tender.city || tender.dept || 'Sin ciudad'}</h3></div><span className="badge">{statusLabel(tender)}</span></div><p>{tender.title}</p><div className="tender-meta"><span>{money.format(Number(tender.value || 0))}</span><span>Ref: {tender.ref || tender.process_id || '—'}</span></div>{tender.reasons?.length ? <small className="muted">{tender.reasons.slice(0, 4).join(' · ')}</small> : null}{tender.risks?.length ? <small className="muted">Riesgos: {tender.risks.slice(0, 2).join(' · ')}</small> : null}<div className="row-actions tender-card-actions">{tender.url && <a className="button secondary" target="_blank" rel="noreferrer" href={tender.url}>Abrir fuente</a>}<button className="secondary" onClick={() => void enterTracking(tender)} disabled={busyId === tender.id || tender.internal_status === 'en_revision'}>{busyId === tender.id ? 'Guardando…' : tender.internal_status === 'en_revision' ? 'En seguimiento' : 'Pasar a seguimiento'}</button><button onClick={() => void convert(tender)} disabled={busyId === tender.id}>{busyId === tender.id ? 'Convirtiendo…' : 'Convertir en oportunidad'}</button></div></article>)}</div>
+    <div className="tender-cards">{visible.map(tender => <article key={tender.id} id={`tender-${tender.id}`} className={`card tender-card tender-${tender.section} ${focusTenderId === tender.id ? 'tender-highlight' : ''}`}><div className="tender-head"><div><div className="tender-card-kickers"><span className="badge">{tender.source}</span><span className="badge">Cierre: {deadlineLabel(tender.deadline)}</span><span className="badge">Score {tender.score}</span></div><h3>{tender.entity} — {tender.city || tender.dept || 'Sin ciudad'}</h3></div><span className="badge">{statusLabel(tender)}</span></div><p>{tender.title}</p><div className="tender-meta"><span>{money.format(Number(tender.value || 0))}</span><span>Ref: {tender.ref || tender.process_id || '—'}</span></div>{tender.reasons?.length ? <small className="muted">{tender.reasons.slice(0, 4).join(' · ')}</small> : null}{tender.risks?.length ? <small className="muted">Riesgos: {tender.risks.slice(0, 2).join(' · ')}</small> : null}<div className="row-actions tender-card-actions">{tender.url && <a className="button secondary" target="_blank" rel="noreferrer" href={tender.url}>Abrir fuente</a>}<button className="secondary" onClick={() => void enterTracking(tender)} disabled={busyId === tender.id || tender.internal_status === 'en_revision'}>{busyId === tender.id ? 'Guardando…' : tender.internal_status === 'en_revision' ? 'En seguimiento' : 'Pasar a seguimiento'}</button><button onClick={() => void convert(tender)} disabled={busyId === tender.id}>{busyId === tender.id ? 'Convirtiendo…' : 'Convertir en oportunidad'}</button></div></article>)}</div>
     {!visible.length && <div className="notice">No hay procesos nuevos con los filtros actuales.</div>}
     <nav className="pagination" aria-label="Paginación de licitaciones"><button className="secondary" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Anterior</button><span className="pagination-status">Página {currentPage} de {totalPages} · {rows.length} procesos</span><button className="secondary" disabled={currentPage >= totalPages} onClick={() => setPage(currentPage + 1)}>Siguiente</button></nav>
   </section>;

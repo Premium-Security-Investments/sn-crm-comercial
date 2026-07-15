@@ -5,8 +5,6 @@ const main = readFileSync('src/main.tsx', 'utf8');
 const css = readFileSync('src/styles.css', 'utf8');
 
 const requiredMarkers = [
-  "tenderSortConfig",
-  "sortedTenderRows",
   "consultantMonthlySortConfig",
   "sortedConsultantMonthlyRows",
   "consultantOpportunitySortConfig",
