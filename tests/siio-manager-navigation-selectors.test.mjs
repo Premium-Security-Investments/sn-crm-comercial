@@ -69,6 +69,13 @@ const recommendations = mod.deriveRecommendations({
 });
 assert.deepEqual(recommendations[0].sourceIds, ['Pendiente de evidencia']);
 assert.equal(recommendations[0].period, '2026-06-01');
+const missingEvidenceAndPeriod = mod.deriveRecommendations({
+  managementInsights: [{ id: 'i-2', front: 'F5', tone: 'amber', priority: 'alta', title: 'Completar trazabilidad', finding: 'No hay periodo disponible', evidence: '', action: 'Solicitar evidencia' }],
+  financialPeriod: null,
+  payrollPeriod: null,
+});
+assert.deepEqual(missingEvidenceAndPeriod[0].sourceIds, ['Pendiente de evidencia']);
+assert.equal(missingEvidenceAndPeriod[0].period, null, 'a missing origin period must remain null for the view to disclose as pending');
 assert.deepEqual(
   mod.filterSources([
     { id: 'old', name: 'Archivo vencido', next_review_at: '2000-01-01', trust_level: 'restringida', source_type: 'archivo' },

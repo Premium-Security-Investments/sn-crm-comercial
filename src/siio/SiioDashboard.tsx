@@ -3,8 +3,10 @@ import { api } from '../apiClient';
 import { isManagementRole } from '../navPermissions';
 import { navigateSiioView, parseSiioRouteState, toSiioHash } from './selectors';
 import { SiioExecutiveView } from './SiioExecutiveView';
+import { SiioAgentsView } from './SiioAgentsView';
 import { SiioManagementTrackingView } from './SiioManagementTrackingView';
 import { SiioNavigation } from './SiioNavigation';
+import { SiioSourcesIntelligenceView } from './SiioSourcesIntelligenceView';
 import type { SiioBootstrapPayload, SiioCurrentProfile, SiioRouteState, SiioView } from './types';
 
 export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentProfile }) {
@@ -55,6 +57,8 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
       ? <SiioExecutiveView payload={payload} routeState={routeState} onNavigate={onNavigate} />
       : routeState.view === 'seguimiento'
         ? <SiioManagementTrackingView payload={payload} routeState={routeState} onNavigate={onNavigate} />
-        : <div className="notice">La vista seleccionada se compondrá con los módulos SIIO extraídos.</div>}
+        : routeState.view === 'inteligencia'
+          ? <SiioSourcesIntelligenceView payload={payload} routeState={routeState} onNavigate={onNavigate} />
+          : <SiioAgentsView payload={payload} routeState={routeState} onNavigate={onNavigate} />}
   </section>;
 }

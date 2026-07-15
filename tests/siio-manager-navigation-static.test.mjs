@@ -28,4 +28,25 @@ assert.match(executive, /navigateSiioView\('seguimiento'/);
 assert.match(executive, /navigateSiioView\('inteligencia'/);
 assert.doesNotMatch(dashboard, /global.*filter/i);
 
+const intelligence = readFileSync('src/siio/SiioSourcesIntelligenceView.tsx', 'utf8');
+const agents = readFileSync('src/siio/SiioAgentsView.tsx', 'utf8');
+for (const marker of ['Vigencia', 'Confianza', 'Tipo de fuente', 'Restricciones', 'Última revisión', 'Próxima revisión', 'Frentes relacionados', 'Pendiente de evidencia', 'Periodo pendiente', 'Evidencia', 'Fuentes', 'Periodo de origen', 'Acción recomendada']) {
+  assert.match(intelligence, new RegExp(marker));
+}
+assert.match(intelligence, /filterSources/);
+assert.match(intelligence, /deriveRecommendations/);
+assert.equal((intelligence.match(/<select/g) || []).length, 3, 'intelligence must expose only its three contextual filters');
+assert.match(intelligence, /source\.url \?/);
+assert.doesNotMatch(intelligence, /\bonClick\b|\bapi\b/);
+for (const marker of ['Propósito', 'Responsable institucional', 'Estado', 'Fuentes autorizadas', 'Acciones permitidas', 'Acciones prohibidas', 'Revisión humana obligatoria', 'Regla de auditoría', 'Siguiente gate', 'Sin escritura automática en producción']) {
+  assert.match(agents, new RegExp(marker));
+}
+assert.match(agents, /SIIO_AGENT_CATALOG/);
+assert.equal((agents.match(/<select/g) || []).length, 2, 'agents must expose only status and institutional-owner filters');
+assert.match(agents, /routeState\.filters\.status/);
+assert.match(agents, /routeState\.filters\.owner/);
+assert.doesNotMatch(agents, /AGT-004|Asistente de Junta|\bonClick\b|\bapi\b/);
+assert.match(dashboard, /SiioSourcesIntelligenceView/);
+assert.match(dashboard, /SiioAgentsView/);
+
 console.log('SIIO managerial navigation shell contract OK');

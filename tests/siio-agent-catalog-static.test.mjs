@@ -8,6 +8,8 @@ assert.match(catalog, /id: 'AGT-002'/, 'the tender copilot must remain in the ca
 assert.match(catalog, /id: 'AGT-003'/, 'the commercial assistant must remain in the catalog');
 assert.doesNotMatch(catalog, /AGT-004/, 'Board drafting must not be a standalone agent');
 assert.match(catalog, /Preparar borrador de Junta/, 'the SIIO manager must own Board draft preparation');
+assert.match(catalog, /SIIO_AGENT_CATALOG: SiioInstitutionalAgent\[\]/, 'the catalog must remain typed');
+assert.match(catalog, /id: 'AGT-001'[\s\S]*?id: 'AGT-002'[\s\S]*?id: 'AGT-003'/, 'the catalog must preserve the three governed agents in order');
 for (const field of ['owner_role', 'purpose', 'status', 'authorized_sources', 'permitted_actions', 'forbidden_actions', 'human_review_required', 'can_write_production', 'audit_rule', 'next_gate']) {
   assert.match(catalog, new RegExp(field), `catalog must declare ${field}`);
 }
