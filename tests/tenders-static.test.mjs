@@ -42,6 +42,7 @@ for (const marker of ['TenderDocumentReviewPanel', 'Estado documental', 'Analiza
   assert.ok(main.includes(marker), `El detalle protegido debe conservar: ${marker}`);
 }
 for (const handler of [server, api]) {
+  assert.ok(handler.includes("if (!process.env.VERCEL)") && handler.includes('app.listen(port'), 'El handler debe arrancar localmente sin abrir un puerto dentro de Vercel.');
   assert.ok(handler.includes("app.post('/api/tender-convert'"), 'Backend debe conservar conversión protegida.');
   assert.ok(handler.includes("app.post('/api/tender-refresh'"), 'Backend debe conservar sincronización oficial.');
   assert.ok(handler.includes("app.get('/api/tender-dossiers'"), 'Backend debe exponer expedientes protegidos.');

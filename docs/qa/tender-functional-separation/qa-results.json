@@ -1,0 +1,368 @@
+{
+  "generatedAt": "2026-07-15T03:20:46.940Z",
+  "routes": {
+    "radar-desktop": {
+      "file": "radar-desktop.png",
+      "requested": [
+        "GET /api/bootstrap",
+        "GET /api/tenders"
+      ],
+      "apiFailures": [],
+      "writes": [],
+      "overflow": {
+        "body": 0,
+        "html": 0
+      },
+      "active": "page"
+    },
+    "tracking-desktop": {
+      "file": "tracking-desktop.png",
+      "requested": [
+        "GET /api/bootstrap",
+        "GET /api/tender-tracking"
+      ],
+      "apiFailures": [],
+      "writes": [],
+      "overflow": {
+        "body": 0,
+        "html": 0
+      },
+      "active": "page"
+    },
+    "dossiers-desktop": {
+      "file": "dossiers-desktop.png",
+      "requested": [
+        "GET /api/bootstrap",
+        "GET /api/tender-dossiers"
+      ],
+      "apiFailures": [],
+      "writes": [],
+      "overflow": {
+        "body": 0,
+        "html": 0
+      },
+      "active": "page"
+    },
+    "profiles-desktop": {
+      "file": "profiles-desktop.png",
+      "requested": [
+        "GET /api/bootstrap",
+        "GET /api/tender-company-profile",
+        "GET /api/tender-search-profiles"
+      ],
+      "apiFailures": [],
+      "writes": [],
+      "overflow": {
+        "body": 0,
+        "html": 0
+      },
+      "active": "page"
+    },
+    "radar-mobile": {
+      "file": "radar-mobile.png",
+      "requested": [
+        "GET /api/bootstrap",
+        "GET /api/tenders"
+      ],
+      "apiFailures": [],
+      "writes": [],
+      "overflow": {
+        "body": 0,
+        "html": 0
+      },
+      "active": "page"
+    },
+    "tracking-mobile": {
+      "file": "tracking-mobile.png",
+      "requested": [
+        "GET /api/bootstrap",
+        "GET /api/tender-tracking"
+      ],
+      "apiFailures": [],
+      "writes": [],
+      "overflow": {
+        "body": 0,
+        "html": 0
+      },
+      "active": "page"
+    },
+    "dossiers-mobile": {
+      "file": "dossiers-mobile.png",
+      "requested": [
+        "GET /api/bootstrap",
+        "GET /api/tender-dossiers"
+      ],
+      "apiFailures": [],
+      "writes": [],
+      "overflow": {
+        "body": 0,
+        "html": 0
+      },
+      "active": "page"
+    },
+    "profiles-mobile": {
+      "file": "profiles-mobile.png",
+      "requested": [
+        "GET /api/bootstrap",
+        "GET /api/tender-company-profile",
+        "GET /api/tender-search-profiles"
+      ],
+      "apiFailures": [],
+      "writes": [],
+      "overflow": {
+        "body": 0,
+        "html": 0
+      },
+      "active": "page"
+    }
+  },
+  "interactions": {
+    "savedProfile": {
+      "exercised": true,
+      "url": "http://127.0.0.1:4173/#/tenders?view=radar&profile=6e31679b-22d5-4ac2-85c0-316fe7750fb3"
+    },
+    "dossier": {
+      "exercised": true,
+      "activeId": "tender-document-review",
+      "url": "http://127.0.0.1:4173/#/detail/50488b76-2ec8-47e1-9b65-23ce7bafad09?focus=documents"
+    },
+    "history": {
+      "url": "http://127.0.0.1:4173/#/tenders?view=seguimiento"
+    },
+    "mobileDrawer": {
+      "exercised": false
+    }
+  },
+  "checks": [
+    {
+      "name": "radar-desktop-active-tab",
+      "ok": true,
+      "detail": "aria-current=page"
+    },
+    {
+      "name": "radar-desktop-no-api-errors",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "radar-desktop-read-only-load",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "radar-desktop-no-page-overflow",
+      "ok": true,
+      "detail": "{\"body\":0,\"html\":0}"
+    },
+    {
+      "name": "radar-desktop-no-error-banner",
+      "ok": true,
+      "detail": "count=0"
+    },
+    {
+      "name": "tracking-desktop-active-tab",
+      "ok": true,
+      "detail": "aria-current=page"
+    },
+    {
+      "name": "tracking-desktop-no-api-errors",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "tracking-desktop-read-only-load",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "tracking-desktop-no-page-overflow",
+      "ok": true,
+      "detail": "{\"body\":0,\"html\":0}"
+    },
+    {
+      "name": "tracking-desktop-no-error-banner",
+      "ok": true,
+      "detail": "count=0"
+    },
+    {
+      "name": "dossiers-desktop-active-tab",
+      "ok": true,
+      "detail": "aria-current=page"
+    },
+    {
+      "name": "dossiers-desktop-no-api-errors",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dossiers-desktop-read-only-load",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dossiers-desktop-no-page-overflow",
+      "ok": true,
+      "detail": "{\"body\":0,\"html\":0}"
+    },
+    {
+      "name": "dossiers-desktop-no-error-banner",
+      "ok": true,
+      "detail": "count=0"
+    },
+    {
+      "name": "profiles-desktop-active-tab",
+      "ok": true,
+      "detail": "aria-current=page"
+    },
+    {
+      "name": "profiles-desktop-no-api-errors",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "profiles-desktop-read-only-load",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "profiles-desktop-no-page-overflow",
+      "ok": true,
+      "detail": "{\"body\":0,\"html\":0}"
+    },
+    {
+      "name": "profiles-desktop-no-error-banner",
+      "ok": true,
+      "detail": "count=0"
+    },
+    {
+      "name": "radar-mobile-active-tab",
+      "ok": true,
+      "detail": "aria-current=page"
+    },
+    {
+      "name": "radar-mobile-no-api-errors",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "radar-mobile-read-only-load",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "radar-mobile-no-page-overflow",
+      "ok": true,
+      "detail": "{\"body\":0,\"html\":0}"
+    },
+    {
+      "name": "radar-mobile-no-error-banner",
+      "ok": true,
+      "detail": "count=0"
+    },
+    {
+      "name": "tracking-mobile-active-tab",
+      "ok": true,
+      "detail": "aria-current=page"
+    },
+    {
+      "name": "tracking-mobile-no-api-errors",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "tracking-mobile-read-only-load",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "tracking-mobile-no-page-overflow",
+      "ok": true,
+      "detail": "{\"body\":0,\"html\":0}"
+    },
+    {
+      "name": "tracking-mobile-no-error-banner",
+      "ok": true,
+      "detail": "count=0"
+    },
+    {
+      "name": "dossiers-mobile-active-tab",
+      "ok": true,
+      "detail": "aria-current=page"
+    },
+    {
+      "name": "dossiers-mobile-no-api-errors",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dossiers-mobile-read-only-load",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "dossiers-mobile-no-page-overflow",
+      "ok": true,
+      "detail": "{\"body\":0,\"html\":0}"
+    },
+    {
+      "name": "dossiers-mobile-no-error-banner",
+      "ok": true,
+      "detail": "count=0"
+    },
+    {
+      "name": "profiles-mobile-active-tab",
+      "ok": true,
+      "detail": "aria-current=page"
+    },
+    {
+      "name": "profiles-mobile-no-api-errors",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "profiles-mobile-read-only-load",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "profiles-mobile-no-page-overflow",
+      "ok": true,
+      "detail": "{\"body\":0,\"html\":0}"
+    },
+    {
+      "name": "profiles-mobile-no-error-banner",
+      "ok": true,
+      "detail": "count=0"
+    },
+    {
+      "name": "saved-profile-opens-radar",
+      "ok": true,
+      "detail": "http://127.0.0.1:4173/#/tenders?view=radar&profile=6e31679b-22d5-4ac2-85c0-316fe7750fb3"
+    },
+    {
+      "name": "dossier-document-focus",
+      "ok": true,
+      "detail": "activeElement=tender-document-review"
+    },
+    {
+      "name": "browser-history-preserves-view",
+      "ok": true,
+      "detail": "http://127.0.0.1:4173/#/tenders?view=seguimiento"
+    },
+    {
+      "name": "interactions-no-api-errors",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "interactions-no-writes",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "summary": {
+    "passed": 45,
+    "total": 45,
+    "failed": []
+  }
+}

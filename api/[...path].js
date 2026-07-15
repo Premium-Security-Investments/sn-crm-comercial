@@ -2335,4 +2335,9 @@ const distPath = path.join(__dirname, '..', 'dist');
 app.use(express.static(distPath));
 app.use((_req, res) => res.sendFile(path.join(distPath, 'index.html')));
 
+if (!process.env.VERCEL) {
+  const port = process.env.PORT || 4173;
+  app.listen(port, () => console.log(`CRM Comercial SN escuchando en http://localhost:${port}`));
+}
+
 export default app;

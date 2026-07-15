@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
 const migration = readFileSync(new URL('../supabase/migrations/018_tender_tracking_rpc.sql', import.meta.url), 'utf8');
+const rollback = readFileSync(new URL('../supabase/rollbacks/017_018_tender_tracking_rollback.sql', import.meta.url), 'utf8');
 const ids = {
   actor: '11111111-1111-4111-8111-111111111111',
   owner: '22222222-2222-4222-8222-222222222222',
@@ -242,6 +243,29 @@ await (async function convertsAndRetriesIdempotently() {
   assert.equal(first.opportunity_id, second.opportunity_id);
   assert.equal(await count(db, 'psi_sales_opportunities'), 1);
   assert.equal(await count(db, 'psi_tender_tracking_events'), 1);
+  await db.close();
+})();
+
+await (async function restoresPreTrackingSchemaOnEmergencyRollback() {
+  const db = await createDatabase();
+  await db.exec(`
+    create schema auth;
+    create function auth.jwt() returns jsonb language sql stable as $$ select '{}'::jsonb $$;
+  `);
+  await db.exec(rollback);
+  const shape = await scalar(db, `select
+    to_regclass('public.psi_tender_tracking_events') is null as events_removed,
+    (select count(*)::int from information_schema.columns where table_schema='public' and table_name='psi_public_tenders' and column_name like 'tracking_%') as tracking_columns,
+    (select count(*)::int from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname like 'psi_%tender%tracking%') as tracking_functions,
+    (select count(*)::int from information_schema.role_table_grants where table_schema='public' and table_name='psi_public_tenders' and grantee='authenticated' and privilege_type in ('INSERT','UPDATE','DELETE')) as restored_write_grants,
+    (select count(*)::int from pg_policies where schemaname='public' and tablename='psi_public_tenders' and policyname='psi_public_tenders_modify') as restored_policy`);
+  assert.deepEqual(shape, {
+    events_removed: true,
+    tracking_columns: 0,
+    tracking_functions: 0,
+    restored_write_grants: 3,
+    restored_policy: 1,
+  });
   await db.close();
 })();
 
