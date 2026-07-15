@@ -17,12 +17,13 @@ export async function updateTracking<T>(request: TenderRequest, update: TenderTr
   return request<T>('/api/tender-tracking-update', { method: 'POST', body: JSON.stringify(update) });
 }
 
-/**
- * Dossiers remain part of the current radar payload until their dedicated
- * endpoint is introduced; naming the loader keeps that migration explicit.
- */
-export async function loadDossiers<T>(request: TenderRequest): Promise<T> {
-  return request<T>('/api/tenders');
+export type TenderDossierPage = { limit?: number; offset?: number };
+
+/** Dedicated, bounded dossier API loader for the future expediente view. */
+export async function loadDossiers<T>(request: TenderRequest, page: TenderDossierPage = {}): Promise<T> {
+  const limit = Math.min(100, Math.max(1, Math.trunc(page.limit ?? 50)));
+  const offset = Math.min(10000, Math.max(0, Math.trunc(page.offset ?? 0)));
+  return request<T>(`/api/tender-dossiers?limit=${limit}&offset=${offset}`);
 }
 
 export async function loadProfiles<T>(request: TenderRequest): Promise<T> {

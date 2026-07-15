@@ -1529,20 +1529,22 @@ function buildTenderDocumentAnalysis(opportunity, documents, companyProfile = {}
     documents: documents.map(d => ({ id: d.id, name: d.name, type: d.document_type, current: d.current }))
   };
 }
-async function getTenderDocumentRecords(database, opportunityId) {
+async function getTenderDocumentRecords(database, opportunityId, { includeSignedUrls = true } = {}) {
   const interactions = await must(database.from('psi_sales_interactions').select('id,notes,occurred_at,created_at,created_by,psi_sales_profiles(full_name)').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true }));
   const documents = [];
   const analyses = [];
+  const importErrors = [];
   for (const row of interactions) {
     const payload = parseInteractionJson(row.notes);
     if (payload?.kind === 'tender_document_upload') documents.push(...(payload.documents || []).map(doc => ({ ...doc, interaction_id: row.id, uploaded_by: row.psi_sales_profiles?.full_name || null })));
     if (payload?.kind === 'tender_document_analysis') analyses.push({ ...payload, interaction_id: row.id, created_at: row.created_at, created_by_name: row.psi_sales_profiles?.full_name || null });
+    if (payload?.kind === 'tender_document_import_error') importErrors.push({ kind: payload.kind, source: payload.source || null, created_at: row.created_at, failure_marker: 'fallo_importacion' });
   }
-  const signed = await Promise.all(documents.map(async doc => {
+  const signed = includeSignedUrls ? await Promise.all(documents.map(async doc => {
     const { data } = await database.storage.from(tenderDocumentBucket).createSignedUrl(doc.storage_path, 3600);
     return { ...doc, signed_url: data?.signedUrl || null };
-  }));
-  return { documents: signed, analysis: analyses.at(-1) || null, analyses };
+  })) : documents;
+  return { documents: signed, analysis: analyses.at(-1) || null, analyses, import_error: importErrors.at(-1) || null };
 }
 
 function genericTenderOfferDocuments(opportunity, analysis) {
@@ -1812,6 +1814,7 @@ export async function buildTenderDossierSummary(database, tender) {
     document_count: 0,
     missing_document_count: 0,
     document_import_status: 'error',
+    document_import_error: null,
     go_no_go: 'Pendiente',
     risk: 'Pendiente',
     checklist_progress: null,
@@ -1822,18 +1825,20 @@ export async function buildTenderDossierSummary(database, tender) {
     dossier_error: 'No se pudo cargar el expediente.'
   };
   try {
-    const records = await getTenderDocumentRecords(database, tender.converted_opportunity_id);
+    const records = await getTenderDocumentRecords(database, tender.converted_opportunity_id, { includeSignedUrls: false });
     const preparationRecords = await getTenderOfferPreparationRecords(database, tender.converted_opportunity_id);
     const currentDocuments = records.documents.filter(document => document.current !== false);
     const analysis = records.analysis?.status === 'analisis_generado' ? records.analysis : null;
+    const importFailureIsCurrent = records.import_error && (!analysis || !analysis.created_at || !records.import_error.created_at || Date.parse(records.import_error.created_at) >= Date.parse(analysis.created_at));
     const preparation = preparationRecords.preparation;
     return {
       ...fallback,
       document_count: currentDocuments.length,
       missing_document_count: (analysis?.checklist || []).filter(item => /pendiente|falta/i.test(String(item))).length,
-      document_import_status: analysis ? 'analisis_generado' : currentDocuments.length ? 'documentos_cargados' : 'pendiente_documentos',
-      go_no_go: analysis?.go_no_go?.decision || analysis?.recommendation || 'Pendiente',
-      risk: analysis?.go_no_go?.risk || analysis?.risk || 'Pendiente',
+      document_import_status: importFailureIsCurrent ? 'fallo_importacion' : analysis ? 'analisis_generado' : currentDocuments.length ? 'documentos_cargados' : 'pendiente_documentos',
+      document_import_error: importFailureIsCurrent ? 'La importación automática de documentos falló. Reintente o cargue los documentos manualmente.' : null,
+      go_no_go: importFailureIsCurrent ? 'Pendiente' : analysis?.go_no_go?.decision || analysis?.recommendation || 'Pendiente',
+      risk: importFailureIsCurrent ? 'Pendiente' : analysis?.go_no_go?.risk || analysis?.risk || 'Pendiente',
       checklist_progress: preparation?.checklist_summary || null,
       preparation_status: preparation?.status || 'pendiente',
       human_pending_count: preparation?.human_required_items?.length || 0,
@@ -1846,14 +1851,33 @@ export async function buildTenderDossierSummary(database, tender) {
   }
 }
 
+const tenderDossierDefaultLimit = 50;
+const tenderDossierMaxLimit = 100;
+const tenderDossierMaxOffset = 10000;
+function parseTenderDossierPage(query = {}) {
+  const parse = (value, fallback, maximum, label) => {
+    if (value === undefined || value === '') return fallback;
+    if (!/^\d+$/.test(String(value))) { const error = new Error(`${label} debe ser un entero positivo.`); error.status = 400; throw error; }
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed > maximum) { const error = new Error(`${label} debe estar entre 0 y ${maximum}.`); error.status = 400; throw error; }
+    return parsed;
+  };
+  const limit = parse(query.limit, tenderDossierDefaultLimit, tenderDossierMaxLimit, 'El límite');
+  if (limit < 1) { const error = new Error(`El límite debe estar entre 1 y ${tenderDossierMaxLimit}.`); error.status = 400; throw error; }
+  return { limit, offset: parse(query.offset, 0, tenderDossierMaxOffset, 'El desplazamiento') };
+}
+
 app.get('/api/tender-dossiers', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     requireTenderTrackingAccess(currentProfile);
     const database = requireDb();
-    const tenders = await must(database.from('psi_public_tenders').select('*').not('converted_opportunity_id', 'is', null).order('tracking_updated_at', { ascending: false }));
+    const { limit, offset } = parseTenderDossierPage(req.query);
+    const tenders = await must(database.from('psi_public_tenders').select('*').not('converted_opportunity_id', 'is', null).order('tracking_updated_at', { ascending: false }).order('id', { ascending: true }).range(offset, offset + limit - 1));
     const dossiers = [];
     for (const tender of tenders || []) dossiers.push(await buildTenderDossierSummary(database, tender));
+    res.set('X-Dossier-Limit', String(limit));
+    res.set('X-Dossier-Offset', String(offset));
     res.json(dossiers);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
