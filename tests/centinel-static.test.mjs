@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
 const main = fs.readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+const radar = fs.readFileSync(new URL('../src/tenders/TenderRadarView.tsx', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
 const mainMarkers = [
@@ -42,8 +43,6 @@ const mainMarkers = [
   "Radar de licitaciones no disponible",
   "Abrir radar de licitaciones",
   "tenderDeepLink",
-  "focusTenderId",
-  "tender-highlight",
   "#/tenders?tender=",
   "Solo lectura",
 ];
@@ -51,6 +50,7 @@ const mainMarkers = [
 for (const marker of mainMarkers) {
   assert.ok(main.includes(marker), `main.tsx missing marker: ${marker}`);
 }
+for (const marker of ['focusTenderId', 'tender-highlight']) assert.ok(radar.includes(marker), `TenderRadarView missing deep-link marker: ${marker}`);
 
 const cssMarkers = [
   '.centinel-dashboard',

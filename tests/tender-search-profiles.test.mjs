@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { strict as assert } from 'node:assert';
+import { buildSync } from 'esbuild';
 
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+const profiles = readFileSync(new URL('../src/tenders/TenderProfilesView.tsx', import.meta.url), 'utf8');
+const radar = readFileSync(new URL('../src/tenders/TenderRadarView.tsx', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
 const migration = readFileSync(new URL('../supabase/migrations/013_tender_search_profiles.sql', import.meta.url), 'utf8');
 
@@ -11,9 +14,37 @@ assert.match(migration, /unique\s*\(name\)/i, 'No deben duplicarse nombres de pe
 assert.match(api, /app\.get\('\/api\/tender-search-profiles'/, 'Debe existir endpoint GET de perfiles');
 assert.match(api, /app\.post\('\/api\/tender-search-profiles'/, 'Debe existir endpoint POST de perfiles');
 assert.match(api, /app\.delete\('\/api\/tender-search-profiles\/:id'/, 'Debe existir endpoint DELETE de perfiles');
-assert.match(main, /loadSearchProfiles/, 'El frontend debe cargar perfiles guardados');
-assert.match(main, /saveCurrentSearchProfile/, 'El frontend debe guardar el perfil actual');
-assert.match(main, /applySearchProfile/, 'El frontend debe aplicar perfiles guardados');
-assert.match(main, /api<TenderSearchProfile\[]>\('\/api\/tender-search-profiles'\)/, 'El frontend debe consumir el GET de perfiles');
+assert.match(profiles, /loadProfiles/, 'Perfiles debe cargar perfiles guardados desde su propia vista.');
+assert.match(profiles, /\/api\/tender-company-profile/, 'Perfiles debe cargar la ficha corporativa.');
+assert.match(profiles, /\/api\/tender-search-profiles/, 'Perfiles debe consumir los perfiles guardados.');
+assert.doesNotMatch(profiles, /\/api\/tenders/, 'Perfiles nunca debe cargar la cola del Radar.');
+assert.match(profiles, /profileRadarHash/, 'Aplicar debe construir la URL del Radar desde el id persistido.');
+assert.match(profiles, /Aplicar en Radar/);
+assert.match(radar, /profileId/, 'Radar debe leer el perfil solicitado en el hash.');
+assert.match(radar, /loadProfiles/, 'Radar debe leer el perfil guardado antes de filtrar la cola.');
+for (const field of ['query_text', 'source_filter', 'region_key', 'deadline_filter', 'value_filter', 'score_filter', 'section_filter', 'internal_status_filter']) {
+  assert.match(radar, new RegExp(`profile\\.${field}`), `Radar debe aplicar el campo persistido ${field}.`);
+}
+assert.match(radar, /section_filter/, 'Radar debe aplicar la sección persistida del perfil.');
+assert.match(radar, /internal_status_filter/, 'Radar debe aplicar el estado interno persistido del perfil.');
+assert.match(radar, /Las oportunidades convertidas se gestionan en Expedientes/, 'Radar debe explicar dónde viven las oportunidades convertidas.');
+assert.match(radar, /view=expedientes/, 'Radar debe ofrecer navegación explícita a Expedientes para convertidas.');
+assert.doesNotMatch(main, /loadSearchProfiles|saveCurrentSearchProfile|applySearchProfile/, 'main no debe retener la lógica de perfiles migrada.');
 
-console.log('Tender search profiles persistence expectations passed');
+const bundle = buildSync({
+  entryPoints: [new URL('../src/tenders/radarUtils.ts', import.meta.url).pathname], bundle: true, platform: 'node', format: 'esm', write: false,
+});
+const radarUtilsUrl = `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].contents).toString('base64')}`;
+const { filterRadarTenders } = await import(radarUtilsUrl);
+const candidates = [
+  { id: 'new-hacer', source: 'SECOP II', section: 'hacer', internal_status: 'nueva', entity: 'Bogotá', title: 'Nueva', value: 100, score: 80, reasons: [], risks: [] },
+  { id: 'review-revisar', source: 'SECOP II', section: 'revisar', internal_status: 'en_revision', entity: 'Bogotá', title: 'Revisión', value: 100, score: 80, reasons: [], risks: [] },
+  { id: 'discard-descartar', source: 'SECOP II', section: 'descartar', internal_status: 'descartada', entity: 'Bogotá', title: 'Descartada', value: 100, score: 80, reasons: [], risks: [] },
+  { id: 'converted', source: 'SECOP II', section: 'hacer', internal_status: 'convertida_oportunidad', converted_opportunity_id: 'opp-1', entity: 'Bogotá', title: 'Convertida', value: 100, score: 80, reasons: [], risks: [] },
+];
+const baseFilters = { query: '', source: 'todas', region: 'todas', deadline: 'todas', value: 'todas', score: 'todas', section: 'todas', internalStatus: 'todas' };
+assert.deepEqual(filterRadarTenders(candidates, { ...baseFilters, section: 'revisar', internalStatus: 'en_revision' }).map(item => item.id), ['review-revisar'], 'El perfil debe aplicar sección y estado interno conjuntamente.');
+assert.deepEqual(filterRadarTenders(candidates, { ...baseFilters, internalStatus: 'descartada' }).map(item => item.id), ['discard-descartar'], 'El perfil debe poder recuperar descartadas.');
+assert.deepEqual(filterRadarTenders(candidates, { ...baseFilters, internalStatus: 'convertida_oportunidad' }), [], 'Radar conserva la frontera: convertidas nunca aparecen aunque el perfil las solicite.');
+
+console.log('Tender search profile isolation and URL handoff passed');

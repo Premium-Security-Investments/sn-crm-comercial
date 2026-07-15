@@ -6,6 +6,9 @@ import './styles.css';
 import { canAccessRoute, canAccessSiio as navCanAccessSiio, canManageUsers as navCanManageUsers, canViewTenders as navCanViewTenders, isManagementRole as navIsManagementRole } from './navPermissions';
 import { api, setApiAccessToken } from './apiClient';
 import { SiioDashboard } from './siio/SiioDashboard';
+import { TendersModule } from './tenders/TendersModule';
+import type { TenderModuleView } from './tenders/types';
+import { focusDocumentReviewArea } from './tenders/viewUtils';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
@@ -39,7 +42,6 @@ type TenderDeadlineFilter = 'todas' | '0_7' | '8_15' | '16_30' | 'vencida' | 'si
 type TenderValueFilter = 'todas' | 'sin_valor' | 'lt_50m' | '50m_500m' | '500m_plus' | '1000m_plus';
 type TenderScoreFilter = 'todas' | 'alto' | 'medio' | 'bajo';
 type TenderSortKey = 'deadline' | 'value' | 'score' | 'entity' | 'source';
-type TenderModuleView = 'radar' | 'seguimiento' | 'expedientes' | 'perfiles';
 type TenderRegionKey = 'todas' | 'bog_cundinamarca' | 'med_antioquia' | 'eje_cafetero' | 'cali_valle' | 'costa_caribe' | 'santanderes' | 'sur_occidente' | 'otros';
 type PublicTender = { id: string; stable_key?: string; source: string; section: TenderSection; internal_status?: TenderInternalStatus; converted_opportunity_id?: string | null; reviewed_at?: string | null; detected_at?: string | null; last_seen_at?: string | null; entity: string; dept?: string; city?: string; ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string; category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null; score: number; reasons: string[]; risks: string[]; url?: string };
 type TenderDocumentStatus = 'pendiente_documentos' | 'documentos_cargados' | 'analisis_generado';
@@ -245,15 +247,6 @@ function managerAlertRoute(status: string) { return alertRoute(status); }
 function tenderDeepLink(tender: PublicTender) { return `#/tenders?tender=${encodeURIComponent(tender.id)}`; }
 function hashQueryParam(name: string) { return new URLSearchParams((window.location.hash.split('?')[1] || '')).get(name) || ''; }
 function tenderViewFromHash(): TenderModuleView { return (['radar','seguimiento','expedientes','perfiles'].includes(hashQueryParam('view')) ? hashQueryParam('view') : 'radar') as TenderModuleView; }
-function tenderDefaultFiltersForView(view: TenderModuleView): { section: TenderSection | 'todas'; internalStatus: TenderInternalStatus | 'todas' } {
-  const defaults: Record<TenderModuleView, { section: TenderSection | 'todas'; internalStatus: TenderInternalStatus | 'todas' }> = {
-    radar: { section: 'todas', internalStatus: 'todas' },
-    seguimiento: { section: 'todas', internalStatus: 'en_revision' },
-    expedientes: { section: 'todas', internalStatus: 'convertida_oportunidad' },
-    perfiles: { section: 'todas', internalStatus: 'todas' },
-  };
-  return defaults[view];
-}
 function isTerminalStage(stageCode?: string | null) { return ['aprobado','perdido','descartado'].includes(stageCode || ''); }
 function dashboardOpportunityDate(o: Opportunity) { return o.expected_close_date || o.quote_date || o.approved_at || o.updated_at || o.created_at; }
 function matchesDashboardPeriod(o: Opportunity, period: DashboardPeriodFilter) {
@@ -437,19 +430,18 @@ function titleFor(route: Route) {
 }
 function Nav({ route, currentProfile, onNavigate }: { route: Route; currentProfile: Profile | null; onNavigate?: () => void }) {
   const isActiveHref = (href: string) => (route.page === 'home' && href === '#/') || href.includes(route.page) || (route.page === 'centinel' && href === '#/vig-ia');
-  const tenderSubnav: Array<[string, string]> = [['#/tenders?view=radar','Radar de oportunidades'],['#/tenders?view=seguimiento','Seguimiento'],['#/tenders?view=expedientes','Expedientes'],['#/tenders?view=perfiles','Perfiles de búsqueda']];
   const handleNav = () => { if (onNavigate) onNavigate(); };
   return <nav className="nav-domain-groups">
     {isManagementRole(currentProfile?.role) && <div className="nav-section"><span className="nav-section-title">Gerencia</span><a onClick={handleNav} className={route.page === 'siio' ? 'active' : ''} href="#/siio">SIIO Gerencial</a><a onClick={handleNav} className={route.page === 'centinel' ? 'active' : ''} href="#/vig-ia">Vig-IA</a></div>}
     <div className="nav-section"><span className="nav-section-title">Comercial</span>{isManagementRole(currentProfile?.role) && <a onClick={handleNav} className={route.page === 'dashboard' || route.page === 'dashboard2' ? 'active' : ''} href="#/dashboard2">Dashboard comercial</a>}<a onClick={handleNav} className={isActiveHref('#/alerts') ? 'active' : ''} href="#/alerts">Alertas comerciales</a><a onClick={handleNav} className={isActiveHref('#/opportunities') ? 'active' : ''} href="#/opportunities">Oportunidades</a></div>
-    {canViewTenders(currentProfile) && <div className={`nav-section nav-group tender-subnav ${route.page === 'tenders' ? 'open active' : ''}`}><span className="nav-section-title">Licitaciones</span><a onClick={handleNav} className={`nav-parent ${route.page === 'tenders' ? 'active' : ''}`} href="#/tenders?view=radar">Radar de oportunidades <span>▾</span></a><div className="nav-subitems">{tenderSubnav.slice(1).map(([href,label]) => <a key={href} onClick={handleNav} href={href} className={route.page === 'tenders' && (hashQueryParam('view') || 'radar') === new URLSearchParams(href.split('?')[1]).get('view') ? 'active' : ''}>{label}</a>)}</div></div>}
+    {canViewTenders(currentProfile) && <div className="nav-section"><span className="nav-section-title">Licitaciones</span><a onClick={handleNav} className={`nav-parent ${route.page === 'tenders' ? 'active' : ''}`} href="#/tenders?view=radar">Radar de oportunidades</a></div>}
     <div className="nav-section"><span className="nav-section-title">Administración</span>{canManageGoals(currentProfile) && <a onClick={handleNav} className={isActiveHref('#/goals') ? 'active' : ''} href="#/goals">Metas y cumplimiento</a>}{canManageUsers(currentProfile) && <a onClick={handleNav} className={isActiveHref('#/users') ? 'active' : ''} href="#/users">Usuarios y permisos</a>}</div>
   </nav>;
 }
 function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; refresh: () => Promise<void> }) {
   if (!canAccessRoute(data.currentProfile, route.page)) return <div className="error">No tienes permiso para ver esta sección.</div>;
   if (route.page === 'opportunities') return <OpportunityList data={data} />;
-  if (route.page === 'tenders') return <TendersRadar data={data} refresh={refresh} />;
+  if (route.page === 'tenders') return <TendersModule view={tenderViewFromHash()} data={data} refresh={refresh} request={api} navigate={go} />;
   if (route.page === 'detail' && route.id) return <OpportunityDetail id={route.id} data={data} refresh={refresh} />;
   if (route.page === 'new') return <OpportunityForm data={data} refresh={refresh} />;
   if (route.page === 'edit' && route.id) return <OpportunityForm data={data} id={route.id} refresh={refresh} />;
@@ -713,404 +705,21 @@ function scoreLabel(score?: number) {
   if (value >= 40) return 'Medio';
   return 'Bajo / validar';
 }
-const emptyTenderCompanyProfile: TenderCompanyProfile = { legal_name: '', nit: '', rup_status: '', rup_updated_at: '', rup_unspsc_codes: '', authorized_services: '', supervigilancia_license: '', financial_capacity: '', organizational_capacity: '', experience_summary: '', certifications: '', recurring_documents: '', disqualifications_notes: '', useful_company_info: '', source_document_name: '', rup_import_notes: '' };
-const tenderCompanyProfileFields: Array<{ key: keyof TenderCompanyProfile; label: string; placeholder: string; rows?: number }> = [
-  { key: 'legal_name', label: 'Nombre legal', placeholder: 'Ej: Seguridad Nacional Ltda.' },
-  { key: 'nit', label: 'NIT', placeholder: 'NIT con dígito de verificación' },
-  { key: 'rup_status', label: 'Estado RUP', placeholder: 'Vigente / en renovación / pendiente; cámara de comercio; fecha de firmeza' },
-  { key: 'rup_updated_at', label: 'Fecha última actualización RUP', placeholder: 'AAAA-MM-DD' },
-  { key: 'rup_unspsc_codes', label: 'RUP / códigos UNSPSC', placeholder: 'Códigos, segmentos, cuantías y clasificaciones relevantes', rows: 3 },
-  { key: 'authorized_services', label: 'Servicios autorizados', placeholder: 'Vigilancia fija/móvil, escoltas, medios tecnológicos, monitoreo, consultoría, seguridad electrónica...', rows: 3 },
-  { key: 'supervigilancia_license', label: 'Licencia SuperVigilancia', placeholder: 'Resolución, vigencia, modalidades autorizadas, limitaciones', rows: 3 },
-  { key: 'financial_capacity', label: 'Capacidad financiera', placeholder: 'Liquidez, endeudamiento, cobertura, patrimonio, ingresos, notas financieras útiles para pliegos', rows: 4 },
-  { key: 'organizational_capacity', label: 'Capacidad organizacional', placeholder: 'Rentabilidad, estructura operativa, cobertura regional, personal, sedes, tecnología', rows: 4 },
-  { key: 'experience_summary', label: 'Experiencia habilitante', placeholder: 'Contratos comparables, entidades, cuantías, objetos, fechas, certificaciones disponibles', rows: 5 },
-  { key: 'certifications', label: 'Certificaciones / pólizas / permisos', placeholder: 'ISO, BASC, pólizas, certificaciones tributarias/parafiscales, permisos especiales', rows: 3 },
-  { key: 'recurring_documents', label: 'Documentos recurrentes', placeholder: 'Cámara de Comercio, RUT, antecedentes, paz y salvo, estados financieros, formatos usuales y fecha de vencimiento', rows: 4 },
-  { key: 'disqualifications_notes', label: 'Alertas / restricciones', placeholder: 'Inhabilidades, sanciones, conflictos, restricciones contractuales, temas por validar antes de ofertar', rows: 3 },
-  { key: 'useful_company_info', label: 'Información útil para cruzar contra pliegos', placeholder: 'Todo lo que deba usar el análisis: fortalezas, límites, diferenciales, zonas donde sí/no operamos, aliados, topes, experiencia por sector...', rows: 6 },
-];
-function TenderCompanyProfilePanel() {
-  const [profile, setProfile] = useState<TenderCompanyProfile>(emptyTenderCompanyProfile);
-  const [loadingProfile, setLoadingProfile] = useState(true);
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [uploadingRup, setUploadingRup] = useState(false);
-  const [profileStatus, setProfileStatus] = useState('');
-  const loadProfile = async () => {
-    setLoadingProfile(true); setProfileStatus('');
-    try { setProfile({ ...emptyTenderCompanyProfile, ...(await api<TenderCompanyProfile>('/api/tender-company-profile')) }); }
-    catch (err) { setProfileStatus(err instanceof Error ? err.message : String(err)); }
-    finally { setLoadingProfile(false); }
-  };
-  useEffect(() => { loadProfile(); }, []);
-  const updateField = (key: keyof TenderCompanyProfile, value: string) => setProfile(current => ({ ...current, [key]: value }));
-  const saveProfile = async () => {
-    setSavingProfile(true); setProfileStatus('Guardando información de empresa…');
-    try {
-      const saved = await api<TenderCompanyProfile>('/api/tender-company-profile', { method: 'PUT', body: JSON.stringify(profile) });
-      setProfile({ ...emptyTenderCompanyProfile, ...saved });
-      setProfileStatus('Información de empresa guardada. Ya queda disponible para cruzar contra pliegos y oportunidades.');
-    } catch (err) { setProfileStatus(err instanceof Error ? err.message : String(err)); }
-    finally { setSavingProfile(false); }
-  };
-  const uploadRup = async (file?: File) => {
-    if (!file) return;
-    if (file.size > 50 * 1024 * 1024) { setProfileStatus('Error: el RUP supera 50MB. Cargue una versión PDF/DOCX más liviana.'); return; }
-    setUploadingRup(true); setProfileStatus('Preparando carga segura del RUP…');
-    try {
-      const uploadTicket = await api<{ path: string; token: string }>('/api/tender-company-profile-upload-url', { method: 'POST', body: JSON.stringify({ name: file.name, mime_type: file.type, size: file.size }) });
-      setProfileStatus('Subiendo RUP a almacenamiento seguro…');
-      const uploadResult = await supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(uploadTicket.path, uploadTicket.token, file);
-      if (uploadResult.error) throw uploadResult.error;
-      setProfileStatus('Procesando RUP actualizado…');
-      const saved = await api<TenderCompanyProfile>('/api/tender-company-profile-process-upload', { method: 'POST', body: JSON.stringify({ storage_path: uploadTicket.path, name: file.name, mime_type: file.type }) });
-      setProfile({ ...emptyTenderCompanyProfile, ...saved });
-      setProfileStatus('RUP cargado y ficha actualizada. Revise los campos y ajuste manualmente lo que haga falta.');
-    } catch (err) { setProfileStatus(err instanceof Error ? err.message : String(err)); }
-    finally { setUploadingRup(false); }
-  };
-  const filled = tenderCompanyProfileFields.filter(field => String(profile[field.key] || '').trim()).length;
-  const profileUpdatedLabel = profile.updated_at ? `Actualizada ${fmtDate(profile.updated_at)}` : 'Sin RUP cargado';
-  return <section className="company-compliance-panel company-profile-panel" aria-label="Información de empresa para analizar licitaciones">
-    <details className="company-profile-details">
-      <summary><div><span className="eyebrow">Empresa licitante</span><strong>Información empresa</strong><p>{profileUpdatedLabel} · {filled}/{tenderCompanyProfileFields.length} campos</p></div><span className="button secondary company-profile-summary-action">Ver / editar</span></summary>
-      <div className="company-profile-body">
-        <div className="company-compliance-head"><div><h2>Información empresa</h2><p>Cargue el RUP y revise los campos clave.</p></div><label className="rup-upload-card"><span>Cargar RUP</span><input type="file" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" disabled={uploadingRup || loadingProfile} onChange={event=>{ uploadRup(event.currentTarget.files?.[0]); event.currentTarget.value = ''; }}/><small>{uploadingRup ? 'Procesando documento…' : 'PDF, DOCX o TXT'}</small>{profileStatus ? <strong className={`rup-upload-status ${profileStatus.toLowerCase().includes('error') ? 'error' : ''}`}>{profileStatus}</strong> : null}</label></div>
-        {loadingProfile ? <div className="notice">Cargando información de empresa…</div> : <div className="company-profile-form">
-          {tenderCompanyProfileFields.map(field => <label key={field.key} className={field.rows ? 'wide' : ''}><span>{field.label}</span>{field.rows ? <textarea rows={field.rows} value={String(profile[field.key] || '')} onChange={e=>updateField(field.key, e.target.value)} placeholder={field.placeholder} /> : <input value={String(profile[field.key] || '')} onChange={e=>updateField(field.key, e.target.value)} placeholder={field.placeholder} />}</label>)}
-        </div>}
-        <div className="row-actions"><button onClick={saveProfile} disabled={savingProfile || loadingProfile || uploadingRup}>{savingProfile ? 'Guardando…' : 'Guardar información de empresa'}</button><button className="secondary" onClick={loadProfile} disabled={savingProfile || uploadingRup}>Recargar ficha</button>{profileStatus && <span className="muted">{profileStatus}</span>}</div>
-      </div>
-    </details>
-  </section>;
+function Select({ value, onChange, options, empty, disabled = false }: { value: string; onChange: (value: string) => void; options: string[][]; empty: string; disabled?: boolean }) {
+  return <select value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>{empty ? <option value="">{empty}</option> : null}{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>;
 }
-function TenderSearchProfilesPanel({ regionFilter, setRegionFilter, profiles, profileName, setProfileName, profileStatus, savingProfile, onSave, onApply, onDelete }: { regionFilter: TenderRegionKey; setRegionFilter: (value: TenderRegionKey) => void; profiles: TenderSearchProfile[]; profileName: string; setProfileName: (value: string) => void; profileStatus: string; savingProfile: boolean; onSave: () => void; onApply: (profile: TenderSearchProfile) => void; onDelete: (profile: TenderSearchProfile) => void }) {
-  return <section className="panel tender-search-profiles-panel"><div className="tender-profile-head"><div><span className="eyebrow">Perfiles de búsqueda SN</span><h2>Filtrar por regiones donde tenemos presencia</h2><p>Los perfiles combinan servicio, fuente, cuantía y cobertura. La prioridad es enfocar el radar en ciudades/regiones donde Seguridad Nacional puede operar o donde vale la pena validar cobertura antes de ofertar.</p></div><label><span>Región SN</span><Select value={regionFilter} onChange={v=>setRegionFilter(v as TenderRegionKey)} options={TENDER_SN_REGIONS.map(region => [region.key, region.label])} empty=""/></label></div><div className="tender-region-grid">{TENDER_SN_REGIONS.filter(region => region.key !== 'todas').map(region => <button key={region.key} className={regionFilter === region.key ? 'active' : ''} onClick={() => setRegionFilter(region.key)}><strong>{region.label}</strong><span>{region.focus}</span><small>{region.key === 'otros' ? 'Bandeja de validación' : region.aliases.slice(0,5).join(' · ')}</small></button>)}</div><div className="tender-profile-save"><input placeholder="Nombre del perfil, ej. CCTV Bogotá $500M+" value={profileName} onChange={e=>setProfileName(e.target.value)} /><button onClick={onSave} disabled={savingProfile}>{savingProfile ? 'Guardando…' : 'Guardar perfil actual'}</button>{profileStatus && <span>{profileStatus}</span>}</div><div className="tender-saved-profiles"><strong>Perfiles guardados</strong>{profiles.length ? profiles.map(profile => <div key={profile.id} className="tender-saved-profile-row"><button className="secondary" onClick={() => onApply(profile)}><b>{profile.name}</b><small>{TENDER_SN_REGIONS.find(region => region.key === profile.region_key)?.label || profile.region_key} · {profile.source_filter || 'todas'} · {profile.value_filter || 'todas'}</small></button><button className="secondary" onClick={() => onDelete(profile)}>Eliminar</button></div>) : <span className="muted">Aún no hay perfiles guardados en la base de datos.</span>}</div><div className="tender-profile-examples"><strong>Perfiles sugeridos iniciales</strong><span>Vigilancia física + BOG/Cundinamarca</span><span>Seguridad electrónica + Medellín/Antioquia</span><span>ESU + Antioquia</span><span>CCTV / monitoreo + ciudades principales</span><span>Grandes cuantías + regiones con cobertura confirmada</span></div></section>;
-}
-function TendersRadar({ data, refresh }: { data: Bootstrap; refresh: () => Promise<void> }) {
-  const currentProfile = data.currentProfile;
-  const tenderView = tenderViewFromHash();
-  const initialTenderFilters = tenderDefaultFiltersForView(tenderView);
-  const [payload, setPayload] = useState<TenderRadarPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [creatingId, setCreatingId] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
-  const [section, setSection] = useState<TenderSection | 'todas'>(initialTenderFilters.section);
-  const [internalStatus, setInternalStatus] = useState<TenderInternalStatus | 'todas'>(initialTenderFilters.internalStatus);
-  const [q, setQ] = useState('');
-  const [quickFilter, setQuickFilter] = useState<TenderQuickFilter>(null);
-  const [fastFilter, setFastFilter] = useState<TenderFastFilter>(null);
-  const [sourceFilter, setSourceFilter] = useState('todas');
-  const [regionFilter, setRegionFilter] = useState<TenderRegionKey>('todas');
-  const [deadlineFilter, setDeadlineFilter] = useState<TenderDeadlineFilter>('todas');
-  const [valueFilter, setValueFilter] = useState<TenderValueFilter>('todas');
-  const [scoreFilter, setScoreFilter] = useState<TenderScoreFilter>('todas');
-  const [searchProfiles, setSearchProfiles] = useState<TenderSearchProfile[]>([]);
-  const [profileName, setProfileName] = useState('');
-  const [profileStatus, setProfileStatus] = useState('');
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [tenderSortKey, setTenderSortKey] = useState<TenderSortKey>('value');
-  const [tenderSortDirection, setTenderSortDirection] = useState<SortDirection>('desc');
-  const [tenderPage, setTenderPage] = useState(1);
-  const applyingSearchProfileRef = useRef(false);
-  const focusTenderId = hashQueryParam('tender');
-  const load = async () => {
-    setLoading(true); setError(null);
-    try { setPayload(await api<TenderRadarPayload>('/api/tenders')); }
-    catch (err) { setError(err instanceof Error ? err.message : String(err)); }
-    finally { setLoading(false); }
-  };
-  const loadSearchProfiles = async () => {
-    try { setSearchProfiles(await api<TenderSearchProfile[]>('/api/tender-search-profiles')); }
-    catch (err) { setProfileStatus(err instanceof Error ? err.message : String(err)); }
-  };
-  const refreshRadar = async () => {
-    setSyncing(true); setError(null);
-    try { setPayload(await api<TenderRadarPayload>('/api/tender-refresh', { method: 'POST' })); }
-    catch (err) { setError(err instanceof Error ? err.message : String(err)); }
-    finally { setSyncing(false); }
-  };
-  const setRouteViewDefaults = (view: TenderModuleView) => {
-    const defaults = tenderDefaultFiltersForView(view);
-    setQuickFilter(null);
-    setFastFilter(null);
-    setSection(defaults.section);
-    setInternalStatus(defaults.internalStatus);
-    setDeadlineFilter('todas');
-    setValueFilter('todas');
-    setScoreFilter('todas');
-  };
-  useEffect(() => { load(); loadSearchProfiles(); }, []);
-  useEffect(() => {
-    if (applyingSearchProfileRef.current) { applyingSearchProfileRef.current = false; return; }
-    if (!focusTenderId) setRouteViewDefaults(tenderView);
-  }, [tenderView, focusTenderId]);
-  useEffect(() => {
-    if (!focusTenderId || !payload) return;
-    const focused = payload.tenders.find(t => t.id === focusTenderId);
-    if (!focused) return;
-    setSection(focused.section);
-    setInternalStatus('todas');
-    setQ('');
-    setQuickFilter(null);
-    setFastFilter(null);
-    setSourceFilter('todas');
-    setRegionFilter('todas');
-    setDeadlineFilter('todas');
-    setValueFilter('todas');
-    setScoreFilter('todas');
-    window.setTimeout(() => document.getElementById(`tender-${focusTenderId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
-  }, [focusTenderId, payload]);
-  useEffect(() => { setTenderPage(1); }, [tenderView, quickFilter, fastFilter, section, internalStatus, sourceFilter, regionFilter, deadlineFilter, valueFilter, scoreFilter, q, tenderSortKey, tenderSortDirection]);
-  if (!canViewTenders(currentProfile)) return <div className="error">Solo dirección o licitaciones puede ver este radar.</div>;
-  if (loading) return <div className="notice">Cargando radar de licitaciones…</div>;
-  if (error) return <div className="error">{error}</div>;
-  if (!payload) return <EmptyState title="Sin datos" text="No se pudo cargar el radar de licitaciones." />;
-  const clearTenderFilters = () => { setQuickFilter(null); setFastFilter(null); setSection('todas'); setInternalStatus('todas'); setSourceFilter('todas'); setRegionFilter('todas'); setDeadlineFilter('todas'); setValueFilter('todas'); setScoreFilter('todas'); setQ(''); };
-  const applyTenderQuickFilter = (filter: TenderQuickFilter) => {
-    setQuickFilter(current => current === filter ? null : filter);
-    setFastFilter(null);
-    setQ('');
-    if (filter === 'hacer') { setSection('hacer'); setInternalStatus('todas'); setValueFilter('todas'); }
-    if (filter === 'en_revision') { setSection('todas'); setInternalStatus('en_revision'); setValueFilter('todas'); }
-    if (filter === 'high_value') { setSection('todas'); setInternalStatus('todas'); setValueFilter('500m_plus'); }
-    if (filter === 'convertidas') { setSection('todas'); setInternalStatus('convertida_oportunidad'); setValueFilter('todas'); }
-  };
-  const applyTenderFastFilter = (filter: TenderFastFilter) => {
-    const isClearing = fastFilter === filter;
-    setFastFilter(isClearing ? null : filter);
-    setQuickFilter(null);
-    setQ('');
-    setSection('todas');
-    setInternalStatus('todas');
-    setDeadlineFilter('todas');
-    setValueFilter('todas');
-    setScoreFilter('todas');
-    if (isClearing || !filter) return;
-    const config = tenderFastFilterConfig[filter];
-    if (config?.section) setSection(config.section);
-    if (config?.internalStatus) setInternalStatus(config.internalStatus);
-    if (config?.deadlineFilter) setDeadlineFilter(config.deadlineFilter);
-    if (config?.valueFilter) setValueFilter(config.valueFilter);
-    if (config?.scoreFilter) setScoreFilter(config.scoreFilter);
-  };
-  const markTenderStatus = async (tender: PublicTender, status: TenderInternalStatus) => {
-    setCreatingId(tender.id); setError(null);
-    try {
-      const updated = await api<PublicTender>(`/api/tender-status?id=${encodeURIComponent(tender.id)}`, { method: 'PATCH', body: JSON.stringify({ internal_status: status }) });
-      setPayload(current => current ? { ...current, tenders: current.tenders.map(t => t.id === tender.id ? { ...t, ...updated } : t) } : current);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setCreatingId(null);
-    }
-  };
-  const createOpportunityFromTender = async (tender: PublicTender) => {
-    if (tender.converted_opportunity_id) { go(`#/detail/${tender.converted_opportunity_id}`); return; }
-    const owner = findTenderOwner(data);
-    const ok = window.confirm(`¿Crear oportunidad para ${tender.entity} y asignarla a ${owner.full_name}?`);
-    if (!ok) return;
-    setCreatingId(tender.id); setError(null);
-    try {
-      const saved = await api<{id:string}>('/api/tender-convert', { method: 'POST', body: JSON.stringify({ tender }) });
-      setPayload(current => current ? { ...current, tenders: current.tenders.map(t => t.id === tender.id ? { ...t, internal_status: 'convertida_oportunidad', converted_opportunity_id: saved.id } : t) } : current);
-      await refresh();
-      go(`#/detail/${saved.id}`);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setCreatingId(null);
-    }
-  };
-  const sourceOptions = Array.from(new Set([...TENDER_OFFICIAL_SOURCES, ...payload.tenders.map(t => t.source).filter(Boolean)])).sort((a,b) => a.localeCompare(b)).map(s => [s, s]);
-  const regionOptions = TENDER_SN_REGIONS.map(region => [region.key, region.label]);
-  const tenderViewCopy: Record<TenderModuleView, { title: string; text: string }> = {
-    radar: { title: 'Radar de oportunidades', text: 'Bandeja principal para detectar, priorizar y clasificar procesos nuevos.' },
-    seguimiento: { title: 'Seguimiento', text: 'Procesos marcados para revisión activa, cambios de estado y alertas documentales.' },
-    expedientes: { title: 'Expedientes', text: 'Procesos convertidos o listos para preparar documentos, GO/NO GO y oferta.' },
-    perfiles: { title: 'Perfiles de búsqueda', text: 'Criterios SN por servicio, cuantía, fuente y región donde tenemos presencia.' },
-  };
-  const tenderFastFilterConfig: Record<Exclude<TenderFastFilter, null>, { label: string; section?: TenderSection | 'todas'; internalStatus?: TenderInternalStatus | 'todas'; deadlineFilter?: TenderDeadlineFilter; valueFilter?: TenderValueFilter; scoreFilter?: TenderScoreFilter }> = {
-    hacer: { label: 'Hacer hoy', section: 'hacer' },
-    revisar: { label: 'Revisar', section: 'revisar' },
-    nuevas: { label: 'Nuevas', internalStatus: 'nueva' },
-    urgentes: { label: 'Urgentes', deadlineFilter: '0_7' },
-    alto_valor: { label: 'Alto valor', valueFilter: '500m_plus' },
-    alto_encaje: { label: 'Alto encaje', scoreFilter: 'alto' },
-  };
-  const primaryTenderFilter: TenderPrimaryFilter = fastFilter || (section !== 'todas' ? section : 'todas');
-  const applyPrimaryTenderFilter = (filter: TenderPrimaryFilter) => {
-    setQuickFilter(null);
-    setFastFilter(null);
-    setSection('todas');
-    setInternalStatus('todas');
-    setDeadlineFilter('todas');
-    setValueFilter('todas');
-    setScoreFilter('todas');
-    if (filter === 'todas') return;
-    if (filter === 'hacer' || filter === 'revisar' || filter === 'descartar') { setSection(filter); return; }
-    setFastFilter(filter);
-    const config = tenderFastFilterConfig[filter];
-    if (config?.section) setSection(config.section);
-    if (config?.internalStatus) setInternalStatus(config.internalStatus);
-    if (config?.deadlineFilter) setDeadlineFilter(config.deadlineFilter);
-    if (config?.valueFilter) setValueFilter(config.valueFilter);
-    if (config?.scoreFilter) setScoreFilter(config.scoreFilter);
-  };
-  const applyTenderSortPreset = (preset: string) => {
-    const [key, direction] = preset.split(':') as [TenderSortKey, SortDirection];
-    setTenderSortKey(key);
-    setTenderSortDirection(direction);
-  };
-  const applySearchProfile = (profile: TenderSearchProfile) => {
-    setQuickFilter(null); setFastFilter(null);
-    setRegionFilter(profile.region_key || 'todas'); setSourceFilter(profile.source_filter || 'todas');
-    setSection(profile.section_filter || 'todas'); setInternalStatus(profile.internal_status_filter || 'todas');
-    setDeadlineFilter(profile.deadline_filter || 'todas'); setValueFilter(profile.value_filter || 'todas'); setScoreFilter(profile.score_filter || 'todas');
-    setQ(profile.query_text || ''); setProfileName(profile.name); setProfileStatus(`Perfil aplicado: ${profile.name}. Abriendo Radar…`);
-    if (tenderView === 'perfiles') { applyingSearchProfileRef.current = true; window.setTimeout(() => go('#/tenders?view=radar'), 60); }
-  };
-  const saveCurrentSearchProfile = async () => {
-    const name = profileName.trim();
-    if (!name) { setProfileStatus('Escriba un nombre para guardar el perfil.'); return; }
-    setSavingProfile(true); setProfileStatus('Guardando perfil de búsqueda…');
-    try {
-      const saved = await api<TenderSearchProfile>('/api/tender-search-profiles', { method: 'POST', body: JSON.stringify({ name, region_key: regionFilter, source_filter: sourceFilter, section_filter: section, internal_status_filter: internalStatus, deadline_filter: deadlineFilter, value_filter: valueFilter, score_filter: scoreFilter, query_text: q }) });
-      setSearchProfiles(current => [saved, ...current.filter(profile => profile.id !== saved.id && profile.name !== saved.name)].sort((a,b) => Number(Boolean(b.is_default)) - Number(Boolean(a.is_default)) || a.name.localeCompare(b.name)));
-      setProfileStatus(`Perfil guardado: ${saved.name}`);
-    } catch (err) { setProfileStatus(err instanceof Error ? err.message : String(err)); }
-    finally { setSavingProfile(false); }
-  };
-  const deleteSearchProfile = async (profile: TenderSearchProfile) => {
-    const ok = window.confirm(`¿Eliminar el perfil "${profile.name}"?`);
-    if (!ok) return;
-    setProfileStatus('Eliminando perfil…');
-    try { await api(`/api/tender-search-profiles/${encodeURIComponent(profile.id)}`, { method: 'DELETE' }); setSearchProfiles(current => current.filter(item => item.id !== profile.id)); setProfileStatus(`Perfil eliminado: ${profile.name}`); }
-    catch (err) { setProfileStatus(err instanceof Error ? err.message : String(err)); }
-  };
-  const dedupedTenders = deduplicateTenders(payload.tenders);
-  const rows = dedupedTenders.filter(t => {
-    const status = t.internal_status || 'nueva';
-    const value = Number(t.value || 0);
-    const score = Number(t.score || 0);
-    const deadlineBucket = tenderDeadlineBucket(t);
-    const prioritizable = isTenderPrioritizable(t);
-    const priorityFilterActive = quickFilter === 'hacer' || quickFilter === 'high_value' || fastFilter === 'hacer' || fastFilter === 'revisar' || fastFilter === 'urgentes' || fastFilter === 'alto_valor' || fastFilter === 'alto_encaje';
-    const matchesQuick = !quickFilter || (quickFilter === 'hacer' && prioritizable && t.section === 'hacer') || (quickFilter === 'en_revision' && status === 'en_revision') || (quickFilter === 'high_value' && prioritizable && value >= 500_000_000) || (quickFilter === 'convertidas' && status === 'convertida_oportunidad');
-    const matchesValue = valueFilter === 'todas' || (valueFilter === 'sin_valor' && value <= 0) || (valueFilter === 'lt_50m' && value > 0 && value < 50_000_000) || (valueFilter === '50m_500m' && value >= 50_000_000 && value < 500_000_000) || (valueFilter === '500m_plus' && value >= 500_000_000) || (valueFilter === '1000m_plus' && value >= 1_000_000_000);
-    const matchesScore = scoreFilter === 'todas' || (scoreFilter === 'alto' && score >= 70) || (scoreFilter === 'medio' && score >= 40 && score < 70) || (scoreFilter === 'bajo' && score < 40);
-    const matchesRegion = tenderMatchesRegion(t, regionFilter);
-    const matchesView = tenderView === 'radar' || tenderView === 'perfiles' || (tenderView === 'seguimiento' && status === 'en_revision') || (tenderView === 'expedientes' && status === 'convertida_oportunidad');
-    return matchesView && matchesRegion && (!priorityFilterActive || prioritizable) && matchesQuick && (section === 'todas' || t.section === section) && (internalStatus === 'todas' || status === internalStatus) && (sourceFilter === 'todas' || t.source === sourceFilter) && (deadlineFilter === 'todas' || deadlineBucket === deadlineFilter) && matchesValue && matchesScore && (!q || `${t.entity} ${t.city||''} ${t.dept||''} ${t.title} ${t.ref||''} ${t.source}`.toLowerCase().includes(q.toLowerCase()));
-  });
-  const sortedRows = sortTenderCards(rows, tenderSortKey, tenderSortDirection);
-  const activeTenderFilterChips = [
-    quickFilter ? { key: 'quick', label: quickFilter === 'hacer' ? 'KPI: Hacer hoy' : quickFilter === 'en_revision' ? 'KPI: En revisión' : quickFilter === 'high_value' ? 'KPI: Alto valor' : 'KPI: Convertidas', clear: () => setQuickFilter(null) } : null,
-    fastFilter ? { key: 'fast', label: `Rápido: ${tenderFastFilterConfig[fastFilter].label}`, clear: () => setFastFilter(null) } : null,
-    section !== 'todas' ? { key: 'section', label: `Sección: ${section === 'hacer' ? 'Hacer hoy' : section === 'revisar' ? 'Revisar' : 'Descartar'}`, clear: () => setSection('todas') } : null,
-    internalStatus !== 'todas' ? { key: 'status', label: `Estado: ${tenderStatusLabel(internalStatus)}`, clear: () => setInternalStatus('todas') } : null,
-    sourceFilter !== 'todas' ? { key: 'source', label: `Fuente: ${sourceFilter}`, clear: () => setSourceFilter('todas') } : null,
-    regionFilter !== 'todas' ? { key: 'region', label: `Región SN: ${TENDER_SN_REGIONS.find(r => r.key === regionFilter)?.label || regionFilter}`, clear: () => setRegionFilter('todas') } : null,
-    deadlineFilter !== 'todas' ? { key: 'deadline', label: `Cierre: ${deadlineFilter === '0_7' ? '0-7 días' : deadlineFilter === '8_15' ? '8-15 días' : deadlineFilter === '16_30' ? '16-30 días' : deadlineFilter === 'vencida' ? 'Vencida' : 'Sin fecha'}`, clear: () => setDeadlineFilter('todas') } : null,
-    valueFilter !== 'todas' ? { key: 'value', label: `Valor: ${valueFilter === 'sin_valor' ? 'Sin valor' : valueFilter === 'lt_50m' ? '<$50M' : valueFilter === '50m_500m' ? '$50M-$500M' : valueFilter === '500m_plus' ? '$500M+' : '$1.000M+'}`, clear: () => setValueFilter('todas') } : null,
-    scoreFilter !== 'todas' ? { key: 'score', label: `Encaje: ${scoreFilter === 'alto' ? 'Alto' : scoreFilter === 'medio' ? 'Medio' : 'Bajo/validar'}`, clear: () => setScoreFilter('todas') } : null,
-    q ? { key: 'q', label: `Búsqueda: ${q}`, clear: () => setQ('') } : null,
-  ].filter(Boolean) as Array<{ key: string; label: string; clear: () => void }>;
-  if (tenderView === 'perfiles') {
-    return <section className="stack tenders-page tender-profiles-only">
-      <section className="compact-tender-command">
-        <div className="compact-tender-summary"><span className="eyebrow">Perfiles de búsqueda</span><h2>{tenderViewCopy[tenderView].title}</h2><p>{tenderViewCopy[tenderView].text} Configure aquí los criterios y luego aplíquelos sobre el Radar para revisar procesos.</p></div>
-      </section>
-      <TenderCompanyProfilePanel />
-      <TenderSearchProfilesPanel regionFilter={regionFilter} setRegionFilter={setRegionFilter} profiles={searchProfiles} profileName={profileName} setProfileName={setProfileName} profileStatus={profileStatus} savingProfile={savingProfile} onSave={saveCurrentSearchProfile} onApply={applySearchProfile} onDelete={deleteSearchProfile} />
-      <p className="muted">Aplicar un perfil abre el Radar con los filtros seleccionados; los procesos no se listan en esta pantalla.</p>
-    </section>;
-  }
-  const totalTenderPages = Math.max(1, Math.ceil(sortedRows.length / TENDERS_PAGE_SIZE));
-  const currentTenderPage = Math.min(Math.max(1, tenderPage), totalTenderPages);
-  const pagedTenderRows = sortedRows.slice((currentTenderPage - 1) * TENDERS_PAGE_SIZE, currentTenderPage * TENDERS_PAGE_SIZE);
-  return <section className="stack tenders-page">
-    <section className="compact-tender-command">
-      <div className="compact-tender-summary"><span className="eyebrow">Radar de Licitaciones Públicas</span><h2>{tenderViewCopy[tenderView].title}</h2><p>{tenderViewCopy[tenderView].text} SECOP I, SECOP II, TVEC y ESU Contratación priorizados para revisar, descartar o convertir sin duplicar oportunidades.</p><div className="tender-command-meta"><span>Actualización <strong>{fmtDate(payload.generatedAt)}</strong></span><span>Fuente <strong>{payload.source === 'supabase' ? 'Supabase' : 'Fuentes vivas'}</strong></span></div></div>
-      <div className="compact-tender-kpis" aria-label="Indicadores accionables de licitaciones">
-        <button className={`tender-kpi-filter tender-kpi-filter-amber ${quickFilter === 'hacer' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('hacer')}><span>Hacer hoy</span><strong>{payload.totals.hacer}</strong><em>prioritarias</em><small>Ver procesos prioritarios</small></button>
-        <button className={`tender-kpi-filter tender-kpi-filter-purple ${quickFilter === 'high_value' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('high_value')}><span>Alto valor</span><strong>{payload.totals.highValue}</strong><em>$500M+ COP</em><small>Ver procesos $500M+</small></button>
-        <button className={`tender-kpi-filter tender-kpi-filter-green ${quickFilter === 'convertidas' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('convertidas')}><span>Convertidas</span><strong>{payload.totals.convertidas || 0}</strong><em>ya son oport.</em><small>Ver convertidas</small></button>
-        <button className={`tender-kpi-filter tender-kpi-filter-blue ${quickFilter === 'en_revision' ? 'active' : ''}`} onClick={() => applyTenderQuickFilter('en_revision')}><span>En revisión</span><strong>{payload.totals.enRevision || 0}</strong><em>marcadas</em><small>Ver estado interno</small></button>
-      </div>
-    </section>
-    <section className="tender-quick-views-panel" aria-label="Vistas rápidas de licitaciones">
-      <div className="tender-quick-views-copy"><span className="filter-label">Vistas operativas</span><strong>Accesos directos para priorizar la bandeja antes de buscar o refinar.</strong></div>
-      <div className="tender-fast-filters" aria-label="Filtros rápidos de licitaciones">
-        {(Object.entries(tenderFastFilterConfig) as Array<[Exclude<TenderFastFilter, null>, { label: string }]>).map(([key, config]) => <button key={key} className={fastFilter === key ? 'active' : ''} onClick={() => applyTenderFastFilter(key)}>{config.label}</button>)}
-      </div>
-    </section>
-    <TenderCompanyProfilePanel />
-    <section className="tender-control-panel" aria-label="Controles de licitaciones">
-      <div className="tender-control-top">
-        <input className="tender-search-input" placeholder="Buscar entidad, ciudad, objeto, fuente o referencia…" value={q} onChange={e=>setQ(e.target.value)} />
-        <div className="tender-control-actions"><button className="secondary" onClick={load}>Recargar vista</button><button onClick={refreshRadar} disabled={syncing}>{syncing ? 'Sincronizando…' : 'Sincronizar fuentes oficiales'}</button></div>
-        <p className="muted tender-action-help">Recargar vista actualiza los datos guardados; Sincronizar fuentes oficiales consulta SECOP/TVEC/ESU y puede tardar más.</p>
-      </div>
-      <div className="filters tender-refine-filters"><span className="filter-label">Refinar resultados</span><label className="tender-filter-field"><span>Prioridad</span><Select value={primaryTenderFilter} onChange={v=>applyPrimaryTenderFilter(v as TenderPrimaryFilter)} options={[["todas","Todas"],["hacer","Hacer hoy"],["revisar","Revisar"],["descartar","Descartar / validar"],["nuevas","Nuevas"],["urgentes","Urgentes"],["alto_valor","Alto valor"],["alto_encaje","Alto encaje"]]} empty=""/></label><label className="tender-filter-field"><span>Estado interno</span><Select value={internalStatus} onChange={v=>{ setInternalStatus(v as TenderInternalStatus | 'todas'); setQuickFilter(null); setFastFilter(null); }} options={[["todas","Todas"],["nueva","Nueva"],["en_revision","En revisión"],["descartada","Descartada"],["convertida_oportunidad","Convertida"]]} empty=""/></label><label className="tender-filter-field"><span>Fuente</span><Select value={sourceFilter} onChange={setSourceFilter} options={[["todas","Todas"], ...sourceOptions]} empty=""/></label><label className="tender-filter-field"><span>Región SN</span><Select value={regionFilter} onChange={v=>setRegionFilter(v as TenderRegionKey)} options={regionOptions} empty=""/></label><label className="tender-filter-field"><span>Cierre</span><Select value={deadlineFilter} onChange={v=>setDeadlineFilter(v as TenderDeadlineFilter)} options={[["todas","Todas"],["0_7","0-7 días"],["8_15","8-15 días"],["16_30","16-30 días"],["vencida","Vencida"],["sin_fecha","Sin fecha"]]} empty=""/></label><label className="tender-filter-field"><span>Valor</span><Select value={valueFilter} onChange={v=>setValueFilter(v as TenderValueFilter)} options={[["todas","Todas"],["sin_valor","Sin valor"],["lt_50m","<$50M"],["50m_500m","$50M-$500M"],["500m_plus","$500M+"],["1000m_plus","$1.000M+"]]} empty=""/></label><label className="tender-filter-field"><span>Encaje</span><Select value={scoreFilter} onChange={v=>setScoreFilter(v as TenderScoreFilter)} options={[["todas","Todas"],["alto","Alto"],["medio","Medio"],["bajo","Bajo / validar"]]} empty=""/></label><button className="secondary" onClick={clearTenderFilters}>Limpiar</button></div>
-    </section>
-    <div className="tender-results-toolbar">
-      <div className="filter-summary"><strong>{rows.length}</strong><span>de {dedupedTenders.length} procesos únicos ({payload.tenders.length} entradas fuente)</span>{activeTenderFilterChips.length ? <div className="filter-chips">{activeTenderFilterChips.map(chip => <button className="filter-chip" key={chip.key} onClick={chip.clear}>{chip.label} ×</button>)}</div> : <span className="muted">Sin filtros activos</span>}</div>
-      <div className="filters tender-sort-controls"><span className="filter-label">Orden</span><Select value={`${tenderSortKey}:${tenderSortDirection}`} onChange={applyTenderSortPreset} options={[["deadline:asc","Cierre más próximo"],["deadline:desc","Cierre más lejano"],["value:desc","Mayor valor primero"],["value:asc","Menor valor primero"],["score:desc","Score alto primero"],["score:asc","Score bajo primero"],["entity:asc","Entidad A-Z"],["entity:desc","Entidad Z-A"],["source:asc","Fuente A-Z"]]} empty="Ordenar por"/></div>
-    </div>
-    <details className="tender-help-panel"><summary>Cómo se clasifica esta bandeja</summary><p className="action-explainer">“Hacer hoy” prioriza procesos con mayor encaje, valor y urgencia de cierre; “Revisar” agrupa procesos que requieren validación documental/comercial; “Descartar” deja visibles los casos de bajo encaje para trazabilidad.</p><p className="tender-classification-note">Use Radar para detectar, Seguimiento para procesos marcados en revisión, Expedientes para convertidas/preparación de oferta y Perfiles para guardar criterios de búsqueda.</p></details>
-    <TenderUnifiedBoard rows={pagedTenderRows} focusTenderId={focusTenderId} onCreate={createOpportunityFromTender} onStatus={markTenderStatus} creatingId={creatingId} />
-    <Pagination page={currentTenderPage} pageSize={TENDERS_PAGE_SIZE} total={sortedRows.length} onChange={setTenderPage} label="Paginación de licitaciones" />
-  </section>;
-}
-function TenderUnifiedBoard({ rows, focusTenderId, onCreate, onStatus, creatingId }: { rows: PublicTender[]; focusTenderId?: string; onCreate: (tender: PublicTender) => void; onStatus: (tender: PublicTender, status: TenderInternalStatus) => void; creatingId: string | null }) {
-  return <Panel title="Vista unificada de licitaciones">{rows.length ? <div className="tender-cards">{rows.map(t => <TenderCard key={t.id} tender={t} focused={focusTenderId === t.id} onCreate={onCreate} onStatus={onStatus} creating={creatingId === t.id} />)}</div> : <EmptyState title="Sin licitaciones" text="No hay procesos con los filtros actuales." />}</Panel>;
-}
-function TenderSectionPanel({ title, rows, show, focusTenderId, onCreate, onStatus, creatingId }: { title: string; rows: PublicTender[]; show: boolean; focusTenderId?: string; onCreate: (tender: PublicTender) => void; onStatus: (tender: PublicTender, status: TenderInternalStatus) => void; creatingId: string | null }) {
-  if (!show) return null;
-  return <Panel title={title}>{rows.length ? <div className="tender-cards">{rows.map(t => <TenderCard key={t.id} tender={t} focused={focusTenderId === t.id} onCreate={onCreate} onStatus={onStatus} creating={creatingId === t.id} />)}</div> : <EmptyState title="Sin licitaciones" text="No hay procesos en esta sección con los filtros actuales." />}</Panel>;
-}
-function TenderCard({ tender, focused, onCreate, onStatus, creating }: { tender: PublicTender; focused?: boolean; onCreate: (tender: PublicTender) => void; onStatus: (tender: PublicTender, status: TenderInternalStatus) => void; creating: boolean }) {
-  const converted = Boolean(tender.converted_opportunity_id);
-  return <article id={`tender-${tender.id}`} className={`card tender-card tender-${tender.section} ${focused ? 'tender-highlight' : ''}`}>
-    <div className="tender-head"><div><div className="tender-card-kickers"><Badge tone={tenderSourceTone(tender.source)}><span className="tender-source-badge">{tender.source}</span></Badge><Badge tone={tenderDeadlineTone(tender)}><span className={`tender-deadline-pill ${tenderDeadlineClass(tender)}`}>{fmtTenderDeadline(tender.deadline)}</span></Badge><Badge>Score {tender.score} · {scoreLabel(tender.score)}</Badge></div><h3>{tender.entity} — {tender.city || tender.dept || 'Sin ciudad'}</h3></div><div className="badge-stack"><Badge tone={tender.section === 'hacer' ? 'amber' : tender.section === 'descartar' ? 'danger' : 'blue'}>{tender.section === 'hacer' ? 'Hacer hoy' : tender.section === 'revisar' ? 'Revisar' : 'Validar'}</Badge><Badge tone={tenderStatusTone(tender.internal_status)}>{tenderStatusLabel(tender.internal_status)}</Badge></div></div>
-    <p>{tender.title}</p>
-    <div className="tender-meta"><span>{fmtMoneyCompact(tender.value)}</span><span>Ref: {tender.ref || tender.process_id || '—'}</span></div>
-    <small className="muted">{tender.reasons.slice(0,4).join(' · ')}</small>
-    {tender.risks.length > 0 && <small className="muted">Riesgos: {tender.risks.slice(0,2).join(' · ')}</small>}
-    <div className="row-actions tender-card-actions">{tender.url && <a className="button secondary" target="_blank" href={tender.url}>Abrir fuente</a>}<button className="secondary" onClick={() => onStatus(tender, 'en_revision')} disabled={creating || converted}>En revisión</button><button className="secondary" onClick={() => onStatus(tender, 'descartada')} disabled={creating || converted}>Descartar</button><button onClick={() => onCreate(tender)} disabled={creating}>{creating ? 'Creando…' : converted ? 'Ver oportunidad' : 'Crear oportunidad'}</button></div>
-  </article>;
-}
-function TenderTable({ rows, focusTenderId, onCreate, onStatus, creatingId }: { rows: PublicTender[]; focusTenderId?: string; onCreate: (tender: PublicTender) => void; onStatus: (tender: PublicTender, status: TenderInternalStatus) => void; creatingId: string | null }) {
-  const [tenderSortConfig, setTenderSortConfig] = useState<SortConfig<'entity'|'section'|'status'|'location'|'title'|'value'|'deadline'|'source'|'score'>>({ key: 'deadline', direction: 'asc' });
-  const sortedTenderRows = [...rows].sort((a,b) => {
-    const value = (t: PublicTender) => tenderSortConfig.key === 'entity' ? t.entity : tenderSortConfig.key === 'section' ? t.section : tenderSortConfig.key === 'status' ? tenderStatusLabel(t.internal_status) : tenderSortConfig.key === 'location' ? `${t.dept || ''} ${t.city || ''}` : tenderSortConfig.key === 'title' ? t.title : tenderSortConfig.key === 'value' ? Number(t.value || 0) : tenderSortConfig.key === 'source' ? t.source : tenderSortConfig.key === 'score' ? Number(t.score || 0) : (t.deadline || '');
-    return compareSortValues(value(a), value(b), tenderSortConfig.direction);
-  });
-  const sortTenderBy = (key: typeof tenderSortConfig.key) => setTenderSortConfig(current => nextSort(current, key));
-  if (!rows.length) return <EmptyState title="Sin resultados" text="No hay licitaciones con esos filtros." />;
-  return <div className="tablewrap"><table><thead><tr><SortableTh label="Entidad" sortKey="entity" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Fuente" sortKey="source" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Sección" sortKey="section" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Estado interno" sortKey="status" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Ubicación" sortKey="location" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Objeto" sortKey="title" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Valor" sortKey="value" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Cierre" sortKey="deadline" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><SortableTh label="Score" sortKey="score" sortConfig={tenderSortConfig} onSort={sortTenderBy}/><th>Acción</th></tr></thead><tbody>{sortedTenderRows.map(t => { const converted = Boolean(t.converted_opportunity_id); return <tr id={`tender-${t.id}`} className={focusTenderId === t.id ? 'tender-highlight' : ''} key={t.id}><td><strong>{t.entity}</strong><br/><small>{t.ref || t.process_id || '—'}</small></td><td><Badge tone={tenderSourceTone(t.source)}><span className="tender-source-badge">{t.source}</span></Badge></td><td><Badge>{t.section}</Badge></td><td><Badge tone={tenderStatusTone(t.internal_status)}>{tenderStatusLabel(t.internal_status)}</Badge></td><td>{t.dept || '—'} / {t.city || '—'}</td><td>{t.title}</td><td><strong>{fmtMoneyCompact(t.value)}</strong><br/><small>{fmtMoney(t.value)}</small></td><td><Badge tone={tenderDeadlineTone(t)}><span className={`tender-deadline-pill ${tenderDeadlineClass(t)}`}>{fmtTenderDeadline(t.deadline)}</span></Badge></td><td><strong>{t.score}</strong><br/><small>{scoreLabel(t.score)}</small></td><td><div className="row-actions table-actions tender-card-actions">{t.url ? <a target="_blank" href={t.url}>Abrir</a> : null}<button className="secondary" onClick={() => onStatus(t, 'en_revision')} disabled={creatingId === t.id || converted}>Revisar</button><button className="secondary" onClick={() => onStatus(t, 'descartada')} disabled={creatingId === t.id || converted}>Descartar</button><button onClick={() => onCreate(t)} disabled={creatingId === t.id}>{creatingId === t.id ? 'Creando…' : converted ? 'Ver' : 'Crear'}</button></div></td></tr>; })}</tbody></table></div>;
-}
-function Select({ value, onChange, options, empty, disabled = false }: { value: string; onChange: (v:string)=>void; options: string[][]; empty: string; disabled?: boolean }) { return <select value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{empty ? <option value="">{empty}</option> : null}{options.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>; }
 function Badge({ children, tone }: { children: React.ReactNode; tone?: string }) { return <span className={`badge ${tone ? `badge-${tone}` : ''}`}>{children}</span>; }
 function Pagination({ page, pageSize, total, onChange, label }: { page: number; pageSize: number; total: number; onChange: (page: number) => void; label?: string }) {
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const current = Math.min(Math.max(1, page), totalPages);
-  const from = total === 0 ? 0 : (current - 1) * pageSize + 1;
-  const to = Math.min(current * pageSize, total);
-  return <nav className="pagination" aria-label={label || 'Paginación'}>
-    <button type="button" className="secondary" onClick={() => onChange(1)} disabled={current <= 1}>«</button>
-    <button type="button" className="secondary" onClick={() => onChange(current - 1)} disabled={current <= 1}>Anterior</button>
-    <span className="pagination-status"><strong>{from}</strong>-<strong>{to}</strong> de <strong>{total}</strong> · página {current} de {totalPages}</span>
-    <button type="button" className="secondary" onClick={() => onChange(current + 1)} disabled={current >= totalPages}>Siguiente</button>
-    <button type="button" className="secondary" onClick={() => onChange(totalPages)} disabled={current >= totalPages}>»</button>
-  </nav>;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize)); const current = Math.min(Math.max(1, page), totalPages);
+  return <nav className="pagination" aria-label={label || 'Paginación'}><button type="button" className="secondary" onClick={() => onChange(current - 1)} disabled={current <= 1}>Anterior</button><span className="pagination-status">Página {current} de {totalPages}</span><button type="button" className="secondary" onClick={() => onChange(current + 1)} disabled={current >= totalPages}>Siguiente</button></nav>;
 }
 function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap; refresh: () => Promise<void> }) {
   const [detail, setDetail] = useState<{ opportunity: Opportunity; interactions: Interaction[] } | null>(null); const [error, setError] = useState<string | null>(null);
+  const documentReviewRef = useRef<HTMLDivElement>(null);
+  const documentFocusRequested = new URLSearchParams(window.location.hash.split('?')[1] || '').get('focus') === 'documents';
   const load = async () => { try { setDetail(await api(`/api/opportunity-detail?id=${encodeURIComponent(id)}`)); } catch(e) { setError(e instanceof Error ? e.message : String(e)); } };
   useEffect(() => { load(); }, [id]);
+  useEffect(() => { if (documentFocusRequested && detail?.opportunity.service_type_code === 'licitacion_publica') focusDocumentReviewArea(documentReviewRef.current); }, [documentFocusRequested, detail?.opportunity.id]);
   if (error) return <div className="error">{error}</div>; if (!detail) return <div className="notice">Cargando detalle…</div>;
   const o = detail.opportunity;
   const visibleInteractions = detail.interactions.filter(i => i.interaction_type !== 'documento');
@@ -1127,7 +736,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   return <section className="stack">
     <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p></div><div className="row-actions"><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>{o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <button className="danger" onClick={discardTenderOpportunity}>Sacar de oportunidad</button>}</div></div>
     <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Fecha creación" value={fmtDate(o.created_at)}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
-    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel opportunity={o} onReload={async()=>{await load(); await refresh();}} />}
+    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel opportunity={o} focusTargetRef={documentReviewRef} onReload={async()=>{await load(); await refresh();}} />}
     {o.service_type_code === 'licitacion_publica' && <TenderOfferPreparationPanel opportunity={o} onReload={async()=>{await load(); await refresh();}} />}
     <div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div>
     <Panel title="Línea de seguimientos"><div className="timeline">{visibleInteractions.length ? visibleInteractions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel>
@@ -1154,7 +763,7 @@ function fileToBase64(file: File) {
     reader.readAsDataURL(file);
   });
 }
-function TenderDocumentReviewPanel({ opportunity, onReload }: { opportunity: Opportunity; onReload?: () => Promise<void> }) {
+function TenderDocumentReviewPanel({ opportunity, onReload, focusTargetRef }: { opportunity: Opportunity; onReload?: () => Promise<void>; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
   const [payload, setPayload] = useState<TenderDocumentsPayload>({ documents: [], analysis: null, analyses: [] });
   const [statusText, setStatusText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1202,7 +811,7 @@ function TenderDocumentReviewPanel({ opportunity, onReload }: { opportunity: Opp
     } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }
   };
-  return <Panel title="Revisión documental" >
+  return <div id="tender-document-review" tabIndex={-1} ref={focusTargetRef}><Panel title="Revisión documental" >
     <div className="tender-document-panel">
       <div className="document-review-head">
         <div><span className="eyebrow">Oportunidad de licitación</span><h3>Documentos del proceso</h3><p>Al convertir desde el radar, el sistema importa los documentos oficiales SECOP/ESU y genera el análisis. La carga manual queda para documentos complementarios, adendas o archivos internos.</p></div>
@@ -1229,7 +838,7 @@ function TenderDocumentReviewPanel({ opportunity, onReload }: { opportunity: Opp
         <section className="document-analysis-card"><small>Resumen para comité</small><p>{analysis.committee_summary || analysis.summary}</p><small>Siguiente acción recomendada</small><strong>{analysis.next_action || 'Revisar con licitaciones'}</strong><small>Checklist SN</small>{analysis.checklist?.length ? <ul>{analysis.checklist.slice(0, 3).map(item => <li key={item}>{item}</li>)}</ul> : null}<small>Generado: {fmtDate(analysis.generated_at)}</small></section>
       </div>}
     </div>
-  </Panel>;
+  </Panel></div>;
 }
 function TenderOfferPreparationPanel({ opportunity, onReload }: { opportunity: Opportunity; onReload?: () => Promise<void> }) {
   const [payload, setPayload] = useState<TenderOfferPreparationPayload>({ preparation: null, preparations: [], notes: [] });

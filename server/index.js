@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import mammoth from 'mammoth';
 import AdmZip from 'adm-zip';
+import { callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -889,17 +890,98 @@ function buildTenderOpportunityPayload(tender, owner) {
     external_source: `secop_radar:${tender.source}:${stableTenderKey(tender)}`
   };
 }
-async function markTenderConverted(database, tender, opportunityId, profileId) {
-  if (!(await tenderTableAvailable(database))) return;
-  await database.from('psi_public_tenders').update({ internal_status: 'convertida_oportunidad', converted_opportunity_id: opportunityId, reviewed_by: profileId, reviewed_at: new Date().toISOString() }).eq('stable_key', stableTenderKey(tender));
+async function getPersistedTenderByStableKey(database, stableKey) {
+  const { data, error } = await database.from('psi_public_tenders')
+    .select('id,stable_key,internal_status,converted_opportunity_id,tracking_updated_at')
+    .eq('stable_key', stableKey)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw trackingError('La licitación persistida no existe; no se puede omitir la trazabilidad de seguimiento.', 409);
+  return data;
 }
 async function setTenderStatus(database, stableKey, internalStatus, currentProfile) {
   if (!tenderInternalStatuses.includes(internalStatus)) throw new Error('Estado interno de licitación inválido.');
   if (!(await tenderTableAvailable(database))) throw new Error('La tabla psi_public_tenders aún no existe. Aplica la migración para guardar estados internos.');
-  const { data, error } = await database.from('psi_public_tenders').update({ internal_status: internalStatus, reviewed_by: currentProfile.id, reviewed_at: new Date().toISOString() }).eq('stable_key', stableKey).select('*').single();
-  if (error) throw error;
-  return dbTenderToPublic(data);
+  if (internalStatus === 'convertida_oportunidad') throw trackingError('La conversión debe usar el flujo de convertir a oportunidad.', 400);
+  const tender = await getPersistedTenderByStableKey(database, stableKey);
+  if (tender.internal_status === 'convertida_oportunidad' && (internalStatus === 'descartada' || internalStatus === 'nueva')) {
+    throw trackingError('Una licitación convertida debe descartarse con Sacar de oportunidad.', 409);
+  }
+  const updated = internalStatus === 'en_revision'
+    ? await callTenderTrackingUpdate(database, tender.id, {
+      tracking_owner_id: currentProfile.id,
+      tracking_status: 'pendiente_revision',
+      expected_tracking_updated_at: tender.internal_status === 'nueva' ? null : tender.tracking_updated_at,
+    }, currentProfile)
+    : await callTenderTrackingTransition(database, tender.id, {
+      internal_status: internalStatus,
+      expected_tracking_updated_at: tender.tracking_updated_at,
+    }, currentProfile);
+  return dbTenderToPublic(updated);
 }
+
+const tenderTrackingIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function trackingError(message, status = 400) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+function requireTenderTrackingId(value) {
+  const tenderId = String(value || '').trim();
+  if (!tenderTrackingIdPattern.test(tenderId)) throw trackingError('Debe indicar una licitación válida.');
+  return tenderId;
+}
+
+async function getTenderTrackingTender(database, tenderId) {
+  const { data, error } = await database.from('psi_public_tenders').select('*').eq('id', tenderId).maybeSingle();
+  if (error) throw error;
+  if (!data) throw trackingError('La licitación no existe.', 404);
+  return data;
+}
+
+function requireTenderTrackingAccess(profile) {
+  if (!canViewTenders(profile)) throw trackingError('Solo dirección o licitaciones puede gestionar seguimiento.', 403);
+}
+
+app.get('/api/tender-tracking', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireTenderTrackingAccess(currentProfile);
+    const tenders = await must(requireDb().from('psi_public_tenders').select('*').eq('internal_status', 'en_revision').order('tracking_due_at', { ascending: true, nullsFirst: false }).order('tracking_updated_at', { ascending: false }));
+    res.json(tenders || []);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.get('/api/tender-tracking-events', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireTenderTrackingAccess(currentProfile);
+    const database = requireDb();
+    const tenderId = requireTenderTrackingId(req.query.id);
+    await getTenderTrackingTender(database, tenderId);
+    res.json(await must(database.from('psi_tender_tracking_events').select('*').eq('tender_id', tenderId).order('created_at', { ascending: false })) || []);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-tracking-update', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireTenderTrackingAccess(currentProfile);
+    const tenderId = requireTenderTrackingId(req.body?.id);
+    res.json(await callTenderTrackingUpdate(requireDb(), tenderId, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-tracking-transition', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireTenderTrackingAccess(currentProfile);
+    const tenderId = requireTenderTrackingId(req.body?.id);
+    res.json(await callTenderTrackingTransition(requireDb(), tenderId, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
 
 app.get('/api/tenders', async (req, res) => {
   try {
@@ -1447,20 +1529,22 @@ function buildTenderDocumentAnalysis(opportunity, documents, companyProfile = {}
     documents: documents.map(d => ({ id: d.id, name: d.name, type: d.document_type, current: d.current }))
   };
 }
-async function getTenderDocumentRecords(database, opportunityId) {
+async function getTenderDocumentRecords(database, opportunityId, { includeSignedUrls = true } = {}) {
   const interactions = await must(database.from('psi_sales_interactions').select('id,notes,occurred_at,created_at,created_by,psi_sales_profiles(full_name)').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true }));
   const documents = [];
   const analyses = [];
+  const importErrors = [];
   for (const row of interactions) {
     const payload = parseInteractionJson(row.notes);
     if (payload?.kind === 'tender_document_upload') documents.push(...(payload.documents || []).map(doc => ({ ...doc, interaction_id: row.id, uploaded_by: row.psi_sales_profiles?.full_name || null })));
     if (payload?.kind === 'tender_document_analysis') analyses.push({ ...payload, interaction_id: row.id, created_at: row.created_at, created_by_name: row.psi_sales_profiles?.full_name || null });
+    if (payload?.kind === 'tender_document_import_error') importErrors.push({ kind: payload.kind, source: payload.source || null, created_at: row.created_at, failure_marker: 'fallo_importacion' });
   }
-  const signed = await Promise.all(documents.map(async doc => {
+  const signed = includeSignedUrls ? await Promise.all(documents.map(async doc => {
     const { data } = await database.storage.from(tenderDocumentBucket).createSignedUrl(doc.storage_path, 3600);
     return { ...doc, signed_url: data?.signedUrl || null };
-  }));
-  return { documents: signed, analysis: analyses.at(-1) || null, analyses };
+  })) : documents;
+  return { documents: signed, analysis: analyses.at(-1) || null, analyses, import_error: importErrors.at(-1) || null };
 }
 
 function genericTenderOfferDocuments(opportunity, analysis) {
@@ -1664,6 +1748,7 @@ async function importTenderDocumentsFromOfficialSource(database, opportunityId, 
     }
   }
   await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_upload', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, documents: uploaded }) }).select('id').single());
+  let analysisGenerated = false;
   if (analyze) {
     const records = await getTenderDocumentRecords(database, opportunityId);
     const currentDocs = records.documents.filter(d => d.current !== false);
@@ -1671,42 +1756,131 @@ async function importTenderDocumentsFromOfficialSource(database, opportunityId, 
       const companyProfile = await getTenderCompanyProfile(database);
       const analysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
       await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ ...analysis, auto_import: true, source: sourceLabel }) }).select('id').single());
+      analysisGenerated = true;
     }
   }
-  return await getTenderDocumentRecords(database, opportunityId);
+  const records = await getTenderDocumentRecords(database, opportunityId);
+  return {
+    ...records,
+    imported_count: uploaded.filter(doc => doc.current !== false).length,
+    failed_count: uploaded.filter(doc => doc.current === false).length,
+    analysis_generated: analysisGenerated && Boolean(records.analysis)
+  };
 }
 async function convertTenderToOpportunity(database, tender, currentProfile) {
   if (!tender?.source || !tender?.entity || !tender?.title) throw new Error('Licitación inválida para convertir.');
+  if (!(await tenderTableAvailable(database))) throw new Error('La tabla psi_public_tenders aún no existe. Aplica la migración para convertir licitaciones.');
   const owner = await findTenderOwner(database, currentProfile);
   const payload = buildTenderOpportunityPayload(tender, currentProfile.role === 'comercial' ? currentProfile : owner);
-  const existing = await database.from('psi_sales_opportunities').select('id').eq('external_source', payload.external_source).maybeSingle();
-  if (existing.error) throw existing.error;
-  const opportunityId = existing.data?.id || (await must(database.from('psi_sales_opportunities').insert(payload).select('id').single())).id;
-  await markTenderConverted(database, tender, opportunityId, currentProfile.id);
+  const tenderRecord = await getPersistedTenderByStableKey(database, stableTenderKey(tender));
+  const conversion = await callTenderOpportunityConversion(database, tenderRecord.id, payload, tenderRecord.tracking_updated_at, currentProfile);
+  const opportunityId = conversion.opportunity_id;
   let document_import_status = 'no_aplica';
   let document_import_error = null;
   if ((tender.source === 'SECOP II' || tender.source === 'ESU Contratación') && tender.url) {
     try {
-      await importTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze: true });
-      document_import_status = 'analisis_generado';
+      const importResult = await importTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze: true });
+      document_import_status = importResult.analysis_generated ? 'analisis_generado' : 'fallo_importacion';
+      if (!importResult.analysis_generated) {
+        document_import_error = `No se pudo generar análisis: ${importResult.imported_count} documentos vigentes, ${importResult.failed_count} fallidos.`;
+        await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_import_error', auto_import: true, source: tender.source, error: document_import_error }) }).select('id').single());
+      }
     } catch (error) {
       document_import_status = 'fallo_importacion';
       document_import_error = error?.message || String(error);
-      await database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_import_error', auto_import: true, source: tender.source, error: document_import_error }) });
+      await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_import_error', auto_import: true, source: tender.source, error: document_import_error }) }).select('id').single());
     }
   }
-  return { id: opportunityId, duplicate: !!existing.data?.id, document_import_status, document_import_error };
+  return { id: opportunityId, duplicate: !!conversion.duplicate, document_import_status, document_import_error };
 }
 async function markTenderOpportunityDiscarded(database, opportunityId, currentProfile, reason) {
   await ensureTenderOpportunity(database, opportunityId, currentProfile);
   const notes = String(reason || 'Descartada después de revisión documental / comercial.').trim();
-  await must(database.from('psi_sales_opportunities').update({ stage_code: 'descartado', loss_notes: notes, next_action_at: null }).eq('id', opportunityId).select('id').single());
-  await database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'nota', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: `Sacar de oportunidad / descartada: ${notes}` });
-  if (await tenderTableAvailable(database)) {
-    await database.from('psi_public_tenders').update({ internal_status: 'descartada', converted_opportunity_id: null, reviewed_by: currentProfile.id, reviewed_at: new Date().toISOString() }).eq('converted_opportunity_id', opportunityId);
-  }
-  return { id: opportunityId, stage_code: 'descartado', internal_status: 'descartada' };
+  const { data: tender, error } = await database.from('psi_public_tenders')
+    .select('id,tracking_updated_at')
+    .eq('converted_opportunity_id', opportunityId)
+    .maybeSingle();
+  if (error) throw error;
+  return await callTenderOpportunityDiscard(database, opportunityId, {
+    note: notes,
+    expected_tracking_updated_at: tender?.tracking_updated_at ?? null,
+  }, currentProfile);
 }
+
+export async function buildTenderDossierSummary(database, tender) {
+  const fallback = {
+    ...dbTenderToPublic(tender),
+    opportunity_id: tender.converted_opportunity_id,
+    document_count: 0,
+    missing_document_count: 0,
+    document_import_status: 'error',
+    document_import_error: null,
+    go_no_go: 'Pendiente',
+    risk: 'Pendiente',
+    checklist_progress: null,
+    preparation_status: 'pendiente',
+    human_pending_count: 0,
+    sharepoint_status: 'pendiente',
+    sharepoint_url: null,
+    dossier_error: 'No se pudo cargar el expediente.'
+  };
+  try {
+    const records = await getTenderDocumentRecords(database, tender.converted_opportunity_id, { includeSignedUrls: false });
+    const preparationRecords = await getTenderOfferPreparationRecords(database, tender.converted_opportunity_id);
+    const currentDocuments = records.documents.filter(document => document.current !== false);
+    const analysis = records.analysis?.status === 'analisis_generado' ? records.analysis : null;
+    const importFailureIsCurrent = records.import_error && (!analysis || !analysis.created_at || !records.import_error.created_at || Date.parse(records.import_error.created_at) >= Date.parse(analysis.created_at));
+    const preparation = preparationRecords.preparation;
+    return {
+      ...fallback,
+      document_count: currentDocuments.length,
+      missing_document_count: (analysis?.checklist || []).filter(item => /pendiente|falta/i.test(String(item))).length,
+      document_import_status: importFailureIsCurrent ? 'fallo_importacion' : analysis ? 'analisis_generado' : currentDocuments.length ? 'documentos_cargados' : 'pendiente_documentos',
+      document_import_error: importFailureIsCurrent ? 'La importación automática de documentos falló. Reintente o cargue los documentos manualmente.' : null,
+      go_no_go: importFailureIsCurrent ? 'Pendiente' : analysis?.go_no_go?.decision || analysis?.recommendation || 'Pendiente',
+      risk: importFailureIsCurrent ? 'Pendiente' : analysis?.go_no_go?.risk || analysis?.risk || 'Pendiente',
+      checklist_progress: preparation?.checklist_summary || null,
+      preparation_status: preparation?.status || 'pendiente',
+      human_pending_count: preparation?.human_required_items?.length || 0,
+      sharepoint_status: preparation?.sharepoint_folder?.status || 'pendiente',
+      sharepoint_url: preparation?.sharepoint_folder?.url || null,
+      dossier_error: null
+    };
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+const tenderDossierDefaultLimit = 50;
+const tenderDossierMaxLimit = 100;
+const tenderDossierMaxOffset = 10000;
+function parseTenderDossierPage(query = {}) {
+  const parse = (value, fallback, maximum, label) => {
+    if (value === undefined || value === '') return fallback;
+    if (!/^\d+$/.test(String(value))) { const error = new Error(`${label} debe ser un entero positivo.`); error.status = 400; throw error; }
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed > maximum) { const error = new Error(`${label} debe estar entre 0 y ${maximum}.`); error.status = 400; throw error; }
+    return parsed;
+  };
+  const limit = parse(query.limit, tenderDossierDefaultLimit, tenderDossierMaxLimit, 'El límite');
+  if (limit < 1) { const error = new Error(`El límite debe estar entre 1 y ${tenderDossierMaxLimit}.`); error.status = 400; throw error; }
+  return { limit, offset: parse(query.offset, 0, tenderDossierMaxOffset, 'El desplazamiento') };
+}
+
+app.get('/api/tender-dossiers', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireTenderTrackingAccess(currentProfile);
+    const database = requireDb();
+    const { limit, offset } = parseTenderDossierPage(req.query);
+    const tenders = await must(database.from('psi_public_tenders').select('*').not('converted_opportunity_id', 'is', null).order('tracking_updated_at', { ascending: false }).order('id', { ascending: true }).range(offset, offset + limit - 1));
+    const dossiers = [];
+    for (const tender of tenders || []) dossiers.push(await buildTenderDossierSummary(database, tender));
+    res.set('X-Dossier-Limit', String(limit));
+    res.set('X-Dossier-Offset', String(offset));
+    res.json(dossiers);
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
 
 app.get('/api/tender-offer-preparation', async (req, res) => {
   try {

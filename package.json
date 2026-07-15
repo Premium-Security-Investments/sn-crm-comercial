@@ -27,6 +27,7 @@
     "vite": "^8.1.4"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.4",
     "@types/express": "latest",
     "@types/node": "latest",
     "@types/react": "latest",

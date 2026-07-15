@@ -30,9 +30,9 @@ for (const marker of expectedOrder) {
 }
 
 assert.ok(!main.includes("['#/new','Crear oportunidad']"), 'Crear oportunidad no debe ser ítem permanente del sidebar; debe quedar como acción contextual.');
-for (const marker of ["['#/tenders?view=radar','Radar de oportunidades']", "['#/tenders?view=seguimiento','Seguimiento']", "['#/tenders?view=expedientes','Expedientes']", "['#/tenders?view=perfiles','Perfiles de búsqueda']"]) {
-  assert.ok(main.includes(marker), `Licitaciones debe conservar subruta ${marker}`);
-}
+assert.ok(main.includes('href="#/tenders?view=radar"'), 'Licitaciones debe conservar un único enlace compacto hacia Radar.');
+assert.ok(!main.includes('tenderSubnav'), 'El sidebar no debe mantener el array de cuatro subrutas de Licitaciones.');
+assert.ok(!main.includes('nav-subitems'), 'El sidebar no debe duplicar las cuatro tabs como sublinks.');
 assert.ok(main.includes('canViewTenders(currentProfile)'), 'Licitaciones tab should be gated by role/person.');
 
 console.log('navigation domain grouping static checks passed');
