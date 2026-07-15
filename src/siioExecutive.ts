@@ -83,7 +83,7 @@ function deriveManagementInsights(
       title: 'Cifras financieras pendientes de validación',
       finding: 'El snapshot permite lectura gerencial, pero todavía no debe tratarse como cierre financiero aprobado.',
       evidence: 'Las métricas del último periodo no tienen responsable registrado en validated_by.',
-      action: 'Solicitar validación del periodo y registrar al responsable financiero antes de usar Modo Junta.',
+      action: 'Solicitar validación del periodo y registrar al responsable financiero antes de usar el borrador de Junta.',
     });
   }
   if (income && costs && numeric(costs.variation_pct) > numeric(income.variation_pct)) {

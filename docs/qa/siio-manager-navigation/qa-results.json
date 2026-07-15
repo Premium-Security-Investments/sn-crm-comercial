@@ -1,0 +1,86 @@
+[
+  {
+    "check": "resumen-desktop-overflow",
+    "pass": true
+  },
+  {
+    "check": "resumen-desktop-keyboard-focus",
+    "pass": true
+  },
+  {
+    "check": "resumen-mobile-overflow",
+    "pass": true
+  },
+  {
+    "check": "resumen-mobile-keyboard-focus",
+    "pass": true
+  },
+  {
+    "check": "mobile-drawer-open",
+    "pass": true
+  },
+  {
+    "check": "seguimiento-desktop-overflow",
+    "pass": true
+  },
+  {
+    "check": "seguimiento-desktop-keyboard-focus",
+    "pass": true
+  },
+  {
+    "check": "seguimiento-mobile-overflow",
+    "pass": true
+  },
+  {
+    "check": "seguimiento-mobile-keyboard-focus",
+    "pass": true
+  },
+  {
+    "check": "inteligencia-desktop-overflow",
+    "pass": true
+  },
+  {
+    "check": "inteligencia-desktop-keyboard-focus",
+    "pass": true
+  },
+  {
+    "check": "inteligencia-mobile-overflow",
+    "pass": true
+  },
+  {
+    "check": "inteligencia-mobile-keyboard-focus",
+    "pass": true
+  },
+  {
+    "check": "agentes-desktop-overflow",
+    "pass": true
+  },
+  {
+    "check": "agentes-desktop-keyboard-focus",
+    "pass": true
+  },
+  {
+    "check": "agentes-mobile-overflow",
+    "pass": true
+  },
+  {
+    "check": "agentes-mobile-keyboard-focus",
+    "pass": true
+  },
+  {
+    "check": "board-desktop-read-only-print-escape",
+    "pass": true
+  },
+  {
+    "check": "board-mobile-read-only-print-escape",
+    "pass": true
+  },
+  {
+    "check": "route-fallback-history-drilldown",
+    "pass": true
+  },
+  {
+    "check": "commercial-denied-without-siio-bootstrap",
+    "pass": true
+  }
+]

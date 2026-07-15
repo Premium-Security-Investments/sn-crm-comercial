@@ -4,8 +4,8 @@ import { createClient, type Session } from '@supabase/supabase-js';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 import { canAccessRoute, canAccessSiio as navCanAccessSiio, canManageUsers as navCanManageUsers, canViewTenders as navCanViewTenders, isManagementRole as navIsManagementRole } from './navPermissions';
-import { deriveSiioExecutiveSnapshot, type SiioFinancialMetric, type SiioPayrollAggregate } from './siioExecutive';
-import { SIIO_AGENT_CATALOG, type SiioInstitutionalAgent } from './siioAgents';
+import { api, setApiAccessToken } from './apiClient';
+import { SiioDashboard } from './siio/SiioDashboard';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
@@ -55,13 +55,6 @@ type TenderSearchProfile = { id: string; name: string; description?: string | nu
 type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; rup_status?: string | null; rup_updated_at?: string | null; rup_unspsc_codes?: string | null; authorized_services?: string | null; supervigilancia_license?: string | null; financial_capacity?: string | null; organizational_capacity?: string | null; experience_summary?: string | null; certifications?: string | null; recurring_documents?: string | null; disqualifications_notes?: string | null; useful_company_info?: string | null; source_document_name?: string | null; rup_import_notes?: string | null; updated_at?: string | null; updated_by_name?: string | null };
 type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users' | 'siio'; id?: string };
 type DashboardPeriodFilter = '' | 'todos' | 'mes_actual' | 'proximos_30' | 'trimestre_actual' | 'anio_actual';
-type SiioFront = { id: string; name: string; description?: string; status?: string; owner_role?: string | null };
-type SiioRecord = { id: string; front_id: string; title: string; record_type?: string; owner?: string | null; decision_owner?: string | null; status?: string; priority?: string; semaforo?: 'verde' | 'amarillo' | 'rojo' | string; next_action?: string | null; blockers?: string | null; risks?: string | null; decision_required?: string | null; source_ids?: string[] };
-type SiioSource = { id: string; name: string; source_type?: string; trust_level?: string; status?: string; restrictions?: string | null; related_fronts?: string[]; url?: string | null; last_reviewed_at?: string | null; next_review_at?: string | null; update_frequency?: string | null };
-type SiioDecision = { id: string; item_type: 'decision' | 'compromiso' | 'bloqueo' | 'riesgo' | string; description: string; owner?: string | null; due_date?: string | null; status?: string; impact?: string | null; related_record_id?: string | null };
-type SiioBoardReport = { id: string; period_month: string; status: string; summary?: string; generated_at?: string; source_ids?: string[] };
-type SiioBootstrap = { fronts: SiioFront[]; records: SiioRecord[]; sources: SiioSource[]; decisions: SiioDecision[]; boardReports: SiioBoardReport[]; boardSections: Array<{ id?: string; name: string; section_order?: number; human_review_required?: boolean }>; financialMetrics: SiioFinancialMetric[]; commercialSignals: any[]; payrollAggregates: SiioPayrollAggregate[]; strategicOpportunities: any[]; currentProfile: Profile };
-type SiioTab = 'inicio' | 'frentes' | 'registros' | 'decisiones' | 'archivo' | 'razonamiento' | 'agentes' | 'junta';
 
 type OpportunityPayload = Partial<Omit<Opportunity, 'customer_segment'>> & { company_name?: string; offer_value?: number | string; commission_rate?: number | string; external_source?: string; customer_segment?: CustomerSegment | ''; };
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
@@ -69,8 +62,6 @@ const dateFmt = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
 const interactionTypes = ['llamada','correo','reunion','whatsapp','nota','cambio_estado','documento'];
 
 const supabaseBrowser = createClient(import.meta.env.NEXT_PUBLIC_SUPABASE_URL, import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-let currentAccessToken: string | null = null;
-function setApiAccessToken(token: string | null) { currentAccessToken = token; }
 function isManagementRole(role?: string | null) { return navIsManagementRole(role); }
 function canManageUsers(profile?: Profile | null) { return navCanManageUsers(profile); }
 function canManageGoals(profile?: Profile | null) { return ['admin', 'gerencia', 'director', 'comercial'].includes(profile?.role || ''); }
@@ -208,15 +199,7 @@ function parseRoute(): Route {
   return { page: 'dashboard' };
 }
 function go(hash: string) { window.location.hash = hash; }
-async function api<T>(url: string, options?: RequestInit): Promise<T> {
-  const headers = { 'Content-Type': 'application/json', ...(currentAccessToken ? { Authorization: `Bearer ${currentAccessToken}` } : {}), ...(options?.headers || {}) };
-  const res = await fetch(url, { ...options, headers });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Error ${res.status}`);
-  }
-  return res.json();
-}
+
 function fmtMoney(n: number | null | undefined) { return money.format(Number(n || 0)); }
 function fmtMoneyCompact(n: number | null | undefined) {
   const value = Number(n || 0);
@@ -313,7 +296,6 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const refresh = async () => {
-    if (!currentAccessToken) return;
     setLoading(true); setError(null);
     try { setData(await api<Bootstrap>('/api/bootstrap')); }
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
@@ -428,7 +410,7 @@ function LoginScreen({ siioMode = false }: { siioMode?: boolean }) {
     <form className="login-card" onSubmit={submit}>
       <span className="eyebrow">{siioMode ? 'Plataforma PSI' : 'Seguridad Nacional Ltda'}</span>
       <h1>{siioMode ? 'Ingreso a SIIO Gerencial' : 'Ingreso al CRM Comercial'}</h1>
-      <p>{siioMode ? 'Ingresa con tu usuario autorizado para revisar control gerencial, fuentes, decisiones y junta.' : 'Ingresa con el usuario asignado para ver tus oportunidades y próximas acciones.'}</p>
+      <p>{siioMode ? 'Ingresa con tu usuario autorizado para revisar control gerencial, fuentes y decisiones.' : 'Ingresa con el usuario asignado para ver tus oportunidades y próximas acciones.'}</p>
       <label>Email<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="correo@empresa.com" /></label>
       <label>Clave<input type="password" required value={password} onChange={e=>setPassword(e.target.value)} placeholder="Clave temporal" /></label>
       <button>Ingresar</button>
@@ -520,170 +502,6 @@ function ExecutiveSummary({ data, active, largestStage }: { data: Bootstrap; act
       <div><small>Base</small><strong>{data.totals.count} registros</strong></div>
     </div>
   </section>;
-}
-function formatSiioPeriod(period?: string | null) {
-  if (!period) return 'Sin datos publicados';
-  return new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${period}T12:00:00Z`));
-}
-function siioFinancialValue(metric?: SiioFinancialMetric, percent = false) {
-  if (!metric || metric.value_current === null || metric.value_current === undefined) return 'Sin datos';
-  return percent ? new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(metric.value_current) : money.format(metric.value_current);
-}
-function SiioDashboard({ currentProfile }: { currentProfile: Profile }) {
-  const [payload, setPayload] = useState<SiioBootstrap | null>(null);
-  const [status, setStatus] = useState('Cargando SIIO / Gestión Gerencial y Control…');
-  const [activeTab, setActiveTab] = useState<SiioTab>('inicio');
-  const load = async () => {
-    setStatus('Cargando SIIO / Gestión Gerencial y Control…');
-    try { setPayload(await api<SiioBootstrap>('/api/siio/bootstrap')); setStatus(''); }
-    catch (e) { setStatus(e instanceof Error ? e.message : String(e)); }
-  };
-  useEffect(() => { load(); }, []);
-  const executive = useMemo(() => deriveSiioExecutiveSnapshot({
-    financialMetrics: payload?.financialMetrics || [],
-    payrollAggregates: payload?.payrollAggregates || [],
-    sources: payload?.sources || [],
-  }), [payload]);
-  if (!isManagementRole(currentProfile.role)) return <section className="stack"><div className="error">SIIO / Gestión Gerencial y Control es una visual gerencial. Tu perfil actual no tiene acceso.</div></section>;
-  const records = payload?.records || [];
-  const sources = payload?.sources || [];
-  const decisions = payload?.decisions || [];
-  const reports = payload?.boardReports || [];
-  const red = records.filter(r => r.semaforo === 'rojo').length;
-  const blockers = decisions.filter(d => d.item_type === 'bloqueo' || d.status === 'bloqueado').length + records.filter(r => r.blockers).length;
-  const pendingDecisions = decisions.filter(d => d.item_type === 'decision' && !['cerrado'].includes(d.status || '')).length + records.filter(r => r.decision_required).length;
-  const siioTabs: Array<{ key: SiioTab; label: string }> = [
-    { key: 'inicio', label: 'Resumen ejecutivo' },
-    { key: 'frentes', label: 'Frentes F1-F6' },
-    { key: 'registros', label: 'Registro F2' },
-    { key: 'decisiones', label: 'Decisiones/Bloqueos' },
-    { key: 'archivo', label: 'Archivo F4' },
-    { key: 'razonamiento', label: 'Razonamiento F5' },
-    { key: 'agentes', label: 'Agentes F6' },
-    { key: 'junta', label: 'Modo Junta' },
-  ];
-  return <section className="stack siio-dashboard">
-    <section className="executive-hero">
-      <div><span className="eyebrow">SIIO · Sistema Integrado de Información Operativa</span><h2>Centro de Control Gerencial</h2><p>Información permanente para dirección: resultados financieros, nómina agregada, señales comerciales, riesgos, decisiones, fuentes y trazabilidad. Modo Junta es una salida del sistema, no su fuente de verdad.</p></div>
-      <div className="hero-facts"><div><small>Perfil</small><strong>{roleLabel(currentProfile.role)}</strong></div><div><small>Periodo financiero</small><strong>{formatSiioPeriod(executive.financialPeriod)}</strong></div><div><small>Periodo nómina</small><strong>{formatSiioPeriod(executive.payrollPeriod)}</strong></div></div>
-    </section>
-    {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}
-    <div className="tabs siio-tabs">
-      {siioTabs.map(({ key, label }) => <button key={key} className={activeTab===key ? 'active' : ''} onClick={() => setActiveTab(key)}>{label}</button>)}
-    </div>
-    {activeTab === 'inicio' && <SiioExecutiveHome executive={executive} records={records} decisions={decisions} red={red} blockers={blockers} pendingDecisions={pendingDecisions} />}
-    {activeTab === 'frentes' && <SiioFrontsView fronts={payload?.fronts || []} records={records} />}
-    {activeTab === 'registros' && <SiioRecordsView records={records} />}
-    {activeTab === 'decisiones' && <SiioDecisionsView decisions={decisions} records={records} />}
-    {activeTab === 'archivo' && <SiioSourcesView sources={sources} />}
-    {activeTab === 'razonamiento' && <SiioReasoningView insights={executive.managementInsights} />}
-    {activeTab === 'agentes' && <SiioAgentsCatalogView />}
-    {activeTab === 'junta' && <SiioBoardView reports={reports} sections={payload?.boardSections || []} />}
-  </section>;
-}
-function SiioExecutiveHome({ executive, records, decisions, red, blockers, pendingDecisions }: { executive: ReturnType<typeof deriveSiioExecutiveSnapshot>; records: SiioRecord[]; decisions: SiioDecision[]; red: number; blockers: number; pendingDecisions: number }) {
-  const income = executive.financialByConcept['INGRESOS'];
-  const operatingProfit = executive.financialByConcept['UTILIDAD OPERACIONAL'];
-  const netProfit = executive.financialByConcept['UTILIDAD NETA'];
-  const netMargin = executive.financialByConcept['MARGEN NETO'];
-  const payrollReady = Boolean(executive.payrollPeriod);
-  const boardSources = executive.sourceFreshness.filter(source => ['SRC-011', 'SRC-012', 'SRC-013'].includes(source.id));
-  const validationLabel = executive.financialValidationStatus === 'validado' ? 'Validado por Finanzas' : executive.financialValidationStatus === 'sin_datos' ? 'Sin datos publicados' : 'Pendiente de validación financiera';
-  return <div className="stack">
-    <div className="siio-executive-status">
-      <div><span className="eyebrow">Resumen ejecutivo permanente</span><strong>Información disponible sin reconstruir la presentación mensual</strong></div>
-      <Badge tone={executive.financialValidationStatus === 'validado' ? 'green' : 'amber'}>{validationLabel}</Badge>
-    </div>
-    <div className="siio-front-strip" aria-label="Frentes oficiales SIIO">
-      <span><strong>F1</strong> Gestión Comercial Inteligente</span><span><strong>F2</strong> Gestión Gerencial y Control</span><span><strong>F3</strong> Gestión Operativa</span><span><strong>F3A</strong> Personal activo y operación diaria</span><span><strong>F3B</strong> Reclutamiento, selección y contratación permanente</span><span><strong>F4</strong> Archivo Corporativo Inteligente</span><span><strong>F5</strong> Motor Interno de Razonamiento</span><span><strong>F6</strong> Catálogo Institucional de Agentes</span>
-    </div>
-    <div className="siio-executive-grid">
-      <Kpi icon="$" tone="blue" label="Ingresos" value={siioFinancialValue(income)} hint={`Periodo financiero: ${formatSiioPeriod(executive.financialPeriod)}`} meta={income ? `${new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(income.variation_pct || 0)} vs. comparativo` : 'Seed 016 pendiente'} />
-      <Kpi icon="OP" tone="indigo" label="Utilidad operacional" value={siioFinancialValue(operatingProfit)} hint="Resultado operativo" meta={operatingProfit ? 'Fuente SRC-011' : 'Sin datos publicados'} />
-      <Kpi icon="UN" tone="green" label="Utilidad neta" value={siioFinancialValue(netProfit)} hint="Resultado después de impuestos" meta={netProfit ? `${new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(netProfit.variation_pct || 0)} vs. comparativo` : 'Sin datos publicados'} />
-      <Kpi icon="%" tone="purple" label="Margen neto" value={siioFinancialValue(netMargin, true)} hint="Rentabilidad neta" meta={`Periodo: ${formatSiioPeriod(executive.financialPeriod)}`} />
-      <Kpi icon="TH" tone="amber" label="Nómina agregada" value={payrollReady ? money.format(executive.payrollTotals.totalAccrued) : 'Sin datos'} hint={payrollReady ? `${executive.payrollTotals.totalPeople} personas · ${formatSiioPeriod(executive.payrollPeriod)}` : 'Seed 016 pendiente'} meta="Sin nombres, cédulas ni salarios individuales" />
-      <Kpi icon="!" tone={executive.payrollTotals.alerts || red || blockers ? 'amber' : 'green'} label="Alertas ejecutivas" value={(executive.payrollTotals.alerts + red + blockers).toString()} hint="Datos, semáforos y bloqueos" meta={`${pendingDecisions} decisiones pendientes`} />
-    </div>
-    <Panel title="F5 · Lectura gerencial automática">
-      {executive.managementInsights.length ? <div className="siio-insight-list">{executive.managementInsights.map(insight => <article key={insight.id} className={`siio-insight siio-insight-${insight.tone}`}>
-        <header><div><span className="eyebrow">{insight.front} · Prioridad {insight.priority}</span><h3>{insight.title}</h3></div><Badge tone={insight.tone}>{insight.priority}</Badge></header>
-        <p>{insight.finding}</p>
-        <div className="siio-insight-detail"><div><strong>Evidencia</strong><span>{insight.evidence}</span></div><div><strong>Acción recomendada</strong><span>{insight.action}</span></div></div>
-      </article>)}</div> : <EmptyState title="Sin lecturas automáticas" text="F5 no emitirá conclusiones hasta contar con evidencia suficiente." />}
-    </Panel>
-    <div className="grid two siio-dashboard-sections">
-      <Panel title="Resultado financiero">
-        <div className="siio-period-line"><span>Periodo financiero</span><strong>{formatSiioPeriod(executive.financialPeriod)}</strong></div>
-        {!executive.financialRows.length ? <EmptyState title="Sin métricas financieras publicadas" text="El extractor y la migración 016 están preparados. La publicación en Supabase requiere aprobación." /> : <div className="table-wrap"><table><thead><tr><th>Indicador</th><th>Actual</th><th>Comparativo</th><th>Variación</th></tr></thead><tbody>{executive.financialRows.map(metric => <tr key={metric.concept}><td><strong>{metric.concept}</strong></td><td>{siioFinancialValue(metric, metric.category === 'margen')}</td><td>{metric.value_comparison === null || metric.value_comparison === undefined ? '—' : metric.category === 'margen' ? new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(metric.value_comparison) : money.format(metric.value_comparison)}</td><td>{new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(metric.variation_pct || 0)}</td></tr>)}</tbody></table></div>}
-      </Panel>
-      <Panel title="Lectura gerencial permanente">
-        <div className="siio-management-signals">
-          <div><span>Registros activos F2</span><strong>{records.length}</strong></div>
-          <div><span>Decisiones y compromisos</span><strong>{decisions.length}</strong></div>
-          <div><span>Decisiones pendientes</span><strong>{pendingDecisions}</strong></div>
-          <div><span>Bloqueos y riesgos</span><strong>{blockers}</strong></div>
-        </div>
-        <p className="muted">Esta sección crecerá con señales comerciales F1, operación F3, oportunidades estratégicas y recomendaciones auditables F5. El informe de Junta será una vista filtrada de esta misma información.</p>
-      </Panel>
-    </div>
-    <Panel title="Nómina agregada">
-      <div className="siio-period-line"><span>Periodo de nómina</span><strong>{formatSiioPeriod(executive.payrollPeriod)}</strong></div>
-      {!executive.payrollRows.length ? <EmptyState title="Sin agregados de nómina publicados" text="No se muestran datos individuales. El snapshot redacted está preparado y pendiente de aprobación para publicación." /> : <div className="table-wrap"><table><thead><tr><th>Área</th><th>Personas</th><th>Devengado agregado</th><th>Deducciones agregadas</th><th>Neto calculado</th><th>Control</th></tr></thead><tbody>{executive.payrollRows.map(row => <tr key={row.area || 'sin-area'}><td><strong>{row.area || 'Área pendiente'}</strong></td><td>{row.total_people || 0}</td><td>{money.format(row.total_accrued || 0)}</td><td>{money.format(row.total_deductions || 0)}</td><td>{money.format(row.net_total || 0)}</td><td>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</td></tr>)}</tbody><tfoot><tr><th>Total</th><th>{executive.payrollTotals.totalPeople}</th><th>{money.format(executive.payrollTotals.totalAccrued)}</th><th>{money.format(executive.payrollTotals.totalDeductions)}</th><th>{money.format(executive.payrollTotals.netTotal)}</th><th>{executive.payrollTotals.alerts} alertas</th></tr></tfoot></table></div>}
-    </Panel>
-    <Panel title="Vigencia de fuentes">
-      <div className="siio-source-freshness">{boardSources.length ? boardSources.map(source => <article key={source.id}><div><strong>{source.id} · {source.name}</strong><span>{source.update_frequency || 'Frecuencia por definir'} · {source.status || 'Estado pendiente'}</span></div><div><small>Última revisión</small><strong>{source.last_reviewed_at ? dateFmt.format(new Date(source.last_reviewed_at)) : 'Pendiente'}</strong><Badge tone={source.trust_level === 'restringida' ? 'amber' : 'blue'}>{source.trust_level || 'Por clasificar'}</Badge></div></article>) : <EmptyState title="Fuentes de Junta no publicadas" text="SRC-011 PYG, SRC-012 nómina y SRC-013 presentación quedarán visibles aquí con periodo, confianza y restricciones." />}</div>
-    </Panel>
-  </div>;
-}
-function SiioFrontsView({ fronts, records }: { fronts: SiioFront[]; records: SiioRecord[] }) {
-  if (!fronts.length) return <EmptyState title="Sin frentes SIIO cargados" text="Ejecuta la migración y seed aprobado para ver F1-F6 en esta vista." />;
-  return <div className="grid two">{fronts.map(f => { const rows = records.filter(r => r.front_id === f.id); return <Panel key={f.id} title={`${f.id} · ${f.name}`}><p>{f.description || 'Frente SIIO'}</p><div className="pill-row"><span>{rows.length} registros</span><span>{f.status || 'diseño'}</span></div></Panel>; })}</div>;
-}
-function SiioRecordsView({ records }: { records: SiioRecord[] }) {
-  if (!records.length) return <EmptyState title="Sin registros F2" text="La visual está lista; falta aplicar migración y cargar seed aprobado." />;
-  return <Panel title="Registro Gerencial F2"><div className="table-wrap"><table><thead><tr><th>ID</th><th>Frente</th><th>Registro</th><th>Estado</th><th>Semáforo</th><th>Próxima acción</th></tr></thead><tbody>{records.map(r => <tr key={r.id}><td>{r.id}</td><td>{r.front_id}</td><td><strong>{r.title}</strong><br/><small>{r.owner || 'Responsable pendiente'}</small></td><td>{r.status || '—'}</td><td><span className={`badge ${r.semaforo || 'amarillo'}`}>{r.semaforo || 'amarillo'}</span></td><td>{r.next_action || 'Pendiente'}</td></tr>)}</tbody></table></div></Panel>;
-}
-function SiioDecisionsView({ decisions, records }: { decisions: SiioDecision[]; records: SiioRecord[] }) {
-  const recordItems = records.filter(r => r.decision_required || r.blockers || r.risks).map(r => ({ id: r.id, item_type: r.blockers ? 'bloqueo' : r.risks ? 'riesgo' : 'decision', description: r.decision_required || r.blockers || r.risks || '', owner: r.decision_owner || r.owner, status: r.blockers ? 'bloqueado' : 'pendiente' } as SiioDecision));
-  const rows = [...decisions, ...recordItems];
-  if (!rows.length) return <EmptyState title="Sin decisiones o bloqueos" text="Cuando existan decisiones, compromisos o riesgos, aparecerán aquí." />;
-  return <Panel title="Decisiones, compromisos, bloqueos y riesgos"><div className="table-wrap"><table><thead><tr><th>Tipo</th><th>Descripción</th><th>Responsable</th><th>Estado</th></tr></thead><tbody>{rows.map((d, i) => <tr key={d.id || i}><td>{d.item_type}</td><td>{d.description}</td><td>{d.owner || 'Pendiente'}</td><td>{d.status || 'pendiente'}</td></tr>)}</tbody></table></div></Panel>;
-}
-function SiioSourcesView({ sources }: { sources: SiioSource[] }) {
-  if (!sources.length) return <EmptyState title="Sin Archivo Corporativo Inteligente cargado" text="F4 se cargará desde la matriz aprobada de fuentes, documentos, permisos y restricciones." />;
-  return <Panel title="F4 · Archivo Corporativo Inteligente"><p>Inventario de fuentes, documentos, evidencia, permisos de uso, restricciones e histórico institucional que puede soportar decisiones y agentes.</p><div className="table-wrap"><table><thead><tr><th>ID</th><th>Fuente / documento</th><th>Tipo</th><th>Confianza</th><th>Restricciones</th></tr></thead><tbody>{sources.map(s => <tr key={s.id}><td>{s.id}</td><td>{s.url ? <a href={s.url} target="_blank">{s.name}</a> : s.name}</td><td>{s.source_type || '—'}</td><td>{s.trust_level || 'pendiente'}</td><td>{s.restrictions || '—'}</td></tr>)}</tbody></table></div></Panel>;
-}
-function SiioReasoningView({ insights }: { insights: ReturnType<typeof deriveSiioExecutiveSnapshot>['managementInsights'] }) {
-  return <Panel title="F5 · Motor Interno de Razonamiento"><p>Reglas determinísticas activas: cruzan F2 y F4 para priorizar, explicar riesgos y proponer acciones auditables sin ejecutar decisiones automáticamente.</p><div className="pill-row"><span>{insights.length} lecturas vigentes</span><span>Evidencia y recomendación trazables</span></div>{insights.length ? <ul className="clean-list">{insights.map(insight => <li key={insight.id}><strong>{insight.title}</strong> · prioridad {insight.priority}<br/><small>{insight.evidence}</small></li>)}</ul> : <EmptyState title="Sin reglas activadas" text="El motor no encontró evidencia suficiente para emitir una lectura." />}</Panel>;
-}
-function SiioAgentsCatalogView() {
-  const pilots = SIIO_AGENT_CATALOG.filter(agent => agent.status === 'piloto').length;
-  const partial = SIIO_AGENT_CATALOG.filter(agent => agent.status === 'operativo_parcial').length;
-  const design = SIIO_AGENT_CATALOG.filter(agent => agent.status === 'diseño').length;
-  return <div className="stack">
-    <Panel title="F6 · Catálogo Institucional de Agentes">
-      <p>Inventario institucional gobernado. Registrar un agente aquí no lo vuelve autónomo ni le concede permisos adicionales.</p>
-      <div className="siio-agent-summary"><div><span>Total catalogados</span><strong>{SIIO_AGENT_CATALOG.length}</strong></div><div><span>Piloto</span><strong>{pilots}</strong></div><div><span>Operativo parcial</span><strong>{partial}</strong></div><div><span>Diseño</span><strong>{design}</strong></div></div>
-    </Panel>
-    <div className="siio-agent-grid">{SIIO_AGENT_CATALOG.map(agent => <SiioAgentGovernanceCard key={agent.id} agent={agent} />)}</div>
-  </div>;
-}
-function SiioAgentGovernanceCard({ agent }: { agent: SiioInstitutionalAgent }) {
-  const statusLabel = agent.status === 'operativo_parcial' ? 'Operativo parcial' : agent.status === 'diseño' ? 'Diseño' : 'Piloto';
-  const statusTone = agent.status === 'operativo_parcial' ? 'blue' : agent.status === 'piloto' ? 'amber' : 'purple';
-  return <article className="siio-agent-card">
-    <header><div><span className="eyebrow">{agent.id}</span><h3>{agent.name}</h3><small>Responsable institucional: {agent.owner_role}</small></div><Badge tone={statusTone}>{statusLabel}</Badge></header>
-    <section><strong>Propósito</strong><p>{agent.purpose}</p></section>
-    <section><strong>Capacidad actual</strong><p>{agent.current_capability}</p></section>
-    <div className="siio-agent-tags"><strong>Frentes autorizados</strong><div>{agent.authorized_fronts.map(front => <span key={front}>{front}</span>)}</div></div>
-    <div className="siio-agent-tags"><strong>Fuentes autorizadas</strong><div>{agent.authorized_sources.map(source => <span key={source}>{source}</span>)}</div></div>
-    <div className="siio-agent-action-grid"><section><strong>Acciones permitidas</strong><ul>{agent.permitted_actions.map(action => <li key={action}>{action}</li>)}</ul></section><section className="forbidden"><strong>Acciones prohibidas</strong><ul>{agent.forbidden_actions.map(action => <li key={action}>{action}</li>)}</ul></section></div>
-    <footer><div><strong>Regla de auditoría</strong><span>{agent.audit_rule}</span></div><div><strong>Siguiente gate</strong><span>{agent.next_gate}</span></div><div className="siio-agent-gates"><Badge tone="amber">Revisión humana obligatoria</Badge><Badge tone="red">Sin escritura automática en producción</Badge></div></footer>
-  </article>;
-}
-function SiioBoardView({ reports, sections }: { reports: SiioBoardReport[]; sections: SiioBootstrap['boardSections'] }) {
-  return <div className="grid two"><Panel title="Junta mensual"><p>Vista de solo lectura para consultar y exportar información previamente gobernada por SIIO. Las cifras financieras requieren validación humana.</p><button onClick={() => window.print()}>Exportar vista de Junta</button><ul className="clean-list">{reports.length ? reports.map(r => <li key={r.id}><strong>{r.id}</strong> · {r.status}<br/><small>{r.summary || 'Sin resumen'}</small></li>) : <li>Sin informes de Junta registrados.</li>}</ul></Panel><Panel title="Secciones plantilla"><ul className="clean-list">{sections.length ? sections.map((s,i) => <li key={s.id || i}><strong>{s.name}</strong>{s.human_review_required && <Badge tone="amber">Revisión humana</Badge>}</li>) : <li>Sin plantilla cargada.</li>}</ul></Panel></div>;
 }
 function Kpi({ label, value, hint, tone, icon, meta }: { label: string; value: string; hint: string; tone?: 'warn'|'ok'|'blue'|'purple'|'indigo'|'green'|'amber'; icon?: string; meta?: string }) {
   return <div className={`card kpi ${tone||''}`}>
