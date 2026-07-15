@@ -64,6 +64,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
       <Badge tone={snapshot.financialValidationStatus === 'validado' ? 'green' : 'amber'}>{validationLabel}</Badge>
     </div>
 
+    <div className="siio-period-line"><span>Periodo financiero</span><strong>{formatPeriod(selectedPeriod)}</strong></div>
     <div className="siio-executive-grid">
       {financialRows.map(metric => <div className="card kpi blue" key={metric.concept}>
         <div className="kpi-head"><small>{metric.concept}</small></div>
@@ -71,31 +72,27 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
         <span>{formatPeriod(selectedPeriod)}</span>
         <em>{metric.variation_pct === null || metric.variation_pct === undefined ? 'Comparativo pendiente' : `${formatMetric(metric.variation_pct, true)} vs. comparativo`}</em>
       </div>)}
-      <div className="card kpi amber"><div className="kpi-head"><small>Nómina agregada</small></div><strong>{fmtSiioMoney(payrollTotals.accrued)}</strong><span>{payrollTotals.people} personas · {formatPeriod(snapshot.payrollPeriod)}</span><em>Sin nombres, identificadores ni salarios individuales</em></div>
     </div>
 
     <Panel title="Gestión que requiere atención">
       <div className="siio-management-signals">
-        <button type="button" onClick={() => trackingLink('riesgos')}><span>Alertas y riesgos</span><strong>{count('riesgos') + payrollTotals.alerts}</strong></button>
+        <button type="button" onClick={() => trackingLink('riesgos')}><span>Alertas y riesgos</span><strong>{count('riesgos')}</strong></button>
         <button type="button" onClick={() => trackingLink('decisiones')}><span>Decisiones pendientes</span><strong>{count('decisiones')}</strong></button>
         <button type="button" onClick={() => trackingLink('bloqueos')}><span>Bloqueos</span><strong>{count('bloqueos')}</strong></button>
         <button type="button" onClick={() => trackingLink('compromisos')}><span>Compromisos</span><strong>{count('compromisos')}</strong></button>
+        <div className="siio-management-signal-static"><span>Alertas de nómina agregadas</span><strong>{payrollTotals.alerts}</strong></div>
       </div>
     </Panel>
 
-    <div className="grid two siio-dashboard-sections">
-      <Panel title="Resultado financiero">
-        <div className="siio-period-line"><span>Periodo financiero</span><strong>{formatPeriod(selectedPeriod)}</strong></div>
-        {!financialRows.length ? <EmptyState title="Sin métricas financieras publicadas" text="No hay indicadores para el periodo seleccionado." /> : <div className="siio-table-wrap"><table><thead><tr><th>Indicador</th><th>Actual</th><th>Comparativo</th><th>Variación</th></tr></thead><tbody>{financialRows.map(metric => <tr key={metric.concept}><td><strong>{metric.concept}</strong></td><td>{formatMetric(metric.value_current, metric.category === 'margen')}</td><td>{formatMetric(metric.value_comparison, metric.category === 'margen')}</td><td>{formatMetric(metric.variation_pct, true)}</td></tr>)}</tbody></table></div>}
-      </Panel>
-      <Panel title="Recomendaciones principales">
-        {recommendations.length ? <div className="siio-insight-list">{recommendations.slice(0, 3).map(recommendation => <article key={recommendation.id} className={`siio-insight siio-insight-${recommendation.tone}`}><strong>{recommendation.title}</strong><p>{recommendation.finding}</p><button type="button" className="secondary" onClick={intelligenceLink}>Ver fuentes e inteligencia</button></article>)}</div> : <EmptyState title="Sin recomendaciones" text="F5 no emitirá recomendaciones hasta contar con evidencia suficiente." />}
-      </Panel>
-    </div>
+    {!financialRows.length ? <EmptyState title="Sin métricas financieras publicadas" text="No hay indicadores para el periodo seleccionado." /> : null}
+
+    <Panel title="Recomendaciones principales">
+      {recommendations.length ? <div className="siio-insight-list">{recommendations.slice(0, 3).map(recommendation => <article key={recommendation.id} className={`siio-insight siio-insight-${recommendation.tone}`}><strong>{recommendation.title}</strong><p>{recommendation.finding}</p><button type="button" className="secondary" onClick={intelligenceLink}>Ver fuentes e inteligencia</button></article>)}</div> : <EmptyState title="Sin recomendaciones" text="F5 no emitirá recomendaciones hasta contar con evidencia suficiente." />}
+    </Panel>
 
     <Panel title="Nómina agregada">
       <div className="siio-period-line"><span>Periodo de nómina</span><strong>{formatPeriod(snapshot.payrollPeriod)}</strong></div>
-      {!payrollRows.length ? <EmptyState title="Sin agregados de nómina publicados" text="No se muestran datos individuales." /> : <div className="siio-table-wrap"><table><thead><tr><th>Área</th><th>Personas</th><th>Devengado agregado</th><th>Deducciones agregadas</th><th>Neto total</th><th>Control</th></tr></thead><tbody>{payrollRows.map(row => <tr key={`${row.period_month}:${row.area || 'sin-area'}`}><td><strong>{row.area || 'Área pendiente'}</strong></td><td>{row.total_people || 0}</td><td>{fmtSiioMoney(row.total_accrued)}</td><td>{fmtSiioMoney(row.total_deductions)}</td><td>{fmtSiioMoney(row.net_total)}</td><td>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</td></tr>)}</tbody><tfoot><tr><th>Total</th><th>{payrollTotals.people}</th><th>{fmtSiioMoney(payrollTotals.accrued)}</th><th>{fmtSiioMoney(payrollTotals.deductions)}</th><th>{fmtSiioMoney(payrollTotals.net)}</th><th>{payrollTotals.alerts} alertas</th></tr></tfoot></table></div>}
+      {!payrollRows.length ? <EmptyState title="Sin agregados de nómina publicados" text="No se muestran datos individuales." /> : <div className="siio-table-wrap"><table><thead><tr><th>Área</th><th>Personas</th><th>Devengado agregado</th><th>Deducciones agregadas</th><th>Neto total</th><th>Control</th></tr></thead><tbody>{payrollRows.map(row => <tr key={`${row.period_month}:${row.area || 'sin-area'}`}><td><strong>{row.area || 'Área pendiente'}</strong></td><td>{row.total_people || 0}</td><td>{fmtSiioMoney(row.total_accrued)}</td><td>{fmtSiioMoney(row.total_deductions)}</td><td>{fmtSiioMoney(row.net_total)}</td><td>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</td></tr>)}</tbody><tfoot><tr><th>Total</th><th>{payrollTotals.people}</th><th>{fmtSiioMoney(payrollTotals.accrued)}</th><th>{fmtSiioMoney(payrollTotals.deductions)}</th><th>{fmtSiioMoney(payrollTotals.net)}</th><th>Control agregado</th></tr></tfoot></table></div>}
     </Panel>
 
     <Panel title="Vigencia de fuentes">

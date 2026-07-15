@@ -63,8 +63,25 @@ function trackingKind(value: string | null | undefined): Exclude<SiioTrackingIte
 }
 
 export function deriveTrackingItems(records: SiioRecord[], decisions: SiioDecision[]): SiioTrackingItem[] {
-  const emittedSubjects = new Map<string, string>();
-  const recordRows = records.map((record): SiioTrackingItem => {
+  type TrackingCandidate = { item: SiioTrackingItem; source: 'record' | 'decision' };
+  const compareText = (left: string, right: string) => left === right ? 0 : left < right ? -1 : 1;
+  const compareCandidates = (left: TrackingCandidate, right: TrackingCandidate) => {
+    // Records carry the richer tracking semantics, so they win over equivalent decision rows.
+    const sourceOrder = (left.source === 'record' ? 0 : 1) - (right.source === 'record' ? 0 : 1);
+    if (sourceOrder) return sourceOrder;
+    return compareText(left.item.id, right.item.id)
+      || compareText(normalizedSubject(left.item.kind), normalizedSubject(right.item.kind))
+      || compareText(normalizedSubject(left.item.title), normalizedSubject(right.item.title))
+      || compareText(normalizedSubject(left.item.owner), normalizedSubject(right.item.owner));
+  };
+  // Canonical identity is the display kind plus normalized subject and owner. A blank subject is not
+  // an honest match, so it remains source-specific rather than collapsing unrelated empty rows.
+  const identityFor = (candidate: TrackingCandidate) => {
+    const title = normalizedSubject(candidate.item.title);
+    if (!title) return `${candidate.item.kind}\u0000unidentified\u0000${candidate.source}\u0000${candidate.item.id}`;
+    return `${candidate.item.kind}\u0000${title}\u0000${normalizedSubject(candidate.item.owner)}`;
+  };
+  const recordCandidates = records.map((record): TrackingCandidate => {
     const title = record.blockers || record.risks || record.decision_required || record.title;
     const kind = record.blockers
       ? 'bloqueos'
@@ -73,24 +90,25 @@ export function deriveTrackingItems(records: SiioRecord[], decisions: SiioDecisi
         : record.decision_required
           ? 'decisiones'
           : trackingKind(record.record_type);
-    emittedSubjects.set(record.id, normalizedSubject(title));
     return {
-      id: `${record.id}:${kind === 'decisiones' ? 'decision' : kind}`,
-      kind,
-      title,
-      owner: record.decision_owner || record.owner || null,
-      status: record.status || 'Pendiente',
-      semaphore: record.semaforo || '',
-      nextAction: record.next_action || null,
-      frontId: record.front_id || null,
-      sourceIds: record.source_ids || [],
-      dueDate: null,
+      source: 'record',
+      item: {
+        id: `${record.id}:${kind === 'decisiones' ? 'decision' : kind}`,
+        kind,
+        title,
+        owner: record.decision_owner || record.owner || null,
+        status: record.status || 'Pendiente',
+        semaphore: record.semaforo || '',
+        nextAction: record.next_action || null,
+        frontId: record.front_id || null,
+        sourceIds: record.source_ids || [],
+        dueDate: null,
+      },
     };
   });
-
-  const decisionRows = decisions.flatMap((decision): SiioTrackingItem[] => {
-    if (decision.related_record_id && emittedSubjects.get(decision.related_record_id) === normalizedSubject(decision.description)) return [];
-    return [{
+  const decisionCandidates = decisions.map((decision): TrackingCandidate => ({
+    source: 'decision',
+    item: {
       id: decision.id,
       kind: trackingKind(decision.item_type),
       title: decision.description,
@@ -101,10 +119,14 @@ export function deriveTrackingItems(records: SiioRecord[], decisions: SiioDecisi
       frontId: null,
       sourceIds: [],
       dueDate: decision.due_date || null,
-    }];
-  });
-
-  return [...recordRows, ...decisionRows];
+    },
+  }));
+  const canonical = new Map<string, TrackingCandidate>();
+  for (const candidate of [...recordCandidates, ...decisionCandidates].sort(compareCandidates)) {
+    const identity = identityFor(candidate);
+    if (!canonical.has(identity)) canonical.set(identity, candidate);
+  }
+  return [...canonical.values()].sort(compareCandidates).map(candidate => candidate.item);
 }
 
 export function filterTrackingItems(items: SiioTrackingItem[], filters: SiioRouteFiltersByView['seguimiento']): SiioTrackingItem[] {

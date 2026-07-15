@@ -14,6 +14,10 @@ assert.match(executive, /Vigencia de fuentes/, 'Dashboard must expose source fre
 assert.match(executive, /Recomendaciones principales/, 'Dashboard must show derived management recommendations');
 assert.match(executive, /navigateSiioView\('seguimiento'/, 'Actionable executive controls must drill into tracking');
 assert.match(executive, /navigateSiioView\('inteligencia'/, 'Source controls must drill into intelligence');
+assert.equal((executive.match(/financialRows\.map/g) || []).length, 1, 'Each financial KPI must have one presentation, not cards plus a duplicate detail panel');
+assert.match(executive, /Alertas y riesgos<\/span><strong>\{count\('riesgos'\)\}<\/strong>/, 'The risk drill-down count must exactly equal its tracking filter');
+assert.match(executive, /<div className="siio-management-signal-static"><span>Alertas de nómina agregadas<\/span><strong>\{payrollTotals\.alerts\}<\/strong><\/div>/, 'Payroll alerts must be a separate, non-clickable aggregate indicator');
+assert.equal((executive.match(/payrollTotals\.alerts/g) || []).length, 1, 'The aggregate payroll alert metric must not be duplicated');
 assert.match(tracking, /deriveTrackingItems/, 'Tracking must derive deduplicated records and decisions');
 assert.match(tracking, /filterTrackingItems/, 'Tracking must apply contextual route filters');
 assert.match(tracking, /Todos.*Decisiones.*Bloqueos.*Riesgos.*Compromisos/s, 'Tracking must expose its five internal kinds');

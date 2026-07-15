@@ -39,6 +39,30 @@ assert.deepEqual(
   mod.filterTrackingItems(rows, { kind: 'bloqueos', status: '', semaphore: '', owner: '' }).map(row => row.id),
   ['REC-2:bloqueos'],
 );
+const duplicateTrackingRows = mod.deriveTrackingItems([
+  { id: 'REC-Z', front_id: 'F2', title: 'Control de proveedores', decision_owner: 'Compras', status: 'pendiente', decision_required: 'Renovar contrato', source_ids: ['SRC-011'] },
+  { id: 'REC-A', front_id: 'F2', title: 'Control de proveedores', decision_owner: 'Compras', status: 'pendiente', decision_required: 'Renovar contrato', source_ids: ['SRC-011'] },
+], [
+  { id: 'DEC-Z', item_type: 'decision', description: 'Renovar contrato', owner: 'Compras', status: 'pendiente', related_record_id: 'REC-Z' },
+  { id: 'DEC-A', item_type: 'decision', description: ' renovar   contrato ', owner: 'Compras', status: 'pendiente' },
+]);
+assert.deepEqual(duplicateTrackingRows.map(row => row.id), ['REC-A:decision'], 'equivalent duplicate records and linked or unlinked decisions must collapse to the canonical record');
+assert.equal(duplicateTrackingRows[0].nextAction, null, 'the canonical record must retain record fields rather than a decision fallback');
+const reorderedDuplicateTrackingRows = mod.deriveTrackingItems([
+  { id: 'REC-A', front_id: 'F2', title: 'Control de proveedores', decision_owner: 'Compras', status: 'pendiente', decision_required: 'Renovar contrato', source_ids: ['SRC-011'] },
+  { id: 'REC-Z', front_id: 'F2', title: 'Control de proveedores', decision_owner: 'Compras', status: 'pendiente', decision_required: 'Renovar contrato', source_ids: ['SRC-011'] },
+], [
+  { id: 'DEC-A', item_type: 'decision', description: ' renovar   contrato ', owner: 'Compras', status: 'pendiente' },
+  { id: 'DEC-Z', item_type: 'decision', description: 'Renovar contrato', owner: 'Compras', status: 'pendiente', related_record_id: 'REC-Z' },
+]);
+assert.deepEqual(reorderedDuplicateTrackingRows, duplicateTrackingRows, 'tracking rows must be invariant under input-order permutations');
+const materiallyDistinctRows = mod.deriveTrackingItems([
+  { id: 'REC-OWNER-A', front_id: 'F2', title: 'Proveedor crítico', decision_owner: 'Compras', status: 'pendiente', risks: 'Proveedor crítico' },
+  { id: 'REC-OWNER-B', front_id: 'F2', title: 'Proveedor crítico', decision_owner: 'Jurídica', status: 'pendiente', risks: 'Proveedor crítico' },
+], [
+  { id: 'DEC-KIND', item_type: 'decision', description: 'Proveedor crítico', owner: 'Compras', status: 'pendiente' },
+]);
+assert.deepEqual(materiallyDistinctRows.map(row => row.id), ['REC-OWNER-A:riesgos', 'REC-OWNER-B:riesgos', 'DEC-KIND'], 'deduplication must retain rows with a materially distinct owner or kind');
 const recommendations = mod.deriveRecommendations({
   managementInsights: [{ id: 'i-1', front: 'F5', tone: 'amber', priority: 'alta', title: 'Validar cifras', finding: 'Falta validación', evidence: 'Métrica sin validador', action: 'Solicitar validación' }],
   financialPeriod: '2026-06-01', payrollPeriod: null,
