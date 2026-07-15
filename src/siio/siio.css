@@ -4,21 +4,7 @@
 }
 
 .siio-dashboard .siio-navigation{
-  display:flex;
-  gap:8px;
-  overflow-x:auto;
-  overscroll-behavior-x:contain;
-  padding:2px 0 8px;
-  scrollbar-width:thin;
-}
-
-.siio-dashboard .siio-navigation button{
-  flex:0 0 auto;
-  min-height:40px;
-  background:#eef4ff;
-  color:#27456f;
-  box-shadow:none;
-  border:1px solid #d5e2f5;
+  margin:0;
 }
 
 .siio-dashboard .siio-navigation button:hover{

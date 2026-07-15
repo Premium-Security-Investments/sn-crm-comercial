@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { loadTracking, loadTrackingEvents, updateTracking } from './api';
 import { daysSince, matchesTrackingFilter, trackingSemaphore, type TrackingFilter } from './trackingUtils';
 import type { PublicTender, TenderConversionResult, TenderTrackingEvent, TenderTrackingStatus, TenderTrackingUpdate, TendersModuleProps } from './types';
@@ -45,7 +45,9 @@ function conversionMessage(result: TenderConversionResult) {
   return `Oportunidad creada. El detalle mostrará el estado documental real.${result.document_import_error ? ` ${result.document_import_error}` : ''}`;
 }
 
-export function TenderTrackingView({ data, refresh, request, navigate }: TendersModuleProps) {
+type TenderTrackingViewProps = TendersModuleProps & { moduleNavigation: ReactNode };
+
+export function TenderTrackingView({ data, refresh, request, navigate, moduleNavigation }: TenderTrackingViewProps) {
   const [rows, setRows] = useState<PublicTender[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +125,7 @@ export function TenderTrackingView({ data, refresh, request, navigate }: Tenders
   if (error && !rows.length) return <div className="error">{error}</div>;
   return <section className="stack tenders-page tender-tracking-view" aria-labelledby="tender-tracking-heading">
     <header className="tracking-header"><div><span className="eyebrow">Cola operativa</span><h2 id="tender-tracking-heading">Seguimiento</h2><p>Gestione responsables, compromisos, bloqueos y trazabilidad de cada proceso en revisión.</p></div><button className="secondary" onClick={() => void load()}>Recargar cola</button></header>
+    {moduleNavigation}
     {notice && <div className="notice" role="status">{notice}</div>}{error && <div className="error" role="alert">{error}</div>}
     {conversion && <section className="notice tender-conversion-result" role="status" aria-label="Resultado de conversión documental"><strong>Conversión confirmada</strong><dl className="tracking-metadata"><div><dt>Estado documental</dt><dd>{conversion.document_import_status || 'Pendiente de confirmación'}</dd></div><div><dt>Error documental</dt><dd>{conversion.document_import_error || 'Sin errores reportados.'}</dd></div></dl><button onClick={() => navigate(`#/detail/${conversion.id}`)}>Abrir oportunidad</button></section>}
     <section className="tracking-filters" aria-label="Filtros de seguimiento"><label>Estado<select value={status} onChange={event => setStatus(event.target.value)}><option value="todas">Todos</option>{statuses.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label><label>Responsable<select value={owner} onChange={event => setOwner(event.target.value)}><option value="todas">Todos</option>{owners.map(profile => <option key={profile.id} value={profile.id}>{profile.full_name}</option>)}</select></label><label>Semáforo<select value={semaphore} onChange={event => setSemaphore(event.target.value as TrackingFilter['semaphore'])}><option value="todas">Todos</option><option value="rojo">Rojo — bloqueo o vencido</option><option value="amarillo">Amarillo — próximo o sin fecha</option><option value="verde">Verde — en fecha</option></select></label><strong>{filtered.length} procesos</strong></section>

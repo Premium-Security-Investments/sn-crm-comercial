@@ -8,7 +8,7 @@ const items: ReadonlyArray<{ view: SiioView; label: string }> = [
 ];
 
 export function SiioNavigation({ activeView, onSelect }: { activeView: SiioView; onSelect: (view: SiioView) => void }) {
-  return <nav className="siio-navigation" aria-label="Navegación SIIO">
+  return <nav className="siio-navigation module-segmented-nav" aria-label="Navegación SIIO">
     {items.map(({ view, label }) => <button
       type="button"
       key={view}
