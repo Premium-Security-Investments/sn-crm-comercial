@@ -20,7 +20,7 @@ export function SiioSourcesIntelligenceView({ payload, routeState, onNavigate }:
     financialMetrics: payload.financialMetrics,
     payrollAggregates: payload.payrollAggregates,
     sources: payload.sources,
-  }), [payload.financialMetrics, payload.payrollAggregates, payload.sources]);
+  }, routeState.filters.period), [payload.financialMetrics, payload.payrollAggregates, payload.sources, routeState.filters.period]);
   const recommendations = useMemo(() => deriveRecommendations(snapshot), [snapshot]);
   const visibleSources = useMemo(() => filterSources(payload.sources, routeState.filters), [payload.sources, routeState.filters]);
   const freshnessOptions = useMemo(() => uniqueOptions(payload.sources.map(source => sourceFreshness(source))), [payload.sources]);

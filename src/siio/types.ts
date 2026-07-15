@@ -6,7 +6,7 @@ export type SiioTrackingKind = 'todos' | 'decisiones' | 'bloqueos' | 'riesgos' |
 export type SiioRouteFiltersByView = {
   resumen: { period: string; area: string };
   seguimiento: { kind: SiioTrackingKind; status: string; semaphore: string; owner: string };
-  inteligencia: { freshness: string; trust: string; sourceType: string };
+  inteligencia: { period: string; freshness: string; trust: string; sourceType: string };
   agentes: { status: string; owner: string };
 };
 export type SiioRouteFilters = SiioRouteFiltersByView[SiioView];

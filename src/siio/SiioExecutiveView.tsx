@@ -20,12 +20,12 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
     financialMetrics: payload.financialMetrics,
     payrollAggregates: payload.payrollAggregates,
     sources: payload.sources,
-  }), [payload.financialMetrics, payload.payrollAggregates, payload.sources]);
+  }, routeState.filters.period), [payload.financialMetrics, payload.payrollAggregates, payload.sources, routeState.filters.period]);
   const trackingItems = useMemo(() => deriveTrackingItems(payload.records, payload.decisions), [payload.records, payload.decisions]);
   const periodOptions = useMemo(() => uniqueOptions(payload.financialMetrics.map(metric => metric.period_month)), [payload.financialMetrics]);
   const areaOptions = useMemo(() => uniqueOptions(payload.payrollAggregates.map(row => row.area)), [payload.payrollAggregates]);
-  const selectedPeriod = routeState.filters.period || snapshot.financialPeriod || '';
-  const financialRows = useMemo(() => payload.financialMetrics.filter(metric => metric.period_month === selectedPeriod), [payload.financialMetrics, selectedPeriod]);
+  const selectedPeriod = snapshot.financialPeriod || '';
+  const financialRows = snapshot.financialRows;
   const payrollRows = useMemo(() => payload.payrollAggregates.filter(row =>
     (!routeState.filters.area || row.area === routeState.filters.area)
     && (!snapshot.payrollPeriod || row.period_month === snapshot.payrollPeriod)
@@ -40,21 +40,15 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
   const recommendations = useMemo(() => deriveRecommendations(snapshot), [snapshot]);
   const count = (kind: SiioTrackingKind) => trackingItems.filter(item => item.kind === kind).length;
   const trackingLink = (kind: SiioTrackingKind) => onNavigate(navigateSiioView('seguimiento', { kind }));
-  const intelligenceLink = () => onNavigate(navigateSiioView('inteligencia'));
+  const intelligenceLink = () => onNavigate(navigateSiioView('inteligencia', { period: selectedPeriod }));
   const validationLabel = snapshot.financialValidationStatus === 'validado' ? 'Validado por Finanzas' : snapshot.financialValidationStatus === 'sin_datos' ? 'Sin datos publicados' : 'Pendiente de validación financiera';
 
   return <div className="stack">
     <section className="siio-view-filters" aria-label="Filtros del resumen ejecutivo">
-      <label>Periodo
+      <label>Periodo financiero
         <select value={routeState.filters.period} onChange={event => onNavigate(navigateSiioView('resumen', { ...routeState.filters, period: event.target.value }))}>
           <option value="">Último periodo publicado</option>
           {periodOptions.map(period => <option key={period} value={period}>{formatPeriod(period)}</option>)}
-        </select>
-      </label>
-      <label>Área
-        <select value={routeState.filters.area} onChange={event => onNavigate(navigateSiioView('resumen', { ...routeState.filters, area: event.target.value }))}>
-          <option value="">Todas las áreas</option>
-          {areaOptions.map(area => <option key={area} value={area}>{area}</option>)}
         </select>
       </label>
     </section>
@@ -92,6 +86,14 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
 
     <Panel title="Nómina agregada">
       <div className="siio-period-line"><span>Periodo de nómina</span><strong>{formatPeriod(snapshot.payrollPeriod)}</strong></div>
+      <section className="siio-view-filters" aria-label="Filtro de nómina agregada">
+        <label>Área de nómina
+          <select value={routeState.filters.area} onChange={event => onNavigate(navigateSiioView('resumen', { ...routeState.filters, area: event.target.value }))}>
+            <option value="">Todas las áreas</option>
+            {areaOptions.map(area => <option key={area} value={area}>{area}</option>)}
+          </select>
+        </label>
+      </section>
       {!payrollRows.length ? <EmptyState title="Sin agregados de nómina publicados" text="No se muestran datos individuales." /> : <div className="siio-table-wrap"><table><thead><tr><th>Área</th><th>Personas</th><th>Devengado agregado</th><th>Deducciones agregadas</th><th>Neto total</th><th>Control</th></tr></thead><tbody>{payrollRows.map(row => <tr key={`${row.period_month}:${row.area || 'sin-area'}`}><td><strong>{row.area || 'Área pendiente'}</strong></td><td>{row.total_people || 0}</td><td>{fmtSiioMoney(row.total_accrued)}</td><td>{fmtSiioMoney(row.total_deductions)}</td><td>{fmtSiioMoney(row.net_total)}</td><td>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</td></tr>)}</tbody><tfoot><tr><th>Total</th><th>{payrollTotals.people}</th><th>{fmtSiioMoney(payrollTotals.accrued)}</th><th>{fmtSiioMoney(payrollTotals.deductions)}</th><th>{fmtSiioMoney(payrollTotals.net)}</th><th>Control agregado</th></tr></tfoot></table></div>}
     </Panel>
 

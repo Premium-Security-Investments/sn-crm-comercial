@@ -19,7 +19,7 @@ function isSiioView(value: string | null): value is SiioView {
 export function emptyFiltersForView<View extends SiioView>(view: View): SiioRouteFiltersByView[View] {
   if (view === 'resumen') return { period: '', area: '' } as SiioRouteFiltersByView[View];
   if (view === 'seguimiento') return { kind: 'todos', status: '', semaphore: '', owner: '' } as SiioRouteFiltersByView[View];
-  if (view === 'inteligencia') return { freshness: '', trust: '', sourceType: '' } as SiioRouteFiltersByView[View];
+  if (view === 'inteligencia') return { period: '', freshness: '', trust: '', sourceType: '' } as SiioRouteFiltersByView[View];
   return { status: '', owner: '' } as SiioRouteFiltersByView[View];
 }
 
@@ -38,7 +38,7 @@ export function parseSiioRouteState(hash: string): SiioRouteState {
     const validKind = ['todos', 'decisiones', 'bloqueos', 'riesgos', 'compromisos'].includes(kind || '') ? kind as SiioRouteFiltersByView['seguimiento']['kind'] : 'todos';
     return navigateSiioView(view, { kind: validKind, status: params.get('status') || '', semaphore: params.get('semaphore') || '', owner: params.get('owner') || '' });
   }
-  if (view === 'inteligencia') return navigateSiioView(view, { freshness: params.get('freshness') || '', trust: params.get('trust') || '', sourceType: params.get('sourceType') || '' });
+  if (view === 'inteligencia') return navigateSiioView(view, { period: params.get('period') || '', freshness: params.get('freshness') || '', trust: params.get('trust') || '', sourceType: params.get('sourceType') || '' });
   return navigateSiioView(view, { status: params.get('status') || '', owner: params.get('owner') || '' });
 }
 

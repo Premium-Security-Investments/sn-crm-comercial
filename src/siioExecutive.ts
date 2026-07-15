@@ -116,8 +116,8 @@ function deriveManagementInsights(
   return insights;
 }
 
-export function deriveSiioExecutiveSnapshot(input: SiioExecutiveInput) {
-  const financialPeriod = latestPeriod(input.financialMetrics);
+export function deriveSiioExecutiveSnapshot(input: SiioExecutiveInput, selectedFinancialPeriod?: string | null) {
+  const financialPeriod = selectedFinancialPeriod || latestPeriod(input.financialMetrics);
   const payrollPeriod = latestPeriod(input.payrollAggregates);
   const financialRows = input.financialMetrics.filter(row => row.period_month === financialPeriod);
   const payrollRows = input.payrollAggregates
