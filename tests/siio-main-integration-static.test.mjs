@@ -22,7 +22,7 @@ for (const marker of [
 ]) assert.ok(main.includes(marker), `missing main marker: ${marker}`);
 
 assert.doesNotMatch(main, /function SiioDashboard/, 'SIIO dashboard must be extracted from main');
-assert.match(dashboard, /Sistema Integrado de Información Operativa/);
+assert.match(dashboard, /SIIO — Sistema Interno de Inteligencia Operativa/);
 assert.match(dashboard, /api<SiioBootstrapPayload>\('\/api\/siio\/bootstrap'\)/);
 assert.match(dashboard, /isManagementRole\(currentProfile\.role\)/);
 assert.match(navigation, /Resumen ejecutivo/);

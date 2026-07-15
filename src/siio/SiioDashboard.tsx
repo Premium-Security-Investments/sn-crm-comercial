@@ -17,11 +17,12 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
   const [status, setStatus] = useState('');
   const [boardDraftOpen, setBoardDraftOpen] = useState(false);
   const [routeState, setRouteState] = useState<SiioRouteState>(() => parseSiioRouteState(window.location.hash));
+  const selectedFinancialPeriod = routeState.view === 'resumen' || routeState.view === 'inteligencia' ? routeState.filters.period : '';
   const snapshot = useMemo(() => payload ? deriveSiioExecutiveSnapshot({
     financialMetrics: payload.financialMetrics,
     payrollAggregates: payload.payrollAggregates,
     sources: payload.sources,
-  }) : null, [payload]);
+  }, selectedFinancialPeriod) : null, [payload, selectedFinancialPeriod]);
   const trackingItems = useMemo(() => payload ? deriveTrackingItems(payload.records, payload.decisions) : [], [payload]);
   const recommendations = useMemo(() => snapshot ? deriveRecommendations(snapshot) : [], [snapshot]);
 
@@ -59,7 +60,7 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
 
   return <section className="stack siio-dashboard">
     <section className="executive-hero">
-      <div><span className="eyebrow">SIIO · Sistema Integrado de Información Operativa</span><h2>Centro de Control Gerencial</h2><p>Información permanente para dirección: resultados financieros, nómina agregada, señales comerciales, riesgos, decisiones, fuentes y trazabilidad.</p></div>
+      <div><span className="eyebrow">SIIO — Sistema Interno de Inteligencia Operativa</span><h2>Centro de Control Gerencial</h2><p>Información permanente para dirección: resultados financieros, nómina agregada, señales comerciales, riesgos, decisiones, fuentes y trazabilidad.</p></div>
       <div className="hero-facts"><div><small>Perfil</small><strong>{currentProfile.role}</strong></div><button type="button" onClick={() => setBoardDraftOpen(true)}>Preparar informe de Junta</button></div>
     </section>
     {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}

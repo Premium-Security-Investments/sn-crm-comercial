@@ -94,7 +94,7 @@ Encabezado:
 
 - Organización: `Seguridad Nacional Ltda`
 - Producto: `SIIO`
-- Descriptor accesible: `Sistema Integrado de Información Operativa`
+- Descriptor accesible: `Sistema Interno de Inteligencia Operativa`
 
 Comportamiento:
 

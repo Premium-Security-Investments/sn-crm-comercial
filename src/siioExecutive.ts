@@ -50,6 +50,8 @@ export type SiioManagementInsight = {
   finding: string;
   evidence: string;
   action: string;
+  sourceIds: string[];
+  period: string | null;
 };
 
 function latestPeriod(rows: Array<{ period_month?: string | null }>): string | null {
@@ -71,6 +73,12 @@ function deriveManagementInsights(
   financialByConcept: Record<string, SiioFinancialMetric>,
   payrollTotals: { alerts: number },
   financialValidationStatus: string,
+  lineage: {
+    financialPeriod: string | null;
+    payrollPeriod: string | null;
+    financialSourceIds: string[];
+    payrollSourceIds: string[];
+  },
 ): SiioManagementInsight[] {
   const insights: SiioManagementInsight[] = [];
   const income = financialByConcept.INGRESOS;
@@ -82,8 +90,9 @@ function deriveManagementInsights(
       id: 'financial-validation-pending', front: 'F5', tone: 'amber', priority: 'alta',
       title: 'Cifras financieras pendientes de validación',
       finding: 'El snapshot permite lectura gerencial, pero todavía no debe tratarse como cierre financiero aprobado.',
-      evidence: 'Las métricas del último periodo no tienen responsable registrado en validated_by.',
+      evidence: 'Las métricas del periodo financiero seleccionado no tienen responsable registrado en validated_by.',
       action: 'Solicitar validación del periodo y registrar al responsable financiero antes de usar el borrador de Junta.',
+      sourceIds: lineage.financialSourceIds, period: lineage.financialPeriod,
     });
   }
   if (income && costs && numeric(costs.variation_pct) > numeric(income.variation_pct)) {
@@ -93,6 +102,7 @@ function deriveManagementInsights(
       finding: 'El crecimiento comercial no se está convirtiendo íntegramente en expansión del margen.',
       evidence: `Costos ${percent(costs.variation_pct)} vs. ingresos ${percent(income.variation_pct)} frente al comparativo.`,
       action: 'Abrir el detalle de costos y asignar responsables a los rubros con mayor variación absoluta.',
+      sourceIds: lineage.financialSourceIds, period: lineage.financialPeriod,
     });
   }
   if (nonOperating && numeric(nonOperating.value_current) < 0 && numeric(nonOperating.variation_abs) < 0) {
@@ -102,6 +112,7 @@ function deriveManagementInsights(
       finding: 'El componente no operacional es negativo y empeoró frente al periodo comparativo.',
       evidence: `Variación no operacional ${percent(nonOperating.variation_pct)}; cambio absoluto negativo registrado en la fuente.`,
       action: 'Desagregar gastos e ingresos no operacionales y definir una explicación ejecutiva del deterioro.',
+      sourceIds: lineage.financialSourceIds, period: lineage.financialPeriod,
     });
   }
   if (payrollTotals.alerts > 0) {
@@ -111,19 +122,23 @@ function deriveManagementInsights(
       finding: 'Al menos un total del archivo fuente no coincide con devengado menos deducciones.',
       evidence: `${payrollTotals.alerts} área(s) con alerta automática en el último periodo de nómina.`,
       action: 'Validar el archivo de origen con Gestión Humana o Financiera antes de cerrar el dato.',
+      sourceIds: lineage.payrollSourceIds, period: lineage.payrollPeriod,
     });
   }
   return insights;
 }
 
-export function deriveSiioExecutiveSnapshot(input: SiioExecutiveInput) {
-  const financialPeriod = latestPeriod(input.financialMetrics);
+export function deriveSiioExecutiveSnapshot(input: SiioExecutiveInput, selectedFinancialPeriod?: string | null) {
+  const financialPeriod = selectedFinancialPeriod || latestPeriod(input.financialMetrics);
   const payrollPeriod = latestPeriod(input.payrollAggregates);
   const financialRows = input.financialMetrics.filter(row => row.period_month === financialPeriod);
   const payrollRows = input.payrollAggregates
     .filter(row => row.period_month === payrollPeriod)
     .sort((a, b) => numeric(b.total_accrued) - numeric(a.total_accrued));
   const financialByConcept = Object.fromEntries(financialRows.map(row => [row.concept, row]));
+  const financialSourceIds = [...new Set(financialRows.map(row => row.source_id).filter((sourceId): sourceId is string => Boolean(sourceId)))];
+  const payrollSourceIds = [...new Set(payrollRows.map(row => row.source_id).filter((sourceId): sourceId is string => Boolean(sourceId)))];
+  const evidenceSourceIds = [...new Set([...financialSourceIds, ...payrollSourceIds])];
   const payrollTotals = payrollRows.reduce((totals, row) => ({
     totalPeople: totals.totalPeople + numeric(row.total_people),
     totalAccrued: totals.totalAccrued + numeric(row.total_accrued),
@@ -137,13 +152,21 @@ export function deriveSiioExecutiveSnapshot(input: SiioExecutiveInput) {
   const sourceFreshness = [...input.sources].sort((a, b) =>
     String(b.last_reviewed_at || '').localeCompare(String(a.last_reviewed_at || ''))
   );
-  const managementInsights = deriveManagementInsights(financialByConcept, payrollTotals, financialValidationStatus);
+  const managementInsights = deriveManagementInsights(financialByConcept, payrollTotals, financialValidationStatus, {
+    financialPeriod,
+    payrollPeriod,
+    financialSourceIds,
+    payrollSourceIds,
+  });
   return {
     financialPeriod,
     payrollPeriod,
     financialRows,
     financialByConcept,
+    financialSourceIds,
     payrollRows,
+    payrollSourceIds,
+    evidenceSourceIds,
     payrollTotals,
     financialValidationStatus,
     sourceFreshness,

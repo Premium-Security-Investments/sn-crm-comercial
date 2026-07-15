@@ -19,7 +19,7 @@ function isSiioView(value: string | null): value is SiioView {
 export function emptyFiltersForView<View extends SiioView>(view: View): SiioRouteFiltersByView[View] {
   if (view === 'resumen') return { period: '', area: '' } as SiioRouteFiltersByView[View];
   if (view === 'seguimiento') return { kind: 'todos', status: '', semaphore: '', owner: '' } as SiioRouteFiltersByView[View];
-  if (view === 'inteligencia') return { freshness: '', trust: '', sourceType: '' } as SiioRouteFiltersByView[View];
+  if (view === 'inteligencia') return { period: '', freshness: '', trust: '', sourceType: '' } as SiioRouteFiltersByView[View];
   return { status: '', owner: '' } as SiioRouteFiltersByView[View];
 }
 
@@ -38,7 +38,7 @@ export function parseSiioRouteState(hash: string): SiioRouteState {
     const validKind = ['todos', 'decisiones', 'bloqueos', 'riesgos', 'compromisos'].includes(kind || '') ? kind as SiioRouteFiltersByView['seguimiento']['kind'] : 'todos';
     return navigateSiioView(view, { kind: validKind, status: params.get('status') || '', semaphore: params.get('semaphore') || '', owner: params.get('owner') || '' });
   }
-  if (view === 'inteligencia') return navigateSiioView(view, { freshness: params.get('freshness') || '', trust: params.get('trust') || '', sourceType: params.get('sourceType') || '' });
+  if (view === 'inteligencia') return navigateSiioView(view, { period: params.get('period') || '', freshness: params.get('freshness') || '', trust: params.get('trust') || '', sourceType: params.get('sourceType') || '' });
   return navigateSiioView(view, { status: params.get('status') || '', owner: params.get('owner') || '' });
 }
 
@@ -145,16 +145,11 @@ type ExecutiveSnapshot = {
 };
 
 export function deriveRecommendations(snapshot: ExecutiveSnapshot): SiioRecommendation[] {
-  return snapshot.managementInsights.map(insight => {
-    const evidence = normalizedSubject(insight.evidence);
-    const financial = evidence.includes('financier');
-    const payroll = evidence.includes('nomina');
-    return {
-      ...insight,
-      sourceIds: financial ? ['SRC-011'] : payroll ? ['SRC-012'] : ['Pendiente de evidencia'],
-      period: financial ? snapshot.financialPeriod : payroll ? snapshot.payrollPeriod : snapshot.financialPeriod ?? snapshot.payrollPeriod,
-    };
-  });
+  return snapshot.managementInsights.map(insight => ({
+    ...insight,
+    sourceIds: insight.sourceIds?.length ? insight.sourceIds : ['Pendiente de evidencia'],
+    period: insight.period ?? snapshot.financialPeriod ?? snapshot.payrollPeriod,
+  }));
 }
 
 export function sourceFreshness(source: SiioSource, today = new Date()): 'vigente' | 'próxima_a_vencer' | 'vencida' | 'sin_fecha' {
@@ -168,9 +163,11 @@ export function sourceFreshness(source: SiioSource, today = new Date()): 'vigent
   return 'vigente';
 }
 
-export function filterSources(sources: SiioSource[], filters: SiioRouteFiltersByView['inteligencia']): SiioSource[] {
+export function filterSources(sources: SiioSource[], filters: SiioRouteFiltersByView['inteligencia'], evidenceSourceIds?: string[]): SiioSource[] {
+  const evidenceSourceSet = evidenceSourceIds ? new Set(evidenceSourceIds) : null;
   return sources.filter(source => (
-    (!filters.freshness || sourceFreshness(source) === filters.freshness)
+    (!evidenceSourceSet || evidenceSourceSet.has(source.id))
+    && (!filters.freshness || sourceFreshness(source) === filters.freshness)
     && (!filters.trust || normalizedSubject(source.trust_level) === normalizedSubject(filters.trust))
     && (!filters.sourceType || normalizedSubject(source.source_type) === normalizedSubject(filters.sourceType))
   ));

@@ -111,7 +111,7 @@ export function SiioBoardDraftAction({ open, onClose, payload, snapshot, trackin
           <div><strong>Neto total</strong><span>{fmtSiioMoney(snapshot.payrollTotals.netTotal)}</span></div>
           <div><strong>Alertas de nómina agregadas</strong><span>{snapshot.payrollTotals.alerts}</span></div>
         </div>
-        {!snapshot.financialRows.length ? <EmptyState title="Sin métricas financieras publicadas" text="No hay indicadores cargados para el último periodo." /> : <div className="siio-table-wrap"><table><thead><tr><th>Indicador</th><th>Valor</th><th>Periodo</th></tr></thead><tbody>{snapshot.financialRows.map(row => <tr key={row.concept}><td>{row.concept}</td><td>{row.category === 'margen' ? new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(Number(row.value_current || 0)) : fmtSiioMoney(row.value_current)}</td><td>{formatPeriod(row.period_month)}</td></tr>)}</tbody></table></div>}
+        {!snapshot.financialRows.length ? <EmptyState title="Sin métricas financieras publicadas" text="No hay indicadores cargados para el periodo financiero seleccionado." /> : <div className="siio-table-wrap"><table><thead><tr><th>Indicador</th><th>Valor</th><th>Periodo</th></tr></thead><tbody>{snapshot.financialRows.map(row => <tr key={row.concept}><td>{row.concept}</td><td>{row.category === 'margen' ? new Intl.NumberFormat('es-CO', { style: 'percent', maximumFractionDigits: 1 }).format(Number(row.value_current || 0)) : fmtSiioMoney(row.value_current)}</td><td>{formatPeriod(row.period_month)}</td></tr>)}</tbody></table></div>}
       </section>
 
       <section className="panel">

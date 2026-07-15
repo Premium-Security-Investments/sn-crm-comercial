@@ -20,9 +20,9 @@ export function SiioSourcesIntelligenceView({ payload, routeState, onNavigate }:
     financialMetrics: payload.financialMetrics,
     payrollAggregates: payload.payrollAggregates,
     sources: payload.sources,
-  }), [payload.financialMetrics, payload.payrollAggregates, payload.sources]);
+  }, routeState.filters.period), [payload.financialMetrics, payload.payrollAggregates, payload.sources, routeState.filters.period]);
   const recommendations = useMemo(() => deriveRecommendations(snapshot), [snapshot]);
-  const visibleSources = useMemo(() => filterSources(payload.sources, routeState.filters), [payload.sources, routeState.filters]);
+  const visibleSources = useMemo(() => filterSources(payload.sources, routeState.filters, snapshot.evidenceSourceIds), [payload.sources, routeState.filters, snapshot.evidenceSourceIds]);
   const freshnessOptions = useMemo(() => uniqueOptions(payload.sources.map(source => sourceFreshness(source))), [payload.sources]);
   const trustOptions = useMemo(() => uniqueOptions(payload.sources.map(source => source.trust_level)), [payload.sources]);
   const sourceTypeOptions = useMemo(() => uniqueOptions(payload.sources.map(source => source.source_type)), [payload.sources]);
@@ -52,8 +52,8 @@ export function SiioSourcesIntelligenceView({ payload, routeState, onNavigate }:
       </label>
     </section>
 
-    <Panel title="Fuentes autorizadas y trazabilidad">
-      {!visibleSources.length ? <EmptyState title="Sin fuentes para los filtros seleccionados" text="No hay fuentes autorizadas que coincidan con la vigencia, confianza y tipo seleccionados." /> : <div className="siio-insight-list">
+    <Panel title="Fuentes de evidencia de los periodos mostrados">
+      {!visibleSources.length ? <EmptyState title="Sin fuentes de evidencia para los filtros seleccionados" text="No hay fuentes vinculadas al periodo financiero seleccionado ni al periodo de nómina mostrado que coincidan con la vigencia, confianza y tipo seleccionados." /> : <div className="siio-insight-list">
         {visibleSources.map(source => <article className="siio-insight" key={source.id}>
           <header><div><span className="eyebrow">{source.id}</span><h3>{source.name}</h3></div><Badge tone={sourceFreshness(source) === 'vencida' ? 'danger' : sourceFreshness(source) === 'próxima_a_vencer' ? 'amber' : 'green'}>{freshnessLabels[sourceFreshness(source)]}</Badge></header>
           <div className="siio-insight-detail">

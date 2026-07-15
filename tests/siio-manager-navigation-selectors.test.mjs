@@ -19,7 +19,7 @@ assert.deepEqual(mod.parseSiioRouteState('#/siio?view=invalida&period=2026-06-01
   filters: { period: '2026-06-01', area: '' },
 });
 assert.equal(
-  mod.toSiioHash({ view: 'inteligencia', filters: { freshness: 'vencida', trust: 'restringida', sourceType: 'archivo' } }),
+  mod.toSiioHash({ view: 'inteligencia', filters: { period: '', freshness: 'vencida', trust: 'restringida', sourceType: 'archivo' } }),
   '#/siio?view=inteligencia&freshness=vencida&trust=restringida&sourceType=archivo',
 );
 assert.equal(

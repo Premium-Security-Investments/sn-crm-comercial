@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Identidad superior: `SIIO` y descriptor `Sistema Integrado de Información Operativa`.
+- Identidad superior: `SIIO` y descriptor `Sistema Interno de Inteligencia Operativa`.
 - Gerencia enlaza `#/siio`; Dashboard comercial vive bajo Comercial en `#/dashboard2`.
 - No hacer merge ciego de `feature/siio-main-integration`.
 - Conservar paginación, deduplicación, responsive, drawer y Escape del PR #13.
@@ -51,7 +51,7 @@ const main = fs.readFileSync('src/main.tsx', 'utf8');
 const css = fs.readFileSync('src/styles.css', 'utf8');
 for (const marker of [
   "| 'siio'", "href=\"#/siio\"", 'SIIO Gerencial',
-  'Sistema Integrado de Información Operativa',
+  'Sistema Interno de Inteligencia Operativa',
   "href=\"#/dashboard2\">Dashboard comercial",
   "route.page === 'siio'", '<SiioDashboard',
   'OPPORTUNITIES_PAGE_SIZE = 25', 'TENDER_PAGE_SIZE = 24',
@@ -328,7 +328,7 @@ git commit -m "feat: integrar SIIO Gerencial en main"
 
 Require:
 ```tsx
-<div className="brand"><small>Seguridad Nacional Ltda</small><em>SIIO</em><span>Sistema Integrado de Información Operativa</span></div>
+<div className="brand"><small>Seguridad Nacional Ltda</small><em>SIIO</em><span>Sistema Interno de Inteligencia Operativa</span></div>
 <div className="sidebar-nav-scroll"><Nav ... /></div>
 <div className="sidebar-footer-compact">...</div>
 ```
