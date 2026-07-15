@@ -30,6 +30,10 @@ assert.match(main, /TenderDocumentReviewPanel/);
 assert.match(main, /TenderOfferPreparationPanel/);
 assert.match(main, /import type \{ TenderModuleView \} from '\.\/tenders\/types';/, 'main must use the tender module view type from the authoritative module types.');
 assert.doesNotMatch(main, /type TenderModuleView =/, 'main must not redeclare the tender module view union locally.');
+assert.match(main, /focusDocumentReviewArea/, 'OpportunityDetail must consume the document focus request through the accessible focus helper.');
+assert.match(main, /get\('focus'\) === 'documents'/, 'OpportunityDetail must read the focus query parameter passed by Expedientes.');
+assert.match(main, /id="tender-document-review"/, 'TenderDocumentReviewPanel needs a stable document-focus anchor.');
+assert.match(main, /tabIndex=\{-1\}/, 'The document-focus anchor must be programmatically focusable.');
 
 for (const label of ['Abrir expediente', 'GO / NO GO', 'Documentos', 'Checklist', 'Pendientes humanos', 'SharePoint / OneDrive']) {
   assert.ok(dossiers.includes(label), `Expedientes debe mostrar ${label}`);
@@ -75,9 +79,18 @@ const bundle = buildSync({
   write: false,
 });
 const utilsUrl = `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].contents).toString('base64')}`;
-const { dossierPageQuery, profileRadarHash } = await import(utilsUrl);
+const { dossierPageQuery, profileRadarHash, focusDocumentReviewArea, reloadCurrentDossierPage } = await import(utilsUrl);
 assert.deepEqual(dossierPageQuery(3, 25), { limit: 25, offset: 50 }, 'La paginación de expedientes debe calcular el offset de la página actual.');
 assert.deepEqual(dossierPageQuery(-4, 999), { limit: 100, offset: 0 }, 'La paginación debe acotar páginas y tamaño inválidos.');
 assert.equal(profileRadarHash('perfil con espacio'), '#/tenders?view=radar&profile=perfil%20con%20espacio', 'Aplicar un perfil debe preservar su id codificado en la URL del Radar.');
+const focused = { scrollIntoViewCalls: [], focusCalls: 0, scrollIntoView(options) { this.scrollIntoViewCalls.push(options); }, focus() { this.focusCalls += 1; } };
+assert.equal(focusDocumentReviewArea(focused), true, 'El foco documental debe desplazar y enfocar el área accesible.');
+assert.deepEqual(focused.scrollIntoViewCalls, [{ behavior: 'smooth', block: 'start' }]);
+assert.equal(focused.focusCalls, 1);
+assert.equal(focusDocumentReviewArea(null), false, 'Un detalle sin documentos no debe lanzar al intentar enfocar.');
+const reloadCalls = [];
+await reloadCurrentDossierPage(3, 25, async query => { reloadCalls.push(query); return ['same-page']; });
+assert.deepEqual(reloadCalls, [{ limit: 25, offset: 50 }], 'El reintento debe recargar la misma página local de Expedientes.');
+assert.match(dossiers, /await request\('\/api\/tender-documents-import'[\s\S]*await reloadCurrentDossierPage\(\)/, 'La recarga local nombrada debe ocurrir solo después del reintento protegido exitoso.');
 
 console.log('independent tender functional views and behavior passed');

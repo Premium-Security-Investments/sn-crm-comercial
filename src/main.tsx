@@ -8,6 +8,7 @@ import { deriveSiioExecutiveSnapshot, type SiioFinancialMetric, type SiioPayroll
 import { SIIO_AGENT_CATALOG, type SiioInstitutionalAgent } from './siioAgents';
 import { TendersModule } from './tenders/TendersModule';
 import type { TenderModuleView } from './tenders/types';
+import { focusDocumentReviewArea } from './tenders/viewUtils';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
@@ -896,8 +897,11 @@ function Pagination({ page, pageSize, total, onChange, label }: { page: number; 
 }
 function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap; refresh: () => Promise<void> }) {
   const [detail, setDetail] = useState<{ opportunity: Opportunity; interactions: Interaction[] } | null>(null); const [error, setError] = useState<string | null>(null);
+  const documentReviewRef = useRef<HTMLDivElement>(null);
+  const documentFocusRequested = new URLSearchParams(window.location.hash.split('?')[1] || '').get('focus') === 'documents';
   const load = async () => { try { setDetail(await api(`/api/opportunity-detail?id=${encodeURIComponent(id)}`)); } catch(e) { setError(e instanceof Error ? e.message : String(e)); } };
   useEffect(() => { load(); }, [id]);
+  useEffect(() => { if (documentFocusRequested && detail?.opportunity.service_type_code === 'licitacion_publica') focusDocumentReviewArea(documentReviewRef.current); }, [documentFocusRequested, detail?.opportunity.id]);
   if (error) return <div className="error">{error}</div>; if (!detail) return <div className="notice">Cargando detalle…</div>;
   const o = detail.opportunity;
   const visibleInteractions = detail.interactions.filter(i => i.interaction_type !== 'documento');
@@ -914,7 +918,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   return <section className="stack">
     <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p></div><div className="row-actions"><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>{o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <button className="danger" onClick={discardTenderOpportunity}>Sacar de oportunidad</button>}</div></div>
     <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Fecha creación" value={fmtDate(o.created_at)}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
-    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel opportunity={o} onReload={async()=>{await load(); await refresh();}} />}
+    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel opportunity={o} focusTargetRef={documentReviewRef} onReload={async()=>{await load(); await refresh();}} />}
     {o.service_type_code === 'licitacion_publica' && <TenderOfferPreparationPanel opportunity={o} onReload={async()=>{await load(); await refresh();}} />}
     <div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div>
     <Panel title="Línea de seguimientos"><div className="timeline">{visibleInteractions.length ? visibleInteractions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel>
@@ -941,7 +945,7 @@ function fileToBase64(file: File) {
     reader.readAsDataURL(file);
   });
 }
-function TenderDocumentReviewPanel({ opportunity, onReload }: { opportunity: Opportunity; onReload?: () => Promise<void> }) {
+function TenderDocumentReviewPanel({ opportunity, onReload, focusTargetRef }: { opportunity: Opportunity; onReload?: () => Promise<void>; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
   const [payload, setPayload] = useState<TenderDocumentsPayload>({ documents: [], analysis: null, analyses: [] });
   const [statusText, setStatusText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -989,7 +993,7 @@ function TenderDocumentReviewPanel({ opportunity, onReload }: { opportunity: Opp
     } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }
   };
-  return <Panel title="Revisión documental" >
+  return <div id="tender-document-review" tabIndex={-1} ref={focusTargetRef}><Panel title="Revisión documental" >
     <div className="tender-document-panel">
       <div className="document-review-head">
         <div><span className="eyebrow">Oportunidad de licitación</span><h3>Documentos del proceso</h3><p>Al convertir desde el radar, el sistema importa los documentos oficiales SECOP/ESU y genera el análisis. La carga manual queda para documentos complementarios, adendas o archivos internos.</p></div>
@@ -1016,7 +1020,7 @@ function TenderDocumentReviewPanel({ opportunity, onReload }: { opportunity: Opp
         <section className="document-analysis-card"><small>Resumen para comité</small><p>{analysis.committee_summary || analysis.summary}</p><small>Siguiente acción recomendada</small><strong>{analysis.next_action || 'Revisar con licitaciones'}</strong><small>Checklist SN</small>{analysis.checklist?.length ? <ul>{analysis.checklist.slice(0, 3).map(item => <li key={item}>{item}</li>)}</ul> : null}<small>Generado: {fmtDate(analysis.generated_at)}</small></section>
       </div>}
     </div>
-  </Panel>;
+  </Panel></div>;
 }
 function TenderOfferPreparationPanel({ opportunity, onReload }: { opportunity: Opportunity; onReload?: () => Promise<void> }) {
   const [payload, setPayload] = useState<TenderOfferPreparationPayload>({ preparation: null, preparations: [], notes: [] });

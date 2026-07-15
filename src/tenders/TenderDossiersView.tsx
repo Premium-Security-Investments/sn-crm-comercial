@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { loadDossiers } from './api';
 import { TenderStatusBadge } from './components/TenderStatusBadge';
-import { dossierPageQuery } from './viewUtils';
+import { dossierPageQuery, reloadCurrentDossierPage as reloadDossierPage } from './viewUtils';
 import type { TenderDossier, TendersModuleProps } from './types';
 
 const PAGE_SIZE = 25;
@@ -21,26 +21,26 @@ export function TenderDossiersView({ request, navigate }: TendersModuleProps) {
   const [error, setError] = useState<string | null>(null);
 
   const query = useMemo(() => dossierPageQuery(page, PAGE_SIZE), [page]);
-  const load = async () => {
+  const reloadCurrentDossierPage = async () => {
     setLoading(true); setError(null);
-    try { setRows(await loadDossiers<TenderDossier[]>(request, query)); }
+    try { setRows(await reloadDossierPage<TenderDossier[]>(page, PAGE_SIZE, nextQuery => loadDossiers<TenderDossier[]>(request, nextQuery))); }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setLoading(false); }
   };
-  useEffect(() => { void load(); }, [query.limit, query.offset]);
+  useEffect(() => { void reloadCurrentDossierPage(); }, [query.limit, query.offset]);
 
   const retryImport = async (dossier: TenderDossier) => {
     setRetrying(dossier.opportunity_id); setError(null);
     try {
       await request('/api/tender-documents-import', { method: 'POST', body: JSON.stringify({ opportunity_id: dossier.opportunity_id }) });
-      await load();
+      await reloadCurrentDossierPage();
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setRetrying(null); }
   };
 
   if (loading && !rows.length) return <div className="notice">Cargando expedientes…</div>;
   return <section className="stack tenders-page tender-dossiers-view" aria-labelledby="tender-dossiers-heading">
-    <header className="tracking-header"><div><span className="eyebrow">Bandeja documental</span><h2 id="tender-dossiers-heading">Expedientes</h2><p>Revise evidencia, análisis, preparación y pendientes humanos de oportunidades convertidas.</p></div><button className="secondary" onClick={() => void load()} disabled={loading}>Recargar expedientes</button></header>
+    <header className="tracking-header"><div><span className="eyebrow">Bandeja documental</span><h2 id="tender-dossiers-heading">Expedientes</h2><p>Revise evidencia, análisis, preparación y pendientes humanos de oportunidades convertidas.</p></div><button className="secondary" onClick={() => void reloadCurrentDossierPage()} disabled={loading}>Recargar expedientes</button></header>
     {error && <div className="error" role="alert">{error}</div>}
     {!rows.length ? <div className="notice">No hay expedientes convertidos en esta página.</div> : <div className="tracking-queue">{rows.map(dossier => <article key={dossier.opportunity_id} className="card tracking-row">
       <div className="tracking-row-head"><div><div className="tender-card-kickers"><TenderStatusBadge label={dossier.document_import_status} tone={tone(dossier.document_import_status)} /><TenderStatusBadge label={dossier.risk || 'Riesgo pendiente'} tone={tone(dossier.risk)} /></div><h3>{dossier.entity || 'Oportunidad convertida'}</h3><p>{dossier.title || dossier.opportunity_id}</p></div><TenderStatusBadge label={dossier.go_no_go || 'GO / NO GO pendiente'} tone={tone(dossier.go_no_go)} /></div>

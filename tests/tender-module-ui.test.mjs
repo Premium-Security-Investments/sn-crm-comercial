@@ -16,7 +16,7 @@ for (const label of ['Radar de oportunidades', 'Seguimiento', 'Expedientes', 'Pe
 }
 assert.match(radarSource, /Región SN/, 'El Radar debe exponer un filtro Región SN');
 assert.match(radarUtilsSource, /BOG - Bogotá\/Cundinamarca/, 'El Radar debe contemplar regiones donde SN tiene presencia');
-assert.match(radarSource, /tenderMatchesRegion\(tender, region\)/, 'El filtro regional debe aplicarse a la lista de licitaciones');
+assert.match(radarUtilsSource, /tenderMatchesRegion\(tender, filters\.region\)/, 'El filtro regional debe aplicarse a la lista de licitaciones desde el helper de filtro compartido.');
 assert.doesNotMatch(radarSource, /TenderUnifiedBoard|renderLegacy/, 'Radar no debe delegar en el tablero unificado ni en el renderer legado.');
 
 console.log('Tender module UI expectations passed');

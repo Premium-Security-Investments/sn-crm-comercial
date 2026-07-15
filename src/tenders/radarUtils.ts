@@ -1,4 +1,4 @@
-import type { PublicTender, TenderDeadlineFilter, TenderRegionKey, TenderSortKey } from './types';
+import type { PublicTender, TenderDeadlineFilter, TenderInternalStatus, TenderRegionKey, TenderScoreFilter, TenderSection, TenderSortKey, TenderValueFilter } from './types';
 
 export const TENDER_OFFICIAL_SOURCES = ['SECOP I', 'SECOP II', 'TVEC', 'ESU Contratación'];
 
@@ -65,6 +65,34 @@ export function tenderDeadlineBucket(tender: PublicTender): TenderDeadlineFilter
   if (days <= 15) return '8_15';
   if (days <= 30) return '16_30';
   return '31_plus';
+}
+
+export type RadarFilters = {
+  query: string;
+  source: string;
+  region: TenderRegionKey;
+  deadline: TenderDeadlineFilter;
+  value: TenderValueFilter;
+  score: TenderScoreFilter;
+  section: TenderSection | 'todas';
+  internalStatus: TenderInternalStatus | 'todas';
+};
+
+export function filterRadarTenders(tenders: PublicTender[], filters: RadarFilters): PublicTender[] {
+  return tenders.filter(tender => {
+    const internal = tender.internal_status || 'nueva';
+    const amount = Number(tender.value || 0);
+    const fit = Number(tender.score || 0);
+    return internal !== 'convertida_oportunidad' && !tender.converted_opportunity_id &&
+      (filters.section === 'todas' || tender.section === filters.section) &&
+      (filters.internalStatus === 'todas' || internal === filters.internalStatus) &&
+      (filters.source === 'todas' || tender.source === filters.source) &&
+      tenderMatchesRegion(tender, filters.region) &&
+      (filters.deadline === 'todas' || tenderDeadlineBucket(tender) === filters.deadline) &&
+      (filters.value === 'todas' || filters.value === 'sin_valor' && amount <= 0 || filters.value === 'lt_50m' && amount > 0 && amount < 50_000_000 || filters.value === '50m_500m' && amount >= 50_000_000 && amount < 500_000_000 || filters.value === '500m_plus' && amount >= 500_000_000 || filters.value === '1000m_plus' && amount >= 1_000_000_000) &&
+      (filters.score === 'todas' || filters.score === 'alto' && fit >= 70 || filters.score === 'medio' && fit >= 40 && fit < 70 || filters.score === 'bajo' && fit < 40) &&
+      (!filters.query || `${tender.entity} ${tender.city || ''} ${tender.dept || ''} ${tender.title} ${tender.ref || ''} ${tender.source}`.toLowerCase().includes(filters.query.toLowerCase()));
+  });
 }
 
 export function sortTenderCards(rows: PublicTender[], key: TenderSortKey, direction: 'asc' | 'desc'): PublicTender[] {
