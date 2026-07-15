@@ -792,6 +792,20 @@ function dbTenderToPublic(row) {
 function isConvertedTenderRecord(row) {
   return row?.internal_status === 'convertida_oportunidad' || Boolean(row?.converted_opportunity_id);
 }
+async function readAllConvertedTenderRows(database) {
+  const pageSize = 1000;
+  const rows = [];
+  for (let from = 0; ; from += pageSize) {
+    const result = await database.from('psi_public_tenders').select('*')
+      .or('internal_status.eq.convertida_oportunidad,converted_opportunity_id.not.is.null')
+      .order('last_seen_at', { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (result.error) throw result.error;
+    const page = result.data || [];
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+  }
+}
 async function readPersistedTenderRadar(database) {
   const latestRunResult = await database.from('psi_tender_radar_runs').select('run_at,mode').order('run_at', { ascending: false }).limit(1).maybeSingle();
   if (latestRunResult.error && !isMissingTenderTable(latestRunResult.error)) throw latestRunResult.error;
@@ -800,7 +814,7 @@ async function readPersistedTenderRadar(database) {
   const activeDeadlineCutoff = new Date();
   activeDeadlineCutoff.setUTCHours(0, 0, 0, 0);
   let query = database.from('psi_public_tenders').select('*').order('last_seen_at', { ascending: false }).limit(250);
-  if (cutoff) query = query.or(`last_seen_at.gte.${cutoff},deadline_at.gte.${activeDeadlineCutoff.toISOString()},internal_status.eq.convertida_oportunidad,converted_opportunity_id.not.is.null`);
+  if (cutoff) query = query.or(`last_seen_at.gte.${cutoff},deadline_at.gte.${activeDeadlineCutoff.toISOString()}`);
   let { data, error } = await query;
   if (error) {
     if (isMissingTenderTable(error)) return null;
@@ -811,7 +825,15 @@ async function readPersistedTenderRadar(database) {
     if (fallback.error) throw fallback.error;
     data = fallback.data || [];
   }
-  const rows = (data || []).filter(row => isConvertedTenderRecord(row) || isTenderTrackable(row)).map(dbTenderToPublic).filter(t => isConvertedTenderRecord(t) || !['SECOP I','SECOP II'].includes(t.source) || hasTenderServiceSignal(t)).sort((a,b) => {
+  let convertedRows;
+  try {
+    convertedRows = await readAllConvertedTenderRows(database);
+  } catch (convertedError) {
+    if (isMissingTenderTable(convertedError)) return null;
+    throw convertedError;
+  }
+  const mergedRows = Array.from(new Map([...(data || []), ...convertedRows].map((row, index) => [row.stable_key || row.id || `radar-row-${index}`, row])).values());
+  const rows = mergedRows.filter(row => isConvertedTenderRecord(row) || isTenderTrackable(row)).map(dbTenderToPublic).filter(t => isConvertedTenderRecord(t) || !['SECOP I','SECOP II'].includes(t.source) || hasTenderServiceSignal(t)).sort((a,b) => {
     const statusOrder = { nueva: 0, en_revision: 1, convertida_oportunidad: 2, descartada: 3 };
     const sectionOrder = { hacer: 0, revisar: 1, descartar: 2 };
     return (statusOrder[a.internal_status] ?? 9) - (statusOrder[b.internal_status] ?? 9) || sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score;
