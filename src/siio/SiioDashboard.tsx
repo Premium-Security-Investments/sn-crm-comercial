@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import './siio.css';
 import { api } from '../apiClient';
 import { isManagementRole } from '../navPermissions';
 import { deriveSiioExecutiveSnapshot } from '../siioExecutive';

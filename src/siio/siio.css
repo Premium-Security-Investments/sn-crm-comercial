@@ -1,0 +1,192 @@
+/* SIIO owns these view-level styles. CRM shell and tender styles remain in src/styles.css. */
+.siio-dashboard{
+  min-width:0;
+}
+
+.siio-dashboard .siio-navigation{
+  display:flex;
+  gap:8px;
+  overflow-x:auto;
+  overscroll-behavior-x:contain;
+  padding:2px 0 8px;
+  scrollbar-width:thin;
+}
+
+.siio-dashboard .siio-navigation button{
+  flex:0 0 auto;
+  min-height:40px;
+  background:#eef4ff;
+  color:#27456f;
+  box-shadow:none;
+  border:1px solid #d5e2f5;
+}
+
+.siio-dashboard .siio-navigation button:hover{
+  background:#dceaff;
+  color:#123f8e;
+}
+
+.siio-dashboard .siio-navigation button.active{
+  background:#174ea6;
+  color:#fff;
+  border-color:#174ea6;
+}
+
+.siio-dashboard .siio-navigation button:focus-visible,
+.siio-dashboard .siio-tracking-kinds button:focus-visible,
+.siio-dashboard .siio-management-signals button:focus-visible,
+.siio-dashboard .siio-insight button:focus-visible,
+.siio-dashboard .siio-view-filters select:focus-visible,
+.siio-dashboard .siio-view-filters a:focus-visible,
+.siio-board-dialog button:focus-visible{
+  outline:3px solid #60a5fa;
+  outline-offset:3px;
+}
+
+.siio-dashboard .siio-view-filters{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  align-items:end;
+  padding:14px;
+  border:1px solid #dbe7f5;
+  border-radius:18px;
+  background:#f8fbff;
+}
+
+.siio-dashboard .siio-view-filters label{
+  display:grid;
+  gap:6px;
+  min-width:170px;
+  color:#40516b;
+  font-size:12px;
+  font-weight:900;
+  text-transform:uppercase;
+  letter-spacing:.05em;
+}
+
+.siio-dashboard .siio-view-filters select{
+  min-height:40px;
+}
+
+.siio-dashboard .siio-executive-grid,
+.siio-dashboard .siio-management-signals,
+.siio-dashboard .siio-agent-grid,
+.siio-dashboard .siio-agent-action-grid,
+.siio-dashboard .siio-insight-list{
+  min-width:0;
+}
+
+.siio-dashboard .siio-executive-grid > *,
+.siio-dashboard .siio-management-signals > *,
+.siio-dashboard .siio-agent-grid > *,
+.siio-dashboard .siio-agent-action-grid > *,
+.siio-dashboard .siio-insight-list > *{
+  min-width:0;
+}
+
+.siio-dashboard .siio-insight,
+.siio-dashboard .siio-management-signal-static,
+.siio-dashboard .siio-executive-status,
+.siio-dashboard .siio-period-line{
+  overflow-wrap:anywhere;
+}
+
+.siio-dashboard .siio-table-wrap{
+  overflow-x:auto;
+  overscroll-behavior-x:contain;
+  max-width:100%;
+  border:1px solid #e2eaf5;
+  border-radius:16px;
+  -webkit-overflow-scrolling:touch;
+}
+
+.siio-dashboard .siio-table-wrap table{
+  min-width:900px;
+}
+
+.siio-dashboard .siio-table-wrap th,
+.siio-dashboard .siio-table-wrap td{
+  vertical-align:top;
+}
+
+.siio-board-backdrop{
+  position:fixed;
+  inset:0;
+  z-index:70;
+  display:grid;
+  place-items:center;
+  padding:16px;
+  background:rgba(8,15,28,.58);
+}
+
+.siio-board-dialog{
+  width:min(980px,100%);
+  max-height:calc(100vh - 32px);
+  overflow:auto;
+  overscroll-behavior:contain;
+  padding:22px;
+  border-radius:22px;
+  background:#fff;
+  box-shadow:0 30px 70px rgba(8,15,28,.34);
+}
+
+.siio-board-dialog:focus-visible{
+  outline:3px solid #60a5fa;
+  outline-offset:-3px;
+}
+
+.siio-board-dialog .siio-table-wrap{
+  overflow-x:auto;
+  max-width:100%;
+}
+
+.siio-board-dialog .siio-table-wrap table{
+  min-width:720px;
+}
+
+@media(max-width:760px){
+  .siio-dashboard .siio-view-filters{
+    display:grid;
+    grid-template-columns:1fr;
+  }
+
+  .siio-dashboard .siio-view-filters label{
+    min-width:0;
+  }
+
+  .siio-dashboard .siio-navigation{
+    margin-inline:-2px;
+  }
+
+  .siio-dashboard .siio-executive-grid,
+  .siio-dashboard .siio-management-signals,
+  .siio-dashboard .siio-agent-grid,
+  .siio-dashboard .siio-agent-action-grid,
+  .siio-dashboard .siio-insight-list,
+  .siio-dashboard .siio-insight-detail{
+    grid-template-columns:1fr;
+  }
+
+  .siio-board-backdrop{
+    align-items:end;
+    padding:0;
+  }
+
+  .siio-board-dialog{
+    width:100%;
+    max-height:calc(100vh - 16px);
+    border-radius:22px 22px 0 0;
+  }
+}
+
+@media(prefers-reduced-motion:reduce){
+  .siio-dashboard *,
+  .siio-board-backdrop *,
+  .siio-board-dialog *{
+    scroll-behavior:auto;
+    transition-duration:.01ms !important;
+    animation-duration:.01ms !important;
+    animation-iteration-count:1 !important;
+  }
+}

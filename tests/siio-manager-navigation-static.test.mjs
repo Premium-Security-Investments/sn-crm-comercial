@@ -49,4 +49,14 @@ assert.doesNotMatch(agents, /AGT-004|Asistente de Junta|\bonClick\b|\bapi\b/);
 assert.match(dashboard, /SiioSourcesIntelligenceView/);
 assert.match(dashboard, /SiioAgentsView/);
 
+const css = readFileSync('src/siio/siio.css', 'utf8');
+for (const selector of ['.siio-dashboard .siio-navigation', '.siio-dashboard .siio-navigation button:focus-visible', '.siio-dashboard .siio-view-filters', '.siio-dashboard .siio-table-wrap', '.siio-board-dialog', '.siio-board-backdrop', '@media(max-width:760px)']) {
+  assert.ok(css.includes(selector), `missing SIIO CSS selector: ${selector}`);
+}
+assert.match(css, /overflow-x:auto/, 'SIIO wide tables must retain horizontal scroll');
+assert.match(css, /max-height:calc\(100vh - 32px\)/, 'Board dialog must fit desktop viewport');
+assert.match(css, /max-height:calc\(100vh - 16px\)/, 'Board dialog must fit mobile viewport');
+assert.match(dashboard, /import '\.\/siio\.css';/, 'SIIO dashboard must import its isolated stylesheet once');
+assert.doesNotMatch(css, /(^|\n)\s*\.sidebar\b|(^|\n)\s*\.topbar-menu-toggle\b|(^|\n)\s*\.pagination\b|(^|\n)\s*\.tender-/m, 'SIIO stylesheet must not override CRM shell, pagination, or tender styles');
+
 console.log('SIIO managerial navigation shell contract OK');
