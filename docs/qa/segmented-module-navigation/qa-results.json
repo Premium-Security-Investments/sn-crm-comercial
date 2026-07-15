@@ -1,0 +1,16 @@
+{
+  "status": "pass",
+  "automated": {
+    "javascript_test_files": 52,
+    "python_test_cases": 3,
+    "checkers": 4,
+    "build": "pass"
+  },
+  "visual": [
+    { "file": "siio-desktop.png", "viewport": "1440x900", "columns": 4, "height_px": 52, "horizontal_overflow_px": 0, "status": "pass" },
+    { "file": "siio-mobile.png", "viewport": "390x844", "columns": 4, "height_px": 60, "horizontal_overflow_px": 0, "status": "pass" },
+    { "file": "tenders-desktop.png", "viewport": "1440x900", "columns": 4, "height_px": 52, "horizontal_overflow_px": 0, "status": "pass" },
+    { "file": "tenders-mobile.png", "viewport": "390x844", "columns": 4, "height_px": 60, "horizontal_overflow_px": 0, "status": "pass" }
+  ],
+  "code_review": { "critical": 0, "important": 0, "minor_accepted": 1, "safe_to_merge": true }
+}
