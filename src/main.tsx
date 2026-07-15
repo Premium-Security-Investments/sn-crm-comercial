@@ -410,7 +410,7 @@ function LoginScreen({ siioMode = false }: { siioMode?: boolean }) {
     <form className="login-card" onSubmit={submit}>
       <span className="eyebrow">{siioMode ? 'Plataforma PSI' : 'Seguridad Nacional Ltda'}</span>
       <h1>{siioMode ? 'Ingreso a SIIO Gerencial' : 'Ingreso al CRM Comercial'}</h1>
-      <p>{siioMode ? 'Ingresa con tu usuario autorizado para revisar control gerencial, fuentes, decisiones y junta.' : 'Ingresa con el usuario asignado para ver tus oportunidades y próximas acciones.'}</p>
+      <p>{siioMode ? 'Ingresa con tu usuario autorizado para revisar control gerencial, fuentes y decisiones.' : 'Ingresa con el usuario asignado para ver tus oportunidades y próximas acciones.'}</p>
       <label>Email<input type="email" required value={email} onChange={e=>setEmail(e.target.value)} placeholder="correo@empresa.com" /></label>
       <label>Clave<input type="password" required value={password} onChange={e=>setPassword(e.target.value)} placeholder="Clave temporal" /></label>
       <button>Ingresar</button>

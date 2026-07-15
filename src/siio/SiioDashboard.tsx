@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../apiClient';
 import { isManagementRole } from '../navPermissions';
-import { navigateSiioView, parseSiioRouteState, toSiioHash } from './selectors';
+import { deriveSiioExecutiveSnapshot } from '../siioExecutive';
+import { deriveRecommendations, deriveTrackingItems, navigateSiioView, parseSiioRouteState, toSiioHash } from './selectors';
 import { SiioExecutiveView } from './SiioExecutiveView';
 import { SiioAgentsView } from './SiioAgentsView';
+import { SiioBoardDraftAction } from './SiioBoardDraftAction';
 import { SiioManagementTrackingView } from './SiioManagementTrackingView';
 import { SiioNavigation } from './SiioNavigation';
 import { SiioSourcesIntelligenceView } from './SiioSourcesIntelligenceView';
@@ -12,7 +14,15 @@ import type { SiioBootstrapPayload, SiioCurrentProfile, SiioRouteState, SiioView
 export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentProfile }) {
   const [payload, setPayload] = useState<SiioBootstrapPayload | null>(null);
   const [status, setStatus] = useState('');
+  const [boardDraftOpen, setBoardDraftOpen] = useState(false);
   const [routeState, setRouteState] = useState<SiioRouteState>(() => parseSiioRouteState(window.location.hash));
+  const snapshot = useMemo(() => payload ? deriveSiioExecutiveSnapshot({
+    financialMetrics: payload.financialMetrics,
+    payrollAggregates: payload.payrollAggregates,
+    sources: payload.sources,
+  }) : null, [payload]);
+  const trackingItems = useMemo(() => payload ? deriveTrackingItems(payload.records, payload.decisions) : [], [payload]);
+  const recommendations = useMemo(() => snapshot ? deriveRecommendations(snapshot) : [], [snapshot]);
 
   const load = async () => {
     setStatus('Cargando SIIO / Gestión Gerencial y Control…');
@@ -49,7 +59,7 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
   return <section className="stack siio-dashboard">
     <section className="executive-hero">
       <div><span className="eyebrow">SIIO · Sistema Integrado de Información Operativa</span><h2>Centro de Control Gerencial</h2><p>Información permanente para dirección: resultados financieros, nómina agregada, señales comerciales, riesgos, decisiones, fuentes y trazabilidad.</p></div>
-      <div className="hero-facts"><div><small>Perfil</small><strong>{currentProfile.role}</strong></div></div>
+      <div className="hero-facts"><div><small>Perfil</small><strong>{currentProfile.role}</strong></div><button type="button" onClick={() => setBoardDraftOpen(true)}>Preparar informe de Junta</button></div>
     </section>
     {status && <div className={status.includes('permiso') || status.includes('Error') ? 'error' : 'notice'}>{status}</div>}
     <SiioNavigation activeView={routeState.view} onSelect={selectView} />
@@ -60,5 +70,6 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
         : routeState.view === 'inteligencia'
           ? <SiioSourcesIntelligenceView payload={payload} routeState={routeState} onNavigate={onNavigate} />
           : <SiioAgentsView payload={payload} routeState={routeState} onNavigate={onNavigate} />}
+    {payload && snapshot ? <SiioBoardDraftAction open={boardDraftOpen} onClose={() => setBoardDraftOpen(false)} payload={payload} snapshot={snapshot} trackingItems={trackingItems} recommendations={recommendations} /> : null}
   </section>;
 }

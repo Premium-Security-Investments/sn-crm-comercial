@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const dashboard = readFileSync(new URL('../src/siio/SiioDashboard.tsx', import.meta.url), 'utf8');
 const executive = readFileSync(new URL('../src/siio/SiioExecutiveView.tsx', import.meta.url), 'utf8');
 const tracking = readFileSync(new URL('../src/siio/SiioManagementTrackingView.tsx', import.meta.url), 'utf8');
+const board = readFileSync(new URL('../src/siio/SiioBoardDraftAction.tsx', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
 assert.match(executive, /deriveSiioExecutiveSnapshot/, 'Dashboard must derive a period-aware executive snapshot');
@@ -28,5 +29,29 @@ assert.doesNotMatch(executive, /salary|salario individual/i, 'Dashboard must nev
 assert.match(styles, /\.siio-executive-grid/, 'Executive dashboard layout styles must exist');
 assert.match(styles, /\.siio-source-freshness/, 'Source freshness styles must exist');
 assert.match(styles, /\.siio-insight-list/, 'F5 management insight styles must exist');
+
+assert.match(dashboard, /Preparar informe de Junta/, 'SIIO header must expose the governed Board action');
+assert.match(dashboard, /useState\(false\)/, 'The Board action must have local open state');
+assert.match(dashboard, /setBoardDraftOpen\(true\)/, 'The Board action trigger must open the local draft');
+assert.match(dashboard, /onClose=\{\(\) => setBoardDraftOpen\(false\)\}/, 'The Board action must close through local state');
+assert.match(board, /Borrador sujeto a revisión humana/, 'Board output must disclose the human gate');
+assert.match(board, /window\.print\(\)/, 'Board action must only print/export the local draft');
+assert.doesNotMatch(board, /api\(|fetch\(|method:\s*['"]POST|method:\s*['"]PUT|method:\s*['"]PATCH|method:\s*['"]DELETE/, 'Board action must not call a persistent endpoint');
+assert.match(board, /return null/, 'The closed Board action must render nothing');
+assert.match(board, /role="dialog"/, 'Board surface must be a dialog');
+assert.match(board, /aria-modal="true"/, 'Board dialog must be modal');
+assert.match(board, /aria-labelledby="siio-board-title"/, 'Board dialog must have an accessible name');
+assert.match(board, /Cerrar borrador de Junta/, 'Board dialog must provide an explicit close control');
+assert.match(board, /event\.key === 'Escape'/, 'Board dialog must close on Escape');
+assert.match(board, /focus\(\)/, 'Board dialog must receive focus when opened');
+assert.match(board, /previouslyFocusedElement/, 'Board dialog must restore trigger focus after closing');
+assert.match(board, /event\.key !== 'Tab'/, 'Board dialog must trap keyboard focus');
+assert.match(board, /financialRows/, 'Board action must use the loaded financial snapshot');
+assert.match(board, /payrollTotals/, 'Board action must render only payroll aggregates');
+assert.match(board, /trackingItems/, 'Board action must show loaded management tracking');
+assert.match(board, /recommendations/, 'Board action must show derived recommendations');
+assert.match(board, /boardReports/, 'Board action must show existing Board reports');
+assert.match(board, /boardSections/, 'Board action must show existing Board sections');
+assert.doesNotMatch(board, /cedula|documento|salario individual|nombre completo/i, 'Board draft must not render payroll PII');
 
 console.log('SIIO executive dashboard static contract OK');
