@@ -15,7 +15,7 @@ assert.match(moduleSource, /<TenderRadarView/);
 assert.match(moduleSource, /<TenderTrackingView/);
 assert.match(moduleSource, /<TenderDossiersView/);
 assert.match(moduleSource, /<TenderProfilesView/);
-assert.match(moduleSource, /\{props\.view === 'seguimiento' && <TenderTrackingView \{\.\.\.props\} \/>\}/, 'Seguimiento debe ser una vista independiente y no recibir renderLegacy.');
+assert.match(moduleSource, /\{props\.view === 'seguimiento' && <TenderTrackingView \{\.\.\.props\} moduleNavigation=\{moduleNavigation\} \/>\}/, 'Seguimiento debe seguir siendo una vista independiente y solo recibir composición visual compartida.');
 assert.doesNotMatch(moduleSource, /renderLegacy/, 'Ninguna de las cuatro vistas puede conservar el adaptador legado.');
 assert.match(apiSource, /export async function loadRadar/);
 assert.match(apiSource, /export async function loadTracking/);

@@ -8,7 +8,7 @@ const views: Array<{ view: TenderModuleView; label: string }> = [
 ];
 
 export function TenderModuleTabs({ active, navigate }: { active: TenderModuleView; navigate: (hash: string) => void }) {
-  return <nav className="tender-module-tabs" aria-label="Vistas de licitaciones">
+  return <nav className="tender-module-tabs module-segmented-nav" aria-label="Vistas de licitaciones">
     {views.map(({ view, label }) => {
       const hash = `#/tenders?view=${view}`;
       return <button

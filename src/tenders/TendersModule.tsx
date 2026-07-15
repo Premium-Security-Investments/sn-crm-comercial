@@ -7,11 +7,11 @@ import type { TendersModuleProps } from './types';
 
 /** Route-level composition; every view owns its data contract. */
 export function TendersModule(props: TendersModuleProps) {
+  const moduleNavigation = <TenderModuleTabs active={props.view} navigate={props.navigate} />;
   return <section className="stack tenders-page" aria-label="Módulo de licitaciones">
-    <TenderModuleTabs active={props.view} navigate={props.navigate} />
-    {props.view === 'radar' && <TenderRadarView {...props} />}
-    {props.view === 'seguimiento' && <TenderTrackingView {...props} />}
-    {props.view === 'expedientes' && <TenderDossiersView {...props} />}
-    {props.view === 'perfiles' && <TenderProfilesView {...props} />}
+    {props.view === 'radar' && <TenderRadarView {...props} moduleNavigation={moduleNavigation} />}
+    {props.view === 'seguimiento' && <TenderTrackingView {...props} moduleNavigation={moduleNavigation} />}
+    {props.view === 'expedientes' && <TenderDossiersView {...props} moduleNavigation={moduleNavigation} />}
+    {props.view === 'perfiles' && <TenderProfilesView {...props} moduleNavigation={moduleNavigation} />}
   </section>;
 }

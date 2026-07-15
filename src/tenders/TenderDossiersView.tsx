@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { loadDossiers } from './api';
 import { TenderStatusBadge } from './components/TenderStatusBadge';
 import { dossierPageQuery, reloadCurrentDossierPage as reloadDossierPage } from './viewUtils';
@@ -13,7 +13,9 @@ function tone(value?: string | null): 'success' | 'danger' | 'warning' | 'neutra
   return 'neutral';
 }
 
-export function TenderDossiersView({ request, navigate }: TendersModuleProps) {
+type TenderDossiersViewProps = TendersModuleProps & { moduleNavigation: ReactNode };
+
+export function TenderDossiersView({ request, navigate, moduleNavigation }: TenderDossiersViewProps) {
   const [rows, setRows] = useState<TenderDossier[]>([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -41,6 +43,7 @@ export function TenderDossiersView({ request, navigate }: TendersModuleProps) {
   if (loading && !rows.length) return <div className="notice">Cargando expedientes…</div>;
   return <section className="stack tenders-page tender-dossiers-view" aria-labelledby="tender-dossiers-heading">
     <header className="tracking-header"><div><span className="eyebrow">Bandeja documental</span><h2 id="tender-dossiers-heading">Expedientes</h2><p>Revise evidencia, análisis, preparación y pendientes humanos de oportunidades convertidas.</p></div><button className="secondary" onClick={() => void reloadCurrentDossierPage()} disabled={loading}>Recargar expedientes</button></header>
+    {moduleNavigation}
     {error && <div className="error" role="alert">{error}</div>}
     {!rows.length ? <div className="notice">No hay expedientes convertidos en esta página.</div> : <div className="tracking-queue">{rows.map(dossier => <article key={dossier.opportunity_id} className="card tracking-row">
       <div className="tracking-row-head"><div><div className="tender-card-kickers"><TenderStatusBadge label={dossier.document_import_status} tone={tone(dossier.document_import_status)} /><TenderStatusBadge label={dossier.risk || 'Riesgo pendiente'} tone={tone(dossier.risk)} /></div><h3>{dossier.entity || 'Oportunidad convertida'}</h3><p>{dossier.title || dossier.opportunity_id}</p></div><TenderStatusBadge label={dossier.go_no_go || 'GO / NO GO pendiente'} tone={tone(dossier.go_no_go)} /></div>

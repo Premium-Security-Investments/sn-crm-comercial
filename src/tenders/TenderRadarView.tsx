@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { loadProfiles, loadRadar } from './api';
 import { TENDER_OFFICIAL_SOURCES, TENDER_SN_REGIONS, deduplicateTenders, filterRadarTenders, sortTenderCards } from './radarUtils';
 import type { PublicTender, TenderConversionResult, TenderDeadlineFilter, TenderInternalStatus, TenderRadarPayload, TenderRegionKey, TenderScoreFilter, TenderSearchProfile, TenderSection, TenderSortKey, TenderValueFilter, TendersModuleProps } from './types';
@@ -15,7 +15,9 @@ function importMessage(result: TenderConversionResult) {
   return 'Oportunidad creada. El detalle mostrará el estado documental real.';
 }
 
-export function TenderRadarView({ data, refresh, request, navigate }: TendersModuleProps) {
+type TenderRadarViewProps = TendersModuleProps & { moduleNavigation: ReactNode };
+
+export function TenderRadarView({ data, refresh, request, navigate, moduleNavigation }: TenderRadarViewProps) {
   const [payload, setPayload] = useState<TenderRadarPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +106,7 @@ export function TenderRadarView({ data, refresh, request, navigate }: TendersMod
   if (!payload) return <div className="notice">No se pudo cargar el Radar.</div>;
   return <section className="stack tenders-page tender-radar-view" aria-labelledby="tender-radar-heading">
     <header className="compact-tender-command"><div className="compact-tender-summary"><span className="eyebrow">Radar de Licitaciones Públicas</span><h2 id="tender-radar-heading">Radar de oportunidades</h2><p>Descubra, priorice y clasifique procesos nuevos. Las oportunidades ya convertidas se gestionan fuera del Radar.</p><div className="tender-command-meta"><span>Actualización <strong>{deadlineLabel(payload.generatedAt)}</strong></span><span>Fuente <strong>{payload.source === 'supabase' ? 'Supabase' : 'Fuentes oficiales'}</strong></span></div></div><div className="row-actions"><button className="secondary" onClick={() => void load()}>Recargar vista</button><button onClick={() => void synchronize()} disabled={syncing}>{syncing ? 'Sincronizando…' : 'Sincronizar fuentes oficiales'}</button></div></header>
+    {moduleNavigation}
     {notice && <div className="notice" role="status">{notice}</div>}{error && <div className="error">{error}</div>}
     {internalStatus === 'convertida_oportunidad' && <div className="notice" role="status">Las oportunidades convertidas se gestionan en Expedientes y no se muestran en Radar. <button className="secondary" onClick={() => navigate('#/tenders?view=expedientes')}>Abrir Expedientes</button></div>}
     {conversion && <section className="notice tender-conversion-result" role="status" aria-label="Resultado de conversión documental"><strong>Conversión confirmada</strong><dl className="tracking-metadata"><div><dt>Estado documental</dt><dd>{conversion.document_import_status || 'Pendiente de confirmación'}</dd></div><div><dt>Error documental</dt><dd>{conversion.document_import_error || 'Sin errores reportados.'}</dd></div></dl><button onClick={() => navigate(`#/detail/${conversion.id}`)}>Abrir oportunidad</button></section>}
