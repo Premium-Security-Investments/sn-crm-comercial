@@ -145,16 +145,11 @@ type ExecutiveSnapshot = {
 };
 
 export function deriveRecommendations(snapshot: ExecutiveSnapshot): SiioRecommendation[] {
-  return snapshot.managementInsights.map(insight => {
-    const evidence = normalizedSubject(insight.evidence);
-    const financial = evidence.includes('financier');
-    const payroll = evidence.includes('nomina');
-    return {
-      ...insight,
-      sourceIds: financial ? ['SRC-011'] : payroll ? ['SRC-012'] : ['Pendiente de evidencia'],
-      period: financial ? snapshot.financialPeriod : payroll ? snapshot.payrollPeriod : snapshot.financialPeriod ?? snapshot.payrollPeriod,
-    };
-  });
+  return snapshot.managementInsights.map(insight => ({
+    ...insight,
+    sourceIds: insight.sourceIds?.length ? insight.sourceIds : ['Pendiente de evidencia'],
+    period: insight.period ?? snapshot.financialPeriod ?? snapshot.payrollPeriod,
+  }));
 }
 
 export function sourceFreshness(source: SiioSource, today = new Date()): 'vigente' | 'próxima_a_vencer' | 'vencida' | 'sin_fecha' {
@@ -168,9 +163,11 @@ export function sourceFreshness(source: SiioSource, today = new Date()): 'vigent
   return 'vigente';
 }
 
-export function filterSources(sources: SiioSource[], filters: SiioRouteFiltersByView['inteligencia']): SiioSource[] {
+export function filterSources(sources: SiioSource[], filters: SiioRouteFiltersByView['inteligencia'], evidenceSourceIds?: string[]): SiioSource[] {
+  const evidenceSourceSet = evidenceSourceIds ? new Set(evidenceSourceIds) : null;
   return sources.filter(source => (
-    (!filters.freshness || sourceFreshness(source) === filters.freshness)
+    (!evidenceSourceSet || evidenceSourceSet.has(source.id))
+    && (!filters.freshness || sourceFreshness(source) === filters.freshness)
     && (!filters.trust || normalizedSubject(source.trust_level) === normalizedSubject(filters.trust))
     && (!filters.sourceType || normalizedSubject(source.source_type) === normalizedSubject(filters.sourceType))
   ));
