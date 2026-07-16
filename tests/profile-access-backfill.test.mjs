@@ -182,6 +182,16 @@ await (async function backfillsOnlyTheLegacyColumnsAvailableInPartialSchemas() {
       permissions: [{ profile_id: ids.historicalTenderEmail, permission_code: 'licitaciones' }],
     },
     {
+      name: 'microsoft_email presente sin coincidencias históricas',
+      options: {
+        hasCommercialArea: false,
+        hasMicrosoftEmail: true,
+        rows: [[ids.unrelated, 'colaborador', true, 'sin-acceso@seguridadnacional.co']],
+      },
+      assignments: 0,
+      permissions: [],
+    },
+    {
       name: 'sin columnas legacy',
       options: { hasCommercialArea: false, hasMicrosoftEmail: false },
       assignments: 0,
@@ -229,5 +239,12 @@ assert.match(
   /commercial_area.*compatibilidad temporal|compatibilidad temporal.*commercial_area/is,
   '019 debe documentar commercial_area como compatibilidad temporal/read-only',
 );
+
+const transactionStart = migration.search(/\bbegin\s*;/i);
+const firstPreflight = migration.search(/--\s*Abort before any DDL|\bdo\s+\$\$/i);
+const profileLock = migration.search(/\block\s+table\s+public\.psi_sales_profiles\s+in\s+share\s+row\s+exclusive\s+mode\s*;/i);
+assert.notEqual(profileLock, -1, '019 debe bloquear psi_sales_profiles durante el preflight y backfill legado');
+assert.ok(transactionStart !== -1 && transactionStart < profileLock, 'el lock debe ocurrir después de BEGIN');
+assert.ok(firstPreflight !== -1 && profileLock < firstPreflight, 'el lock debe ocurrir antes del primer preflight o DO');
 
 console.log('profile access backfill PGlite contract passed');
