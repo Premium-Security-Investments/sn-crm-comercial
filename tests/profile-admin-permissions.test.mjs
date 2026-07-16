@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import ts from 'typescript';
 
 process.env.VERCEL = '1';
 process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://127.0.0.1:54321';
@@ -23,6 +24,33 @@ const catalog = {
   ],
   permissions: [{ code: 'licitaciones', name: 'Licitaciones', description: 'Acceso a licitaciones' }],
 };
+
+const profileAccessStateTs = readFileSync(new URL('../src/profileAccessState.ts', import.meta.url), 'utf8');
+const profileAccessStateJs = ts.transpileModule(profileAccessStateTs, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const { setAreaScopeSelection } = await import(`data:text/javascript;base64,${Buffer.from(profileAccessStateJs).toString('base64')}`);
+const operationsWhole = { area_code: 'operaciones', subarea_code: null };
+assert.deepEqual(
+  setAreaScopeSelection([operationsWhole], 'comercial', 'tecnologia', true),
+  [operationsWhole, { area_code: 'comercial', subarea_code: 'tecnologia' }],
+  'seleccionar una subárea conserva el área completa de otra área',
+);
+assert.deepEqual(
+  setAreaScopeSelection([operationsWhole, { area_code: 'comercial', subarea_code: null }], 'comercial', 'tecnologia', true),
+  [operationsWhole, { area_code: 'comercial', subarea_code: 'tecnologia' }],
+  'seleccionar una subárea reemplaza solo el alcance completo de su propia área',
+);
+assert.deepEqual(
+  setAreaScopeSelection([operationsWhole, { area_code: 'comercial', subarea_code: 'seguridad_fisica' }], 'comercial', 'tecnologia', true),
+  [operationsWhole, { area_code: 'comercial', subarea_code: 'seguridad_fisica' }, { area_code: 'comercial', subarea_code: 'tecnologia' }],
+  'permite varias subáreas sin perder otras áreas',
+);
+assert.deepEqual(
+  setAreaScopeSelection([operationsWhole, { area_code: 'comercial', subarea_code: 'tecnologia' }], 'comercial', null, true),
+  [operationsWhole, { area_code: 'comercial', subarea_code: null }],
+  'seleccionar área completa elimina solo las subáreas de esa área',
+);
 
 assert.deepEqual(
   normalizeProfileAccessRequest({
