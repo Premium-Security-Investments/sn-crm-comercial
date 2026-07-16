@@ -25,6 +25,34 @@ begin
   end if;
 end $$;
 
+-- Abort before destructive DDL when the historical tender-email exception is ambiguous.
+-- microsoft_email is optional in older profile schemas, so inspect it dynamically first.
+do $$
+declare
+  has_microsoft_email boolean;
+  historical_email_count integer;
+begin
+  select exists (
+    select 1
+    from pg_attribute
+    where attrelid = 'public.psi_sales_profiles'::regclass
+      and attname = 'microsoft_email'
+      and not attisdropped
+  ) into has_microsoft_email;
+
+  if has_microsoft_email then
+    execute $sql$
+      select count(*)::integer
+      from public.psi_sales_profiles
+      where lower(btrim(microsoft_email)) = 'directora.licitaciones@seguridadnacional.co'
+    $sql$ into historical_email_count;
+
+    if historical_email_count > 1 then
+      raise exception 'No se puede aplicar 019: el correo histórico directora.licitaciones@seguridadnacional.co aparece en % perfiles. Normalice y desduplique ese correo antes de reintentar.', historical_email_count;
+    end if;
+  end if;
+end $$;
+
 -- Replace only a CHECK whose constrained columns are exactly the role column.
 -- Composite checks (for example role + active) are unrelated business rules and survive.
 do $$

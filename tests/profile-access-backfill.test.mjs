@@ -210,7 +210,7 @@ await (async function rejectsAmbiguousHistoricalTenderEmailBeforeDestructiveDdlA
 
   await assert.rejects(
     db.exec(migration),
-    /directora\.licitaciones@seguridadnacional\.co.*2.*normaliz|2.*directora\.licitaciones@seguridadnacional\.co.*normaliz/i,
+    /directora\.licitaciones@seguridadnacional\.co.*2.*(?:normalic|desdupli)|2.*directora\.licitaciones@seguridadnacional\.co.*(?:normalic|desdupli)/i,
     'dos perfiles que normalizan al correo histórico deben bloquear la migración',
   );
   await db.exec('rollback');
