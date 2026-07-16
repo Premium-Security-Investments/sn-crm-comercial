@@ -37,9 +37,38 @@ await db.exec(`
   insert into public.psi_sales_profiles(id,full_name,microsoft_email,role,active) values
     ('${ids.admin}','Admin','admin@example.com','admin',true),
     ('${ids.target}','Comercial','target@example.com','comercial',true);
+
+  create table public.psi_public_tenders (id uuid primary key default gen_random_uuid());
+  create table public.psi_tender_radar_runs (id uuid primary key default gen_random_uuid());
+  create table public.psi_company_procurement_profile (id uuid primary key default gen_random_uuid());
+  create table public.psi_tender_search_profiles (id uuid primary key default gen_random_uuid());
+  create table public.psi_tender_tracking_events (id uuid primary key default gen_random_uuid());
+  alter table public.psi_public_tenders enable row level security;
+  alter table public.psi_tender_radar_runs enable row level security;
+  alter table public.psi_company_procurement_profile enable row level security;
+  alter table public.psi_tender_search_profiles enable row level security;
+  alter table public.psi_tender_tracking_events enable row level security;
+  create policy psi_public_tenders_select on public.psi_public_tenders for select to authenticated using (true);
+  create policy psi_public_tenders_modify on public.psi_public_tenders for all to authenticated using (true) with check (true);
+  create policy psi_tender_radar_runs_select on public.psi_tender_radar_runs for select to authenticated using (true);
+  create policy psi_tender_radar_runs_insert on public.psi_tender_radar_runs for insert to authenticated with check (true);
+  create policy psi_company_procurement_profile_select on public.psi_company_procurement_profile for select to authenticated using (true);
+  create policy psi_company_procurement_profile_modify on public.psi_company_procurement_profile for all to authenticated using (true) with check (true);
+  create policy psi_tender_search_profiles_select on public.psi_tender_search_profiles for select to authenticated using (true);
+  create policy psi_tender_search_profiles_modify on public.psi_tender_search_profiles for all to authenticated using (true) with check (true);
+  create policy psi_tender_tracking_events_select on public.psi_tender_tracking_events for select to authenticated using (true);
+  create policy psi_tender_tracking_events_insert on public.psi_tender_tracking_events for insert to authenticated with check (true);
+  grant select, insert, update, delete on public.psi_public_tenders, public.psi_tender_radar_runs,
+    public.psi_company_procurement_profile, public.psi_tender_search_profiles, public.psi_tender_tracking_events to authenticated;
 `);
 await db.exec(readFileSync(migration019Path, 'utf8'));
 await db.exec(readFileSync(migration020Path, 'utf8'));
+for (const table of ['psi_public_tenders', 'psi_tender_radar_runs', 'psi_company_procurement_profile', 'psi_tender_search_profiles', 'psi_tender_tracking_events']) {
+  for (const privilege of ['select', 'insert', 'update', 'delete']) {
+    assert.equal((await db.query(`select has_table_privilege('authenticated',$1,$2) as allowed`, [`public.${table}`, privilege])).rows[0].allowed, false, `${table}: authenticated no conserva ${privilege}`);
+  }
+  assert.equal(Number((await db.query(`select count(*)::int as count from pg_policies where schemaname='public' and tablename=$1`, [table])).rows[0].count), 0, `${table}: 020 retira políticas directas legacy`);
+}
 assert.equal((await db.query(`select auth_user_id from public.psi_sales_profiles where id=$1`, [ids.target])).rows[0].auth_user_id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '020 vincula perfiles históricos al sujeto Auth por UUID');
 assert.equal((await db.query(`select has_function_privilege('authenticated','public.psi_admin_bind_profile_auth(uuid,text,uuid)','execute') as allowed`)).rows[0].allowed, false);
 assert.equal((await db.query(`select has_function_privilege('service_role','public.psi_admin_bind_profile_auth(uuid,text,uuid)','execute') as allowed`)).rows[0].allowed, true);

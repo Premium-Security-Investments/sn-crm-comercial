@@ -22,8 +22,8 @@ const mod = await import(`file://${outPath}`);
 assert.equal(typeof mod.getVisibleNavGroups, 'function', 'getVisibleNavGroups must be exported');
 assert.equal(typeof mod.canAccessRoute, 'function', 'canAccessRoute must be exported');
 
-const profile = (role, email = `${role}@example.com`) => ({ role, microsoft_email: email, active: true });
-const labelsFor = (role, email) => mod.getVisibleNavGroups(profile(role, email)).flatMap(group => group.items.map(item => item.label));
+const profile = (role, permissions = [], email = `${role}@example.com`) => ({ role, microsoft_email: email, permissions, active: true });
+const labelsFor = (role, permissions = [], email) => mod.getVisibleNavGroups(profile(role, permissions, email)).flatMap(group => group.items.map(item => item.label));
 
 assert.deepEqual(labelsFor('comercial'), ['Alertas comerciales', 'Oportunidades', 'Metas y cumplimiento']);
 const gerenciaGroups = mod.getVisibleNavGroups(profile('gerencia'));
@@ -35,9 +35,12 @@ assert.deepEqual(gerenciaGroups[0], {
   ],
 });
 assert.deepEqual(gerenciaGroups[1].items.map(item => item.label), ['Dashboard comercial', 'Alertas comerciales', 'Oportunidades']);
-assert.deepEqual(labelsFor('gerencia'), ['SIIO Gerencial', 'Vig-IA', 'Dashboard comercial', 'Alertas comerciales', 'Oportunidades', 'Radar de oportunidades', 'Metas y cumplimiento']);
+assert.deepEqual(labelsFor('gerencia'), ['SIIO Gerencial', 'Vig-IA', 'Dashboard comercial', 'Alertas comerciales', 'Oportunidades', 'Metas y cumplimiento']);
 assert.deepEqual(labelsFor('director'), labelsFor('gerencia'));
-assert.deepEqual(labelsFor('admin'), ['SIIO Gerencial', 'Vig-IA', 'Dashboard comercial', 'Alertas comerciales', 'Oportunidades', 'Radar de oportunidades', 'Metas y cumplimiento', 'Usuarios y permisos']);
+assert.deepEqual(labelsFor('admin'), ['SIIO Gerencial', 'Vig-IA', 'Dashboard comercial', 'Alertas comerciales', 'Oportunidades', 'Metas y cumplimiento', 'Usuarios y permisos']);
+assert.ok(labelsFor('gerencia', ['licitaciones']).includes('Radar de oportunidades'));
+assert.ok(labelsFor('director', ['licitaciones']).includes('Radar de oportunidades'));
+assert.ok(labelsFor('admin', ['licitaciones']).includes('Radar de oportunidades'));
 
 assert.ok(mod.canAccessRoute(profile('admin'), 'siio'));
 assert.ok(mod.canAccessRoute(profile('gerencia'), 'siio'));
@@ -50,6 +53,8 @@ assert.ok(mod.canAccessRoute(profile('comercial'), 'opportunities'));
 assert.ok(mod.canAccessRoute(profile('comercial'), 'new'));
 assert.ok(mod.canAccessRoute(profile('comercial'), 'goals'));
 assert.equal(mod.canAccessRoute(profile('comercial'), 'tenders'), false);
-assert.ok(mod.canAccessRoute(profile('comercial', 'directora.licitaciones@seguridadnacional.co'), 'tenders'));
+assert.equal(mod.canAccessRoute(profile('comercial', [], 'directora.licitaciones@seguridadnacional.co'), 'tenders'), false);
+assert.ok(mod.canAccessRoute(profile('comercial', ['licitaciones']), 'tenders'));
+assert.ok(mod.canAccessRoute(profile('director', ['licitaciones']), 'tenders'));
 
 console.log('nav permission matrix OK');
