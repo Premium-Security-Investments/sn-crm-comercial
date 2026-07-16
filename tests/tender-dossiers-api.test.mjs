@@ -147,11 +147,16 @@ const fakeSupabase = http.createServer((req, res) => {
     return json(res, 401, { message: 'invalid token' });
   }
   if (url.pathname === '/rest/v1/psi_sales_profiles') {
-    const manager = url.searchParams.get('microsoft_email')?.includes('manager%40') || decodeURIComponent(url.searchParams.get('microsoft_email') || '').includes('manager@');
+    const manager = url.searchParams.get('auth_user_id') === 'eq.manager-user';
     const profile = manager
       ? { id: 'manager-profile', full_name: 'Manager', microsoft_email: 'manager@example.test', role: 'director', active: true }
       : { id: 'viewer-profile', full_name: 'Viewer', microsoft_email: 'viewer@example.test', role: 'comercial', active: true };
     return json(res, 200, getHeader(req, 'accept').includes('vnd.pgrst.object') ? profile : [profile]);
+  }
+  if (url.pathname === '/rest/v1/psi_profile_area_assignments') return json(res, 200, []);
+  if (url.pathname === '/rest/v1/psi_profile_permissions') {
+    const manager = url.searchParams.get('profile_id') === 'eq.manager-profile';
+    return json(res, 200, manager ? [{ permission_code: 'licitaciones' }] : []);
   }
   if (url.pathname === '/rest/v1/psi_public_tenders') {
     observed.tenderQueries.push(url.search);

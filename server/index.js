@@ -7,6 +7,9 @@ import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import mammoth from 'mammoth';
 import AdmZip from 'adm-zip';
 import { callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
+import { can, requireAction } from '../access-control.js';
+import { ACTIONS } from '../access-control.js';
+import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,21 +45,86 @@ function requireDb() {
 
 
 const managementRoles = ['director','gerencia','admin'];
+const globalCrmScopeRoles = new Set(['gerencia', 'admin']);
 const commercialAreas = ['seguridad_fisica','tecnologia','licitacion_publica'];
 const customerSegments = ['cliente_nuevo','cliente_actual'];
 function isManager(profile) { return managementRoles.includes(profile?.role); }
 function validateCommercialArea(value) { const area = value || null; if (area && !commercialAreas.includes(area)) throw new Error('Área comercial no válida.'); return area; }
 function validateCustomerSegment(value, required = false) { const segment = value || null; if (required && !segment) throw new Error('Debe clasificar la oportunidad como Cliente Nuevo o Cliente Actual.'); if (segment && !customerSegments.includes(segment)) throw new Error('Tipo de cliente no válido.'); return segment; }
-function canEditCustomerSegment(profile, opportunity) { return isManager(profile) || (profile?.can_edit_customer_segment && opportunity?.owner_id === profile.id); }
+function canEditCustomerSegment(profile, opportunity) { return globalCrmScopeRoles.has(profile?.role) || (profile?.can_edit_customer_segment && opportunity?.owner_id === profile.id); }
 function canManageUsers(profile) { return profile?.role === 'admin'; }
-function canAccessSiio(profile) { return ['admin','gerencia','director'].includes(profile?.role); }
-function requireSiioAccess(profile) {
-  if (!canAccessSiio(profile)) {
-    const error = new Error('No tiene permisos para acceder al SIIO / F2 gerencial.');
-    error.status = 403;
-    throw error;
-  }
+export const MODULE_ENDPOINT_ACTIONS = Object.freeze({
+  opportunities: ACTIONS.MODULE_OPPORTUNITIES_VIEW,
+  goals: ACTIONS.MODULE_GOALS_VIEW,
+  siio: ACTIONS.MODULE_SIIO_VIEW,
+  tenders: ACTIONS.LICITACIONES_VIEW,
+  users: ACTIONS.MODULE_USERS_VIEW,
+});
+// Canonical and Vercel-safe aliases share one auditable method+route inventory.
+export const HTTP_ACTION_MATRIX = Object.freeze({
+  'GET /api/opportunities/:id': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
+  'POST /api/opportunities': ['opportunities', ACTIONS.CRM_OPPORTUNITY_CREATE],
+  'PUT /api/opportunities/:id': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'POST /api/opportunities/:id/interactions': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'GET /api/opportunity-detail': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
+  'PUT /api/opportunity': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'POST /api/opportunity-interactions': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'GET /api/goals': ['goals', ACTIONS.MODULE_GOALS_VIEW],
+  'PUT /api/goals': ['goals', ACTIONS.MODULE_GOALS_VIEW],
+
+  'GET /api/tenders': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'GET /api/users': ['users', ACTIONS.USERS_MANAGE],
+  'GET /api/access-catalog': ['users', ACTIONS.USERS_MANAGE],
+
+  'GET /api/siio/bootstrap': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'GET /api/siio/fronts': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'GET /api/siio/records': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'POST /api/siio/records': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
+  'PATCH /api/siio/records/:id': ['siio', ACTIONS.SIIO_SUBJECT_EDIT],
+  'GET /api/siio/sources': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'POST /api/siio/sources': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
+  'GET /api/siio/decisions': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'POST /api/siio/decisions': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
+  'PATCH /api/siio/decisions/:id': ['siio', ACTIONS.SIIO_SUBJECT_EDIT],
+  'GET /api/siio/board-reports': ['siio', ACTIONS.BOARD_PUBLICATION_VIEW],
+});
+const SIIO_MANAGEMENT_RESOURCE = Object.freeze({ area_code: 'gerencia' });
+const SIIO_PUBLISHED_BOARD_RESOURCE = Object.freeze({ publication_status: 'published' });
+export const SIIO_ENDPOINT_ACTIONS = Object.freeze({
+  'GET /api/siio/bootstrap': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'board-published' }),
+  'GET /api/siio/fronts': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'GET /api/siio/records': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'POST /api/siio/records': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'PATCH /api/siio/records/:id': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_EDIT, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'GET /api/siio/sources': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'POST /api/siio/sources': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'GET /api/siio/decisions': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'POST /api/siio/decisions': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'PATCH /api/siio/decisions/:id': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_EDIT, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'GET /api/siio/board-reports': Object.freeze({ action: ACTIONS.BOARD_PUBLICATION_VIEW, resource: SIIO_PUBLISHED_BOARD_RESOURCE, policy: 'board-published' }),
+});
+export function requireModuleAction(profile, endpointModule) {
+  return requireAction(profile, MODULE_ENDPOINT_ACTIONS[endpointModule], {});
 }
+function throwSiioForbidden() {
+  const error = new Error('No tiene permisos para acceder al SIIO / F2 gerencial.');
+  error.status = 403;
+  error.code = 'FORBIDDEN';
+  throw error;
+}
+export function requireSiioEndpointAccess(profile, methodRoute) {
+  requireModuleAction(profile, 'siio');
+  const endpoint = SIIO_ENDPOINT_ACTIONS[methodRoute];
+  // SIIO rows have no canonical area/subarea relation yet, so directors fail
+  // closed until Task 11 can derive a resource from the server-side record.
+  if (!endpoint || profile?.role === 'director') throwSiioForbidden();
+  if (profile?.role === 'junta') {
+    if (endpoint.policy !== 'board-published') throwSiioForbidden();
+    return requireAction(profile, ACTIONS.BOARD_PUBLICATION_VIEW, SIIO_PUBLISHED_BOARD_RESOURCE);
+  }
+  return requireAction(profile, endpoint.action, endpoint.resource);
+}
+
 function normalizeUserRole(value) {
   const raw = String(value || 'comercial').trim().toLowerCase();
   if (raw === 'directivo') return 'director';
@@ -67,7 +135,252 @@ function getBearerToken(req) {
   const match = String(raw).match(/^Bearer\s+(.+)$/i);
   return match ? match[1] : null;
 }
-async function getAuthContext(req) {
+function isExactNonblankString(value) {
+  return typeof value === 'string' && value.length > 0 && value.trim() === value;
+}
+function normalizeAccessAssignments(rows) {
+  if (!Array.isArray(rows)) throw new Error('Asignaciones de área inválidas.');
+  const assignments = [];
+  const seen = new Set();
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)
+      || !isExactNonblankString(row.area_code)
+      || (row.subarea_code !== null && !isExactNonblankString(row.subarea_code))) {
+      throw new Error('Asignaciones de área inválidas.');
+    }
+    const key = `${row.area_code}\u0000${row.subarea_code ?? ''}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      assignments.push({ area_code: row.area_code, subarea_code: row.subarea_code });
+    }
+  }
+  return assignments;
+}
+function normalizeAccessPermissions(rows) {
+  if (!Array.isArray(rows)) throw new Error('Permisos inválidos.');
+  const permissions = [];
+  const seen = new Set();
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row) || !isExactNonblankString(row.permission_code)) {
+      throw new Error('Permisos inválidos.');
+    }
+    if (!seen.has(row.permission_code)) {
+      seen.add(row.permission_code);
+      permissions.push(row.permission_code);
+    }
+  }
+  return permissions;
+}
+
+const PROFILE_ROLES = new Set(['admin','gerencia','director','comercial','colaborador','junta']);
+const MODULE_PERMISSION_CODE_SET = new Set(MODULE_PERMISSION_CODES);
+const MAX_PROFILE_ACCESS_ROWS = 100;
+function accessValidationError(message) { const error = new Error(message); error.status = 400; return error; }
+function profileAdministrationFailure(cause) {
+  const error = new Error('No se pudo actualizar el perfil. Intente nuevamente.', { cause });
+  error.status = 500;
+  error.code = 'PROFILE_ADMIN_UPDATE_FAILED';
+  return error;
+}
+function profileAdministrationConflict(cause) {
+  const error = new Error('El perfil ya existe. Recargue la lista y edite el registro existente.', { cause });
+  error.status = 409;
+  error.code = 'PROFILE_ADMIN_CONFLICT';
+  return error;
+}
+function normalizedProfileEmail(value) { return String(value || '').trim().toLowerCase(); }
+export function assertNoAdminSelfLockout(currentProfile, { profileId, microsoftEmail, role, active, permissions }) {
+  const sameProfile = Boolean(profileId && currentProfile?.id && profileId === currentProfile.id);
+  const currentEmail = normalizedProfileEmail(currentProfile?.microsoft_email);
+  const targetEmail = normalizedProfileEmail(microsoftEmail);
+  const sameEmail = Boolean(currentEmail && targetEmail && currentEmail === targetEmail);
+  const removesUsersModule = Array.isArray(permissions) && !permissions.includes('modulo_usuarios');
+  if ((sameProfile || sameEmail) && (!active || role !== 'admin' || removesUsersModule)) throw accessValidationError('No puede desactivar, cambiar su propio rol de administrador ni retirarse Usuarios y Permisos.');
+}
+function catalogAccessFailure(cause) { const error = new Error('No se pudo validar el catálogo de acceso.', { cause }); error.status = 500; error.code = 'ACCESS_CATALOG_UNAVAILABLE'; return error; }
+function profileAccessReadFailure(cause) { const error = new Error('No se pudo cargar la configuración de acceso.', { cause }); error.status = 500; error.code = 'PROFILE_ACCESS_READ_FAILED'; return error; }
+function profileAccessWriteFailure(cause) { const error = new Error('No se pudo guardar el alcance de acceso. Intente nuevamente.', { cause }); error.status = 500; error.code = 'PROFILE_ACCESS_WRITE_FAILED'; return error; }
+function validateAccessCatalog(catalog) {
+  if (!catalog || !Array.isArray(catalog.areas) || !Array.isArray(catalog.subareas) || !Array.isArray(catalog.permissions)) throw new Error('Catálogo de acceso inválido.');
+  for (const area of catalog.areas) if (!area || !isExactNonblankString(area.code) || !isExactNonblankString(area.name)) throw new Error('Catálogo de áreas inválido.');
+  for (const subarea of catalog.subareas) if (!subarea || !isExactNonblankString(subarea.code) || !isExactNonblankString(subarea.area_code) || !isExactNonblankString(subarea.name)) throw new Error('Catálogo de subáreas inválido.');
+  for (const permission of catalog.permissions) if (!permission || !isExactNonblankString(permission.code) || !isExactNonblankString(permission.name) || typeof permission.description !== 'string') throw new Error('Catálogo de permisos inválido.');
+  return catalog;
+}
+export function normalizeProfileAccessRequest(body, catalog, role) {
+  if (!body || typeof body !== 'object' || Array.isArray(body) || !Array.isArray(body.areas)) throw accessValidationError('Debe enviar las áreas de alcance.');
+  if (!Array.isArray(body.permissions)) throw accessValidationError('Debe enviar los permisos de acceso.');
+  if (body.areas.length > MAX_PROFILE_ACCESS_ROWS || body.permissions.length > MAX_PROFILE_ACCESS_ROWS) throw accessValidationError(`Máximo ${MAX_PROFILE_ACCESS_ROWS} asignaciones o permisos.`);
+  validateAccessCatalog(catalog);
+  const areaCodes = new Set(catalog.areas.map(area => area.code));
+  const subareasByCode = new Map(catalog.subareas.map(subarea => [subarea.code, subarea]));
+  const permissionCodes = new Set(catalog.permissions.map(permission => permission.code));
+  const areas = normalizeAccessAssignments(body.areas);
+  const permissions = [];
+  const seenPermissions = new Set();
+  for (const permission of body.permissions) {
+    if (!isExactNonblankString(permission) || !permissionCodes.has(permission)) throw accessValidationError('Permiso de acceso no válido.');
+    if (!seenPermissions.has(permission)) { seenPermissions.add(permission); permissions.push(permission); }
+  }
+  for (const assignment of areas) {
+    if (!areaCodes.has(assignment.area_code)) throw accessValidationError('Área de alcance no válida.');
+    if (assignment.subarea_code !== null) {
+      const subarea = subareasByCode.get(assignment.subarea_code);
+      if (!subarea || subarea.area_code !== assignment.area_code) throw accessValidationError('Subárea de alcance no válida para el área seleccionada.');
+    }
+  }
+  for (const assignment of areas) if (assignment.subarea_code === null && areas.some(other => other.area_code === assignment.area_code && other.subarea_code !== null)) throw accessValidationError('La asignación de área es ambigua: seleccione toda el área o sus subáreas.');
+  for (const permission of permissions) {
+    if (MODULE_PERMISSION_CODE_SET.has(permission) && !isModulePermissionEligible(role, permission)) {
+      throw accessValidationError(`El módulo ${permission === 'licitaciones' ? 'Licitaciones' : 'seleccionado'} no aplica para este rol.`);
+    }
+  }
+  return { areas, permissions };
+}
+export function legacyCommercialAreaFromAssignments(areas) {
+  if (!Array.isArray(areas) || areas.length !== 1 || areas[0]?.area_code !== 'comercial') return null;
+  return ({ seguridad_fisica: 'seguridad_fisica', tecnologia: 'tecnologia', licitaciones: 'licitacion_publica' })[areas[0].subarea_code] || null;
+}
+export function enrichProfilesWithAccess(profiles, assignmentRows, permissionRows) {
+  if (!Array.isArray(profiles)) throw new Error('Perfiles inválidos.');
+  if (!Array.isArray(assignmentRows)) throw new Error('Asignaciones inválidas.');
+  if (!Array.isArray(permissionRows)) throw new Error('Permisos inválidos.');
+  const profileIds = new Set();
+  for (const profile of profiles) {
+    if (!profile || typeof profile !== 'object' || Array.isArray(profile) || !isExactNonblankString(profile.id) || profileIds.has(profile.id)) throw new Error('Perfiles inválidos.');
+    profileIds.add(profile.id);
+  }
+  const areasByProfile = new Map();
+  for (const row of assignmentRows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row) || !isExactNonblankString(row.profile_id)) throw new Error('Asignaciones inválidas.');
+    if (!profileIds.has(row.profile_id)) throw new Error('Asignación para perfil inesperado.');
+    const rows = areasByProfile.get(row.profile_id) || [];
+    rows.push(row);
+    areasByProfile.set(row.profile_id, rows);
+  }
+  const permissionsByProfile = new Map();
+  for (const row of permissionRows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row) || !isExactNonblankString(row.profile_id)) throw new Error('Permisos inválidos.');
+    if (!profileIds.has(row.profile_id)) throw new Error('Permiso para perfil inesperado.');
+    const rows = permissionsByProfile.get(row.profile_id) || [];
+    rows.push(row);
+    permissionsByProfile.set(row.profile_id, rows);
+  }
+  return profiles.map(profile => ({
+    ...profile,
+    areas: normalizeAccessAssignments(areasByProfile.get(profile.id) || []),
+    permissions: normalizeAccessPermissions(permissionsByProfile.get(profile.id) || []),
+  }));
+}
+async function getActiveAccessCatalog(database) {
+  try {
+    const [areas, subareas, permissions] = await Promise.all([
+      must(database.from('psi_org_areas').select('code,name').eq('active', true).order('name').order('code')),
+      must(database.from('psi_org_subareas').select('code,area_code,name').eq('active', true).order('area_code').order('name').order('code')),
+      must(database.from('psi_access_permissions').select('code,name,description').eq('active', true).order('name').order('code')),
+    ]);
+    return validateAccessCatalog({ areas, subareas, permissions });
+  } catch (error) { throw catalogAccessFailure(error); }
+}
+async function readProfileAccess(database, profileId) {
+  try {
+    const [areaRows, permissionRows] = await Promise.all([
+      must(database.from('psi_profile_area_assignments').select('area_code,subarea_code,created_by').eq('profile_id', profileId)),
+      must(database.from('psi_profile_permissions').select('permission_code,created_by').eq('profile_id', profileId)),
+    ]);
+    return { areas: normalizeAccessAssignments(areaRows), permissions: normalizeAccessPermissions(permissionRows), areaRows, permissionRows };
+  } catch (error) { throw profileAccessWriteFailure(error); }
+}
+export async function replaceProfileAccess(database, { profileId, actorProfileId, before, after }) {
+  try {
+    // Supabase REST has no shared transaction here. If a later write fails we best-effort restore the exact old rows.
+    await must(database.from('psi_profile_area_assignments').delete().eq('profile_id', profileId));
+    await must(database.from('psi_profile_permissions').delete().eq('profile_id', profileId));
+    if (after.areas.length) await must(database.from('psi_profile_area_assignments').insert(after.areas.map(area => ({ ...area, profile_id: profileId, created_by: actorProfileId }))));
+    if (after.permissions.length) await must(database.from('psi_profile_permissions').insert(after.permissions.map(permission_code => ({ permission_code, profile_id: profileId, created_by: actorProfileId }))));
+    await must(database.from('psi_access_audit_log').insert({ actor_profile_id: actorProfileId, target_profile_id: profileId, action: 'profile.access.replace', before_state: { areas: before.areas, permissions: before.permissions }, after_state: after }));
+  } catch (error) {
+    console.error('Profile access write failed; attempting compensation restore', error);
+    try {
+      await must(database.from('psi_profile_area_assignments').delete().eq('profile_id', profileId));
+      await must(database.from('psi_profile_permissions').delete().eq('profile_id', profileId));
+      if (before.areaRows.length) await must(database.from('psi_profile_area_assignments').insert(before.areaRows.map(({ area_code, subarea_code, created_by }) => ({ profile_id: profileId, area_code, subarea_code, created_by }))));
+      if (before.permissionRows.length) await must(database.from('psi_profile_permissions').insert(before.permissionRows.map(({ permission_code, created_by }) => ({ profile_id: profileId, permission_code, created_by }))));
+    } catch (restoreError) { console.error('Profile access compensation restore failed', restoreError); }
+    throw profileAccessWriteFailure(error);
+  }
+}
+const profileAdminSelect = 'id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,created_at';
+function profileExpectedSnapshot(profile) {
+  return {
+    id: profile.id,
+    full_name: profile.full_name,
+    microsoft_email: profile.microsoft_email,
+    role: profile.role,
+    active: profile.active,
+    commercial_area: profile.commercial_area ?? null,
+    can_edit_customer_segment: profile.can_edit_customer_segment === true,
+  };
+}
+export async function acquireProfileAdministrationLock(database, actorProfileId) {
+  try {
+    const operationId = await must(database.rpc('psi_admin_acquire_profile_lock', { p_actor_profile_id: actorProfileId }));
+    if (!isExactNonblankString(operationId)) throw new Error('Lock de administración inválido.');
+    return operationId;
+  } catch (error) {
+    if (error?.code === '55P03' || error?.code === '23505') {
+      const busy = new Error('Otra administración de perfiles está en curso. Intente nuevamente en unos segundos.', { cause: error });
+      busy.status = 409;
+      busy.code = 'PROFILE_ADMIN_BUSY';
+      throw busy;
+    }
+    throw profileAdministrationFailure(error);
+  }
+}
+export async function releaseProfileAdministrationLock(database, operationId, actorProfileId) {
+  if (!operationId) return;
+  try {
+    await must(database.rpc('psi_admin_release_profile_lock', { p_operation_id: operationId, p_actor_profile_id: actorProfileId }));
+  } catch (error) { console.error('Could not release profile administration lock; lease will expire', error); }
+}
+export async function persistProfileAccessChange(database, { mode, targetId, beforeProfile, profileValues, afterAccess, actorProfileId, operationId }) {
+  try {
+    const row = await must(database.rpc('psi_admin_persist_profile_access', {
+      p_mode: mode,
+      p_target_id: beforeProfile?.id || targetId || null,
+      p_expected_profile: beforeProfile ? profileExpectedSnapshot(beforeProfile) : null,
+      p_profile: profileValues,
+      p_areas: afterAccess.areas,
+      p_permissions: afterAccess.permissions,
+      p_actor_profile_id: actorProfileId,
+      p_operation_id: operationId,
+    }));
+    if (!row || typeof row !== 'object' || Array.isArray(row) || !isExactNonblankString(row.id)) throw new Error('Respuesta transaccional de perfil inválida.');
+    return row;
+  } catch (error) {
+    if (error?.code === '23505') throw profileAdministrationConflict(error);
+    if (error?.code === '40001') {
+      const stale = new Error('El perfil cambió mientras se guardaba. Recargue y vuelva a intentar.', { cause: error });
+      stale.status = 409;
+      stale.code = 'PROFILE_ADMIN_STALE';
+      throw stale;
+    }
+    if (error?.code === '55P03') {
+      const busy = new Error('La operación de administración expiró o perdió el lock. Recargue y vuelva a intentar.', { cause: error });
+      busy.status = 409;
+      busy.code = 'PROFILE_ADMIN_BUSY';
+      throw busy;
+    }
+    throw profileAdministrationFailure(error);
+  }
+}
+function authContextUnavailable(cause) {
+  const error = new Error('No se pudo validar el acceso del usuario.', { cause });
+  error.status = 500;
+  error.code = 'AUTH_CONTEXT_UNAVAILABLE';
+  return error;
+}
+export async function getAuthContext(req) {
   const database = requireDb();
   const token = getBearerToken(req);
   if (!token) {
@@ -76,19 +389,37 @@ async function getAuthContext(req) {
     throw error;
   }
   const { data: userData, error: userError } = await database.auth.getUser(token);
-  if (userError || !userData?.user?.email) {
+  if (userError || !userData?.user?.id) {
     const error = new Error('Sesión inválida o vencida.');
     error.status = 401;
     throw error;
   }
-  const email = userData.user.email.toLowerCase();
-  const profile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment').ilike('microsoft_email', email).eq('active', true).single());
-  if (!profile) {
+  let profile;
+  try {
+    profile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,auth_user_id,role,active,commercial_area,can_edit_customer_segment').eq('auth_user_id', userData.user.id).maybeSingle());
+  } catch (error) {
+    throw authContextUnavailable(error);
+  }
+  if (!profile || profile.active !== true) {
     const error = new Error('El usuario no tiene perfil comercial activo.');
     error.status = 403;
     throw error;
   }
-  return { user: userData.user, profile, token };
+  const { auth_user_id: _internalAuthUserId, ...authorizedProfile } = profile;
+  // Access scope is server-derived from trusted profile assignment tables.
+  try {
+    const [assignmentsResult, permissionsResult] = await Promise.all([
+      database.from('psi_profile_area_assignments').select('area_code,subarea_code').eq('profile_id', profile.id),
+      database.from('psi_profile_permissions').select('permission_code').eq('profile_id', profile.id)
+    ]);
+    if (assignmentsResult.error) throw assignmentsResult.error;
+    if (permissionsResult.error) throw permissionsResult.error;
+    const areas = normalizeAccessAssignments(assignmentsResult.data);
+    const permissions = normalizeAccessPermissions(permissionsResult.data);
+    return { user: userData.user, profile: { ...authorizedProfile, areas, permissions }, token };
+  } catch (error) {
+    throw authContextUnavailable(error);
+  }
 }
 function sendAuthError(res, error) {
   sendError(res, error, error?.status || 500);
@@ -113,16 +444,72 @@ function recomputeSummary(stages, opportunities) {
     };
   });
 }
-function filterBootstrapForProfile(payload, currentProfile) {
-  const manager = isManager(currentProfile);
-  const opportunities = manager ? payload.opportunities : payload.opportunities.filter(o => o.owner_id === currentProfile.id);
-  const stages = payload.stages;
-  const summary = manager ? payload.summary : recomputeSummary(stages, opportunities);
-  const stalled = manager ? payload.stalled : payload.stalled.filter(o => o.owner_id === currentProfile.id);
-  const topClosing = manager ? payload.topClosing : payload.topClosing.filter(o => o.owner_id === currentProfile.id);
-  const monthlyKpis = manager ? payload.monthlyKpis : payload.monthlyKpis.filter(k => k.owner_id === currentProfile.id);
-  const goals = manager ? payload.goals : payload.goals.filter(g => !g.user_id || g.user_id === currentProfile.id);
-  const profiles = manager ? payload.profiles : payload.profiles.filter(p => p.id === currentProfile.id);
+export function bootstrapCapabilities(profile) {
+  return Object.freeze({
+    opportunities: can(profile, ACTIONS.MODULE_OPPORTUNITIES_VIEW),
+    goals: can(profile, ACTIONS.MODULE_GOALS_VIEW),
+    dashboard: can(profile, ACTIONS.MODULE_DASHBOARD_VIEW),
+    alerts: can(profile, ACTIONS.MODULE_ALERTS_VIEW),
+    vigia: can(profile, ACTIONS.MODULE_VIGIA_VIEW),
+  });
+}
+const BOOTSTRAP_PROFILE_SELECT = 'id,full_name';
+function crmResource(ownerId, assignment = {}) {
+  return { area_code: assignment.area_code || 'comercial', subarea_code: assignment.subarea_code ?? null, owner_id: ownerId };
+}
+function assignmentsByProfile(rows = []) {
+  const result = new Map();
+  for (const row of rows) {
+    if (!row?.profile_id || row.area_code !== 'comercial') continue;
+    const assignments = result.get(row.profile_id) || [];
+    assignments.push({ area_code: row.area_code, subarea_code: row.subarea_code ?? null });
+    result.set(row.profile_id, assignments);
+  }
+  return result;
+}
+function canReadCrmRow(profile, row, ownerAssignments) {
+  const ownerId = row?.owner_id;
+  const assignments = ownerAssignments.get(ownerId) || [];
+  if (assignments.some(assignment => can(profile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW, crmResource(ownerId, assignment)))) return true;
+  // Commercial ownership is already enforced by the action, while directors must
+  // always match a canonical assignment from the server.
+  return profile?.role !== 'director' && can(profile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW, crmResource(ownerId));
+}
+function readableOwnerIds(profile, profiles, ownerAssignments, globalScope) {
+  if (globalScope) return new Set(profiles.map(profileRow => profileRow.id));
+  const ids = new Set([profile.id]);
+  for (const profileRow of profiles) {
+    if (canReadCrmRow(profile, { owner_id: profileRow.id }, ownerAssignments)) ids.add(profileRow.id);
+  }
+  return ids;
+}
+export function filterBootstrapForProfile(payload, currentProfile) {
+  const { profileAssignments = [], ...publicPayload } = payload;
+  const capabilities = bootstrapCapabilities(currentProfile);
+  const globalScope = globalCrmScopeRoles.has(currentProfile?.role);
+  const ownerAssignments = assignmentsByProfile(profileAssignments);
+  const visibleOwnerIds = readableOwnerIds(currentProfile, payload.profiles, ownerAssignments, globalScope);
+  const commercialData = capabilities.opportunities || capabilities.dashboard || capabilities.alerts || capabilities.vigia;
+  const scopedOpportunities = globalScope ? payload.opportunities : payload.opportunities.filter(o => canReadCrmRow(currentProfile, o, ownerAssignments));
+  const scopedStalled = globalScope ? payload.stalled : payload.stalled.filter(o => canReadCrmRow(currentProfile, o, ownerAssignments));
+  const scopedTopClosing = globalScope ? payload.topClosing : payload.topClosing.filter(o => canReadCrmRow(currentProfile, o, ownerAssignments));
+  const scopedMonthlyKpis = globalScope ? payload.monthlyKpis : payload.monthlyKpis.filter(k => visibleOwnerIds.has(k.owner_id));
+  const scopedGoals = globalScope ? payload.goals : payload.goals.filter(g => !g.user_id || visibleOwnerIds.has(g.user_id));
+  const needsProfiles = commercialData || capabilities.goals;
+  const opportunities = commercialData ? scopedOpportunities : [];
+  const stages = commercialData ? payload.stages : [];
+  const services = commercialData || capabilities.goals ? payload.services : [];
+  const lossReasons = capabilities.opportunities ? payload.lossReasons : [];
+  const summary = capabilities.dashboard || capabilities.vigia
+    ? (globalScope ? payload.summary : recomputeSummary(stages, opportunities))
+    : [];
+  const stalled = capabilities.dashboard ? scopedStalled : [];
+  const topClosing = capabilities.dashboard ? scopedTopClosing : [];
+  const monthlyKpis = capabilities.goals || capabilities.dashboard || capabilities.alerts || capabilities.vigia ? scopedMonthlyKpis : [];
+  const goals = capabilities.goals || capabilities.dashboard || capabilities.alerts || capabilities.vigia ? scopedGoals : [];
+  const profiles = (needsProfiles
+    ? (globalScope ? payload.profiles : payload.profiles.filter(p => visibleOwnerIds.has(p.id)))
+    : []).map(({ id, full_name }) => ({ id, full_name }));
   const totals = opportunities.reduce((acc, o) => {
     acc.count += 1;
     acc.pipeline += Number(o.offer_value || 0);
@@ -130,15 +517,36 @@ function filterBootstrapForProfile(payload, currentProfile) {
     if (o.stage_code === 'aprobado') acc.approved += Number(o.offer_value || 0);
     return acc;
   }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
-  return { ...payload, summary, opportunities, profiles, stalled, topClosing, monthlyKpis, goals, totals, currentProfile };
+  return { ...publicPayload, summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals, totals: capabilities.dashboard || capabilities.vigia ? totals : { count: 0, pipeline: 0, weighted: 0, approved: 0 }, currentProfile };
 }
-async function ensureOpportunityAccess(database, id, profile) {
-  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,customer_segment').eq('id', id).single());
-  if (!isManager(profile) && opportunity.owner_id !== profile.id) {
-    const error = new Error('No tiene permisos sobre esta oportunidad.');
-    error.status = 403;
+function opportunityOwnerError(message, status) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+async function resolveActiveOpportunityOwner(database, ownerId) {
+  if (!ownerId) throw opportunityOwnerError('El comercial responsable es obligatorio.', 400);
+  const { data: owner, error } = await database.from('psi_sales_profiles').select('id,active').eq('id', ownerId).single();
+  if (error) {
+    if (error.code === 'PGRST116') throw opportunityOwnerError('El comercial responsable no existe.', 404);
     throw error;
   }
+  if (!owner) throw opportunityOwnerError('El comercial responsable no existe.', 404);
+  if (!owner.active) throw opportunityOwnerError('El comercial responsable debe estar activo.', 400);
+  return owner;
+}
+async function requireExistingOpportunityAction(database, profile, ownerId, action) {
+  const assignments = await must(database.from('psi_profile_area_assignments').select('area_code,subarea_code').eq('profile_id', ownerId));
+  if (assignments.some(assignment => can(profile, action, crmResource(ownerId, assignment)))) return true;
+  return requireAction(profile, action, crmResource(ownerId));
+}
+export async function requireOpportunityAction(database, profile, ownerId, action) {
+  const owner = await resolveActiveOpportunityOwner(database, ownerId);
+  return requireExistingOpportunityAction(database, profile, owner.id, action);
+}
+async function ensureOpportunityAccess(database, id, profile, action = ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW) {
+  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,customer_segment').eq('id', id).single());
+  await requireExistingOpportunityAction(database, profile, opportunity.owner_id, action);
   return opportunity;
 }
 
@@ -224,7 +632,7 @@ const tenderDisqualifyingTerms = [
 ];
 const tenderFocusTerms = { 'bogotá': 22, 'bogota': 22, 'distrito capital': 20, 'medellín': 22, 'medellin': 22, 'antioquia': 14 };
 const tenderInternalStatuses = ['nueva','en_revision','descartada','convertida_oportunidad'];
-function canViewTenders(profile) { return isManager(profile) || profile?.microsoft_email?.toLowerCase() === 'directora.licitaciones@seguridadnacional.co'; }
+export function canViewTenders(profile) { return can(profile, ACTIONS.LICITACIONES_VIEW); }
 const tenderRegionKeys = ['todas','bog_cundinamarca','med_antioquia','eje_cafetero','cali_valle','costa_caribe','santanderes','sur_occidente','otros'];
 const tenderSectionFilters = ['todas','hacer','revisar','descartar'];
 const tenderDeadlineFilters = ['todas','0_7','8_15','16_30','vencida','sin_fecha'];
@@ -1264,11 +1672,22 @@ function cleanSiioDecision(body = {}, profile) {
   };
 }
 
+function filterBoardReportsForProfile(profile, rows) {
+  if (profile?.role !== 'junta') return rows;
+  return rows.filter(row => can(profile, ACTIONS.BOARD_PUBLICATION_VIEW, {
+    publication_status: row?.publication_status ?? row?.status,
+  }));
+}
+
 app.get('/api/siio/bootstrap', async (req, res) => {
   try {
     const { profile } = await getAuthContext(req);
-    requireSiioAccess(profile);
+    requireSiioEndpointAccess(profile, 'GET /api/siio/bootstrap');
     const database = requireDb();
+    if (profile.role === 'junta') {
+      const boardReports = filterBoardReportsForProfile(profile, await optionalSiioList(database, siioTables.boardReports, '*', 'period_month'));
+      return res.json({ fronts: [], records: [], sources: [], decisions: [], boardReports, boardSections: [], financialMetrics: [], commercialSignals: [], payrollAggregates: [], strategicOpportunities: [], currentProfile: profile });
+    }
     const [fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates, strategicOpportunities] = await Promise.all([
       optionalSiioList(database, siioTables.fronts, '*', 'id'),
       optionalSiioList(database, siioTables.records, '*', 'updated_at'),
@@ -1285,16 +1704,16 @@ app.get('/api/siio/bootstrap', async (req, res) => {
   } catch (error) { sendAuthError(res, error); }
 });
 app.get('/api/siio/fronts', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.fronts, '*', 'id')); }
+  try { const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'GET /api/siio/fronts'); res.json(await optionalSiioList(requireDb(), siioTables.fronts, '*', 'id')); }
   catch (error) { sendAuthError(res, error); }
 });
 app.get('/api/siio/records', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.records, '*', 'updated_at')); }
+  try { const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'GET /api/siio/records'); res.json(await optionalSiioList(requireDb(), siioTables.records, '*', 'updated_at')); }
   catch (error) { sendAuthError(res, error); }
 });
 app.post('/api/siio/records', async (req, res) => {
   try {
-    const { profile } = await getAuthContext(req); requireSiioAccess(profile);
+    const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'POST /api/siio/records');
     const payload = { ...cleanSiioRecord(req.body, profile), created_by: profile.id };
     if (!payload.id || !payload.title) throw new Error('ID y título son obligatorios.');
     res.json(await must(requireDb().from(siioTables.records).insert(payload).select('*').single()));
@@ -1302,30 +1721,30 @@ app.post('/api/siio/records', async (req, res) => {
 });
 app.patch('/api/siio/records/:id', async (req, res) => {
   try {
-    const { profile } = await getAuthContext(req); requireSiioAccess(profile);
+    const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'PATCH /api/siio/records/:id');
     const payload = cleanSiioRecord({ ...req.body, id: req.params.id }, profile); delete payload.id; delete payload.created_by;
     res.json(await must(requireDb().from(siioTables.records).update(payload).eq('id', req.params.id).select('*').single()));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.get('/api/siio/sources', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.sources, '*', 'id')); }
+  try { const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'GET /api/siio/sources'); res.json(await optionalSiioList(requireDb(), siioTables.sources, '*', 'id')); }
   catch (error) { sendAuthError(res, error); }
 });
 app.post('/api/siio/sources', async (req, res) => {
   try {
-    const { profile } = await getAuthContext(req); requireSiioAccess(profile);
+    const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'POST /api/siio/sources');
     const payload = cleanSiioSource(req.body);
     if (!payload.id || !payload.name) throw new Error('ID y nombre de fuente son obligatorios.');
     res.json(await must(requireDb().from(siioTables.sources).upsert(payload).select('*').single()));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.get('/api/siio/decisions', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.decisions, '*', 'created_at')); }
+  try { const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'GET /api/siio/decisions'); res.json(await optionalSiioList(requireDb(), siioTables.decisions, '*', 'created_at')); }
   catch (error) { sendAuthError(res, error); }
 });
 app.post('/api/siio/decisions', async (req, res) => {
   try {
-    const { profile } = await getAuthContext(req); requireSiioAccess(profile);
+    const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'POST /api/siio/decisions');
     const payload = { ...cleanSiioDecision(req.body, profile), created_by: profile.id };
     if (!payload.description) throw new Error('La descripción es obligatoria.');
     res.json(await must(requireDb().from(siioTables.decisions).insert(payload).select('*').single()));
@@ -1333,23 +1752,27 @@ app.post('/api/siio/decisions', async (req, res) => {
 });
 app.patch('/api/siio/decisions/:id', async (req, res) => {
   try {
-    const { profile } = await getAuthContext(req); requireSiioAccess(profile);
+    const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'PATCH /api/siio/decisions/:id');
     res.json(await must(requireDb().from(siioTables.decisions).update(cleanSiioDecision(req.body, profile)).eq('id', req.params.id).select('*').single()));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.get('/api/siio/board-reports', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.boardReports, '*', 'period_month')); }
-  catch (error) { sendAuthError(res, error); }
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'GET /api/siio/board-reports');
+    res.json(filterBoardReportsForProfile(profile, await optionalSiioList(requireDb(), siioTables.boardReports, '*', 'period_month')));
+  } catch (error) { sendAuthError(res, error); }
 });
 
 app.get('/api/bootstrap', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
-    const [summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals] = await Promise.all([
+    const [summary, opportunities, profiles, profileAssignments, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals] = await Promise.all([
       must(database.from('v_psi_sales_pipeline_summary').select('*').order('stage_order')),
       must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).order('updated_at', { ascending: false }).limit(1000)),
-      must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment').eq('active', true).order('full_name')),
+      must(database.from('psi_sales_profiles').select(BOOTSTRAP_PROFILE_SELECT).eq('active', true).order('full_name')),
+      must(database.from('psi_profile_area_assignments').select('profile_id,area_code,subarea_code')),
       must(database.from('psi_sales_pipeline_stages').select('*').order('stage_order')),
       must(database.from('psi_sales_service_types').select('*').eq('active', true).order('name')),
       must(database.from('psi_sales_loss_reasons').select('*').eq('active', true).order('name')),
@@ -1368,16 +1791,17 @@ app.get('/api/bootstrap', async (req, res) => {
       if (o.stage_code === 'aprobado') acc.approved += Number(o.offer_value || 0);
       return acc;
     }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
-    res.json(filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, stages, services, lossReasons, stalled: enrichedStalled, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile));
+    res.json(filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, profileAssignments, stages, services, lossReasons, stalled: enrichedStalled, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile));
   } catch (error) { sendAuthError(res, error); }
 });
 
 app.get('/api/opportunities/:id', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     const id = req.params.id;
-    await ensureOpportunityAccess(database, id, currentProfile);
+    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
     const opportunity = await attachCommercialMetadata(database, await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', id).single()));
     const interactions = await must(database.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
     res.json({ opportunity, interactions });
@@ -2055,9 +2479,11 @@ function cleanOpportunity(body) {
 app.post('/api/opportunities', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     const payload = cleanOpportunity(req.body);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
+    await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_CREATE);
     const data = await must(database.from('psi_sales_opportunities').insert(payload).select('id').single());
     res.status(201).json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
@@ -2066,10 +2492,12 @@ app.post('/api/opportunities', async (req, res) => {
 app.put('/api/opportunities/:id', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
-    const existing = await ensureOpportunityAccess(database, req.params.id, currentProfile);
+    const existing = await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const payload = cleanOpportunity(req.body);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
+    if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
     if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
     const data = await must(database.from('psi_sales_opportunities').update(payload).eq('id', req.params.id).select('id').single());
     await logCustomerSegmentChange(database, req.params.id, currentProfile.id, existing.customer_segment, payload.customer_segment);
@@ -2108,18 +2536,23 @@ function cleanGoal(body) {
 app.get('/api/goals', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'goals');
     const database = requireDb();
     let query = database.from('psi_sales_goals').select('*').order('period_month', { ascending: false }).limit(500);
     if (currentProfile.role === 'comercial') query = query.or(`user_id.eq.${currentProfile.id},user_id.is.null`);
     const data = await must(query);
-    res.json(data);
+    if (currentProfile.role !== 'director') return res.json(data);
+    const assignmentRows = await must(database.from('psi_profile_area_assignments').select('profile_id,area_code,subarea_code'));
+    const ownerAssignments = assignmentsByProfile(assignmentRows);
+    res.json(data.filter(goal => goal.user_id && canReadCrmRow(currentProfile, { owner_id: goal.user_id }, ownerAssignments)));
   } catch (error) { sendAuthError(res, error); }
 });
 
 app.put('/api/goals', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!isManager(currentProfile)) { const error = new Error('Solo gerencia/admin puede modificar metas.'); error.status = 403; throw error; }
+    requireModuleAction(currentProfile, 'goals');
+    if (!globalCrmScopeRoles.has(currentProfile?.role)) { const error = new Error('Solo gerencia/admin puede modificar metas.'); error.status = 403; throw error; }
     const database = requireDb();
     const payload = cleanGoal(req.body);
     const data = await must(database.from('psi_sales_goals').upsert(payload, { onConflict: 'user_id,period_month,service_type_code,regional_nombre' }).select('*').single());
@@ -2130,13 +2563,14 @@ app.put('/api/goals', async (req, res) => {
 app.post('/api/opportunities/:id/interactions', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
-    await ensureOpportunityAccess(database, req.params.id, currentProfile);
+    await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const notes = String(req.body.notes || '').trim();
     if (!notes) throw new Error('La nota del seguimiento es obligatoria.');
     const occurred_at = req.body.occurred_at || new Date().toISOString();
     const interaction_type = req.body.interaction_type || 'nota';
-    const created_by = isManager(currentProfile) ? (req.body.created_by || currentProfile.id) : currentProfile.id;
+    const created_by = globalCrmScopeRoles.has(currentProfile?.role) ? (req.body.created_by || currentProfile.id) : currentProfile.id;
     const next_action_at = req.body.next_action_at || null;
     const row = { opportunity_id: req.params.id, notes, occurred_at, interaction_type, created_by };
     const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
@@ -2153,10 +2587,11 @@ app.post('/api/opportunities/:id/interactions', async (req, res) => {
 app.get('/api/opportunity-detail', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
-    await ensureOpportunityAccess(database, id, currentProfile);
+    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
     const opportunity = await attachCommercialMetadata(database, await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', id).single()));
     const interactions = await must(database.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
     res.json({ opportunity, interactions });
@@ -2166,12 +2601,14 @@ app.get('/api/opportunity-detail', async (req, res) => {
 app.put('/api/opportunity', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
-    const existing = await ensureOpportunityAccess(database, id, currentProfile);
+    const existing = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const payload = cleanOpportunity(req.body);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
+    if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
     if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
     const data = await must(database.from('psi_sales_opportunities').update(payload).eq('id', id).select('id').single());
     await logCustomerSegmentChange(database, id, currentProfile.id, existing.customer_segment, payload.customer_segment);
@@ -2182,15 +2619,16 @@ app.put('/api/opportunity', async (req, res) => {
 app.post('/api/opportunity-interactions', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
-    await ensureOpportunityAccess(database, id, currentProfile);
+    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const notes = String(req.body.notes || '').trim();
     if (!notes) throw new Error('La nota del seguimiento es obligatoria.');
     const occurred_at = req.body.occurred_at || new Date().toISOString();
     const interaction_type = req.body.interaction_type || 'nota';
-    const created_by = isManager(currentProfile) ? (req.body.created_by || currentProfile.id) : currentProfile.id;
+    const created_by = globalCrmScopeRoles.has(currentProfile?.role) ? (req.body.created_by || currentProfile.id) : currentProfile.id;
     const next_action_at = req.body.next_action_at || null;
     const row = { opportunity_id: id, notes, occurred_at, interaction_type, created_by };
     const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
@@ -2216,6 +2654,45 @@ async function confirmAuthUserIfNeeded(database, user) {
   return data?.user || user;
 }
 
+export async function ensureProfileAuthAfterCommit(database, { targetProfileId, email, password, userMetadata, active, sendInvite, req }) {
+  const result = { invited: false, accessLink: null, authWarning: null };
+  if (!active || (!sendInvite && !password)) return result;
+  try {
+    let authUser = await findAuthUserByEmail(database, email);
+    const existed = Boolean(authUser);
+    if (!authUser) {
+      const attributes = { email, email_confirm: false, user_metadata: userMetadata };
+      if (password) attributes.password = password;
+      const { data, error } = await database.auth.admin.createUser(attributes);
+      if (error && !/already|registered|exists/i.test(error.message)) throw error;
+      authUser = data?.user || await findAuthUserByEmail(database, email);
+    }
+    if (!authUser?.id) throw new Error('No se pudo identificar el sujeto Auth aprovisionado.');
+    const { data: bound, error: bindError } = await database.rpc('psi_admin_bind_profile_auth', {
+      p_profile_id: targetProfileId,
+      p_expected_email: email,
+      p_auth_user_id: authUser.id,
+    });
+    if (bindError) throw bindError;
+    if (bound !== true) {
+      result.authWarning = 'El perfil cambió después de guardarse; la provisión de acceso quedó obsoleta y no se envió ningún enlace.';
+      return result;
+    }
+    await confirmAuthUserIfNeeded(database, authUser);
+    // Existing identities are never overwritten. Password changes use a user-controlled recovery link.
+    if (sendInvite || (password && existed)) {
+      const emailResult = await sendAccessEmail(database, email, req);
+      if (emailResult.error) console.error('Supabase access email failed', emailResult.error);
+      result.invited = emailResult.sent;
+    }
+    if (sendInvite) result.accessLink = await generateAccessLink(database, email, req, userMetadata);
+  } catch (error) {
+    console.error('Post-commit Auth provisioning failed', error);
+    result.authWarning = 'El perfil quedó guardado, pero el acceso no pudo aprovisionarse. Reintente el envío desde Usuarios y permisos.';
+  }
+  return result;
+}
+
 async function generateAccessLink(database, email, req, userMetadata = {}) {
   const { data, error } = await database.auth.admin.generateLink({
     type: 'recovery',
@@ -2231,20 +2708,45 @@ async function sendAccessEmail(database, email, req) {
   return { sent: !error, error };
 }
 
+app.get('/api/access-catalog', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'users');
+    requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
+    res.json(await getActiveAccessCatalog(requireDb()));
+  } catch (error) { sendAuthError(res, error); }
+});
+
 app.get('/api/users', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canManageUsers(currentProfile)) { const error = new Error('Solo admin puede administrar usuarios.'); error.status = 403; throw error; }
+    requireModuleAction(currentProfile, 'users');
+    requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
     const database = requireDb();
-    const profiles = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,created_at').order('full_name'));
-    res.json(profiles);
+    let profiles;
+    try {
+      profiles = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,created_at').order('full_name'));
+      if (!Array.isArray(profiles)) throw new Error('Perfiles inválidos.');
+    } catch (error) { throw profileAccessReadFailure(error); }
+    const ids = profiles.map(profile => profile?.id);
+    if (ids.some(id => !isExactNonblankString(id)) || new Set(ids).size !== ids.length) throw profileAccessReadFailure(new Error('Perfiles inválidos.'));
+    if (!ids.length) return res.json([]);
+    let assignmentRows; let permissionRows;
+    try {
+      [assignmentRows, permissionRows] = await Promise.all([
+        must(database.from('psi_profile_area_assignments').select('profile_id,area_code,subarea_code').in('profile_id', ids)),
+        must(database.from('psi_profile_permissions').select('profile_id,permission_code').in('profile_id', ids)),
+      ]);
+      res.json(enrichProfilesWithAccess(profiles, assignmentRows, permissionRows));
+    } catch (error) { throw profileAccessReadFailure(error); }
   } catch (error) { sendAuthError(res, error); }
 });
 
 app.post('/api/users', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canManageUsers(currentProfile)) { const error = new Error('Solo admin puede administrar usuarios.'); error.status = 403; throw error; }
+    requireModuleAction(currentProfile, 'users');
+    requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
     const database = requireDb();
     const full_name = String(req.body.full_name || '').trim();
     const microsoft_email = String(req.body.microsoft_email || '').trim().toLowerCase();
@@ -2252,59 +2754,37 @@ app.post('/api/users', async (req, res) => {
     const password = String(req.body.password || '');
     const active = req.body.active !== false;
     const send_invite = req.body.send_invite !== false;
-    const commercial_area = validateCommercialArea(req.body.commercial_area);
     const can_edit_customer_segment = req.body.can_edit_customer_segment === true;
     if (!full_name) throw new Error('El nombre completo es obligatorio.');
     if (!microsoft_email || !microsoft_email.includes('@')) throw new Error('Debe registrar un email válido.');
-    if (!['comercial','director','gerencia','admin'].includes(role)) throw new Error('Rol no válido.');
+    if (!PROFILE_ROLES.has(role)) throw new Error('Rol no válido.');
     if (password && password.length < 8) throw new Error('La clave temporal debe tener mínimo 8 caracteres.');
+    const access = normalizeProfileAccessRequest(req.body, await getActiveAccessCatalog(database), role);
+    const commercial_area = legacyCommercialAreaFromAssignments(access.areas);
     const userMetadata = { full_name, role };
-    let inviteSent = false;
-    let accessLink = null;
-    let authUser = await findAuthUserByEmail(database, microsoft_email);
-    if (send_invite && active) {
-      if (authUser) {
-        const updates = { user_metadata: userMetadata, email_confirm: true };
-        if (password) updates.password = password;
-        const { data: updatedAuth, error: updateError } = await database.auth.admin.updateUserById(authUser.id, updates);
-        if (updateError) throw updateError;
-        authUser = updatedAuth?.user || authUser;
-      } else if (password) {
-        const { data: createdAuth, error: createError } = await database.auth.admin.createUser({ email: microsoft_email, password, email_confirm: true, user_metadata: userMetadata });
-        if (createError && !/already|registered|exists/i.test(createError.message)) throw createError;
-        authUser = createError ? await findAuthUserByEmail(database, microsoft_email) : createdAuth?.user;
-      } else {
-        const { error: inviteError } = await database.auth.admin.inviteUserByEmail(microsoft_email, {
-          redirectTo: getPublicAppUrl(req),
-          data: userMetadata
-        });
-        if (inviteError && !/already|registered|exists/i.test(inviteError.message)) throw inviteError;
-        authUser = await findAuthUserByEmail(database, microsoft_email);
-      }
-      if (authUser) await confirmAuthUserIfNeeded(database, authUser);
-      const emailResult = await sendAccessEmail(database, microsoft_email, req);
-      if (emailResult.error) console.error('Supabase access email failed', emailResult.error);
-      accessLink = await generateAccessLink(database, microsoft_email, req, userMetadata);
-      inviteSent = emailResult.sent;
-    } else if (password) {
-      const { data: createdAuth, error: createError } = await database.auth.admin.createUser({ email: microsoft_email, password, email_confirm: true, user_metadata: userMetadata });
-      if (createError && !/already|registered|exists/i.test(createError.message)) throw createError;
-      if (createError && /already|registered|exists/i.test(createError.message)) {
-        const existing = await findAuthUserByEmail(database, microsoft_email);
-        if (existing) await database.auth.admin.updateUserById(existing.id, { password, email_confirm: true, user_metadata: userMetadata });
-      } else if (createdAuth?.user) {
-        await confirmAuthUserIfNeeded(database, createdAuth.user);
-      }
+    let beforeProfile;
+    try {
+      beforeProfile = await must(database.from('psi_sales_profiles').select(profileAdminSelect).eq('microsoft_email', microsoft_email).maybeSingle());
+    } catch (error) { throw profileAdministrationFailure(error); }
+    assertNoAdminSelfLockout(currentProfile, { profileId: beforeProfile?.id, microsoftEmail: microsoft_email, role, active, permissions: access.permissions });
+    const beforeAccess = beforeProfile ? await readProfileAccess(database, beforeProfile.id) : { areas: [], permissions: [], areaRows: [], permissionRows: [] };
+    const operationId = await acquireProfileAdministrationLock(database, currentProfile.id);
+    let row;
+    try {
+      row = await persistProfileAccessChange(database, { mode: 'post', targetId: beforeProfile?.id || null, beforeProfile, profileValues: { full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }, beforeAccess, afterAccess: access, actorProfileId: currentProfile.id, operationId });
+    } finally {
+      await releaseProfileAdministrationLock(database, operationId, currentProfile.id);
     }
-    const row = await must(database.from('psi_sales_profiles').upsert({ full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }, { onConflict: 'microsoft_email' }).select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,created_at').single());
-    res.status(201).json({ ...row, invited: inviteSent, access_link: accessLink });
+    const authResult = await ensureProfileAuthAfterCommit(database, { targetProfileId: row.id, email: microsoft_email, password, userMetadata, active, sendInvite: send_invite, req });
+    res.status(201).json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning });
   } catch (error) { sendAuthError(res, error); }
 });
 
 app.patch('/api/users', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canManageUsers(currentProfile)) { const error = new Error('Solo admin puede administrar usuarios.'); error.status = 403; throw error; }
+    requireModuleAction(currentProfile, 'users');
+    requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
     const database = requireDb();
     const id = String(req.query.id || '').trim();
     const existingProfile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment').eq('id', id).single());
@@ -2315,44 +2795,31 @@ app.patch('/api/users', async (req, res) => {
     const password = String(req.body.password || '');
     const active = req.body.active !== false;
     const send_invite = req.body.send_invite === true;
-    const commercial_area = validateCommercialArea(req.body.commercial_area);
     const can_edit_customer_segment = req.body.can_edit_customer_segment === true;
     if (!full_name) throw new Error('El nombre completo es obligatorio.');
     if (!microsoft_email || !microsoft_email.includes('@')) throw new Error('Debe registrar un email válido.');
-    if (!['comercial','director','gerencia','admin'].includes(role)) throw new Error('Rol no válido.');
+    if (microsoft_email !== String(existingProfile.microsoft_email || '').trim().toLowerCase()) {
+      const error = new Error('El correo del perfil es inmutable. Cree un usuario nuevo para otra identidad.');
+      error.status = 409;
+      error.code = 'PROFILE_EMAIL_IMMUTABLE';
+      throw error;
+    }
+    if (!PROFILE_ROLES.has(role)) throw new Error('Rol no válido.');
     if (password && password.length < 8) throw new Error('La clave temporal debe tener mínimo 8 caracteres.');
-    const existingEmail = String(existingProfile.microsoft_email || '').trim().toLowerCase();
-    const emailChanged = microsoft_email !== existingEmail;
-    const authUserByOldEmail = await findAuthUserByEmail(database, existingEmail);
-    const authUserByNewEmail = emailChanged ? await findAuthUserByEmail(database, microsoft_email) : authUserByOldEmail;
-    if (emailChanged && authUserByNewEmail && (!authUserByOldEmail || authUserByNewEmail.id !== authUserByOldEmail.id)) {
-      throw new Error('El email ya pertenece a otro usuario de acceso.');
-    }
-    let authUser = authUserByOldEmail || authUserByNewEmail;
+    const access = normalizeProfileAccessRequest(req.body, await getActiveAccessCatalog(database), role);
+    assertNoAdminSelfLockout(currentProfile, { profileId: id, microsoftEmail: microsoft_email, role, active, permissions: access.permissions });
+    const beforeAccess = await readProfileAccess(database, id);
+    const commercial_area = legacyCommercialAreaFromAssignments(access.areas);
     const userMetadata = { full_name, role };
-    let accessLink = null;
-    let inviteSent = false;
-    if (authUser) {
-      const updates = { user_metadata: userMetadata, email_confirm: true };
-      if (emailChanged) updates.email = microsoft_email;
-      if (password) updates.password = password;
-      const { data: updatedAuth, error: updateAuthError } = await database.auth.admin.updateUserById(authUser.id, updates);
-      if (updateAuthError) throw updateAuthError;
-      authUser = updatedAuth?.user || authUser;
-    } else if (password) {
-      const { data: createdAuth, error: createError } = await database.auth.admin.createUser({ email: microsoft_email, password, email_confirm: true, user_metadata: userMetadata });
-      if (createError) throw createError;
-      authUser = createdAuth?.user || null;
+    const operationId = await acquireProfileAdministrationLock(database, currentProfile.id);
+    let row;
+    try {
+      row = await persistProfileAccessChange(database, { mode: 'patch', targetId: id, beforeProfile: existingProfile, profileValues: { full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }, beforeAccess, afterAccess: access, actorProfileId: currentProfile.id, operationId });
+    } finally {
+      await releaseProfileAdministrationLock(database, operationId, currentProfile.id);
     }
-    if (send_invite && active) {
-      if (authUser) await confirmAuthUserIfNeeded(database, authUser);
-      const emailResult = await sendAccessEmail(database, microsoft_email, req);
-      if (emailResult.error) console.error('Supabase access email failed', emailResult.error);
-      accessLink = await generateAccessLink(database, microsoft_email, req, userMetadata);
-      inviteSent = emailResult.sent;
-    }
-    const row = await must(database.from('psi_sales_profiles').update({ full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }).eq('id', id).select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,created_at').single());
-    res.json({ ...row, invited: inviteSent, access_link: accessLink });
+    const authResult = await ensureProfileAuthAfterCommit(database, { targetProfileId: row.id, email: microsoft_email, password, userMetadata, active, sendInvite: send_invite, req });
+    res.json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning });
   } catch (error) { sendAuthError(res, error); }
 });
 

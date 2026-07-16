@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
 const main = fs.readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+const nav = fs.readFileSync(new URL('../src/navPermissions.ts', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
 const requiredMainMarkers = [
@@ -9,7 +10,6 @@ const requiredMainMarkers = [
   "if (page === 'dashboard2') return { page: 'dashboard2' };",
   "if (route.page === 'dashboard') return 'Dashboard comercial';",
   "if (route.page === 'dashboard2') return 'Dashboard comercial';",
-  "href=\"#/dashboard2\">Dashboard comercial",
   '← Dashboard comercial',
   "if (route.page === 'dashboard' || route.page === 'dashboard2') return <ManagerDashboardV2 data={data} />;",
   'function ManagerDashboardV2({ data }: { data: Bootstrap })',
@@ -124,7 +124,9 @@ for (const marker of requiredCssMarkers) {
   assert.ok(css.includes(marker), `styles.css missing dashboard v2 marker: ${marker}`);
 }
 
-assert.ok(main.indexOf('nav-section-title">Gerencia') < main.indexOf('href="#/dashboard2">Dashboard comercial'), 'Dashboard comercial debe quedar dentro del grupo Gerencia del sidebar');
+assert.match(nav, /title: 'Comercial'[\s\S]{0,500}href: '#\/dashboard2', label: 'Dashboard comercial', page: 'dashboard2'/, 'Dashboard comercial debe pertenecer al catálogo central dentro del grupo Comercial.');
+assert.match(main, /getVisibleNavGroups\(currentProfile\)[\s\S]{0,420}group\.items\.map\(item/, 'El sidebar debe renderizar el catálogo visible genéricamente, no enlaces hardcoded.');
+assert.doesNotMatch(main, /href="#\/dashboard2">Dashboard comercial/, 'main.tsx no debe duplicar el enlace Dashboard comercial fuera del catálogo central.');
 assert.ok(main.indexOf('Panel title="Cumplimiento comercial"') < main.indexOf('Panel title="Pipeline / prospección activa"'), 'Dashboard v2 should prioritize compliance before prospecting detail');
 assert.ok(main.indexOf('Panel title="Pipeline / prospección activa"') < main.indexOf('Panel title="Top oportunidades de cierre"'), 'Dashboard v2 should end with prioritized close opportunities');
 assert.ok(!main.includes('Proyección 2026 — tabla completa'), 'Dashboard v2 should not copy the full PowerPoint tables into the first level');
