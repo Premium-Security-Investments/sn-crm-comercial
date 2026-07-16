@@ -3,6 +3,9 @@
 
 begin;
 
+-- Blocks concurrent profile INSERT/UPDATE/DELETE during fail-closed preflight and backfill.
+lock table public.psi_sales_profiles in share row exclusive mode;
+
 -- Abort before any DDL if historical role data cannot satisfy the approved catalog.
 do $$
 declare
