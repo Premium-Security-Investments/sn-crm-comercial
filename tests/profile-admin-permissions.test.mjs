@@ -286,6 +286,24 @@ try {
 }
 assert.deepEqual(compensatedNew.tables.psi_sales_profiles, [], 'un perfil nuevo se elimina si el acceso no puede persistirse');
 
+const concurrentProfile = { id: 'concurrent-profile', ...changedProfile, full_name: 'Creado por otra solicitud' };
+const concurrentCreation = profileAdministrationDatabase({ failAuditOnce: true });
+concurrentCreation.tables.psi_sales_profiles.push({ ...concurrentProfile });
+console.error = () => {};
+try {
+  await assert.rejects(
+    persistProfileAccessChange(concurrentCreation.database, { mode: 'post', targetId: null, beforeProfile: null, profileValues: changedProfile, beforeAccess: { areas: [], permissions: [], areaRows: [], permissionRows: [] }, afterAccess, actorProfileId: 'admin' }),
+    error => error?.status === 409 || (error?.status === 500 && error?.code === 'PROFILE_ADMIN_UPDATE_FAILED'),
+  );
+} finally {
+  console.error = originalConsoleError;
+}
+assert.deepEqual(
+  concurrentCreation.tables.psi_sales_profiles,
+  [concurrentProfile],
+  'un conflicto concurrente nunca actualiza ni elimina el perfil creado por otra solicitud',
+);
+
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
 const src = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
