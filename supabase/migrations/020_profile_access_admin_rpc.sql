@@ -42,20 +42,6 @@ begin
 end;
 $$;
 
-create or replace function public.psi_admin_profile_lock_owned(p_operation_id uuid, p_actor_profile_id uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public, pg_temp
-as $$
-  select exists (
-    select 1 from public.psi_profile_admin_lock
-    where lock_name = 'global' and operation_id = p_operation_id
-      and actor_profile_id = p_actor_profile_id and expires_at > now()
-  );
-$$;
-
 create or replace function public.psi_admin_release_profile_lock(p_operation_id uuid, p_actor_profile_id uuid)
 returns boolean
 language plpgsql
@@ -261,9 +247,6 @@ $$;
 revoke all on function public.psi_admin_acquire_profile_lock(uuid) from public;
 revoke all on function public.psi_admin_acquire_profile_lock(uuid) from authenticated;
 grant execute on function public.psi_admin_acquire_profile_lock(uuid) to service_role;
-revoke all on function public.psi_admin_profile_lock_owned(uuid,uuid) from public;
-revoke all on function public.psi_admin_profile_lock_owned(uuid,uuid) from authenticated;
-grant execute on function public.psi_admin_profile_lock_owned(uuid,uuid) to service_role;
 revoke all on function public.psi_admin_release_profile_lock(uuid,uuid) from public;
 revoke all on function public.psi_admin_release_profile_lock(uuid,uuid) from authenticated;
 grant execute on function public.psi_admin_release_profile_lock(uuid,uuid) to service_role;

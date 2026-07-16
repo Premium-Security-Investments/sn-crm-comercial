@@ -14,6 +14,7 @@ const {
   replaceProfileAccess,
   assertNoAdminSelfLockout,
   persistProfileAccessChange,
+  ensureProfileAuthAfterCommit,
 } = await import('../server/index.js');
 
 const catalog = {
@@ -244,6 +245,41 @@ await assert.rejects(
   error => error?.status === 409 && error?.code === 'PROFILE_ADMIN_BUSY',
 );
 
+const req = { headers: { origin: 'https://crm.example.test' } };
+const newCalls = [];
+const newAuthResult = await ensureProfileAuthAfterCommit({ auth: {
+  admin: {
+    listUsers: async () => ({ data: { users: [] }, error: null }),
+    createUser: async attributes => { newCalls.push(['create', attributes]); return { data: { user: { id: 'new-auth', email: attributes.email, email_confirmed_at: 'now' } }, error: null }; },
+    generateLink: async () => ({ data: { properties: { action_link: 'https://auth.example.test/access' } }, error: null }),
+  },
+  resetPasswordForEmail: async email => { newCalls.push(['reset', email]); return { error: null }; },
+} }, { email: 'new@example.test', password: 'temporary-secret', userMetadata: { role: 'admin' }, active: true, sendInvite: true, req });
+assert.equal(newCalls.filter(([kind]) => kind === 'create').length, 1, 'identidad nueva se crea una sola vez después del commit');
+assert.equal(newAuthResult.invited, true);
+assert.equal(newAuthResult.accessLink, 'https://auth.example.test/access');
+assert.equal(newAuthResult.authWarning, null);
+
+const existingCalls = [];
+const existingUser = { id: 'existing-auth', email: 'existing@example.test', email_confirmed_at: 'now' };
+const existingAuthResult = await ensureProfileAuthAfterCommit({ auth: {
+  admin: {
+    listUsers: async () => ({ data: { users: [existingUser] }, error: null }),
+    createUser: async () => { existingCalls.push(['create']); throw new Error('no debe crear'); },
+    updateUserById: async () => { existingCalls.push(['update']); throw new Error('no debe sobrescribir'); },
+    generateLink: async () => ({ data: { properties: { action_link: 'https://auth.example.test/existing' } }, error: null }),
+  },
+  resetPasswordForEmail: async email => { existingCalls.push(['reset', email]); return { error: null }; },
+} }, { email: existingUser.email, password: 'replacement-secret', userMetadata: { role: 'junta' }, active: true, sendInvite: false, req });
+assert.deepEqual(existingCalls, [['reset', existingUser.email]], 'identidad existente conserva email/password y recibe recuperación controlada');
+assert.equal(existingAuthResult.invited, true);
+assert.equal(existingAuthResult.authWarning, null);
+
+const failedAuthResult = await ensureProfileAuthAfterCommit({ auth: { admin: {
+  listUsers: async () => ({ data: null, error: new Error('auth unavailable') }),
+} } }, { email: 'failed@example.test', password: '', userMetadata: {}, active: true, sendInvite: true, req });
+assert.match(failedAuthResult.authWarning, /perfil quedó guardado/i, 'fallo Auth post-commit se reporta sin fingir rollback');
+
 for (const backend of [server, api]) {
   for (const route of ["app.get('/api/users'", "app.post('/api/users'", "app.patch('/api/users'", "app.get('/api/access-catalog'"]) {
     const start = backend.indexOf(route);
@@ -266,10 +302,9 @@ for (const backend of [server, api]) {
   const patch = backend.slice(backend.indexOf("app.patch('/api/users'"), backend.indexOf("const distPath"));
   assert.ok(post.indexOf('assertNoAdminSelfLockout') < post.indexOf('persistProfileAccessChange'), 'POST protege autobloqueo antes del commit');
   assert.ok(patch.indexOf('assertNoAdminSelfLockout') < patch.indexOf('persistProfileAccessChange'), 'PATCH protege autobloqueo antes del commit');
-  assert.ok(post.lastIndexOf('persistProfileAccessChange') < post.indexOf('findAuthUserByEmail'), 'POST persiste autoridad DB antes de tocar Auth');
-  assert.ok(patch.lastIndexOf('persistProfileAccessChange') < patch.indexOf('findAuthUserByEmail'), 'PATCH persiste autoridad DB antes de tocar Auth');
-  assert.ok(post.lastIndexOf('persistProfileAccessChange') < post.indexOf('sendAccessEmail'), 'POST envía credenciales solo después del commit');
-  assert.ok(patch.lastIndexOf('persistProfileAccessChange') < patch.indexOf('sendAccessEmail'), 'PATCH envía credenciales solo después del commit');
+  assert.ok(post.lastIndexOf('persistProfileAccessChange') < post.indexOf('ensureProfileAuthAfterCommit'), 'POST persiste autoridad DB antes de tocar Auth');
+  assert.ok(patch.lastIndexOf('persistProfileAccessChange') < patch.indexOf('ensureProfileAuthAfterCommit'), 'PATCH persiste autoridad DB antes de tocar Auth');
+  assert.match(backend.slice(backend.indexOf('async function ensureProfileAuthAfterCommit'), backend.indexOf('async function generateAccessLink')), /sendAccessEmail/, 'helper post-commit controla el envío de acceso');
   assert.doesNotMatch(post, /inviteUserByEmail/, 'POST no usa invitación con envío implícito antes del commit');
   assert.doesNotMatch(post, /updateUserById[^\n]*(password|email\s*:)/, 'POST no sobrescribe password/email de Auth existente');
   assert.doesNotMatch(patch, /updateUserById[^\n]*(password|email\s*:)/, 'PATCH no sobrescribe password/email de Auth existente');

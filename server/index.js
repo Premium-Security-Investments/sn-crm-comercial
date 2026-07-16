@@ -266,14 +266,6 @@ export async function acquireProfileAdministrationLock(database, actorProfileId)
     throw profileAdministrationFailure(error);
   }
 }
-async function profileAdministrationLockOwned(database, operationId, actorProfileId) {
-  try {
-    return await must(database.rpc('psi_admin_profile_lock_owned', { p_operation_id: operationId, p_actor_profile_id: actorProfileId })) === true;
-  } catch (error) {
-    console.error('Could not verify profile administration lock ownership', error);
-    return false;
-  }
-}
 export async function releaseProfileAdministrationLock(database, operationId, actorProfileId) {
   if (!operationId) return;
   try {
@@ -297,10 +289,16 @@ export async function persistProfileAccessChange(database, { mode, targetId, bef
   } catch (error) {
     if (error?.code === '23505') throw profileAdministrationConflict(error);
     if (error?.code === '40001') {
-      const conflict = new Error('El perfil cambió mientras se editaba. Recargue la lista e intente nuevamente.', { cause: error });
-      conflict.status = 409;
-      conflict.code = 'PROFILE_ADMIN_STALE';
-      throw conflict;
+      const stale = new Error('El perfil cambió mientras se guardaba. Recargue y vuelva a intentar.', { cause: error });
+      stale.status = 409;
+      stale.code = 'PROFILE_ADMIN_STALE';
+      throw stale;
+    }
+    if (error?.code === '55P03') {
+      const busy = new Error('La operación de administración expiró o perdió el lock. Recargue y vuelva a intentar.', { cause: error });
+      busy.status = 409;
+      busy.code = 'PROFILE_ADMIN_BUSY';
+      throw busy;
     }
     throw profileAdministrationFailure(error);
   }
@@ -2478,29 +2476,32 @@ async function confirmAuthUserIfNeeded(database, user) {
   return data?.user || user;
 }
 
-function authSnapshot(user) {
-  if (!user?.id) return null;
-  return { id: user.id, email: user.email, user_metadata: user.user_metadata || {}, confirmed: Boolean(user.email_confirmed_at || user.confirmed_at) };
-}
-async function compensateAuthMutation(database, mutation, operationId, actorProfileId) {
-  if (!mutation?.snapshot?.id) return;
-  if (!await profileAdministrationLockOwned(database, operationId, actorProfileId)) {
-    console.error('Auth compensation skipped because profile administration lock is no longer owned');
-    return;
-  }
+export async function ensureProfileAuthAfterCommit(database, { email, password, userMetadata, active, sendInvite, req }) {
+  const result = { invited: false, accessLink: null, authWarning: null };
+  if (!active || (!sendInvite && !password)) return result;
   try {
-    if (mutation.kind === 'created') {
-      const { error } = await database.auth.admin.deleteUser(mutation.snapshot.id);
-      if (error) throw error;
-      return;
+    let authUser = await findAuthUserByEmail(database, email);
+    const existed = Boolean(authUser);
+    if (!authUser) {
+      const attributes = { email, email_confirm: true, user_metadata: userMetadata };
+      if (password) attributes.password = password;
+      const { data, error } = await database.auth.admin.createUser(attributes);
+      if (error && !/already|registered|exists/i.test(error.message)) throw error;
+      authUser = data?.user || await findAuthUserByEmail(database, email);
     }
-    const snapshot = mutation.snapshot;
-    const updates = { email: snapshot.email, user_metadata: snapshot.user_metadata };
-    if (snapshot.confirmed) updates.email_confirm = true;
-    // Auth cannot rollback password because it is unreadable; server profile/access remains authoritative fail-safe.
-    const { error } = await database.auth.admin.updateUserById(snapshot.id, updates);
-    if (error) throw error;
-  } catch (error) { console.error('Auth compensation failed', error); }
+    if (authUser) await confirmAuthUserIfNeeded(database, authUser);
+    // Existing identities are never overwritten. Password changes use a user-controlled recovery link.
+    if (sendInvite || (password && existed)) {
+      const emailResult = await sendAccessEmail(database, email, req);
+      if (emailResult.error) console.error('Supabase access email failed', emailResult.error);
+      result.invited = emailResult.sent;
+    }
+    if (sendInvite) result.accessLink = await generateAccessLink(database, email, req, userMetadata);
+  } catch (error) {
+    console.error('Post-commit Auth provisioning failed', error);
+    result.authWarning = 'El perfil quedó guardado, pero el acceso no pudo aprovisionarse. Reintente el envío desde Usuarios y permisos.';
+  }
+  return result;
 }
 
 async function generateAccessLink(database, email, req, userMetadata = {}) {
@@ -2576,69 +2577,14 @@ app.post('/api/users', async (req, res) => {
     assertNoAdminSelfLockout(currentProfile, { profileId: beforeProfile?.id, microsoftEmail: microsoft_email, role, active });
     const beforeAccess = beforeProfile ? await readProfileAccess(database, beforeProfile.id) : { areas: [], permissions: [], areaRows: [], permissionRows: [] };
     const operationId = await acquireProfileAdministrationLock(database, currentProfile.id);
-    try {
-    let inviteSent = false;
-    let accessLink = null;
-    let authMutation = null;
-    let authUser = await findAuthUserByEmail(database, microsoft_email);
-    if (send_invite && active) {
-      if (authUser) {
-        const snapshot = authSnapshot(authUser);
-        const updates = { user_metadata: userMetadata, email_confirm: true };
-        if (password) updates.password = password;
-        const { data: updatedAuth, error: updateError } = await database.auth.admin.updateUserById(authUser.id, updates);
-        if (updateError) throw updateError;
-        authMutation = { kind: 'updated', snapshot };
-        authUser = updatedAuth?.user || authUser;
-      } else if (password) {
-        const { data: createdAuth, error: createError } = await database.auth.admin.createUser({ email: microsoft_email, password, email_confirm: true, user_metadata: userMetadata });
-        if (createError && !/already|registered|exists/i.test(createError.message)) throw createError;
-        authUser = createError ? await findAuthUserByEmail(database, microsoft_email) : createdAuth?.user;
-        if (!createError && authUser) authMutation = { kind: 'created', snapshot: authSnapshot(authUser) };
-      } else {
-        const { data: createdAuth, error: createError } = await database.auth.admin.createUser({ email: microsoft_email, email_confirm: true, user_metadata: userMetadata });
-        if (createError && !/already|registered|exists/i.test(createError.message)) throw createError;
-        authUser = createError ? await findAuthUserByEmail(database, microsoft_email) : createdAuth?.user;
-        if (!createError && authUser) authMutation = { kind: 'created', snapshot: authSnapshot(authUser) };
-      }
-      if (authUser) {
-        try { await confirmAuthUserIfNeeded(database, authUser); }
-        catch (error) { await compensateAuthMutation(database, authMutation, operationId, currentProfile.id); throw profileAdministrationFailure(error); }
-      }
-    } else if (password) {
-      const { data: createdAuth, error: createError } = await database.auth.admin.createUser({ email: microsoft_email, password, email_confirm: true, user_metadata: userMetadata });
-      if (createError && !/already|registered|exists/i.test(createError.message)) throw createError;
-      if (createError && /already|registered|exists/i.test(createError.message)) {
-        const existing = await findAuthUserByEmail(database, microsoft_email);
-        if (existing) {
-          const snapshot = authSnapshot(existing);
-          const { error: updateError } = await database.auth.admin.updateUserById(existing.id, { password, email_confirm: true, user_metadata: userMetadata });
-          if (updateError) throw updateError;
-          authMutation = { kind: 'updated', snapshot };
-        }
-      } else if (createdAuth?.user) {
-        authMutation = { kind: 'created', snapshot: authSnapshot(createdAuth.user) };
-        try { await confirmAuthUserIfNeeded(database, createdAuth.user); }
-        catch (error) { await compensateAuthMutation(database, authMutation, operationId, currentProfile.id); throw profileAdministrationFailure(error); }
-      }
-    }
     let row;
     try {
       row = await persistProfileAccessChange(database, { mode: 'post', targetId: beforeProfile?.id || null, beforeProfile, profileValues: { full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }, beforeAccess, afterAccess: access, actorProfileId: currentProfile.id, operationId });
-    } catch (error) {
-      await compensateAuthMutation(database, authMutation, operationId, currentProfile.id);
-      throw error;
-    }
-    if (send_invite && active) {
-      const emailResult = await sendAccessEmail(database, microsoft_email, req);
-      if (emailResult.error) console.error('Supabase access email failed', emailResult.error);
-      accessLink = await generateAccessLink(database, microsoft_email, req, userMetadata);
-      inviteSent = emailResult.sent;
-    }
-    res.status(201).json({ ...row, ...access, invited: inviteSent, access_link: accessLink });
     } finally {
       await releaseProfileAdministrationLock(database, operationId, currentProfile.id);
     }
+    const authResult = await ensureProfileAuthAfterCommit(database, { email: microsoft_email, password, userMetadata, active, sendInvite: send_invite, req });
+    res.status(201).json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning });
   } catch (error) { sendAuthError(res, error); }
 });
 
@@ -2664,55 +2610,17 @@ app.patch('/api/users', async (req, res) => {
     if (password && password.length < 8) throw new Error('La clave temporal debe tener mínimo 8 caracteres.');
     const access = normalizeProfileAccessRequest(req.body, await getActiveAccessCatalog(database), role);
     const beforeAccess = await readProfileAccess(database, id);
-    const operationId = await acquireProfileAdministrationLock(database, currentProfile.id);
-    try {
     const commercial_area = legacyCommercialAreaFromAssignments(access.areas);
-    const existingEmail = String(existingProfile.microsoft_email || '').trim().toLowerCase();
-    const emailChanged = microsoft_email !== existingEmail;
-    const authUserByOldEmail = await findAuthUserByEmail(database, existingEmail);
-    const authUserByNewEmail = emailChanged ? await findAuthUserByEmail(database, microsoft_email) : authUserByOldEmail;
-    if (emailChanged && authUserByNewEmail && (!authUserByOldEmail || authUserByNewEmail.id !== authUserByOldEmail.id)) throw new Error('El email ya pertenece a otro usuario de acceso.');
-    let authUser = authUserByOldEmail || authUserByNewEmail;
     const userMetadata = { full_name, role };
-    let accessLink = null;
-    let inviteSent = false;
-    let authMutation = null;
-    if (authUser) {
-      const snapshot = authSnapshot(authUser);
-      const updates = { user_metadata: userMetadata, email_confirm: true };
-      if (emailChanged) updates.email = microsoft_email;
-      if (password) updates.password = password;
-      const { data: updatedAuth, error: updateAuthError } = await database.auth.admin.updateUserById(authUser.id, updates);
-      if (updateAuthError) throw updateAuthError;
-      authMutation = { kind: 'updated', snapshot };
-      authUser = updatedAuth?.user || authUser;
-    } else if (password) {
-      const { data: createdAuth, error: createError } = await database.auth.admin.createUser({ email: microsoft_email, password, email_confirm: true, user_metadata: userMetadata });
-      if (createError) throw createError;
-      authUser = createdAuth?.user || null;
-      if (authUser) authMutation = { kind: 'created', snapshot: authSnapshot(authUser) };
-    }
-    if (send_invite && active && authUser) {
-      try { await confirmAuthUserIfNeeded(database, authUser); }
-      catch (error) { await compensateAuthMutation(database, authMutation, operationId, currentProfile.id); throw profileAdministrationFailure(error); }
-    }
+    const operationId = await acquireProfileAdministrationLock(database, currentProfile.id);
     let row;
     try {
       row = await persistProfileAccessChange(database, { mode: 'patch', targetId: id, beforeProfile: existingProfile, profileValues: { full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }, beforeAccess, afterAccess: access, actorProfileId: currentProfile.id, operationId });
-    } catch (error) {
-      await compensateAuthMutation(database, authMutation, operationId, currentProfile.id);
-      throw error;
-    }
-    if (send_invite && active) {
-      const emailResult = await sendAccessEmail(database, microsoft_email, req);
-      if (emailResult.error) console.error('Supabase access email failed', emailResult.error);
-      accessLink = await generateAccessLink(database, microsoft_email, req, userMetadata);
-      inviteSent = emailResult.sent;
-    }
-    res.json({ ...row, ...access, invited: inviteSent, access_link: accessLink });
     } finally {
       await releaseProfileAdministrationLock(database, operationId, currentProfile.id);
     }
+    const authResult = await ensureProfileAuthAfterCommit(database, { email: microsoft_email, password, userMetadata, active, sendInvite: send_invite, req });
+    res.json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning });
   } catch (error) { sendAuthError(res, error); }
 });
 
