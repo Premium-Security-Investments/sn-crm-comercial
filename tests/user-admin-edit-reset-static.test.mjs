@@ -23,10 +23,10 @@ assert(src.includes('Editar usuario ·'), 'El formulario debe mostrar claramente
 
 for (const file of [server, api]) {
   assert(file.includes("app.patch('/api/users'"), 'API debe exponer PATCH /api/users?id=... para editar usuarios existentes.');
-  assert(file.includes('updateUserById'), 'API debe poder actualizar password/metadatos del usuario Auth existente.');
-  assert(file.includes('emailChanged'), 'PATCH de usuarios debe detectar si el email realmente cambió antes de tocar Auth.');
-  assert(file.includes('updates.email = microsoft_email'), 'PATCH solo debe enviar email a Supabase Auth cuando el correo cambió.');
-  assert(file.includes('El email ya pertenece a otro usuario de acceso.'), 'PATCH debe dar error claro si el nuevo email pertenece a otro Auth user.');
+  assert(file.includes('ensureProfileAuthAfterCommit'), 'API debe aprovisionar Auth de forma aditiva después del commit.');
+  assert(!file.includes('updates.email = microsoft_email'), 'PATCH no debe cambiar el email de una identidad Auth existente.');
+  assert(!file.includes('compensateAuthMutation') && !file.includes('deleteUser('), 'API no debe revertir Auth de forma destructiva.');
+  assert(file.includes('resetPasswordForEmail'), 'Cambios de clave de identidades existentes deben usar recuperación controlada por el usuario.');
   assert(file.includes("database.rpc('psi_admin_persist_profile_access'"), 'API debe persistir perfil y alcances mediante el RPC transaccional.');
 }
 assert(profileAdminRpc.includes('update public.psi_sales_profiles set') && profileAdminRpc.includes('commercial_area =') && profileAdminRpc.includes('can_edit_customer_segment ='), 'RPC debe actualizar todos los campos editables del perfil.');

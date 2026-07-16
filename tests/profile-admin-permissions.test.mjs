@@ -239,6 +239,11 @@ await assert.rejects(
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
 const src = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+await assert.rejects(
+  persistProfileAccessChange({ rpc: () => Promise.resolve({ data: null, error: { code: '55P03' } }) }, { mode: 'patch', targetId: oldProfile.id, beforeProfile: oldProfile, profileValues: changedProfile, afterAccess, actorProfileId: 'admin', operationId: 'operation' }),
+  error => error?.status === 409 && error?.code === 'PROFILE_ADMIN_BUSY',
+);
+
 for (const backend of [server, api]) {
   for (const route of ["app.get('/api/users'", "app.post('/api/users'", "app.patch('/api/users'", "app.get('/api/access-catalog'"]) {
     const start = backend.indexOf(route);
@@ -252,31 +257,24 @@ for (const backend of [server, api]) {
   assert.match(backend, /psi_profile_permissions[\s\S]{0,500}\.in\('profile_id', ids\)/);
   assert.match(backend, /psi_access_audit_log/);
   assert.match(backend, /created_by:\s*currentProfile\.id/);
-  assert.match(backend, /compensat|restore/i);
+  assert.doesNotMatch(backend, /compensateAuthMutation|deleteUser\(/, 'Auth no tiene rollback destructivo');
   assert.match(backend, /export function assertNoAdminSelfLockout/);
   assert.match(backend, /export async function persistProfileAccessChange/);
   assert.match(backend, /database\.rpc\('psi_admin_persist_profile_access'/);
   assert.doesNotMatch(backend.slice(backend.indexOf('export async function persistProfileAccessChange'), backend.indexOf('function authContextUnavailable')), /\.delete\(\).*psi_sales_profiles|Profile administration database compensation/s);
   const post = backend.slice(backend.indexOf("app.post('/api/users'"), backend.indexOf("app.patch('/api/users'"));
   const patch = backend.slice(backend.indexOf("app.patch('/api/users'"), backend.indexOf("const distPath"));
-  assert.ok(post.indexOf('assertNoAdminSelfLockout') < post.indexOf('findAuthUserByEmail'), 'POST protege autobloqueo antes de tocar Auth');
-  assert.ok(post.indexOf('readProfileAccess') < post.indexOf('findAuthUserByEmail'), 'POST captura acceso previo antes de tocar Auth');
-  assert.ok(post.indexOf('acquireProfileAdministrationLock') < post.indexOf('findAuthUserByEmail'), 'POST adquiere exclusión distribuida antes de tocar Auth');
-  assert.ok(patch.indexOf('assertNoAdminSelfLockout') < patch.indexOf('findAuthUserByEmail'), 'PATCH protege autobloqueo antes de tocar Auth');
-  assert.ok(patch.indexOf('readProfileAccess') < patch.indexOf('findAuthUserByEmail'), 'PATCH captura acceso previo antes de tocar Auth');
-  assert.ok(patch.indexOf('acquireProfileAdministrationLock') < patch.indexOf('findAuthUserByEmail'), 'PATCH adquiere exclusión distribuida antes de tocar Auth');
-  assert.match(post, /persistProfileAccessChange\(database/);
-  assert.match(patch, /persistProfileAccessChange\(database/);
+  assert.ok(post.indexOf('assertNoAdminSelfLockout') < post.indexOf('persistProfileAccessChange'), 'POST protege autobloqueo antes del commit');
+  assert.ok(patch.indexOf('assertNoAdminSelfLockout') < patch.indexOf('persistProfileAccessChange'), 'PATCH protege autobloqueo antes del commit');
+  assert.ok(post.lastIndexOf('persistProfileAccessChange') < post.indexOf('findAuthUserByEmail'), 'POST persiste autoridad DB antes de tocar Auth');
+  assert.ok(patch.lastIndexOf('persistProfileAccessChange') < patch.indexOf('findAuthUserByEmail'), 'PATCH persiste autoridad DB antes de tocar Auth');
   assert.ok(post.lastIndexOf('persistProfileAccessChange') < post.indexOf('sendAccessEmail'), 'POST envía credenciales solo después del commit');
   assert.ok(patch.lastIndexOf('persistProfileAccessChange') < patch.indexOf('sendAccessEmail'), 'PATCH envía credenciales solo después del commit');
   assert.doesNotMatch(post, /inviteUserByEmail/, 'POST no usa invitación con envío implícito antes del commit');
+  assert.doesNotMatch(post, /updateUserById[^\n]*(password|email\s*:)/, 'POST no sobrescribe password/email de Auth existente');
+  assert.doesNotMatch(patch, /updateUserById[^\n]*(password|email\s*:)/, 'PATCH no sobrescribe password/email de Auth existente');
   assert.match(post, /releaseProfileAdministrationLock/);
   assert.match(patch, /releaseProfileAdministrationLock/);
-  const authCompensation = backend.slice(backend.indexOf('async function compensateAuthMutation'), backend.indexOf('async function generateAccessLink'));
-  assert.ok(authCompensation.indexOf('profileAdministrationLockOwned') < authCompensation.indexOf("mutation.kind === 'created'"), 'Auth solo se compensa mientras el request conserva el lock');
-  assert.match(backend, /updateUserById\(snapshot\.id/);
-  assert.match(backend, /deleteUser\(/);
-  assert.match(backend, /password[^\n]{0,160}(unreadable|no se puede|cannot)[^\n]{0,160}(server profile|perfil)/i);
 }
 assert.equal(server, api, 'server y handler Vercel deben mantenerse idénticos');
 
