@@ -16,6 +16,7 @@ import type { SiioBootstrapPayload, SiioCurrentProfile, SiioRouteState, SiioView
 export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentProfile }) {
   const [payload, setPayload] = useState<SiioBootstrapPayload | null>(null);
   const [status, setStatus] = useState('');
+  const [loading, setLoading] = useState(true);
   const [boardDraftOpen, setBoardDraftOpen] = useState(false);
   const [routeState, setRouteState] = useState<SiioRouteState>(() => parseSiioRouteState(window.location.hash));
   const selectedFinancialPeriod = routeState.view === 'resumen' || routeState.view === 'inteligencia' ? routeState.filters.period : '';
@@ -28,12 +29,16 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
   const recommendations = useMemo(() => snapshot ? deriveRecommendations(snapshot) : [], [snapshot]);
 
   const load = async () => {
+    setLoading(true);
     setStatus('Cargando SIIO / Gestión Gerencial y Control…');
     try {
       setPayload(await api<SiioBootstrapPayload>('/api/siio/bootstrap'));
       setStatus('');
     } catch (error) {
+      setPayload(null);
       setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -56,7 +61,7 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
   };
 
   if (!isManagementRole(currentProfile.role)) {
-    if (currentProfile.role === 'junta') return <SiioBoardReadonlyView payload={payload} status={status} onRetry={load} />;
+    if (currentProfile.role === 'junta') return <SiioBoardReadonlyView payload={payload} loading={loading} status={status} onRetry={load} />;
     return <section className="stack"><div className="error">SIIO / Gestión Gerencial y Control es una visual gerencial. Tu perfil actual no tiene acceso.</div></section>;
   }
 

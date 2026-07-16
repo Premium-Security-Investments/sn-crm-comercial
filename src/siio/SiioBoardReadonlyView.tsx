@@ -2,19 +2,16 @@ import type { SiioBoardReport } from './types';
 
 type Props = {
   payload: { boardReports: SiioBoardReport[] } | null;
+  loading: boolean;
   status: string;
   onRetry: () => void;
 };
 
-function isError(status: string) {
-  return /permiso|error|forbidden|no tiene/i.test(status);
-}
-
-export function SiioBoardReadonlyView({ payload, status, onRetry }: Props) {
+export function SiioBoardReadonlyView({ payload, loading, status, onRetry }: Props) {
   if (!payload) {
-    if (status && isError(status)) {
+    if (!loading) {
       return <section className="stack" aria-live="polite">
-        <div className="error">No fue posible cargar los reportes publicados: {status}</div>
+        <div className="error">No fue posible cargar los reportes publicados: {status || 'Error de conexión.'}</div>
         <button type="button" onClick={onRetry}>Reintentar carga</button>
       </section>;
     }
