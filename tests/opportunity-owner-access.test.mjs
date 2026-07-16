@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { ACTIONS } from '../access-control.js';
-import { requireOpportunityAction } from '../server/index.js';
+
+const savedEnv = Object.fromEntries(['NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'VERCEL'].map(key => [key, process.env[key]]));
+process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://127.0.0.1:1';
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
+process.env.VERCEL = '1';
+const { requireOpportunityAction } = await import('../server/index.js');
 
 function database({ owner, assignments = [] }) {
   const calls = [];
@@ -60,6 +65,11 @@ for (const route of ["app.post('/api/opportunities'", "app.put('/api/opportuniti
   const end = source.indexOf('\n});', start);
   const handler = source.slice(start, end);
   assert.match(handler, /requireOpportunityAction\(database, currentProfile, payload\.owner_id/, `${route} must route owner authorization through the server-side active-owner resolver`);
+}
+
+for (const [key, value] of Object.entries(savedEnv)) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
 }
 
 console.log('Opportunity owner access regression passed');
