@@ -45,23 +45,23 @@ const EXPLICIT_SCOPE_ROLES = new Set(['director', 'comercial', 'colaborador']);
 
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const isCode = (value) => typeof value === 'string' && value.trim() === value && value.length > 0;
-const isId = (value) => typeof value === 'string' && value.length > 0;
+const isId = (value) => typeof value === 'string' && value.trim() === value && value.length > 0;
 
-function isActiveProfile(profile) {
+function isActiveIdentity(profile) {
   return isRecord(profile)
     && profile.active === true
-    && isId(profile.id)
-    && typeof profile.role === 'string'
-    && HUMAN_ROLES.has(profile.role)
-    && (profile.identity_type === undefined || profile.identity_type === 'human' || profile.identity_type === 'agent');
+    && isId(profile.id);
 }
 
 function isAgent(profile) {
-  return isActiveProfile(profile) && profile.identity_type === 'agent';
+  return isActiveIdentity(profile) && profile.identity_type === 'agent';
 }
 
 function isHuman(profile) {
-  return isActiveProfile(profile) && !isAgent(profile);
+  return isActiveIdentity(profile)
+    && (profile.identity_type === undefined || profile.identity_type === 'human')
+    && typeof profile.role === 'string'
+    && HUMAN_ROLES.has(profile.role);
 }
 
 function hasHumanRole(profile, roles) {
@@ -75,7 +75,7 @@ function validAssignment(assignment) {
 }
 
 function assignments(profile) {
-  return isActiveProfile(profile) && Array.isArray(profile.areas)
+  return isActiveIdentity(profile) && Array.isArray(profile.areas)
     ? profile.areas.filter(validAssignment)
     : [];
 }
@@ -147,7 +147,7 @@ function canSiioAssignedAction(profile, resource) {
 }
 
 export function hasPermission(profile, permissionCode) {
-  if (!isActiveProfile(profile) || !Array.isArray(profile.permissions) || typeof permissionCode !== 'string') {
+  if (!isHuman(profile) || !Array.isArray(profile.permissions) || typeof permissionCode !== 'string') {
     return false;
   }
   const normalizedCode = permissionCode.trim();
@@ -164,7 +164,7 @@ export function hasAreaScope(profile, areaCode, subareaCode = null) {
 }
 
 export function can(profile, action, resource = {}) {
-  if (!isActiveProfile(profile) || !KNOWN_ACTIONS.has(action) || !isResource(resource)) {
+  if ((!isHuman(profile) && !isAgent(profile)) || !KNOWN_ACTIONS.has(action) || !isResource(resource)) {
     return false;
   }
 
