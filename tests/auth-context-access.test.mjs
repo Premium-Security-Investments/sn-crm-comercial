@@ -114,7 +114,9 @@ const fakeSupabase = http.createServer((req, res) => {
     assert.ok(accessScenario, `unexpected area lookup for ${profileId}`);
     assert.equal(url.searchParams.get('select'), 'area_code,subarea_code');
     assert.equal(url.searchParams.get('profile_id'), `eq.${accessScenario.profile.id}`);
-    if (accessScenario === scenarios['assignment-error-token']) return json(res, 500, { message: 'relation psi_profile_area_assignments is unavailable' });
+    if (accessScenario === scenarios['assignment-error-token']) {
+      return json(res, 500, { message: 'relation psi_profile_area_assignments is unavailable', code: 'AUTH_CONTEXT_UNAVAILABLE' });
+    }
     return json(res, 200, accessScenario.areas);
   }
   if (url.pathname === '/rest/v1/psi_profile_permissions') {
