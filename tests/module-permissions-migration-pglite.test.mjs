@@ -60,7 +60,30 @@ await db.exec(`
   grant all on public.psi_access_permissions, public.psi_profile_permissions to service_role;
 `);
 
+// Reproduce a profile committed after the migration's initial snapshot but while
+// its first backfill INSERT is running. Without one materialized snapshot, later
+// backfill statements can see this admin and grant it their modules.
+await db.exec(`
+  create function public.insert_future_profile_during_backfill()
+  returns trigger
+  language plpgsql
+  as $$
+  begin
+    if not exists (select 1 from public.psi_sales_profiles where id = '${ids.future}') then
+      insert into public.psi_sales_profiles(id,full_name,microsoft_email,role)
+      values ('${ids.future}','Futuro','future@example.test','admin');
+    end if;
+    return new;
+  end;
+  $$;
+  create trigger insert_future_profile_during_backfill
+  before insert on public.psi_profile_permissions
+  for each row execute function public.insert_future_profile_during_backfill();
+`);
+
 await db.exec(readFileSync(migrationPath, 'utf8'));
+
+await db.exec(`drop trigger insert_future_profile_during_backfill on public.psi_profile_permissions;`);
 
 const catalog = await db.query(`select code, active from public.psi_access_permissions where code = any($1::text[]) order by code`, [MODULE_PERMISSION_CODES]);
 assert.deepEqual(catalog.rows.map(row => row.code), [...MODULE_PERMISSION_CODES].sort(), '021 registra todos los módulos del catálogo compartido');
@@ -77,8 +100,7 @@ assert.deepEqual(await permissionsFor(ids.comercial), [...eligibleModulePermissi
 assert.deepEqual(await permissionsFor(ids.colaborador), [...eligibleModulePermissions('colaborador')].sort(), 'colaborador recibe únicamente módulos legacy compatibles');
 assert.deepEqual(await permissionsFor(ids.junta), [], 'junta no recibe módulos operativos; el email no concede Licitaciones');
 
-await db.query(`insert into public.psi_sales_profiles(id,full_name,microsoft_email,role) values ($1,'Futuro','future@example.test','admin')`, [ids.future]);
-assert.deepEqual(await permissionsFor(ids.future), [], 'los perfiles creados después de 021 no reciben permisos automáticos');
+assert.deepEqual(await permissionsFor(ids.future), [], 'un perfil creado después del snapshot inicial y durante el backfill no recibe módulos');
 assert.equal(Number((await db.query(`select count(*)::int as count from pg_trigger where tgrelid='public.psi_profile_permissions'::regclass and not tgisinternal`)).rows[0].count), 0, 'no existe trigger que conceda módulos');
 for (const table of ['psi_access_permissions', 'psi_profile_permissions']) {
   for (const privilege of ['insert', 'update', 'delete']) {
