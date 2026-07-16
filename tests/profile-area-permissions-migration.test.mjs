@@ -44,7 +44,7 @@ await (async function migratesLegacySchemaAndIsIdempotent() {
   const db = await createDatabase();
   await db.exec(migration);
   assert.equal(await count(db, 'psi_org_areas'), 6);
-  assert.equal(await count(db, 'psi_org_subareas'), 18);
+  assert.equal(await count(db, 'psi_org_subareas'), 20);
   assert.equal(await count(db, 'psi_access_permissions'), 1);
   assert.deepEqual(
     await scalar(db, `select role as admin_role, (select role from public.psi_sales_profiles where id = '${ids.commercial}') as commercial_role from public.psi_sales_profiles where id = '${ids.admin}'`),
@@ -121,7 +121,8 @@ await (async function keepsTenderPermissionIndependentAndUnique() {
 
 await (async function preservesAuditSafelyWhenProfilesAreDeleted() {
   const db = await createDatabase();
-  await db.exec(`insert into public.psi_profile_area_assignments(profile_id, area_code) values ('${ids.collaborator}', 'financiera');
+  await db.exec(`insert into public.psi_sales_profiles (id, role) values ('${ids.collaborator}', 'colaborador');
+    insert into public.psi_profile_area_assignments(profile_id, area_code) values ('${ids.collaborator}', 'financiera');
     insert into public.psi_profile_permissions(profile_id, permission_code) values ('${ids.collaborator}', 'licitaciones');
     insert into public.psi_access_audit_log(actor_profile_id, target_profile_id, action, before_state, after_state)
     values ('${ids.admin}', '${ids.collaborator}', 'profile_access_changed', '{"role":"comercial"}'::jsonb, '{"role":"colaborador"}'::jsonb);
@@ -142,6 +143,8 @@ await (async function keepsAccessTablesConservativeAndRestoresLegacyCheckOnRollb
   const rlsTables = ['psi_org_areas', 'psi_org_subareas', 'psi_access_permissions', 'psi_profile_area_assignments', 'psi_profile_permissions', 'psi_access_audit_log'];
   for (const table of rlsTables) {
     assert.equal((await scalar(db, `select relrowsecurity as enabled from pg_class where oid = 'public.${table}'::regclass`)).enabled, true, `${table} must enable RLS`);
+    assert.equal((await scalar(db, `select has_table_privilege('authenticated', 'public.${table}', 'insert') as can_insert`)).can_insert, false, `${table} must not grant authenticated direct writes`);
+    assert.equal((await scalar(db, `select has_table_privilege('service_role', 'public.${table}', 'insert') as can_insert`)).can_insert, true, `${table} must remain usable by service_role`);
   }
   await db.exec(rollback);
   assert.deepEqual(
@@ -162,6 +165,7 @@ await (async function blocksRollbackWhenNewRolesExist() {
   const db = await createDatabase();
   await db.exec(`insert into public.psi_sales_profiles (id, role) values ('${ids.collaborator}', 'colaborador')`);
   await assert.rejects(db.exec(rollback), /colaborador.*junta|junta.*colaborador/i);
+  await db.exec('rollback');
   assert.equal((await scalar(db, `select to_regclass('public.psi_org_areas') is not null as areas_still_present`)).areas_still_present, true);
   await db.close();
 })();
