@@ -140,7 +140,9 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
 process.env.VERCEL = '1';
 
 try {
-  const { getAuthContext, default: app } = await import('../server/index.js');
+  const { getAuthContext, canViewTenders, default: app } = await import('../server/index.js');
+  assert.equal(canViewTenders({ id: 'historical-profile', active: true, role: 'director', microsoft_email: 'directora.licitaciones@seguridadnacional.co', areas: [], permissions: [] }), false, 'el email histórico por sí solo no concede acceso operativo a Licitaciones');
+  assert.equal(canViewTenders({ id: 'permitted-profile', active: true, role: 'director', microsoft_email: 'otra@seguridadnacional.co', areas: [], permissions: ['licitaciones'] }), true, 'el permiso explícito derivado por servidor concede acceso');
   const context = await getAuthContext({
     headers: { authorization: 'Bearer director-token' },
     body: { areas: [{ area_code: 'forged' }], permissions: ['forged'] },
