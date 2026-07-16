@@ -2,7 +2,7 @@ import { strict as assert } from 'node:assert';
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
 
-const legacyProfileFields = 'id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment';
+const legacyProfileFields = 'id,full_name,microsoft_email,auth_user_id,role,active,commercial_area,can_edit_customer_segment';
 const scenarios = {
   'director-token': {
     user: { id: 'director-user', email: 'director@example.test' },
@@ -86,7 +86,7 @@ async function requestJson(port, path, token) {
   });
 }
 
-const scenarioByEmail = new Map(Object.values(scenarios).map(scenario => [scenario.user.email, scenario]));
+const scenarioByAuthId = new Map(Object.values(scenarios).map(scenario => [scenario.user.id, scenario]));
 const scenarioByProfileId = new Map(Object.values(scenarios).filter(scenario => scenario.profile).map(scenario => [scenario.profile.id, scenario]));
 const observed = { auth: 0, profiles: [], areas: [], permissions: [] };
 const fakeSupabase = http.createServer((req, res) => {
@@ -98,13 +98,14 @@ const fakeSupabase = http.createServer((req, res) => {
     return scenario ? json(res, 200, scenario.user) : json(res, 401, { message: 'invalid token' });
   }
   if (url.pathname === '/rest/v1/psi_sales_profiles') {
-    const email = String(url.searchParams.get('microsoft_email') || '').replace(/^ilike\./, '');
-    const profileScenario = scenarioByEmail.get(email);
-    observed.profiles.push({ email, search: url.searchParams });
-    assert.ok(profileScenario, `unexpected profile lookup for ${email}`);
+    const authUserId = String(url.searchParams.get('auth_user_id') || '').replace(/^eq\./, '');
+    const profileScenario = scenarioByAuthId.get(authUserId);
+    observed.profiles.push({ authUserId, search: url.searchParams });
+    assert.ok(profileScenario, `unexpected profile lookup for Auth subject ${authUserId}`);
     assert.equal(url.searchParams.get('select'), legacyProfileFields);
     assert.equal(url.searchParams.get('active'), null, 'inactive profiles must be handled explicitly after lookup');
-    assert.equal(url.searchParams.get('microsoft_email'), `ilike.${profileScenario.user.email}`);
+    assert.equal(url.searchParams.get('auth_user_id'), `eq.${profileScenario.user.id}`);
+    assert.equal(url.searchParams.get('microsoft_email'), null, 'authorization must never fall back to reusable email');
     return json(res, 200, profileScenario.profile);
   }
   if (url.pathname === '/rest/v1/psi_profile_area_assignments') {
@@ -216,6 +217,8 @@ try {
   assert.match(source, /import\s+\{\s*can\s*,\s*requireAction\s*\}\s+from\s+'\.\.\/access-control\.js';/);
   const authContextSource = source.slice(source.indexOf('getAuthContext'), source.indexOf('function sendAuthError'));
   assert.doesNotMatch(authContextSource, /directora\.licitaciones@seguridadnacional\.co/);
+  assert.match(authContextSource, /\.eq\('auth_user_id',\s*userData\.user\.id\)/);
+  assert.doesNotMatch(authContextSource, /ilike\('microsoft_email'/);
 } finally {
   await new Promise(resolve => fakeSupabase.close(resolve));
   for (const [key, value] of Object.entries(originalEnv)) {

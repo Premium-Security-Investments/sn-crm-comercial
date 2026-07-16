@@ -18,6 +18,11 @@ await db.exec(`
   create role service_role;
   alter role service_role bypassrls;
   grant service_role to current_user;
+  create schema auth;
+  create table auth.users (id uuid primary key, email text);
+  insert into auth.users(id,email) values
+    ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','admin@example.com'),
+    ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','target@example.com');
   create table public.psi_sales_profiles (
     id uuid primary key default gen_random_uuid(),
     full_name text not null,
@@ -35,6 +40,9 @@ await db.exec(`
 `);
 await db.exec(readFileSync(migration019Path, 'utf8'));
 await db.exec(readFileSync(migration020Path, 'utf8'));
+assert.equal((await db.query(`select auth_user_id from public.psi_sales_profiles where id=$1`, [ids.target])).rows[0].auth_user_id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '020 vincula perfiles históricos al sujeto Auth por UUID');
+assert.equal((await db.query(`select has_function_privilege('authenticated','public.psi_admin_bind_profile_auth(uuid,text,uuid)','execute') as allowed`)).rows[0].allowed, false);
+assert.equal((await db.query(`select has_function_privilege('service_role','public.psi_admin_bind_profile_auth(uuid,text,uuid)','execute') as allowed`)).rows[0].allowed, true);
 await db.exec(`insert into public.psi_profile_area_assignments(profile_id,area_code,subarea_code,created_by)
   values ('${ids.target}','comercial','seguridad_fisica','${ids.admin}')`);
 

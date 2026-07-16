@@ -247,22 +247,27 @@ await assert.rejects(
 
 const req = { headers: { origin: 'https://crm.example.test' } };
 const newCalls = [];
-const newAuthResult = await ensureProfileAuthAfterCommit({ auth: {
+const newAuthResult = await ensureProfileAuthAfterCommit({
+  rpc: async (name, args) => { newCalls.push(['bind', name, args]); return { data: true, error: null }; },
+  auth: {
   admin: {
     listUsers: async () => ({ data: { users: [] }, error: null }),
     createUser: async attributes => { newCalls.push(['create', attributes]); return { data: { user: { id: 'new-auth', email: attributes.email, email_confirmed_at: 'now' } }, error: null }; },
     generateLink: async () => ({ data: { properties: { action_link: 'https://auth.example.test/access' } }, error: null }),
   },
   resetPasswordForEmail: async email => { newCalls.push(['reset', email]); return { error: null }; },
-} }, { email: 'new@example.test', password: 'temporary-secret', userMetadata: { role: 'admin' }, active: true, sendInvite: true, req });
+} }, { targetProfileId: 'new-profile', email: 'new@example.test', password: 'temporary-secret', userMetadata: { role: 'admin' }, active: true, sendInvite: true, req });
 assert.equal(newCalls.filter(([kind]) => kind === 'create').length, 1, 'identidad nueva se crea una sola vez después del commit');
+assert.equal(newCalls.filter(([kind]) => kind === 'bind').length, 1, 'identidad nueva se vincula al perfil original antes de enviar acceso');
 assert.equal(newAuthResult.invited, true);
 assert.equal(newAuthResult.accessLink, 'https://auth.example.test/access');
 assert.equal(newAuthResult.authWarning, null);
 
 const existingCalls = [];
 const existingUser = { id: 'existing-auth', email: 'existing@example.test', email_confirmed_at: 'now' };
-const existingAuthResult = await ensureProfileAuthAfterCommit({ auth: {
+const existingAuthResult = await ensureProfileAuthAfterCommit({
+  rpc: async () => ({ data: true, error: null }),
+  auth: {
   admin: {
     listUsers: async () => ({ data: { users: [existingUser] }, error: null }),
     createUser: async () => { existingCalls.push(['create']); throw new Error('no debe crear'); },
@@ -270,15 +275,30 @@ const existingAuthResult = await ensureProfileAuthAfterCommit({ auth: {
     generateLink: async () => ({ data: { properties: { action_link: 'https://auth.example.test/existing' } }, error: null }),
   },
   resetPasswordForEmail: async email => { existingCalls.push(['reset', email]); return { error: null }; },
-} }, { email: existingUser.email, password: 'replacement-secret', userMetadata: { role: 'junta' }, active: true, sendInvite: false, req });
+} }, { targetProfileId: 'existing-profile', email: existingUser.email, password: 'replacement-secret', userMetadata: { role: 'junta' }, active: true, sendInvite: false, req });
 assert.deepEqual(existingCalls, [['reset', existingUser.email]], 'identidad existente conserva email/password y recibe recuperación controlada');
 assert.equal(existingAuthResult.invited, true);
 assert.equal(existingAuthResult.authWarning, null);
 
 const failedAuthResult = await ensureProfileAuthAfterCommit({ auth: { admin: {
   listUsers: async () => ({ data: null, error: new Error('auth unavailable') }),
-} } }, { email: 'failed@example.test', password: '', userMetadata: {}, active: true, sendInvite: true, req });
+} } }, { targetProfileId: 'failed-profile', email: 'failed@example.test', password: '', userMetadata: {}, active: true, sendInvite: true, req });
 assert.match(failedAuthResult.authWarning, /perfil quedó guardado/i, 'fallo Auth post-commit se reporta sin fingir rollback');
+
+const staleCalls = [];
+const staleAuthResult = await ensureProfileAuthAfterCommit({
+  rpc: async (name, args) => { staleCalls.push(['bind', name, args]); return { data: false, error: null }; },
+  auth: {
+    admin: {
+      listUsers: async () => ({ data: { users: [{ id: 'stale-auth', email: 'reused@example.test', email_confirmed_at: 'now' }] }, error: null }),
+      updateUserById: async () => { staleCalls.push(['update']); return { data: {}, error: null }; },
+      generateLink: async () => { staleCalls.push(['link']); return { data: {}, error: null }; },
+    },
+    resetPasswordForEmail: async () => { staleCalls.push(['reset']); return { error: null }; },
+  },
+}, { targetProfileId: 'original-profile', email: 'reused@example.test', password: '', userMetadata: {}, active: true, sendInvite: true, req });
+assert.deepEqual(staleCalls.map(([kind]) => kind), ['bind'], 'provisión obsoleta no confirma ni envía acceso para un email reutilizado');
+assert.match(staleAuthResult.authWarning, /perfil cambió|obsolet/i);
 
 for (const backend of [server, api]) {
   for (const route of ["app.get('/api/users'", "app.post('/api/users'", "app.patch('/api/users'", "app.get('/api/access-catalog'"]) {
