@@ -93,7 +93,9 @@ insert into public.psi_org_areas (code, name) values
   ('financiera', 'Financiera'),
   ('gestion_humana', 'Gestión Humana'),
   ('tecnologia_innovacion', 'Tecnología e Innovación')
-on conflict (code) do nothing;
+on conflict (code) do update
+  set name = excluded.name,
+      active = true;
 
 insert into public.psi_org_subareas (code, area_code, name) values
   ('seguridad_fisica', 'comercial', 'Seguridad Física'),
@@ -116,11 +118,17 @@ insert into public.psi_org_subareas (code, area_code, name) values
   ('ia_automatizacion', 'tecnologia_innovacion', 'IA y Automatización'),
   ('innovacion_productos', 'tecnologia_innovacion', 'Innovación y Productos'),
   ('seguridad_informacion', 'tecnologia_innovacion', 'Seguridad de la Información')
-on conflict (code) do nothing;
+on conflict (code) do update
+  set area_code = excluded.area_code,
+      name = excluded.name,
+      active = true;
 
 insert into public.psi_access_permissions (code, name, description) values
   ('licitaciones', 'Licitaciones', 'Acceso transversal al módulo de Licitaciones.')
-on conflict (code) do nothing;
+on conflict (code) do update
+  set name = excluded.name,
+      description = excluded.description,
+      active = true;
 
 -- Access writes stay backend/service-role mediated. No broad authenticated table access.
 revoke all on table public.psi_org_areas, public.psi_org_subareas, public.psi_access_permissions,
