@@ -7,6 +7,7 @@ import { deriveRecommendations, deriveTrackingItems, navigateSiioView, parseSiio
 import { SiioExecutiveView } from './SiioExecutiveView';
 import { SiioAgentsView } from './SiioAgentsView';
 import { SiioBoardDraftAction } from './SiioBoardDraftAction';
+import { SiioBoardReadonlyView } from './SiioBoardReadonlyView';
 import { SiioManagementTrackingView } from './SiioManagementTrackingView';
 import { SiioNavigation } from './SiioNavigation';
 import { SiioSourcesIntelligenceView } from './SiioSourcesIntelligenceView';
@@ -43,7 +44,7 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
   }, []);
 
   useEffect(() => {
-    if (!isManagementRole(currentProfile.role)) return;
+    if (!isManagementRole(currentProfile.role) && currentProfile.role !== 'junta') return;
     void load();
   }, [currentProfile.role]);
 
@@ -55,6 +56,7 @@ export function SiioDashboard({ currentProfile }: { currentProfile: SiioCurrentP
   };
 
   if (!isManagementRole(currentProfile.role)) {
+    if (currentProfile.role === 'junta') return <SiioBoardReadonlyView payload={payload} status={status} onRetry={load} />;
     return <section className="stack"><div className="error">SIIO / Gestión Gerencial y Control es una visual gerencial. Tu perfil actual no tiene acceso.</div></section>;
   }
 

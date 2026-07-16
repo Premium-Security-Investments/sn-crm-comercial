@@ -519,14 +519,34 @@ export function filterBootstrapForProfile(payload, currentProfile) {
   }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
   return { ...publicPayload, summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals, totals: capabilities.dashboard || capabilities.vigia ? totals : { count: 0, pipeline: 0, weighted: 0, approved: 0 }, currentProfile };
 }
-async function requireOpportunityAction(database, profile, ownerId, action) {
+function opportunityOwnerError(message, status) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+async function resolveActiveOpportunityOwner(database, ownerId) {
+  if (!ownerId) throw opportunityOwnerError('El comercial responsable es obligatorio.', 400);
+  const { data: owner, error } = await database.from('psi_sales_profiles').select('id,active').eq('id', ownerId).single();
+  if (error) {
+    if (error.code === 'PGRST116') throw opportunityOwnerError('El comercial responsable no existe.', 404);
+    throw error;
+  }
+  if (!owner) throw opportunityOwnerError('El comercial responsable no existe.', 404);
+  if (!owner.active) throw opportunityOwnerError('El comercial responsable debe estar activo.', 400);
+  return owner;
+}
+async function requireExistingOpportunityAction(database, profile, ownerId, action) {
   const assignments = await must(database.from('psi_profile_area_assignments').select('area_code,subarea_code').eq('profile_id', ownerId));
   if (assignments.some(assignment => can(profile, action, crmResource(ownerId, assignment)))) return true;
   return requireAction(profile, action, crmResource(ownerId));
 }
+export async function requireOpportunityAction(database, profile, ownerId, action) {
+  const owner = await resolveActiveOpportunityOwner(database, ownerId);
+  return requireExistingOpportunityAction(database, profile, owner.id, action);
+}
 async function ensureOpportunityAccess(database, id, profile, action = ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW) {
   const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,customer_segment').eq('id', id).single());
-  await requireOpportunityAction(database, profile, opportunity.owner_id, action);
+  await requireExistingOpportunityAction(database, profile, opportunity.owner_id, action);
   return opportunity;
 }
 
