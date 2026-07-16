@@ -1,0 +1,109 @@
+import { strict as assert } from 'node:assert';
+import { existsSync, readFileSync } from 'node:fs';
+import { PGlite } from '@electric-sql/pglite';
+
+const migration019Path = new URL('../supabase/migrations/019_profile_area_permissions.sql', import.meta.url);
+const migration020Path = new URL('../supabase/migrations/020_profile_access_admin_rpc.sql', import.meta.url);
+const rollback020Path = new URL('../supabase/rollbacks/020_profile_access_admin_rpc_rollback.sql', import.meta.url);
+assert.equal(existsSync(migration020Path), true, 'La migración transaccional 020 debe existir.');
+assert.equal(existsSync(rollback020Path), true, 'El rollback transaccional 020 debe existir.');
+
+const db = new PGlite();
+const ids = {
+  admin: '11111111-1111-4111-8111-111111111111',
+  target: '22222222-2222-4222-8222-222222222222',
+};
+await db.exec(`
+  create role authenticated;
+  create role service_role;
+  alter role service_role bypassrls;
+  grant service_role to current_user;
+  create table public.psi_sales_profiles (
+    id uuid primary key default gen_random_uuid(),
+    full_name text not null,
+    microsoft_email text not null unique,
+    role text not null,
+    active boolean not null default true,
+    commercial_area text,
+    can_edit_customer_segment boolean not null default false,
+    created_at timestamptz not null default now(),
+    constraint legacy_sales_profile_role_check check (role in ('admin', 'gerencia', 'director', 'comercial'))
+  );
+  insert into public.psi_sales_profiles(id,full_name,microsoft_email,role,active) values
+    ('${ids.admin}','Admin','admin@example.com','admin',true),
+    ('${ids.target}','Comercial','target@example.com','comercial',true);
+`);
+await db.exec(readFileSync(migration019Path, 'utf8'));
+await db.exec(readFileSync(migration020Path, 'utf8'));
+await db.exec(`insert into public.psi_profile_area_assignments(profile_id,area_code,subarea_code,created_by)
+  values ('${ids.target}','comercial','seguridad_fisica','${ids.admin}')`);
+
+const profileSnapshot = row => ({
+  id: row.id,
+  full_name: row.full_name,
+  microsoft_email: row.microsoft_email,
+  role: row.role,
+  active: row.active,
+  commercial_area: row.commercial_area,
+  can_edit_customer_segment: row.can_edit_customer_segment,
+});
+const getProfile = async id => profileSnapshot((await db.query(`select * from public.psi_sales_profiles where id=$1`, [id])).rows[0]);
+const getAreas = async id => (await db.query(`select area_code,subarea_code from public.psi_profile_area_assignments where profile_id=$1 order by area_code,subarea_code`, [id])).rows;
+const getPermissions = async id => (await db.query(`select permission_code from public.psi_profile_permissions where profile_id=$1 order by permission_code`, [id])).rows;
+const callRpc = async ({ mode='patch', targetId=ids.target, expected, profile, areas, permissions }) =>
+  (await db.query(
+    `select public.psi_admin_persist_profile_access($1,$2,$3::jsonb,$4::jsonb,$5::jsonb,$6::jsonb,$7) as result`,
+    [mode, targetId, JSON.stringify(expected), JSON.stringify(profile), JSON.stringify(areas), JSON.stringify(permissions), ids.admin],
+  )).rows[0].result;
+
+const before = await getProfile(ids.target);
+const after = { ...before, full_name: 'Directora', role: 'director', commercial_area: null };
+const afterAreas = [{ area_code: 'operaciones', subarea_code: null }];
+const afterPermissions = ['licitaciones'];
+
+await db.exec(`
+  create function public.test_fail_profile_access_audit() returns trigger language plpgsql as $$
+  begin raise exception 'forced audit failure'; end; $$;
+  create trigger test_fail_profile_access_audit before insert on public.psi_access_audit_log
+    for each row execute function public.test_fail_profile_access_audit();
+`);
+await assert.rejects(
+  callRpc({ expected: before, profile: after, areas: afterAreas, permissions: afterPermissions }),
+  /forced audit failure/i,
+  'un fallo de auditoría aborta la transacción completa',
+);
+assert.deepEqual(await getProfile(ids.target), before, 'perfil revierte atómicamente');
+assert.deepEqual(await getAreas(ids.target), [{ area_code: 'comercial', subarea_code: 'seguridad_fisica' }], 'áreas revierten atómicamente');
+assert.deepEqual(await getPermissions(ids.target), [], 'permisos revierten atómicamente');
+assert.equal(Number((await db.query(`select count(*)::int as count from public.psi_access_audit_log`)).rows[0].count), 0, 'audit fallido no deja evidencia parcial');
+
+await assert.rejects(
+  callRpc({ mode: 'post', targetId: null, expected: null, profile: { ...after, id: undefined, microsoft_email: 'new@example.com' }, areas: afterAreas, permissions: afterPermissions }),
+  /forced audit failure/i,
+);
+assert.equal(Number((await db.query(`select count(*)::int as count from public.psi_sales_profiles where microsoft_email='new@example.com'`)).rows[0].count), 0, 'creación y acceso revierten juntos');
+
+await db.exec(`drop trigger test_fail_profile_access_audit on public.psi_access_audit_log;`);
+const saved = await callRpc({ expected: before, profile: after, areas: afterAreas, permissions: afterPermissions });
+assert.equal(saved.role, 'director');
+assert.deepEqual(await getAreas(ids.target), afterAreas);
+assert.deepEqual(await getPermissions(ids.target), [{ permission_code: 'licitaciones' }]);
+assert.equal(Number((await db.query(`select count(*)::int as count from public.psi_access_audit_log`)).rows[0].count), 1);
+
+const staleExpected = await getProfile(ids.target);
+await db.exec(`update public.psi_sales_profiles set role='colaborador',active=false where id='${ids.target}'`);
+await assert.rejects(
+  callRpc({ expected: staleExpected, profile: { ...staleExpected, role: 'admin', active: true }, areas: [], permissions: [] }),
+  /concurrente|obsoleto|stale/i,
+  'un snapshot obsoleto no puede revertir una revocación concurrente',
+);
+assert.equal((await getProfile(ids.target)).role, 'colaborador');
+assert.equal((await getProfile(ids.target)).active, false);
+
+assert.equal((await db.query(`select has_function_privilege('authenticated','public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid)','execute') as allowed`)).rows[0].allowed, false);
+assert.equal((await db.query(`select has_function_privilege('service_role','public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid)','execute') as allowed`)).rows[0].allowed, true);
+
+await db.exec(readFileSync(rollback020Path, 'utf8'));
+assert.equal((await db.query(`select to_regprocedure('public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid)') as proc`)).rows[0].proc, null);
+await db.close();
+console.log('profile administration transaction PGlite checks passed');
