@@ -252,13 +252,16 @@ const newAuthResult = await ensureProfileAuthAfterCommit({
   auth: {
   admin: {
     listUsers: async () => ({ data: { users: [] }, error: null }),
-    createUser: async attributes => { newCalls.push(['create', attributes]); return { data: { user: { id: 'new-auth', email: attributes.email, email_confirmed_at: 'now' } }, error: null }; },
-    generateLink: async () => ({ data: { properties: { action_link: 'https://auth.example.test/access' } }, error: null }),
+    createUser: async attributes => { newCalls.push(['create', attributes]); return { data: { user: { id: 'new-auth', email: attributes.email } }, error: null }; },
+    updateUserById: async (id, attributes) => { newCalls.push(['confirm', id, attributes]); return { data: { user: { id, email: 'new@example.test', email_confirmed_at: 'now' } }, error: null }; },
+    generateLink: async () => { newCalls.push(['link']); return { data: { properties: { action_link: 'https://auth.example.test/access' } }, error: null }; },
   },
   resetPasswordForEmail: async email => { newCalls.push(['reset', email]); return { error: null }; },
 } }, { targetProfileId: 'new-profile', email: 'new@example.test', password: 'temporary-secret', userMetadata: { role: 'admin' }, active: true, sendInvite: true, req });
 assert.equal(newCalls.filter(([kind]) => kind === 'create').length, 1, 'identidad nueva se crea una sola vez después del commit');
 assert.equal(newCalls.filter(([kind]) => kind === 'bind').length, 1, 'identidad nueva se vincula al perfil original antes de enviar acceso');
+assert.equal(newCalls.find(([kind]) => kind === 'create')[1].email_confirm, false, 'la identidad nace sin confirmar hasta obtener vínculo durable');
+assert.deepEqual(newCalls.map(([kind]) => kind), ['create', 'bind', 'confirm', 'reset', 'link'], 'orden seguro: crear sin confirmar, vincular, confirmar y luego enviar acceso');
 assert.equal(newAuthResult.invited, true);
 assert.equal(newAuthResult.accessLink, 'https://auth.example.test/access');
 assert.equal(newAuthResult.authWarning, null);

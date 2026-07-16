@@ -43,6 +43,10 @@ await db.exec(readFileSync(migration020Path, 'utf8'));
 assert.equal((await db.query(`select auth_user_id from public.psi_sales_profiles where id=$1`, [ids.target])).rows[0].auth_user_id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '020 vincula perfiles históricos al sujeto Auth por UUID');
 assert.equal((await db.query(`select has_function_privilege('authenticated','public.psi_admin_bind_profile_auth(uuid,text,uuid)','execute') as allowed`)).rows[0].allowed, false);
 assert.equal((await db.query(`select has_function_privilege('service_role','public.psi_admin_bind_profile_auth(uuid,text,uuid)','execute') as allowed`)).rows[0].allowed, true);
+assert.equal((await db.query(`select has_table_privilege('authenticated','public.psi_sales_profiles','update') as allowed`)).rows[0].allowed, false, 'authenticated no puede forjar auth_user_id ni otros cambios de perfil');
+assert.equal((await db.query(`select has_table_privilege('service_role','public.psi_sales_profiles','update') as allowed`)).rows[0].allowed, true);
+assert.equal((await db.query(`select has_table_privilege('authenticated','public.psi_profile_auth_subject_claims','select') as allowed`)).rows[0].allowed, false);
+assert.equal((await db.query(`select has_table_privilege('authenticated','public.psi_profile_auth_subject_claims','insert') as allowed`)).rows[0].allowed, false);
 await db.exec(`insert into public.psi_profile_area_assignments(profile_id,area_code,subarea_code,created_by)
   values ('${ids.target}','comercial','seguridad_fisica','${ids.admin}')`);
 
@@ -108,6 +112,19 @@ assert.equal(saved.role, 'director');
 assert.deepEqual(await getAreas(ids.target), afterAreas);
 assert.deepEqual(await getPermissions(ids.target), [{ permission_code: 'licitaciones' }]);
 assert.equal(Number((await db.query(`select count(*)::int as count from public.psi_access_audit_log`)).rows[0].count), 1);
+assert.equal((await db.query(`select auth_user_id from public.psi_sales_profiles where id=$1`, [ids.target])).rows[0].auth_user_id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'editar sin cambiar email preserva vínculo Auth');
+
+const beforeEmailChange = await getProfile(ids.target);
+const changedEmail = { ...beforeEmailChange, microsoft_email: 'target-renamed@example.com' };
+await callRpc({ expected: beforeEmailChange, profile: changedEmail, areas: afterAreas, permissions: afterPermissions });
+assert.equal((await db.query(`select auth_user_id from public.psi_sales_profiles where id=$1`, [ids.target])).rows[0].auth_user_id, null, 'cambiar email revoca el vínculo Auth dentro de la transacción');
+const reusedProfileId = '33333333-3333-4333-8333-333333333333';
+await db.query(`insert into public.psi_sales_profiles(id,full_name,microsoft_email,role,active) values ($1,'Reutilizado','target@example.com','comercial',true)`, [reusedProfileId]);
+const staleBind = (await db.query(`select public.psi_admin_bind_profile_auth($1,$2,$3) as bound`, [ids.target, 'target@example.com', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'])).rows[0].bound;
+assert.equal(staleBind, false, 'una provisión tardía no puede adoptar un perfil diferente que reutilizó el email');
+const currentBind = (await db.query(`select public.psi_admin_bind_profile_auth($1,$2,$3) as bound`, [reusedProfileId, 'target@example.com', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'])).rows[0].bound;
+assert.equal(currentBind, false, 'un Auth UID reclamado históricamente no puede saltar al perfil que reutilizó el email');
+assert.equal((await db.query(`select profile_id from public.psi_profile_auth_subject_claims where auth_user_id=$1`, ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'])).rows[0].profile_id, ids.target, 'la reclamación histórica permanece inmutable');
 
 const staleExpected = await getProfile(ids.target);
 await db.exec(`update public.psi_sales_profiles set role='colaborador',active=false where id='${ids.target}'`);
@@ -133,5 +150,8 @@ await releaseLock(replacementOperationId);
 await db.exec(readFileSync(rollback020Path, 'utf8'));
 assert.equal((await db.query(`select to_regprocedure('public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid,uuid)') as proc`)).rows[0].proc, null);
 assert.equal((await db.query(`select to_regprocedure('public.psi_admin_acquire_profile_lock(uuid)') as proc`)).rows[0].proc, null);
+assert.equal((await db.query(`select to_regprocedure('public.psi_admin_bind_profile_auth(uuid,text,uuid)') as proc`)).rows[0].proc, null);
+assert.equal((await db.query(`select to_regclass('public.psi_profile_auth_subject_claims') as relation`)).rows[0].relation, null);
+assert.equal((await db.query(`select count(*)::int as count from information_schema.columns where table_schema='public' and table_name='psi_sales_profiles' and column_name='auth_user_id'`)).rows[0].count, 0, 'rollback retira el vínculo Auth agregado por 020');
 await db.close();
 console.log('profile administration transaction PGlite checks passed');

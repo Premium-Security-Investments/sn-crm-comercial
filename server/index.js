@@ -318,15 +318,14 @@ export async function getAuthContext(req) {
     throw error;
   }
   const { data: userData, error: userError } = await database.auth.getUser(token);
-  if (userError || !userData?.user?.email) {
+  if (userError || !userData?.user?.id) {
     const error = new Error('Sesión inválida o vencida.');
     error.status = 401;
     throw error;
   }
-  const email = userData.user.email.toLowerCase();
   let profile;
   try {
-    profile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment').ilike('microsoft_email', email).maybeSingle());
+    profile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,auth_user_id,role,active,commercial_area,can_edit_customer_segment').eq('auth_user_id', userData.user.id).maybeSingle());
   } catch (error) {
     throw authContextUnavailable(error);
   }
@@ -335,6 +334,7 @@ export async function getAuthContext(req) {
     error.status = 403;
     throw error;
   }
+  const { auth_user_id: _internalAuthUserId, ...authorizedProfile } = profile;
   // Access scope is server-derived from trusted profile assignment tables.
   try {
     const [assignmentsResult, permissionsResult] = await Promise.all([
@@ -345,7 +345,7 @@ export async function getAuthContext(req) {
     if (permissionsResult.error) throw permissionsResult.error;
     const areas = normalizeAccessAssignments(assignmentsResult.data);
     const permissions = normalizeAccessPermissions(permissionsResult.data);
-    return { user: userData.user, profile: { ...profile, areas, permissions }, token };
+    return { user: userData.user, profile: { ...authorizedProfile, areas, permissions }, token };
   } catch (error) {
     throw authContextUnavailable(error);
   }
@@ -2476,20 +2476,31 @@ async function confirmAuthUserIfNeeded(database, user) {
   return data?.user || user;
 }
 
-export async function ensureProfileAuthAfterCommit(database, { email, password, userMetadata, active, sendInvite, req }) {
+export async function ensureProfileAuthAfterCommit(database, { targetProfileId, email, password, userMetadata, active, sendInvite, req }) {
   const result = { invited: false, accessLink: null, authWarning: null };
   if (!active || (!sendInvite && !password)) return result;
   try {
     let authUser = await findAuthUserByEmail(database, email);
     const existed = Boolean(authUser);
     if (!authUser) {
-      const attributes = { email, email_confirm: true, user_metadata: userMetadata };
+      const attributes = { email, email_confirm: false, user_metadata: userMetadata };
       if (password) attributes.password = password;
       const { data, error } = await database.auth.admin.createUser(attributes);
       if (error && !/already|registered|exists/i.test(error.message)) throw error;
       authUser = data?.user || await findAuthUserByEmail(database, email);
     }
-    if (authUser) await confirmAuthUserIfNeeded(database, authUser);
+    if (!authUser?.id) throw new Error('No se pudo identificar el sujeto Auth aprovisionado.');
+    const { data: bound, error: bindError } = await database.rpc('psi_admin_bind_profile_auth', {
+      p_profile_id: targetProfileId,
+      p_expected_email: email,
+      p_auth_user_id: authUser.id,
+    });
+    if (bindError) throw bindError;
+    if (bound !== true) {
+      result.authWarning = 'El perfil cambió después de guardarse; la provisión de acceso quedó obsoleta y no se envió ningún enlace.';
+      return result;
+    }
+    await confirmAuthUserIfNeeded(database, authUser);
     // Existing identities are never overwritten. Password changes use a user-controlled recovery link.
     if (sendInvite || (password && existed)) {
       const emailResult = await sendAccessEmail(database, email, req);
@@ -2583,7 +2594,7 @@ app.post('/api/users', async (req, res) => {
     } finally {
       await releaseProfileAdministrationLock(database, operationId, currentProfile.id);
     }
-    const authResult = await ensureProfileAuthAfterCommit(database, { email: microsoft_email, password, userMetadata, active, sendInvite: send_invite, req });
+    const authResult = await ensureProfileAuthAfterCommit(database, { targetProfileId: row.id, email: microsoft_email, password, userMetadata, active, sendInvite: send_invite, req });
     res.status(201).json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning });
   } catch (error) { sendAuthError(res, error); }
 });
@@ -2619,7 +2630,7 @@ app.patch('/api/users', async (req, res) => {
     } finally {
       await releaseProfileAdministrationLock(database, operationId, currentProfile.id);
     }
-    const authResult = await ensureProfileAuthAfterCommit(database, { email: microsoft_email, password, userMetadata, active, sendInvite: send_invite, req });
+    const authResult = await ensureProfileAuthAfterCommit(database, { targetProfileId: row.id, email: microsoft_email, password, userMetadata, active, sendInvite: send_invite, req });
     res.json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning });
   } catch (error) { sendAuthError(res, error); }
 });

@@ -147,7 +147,7 @@ const fakeSupabase = http.createServer((req, res) => {
     return json(res, 401, { message: 'invalid token' });
   }
   if (url.pathname === '/rest/v1/psi_sales_profiles') {
-    const manager = url.searchParams.get('microsoft_email')?.includes('manager%40') || decodeURIComponent(url.searchParams.get('microsoft_email') || '').includes('manager@');
+    const manager = url.searchParams.get('auth_user_id') === 'eq.manager-user';
     const profile = manager
       ? { id: 'manager-profile', full_name: 'Manager', microsoft_email: 'manager@example.test', role: 'director', active: true }
       : { id: 'viewer-profile', full_name: 'Viewer', microsoft_email: 'viewer@example.test', role: 'comercial', active: true };

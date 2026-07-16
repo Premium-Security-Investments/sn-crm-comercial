@@ -2,6 +2,38 @@
 -- Supabase Auth remains external; database authorization state changes as one PostgreSQL transaction.
 begin;
 
+alter table public.psi_sales_profiles
+  add column if not exists auth_user_id uuid;
+
+create unique index if not exists psi_sales_profiles_auth_user_id_key
+  on public.psi_sales_profiles(auth_user_id)
+  where auth_user_id is not null;
+
+revoke insert, update, delete on table public.psi_sales_profiles from public;
+revoke insert, update, delete on table public.psi_sales_profiles from authenticated;
+grant select, insert, update, delete on table public.psi_sales_profiles to service_role;
+
+-- Bind existing profiles to their immutable Supabase Auth subject before runtime authorization switches to UUID.
+update public.psi_sales_profiles profile
+set auth_user_id = auth_user.id
+from auth.users auth_user
+where profile.auth_user_id is null
+  and lower(btrim(profile.microsoft_email)) = lower(btrim(auth_user.email));
+
+create table if not exists public.psi_profile_auth_subject_claims (
+  auth_user_id uuid primary key,
+  profile_id uuid not null references public.psi_sales_profiles(id) on delete restrict,
+  claimed_at timestamptz not null default now()
+);
+insert into public.psi_profile_auth_subject_claims(auth_user_id, profile_id)
+select auth_user_id, id
+from public.psi_sales_profiles
+where auth_user_id is not null
+on conflict (auth_user_id) do nothing;
+revoke all on table public.psi_profile_auth_subject_claims from public;
+revoke all on table public.psi_profile_auth_subject_claims from authenticated;
+revoke all on table public.psi_profile_auth_subject_claims from service_role;
+
 create table if not exists public.psi_profile_admin_lock (
   lock_name text primary key,
   operation_id uuid not null unique,
@@ -55,6 +87,54 @@ begin
   where lock_name = 'global' and operation_id = p_operation_id and actor_profile_id = p_actor_profile_id;
   get diagnostics v_deleted_count = row_count;
   return v_deleted_count > 0;
+end;
+$$;
+
+create or replace function public.psi_admin_bind_profile_auth(p_profile_id uuid, p_expected_email text, p_auth_user_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_updated_count integer;
+begin
+  if p_profile_id is null or p_auth_user_id is null or nullif(btrim(p_expected_email), '') is null then
+    return false;
+  end if;
+  if not exists (
+    select 1 from auth.users auth_user
+    where auth_user.id = p_auth_user_id
+      and lower(btrim(auth_user.email)) = lower(btrim(p_expected_email))
+  ) then
+    return false;
+  end if;
+  perform 1
+  from public.psi_sales_profiles
+  where id = p_profile_id
+    and active = true
+    and lower(btrim(microsoft_email)) = lower(btrim(p_expected_email))
+    and (auth_user_id is null or auth_user_id = p_auth_user_id)
+  for update;
+  if not found then
+    return false;
+  end if;
+
+  insert into public.psi_profile_auth_subject_claims(auth_user_id, profile_id)
+  values (p_auth_user_id, p_profile_id)
+  on conflict (auth_user_id) do nothing;
+  if not exists (
+    select 1 from public.psi_profile_auth_subject_claims claim
+    where claim.auth_user_id = p_auth_user_id and claim.profile_id = p_profile_id
+  ) then
+    return false;
+  end if;
+
+  update public.psi_sales_profiles
+  set auth_user_id = p_auth_user_id
+  where id = p_profile_id;
+  get diagnostics v_updated_count = row_count;
+  return v_updated_count = 1;
 end;
 $$;
 
@@ -202,6 +282,10 @@ begin
 
     update public.psi_sales_profiles set
       full_name = btrim(p_profile->>'full_name'),
+      auth_user_id = case
+        when lower(btrim(microsoft_email)) = lower(btrim(p_profile->>'microsoft_email')) then auth_user_id
+        else null
+      end,
       microsoft_email = lower(btrim(p_profile->>'microsoft_email')),
       role = v_role,
       active = v_active,
@@ -250,6 +334,9 @@ grant execute on function public.psi_admin_acquire_profile_lock(uuid) to service
 revoke all on function public.psi_admin_release_profile_lock(uuid,uuid) from public;
 revoke all on function public.psi_admin_release_profile_lock(uuid,uuid) from authenticated;
 grant execute on function public.psi_admin_release_profile_lock(uuid,uuid) to service_role;
+revoke all on function public.psi_admin_bind_profile_auth(uuid,text,uuid) from public;
+revoke all on function public.psi_admin_bind_profile_auth(uuid,text,uuid) from authenticated;
+grant execute on function public.psi_admin_bind_profile_auth(uuid,text,uuid) to service_role;
 revoke all on function public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid,uuid) from public;
 revoke all on function public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid,uuid) from authenticated;
 grant execute on function public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid,uuid) to service_role;
