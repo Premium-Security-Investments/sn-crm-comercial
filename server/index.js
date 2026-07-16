@@ -2616,6 +2616,12 @@ app.patch('/api/users', async (req, res) => {
     const can_edit_customer_segment = req.body.can_edit_customer_segment === true;
     if (!full_name) throw new Error('El nombre completo es obligatorio.');
     if (!microsoft_email || !microsoft_email.includes('@')) throw new Error('Debe registrar un email válido.');
+    if (microsoft_email !== String(existingProfile.microsoft_email || '').trim().toLowerCase()) {
+      const error = new Error('El correo del perfil es inmutable. Cree un usuario nuevo para otra identidad.');
+      error.status = 409;
+      error.code = 'PROFILE_EMAIL_IMMUTABLE';
+      throw error;
+    }
     if (!PROFILE_ROLES.has(role)) throw new Error('Rol no válido.');
     assertNoAdminSelfLockout(currentProfile, { profileId: id, microsoftEmail: microsoft_email, role, active });
     if (password && password.length < 8) throw new Error('La clave temporal debe tener mínimo 8 caracteres.');

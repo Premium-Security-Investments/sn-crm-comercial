@@ -25,6 +25,8 @@ create table if not exists public.psi_profile_auth_subject_claims (
   profile_id uuid not null references public.psi_sales_profiles(id) on delete restrict,
   claimed_at timestamptz not null default now()
 );
+create unique index if not exists psi_profile_auth_subject_claims_profile_id_key
+  on public.psi_profile_auth_subject_claims(profile_id);
 insert into public.psi_profile_auth_subject_claims(auth_user_id, profile_id)
 select auth_user_id, id
 from public.psi_sales_profiles
@@ -122,7 +124,7 @@ begin
 
   insert into public.psi_profile_auth_subject_claims(auth_user_id, profile_id)
   values (p_auth_user_id, p_profile_id)
-  on conflict (auth_user_id) do nothing;
+  on conflict do nothing;
   if not exists (
     select 1 from public.psi_profile_auth_subject_claims claim
     where claim.auth_user_id = p_auth_user_id and claim.profile_id = p_profile_id
@@ -272,6 +274,9 @@ begin
     if v_target.id = p_actor_profile_id and (v_role <> 'admin' or not v_active) then
       raise exception 'No puede desactivar ni cambiar su propio rol de administrador.' using errcode = '22023';
     end if;
+    if lower(btrim(v_target.microsoft_email)) <> lower(btrim(p_profile->>'microsoft_email')) then
+      raise exception 'El correo del perfil es inmutable; cree un perfil nuevo para otra identidad.' using errcode = '22023';
+    end if;
 
     select coalesce(jsonb_agg(jsonb_build_object('area_code', area_code, 'subarea_code', subarea_code) order by area_code, subarea_code nulls first), '[]'::jsonb)
       into v_before_areas
@@ -282,10 +287,6 @@ begin
 
     update public.psi_sales_profiles set
       full_name = btrim(p_profile->>'full_name'),
-      auth_user_id = case
-        when lower(btrim(microsoft_email)) = lower(btrim(p_profile->>'microsoft_email')) then auth_user_id
-        else null
-      end,
       microsoft_email = lower(btrim(p_profile->>'microsoft_email')),
       role = v_role,
       active = v_active,
