@@ -106,8 +106,9 @@ const fakeSupabase = http.createServer((req, res) => {
     return json(res, 200, req.headers.accept?.includes('vnd.pgrst.object') ? profile : [profile]);
   }
   if (url.pathname === '/rest/v1/psi_tender_radar_runs') return json(res, 200, { run_at: '2026-07-15T12:00:00.000Z', mode: 'cron_export' });
-  if (url.pathname === '/rest/v1/psi_profile_area_assignments' || url.pathname === '/rest/v1/psi_profile_permissions') {
-    return json(res, 200, []);
+  if (url.pathname === '/rest/v1/psi_profile_area_assignments') return json(res, 200, []);
+  if (url.pathname === '/rest/v1/psi_profile_permissions') {
+    return json(res, 200, [{ permission_code: 'licitaciones' }]);
   }
   if (url.pathname === '/rest/v1/psi_public_tenders') {
     if (url.searchParams.get('select') === 'id') return json(res, 200, [{ id: 'available' }]);

@@ -484,7 +484,7 @@ const tenderDisqualifyingTerms = [
 ];
 const tenderFocusTerms = { 'bogotá': 22, 'bogota': 22, 'distrito capital': 20, 'medellín': 22, 'medellin': 22, 'antioquia': 14 };
 const tenderInternalStatuses = ['nueva','en_revision','descartada','convertida_oportunidad'];
-function canViewTenders(profile) { return isManager(profile) || profile?.microsoft_email?.toLowerCase() === 'directora.licitaciones@seguridadnacional.co'; }
+export function canViewTenders(profile) { return can(profile, ACTIONS.LICITACIONES_VIEW); }
 const tenderRegionKeys = ['todas','bog_cundinamarca','med_antioquia','eje_cafetero','cali_valle','costa_caribe','santanderes','sur_occidente','otros'];
 const tenderSectionFilters = ['todas','hacer','revisar','descartar'];
 const tenderDeadlineFilters = ['todas','0_7','8_15','16_30','vencida','sin_fecha'];
