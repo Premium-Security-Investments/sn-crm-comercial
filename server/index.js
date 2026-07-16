@@ -53,7 +53,6 @@ function validateCommercialArea(value) { const area = value || null; if (area &&
 function validateCustomerSegment(value, required = false) { const segment = value || null; if (required && !segment) throw new Error('Debe clasificar la oportunidad como Cliente Nuevo o Cliente Actual.'); if (segment && !customerSegments.includes(segment)) throw new Error('Tipo de cliente no válido.'); return segment; }
 function canEditCustomerSegment(profile, opportunity) { return globalCrmScopeRoles.has(profile?.role) || (profile?.can_edit_customer_segment && opportunity?.owner_id === profile.id); }
 function canManageUsers(profile) { return profile?.role === 'admin'; }
-function canAccessSiio(profile) { return ['admin','gerencia','director'].includes(profile?.role); }
 export const MODULE_ENDPOINT_ACTIONS = Object.freeze({
   opportunities: ACTIONS.MODULE_OPPORTUNITIES_VIEW,
   goals: ACTIONS.MODULE_GOALS_VIEW,
@@ -76,20 +75,54 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/tenders': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'GET /api/users': ['users', ACTIONS.USERS_MANAGE],
   'GET /api/access-catalog': ['users', ACTIONS.USERS_MANAGE],
+
+  'GET /api/siio/bootstrap': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'GET /api/siio/fronts': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'GET /api/siio/records': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'POST /api/siio/records': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
+  'PATCH /api/siio/records/:id': ['siio', ACTIONS.SIIO_SUBJECT_EDIT],
+  'GET /api/siio/sources': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'POST /api/siio/sources': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
+  'GET /api/siio/decisions': ['siio', ACTIONS.SIIO_AREA_VIEW],
+  'POST /api/siio/decisions': ['siio', ACTIONS.SIIO_SUBJECT_CREATE],
+  'PATCH /api/siio/decisions/:id': ['siio', ACTIONS.SIIO_SUBJECT_EDIT],
+  'GET /api/siio/board-reports': ['siio', ACTIONS.BOARD_PUBLICATION_VIEW],
+});
+const SIIO_MANAGEMENT_RESOURCE = Object.freeze({ area_code: 'gerencia' });
+const SIIO_PUBLISHED_BOARD_RESOURCE = Object.freeze({ publication_status: 'published' });
+export const SIIO_ENDPOINT_ACTIONS = Object.freeze({
+  'GET /api/siio/bootstrap': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'board-published' }),
+  'GET /api/siio/fronts': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'GET /api/siio/records': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'POST /api/siio/records': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'PATCH /api/siio/records/:id': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_EDIT, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'GET /api/siio/sources': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'POST /api/siio/sources': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'GET /api/siio/decisions': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'POST /api/siio/decisions': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_CREATE, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'PATCH /api/siio/decisions/:id': Object.freeze({ action: ACTIONS.SIIO_SUBJECT_EDIT, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
+  'GET /api/siio/board-reports': Object.freeze({ action: ACTIONS.BOARD_PUBLICATION_VIEW, resource: SIIO_PUBLISHED_BOARD_RESOURCE, policy: 'board-published' }),
 });
 export function requireModuleAction(profile, endpointModule) {
   return requireAction(profile, MODULE_ENDPOINT_ACTIONS[endpointModule], {});
 }
-function requireSiioAccess(profile) {
-  if (!canAccessSiio(profile)) {
-    const error = new Error('No tiene permisos para acceder al SIIO / F2 gerencial.');
-    error.status = 403;
-    throw error;
-  }
+function throwSiioForbidden() {
+  const error = new Error('No tiene permisos para acceder al SIIO / F2 gerencial.');
+  error.status = 403;
+  error.code = 'FORBIDDEN';
+  throw error;
 }
-function requireSiioModuleAccess(profile) {
+export function requireSiioEndpointAccess(profile, methodRoute) {
   requireModuleAction(profile, 'siio');
-  requireSiioAccess(profile);
+  const endpoint = SIIO_ENDPOINT_ACTIONS[methodRoute];
+  // SIIO rows have no canonical area/subarea relation yet, so directors fail
+  // closed until Task 11 can derive a resource from the server-side record.
+  if (!endpoint || profile?.role === 'director') throwSiioForbidden();
+  if (profile?.role === 'junta') {
+    if (endpoint.policy !== 'board-published') throwSiioForbidden();
+    return requireAction(profile, ACTIONS.BOARD_PUBLICATION_VIEW, SIIO_PUBLISHED_BOARD_RESOURCE);
+  }
+  return requireAction(profile, endpoint.action, endpoint.resource);
 }
 
 function normalizeUserRole(value) {
@@ -1619,11 +1652,22 @@ function cleanSiioDecision(body = {}, profile) {
   };
 }
 
+function filterBoardReportsForProfile(profile, rows) {
+  if (profile?.role !== 'junta') return rows;
+  return rows.filter(row => can(profile, ACTIONS.BOARD_PUBLICATION_VIEW, {
+    publication_status: row?.publication_status ?? row?.status,
+  }));
+}
+
 app.get('/api/siio/bootstrap', async (req, res) => {
   try {
     const { profile } = await getAuthContext(req);
-    requireSiioModuleAccess(profile);
+    requireSiioEndpointAccess(profile, 'GET /api/siio/bootstrap');
     const database = requireDb();
+    if (profile.role === 'junta') {
+      const boardReports = filterBoardReportsForProfile(profile, await optionalSiioList(database, siioTables.boardReports, '*', 'period_month'));
+      return res.json({ fronts: [], records: [], sources: [], decisions: [], boardReports, boardSections: [], financialMetrics: [], commercialSignals: [], payrollAggregates: [], strategicOpportunities: [], currentProfile: profile });
+    }
     const [fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates, strategicOpportunities] = await Promise.all([
       optionalSiioList(database, siioTables.fronts, '*', 'id'),
       optionalSiioList(database, siioTables.records, '*', 'updated_at'),
@@ -1640,16 +1684,16 @@ app.get('/api/siio/bootstrap', async (req, res) => {
   } catch (error) { sendAuthError(res, error); }
 });
 app.get('/api/siio/fronts', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.fronts, '*', 'id')); }
+  try { const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'GET /api/siio/fronts'); res.json(await optionalSiioList(requireDb(), siioTables.fronts, '*', 'id')); }
   catch (error) { sendAuthError(res, error); }
 });
 app.get('/api/siio/records', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.records, '*', 'updated_at')); }
+  try { const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'GET /api/siio/records'); res.json(await optionalSiioList(requireDb(), siioTables.records, '*', 'updated_at')); }
   catch (error) { sendAuthError(res, error); }
 });
 app.post('/api/siio/records', async (req, res) => {
   try {
-    const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile);
+    const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'POST /api/siio/records');
     const payload = { ...cleanSiioRecord(req.body, profile), created_by: profile.id };
     if (!payload.id || !payload.title) throw new Error('ID y título son obligatorios.');
     res.json(await must(requireDb().from(siioTables.records).insert(payload).select('*').single()));
@@ -1657,30 +1701,30 @@ app.post('/api/siio/records', async (req, res) => {
 });
 app.patch('/api/siio/records/:id', async (req, res) => {
   try {
-    const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile);
+    const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'PATCH /api/siio/records/:id');
     const payload = cleanSiioRecord({ ...req.body, id: req.params.id }, profile); delete payload.id; delete payload.created_by;
     res.json(await must(requireDb().from(siioTables.records).update(payload).eq('id', req.params.id).select('*').single()));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.get('/api/siio/sources', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.sources, '*', 'id')); }
+  try { const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'GET /api/siio/sources'); res.json(await optionalSiioList(requireDb(), siioTables.sources, '*', 'id')); }
   catch (error) { sendAuthError(res, error); }
 });
 app.post('/api/siio/sources', async (req, res) => {
   try {
-    const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile);
+    const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'POST /api/siio/sources');
     const payload = cleanSiioSource(req.body);
     if (!payload.id || !payload.name) throw new Error('ID y nombre de fuente son obligatorios.');
     res.json(await must(requireDb().from(siioTables.sources).upsert(payload).select('*').single()));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.get('/api/siio/decisions', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.decisions, '*', 'created_at')); }
+  try { const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'GET /api/siio/decisions'); res.json(await optionalSiioList(requireDb(), siioTables.decisions, '*', 'created_at')); }
   catch (error) { sendAuthError(res, error); }
 });
 app.post('/api/siio/decisions', async (req, res) => {
   try {
-    const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile);
+    const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'POST /api/siio/decisions');
     const payload = { ...cleanSiioDecision(req.body, profile), created_by: profile.id };
     if (!payload.description) throw new Error('La descripción es obligatoria.');
     res.json(await must(requireDb().from(siioTables.decisions).insert(payload).select('*').single()));
@@ -1688,13 +1732,16 @@ app.post('/api/siio/decisions', async (req, res) => {
 });
 app.patch('/api/siio/decisions/:id', async (req, res) => {
   try {
-    const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile);
+    const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'PATCH /api/siio/decisions/:id');
     res.json(await must(requireDb().from(siioTables.decisions).update(cleanSiioDecision(req.body, profile)).eq('id', req.params.id).select('*').single()));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.get('/api/siio/board-reports', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.boardReports, '*', 'period_month')); }
-  catch (error) { sendAuthError(res, error); }
+  try {
+    const { profile } = await getAuthContext(req);
+    requireSiioEndpointAccess(profile, 'GET /api/siio/board-reports');
+    res.json(filterBoardReportsForProfile(profile, await optionalSiioList(requireDb(), siioTables.boardReports, '*', 'period_month')));
+  } catch (error) { sendAuthError(res, error); }
 });
 
 app.get('/api/bootstrap', async (req, res) => {
