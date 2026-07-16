@@ -29,10 +29,9 @@ export type NavRoutePage =
 export type NavItem = { href: string; label: string; page: NavRoutePage };
 export type NavGroup = { title: 'Gerencia' | 'Comercial' | 'Licitaciones' | 'Administración'; items: NavItem[] };
 
-type NavItemDefinition = NavItem & { moduleCode: string };
 type NavGroupDefinition = {
   title: NavGroup['title'];
-  items: NavItemDefinition[];
+  items: NavItem[];
 };
 
 const managementRoles = new Set(['admin', 'gerencia', 'director']);
@@ -41,34 +40,34 @@ const navGroups: readonly NavGroupDefinition[] = [
   {
     title: 'Gerencia',
     items: [
-      { href: '#/siio', label: 'SIIO Gerencial', page: 'siio', moduleCode: 'modulo_siio_gerencial' },
-      { href: '#/vig-ia', label: 'Vig-IA', page: 'centinel', moduleCode: 'modulo_vig_ia' },
+      { href: '#/siio', label: 'SIIO Gerencial', page: 'siio' },
+      { href: '#/vig-ia', label: 'Vig-IA', page: 'centinel' },
     ],
   },
   {
     title: 'Comercial',
     items: [
-      { href: '#/dashboard2', label: 'Dashboard comercial', page: 'dashboard2', moduleCode: 'modulo_dashboard_comercial' },
-      { href: '#/alerts', label: 'Alertas comerciales', page: 'alerts', moduleCode: 'modulo_alertas_comerciales' },
-      { href: '#/opportunities', label: 'Oportunidades', page: 'opportunities', moduleCode: 'modulo_oportunidades' },
+      { href: '#/dashboard2', label: 'Dashboard comercial', page: 'dashboard2' },
+      { href: '#/alerts', label: 'Alertas comerciales', page: 'alerts' },
+      { href: '#/opportunities', label: 'Oportunidades', page: 'opportunities' },
     ],
   },
   {
     title: 'Licitaciones',
     items: [
-      { href: '#/tenders?view=radar', label: 'Radar de oportunidades', page: 'tenders', moduleCode: 'licitaciones' },
+      { href: '#/tenders?view=radar', label: 'Radar de oportunidades', page: 'tenders' },
     ],
   },
   {
     title: 'Administración',
     items: [
-      { href: '#/goals', label: 'Metas y cumplimiento', page: 'goals', moduleCode: 'modulo_metas' },
-      { href: '#/users', label: 'Usuarios y permisos', page: 'users', moduleCode: 'modulo_usuarios' },
+      { href: '#/goals', label: 'Metas y cumplimiento', page: 'goals' },
+      { href: '#/users', label: 'Usuarios y permisos', page: 'users' },
     ],
   },
 ];
 
-const moduleCodeForPage: Partial<Record<NavRoutePage, string>> = {
+const moduleActionByPage: Partial<Record<NavRoutePage, string>> = {
   siio: 'modulo_siio_gerencial',
   centinel: 'modulo_vig_ia',
   dashboard: 'modulo_dashboard_comercial',
@@ -89,7 +88,7 @@ export function isManagementRole(role?: string | null) {
 }
 
 export function moduleActionForPage(page: NavRoutePage) {
-  return moduleCodeForPage[page] ?? null;
+  return moduleActionByPage[page] ?? null;
 }
 
 function hasModuleAccess(profile: NavProfile, moduleCode: string) {
