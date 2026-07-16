@@ -55,9 +55,18 @@ El administrador solo podrá seleccionar módulos compatibles con el rol objetiv
 | `director` | SIIO, Vig-IA, Dashboard Comercial, Alertas, Oportunidades, Metas, Licitaciones, sujeto a áreas cuando corresponda |
 | `comercial` | Alertas, Oportunidades, Metas, Licitaciones |
 | `colaborador` | Alertas, Oportunidades y Metas cuando la matriz central permita el alcance requerido |
-| `junta` | sin módulos operativos en esta entrega; sus vistas ejecutivas se habilitarán cuando exista una ruta de Junta gobernada |
+| `junta` | únicamente SIIO Gerencial, para lectura ejecutiva publicada; no recibe módulos comerciales ni de administración |
 
 `modulo_usuarios` requiere simultáneamente rol `admin` y permiso explícito. Un permiso almacenado que sea incompatible con el rol se considera denegado y el backend rechazará nuevos intentos de guardarlo.
+
+### Política vinculante SIIO
+
+- `admin` y `gerencia`: gestión completa, siempre con módulo explícito.
+- `director`: elegible para SIIO, pero cada operación debe validar su alcance canónico derivado en servidor; el módulo no concede alcance global.
+- `junta`: elegible únicamente para `modulo_siio_gerencial` y sólo para lectura ejecutiva publicada. No recibe ninguna mutación ni otros módulos automáticos.
+- `comercial` y `colaborador`: no son elegibles para SIIO.
+
+La composición ruta→acción SIIO y la derivación de recursos SIIO permanecen fuera de esta migración de catálogo: no se infieren áreas desde email, body ni texto libre.
 
 ## 5. Migración y compatibilidad
 

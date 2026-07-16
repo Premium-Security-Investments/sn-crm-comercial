@@ -27,7 +27,7 @@ on conflict (code) do update
 insert into public.psi_profile_permissions (profile_id, permission_code)
 select profile_id, 'modulo_siio_gerencial'
 from psi_021_profile_snapshot
-where role in ('admin', 'gerencia', 'director')
+where role in ('admin', 'gerencia', 'director', 'junta')
 on conflict do nothing;
 
 insert into public.psi_profile_permissions (profile_id, permission_code)

@@ -7,7 +7,7 @@ for (const file of files) {
   const source = readFileSync(file, 'utf8');
   assert.match(source, /export const MODULE_ENDPOINT_ACTIONS = Object\.freeze\(\{[\s\S]*?opportunities: ACTIONS\.MODULE_OPPORTUNITIES_VIEW,[\s\S]*?goals: ACTIONS\.MODULE_GOALS_VIEW,[\s\S]*?siio: ACTIONS\.MODULE_SIIO_VIEW,[\s\S]*?tenders: ACTIONS\.LICITACIONES_VIEW,[\s\S]*?users: ACTIONS\.MODULE_USERS_VIEW,[\s\S]*?\}\)/, `${file}: central endpoint→module matrix must be auditable`);
   assert.match(source, /export function requireModuleAction\(profile, endpointModule\)[\s\S]*?requireAction\(profile, MODULE_ENDPOINT_ACTIONS\[endpointModule\], \{\}\)/, `${file}: unknown module families must fail closed through requireAction`);
-  assert.match(source, /function canAccessSiio\(profile\) \{ return \['admin','gerencia','director'\]\.includes\(profile\?\.role\); \}/, `${file}: SIIO role guard must allow admin/gerencia/director only`);
+  assert.match(source, /function canAccessSiio\(profile\) \{ return \['admin','gerencia','director'\]\.includes\(profile\?\.role\); \}/, `${file}: legacy SIIO guard preserves director eligibility until Task 4B composes scoped actions`);
   assert.match(source, /function requireSiioModuleAccess\(profile\) \{[\s\S]*?requireModuleAction\(profile, 'siio'\);[\s\S]*?requireSiioAccess\(profile\);/, `${file}: SIIO must compose module and legacy role guards`);
   for (const route of ['/api/siio/bootstrap', '/api/siio/records', '/api/siio/board-reports']) {
     assert.match(source, new RegExp(`app\\.(?:get|post|patch)\\('${route.replaceAll('/', '\\/')}[\\s\\S]*?requireSiioModuleAccess\\(profile\\)`), `${file}: ${route} must require SIIO module before data access`);

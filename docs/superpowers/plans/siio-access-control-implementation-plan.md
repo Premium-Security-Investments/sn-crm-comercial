@@ -42,6 +42,12 @@
 - SIIO filtrado por área;
 - bandeja de asignaciones.
 
+#### Corrección de política SIIO (Task 4A)
+
+El catálogo y el backfill explícito preservan SIIO para `admin`, `gerencia`, `director` y `junta`; cada perfil sigue requiriendo `modulo_siio_gerencial`. Admin/gerencia gestionan. Director opera únicamente sobre recursos con alcance canónico derivado en servidor. Junta sólo consume lectura ejecutiva publicada y no recibe módulos comerciales ni de administración. Comercial y colaborador no son elegibles.
+
+La composición de rutas SIIO con acciones y recursos canónicos se implementa en la fase de aplicación: no se adelanta con email, body ni texto libre.
+
 ### Fase C — Gobernanza nueva
 
 - solicitud y validación de cierre;

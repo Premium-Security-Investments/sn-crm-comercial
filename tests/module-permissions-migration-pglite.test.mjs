@@ -96,9 +96,10 @@ const permissionsFor = async profileId => (await db.query(
 assert.deepEqual(await permissionsFor(ids.admin), [...eligibleModulePermissions('admin')].sort(), 'admin histórico conserva todos los módulos elegibles incluido Usuarios');
 assert.deepEqual(await permissionsFor(ids.gerencia), [...eligibleModulePermissions('gerencia')].filter(code => code !== 'licitaciones').sort(), 'gerencia recibe solo visibilidad legacy dentro de su techo');
 assert.deepEqual(await permissionsFor(ids.director), [...eligibleModulePermissions('director')].filter(code => code !== 'licitaciones').sort(), 'director recibe solo visibilidad legacy dentro de su techo');
+assert.equal((await permissionsFor(ids.director)).includes('modulo_siio_gerencial'), true, 'director histórico recibe el módulo explícito; el scope se aplica por acción');
 assert.deepEqual(await permissionsFor(ids.comercial), [...eligibleModulePermissions('comercial')].sort(), 'comercial conserva Licitaciones existente y recibe sus módulos legacy');
 assert.deepEqual(await permissionsFor(ids.colaborador), [...eligibleModulePermissions('colaborador')].sort(), 'colaborador recibe únicamente módulos legacy compatibles');
-assert.deepEqual(await permissionsFor(ids.junta), [], 'junta no recibe módulos operativos; el email no concede Licitaciones');
+assert.deepEqual(await permissionsFor(ids.junta), ['modulo_siio_gerencial'], 'junta recibe únicamente SIIO ejecutivo; el email no concede Licitaciones ni otros módulos');
 
 assert.deepEqual(await permissionsFor(ids.future), [], 'un perfil creado después del snapshot inicial y durante el backfill no recibe módulos');
 assert.equal(Number((await db.query(`select count(*)::int as count from pg_trigger where tgrelid='public.psi_profile_permissions'::regclass and not tgisinternal`)).rows[0].count), 0, 'no existe trigger que conceda módulos');

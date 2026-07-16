@@ -20,7 +20,7 @@ const ROLE_MODULE_CEILINGS = new Map([
   ['director', new Set(MODULE_PERMISSION_CODES.filter(code => code !== 'modulo_usuarios'))],
   ['comercial', new Set(['modulo_alertas_comerciales', 'modulo_oportunidades', 'modulo_metas', 'licitaciones'])],
   ['colaborador', new Set(['modulo_alertas_comerciales', 'modulo_oportunidades', 'modulo_metas'])],
-  ['junta', new Set()],
+  ['junta', new Set(['modulo_siio_gerencial'])],
 ]);
 
 export function eligibleModulePermissions(role) {

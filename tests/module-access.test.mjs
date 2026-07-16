@@ -20,10 +20,13 @@ assert.equal(new Set(MODULE_PERMISSION_CODES).size, MODULE_PERMISSION_CODES.leng
 assert.ok(MODULE_PERMISSIONS.every(item => item.code && item.name && item.description));
 assert.equal(Object.isFrozen(MODULE_PERMISSIONS), true, 'el catálogo no puede mutarse');
 assert.ok(MODULE_PERMISSIONS.every(Object.isFrozen), 'cada módulo no puede mutarse');
-assert.deepEqual(eligibleModulePermissions('junta'), []);
+assert.deepEqual(eligibleModulePermissions('junta'), ['modulo_siio_gerencial']);
 assert.equal(isModulePermissionEligible('admin', 'modulo_usuarios'), true);
 assert.equal(isModulePermissionEligible('gerencia', 'modulo_usuarios'), false);
 assert.equal(isModulePermissionEligible('comercial', 'modulo_siio_gerencial'), false);
+assert.equal(isModulePermissionEligible('director', 'modulo_siio_gerencial'), true);
+assert.equal(isModulePermissionEligible('junta', 'modulo_siio_gerencial'), true);
+assert.equal(isModulePermissionEligible('junta', 'modulo_dashboard_comercial'), false);
 assert.equal(isModulePermissionEligible('comercial', 'modulo_oportunidades'), true);
 assert.equal(isModulePermissionEligible('colaborador', 'modulo_oportunidades'), true);
 assert.equal(isModulePermissionEligible('desconocido', 'modulo_metas'), false);

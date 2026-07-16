@@ -45,12 +45,13 @@ function requireDb() {
 
 
 const managementRoles = ['director','gerencia','admin'];
+const globalCrmScopeRoles = new Set(['gerencia', 'admin']);
 const commercialAreas = ['seguridad_fisica','tecnologia','licitacion_publica'];
 const customerSegments = ['cliente_nuevo','cliente_actual'];
 function isManager(profile) { return managementRoles.includes(profile?.role); }
 function validateCommercialArea(value) { const area = value || null; if (area && !commercialAreas.includes(area)) throw new Error('Área comercial no válida.'); return area; }
 function validateCustomerSegment(value, required = false) { const segment = value || null; if (required && !segment) throw new Error('Debe clasificar la oportunidad como Cliente Nuevo o Cliente Actual.'); if (segment && !customerSegments.includes(segment)) throw new Error('Tipo de cliente no válido.'); return segment; }
-function canEditCustomerSegment(profile, opportunity) { return isManager(profile) || (profile?.can_edit_customer_segment && opportunity?.owner_id === profile.id); }
+function canEditCustomerSegment(profile, opportunity) { return globalCrmScopeRoles.has(profile?.role) || (profile?.can_edit_customer_segment && opportunity?.owner_id === profile.id); }
 function canManageUsers(profile) { return profile?.role === 'admin'; }
 function canAccessSiio(profile) { return ['admin','gerencia','director'].includes(profile?.role); }
 export const MODULE_ENDPOINT_ACTIONS = Object.freeze({
@@ -59,6 +60,22 @@ export const MODULE_ENDPOINT_ACTIONS = Object.freeze({
   siio: ACTIONS.MODULE_SIIO_VIEW,
   tenders: ACTIONS.LICITACIONES_VIEW,
   users: ACTIONS.MODULE_USERS_VIEW,
+});
+// Canonical and Vercel-safe aliases share one auditable method+route inventory.
+export const HTTP_ACTION_MATRIX = Object.freeze({
+  'GET /api/opportunities/:id': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
+  'POST /api/opportunities': ['opportunities', ACTIONS.CRM_OPPORTUNITY_CREATE],
+  'PUT /api/opportunities/:id': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'POST /api/opportunities/:id/interactions': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'GET /api/opportunity-detail': ['opportunities', ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW],
+  'PUT /api/opportunity': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'POST /api/opportunity-interactions': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
+  'GET /api/goals': ['goals', ACTIONS.MODULE_GOALS_VIEW],
+  'PUT /api/goals': ['goals', ACTIONS.MODULE_GOALS_VIEW],
+
+  'GET /api/tenders': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'GET /api/users': ['users', ACTIONS.USERS_MANAGE],
+  'GET /api/access-catalog': ['users', ACTIONS.USERS_MANAGE],
 });
 export function requireModuleAction(profile, endpointModule) {
   return requireAction(profile, MODULE_ENDPOINT_ACTIONS[endpointModule], {});
@@ -74,6 +91,7 @@ function requireSiioModuleAccess(profile) {
   requireModuleAction(profile, 'siio');
   requireSiioAccess(profile);
 }
+
 function normalizeUserRole(value) {
   const raw = String(value || 'comercial').trim().toLowerCase();
   if (raw === 'directivo') return 'director';
@@ -402,28 +420,63 @@ export function bootstrapCapabilities(profile) {
     vigia: can(profile, ACTIONS.MODULE_VIGIA_VIEW),
   });
 }
+const BOOTSTRAP_PROFILE_SELECT = 'id,full_name';
+function crmResource(ownerId, assignment = {}) {
+  return { area_code: assignment.area_code || 'comercial', subarea_code: assignment.subarea_code ?? null, owner_id: ownerId };
+}
+function assignmentsByProfile(rows = []) {
+  const result = new Map();
+  for (const row of rows) {
+    if (!row?.profile_id || row.area_code !== 'comercial') continue;
+    const assignments = result.get(row.profile_id) || [];
+    assignments.push({ area_code: row.area_code, subarea_code: row.subarea_code ?? null });
+    result.set(row.profile_id, assignments);
+  }
+  return result;
+}
+function canReadCrmRow(profile, row, ownerAssignments) {
+  const ownerId = row?.owner_id;
+  const assignments = ownerAssignments.get(ownerId) || [];
+  if (assignments.some(assignment => can(profile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW, crmResource(ownerId, assignment)))) return true;
+  // Commercial ownership is already enforced by the action, while directors must
+  // always match a canonical assignment from the server.
+  return profile?.role !== 'director' && can(profile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW, crmResource(ownerId));
+}
+function readableOwnerIds(profile, profiles, ownerAssignments, globalScope) {
+  if (globalScope) return new Set(profiles.map(profileRow => profileRow.id));
+  const ids = new Set([profile.id]);
+  for (const profileRow of profiles) {
+    if (canReadCrmRow(profile, { owner_id: profileRow.id }, ownerAssignments)) ids.add(profileRow.id);
+  }
+  return ids;
+}
 export function filterBootstrapForProfile(payload, currentProfile) {
+  const { profileAssignments = [], ...publicPayload } = payload;
   const capabilities = bootstrapCapabilities(currentProfile);
-  const manager = isManager(currentProfile);
+  const globalScope = globalCrmScopeRoles.has(currentProfile?.role);
+  const ownerAssignments = assignmentsByProfile(profileAssignments);
+  const visibleOwnerIds = readableOwnerIds(currentProfile, payload.profiles, ownerAssignments, globalScope);
   const commercialData = capabilities.opportunities || capabilities.dashboard || capabilities.alerts || capabilities.vigia;
-  const scopedOpportunities = manager ? payload.opportunities : payload.opportunities.filter(o => o.owner_id === currentProfile.id);
-  const scopedStalled = manager ? payload.stalled : payload.stalled.filter(o => o.owner_id === currentProfile.id);
-  const scopedTopClosing = manager ? payload.topClosing : payload.topClosing.filter(o => o.owner_id === currentProfile.id);
-  const scopedMonthlyKpis = manager ? payload.monthlyKpis : payload.monthlyKpis.filter(k => k.owner_id === currentProfile.id);
-  const scopedGoals = manager ? payload.goals : payload.goals.filter(g => !g.user_id || g.user_id === currentProfile.id);
+  const scopedOpportunities = globalScope ? payload.opportunities : payload.opportunities.filter(o => canReadCrmRow(currentProfile, o, ownerAssignments));
+  const scopedStalled = globalScope ? payload.stalled : payload.stalled.filter(o => canReadCrmRow(currentProfile, o, ownerAssignments));
+  const scopedTopClosing = globalScope ? payload.topClosing : payload.topClosing.filter(o => canReadCrmRow(currentProfile, o, ownerAssignments));
+  const scopedMonthlyKpis = globalScope ? payload.monthlyKpis : payload.monthlyKpis.filter(k => visibleOwnerIds.has(k.owner_id));
+  const scopedGoals = globalScope ? payload.goals : payload.goals.filter(g => !g.user_id || visibleOwnerIds.has(g.user_id));
   const needsProfiles = commercialData || capabilities.goals;
   const opportunities = commercialData ? scopedOpportunities : [];
   const stages = commercialData ? payload.stages : [];
   const services = commercialData || capabilities.goals ? payload.services : [];
   const lossReasons = capabilities.opportunities ? payload.lossReasons : [];
   const summary = capabilities.dashboard || capabilities.vigia
-    ? (manager ? payload.summary : recomputeSummary(stages, opportunities))
+    ? (globalScope ? payload.summary : recomputeSummary(stages, opportunities))
     : [];
   const stalled = capabilities.dashboard ? scopedStalled : [];
   const topClosing = capabilities.dashboard ? scopedTopClosing : [];
   const monthlyKpis = capabilities.goals || capabilities.dashboard || capabilities.alerts || capabilities.vigia ? scopedMonthlyKpis : [];
   const goals = capabilities.goals || capabilities.dashboard || capabilities.alerts || capabilities.vigia ? scopedGoals : [];
-  const profiles = needsProfiles ? (manager ? payload.profiles : payload.profiles.filter(p => p.id === currentProfile.id)) : [];
+  const profiles = (needsProfiles
+    ? (globalScope ? payload.profiles : payload.profiles.filter(p => visibleOwnerIds.has(p.id)))
+    : []).map(({ id, full_name }) => ({ id, full_name }));
   const totals = opportunities.reduce((acc, o) => {
     acc.count += 1;
     acc.pipeline += Number(o.offer_value || 0);
@@ -431,15 +484,16 @@ export function filterBootstrapForProfile(payload, currentProfile) {
     if (o.stage_code === 'aprobado') acc.approved += Number(o.offer_value || 0);
     return acc;
   }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
-  return { ...payload, summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals, totals: capabilities.dashboard || capabilities.vigia ? totals : { count: 0, pipeline: 0, weighted: 0, approved: 0 }, currentProfile };
+  return { ...publicPayload, summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals, totals: capabilities.dashboard || capabilities.vigia ? totals : { count: 0, pipeline: 0, weighted: 0, approved: 0 }, currentProfile };
 }
-async function ensureOpportunityAccess(database, id, profile) {
+async function requireOpportunityAction(database, profile, ownerId, action) {
+  const assignments = await must(database.from('psi_profile_area_assignments').select('area_code,subarea_code').eq('profile_id', ownerId));
+  if (assignments.some(assignment => can(profile, action, crmResource(ownerId, assignment)))) return true;
+  return requireAction(profile, action, crmResource(ownerId));
+}
+async function ensureOpportunityAccess(database, id, profile, action = ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW) {
   const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,customer_segment').eq('id', id).single());
-  if (!isManager(profile) && opportunity.owner_id !== profile.id) {
-    const error = new Error('No tiene permisos sobre esta oportunidad.');
-    error.status = 403;
-    throw error;
-  }
+  await requireOpportunityAction(database, profile, opportunity.owner_id, action);
   return opportunity;
 }
 
@@ -1647,10 +1701,11 @@ app.get('/api/bootstrap', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
-    const [summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals] = await Promise.all([
+    const [summary, opportunities, profiles, profileAssignments, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals] = await Promise.all([
       must(database.from('v_psi_sales_pipeline_summary').select('*').order('stage_order')),
       must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).order('updated_at', { ascending: false }).limit(1000)),
-      must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment').eq('active', true).order('full_name')),
+      must(database.from('psi_sales_profiles').select(BOOTSTRAP_PROFILE_SELECT).eq('active', true).order('full_name')),
+      must(database.from('psi_profile_area_assignments').select('profile_id,area_code,subarea_code')),
       must(database.from('psi_sales_pipeline_stages').select('*').order('stage_order')),
       must(database.from('psi_sales_service_types').select('*').eq('active', true).order('name')),
       must(database.from('psi_sales_loss_reasons').select('*').eq('active', true).order('name')),
@@ -1669,7 +1724,7 @@ app.get('/api/bootstrap', async (req, res) => {
       if (o.stage_code === 'aprobado') acc.approved += Number(o.offer_value || 0);
       return acc;
     }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
-    res.json(filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, stages, services, lossReasons, stalled: enrichedStalled, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile));
+    res.json(filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, profileAssignments, stages, services, lossReasons, stalled: enrichedStalled, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile));
   } catch (error) { sendAuthError(res, error); }
 });
 
@@ -1679,7 +1734,7 @@ app.get('/api/opportunities/:id', async (req, res) => {
     requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     const id = req.params.id;
-    await ensureOpportunityAccess(database, id, currentProfile);
+    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
     const opportunity = await attachCommercialMetadata(database, await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', id).single()));
     const interactions = await must(database.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
     res.json({ opportunity, interactions });
@@ -2361,6 +2416,7 @@ app.post('/api/opportunities', async (req, res) => {
     const database = requireDb();
     const payload = cleanOpportunity(req.body);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
+    await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_CREATE);
     const data = await must(database.from('psi_sales_opportunities').insert(payload).select('id').single());
     res.status(201).json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
@@ -2371,9 +2427,10 @@ app.put('/api/opportunities/:id', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
-    const existing = await ensureOpportunityAccess(database, req.params.id, currentProfile);
+    const existing = await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const payload = cleanOpportunity(req.body);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
+    if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
     if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
     const data = await must(database.from('psi_sales_opportunities').update(payload).eq('id', req.params.id).select('id').single());
     await logCustomerSegmentChange(database, req.params.id, currentProfile.id, existing.customer_segment, payload.customer_segment);
@@ -2417,7 +2474,10 @@ app.get('/api/goals', async (req, res) => {
     let query = database.from('psi_sales_goals').select('*').order('period_month', { ascending: false }).limit(500);
     if (currentProfile.role === 'comercial') query = query.or(`user_id.eq.${currentProfile.id},user_id.is.null`);
     const data = await must(query);
-    res.json(data);
+    if (currentProfile.role !== 'director') return res.json(data);
+    const assignmentRows = await must(database.from('psi_profile_area_assignments').select('profile_id,area_code,subarea_code'));
+    const ownerAssignments = assignmentsByProfile(assignmentRows);
+    res.json(data.filter(goal => goal.user_id && canReadCrmRow(currentProfile, { owner_id: goal.user_id }, ownerAssignments)));
   } catch (error) { sendAuthError(res, error); }
 });
 
@@ -2425,7 +2485,7 @@ app.put('/api/goals', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     requireModuleAction(currentProfile, 'goals');
-    if (!isManager(currentProfile)) { const error = new Error('Solo gerencia/admin puede modificar metas.'); error.status = 403; throw error; }
+    if (!globalCrmScopeRoles.has(currentProfile?.role)) { const error = new Error('Solo gerencia/admin puede modificar metas.'); error.status = 403; throw error; }
     const database = requireDb();
     const payload = cleanGoal(req.body);
     const data = await must(database.from('psi_sales_goals').upsert(payload, { onConflict: 'user_id,period_month,service_type_code,regional_nombre' }).select('*').single());
@@ -2438,12 +2498,12 @@ app.post('/api/opportunities/:id/interactions', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
-    await ensureOpportunityAccess(database, req.params.id, currentProfile);
+    await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const notes = String(req.body.notes || '').trim();
     if (!notes) throw new Error('La nota del seguimiento es obligatoria.');
     const occurred_at = req.body.occurred_at || new Date().toISOString();
     const interaction_type = req.body.interaction_type || 'nota';
-    const created_by = isManager(currentProfile) ? (req.body.created_by || currentProfile.id) : currentProfile.id;
+    const created_by = globalCrmScopeRoles.has(currentProfile?.role) ? (req.body.created_by || currentProfile.id) : currentProfile.id;
     const next_action_at = req.body.next_action_at || null;
     const row = { opportunity_id: req.params.id, notes, occurred_at, interaction_type, created_by };
     const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
@@ -2464,7 +2524,7 @@ app.get('/api/opportunity-detail', async (req, res) => {
     const database = requireDb();
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
-    await ensureOpportunityAccess(database, id, currentProfile);
+    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
     const opportunity = await attachCommercialMetadata(database, await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', id).single()));
     const interactions = await must(database.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
     res.json({ opportunity, interactions });
@@ -2478,9 +2538,10 @@ app.put('/api/opportunity', async (req, res) => {
     const database = requireDb();
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
-    const existing = await ensureOpportunityAccess(database, id, currentProfile);
+    const existing = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const payload = cleanOpportunity(req.body);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
+    if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
     if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
     const data = await must(database.from('psi_sales_opportunities').update(payload).eq('id', id).select('id').single());
     await logCustomerSegmentChange(database, id, currentProfile.id, existing.customer_segment, payload.customer_segment);
@@ -2495,12 +2556,12 @@ app.post('/api/opportunity-interactions', async (req, res) => {
     const database = requireDb();
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
-    await ensureOpportunityAccess(database, id, currentProfile);
+    await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const notes = String(req.body.notes || '').trim();
     if (!notes) throw new Error('La nota del seguimiento es obligatoria.');
     const occurred_at = req.body.occurred_at || new Date().toISOString();
     const interaction_type = req.body.interaction_type || 'nota';
-    const created_by = isManager(currentProfile) ? (req.body.created_by || currentProfile.id) : currentProfile.id;
+    const created_by = globalCrmScopeRoles.has(currentProfile?.role) ? (req.body.created_by || currentProfile.id) : currentProfile.id;
     const next_action_at = req.body.next_action_at || null;
     const row = { opportunity_id: id, notes, occurred_at, interaction_type, created_by };
     const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
