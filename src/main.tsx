@@ -187,6 +187,7 @@ function parseRoute(): Route {
   const hash = window.location.hash.replace(/^#\/?/, '');
   const [path] = hash.split('?');
   const [page, id] = path.split('/');
+  if (!page) return { page: 'dashboard' };
   if (page === 'opportunities') return { page: 'opportunities' };
   if (page === 'tenders') return { page: 'tenders' };
   if (page === 'detail') return id ? { page: 'detail', id: decodeURIComponent(id) } : { page: 'invalid' };
