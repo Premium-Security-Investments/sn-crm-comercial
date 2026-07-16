@@ -222,6 +222,64 @@ on conflict (code) do update
       description = excluded.description,
       active = true;
 
+-- commercial_area se conserva como compatibilidad temporal/read-only hasta una migración posterior.
+-- This preserves legacy configuration (including inactive profiles) without impersonating a human audit actor.
+do $$
+declare
+  has_commercial_area boolean;
+  has_microsoft_email boolean;
+begin
+  select exists (
+    select 1
+    from pg_attribute
+    where attrelid = 'public.psi_sales_profiles'::regclass
+      and attname = 'commercial_area'
+      and not attisdropped
+  ) into has_commercial_area;
+
+  select exists (
+    select 1
+    from pg_attribute
+    where attrelid = 'public.psi_sales_profiles'::regclass
+      and attname = 'microsoft_email'
+      and not attisdropped
+  ) into has_microsoft_email;
+
+  if has_commercial_area then
+    execute $sql$
+      insert into public.psi_profile_area_assignments (profile_id, area_code, subarea_code)
+      select id,
+             'comercial',
+             case commercial_area
+               when 'seguridad_fisica' then 'seguridad_fisica'
+               when 'tecnologia' then 'tecnologia'
+               when 'licitacion_publica' then 'licitaciones'
+             end
+      from public.psi_sales_profiles
+      where commercial_area in ('seguridad_fisica', 'tecnologia', 'licitacion_publica')
+      on conflict do nothing
+    $sql$;
+
+    execute $sql$
+      insert into public.psi_profile_permissions (profile_id, permission_code)
+      select id, 'licitaciones'
+      from public.psi_sales_profiles
+      where commercial_area = 'licitacion_publica'
+      on conflict do nothing
+    $sql$;
+  end if;
+
+  if has_microsoft_email then
+    execute $sql$
+      insert into public.psi_profile_permissions (profile_id, permission_code)
+      select id, 'licitaciones'
+      from public.psi_sales_profiles
+      where lower(btrim(microsoft_email)) = 'directora.licitaciones@seguridadnacional.co'
+      on conflict do nothing
+    $sql$;
+  end if;
+end $$;
+
 -- Audit evidence is append-only, including for owners or BYPASSRLS roles.
 create or replace function public.psi_access_audit_log_prevent_mutation()
 returns trigger
