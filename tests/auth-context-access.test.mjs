@@ -74,6 +74,18 @@ async function listen(server) {
   return server.address().port;
 }
 
+async function requestJson(port, path, token) {
+  return new Promise((resolve, reject) => {
+    const req = http.get({ hostname: '127.0.0.1', port, path, headers: { authorization: `Bearer ${token}` } }, res => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', chunk => { body += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(body) }));
+    });
+    req.on('error', reject);
+  });
+}
+
 const scenarioByEmail = new Map(Object.values(scenarios).map(scenario => [scenario.user.email, scenario]));
 const scenarioByProfileId = new Map(Object.values(scenarios).filter(scenario => scenario.profile).map(scenario => [scenario.profile.id, scenario]));
 const observed = { auth: 0, profiles: [], areas: [], permissions: [] };
@@ -102,7 +114,7 @@ const fakeSupabase = http.createServer((req, res) => {
     assert.ok(accessScenario, `unexpected area lookup for ${profileId}`);
     assert.equal(url.searchParams.get('select'), 'area_code,subarea_code');
     assert.equal(url.searchParams.get('profile_id'), `eq.${accessScenario.profile.id}`);
-    if (accessScenario === scenarios['assignment-error-token']) return json(res, 500, { message: 'areas unavailable' });
+    if (accessScenario === scenarios['assignment-error-token']) return json(res, 500, { message: 'relation psi_profile_area_assignments is unavailable' });
     return json(res, 200, accessScenario.areas);
   }
   if (url.pathname === '/rest/v1/psi_profile_permissions') {
@@ -125,7 +137,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
 process.env.VERCEL = '1';
 
 try {
-  const { getAuthContext } = await import('../server/index.js');
+  const { getAuthContext, default: app } = await import('../server/index.js');
   const context = await getAuthContext({
     headers: { authorization: 'Bearer director-token' },
     body: { areas: [{ area_code: 'forged' }], permissions: ['forged'] },
@@ -164,8 +176,35 @@ try {
   assert.equal(observed.areas.length, 2, 'invalid authentication must not query areas');
   assert.equal(observed.permissions.length, 2, 'invalid authentication must not query permissions');
 
+  const publicAuthContextFailure = 'No se pudo validar el acceso del usuario.';
+  const internalDetails = /relation|psi_profile|assign|permission|area|unavailable/i;
   for (const token of ['assignment-error-token', 'permission-error-token', 'null-areas-token', 'malformed-permission-token']) {
-    await assert.rejects(() => getAuthContext({ headers: { authorization: `Bearer ${token}` } }));
+    await assert.rejects(
+      () => getAuthContext({ headers: { authorization: `Bearer ${token}` } }),
+      error => {
+        assert.equal(error?.status, 500);
+        assert.equal(error?.code, 'AUTH_CONTEXT_UNAVAILABLE');
+        assert.equal(error?.message, publicAuthContextFailure);
+        assert.ok(error?.cause);
+        assert.doesNotMatch(error.message, internalDetails);
+        return true;
+      }
+    );
+  }
+
+  const originalConsoleError = console.error;
+  let appServer;
+  try {
+    console.error = () => {};
+    appServer = http.createServer(app);
+    const appPort = await listen(appServer);
+    const response = await requestJson(appPort, '/api/bootstrap', 'assignment-error-token');
+    assert.equal(response.status, 500);
+    assert.equal(response.body.error, publicAuthContextFailure);
+    assert.doesNotMatch(response.body.error, internalDetails);
+  } finally {
+    if (appServer?.listening) await new Promise(resolve => appServer.close(resolve));
+    console.error = originalConsoleError;
   }
 
   const historical = await getAuthContext({ headers: { authorization: 'Bearer historical-email-token' } });
