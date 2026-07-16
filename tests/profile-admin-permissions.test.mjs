@@ -77,6 +77,15 @@ assert.deepEqual(
   ],
   'agrupa filas batched sin mezclar perfiles',
 );
+for (const [profiles, assignments, permissions, message] of [
+  [[{ id: 'one' }], [{ profile_id: 'one', area_code: 'comercial' }], [], /asignaciones/i],
+  [[{ id: 'one' }], [], [{ profile_id: 'one', permission_code: ' ' }], /permisos/i],
+  [[{ id: 'one' }], [{ profile_id: 'other', area_code: 'comercial', subarea_code: null }], [], /perfil inesperado/i],
+  [[{ id: 'one' }], [], [{ profile_id: 'other', permission_code: 'licitaciones' }], /perfil inesperado/i],
+]) {
+  assert.throws(() => enrichProfilesWithAccess(profiles, assignments, permissions), message, 'las lecturas administrativas deben fallar cerradamente');
+}
+assert.throws(() => enrichProfilesWithAccess(null, [], []), /perfiles/i);
 
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
