@@ -53,12 +53,26 @@ function validateCustomerSegment(value, required = false) { const segment = valu
 function canEditCustomerSegment(profile, opportunity) { return isManager(profile) || (profile?.can_edit_customer_segment && opportunity?.owner_id === profile.id); }
 function canManageUsers(profile) { return profile?.role === 'admin'; }
 function canAccessSiio(profile) { return ['admin','gerencia','director'].includes(profile?.role); }
+export const MODULE_ENDPOINT_ACTIONS = Object.freeze({
+  opportunities: ACTIONS.MODULE_OPPORTUNITIES_VIEW,
+  goals: ACTIONS.MODULE_GOALS_VIEW,
+  siio: ACTIONS.MODULE_SIIO_VIEW,
+  tenders: ACTIONS.LICITACIONES_VIEW,
+  users: ACTIONS.MODULE_USERS_VIEW,
+});
+export function requireModuleAction(profile, endpointModule) {
+  return requireAction(profile, MODULE_ENDPOINT_ACTIONS[endpointModule], {});
+}
 function requireSiioAccess(profile) {
   if (!canAccessSiio(profile)) {
     const error = new Error('No tiene permisos para acceder al SIIO / F2 gerencial.');
     error.status = 403;
     throw error;
   }
+}
+function requireSiioModuleAccess(profile) {
+  requireModuleAction(profile, 'siio');
+  requireSiioAccess(profile);
 }
 function normalizeUserRole(value) {
   const raw = String(value || 'comercial').trim().toLowerCase();
@@ -379,16 +393,37 @@ function recomputeSummary(stages, opportunities) {
     };
   });
 }
-function filterBootstrapForProfile(payload, currentProfile) {
+export function bootstrapCapabilities(profile) {
+  return Object.freeze({
+    opportunities: can(profile, ACTIONS.MODULE_OPPORTUNITIES_VIEW),
+    goals: can(profile, ACTIONS.MODULE_GOALS_VIEW),
+    dashboard: can(profile, ACTIONS.MODULE_DASHBOARD_VIEW),
+    alerts: can(profile, ACTIONS.MODULE_ALERTS_VIEW),
+    vigia: can(profile, ACTIONS.MODULE_VIGIA_VIEW),
+  });
+}
+export function filterBootstrapForProfile(payload, currentProfile) {
+  const capabilities = bootstrapCapabilities(currentProfile);
   const manager = isManager(currentProfile);
-  const opportunities = manager ? payload.opportunities : payload.opportunities.filter(o => o.owner_id === currentProfile.id);
-  const stages = payload.stages;
-  const summary = manager ? payload.summary : recomputeSummary(stages, opportunities);
-  const stalled = manager ? payload.stalled : payload.stalled.filter(o => o.owner_id === currentProfile.id);
-  const topClosing = manager ? payload.topClosing : payload.topClosing.filter(o => o.owner_id === currentProfile.id);
-  const monthlyKpis = manager ? payload.monthlyKpis : payload.monthlyKpis.filter(k => k.owner_id === currentProfile.id);
-  const goals = manager ? payload.goals : payload.goals.filter(g => !g.user_id || g.user_id === currentProfile.id);
-  const profiles = manager ? payload.profiles : payload.profiles.filter(p => p.id === currentProfile.id);
+  const commercialData = capabilities.opportunities || capabilities.dashboard || capabilities.alerts || capabilities.vigia;
+  const scopedOpportunities = manager ? payload.opportunities : payload.opportunities.filter(o => o.owner_id === currentProfile.id);
+  const scopedStalled = manager ? payload.stalled : payload.stalled.filter(o => o.owner_id === currentProfile.id);
+  const scopedTopClosing = manager ? payload.topClosing : payload.topClosing.filter(o => o.owner_id === currentProfile.id);
+  const scopedMonthlyKpis = manager ? payload.monthlyKpis : payload.monthlyKpis.filter(k => k.owner_id === currentProfile.id);
+  const scopedGoals = manager ? payload.goals : payload.goals.filter(g => !g.user_id || g.user_id === currentProfile.id);
+  const needsProfiles = commercialData || capabilities.goals;
+  const opportunities = commercialData ? scopedOpportunities : [];
+  const stages = commercialData ? payload.stages : [];
+  const services = commercialData || capabilities.goals ? payload.services : [];
+  const lossReasons = capabilities.opportunities ? payload.lossReasons : [];
+  const summary = capabilities.dashboard || capabilities.vigia
+    ? (manager ? payload.summary : recomputeSummary(stages, opportunities))
+    : [];
+  const stalled = capabilities.dashboard ? scopedStalled : [];
+  const topClosing = capabilities.dashboard ? scopedTopClosing : [];
+  const monthlyKpis = capabilities.goals || capabilities.dashboard || capabilities.alerts || capabilities.vigia ? scopedMonthlyKpis : [];
+  const goals = capabilities.goals || capabilities.dashboard || capabilities.alerts || capabilities.vigia ? scopedGoals : [];
+  const profiles = needsProfiles ? (manager ? payload.profiles : payload.profiles.filter(p => p.id === currentProfile.id)) : [];
   const totals = opportunities.reduce((acc, o) => {
     acc.count += 1;
     acc.pipeline += Number(o.offer_value || 0);
@@ -396,7 +431,7 @@ function filterBootstrapForProfile(payload, currentProfile) {
     if (o.stage_code === 'aprobado') acc.approved += Number(o.offer_value || 0);
     return acc;
   }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
-  return { ...payload, summary, opportunities, profiles, stalled, topClosing, monthlyKpis, goals, totals, currentProfile };
+  return { ...payload, summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals, totals: capabilities.dashboard || capabilities.vigia ? totals : { count: 0, pipeline: 0, weighted: 0, approved: 0 }, currentProfile };
 }
 async function ensureOpportunityAccess(database, id, profile) {
   const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,customer_segment').eq('id', id).single());
@@ -1533,7 +1568,7 @@ function cleanSiioDecision(body = {}, profile) {
 app.get('/api/siio/bootstrap', async (req, res) => {
   try {
     const { profile } = await getAuthContext(req);
-    requireSiioAccess(profile);
+    requireSiioModuleAccess(profile);
     const database = requireDb();
     const [fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates, strategicOpportunities] = await Promise.all([
       optionalSiioList(database, siioTables.fronts, '*', 'id'),
@@ -1551,16 +1586,16 @@ app.get('/api/siio/bootstrap', async (req, res) => {
   } catch (error) { sendAuthError(res, error); }
 });
 app.get('/api/siio/fronts', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.fronts, '*', 'id')); }
+  try { const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.fronts, '*', 'id')); }
   catch (error) { sendAuthError(res, error); }
 });
 app.get('/api/siio/records', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.records, '*', 'updated_at')); }
+  try { const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.records, '*', 'updated_at')); }
   catch (error) { sendAuthError(res, error); }
 });
 app.post('/api/siio/records', async (req, res) => {
   try {
-    const { profile } = await getAuthContext(req); requireSiioAccess(profile);
+    const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile);
     const payload = { ...cleanSiioRecord(req.body, profile), created_by: profile.id };
     if (!payload.id || !payload.title) throw new Error('ID y título son obligatorios.');
     res.json(await must(requireDb().from(siioTables.records).insert(payload).select('*').single()));
@@ -1568,30 +1603,30 @@ app.post('/api/siio/records', async (req, res) => {
 });
 app.patch('/api/siio/records/:id', async (req, res) => {
   try {
-    const { profile } = await getAuthContext(req); requireSiioAccess(profile);
+    const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile);
     const payload = cleanSiioRecord({ ...req.body, id: req.params.id }, profile); delete payload.id; delete payload.created_by;
     res.json(await must(requireDb().from(siioTables.records).update(payload).eq('id', req.params.id).select('*').single()));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.get('/api/siio/sources', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.sources, '*', 'id')); }
+  try { const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.sources, '*', 'id')); }
   catch (error) { sendAuthError(res, error); }
 });
 app.post('/api/siio/sources', async (req, res) => {
   try {
-    const { profile } = await getAuthContext(req); requireSiioAccess(profile);
+    const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile);
     const payload = cleanSiioSource(req.body);
     if (!payload.id || !payload.name) throw new Error('ID y nombre de fuente son obligatorios.');
     res.json(await must(requireDb().from(siioTables.sources).upsert(payload).select('*').single()));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.get('/api/siio/decisions', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.decisions, '*', 'created_at')); }
+  try { const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.decisions, '*', 'created_at')); }
   catch (error) { sendAuthError(res, error); }
 });
 app.post('/api/siio/decisions', async (req, res) => {
   try {
-    const { profile } = await getAuthContext(req); requireSiioAccess(profile);
+    const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile);
     const payload = { ...cleanSiioDecision(req.body, profile), created_by: profile.id };
     if (!payload.description) throw new Error('La descripción es obligatoria.');
     res.json(await must(requireDb().from(siioTables.decisions).insert(payload).select('*').single()));
@@ -1599,12 +1634,12 @@ app.post('/api/siio/decisions', async (req, res) => {
 });
 app.patch('/api/siio/decisions/:id', async (req, res) => {
   try {
-    const { profile } = await getAuthContext(req); requireSiioAccess(profile);
+    const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile);
     res.json(await must(requireDb().from(siioTables.decisions).update(cleanSiioDecision(req.body, profile)).eq('id', req.params.id).select('*').single()));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.get('/api/siio/board-reports', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.boardReports, '*', 'period_month')); }
+  try { const { profile } = await getAuthContext(req); requireSiioModuleAccess(profile); res.json(await optionalSiioList(requireDb(), siioTables.boardReports, '*', 'period_month')); }
   catch (error) { sendAuthError(res, error); }
 });
 
@@ -1641,6 +1676,7 @@ app.get('/api/bootstrap', async (req, res) => {
 app.get('/api/opportunities/:id', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     const id = req.params.id;
     await ensureOpportunityAccess(database, id, currentProfile);
@@ -2321,6 +2357,7 @@ function cleanOpportunity(body) {
 app.post('/api/opportunities', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     const payload = cleanOpportunity(req.body);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
@@ -2332,6 +2369,7 @@ app.post('/api/opportunities', async (req, res) => {
 app.put('/api/opportunities/:id', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     const existing = await ensureOpportunityAccess(database, req.params.id, currentProfile);
     const payload = cleanOpportunity(req.body);
@@ -2374,6 +2412,7 @@ function cleanGoal(body) {
 app.get('/api/goals', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'goals');
     const database = requireDb();
     let query = database.from('psi_sales_goals').select('*').order('period_month', { ascending: false }).limit(500);
     if (currentProfile.role === 'comercial') query = query.or(`user_id.eq.${currentProfile.id},user_id.is.null`);
@@ -2385,6 +2424,7 @@ app.get('/api/goals', async (req, res) => {
 app.put('/api/goals', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'goals');
     if (!isManager(currentProfile)) { const error = new Error('Solo gerencia/admin puede modificar metas.'); error.status = 403; throw error; }
     const database = requireDb();
     const payload = cleanGoal(req.body);
@@ -2396,6 +2436,7 @@ app.put('/api/goals', async (req, res) => {
 app.post('/api/opportunities/:id/interactions', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     await ensureOpportunityAccess(database, req.params.id, currentProfile);
     const notes = String(req.body.notes || '').trim();
@@ -2419,6 +2460,7 @@ app.post('/api/opportunities/:id/interactions', async (req, res) => {
 app.get('/api/opportunity-detail', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
@@ -2432,6 +2474,7 @@ app.get('/api/opportunity-detail', async (req, res) => {
 app.put('/api/opportunity', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
@@ -2448,6 +2491,7 @@ app.put('/api/opportunity', async (req, res) => {
 app.post('/api/opportunity-interactions', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
@@ -2539,6 +2583,7 @@ async function sendAccessEmail(database, email, req) {
 app.get('/api/access-catalog', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'users');
     requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
     res.json(await getActiveAccessCatalog(requireDb()));
   } catch (error) { sendAuthError(res, error); }
@@ -2547,6 +2592,7 @@ app.get('/api/access-catalog', async (req, res) => {
 app.get('/api/users', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'users');
     requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
     const database = requireDb();
     let profiles;
@@ -2571,6 +2617,7 @@ app.get('/api/users', async (req, res) => {
 app.post('/api/users', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'users');
     requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
     const database = requireDb();
     const full_name = String(req.body.full_name || '').trim();
@@ -2608,6 +2655,7 @@ app.post('/api/users', async (req, res) => {
 app.patch('/api/users', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'users');
     requireAction(currentProfile, ACTIONS.USERS_MANAGE, {});
     const database = requireDb();
     const id = String(req.query.id || '').trim();
