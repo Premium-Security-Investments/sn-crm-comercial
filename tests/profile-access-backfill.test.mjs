@@ -12,32 +12,40 @@ const ids = {
   historicalTenderEmail: '44444444-4444-4444-8444-444444444444',
   unrelated: '55555555-5555-4555-8555-555555555555',
   inactive: '66666666-6666-4666-8666-666666666666',
+  duplicateTenderEmail: '77777777-7777-4777-8777-777777777777',
 };
 
 const scalar = async (db, sql) => (await db.query(sql)).rows[0];
 
-async function createLegacyDatabase() {
+async function createLegacyDatabase({ hasCommercialArea = true, hasMicrosoftEmail = true, rows } = {}) {
   const db = new PGlite();
+  const columns = [
+    'id uuid primary key',
+    'role text not null',
+    'active boolean not null default true',
+    hasMicrosoftEmail && 'microsoft_email text',
+    hasCommercialArea && 'commercial_area text',
+    "constraint legacy_sales_profile_role_check check (role in ('admin', 'gerencia', 'director', 'comercial', 'colaborador'))",
+  ].filter(Boolean);
+  const insertColumns = ['id', 'role', 'active', hasMicrosoftEmail && 'microsoft_email', hasCommercialArea && 'commercial_area'].filter(Boolean);
+  const seedRows = rows ?? [
+    [ids.seguridadFisica, 'comercial', true, hasMicrosoftEmail && 'fisica@seguridadnacional.co', hasCommercialArea && 'seguridad_fisica'],
+    [ids.tecnologia, 'comercial', true, hasMicrosoftEmail && 'tecnologia@seguridadnacional.co', hasCommercialArea && 'tecnologia'],
+    [ids.licitacion, 'comercial', true, hasMicrosoftEmail && 'licitacion@seguridadnacional.co', hasCommercialArea && 'licitacion_publica'],
+    [ids.historicalTenderEmail, 'colaborador', true, hasMicrosoftEmail && '  Directora.Licitaciones@SeguridadNacional.co  ', hasCommercialArea && null],
+    [ids.unrelated, 'comercial', true, hasMicrosoftEmail && 'sin-acceso@seguridadnacional.co', hasCommercialArea && null],
+    [ids.inactive, 'colaborador', false, hasMicrosoftEmail && 'inactiva@seguridadnacional.co', hasCommercialArea && 'tecnologia'],
+  ].map((row) => row.filter((value, index) => index < 3 || (index === 3 && hasMicrosoftEmail) || (index === 4 && hasCommercialArea)));
+  const quote = (value) => value === null ? 'null' : typeof value === 'boolean' ? String(value) : `'${value.replaceAll("'", "''")}'`;
+
   await db.exec(`
     create role authenticated;
     create role service_role;
     alter role service_role bypassrls;
     grant service_role to current_user;
-    create table public.psi_sales_profiles (
-      id uuid primary key,
-      role text not null,
-      active boolean not null default true,
-      microsoft_email text,
-      commercial_area text,
-      constraint legacy_sales_profile_role_check check (role in ('admin', 'gerencia', 'director', 'comercial', 'colaborador'))
-    );
-    insert into public.psi_sales_profiles (id, role, active, microsoft_email, commercial_area) values
-      ('${ids.seguridadFisica}', 'comercial', true, 'fisica@seguridadnacional.co', 'seguridad_fisica'),
-      ('${ids.tecnologia}', 'comercial', true, 'tecnologia@seguridadnacional.co', 'tecnologia'),
-      ('${ids.licitacion}', 'comercial', true, 'licitacion@seguridadnacional.co', 'licitacion_publica'),
-      ('${ids.historicalTenderEmail}', 'colaborador', true, '  Directora.Licitaciones@SeguridadNacional.co  ', null),
-      ('${ids.unrelated}', 'comercial', true, 'sin-acceso@seguridadnacional.co', null),
-      ('${ids.inactive}', 'colaborador', false, 'inactiva@seguridadnacional.co', 'tecnologia');
+    create table public.psi_sales_profiles (${columns.join(',\n')});
+    insert into public.psi_sales_profiles (${insertColumns.join(', ')}) values
+      ${seedRows.map((row) => `(${row.map(quote).join(', ')})`).join(',\n      ')};
   `);
   return db;
 }
@@ -55,6 +63,23 @@ async function permissionsByProfile(db) {
     select profile_id, permission_code
     from public.psi_profile_permissions
     order by profile_id, permission_code
+  `)).rows;
+}
+
+async function exclusiveRoleChecks(db) {
+  return (await db.query(`
+    select conname
+    from pg_constraint
+    where conrelid = 'public.psi_sales_profiles'::regclass
+      and contype = 'c'
+      and conkey = array[(
+        select attnum
+        from pg_attribute
+        where attrelid = 'public.psi_sales_profiles'::regclass
+          and attname = 'role'
+          and not attisdropped
+      )]::smallint[]
+    order by conname
   `)).rows;
 }
 
@@ -104,12 +129,14 @@ await (async function backfillsLegacyCommercialAreaAndHistoricalTenderPermission
     'el backfill no debe mutar columnas del perfil legado',
   );
   assert.equal((await scalar(db, `select count(*)::int as count from public.psi_access_audit_log`)).count, 0, 'un backfill no debe fingir actor humano en auditoría');
+  assert.deepEqual(await exclusiveRoleChecks(db), [{ conname: 'psi_sales_profiles_role_check' }], 'la primera ejecución deja exactamente un CHECK exclusivo de role con el nombre canónico');
 
   const firstAssignments = await assignmentsByProfile(db);
   const firstPermissions = await permissionsByProfile(db);
   await db.exec(migration);
   assert.deepEqual(await assignmentsByProfile(db), firstAssignments, 're-ejecutar 019 no debe duplicar assignments');
   assert.deepEqual(await permissionsByProfile(db), firstPermissions, 're-ejecutar 019 no debe duplicar permissions');
+  assert.deepEqual(await exclusiveRoleChecks(db), [{ conname: 'psi_sales_profiles_role_check' }], 'la segunda ejecución conserva exactamente un CHECK exclusivo de role con el nombre canónico');
   assert.equal(
     (await scalar(db, `
       select count(*)::int as count
@@ -137,6 +164,63 @@ await (async function backfillsLegacyCommercialAreaAndHistoricalTenderPermission
     'no deben existir permissions duplicados',
   );
   assert.equal((await scalar(db, `select count(*)::int as count from public.psi_access_audit_log`)).count, 0, 'el segundo backfill tampoco debe escribir auditoría');
+  await db.close();
+})();
+
+await (async function backfillsOnlyTheLegacyColumnsAvailableInPartialSchemas() {
+  const cases = [
+    {
+      name: 'solo commercial_area',
+      options: { hasCommercialArea: true, hasMicrosoftEmail: false },
+      assignments: 4,
+      permissions: [{ profile_id: ids.licitacion, permission_code: 'licitaciones' }],
+    },
+    {
+      name: 'solo microsoft_email',
+      options: { hasCommercialArea: false, hasMicrosoftEmail: true },
+      assignments: 0,
+      permissions: [{ profile_id: ids.historicalTenderEmail, permission_code: 'licitaciones' }],
+    },
+    {
+      name: 'sin columnas legacy',
+      options: { hasCommercialArea: false, hasMicrosoftEmail: false },
+      assignments: 0,
+      permissions: [],
+    },
+  ];
+
+  for (const scenario of cases) {
+    const db = await createLegacyDatabase(scenario.options);
+    await db.exec(migration);
+    assert.equal((await assignmentsByProfile(db)).length, scenario.assignments, `${scenario.name}: solo commercial_area debe generar assignments`);
+    assert.deepEqual(await permissionsByProfile(db), scenario.permissions, `${scenario.name}: el permiso histórico depende solo de microsoft_email`);
+    assert.deepEqual(await exclusiveRoleChecks(db), [{ conname: 'psi_sales_profiles_role_check' }], `${scenario.name}: 019 deja un único CHECK exclusivo de role`);
+    await db.close();
+  }
+})();
+
+await (async function rejectsAmbiguousHistoricalTenderEmailBeforeDestructiveDdlAndRollsBack() {
+  const db = await createLegacyDatabase({
+    rows: [
+      [ids.historicalTenderEmail, 'colaborador', true, ' Directora.Licitaciones@SeguridadNacional.co ', null],
+      [ids.duplicateTenderEmail, 'colaborador', true, 'DIRECTORA.LICITACIONES@SEGURIDADNACIONAL.CO', null],
+    ],
+  });
+  const beforeProfiles = (await db.query(`select id, role, active, microsoft_email, commercial_area from public.psi_sales_profiles order by id`)).rows;
+
+  await assert.rejects(
+    db.exec(migration),
+    /directora\.licitaciones@seguridadnacional\.co.*2.*normaliz|2.*directora\.licitaciones@seguridadnacional\.co.*normaliz/i,
+    'dos perfiles que normalizan al correo histórico deben bloquear la migración',
+  );
+  await db.exec('rollback');
+  assert.equal((await scalar(db, `select to_regclass('public.psi_org_areas') is null as absent`)).absent, true, 'el abort debe ocurrir antes de crear tablas 019');
+  assert.deepEqual(
+    (await db.query(`select id, role, active, microsoft_email, commercial_area from public.psi_sales_profiles order by id`)).rows,
+    beforeProfiles,
+    'el abort debe dejar los perfiles legado intactos',
+  );
+  assert.deepEqual(await exclusiveRoleChecks(db), [{ conname: 'legacy_sales_profile_role_check' }], 'el abort no puede reemplazar el CHECK legado');
   await db.close();
 })();
 
