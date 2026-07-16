@@ -342,4 +342,92 @@ revoke all on function public.psi_admin_persist_profile_access(text,uuid,jsonb,j
 revoke all on function public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid,uuid) from authenticated;
 grant execute on function public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid,uuid) to service_role;
 
+-- Licitaciones is backend-only. Remove legacy direct authenticated access and
+-- every RLS policy that derived runtime authorization from JWT email.
+drop policy if exists psi_public_tenders_select on public.psi_public_tenders;
+drop policy if exists psi_public_tenders_modify on public.psi_public_tenders;
+drop policy if exists psi_tender_radar_runs_select on public.psi_tender_radar_runs;
+drop policy if exists psi_tender_radar_runs_insert on public.psi_tender_radar_runs;
+drop policy if exists psi_company_procurement_profile_select on public.psi_company_procurement_profile;
+drop policy if exists psi_company_procurement_profile_modify on public.psi_company_procurement_profile;
+drop policy if exists psi_tender_search_profiles_select on public.psi_tender_search_profiles;
+drop policy if exists psi_tender_search_profiles_modify on public.psi_tender_search_profiles;
+drop policy if exists psi_tender_tracking_events_select on public.psi_tender_tracking_events;
+drop policy if exists psi_tender_tracking_events_modify on public.psi_tender_tracking_events;
+drop policy if exists psi_tender_tracking_events_insert on public.psi_tender_tracking_events;
+
+revoke all on public.psi_public_tenders, public.psi_tender_radar_runs,
+  public.psi_company_procurement_profile, public.psi_tender_search_profiles,
+  public.psi_tender_tracking_events from authenticated;
+revoke all on public.psi_public_tenders, public.psi_tender_radar_runs,
+  public.psi_company_procurement_profile, public.psi_tender_search_profiles,
+  public.psi_tender_tracking_events from public;
+grant select, insert, update, delete on public.psi_public_tenders, public.psi_tender_radar_runs,
+  public.psi_company_procurement_profile, public.psi_tender_search_profiles,
+  public.psi_tender_tracking_events to service_role;
+
+-- Defense in depth for service-role-only tender RPCs. Identity is the immutable
+-- profile UUID and authorization is the explicit permission assignment.
+create or replace function public.psi_profile_has_tender_permission(
+  p_profile_id uuid,
+  p_manager_only boolean default false
+) returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1
+    from public.psi_sales_profiles p
+    join public.psi_profile_permissions pp
+      on pp.profile_id = p.id
+     and pp.permission_code = 'licitaciones'
+    where p.id = p_profile_id
+      and p.active = true
+      and p.role in ('admin', 'gerencia', 'director', 'comercial')
+      and (not p_manager_only or p.role in ('admin', 'gerencia', 'director'))
+  );
+$$;
+
+revoke all on function public.psi_profile_has_tender_permission(uuid,boolean) from public;
+revoke all on function public.psi_profile_has_tender_permission(uuid,boolean) from authenticated;
+grant execute on function public.psi_profile_has_tender_permission(uuid,boolean) to service_role;
+
+-- 018 may already be installed in existing environments. Converge those RPC
+-- bodies in place without requiring destructive recreation of their signatures.
+do $$
+declare
+  v_signature text;
+  v_proc regprocedure;
+  v_definition text;
+  v_legacy_predicate text := '(p.role in (''admin'', ''director'', ''gerencia'') or lower(p.microsoft_email) = ''directora.licitaciones@seguridadnacional.co'')';
+begin
+  foreach v_signature in array array[
+    'public.psi_update_tender_tracking(uuid,uuid,uuid,text,text,timestamptz,text,text,timestamptz)',
+    'public.psi_transition_tender_tracking(uuid,uuid,text,uuid,text,timestamptz)',
+    'public.psi_convert_tender_to_opportunity(uuid,uuid,text,text,uuid,text,text,numeric,date,text,text,text,text,text,text,timestamptz)',
+    'public.psi_discard_tender_opportunity(uuid,uuid,text,timestamptz)'
+  ] loop
+    v_proc := to_regprocedure(v_signature);
+    if v_proc is null then
+      continue;
+    end if;
+    v_definition := pg_get_functiondef(v_proc);
+    v_definition := replace(
+      v_definition,
+      v_legacy_predicate,
+      'public.psi_profile_has_tender_permission(p.id, true)'
+    );
+    if position('microsoft_email' in lower(v_definition)) > 0 then
+      raise exception 'No se pudo retirar autorización legacy por email de %', v_signature;
+    end if;
+    execute v_definition;
+    execute format('revoke all on function %s from public', v_proc);
+    execute format('revoke all on function %s from authenticated', v_proc);
+    execute format('grant execute on function %s to service_role', v_proc);
+  end loop;
+end;
+$$;
+
 commit;

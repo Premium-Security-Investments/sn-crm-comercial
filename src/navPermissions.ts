@@ -3,6 +3,8 @@ export type NavRole = 'admin' | 'gerencia' | 'director' | 'comercial' | string;
 export type NavProfile = {
   role?: NavRole | null;
   microsoft_email?: string | null;
+  active?: boolean | null;
+  permissions?: string[] | null;
 } | null | undefined;
 
 export type NavRoutePage =
@@ -25,7 +27,7 @@ export type NavItem = { href: string; label: string; page: NavRoutePage };
 export type NavGroup = { title: 'Gerencia' | 'Comercial' | 'Licitaciones' | 'Administración'; items: NavItem[] };
 
 const managementRoles = new Set(['admin', 'gerencia', 'director']);
-const tenderExceptionEmails = new Set(['directora.licitaciones@seguridadnacional.co']);
+const humanTenderRoles = new Set(['admin', 'gerencia', 'director', 'comercial']);
 
 export function isManagementRole(role?: string | null) {
   return managementRoles.has(role || '');
@@ -36,7 +38,9 @@ export function canManageUsers(profile?: NavProfile) {
 }
 
 export function canViewTenders(profile?: NavProfile) {
-  return isManagementRole(profile?.role) || tenderExceptionEmails.has(profile?.microsoft_email?.toLowerCase() || '');
+  return profile?.active === true
+    && humanTenderRoles.has(profile.role || '')
+    && Boolean(profile.permissions?.includes('licitaciones'));
 }
 
 export function canAccessSiio(profile?: NavProfile) {

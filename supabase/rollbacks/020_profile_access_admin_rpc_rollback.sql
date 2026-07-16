@@ -1,5 +1,9 @@
 begin;
 
+-- El cierre de acceso directo a Licitaciones y psi_profile_has_tender_permission
+-- se conservan: los RPC 018 convergidos dependen del helper y el rollback nunca
+-- debe restaurar autorización runtime por email.
+
 drop function if exists public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid,uuid);
 drop function if exists public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid);
 drop function if exists public.psi_admin_release_profile_lock(uuid,uuid);

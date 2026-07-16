@@ -60,6 +60,19 @@ await db.exec(`
   create policy psi_tender_tracking_events_insert on public.psi_tender_tracking_events for insert to authenticated with check (true);
   grant select, insert, update, delete on public.psi_public_tenders, public.psi_tender_radar_runs,
     public.psi_company_procurement_profile, public.psi_tender_search_profiles, public.psi_tender_tracking_events to authenticated;
+
+  create function public.psi_discard_tender_opportunity(uuid, uuid, text, timestamptz)
+  returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+  declare v_actor_tender_manager boolean;
+  begin
+    select exists (
+      select 1 from public.psi_sales_profiles p
+      where p.id = $2 and p.active = true
+        and (p.role in ('admin', 'director', 'gerencia') or lower(p.microsoft_email) = 'directora.licitaciones@seguridadnacional.co')
+    ) into v_actor_tender_manager;
+    return jsonb_build_object('allowed', v_actor_tender_manager);
+  end;
+  $$;
 `);
 await db.exec(readFileSync(migration019Path, 'utf8'));
 await db.exec(readFileSync(migration020Path, 'utf8'));
@@ -69,6 +82,12 @@ for (const table of ['psi_public_tenders', 'psi_tender_radar_runs', 'psi_company
   }
   assert.equal(Number((await db.query(`select count(*)::int as count from pg_policies where schemaname='public' and tablename=$1`, [table])).rows[0].count), 0, `${table}: 020 retira políticas directas legacy`);
 }
+const convergedTenderRpc = (await db.query(`select pg_get_functiondef('public.psi_discard_tender_opportunity(uuid,uuid,text,timestamptz)'::regprocedure) as definition`)).rows[0].definition;
+assert.doesNotMatch(convergedTenderRpc, /microsoft_email|directora\.licitaciones/i, '020 elimina autorización por email de RPCs 018 ya instalados');
+assert.match(convergedTenderRpc, /psi_profile_has_tender_permission\(p\.id, true\)/, '020 converge RPCs 018 a perfil + permiso explícito');
+assert.equal((await db.query(`select has_function_privilege('authenticated','public.psi_discard_tender_opportunity(uuid,uuid,text,timestamptz)','execute') as allowed`)).rows[0].allowed, false, '020 revoca ejecución directa authenticated de RPCs Licitaciones');
+assert.equal((await db.query(`select has_function_privilege('service_role','public.psi_discard_tender_opportunity(uuid,uuid,text,timestamptz)','execute') as allowed`)).rows[0].allowed, true, '020 conserva ejecución backend service_role');
+assert.equal((await db.query(`select public.psi_profile_has_tender_permission($1,true) as allowed`, [ids.admin])).rows[0].allowed, false, 'rol gerencial sin permiso explícito no autoriza Licitaciones');
 assert.equal((await db.query(`select auth_user_id from public.psi_sales_profiles where id=$1`, [ids.target])).rows[0].auth_user_id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', '020 vincula perfiles históricos al sujeto Auth por UUID');
 assert.equal((await db.query(`select has_function_privilege('authenticated','public.psi_admin_bind_profile_auth(uuid,text,uuid)','execute') as allowed`)).rows[0].allowed, false);
 assert.equal((await db.query(`select has_function_privilege('service_role','public.psi_admin_bind_profile_auth(uuid,text,uuid)','execute') as allowed`)).rows[0].allowed, true);
@@ -140,6 +159,7 @@ const saved = await callRpc({ expected: before, profile: after, areas: afterArea
 assert.equal(saved.role, 'director');
 assert.deepEqual(await getAreas(ids.target), afterAreas);
 assert.deepEqual(await getPermissions(ids.target), [{ permission_code: 'licitaciones' }]);
+assert.equal((await db.query(`select public.psi_profile_has_tender_permission($1,true) as allowed`, [ids.target])).rows[0].allowed, true, 'perfil directivo activo con permiso explícito sí autoriza Licitaciones');
 assert.equal(Number((await db.query(`select count(*)::int as count from public.psi_access_audit_log`)).rows[0].count), 1);
 assert.equal((await db.query(`select auth_user_id from public.psi_sales_profiles where id=$1`, [ids.target])).rows[0].auth_user_id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'editar sin cambiar email preserva vínculo Auth');
 
