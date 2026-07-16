@@ -10,6 +10,7 @@ const {
   normalizeProfileAccessRequest,
   legacyCommercialAreaFromAssignments,
   enrichProfilesWithAccess,
+  replaceProfileAccess,
 } = await import('../server/index.js');
 
 const catalog = {
@@ -86,6 +87,75 @@ for (const [profiles, assignments, permissions, message] of [
   assert.throws(() => enrichProfilesWithAccess(profiles, assignments, permissions), message, 'las lecturas administrativas deben fallar cerradamente');
 }
 assert.throws(() => enrichProfilesWithAccess(null, [], []), /perfiles/i);
+
+function accessDatabase({ failAuditOnce = false } = {}) {
+  const tables = {
+    psi_profile_area_assignments: [],
+    psi_profile_permissions: [],
+    psi_access_audit_log: [],
+  };
+  let shouldFailAudit = failAuditOnce;
+  return {
+    tables,
+    database: {
+      from(table) {
+        assert.ok(Object.hasOwn(tables, table), `tabla simulada inesperada: ${table}`);
+        return {
+          delete() {
+            return {
+              eq(column, value) {
+                assert.equal(column, 'profile_id');
+                tables[table] = tables[table].filter(row => row.profile_id !== value);
+                return Promise.resolve({ data: null, error: null });
+              },
+            };
+          },
+          insert(value) {
+            if (table === 'psi_access_audit_log' && shouldFailAudit) {
+              shouldFailAudit = false;
+              return Promise.resolve({ data: null, error: new Error('relation psi_access_audit_log unavailable') });
+            }
+            tables[table].push(...(Array.isArray(value) ? value : [value]));
+            return Promise.resolve({ data: null, error: null });
+          },
+        };
+      },
+    },
+  };
+}
+const beforeAccess = {
+  areas: [{ area_code: 'comercial', subarea_code: 'seguridad_fisica' }],
+  permissions: [],
+  areaRows: [{ area_code: 'comercial', subarea_code: 'seguridad_fisica', created_by: 'old-actor' }],
+  permissionRows: [],
+};
+const afterAccess = {
+  areas: [{ area_code: 'operaciones', subarea_code: null }],
+  permissions: ['licitaciones'],
+};
+const successDb = accessDatabase();
+successDb.tables.psi_profile_area_assignments.push({ profile_id: 'target', ...beforeAccess.areaRows[0] });
+await replaceProfileAccess(successDb.database, { profileId: 'target', actorProfileId: 'admin', before: beforeAccess, after: afterAccess });
+assert.deepEqual(successDb.tables.psi_profile_area_assignments, [{ profile_id: 'target', area_code: 'operaciones', subarea_code: null, created_by: 'admin' }]);
+assert.deepEqual(successDb.tables.psi_profile_permissions, [{ profile_id: 'target', permission_code: 'licitaciones', created_by: 'admin' }]);
+assert.deepEqual(successDb.tables.psi_access_audit_log[0], {
+  actor_profile_id: 'admin', target_profile_id: 'target', action: 'profile.access.replace',
+  before_state: { areas: beforeAccess.areas, permissions: beforeAccess.permissions }, after_state: afterAccess,
+});
+const failingDb = accessDatabase({ failAuditOnce: true });
+failingDb.tables.psi_profile_area_assignments.push({ profile_id: 'target', ...beforeAccess.areaRows[0] });
+const originalConsoleError = console.error;
+console.error = () => {};
+try {
+  await assert.rejects(
+    replaceProfileAccess(failingDb.database, { profileId: 'target', actorProfileId: 'admin', before: beforeAccess, after: afterAccess }),
+    error => error?.status === 500 && error?.code === 'PROFILE_ACCESS_WRITE_FAILED' && error?.message === 'No se pudo guardar el alcance de acceso. Intente nuevamente.' && Boolean(error?.cause),
+  );
+} finally {
+  console.error = originalConsoleError;
+}
+assert.deepEqual(failingDb.tables.psi_profile_area_assignments, [{ profile_id: 'target', ...beforeAccess.areaRows[0] }], 'restaura áreas exactas después de un fallo');
+assert.deepEqual(failingDb.tables.psi_profile_permissions, [], 'restaura permisos exactos después de un fallo');
 
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
