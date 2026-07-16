@@ -13,7 +13,9 @@ import { focusDocumentReviewArea } from './tenders/viewUtils';
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
 type CustomerSegment = 'cliente_nuevo' | 'cliente_actual';
-type Profile = { id: string; full_name: string; microsoft_email: string; role: string; active: boolean; commercial_area?: CommercialArea | null; can_edit_customer_segment?: boolean };
+type AccessAssignment = { area_code: string; subarea_code: string | null };
+type AccessCatalog = { areas: Array<{ code: string; name: string }>; subareas: Array<{ code: string; area_code: string; name: string }>; permissions: Array<{ code: string; name: string; description: string }> };
+type Profile = { id: string; full_name: string; microsoft_email: string; role: string; active: boolean; commercial_area?: CommercialArea | null; can_edit_customer_segment?: boolean; areas?: AccessAssignment[]; permissions?: string[] };
 type ServiceType = { code: string; name: string };
 type LossReason = { code: string; name: string };
 type SummaryRow = { stage_code: string; stage_name: string; stage_order: number; opportunities_count: number; total_offer_value: number; weighted_pipeline_value: number };
@@ -32,7 +34,7 @@ type Interaction = { id: string; opportunity_id: string; interaction_type: strin
 type MonthlyKpi = { owner_id?: string | null; owner_name: string | null; period_month: string; prospectos: number; cotizaciones: number; ventas_aprobadas: number; comision_ganada: number; comision_proyectada: number };
 type SalesGoal = { id?: string; user_id: string | null; period_month: string; service_type_code: string | null; regional_nombre?: string | null; operational_unit_target?: number; quote_target: number; prospect_target: number; sales_budget: number; created_at?: string; updated_at?: string };
 type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile };
-type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string; send_invite?: boolean; commercial_area?: CommercialArea | ''; can_edit_customer_segment?: boolean };
+type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string; send_invite?: boolean; areas: AccessAssignment[]; permissions: string[]; can_edit_customer_segment?: boolean };
 type TenderSection = 'hacer' | 'revisar' | 'descartar';
 type TenderInternalStatus = 'nueva' | 'en_revision' | 'convertida_oportunidad' | 'descartada';
 type TenderQuickFilter = 'hacer' | 'en_revision' | 'high_value' | 'convertidas' | null;
@@ -94,7 +96,7 @@ const PRODUCT_OPERATIONAL_UNITS_BY_NAME: Record<string, string> = {
 };
 const OPPORTUNITIES_PAGE_SIZE = 25;
 const TENDERS_PAGE_SIZE = 24;
-const ROLE_LABELS: Record<string, string> = { director: 'Directivo', gerencia: 'Gerencia', admin: 'Admin', comercial: 'Comercial' };
+const ROLE_LABELS: Record<string, string> = { director: 'Directivo', gerencia: 'Gerencia', admin: 'Admin', comercial: 'Comercial', colaborador: 'Colaborador', junta: 'Junta' };
 const REGION_ALIAS_CANONICAL: Record<string, string> = {
   'bogota': 'Bogotá', 'bogotá': 'Bogotá', 'distrito capital de bogota': 'Bogotá', 'distrito capital de bogotá': 'Bogotá',
   'medellin': 'Medellín', 'medellín': 'Medellín',
@@ -2591,62 +2593,46 @@ function monthName(month: number) {
 
 function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const [users, setUsers] = useState<Profile[]>([]);
+  const [catalog, setCatalog] = useState<AccessCatalog>({ areas: [], subareas: [], permissions: [] });
   const [status, setStatus] = useState('');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const editFormRef = useRef<HTMLDivElement | null>(null);
-  const emptyUserForm: UserPayload = { full_name: '', microsoft_email: '', role: 'comercial', active: true, password: '', send_invite: true, commercial_area: '', can_edit_customer_segment: false };
+  const emptyUserForm: UserPayload = { full_name: '', microsoft_email: '', role: 'comercial', active: true, password: '', send_invite: true, areas: [], permissions: [], can_edit_customer_segment: false };
   const [form, setForm] = useState<UserPayload>(emptyUserForm);
-  const [usersSortConfig, setUsersSortConfig] = useState<SortConfig<'name'|'email'|'role'|'area'|'segment'|'status'>>({ key: 'name', direction: 'asc' });
-  const load = async () => { setUsers(await api<Profile[]>('/api/users')); };
+  const [usersSortConfig, setUsersSortConfig] = useState<SortConfig<'name'|'email'|'role'|'area'|'permission'|'segment'|'status'>>({ key: 'name', direction: 'asc' });
+  const load = async () => { const [nextUsers, nextCatalog] = await Promise.all([api<Profile[]>('/api/users'), api<AccessCatalog>('/api/access-catalog')]); setUsers(nextUsers); setCatalog(nextCatalog); };
+  const areaLabel = (code: string) => catalog.areas.find(area => area.code === code)?.name || formatDisplayName(code);
+  const scopeLabel = (assignment: AccessAssignment) => assignment.subarea_code ? `${areaLabel(assignment.area_code)} · ${catalog.subareas.find(subarea => subarea.code === assignment.subarea_code)?.name || formatDisplayName(assignment.subarea_code)}` : `Toda ${areaLabel(assignment.area_code)}`;
+  const scopesLabel = (user: Profile) => user.areas?.length ? user.areas.map(scopeLabel).join(', ') : 'Sin alcance asignado';
+  const permissionsLabel = (user: Profile) => user.permissions?.length ? user.permissions.map(permission => catalog.permissions.find(item => item.code === permission)?.name || formatDisplayName(permission)).join(', ') : 'Sin permisos';
   const sortedUsers = [...users].sort((a,b) => {
-    const value = (u: Profile) => usersSortConfig.key === 'name' ? u.full_name : usersSortConfig.key === 'email' ? u.microsoft_email : usersSortConfig.key === 'role' ? u.role : usersSortConfig.key === 'area' ? commercialAreaLabel(u.commercial_area) : usersSortConfig.key === 'segment' ? (u.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado') : (u.active ? 'Activo' : 'Inactivo');
+    const value = (u: Profile) => usersSortConfig.key === 'name' ? u.full_name : usersSortConfig.key === 'email' ? u.microsoft_email : usersSortConfig.key === 'role' ? u.role : usersSortConfig.key === 'area' ? scopesLabel(u) : usersSortConfig.key === 'permission' ? permissionsLabel(u) : usersSortConfig.key === 'segment' ? (u.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado') : (u.active ? 'Activo' : 'Inactivo');
     return compareSortValues(value(a), value(b), usersSortConfig.direction);
   });
   const sortUsersBy = (key: typeof usersSortConfig.key) => setUsersSortConfig(current => nextSort(current, key));
   useEffect(() => { if (canManageUsers(currentProfile)) load().catch(e => setStatus(e instanceof Error ? e.message : String(e))); }, [currentProfile.id]);
-  if (!canManageUsers(currentProfile)) return <div className="error">Solo admin puede administrar usuarios.</div>;
-  const startEdit = (user: Profile) => {
-    setEditingUserId(user.id);
-    setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, role: user.role, active: user.active, password: '', send_invite: false, commercial_area: user.commercial_area || '', can_edit_customer_segment: !!user.can_edit_customer_segment });
-    setStatus('Editando usuario existente. Deja la clave en blanco si no quieres cambiarla.');
-    window.setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
-  };
-  const cancelEdit = () => {
-    setEditingUserId(null);
-    setForm(emptyUserForm);
-    setStatus('');
-  };
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setStatus(editingUserId ? 'Actualizando usuario…' : 'Creando usuario…');
-    try {
-      const saved = await api<(Profile & { invited?: boolean; access_link?: string | null })>(editingUserId ? `/api/users?id=${encodeURIComponent(editingUserId)}` : '/api/users', { method: editingUserId ? 'PATCH' : 'POST', body: JSON.stringify(form) });
-      const wasEditing = !!editingUserId;
-      setForm(emptyUserForm);
-      setEditingUserId(null);
-      await load();
-      const mailStatus = saved.access_link ? ` Si el correo no llega, comparte este enlace de acceso: ${saved.access_link}` : (saved.invited ? ' Invitación enviada por correo.' : '');
-      setStatus(wasEditing ? `Usuario actualizado.${mailStatus}` : `Usuario/perfil guardado.${mailStatus}`);
-    } catch (err) { setStatus(err instanceof Error ? err.message : String(err)); }
-  };
+  if (!canManageUsers(currentProfile)) return <div className="error">No tiene autorización para administrar usuarios.</div>;
+  const setAreaScope = (area_code: string, subarea_code: string | null, checked: boolean) => setForm(current => {
+    const withoutArea = current.areas.filter(scope => scope.area_code !== area_code);
+    if (!checked) return { ...current, areas: current.areas.filter(scope => !(scope.area_code === area_code && scope.subarea_code === subarea_code)) };
+    const next = subarea_code === null ? [...withoutArea, { area_code, subarea_code: null }] : [...withoutArea.filter(scope => scope.subarea_code !== null), ...current.areas.filter(scope => scope.area_code === area_code && scope.subarea_code !== null), { area_code, subarea_code }];
+    return { ...current, areas: next.filter((scope, index, all) => all.findIndex(other => other.area_code === scope.area_code && other.subarea_code === scope.subarea_code) === index) };
+  });
+  const eligibleForTenders = ['admin','gerencia','director','comercial'].includes(form.role);
+  const changeRole = (role: string) => setForm(current => ({ ...current, role, permissions: ['colaborador','junta'].includes(role) ? current.permissions.filter(permission => permission !== 'licitaciones') : current.permissions }));
+  const startEdit = (user: Profile) => { setEditingUserId(user.id); setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, role: user.role, active: user.active, password: '', send_invite: false, areas: user.areas || [], permissions: user.permissions || [], can_edit_customer_segment: !!user.can_edit_customer_segment }); setStatus('Editando usuario existente. Deja la clave en blanco si no quieres cambiarla.'); window.setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); };
+  const cancelEdit = () => { setEditingUserId(null); setForm(emptyUserForm); setStatus(''); };
+  const submit = async (e: React.FormEvent) => { e.preventDefault(); setStatus(editingUserId ? 'Actualizando usuario…' : 'Creando usuario…'); try { const saved = await api<(Profile & { invited?: boolean; access_link?: string | null })>(editingUserId ? `/api/users?id=${encodeURIComponent(editingUserId)}` : '/api/users', { method: editingUserId ? 'PATCH' : 'POST', body: JSON.stringify(form) }); const wasEditing = !!editingUserId; setForm(emptyUserForm); setEditingUserId(null); await load(); const mailStatus = saved.access_link ? ` Si el correo no llega, comparte este enlace de acceso: ${saved.access_link}` : (saved.invited ? ' Invitación enviada por correo.' : ''); setStatus(wasEditing ? `Usuario actualizado.${mailStatus}` : `Usuario/perfil guardado.${mailStatus}`); } catch (err) { setStatus(err instanceof Error ? err.message : String(err)); } };
   return <section className="stack">
-    <section className="executive-hero"><div><span className="eyebrow">Administración</span><h2>Usuarios y permisos</h2><p>Crea usuarios de acceso y asigna el rol comercial, dirección, gerencia o admin.</p></div><div className="hero-facts"><div><small>Usuarios</small><strong>{users.length}</strong></div><div><small>Administrador</small><strong>{currentProfile.full_name}</strong></div></div></section>
-    <div ref={editFormRef} className="users-edit-anchor">
-    <Panel title={editingUserId ? `Editar usuario · ${form.full_name || form.microsoft_email}` : 'Crear usuario'}>
-      <form className="form gridform" onSubmit={submit}>
-        <label>Nombre completo<input required value={form.full_name} onChange={e=>setForm({...form, full_name:e.target.value})}/></label>
-        <label>Email<input type="email" required value={form.microsoft_email} onChange={e=>setForm({...form, microsoft_email:e.target.value})}/></label>
-        <label>Rol<Select value={form.role} onChange={v=>setForm({...form, role:v})} options={[['comercial','Comercial'],['director','Directivo'],['gerencia','Gerencia'],['admin','Admin']]} empty="Rol"/></label>
-        <label>Área comercial<Select value={form.commercial_area || ''} onChange={v=>setForm({...form, commercial_area:v as CommercialArea | ''})} options={commercialAreaOptions} empty="Sin área"/></label>
-        <label className="checkline"><input type="checkbox" checked={!!form.can_edit_customer_segment} onChange={e=>setForm({...form, can_edit_customer_segment:e.target.checked})}/> Habilitar edición posterior de Cliente Nuevo / Cliente Actual</label>
-        <label>Clave temporal<input type="password" minLength={8} value={form.password || ''} onChange={e=>setForm({...form, password:e.target.value})} placeholder={form.send_invite ? "Opcional si envías invitación" : "Mínimo 8 caracteres"}/></label>
-        <label>Estado<Select value={form.active ? 'true' : 'false'} onChange={v=>setForm({...form, active:v==='true'})} options={[['true','Activo'],['false','Inactivo']]} empty="Estado"/></label>
-        <label className="checkline"><input type="checkbox" checked={!!form.send_invite} onChange={e=>setForm({...form, send_invite:e.target.checked})}/> Enviar correo de invitación para que el usuario active su acceso</label>
-        <div className="formactions"><button>{editingUserId ? 'Actualizar usuario' : 'Guardar usuario'}</button>{editingUserId && <button type="button" className="secondary" onClick={cancelEdit}>Cancelar edición</button>}{status && <span>{status}</span>}</div>
-      </form>
-    </Panel>
-    </div>
-    <Panel title="Perfiles actuales"><div className="tablewrap"><table><thead><tr><SortableTh label="Nombre" sortKey="name" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Email" sortKey="email" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Rol" sortKey="role" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Área" sortKey="area" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Segmento" sortKey="segment" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Estado" sortKey="status" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Acciones</th></tr></thead><tbody>{sortedUsers.map(p => <tr key={p.id}><td><strong>{p.full_name}</strong></td><td>{p.microsoft_email}</td><td><Badge>{roleLabel(p.role)}</Badge></td><td>{commercialAreaLabel(p.commercial_area)}</td><td>{p.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado'}</td><td>{p.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(p)}>Editar</button></td></tr>)}</tbody></table></div></Panel>
+    <section className="executive-hero"><div><span className="eyebrow">Administración</span><h2>Usuarios y permisos</h2><p>Admin y Gerencia tienen alcance global. Las asignaciones se conservan como contexto administrativo y el servidor siempre valida el acceso efectivo.</p></div><div className="hero-facts"><div><small>Usuarios</small><strong>{users.length}</strong></div><div><small>Administrador</small><strong>{currentProfile.full_name}</strong></div></div></section>
+    <div ref={editFormRef} className="users-edit-anchor"><Panel title={editingUserId ? `Editar usuario · ${form.full_name || form.microsoft_email}` : 'Crear usuario'}><form className="form gridform" onSubmit={submit}>
+      <label>Nombre completo<input required value={form.full_name} onChange={e=>setForm({...form, full_name:e.target.value})}/></label><label>Email<input type="email" required value={form.microsoft_email} onChange={e=>setForm({...form, microsoft_email:e.target.value})}/></label>
+      <label>Rol<Select value={form.role} onChange={changeRole} options={[['comercial','Comercial'],['colaborador','Colaborador'],['director','Directivo'],['gerencia','Gerencia'],['admin','Admin'],['junta','Junta']]} empty="Rol"/></label>
+      <fieldset className="access-scope wide"><legend>Alcance por áreas y subáreas</legend><p>Selecciona toda un área o subáreas específicas. Puedes combinar varias áreas.</p><div className="access-scope-grid">{catalog.areas.map(area => { const whole = form.areas.some(scope => scope.area_code === area.code && scope.subarea_code === null); const subareas = catalog.subareas.filter(subarea => subarea.area_code === area.code); return <fieldset className="access-area-card" key={area.code}><legend>{area.name}</legend><label className="checkline"><input type="checkbox" checked={whole} onChange={e => setAreaScope(area.code, null, e.target.checked)}/> Toda el área</label>{subareas.map(subarea => <label className="checkline access-subarea" key={subarea.code}><input type="checkbox" disabled={whole} checked={form.areas.some(scope => scope.area_code === area.code && scope.subarea_code === subarea.code)} onChange={e => setAreaScope(area.code, subarea.code, e.target.checked)}/>{subarea.name}</label>)}</fieldset>; })}</div></fieldset>
+      <fieldset className="access-permission wide"><legend>Permisos transversales</legend>{catalog.permissions.filter(permission => permission.code === 'licitaciones').map(permission => <label className="checkline" key={permission.code}><input type="checkbox" disabled={!eligibleForTenders} checked={form.permissions.includes('licitaciones')} onChange={e=>setForm(current => ({ ...current, permissions: e.target.checked ? [...new Set([...current.permissions, 'licitaciones'])] : current.permissions.filter(item => item !== 'licitaciones') }))}/> Acceso al módulo de Licitaciones <small>{permission.description}</small></label>)}{!eligibleForTenders && <p className="muted">Este permiso no aplica a Colaborador ni Junta.</p>}</fieldset>
+      <label className="checkline"><input type="checkbox" checked={!!form.can_edit_customer_segment} onChange={e=>setForm({...form, can_edit_customer_segment:e.target.checked})}/> Habilitar edición posterior de Cliente Nuevo / Cliente Actual</label><label>Clave temporal<input type="password" minLength={8} value={form.password || ''} onChange={e=>setForm({...form, password:e.target.value})} placeholder={form.send_invite ? 'Opcional si envías invitación' : 'Mínimo 8 caracteres'}/></label><label>Estado<Select value={form.active ? 'true' : 'false'} onChange={v=>setForm({...form, active:v==='true'})} options={[['true','Activo'],['false','Inactivo']]} empty="Estado"/></label><label className="checkline"><input type="checkbox" checked={!!form.send_invite} onChange={e=>setForm({...form, send_invite:e.target.checked})}/> Enviar correo de invitación para que el usuario active su acceso</label><div className="formactions"><button>{editingUserId ? 'Actualizar usuario' : 'Guardar usuario'}</button>{editingUserId && <button type="button" className="secondary" onClick={cancelEdit}>Cancelar edición</button>}{status && <span>{status}</span>}</div>
+    </form></Panel></div>
+    <Panel title="Perfiles actuales"><div className="tablewrap"><table><thead><tr><SortableTh label="Nombre" sortKey="name" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Email" sortKey="email" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Rol" sortKey="role" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Áreas" sortKey="area" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Permisos" sortKey="permission" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Segmento" sortKey="segment" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Estado" sortKey="status" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Acciones</th></tr></thead><tbody>{sortedUsers.map(p => <tr key={p.id}><td><strong>{p.full_name}</strong></td><td>{p.microsoft_email}</td><td><Badge>{roleLabel(p.role)}</Badge></td><td>{scopesLabel(p)}</td><td>{permissionsLabel(p)}</td><td>{p.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado'}</td><td>{p.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(p)}>Editar</button></td></tr>)}</tbody></table></div></Panel>
   </section>;
 }
 
