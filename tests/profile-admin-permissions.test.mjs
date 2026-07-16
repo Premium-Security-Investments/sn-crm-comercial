@@ -225,15 +225,16 @@ function profileAdministrationDatabase({ failAuditOnce = false } = {}) {
             },
           };
         },
-        upsert(values) {
+        insert(values) {
           return {
             select() {
               return {
                 single: async () => {
-                  const index = tables.psi_sales_profiles.findIndex(row => row.microsoft_email === values.microsoft_email);
-                  if (index >= 0) tables.psi_sales_profiles[index] = { ...tables.psi_sales_profiles[index], ...values };
-                  else tables.psi_sales_profiles.push({ id: 'new-profile', ...values });
-                  const row = index >= 0 ? tables.psi_sales_profiles[index] : tables.psi_sales_profiles.at(-1);
+                  if (tables.psi_sales_profiles.some(row => row.microsoft_email === values.microsoft_email)) {
+                    return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } };
+                  }
+                  const row = { id: 'new-profile', ...values };
+                  tables.psi_sales_profiles.push(row);
                   return { data: pick(row), error: null };
                 },
               };
@@ -293,7 +294,7 @@ console.error = () => {};
 try {
   await assert.rejects(
     persistProfileAccessChange(concurrentCreation.database, { mode: 'post', targetId: null, beforeProfile: null, profileValues: changedProfile, beforeAccess: { areas: [], permissions: [], areaRows: [], permissionRows: [] }, afterAccess, actorProfileId: 'admin' }),
-    error => error?.status === 409 || (error?.status === 500 && error?.code === 'PROFILE_ADMIN_UPDATE_FAILED'),
+    error => error?.status === 409 && error?.code === 'PROFILE_ADMIN_CONFLICT',
   );
 } finally {
   console.error = originalConsoleError;

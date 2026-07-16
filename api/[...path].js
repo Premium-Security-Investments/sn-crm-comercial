@@ -116,6 +116,12 @@ function profileAdministrationFailure(cause) {
   error.code = 'PROFILE_ADMIN_UPDATE_FAILED';
   return error;
 }
+function profileAdministrationConflict(cause) {
+  const error = new Error('El perfil ya existe. Recargue la lista y edite el registro existente.', { cause });
+  error.status = 409;
+  error.code = 'PROFILE_ADMIN_CONFLICT';
+  return error;
+}
 function normalizedProfileEmail(value) { return String(value || '').trim().toLowerCase(); }
 export function assertNoAdminSelfLockout(currentProfile, { profileId, microsoftEmail, role, active }) {
   const sameProfile = Boolean(profileId && currentProfile?.id && profileId === currentProfile.id);
@@ -248,8 +254,11 @@ export async function persistProfileAccessChange(database, { mode, targetId, bef
   let row;
   const { full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment } = profileValues;
   try {
-    if (mode === 'post') {
-      row = await must(database.from('psi_sales_profiles').upsert({ full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }, { onConflict: 'microsoft_email' }).select(profileAdminSelect).single());
+    if (mode === 'post' && beforeProfile?.id) {
+      row = await must(database.from('psi_sales_profiles').update({ full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }).eq('id', beforeProfile.id).select(profileAdminSelect).single());
+    } else if (mode === 'post') {
+      // INSERT proves this request owns the new row. An upsert could update and later delete a concurrent creator's profile during compensation.
+      row = await must(database.from('psi_sales_profiles').insert({ full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }).select(profileAdminSelect).single());
     } else if (mode === 'patch' && targetId) {
       row = await must(database.from('psi_sales_profiles').update({ full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }).eq('id', targetId).select(profileAdminSelect).single());
     } else {
@@ -258,6 +267,7 @@ export async function persistProfileAccessChange(database, { mode, targetId, bef
     await replaceProfileAccess(database, { profileId: row.id, actorProfileId, before: beforeAccess, after: afterAccess });
     return row;
   } catch (error) {
+    if (mode === 'post' && !beforeProfile && !row && error?.code === '23505') throw profileAdministrationConflict(error);
     console.error('Profile administration failed; attempting database compensation', error);
     let restoreError = null;
     try {
