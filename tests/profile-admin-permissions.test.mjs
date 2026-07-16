@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
+import { MODULE_PERMISSIONS } from '../module-access.js';
 
 process.env.VERCEL = '1';
 process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://127.0.0.1:54321';
@@ -25,7 +26,7 @@ const catalog = {
     { code: 'licitaciones', area_code: 'comercial', name: 'Licitaciones' },
     { code: 'vigilancia_fisica', area_code: 'operaciones', name: 'Vigilancia física' },
   ],
-  permissions: [{ code: 'licitaciones', name: 'Licitaciones', description: 'Acceso a licitaciones' }],
+  permissions: MODULE_PERMISSIONS.map(permission => ({ ...permission })),
 };
 
 const profileAccessStateTs = readFileSync(new URL('../src/profileAccessState.ts', import.meta.url), 'utf8');
@@ -89,6 +90,16 @@ assert.throws(
   () => normalizeProfileAccessRequest({ areas: [], permissions: ['licitaciones'] }, catalog, 'colaborador'),
   /licitaciones/i,
   'no concede Licitaciones a un rol sin sentido para ese permiso',
+);
+assert.deepEqual(
+  normalizeProfileAccessRequest({ areas: [], permissions: [] }, catalog, 'comercial'),
+  { areas: [], permissions: [] },
+  'un perfil puede quedar explícitamente sin módulos',
+);
+assert.throws(
+  () => normalizeProfileAccessRequest({ areas: [], permissions: ['modulo_usuarios'] }, catalog, 'comercial'),
+  /rol|módulo/i,
+  'el backend rechaza módulos incompatibles con el rol objetivo',
 );
 
 assert.equal(legacyCommercialAreaFromAssignments([{ area_code: 'comercial', subarea_code: 'seguridad_fisica' }]), 'seguridad_fisica');
@@ -202,6 +213,13 @@ for (const target of [
 assert.doesNotThrow(
   () => assertNoAdminSelfLockout({ id: 'admin-id', microsoft_email: 'Admin@example.com' }, { profileId: 'admin-id', microsoftEmail: ' admin@example.com ', role: 'admin', active: true }),
   'conservar administrador activo para el propio perfil es inocuo',
+);
+assert.throws(
+  () => assertNoAdminSelfLockout({ id: 'admin-id', microsoft_email: 'Admin@example.com' }, {
+    profileId: 'admin-id', microsoftEmail: 'admin@example.com', role: 'admin', active: true, permissions: [],
+  }),
+  /propio|administrador/i,
+  'un administrador no puede retirarse su módulo de Usuarios',
 );
 assert.doesNotThrow(
   () => assertNoAdminSelfLockout({ id: 'admin-id', microsoft_email: 'admin@example.com' }, { profileId: 'other-id', microsoftEmail: 'other@example.com', role: 'colaborador', active: false }),

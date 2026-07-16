@@ -4,6 +4,7 @@ import { PGlite } from '@electric-sql/pglite';
 
 const migration019Path = new URL('../supabase/migrations/019_profile_area_permissions.sql', import.meta.url);
 const migration020Path = new URL('../supabase/migrations/020_profile_access_admin_rpc.sql', import.meta.url);
+const migration021Path = new URL('../supabase/migrations/021_explicit_user_modules.sql', import.meta.url);
 const rollback020Path = new URL('../supabase/rollbacks/020_profile_access_admin_rpc_rollback.sql', import.meta.url);
 assert.equal(existsSync(migration020Path), true, 'La migración transaccional 020 debe existir.');
 assert.equal(existsSync(rollback020Path), true, 'El rollback transaccional 020 debe existir.');
@@ -76,6 +77,8 @@ await db.exec(`
 `);
 await db.exec(readFileSync(migration019Path, 'utf8'));
 await db.exec(readFileSync(migration020Path, 'utf8'));
+await db.exec(readFileSync(migration021Path, 'utf8'));
+assert.equal((await db.query(`select exists (select 1 from public.psi_profile_permissions where profile_id=$1 and permission_code='modulo_usuarios') as assigned`, [ids.admin])).rows[0].assigned, true, '021 conserva el módulo administrativo para el administrador histórico');
 for (const table of ['psi_public_tenders', 'psi_tender_radar_runs', 'psi_company_procurement_profile', 'psi_tender_search_profiles', 'psi_tender_tracking_events']) {
   for (const privilege of ['select', 'insert', 'update', 'delete']) {
     assert.equal((await db.query(`select has_table_privilege('authenticated',$1,$2) as allowed`, [`public.${table}`, privilege])).rows[0].allowed, false, `${table}: authenticated no conserva ${privilege}`);
@@ -145,7 +148,11 @@ await assert.rejects(
 );
 assert.deepEqual(await getProfile(ids.target), before, 'perfil revierte atómicamente');
 assert.deepEqual(await getAreas(ids.target), [{ area_code: 'comercial', subarea_code: 'seguridad_fisica' }], 'áreas revierten atómicamente');
-assert.deepEqual(await getPermissions(ids.target), [], 'permisos revierten atómicamente');
+assert.deepEqual(await getPermissions(ids.target), [
+  { permission_code: 'modulo_alertas_comerciales' },
+  { permission_code: 'modulo_metas' },
+  { permission_code: 'modulo_oportunidades' },
+], 'permisos revierten atómicamente');
 assert.equal(Number((await db.query(`select count(*)::int as count from public.psi_access_audit_log`)).rows[0].count), 0, 'audit fallido no deja evidencia parcial');
 
 await assert.rejects(

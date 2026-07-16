@@ -9,6 +9,7 @@ import AdmZip from 'adm-zip';
 import { callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
+import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -107,7 +108,7 @@ function normalizeAccessPermissions(rows) {
 }
 
 const PROFILE_ROLES = new Set(['admin','gerencia','director','comercial','colaborador','junta']);
-const TENDER_PERMISSION_ROLES = new Set(['admin','gerencia','director','comercial']);
+const MODULE_PERMISSION_CODE_SET = new Set(MODULE_PERMISSION_CODES);
 const MAX_PROFILE_ACCESS_ROWS = 100;
 function accessValidationError(message) { const error = new Error(message); error.status = 400; return error; }
 function profileAdministrationFailure(cause) {
@@ -123,12 +124,13 @@ function profileAdministrationConflict(cause) {
   return error;
 }
 function normalizedProfileEmail(value) { return String(value || '').trim().toLowerCase(); }
-export function assertNoAdminSelfLockout(currentProfile, { profileId, microsoftEmail, role, active }) {
+export function assertNoAdminSelfLockout(currentProfile, { profileId, microsoftEmail, role, active, permissions }) {
   const sameProfile = Boolean(profileId && currentProfile?.id && profileId === currentProfile.id);
   const currentEmail = normalizedProfileEmail(currentProfile?.microsoft_email);
   const targetEmail = normalizedProfileEmail(microsoftEmail);
   const sameEmail = Boolean(currentEmail && targetEmail && currentEmail === targetEmail);
-  if ((sameProfile || sameEmail) && (!active || role !== 'admin')) throw accessValidationError('No puede desactivar ni cambiar su propio rol de administrador.');
+  const removesUsersModule = Array.isArray(permissions) && !permissions.includes('modulo_usuarios');
+  if ((sameProfile || sameEmail) && (!active || role !== 'admin' || removesUsersModule)) throw accessValidationError('No puede desactivar, cambiar su propio rol de administrador ni retirarse Usuarios y Permisos.');
 }
 function catalogAccessFailure(cause) { const error = new Error('No se pudo validar el catálogo de acceso.', { cause }); error.status = 500; error.code = 'ACCESS_CATALOG_UNAVAILABLE'; return error; }
 function profileAccessReadFailure(cause) { const error = new Error('No se pudo cargar la configuración de acceso.', { cause }); error.status = 500; error.code = 'PROFILE_ACCESS_READ_FAILED'; return error; }
@@ -163,7 +165,11 @@ export function normalizeProfileAccessRequest(body, catalog, role) {
     }
   }
   for (const assignment of areas) if (assignment.subarea_code === null && areas.some(other => other.area_code === assignment.area_code && other.subarea_code !== null)) throw accessValidationError('La asignación de área es ambigua: seleccione toda el área o sus subáreas.');
-  if (permissions.includes('licitaciones') && !TENDER_PERMISSION_ROLES.has(role)) throw accessValidationError('El permiso de Licitaciones no aplica para este rol.');
+  for (const permission of permissions) {
+    if (MODULE_PERMISSION_CODE_SET.has(permission) && !isModulePermissionEligible(role, permission)) {
+      throw accessValidationError(`El módulo ${permission === 'licitaciones' ? 'Licitaciones' : 'seleccionado'} no aplica para este rol.`);
+    }
+  }
   return { areas, permissions };
 }
 export function legacyCommercialAreaFromAssignments(areas) {
@@ -2585,7 +2591,7 @@ app.post('/api/users', async (req, res) => {
     try {
       beforeProfile = await must(database.from('psi_sales_profiles').select(profileAdminSelect).eq('microsoft_email', microsoft_email).maybeSingle());
     } catch (error) { throw profileAdministrationFailure(error); }
-    assertNoAdminSelfLockout(currentProfile, { profileId: beforeProfile?.id, microsoftEmail: microsoft_email, role, active });
+    assertNoAdminSelfLockout(currentProfile, { profileId: beforeProfile?.id, microsoftEmail: microsoft_email, role, active, permissions: access.permissions });
     const beforeAccess = beforeProfile ? await readProfileAccess(database, beforeProfile.id) : { areas: [], permissions: [], areaRows: [], permissionRows: [] };
     const operationId = await acquireProfileAdministrationLock(database, currentProfile.id);
     let row;
@@ -2623,9 +2629,9 @@ app.patch('/api/users', async (req, res) => {
       throw error;
     }
     if (!PROFILE_ROLES.has(role)) throw new Error('Rol no válido.');
-    assertNoAdminSelfLockout(currentProfile, { profileId: id, microsoftEmail: microsoft_email, role, active });
     if (password && password.length < 8) throw new Error('La clave temporal debe tener mínimo 8 caracteres.');
     const access = normalizeProfileAccessRequest(req.body, await getActiveAccessCatalog(database), role);
+    assertNoAdminSelfLockout(currentProfile, { profileId: id, microsoftEmail: microsoft_email, role, active, permissions: access.permissions });
     const beforeAccess = await readProfileAccess(database, id);
     const commercial_area = legacyCommercialAreaFromAssignments(access.areas);
     const userMetadata = { full_name, role };
