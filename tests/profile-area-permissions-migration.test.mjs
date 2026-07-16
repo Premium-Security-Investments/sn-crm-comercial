@@ -11,8 +11,11 @@ const migration = readFileSync(migrationPath, 'utf8');
 const rollback = readFileSync(rollbackPath, 'utf8');
 const ids = {
   admin: '11111111-1111-4111-8111-111111111111',
+  gerencia: '12121212-1212-4121-8121-121212121212',
+  director: '13131313-1313-4131-8131-131313131313',
   commercial: '22222222-2222-4222-8222-222222222222',
   collaborator: '33333333-3333-4333-8333-333333333333',
+  junta: '44444444-4444-4444-8444-444444444444',
 };
 
 const scalar = async (db, sql) => (await db.query(sql)).rows[0];
@@ -30,6 +33,8 @@ async function createDatabase() {
     );
     insert into public.psi_sales_profiles (id, role) values
       ('${ids.admin}', 'admin'),
+      ('${ids.gerencia}', 'gerencia'),
+      ('${ids.director}', 'director'),
       ('${ids.commercial}', 'comercial');
   `);
   await db.exec(migration);
@@ -40,12 +45,33 @@ async function count(db, table) {
   return Number((await scalar(db, `select count(*)::int as count from public.${table}`)).count);
 }
 
-await (async function migratesLegacySchemaAndIsIdempotent() {
+await (async function migratesLegacySchemaAndConvergesExistingCatalogRows() {
   const db = await createDatabase();
+  await db.exec(`
+    update public.psi_org_areas set name = 'Gerencia obsoleta', active = false where code = 'gerencia';
+    update public.psi_org_subareas
+      set area_code = 'operaciones', name = 'Licitaciones obsoletas', active = false
+      where code = 'licitaciones';
+    update public.psi_access_permissions
+      set name = 'Permiso obsoleto', description = 'Descripción obsoleta.', active = false
+      where code = 'licitaciones';
+  `);
   await db.exec(migration);
   assert.equal(await count(db, 'psi_org_areas'), 6);
   assert.equal(await count(db, 'psi_org_subareas'), 20);
   assert.equal(await count(db, 'psi_access_permissions'), 1);
+  assert.deepEqual(
+    await scalar(db, `select name, active from public.psi_org_areas where code = 'gerencia'`),
+    { name: 'Gerencia', active: true },
+  );
+  assert.deepEqual(
+    await scalar(db, `select area_code, name, active from public.psi_org_subareas where code = 'licitaciones'`),
+    { area_code: 'comercial', name: 'Licitaciones', active: true },
+  );
+  assert.deepEqual(
+    await scalar(db, `select name, description, active from public.psi_access_permissions where code = 'licitaciones'`),
+    { name: 'Licitaciones', description: 'Acceso transversal al módulo de Licitaciones.', active: true },
+  );
   assert.deepEqual(
     await scalar(db, `select role as admin_role, (select role from public.psi_sales_profiles where id = '${ids.commercial}') as commercial_role from public.psi_sales_profiles where id = '${ids.admin}'`),
     { admin_role: 'admin', commercial_role: 'comercial' },
@@ -79,16 +105,19 @@ await (async function seedsExactlyTheApprovedActiveAreaAndSubareaCatalog() {
   await db.close();
 })();
 
-await (async function expandsRolesWithoutChangingExistingRows() {
+await (async function acceptsEveryApprovedRoleAndRejectsUnknownRoles() {
   const db = await createDatabase();
   await db.exec(`insert into public.psi_sales_profiles (id, role) values
     ('${ids.collaborator}', 'colaborador'),
-    ('44444444-4444-4444-8444-444444444444', 'junta');`);
+    ('${ids.junta}', 'junta');`);
   await assert.rejects(
     db.exec(`insert into public.psi_sales_profiles (id, role) values ('55555555-5555-4555-8555-555555555555', 'desconocido')`),
     /check constraint|violates/i,
   );
-  assert.equal((await scalar(db, `select string_agg(role, ',' order by role) as roles from public.psi_sales_profiles`)).roles, 'admin,colaborador,comercial,junta');
+  assert.equal(
+    (await scalar(db, `select string_agg(role, ',' order by role) as roles from public.psi_sales_profiles`)).roles,
+    'admin,colaborador,comercial,director,gerencia,junta',
+  );
   await db.close();
 })();
 
@@ -150,9 +179,30 @@ await (async function keepsAccessTablesConservativeAndRestoresLegacyCheckOnRollb
   assert.deepEqual(
     await scalar(db, `select
       to_regclass('public.psi_org_areas') is null as areas_removed,
+      to_regclass('public.psi_org_subareas') is null as subareas_removed,
+      to_regclass('public.psi_access_permissions') is null as permissions_removed,
+      to_regclass('public.psi_profile_area_assignments') is null as area_assignments_removed,
+      to_regclass('public.psi_profile_permissions') is null as profile_permissions_removed,
       to_regclass('public.psi_access_audit_log') is null as audit_removed,
       (select count(*)::int from pg_constraint where conrelid = 'public.psi_sales_profiles'::regclass and pg_get_constraintdef(oid) like '%colaborador%') as new_role_checks_removed`),
-    { areas_removed: true, audit_removed: true, new_role_checks_removed: 0 },
+    {
+      areas_removed: true,
+      subareas_removed: true,
+      permissions_removed: true,
+      area_assignments_removed: true,
+      profile_permissions_removed: true,
+      audit_removed: true,
+      new_role_checks_removed: 0,
+    },
+  );
+  assert.deepEqual(
+    (await db.query(`select id, role from public.psi_sales_profiles order by id`)).rows,
+    [
+      { id: ids.admin, role: 'admin' },
+      { id: ids.gerencia, role: 'gerencia' },
+      { id: ids.director, role: 'director' },
+      { id: ids.commercial, role: 'comercial' },
+    ].sort((left, right) => left.id.localeCompare(right.id)),
   );
   await assert.rejects(
     db.exec(`insert into public.psi_sales_profiles (id, role) values ('66666666-6666-4666-8666-666666666666', 'colaborador')`),
