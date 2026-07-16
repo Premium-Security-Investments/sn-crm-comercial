@@ -56,16 +56,21 @@ const profileSnapshot = row => ({
 const getProfile = async id => profileSnapshot((await db.query(`select * from public.psi_sales_profiles where id=$1`, [id])).rows[0]);
 const getAreas = async id => (await db.query(`select area_code,subarea_code from public.psi_profile_area_assignments where profile_id=$1 order by area_code,subarea_code`, [id])).rows;
 const getPermissions = async id => (await db.query(`select permission_code from public.psi_profile_permissions where profile_id=$1 order by permission_code`, [id])).rows;
-const callRpc = async ({ mode='patch', targetId=ids.target, expected, profile, areas, permissions }) =>
+const callRpc = async ({ mode='patch', targetId=ids.target, expected, profile, areas, permissions, op=operationId }) =>
   (await db.query(
     `select public.psi_admin_persist_profile_access($1,$2,$3::jsonb,$4::jsonb,$5::jsonb,$6::jsonb,$7,$8) as result`,
-    [mode, targetId, JSON.stringify(expected), JSON.stringify(profile), JSON.stringify(areas), JSON.stringify(permissions), ids.admin, operationId],
+    [mode, targetId, JSON.stringify(expected), JSON.stringify(profile), JSON.stringify(areas), JSON.stringify(permissions), ids.admin, op],
   )).rows[0].result;
 
 const before = await getProfile(ids.target);
 const after = { ...before, full_name: 'Directora', role: 'director', commercial_area: null };
 const afterAreas = [{ area_code: 'operaciones', subarea_code: null }];
 const afterPermissions = ['licitaciones'];
+await assert.rejects(
+  callRpc({ expected: before, profile: after, areas: afterAreas, permissions: afterPermissions, op: '99999999-9999-4999-8999-999999999999' }),
+  /lock.*(pertenece|expiró)|bloque/i,
+  'el RPC rechaza una operación que no posee el lock',
+);
 
 await db.exec(`
   create function public.test_fail_profile_access_audit() returns trigger language plpgsql as $$
@@ -112,7 +117,10 @@ assert.equal((await db.query(`select has_function_privilege('authenticated','pub
 await releaseLock(operationId);
 const nextOperationId = await acquireLock();
 assert.notEqual(nextOperationId, operationId, 'liberar permite una nueva operación con propietario distinto');
-await releaseLock(nextOperationId);
+await db.query(`update public.psi_profile_admin_lock set expires_at=now()-interval '1 second' where operation_id=$1`, [nextOperationId]);
+const replacementOperationId = await acquireLock();
+assert.notEqual(replacementOperationId, nextOperationId, 'un lease expirado se reemplaza sin bloqueo permanente');
+await releaseLock(replacementOperationId);
 
 await db.exec(readFileSync(rollback020Path, 'utf8'));
 assert.equal((await db.query(`select to_regprocedure('public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid,uuid)') as proc`)).rows[0].proc, null);

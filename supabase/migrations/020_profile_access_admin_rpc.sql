@@ -2,6 +2,79 @@
 -- Supabase Auth remains external; database authorization state changes as one PostgreSQL transaction.
 begin;
 
+create table if not exists public.psi_profile_admin_lock (
+  lock_name text primary key,
+  operation_id uuid not null unique,
+  actor_profile_id uuid not null references public.psi_sales_profiles(id) on delete restrict,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  constraint psi_profile_admin_lock_global_check check (lock_name = 'global')
+);
+
+revoke all on table public.psi_profile_admin_lock from public;
+revoke all on table public.psi_profile_admin_lock from authenticated;
+revoke all on table public.psi_profile_admin_lock from service_role;
+
+create or replace function public.psi_admin_acquire_profile_lock(p_actor_profile_id uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_operation_id uuid := gen_random_uuid();
+begin
+  if not exists (
+    select 1 from public.psi_sales_profiles actor
+    where actor.id = p_actor_profile_id and actor.active = true and actor.role = 'admin'
+  ) then
+    raise exception 'Actor no autorizado para administrar perfiles.' using errcode = '42501';
+  end if;
+
+  delete from public.psi_profile_admin_lock where lock_name = 'global' and expires_at <= now();
+  begin
+    insert into public.psi_profile_admin_lock(lock_name, operation_id, actor_profile_id, expires_at)
+    values ('global', v_operation_id, p_actor_profile_id, now() + interval '5 minutes');
+  exception when unique_violation then
+    raise exception 'Otra administración de perfiles está en curso.' using errcode = '55P03';
+  end;
+  return v_operation_id;
+end;
+$$;
+
+create or replace function public.psi_admin_profile_lock_owned(p_operation_id uuid, p_actor_profile_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select exists (
+    select 1 from public.psi_profile_admin_lock
+    where lock_name = 'global' and operation_id = p_operation_id
+      and actor_profile_id = p_actor_profile_id and expires_at > now()
+  );
+$$;
+
+create or replace function public.psi_admin_release_profile_lock(p_operation_id uuid, p_actor_profile_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_deleted_count integer;
+begin
+  delete from public.psi_profile_admin_lock
+  where lock_name = 'global' and operation_id = p_operation_id and actor_profile_id = p_actor_profile_id;
+  get diagnostics v_deleted_count = row_count;
+  return v_deleted_count > 0;
+end;
+$$;
+
+-- Remove the pre-lock overload when converging an earlier technical preview of 020.
+drop function if exists public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid);
+
 create or replace function public.psi_admin_persist_profile_access(
   p_mode text,
   p_target_id uuid,
@@ -9,7 +82,8 @@ create or replace function public.psi_admin_persist_profile_access(
   p_profile jsonb,
   p_areas jsonb,
   p_permissions jsonb,
-  p_actor_profile_id uuid
+  p_actor_profile_id uuid,
+  p_operation_id uuid
 )
 returns jsonb
 language plpgsql
@@ -29,6 +103,14 @@ begin
     where actor.id = p_actor_profile_id and actor.active = true and actor.role = 'admin'
   ) then
     raise exception 'Actor no autorizado para administrar perfiles.' using errcode = '42501';
+  end if;
+
+  perform 1 from public.psi_profile_admin_lock
+  where lock_name = 'global' and operation_id = p_operation_id
+    and actor_profile_id = p_actor_profile_id and expires_at > now()
+  for update;
+  if not found then
+    raise exception 'El lock de administración no pertenece a esta operación o expiró.' using errcode = '55P03';
   end if;
 
   if p_mode not in ('post', 'patch') or p_profile is null or jsonb_typeof(p_profile) <> 'object' then
@@ -176,8 +258,17 @@ begin
 end;
 $$;
 
-revoke all on function public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid) from public;
-revoke all on function public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid) from authenticated;
-grant execute on function public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid) to service_role;
+revoke all on function public.psi_admin_acquire_profile_lock(uuid) from public;
+revoke all on function public.psi_admin_acquire_profile_lock(uuid) from authenticated;
+grant execute on function public.psi_admin_acquire_profile_lock(uuid) to service_role;
+revoke all on function public.psi_admin_profile_lock_owned(uuid,uuid) from public;
+revoke all on function public.psi_admin_profile_lock_owned(uuid,uuid) from authenticated;
+grant execute on function public.psi_admin_profile_lock_owned(uuid,uuid) to service_role;
+revoke all on function public.psi_admin_release_profile_lock(uuid,uuid) from public;
+revoke all on function public.psi_admin_release_profile_lock(uuid,uuid) from authenticated;
+grant execute on function public.psi_admin_release_profile_lock(uuid,uuid) to service_role;
+revoke all on function public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid,uuid) from public;
+revoke all on function public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid,uuid) from authenticated;
+grant execute on function public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid,uuid) to service_role;
 
 commit;

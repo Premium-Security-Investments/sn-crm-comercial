@@ -153,6 +153,9 @@ const fakeSupabase = http.createServer((req, res) => {
       : { id: 'viewer-profile', full_name: 'Viewer', microsoft_email: 'viewer@example.test', role: 'comercial', active: true };
     return json(res, 200, getHeader(req, 'accept').includes('vnd.pgrst.object') ? profile : [profile]);
   }
+  if (url.pathname === '/rest/v1/psi_profile_area_assignments' || url.pathname === '/rest/v1/psi_profile_permissions') {
+    return json(res, 200, []);
+  }
   if (url.pathname === '/rest/v1/psi_public_tenders') {
     observed.tenderQueries.push(url.search);
     observed.ranges.push(getHeader(req, 'range'));

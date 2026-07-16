@@ -9,7 +9,8 @@ function assert(condition, message) {
 }
 
 for (const file of [server, api]) {
-  assert(file.includes('inviteUserByEmail'), 'API debe enviar invitación por correo con Supabase auth.admin.inviteUserByEmail al crear usuarios.');
+  assert(!file.includes('inviteUserByEmail'), 'API no debe usar inviteUserByEmail porque envía correo antes del commit del perfil.');
+  assert(file.includes('auth.admin.createUser'), 'API debe crear Auth sin envío implícito antes de persistir el perfil.');
   assert(file.includes('send_invite'), 'API debe aceptar bandera send_invite para controlar el envío del correo.');
   assert(file.includes('getPublicAppUrl'), 'API debe construir redirectTo público para que el enlace abra el CRM correcto.');
   assert(file.includes('email_confirm: true'), 'API debe dejar usuarios Auth confirmados para evitar bloqueo Email not confirmed.');

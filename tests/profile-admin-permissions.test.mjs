@@ -217,14 +217,14 @@ const rpcDatabase = {
   },
 };
 assert.deepEqual(
-  await persistProfileAccessChange(rpcDatabase, { mode: 'patch', targetId: oldProfile.id, beforeProfile: oldProfile, profileValues: changedProfile, beforeAccess, afterAccess, actorProfileId: 'admin' }),
+  await persistProfileAccessChange(rpcDatabase, { mode: 'patch', targetId: oldProfile.id, beforeProfile: oldProfile, profileValues: changedProfile, beforeAccess, afterAccess, actorProfileId: 'admin', operationId: 'operation' }),
   { id: oldProfile.id, ...changedProfile },
 );
 assert.deepEqual(rpcCalls, [{
   name: 'psi_admin_persist_profile_access',
   params: {
     p_mode: 'patch', p_target_id: oldProfile.id, p_expected_profile: oldProfile,
-    p_profile: changedProfile, p_areas: afterAccess.areas, p_permissions: afterAccess.permissions, p_actor_profile_id: 'admin',
+    p_profile: changedProfile, p_areas: afterAccess.areas, p_permissions: afterAccess.permissions, p_actor_profile_id: 'admin', p_operation_id: 'operation',
   },
 }], 'el helper envía un único comando transaccional con snapshot optimista');
 await assert.rejects(
@@ -272,6 +272,8 @@ for (const backend of [server, api]) {
   assert.doesNotMatch(post, /inviteUserByEmail/, 'POST no usa invitación con envío implícito antes del commit');
   assert.match(post, /releaseProfileAdministrationLock/);
   assert.match(patch, /releaseProfileAdministrationLock/);
+  const authCompensation = backend.slice(backend.indexOf('async function compensateAuthMutation'), backend.indexOf('async function generateAccessLink'));
+  assert.ok(authCompensation.indexOf('profileAdministrationLockOwned') < authCompensation.indexOf("mutation.kind === 'created'"), 'Auth solo se compensa mientras el request conserva el lock');
   assert.match(backend, /updateUserById\(snapshot\.id/);
   assert.match(backend, /deleteUser\(/);
   assert.match(backend, /password[^\n]{0,160}(unreadable|no se puede|cannot)[^\n]{0,160}(server profile|perfil)/i);
