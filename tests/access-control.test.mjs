@@ -17,7 +17,14 @@ const profile = (role, overrides = {}) => ({
 });
 
 const human = (role, overrides = {}) => profile(role, { identity_type: 'human', ...overrides });
-const agent = (overrides = {}) => profile('admin', { id: 'agent-1', identity_type: 'agent', ...overrides });
+const agent = (overrides = {}) => ({
+  id: 'agent-1',
+  active: true,
+  identity_type: 'agent',
+  areas: [],
+  permissions: [],
+  ...overrides,
+});
 const commercialDirector = (areas, overrides = {}) => human('director', { areas, ...overrides });
 const tenderUser = (role, overrides = {}) => human(role, { permissions: ['licitaciones'], ...overrides });
 
@@ -111,6 +118,7 @@ runCases('licitaciones', [
   { name: 'no existe fallback por correo', profile: human('admin', { microsoft_email: 'directora.licitaciones@seguridadnacional.co' }), action: ACTIONS.LICITACIONES_VIEW, resource: {}, expected: false },
   { name: 'colaborador con permiso sigue denegado', profile: tenderUser('colaborador'), action: ACTIONS.LICITACIONES_VIEW, resource: {}, expected: false },
   { name: 'agent técnico puede recomendar', profile: agent(), action: ACTIONS.LICITACIONES_GO_NO_GO_RECOMMEND, resource: { technical_authorized: true }, expected: true },
+  { name: 'agent técnico no recomienda sin autorización técnica', profile: agent(), action: ACTIONS.LICITACIONES_GO_NO_GO_RECOMMEND, resource: {}, expected: false },
   { name: 'agent técnico no aprueba', profile: agent(), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: { technical_authorized: true }, expected: false },
 ], ({ profile: candidate, action, resource }) => can(candidate, action, resource));
 
@@ -137,9 +145,16 @@ runCases('junta, agentes y fallos cerrados', [
   { name: 'gerencia publica', profile: human('gerencia'), action: ACTIONS.BOARD_PUBLISH, resource: {}, expected: true },
   { name: 'agent técnico ejecuta análisis', profile: agent(), action: ACTIONS.AI_ANALYSIS_RUN, resource: { technical_authorized: true }, expected: true },
   { name: 'agent falla sin autorización técnica', profile: agent(), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
-  { name: 'agent con role falso admin no publica', profile: agent(), action: ACTIONS.BOARD_PUBLISH, resource: {}, expected: false },
-  { name: 'agent con role falso admin no aprueba junta', profile: agent(), action: ACTIONS.BOARD_APPROVE, resource: {}, expected: false },
-  { name: 'agent con role falso admin no aprueba cierre', profile: agent(), action: ACTIONS.SIIO_CLOSE_APPROVE, resource: { area_code: 'siio' }, expected: false },
+  { name: 'agent role-less no administra usuarios', profile: agent(), action: ACTIONS.USERS_MANAGE, resource: {}, expected: false },
+  { name: 'agent role-less no edita oportunidad CRM', profile: agent(), action: ACTIONS.CRM_OPPORTUNITY_EDIT, resource: ownOpportunity, expected: false },
+  { name: 'agent role-less no aprueba go-no-go', profile: agent(), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: { technical_authorized: true }, expected: false },
+  { name: 'agent role-less no aprueba cierre', profile: agent(), action: ACTIONS.SIIO_CLOSE_APPROVE, resource: { area_code: 'siio' }, expected: false },
+  { name: 'agent role-less no aprueba junta', profile: agent(), action: ACTIONS.BOARD_APPROVE, resource: {}, expected: false },
+  { name: 'agent role-less no publica junta', profile: agent(), action: ACTIONS.BOARD_PUBLISH, resource: {}, expected: false },
+  { name: 'agent con role falso admin no publica', profile: agent({ role: 'admin' }), action: ACTIONS.BOARD_PUBLISH, resource: {}, expected: false },
+  { name: 'agent con role falso admin no aprueba junta', profile: agent({ role: 'admin' }), action: ACTIONS.BOARD_APPROVE, resource: {}, expected: false },
+  { name: 'agent con role falso admin no aprueba cierre', profile: agent({ role: 'admin' }), action: ACTIONS.SIIO_CLOSE_APPROVE, resource: { area_code: 'siio' }, expected: false },
+  { name: 'agent con id solo espacios falla cerrado', profile: agent({ id: '   ' }), action: ACTIONS.AI_ANALYSIS_RUN, resource: { technical_authorized: true }, expected: false },
   { name: 'acción desconocida', profile: human('admin'), action: 'UNKNOWN_ACTION', resource: {}, expected: false },
   { name: 'perfil malformado', profile: { id: 'bad', active: true, role: 'desconocido', areas: [], permissions: [] }, action: ACTIONS.USERS_MANAGE, resource: {}, expected: false },
   { name: 'resource no objeto falla cerrado cuando necesita campos', profile: human('comercial'), action: ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW, resource: null, expected: false },
