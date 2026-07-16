@@ -105,7 +105,6 @@ function normalizeAccessPermissions(rows) {
   return permissions;
 }
 function authContextUnavailable(cause) {
-  if (cause?.code === 'AUTH_CONTEXT_UNAVAILABLE') return cause;
   const error = new Error('No se pudo validar el acceso del usuario.', { cause });
   error.status = 500;
   error.code = 'AUTH_CONTEXT_UNAVAILABLE';
