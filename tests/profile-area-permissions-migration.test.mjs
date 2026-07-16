@@ -25,6 +25,8 @@ async function createDatabase() {
   await db.exec(`
     create role authenticated;
     create role service_role;
+    alter role service_role bypassrls;
+    grant service_role to current_user;
     create table public.psi_sales_profiles (
       id uuid primary key,
       role text not null,
@@ -217,6 +219,165 @@ await (async function blocksRollbackWhenNewRolesExist() {
   await assert.rejects(db.exec(rollback), /colaborador.*junta|junta.*colaborador/i);
   await db.exec('rollback');
   assert.equal((await scalar(db, `select to_regclass('public.psi_org_areas') is not null as areas_still_present`)).areas_still_present, true);
+  await db.close();
+})();
+
+await (async function preservesCompositeRoleChecksAndRejectsAmbiguousLegacyRoleChecks() {
+  const db = new PGlite();
+  await db.exec(`
+    create role authenticated;
+    create role service_role;
+    create table public.psi_sales_profiles (
+      id uuid primary key,
+      role text not null,
+      active boolean not null default true,
+      constraint legacy_sales_profile_role_check check (role in ('admin', 'gerencia', 'director', 'comercial')),
+      constraint legacy_role_requires_active check (role <> 'admin' or active)
+    );
+    insert into public.psi_sales_profiles (id, role) values ('${ids.admin}', 'admin');
+  `);
+  await db.exec(migration);
+  assert.equal(
+    (await scalar(db, `select count(*)::int as count from pg_constraint where conrelid = 'public.psi_sales_profiles'::regclass and conname = 'legacy_role_requires_active'`)).count,
+    1,
+    'un CHECK compuesto role + active no debe ser eliminado por 019',
+  );
+  await db.exec(rollback);
+  assert.equal(
+    (await scalar(db, `select count(*)::int as count from pg_constraint where conrelid = 'public.psi_sales_profiles'::regclass and conname = 'legacy_role_requires_active'`)).count,
+    1,
+    'el CHECK compuesto ajeno debe sobrevivir también al rollback',
+  );
+  await db.close();
+
+  const ambiguous = new PGlite();
+  await ambiguous.exec(`
+    create role authenticated;
+    create role service_role;
+    create table public.psi_sales_profiles (
+      id uuid primary key,
+      role text not null,
+      active boolean not null default true,
+      constraint legacy_role_check_one check (role in ('admin', 'gerencia', 'director', 'comercial')),
+      constraint legacy_role_check_two check (role <> 'desconocido')
+    );
+  `);
+  await assert.rejects(ambiguous.exec(migration), /ambig.*role|role.*ambig/i);
+  await ambiguous.exec('rollback');
+  assert.deepEqual(
+    (await ambiguous.query(`select conname from pg_constraint where conrelid = 'public.psi_sales_profiles'::regclass and contype = 'c' order by conname`)).rows,
+    [{ conname: 'legacy_role_check_one' }, { conname: 'legacy_role_check_two' }],
+    'un legado ambiguo debe permanecer intacto cuando el forward aborta',
+  );
+  assert.equal((await scalar(ambiguous, `select to_regclass('public.psi_org_areas') is null as untouched`)).untouched, true);
+  await ambiguous.close();
+})();
+
+await (async function preflightsHistoricalRolesBeforeChangingTheSchema() {
+  const db = new PGlite();
+  await db.exec(`
+    create role authenticated;
+    create role service_role;
+    create table public.psi_sales_profiles (
+      id uuid primary key,
+      role text,
+      active boolean not null default true,
+      constraint legacy_role_active_guard check (role <> 'admin' or active)
+    );
+    insert into public.psi_sales_profiles (id, role) values
+      ('77777777-7777-4777-8777-777777777777', 'historico_no_aprobado'),
+      ('88888888-8888-4888-8888-888888888888', null);
+  `);
+  await assert.rejects(
+    db.exec(migration),
+    /historico_no_aprobado.*NULL|NULL.*historico_no_aprobado/i,
+    'el preflight debe nombrar los valores bloqueantes y pedir normalización',
+  );
+  await db.exec('rollback');
+  assert.equal((await scalar(db, `select to_regclass('public.psi_org_areas') is null as untouched`)).untouched, true);
+  assert.equal(
+    (await scalar(db, `select count(*)::int as count from pg_constraint where conrelid = 'public.psi_sales_profiles'::regclass and conname = 'legacy_role_active_guard'`)).count,
+    1,
+  );
+  await db.close();
+})();
+
+await (async function makesAuditEvidenceImmutableForServiceRoleAndOwners() {
+  const db = await createDatabase();
+  for (const privilege of ['select', 'insert']) {
+    assert.equal((await scalar(db, `select has_table_privilege('service_role', 'public.psi_access_audit_log', '${privilege}') as allowed`)).allowed, true);
+  }
+  for (const privilege of ['update', 'delete', 'truncate']) {
+    assert.equal((await scalar(db, `select has_table_privilege('service_role', 'public.psi_access_audit_log', '${privilege}') as allowed`)).allowed, false);
+  }
+  await db.exec(`set role service_role;
+    insert into public.psi_access_audit_log(actor_profile_id, action) values ('${ids.admin}', 'access_granted');
+    select * from public.psi_access_audit_log;`);
+  await db.exec('reset role');
+  await assert.rejects(
+    db.exec(`update public.psi_access_audit_log set action = 'altered'`),
+    /immutable|prohibit/i,
+    'el trigger debe proteger inclusive al propietario/BYPASSRLS',
+  );
+  await assert.rejects(db.exec(`delete from public.psi_access_audit_log`), /immutable|prohibit/i);
+  assert.deepEqual(await scalar(db, `select action from public.psi_access_audit_log`), { action: 'access_granted' });
+  await db.close();
+})();
+
+await (async function blocksDestructiveRollbackWhenFunctionalAccessDataExists() {
+  const cases = [
+    ['psi_profile_area_assignments', `insert into public.psi_profile_area_assignments(profile_id, area_code) values ('${ids.admin}', 'comercial')`],
+    ['psi_profile_permissions', `insert into public.psi_profile_permissions(profile_id, permission_code) values ('${ids.admin}', 'licitaciones')`],
+    ['psi_access_audit_log', `insert into public.psi_access_audit_log(actor_profile_id, action) values ('${ids.admin}', 'access_granted')`],
+  ];
+  for (const [table, seed] of cases) {
+    const db = await createDatabase();
+    await db.exec(seed);
+    await assert.rejects(db.exec(rollback), new RegExp(`${table}.*datos|datos.*${table}`, 'i'));
+    await db.exec('rollback');
+    assert.equal((await scalar(db, `select to_regclass('public.${table}') is not null as remains`)).remains, true);
+    assert.equal(await count(db, table), 1, `${table} y sus datos deben sobrevivir un rollback bloqueado`);
+    await db.close();
+  }
+})();
+
+await (async function rollsBackOnlyWhenAccessDataIsEmptyAndRemoves019AuditObjects() {
+  const db = await createDatabase();
+  await db.exec(rollback);
+  assert.deepEqual(
+    await scalar(db, `select
+      to_regclass('public.psi_org_areas') is null as areas_removed,
+      to_regclass('public.psi_org_subareas') is null as subareas_removed,
+      to_regclass('public.psi_access_permissions') is null as permissions_removed,
+      to_regclass('public.psi_profile_area_assignments') is null as assignments_removed,
+      to_regclass('public.psi_profile_permissions') is null as profile_permissions_removed,
+      to_regclass('public.psi_access_audit_log') is null as audit_removed,
+      to_regprocedure('public.psi_access_audit_log_prevent_mutation()') is null as audit_function_removed`),
+    { areas_removed: true, subareas_removed: true, permissions_removed: true, assignments_removed: true, profile_permissions_removed: true, audit_removed: true, audit_function_removed: true },
+  );
+  await db.close();
+})();
+
+await (async function cascadesSubareaAreaCorrectionsIntoAssignmentsDuringSeedReconciliation() {
+  const db = await createDatabase();
+  await db.exec(`insert into public.psi_profile_area_assignments(profile_id, area_code, subarea_code)
+    values ('${ids.admin}', 'comercial', 'licitaciones');
+    update public.psi_org_subareas set area_code = 'operaciones' where code = 'licitaciones';`);
+  assert.deepEqual(
+    await scalar(db, `select area_code, subarea_code from public.psi_profile_area_assignments`),
+    { area_code: 'operaciones', subarea_code: 'licitaciones' },
+  );
+  await db.exec(migration);
+  assert.deepEqual(await scalar(db, `select area_code, subarea_code from public.psi_profile_area_assignments`), { area_code: 'comercial', subarea_code: 'licitaciones' });
+  await db.close();
+})();
+
+await (async function rejectsBlankCatalogCodesAndBlankAuditActions() {
+  const db = await createDatabase();
+  await assert.rejects(db.exec(`insert into public.psi_org_areas(code, name) values ('   ', 'Vacía')`), /check constraint|violates/i);
+  await assert.rejects(db.exec(`insert into public.psi_org_subareas(code, area_code, name) values (' ', 'comercial', 'Vacía')`), /check constraint|violates/i);
+  await assert.rejects(db.exec(`insert into public.psi_access_permissions(code, name) values ('', 'Vacío')`), /check constraint|violates/i);
+  await assert.rejects(db.exec(`insert into public.psi_access_audit_log(action) values ('  ')`), /check constraint|violates/i);
   await db.close();
 })();
 
