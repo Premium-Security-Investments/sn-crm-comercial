@@ -107,12 +107,12 @@ Extend `tests/access-control.test.mjs` with active profiles carrying explicit pe
 { profile: human('admin', { active: false, permissions: MODULE_PERMISSION_CODES }), action: ACTIONS.MODULE_DASHBOARD_VIEW, expected: false }
 ```
 
-Also require existing CRM opportunity actions to include `modulo_oportunidades`, SIIO actions to include `modulo_siio_gerencial`, and `USERS_MANAGE` to include `modulo_usuarios` in addition to their existing role/resource checks.
+Keep existing resource actions (`USERS_MANAGE`, CRM, SIIO and tender actions) semantically unchanged in this task. Task 4 composes the new module-entry action with the existing role/resource action at each backend route, so every intermediate commit remains backward-compatible and independently testable.
 
 - [ ] **Step 6: Run matrix RED**
 
 Run: `node tests/access-control.test.mjs`
-Expected: FAIL because the new actions are unknown and current role checks grant without module permissions.
+Expected: FAIL because the new module actions are unknown.
 
 - [ ] **Step 7: Implement module actions in central matrix**
 
