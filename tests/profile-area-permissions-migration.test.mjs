@@ -150,22 +150,22 @@ await (async function keepsTenderPermissionIndependentAndUnique() {
   await db.close();
 })();
 
-await (async function preservesAuditSafelyWhenProfilesAreDeleted() {
+await (async function preservesAuditEvidenceByBlockingProfileDeletion() {
   const db = await createDatabase();
   await db.exec(`insert into public.psi_sales_profiles (id, role) values ('${ids.collaborator}', 'colaborador');
     insert into public.psi_profile_area_assignments(profile_id, area_code) values ('${ids.collaborator}', 'financiera');
     insert into public.psi_profile_permissions(profile_id, permission_code) values ('${ids.collaborator}', 'licitaciones');
     insert into public.psi_access_audit_log(actor_profile_id, target_profile_id, action, before_state, after_state)
-    values ('${ids.admin}', '${ids.collaborator}', 'profile_access_changed', '{"role":"comercial"}'::jsonb, '{"role":"colaborador"}'::jsonb);
-    delete from public.psi_sales_profiles where id = '${ids.collaborator}';`);
-  assert.equal(await count(db, 'psi_profile_area_assignments'), 0);
-  assert.equal(await count(db, 'psi_profile_permissions'), 0);
-  assert.deepEqual(
-    await scalar(db, `select actor_profile_id is null as actor_cleared, target_profile_id is null as target_cleared, before_state, after_state from public.psi_access_audit_log`),
-    { actor_cleared: false, target_cleared: true, before_state: { role: 'comercial' }, after_state: { role: 'colaborador' } },
+    values ('${ids.admin}', '${ids.collaborator}', 'profile_access_changed', '{"role":"comercial"}'::jsonb, '{"role":"colaborador"}'::jsonb);`);
+  await assert.rejects(
+    db.exec(`delete from public.psi_sales_profiles where id = '${ids.collaborator}'`),
+    /foreign key|violates/i,
+    'un perfil referenciado por evidencia inmutable no se puede borrar',
   );
-  await db.exec(`delete from public.psi_sales_profiles where id = '${ids.admin}'`);
-  assert.equal((await scalar(db, `select actor_profile_id is null as actor_cleared from public.psi_access_audit_log`)).actor_cleared, true);
+  assert.deepEqual(
+    await scalar(db, `select actor_profile_id, target_profile_id, before_state, after_state from public.psi_access_audit_log`),
+    { actor_profile_id: ids.admin, target_profile_id: ids.collaborator, before_state: { role: 'comercial' }, after_state: { role: 'colaborador' } },
+  );
   await db.close();
 })();
 
@@ -313,6 +313,16 @@ await (async function makesAuditEvidenceImmutableForServiceRoleAndOwners() {
   await db.exec(`set role service_role;
     insert into public.psi_access_audit_log(actor_profile_id, action) values ('${ids.admin}', 'access_granted');
     select * from public.psi_access_audit_log;`);
+  await assert.rejects(
+    db.exec(`update public.psi_access_audit_log set action = 'altered'`),
+    /permission denied|immutable|prohibit/i,
+    'service_role no puede actualizar evidencia',
+  );
+  await assert.rejects(
+    db.exec(`delete from public.psi_access_audit_log`),
+    /permission denied|immutable|prohibit/i,
+    'service_role no puede borrar evidencia',
+  );
   await db.exec('reset role');
   await assert.rejects(
     db.exec(`update public.psi_access_audit_log set action = 'altered'`),
