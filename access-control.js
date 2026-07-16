@@ -1,3 +1,5 @@
+import { isModulePermissionEligible } from './module-access.js';
+
 const HUMAN_ROLES = new Set([
   'admin',
   'gerencia',
@@ -35,6 +37,13 @@ export const ACTIONS = Object.freeze({
   BOARD_APPROVE: 'board.approve',
   BOARD_PUBLISH: 'board.publish',
   AI_ANALYSIS_RUN: 'ai.analysis.run',
+  MODULE_SIIO_VIEW: 'module.siio.view',
+  MODULE_VIGIA_VIEW: 'module.vigia.view',
+  MODULE_DASHBOARD_VIEW: 'module.dashboard.view',
+  MODULE_ALERTS_VIEW: 'module.alerts.view',
+  MODULE_OPPORTUNITIES_VIEW: 'module.opportunities.view',
+  MODULE_GOALS_VIEW: 'module.goals.view',
+  MODULE_USERS_VIEW: 'module.users.view',
 });
 
 const KNOWN_ACTIONS = new Set(Object.values(ACTIONS));
@@ -198,6 +207,12 @@ export function hasPermission(profile, permissionCode) {
   return false;
 }
 
+function hasEligibleModule(profile, permissionCode) {
+  return isHuman(profile)
+    && isModulePermissionEligible(profile.role, permissionCode)
+    && hasPermission(profile, permissionCode);
+}
+
 /**
  * Admin and gerencia have organization-wide scope. Director, comercial and
  * colaborador are limited to explicit assignments; a subarea assignment never
@@ -237,6 +252,21 @@ export function can(profile, action, resource = {}) {
         || hasHumanRole(profile, COMMERCIAL_ROLES);
     case ACTIONS.NAV_LICITACIONES_VIEW:
       return canHumanTenderAction(profile);
+
+    case ACTIONS.MODULE_SIIO_VIEW:
+      return hasEligibleModule(profile, 'modulo_siio_gerencial');
+    case ACTIONS.MODULE_VIGIA_VIEW:
+      return hasEligibleModule(profile, 'modulo_vig_ia');
+    case ACTIONS.MODULE_DASHBOARD_VIEW:
+      return hasEligibleModule(profile, 'modulo_dashboard_comercial');
+    case ACTIONS.MODULE_ALERTS_VIEW:
+      return hasEligibleModule(profile, 'modulo_alertas_comerciales');
+    case ACTIONS.MODULE_OPPORTUNITIES_VIEW:
+      return hasEligibleModule(profile, 'modulo_oportunidades');
+    case ACTIONS.MODULE_GOALS_VIEW:
+      return hasEligibleModule(profile, 'modulo_metas');
+    case ACTIONS.MODULE_USERS_VIEW:
+      return hasEligibleModule(profile, 'modulo_usuarios');
 
     // Pipeline summary is a collection-level action: privileged/commercial
     // roles may request `{}`; directors still need a scoped area resource.

@@ -6,6 +6,7 @@ import {
   hasPermission,
   requireAction,
 } from '../access-control.js';
+import { MODULE_PERMISSION_CODES } from '../module-access.js';
 
 const profile = (role, overrides = {}) => ({
   id: `user-${role}`,
@@ -64,8 +65,15 @@ assert.deepEqual(ACTIONS, {
   BOARD_APPROVE: 'board.approve',
   BOARD_PUBLISH: 'board.publish',
   AI_ANALYSIS_RUN: 'ai.analysis.run',
-}, 'ACTIONS debe coincidir exactamente con el contrato estable de 27 acciones');
-assert.equal(actionValues.length, 27, 'ACTIONS debe exponer exactamente 27 códigos estables');
+  MODULE_SIIO_VIEW: 'module.siio.view',
+  MODULE_VIGIA_VIEW: 'module.vigia.view',
+  MODULE_DASHBOARD_VIEW: 'module.dashboard.view',
+  MODULE_ALERTS_VIEW: 'module.alerts.view',
+  MODULE_OPPORTUNITIES_VIEW: 'module.opportunities.view',
+  MODULE_GOALS_VIEW: 'module.goals.view',
+  MODULE_USERS_VIEW: 'module.users.view',
+}, 'ACTIONS debe coincidir exactamente con el contrato estable de 34 acciones');
+assert.equal(actionValues.length, 34, 'ACTIONS debe exponer exactamente 34 códigos estables');
 assert.equal(new Set(actionValues).size, actionValues.length, 'todos los códigos de acción deben ser únicos');
 assert.ok(actionValues.every((value) => typeof value === 'string' && value.length > 0), 'todos los códigos de acción deben ser strings no vacíos');
 const originalUsersManageAction = ACTIONS.USERS_MANAGE;
@@ -124,6 +132,20 @@ runCases('usuarios y navegación', [
   { name: 'comercial con permiso ve navegación de licitaciones', profile: tenderUser('comercial'), action: ACTIONS.NAV_LICITACIONES_VIEW, resource: {}, expected: true },
   { name: 'colaborador no ve navegación de licitaciones', profile: tenderUser('colaborador'), action: ACTIONS.NAV_LICITACIONES_VIEW, resource: {}, expected: false },
 ], ({ profile: candidate, action, resource }) => can(candidate, action, resource));
+
+runCases('entrada explícita a módulos', [
+  { name: 'admin sin módulo Usuarios no entra', profile: human('admin', { permissions: [] }), action: ACTIONS.MODULE_USERS_VIEW, expected: false },
+  { name: 'admin con módulo Usuarios entra', profile: human('admin', { permissions: ['modulo_usuarios'] }), action: ACTIONS.MODULE_USERS_VIEW, expected: true },
+  { name: 'admin con SIIO entra', profile: human('admin', { permissions: ['modulo_siio_gerencial'] }), action: ACTIONS.MODULE_SIIO_VIEW, expected: true },
+  { name: 'director con Vig-IA entra', profile: human('director', { permissions: ['modulo_vig_ia'] }), action: ACTIONS.MODULE_VIGIA_VIEW, expected: true },
+  { name: 'gerencia con Dashboard entra', profile: human('gerencia', { permissions: ['modulo_dashboard_comercial'] }), action: ACTIONS.MODULE_DASHBOARD_VIEW, expected: true },
+  { name: 'comercial con Alertas entra', profile: human('comercial', { permissions: ['modulo_alertas_comerciales'] }), action: ACTIONS.MODULE_ALERTS_VIEW, expected: true },
+  { name: 'comercial con Oportunidades entra', profile: human('comercial', { permissions: ['modulo_oportunidades'] }), action: ACTIONS.MODULE_OPPORTUNITIES_VIEW, expected: true },
+  { name: 'colaborador con Metas entra', profile: human('colaborador', { permissions: ['modulo_metas'] }), action: ACTIONS.MODULE_GOALS_VIEW, expected: true },
+  { name: 'comercial con SIIO incompatible no entra', profile: human('comercial', { permissions: ['modulo_siio_gerencial'] }), action: ACTIONS.MODULE_SIIO_VIEW, expected: false },
+  { name: 'junta con Dashboard incompatible no entra', profile: human('junta', { permissions: ['modulo_dashboard_comercial'] }), action: ACTIONS.MODULE_DASHBOARD_VIEW, expected: false },
+  { name: 'admin inactivo no entra aunque tenga módulos', profile: human('admin', { active: false, permissions: MODULE_PERMISSION_CODES }), action: ACTIONS.MODULE_DASHBOARD_VIEW, expected: false },
+], ({ profile: candidate, action }) => can(candidate, action));
 
 const ownOpportunity = { area_code: 'comercial', subarea_code: 'norte', owner_id: 'user-comercial' };
 runCases('CRM', [
