@@ -261,10 +261,17 @@ for (const backend of [server, api]) {
   const patch = backend.slice(backend.indexOf("app.patch('/api/users'"), backend.indexOf("const distPath"));
   assert.ok(post.indexOf('assertNoAdminSelfLockout') < post.indexOf('findAuthUserByEmail'), 'POST protege autobloqueo antes de tocar Auth');
   assert.ok(post.indexOf('readProfileAccess') < post.indexOf('findAuthUserByEmail'), 'POST captura acceso previo antes de tocar Auth');
+  assert.ok(post.indexOf('acquireProfileAdministrationLock') < post.indexOf('findAuthUserByEmail'), 'POST adquiere exclusión distribuida antes de tocar Auth');
   assert.ok(patch.indexOf('assertNoAdminSelfLockout') < patch.indexOf('findAuthUserByEmail'), 'PATCH protege autobloqueo antes de tocar Auth');
   assert.ok(patch.indexOf('readProfileAccess') < patch.indexOf('findAuthUserByEmail'), 'PATCH captura acceso previo antes de tocar Auth');
+  assert.ok(patch.indexOf('acquireProfileAdministrationLock') < patch.indexOf('findAuthUserByEmail'), 'PATCH adquiere exclusión distribuida antes de tocar Auth');
   assert.match(post, /persistProfileAccessChange\(database/);
   assert.match(patch, /persistProfileAccessChange\(database/);
+  assert.ok(post.lastIndexOf('persistProfileAccessChange') < post.indexOf('sendAccessEmail'), 'POST envía credenciales solo después del commit');
+  assert.ok(patch.lastIndexOf('persistProfileAccessChange') < patch.indexOf('sendAccessEmail'), 'PATCH envía credenciales solo después del commit');
+  assert.doesNotMatch(post, /inviteUserByEmail/, 'POST no usa invitación con envío implícito antes del commit');
+  assert.match(post, /releaseProfileAdministrationLock/);
+  assert.match(patch, /releaseProfileAdministrationLock/);
   assert.match(backend, /updateUserById\(snapshot\.id/);
   assert.match(backend, /deleteUser\(/);
   assert.match(backend, /password[^\n]{0,160}(unreadable|no se puede|cannot)[^\n]{0,160}(server profile|perfil)/i);

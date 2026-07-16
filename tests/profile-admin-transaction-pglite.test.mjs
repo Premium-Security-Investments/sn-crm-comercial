@@ -38,6 +38,12 @@ await db.exec(readFileSync(migration020Path, 'utf8'));
 await db.exec(`insert into public.psi_profile_area_assignments(profile_id,area_code,subarea_code,created_by)
   values ('${ids.target}','comercial','seguridad_fisica','${ids.admin}')`);
 
+const acquireLock = async () => (await db.query(`select public.psi_admin_acquire_profile_lock($1) as operation_id`, [ids.admin])).rows[0].operation_id;
+const releaseLock = async operationId => db.query(`select public.psi_admin_release_profile_lock($1,$2)`, [operationId, ids.admin]);
+const operationId = await acquireLock();
+assert.match(operationId, /^[0-9a-f-]{36}$/i);
+await assert.rejects(acquireLock(), /curso|lock|bloquead|busy/i, 'solo una administración de perfiles puede tocar Auth a la vez');
+
 const profileSnapshot = row => ({
   id: row.id,
   full_name: row.full_name,
@@ -52,8 +58,8 @@ const getAreas = async id => (await db.query(`select area_code,subarea_code from
 const getPermissions = async id => (await db.query(`select permission_code from public.psi_profile_permissions where profile_id=$1 order by permission_code`, [id])).rows;
 const callRpc = async ({ mode='patch', targetId=ids.target, expected, profile, areas, permissions }) =>
   (await db.query(
-    `select public.psi_admin_persist_profile_access($1,$2,$3::jsonb,$4::jsonb,$5::jsonb,$6::jsonb,$7) as result`,
-    [mode, targetId, JSON.stringify(expected), JSON.stringify(profile), JSON.stringify(areas), JSON.stringify(permissions), ids.admin],
+    `select public.psi_admin_persist_profile_access($1,$2,$3::jsonb,$4::jsonb,$5::jsonb,$6::jsonb,$7,$8) as result`,
+    [mode, targetId, JSON.stringify(expected), JSON.stringify(profile), JSON.stringify(areas), JSON.stringify(permissions), ids.admin, operationId],
   )).rows[0].result;
 
 const before = await getProfile(ids.target);
@@ -100,10 +106,16 @@ await assert.rejects(
 assert.equal((await getProfile(ids.target)).role, 'colaborador');
 assert.equal((await getProfile(ids.target)).active, false);
 
-assert.equal((await db.query(`select has_function_privilege('authenticated','public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid)','execute') as allowed`)).rows[0].allowed, false);
-assert.equal((await db.query(`select has_function_privilege('service_role','public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid)','execute') as allowed`)).rows[0].allowed, true);
+assert.equal((await db.query(`select has_function_privilege('authenticated','public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid,uuid)','execute') as allowed`)).rows[0].allowed, false);
+assert.equal((await db.query(`select has_function_privilege('service_role','public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid,uuid)','execute') as allowed`)).rows[0].allowed, true);
+assert.equal((await db.query(`select has_function_privilege('authenticated','public.psi_admin_acquire_profile_lock(uuid)','execute') as allowed`)).rows[0].allowed, false);
+await releaseLock(operationId);
+const nextOperationId = await acquireLock();
+assert.notEqual(nextOperationId, operationId, 'liberar permite una nueva operación con propietario distinto');
+await releaseLock(nextOperationId);
 
 await db.exec(readFileSync(rollback020Path, 'utf8'));
-assert.equal((await db.query(`select to_regprocedure('public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid)') as proc`)).rows[0].proc, null);
+assert.equal((await db.query(`select to_regprocedure('public.psi_admin_persist_profile_access(text,uuid,jsonb,jsonb,jsonb,jsonb,uuid,uuid)') as proc`)).rows[0].proc, null);
+assert.equal((await db.query(`select to_regprocedure('public.psi_admin_acquire_profile_lock(uuid)') as proc`)).rows[0].proc, null);
 await db.close();
 console.log('profile administration transaction PGlite checks passed');
