@@ -36,9 +36,45 @@ const runCases = (label, cases, fn) => {
 
 assert.equal(Object.isFrozen(ACTIONS), true, 'ACTIONS debe estar congelado');
 const actionValues = Object.values(ACTIONS);
-assert.ok(actionValues.length >= 27, 'ACTIONS debe exponer todos los códigos estables requeridos');
+assert.deepEqual(ACTIONS, {
+  USERS_MANAGE: 'users.manage',
+  NAV_GERENCIAL_VIEW: 'nav.gerencial.view',
+  NAV_COMERCIAL_VIEW: 'nav.comercial.view',
+  NAV_LICITACIONES_VIEW: 'nav.licitaciones.view',
+  CRM_PIPELINE_SUMMARY_VIEW: 'crm.pipeline.summary.view',
+  CRM_OPPORTUNITY_DETAIL_VIEW: 'crm.opportunity.detail.view',
+  CRM_OPPORTUNITY_CREATE: 'crm.opportunity.create',
+  CRM_OPPORTUNITY_EDIT: 'crm.opportunity.edit',
+  CRM_OPPORTUNITY_REASSIGN: 'crm.opportunity.reassign',
+  LICITACIONES_VIEW: 'licitaciones.view',
+  LICITACIONES_SYNC: 'licitaciones.sync',
+  LICITACIONES_DISCARD_PROPOSE: 'licitaciones.discard.propose',
+  LICITACIONES_DISCARD_APPROVE: 'licitaciones.discard.approve',
+  LICITACIONES_GO_NO_GO_RECOMMEND: 'licitaciones.go_no_go.recommend',
+  LICITACIONES_GO_NO_GO_APPROVE: 'licitaciones.go_no_go.approve',
+  SIIO_AREA_VIEW: 'siio.area.view',
+  SIIO_SUBJECT_CREATE: 'siio.subject.create',
+  SIIO_SUBJECT_EDIT: 'siio.subject.edit',
+  SIIO_ASSIGNMENT_VIEW: 'siio.assignment.view',
+  SIIO_ASSIGNMENT_UPDATE: 'siio.assignment.update',
+  SIIO_CLOSE_REQUEST: 'siio.close.request',
+  SIIO_CLOSE_APPROVE: 'siio.close.approve',
+  BOARD_PUBLICATION_VIEW: 'board.publication.view',
+  BOARD_DRAFT_EDIT: 'board.draft.edit',
+  BOARD_APPROVE: 'board.approve',
+  BOARD_PUBLISH: 'board.publish',
+  AI_ANALYSIS_RUN: 'ai.analysis.run',
+}, 'ACTIONS debe coincidir exactamente con el contrato estable de 27 acciones');
+assert.equal(actionValues.length, 27, 'ACTIONS debe exponer exactamente 27 códigos estables');
 assert.equal(new Set(actionValues).size, actionValues.length, 'todos los códigos de acción deben ser únicos');
 assert.ok(actionValues.every((value) => typeof value === 'string' && value.length > 0), 'todos los códigos de acción deben ser strings no vacíos');
+const originalUsersManageAction = ACTIONS.USERS_MANAGE;
+try {
+  ACTIONS.USERS_MANAGE = 'forged';
+} catch {
+  // ESM strict mode may throw when mutating the frozen action contract.
+}
+assert.equal(ACTIONS.USERS_MANAGE, originalUsersManageAction, 'ACTIONS no puede mutarse');
 
 runCases('hasPermission', [
   { name: 'permiso exacto activo', profile: tenderUser('comercial'), code: 'licitaciones', expected: true },
@@ -132,9 +168,9 @@ runCases('SIIO', [
   { name: 'colaborador solicita cierre propio', profile: human('colaborador'), action: ACTIONS.SIIO_CLOSE_REQUEST, resource: { area_code: 'siio', assignee_id: 'user-colaborador' }, expected: true },
   { name: 'colaborador falla cerrado sin assignee', profile: human('colaborador'), action: ACTIONS.SIIO_ASSIGNMENT_VIEW, resource: { area_code: 'siio' }, expected: false },
   { name: 'colaborador no aprueba cierre definitivo', profile: human('colaborador'), action: ACTIONS.SIIO_CLOSE_APPROVE, resource: { area_code: 'siio', assignee_id: 'user-colaborador' }, expected: false },
-  { name: 'director con área ve asignación interna', profile: commercialDirector([{ area_code: 'siio', subarea_code: null }]), action: ACTIONS.SIIO_ASSIGNMENT_VIEW, resource: { area_code: 'siio' }, expected: true },
+  { name: 'director con área ve asignación interna', profile: commercialDirector([{ area_code: 'siio', subarea_code: null }]), action: ACTIONS.SIIO_ASSIGNMENT_VIEW, resource: { area_code: 'siio', assignee_id: 'other' }, expected: true },
   { name: 'director no aprueba cierre definitivo', profile: commercialDirector([{ area_code: 'siio', subarea_code: null }]), action: ACTIONS.SIIO_CLOSE_APPROVE, resource: { area_code: 'siio' }, expected: false },
-  { name: 'gerencia aprueba cierre definitivo', profile: human('gerencia'), action: ACTIONS.SIIO_CLOSE_APPROVE, resource: { area_code: 'siio' }, expected: true },
+  { name: 'gerencia aprueba cierre definitivo', profile: human('gerencia'), action: ACTIONS.SIIO_CLOSE_APPROVE, resource: { area_code: 'siio', assignee_id: 'other' }, expected: true },
 ], ({ profile: candidate, action, resource }) => can(candidate, action, resource));
 
 runCases('junta, agentes y fallos cerrados', [
@@ -159,6 +195,114 @@ runCases('junta, agentes y fallos cerrados', [
   { name: 'perfil malformado', profile: { id: 'bad', active: true, role: 'desconocido', areas: [], permissions: [] }, action: ACTIONS.USERS_MANAGE, resource: {}, expected: false },
   { name: 'resource no objeto falla cerrado cuando necesita campos', profile: human('comercial'), action: ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW, resource: null, expected: false },
 ], ({ profile: candidate, action, resource }) => can(candidate, action, resource));
+
+const crmSensitiveActions = [
+  ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW,
+  ACTIONS.CRM_OPPORTUNITY_CREATE,
+  ACTIONS.CRM_OPPORTUNITY_EDIT,
+  ACTIONS.CRM_OPPORTUNITY_REASSIGN,
+];
+const validCrmResource = { area_code: 'comercial', subarea_code: null, owner_id: 'user-comercial' };
+for (const role of ['admin', 'gerencia']) {
+  for (const action of crmSensitiveActions) {
+    assert.equal(can(human(role), action, {}), false, `${role} niega CRM sensible sin recurso completo`);
+    assert.equal(can(human(role), action, validCrmResource), true, `${role} permite CRM sensible con recurso completo`);
+  }
+}
+for (const action of [
+  ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW,
+  ACTIONS.CRM_OPPORTUNITY_CREATE,
+  ACTIONS.CRM_OPPORTUNITY_EDIT,
+]) {
+  assert.equal(can(human('comercial'), action, { owner_id: 'user-comercial' }), false, `comercial niega ${action} propio sin área`);
+}
+assert.equal(
+  can(commercialDirector([{ area_code: 'comercial', subarea_code: null }]), ACTIONS.CRM_OPPORTUNITY_REASSIGN, validCrmResource),
+  true,
+  'director solo reasigna CRM dentro de Comercial asignada',
+);
+
+const siioSensitiveActions = [
+  ACTIONS.SIIO_ASSIGNMENT_VIEW,
+  ACTIONS.SIIO_ASSIGNMENT_UPDATE,
+  ACTIONS.SIIO_CLOSE_REQUEST,
+  ACTIONS.SIIO_CLOSE_APPROVE,
+];
+const validSiioResource = { area_code: 'siio', subarea_code: null, assignee_id: 'user-colaborador' };
+for (const role of ['admin', 'gerencia']) {
+  for (const action of siioSensitiveActions) {
+    assert.equal(can(human(role), action, {}), false, `${role} niega SIIO sensible sin recurso completo`);
+    assert.equal(can(human(role), action, validSiioResource), true, `${role} permite SIIO sensible con recurso completo`);
+  }
+}
+for (const role of ['comercial', 'colaborador']) {
+  for (const action of [ACTIONS.SIIO_ASSIGNMENT_VIEW, ACTIONS.SIIO_ASSIGNMENT_UPDATE, ACTIONS.SIIO_CLOSE_REQUEST]) {
+    assert.equal(can(human(role), action, { assignee_id: `user-${role}` }), false, `${role} niega ${action} propio sin área`);
+  }
+}
+assert.equal(
+  can(commercialDirector([{ area_code: 'siio', subarea_code: null }]), ACTIONS.SIIO_ASSIGNMENT_VIEW, validSiioResource),
+  true,
+  'director permite asignación SIIO con recurso completo dentro de área',
+);
+
+for (const resource of [
+  [],
+  { area_code: '   ', owner_id: 'user-comercial' },
+  { area_code: 'comercial', owner_id: '   ' },
+]) {
+  assert.equal(can(human('admin'), ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW, resource), false, 'CRM niega recurso malformado');
+}
+for (const resource of [
+  [],
+  { area_code: '   ', assignee_id: 'user-colaborador' },
+  { area_code: 'siio', assignee_id: '   ' },
+]) {
+  assert.equal(can(human('admin'), ACTIONS.SIIO_ASSIGNMENT_VIEW, resource), false, 'SIIO niega recurso malformado');
+}
+
+const inheritedAdmin = Object.create({
+  id: 'forged-admin', active: true, identity_type: 'human', role: 'admin', areas: [], permissions: [],
+});
+assert.equal(can(inheritedAdmin, ACTIONS.USERS_MANAGE, {}), false, 'perfil heredado no concede administración');
+const inheritedCrmResource = Object.create({ area_code: 'comercial', owner_id: 'user-comercial' });
+assert.equal(can(human('comercial'), ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW, inheritedCrmResource), false, 'CRM no acepta campos heredados');
+const inheritedAssignment = Object.create({ area_code: 'siio', subarea_code: null });
+assert.equal(hasAreaScope(human('director', { areas: [inheritedAssignment] }), 'siio', null), false, 'alcance no acepta asignación con campos heredados');
+
+const inheritedPermissions = [];
+Object.setPrototypeOf(inheritedPermissions, Object.assign([], { 0: 'licitaciones' }));
+assert.equal(hasPermission(human('comercial', { permissions: inheritedPermissions }), 'licitaciones'), false, 'permiso heredado no concede acceso');
+const forgedSomePermissions = ['not-licitaciones'];
+forgedSomePermissions.some = () => true;
+assert.equal(hasPermission(human('comercial', { permissions: forgedSomePermissions }), 'licitaciones'), false, 'some manipulado no concede permiso');
+const forgedFilterAreas = [{ area_code: 'other', subarea_code: null }];
+forgedFilterAreas.filter = () => [{ area_code: 'siio', subarea_code: null }];
+assert.equal(hasAreaScope(human('director', { areas: forgedFilterAreas }), 'siio', null), false, 'filter manipulado no concede área');
+const inheritedAreaElement = [];
+Object.setPrototypeOf(inheritedAreaElement, Object.assign([], { 0: { area_code: 'siio', subarea_code: null } }));
+inheritedAreaElement.length = 1;
+assert.equal(hasAreaScope(human('director', { areas: inheritedAreaElement }), 'siio', null), false, 'elemento heredado de array no concede área');
+
+const inheritedTechnicalAuthorization = Object.create({ technical_authorized: true });
+assert.equal(can(agent(), ACTIONS.AI_ANALYSIS_RUN, inheritedTechnicalAuthorization), false, 'autorización técnica heredada no concede acción de agente');
+
+assert.equal(can(human('admin', { identity_type: 'unknown' }), ACTIONS.USERS_MANAGE, {}), false, 'identity_type desconocido niega admin');
+assert.equal(can(profile('admin'), ACTIONS.USERS_MANAGE, {}), true, 'identity_type ausente mantiene compatibilidad legacy');
+assert.equal(can(human('admin', { active: false }), ACTIONS.USERS_MANAGE, {}), false, 'identidad inactiva niega admin');
+assert.equal(can(human('admin', { id: '   ' }), ACTIONS.USERS_MANAGE, {}), false, 'id con espacios niega admin');
+
+const nullPrototypeAdmin = Object.assign(Object.create(null), {
+  id: 'null-admin', active: true, identity_type: 'human', role: 'admin', areas: [], permissions: [],
+});
+const nullPrototypeCrm = Object.assign(Object.create(null), {
+  area_code: 'comercial', subarea_code: null, owner_id: 'null-commercial',
+});
+const nullPrototypeCommercial = Object.assign(Object.create(null), {
+  id: 'null-commercial', active: true, identity_type: 'human', role: 'comercial', areas: [], permissions: [],
+});
+assert.equal(can(nullPrototypeAdmin, ACTIONS.USERS_MANAGE, {}), true, 'perfil null-prototype con campos propios es válido');
+assert.equal(can(nullPrototypeCommercial, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW, nullPrototypeCrm), true, 'recurso null-prototype con campos propios es válido');
 
 const sensitiveResource = { area_code: 'siio', assignee_id: 'other', secret: 'no-filtrar', action: 'no-filtrar' };
 assert.equal(requireAction(human('admin'), ACTIONS.USERS_MANAGE, {}), true, 'requireAction devuelve true al permitir');
