@@ -205,7 +205,8 @@ for (const backend of [server, api]) {
 }
 assert.equal(server, api, 'server y handler Vercel deben mantenerse idénticos');
 
-assert.match(src, /type AccessAssignment =/);
+assert.match(profileAccessStateTs, /export type AccessAssignment =/);
+assert.match(src, /type AccessAssignment/);
 assert.match(src, /areas\?: AccessAssignment\[\]/);
 assert.match(src, /permissions\?: string\[\]/);
 assert.match(src, /api<AccessCatalog>\('\/api\/access-catalog'\)/);

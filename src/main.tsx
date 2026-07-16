@@ -9,11 +9,11 @@ import { SiioDashboard } from './siio/SiioDashboard';
 import { TendersModule } from './tenders/TendersModule';
 import type { TenderModuleView } from './tenders/types';
 import { focusDocumentReviewArea } from './tenders/viewUtils';
+import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
 type CustomerSegment = 'cliente_nuevo' | 'cliente_actual';
-type AccessAssignment = { area_code: string; subarea_code: string | null };
 type AccessCatalog = { areas: Array<{ code: string; name: string }>; subareas: Array<{ code: string; area_code: string; name: string }>; permissions: Array<{ code: string; name: string; description: string }> };
 type Profile = { id: string; full_name: string; microsoft_email: string; role: string; active: boolean; commercial_area?: CommercialArea | null; can_edit_customer_segment?: boolean; areas?: AccessAssignment[]; permissions?: string[] };
 type ServiceType = { code: string; name: string };
@@ -2612,12 +2612,8 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const sortUsersBy = (key: typeof usersSortConfig.key) => setUsersSortConfig(current => nextSort(current, key));
   useEffect(() => { if (canManageUsers(currentProfile)) load().catch(e => setStatus(e instanceof Error ? e.message : String(e))); }, [currentProfile.id]);
   if (!canManageUsers(currentProfile)) return <div className="error">No tiene autorización para administrar usuarios.</div>;
-  const setAreaScope = (area_code: string, subarea_code: string | null, checked: boolean) => setForm(current => {
-    const withoutArea = current.areas.filter(scope => scope.area_code !== area_code);
-    if (!checked) return { ...current, areas: current.areas.filter(scope => !(scope.area_code === area_code && scope.subarea_code === subarea_code)) };
-    const next = subarea_code === null ? [...withoutArea, { area_code, subarea_code: null }] : [...withoutArea.filter(scope => scope.subarea_code !== null), ...current.areas.filter(scope => scope.area_code === area_code && scope.subarea_code !== null), { area_code, subarea_code }];
-    return { ...current, areas: next.filter((scope, index, all) => all.findIndex(other => other.area_code === scope.area_code && other.subarea_code === scope.subarea_code) === index) };
-  });
+  const setAreaScope = (areaCode: string, subareaCode: string | null, checked: boolean) =>
+    setForm(current => ({ ...current, areas: setAreaScopeSelection(current.areas, areaCode, subareaCode, checked) }));
   const eligibleForTenders = ['admin','gerencia','director','comercial'].includes(form.role);
   const changeRole = (role: string) => setForm(current => ({ ...current, role, permissions: ['colaborador','junta'].includes(role) ? current.permissions.filter(permission => permission !== 'licitaciones') : current.permissions }));
   const startEdit = (user: Profile) => { setEditingUserId(user.id); setForm({ full_name: user.full_name, microsoft_email: user.microsoft_email, role: user.role, active: user.active, password: '', send_invite: false, areas: user.areas || [], permissions: user.permissions || [], can_edit_customer_segment: !!user.can_edit_customer_segment }); setStatus('Editando usuario existente. Deja la clave en blanco si no quieres cambiarla.'); window.setTimeout(() => editFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); };
