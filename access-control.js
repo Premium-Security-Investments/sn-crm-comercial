@@ -42,24 +42,39 @@ const TENDER_PERMISSION = 'licitaciones';
 const HUMAN_TENDER_ROLES = new Set(['admin', 'gerencia', 'director', 'comercial']);
 const PRIVILEGED_ROLES = new Set(['admin', 'gerencia']);
 const EXPLICIT_SCOPE_ROLES = new Set(['director', 'comercial', 'colaborador']);
+const DIRECTOR_ROLE = new Set(['director']);
+const COMMERCIAL_ROLES = new Set(['comercial']);
+const COMMERCIAL_OR_COLLABORATOR_ROLES = new Set(['comercial', 'colaborador']);
+const ADMIN_ROLE = new Set(['admin']);
+const BOARD_ROLE = new Set(['junta']);
 
-const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const hasOwn = (value, key) => Object.hasOwn(value, key);
+const isRecord = (value) => {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+};
 const isCode = (value) => typeof value === 'string' && value.trim() === value && value.length > 0;
 const isId = (value) => typeof value === 'string' && value.trim() === value && value.length > 0;
 
 function isActiveIdentity(profile) {
   return isRecord(profile)
+    && hasOwn(profile, 'active')
     && profile.active === true
+    && hasOwn(profile, 'id')
     && isId(profile.id);
 }
 
 function isAgent(profile) {
-  return isActiveIdentity(profile) && profile.identity_type === 'agent';
+  return isActiveIdentity(profile)
+    && hasOwn(profile, 'identity_type')
+    && profile.identity_type === 'agent';
 }
 
 function isHuman(profile) {
   return isActiveIdentity(profile)
-    && (profile.identity_type === undefined || profile.identity_type === 'human')
+    && (!hasOwn(profile, 'identity_type') || profile.identity_type === 'human')
+    && hasOwn(profile, 'role')
     && typeof profile.role === 'string'
     && HUMAN_ROLES.has(profile.role);
 }
@@ -68,16 +83,31 @@ function hasHumanRole(profile, roles) {
   return isHuman(profile) && roles.has(profile.role);
 }
 
+function ownArray(profile, key) {
+  return isActiveIdentity(profile) && hasOwn(profile, key) && Array.isArray(profile[key])
+    ? profile[key]
+    : null;
+}
+
+function ownArrayValues(array) {
+  const values = [];
+  for (let index = 0; index < array.length; index += 1) {
+    if (hasOwn(array, index)) values.push(array[index]);
+  }
+  return values;
+}
+
 function validAssignment(assignment) {
   return isRecord(assignment)
+    && hasOwn(assignment, 'area_code')
     && isCode(assignment.area_code)
+    && hasOwn(assignment, 'subarea_code')
     && (assignment.subarea_code === null || isCode(assignment.subarea_code));
 }
 
 function assignments(profile) {
-  return isActiveIdentity(profile) && Array.isArray(profile.areas)
-    ? profile.areas.filter(validAssignment)
-    : [];
+  const areas = ownArray(profile, 'areas');
+  return areas === null ? [] : ownArrayValues(areas).filter(validAssignment);
 }
 
 function hasAnyArea(profile) {
@@ -85,35 +115,44 @@ function hasAnyArea(profile) {
 }
 
 function hasAssignedArea(profile, areaCode) {
-  return assignments(profile).some((assignment) => assignment.area_code === areaCode);
+  for (const assignment of assignments(profile)) {
+    if (assignment.area_code === areaCode) return true;
+  }
+  return false;
 }
 
 function isScopedHuman(profile, areaCode, subareaCode = null) {
   if (!isHuman(profile) || !isCode(areaCode) || (subareaCode !== null && !isCode(subareaCode))) {
     return false;
   }
-  if (PRIVILEGED_ROLES.has(profile.role)) {
-    return true;
-  }
-  if (!EXPLICIT_SCOPE_ROLES.has(profile.role)) {
-    return false;
-  }
-  return assignments(profile).some((assignment) => {
-    if (assignment.area_code !== areaCode) return false;
+  if (PRIVILEGED_ROLES.has(profile.role)) return true;
+  if (!EXPLICIT_SCOPE_ROLES.has(profile.role)) return false;
+  for (const assignment of assignments(profile)) {
+    if (assignment.area_code !== areaCode) continue;
     if (assignment.subarea_code === null) return true;
-    return subareaCode !== null && assignment.subarea_code === subareaCode;
-  });
-}
-
-function isResource(resource) {
-  return isRecord(resource);
+    if (subareaCode !== null && assignment.subarea_code === subareaCode) return true;
+  }
+  return false;
 }
 
 function hasAreaResource(resource, expectedArea = null) {
-  return isResource(resource)
+  return isRecord(resource)
+    && hasOwn(resource, 'area_code')
     && isCode(resource.area_code)
     && (expectedArea === null || resource.area_code === expectedArea)
-    && (resource.subarea_code === undefined || resource.subarea_code === null || isCode(resource.subarea_code));
+    && (!hasOwn(resource, 'subarea_code') || resource.subarea_code === null || isCode(resource.subarea_code));
+}
+
+function validCrmResource(resource) {
+  return hasAreaResource(resource, 'comercial')
+    && hasOwn(resource, 'owner_id')
+    && isId(resource.owner_id);
+}
+
+function validSiioAssignmentResource(resource) {
+  return hasAreaResource(resource)
+    && hasOwn(resource, 'assignee_id')
+    && isId(resource.assignee_id);
 }
 
 function canScopeResource(profile, resource, expectedArea = null) {
@@ -123,13 +162,14 @@ function canScopeResource(profile, resource, expectedArea = null) {
 
 function ownsResource(profile, resource, ownerField) {
   return isHuman(profile)
-    && isResource(resource)
+    && isRecord(resource)
+    && hasOwn(resource, ownerField)
     && isId(resource[ownerField])
     && resource[ownerField] === profile.id;
 }
 
 function isCommercialDirector(profile) {
-  return hasHumanRole(profile, new Set(['director'])) && hasAssignedArea(profile, 'comercial');
+  return hasHumanRole(profile, DIRECTOR_ROLE) && hasAssignedArea(profile, 'comercial');
 }
 
 function canDirectorCommercialResource(profile, resource) {
@@ -141,17 +181,21 @@ function canHumanTenderAction(profile) {
 }
 
 function canSiioAssignedAction(profile, resource) {
-  if (hasHumanRole(profile, PRIVILEGED_ROLES)) return isResource(resource);
-  if (hasHumanRole(profile, new Set(['director']))) return canScopeResource(profile, resource);
-  return hasHumanRole(profile, new Set(['comercial', 'colaborador'])) && ownsResource(profile, resource, 'assignee_id');
+  if (hasHumanRole(profile, PRIVILEGED_ROLES)) return true;
+  if (hasHumanRole(profile, DIRECTOR_ROLE)) return canScopeResource(profile, resource);
+  return hasHumanRole(profile, COMMERCIAL_OR_COLLABORATOR_ROLES)
+    && ownsResource(profile, resource, 'assignee_id');
 }
 
 export function hasPermission(profile, permissionCode) {
-  if (!isHuman(profile) || !Array.isArray(profile.permissions) || typeof permissionCode !== 'string') {
-    return false;
-  }
+  const permissions = ownArray(profile, 'permissions');
+  if (!isHuman(profile) || permissions === null || typeof permissionCode !== 'string') return false;
   const normalizedCode = permissionCode.trim();
-  return normalizedCode.length > 0 && profile.permissions.some((permission) => permission === normalizedCode);
+  if (normalizedCode.length === 0) return false;
+  for (const permission of ownArrayValues(permissions)) {
+    if (permission === normalizedCode) return true;
+  }
+  return false;
 }
 
 /**
@@ -163,44 +207,53 @@ export function hasAreaScope(profile, areaCode, subareaCode = null) {
   return isScopedHuman(profile, areaCode, subareaCode);
 }
 
+/**
+ * Authorization flags in resources (for example `technical_authorized`) MUST
+ * be constructed server-side from trusted authorization context, never from a
+ * request body or query string.
+ */
 export function can(profile, action, resource = {}) {
-  if ((!isHuman(profile) && !isAgent(profile)) || !KNOWN_ACTIONS.has(action) || !isResource(resource)) {
+  if ((!isHuman(profile) && !isAgent(profile)) || !KNOWN_ACTIONS.has(action) || !isRecord(resource)) {
     return false;
   }
 
   if (isAgent(profile)) {
     if (action === ACTIONS.AI_ANALYSIS_RUN || action === ACTIONS.LICITACIONES_GO_NO_GO_RECOMMEND) {
-      return resource.technical_authorized === true;
+      return hasOwn(resource, 'technical_authorized') && resource.technical_authorized === true;
     }
     return false;
   }
 
   switch (action) {
     case ACTIONS.USERS_MANAGE:
-      return hasHumanRole(profile, new Set(['admin']));
+      return hasHumanRole(profile, ADMIN_ROLE);
 
     case ACTIONS.NAV_GERENCIAL_VIEW:
       return hasHumanRole(profile, PRIVILEGED_ROLES)
-        || (hasHumanRole(profile, new Set(['director'])) && hasAnyArea(profile));
+        || (hasHumanRole(profile, DIRECTOR_ROLE) && hasAnyArea(profile));
     case ACTIONS.NAV_COMERCIAL_VIEW:
       return hasHumanRole(profile, PRIVILEGED_ROLES)
         || isCommercialDirector(profile)
-        || hasHumanRole(profile, new Set(['comercial']));
+        || hasHumanRole(profile, COMMERCIAL_ROLES);
     case ACTIONS.NAV_LICITACIONES_VIEW:
       return canHumanTenderAction(profile);
 
+    // Pipeline summary is a collection-level action: privileged/commercial
+    // roles may request `{}`; directors still need a scoped area resource.
     case ACTIONS.CRM_PIPELINE_SUMMARY_VIEW:
       return hasHumanRole(profile, PRIVILEGED_ROLES)
-        || (hasHumanRole(profile, new Set(['director'])) && canDirectorCommercialResource(profile, resource))
-        || hasHumanRole(profile, new Set(['comercial']));
+        || (hasHumanRole(profile, DIRECTOR_ROLE) && canDirectorCommercialResource(profile, resource))
+        || hasHumanRole(profile, COMMERCIAL_ROLES);
     case ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW:
     case ACTIONS.CRM_OPPORTUNITY_EDIT:
     case ACTIONS.CRM_OPPORTUNITY_CREATE:
+      if (!validCrmResource(resource)) return false;
       return hasHumanRole(profile, PRIVILEGED_ROLES)
         || canDirectorCommercialResource(profile, resource)
-        || (hasHumanRole(profile, new Set(['comercial'])) && ownsResource(profile, resource, 'owner_id'));
+        || (hasHumanRole(profile, COMMERCIAL_ROLES) && ownsResource(profile, resource, 'owner_id'));
     case ACTIONS.CRM_OPPORTUNITY_REASSIGN:
-      return hasHumanRole(profile, PRIVILEGED_ROLES) || canDirectorCommercialResource(profile, resource);
+      return validCrmResource(resource)
+        && (hasHumanRole(profile, PRIVILEGED_ROLES) || canDirectorCommercialResource(profile, resource));
 
     case ACTIONS.LICITACIONES_VIEW:
     case ACTIONS.LICITACIONES_SYNC:
@@ -216,17 +269,19 @@ export function can(profile, action, resource = {}) {
     case ACTIONS.SIIO_SUBJECT_EDIT:
       return hasHumanRole(profile, PRIVILEGED_ROLES)
         ? hasAreaResource(resource)
-        : hasHumanRole(profile, new Set(['director'])) && canScopeResource(profile, resource);
+        : hasHumanRole(profile, DIRECTOR_ROLE) && canScopeResource(profile, resource);
     case ACTIONS.SIIO_ASSIGNMENT_VIEW:
     case ACTIONS.SIIO_ASSIGNMENT_UPDATE:
     case ACTIONS.SIIO_CLOSE_REQUEST:
-      return canSiioAssignedAction(profile, resource);
+      return validSiioAssignmentResource(resource) && canSiioAssignedAction(profile, resource);
     case ACTIONS.SIIO_CLOSE_APPROVE:
-      return hasHumanRole(profile, PRIVILEGED_ROLES);
+      return validSiioAssignmentResource(resource) && hasHumanRole(profile, PRIVILEGED_ROLES);
 
     case ACTIONS.BOARD_PUBLICATION_VIEW:
       return hasHumanRole(profile, PRIVILEGED_ROLES)
-        || (hasHumanRole(profile, new Set(['junta'])) && resource.publication_status === 'published');
+        || (hasHumanRole(profile, BOARD_ROLE)
+          && hasOwn(resource, 'publication_status')
+          && resource.publication_status === 'published');
     case ACTIONS.BOARD_DRAFT_EDIT:
     case ACTIONS.BOARD_APPROVE:
     case ACTIONS.BOARD_PUBLISH:
