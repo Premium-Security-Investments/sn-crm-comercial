@@ -207,102 +207,33 @@ assert.doesNotThrow(
   'la administración de otro perfil permanece permitida',
 );
 
-function profileAdministrationDatabase({ failAuditOnce = false } = {}) {
-  const { database: accessDb, tables } = accessDatabase({ failAuditOnce });
-  tables.psi_sales_profiles = [];
-  const profileDatabase = {
-    from(table) {
-      if (table !== 'psi_sales_profiles') return accessDb.from(table);
-      const pick = row => ({ id: row.id, full_name: row.full_name, microsoft_email: row.microsoft_email, role: row.role, active: row.active, commercial_area: row.commercial_area, can_edit_customer_segment: row.can_edit_customer_segment });
-      return {
-        update(values) {
-          return {
-            eq(column, value) {
-              assert.equal(column, 'id');
-              const index = tables.psi_sales_profiles.findIndex(row => row.id === value);
-              if (index >= 0) tables.psi_sales_profiles[index] = { ...tables.psi_sales_profiles[index], ...values };
-              return { select() { return { single: async () => ({ data: index >= 0 ? pick(tables.psi_sales_profiles[index]) : null, error: null }) }; } };
-            },
-          };
-        },
-        insert(values) {
-          return {
-            select() {
-              return {
-                single: async () => {
-                  if (tables.psi_sales_profiles.some(row => row.microsoft_email === values.microsoft_email)) {
-                    return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' } };
-                  }
-                  const row = { id: 'new-profile', ...values };
-                  tables.psi_sales_profiles.push(row);
-                  return { data: pick(row), error: null };
-                },
-              };
-            },
-          };
-        },
-        delete() {
-          return {
-            eq(column, value) {
-              assert.equal(column, 'id');
-              tables.psi_sales_profiles = tables.psi_sales_profiles.filter(row => row.id !== value);
-              return Promise.resolve({ data: null, error: null });
-            },
-          };
-        },
-      };
-    },
-  };
-  return { database: profileDatabase, tables };
-}
-
 const oldProfile = { id: 'target', full_name: 'Nombre anterior', microsoft_email: 'old@example.com', role: 'admin', active: true, commercial_area: 'seguridad_fisica', can_edit_customer_segment: false };
 const changedProfile = { full_name: 'Nombre nuevo', microsoft_email: 'new@example.com', role: 'colaborador', active: false, commercial_area: null, can_edit_customer_segment: true };
-const compensatedExisting = profileAdministrationDatabase({ failAuditOnce: true });
-compensatedExisting.tables.psi_sales_profiles.push({ ...oldProfile });
-compensatedExisting.tables.psi_profile_area_assignments.push({ profile_id: oldProfile.id, ...beforeAccess.areaRows[0] });
-console.error = () => {};
-try {
-  await assert.rejects(
-    persistProfileAccessChange(compensatedExisting.database, { mode: 'patch', targetId: oldProfile.id, beforeProfile: oldProfile, profileValues: changedProfile, beforeAccess, afterAccess, actorProfileId: 'admin' }),
-    error => error?.status === 500 && error?.code === 'PROFILE_ADMIN_UPDATE_FAILED' && Boolean(error?.cause),
-  );
-} finally {
-  console.error = originalConsoleError;
-}
-assert.deepEqual(compensatedExisting.tables.psi_sales_profiles, [oldProfile], 'un fallo de acceso restaura exactamente el perfil previo');
-assert.deepEqual(compensatedExisting.tables.psi_profile_area_assignments, [{ profile_id: oldProfile.id, ...beforeAccess.areaRows[0] }], 'un fallo de acceso restaura los alcances previos');
-assert.deepEqual(compensatedExisting.tables.psi_profile_permissions, [], 'un fallo de acceso no deja permisos nuevos');
-assert.deepEqual(compensatedExisting.tables.psi_access_audit_log, [], 'un audit fallido no deja un audit exitoso');
-
-const compensatedNew = profileAdministrationDatabase({ failAuditOnce: true });
-console.error = () => {};
-try {
-  await assert.rejects(
-    persistProfileAccessChange(compensatedNew.database, { mode: 'post', targetId: null, beforeProfile: null, profileValues: changedProfile, beforeAccess: { areas: [], permissions: [], areaRows: [], permissionRows: [] }, afterAccess, actorProfileId: 'admin' }),
-    error => error?.status === 500 && error?.code === 'PROFILE_ADMIN_UPDATE_FAILED',
-  );
-} finally {
-  console.error = originalConsoleError;
-}
-assert.deepEqual(compensatedNew.tables.psi_sales_profiles, [], 'un perfil nuevo se elimina si el acceso no puede persistirse');
-
-const concurrentProfile = { id: 'concurrent-profile', ...changedProfile, full_name: 'Creado por otra solicitud' };
-const concurrentCreation = profileAdministrationDatabase({ failAuditOnce: true });
-concurrentCreation.tables.psi_sales_profiles.push({ ...concurrentProfile });
-console.error = () => {};
-try {
-  await assert.rejects(
-    persistProfileAccessChange(concurrentCreation.database, { mode: 'post', targetId: null, beforeProfile: null, profileValues: changedProfile, beforeAccess: { areas: [], permissions: [], areaRows: [], permissionRows: [] }, afterAccess, actorProfileId: 'admin' }),
-    error => error?.status === 409 && error?.code === 'PROFILE_ADMIN_CONFLICT',
-  );
-} finally {
-  console.error = originalConsoleError;
-}
+const rpcCalls = [];
+const rpcDatabase = {
+  rpc(name, params) {
+    rpcCalls.push({ name, params });
+    return Promise.resolve({ data: { id: oldProfile.id, ...changedProfile }, error: null });
+  },
+};
 assert.deepEqual(
-  concurrentCreation.tables.psi_sales_profiles,
-  [concurrentProfile],
-  'un conflicto concurrente nunca actualiza ni elimina el perfil creado por otra solicitud',
+  await persistProfileAccessChange(rpcDatabase, { mode: 'patch', targetId: oldProfile.id, beforeProfile: oldProfile, profileValues: changedProfile, beforeAccess, afterAccess, actorProfileId: 'admin' }),
+  { id: oldProfile.id, ...changedProfile },
+);
+assert.deepEqual(rpcCalls, [{
+  name: 'psi_admin_persist_profile_access',
+  params: {
+    p_mode: 'patch', p_target_id: oldProfile.id, p_expected_profile: oldProfile,
+    p_profile: changedProfile, p_areas: afterAccess.areas, p_permissions: afterAccess.permissions, p_actor_profile_id: 'admin',
+  },
+}], 'el helper envía un único comando transaccional con snapshot optimista');
+await assert.rejects(
+  persistProfileAccessChange({ rpc: () => Promise.resolve({ data: null, error: { code: '23505' } }) }, { mode: 'post', targetId: null, beforeProfile: null, profileValues: changedProfile, afterAccess, actorProfileId: 'admin' }),
+  error => error?.status === 409 && error?.code === 'PROFILE_ADMIN_CONFLICT',
+);
+await assert.rejects(
+  persistProfileAccessChange({ rpc: () => Promise.resolve({ data: null, error: { code: '40001' } }) }, { mode: 'patch', targetId: oldProfile.id, beforeProfile: oldProfile, profileValues: changedProfile, afterAccess, actorProfileId: 'admin' }),
+  error => error?.status === 409 && error?.code === 'PROFILE_ADMIN_STALE',
 );
 
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
@@ -324,6 +255,8 @@ for (const backend of [server, api]) {
   assert.match(backend, /compensat|restore/i);
   assert.match(backend, /export function assertNoAdminSelfLockout/);
   assert.match(backend, /export async function persistProfileAccessChange/);
+  assert.match(backend, /database\.rpc\('psi_admin_persist_profile_access'/);
+  assert.doesNotMatch(backend.slice(backend.indexOf('export async function persistProfileAccessChange'), backend.indexOf('function authContextUnavailable')), /\.delete\(\).*psi_sales_profiles|Profile administration database compensation/s);
   const post = backend.slice(backend.indexOf("app.post('/api/users'"), backend.indexOf("app.patch('/api/users'"));
   const patch = backend.slice(backend.indexOf("app.patch('/api/users'"), backend.indexOf("const distPath"));
   assert.ok(post.indexOf('assertNoAdminSelfLockout') < post.indexOf('findAuthUserByEmail'), 'POST protege autobloqueo antes de tocar Auth');

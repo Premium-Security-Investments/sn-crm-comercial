@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 const src = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
+const profileAdminRpc = readFileSync(new URL('../supabase/migrations/020_profile_access_admin_rpc.sql', import.meta.url), 'utf8');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -26,7 +27,9 @@ for (const file of [server, api]) {
   assert(file.includes('emailChanged'), 'PATCH de usuarios debe detectar si el email realmente cambió antes de tocar Auth.');
   assert(file.includes('updates.email = microsoft_email'), 'PATCH solo debe enviar email a Supabase Auth cuando el correo cambió.');
   assert(file.includes('El email ya pertenece a otro usuario de acceso.'), 'PATCH debe dar error claro si el nuevo email pertenece a otro Auth user.');
-  assert(file.includes(".update({ full_name, microsoft_email, role, active") && file.includes('commercial_area') && file.includes('can_edit_customer_segment'), 'API debe actualizar psi_sales_profiles al editar usuario, incluyendo área y permiso de segmento.');
+  assert(file.includes("database.rpc('psi_admin_persist_profile_access'"), 'API debe persistir perfil y alcances mediante el RPC transaccional.');
 }
+assert(profileAdminRpc.includes('update public.psi_sales_profiles set') && profileAdminRpc.includes('commercial_area =') && profileAdminRpc.includes('can_edit_customer_segment ='), 'RPC debe actualizar todos los campos editables del perfil.');
+assert(profileAdminRpc.includes('psi_profile_area_assignments') && profileAdminRpc.includes('psi_profile_permissions') && profileAdminRpc.includes('psi_access_audit_log'), 'RPC debe persistir alcances, permisos y auditoría en la misma transacción.');
 
 console.log('user-admin edit/reset static checks passed');

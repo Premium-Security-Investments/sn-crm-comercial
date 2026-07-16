@@ -240,47 +240,39 @@ export async function replaceProfileAccess(database, { profileId, actorProfileId
   }
 }
 const profileAdminSelect = 'id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment,created_at';
-function profileRestoreValues(profile) {
+function profileExpectedSnapshot(profile) {
   return {
+    id: profile.id,
     full_name: profile.full_name,
     microsoft_email: profile.microsoft_email,
     role: profile.role,
     active: profile.active,
-    commercial_area: profile.commercial_area,
-    can_edit_customer_segment: profile.can_edit_customer_segment,
+    commercial_area: profile.commercial_area ?? null,
+    can_edit_customer_segment: profile.can_edit_customer_segment === true,
   };
 }
-export async function persistProfileAccessChange(database, { mode, targetId, beforeProfile, profileValues, beforeAccess, afterAccess, actorProfileId }) {
-  let row;
-  const { full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment } = profileValues;
+export async function persistProfileAccessChange(database, { mode, targetId, beforeProfile, profileValues, afterAccess, actorProfileId }) {
   try {
-    if (mode === 'post' && beforeProfile?.id) {
-      row = await must(database.from('psi_sales_profiles').update({ full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }).eq('id', beforeProfile.id).select(profileAdminSelect).single());
-    } else if (mode === 'post') {
-      // INSERT proves this request owns the new row. An upsert could update and later delete a concurrent creator's profile during compensation.
-      row = await must(database.from('psi_sales_profiles').insert({ full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }).select(profileAdminSelect).single());
-    } else if (mode === 'patch' && targetId) {
-      row = await must(database.from('psi_sales_profiles').update({ full_name, microsoft_email, role, active, commercial_area, can_edit_customer_segment }).eq('id', targetId).select(profileAdminSelect).single());
-    } else {
-      throw new Error('Modo de administración de perfiles inválido.');
-    }
-    await replaceProfileAccess(database, { profileId: row.id, actorProfileId, before: beforeAccess, after: afterAccess });
+    const row = await must(database.rpc('psi_admin_persist_profile_access', {
+      p_mode: mode,
+      p_target_id: beforeProfile?.id || targetId || null,
+      p_expected_profile: beforeProfile ? profileExpectedSnapshot(beforeProfile) : null,
+      p_profile: profileValues,
+      p_areas: afterAccess.areas,
+      p_permissions: afterAccess.permissions,
+      p_actor_profile_id: actorProfileId,
+    }));
+    if (!row || typeof row !== 'object' || Array.isArray(row) || !isExactNonblankString(row.id)) throw new Error('Respuesta transaccional de perfil inválida.');
     return row;
   } catch (error) {
-    if (mode === 'post' && !beforeProfile && !row && error?.code === '23505') throw profileAdministrationConflict(error);
-    console.error('Profile administration failed; attempting database compensation', error);
-    let restoreError = null;
-    try {
-      if (beforeProfile) {
-        await must(database.from('psi_sales_profiles').update(profileRestoreValues(beforeProfile)).eq('id', beforeProfile.id));
-      } else if (row?.id) {
-        await must(database.from('psi_sales_profiles').delete().eq('id', row.id));
-      }
-    } catch (caughtRestoreError) {
-      restoreError = caughtRestoreError;
-      console.error('Profile administration database compensation failed', caughtRestoreError);
+    if (error?.code === '23505') throw profileAdministrationConflict(error);
+    if (error?.code === '40001') {
+      const conflict = new Error('El perfil cambió mientras se editaba. Recargue la lista e intente nuevamente.', { cause: error });
+      conflict.status = 409;
+      conflict.code = 'PROFILE_ADMIN_STALE';
+      throw conflict;
     }
-    throw profileAdministrationFailure(restoreError ? new AggregateError([error, restoreError], 'Profile administration compensation failed') : error);
+    throw profileAdministrationFailure(error);
   }
 }
 function authContextUnavailable(cause) {
