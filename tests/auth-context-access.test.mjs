@@ -74,6 +74,8 @@ async function listen(server) {
   return server.address().port;
 }
 
+const scenarioByEmail = new Map(Object.values(scenarios).map(scenario => [scenario.user.email, scenario]));
+const scenarioByProfileId = new Map(Object.values(scenarios).filter(scenario => scenario.profile).map(scenario => [scenario.profile.id, scenario]));
 const observed = { auth: 0, profiles: [], areas: [], permissions: [] };
 const fakeSupabase = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
@@ -84,25 +86,34 @@ const fakeSupabase = http.createServer((req, res) => {
     return scenario ? json(res, 200, scenario.user) : json(res, 401, { message: 'invalid token' });
   }
   if (url.pathname === '/rest/v1/psi_sales_profiles') {
-    observed.profiles.push({ token, search: url.searchParams });
+    const email = String(url.searchParams.get('microsoft_email') || '').replace(/^ilike\./, '');
+    const profileScenario = scenarioByEmail.get(email);
+    observed.profiles.push({ email, search: url.searchParams });
+    assert.ok(profileScenario, `unexpected profile lookup for ${email}`);
     assert.equal(url.searchParams.get('select'), legacyProfileFields);
     assert.equal(url.searchParams.get('active'), null, 'inactive profiles must be handled explicitly after lookup');
-    assert.equal(url.searchParams.get('microsoft_email'), `ilike.${scenario.user.email}`);
-    return json(res, 200, scenario.profile);
+    assert.equal(url.searchParams.get('microsoft_email'), `ilike.${profileScenario.user.email}`);
+    return json(res, 200, profileScenario.profile);
   }
   if (url.pathname === '/rest/v1/psi_profile_area_assignments') {
-    observed.areas.push({ token, search: url.searchParams });
+    const profileId = String(url.searchParams.get('profile_id') || '').replace(/^eq\./, '');
+    const accessScenario = scenarioByProfileId.get(profileId);
+    observed.areas.push({ profileId, search: url.searchParams });
+    assert.ok(accessScenario, `unexpected area lookup for ${profileId}`);
     assert.equal(url.searchParams.get('select'), 'area_code,subarea_code');
-    assert.equal(url.searchParams.get('profile_id'), `eq.${scenario.profile.id}`);
-    if (token === 'assignment-error-token') return json(res, 500, { message: 'areas unavailable' });
-    return json(res, 200, scenario.areas);
+    assert.equal(url.searchParams.get('profile_id'), `eq.${accessScenario.profile.id}`);
+    if (accessScenario === scenarios['assignment-error-token']) return json(res, 500, { message: 'areas unavailable' });
+    return json(res, 200, accessScenario.areas);
   }
   if (url.pathname === '/rest/v1/psi_profile_permissions') {
-    observed.permissions.push({ token, search: url.searchParams });
+    const profileId = String(url.searchParams.get('profile_id') || '').replace(/^eq\./, '');
+    const accessScenario = scenarioByProfileId.get(profileId);
+    observed.permissions.push({ profileId, search: url.searchParams });
+    assert.ok(accessScenario, `unexpected permission lookup for ${profileId}`);
     assert.equal(url.searchParams.get('select'), 'permission_code');
-    assert.equal(url.searchParams.get('profile_id'), `eq.${scenario.profile.id}`);
-    if (token === 'permission-error-token') return json(res, 500, { message: 'permissions unavailable' });
-    return json(res, 200, scenario.permissions);
+    assert.equal(url.searchParams.get('profile_id'), `eq.${accessScenario.profile.id}`);
+    if (accessScenario === scenarios['permission-error-token']) return json(res, 500, { message: 'permissions unavailable' });
+    return json(res, 200, accessScenario.permissions);
   }
   return json(res, 404, { message: `Unhandled Supabase path ${url.pathname}` });
 });
@@ -129,8 +140,8 @@ try {
     },
     token: 'director-token'
   });
-  assert.equal(observed.areas.filter(query => query.token === 'director-token').length, 1);
-  assert.equal(observed.permissions.filter(query => query.token === 'director-token').length, 1);
+  assert.equal(observed.areas.filter(query => query.profileId === 'director-profile').length, 1);
+  assert.equal(observed.permissions.filter(query => query.profileId === 'director-profile').length, 1);
 
   const empty = await getAuthContext({ headers: { authorization: 'Bearer empty-token' } });
   assert.deepEqual(empty.profile.areas, []);
@@ -141,16 +152,17 @@ try {
       () => getAuthContext({ headers: { authorization: `Bearer ${token}` } }),
       error => error?.status === 403
     );
-    assert.equal(observed.areas.filter(query => query.token === token).length, 0, `${token} must not load areas`);
-    assert.equal(observed.permissions.filter(query => query.token === token).length, 0, `${token} must not load permissions`);
+    const profileId = scenarios[token].profile?.id;
+    assert.equal(observed.areas.filter(query => query.profileId === profileId).length, 0, `${token} must not load areas`);
+    assert.equal(observed.permissions.filter(query => query.profileId === profileId).length, 0, `${token} must not load permissions`);
   }
 
   const profileCountBeforeInvalid = observed.profiles.length;
   await assert.rejects(() => getAuthContext({ headers: {} }), error => error?.status === 401);
   await assert.rejects(() => getAuthContext({ headers: { authorization: 'Bearer invalid-token' } }), error => error?.status === 401);
   assert.equal(observed.profiles.length, profileCountBeforeInvalid, 'invalid authentication must not query profiles');
-  assert.equal(observed.areas.filter(query => query.token === 'invalid-token').length, 0);
-  assert.equal(observed.permissions.filter(query => query.token === 'invalid-token').length, 0);
+  assert.equal(observed.areas.length, 2, 'invalid authentication must not query areas');
+  assert.equal(observed.permissions.length, 2, 'invalid authentication must not query permissions');
 
   for (const token of ['assignment-error-token', 'permission-error-token', 'null-areas-token', 'malformed-permission-token']) {
     await assert.rejects(() => getAuthContext({ headers: { authorization: `Bearer ${token}` } }));

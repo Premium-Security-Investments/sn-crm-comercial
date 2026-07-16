@@ -7,6 +7,7 @@ import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import mammoth from 'mammoth';
 import AdmZip from 'adm-zip';
 import { callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
+import { can, requireAction } from '../access-control.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,7 +68,43 @@ function getBearerToken(req) {
   const match = String(raw).match(/^Bearer\s+(.+)$/i);
   return match ? match[1] : null;
 }
-async function getAuthContext(req) {
+function isExactNonblankString(value) {
+  return typeof value === 'string' && value.length > 0 && value.trim() === value;
+}
+function normalizeAccessAssignments(rows) {
+  if (!Array.isArray(rows)) throw new Error('Asignaciones de área inválidas.');
+  const assignments = [];
+  const seen = new Set();
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)
+      || !isExactNonblankString(row.area_code)
+      || (row.subarea_code !== null && !isExactNonblankString(row.subarea_code))) {
+      throw new Error('Asignaciones de área inválidas.');
+    }
+    const key = `${row.area_code}\u0000${row.subarea_code ?? ''}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      assignments.push({ area_code: row.area_code, subarea_code: row.subarea_code });
+    }
+  }
+  return assignments;
+}
+function normalizeAccessPermissions(rows) {
+  if (!Array.isArray(rows)) throw new Error('Permisos inválidos.');
+  const permissions = [];
+  const seen = new Set();
+  for (const row of rows) {
+    if (!row || typeof row !== 'object' || Array.isArray(row) || !isExactNonblankString(row.permission_code)) {
+      throw new Error('Permisos inválidos.');
+    }
+    if (!seen.has(row.permission_code)) {
+      seen.add(row.permission_code);
+      permissions.push(row.permission_code);
+    }
+  }
+  return permissions;
+}
+export async function getAuthContext(req) {
   const database = requireDb();
   const token = getBearerToken(req);
   if (!token) {
@@ -82,13 +119,22 @@ async function getAuthContext(req) {
     throw error;
   }
   const email = userData.user.email.toLowerCase();
-  const profile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment').ilike('microsoft_email', email).eq('active', true).single());
-  if (!profile) {
+  const profile = await must(database.from('psi_sales_profiles').select('id,full_name,microsoft_email,role,active,commercial_area,can_edit_customer_segment').ilike('microsoft_email', email).maybeSingle());
+  if (!profile || profile.active !== true) {
     const error = new Error('El usuario no tiene perfil comercial activo.');
     error.status = 403;
     throw error;
   }
-  return { user: userData.user, profile, token };
+  // Access scope is server-derived from trusted profile assignment tables.
+  const [assignmentsResult, permissionsResult] = await Promise.all([
+    database.from('psi_profile_area_assignments').select('area_code,subarea_code').eq('profile_id', profile.id),
+    database.from('psi_profile_permissions').select('permission_code').eq('profile_id', profile.id)
+  ]);
+  if (assignmentsResult.error) throw assignmentsResult.error;
+  if (permissionsResult.error) throw permissionsResult.error;
+  const areas = normalizeAccessAssignments(assignmentsResult.data);
+  const permissions = normalizeAccessPermissions(permissionsResult.data);
+  return { user: userData.user, profile: { ...profile, areas, permissions }, token };
 }
 function sendAuthError(res, error) {
   sendError(res, error, error?.status || 500);
