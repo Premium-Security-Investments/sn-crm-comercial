@@ -116,15 +116,20 @@ assert.equal((await db.query(`select auth_user_id from public.psi_sales_profiles
 
 const beforeEmailChange = await getProfile(ids.target);
 const changedEmail = { ...beforeEmailChange, microsoft_email: 'target-renamed@example.com' };
-await callRpc({ expected: beforeEmailChange, profile: changedEmail, areas: afterAreas, permissions: afterPermissions });
-assert.equal((await db.query(`select auth_user_id from public.psi_sales_profiles where id=$1`, [ids.target])).rows[0].auth_user_id, null, 'cambiar email revoca el vínculo Auth dentro de la transacción');
-const reusedProfileId = '33333333-3333-4333-8333-333333333333';
-await db.query(`insert into public.psi_sales_profiles(id,full_name,microsoft_email,role,active) values ($1,'Reutilizado','target@example.com','comercial',true)`, [reusedProfileId]);
-const staleBind = (await db.query(`select public.psi_admin_bind_profile_auth($1,$2,$3) as bound`, [ids.target, 'target@example.com', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'])).rows[0].bound;
-assert.equal(staleBind, false, 'una provisión tardía no puede adoptar un perfil diferente que reutilizó el email');
-const currentBind = (await db.query(`select public.psi_admin_bind_profile_auth($1,$2,$3) as bound`, [reusedProfileId, 'target@example.com', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'])).rows[0].bound;
-assert.equal(currentBind, false, 'un Auth UID reclamado históricamente no puede saltar al perfil que reutilizó el email');
-assert.equal((await db.query(`select profile_id from public.psi_profile_auth_subject_claims where auth_user_id=$1`, ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'])).rows[0].profile_id, ids.target, 'la reclamación histórica permanece inmutable');
+await assert.rejects(
+  callRpc({ expected: beforeEmailChange, profile: changedEmail, areas: afterAreas, permissions: afterPermissions }),
+  /correo.*inmutable|identidad.*inmutable|email.*immutable/i,
+  'un perfil existente no puede reasignarse a otra identidad cambiando el email',
+);
+assert.equal((await db.query(`select microsoft_email from public.psi_sales_profiles where id=$1`, [ids.target])).rows[0].microsoft_email, 'target@example.com');
+assert.equal((await db.query(`select auth_user_id from public.psi_sales_profiles where id=$1`, [ids.target])).rows[0].auth_user_id, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'editar perfil nunca limpia ni reemplaza el vínculo Auth');
+await db.query(`insert into auth.users(id,email) values ('cccccccc-cccc-4ccc-8ccc-cccccccccccc','target@example.com')`);
+await db.query(`update public.psi_sales_profiles set auth_user_id=null where id=$1`, [ids.target]);
+const replacementBind = (await db.query(`select public.psi_admin_bind_profile_auth($1,$2,$3) as bound`, [ids.target, 'target@example.com', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'])).rows[0].bound;
+assert.equal(replacementBind, false, 'el claim histórico impide que un segundo Auth UID adopte el mismo perfil incluso si el vínculo activo fue alterado');
+const originalBind = (await db.query(`select public.psi_admin_bind_profile_auth($1,$2,$3) as bound`, [ids.target, 'target@example.com', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'])).rows[0].bound;
+assert.equal(originalBind, true, 'solo el Auth UID reclamado originalmente puede restaurar su vínculo activo');
+assert.equal(Number((await db.query(`select count(*)::int as count from public.psi_profile_auth_subject_claims where profile_id=$1`, [ids.target])).rows[0].count), 1, 'cada perfil conserva exactamente un claim histórico');
 
 const staleExpected = await getProfile(ids.target);
 await db.exec(`update public.psi_sales_profiles set role='colaborador',active=false where id='${ids.target}'`);

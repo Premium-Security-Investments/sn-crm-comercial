@@ -15,6 +15,7 @@ assert(src.includes('PasswordResetScreen'), 'App debe mostrar pantalla para defi
 assert(src.includes('supabaseBrowser.auth.updateUser'), 'Recuperación debe guardar la nueva clave con Supabase updateUser.');
 assert(src.includes('PASSWORD_RECOVERY'), 'App debe detectar evento PASSWORD_RECOVERY de Supabase.');
 assert(src.includes('editingUserId'), 'Usuarios y permisos debe permitir seleccionar un usuario existente para editar.');
+assert(src.includes('disabled={Boolean(editingUserId)}'), 'Email debe quedar bloqueado al editar un perfil existente.');
 assert(src.includes("method: editingUserId ? 'PATCH' : 'POST'"), 'Formulario de usuarios debe usar PATCH al editar un perfil existente.');
 assert(src.includes("/api/users?id="), 'Frontend debe editar usuarios con /api/users?id=... para compatibilidad serverless Vercel.');
 assert(src.includes('Editar') && src.includes('Cancelar edición'), 'Tabla de usuarios debe tener acción Editar y opción Cancelar edición.');
@@ -25,6 +26,7 @@ for (const file of [server, api]) {
   assert(file.includes("app.patch('/api/users'"), 'API debe exponer PATCH /api/users?id=... para editar usuarios existentes.');
   assert(file.includes('ensureProfileAuthAfterCommit'), 'API debe aprovisionar Auth de forma aditiva después del commit.');
   assert(!file.includes('updates.email = microsoft_email'), 'PATCH no debe cambiar el email de una identidad Auth existente.');
+  assert(file.includes('PROFILE_EMAIL_IMMUTABLE'), 'PATCH debe rechazar cambios del email inmutable del perfil.');
   assert(!file.includes('compensateAuthMutation') && !file.includes('deleteUser('), 'API no debe revertir Auth de forma destructiva.');
   assert(file.includes('resetPasswordForEmail'), 'Cambios de clave de identidades existentes deben usar recuperación controlada por el usuario.');
   assert(file.includes("database.rpc('psi_admin_persist_profile_access'"), 'API debe persistir perfil y alcances mediante el RPC transaccional.');
