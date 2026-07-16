@@ -1,11 +1,23 @@
 import { strict as assert } from 'node:assert';
 import { ACTIONS } from '../access-control.js';
-import {
+const savedEnv = Object.fromEntries(['NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'VERCEL'].map(key => [key, process.env[key]]));
+const restoreEnv = () => {
+  for (const [key, value] of Object.entries(savedEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+};
+process.once('exit', restoreEnv);
+process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://127.0.0.1:1';
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
+process.env.VERCEL = '1';
+
+const {
   MODULE_ENDPOINT_ACTIONS,
   bootstrapCapabilities,
   filterBootstrapForProfile,
   requireModuleAction,
-} from '../server/index.js';
+} = await import('../server/index.js');
 
 const profile = (role, permissions = [], overrides = {}) => ({
   id: `${role}-profile`,

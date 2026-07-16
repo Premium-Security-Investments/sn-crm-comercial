@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+const nav = readFileSync(new URL('../src/navPermissions.ts', import.meta.url), 'utf8');
 const module = readFileSync(new URL('../src/tenders/TendersModule.tsx', import.meta.url), 'utf8');
 const tabs = readFileSync(new URL('../src/tenders/components/TenderModuleTabs.tsx', import.meta.url), 'utf8');
 const radar = readFileSync(new URL('../src/tenders/TenderRadarView.tsx', import.meta.url), 'utf8');
@@ -14,9 +15,12 @@ const viewUtils = readFileSync(new URL('../src/tenders/viewUtils.ts', import.met
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
 
-assert.ok(main.includes("'tenders'") && main.includes("#/tenders?view=radar"), 'Frontend debe incluir la ruta y el grupo Licitaciones.');
-assert.ok(main.includes('canViewTenders'), 'Frontend debe proteger Licitaciones por perfil autorizado.');
-assert.ok(main.includes('directora.licitaciones@seguridadnacional.co'), 'La directora de licitaciones debe conservar autorización explícita.');
+assert.ok(main.includes("'tenders'") && nav.includes("#/tenders?view=radar"), 'Frontend debe incluir la ruta y el catálogo central de Licitaciones.');
+assert.match(nav, /tenders: 'licitaciones'/, 'Licitaciones debe mapearse a su capability central.');
+assert.match(nav, /export function canViewTenders[\s\S]{0,100}hasModuleAccess\(profile, 'licitaciones'\)/, 'Licitaciones debe protegerse por capability central y no por un email hardcoded.');
+assert.match(main, /getVisibleNavGroups\(currentProfile\)[\s\S]{0,420}group\.items\.map\(item/, 'El sidebar debe renderizar el catálogo filtrado por capability.');
+const navRenderer = main.slice(main.indexOf('function Nav('), main.indexOf('function RouterView'));
+assert.doesNotMatch(navRenderer, /href="#\/tenders\?view=radar"|directora\.licitaciones@seguridadnacional\.co/, 'El renderer del sidebar no debe duplicar enlace ni autorización nominal de Licitaciones.');
 assert.ok(main.includes('tenderViewFromHash()'), 'La vista de Licitaciones debe derivarse de la URL.');
 
 for (const [view, component] of [['radar', 'TenderRadarView'], ['seguimiento', 'TenderTrackingView'], ['expedientes', 'TenderDossiersView'], ['perfiles', 'TenderProfilesView']]) {
