@@ -1,6 +1,6 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createClient, type Session } from '@supabase/supabase-js';
+import type { Session } from '@supabase/supabase-js';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 import { canAccessRoute, canManageUsers as navCanManageUsers, canViewTenders as navCanViewTenders, getVisibleNavGroups, isManagementRole as navIsManagementRole } from './navPermissions';
@@ -11,6 +11,7 @@ import { TendersModule } from './tenders/TendersModule';
 import type { TenderModuleView } from './tenders/types';
 import { focusDocumentReviewArea } from './tenders/viewUtils';
 import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
+import { supabaseBrowser } from './supabaseBrowser';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
@@ -66,7 +67,6 @@ const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP
 const dateFmt = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
 const interactionTypes = ['llamada','correo','reunion','whatsapp','nota','cambio_estado','documento'];
 
-const supabaseBrowser = createClient(import.meta.env.NEXT_PUBLIC_SUPABASE_URL, import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 function isManagementRole(role?: string | null) { return navIsManagementRole(role); }
 function canManageUsers(profile?: Profile | null) { return navCanManageUsers(profile); }
 function canManageGoals(profile?: Profile | null) { return canAccessRoute(profile, 'goals'); }
