@@ -1,10 +1,9 @@
-import { createClient } from '@supabase/supabase-js';
 import { useEffect, useState, type ReactNode } from 'react';
+import { supabaseBrowser } from '../supabaseBrowser';
 import { loadCompanyProfile, loadProfiles } from './api';
 import { profileRadarHash } from './viewUtils';
 import type { TenderCompanyProfile, TenderDeadlineFilter, TenderInternalStatus, TenderRegionKey, TenderScoreFilter, TenderSearchProfile, TenderSection, TenderValueFilter, TendersModuleProps } from './types';
 
-const browserSupabase = createClient(import.meta.env.NEXT_PUBLIC_SUPABASE_URL, import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 const emptyCompany: TenderCompanyProfile = { legal_name: '', nit: '', rup_status: '', rup_unspsc_codes: '', authorized_services: '', supervigilancia_license: '', financial_capacity: '', organizational_capacity: '', experience_summary: '', certifications: '', recurring_documents: '', disqualifications_notes: '', useful_company_info: '' };
 const fields: Array<{ key: keyof TenderCompanyProfile; label: string; rows?: number }> = [
   { key: 'legal_name', label: 'Nombre legal' }, { key: 'nit', label: 'NIT' }, { key: 'rup_status', label: 'Estado RUP' },
@@ -46,7 +45,7 @@ export function TenderProfilesView({ request, navigate, moduleNavigation }: Tend
     setUploadingRup(true); setMessage('Preparando carga segura del RUP…');
     try {
       const ticket = await request<{ path: string; token: string }>('/api/tender-company-profile-upload-url', { method: 'POST', body: JSON.stringify({ name: file.name, mime_type: file.type, size: file.size }) });
-      const uploaded = await browserSupabase.storage.from('tender-documents').uploadToSignedUrl(ticket.path, ticket.token, file);
+      const uploaded = await supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(ticket.path, ticket.token, file);
       if (uploaded.error) throw uploaded.error;
       setCompany({ ...emptyCompany, ...(await request<TenderCompanyProfile>('/api/tender-company-profile-process-upload', { method: 'POST', body: JSON.stringify({ storage_path: ticket.path, name: file.name, mime_type: file.type }) })) });
       setMessage('RUP cargado y ficha actualizada.');
