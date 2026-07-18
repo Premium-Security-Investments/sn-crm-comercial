@@ -1,10 +1,10 @@
 # Gate 0 — Vig-IA Comercial AGT-003
 
-**Estado:** APROBADO POR DIRECCIÓN / IMPLEMENTACIÓN AUTORIZADA  
-**Versión:** 1.0  
-**Fecha:** 2026-07-18  
-**Corte técnico consultado:** 2026-07-18T15:00:51Z  
-**Fuente:** CRM-F1 / `v_psi_sales_opportunity_enriched`  
+**Estado:** APROBADO POR DIRECCIÓN / IMPLEMENTACIÓN AUTORIZADA
+**Versión:** 1.0
+**Fecha:** 2026-07-18
+**Corte técnico consultado:** 2026-07-18T15:00:51Z
+**Fuente:** CRM-F1 / `v_psi_sales_opportunity_enriched`
 **Alcance:** lectura gobernada → Visual Gerencial Comercial existente (`#/dashboard2`) → Vig-IA Comercial (`AGT-003`)
 
 > Juan Botero autorizó el 2026-07-18 continuar la implementación y desplegar para validación en vivo. Esta aprobación no autoriza migraciones ni escrituras productivas de Vig-IA; el corte permanece en modo de solo lectura.
@@ -217,6 +217,6 @@ Fuera de alcance:
 - **APROBADO Gate 0 v1.0** — implementación local con TDD y despliegue autorizado para validación en vivo.
 - Vig-IA permanece sin migraciones y sin escrituras productivas en este corte.
 
-**Aprobación:** aprobada.  
-**Aprobado por:** Juan Botero.  
+**Aprobación:** aprobada.
+**Aprobado por:** Juan Botero.
 **Fecha de aprobación:** 2026-07-18.

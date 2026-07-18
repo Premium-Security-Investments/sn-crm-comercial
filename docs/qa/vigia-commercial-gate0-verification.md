@@ -1,8 +1,8 @@
 # Verificación Gate 0 — Vig-IA Comercial AGT-003
 
-**Fecha:** 2026-07-18  
-**Rama:** `feat/vig-ia-commercial-gate0`  
-**Contrato:** `docs/decisions/2026-07-18-vig-ia-comercial-gate.md`  
+**Fecha:** 2026-07-18
+**Rama:** `feat/vig-ia-commercial-gate0`
+**Contrato:** `docs/decisions/2026-07-18-vig-ia-comercial-gate.md`
 **Estado:** QA local y preview superados; despliegue productivo y smoke final pendientes.
 
 ## 1. Alcance verificado
