@@ -3,7 +3,7 @@
 **Fecha:** 2026-07-18
 **Rama:** `feat/vig-ia-commercial-gate0`
 **Contrato:** `docs/decisions/2026-07-18-vig-ia-comercial-gate.md`
-**Estado:** QA local y preview superados; despliegue productivo y smoke final pendientes.
+**Estado:** QA local y smoke autenticado de preview superados; producción pendiente de autorización explícita.
 
 ## 1. Alcance verificado
 
@@ -81,12 +81,14 @@ Resultado real:
 - Smoke ZIP de lectura/extracción: PASS.
 - Advertencia no bloqueante preexistente: chunk principal mayor a 500 kB.
 
-## 4. Smoke autenticado local por roles
+## 4. Smoke autenticado por roles
 
-Se aprovisionaron dos identidades QA temporales y reversibles contra Supabase:
+Se aprovisionaron identidades QA temporales y reversibles contra Supabase para validar el backend real desplegado en Preview:
 
 1. Gerencia con módulos Vig-IA, Dashboard y Oportunidades.
-2. Comercial sin módulo Vig-IA.
+2. Gerencia sin módulo Vig-IA.
+3. Director con módulo Vig-IA pero sin área comercial vigente.
+4. Comercial sin módulo Vig-IA.
 
 Resultados:
 
@@ -97,11 +99,13 @@ Resultados:
 | Política read-only | `true` |
 | Revisión humana obligatoria | `true` |
 | Gerencia sin Licitaciones → `/api/tenders` | 403 |
+| Gerencia sin módulo Vig-IA → `/api/vigia/priorities` | 403 |
+| Director con Vig-IA pero sin área comercial → `/api/vigia/priorities` | 403 |
 | Comercial sin Vig-IA → `/api/vigia/priorities` | 403 |
 | Campos sensibles prohibidos presentes | 0 |
 | Perfiles QA residuales tras cleanup | 0 |
 
-No se alteró ninguna oportunidad, meta, licitación ni dataset SIIO durante este smoke.
+El smoke real del Preview devolvió 219 oportunidades activas visibles y 219 priorizadas bajo `gate0-v1.0`. No se alteró ninguna oportunidad, meta, licitación ni dataset SIIO; las identidades, perfiles y permisos QA se eliminaron al finalizar.
 
 ## 5. Hallazgos de revisión independiente corregidos
 
@@ -121,9 +125,9 @@ Además, los métodos distintos de GET reciben HTTP 405 sin lectura del CRM; un 
 - Build de producción local servido en `http://127.0.0.1:4173`.
 - Ruta `#/centinel` conserva login protegido antes de sesión.
 - El frontend compiló con la nueva consola Vig-IA y sus estilos responsive.
-- Preview final Vercel: `https://seguridad-nacional-33efnet3m-jmb-maxs-projects.vercel.app/#/centinel`.
-- Estado de deployment: `Ready`, target `preview` (`dpl_Hv4h7eebopxbhBsxbfz5W7gdhTsg`).
-- Commit desplegado: `41f62e8b9556e46a0406d2c27c3ba9f8b4c35639`.
+- Preview final Vercel: `https://seguridad-nacional-qbsozav76-jmb-maxs-projects.vercel.app/#/centinel`.
+- Estado de deployment: `Ready`, target `preview` (`dpl_94bwZVGBXJs72g34ZGVswSFRgzyn`).
+- Commit desplegado: `5e0a47ff448e2654769f106212accda05035129b`.
 - PR: `https://github.com/Premium-Security-Investments/sn-crm-comercial/pull/18` (`OPEN`, mergeable).
 - La URL pública directa está protegida por Vercel; `vercel curl` autenticado confirmó documento raíz HTTP 200 y contenedor React.
 - API Vig-IA sin sesión: HTTP 401 con `Debe iniciar sesión.`, correcto.
@@ -133,11 +137,12 @@ Además, los métodos distintos de GET reciben HTTP 405 sin lectura del CRM; un 
 
 - Revisión independiente final: **GO para preview**, sin bloqueadores de código nuevos.
 - Higiene Markdown: `git diff --check main...HEAD` quedó limpio después de normalizar espacios finales.
-- El smoke autenticado no pudo ejecutarse: tanto `.env.local` como el entorno `preview` de Vercel contienen una `SUPABASE_SERVICE_ROLE_KEY` rechazada por Supabase como `Invalid API key`.
-- Los archivos temporales que contenían variables del preview fueron eliminados después del diagnóstico.
+- La credencial vigente se recuperó mediante acceso administrativo autorizado a Supabase y `SUPABASE_SERVICE_ROLE_KEY` se actualizó únicamente en Vercel Preview; no se modificó Producción.
+- El smoke autenticado contra el deployment final pasó para permiso positivo, rol sin módulo, director sin área, separación de Licitaciones, minimización y cleanup.
+- Los archivos temporales con variables y credenciales se eliminaron después de registrar la evidencia.
 
-## 8. Pendientes de cierre
+## 8. Pendientes de producción
 
-- Rotar o actualizar `SUPABASE_SERVICE_ROLE_KEY` con una credencial vigente en los entornos correspondientes; este cambio de secreto productivo requiere autorización.
-- Repetir smoke autenticado por roles en el preview.
-- Autorizar, desplegar y ejecutar smoke final en producción.
+- Revisar el resultado del PR #18 y confirmar merge/release.
+- Autorizar explícitamente la actualización de la credencial en Producción y el despliegue productivo.
+- Ejecutar smoke final post-deploy y conservar rollback si aparece una regresión.
