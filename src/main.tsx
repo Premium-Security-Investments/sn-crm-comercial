@@ -12,6 +12,8 @@ import type { TenderModuleView } from './tenders/types';
 import { focusDocumentReviewArea } from './tenders/viewUtils';
 import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
 import { supabaseBrowser } from './supabaseBrowser';
+import { VigiaCommercial } from './vigia/VigiaCommercial';
+import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
@@ -451,7 +453,10 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
   if (route.page === 'consultant' && route.id) return <ConsultantDetail data={data} ownerId={route.id} />;
   if (route.page === 'goals') return <GoalsCompliance data={data} refresh={refresh} />;
   if (route.page === 'alerts') return <CommercialAlerts data={data} />;
-  if (route.page === 'centinel') return <CentinelAssistant data={data} />;
+  if (route.page === 'centinel') return <VigiaCommercial
+    canOpenDashboard={isModulePermissionEligible(data.currentProfile.role, 'modulo_dashboard_comercial') && Boolean(data.currentProfile.permissions?.includes('modulo_dashboard_comercial'))}
+    canOpenOpportunity={isModulePermissionEligible(data.currentProfile.role, 'modulo_oportunidades') && Boolean(data.currentProfile.permissions?.includes('modulo_oportunidades'))}
+  />;
   if (route.page === 'users') return <UsersAdmin currentProfile={data.currentProfile} />;
   if (data.currentProfile.role === 'comercial') return <CommercialPersonalDashboard data={data} />;
   return <Home data={data} />;
@@ -1392,11 +1397,16 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   const [period, setPeriod] = useState<DashboardPeriodFilter>('');
   const [focusedDashboardTarget, setFocusedDashboardTarget] = useState<string | null>(null);
   const [q, setQ] = useState('');
-  const [owner, setOwner] = useState('');
+  const initialVigiaFilters = useMemo(() => parseVigiaDashboardFilters(window.location.hash, {
+    owners: data.opportunities.map(ownerKey),
+    stages: data.stages.map(item => item.code),
+    services: data.services.map(item => item.code),
+  }), [data]);
+  const [owner, setOwner] = useState(initialVigiaFilters.owner);
   const [regional, setRegional] = useState('');
-  const [stage, setStage] = useState('');
-  const [service, setService] = useState('seguridad_fisica');
-  const [onlyActive, setOnlyActive] = useState(false);
+  const [stage, setStage] = useState(initialVigiaFilters.stage);
+  const [service, setService] = useState(initialVigiaFilters.service);
+  const [onlyActive, setOnlyActive] = useState(initialVigiaFilters.onlyActive);
   const commercialProfiles = data.profiles.filter(isCommercialProfile);
   const managerRegionalOptions = useMemo(() => {
     const canonical = new Map<string, string>();
@@ -1629,6 +1639,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   const focusClass = (targetId: string) => focusedDashboardTarget === targetId ? 'dashboard-focus-hit' : '';
 
   return <section className="stack manager-dashboard dashboard-v2 dashboard-v2-six-components">
+    {initialVigiaFilters.invalid && <div className="error">Enlace de Vig-IA inválido o manipulado. Se aplicó un alcance vacío.</div>}
     <section className="v2-filter-strip panel" aria-label="Filtros gerenciales">
       <div className="v2-filter-strip-title">Filtros gerenciales</div>
       <div className="filters manager-dashboard-filters v2-dashboard-filters">
