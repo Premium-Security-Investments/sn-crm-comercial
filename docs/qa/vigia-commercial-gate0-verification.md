@@ -121,13 +121,16 @@ Además, los métodos distintos de GET reciben HTTP 405 sin lectura del CRM; un 
 - Build de producción local servido en `http://127.0.0.1:4173`.
 - Ruta `#/centinel` conserva login protegido antes de sesión.
 - El frontend compiló con la nueva consola Vig-IA y sus estilos responsive.
-- Preview Vercel: `https://seguridad-nacional-m4umrp5xd-jmb-maxs-projects.vercel.app/#/centinel`.
-- Estado de deployment: `Ready` (`dpl_8wAdQfngKdbZ3psLEdMNYt2Tz2N5`).
-- Documento raíz: HTTP 200, `text/html`, título y contenedor React correctos.
+- Preview final Vercel: `https://seguridad-nacional-33efnet3m-jmb-maxs-projects.vercel.app/#/centinel`.
+- Estado de deployment: `Ready`, target `preview` (`dpl_Hv4h7eebopxbhBsxbfz5W7gdhTsg`).
+- Commit desplegado: `41f62e8b9556e46a0406d2c27c3ba9f8b4c35639`.
+- PR: `https://github.com/Premium-Security-Investments/sn-crm-comercial/pull/18` (`OPEN`, mergeable).
+- La URL pública directa está protegida por Vercel; `vercel curl` autenticado confirmó documento raíz HTTP 200 y contenedor React.
 - API Vig-IA sin sesión: HTTP 401 con `Debe iniciar sesión.`, correcto.
+- `POST /api/vigia/priorities`: HTTP 405 con `Método no permitido.`, correcto.
 
 ## 7. Pendientes de cierre
 
-- Aplicar hallazgos de revisión independiente, si existen.
-- Commit, push, PR y despliegue productivo autorizado.
-- Smoke productivo final.
+- Confirmar el resultado de la revisión independiente final.
+- Repetir smoke autenticado por roles en el preview con credenciales Supabase vigentes.
+- Autorizar, desplegar y ejecutar smoke final en producción.
