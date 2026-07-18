@@ -129,8 +129,15 @@ Además, los métodos distintos de GET reciben HTTP 405 sin lectura del CRM; un 
 - API Vig-IA sin sesión: HTTP 401 con `Debe iniciar sesión.`, correcto.
 - `POST /api/vigia/priorities`: HTTP 405 con `Método no permitido.`, correcto.
 
-## 7. Pendientes de cierre
+## 7. Revisión final y gate operativo
 
-- Confirmar el resultado de la revisión independiente final.
-- Repetir smoke autenticado por roles en el preview con credenciales Supabase vigentes.
+- Revisión independiente final: **GO para preview**, sin bloqueadores de código nuevos.
+- Higiene Markdown: `git diff --check main...HEAD` quedó limpio después de normalizar espacios finales.
+- El smoke autenticado no pudo ejecutarse: tanto `.env.local` como el entorno `preview` de Vercel contienen una `SUPABASE_SERVICE_ROLE_KEY` rechazada por Supabase como `Invalid API key`.
+- Los archivos temporales que contenían variables del preview fueron eliminados después del diagnóstico.
+
+## 8. Pendientes de cierre
+
+- Rotar o actualizar `SUPABASE_SERVICE_ROLE_KEY` con una credencial vigente en los entornos correspondientes; este cambio de secreto productivo requiere autorización.
+- Repetir smoke autenticado por roles en el preview.
 - Autorizar, desplegar y ejecutar smoke final en producción.
