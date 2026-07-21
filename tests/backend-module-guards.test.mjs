@@ -33,6 +33,7 @@ const scenarios = {
   opportunitiesOnly: profile('comercial', ['modulo_oportunidades']),
   goalsOnly: profile('comercial', ['modulo_metas']),
   dashboardOnly: profile('gerencia', ['modulo_dashboard_comercial']),
+  vigiaOnly: profile('gerencia', ['modulo_vig_ia']),
   siioOnly: profile('gerencia', ['modulo_siio_gerencial']),
   adminWithoutUsers: profile('admin'),
   adminWithUsers: profile('admin', ['modulo_usuarios']),
@@ -43,6 +44,7 @@ assert.deepEqual(MODULE_ENDPOINT_ACTIONS, {
   opportunities: ACTIONS.MODULE_OPPORTUNITIES_VIEW,
   goals: ACTIONS.MODULE_GOALS_VIEW,
   siio: ACTIONS.MODULE_SIIO_VIEW,
+  vigia: ACTIONS.MODULE_VIGIA_VIEW,
   tenders: ACTIONS.LICITACIONES_VIEW,
   users: ACTIONS.MODULE_USERS_VIEW,
 }, 'la tabla auditable endpoint→módulo debe centralizar las familias protegidas');
@@ -70,6 +72,10 @@ for (const endpoint of ['/api/siio/bootstrap', '/api/siio/records', '/api/siio/b
   assert.throws(() => requireModuleAction(scenarios.dashboardOnly, 'siio'), error => error?.status === 403 && error?.code === 'FORBIDDEN', `${endpoint} deniega SIIO ausente`);
   assert.equal(requireModuleAction(scenarios.siioOnly, 'siio'), true, `${endpoint} permite entrada con SIIO; requireSiioAccess conserva la restricción de rol`);
 }
+
+assert.throws(() => requireModuleAction(scenarios.dashboardOnly, 'vigia'), error => error?.status === 403 && error?.code === 'FORBIDDEN', '/api/vigia/priorities exige Vig-IA explícito');
+assert.equal(requireModuleAction(scenarios.vigiaOnly, 'vigia'), true, '/api/vigia/priorities permite Vig-IA explícito');
+assert.equal(bootstrapCapabilities(scenarios.vigiaOnly).vigia, true, 'capacidad Vig-IA se deriva del módulo explícito');
 
 for (const endpoint of ['/api/users', '/api/access-catalog']) {
   assert.throws(() => requireModuleAction(scenarios.adminWithoutUsers, 'users'), error => error?.status === 403 && error?.code === 'FORBIDDEN', `${endpoint} exige Usuarios explícito además de admin`);

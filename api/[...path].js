@@ -10,6 +10,7 @@ import { callTenderOpportunityConversion, callTenderOpportunityDiscard, callTend
 import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
+import { VIGIA_CONFIG, prioritizeVigiaOpportunities } from '../vigia-engine.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -57,6 +58,7 @@ export const MODULE_ENDPOINT_ACTIONS = Object.freeze({
   opportunities: ACTIONS.MODULE_OPPORTUNITIES_VIEW,
   goals: ACTIONS.MODULE_GOALS_VIEW,
   siio: ACTIONS.MODULE_SIIO_VIEW,
+  vigia: ACTIONS.MODULE_VIGIA_VIEW,
   tenders: ACTIONS.LICITACIONES_VIEW,
   users: ACTIONS.MODULE_USERS_VIEW,
 });
@@ -71,6 +73,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/opportunity-interactions': ['opportunities', ACTIONS.CRM_OPPORTUNITY_EDIT],
   'GET /api/goals': ['goals', ACTIONS.MODULE_GOALS_VIEW],
   'PUT /api/goals': ['goals', ACTIONS.MODULE_GOALS_VIEW],
+  'GET /api/vigia/priorities': ['vigia', ACTIONS.MODULE_VIGIA_VIEW],
 
   'GET /api/tenders': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'GET /api/users': ['users', ACTIONS.USERS_MANAGE],
@@ -551,6 +554,7 @@ async function ensureOpportunityAccess(database, id, profile, action = ACTIONS.C
 }
 
 const opportunitySelect = '*';
+const VIGIA_OPPORTUNITY_SELECT = 'id,owner_id,owner_name,company_name,stage_code,stage_name,stage_order,service_type_code,service_type_name,regional_nombre,offer_value,weighted_pipeline_value,next_action_at,last_interaction_at,updated_at,created_at,expected_close_date';
 async function attachCommercialMetadata(database, rows) {
   const list = Array.isArray(rows) ? rows : [rows];
   if (!list.length) return rows;
@@ -1763,6 +1767,67 @@ app.get('/api/siio/board-reports', async (req, res) => {
     res.json(filterBoardReportsForProfile(profile, await optionalSiioList(requireDb(), siioTables.boardReports, '*', 'period_month')));
   } catch (error) { sendAuthError(res, error); }
 });
+
+const VIGIA_PAGE_SIZE = 1000;
+const VIGIA_OWNER_BATCH_SIZE = 100;
+function throwVigiaScopeForbidden() {
+  const error = new Error('No tiene un alcance comercial vigente para consultar Vig-IA.');
+  error.status = 403;
+  error.code = 'FORBIDDEN';
+  throw error;
+}
+async function resolveVigiaOwnerScope(database, profile) {
+  if (globalCrmScopeRoles.has(profile?.role)) return null;
+  if (!profile?.areas?.some(area => area.area_code === 'comercial')) throwVigiaScopeForbidden();
+  const rows = await must(database.from('psi_profile_area_assignments').select('profile_id,area_code,subarea_code').eq('area_code', 'comercial'));
+  const ownerAssignments = assignmentsByProfile(rows);
+  const ownerIds = Array.from(ownerAssignments.keys()).filter(ownerId => canReadCrmRow(profile, { owner_id: ownerId }, ownerAssignments));
+  if (!ownerIds.length) throwVigiaScopeForbidden();
+  return ownerIds.sort();
+}
+async function fetchVigiaRows(database, ownerIds) {
+  const batches = ownerIds === null
+    ? [null]
+    : Array.from({ length: Math.ceil(ownerIds.length / VIGIA_OWNER_BATCH_SIZE) }, (_, index) => ownerIds.slice(index * VIGIA_OWNER_BATCH_SIZE, (index + 1) * VIGIA_OWNER_BATCH_SIZE));
+  const rows = [];
+  for (const ownerBatch of batches) {
+    for (let offset = 0; ; offset += VIGIA_PAGE_SIZE) {
+      let query = database.from('v_psi_sales_opportunity_enriched').select(VIGIA_OPPORTUNITY_SELECT).order('updated_at', { ascending: false }).order('id', { ascending: true });
+      if (ownerBatch) query = query.in('owner_id', ownerBatch);
+      const page = await must(query.range(offset, offset + VIGIA_PAGE_SIZE - 1));
+      rows.push(...page);
+      if (page.length < VIGIA_PAGE_SIZE) break;
+    }
+  }
+  return rows;
+}
+
+app.get('/api/vigia/priorities', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireModuleAction(currentProfile, 'vigia');
+    const database = requireDb();
+    const ownerIds = await resolveVigiaOwnerScope(database, currentProfile);
+    const scopedRows = await fetchVigiaRows(database, ownerIds);
+    const priorities = prioritizeVigiaOpportunities(scopedRows);
+    const asOf = scopedRows.map(row => row.updated_at).filter(value => value && !Number.isNaN(new Date(value).getTime())).sort().at(-1) || null;
+    res.json({
+      generated_at: new Date().toISOString(),
+      source: { id: VIGIA_CONFIG.sourceId, label: 'CRM comercial', as_of: asOf },
+      policy: { version: VIGIA_CONFIG.version, read_only: true, human_review_required: true },
+      totals: {
+        source_rows: scopedRows.length,
+        visible_active: scopedRows.filter(row => !VIGIA_CONFIG.terminalStages.includes(row.stage_code)).length,
+        prioritized: priorities.length,
+        high: priorities.filter(row => row.level === 'alto').length,
+        medium: priorities.filter(row => row.level === 'medio').length,
+        low: priorities.filter(row => row.level === 'bajo').length,
+      },
+      priorities,
+    });
+  } catch (error) { sendAuthError(res, error); }
+});
+app.all('/api/vigia/priorities', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
 
 app.get('/api/bootstrap', async (req, res) => {
   try {
