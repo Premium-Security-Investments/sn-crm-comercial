@@ -54,7 +54,7 @@ console.log('Tender compact filter layout expectations passed');
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `node tests/tender-filter-compact-layout.test.mjs`  
+Run: `node tests/tender-filter-compact-layout.test.mjs`
 Expected: FAIL porque las clases semánticas y la grilla de 12 columnas aún no existen.
 
 - [ ] **Step 3: Commit the RED test with the design documents**

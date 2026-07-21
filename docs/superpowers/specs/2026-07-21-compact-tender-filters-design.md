@@ -1,6 +1,6 @@
 # Diseño — filtros compactos del Radar de Licitaciones
 
-**Fecha:** 2026-07-21  
+**Fecha:** 2026-07-21
 **Estado:** aprobado mediante mockup por Juan Botero
 
 ## Problema
