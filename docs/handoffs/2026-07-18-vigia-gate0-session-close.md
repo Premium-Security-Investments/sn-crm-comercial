@@ -1,10 +1,10 @@
 # Cierre de sesión — Vig-IA Comercial Gate 0
 
-**Fecha:** 2026-07-18  
-**Proyecto:** Plataforma SIIO / CRM Comercial  
-**Repositorio:** `Premium-Security-Investments/sn-crm-comercial`  
-**Rama:** `feat/vig-ia-commercial-gate0`  
-**HEAD:** `4d097f0418834f8f733202ce3a0a0fbdc1217c39`  
+**Fecha:** 2026-07-18
+**Proyecto:** Plataforma SIIO / CRM Comercial
+**Repositorio:** `Premium-Security-Investments/sn-crm-comercial`
+**Rama:** `feat/vig-ia-commercial-gate0`
+**HEAD:** `4d097f0418834f8f733202ce3a0a0fbdc1217c39`
 **PR:** https://github.com/Premium-Security-Investments/sn-crm-comercial/pull/18
 
 ## Resultado ejecutivo
@@ -38,7 +38,7 @@ Vig-IA Comercial Gate 0 quedó implementado, revisado, probado y validado con au
 
 ### Smoke autenticado en Preview
 
-**Preview validado:** https://seguridad-nacional-qbsozav76-jmb-maxs-projects.vercel.app/#/centinel  
+**Preview validado:** https://seguridad-nacional-qbsozav76-jmb-maxs-projects.vercel.app/#/centinel
 **Deployment:** `dpl_94bwZVGBXJs72g34ZGVswSFRgzyn` — `Ready`
 
 | Caso | Resultado |
