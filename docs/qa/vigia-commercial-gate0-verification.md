@@ -3,7 +3,7 @@
 **Fecha:** 2026-07-18
 **Rama:** `feat/vig-ia-commercial-gate0`
 **Contrato:** `docs/decisions/2026-07-18-vig-ia-comercial-gate.md`
-**Estado:** QA local y smoke autenticado de preview superados; producción pendiente de autorización explícita.
+**Estado:** Gate 0 desplegado y validado en Producción; smoke autenticado y cleanup superados.
 
 ## 1. Alcance verificado
 
@@ -83,7 +83,7 @@ Resultado real:
 
 ## 4. Smoke autenticado por roles
 
-Se aprovisionaron identidades QA temporales y reversibles contra Supabase para validar el backend real desplegado en Preview:
+Se aprovisionaron identidades QA temporales y reversibles contra Supabase para validar el backend real desplegado primero en Preview y después en Producción:
 
 1. Gerencia con módulos Vig-IA, Dashboard y Oportunidades.
 2. Gerencia sin módulo Vig-IA.
@@ -105,7 +105,7 @@ Resultados:
 | Campos sensibles prohibidos presentes | 0 |
 | Perfiles QA residuales tras cleanup | 0 |
 
-El smoke real del Preview devolvió 219 oportunidades activas visibles y 219 priorizadas bajo `gate0-v1.0`. No se alteró ninguna oportunidad, meta, licitación ni dataset SIIO; las identidades, perfiles y permisos QA se eliminaron al finalizar.
+Tanto el smoke de Preview como el smoke productivo devolvieron 219 oportunidades activas visibles y 219 priorizadas bajo `gate0-v1.0`. No se alteró ninguna oportunidad, meta, licitación ni dataset SIIO; las identidades, perfiles y permisos QA se eliminaron al finalizar. El cleanup productivo terminó con cero fallos y cero perfiles residuales.
 
 ## 5. Hallazgos de revisión independiente corregidos
 
@@ -120,7 +120,7 @@ La primera revisión independiente bloqueó el despliegue y la segunda detectó 
 
 Además, los métodos distintos de GET reciben HTTP 405 sin lectura del CRM; un rol elegible sin `modulo_vig_ia` recibe 403 antes del CRM; y una prioridad sin servicio abre el Dashboard con todos los servicios, sin aplicar un default ajeno.
 
-## 6. Evidencia visual local y preview
+## 6. Evidencia visual, Preview y Producción
 
 - Build de producción local servido en `http://127.0.0.1:4173`.
 - Ruta `#/centinel` conserva login protegido antes de sesión.
@@ -128,7 +128,12 @@ Además, los métodos distintos de GET reciben HTTP 405 sin lectura del CRM; un 
 - Preview final Vercel: `https://seguridad-nacional-qbsozav76-jmb-maxs-projects.vercel.app/#/centinel`.
 - Estado de deployment: `Ready`, target `preview` (`dpl_94bwZVGBXJs72g34ZGVswSFRgzyn`).
 - Commit desplegado: `5e0a47ff448e2654769f106212accda05035129b`.
-- PR: `https://github.com/Premium-Security-Investments/sn-crm-comercial/pull/18` (`OPEN`, mergeable).
+- PR: `https://github.com/Premium-Security-Investments/sn-crm-comercial/pull/18` (`MERGED`).
+- Merge commit: `39aece249b5cd7496cc2fbd168e16aed0220c045`.
+- Commit productivo final: `1fb0435dac421e2c412213a693e08338c9e9d77d`.
+- Producción canónica: `https://seguridad-nacional-crm.vercel.app/#/centinel`.
+- Deployment productivo final: `dpl_263q3qa7VkEgKK6D29NtLxeFXi6S`, target `production`, estado `Ready`.
+- La primera compilación productiva detectó una alerta baja transitiva en `body-parser`; se actualizó a 2.3.0, se repitieron 78/78 tests, integración, build y audit, y el deployment final reportó 0 vulnerabilidades.
 - La URL pública directa está protegida por Vercel; `vercel curl` autenticado confirmó documento raíz HTTP 200 y contenedor React.
 - API Vig-IA sin sesión: HTTP 401 con `Debe iniciar sesión.`, correcto.
 - `POST /api/vigia/priorities`: HTTP 405 con `Método no permitido.`, correcto.
@@ -137,12 +142,17 @@ Además, los métodos distintos de GET reciben HTTP 405 sin lectura del CRM; un 
 
 - Revisión independiente final: **GO para preview**, sin bloqueadores de código nuevos.
 - Higiene Markdown: `git diff --check main...HEAD` quedó limpio después de normalizar espacios finales.
-- La credencial vigente se recuperó mediante acceso administrativo autorizado a Supabase y `SUPABASE_SERVICE_ROLE_KEY` se actualizó únicamente en Vercel Preview; no se modificó Producción.
-- El smoke autenticado contra el deployment final pasó para permiso positivo, rol sin módulo, director sin área, separación de Licitaciones, minimización y cleanup.
-- Los archivos temporales con variables y credenciales se eliminaron después de registrar la evidencia.
+- La credencial vigente se recuperó mediante acceso administrativo autorizado a Supabase, se validó con una consulta read-only y `SUPABASE_SERVICE_ROLE_KEY` se actualizó en Vercel Production sin exponer su valor.
+- La sesión administrativa del CLI de Supabase quedó persistente y operativa en el servidor según la decisión acordada, para evitar verificaciones repetidas; puede revocarse cuando se solicite o ante un incidente.
+- El smoke autenticado contra el deployment productivo final pasó para permiso positivo, rol sin módulo, director sin área, separación de Licitaciones, minimización y cleanup.
+- Los archivos temporales con variables y credenciales se eliminaron después de registrar la evidencia; no se conservaron valores en documentación ni logs de cierre.
 
-## 8. Pendientes de producción
+## 8. Cierre productivo
 
-- Revisar el resultado del PR #18 y confirmar merge/release.
-- Autorizar explícitamente la actualización de la credencial en Producción y el despliegue productivo.
-- Ejecutar smoke final post-deploy y conservar rollback si aparece una regresión.
+- PR #18 integrado a `main`.
+- Credencial productiva actualizada y validada.
+- Deployment productivo final `Ready` y alias canónico activo.
+- Smoke autenticado post-deploy aprobado.
+- Cleanup aprobado con cero perfiles QA residuales.
+- Rollback identificable mediante el deployment productivo anterior `dpl_6TVcUTCUaXWVKfMEpjCrFT6naWSf` y el deployment final `dpl_263q3qa7VkEgKK6D29NtLxeFXi6S`.
+- Gate 0 queda técnicamente cerrado en Producción. El siguiente ciclo no se inicia automáticamente; requiere priorización o autorización separada.
