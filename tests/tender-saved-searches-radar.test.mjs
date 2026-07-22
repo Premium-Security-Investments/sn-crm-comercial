@@ -61,16 +61,34 @@ assert.deepEqual(buildTenderSearchProfilePayload(' CCTV crítico ', filters), {
 const profileA = { id: 'A', name: 'A' };
 const profileB = { id: 'B', name: 'B' };
 const profileC = { id: 'C', name: 'C' };
+const deferred = () => {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+};
 let currentProfiles = [profileA, profileB];
 const setProfiles = updater => { currentProfiles = typeof updater === 'function' ? updater(currentProfiles) : updater; };
-const deleteAResponse = Promise.resolve().then(() => setProfiles(current => removeTenderSearchProfile(current, 'A')));
-const deleteBResponse = Promise.resolve().then(() => setProfiles(current => removeTenderSearchProfile(current, 'B')));
-await Promise.all([deleteBResponse, deleteAResponse]);
-assert.deepEqual(currentProfiles, [], 'Borrados completados fuera de orden no pueden resucitar perfiles eliminados.');
+const deleteARequest = deferred();
+const deleteBRequest = deferred();
+const deleteAResponse = deleteARequest.promise.then(() => setProfiles(current => removeTenderSearchProfile(current, 'A')));
+const deleteBResponse = deleteBRequest.promise.then(() => setProfiles(current => removeTenderSearchProfile(current, 'B')));
+deleteBRequest.resolve();
+await deleteBResponse;
+assert.deepEqual(currentProfiles, [profileA], 'La respuesta B debe aplicarse antes que la respuesta A.');
+deleteARequest.resolve();
+await deleteAResponse;
+assert.deepEqual(currentProfiles, [], 'Borrados resueltos B antes de A no pueden resucitar perfiles eliminados.');
+
 setProfiles([profileA]);
-const saveCResponse = Promise.resolve().then(() => setProfiles(current => prependTenderSearchProfile(current, profileC)));
-const deleteAAfterSave = Promise.resolve().then(() => setProfiles(current => removeTenderSearchProfile(current, 'A')));
-await Promise.all([deleteAAfterSave, saveCResponse]);
-assert.deepEqual(currentProfiles, [profileC], 'Guardar y borrar concurrentes deben componer sobre el estado actual sin reintroducir elementos.');
+const saveCPost = deferred();
+const deleteAAfterSaveRequest = deferred();
+const saveCResponse = saveCPost.promise.then(() => setProfiles(current => prependTenderSearchProfile(current, profileC)));
+const deleteAAfterSave = deleteAAfterSaveRequest.promise.then(() => setProfiles(current => removeTenderSearchProfile(current, 'A')));
+deleteAAfterSaveRequest.resolve();
+await deleteAAfterSave;
+assert.deepEqual(currentProfiles, [], 'El borrado debe terminar antes de que complete el POST de guardado.');
+saveCPost.resolve();
+await saveCResponse;
+assert.deepEqual(currentProfiles, [profileC], 'Un POST completado después del borrado debe componer desde el estado actual sin resucitar perfiles.');
 
 console.log('Tender saved searches are managed inside Radar with independent degradation and async-safe updates');
