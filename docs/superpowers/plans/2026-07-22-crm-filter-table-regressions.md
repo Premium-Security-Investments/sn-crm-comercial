@@ -22,6 +22,7 @@
 **Files:**
 - Modify: `tests/task-4-review-regressions.test.mjs`
 - Modify: `server/index.js`
+- Modify: `api/[...path].js`
 - Modify: `src/main.tsx`
 
 **Interfaces:**
