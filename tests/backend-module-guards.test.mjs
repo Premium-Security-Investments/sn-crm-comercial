@@ -17,6 +17,7 @@ const {
   bootstrapCapabilities,
   filterBootstrapForProfile,
   requireModuleAction,
+  requirePrioritiesAction,
 } = await import('../server/index.js');
 
 const profile = (role, permissions = [], overrides = {}) => ({
@@ -33,6 +34,7 @@ const scenarios = {
   opportunitiesOnly: profile('comercial', ['modulo_oportunidades']),
   goalsOnly: profile('comercial', ['modulo_metas']),
   dashboardOnly: profile('gerencia', ['modulo_dashboard_comercial']),
+  alertsOnly: profile('gerencia', ['modulo_alertas_comerciales']),
   vigiaOnly: profile('gerencia', ['modulo_vig_ia']),
   siioOnly: profile('gerencia', ['modulo_siio_gerencial']),
   adminWithoutUsers: profile('admin'),
@@ -76,6 +78,9 @@ for (const endpoint of ['/api/siio/bootstrap', '/api/siio/records', '/api/siio/b
 assert.throws(() => requireModuleAction(scenarios.dashboardOnly, 'vigia'), error => error?.status === 403 && error?.code === 'FORBIDDEN', '/api/vigia/priorities exige Vig-IA explícito');
 assert.equal(requireModuleAction(scenarios.vigiaOnly, 'vigia'), true, '/api/vigia/priorities permite Vig-IA explícito');
 assert.equal(bootstrapCapabilities(scenarios.vigiaOnly).vigia, true, 'capacidad Vig-IA se deriva del módulo explícito');
+assert.equal(requirePrioritiesAction(scenarios.alertsOnly), true, 'Prioridades conserva acceso heredado de Alertas Comerciales');
+assert.equal(requirePrioritiesAction(scenarios.vigiaOnly), true, 'Prioridades conserva acceso heredado de Vig-IA');
+assert.throws(() => requirePrioritiesAction(scenarios.dashboardOnly), error => error?.status === 403 && error?.code === 'FORBIDDEN', 'Prioridades falla cerrado sin Alertas ni Vig-IA');
 
 for (const endpoint of ['/api/users', '/api/access-catalog']) {
   assert.throws(() => requireModuleAction(scenarios.adminWithoutUsers, 'users'), error => error?.status === 403 && error?.code === 'FORBIDDEN', `${endpoint} exige Usuarios explícito además de admin`);

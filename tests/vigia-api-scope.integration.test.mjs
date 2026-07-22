@@ -17,6 +17,7 @@ async function requestJson(port, path, token, method = 'GET') {
 
 const profiles = {
   'manager-auth': { id: 'manager-profile', full_name: 'Gerencia QA', microsoft_email: 'manager@example.test', auth_user_id: 'manager-auth', role: 'gerencia', active: true, commercial_area: null, can_edit_customer_segment: false },
+  'manager-alerts-auth': { id: 'manager-alerts-profile', full_name: 'Gerencia Alertas', microsoft_email: 'manager-alerts@example.test', auth_user_id: 'manager-alerts-auth', role: 'gerencia', active: true, commercial_area: null, can_edit_customer_segment: false },
   'manager-no-module-auth': { id: 'manager-no-module-profile', full_name: 'Gerencia sin módulo', microsoft_email: 'manager-no-module@example.test', auth_user_id: 'manager-no-module-auth', role: 'gerencia', active: true, commercial_area: null, can_edit_customer_segment: false },
   'director-empty-auth': { id: 'director-empty-profile', full_name: 'Director vacío', microsoft_email: 'director-empty@example.test', auth_user_id: 'director-empty-auth', role: 'director', active: true, commercial_area: null, can_edit_customer_segment: false },
   'director-auth': { id: 'director-profile', full_name: 'Director regional', microsoft_email: 'director@example.test', auth_user_id: 'director-auth', role: 'director', active: true, commercial_area: null, can_edit_customer_segment: false },
@@ -25,6 +26,7 @@ const profiles = {
 const tokens = Object.fromEntries(Object.keys(profiles).map(authId => [authId.replace('-auth', '-token'), authId]));
 const profileAreas = {
   'manager-profile': [],
+  'manager-alerts-profile': [],
   'manager-no-module-profile': [],
   'director-empty-profile': [],
   'director-profile': [{ area_code: 'comercial', subarea_code: 'seguridad_fisica' }],
@@ -56,7 +58,8 @@ const fakeSupabase = http.createServer((req, res) => {
   }
   if (url.pathname === '/rest/v1/psi_profile_permissions') {
     const profileId = url.searchParams.get('profile_id')?.replace(/^eq\./, '');
-    return json(res, 200, profileId === 'manager-no-module-profile' ? [] : [{ permission_code: 'modulo_vig_ia' }]);
+    if (profileId === 'manager-no-module-profile') return json(res, 200, []);
+    return json(res, 200, [{ permission_code: profileId === 'manager-alerts-profile' ? 'modulo_alertas_comerciales' : 'modulo_vig_ia' }]);
   }
   if (url.pathname === '/rest/v1/v_psi_sales_opportunity_enriched') {
     crmReads += 1; crmQueries.push(url);
@@ -92,15 +95,21 @@ try {
 
   response = await requestJson(appPort, '/api/vigia/priorities', 'manager-no-module-token');
   assert.equal(response.status, 403);
-  assert.equal(crmReads, 0, 'rol elegible sin módulo Vig-IA deniega antes de CRM');
+  assert.equal(crmReads, 0, 'rol elegible sin Alertas ni Vig-IA deniega antes de CRM');
 
+  response = await requestJson(appPort, '/api/vigia/priorities', 'manager-alerts-token');
+  assert.equal(response.status, 200, 'permiso heredado de Alertas conserva acceso a Prioridades');
+  assert.ok(response.body.priorities.length > 0);
+
+  const readsBeforeRoleCeiling = crmReads;
   response = await requestJson(appPort, '/api/vigia/priorities', 'commercial-token');
   assert.equal(response.status, 403);
-  assert.equal(crmReads, 0, 'role ceiling deniega antes de CRM');
+  assert.equal(crmReads, readsBeforeRoleCeiling, 'role ceiling deniega antes de CRM');
 
+  const readsBeforeEmptyScope = crmReads;
   response = await requestJson(appPort, '/api/vigia/priorities', 'director-empty-token');
   assert.equal(response.status, 403);
-  assert.equal(crmReads, 0, 'director sin alcance deniega antes de CRM');
+  assert.equal(crmReads, readsBeforeEmptyScope, 'director sin alcance deniega antes de CRM');
 
   response = await requestJson(appPort, '/api/vigia/priorities', 'director-token');
   assert.equal(response.status, 200);

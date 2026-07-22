@@ -110,6 +110,9 @@ export function canAccessSiio(profile?: NavProfile) {
 }
 
 export function canAccessRoute(profile: NavProfile, page: NavRoutePage) {
+  if (page === 'alerts' || page === 'centinel') {
+    return hasModuleAccess(profile, 'modulo_alertas_comerciales') || hasModuleAccess(profile, 'modulo_vig_ia');
+  }
   const moduleCode = moduleActionForPage(page);
   return moduleCode ? hasModuleAccess(profile, moduleCode) : profile?.active === true;
 }

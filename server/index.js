@@ -109,6 +109,10 @@ export const SIIO_ENDPOINT_ACTIONS = Object.freeze({
 export function requireModuleAction(profile, endpointModule) {
   return requireAction(profile, MODULE_ENDPOINT_ACTIONS[endpointModule], {});
 }
+export function requirePrioritiesAction(profile) {
+  if (can(profile, ACTIONS.MODULE_ALERTS_VIEW) || can(profile, ACTIONS.MODULE_VIGIA_VIEW)) return true;
+  return requireAction(profile, ACTIONS.MODULE_VIGIA_VIEW, {});
+}
 function throwSiioForbidden() {
   const error = new Error('No tiene permisos para acceder al SIIO / F2 gerencial.');
   error.status = 403;
@@ -1805,7 +1809,7 @@ async function fetchVigiaRows(database, ownerIds) {
 app.get('/api/vigia/priorities', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    requireModuleAction(currentProfile, 'vigia');
+    requirePrioritiesAction(currentProfile);
     const database = requireDb();
     const ownerIds = await resolveVigiaOwnerScope(database, currentProfile);
     const scopedRows = await fetchVigiaRows(database, ownerIds);
