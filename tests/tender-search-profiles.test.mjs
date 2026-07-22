@@ -4,6 +4,7 @@ import { buildSync } from 'esbuild';
 
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const configuration = readFileSync(new URL('../src/tenders/TenderConfigurationView.tsx', import.meta.url), 'utf8');
+const configurationActions = readFileSync(new URL('../src/tenders/tenderConfigurationActions.ts', import.meta.url), 'utf8');
 const radar = readFileSync(new URL('../src/tenders/TenderRadarView.tsx', import.meta.url), 'utf8');
 const savedSearches = readFileSync(new URL('../src/tenders/components/TenderSavedSearches.tsx', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
@@ -15,8 +16,12 @@ assert.match(migration, /unique\s*\(name\)/i, 'No deben duplicarse nombres de pe
 assert.match(api, /app\.get\('\/api\/tender-search-profiles'/, 'Debe existir endpoint GET de perfiles');
 assert.match(api, /app\.post\('\/api\/tender-search-profiles'/, 'Debe existir endpoint POST de perfiles');
 assert.match(api, /app\.delete\('\/api\/tender-search-profiles\/:id'/, 'Debe existir endpoint DELETE de perfiles');
+assert.match(configuration, /createTenderConfigurationActions/, 'Configuración debe delegar mutaciones al helper de acciones.');
 assert.doesNotMatch(configuration, /tender-search-profiles|TenderSearchProfile|profileRadarHash/, 'Configuración/RUP no debe gestionar búsquedas guardadas.');
-assert.match(configuration, /\/api\/tender-company-profile/, 'Configuración conserva exclusivamente la ficha corporativa.');
+assert.doesNotMatch(configuration, /\/api\/tender-company-profile/, 'Configuración no debe retener endpoints de mutación extraídos.');
+assert.match(configurationActions, /\/api\/tender-company-profile/, 'El helper debe conservar el endpoint de ficha corporativa.');
+assert.match(configurationActions, /\/api\/tender-company-profile-upload-url/, 'El helper debe conservar el endpoint de URL de carga RUP.');
+assert.match(configurationActions, /\/api\/tender-company-profile-process-upload/, 'El helper debe conservar el endpoint de procesamiento RUP.');
 assert.match(radar, /<TenderSavedSearches/, 'Radar debe mostrar el gestor de búsquedas guardadas.');
 assert.match(radar, /loadProfiles/, 'Radar debe cargar los perfiles junto con sus datos.');
 assert.match(savedSearches, /\/api\/tender-search-profiles/, 'El gestor debe consumir el endpoint existente.');
