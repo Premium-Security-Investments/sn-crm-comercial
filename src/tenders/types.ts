@@ -67,7 +67,14 @@ export type TenderGoNoGoDecisionInput = { opportunity_id: string; decision: 'go'
 export type TenderOfferPreparation = { status: string; interaction_id?: string; [key: string]: unknown };
 export type TenderGoNoGoPayload = { decision: TenderGoNoGoDecision | null; history: TenderGoNoGoDecision[]; preparation: TenderOfferPreparation | null; analysis?: TenderDocumentAnalysis | null };
 export type TenderGoNoGoPostPayload = {
-  decision: { decision_id: string; tender_id: string; opportunity_id: string; decision: 'go' | 'no_go'; decided_at: string; preparation_id?: string | null };
+  decision: {
+    decision_id: string;
+    supersedes_decision_id: string | null;
+    decision: 'go' | 'no_go';
+    preparation_id: string | null;
+    preparation_created: boolean;
+    tender_offer_status: TenderOfferStatus;
+  };
   preparation: TenderOfferPreparation | null;
 };
 export type TenderModuleData = { currentProfile: TenderCurrentProfile; profiles: Array<{ id: string; full_name: string; role: string }> };

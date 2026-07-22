@@ -39,6 +39,7 @@ assert(src.includes('Requiere intervención humana'), 'UI debe mostrar pendiente
 assert(src.includes('Carpeta SharePoint / OneDrive'), 'UI debe mostrar estado/enlace de carpeta SharePoint/OneDrive.');
 assert(src.includes('Notas para el asistente'), 'UI debe tener espacio de notas para el asistente/comercial.');
 assert(src.includes('/api/tender-offer-preparation-note'), 'UI debe permitir guardar notas del asistente.');
-assert(/preparation\s*&&\s*payload\.decision\?\.decision\s*===\s*'go'/.test(src), 'Las notas y el formulario deben quedar ocultos si GO ya no es la decisión vigente.');
+assert(/const authorizedPreparation\s*=\s*preparation\s*&&\s*payload\.decision\?\.decision\s*===\s*'go'/.test(src), 'Todo el expediente debe quedar oculto si GO ya no es la decisión vigente.');
+assert(/authorizedPreparation\s*\?\s*<div className="tender-document-panel">/.test(src), 'Encabezado, carpeta, notas y formulario solo deben montarse con preparación autorizada.');
 
 console.log('tender offer preparation static checks passed');

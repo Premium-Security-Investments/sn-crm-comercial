@@ -37,7 +37,10 @@ assert.doesNotMatch(main, />Aprobar preparación de oferta</, 'No puede quedar e
 assert.doesNotMatch(main, /\/api\/tender-offer-preparation-approve/, 'La UI no puede invocar la aprobación legacy.');
 assert.match(main, /Autorizar GO/, 'Sin preparación la UI debe dirigir a la decisión formal GO.');
 assert.match(panel, /const submittedDecision = selectedDecision/, 'El submit debe capturar la decisión antes de limpiar el modal.');
-assert.match(panel, /setSelectedDecision\(null\);\s*setJustification\(''\);[\s\S]*?await load\(true\)/, 'Un éxito debe cerrar explícitamente el modal antes de sincronizar, aunque siga ocupado.');
+assert.match(panel, /setSelectedDecision\(null\);\s*setJustification\(''\);[\s\S]*?await load\(true, true\)/, 'Un éxito debe cerrar explícitamente el modal antes de sincronizar y conservar la vista optimista.');
+assert.match(panel, /let persistedSuccessfully = false[\s\S]*?persistedSuccessfully = true/, 'El flujo debe distinguir persistencia exitosa de sincronización posterior.');
+assert.match(panel, /No fue posible registrar la decisión/, 'Un POST fallido no puede comunicarse como decisión registrada.');
+assert.match(panel, /Reintentar actualización/, 'Una decisión persistida con refresh fallido debe tener reconciliación explícita sin repetir el POST.');
 
 const bundle = buildSync({ entryPoints: [permissionsPath.pathname], bundle: true, platform: 'node', format: 'esm', write: false });
 const permissionsUrl = `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].contents).toString('base64')}`;

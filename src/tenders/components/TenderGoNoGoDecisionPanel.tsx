@@ -36,11 +36,11 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, analysis, currentProf
   const hasCurrentAnalysis = Boolean(analysis?.interaction_id && UUID.test(analysis.interaction_id));
   const risks = useMemo(() => [analysis?.risk, ...(analysis?.findings || []), ...(analysis?.commercial_fit?.concerns || [])].filter((item): item is string => Boolean(item && item.trim())), [analysis]);
 
-  const load = useCallback(async (preserveStatus = false): Promise<boolean> => {
+  const load = useCallback(async (preserveStatus = false, preservePayload = false): Promise<boolean> => {
     const requestVersion = ++requestVersionRef.current;
     const requestedId = opportunityId;
     setLoading(true);
-    setPayload(EMPTY_PAYLOAD);
+    if (!preservePayload) setPayload(EMPTY_PAYLOAD);
     if (!preserveStatus) setStatus('');
     try {
       const next = await loadTenderGoNoGoDecision(request, requestedId);
@@ -101,10 +101,32 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, analysis, currentProf
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [selectedDecision, busy]);
 
+  const reconcile = async () => {
+    if (busy || !syncPending) return;
+    setBusy(true);
+    setStatus('Actualizando la vista…');
+    const reloaded = await load(true, true);
+    if (reloaded) {
+      try {
+        await onChanged();
+        if (activeOpportunityRef.current === opportunityId) {
+          setSyncPending(false);
+          setStatus('Vista actualizada.');
+        }
+      } catch (error) {
+        if (activeOpportunityRef.current === opportunityId) setStatus(`La decisión ya está registrada; la vista sigue pendiente de actualización. ${error instanceof Error ? error.message : String(error)}`);
+      }
+    } else if (activeOpportunityRef.current === opportunityId) {
+      setStatus('La decisión ya está registrada; no fue posible actualizar la vista. Puede reintentar sin duplicar la decisión.');
+    }
+    if (activeOpportunityRef.current === opportunityId) setBusy(false);
+  };
+
   const submit = async () => {
     if (!selectedDecision || !analysis || !analysis.interaction_id || !UUID.test(analysis.interaction_id) || busy || syncPending) return;
     const submittedDecision = selectedDecision;
     const submittedJustification = justification.trim() || null;
+    let persistedSuccessfully = false;
     setBusy(true);
     setStatus('Registrando decisión formal…');
     try {
@@ -114,16 +136,18 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, analysis, currentProf
         analysis_interaction_id: analysis.interaction_id,
         justification: submittedJustification,
       });
+      persistedSuccessfully = true;
       if (activeOpportunityRef.current !== opportunityId) return;
       const optimistic: TenderGoNoGoDecision = {
         id: persisted.decision.decision_id,
         opportunity_id: opportunityId,
-        tender_id: persisted.decision.tender_id || '',
-        decision: submittedDecision,
+        tender_id: '',
+        decision: persisted.decision.decision,
         analysis_interaction_id: analysis.interaction_id,
         justification: submittedJustification,
         decided_by: currentProfile?.id || '',
-        decided_at: persisted.decision.decided_at || new Date().toISOString(),
+        decided_at: new Date().toISOString(),
+        supersedes_decision_id: persisted.decision.supersedes_decision_id,
         psi_sales_profiles: currentProfile ? { full_name: currentProfile.full_name } : null,
       };
       setPayload(previous => ({ ...previous, decision: optimistic, preparation: submittedDecision === 'go' ? persisted.preparation : null, history: [optimistic, ...previous.history.filter(entry => entry.id !== optimistic.id)] }));
@@ -133,12 +157,20 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, analysis, currentProf
       setSyncPending(true);
       setBusy(false);
       setStatus(submittedDecision === 'go' ? 'GO autorizado y expediente de oferta actualizado.' : 'NO GO registrado; el expediente queda en solo lectura.');
-      const reloaded = await load(true);
-      if (!reloaded) throw new Error('No fue posible actualizar la vista.');
+      const reloaded = await load(true, true);
+      if (!reloaded) {
+        setStatus('La decisión ya está registrada; no fue posible actualizar la vista. Puede reintentar sin duplicar la decisión.');
+        return;
+      }
       await onChanged();
       if (activeOpportunityRef.current === opportunityId) setSyncPending(false);
     } catch (error) {
-      if (activeOpportunityRef.current === opportunityId) setStatus(`Decisión registrada; no fue posible actualizar la vista. ${error instanceof Error ? error.message : String(error)}`);
+      if (activeOpportunityRef.current === opportunityId) {
+        setStatus(persistedSuccessfully
+          ? `La decisión ya está registrada; la vista sigue pendiente de actualización. ${error instanceof Error ? error.message : String(error)}`
+          : `No fue posible registrar la decisión. ${error instanceof Error ? error.message : String(error)}`);
+        if (!persistedSuccessfully) setSyncPending(false);
+      }
     } finally {
       if (activeOpportunityRef.current === opportunityId) setBusy(false);
     }
@@ -156,6 +188,7 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, analysis, currentProf
     </div>
     <div className="tender-go-no-go-risks"><strong>Riesgos y hallazgos relevantes</strong>{risks.length ? <ul>{risks.slice(0, 6).map((risk, index) => <li key={`${risk}-${index}`}>{risk}</li>)}</ul> : <p>Sin riesgos adicionales reportados por el análisis vigente.</p>}</div>
     {status && <div className="notice" role="status">{status}</div>}
+    {syncPending && <div className="tender-go-no-go-actions"><button type="button" className="secondary" onClick={() => void reconcile()} disabled={busy}>{busy ? 'Actualizando…' : 'Reintentar actualización'}</button></div>}
     {allowed ? <div className="tender-go-no-go-actions">
       <button type="button" onClick={event => open('go', event.currentTarget)} disabled={!hasCurrentAnalysis || busy || loading || syncPending}>Autorizar GO</button>
       <button type="button" className="danger" onClick={event => open('no_go', event.currentTarget)} disabled={!hasCurrentAnalysis || busy || loading || syncPending}>Registrar NO GO</button>
