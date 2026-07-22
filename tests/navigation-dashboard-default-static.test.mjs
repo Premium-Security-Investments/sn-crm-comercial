@@ -23,7 +23,7 @@ const expectedItems = [
   ["#/dashboard2", 'Dashboard comercial', 'dashboard2'],
   ["#/alerts", 'Prioridades Comerciales', 'alerts'],
   ["#/opportunities", 'Oportunidades', 'opportunities'],
-  ["#/tenders?view=radar", 'Radar de oportunidades', 'tenders'],
+  ["#/tenders?view=radar", 'Radar', 'tenders'],
   ["#/goals", 'Metas y cumplimiento', 'goals'],
   ["#/users", 'Usuarios y permisos', 'users'],
 ];

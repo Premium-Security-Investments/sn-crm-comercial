@@ -1,7 +1,7 @@
 import type { TenderModuleView } from '../types';
 
 const views: Array<{ view: TenderModuleView; label: string }> = [
-  { view: 'radar', label: 'Radar de oportunidades' },
+  { view: 'radar', label: 'Radar' },
   { view: 'seguimiento', label: 'Seguimiento' },
   { view: 'oportunidades', label: 'Oportunidades' },
 ];

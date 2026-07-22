@@ -21,7 +21,8 @@ const { normalizeTenderModuleView } = await import(utilsUrl);
 assert.equal(normalizeTenderModuleView('expedientes'), 'oportunidades');
 assert.equal(normalizeTenderModuleView('perfiles'), 'configuracion');
 assert.equal(normalizeTenderModuleView('desconocida'), 'radar');
-for (const label of ['Radar', 'Seguimiento', 'Oportunidades']) assert.match(tabs, new RegExp(label));
+for (const label of ['Radar', 'Seguimiento', 'Oportunidades']) assert.match(tabs, new RegExp(`label: '${label}'`));
+assert.doesNotMatch(tabs, /Radar de oportunidades/);
 assert.doesNotMatch(tabs, />Expedientes</);
 assert.doesNotMatch(tabs, />Perfiles de búsqueda</);
 
