@@ -67,6 +67,18 @@ export function tenderDeadlineBucket(tender: PublicTender): TenderDeadlineFilter
   return '31_plus';
 }
 
+export function isTenderExpired(deadline: string | null | undefined, now = new Date()): boolean {
+  if (!deadline) return false;
+  const match = String(deadline).match(/^(\d{4})-(\d{2})-(\d{2})(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/);
+  if (!match) return false;
+  const [, year, month, day] = match;
+  const calendarDate = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (calendarDate.getUTCFullYear() !== Number(year) || calendarDate.getUTCMonth() !== Number(month) - 1 || calendarDate.getUTCDate() !== Number(day)) return false;
+  const bogotaParts = new Intl.DateTimeFormat('en', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
+  const bogotaToday = ['year', 'month', 'day'].map(type => bogotaParts.find(part => part.type === type)?.value || '').join('-');
+  return `${year}-${month}-${day}` < bogotaToday;
+}
+
 export type RadarFilters = {
   query: string;
   source: string;
