@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { supabaseBrowser } from '../supabaseBrowser';
 import { loadCompanyProfile } from './api';
+import { createTenderConfigurationActions } from './tenderConfigurationActions';
 import type { TenderCompanyProfile, TendersModuleProps } from './types';
 
 const emptyCompany: TenderCompanyProfile = { legal_name: '', nit: '', rup_status: '', rup_unspsc_codes: '', authorized_services: '', supervigilancia_license: '', financial_capacity: '', organizational_capacity: '', experience_summary: '', certifications: '', recurring_documents: '', disqualifications_notes: '', useful_company_info: '' };
@@ -20,6 +21,11 @@ export function TenderConfigurationView({ request, moduleNavigation, canConfigur
   const [saving, setSaving] = useState(false);
   const [uploadingRup, setUploadingRup] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const mutationActions = createTenderConfigurationActions({
+    canConfigure,
+    request,
+    uploadToSignedUrl: (path, token, file) => supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(path, token, file),
+  });
   const load = async () => {
     setLoading(true); setMessage(null);
     try { setCompany({ ...emptyCompany, ...(await loadCompanyProfile<TenderCompanyProfile>(request)) }); }
@@ -30,19 +36,19 @@ export function TenderConfigurationView({ request, moduleNavigation, canConfigur
   const saveCompany = async () => {
     if (!canConfigure) return;
     setSaving(true); setMessage('Guardando información de empresa…');
-    try { setCompany({ ...emptyCompany, ...(await request<TenderCompanyProfile>('/api/tender-company-profile', { method: 'PUT', body: JSON.stringify(company) })) }); setMessage('Información de empresa guardada.'); }
-    catch (cause) { setMessage(cause instanceof Error ? cause.message : String(cause)); }
+    try {
+      const saved = await mutationActions.saveCompany(company);
+      if (saved) setCompany({ ...emptyCompany, ...saved });
+      setMessage('Información de empresa guardada.');
+    } catch (cause) { setMessage(cause instanceof Error ? cause.message : String(cause)); }
     finally { setSaving(false); }
   };
   const uploadRup = async (file?: File) => {
     if (!canConfigure || !file) return;
-    if (file.size > 50 * 1024 * 1024) { setMessage('Error: el RUP supera 50MB.'); return; }
     setUploadingRup(true); setMessage('Preparando carga segura del RUP…');
     try {
-      const ticket = await request<{ path: string; token: string }>('/api/tender-company-profile-upload-url', { method: 'POST', body: JSON.stringify({ name: file.name, mime_type: file.type, size: file.size }) });
-      const uploaded = await supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(ticket.path, ticket.token, file);
-      if (uploaded.error) throw uploaded.error;
-      setCompany({ ...emptyCompany, ...(await request<TenderCompanyProfile>('/api/tender-company-profile-process-upload', { method: 'POST', body: JSON.stringify({ storage_path: ticket.path, name: file.name, mime_type: file.type }) })) });
+      const updated = await mutationActions.uploadRup(file);
+      if (updated) setCompany({ ...emptyCompany, ...updated });
       setMessage('RUP cargado y ficha actualizada.');
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : String(cause)); }
     finally { setUploadingRup(false); }
