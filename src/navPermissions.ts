@@ -41,14 +41,13 @@ const navGroups: readonly NavGroupDefinition[] = [
     title: 'Gerencia',
     items: [
       { href: '#/siio', label: 'SIIO Gerencial', page: 'siio' },
-      { href: '#/vig-ia', label: 'Vig-IA', page: 'centinel' },
     ],
   },
   {
     title: 'Comercial',
     items: [
       { href: '#/dashboard2', label: 'Dashboard comercial', page: 'dashboard2' },
-      { href: '#/alerts', label: 'Alertas comerciales', page: 'alerts' },
+      { href: '#/alerts', label: 'Prioridades Comerciales', page: 'alerts' },
       { href: '#/opportunities', label: 'Oportunidades', page: 'opportunities' },
     ],
   },
@@ -111,6 +110,9 @@ export function canAccessSiio(profile?: NavProfile) {
 }
 
 export function canAccessRoute(profile: NavProfile, page: NavRoutePage) {
+  if (page === 'alerts' || page === 'centinel') {
+    return hasModuleAccess(profile, 'modulo_alertas_comerciales') || hasModuleAccess(profile, 'modulo_vig_ia');
+  }
   const moduleCode = moduleActionForPage(page);
   return moduleCode ? hasModuleAccess(profile, moduleCode) : profile?.active === true;
 }

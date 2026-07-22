@@ -9,7 +9,6 @@ for (const marker of [
   'function SortableTh',
   'compareSortValues',
   'sortedOpportunities',
-  'sortedFilteredAlerts',
   'sortedCriticalOpportunityRows',
   'aria-sort',
   'Ordenar por',

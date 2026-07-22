@@ -10,7 +10,8 @@ const css = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8
 const markers = [
   'function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }',
   "api<VigiaPayload>('/api/vigia/priorities')",
-  'Vig-IA Comercial',
+  'Prioridades Comerciales',
+  'Impulsado por Vig-IA · AGT-003',
   'Prioridades explicables del CRM',
   'CRM-F1',
   'Requiere validación humana; no ejecuta acciones.',
@@ -22,7 +23,7 @@ const markers = [
   'vigia-priority-card',
   'vigia-score',
   'vigia-source-status',
-  "if (route.page === 'centinel') return <VigiaCommercial",
+  "if (route.page === 'alerts') return <VigiaCommercial",
   "canOpenDashboard={isModulePermissionEligible(data.currentProfile.role, 'modulo_dashboard_comercial')",
   "canOpenOpportunity={isModulePermissionEligible(data.currentProfile.role, 'modulo_oportunidades')",
   'canOpenDashboard && <a className="button"',

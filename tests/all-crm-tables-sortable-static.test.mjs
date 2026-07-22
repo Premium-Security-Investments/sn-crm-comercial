@@ -11,8 +11,6 @@ const requiredMarkers = [
   "sortedConsultantOpportunities",
   "personalCriticalSortConfig",
   "sortedPersonalCriticalRows",
-  "lowGoalSortConfig",
-  "sortedLowGoalRows",
   "stageActionSortConfig",
   "sortedStageActionRows",
   "centinelOpportunitySortConfig",

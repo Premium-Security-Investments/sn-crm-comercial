@@ -17,7 +17,6 @@ const mainMarkers = [
   'const goalCommercialProfiles = data.profiles.filter(isCommercialProfile)',
   'ROLE_LABELS[value || \'\']',
   'roleLabel(p.role)',
-  'Ver detalle en Metas y cumplimiento',
   'setSidebarOpen',
   'event.key === \'Escape\'',
   '<aside id="app-sidebar"',

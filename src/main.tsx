@@ -201,7 +201,7 @@ function parseRoute(): Route {
   if (page === 'siio' || page === 'f2') return { page: 'siio' };
   if (page === 'goals') return { page: 'goals' };
   if (page === 'alerts') return { page: 'alerts' };
-  if (page === 'centinel' || page === 'vig-ia') return { page: 'centinel' };
+  if (page === 'centinel' || page === 'vig-ia') return { page: 'alerts' };
   if (page === 'users') return { page: 'users' };
   return { page: 'invalid' };
 }
@@ -428,13 +428,13 @@ function titleFor(route: Route) {
   if (route.page === 'siio') return 'SIIO Gerencial';
   if (route.page === 'consultant') return 'Detalle de consultor';
   if (route.page === 'goals') return 'Metas comerciales y cumplimiento';
-  if (route.page === 'alerts') return 'Alertas comerciales';
-  if (route.page === 'centinel') return 'Vig-IA — Reportes gerenciales';
+  if (route.page === 'alerts') return 'Prioridades Comerciales';
+  if (route.page === 'centinel') return 'Prioridades Comerciales';
   if (route.page === 'users') return 'Usuarios y permisos';
   return 'Inicio comercial';
 }
 function Nav({ route, currentProfile, onNavigate }: { route: Route; currentProfile: Profile | null; onNavigate?: () => void }) {
-  const isActiveHref = (href: string) => (route.page === 'home' && href === '#/') || href.includes(route.page) || (route.page === 'dashboard' && href === '#/dashboard2') || (route.page === 'centinel' && href === '#/vig-ia');
+  const isActiveHref = (href: string) => (route.page === 'home' && href === '#/') || href.includes(route.page) || (route.page === 'dashboard' && href === '#/dashboard2');
   const handleNav = () => { if (onNavigate) onNavigate(); };
   return <nav className="nav-domain-groups">
     {getVisibleNavGroups(currentProfile).map(group => <div className="nav-section" key={group.title}><span className="nav-section-title">{group.title}</span>{group.items.map(item => <a key={item.href} onClick={handleNav} className={`${item.page === 'tenders' ? 'nav-parent ' : ''}${isActiveHref(item.href) ? 'active' : ''}`} href={item.href}>{item.label}</a>)}</div>)}
@@ -452,8 +452,7 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
   if (route.page === 'siio') return <SiioDashboard currentProfile={data.currentProfile} />;
   if (route.page === 'consultant' && route.id) return <ConsultantDetail data={data} ownerId={route.id} />;
   if (route.page === 'goals') return <GoalsCompliance data={data} refresh={refresh} />;
-  if (route.page === 'alerts') return <CommercialAlerts data={data} />;
-  if (route.page === 'centinel') return <VigiaCommercial
+  if (route.page === 'alerts') return <VigiaCommercial
     canOpenDashboard={isModulePermissionEligible(data.currentProfile.role, 'modulo_dashboard_comercial') && Boolean(data.currentProfile.permissions?.includes('modulo_dashboard_comercial'))}
     canOpenOpportunity={isModulePermissionEligible(data.currentProfile.role, 'modulo_oportunidades') && Boolean(data.currentProfile.permissions?.includes('modulo_oportunidades'))}
   />;
@@ -722,10 +721,14 @@ function Pagination({ page, pageSize, total, onChange, label }: { page: number; 
 function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap; refresh: () => Promise<void> }) {
   const [detail, setDetail] = useState<{ opportunity: Opportunity; interactions: Interaction[] } | null>(null); const [error, setError] = useState<string | null>(null);
   const documentReviewRef = useRef<HTMLDivElement>(null);
-  const documentFocusRequested = new URLSearchParams(window.location.hash.split('?')[1] || '').get('focus') === 'documents';
+  const followUpRef = useRef<HTMLDivElement>(null);
+  const focusTarget = new URLSearchParams(window.location.hash.split('?')[1] || '').get('focus');
+  const documentFocusRequested = focusTarget === 'documents';
+  const interactionFocusRequested = focusTarget === 'interaction';
   const load = async () => { try { setDetail(await api(`/api/opportunity-detail?id=${encodeURIComponent(id)}`)); } catch(e) { setError(e instanceof Error ? e.message : String(e)); } };
   useEffect(() => { load(); }, [id]);
   useEffect(() => { if (documentFocusRequested && detail?.opportunity.service_type_code === 'licitacion_publica') focusDocumentReviewArea(documentReviewRef.current); }, [documentFocusRequested, detail?.opportunity.id]);
+  useEffect(() => { if (interactionFocusRequested && detail?.opportunity.id) focusDocumentReviewArea(followUpRef.current); }, [interactionFocusRequested, detail?.opportunity.id]);
   if (error) return <div className="error">{error}</div>; if (!detail) return <div className="notice">Cargando detalle…</div>;
   const o = detail.opportunity;
   const visibleInteractions = detail.interactions.filter(i => i.interaction_type !== 'documento');
@@ -744,7 +747,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Fecha creación" value={fmtDate(o.created_at)}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
     {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel opportunity={o} focusTargetRef={documentReviewRef} onReload={async()=>{await load(); await refresh();}} />}
     {o.service_type_code === 'licitacion_publica' && <TenderOfferPreparationPanel opportunity={o} onReload={async()=>{await load(); await refresh();}} />}
-    <div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div>
+    <div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><div id="opportunity-follow-up" className="opportunity-follow-up-anchor" tabIndex={-1} ref={followUpRef}><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div></div>
     <Panel title="Línea de seguimientos"><div className="timeline">{visibleInteractions.length ? visibleInteractions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel>
   </section>;
 }
@@ -2006,139 +2009,6 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
     </Panel>
   </section>;
 }
-const ALERT_INBOX_LIMIT = 20;
-
-function CommercialAlerts({ data }: { data: Bootstrap }) {
-  const [q, setQ] = useState('');
-  const [status, setStatus] = useState(hashQueryParam('status'));
-  const [owner, setOwner] = useState(hashQueryParam('owner'));
-  const [regional, setRegional] = useState(hashQueryParam('regional'));
-  const [stage, setStage] = useState(hashQueryParam('stage'));
-  const [service, setService] = useState(hashQueryParam('service'));
-  const [customerSegmentFilter, setCustomerSegmentFilter] = useState(hashQueryParam('segment'));
-  const [hideClosed, setHideClosed] = useState(true);
-  const [sortConfig, setSortConfig] = useState<SortConfig<'alert'|'client'|'owner'|'stage'|'value'|'next'|'inactive'|'action'>>({ key: 'alert', direction: 'asc' });
-  const [lowGoalSortConfig, setLowGoalSortConfig] = useState<SortConfig<'owner'|'month'|'sales'|'goal'|'status'>>({ key: 'status', direction: 'asc' });
-  const [reviewedAlertIds, setReviewedAlertIds] = useState<Set<string>>(new Set());
-
-  const active = data.opportunities.filter(o => !isTerminalStage(o.stage_code));
-  const alertRows = active.map(o => {
-    const action = nextActionStatus(o);
-    const inactiveDays = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
-    const stalledSustentacion = o.stage_code === 'sustentacion' && Number(inactiveDays || 0) > 5;
-    const closeDate = o.expected_close_date ? new Date(o.expected_close_date) : null;
-    const closingSoon = !!closeDate && !Number.isNaN(closeDate.getTime()) && closeDate >= startOfToday() && closeDate <= (() => { const d = startOfToday(); d.setDate(d.getDate() + 30); return d; })();
-    const highValueStalled = Number(o.offer_value || 0) >= 250_000_000 && Number(inactiveDays || 0) >= 10;
-    const alertCode = stalledSustentacion && ['scheduled','soon'].includes(action.code) ? 'stalled' : action.code;
-    const alertLabel = alertCode === 'stalled' ? 'Sustentación estancada' : action.label;
-    const alertTone = alertCode === 'stalled' ? 'danger' : action.tone;
-    const priority = alertCode === 'overdue' ? 1 : alertCode === 'missing' ? 2 : alertCode === 'stalled' ? 3 : alertCode === 'today' ? 4 : alertCode === 'soon' ? 5 : 9;
-    const hasManagedAction = Boolean(o.next_action_at) && !['overdue','missing'].includes(action.code);
-    const isRiskPipeline = ['overdue','missing'].includes(alertCode) || highValueStalled;
-    return { opportunity: o, action, inactiveDays, stalledSustentacion, closingSoon, highValueStalled, hasManagedAction, isRiskPipeline, alertCode, alertLabel, alertTone, priority };
-  }).sort((a,b) => a.priority - b.priority || Number(b.opportunity.offer_value || 0) - Number(a.opportunity.offer_value || 0));
-
-  const lowGoalRows = data.goals.map(g => {
-    const profile = data.profiles.find(p => p.id === g.user_id);
-    const kpi = data.monthlyKpis.find(k => k.owner_id === g.user_id && k.period_month === g.period_month);
-    const sales = Number(kpi?.ventas_aprobadas || 0);
-    const budget = Number(g.sales_budget || 0);
-    const pct = budget ? Math.round((sales / budget) * 100) : null;
-    return { goal: g, profile, sales, budget, pct };
-  }).filter(r => r.pct !== null && Number(r.pct) < 80);
-  const sortedLowGoalRows = [...lowGoalRows].sort((a,b) => {
-    const value = (row: typeof lowGoalRows[number]) => lowGoalSortConfig.key === 'owner' ? (row.profile?.full_name || '') : lowGoalSortConfig.key === 'month' ? (row.goal.period_month || '') : lowGoalSortConfig.key === 'sales' ? row.sales : lowGoalSortConfig.key === 'goal' ? row.budget : Number(row.pct || 0);
-    return compareSortValues(value(a), value(b), lowGoalSortConfig.direction);
-  });
-  const sortLowGoalBy = (key: typeof lowGoalSortConfig.key) => setLowGoalSortConfig(current => nextSort(current, key));
-
-  const commercialProfiles = data.profiles.filter(isCommercialProfile);
-  const ownerOptions = commercialProfiles.filter(p => active.some(o => o.owner_id === p.id)).map(p => [p.id, p.full_name]);
-  const alertRegionCanonical = new Map<string, string>();
-  active.forEach(o => { const c = normalizeRegion(o.regional_nombre); if (c && !alertRegionCanonical.has(c)) alertRegionCanonical.set(c, c); });
-  const alertRegionalOptions = Array.from(alertRegionCanonical.values()).sort((a,b)=>a.localeCompare(b)).map(r => [r, r]);
-  const stageOptions = data.stages.filter(s => active.some(o => o.stage_code === s.code)).map(s => [s.code, s.name]);
-  const alertServiceOptions = data.services.map(s => [s.code, s.name]);
-  const alertFilterTabs = [
-    { status: 'risk', label: 'Pipeline en riesgo', value: alertRows.filter(r => r.isRiskPipeline).length, detail: 'sin control', action: 'Ver riesgo →', tone: 'danger' },
-    { status: 'missing', label: 'Sin próxima acción', value: alertRows.filter(r => r.alertCode === 'missing').length, detail: 'sin agenda', action: 'Ver sin agenda →', tone: 'amber' },
-    { status: 'overdue', label: 'Vencidas', value: alertRows.filter(r => r.alertCode === 'overdue').length, detail: 'gestión atrasada', action: 'Ver vencidas →', tone: 'danger' },
-    { status: 'managed', label: 'Gestión vigente', value: alertRows.filter(r => r.hasManagedAction).length, detail: 'con agenda activa', action: 'Ver gestión vigente →', tone: 'success' },
-  ];
-  const filteredAlerts = alertRows.filter(row => {
-    const o = row.opportunity;
-    const haystack = `${o.company_name} ${o.owner_name || ''} ${o.regional_nombre || ''} ${o.sede || ''} ${o.quote_city || ''} ${o.tipo_producto_original || ''}`.toLowerCase();
-    return (!q || haystack.includes(q.toLowerCase()))
-      && (!status || row.alertCode === status || (status === 'managed' && row.hasManagedAction) || (status === 'risk' && row.isRiskPipeline) || (status === 'closing_soon' && row.closingSoon) || (status === 'high_value_stalled' && row.highValueStalled))
-      && (!owner || o.owner_id === owner)
-      && (!regional || normalizeRegion(o.regional_nombre) === regional)
-      && (!stage || o.stage_code === stage)
-      && (!service || o.service_type_code === service)
-      && (!customerSegmentFilter || o.customer_segment === customerSegmentFilter)
-      && (!hideClosed || !isTerminalStage(o.stage_code));
-  });
-  const sortedFilteredAlerts = [...filteredAlerts].sort((a,b) => {
-    const value = (row: typeof filteredAlerts[number]) => sortConfig.key === 'alert' ? row.priority : sortConfig.key === 'client' ? row.opportunity.company_name : sortConfig.key === 'owner' ? (row.opportunity.owner_name || '') : sortConfig.key === 'stage' ? (row.opportunity.stage_order || 0) : sortConfig.key === 'value' ? Number(row.opportunity.offer_value || 0) : sortConfig.key === 'next' ? (row.opportunity.next_action_at || '') : sortConfig.key === 'inactive' ? Number(row.inactiveDays || 0) : row.action.detail;
-    return compareSortValues(value(a), value(b), sortConfig.direction);
-  });
-  const actionInboxRows = sortedFilteredAlerts.filter(row => !reviewedAlertIds.has(row.opportunity.id)).slice(0, ALERT_INBOX_LIMIT);
-  const sortBy = (key: typeof sortConfig.key) => setSortConfig(current => nextSort(current, key));
-
-  return <section className="stack alerts-dashboard">
-    <section className="compact-alert-command" aria-label="Resumen operativo de alertas comerciales">
-      <div className="compact-alert-summary">
-        <span className="eyebrow">Estado de gestión</span>
-        <h2>Alertas comerciales</h2>
-        <p>Centro operativo para priorizar oportunidades activas con foco en agenda, vencimientos, sustentación y cumplimiento.</p>
-      </div>
-      <div className="compact-alert-kpis" aria-label="Filtros rápidos de alertas comerciales">
-        {alertFilterTabs.map(tab => <button key={tab.status} type="button" className={`alert-kpi-card alert-filter-tab alert-filter-${tab.tone}${status === tab.status ? ' active' : ''}`} onClick={() => setStatus(status === tab.status ? '' : tab.status)}>
-          <span className="alert-filter-label"><span className="alert-filter-dot" />{tab.label}</span>
-          <strong className="numeric-value">{tab.value}</strong>
-          <span>{tab.detail}</span>
-          <em>{tab.action}</em>
-        </button>)}
-      </div>
-    </section>
-    <Panel title="Filtros de gestión" className="alerts-filter-panel">
-      <div className="filters alerts-filters v2-dashboard-filters">
-        <input placeholder="Buscar cliente, sede, ciudad o ID…" value={q} onChange={e=>setQ(e.target.value)} />
-        <Select value={owner} onChange={setOwner} options={ownerOptions} empty="Comerciales" />
-        <Select value={regional} onChange={setRegional} options={alertRegionalOptions} empty="Regiones" />
-        <Select value={stage} onChange={setStage} options={stageOptions} empty="Etapas" />
-        <Select value={service} onChange={setService} options={alertServiceOptions} empty="Productos" />
-        <Select value={customerSegmentFilter} onChange={setCustomerSegmentFilter} options={customerSegmentOptions} empty="Clientes" />
-        <label className="check-filter"><input type="checkbox" checked={hideClosed} onChange={e=>setHideClosed(e.target.checked)} /> Pipeline activo</label>
-        <button className="secondary" onClick={()=>{ setQ(''); setStatus(''); setOwner(''); setRegional(''); setStage(''); setService(''); setCustomerSegmentFilter(''); setHideClosed(true); }}>Limpiar</button>
-      </div>
-      <div className="filter-summary alert-filter-summary"><strong>{filteredAlerts.length}</strong> alertas visibles · {active.length} oportunidades activas base</div>
-    </Panel>
-    <Panel title="Bandeja de acción">
-      <p className="muted">Mostrando las 20 alertas más críticas de {filteredAlerts.length} visibles. Use filtros para acotar por comercial, región, etapa o producto; “Marcar revisada” solo oculta la tarjeta en esta sesión.</p>
-      {actionInboxRows.length ? <div className="alert-action-inbox">{actionInboxRows.map(row => {
-        const o = row.opportunity;
-        const suggestedAction = row.alertCode === 'missing' ? 'Programar próxima gestión' : row.alertCode === 'overdue' ? 'Gestionar vencida' : status === 'closing_soon' ? 'Preparar decisión / cierre' : status === 'high_value_stalled' ? 'Escalar bloqueo comercial' : row.alertCode === 'stalled' ? 'Revisar sustentación' : row.action.detail;
-        return <article key={o.id} className={`alert-action-card alert-row-${row.alertCode}`}>
-          <div className="alert-action-main"><Badge tone={row.alertTone}>{row.alertLabel}</Badge><h3>{o.company_name}</h3><p>{suggestedAction}</p><div className="alert-action-meta"><span>{o.owner_name || 'Sin comercial'}</span><span>{o.regional_nombre || o.sede || 'Sin regional'}</span><span>{o.stage_name}</span></div></div>
-          <div className="alert-action-side"><strong className="numeric-value">{fmtMoney(o.offer_value)}</strong><small>{o.next_action_at ? `Próxima acción: ${fmtDate(o.next_action_at)}` : 'Sin agenda'}</small><small>{row.inactiveDays === null ? 'Sin historial' : `${row.inactiveDays} día(s) sin seguimiento`}</small></div>
-          <div className="alert-action-footer"><div><small>Acción sugerida</small><strong>{suggestedAction}</strong></div><div className="alert-action-buttons"><button type="button" className="secondary" onClick={() => go(`#/detail/${o.id}`)}>Ver oportunidad</button><button type="button" onClick={() => go(`#/detail/${o.id}`)}>Registrar seguimiento</button><button type="button" className="secondary" onClick={() => setReviewedAlertIds(current => new Set([...current, o.id]))}>Marcar revisada</button></div></div>
-        </article>;
-      })}</div> : <EmptyState title="Sin alertas pendientes" text="No hay oportunidades críticas con los filtros actuales o ya fueron marcadas como revisadas en esta sesión." />}
-    </Panel>
-    <Panel title="Cumplimiento por debajo de meta">
-      {lowGoalRows.length ? <div className="low-goal-summary">
-        <div className="low-goal-summary-figures">
-          <div><small>Comerciales bajo 80%</small><strong className="numeric-value">{lowGoalRows.length}</strong><span>Casos detectados en el período consultado</span></div>
-          <div><small>Brecha total contra meta</small><strong className="numeric-value">{fmtMoneyCompact(lowGoalRows.reduce((sum,row)=>sum+Math.max(0, row.budget - row.sales),0))}</strong><span>Diferencia entre meta cargada y ventas aprobadas</span></div>
-          <div><small>Cumplimiento promedio</small><strong className="numeric-value">{Math.round(lowGoalRows.reduce((sum,row)=>sum+Number(row.pct||0),0)/lowGoalRows.length)}%</strong><span>Promedio de los casos bajo 80%</span></div>
-        </div>
-        <p className="muted">El detalle completo por comercial y período se mantiene en Metas y cumplimiento para evitar duplicar la lectura operativa en Alertas.</p>
-        <div className="row-actions"><a className="button" href="#/goals">Ver detalle en Metas y cumplimiento</a></div>
-      </div> : <EmptyState title="Sin alertas de cumplimiento" text="Cuando se carguen metas reales, aquí aparecerá el resumen de comerciales por debajo del 80%. Ver detalle en Metas y cumplimiento." />}
-    </Panel>
-  </section>;
-}
-
 
 type CentinelOwnerSummaryRow = { owner: string; count: number; value: number; nextStep: string };
 type CentinelGoalComplianceRow = { owner: string; period: string; budget: number; approved: number; compliance: number; gap: number };
