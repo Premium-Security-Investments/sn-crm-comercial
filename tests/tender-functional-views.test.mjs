@@ -31,7 +31,8 @@ assert.match(main, /TenderOfferPreparationPanel/);
 assert.match(main, /import type \{ TenderModuleView \} from '\.\/tenders\/types';/, 'main must use the tender module view type from the authoritative module types.');
 assert.doesNotMatch(main, /type TenderModuleView =/, 'main must not redeclare the tender module view union locally.');
 assert.match(main, /focusDocumentReviewArea/, 'OpportunityDetail must consume the document focus request through the accessible focus helper.');
-assert.match(main, /get\('focus'\) === 'documents'/, 'OpportunityDetail must read the focus query parameter passed by Expedientes.');
+assert.match(main, /const focusTarget = new URLSearchParams\(window\.location\.hash\.split\('\?'\)\[1\] \|\| ''\)\.get\('focus'\)/, 'OpportunityDetail must read the focus query parameter passed by Expedientes.');
+assert.match(main, /documentFocusRequested = focusTarget === 'documents'/, 'OpportunityDetail must preserve the document-focus intent.');
 assert.match(main, /id="tender-document-review"/, 'TenderDocumentReviewPanel needs a stable document-focus anchor.');
 assert.match(main, /tabIndex=\{-1\}/, 'The document-focus anchor must be programmatically focusable.');
 

@@ -24,6 +24,7 @@ export type CommercialPriorityFilters = {
   reviewedIds?: Set<string> | string[];
 };
 export function priorityHasSignal(row: CommercialPriorityRow, code: string): boolean;
+export function categoryFromAlertsHash(hash: string): string;
 export function priorityCategory(row: CommercialPriorityRow, category?: string): boolean;
 export function filterCommercialPriorities<T extends CommercialPriorityRow>(rows: T[] | null | undefined, filters?: CommercialPriorityFilters): T[];
-export function summarizeCommercialPriorities(rows: CommercialPriorityRow[] | null | undefined): { total: number; risk: number; missing: number; overdue: number; closing: number; managed: number };
+export function summarizeCommercialPriorities(rows: CommercialPriorityRow[] | null | undefined): { total: number; risk: number; missing: number; overdue: number; closing: number; managed: number; highValueStalled: number };

@@ -6,6 +6,21 @@ export function priorityHasSignal(row, code) {
   return Array.isArray(row?.signals) && row.signals.some(signal => signal?.code === code);
 }
 
+const LEGACY_ALERT_CATEGORY_MAP = Object.freeze({
+  managed: 'managed',
+  risk: 'risk',
+  missing: 'missing',
+  overdue: 'overdue',
+  closing_soon: 'closing',
+  high_value_stalled: 'high_value_stalled',
+});
+
+export function categoryFromAlertsHash(hash) {
+  const query = String(hash || '').split('?')[1] || '';
+  const status = new URLSearchParams(query).get('status') || '';
+  return LEGACY_ALERT_CATEGORY_MAP[status] || '';
+}
+
 export function priorityCategory(row, category) {
   if (!category) return true;
   if (category === 'risk') return row?.level === 'alto';
@@ -13,6 +28,7 @@ export function priorityCategory(row, category) {
   if (category === 'overdue') return priorityHasSignal(row, 'next_action_overdue');
   if (category === 'closing') return priorityHasSignal(row, 'close_soon') || priorityHasSignal(row, 'close_overdue');
   if (category === 'managed') return Boolean(row?.evidence?.next_action_at) && !priorityHasSignal(row, 'next_action_overdue');
+  if (category === 'high_value_stalled') return priorityHasSignal(row, 'high_value') && (priorityHasSignal(row, 'stalled_warning') || priorityHasSignal(row, 'stalled_critical'));
   return false;
 }
 
@@ -46,5 +62,6 @@ export function summarizeCommercialPriorities(rows) {
     overdue: count('overdue'),
     closing: count('closing'),
     managed: count('managed'),
+    highValueStalled: count('high_value_stalled'),
   };
 }

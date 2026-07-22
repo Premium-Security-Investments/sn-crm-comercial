@@ -52,7 +52,7 @@ assert.equal(mod.canAccessRoute(opportunitiesOnlyCommercial, 'new'), true, 'crea
 assert.equal(mod.canAccessRoute(opportunitiesOnlyCommercial, 'edit'), true, 'editar requiere y acepta modulo_oportunidades');
 
 const alertsAndGoals = profile('comercial', ['modulo_alertas_comerciales', 'modulo_metas']);
-assert.deepEqual(labelsFor(alertsAndGoals), ['Alertas comerciales', 'Metas y cumplimiento']);
+assert.deepEqual(labelsFor(alertsAndGoals), ['Prioridades Comerciales', 'Metas y cumplimiento']);
 assert.equal(mod.canAccessRoute(alertsAndGoals, 'opportunities'), false);
 assert.equal(mod.canAccessRoute(alertsAndGoals, 'detail'), false);
 assert.equal(mod.canAccessRoute(alertsAndGoals, 'new'), false);

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../apiClient';
-import { filterCommercialPriorities, summarizeCommercialPriorities } from './priority-filters.js';
+import { categoryFromAlertsHash, filterCommercialPriorities, summarizeCommercialPriorities } from './priority-filters.js';
 
 type VigiaLevel = 'alto' | 'medio' | 'bajo' | 'sin_prioridad';
 type VigiaSignal = { code: string; label: string; points: number; evidence: string };
@@ -31,7 +31,7 @@ export type VigiaPayload = {
 };
 
 type Feedback = 'revisada' | 'util' | 'no_util';
-type OperationalCategory = '' | 'risk' | 'missing' | 'overdue' | 'managed' | 'closing';
+type OperationalCategory = '' | 'risk' | 'missing' | 'overdue' | 'managed' | 'closing' | 'high_value_stalled';
 const PRIORITY_INBOX_LIMIT = 20;
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
 const date = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
@@ -64,7 +64,7 @@ function uniqueOptions(rows: VigiaPriority[], value: (row: VigiaPriority) => str
 export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canOpenDashboard: boolean; canOpenOpportunity: boolean }) {
   const [payload, setPayload] = useState<VigiaPayload | null>(null);
   const [status, setStatus] = useState('Cargando prioridades del CRM…');
-  const [category, setCategory] = useState<OperationalCategory>('');
+  const [category, setCategory] = useState<OperationalCategory>(() => categoryFromAlertsHash(window.location.hash) as OperationalCategory);
   const [level, setLevel] = useState<VigiaLevel | ''>('');
   const [query, setQuery] = useState('');
   const [owner, setOwner] = useState('');
@@ -85,6 +85,11 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
     }
   };
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const syncCategoryFromHash = () => setCategory(categoryFromAlertsHash(window.location.hash) as OperationalCategory);
+    window.addEventListener('hashchange', syncCategoryFromHash);
+    return () => window.removeEventListener('hashchange', syncCategoryFromHash);
+  }, []);
 
   const priorities = payload?.priorities || [];
   const summary = payload ? summarizeCommercialPriorities(payload.priorities) : null;
@@ -108,6 +113,7 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
   const hasFilters = Boolean(category || level || query || owner || regional || stage || service);
   const resetFilters = () => {
     setCategory(''); setLevel(''); setQuery(''); setOwner(''); setRegional(''); setStage(''); setService('');
+    if (categoryFromAlertsHash(window.location.hash)) window.history.replaceState(null, '', '#/alerts');
   };
   const toggleCategory = (next: OperationalCategory) => setCategory(current => current === next ? '' : next);
 
@@ -115,7 +121,7 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
     <section className="centinel-topline"><h2>Prioridades Comerciales</h2><p>Una sola bandeja para decidir dónde intervenir en el pipeline comercial.</p></section>
     <section className="vigia-command-hero">
       <div><span className="eyebrow">Impulsado por Vig-IA · AGT-003</span><h2>Prioridades explicables del CRM</h2><p>Consolida agenda, vencimientos, estancamiento, etapa, cierre y calidad de datos con reglas determinísticas.</p><strong>Requiere validación humana; no ejecuta acciones.</strong></div>
-      <div className="vigia-source-status"><small>Fuente</small><strong>{payload?.source.id || 'CRM-F1'}</strong><span>Corte: {displayDate(payload?.source.as_of || null)}</span><span>Política: {payload?.policy.version || 'gate0-v1.0'}</span><span>Solo lectura</span></div>
+      <div className="vigia-source-status"><small>Motor de priorización</small><strong>AGT-003</strong><span>Fuente de datos: {payload?.source.id || 'CRM-F1'}</span><span>Corte: {displayDate(payload?.source.as_of || null)}</span><span>Política: {payload?.policy.version || 'gate0-v1.0'} · Solo lectura</span></div>
     </section>
 
     {summary && <section className="priority-filter-tabs" aria-label="Categorías operativas">
@@ -124,6 +130,7 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
       <button className={`priority-filter-tab ${category === 'overdue' ? 'active danger' : 'danger'}`} onClick={() => toggleCategory('overdue')}><small>Vencidas</small><strong>{summary.overdue}</strong><span>Gestión atrasada</span></button>
       <button className={`priority-filter-tab ${category === 'managed' ? 'active blue' : 'blue'}`} onClick={() => toggleCategory('managed')}><small>Gestión vigente</small><strong>{summary.managed}</strong><span>Con próxima acción</span></button>
       <button className={`priority-filter-tab ${category === 'closing' ? 'active amber' : 'amber'}`} onClick={() => toggleCategory('closing')}><small>Cierres próximos</small><strong>{summary.closing}</strong><span>Cercanos o vencidos</span></button>
+      <button className={`priority-filter-tab ${category === 'high_value_stalled' ? 'active danger' : 'danger'}`} onClick={() => toggleCategory('high_value_stalled')}><small>Alto valor estancado</small><strong>{summary.highValueStalled}</strong><span>Valor alto sin movimiento</span></button>
     </section>}
 
     <section className="priority-filter-panel">

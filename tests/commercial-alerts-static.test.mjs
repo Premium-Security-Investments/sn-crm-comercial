@@ -24,6 +24,9 @@ for (const marker of [
   'Gestión vigente',
   'Cierres próximos',
   'Registrar seguimiento',
+  'categoryFromAlertsHash(window.location.hash)',
+  'Motor de priorización',
+  'Fuente de datos',
   'Marcar revisada',
   'Ver en Dashboard',
   'Ver oportunidad',
@@ -32,6 +35,10 @@ for (const marker of [
   'summarizeCommercialPriorities(payload.priorities)',
   '.slice(0, PRIORITY_INBOX_LIMIT)',
 ]) assert.ok(component.includes(marker), `Prioridades Comerciales missing marker: ${marker}`);
+
+for (const marker of ['interactionFocusRequested', 'followUpRef', 'id="opportunity-follow-up"']) {
+  assert.ok(main.includes(marker), `Opportunity follow-up focus missing marker: ${marker}`);
+}
 
 for (const marker of [
   '.priority-filter-panel',
