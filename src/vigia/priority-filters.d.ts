@@ -1,0 +1,29 @@
+export type PrioritySignal = { code?: string };
+export type CommercialPriorityRow = {
+  id?: string;
+  company_name?: string | null;
+  owner_id?: string | null;
+  owner_name?: string | null;
+  regional_nombre?: string | null;
+  stage_code?: string | null;
+  stage_name?: string | null;
+  service_type_code?: string | null;
+  service_type_name?: string | null;
+  level?: string | null;
+  signals?: PrioritySignal[] | null;
+  evidence?: { next_action_at?: string | null } | null;
+};
+export type CommercialPriorityFilters = {
+  query?: string;
+  category?: string;
+  owner?: string;
+  regional?: string;
+  stage?: string;
+  service?: string;
+  level?: string;
+  reviewedIds?: Set<string> | string[];
+};
+export function priorityHasSignal(row: CommercialPriorityRow, code: string): boolean;
+export function priorityCategory(row: CommercialPriorityRow, category?: string): boolean;
+export function filterCommercialPriorities<T extends CommercialPriorityRow>(rows: T[] | null | undefined, filters?: CommercialPriorityFilters): T[];
+export function summarizeCommercialPriorities(rows: CommercialPriorityRow[] | null | undefined): { total: number; risk: number; missing: number; overdue: number; closing: number; managed: number };

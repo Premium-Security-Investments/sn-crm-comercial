@@ -10,7 +10,8 @@ const css = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8
 const markers = [
   'function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }',
   "api<VigiaPayload>('/api/vigia/priorities')",
-  'Vig-IA Comercial',
+  'Prioridades Comerciales',
+  'Impulsado por Vig-IA · AGT-003',
   'Prioridades explicables del CRM',
   'CRM-F1',
   'Requiere validación humana; no ejecuta acciones.',
