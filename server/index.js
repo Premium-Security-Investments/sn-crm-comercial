@@ -1464,7 +1464,7 @@ app.delete('/api/tender-search-profiles/:id', async (req, res) => {
 app.get('/api/tender-company-profile', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver esta ficha.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
     res.json(await getTenderCompanyProfile(requireDb()));
   } catch (error) { sendAuthError(res, error); }
 });
@@ -1472,7 +1472,7 @@ app.get('/api/tender-company-profile', async (req, res) => {
 app.put('/api/tender-company-profile', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede editar esta ficha.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     const database = requireDb();
     await saveTenderCompanyProfile(database, cleanTenderCompanyProfile(req.body, currentProfile));
     res.json(await getTenderCompanyProfile(database));
@@ -1482,7 +1482,7 @@ app.put('/api/tender-company-profile', async (req, res) => {
 app.post('/api/tender-company-profile-upload-url', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede cargar el RUP.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     const database = requireDb();
     const name = cleanFileName(req.body?.name || 'rup-actualizado.pdf');
     const size = Number(req.body?.size || 0);
@@ -1500,7 +1500,7 @@ app.post('/api/tender-company-profile-upload-url', async (req, res) => {
 app.post('/api/tender-company-profile-process-upload', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede procesar el RUP.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     const database = requireDb();
     const storagePath = String(req.body?.storage_path || '');
     if (!storagePath.startsWith('company-profile/rup/')) throw new Error('Ruta de RUP inválida.');
@@ -1520,7 +1520,7 @@ app.post('/api/tender-company-profile-process-upload', async (req, res) => {
 app.post('/api/tender-company-profile-upload', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede cargar el RUP.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     const database = requireDb();
     const name = cleanFileName(req.body?.name || 'rup-actualizado.pdf');
     const buffer = Buffer.from(String(req.body?.content_base64 || ''), 'base64');

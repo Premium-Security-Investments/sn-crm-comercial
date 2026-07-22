@@ -11,10 +11,10 @@ const fields: Array<{ key: keyof TenderCompanyProfile; label: string; rows?: num
   { key: 'certifications', label: 'Certificaciones / pólizas / permisos', rows: 3 }, { key: 'recurring_documents', label: 'Documentos recurrentes', rows: 3 }, { key: 'disqualifications_notes', label: 'Alertas / restricciones', rows: 3 }, { key: 'useful_company_info', label: 'Información útil para cruzar contra pliegos', rows: 4 },
 ];
 
-type TenderProfilesViewProps = TendersModuleProps & { moduleNavigation: ReactNode };
+type TenderConfigurationViewProps = TendersModuleProps & { moduleNavigation: ReactNode; canConfigure: boolean };
 
-/** Company/RUP form kept separate from Radar search state. */
-export function TenderProfilesView({ request, moduleNavigation }: TenderProfilesViewProps) {
+/** Base habilitante SN/RUP; mutation affordances mirror the fine backend action. */
+export function TenderConfigurationView({ request, moduleNavigation, canConfigure }: TenderConfigurationViewProps) {
   const [company, setCompany] = useState<TenderCompanyProfile>(emptyCompany);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -28,13 +28,14 @@ export function TenderProfilesView({ request, moduleNavigation }: TenderProfiles
   };
   useEffect(() => { void load(); }, []);
   const saveCompany = async () => {
+    if (!canConfigure) return;
     setSaving(true); setMessage('Guardando información de empresa…');
     try { setCompany({ ...emptyCompany, ...(await request<TenderCompanyProfile>('/api/tender-company-profile', { method: 'PUT', body: JSON.stringify(company) })) }); setMessage('Información de empresa guardada.'); }
     catch (cause) { setMessage(cause instanceof Error ? cause.message : String(cause)); }
     finally { setSaving(false); }
   };
   const uploadRup = async (file?: File) => {
-    if (!file) return;
+    if (!canConfigure || !file) return;
     if (file.size > 50 * 1024 * 1024) { setMessage('Error: el RUP supera 50MB.'); return; }
     setUploadingRup(true); setMessage('Preparando carga segura del RUP…');
     try {
@@ -47,10 +48,11 @@ export function TenderProfilesView({ request, moduleNavigation }: TenderProfiles
     finally { setUploadingRup(false); }
   };
   if (loading) return <div className="notice">Cargando ficha corporativa…</div>;
-  return <section className="stack tenders-page tender-profiles-view" aria-labelledby="tender-profiles-heading">
-    <header className="tracking-header"><div><span className="eyebrow">Configuración aislada</span><h2 id="tender-profiles-heading">Ficha corporativa</h2><p>La información habilitante de Seguridad Nacional se mantiene fuera del Radar.</p></div><button className="secondary" onClick={() => void load()}>Recargar ficha</button></header>
+  return <section className="stack tenders-page tender-configuration-view" aria-labelledby="tender-configuration-heading">
+    <header className="tracking-header"><div><span className="eyebrow">Configuración protegida</span><h2 id="tender-configuration-heading">Base habilitante SN</h2><p>La ficha corporativa y el RUP se mantienen fuera del Radar.</p></div><button className="secondary" onClick={() => void load()}>Recargar ficha</button></header>
     {moduleNavigation}
+    {!canConfigure && <div className="notice" role="status">Tiene acceso de solo lectura a la ficha corporativa.</div>}
     {message && <div className="notice" role="status">{message}</div>}
-    <section className="panel company-profile-panel"><h3>Información empresa</h3><label className="rup-upload-card"><span>Cargar RUP</span><input type="file" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" disabled={uploadingRup || loading} onChange={event => { void uploadRup(event.currentTarget.files?.[0]); event.currentTarget.value = ''; }} /><small>{uploadingRup ? 'Procesando documento…' : 'PDF, DOCX o TXT'}</small></label><div className="company-profile-form">{fields.map(field => <label key={field.key} className={field.rows ? 'wide' : ''}><span>{field.label}</span>{field.rows ? <textarea rows={field.rows} value={String(company[field.key] || '')} onChange={event => setCompany(current => ({ ...current, [field.key]: event.target.value }))} /> : <input value={String(company[field.key] || '')} onChange={event => setCompany(current => ({ ...current, [field.key]: event.target.value }))} />}</label>)}</div><div className="row-actions"><button onClick={() => void saveCompany()} disabled={saving}>Guardar información de empresa</button></div></section>
+    <section className="panel company-profile-panel"><h3>Información empresa</h3><label className="rup-upload-card"><span>Cargar RUP</span><input type="file" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" disabled={!canConfigure || uploadingRup || loading} onChange={event => { void uploadRup(event.currentTarget.files?.[0]); event.currentTarget.value = ''; }} /><small>{uploadingRup ? 'Procesando documento…' : 'PDF, DOCX o TXT'}</small></label><div className="company-profile-form">{fields.map(field => <label key={field.key} className={field.rows ? 'wide' : ''}><span>{field.label}</span>{field.rows ? <textarea rows={field.rows} disabled={!canConfigure} value={String(company[field.key] || '')} onChange={event => setCompany(current => ({ ...current, [field.key]: event.target.value }))} /> : <input disabled={!canConfigure} value={String(company[field.key] || '')} onChange={event => setCompany(current => ({ ...current, [field.key]: event.target.value }))} />}</label>)}</div><div className="row-actions"><button onClick={() => void saveCompany()} disabled={!canConfigure || saving}>Guardar información de empresa</button></div></section>
   </section>;
 }

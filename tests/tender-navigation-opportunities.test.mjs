@@ -23,7 +23,7 @@ assert.equal(normalizeTenderModuleView('expedientes'), 'oportunidades');
 assert.equal(normalizeTenderModuleView('perfiles'), 'configuracion');
 assert.equal(normalizeTenderModuleView('configuracion'), 'configuracion');
 assert.equal(normalizeTenderModuleView('desconocida'), 'radar');
-assert.match(moduleSource, /TenderProfilesView/);
+assert.match(moduleSource, /TenderConfigurationView/);
 assert.match(moduleSource, /props\.view === 'configuracion'/);
 for (const label of ['Radar', 'Seguimiento', 'Oportunidades']) assert.match(tabs, new RegExp(`label: '${label}'`));
 assert.doesNotMatch(tabs, /Radar de oportunidades/);

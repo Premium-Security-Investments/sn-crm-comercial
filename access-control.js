@@ -20,6 +20,7 @@ export const ACTIONS = Object.freeze({
   CRM_OPPORTUNITY_EDIT: 'crm.opportunity.edit',
   CRM_OPPORTUNITY_REASSIGN: 'crm.opportunity.reassign',
   LICITACIONES_VIEW: 'licitaciones.view',
+  LICITACIONES_CONFIGURE: 'licitaciones.configure',
   LICITACIONES_SYNC: 'licitaciones.sync',
   LICITACIONES_DISCARD_PROPOSE: 'licitaciones.discard.propose',
   LICITACIONES_DISCARD_APPROVE: 'licitaciones.discard.approve',
@@ -292,6 +293,7 @@ export function can(profile, action, resource = {}) {
       return canHumanTenderAction(profile);
     case ACTIONS.LICITACIONES_DISCARD_APPROVE:
     case ACTIONS.LICITACIONES_GO_NO_GO_APPROVE:
+    case ACTIONS.LICITACIONES_CONFIGURE:
       return canHumanTenderAction(profile) && hasHumanRole(profile, new Set(['admin', 'gerencia', 'director']));
 
     case ACTIONS.SIIO_AREA_VIEW:

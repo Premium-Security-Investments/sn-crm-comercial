@@ -3,7 +3,7 @@ import { strict as assert } from 'node:assert';
 import { buildSync } from 'esbuild';
 
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
-const profiles = readFileSync(new URL('../src/tenders/TenderProfilesView.tsx', import.meta.url), 'utf8');
+const configuration = readFileSync(new URL('../src/tenders/TenderConfigurationView.tsx', import.meta.url), 'utf8');
 const radar = readFileSync(new URL('../src/tenders/TenderRadarView.tsx', import.meta.url), 'utf8');
 const savedSearches = readFileSync(new URL('../src/tenders/components/TenderSavedSearches.tsx', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
@@ -15,8 +15,8 @@ assert.match(migration, /unique\s*\(name\)/i, 'No deben duplicarse nombres de pe
 assert.match(api, /app\.get\('\/api\/tender-search-profiles'/, 'Debe existir endpoint GET de perfiles');
 assert.match(api, /app\.post\('\/api\/tender-search-profiles'/, 'Debe existir endpoint POST de perfiles');
 assert.match(api, /app\.delete\('\/api\/tender-search-profiles\/:id'/, 'Debe existir endpoint DELETE de perfiles');
-assert.doesNotMatch(profiles, /tender-search-profiles|TenderSearchProfile|profileRadarHash/, 'Configuración/RUP no debe gestionar búsquedas guardadas.');
-assert.match(profiles, /\/api\/tender-company-profile/, 'Configuración conserva exclusivamente la ficha corporativa.');
+assert.doesNotMatch(configuration, /tender-search-profiles|TenderSearchProfile|profileRadarHash/, 'Configuración/RUP no debe gestionar búsquedas guardadas.');
+assert.match(configuration, /\/api\/tender-company-profile/, 'Configuración conserva exclusivamente la ficha corporativa.');
 assert.match(radar, /<TenderSavedSearches/, 'Radar debe mostrar el gestor de búsquedas guardadas.');
 assert.match(radar, /loadProfiles/, 'Radar debe cargar los perfiles junto con sus datos.');
 assert.match(savedSearches, /\/api\/tender-search-profiles/, 'El gestor debe consumir el endpoint existente.');

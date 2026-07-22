@@ -6,7 +6,7 @@ const moduleSource = readFileSync(new URL('../src/tenders/TendersModule.tsx', im
 const tracking = readFileSync(new URL('../src/tenders/TenderTrackingView.tsx', import.meta.url), 'utf8');
 const radar = readFileSync(new URL('../src/tenders/TenderRadarView.tsx', import.meta.url), 'utf8');
 const opportunities = readFileSync(new URL('../src/tenders/TenderOpportunitiesView.tsx', import.meta.url), 'utf8');
-const profiles = readFileSync(new URL('../src/tenders/TenderProfilesView.tsx', import.meta.url), 'utf8');
+const configuration = readFileSync(new URL('../src/tenders/TenderConfigurationView.tsx', import.meta.url), 'utf8');
 const apiSource = readFileSync(new URL('../src/tenders/api.ts', import.meta.url), 'utf8');
 const tabsSource = readFileSync(new URL('../src/tenders/components/TenderModuleTabs.tsx', import.meta.url), 'utf8');
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
@@ -14,7 +14,7 @@ const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 assert.match(moduleSource, /<TenderRadarView/);
 assert.match(moduleSource, /<TenderTrackingView/);
 assert.match(moduleSource, /<TenderOpportunitiesView/);
-assert.match(moduleSource, /<TenderProfilesView/);
+assert.match(moduleSource, /<TenderConfigurationView/);
 assert.match(moduleSource, /\{props\.view === 'seguimiento' && <TenderTrackingView \{\.\.\.props\} moduleNavigation=\{moduleNavigation\} \/>\}/, 'Seguimiento debe seguir siendo una vista independiente y solo recibir composición visual compartida.');
 assert.doesNotMatch(moduleSource, /renderLegacy/, 'Ninguna de las cuatro vistas puede conservar el adaptador legado.');
 assert.match(apiSource, /export async function loadRadar/);
@@ -49,11 +49,10 @@ assert.match(opportunities, /\/api\/tender-documents-import/);
 assert.match(opportunities, /loadDossiers/);
 assert.match(opportunities, /dossier_error/);
 assert.doesNotMatch(opportunities, /Sincronizar fuentes oficiales|TenderCard|renderLegacy/, 'Oportunidades no debe reutilizar Radar ni el adaptador legado.');
-assert.match(profiles, /\/api\/tender-search-profiles/);
-assert.match(profiles, /\/api\/tender-company-profile/);
-assert.ok(!profiles.includes("request('/api/tenders"), 'Perfiles no debe cargar Radar.');
-assert.match(profiles, /Aplicar en Radar/);
-assert.doesNotMatch(profiles, /renderLegacy/);
+assert.match(configuration, /\/api\/tender-company-profile/);
+assert.doesNotMatch(configuration, /tender-search-profiles|Guardar búsqueda|Búsquedas guardadas/);
+assert.ok(!configuration.includes("request('/api/tenders"), 'Configuración no debe cargar Radar.');
+assert.doesNotMatch(configuration, /renderLegacy/);
 assert.match(radar, /profile/, 'Radar debe reconocer el perfil de la URL.');
 
 for (const label of ['Responsable', 'Última revisión', 'Próxima acción', 'Fecha compromiso', 'Días sin gestión', 'Bloqueo', 'Nota', 'Historial']) {

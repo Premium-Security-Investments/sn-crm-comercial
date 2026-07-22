@@ -15,7 +15,7 @@ assert.match(savedSearches, />Guardar búsqueda</);
 assert.match(savedSearches, />Búsquedas guardadas</);
 assert.match(savedSearches, /\/api\/tender-search-profiles/);
 assert.doesNotMatch(savedSearches, /tender-company-profile|RUP|Información empresa/);
-assert.match(moduleSource, /props\.view === 'configuracion' && <TenderProfilesView/, 'Configuración debe seguir montando la ficha corporativa fuera de los tabs.');
+assert.match(moduleSource, /props\.view === 'configuracion' && <TenderConfigurationView/, 'Configuración debe seguir montando la ficha corporativa fuera de los tabs.');
 assert.match(savedSearches, /window\.confirm/, 'Eliminar debe exigir confirmación.');
 assert.match(savedSearches, /onApply\(/, 'Aplicar debe actualizar los filtros del Radar mediante callback.');
 assert.doesNotMatch(savedSearches, /\bnavigate\b/, 'Aplicar no debe navegar fuera del Radar.');
