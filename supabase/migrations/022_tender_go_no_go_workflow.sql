@@ -1,15 +1,16 @@
 -- Immutable, service-mediated GO / NO-GO decisions for tender opportunities.
--- This migration is intentionally additive and can be rerun against a partial legacy 022.
+-- Additive and legacy-compatible: offer preparations remain documento + notes.kind.
 begin;
 
 alter table public.psi_sales_opportunities
   add column if not exists tender_offer_status text;
 
--- Existing profiles default to human; nullable preserves compatibility with pre-identity rows.
+-- NULL remains a legacy-human value; all new profile rows default to human.
 alter table public.psi_sales_profiles
   add column if not exists identity_type text default 'human';
+alter table public.psi_sales_profiles
+  alter column identity_type set default 'human';
 
--- Create the current shape for fresh databases. Existing legacy tables are altered only below.
 create table if not exists public.psi_tender_go_no_go_decisions (
   id uuid primary key default gen_random_uuid(),
   opportunity_id uuid not null constraint psi_tender_go_no_go_decisions_opportunity_fkey references public.psi_sales_opportunities(id) on delete restrict,
@@ -30,12 +31,14 @@ alter table public.psi_tender_go_no_go_decisions
   add column if not exists decided_at timestamptz not null default now(),
   add column if not exists supersedes_decision_id uuid,
   add column if not exists created_at timestamptz not null default now();
--- A legacy table can have its primary key but no UUID default; preserve rows and add it.
 alter table public.psi_tender_go_no_go_decisions alter column id set default gen_random_uuid();
 
--- Existing partial tables do not inherit constraints from CREATE TABLE IF NOT EXISTS.
 do $$
 begin
+  if not exists (select 1 from pg_constraint where conrelid='public.psi_sales_profiles'::regclass and conname='psi_sales_profiles_identity_type_check') then
+    alter table public.psi_sales_profiles add constraint psi_sales_profiles_identity_type_check
+      check (identity_type is null or identity_type in ('human', 'agent')) not valid;
+  end if;
   if not exists (select 1 from pg_constraint where conrelid='public.psi_sales_opportunities'::regclass and conname='psi_sales_opportunities_tender_offer_status_check') then
     alter table public.psi_sales_opportunities add constraint psi_sales_opportunities_tender_offer_status_check
       check (tender_offer_status is null or tender_offer_status in (
@@ -44,39 +47,37 @@ begin
       ));
   end if;
   if not exists (select 1 from pg_constraint where conrelid='public.psi_tender_go_no_go_decisions'::regclass and conname='psi_tender_go_no_go_decisions_decision_check') then
-    alter table public.psi_tender_go_no_go_decisions add constraint psi_tender_go_no_go_decisions_decision_check
-      check (decision in ('go', 'no_go'));
+    alter table public.psi_tender_go_no_go_decisions add constraint psi_tender_go_no_go_decisions_decision_check check (decision in ('go', 'no_go'));
   end if;
   if not exists (select 1 from pg_constraint where conrelid='public.psi_tender_go_no_go_decisions'::regclass and conname='psi_tender_go_no_go_decisions_opportunity_fkey') then
-    alter table public.psi_tender_go_no_go_decisions add constraint psi_tender_go_no_go_decisions_opportunity_fkey
-      foreign key (opportunity_id) references public.psi_sales_opportunities(id) on delete restrict;
+    alter table public.psi_tender_go_no_go_decisions add constraint psi_tender_go_no_go_decisions_opportunity_fkey foreign key (opportunity_id) references public.psi_sales_opportunities(id) on delete restrict;
   end if;
   if not exists (select 1 from pg_constraint where conrelid='public.psi_tender_go_no_go_decisions'::regclass and conname='psi_tender_go_no_go_decisions_tender_fkey') then
-    alter table public.psi_tender_go_no_go_decisions add constraint psi_tender_go_no_go_decisions_tender_fkey
-      foreign key (tender_id) references public.psi_public_tenders(id) on delete restrict;
+    alter table public.psi_tender_go_no_go_decisions add constraint psi_tender_go_no_go_decisions_tender_fkey foreign key (tender_id) references public.psi_public_tenders(id) on delete restrict;
   end if;
   if not exists (select 1 from pg_constraint where conrelid='public.psi_tender_go_no_go_decisions'::regclass and conname='psi_tender_go_no_go_decisions_analysis_interaction_fkey') then
-    alter table public.psi_tender_go_no_go_decisions add constraint psi_tender_go_no_go_decisions_analysis_interaction_fkey
-      foreign key (analysis_interaction_id) references public.psi_sales_interactions(id) on delete restrict;
+    alter table public.psi_tender_go_no_go_decisions add constraint psi_tender_go_no_go_decisions_analysis_interaction_fkey foreign key (analysis_interaction_id) references public.psi_sales_interactions(id) on delete restrict;
   end if;
   if not exists (select 1 from pg_constraint where conrelid='public.psi_tender_go_no_go_decisions'::regclass and conname='psi_tender_go_no_go_decisions_decided_by_fkey') then
-    alter table public.psi_tender_go_no_go_decisions add constraint psi_tender_go_no_go_decisions_decided_by_fkey
-      foreign key (decided_by) references public.psi_sales_profiles(id) on delete restrict;
+    alter table public.psi_tender_go_no_go_decisions add constraint psi_tender_go_no_go_decisions_decided_by_fkey foreign key (decided_by) references public.psi_sales_profiles(id) on delete restrict;
   end if;
   if not exists (select 1 from pg_constraint where conrelid='public.psi_tender_go_no_go_decisions'::regclass and conname='psi_tender_go_no_go_decisions_supersedes_fkey') then
-    alter table public.psi_tender_go_no_go_decisions add constraint psi_tender_go_no_go_decisions_supersedes_fkey
-      foreign key (supersedes_decision_id) references public.psi_tender_go_no_go_decisions(id) on delete restrict;
+    alter table public.psi_tender_go_no_go_decisions add constraint psi_tender_go_no_go_decisions_supersedes_fkey foreign key (supersedes_decision_id) references public.psi_tender_go_no_go_decisions(id) on delete restrict;
   end if;
 end $$;
 
-create index if not exists psi_tender_go_no_go_decisions_opportunity_decided_idx
-  on public.psi_tender_go_no_go_decisions (opportunity_id, decided_at desc, id desc);
-create index if not exists psi_tender_go_no_go_decisions_tender_decided_idx
-  on public.psi_tender_go_no_go_decisions (tender_id, decided_at desc, id desc);
--- This is the concurrency-safe idempotency boundary for preparation work.
-create unique index if not exists psi_sales_interactions_tender_offer_preparation_unique
-  on public.psi_sales_interactions (opportunity_id)
-  where interaction_type = 'tender_offer_preparation';
+create index if not exists psi_tender_go_no_go_decisions_opportunity_decided_idx on public.psi_tender_go_no_go_decisions (opportunity_id, decided_at desc, id desc);
+create index if not exists psi_tender_go_no_go_decisions_tender_decided_idx on public.psi_tender_go_no_go_decisions (tender_id, decided_at desc, id desc);
+
+-- Safe for arbitrary legacy notes, including malformed JSON.
+create or replace function public.psi_safe_jsonb(p_value text)
+returns jsonb language plpgsql immutable strict as $$
+begin
+  return p_value::jsonb;
+exception when others then
+  return null;
+end;
+$$;
 
 create or replace function public.psi_tender_go_no_go_decisions_prevent_mutation()
 returns trigger language plpgsql as $$
@@ -86,14 +87,13 @@ end;
 $$;
 
 drop trigger if exists psi_tender_go_no_go_decisions_immutable on public.psi_tender_go_no_go_decisions;
-create trigger psi_tender_go_no_go_decisions_immutable
-  before update or delete on public.psi_tender_go_no_go_decisions
-  for each row execute function public.psi_tender_go_no_go_decisions_prevent_mutation();
+create trigger psi_tender_go_no_go_decisions_immutable before update or delete on public.psi_tender_go_no_go_decisions for each row execute function public.psi_tender_go_no_go_decisions_prevent_mutation();
 
 alter table public.psi_tender_go_no_go_decisions enable row level security;
+-- Explicitly converge inherited grants before allowing service read-only access.
 revoke all on table public.psi_tender_go_no_go_decisions from public;
 revoke all on table public.psi_tender_go_no_go_decisions from authenticated;
--- The SECURITY DEFINER RPC is the only append path; service_role may inspect, never insert directly.
+revoke all on table public.psi_tender_go_no_go_decisions from service_role;
 grant select on table public.psi_tender_go_no_go_decisions to service_role;
 
 create or replace function public.psi_record_tender_go_no_go(
@@ -122,15 +122,11 @@ begin
   if p_decision is null or p_decision not in ('go', 'no_go') then
     raise exception 'La decisión debe ser go o no_go.' using errcode = '22023';
   end if;
-
   if not exists (
     select 1 from public.psi_sales_profiles p
     join public.psi_profile_permissions pp on pp.profile_id = p.id and pp.permission_code = 'licitaciones'
     join public.psi_access_permissions ap on ap.code = pp.permission_code and ap.active = true
-    where p.id = p_actor_id
-      and p.active = true
-      and coalesce(p.identity_type, 'human') = 'human'
-      and p.role in ('admin', 'gerencia', 'director')
+    where p.id = p_actor_id and p.active = true and coalesce(p.identity_type, 'human') = 'human' and p.role in ('admin', 'gerencia', 'director')
   ) then
     raise exception 'No tiene permisos para registrar una decisión de licitación.' using errcode = '42501';
   end if;
@@ -139,56 +135,54 @@ begin
   if not found then raise exception 'La oportunidad no existe.' using errcode = 'P0002'; end if;
   select * into v_tender from public.psi_public_tenders where id = p_tender_id for update;
   if not found then raise exception 'La licitación no existe.' using errcode = 'P0002'; end if;
-
   if v_tender.converted_opportunity_id is distinct from p_opportunity_id then
     raise exception 'La licitación no está vinculada a la oportunidad indicada.' using errcode = '22023';
   end if;
-  if v_opportunity.tipo_producto_original is distinct from 'Licitación Pública'
-     and coalesce(v_opportunity.external_source, '') not like 'secop_radar:%' then
+  if v_opportunity.tipo_producto_original is distinct from 'Licitación Pública' and coalesce(v_opportunity.external_source, '') not like 'secop_radar:%' then
     raise exception 'La oportunidad no tiene origen de licitación pública.' using errcode = '22023';
   end if;
   if p_analysis_interaction_id is not null and not exists (
-    select 1 from public.psi_sales_interactions i where i.id = p_analysis_interaction_id and i.opportunity_id = p_opportunity_id
+    select 1 from public.psi_sales_interactions i
+    where i.id = p_analysis_interaction_id and i.opportunity_id = p_opportunity_id
+      and i.interaction_type = 'documento'
+      and public.psi_safe_jsonb(i.notes)->>'kind' = 'tender_document_analysis'
   ) then
-    raise exception 'El análisis no pertenece a la oportunidad indicada.' using errcode = '22023';
+    raise exception 'El análisis debe ser un análisis de licitación de la oportunidad indicada.' using errcode = '22023';
   end if;
 
-  select id into v_previous_id from public.psi_tender_go_no_go_decisions
-    where opportunity_id = p_opportunity_id and tender_id = p_tender_id
-    order by decided_at desc, id desc limit 1 for update;
-
-  insert into public.psi_tender_go_no_go_decisions (
-    opportunity_id, tender_id, decision, analysis_interaction_id, justification, decided_by, decided_at, supersedes_decision_id
-  ) values (
-    p_opportunity_id, p_tender_id, p_decision, p_analysis_interaction_id, nullif(btrim(p_justification), ''), p_actor_id, v_now, v_previous_id
-  ) returning id into v_decision_id;
+  select id into v_previous_id from public.psi_tender_go_no_go_decisions where opportunity_id = p_opportunity_id and tender_id = p_tender_id order by decided_at desc, id desc limit 1 for update;
+  insert into public.psi_tender_go_no_go_decisions (opportunity_id, tender_id, decision, analysis_interaction_id, justification, decided_by, decided_at, supersedes_decision_id)
+  values (p_opportunity_id, p_tender_id, p_decision, p_analysis_interaction_id, nullif(btrim(p_justification), ''), p_actor_id, v_now, v_previous_id)
+  returning id into v_decision_id;
 
   if p_decision = 'go' then
-    insert into public.psi_sales_interactions (opportunity_id, interaction_type, created_by, occurred_at, notes)
-    values (p_opportunity_id, 'tender_offer_preparation', p_actor_id, v_now,
-      coalesce(nullif(p_preparation::text, '{}'), 'Preparación de oferta de licitación iniciada.'))
-    on conflict (opportunity_id) where interaction_type = 'tender_offer_preparation' do nothing
-    returning id into v_preparation_id;
-    v_preparation_created := v_preparation_id is not null;
+    select i.id into v_preparation_id
+      from public.psi_sales_interactions i
+      where i.opportunity_id = p_opportunity_id and i.interaction_type = 'documento'
+        and public.psi_safe_jsonb(i.notes)->>'kind' = 'tender_offer_preparation'
+      order by i.occurred_at desc, i.id desc limit 1;
+    if v_preparation_id is null then
+      if p_preparation is null or jsonb_typeof(p_preparation) <> 'object' or p_preparation->>'kind' is distinct from 'tender_offer_preparation' then
+        raise exception 'GO requiere una preparación de oferta JSON con kind tender_offer_preparation.' using errcode = '22023';
+      end if;
+      insert into public.psi_sales_interactions (opportunity_id, interaction_type, created_by, occurred_at, notes)
+      values (p_opportunity_id, 'documento', p_actor_id, v_now, p_preparation::text)
+      returning id into v_preparation_id;
+      v_preparation_created := true;
+    end if;
     v_status := 'en_preparacion';
   else
     v_status := 'cerrada_no_go';
   end if;
 
   update public.psi_sales_opportunities set tender_offer_status = v_status where id = p_opportunity_id;
-  return jsonb_build_object(
-    'decision_id', v_decision_id,
-    'supersedes_decision_id', v_previous_id,
-    'decision', p_decision,
-    'preparation_id', v_preparation_id,
-    'preparation_created', v_preparation_created,
-    'tender_offer_status', v_status
-  );
+  return jsonb_build_object('decision_id', v_decision_id, 'supersedes_decision_id', v_previous_id, 'decision', p_decision, 'preparation_id', v_preparation_id, 'preparation_created', v_preparation_created, 'tender_offer_status', v_status);
 end;
 $$;
 
 revoke all on function public.psi_record_tender_go_no_go(uuid, uuid, uuid, text, uuid, text, jsonb) from public;
 revoke all on function public.psi_record_tender_go_no_go(uuid, uuid, uuid, text, uuid, text, jsonb) from authenticated;
+revoke all on function public.psi_record_tender_go_no_go(uuid, uuid, uuid, text, uuid, text, jsonb) from service_role;
 grant execute on function public.psi_record_tender_go_no_go(uuid, uuid, uuid, text, uuid, text, jsonb) to service_role;
 
 commit;
