@@ -8,10 +8,10 @@ export function filterOpportunitySummaries(rows: TenderOpportunitySummary[], fil
   return rows.filter(row => {
     const status = row.tender_offer_status || 'pendiente_decision';
     if (filter === 'pending_decision') return status === 'pendiente_decision' && !row.decision;
-    if (filter === 'go_authorized') return ['en_preparacion', 'presentada'].includes(status) && row.decision === 'go';
-    if (filter === 'in_preparation') return status === 'en_preparacion';
+    if (filter === 'go_authorized') return ['en_preparacion', 'lista_para_presentar', 'presentada'].includes(status) && row.decision === 'go';
+    if (filter === 'in_preparation') return ['en_preparacion', 'lista_para_presentar'].includes(status);
     if (filter === 'submitted') return status === 'presentada';
-    return ['cerrada_no_go', 'adjudicada', 'perdida'].includes(status);
+    return ['cerrada_no_go', 'adjudicada', 'no_adjudicada'].includes(status);
   });
 }
 

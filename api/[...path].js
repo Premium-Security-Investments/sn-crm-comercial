@@ -2338,10 +2338,7 @@ const tenderDossierDefaultLimit = 50;
 const tenderDossierMaxLimit = 50;
 const tenderDossierMaxOffset = 10000;
 const tenderOpportunityFilters = new Set(['all', 'pending_decision', 'go_authorized', 'in_preparation', 'submitted', 'closed']);
-const tenderOfferStatusesByFilter = {
-  pending_decision: ['pendiente_decision'], go_authorized: ['en_preparacion', 'presentada'],
-  in_preparation: ['en_preparacion'], submitted: ['presentada'], closed: ['cerrada_no_go', 'adjudicada', 'perdida'],
-};
+
 function parseTenderDossierPage(query = {}) {
   const parse = (value, fallback, maximum, label) => {
     if (value === undefined || value === '') return fallback;
@@ -2357,44 +2354,24 @@ function parseTenderDossierPage(query = {}) {
   return { limit, offset: parse(query.offset, 0, tenderDossierMaxOffset, 'El desplazamiento'), filter };
 }
 
-function matchesTenderOpportunityFilter(opportunity, latestDecision, filter) {
-  if (filter === 'pending_decision') return !latestDecision;
-  if (filter === 'go_authorized') return latestDecision?.decision === 'go';
-  return true;
-}
-
-async function loadLatestTenderDecisions(database, opportunityIds) {
-  if (!opportunityIds.length) return new Map();
-  const decisions = await must(database.from('psi_tender_go_no_go_decisions').select('id,opportunity_id,decision,decided_at,psi_sales_profiles(full_name)').in('opportunity_id', opportunityIds).order('decided_at', { ascending: false }).order('id', { ascending: false }));
-  const latestByOpportunity = new Map();
-  for (const decision of decisions || []) if (!latestByOpportunity.has(decision.opportunity_id)) latestByOpportunity.set(decision.opportunity_id, decision);
-  return latestByOpportunity;
-}
-
-/** Lists at most 50 rows. Status-filter candidates resolve their latest decisions in one deterministic batch before tender pagination; document reads remain isolated per card. */
+/** Lists one SQL-bounded page (at most 50 rows); only document enrichment is per-card. */
 export async function listTenderOpportunities(database, query = {}) {
   const { limit, offset, filter } = parseTenderDossierPage(query);
-  let opportunities = [];
-  let opportunityIds = null;
-  let latestDecisionsByOpportunity = new Map();
-  if (filter !== 'all') {
-    opportunities = await must(database.from('psi_sales_opportunities').select('id,tender_offer_status').in('tender_offer_status', tenderOfferStatusesByFilter[filter]));
-    latestDecisionsByOpportunity = await loadLatestTenderDecisions(database, opportunities.map(opportunity => opportunity.id));
-    opportunities = opportunities.filter(opportunity => matchesTenderOpportunityFilter(opportunity, latestDecisionsByOpportunity.get(opportunity.id), filter));
-    opportunityIds = opportunities.map(opportunity => opportunity.id);
-    if (!opportunityIds.length) return { rows: [], limit, offset, filter };
-  }
-  let tenderQuery = database.from('psi_public_tenders').select('*').not('converted_opportunity_id', 'is', null);
-  if (opportunityIds) tenderQuery = tenderQuery.in('converted_opportunity_id', opportunityIds);
-  const tenders = await must(tenderQuery.order('tracking_updated_at', { ascending: false }).order('id', { ascending: true }).range(offset, offset + limit - 1));
-  const visibleOpportunityIds = (tenders || []).map(tender => tender.converted_opportunity_id).filter(Boolean);
-  if (!opportunityIds && visibleOpportunityIds.length) {
-    opportunities = await must(database.from('psi_sales_opportunities').select('id,tender_offer_status').in('id', visibleOpportunityIds));
-    latestDecisionsByOpportunity = await loadLatestTenderDecisions(database, visibleOpportunityIds);
-  }
-  const opportunitiesById = new Map((opportunities || []).map(opportunity => [opportunity.id, opportunity]));
+  const page = await must(database.rpc('psi_list_tender_opportunity_page', {
+    p_filter: filter,
+    p_limit: limit,
+    p_offset: offset,
+  }));
+  if ((page || []).length > tenderDossierMaxLimit) throw new Error('La consulta paginada devolvió más de 50 oportunidades.');
   const rows = [];
-  for (const tender of tenders || []) rows.push(await buildTenderOpportunitySummary(database, tender, { opportunity: opportunitiesById.get(tender.converted_opportunity_id) || null, latestDecision: latestDecisionsByOpportunity.get(tender.converted_opportunity_id) || null }));
+  for (const pageRow of page || []) {
+    const tender = pageRow?.tender;
+    if (!tender) continue;
+    rows.push(await buildTenderOpportunitySummary(database, tender, {
+      opportunity: pageRow.opportunity || null,
+      latestDecision: pageRow.latest_decision || null,
+    }));
+  }
   return { rows, limit, offset, filter };
 }
 
