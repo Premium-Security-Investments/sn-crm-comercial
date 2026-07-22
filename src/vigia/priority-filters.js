@@ -13,12 +13,47 @@ const LEGACY_ALERT_CATEGORY_MAP = Object.freeze({
   overdue: 'overdue',
   closing_soon: 'closing',
   high_value_stalled: 'high_value_stalled',
+  stalled: 'stalled_sustentacion',
 });
 
-export function categoryFromAlertsHash(hash) {
+const VALID_CUSTOMER_SEGMENTS = new Set(['cliente_nuevo', 'cliente_actual']);
+const VALID_CATEGORIES = new Set(Object.values(LEGACY_ALERT_CATEGORY_MAP));
+const ALLOWED_HASH_FILTERS = new Set(['status', 'owner', 'regional', 'stage', 'service', 'segment']);
+const INVALID_FILTER = '__invalid__';
+
+export function filtersFromAlertsHash(hash) {
   const query = String(hash || '').split('?')[1] || '';
-  const status = new URLSearchParams(query).get('status') || '';
-  return LEGACY_ALERT_CATEGORY_MAP[status] || '';
+  const params = new URLSearchParams(query);
+  const status = params.get('status') || '';
+  const segment = params.get('segment') || '';
+  const invalidStructure = [...params.keys()].some(key => !ALLOWED_HASH_FILTERS.has(key) || params.getAll(key).length !== 1);
+  const invalidStatus = Boolean(status && !LEGACY_ALERT_CATEGORY_MAP[status]);
+  const invalidSegment = Boolean(segment && !VALID_CUSTOMER_SEGMENTS.has(segment));
+  const invalid = invalidStructure || invalidStatus || invalidSegment;
+  return {
+    category: invalid ? INVALID_FILTER : (status ? LEGACY_ALERT_CATEGORY_MAP[status] : ''),
+    owner: params.get('owner') || '',
+    regional: params.get('regional') || '',
+    stage: params.get('stage') || '',
+    service: params.get('service') || '',
+    customerSegment: invalidSegment ? INVALID_FILTER : segment,
+    invalid,
+  };
+}
+
+export function categoryFromAlertsHash(hash) {
+  return filtersFromAlertsHash(hash).category;
+}
+
+export function priorityHashFiltersAreValid(rows, filters = {}) {
+  if (!Array.isArray(rows) || filters.invalid || filters.category === INVALID_FILTER || filters.customerSegment === INVALID_FILTER) return false;
+  if (filters.category && !VALID_CATEGORIES.has(filters.category)) return false;
+  const matches = (filter, field) => !filter || rows.some(row => row?.[field] === filter);
+  return matches(filters.owner, 'owner_id')
+    && matches(filters.regional, 'regional_nombre')
+    && matches(filters.stage, 'stage_code')
+    && matches(filters.service, 'service_type_code')
+    && matches(filters.customerSegment, 'customer_segment');
 }
 
 export function priorityCategory(row, category) {
@@ -29,6 +64,7 @@ export function priorityCategory(row, category) {
   if (category === 'closing') return priorityHasSignal(row, 'close_soon') || priorityHasSignal(row, 'close_overdue');
   if (category === 'managed') return Boolean(row?.evidence?.next_action_at) && !priorityHasSignal(row, 'next_action_overdue');
   if (category === 'high_value_stalled') return priorityHasSignal(row, 'high_value') && (priorityHasSignal(row, 'stalled_warning') || priorityHasSignal(row, 'stalled_critical'));
+  if (category === 'stalled_sustentacion') return row?.stage_code === 'sustentacion' && (priorityHasSignal(row, 'stalled_warning') || priorityHasSignal(row, 'stalled_critical'));
   return false;
 }
 
@@ -43,6 +79,7 @@ export function filterCommercialPriorities(rows, filters = {}) {
     if (filters.regional && row?.regional_nombre !== filters.regional) return false;
     if (filters.stage && row?.stage_code !== filters.stage) return false;
     if (filters.service && row?.service_type_code !== filters.service) return false;
+    if (filters.customerSegment && row?.customer_segment !== filters.customerSegment) return false;
     if (filters.level && row?.level !== filters.level) return false;
     if (query) {
       const haystack = normalized([row?.company_name, row?.owner_name, row?.stage_name, row?.service_type_name, row?.regional_nombre].join(' '));
@@ -63,5 +100,6 @@ export function summarizeCommercialPriorities(rows) {
     closing: count('closing'),
     managed: count('managed'),
     highValueStalled: count('high_value_stalled'),
+    stalledSustentacion: count('stalled_sustentacion'),
   };
 }

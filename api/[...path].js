@@ -1810,13 +1810,39 @@ async function fetchVigiaRows(database, ownerIds) {
   return rows;
 }
 
+async function fetchVigiaCustomerSegments(database, ownerIds) {
+  const batches = ownerIds === null
+    ? [null]
+    : Array.from({ length: Math.ceil(ownerIds.length / VIGIA_OWNER_BATCH_SIZE) }, (_, index) => ownerIds.slice(index * VIGIA_OWNER_BATCH_SIZE, (index + 1) * VIGIA_OWNER_BATCH_SIZE));
+  const rows = [];
+  for (const ownerBatch of batches) {
+    for (let offset = 0; ; offset += VIGIA_PAGE_SIZE) {
+      let query = database.from('psi_sales_opportunities').select('id,customer_segment').order('id', { ascending: true });
+      if (ownerBatch) query = query.in('owner_id', ownerBatch);
+      const page = await must(query.range(offset, offset + VIGIA_PAGE_SIZE - 1));
+      rows.push(...page);
+      if (page.length < VIGIA_PAGE_SIZE) break;
+    }
+  }
+  return rows;
+}
+
+function attachVigiaCustomerSegments(rows, segmentRows) {
+  const segmentById = new Map(segmentRows.map(row => [row.id, row.customer_segment || null]));
+  return rows.map(row => ({ ...row, customer_segment: segmentById.get(row.id) ?? null }));
+}
+
 app.get('/api/vigia/priorities', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     requirePrioritiesAction(currentProfile);
     const database = requireDb();
     const ownerIds = await resolveVigiaOwnerScope(database, currentProfile);
-    const scopedRows = await fetchVigiaRows(database, ownerIds);
+    const [viewRows, segmentRows] = await Promise.all([
+      fetchVigiaRows(database, ownerIds),
+      fetchVigiaCustomerSegments(database, ownerIds),
+    ]);
+    const scopedRows = attachVigiaCustomerSegments(viewRows, segmentRows);
     const priorities = prioritizeVigiaOpportunities(scopedRows);
     const asOf = scopedRows.map(row => row.updated_at).filter(value => value && !Number.isNaN(new Date(value).getTime())).sort().at(-1) || null;
     res.json({
@@ -1867,6 +1893,7 @@ app.get('/api/bootstrap', async (req, res) => {
     res.json(filterBootstrapForProfile({ summary, opportunities: enrichedOpportunities, profiles, profileAssignments, stages, services, lossReasons, stalled: enrichedStalled, topClosing: enrichedTopClosing, monthlyKpis, goals, totals }, currentProfile));
   } catch (error) { sendAuthError(res, error); }
 });
+app.all('/api/bootstrap', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
 
 app.get('/api/opportunities/:id', async (req, res) => {
   try {
