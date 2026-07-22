@@ -4,6 +4,7 @@ import { buildSync } from 'esbuild';
 
 const types = readFileSync(new URL('../src/tenders/types.ts', import.meta.url), 'utf8');
 const tabs = readFileSync(new URL('../src/tenders/components/TenderModuleTabs.tsx', import.meta.url), 'utf8');
+const moduleSource = readFileSync(new URL('../src/tenders/TendersModule.tsx', import.meta.url), 'utf8');
 const primaryViews = [...types.matchAll(/'([^']+)'/g)].map(([, value]) => value).filter(value => ['radar', 'seguimiento', 'oportunidades'].includes(value));
 
 assert.deepEqual(primaryViews, ['radar', 'seguimiento', 'oportunidades']);
@@ -20,7 +21,10 @@ const { normalizeTenderModuleView } = await import(utilsUrl);
 
 assert.equal(normalizeTenderModuleView('expedientes'), 'oportunidades');
 assert.equal(normalizeTenderModuleView('perfiles'), 'configuracion');
+assert.equal(normalizeTenderModuleView('configuracion'), 'configuracion');
 assert.equal(normalizeTenderModuleView('desconocida'), 'radar');
+assert.match(moduleSource, /TenderProfilesView/);
+assert.match(moduleSource, /props\.view === 'configuracion'/);
 for (const label of ['Radar', 'Seguimiento', 'Oportunidades']) assert.match(tabs, new RegExp(`label: '${label}'`));
 assert.doesNotMatch(tabs, /Radar de oportunidades/);
 assert.doesNotMatch(tabs, />Expedientes</);
