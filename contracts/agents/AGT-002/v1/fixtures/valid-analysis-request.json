@@ -1,0 +1,8 @@
+{
+  "contract_version": "1.0.0",
+  "capability_id": "agt002.analysis.read",
+  "correlation_id": "syn-corr-analysis-001",
+  "query": {
+    "opportunity_id": "syn-opportunity-003"
+  }
+}

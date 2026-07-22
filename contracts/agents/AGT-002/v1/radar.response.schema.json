@@ -1,0 +1,245 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:psi:siio:agents:agt002:v1:radar.response",
+  "title": "agt002.radar.read response",
+  "description": "Read-only SIIO contract over the named canonical producer; no effects are authorized.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "1.0.0"
+    },
+    "capability_id": {
+      "const": "agt002.radar.read"
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+    },
+    "policy_version": {
+      "const": "phase3a-p1-read-only"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "const": "SIIO"
+        },
+        "dataset": {
+          "const": "psi_public_tenders"
+        },
+        "record_set_id": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+        },
+        "persisted": {
+          "const": true
+        }
+      },
+      "required": [
+        "system",
+        "dataset",
+        "record_set_id",
+        "persisted"
+      ]
+    },
+    "cutoff_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "evidence_id": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+          },
+          "evidence_type": {
+            "type": "string",
+            "enum": [
+              "record_set",
+              "record",
+              "analysis",
+              "policy"
+            ]
+          },
+          "record_id": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "evidence_type",
+          "record_id",
+          "captured_at"
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 100
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "records": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "source": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "section": {
+                "type": "string",
+                "enum": [
+                  "hacer",
+                  "revisar",
+                  "descartar"
+                ]
+              },
+              "internal_status": {
+                "type": "string",
+                "enum": [
+                  "nueva",
+                  "en_revision",
+                  "convertida_oportunidad",
+                  "descartada"
+                ]
+              },
+              "entity": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "value": {
+                "type": "number",
+                "minimum": 0
+              },
+              "score": {
+                "type": "number",
+                "minimum": 0
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "minItems": 0,
+                "maxItems": 20
+              },
+              "risks": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "minItems": 0,
+                "maxItems": 20
+              },
+              "published_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "deadline_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "last_seen_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "tender_id": {
+                "type": "string",
+                "minLength": 5,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+              }
+            },
+            "required": [
+              "tender_id",
+              "source",
+              "section",
+              "internal_status",
+              "entity",
+              "title",
+              "value",
+              "score",
+              "reasons",
+              "risks",
+              "published_at",
+              "deadline_at",
+              "last_seen_at"
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 100
+        },
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "records",
+        "next_cursor"
+      ]
+    }
+  },
+  "required": [
+    "contract_version",
+    "capability_id",
+    "correlation_id",
+    "run_id",
+    "policy_version",
+    "source",
+    "cutoff_at",
+    "evidence",
+    "data"
+  ]
+}

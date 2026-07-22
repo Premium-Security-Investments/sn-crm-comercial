@@ -1,0 +1,9 @@
+{
+  "contract_version": "1.0.0",
+  "capability_id": "agt002.go_no_go.recommendation.read",
+  "correlation_id": "syn-corr-go-no-go-recommendation-001",
+  "query": {
+    "opportunity_id": "syn-opportunity-004"
+  },
+  "source": "synthetic-authority-source"
+}

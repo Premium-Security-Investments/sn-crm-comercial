@@ -1,0 +1,57 @@
+{
+  "agent_id": "AGT-003",
+  "contract_version": "1.0.0",
+  "schema_draft": "https://json-schema.org/draft/2020-12/schema",
+  "owner_system": "SIIO",
+  "status": "contract_only",
+  "immutable": true,
+  "capabilities": [
+    {
+      "id": "agt003.priorities.read",
+      "mode": "read",
+      "persisted_results_only": false,
+      "canonical_producer": "vigia-engine.js#prioritizeVigiaOpportunities",
+      "request_schema": "priorities.request.schema.json",
+      "response_schema": "priorities.response.schema.json",
+      "error_schema": "error.schema.json",
+      "ordering": [
+        "score:desc",
+        "offer_value:desc",
+        "id:asc"
+      ],
+      "functional_request_filters": false
+    }
+  ],
+  "fixtures": [
+    {
+      "path": "fixtures/valid-priorities-request.json",
+      "schema": "priorities.request.schema.json",
+      "valid": true
+    },
+    {
+      "path": "fixtures/invalid-priorities-request-authority.json",
+      "schema": "priorities.request.schema.json",
+      "valid": false
+    },
+    {
+      "path": "fixtures/valid-priorities-response.json",
+      "schema": "priorities.response.schema.json",
+      "valid": true
+    },
+    {
+      "path": "fixtures/invalid-priorities-response-semantic.json",
+      "schema": "priorities.response.schema.json",
+      "valid": false
+    },
+    {
+      "path": "fixtures/valid-error.json",
+      "schema": "error.schema.json",
+      "valid": true
+    },
+    {
+      "path": "fixtures/invalid-error-code.json",
+      "schema": "error.schema.json",
+      "valid": false
+    }
+  ]
+}

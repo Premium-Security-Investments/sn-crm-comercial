@@ -1,0 +1,9 @@
+{
+  "contract_version": "1.0.0",
+  "capability_id": "agt002.radar.read",
+  "correlation_id": "syn-corr-radar-001",
+  "query": {
+    "limit": 25,
+    "cursor": null
+  }
+}

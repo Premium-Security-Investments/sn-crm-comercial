@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:psi:siio:agents:agt002:v1:radar.request",
+  "title": "agt002.radar.read request",
+  "description": "Closed read-only request. Authorization and delegation are transport concerns outside this body.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "1.0.0"
+    },
+    "capability_id": {
+      "const": "agt002.radar.read"
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$"
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "cursor": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "limit"
+      ]
+    }
+  },
+  "required": [
+    "contract_version",
+    "capability_id",
+    "correlation_id",
+    "query"
+  ]
+}

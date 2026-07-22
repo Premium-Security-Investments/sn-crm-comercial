@@ -1,0 +1,918 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:psi:siio:agents:agt003:v1:priorities.response",
+  "title": "agt003.priorities.read response",
+  "description": "Read-only SIIO contract over the named canonical producer; no effects are authorized.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "1.0.0"
+    },
+    "capability_id": {
+      "const": "agt003.priorities.read"
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+    },
+    "policy_version": {
+      "const": "gate0-v1.0"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "const": "SIIO"
+        },
+        "dataset": {
+          "const": "v_psi_sales_opportunity_enriched"
+        },
+        "record_set_id": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+        },
+        "persisted": {
+          "const": false
+        }
+      },
+      "required": [
+        "system",
+        "dataset",
+        "record_set_id",
+        "persisted"
+      ]
+    },
+    "cutoff_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "evidence_id": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+          },
+          "evidence_type": {
+            "type": "string",
+            "enum": [
+              "record_set",
+              "record",
+              "analysis",
+              "policy"
+            ]
+          },
+          "record_id": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "evidence_type",
+          "record_id",
+          "captured_at"
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 100
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "generated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "const": "CRM-F1"
+            },
+            "label": {
+              "const": "CRM comercial"
+            },
+            "as_of": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "as_of"
+          ]
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "const": "gate0-v1.0"
+            },
+            "read_only": {
+              "const": true
+            },
+            "human_review_required": {
+              "const": true
+            }
+          },
+          "required": [
+            "version",
+            "read_only",
+            "human_review_required"
+          ]
+        },
+        "totals": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "source_rows": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "visible_active": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "prioritized": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "high": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "medium": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "low": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "source_rows",
+            "visible_active",
+            "prioritized",
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "priorities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 5,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+              },
+              "owner_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 128
+              },
+              "owner_name": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 500
+              },
+              "company_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "stage_code": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "stage_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "service_type_code": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 500
+              },
+              "service_type_name": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 500
+              },
+              "regional_nombre": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 500
+              },
+              "customer_segment": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 500
+              },
+              "offer_value": {
+                "type": "number",
+                "minimum": 0
+              },
+              "score": {
+                "type": "number",
+                "minimum": 1
+              },
+              "level": {
+                "type": "string",
+                "enum": [
+                  "alto",
+                  "medio",
+                  "bajo"
+                ]
+              },
+              "signal_codes": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "invalid_next_action",
+                    "missing_next_action",
+                    "next_action_overdue",
+                    "invalid_activity",
+                    "stalled_critical",
+                    "stalled_warning",
+                    "critical_stage",
+                    "invalid_expected_close",
+                    "close_overdue",
+                    "close_soon",
+                    "high_value",
+                    "value_missing",
+                    "regional_missing"
+                  ]
+                },
+                "minItems": 1,
+                "maxItems": 20
+              },
+              "signals": {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "const": "invalid_next_action"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "points": {
+                          "const": 0
+                        },
+                        "evidence": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "label",
+                        "points",
+                        "evidence"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "const": "missing_next_action"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "points": {
+                          "const": 25
+                        },
+                        "evidence": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "label",
+                        "points",
+                        "evidence"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "const": "next_action_overdue"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "points": {
+                          "const": 30
+                        },
+                        "evidence": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "label",
+                        "points",
+                        "evidence"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "const": "invalid_activity"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "points": {
+                          "const": 0
+                        },
+                        "evidence": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "label",
+                        "points",
+                        "evidence"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "const": "stalled_critical"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "points": {
+                          "const": 30
+                        },
+                        "evidence": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "label",
+                        "points",
+                        "evidence"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "const": "stalled_warning"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "points": {
+                          "const": 15
+                        },
+                        "evidence": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "label",
+                        "points",
+                        "evidence"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "const": "critical_stage"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "points": {
+                          "const": 15
+                        },
+                        "evidence": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "label",
+                        "points",
+                        "evidence"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "const": "invalid_expected_close"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "points": {
+                          "const": 0
+                        },
+                        "evidence": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "label",
+                        "points",
+                        "evidence"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "const": "close_overdue"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "points": {
+                          "const": 25
+                        },
+                        "evidence": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "label",
+                        "points",
+                        "evidence"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "const": "close_soon"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "points": {
+                          "const": 10
+                        },
+                        "evidence": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "label",
+                        "points",
+                        "evidence"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "const": "high_value"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "points": {
+                          "const": 15
+                        },
+                        "evidence": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "label",
+                        "points",
+                        "evidence"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "const": "value_missing"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "points": {
+                          "const": 10
+                        },
+                        "evidence": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "label",
+                        "points",
+                        "evidence"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "const": "regional_missing"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        },
+                        "points": {
+                          "const": 5
+                        },
+                        "evidence": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 500
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "label",
+                        "points",
+                        "evidence"
+                      ]
+                    }
+                  ]
+                },
+                "minItems": 1,
+                "maxItems": 20
+              },
+              "recommendation": {
+                "type": "string",
+                "enum": [
+                  "Revisar la gestión vencida y validar el siguiente paso.",
+                  "Programar la próxima gestión con validación del responsable.",
+                  "Revisar la fecha esperada de cierre y el bloqueo comercial.",
+                  "Validar el bloqueo de la oportunidad estancada.",
+                  "Completar los datos faltantes antes de la siguiente revisión.",
+                  "Revisar la prioridad con el responsable comercial."
+                ]
+              },
+              "explanation": {
+                "const": "Requiere validación humana; no ejecuta acciones."
+              },
+              "evidence": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "activity_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  },
+                  "activity_basis": {
+                    "type": "string",
+                    "enum": [
+                      "last_interaction_at",
+                      "updated_at",
+                      "created_at",
+                      "missing"
+                    ]
+                  },
+                  "invalid_fields": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "last_interaction_at",
+                        "updated_at",
+                        "created_at"
+                      ]
+                    },
+                    "minItems": 0,
+                    "maxItems": 3
+                  },
+                  "inactive_days": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
+                  "next_action_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  },
+                  "expected_close_date": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "activity_at",
+                  "activity_basis",
+                  "invalid_fields",
+                  "inactive_days",
+                  "next_action_at",
+                  "expected_close_date"
+                ]
+              },
+              "source": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "const": "CRM-F1"
+                  },
+                  "label": {
+                    "const": "CRM comercial"
+                  },
+                  "as_of": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "format": "date-time"
+                  }
+                },
+                "required": [
+                  "id",
+                  "label",
+                  "as_of"
+                ]
+              },
+              "stage_order": {
+                "type": "number"
+              },
+              "weighted_pipeline_value": {
+                "type": "number",
+                "minimum": 0
+              },
+              "next_action_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "last_interaction_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "updated_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "created_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "expected_close_date": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              }
+            },
+            "required": [
+              "id",
+              "owner_id",
+              "owner_name",
+              "company_name",
+              "stage_code",
+              "stage_name",
+              "service_type_code",
+              "service_type_name",
+              "regional_nombre",
+              "customer_segment",
+              "offer_value",
+              "score",
+              "level",
+              "signal_codes",
+              "signals",
+              "recommendation",
+              "explanation",
+              "evidence",
+              "source",
+              "stage_order",
+              "weighted_pipeline_value",
+              "next_action_at",
+              "last_interaction_at",
+              "updated_at",
+              "created_at",
+              "expected_close_date"
+            ],
+            "oneOf": [
+              {
+                "properties": {
+                  "score": {
+                    "minimum": 60
+                  },
+                  "level": {
+                    "const": "alto"
+                  }
+                },
+                "required": [
+                  "score",
+                  "level"
+                ]
+              },
+              {
+                "properties": {
+                  "score": {
+                    "minimum": 30,
+                    "exclusiveMaximum": 60
+                  },
+                  "level": {
+                    "const": "medio"
+                  }
+                },
+                "required": [
+                  "score",
+                  "level"
+                ]
+              },
+              {
+                "properties": {
+                  "score": {
+                    "exclusiveMinimum": 0,
+                    "exclusiveMaximum": 30
+                  },
+                  "level": {
+                    "const": "bajo"
+                  }
+                },
+                "required": [
+                  "score",
+                  "level"
+                ]
+              }
+            ]
+          },
+          "minItems": 0,
+          "maxItems": 100
+        }
+      },
+      "required": [
+        "generated_at",
+        "source",
+        "policy",
+        "totals",
+        "priorities"
+      ]
+    }
+  },
+  "required": [
+    "contract_version",
+    "capability_id",
+    "correlation_id",
+    "run_id",
+    "policy_version",
+    "source",
+    "cutoff_at",
+    "evidence",
+    "data"
+  ]
+}

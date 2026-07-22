@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:psi:siio:agents:agt002:v1:error",
+  "title": "AGT-002 typed error",
+  "description": "Stable typed error envelope with correlation and source context.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "1.0.0"
+    },
+    "capability_id": {
+      "type": "string",
+      "enum": [
+        "agt002.radar.read",
+        "agt002.dossier.read",
+        "agt002.analysis.read",
+        "agt002.go_no_go.recommendation.read"
+      ]
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$"
+    },
+    "run_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 5,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+    },
+    "policy_version": {
+      "const": "phase3a-p1-read-only"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "const": "SIIO"
+        },
+        "dataset": {
+          "type": "string",
+          "enum": [
+            "psi_public_tenders",
+            "psi_sales_interactions",
+            "psi_sales_interactions:tender_document_analysis"
+          ]
+        },
+        "record_set_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 5,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+        },
+        "persisted": {
+          "const": true
+        }
+      },
+      "required": [
+        "system",
+        "dataset",
+        "record_set_id",
+        "persisted"
+      ]
+    },
+    "cutoff_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "evidence_id": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+          },
+          "evidence_type": {
+            "type": "string",
+            "enum": [
+              "record_set",
+              "record",
+              "analysis",
+              "policy"
+            ]
+          },
+          "record_id": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "evidence_type",
+          "record_id",
+          "captured_at"
+        ]
+      },
+      "minItems": 0,
+      "maxItems": 100
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "CONTRACT_VALIDATION_FAILED",
+            "RESULT_NOT_FOUND",
+            "RESULT_NOT_PERSISTED",
+            "SOURCE_UNAVAILABLE",
+            "INTERNAL_READ_ERROR"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "details": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 250
+          },
+          "minItems": 0,
+          "maxItems": 20
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable",
+        "details"
+      ]
+    }
+  },
+  "required": [
+    "contract_version",
+    "capability_id",
+    "correlation_id",
+    "run_id",
+    "policy_version",
+    "source",
+    "cutoff_at",
+    "evidence",
+    "error"
+  ]
+}

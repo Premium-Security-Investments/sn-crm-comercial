@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:psi:siio:agents:agt002:v1:go-no-go-recommendation.response",
+  "title": "agt002.go_no_go.recommendation.read response",
+  "description": "Read-only SIIO contract over the named canonical producer; no effects are authorized.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "const": "1.0.0"
+    },
+    "capability_id": {
+      "const": "agt002.go_no_go.recommendation.read"
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+    },
+    "policy_version": {
+      "const": "phase3a-p1-read-only"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "system": {
+          "const": "SIIO"
+        },
+        "dataset": {
+          "const": "psi_sales_interactions:tender_document_analysis"
+        },
+        "record_set_id": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+        },
+        "persisted": {
+          "const": true
+        }
+      },
+      "required": [
+        "system",
+        "dataset",
+        "record_set_id",
+        "persisted"
+      ]
+    },
+    "cutoff_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "evidence_id": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+          },
+          "evidence_type": {
+            "type": "string",
+            "enum": [
+              "record_set",
+              "record",
+              "analysis",
+              "policy"
+            ]
+          },
+          "record_id": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "evidence_type",
+          "record_id",
+          "captured_at"
+        ]
+      },
+      "minItems": 1,
+      "maxItems": 100
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "go_no_go": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "opportunity_id": {
+              "type": "string",
+              "minLength": 5,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
+            },
+            "generated_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "decision": {
+              "type": "string",
+              "enum": [
+                "GO condicionado",
+                "GO condicionado a validación RUP/financiera",
+                "NO GO temporal / completar documentos",
+                "DESCARTAR salvo señal comercial externa",
+                "REVISAR CON LICITACIONES"
+              ]
+            },
+            "risk": {
+              "type": "string",
+              "enum": [
+                "Alto",
+                "Medio-Alto",
+                "Medio"
+              ]
+            },
+            "blockers": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              "minItems": 0,
+              "maxItems": 30
+            },
+            "next_action": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "committee_summary": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 3000
+            },
+            "human_review_required": {
+              "const": true
+            },
+            "is_approved": {
+              "const": false
+            }
+          },
+          "required": [
+            "opportunity_id",
+            "generated_at",
+            "decision",
+            "risk",
+            "blockers",
+            "next_action",
+            "committee_summary",
+            "human_review_required",
+            "is_approved"
+          ]
+        }
+      },
+      "required": [
+        "go_no_go"
+      ]
+    }
+  },
+  "required": [
+    "contract_version",
+    "capability_id",
+    "correlation_id",
+    "run_id",
+    "policy_version",
+    "source",
+    "cutoff_at",
+    "evidence",
+    "data"
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "contract_version": "1.0.0",
+  "capability_id": "agt002.go_no_go.recommendation.read",
+  "correlation_id": "syn-corr-go-no-go-recommendation-001",
+  "run_id": "syn-run-go-no-go-recommendation-001",
+  "policy_version": "phase3a-p1-read-only",
+  "source": {
+    "system": "SIIO",
+    "dataset": "psi_sales_interactions:tender_document_analysis",
+    "record_set_id": "syn-record-set-go-no-go-recommendation-001",
+    "persisted": true
+  },
+  "cutoff_at": "2030-02-01T10:00:00Z",
+  "evidence": [
+    {
+      "evidence_id": "syn-evidence-go-no-go-recommendation-001",
+      "evidence_type": "record",
+      "record_id": "syn-record-go-no-go-recommendation-001",
+      "captured_at": "2030-02-01T10:00:00Z"
+    }
+  ],
+  "data": {
+    "go_no_go": {
+      "opportunity_id": "syn-opportunity-004",
+      "generated_at": "2030-01-31T10:00:00Z",
+      "decision": "GO condicionado",
+      "risk": "Medio",
+      "blockers": [
+        "Synthetic missing input."
+      ],
+      "next_action": "Synthetic human review step.",
+      "committee_summary": "Synthetic committee summary.",
+      "human_review_required": true,
+      "is_approved": false
+    }
+  }
+}

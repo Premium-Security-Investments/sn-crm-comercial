@@ -1,0 +1,22 @@
+{
+  "contract_version": "1.0.0",
+  "capability_id": "agt002.radar.read",
+  "correlation_id": "syn-corr-agt002-error",
+  "run_id": null,
+  "policy_version": "phase3a-p1-read-only",
+  "source": {
+    "system": "SIIO",
+    "dataset": "psi_public_tenders",
+    "record_set_id": null,
+    "persisted": true
+  },
+  "cutoff_at": null,
+  "evidence": [],
+  "error": {
+    "code": "RESULT_NOT_PERSISTED",
+    "message": "Synthetic persisted result is absent.",
+    "retryable": false,
+    "details": [],
+    "unexpected": "synthetic-extra"
+  }
+}
