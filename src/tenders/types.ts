@@ -66,5 +66,9 @@ export type TenderGoNoGoDecision = {
 export type TenderGoNoGoDecisionInput = { opportunity_id: string; decision: 'go' | 'no_go'; analysis_interaction_id: string; justification?: string | null };
 export type TenderOfferPreparation = { status: string; interaction_id?: string; [key: string]: unknown };
 export type TenderGoNoGoPayload = { decision: TenderGoNoGoDecision | null; history: TenderGoNoGoDecision[]; preparation: TenderOfferPreparation | null; analysis?: TenderDocumentAnalysis | null };
+export type TenderGoNoGoPostPayload = {
+  decision: { decision_id: string; tender_id: string; opportunity_id: string; decision: 'go' | 'no_go'; decided_at: string; preparation_id?: string | null };
+  preparation: TenderOfferPreparation | null;
+};
 export type TenderModuleData = { currentProfile: TenderCurrentProfile; profiles: Array<{ id: string; full_name: string; role: string }> };
 export type TendersModuleProps = { view: TenderModuleView; data: TenderModuleData; refresh: () => Promise<void>; request: TenderRequest; navigate: (hash: string) => void; children?: ReactNode };

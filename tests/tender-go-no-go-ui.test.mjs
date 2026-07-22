@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { existsSync, readFileSync } from 'node:fs';
 import { buildSync } from 'esbuild';
+import { ACTIONS, can } from '../access-control.js';
 
 const read = relative => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8');
 const panelPath = new URL('../src/tenders/components/TenderGoNoGoDecisionPanel.tsx', import.meta.url);
@@ -18,7 +19,7 @@ for (const text of ['Recomendación del sistema', 'Decisión humana', 'Autorizar
 assert.match(panel, /role="dialog"|<dialog/, 'La decisión debe pedir confirmación accesible.');
 assert.match(panel, /recordTenderGoNoGoDecision/, 'La confirmación debe usar la API formal.');
 assert.match(panel, /analysis_interaction_id:\s*analysis\.interaction_id/, 'Debe auditar el ID exacto del análisis vigente.');
-assert.match(panel, /await onChanged\?\.?\(\)/, 'Al guardar debe notificar al detalle para recargar expediente.');
+assert.match(panel, /await onChanged\s*\(\)/, 'Al guardar debe notificar al detalle para recargar expediente.');
 assert.match(panel, /analysis.*interaction_id|interaction_id.*analysis/, 'Sin análisis vigente el panel debe explicar el bloqueo.');
 assert.match(panel, /history/, 'La UI debe mostrar el historial inmutable.');
 assert.match(panel, /findings|concerns/, 'La UI debe exponer hallazgos o alertas relevantes.');
@@ -31,12 +32,12 @@ assert.match(main, /onAnalysisChanged/, 'La revisión documental debe elevar el 
 assert.match(main, /onAnalysisChanged\?:\s*\(analysis: TenderDocumentAnalysis \| null\)/, 'La revisión documental debe exponer el análisis vigente al detalle.');
 assert.match(main, /onAnalysisChanged\?\.\(data\.analysis \|\| null\)/, 'Cada carga o mutación documental debe elevar análisis o null.');
 assert.match(main, /<TenderGoNoGoDecisionPanel[\s\S]*?opportunityId=\{o\.id\}[\s\S]*?analysis=\{tenderAnalysis\}/, 'La decisión debe recibir el análisis vigente de la revisión documental.');
-assert.match(main, /key=\{`tender-preparation-\$\{tenderRevision\}`\}/, 'La preparación debe recargar después de una decisión formal.');
+assert.match(main, /key=\{`tender-preparation-\$\{o\.id\}-\$\{tenderRevision\}`\}/, 'La preparación debe recargar después de una decisión formal y aislarse por oportunidad.');
 assert.doesNotMatch(main, />Aprobar preparación de oferta</, 'No puede quedar el control legacy de preparación.');
 assert.doesNotMatch(main, /\/api\/tender-offer-preparation-approve/, 'La UI no puede invocar la aprobación legacy.');
 assert.match(main, /Autorizar GO/, 'Sin preparación la UI debe dirigir a la decisión formal GO.');
 assert.match(panel, /const submittedDecision = selectedDecision/, 'El submit debe capturar la decisión antes de limpiar el modal.');
-assert.match(panel, /setSelectedDecision\(null\);\s*setJustification\(''\);[\s\S]*?await load\(\)/, 'Un éxito debe cerrar explícitamente el modal aunque siga busy.');
+assert.match(panel, /setSelectedDecision\(null\);\s*setJustification\(''\);[\s\S]*?await load\(true\)/, 'Un éxito debe cerrar explícitamente el modal antes de sincronizar, aunque siga ocupado.');
 
 const bundle = buildSync({ entryPoints: [permissionsPath.pathname], bundle: true, platform: 'node', format: 'esm', write: false });
 const permissionsUrl = `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].contents).toString('base64')}`;
@@ -44,10 +45,29 @@ const { canApproveTenderGoNoGo } = await import(permissionsUrl);
 const human = (role, permissions = ['licitaciones']) => ({ id: `user-${role}`, role, active: true, identity_type: 'human', permissions });
 assert.equal(canApproveTenderGoNoGo({ ...human('admin'), identity_type: 'agent' }), false, 'Un agente admin no puede decidir.');
 assert.equal(canApproveTenderGoNoGo({ id: 'legacy-director', role: 'director', active: true, permissions: ['licitaciones'] }), true, 'Un perfil legacy director humano puede decidir.');
-assert.equal(canApproveTenderGoNoGo({ ...human('director'), identity_type: undefined }), true, 'identity_type undefined preserva el perfil humano legacy.');
-assert.equal(canApproveTenderGoNoGo({ ...human('gerencia'), identity_type: null }), true, 'identity_type null preserva el perfil humano legacy.');
+const accessProfile = profile => ({ ...profile, areas: [{ area_code: 'licitaciones', subarea_code: null }] });
+for (const [label, profile] of [
+  ['legacy sin propiedad', { id: 'legacy-director', role: 'director', active: true, permissions: ['licitaciones'] }],
+  ['undefined propio', { ...human('director'), identity_type: undefined }],
+  ['null propio', { ...human('gerencia'), identity_type: null }],
+  ['humano', human('admin')],
+  ['agente', { ...human('admin'), identity_type: 'agent' }],
+  ['inactivo', { ...human('director'), active: false }],
+  ['sin rol', human('comercial')],
+  ['sin permiso', human('director', [])],
+]) {
+  assert.equal(
+    canApproveTenderGoNoGo(profile),
+    can(accessProfile(profile), ACTIONS.LICITACIONES_GO_NO_GO_APPROVE),
+    `La UI debe replicar exactamente el ACL para ${label}.`,
+  );
+}
 assert.equal(canApproveTenderGoNoGo({ ...human('director'), active: false }), false, 'Un perfil inactivo no puede decidir.');
 assert.equal(canApproveTenderGoNoGo(human('director', [])), false, 'Un director sin permiso de licitaciones no puede decidir.');
 assert.equal(canApproveTenderGoNoGo(human('comercial')), false, 'Comercial no puede decidir.');
+assert.match(panel, /requestVersionRef|requestVersion/, 'Las cargas deben descartar respuestas obsoletas.');
+assert.match(panel, /syncPending/, 'Un POST persistido debe bloquear reintentos mientras sincroniza.');
+assert.match(panel, /document\.activeElement|previouslyFocused/, 'El modal debe recordar el foco previo.');
+assert.match(panel, /Escape|Tab/, 'El modal debe manejar Escape y trap de Tab.');
 
 console.log('tender GO/NO GO UI checks passed');

@@ -7,7 +7,7 @@ import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import mammoth from 'mammoth';
 import AdmZip from 'adm-zip';
 import { callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
-import { callTenderGoNoGoDecision, getTenderGoNoGoDecision } from '../tender-go-no-go-rpc.js';
+import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
 import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
 import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
@@ -2396,7 +2396,9 @@ app.get('/api/tender-offer-preparation', async (req, res) => {
     const opportunityId = String(req.query.id || '');
     if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
     await ensureTenderOpportunity(database, opportunityId, currentProfile);
-    res.json(await getTenderOfferPreparationRecords(database, opportunityId));
+    const formal = await getTenderGoNoGoDecision(database, opportunityId, currentProfile);
+    if (formal.decision?.decision !== 'go') return res.json({ preparation: null, preparations: [], notes: [], decision: formal.decision, reason: 'no_go_or_pending' });
+    res.json({ ...(await getTenderOfferPreparationRecords(database, opportunityId)), decision: formal.decision });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -2428,6 +2430,7 @@ app.post('/api/tender-offer-preparation-note', async (req, res) => {
     const opportunityId = String(req.body.opportunity_id || '');
     if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
     await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    await requireTenderGoForPreparation(database, opportunityId, currentProfile);
     const note = String(req.body.note || '').trim();
     if (!note) throw new Error('La nota para el asistente es obligatoria.');
     const payload = { kind: 'tender_offer_preparation_note', note, status: req.body.status || 'abierta', created_at: new Date().toISOString(), created_by: currentProfile.full_name || currentProfile.microsoft_email || currentProfile.id, purpose: 'Notas para el asistente / comercial: informar qué necesitamos del humano para seguir adelante.' };

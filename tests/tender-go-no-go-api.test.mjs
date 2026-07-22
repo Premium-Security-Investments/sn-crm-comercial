@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { callTenderGoNoGoDecision, getTenderGoNoGoDecision } from '../tender-go-no-go-rpc.js';
+import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
 
 const OPPORTUNITY_ID = '11111111-1111-4111-8111-111111111111';
 const TENDER_ID = '22222222-2222-4222-8222-222222222222';
@@ -207,6 +207,16 @@ function decide(database, input = {}) {
   assert.deepEqual(readResult.preparation, SQL_CURRENT_PREPARATION, 'GET preparation must use SQL occurred_at DESC, id DESC order');
 }
 
+{
+  const noGo = { id: '99999999-9999-4999-8999-999999999998', decision: 'no_go', decided_at: '2026-07-11T00:00:00.000Z' };
+  const go = { id: '99999999-9999-4999-8999-999999999997', decision: 'go', decided_at: '2026-07-10T00:00:00.000Z' };
+  const { database } = fakeDatabase({ historicalPreparation: HISTORICAL_PREPARATION, history: [noGo, go] });
+  const result = await getTenderGoNoGoDecision(database, OPPORTUNITY_ID, directorProfile);
+  assert.equal(result.decision.decision, 'no_go');
+  assert.equal(result.preparation, null, 'Una decisión NO_GO posterior no puede exponer una preparación histórica.');
+  await assert.rejects(() => requireTenderGoForPreparation(database, OPPORTUNITY_ID, directorProfile), error => error?.status === 409, 'Las notas deben rechazar NO_GO vigente antes de insertar.');
+}
+
 for (const input of [
   { opportunity_id: 'invalid', decision: 'go' },
   { opportunity_id: OPPORTUNITY_ID, decision: 'unknown' },
@@ -230,7 +240,7 @@ for (const profile of [
 
 for (const path of ['../server/index.js', '../api/[...path].js']) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-  assert.match(source, /import \{ callTenderGoNoGoDecision, getTenderGoNoGoDecision \} from '\.\.\/tender-go-no-go-rpc\.js';/);
+  assert.match(source, /import \{ callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation \} from '\.\.\/tender-go-no-go-rpc\.js';/);
   assert.match(source, /app\.get\('\/api\/tender-go-no-go-decision'/);
   assert.match(source, /app\.post\('\/api\/tender-go-no-go-decision'/);
   assert.match(source, /callTenderGoNoGoDecision\(requireDb\(\), req\.body \|\| \{\}, currentProfile\)/);
@@ -239,6 +249,9 @@ for (const path of ['../server/index.js', '../api/[...path].js']) {
   assert.match(alias[0], /getAuthContext\(req\)/, 'legacy alias still authenticates');
   assert.match(alias[0], /status\(410\)\.json\(\{ error: 'Use Autorizar GO para iniciar la preparación de oferta\.' \}\)/);
   assert.doesNotMatch(alias[0], /requireDb|\.from\(|\.rpc\(|storage/);
+  const noteRoute = source.match(/app\.post\('\/api\/tender-offer-preparation-note'[\s\S]*?\n}\);/);
+  assert.ok(noteRoute, 'Debe conservarse la ruta de notas.');
+  assert.match(noteRoute[0], /await requireTenderGoForPreparation\(database, opportunityId, currentProfile\)/, 'Las notas deben validar GO vigente antes del insert.');
 }
 
 console.log('tender go/no-go API checks passed');

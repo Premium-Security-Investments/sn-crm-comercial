@@ -21,6 +21,7 @@ for (const file of [server, api]) {
   assert(file.includes("import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';"), 'Backend debe compartir el builder rico de preparación.');
   assert(file.includes("app.get('/api/tender-offer-preparation'"), 'Debe existir endpoint para leer expediente de oferta.');
   assert(file.includes("app.post('/api/tender-offer-preparation-note'"), 'Debe existir endpoint para notas/solicitudes del asistente.');
+  assert(file.includes('requireTenderGoForPreparation'), 'Preparación y notas deben consultar la decisión formal vigente.');
   assert(file.includes("app.post('/api/tender-go-no-go-decision'"), 'GO/NO GO debe tener una ruta formal única.');
   const alias = file.match(/app\.post\('\/api\/tender-offer-preparation-approve'[\s\S]*?\n}\);/);
   assert(alias, 'La ruta anterior debe permanecer como alias controlado durante la transición.');
@@ -38,6 +39,6 @@ assert(src.includes('Requiere intervención humana'), 'UI debe mostrar pendiente
 assert(src.includes('Carpeta SharePoint / OneDrive'), 'UI debe mostrar estado/enlace de carpeta SharePoint/OneDrive.');
 assert(src.includes('Notas para el asistente'), 'UI debe tener espacio de notas para el asistente/comercial.');
 assert(src.includes('/api/tender-offer-preparation-note'), 'UI debe permitir guardar notas del asistente.');
-assert(/preparation\s*\?\s*<div className="document-analysis-grid"/.test(src), 'Las notas y el formulario deben quedar ocultos antes del GO.');
+assert(/preparation\s*&&\s*payload\.decision\?\.decision\s*===\s*'go'/.test(src), 'Las notas y el formulario deben quedar ocultos si GO ya no es la decisión vigente.');
 
 console.log('tender offer preparation static checks passed');
