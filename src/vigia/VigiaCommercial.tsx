@@ -127,7 +127,7 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
     </section>}
 
     <section className="priority-filter-panel">
-      <div className="priority-filter-heading"><div><strong>Filtros de gestión</strong><span>Los filtros se combinan sobre la misma lectura de AGT-003.</span></div>{hasFilters && <button className="secondary" onClick={resetFilters}>Limpiar filtros</button>}</div>
+      <div className="priority-filter-heading"><div><strong>Filtros de gestión</strong><span>Los filtros se combinan sobre la misma lectura de AGT-003.</span></div>{hasFilters && <button className="secondary" onClick={resetFilters}>Limpiar</button>}</div>
       <div className="priority-filter-grid">
         <label className="priority-search"><span>Buscar</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Empresa o comercial" /></label>
         <label><span>Comercial</span><select value={owner} onChange={event => setOwner(event.target.value)}><option value="">Todos</option>{ownerOptions.map(([value, optionLabel]) => <option key={value} value={value}>{optionLabel}</option>)}</select></label>
@@ -151,7 +151,7 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
         <footer>{(canOpenDashboard || canOpenOpportunity) && <div className="vigia-card-actions">{canOpenDashboard && <a className="button" href={dashboardLink(priority)}>Ver en Dashboard</a>}{canOpenOpportunity && <a className="button secondary" href={`#/detail/${priority.id}`}>Ver oportunidad</a>}{canOpenOpportunity && <a className="button secondary" href={`#/detail/${priority.id}?focus=interaction`}>Registrar seguimiento</a>}</div>}<div className="vigia-feedback" aria-label="Feedback local"><button className={feedback[priority.id] === 'revisada' ? 'active' : 'secondary'} onClick={() => setFeedback(current => ({ ...current, [priority.id]: 'revisada' }))}>Marcar revisada</button><button className={feedback[priority.id] === 'util' ? 'active' : 'secondary'} onClick={() => setFeedback(current => ({ ...current, [priority.id]: 'util' }))}>Útil</button><button className={feedback[priority.id] === 'no_util' ? 'active' : 'secondary'} onClick={() => setFeedback(current => ({ ...current, [priority.id]: 'no_util' }))}>No útil</button></div></footer>
       </article>)}
     </section>
-    {!status && !visible.length && <div className="empty"><strong>Sin prioridades para estos filtros</strong><span>Prueba otra combinación o actualiza la lectura.</span>{hasFilters && <button className="secondary" onClick={resetFilters}>Limpiar filtros</button>}</div>}
+    {!status && !visible.length && <div className="empty"><strong>Sin prioridades para estos filtros</strong><span>Prueba otra combinación o actualiza la lectura.</span>{hasFilters && <button className="secondary" onClick={resetFilters}>Limpiar</button>}</div>}
     <p className="muted">Feedback local de sesión: no se guarda en el CRM, no cambia el score y se pierde al recargar.</p>
   </section>;
 }

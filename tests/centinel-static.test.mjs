@@ -7,7 +7,6 @@ const css = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8
 
 const mainMarkers = [
   "'centinel'",
-  "#/vig-ia",
   "Vig-IA — Reportes gerenciales",
   "Vig-IA — Reportes gerenciales asistidos",
   "Selecciona un reporte gerencial",

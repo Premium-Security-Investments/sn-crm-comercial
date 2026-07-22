@@ -11,14 +11,14 @@ for (const [name, source] of [['server', server], ['vercel', vercel]]) {
   assert.ok(source.includes("'GET /api/vigia/priorities': ['vigia', ACTIONS.MODULE_VIGIA_VIEW]"), `${name} inventories Vig-IA endpoint`);
   assert.ok(source.includes("app.get('/api/vigia/priorities'"), `${name} exposes dedicated endpoint`);
   assert.ok(source.includes('VIGIA_OPPORTUNITY_SELECT'), `${name} uses an explicit allowlist`);
-  assert.ok(source.includes("requireModuleAction(currentProfile, 'vigia')"), `${name} checks module before CRM read`);
+  assert.ok(source.includes('requirePrioritiesAction(currentProfile)'), `${name} checks inherited Prioridades modules before CRM read`);
   const routeStart = source.indexOf("app.get('/api/vigia/priorities'");
   const route = source.slice(routeStart, source.indexOf("app.get('/api/bootstrap'", routeStart));
-  assert.ok(route.indexOf("requireModuleAction(currentProfile, 'vigia')") < route.indexOf('resolveVigiaOwnerScope(database, currentProfile)'), `${name} checks module before scope resolution`);
+  assert.ok(route.indexOf('requirePrioritiesAction(currentProfile)') < route.indexOf('resolveVigiaOwnerScope(database, currentProfile)'), `${name} checks module before scope resolution`);
   assert.ok(route.indexOf('resolveVigiaOwnerScope(database, currentProfile)') < route.indexOf('fetchVigiaRows(database, ownerIds)'), `${name} resolves scope before reading CRM rows`);
   assert.ok(source.includes("app.all('/api/vigia/priorities'"), `${name} rejects non-GET methods`);
   assert.ok(!route.includes("select('*')"), `${name} endpoint never selects all columns`);
   assert.ok(!route.includes('psi_public_tenders'), `${name} endpoint does not mix tenders`);
 }
-assert.ok(backendTest.includes("vigiaOnly"), 'backend guard suite covers explicit Vig-IA module');
+assert.ok(backendTest.includes('alertsOnly') && backendTest.includes('vigiaOnly'), 'backend guard suite covers both inherited Prioridades modules');
 console.log('vigia endpoint static security contract passed');
