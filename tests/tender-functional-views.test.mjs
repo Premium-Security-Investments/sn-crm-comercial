@@ -5,7 +5,7 @@ import { buildSync } from 'esbuild';
 const moduleSource = readFileSync(new URL('../src/tenders/TendersModule.tsx', import.meta.url), 'utf8');
 const tracking = readFileSync(new URL('../src/tenders/TenderTrackingView.tsx', import.meta.url), 'utf8');
 const radar = readFileSync(new URL('../src/tenders/TenderRadarView.tsx', import.meta.url), 'utf8');
-const dossiers = readFileSync(new URL('../src/tenders/TenderDossiersView.tsx', import.meta.url), 'utf8');
+const opportunities = readFileSync(new URL('../src/tenders/TenderOpportunitiesView.tsx', import.meta.url), 'utf8');
 const profiles = readFileSync(new URL('../src/tenders/TenderProfilesView.tsx', import.meta.url), 'utf8');
 const apiSource = readFileSync(new URL('../src/tenders/api.ts', import.meta.url), 'utf8');
 const tabsSource = readFileSync(new URL('../src/tenders/components/TenderModuleTabs.tsx', import.meta.url), 'utf8');
@@ -13,7 +13,7 @@ const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
 assert.match(moduleSource, /<TenderRadarView/);
 assert.match(moduleSource, /<TenderTrackingView/);
-assert.match(moduleSource, /<TenderDossiersView/);
+assert.match(moduleSource, /<TenderOpportunitiesView/);
 assert.match(moduleSource, /<TenderProfilesView/);
 assert.match(moduleSource, /\{props\.view === 'seguimiento' && <TenderTrackingView \{\.\.\.props\} moduleNavigation=\{moduleNavigation\} \/>\}/, 'Seguimiento debe seguir siendo una vista independiente y solo recibir composición visual compartida.');
 assert.doesNotMatch(moduleSource, /renderLegacy/, 'Ninguna de las cuatro vistas puede conservar el adaptador legado.');
@@ -22,7 +22,9 @@ assert.match(apiSource, /export async function loadTracking/);
 assert.match(apiSource, /export async function loadDossiers/);
 assert.match(apiSource, /export async function loadProfiles/);
 assert.match(tabsSource, /navigate\(hash\)/, 'Tabs must navigate through the callback supplied by the module.');
-for (const label of ['Radar de oportunidades', 'Seguimiento', 'Expedientes', 'Perfiles de búsqueda']) assert.match(tabsSource, new RegExp(label));
+for (const label of ['Radar de oportunidades', 'Seguimiento', 'Oportunidades']) assert.match(tabsSource, new RegExp(label));
+assert.doesNotMatch(tabsSource, />Expedientes</);
+assert.doesNotMatch(tabsSource, />Perfiles de búsqueda</);
 assert.match(main, /<TendersModule/);
 assert.doesNotMatch(main, /renderLegacy=/, 'main no debe conservar el renderer del tablero legado.');
 assert.doesNotMatch(main, /TendersRadar|TenderUnifiedBoard|TenderSectionPanel|TenderCompanyProfilePanel|TenderSearchProfilesPanel/, 'Los componentes del tablero legado deben retirarse de main.');
@@ -37,12 +39,15 @@ assert.match(main, /id="tender-document-review"/, 'TenderDocumentReviewPanel nee
 assert.match(main, /tabIndex=\{-1\}/, 'The document-focus anchor must be programmatically focusable.');
 
 for (const label of ['Abrir expediente', 'GO / NO GO', 'Documentos', 'Checklist', 'Pendientes humanos', 'SharePoint / OneDrive']) {
-  assert.ok(dossiers.includes(label), `Expedientes debe mostrar ${label}`);
+  assert.ok(opportunities.includes(label), `Oportunidades debe mostrar ${label}`);
 }
-assert.match(dossiers, /\/api\/tender-documents-import/);
-assert.match(dossiers, /loadDossiers/);
-assert.match(dossiers, /dossier_error/);
-assert.doesNotMatch(dossiers, /Sincronizar fuentes oficiales|TenderCard|renderLegacy/, 'Expedientes no debe reutilizar Radar ni el adaptador legado.');
+assert.match(opportunities, /Bandeja de oportunidades/);
+assert.match(opportunities, /<h2 id="tender-dossiers-heading">Oportunidades<\/h2>/);
+assert.match(opportunities, /Gestione oportunidades convertidas, su expediente, decisión y preparación\./);
+assert.match(opportunities, /\/api\/tender-documents-import/);
+assert.match(opportunities, /loadDossiers/);
+assert.match(opportunities, /dossier_error/);
+assert.doesNotMatch(opportunities, /Sincronizar fuentes oficiales|TenderCard|renderLegacy/, 'Oportunidades no debe reutilizar Radar ni el adaptador legado.');
 assert.match(profiles, /\/api\/tender-search-profiles/);
 assert.match(profiles, /\/api\/tender-company-profile/);
 assert.ok(!profiles.includes("request('/api/tenders"), 'Perfiles no debe cargar Radar.');
@@ -92,6 +97,6 @@ assert.equal(focusDocumentReviewArea(null), false, 'Un detalle sin documentos no
 const reloadCalls = [];
 await reloadCurrentDossierPage(3, 25, async query => { reloadCalls.push(query); return ['same-page']; });
 assert.deepEqual(reloadCalls, [{ limit: 25, offset: 50 }], 'El reintento debe recargar la misma página local de Expedientes.');
-assert.match(dossiers, /await request\('\/api\/tender-documents-import'[\s\S]*await reloadCurrentDossierPage\(\)/, 'La recarga local nombrada debe ocurrir solo después del reintento protegido exitoso.');
+assert.match(opportunities, /await request\('\/api\/tender-documents-import'[\s\S]*await reloadCurrentDossierPage\(\)/, 'La recarga local nombrada debe ocurrir solo después del reintento protegido exitoso.');
 
 console.log('independent tender functional views and behavior passed');

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export type TenderModuleView = 'radar' | 'seguimiento' | 'expedientes' | 'perfiles';
+export type TenderModuleView = 'radar' | 'seguimiento' | 'oportunidades' | 'configuracion';
 export type TenderRequest = <T>(path: string, options?: RequestInit) => Promise<T>;
 export type TenderSection = 'hacer' | 'revisar' | 'descartar';
 export type TenderInternalStatus = 'nueva' | 'en_revision' | 'convertida_oportunidad' | 'descartada';

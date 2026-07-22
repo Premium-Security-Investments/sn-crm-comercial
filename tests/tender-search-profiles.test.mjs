@@ -28,7 +28,7 @@ for (const field of ['query_text', 'source_filter', 'region_key', 'deadline_filt
 assert.match(radar, /section_filter/, 'Radar debe aplicar la sección persistida del perfil.');
 assert.match(radar, /internal_status_filter/, 'Radar debe aplicar el estado interno persistido del perfil.');
 assert.match(radar, /Mostrando procesos convertidos/, 'Radar debe explicar que las oportunidades convertidas permanecen visibles.');
-assert.match(radar, /view=expedientes/, 'Radar debe ofrecer navegación explícita a Expedientes para convertidas.');
+assert.match(radar, /view=oportunidades/, 'Radar debe ofrecer navegación explícita a Oportunidades para convertidas.');
 assert.doesNotMatch(main, /loadSearchProfiles|saveCurrentSearchProfile|applySearchProfile/, 'main no debe retener la lógica de perfiles migrada.');
 
 const bundle = buildSync({

@@ -3,8 +3,7 @@ import type { TenderModuleView } from '../types';
 const views: Array<{ view: TenderModuleView; label: string }> = [
   { view: 'radar', label: 'Radar de oportunidades' },
   { view: 'seguimiento', label: 'Seguimiento' },
-  { view: 'expedientes', label: 'Expedientes' },
-  { view: 'perfiles', label: 'Perfiles de búsqueda' },
+  { view: 'oportunidades', label: 'Oportunidades' },
 ];
 
 export function TenderModuleTabs({ active, navigate }: { active: TenderModuleView; navigate: (hash: string) => void }) {

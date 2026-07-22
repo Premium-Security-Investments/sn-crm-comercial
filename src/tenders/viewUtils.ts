@@ -1,3 +1,11 @@
+import type { TenderModuleView } from './types';
+
+export function normalizeTenderModuleView(value: string): TenderModuleView {
+  if (value === 'expedientes') return 'oportunidades';
+  if (value === 'perfiles') return 'configuracion';
+  return value === 'seguimiento' || value === 'oportunidades' || value === 'configuracion' ? value : 'radar';
+}
+
 export function dossierPageQuery(page: number, limit: number) {
   const safeLimit = Math.min(100, Math.max(1, Math.trunc(limit) || 50));
   const safePage = Math.max(1, Math.trunc(page) || 1);

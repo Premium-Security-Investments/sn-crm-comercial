@@ -9,7 +9,7 @@ import { MODULE_PERMISSION_CODES, MODULE_PERMISSIONS, eligibleModulePermissions,
 import { SiioDashboard } from './siio/SiioDashboard';
 import { TendersModule } from './tenders/TendersModule';
 import type { TenderModuleView } from './tenders/types';
-import { focusDocumentReviewArea } from './tenders/viewUtils';
+import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
 import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
 import { supabaseBrowser } from './supabaseBrowser';
 import { VigiaCommercial } from './vigia/VigiaCommercial';
@@ -251,7 +251,7 @@ function alertRoute(status: string) { return `#/alerts?status=${encodeURICompone
 function managerAlertRoute(status: string) { return alertRoute(status); }
 function tenderDeepLink(tender: PublicTender) { return `#/tenders?tender=${encodeURIComponent(tender.id)}`; }
 function hashQueryParam(name: string) { return new URLSearchParams((window.location.hash.split('?')[1] || '')).get(name) || ''; }
-function tenderViewFromHash(): TenderModuleView { return (['radar','seguimiento','expedientes','perfiles'].includes(hashQueryParam('view')) ? hashQueryParam('view') : 'radar') as TenderModuleView; }
+function tenderViewFromHash(): TenderModuleView { return normalizeTenderModuleView(hashQueryParam('view')); }
 function isTerminalStage(stageCode?: string | null) { return ['aprobado','perdido','descartado'].includes(stageCode || ''); }
 function dashboardOpportunityDate(o: Opportunity) { return o.expected_close_date || o.quote_date || o.approved_at || o.updated_at || o.created_at; }
 function matchesDashboardPeriod(o: Opportunity, period: DashboardPeriodFilter) {

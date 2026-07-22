@@ -7,7 +7,7 @@ const module = readFileSync(new URL('../src/tenders/TendersModule.tsx', import.m
 const tabs = readFileSync(new URL('../src/tenders/components/TenderModuleTabs.tsx', import.meta.url), 'utf8');
 const radar = readFileSync(new URL('../src/tenders/TenderRadarView.tsx', import.meta.url), 'utf8');
 const tracking = readFileSync(new URL('../src/tenders/TenderTrackingView.tsx', import.meta.url), 'utf8');
-const dossiers = readFileSync(new URL('../src/tenders/TenderDossiersView.tsx', import.meta.url), 'utf8');
+const opportunities = readFileSync(new URL('../src/tenders/TenderOpportunitiesView.tsx', import.meta.url), 'utf8');
 const profiles = readFileSync(new URL('../src/tenders/TenderProfilesView.tsx', import.meta.url), 'utf8');
 const radarUtils = readFileSync(new URL('../src/tenders/radarUtils.ts', import.meta.url), 'utf8');
 const tenderApi = readFileSync(new URL('../src/tenders/api.ts', import.meta.url), 'utf8');
@@ -23,10 +23,12 @@ const navRenderer = main.slice(main.indexOf('function Nav('), main.indexOf('func
 assert.doesNotMatch(navRenderer, /href="#\/tenders\?view=radar"|directora\.licitaciones@seguridadnacional\.co/, 'El renderer del sidebar no debe duplicar enlace ni autorización nominal de Licitaciones.');
 assert.ok(main.includes('tenderViewFromHash()'), 'La vista de Licitaciones debe derivarse de la URL.');
 
-for (const [view, component] of [['radar', 'TenderRadarView'], ['seguimiento', 'TenderTrackingView'], ['expedientes', 'TenderDossiersView'], ['perfiles', 'TenderProfilesView']]) {
+for (const [view, component] of [['radar', 'TenderRadarView'], ['seguimiento', 'TenderTrackingView'], ['oportunidades', 'TenderOpportunitiesView']]) {
   assert.ok(module.includes(`props.view === '${view}' && <${component}`), `${view} debe tener un componente independiente.`);
   assert.ok(tabs.includes(`view: '${view}'`), `${view} debe estar disponible en la navegación interna.`);
 }
+assert.ok(module.includes("props.view === 'configuracion' && <TenderProfilesView"), 'Configuración debe conservar su vista fuera de las tabs primarias.');
+assert.ok(!tabs.includes("view: 'configuracion'"), 'Configuración no debe aparecer en las tabs primarias.');
 assert.ok(!module.includes('renderLegacy') && !main.includes('TenderUnifiedBoard') && !main.includes('TendersRadar'), 'No debe quedar el tablero monolítico legacy.');
 
 for (const marker of ["loadRadar<TenderRadarPayload>(request)", "'/api/tender-refresh'", "'/api/tender-convert'", 'Sincronizar fuentes oficiales', 'Abrir fuente', 'diagnostics', 'Cierre más próximo', 'className="pagination"']) {
@@ -38,7 +40,7 @@ assert.ok(radarUtils.includes('deduplicateTenders') && radarUtils.includes('sort
 
 assert.ok(tracking.includes('loadTracking<PublicTender[]>') && tenderApi.includes("'/api/tender-tracking'") && tracking.includes('expected_tracking_updated_at'), 'Seguimiento debe usar la cola y concurrencia optimista.');
 assert.ok(tracking.includes('Abrir oportunidad') && tracking.includes('document_import_status'), 'Seguimiento debe confirmar estado documental antes de navegar.');
-assert.ok(dossiers.includes("'/api/tender-documents-import'") && dossiers.includes('focus=documents'), 'Expedientes debe reutilizar importación protegida y abrir el foco documental.');
+assert.ok(opportunities.includes("'/api/tender-documents-import'") && opportunities.includes('focus=documents'), 'Oportunidades debe reutilizar importación protegida y abrir el foco documental.');
 assert.ok(profiles.includes('loadProfiles') && !profiles.includes("'/api/tenders'"), 'Perfiles no debe cargar el Radar.');
 assert.ok(profiles.includes('profileRadarHash') && viewUtils.includes('view=radar&profile=${encodeURIComponent(profileId)}'), 'Un perfil guardado debe aplicarse mediante URL codificada al Radar.');
 

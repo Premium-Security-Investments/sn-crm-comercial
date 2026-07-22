@@ -282,6 +282,7 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
   background:#eef4fb;
   box-sizing:border-box;
 }
+.tender-module-tabs.module-segmented-nav{grid-template-columns:repeat(3,minmax(0,1fr));}
 .module-segmented-nav button{
   width:100%;
   min-width:0;

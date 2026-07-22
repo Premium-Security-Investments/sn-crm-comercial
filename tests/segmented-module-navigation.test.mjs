@@ -12,18 +12,19 @@ const siioStyles = compact(read('src/siio/siio.css'));
 const tenderViews = [
   'src/tenders/TenderRadarView.tsx',
   'src/tenders/TenderTrackingView.tsx',
-  'src/tenders/TenderDossiersView.tsx',
+  'src/tenders/TenderOpportunitiesView.tsx',
   'src/tenders/TenderProfilesView.tsx',
 ].map(path => ({ path, source: read(path) }));
 
 assert.match(siioNavigation, /className="siio-navigation module-segmented-nav"/, 'SIIO debe usar el control segmentado compartido');
 assert.match(tenderTabs, /className="tender-module-tabs module-segmented-nav"/, 'Licitaciones debe usar el control segmentado compartido');
 assert.equal((siioNavigation.match(/view:\s*'/g) || []).length, 4, 'SIIO conserva cuatro vistas internas');
-assert.equal((tenderTabs.match(/view:\s*'/g) || []).length, 4, 'Licitaciones conserva cuatro vistas internas');
+assert.equal((tenderTabs.match(/view:\s*'/g) || []).length, 3, 'Licitaciones conserva tres vistas primarias');
 assert.match(siioNavigation, /aria-current=/, 'SIIO conserva aria-current');
 assert.match(tenderTabs, /aria-current=/, 'Licitaciones conserva aria-current');
 
 assert.match(styles, /\.module-segmented-nav\{[^}]*display:grid;[^}]*grid-template-columns:repeat\(4,minmax\(0,1fr\)\);[^}]*width:100%;/, 'el control debe ser una cuadrícula de cuatro segmentos iguales');
+assert.match(styles, /\.tender-module-tabs\.module-segmented-nav\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\);\}/, 'Licitaciones debe distribuir sus tres vistas primarias en segmentos iguales');
 assert.match(styles, /\.module-segmented-navbutton\{[^}]*width:100%;[^}]*min-width:0;[^}]*box-shadow:none;/, 'cada segmento debe ser compacto y sin sombras');
 assert.match(styles, /\.module-segmented-navbutton\.active[^{}]*\{[^}]*background:#174ea6;[^}]*color:#fff;/, 'el segmento activo debe ser inequívoco');
 assert.match(styles, /\.module-segmented-navbutton:focus-visible\{[^}]*outline:/, 'el foco de teclado debe ser visible');

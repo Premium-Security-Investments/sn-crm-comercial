@@ -14,9 +14,11 @@ assert.match(nav, /\.filter\(item => canAccessRoute\(profile, item\.page\)\)/, '
 assert.match(main, /item\.page === 'tenders' \? 'nav-parent '/, 'El renderer genérico debe mantener activo el padre de Licitaciones para cualquiera de sus subvistas.');
 assert.doesNotMatch(main, /href="#\/tenders\?view=radar"/, 'main.tsx no debe duplicar el enlace centralizado de Licitaciones.');
 assert.match(tabsSource, /tender-module-tabs/, 'El módulo debe proporcionar la navegación interna de Licitaciones.');
-for (const label of ['Radar de oportunidades', 'Seguimiento', 'Expedientes', 'Perfiles de búsqueda']) {
+for (const label of ['Radar de oportunidades', 'Seguimiento', 'Oportunidades']) {
   assert.match(tabsSource, new RegExp(label), `Las tabs del módulo deben incluir ${label}.`);
 }
+assert.doesNotMatch(tabsSource, />Expedientes</);
+assert.doesNotMatch(tabsSource, />Perfiles de búsqueda</);
 assert.match(radarSource, /Región SN/, 'El Radar debe exponer un filtro Región SN');
 assert.match(radarUtilsSource, /BOG - Bogotá\/Cundinamarca/, 'El Radar debe contemplar regiones donde SN tiene presencia');
 assert.match(radarUtilsSource, /tenderMatchesRegion\(tender, filters\.region\)/, 'El filtro regional debe aplicarse a la lista de licitaciones desde el helper de filtro compartido.');

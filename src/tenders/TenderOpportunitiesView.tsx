@@ -13,9 +13,9 @@ function tone(value?: string | null): 'success' | 'danger' | 'warning' | 'neutra
   return 'neutral';
 }
 
-type TenderDossiersViewProps = TendersModuleProps & { moduleNavigation: ReactNode };
+type TenderOpportunitiesViewProps = TendersModuleProps & { moduleNavigation: ReactNode };
 
-export function TenderDossiersView({ request, navigate, moduleNavigation }: TenderDossiersViewProps) {
+export function TenderOpportunitiesView({ request, navigate, moduleNavigation }: TenderOpportunitiesViewProps) {
   const [rows, setRows] = useState<TenderDossier[]>([]);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -42,7 +42,7 @@ export function TenderDossiersView({ request, navigate, moduleNavigation }: Tend
 
   if (loading && !rows.length) return <div className="notice">Cargando expedientes…</div>;
   return <section className="stack tenders-page tender-dossiers-view" aria-labelledby="tender-dossiers-heading">
-    <header className="tracking-header"><div><span className="eyebrow">Bandeja documental</span><h2 id="tender-dossiers-heading">Expedientes</h2><p>Revise evidencia, análisis, preparación y pendientes humanos de oportunidades convertidas.</p></div><button className="secondary" onClick={() => void reloadCurrentDossierPage()} disabled={loading}>Recargar expedientes</button></header>
+    <header className="tracking-header"><div><span className="eyebrow">Bandeja de oportunidades</span><h2 id="tender-dossiers-heading">Oportunidades</h2><p>Gestione oportunidades convertidas, su expediente, decisión y preparación.</p></div><button className="secondary" onClick={() => void reloadCurrentDossierPage()} disabled={loading}>Recargar oportunidades</button></header>
     {moduleNavigation}
     {error && <div className="error" role="alert">{error}</div>}
     {!rows.length ? <div className="notice">No hay expedientes convertidos en esta página.</div> : <div className="tracking-queue">{rows.map(dossier => <article key={dossier.opportunity_id} className="card tracking-row">
