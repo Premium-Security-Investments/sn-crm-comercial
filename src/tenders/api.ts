@@ -26,11 +26,16 @@ export async function enterTrackingFromRadar<T = Record<string, unknown>>(reques
   });
 }
 
-export type TenderDossierPage = { limit?: number; offset?: number };
+export type TenderDossierPage = { limit?: number; offset?: number; filter?: import('./types').TenderOpportunityFilter };
 export async function loadDossiers<T>(request: TenderRequest, page: TenderDossierPage = {}): Promise<T> {
-  const limit = Math.min(100, Math.max(1, Math.trunc(page.limit ?? 50)));
+  return loadTenderOpportunities(request, page);
+}
+
+export async function loadTenderOpportunities<T>(request: TenderRequest, page: TenderDossierPage = {}): Promise<T> {
+  const limit = Math.min(50, Math.max(1, Math.trunc(page.limit ?? 50)));
   const offset = Math.min(10000, Math.max(0, Math.trunc(page.offset ?? 0)));
-  return request<T>(`/api/tender-dossiers?limit=${limit}&offset=${offset}`);
+  const filter = page.filter || 'all';
+  return request<T>(`/api/tender-opportunities?filter=${encodeURIComponent(filter)}&limit=${limit}&offset=${offset}`);
 }
 
 export async function loadProfiles<T>(request: TenderRequest): Promise<T> {

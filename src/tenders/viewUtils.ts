@@ -1,4 +1,19 @@
-import type { TenderModuleView } from './types';
+import type { TenderModuleView, TenderOpportunityFilter, TenderOpportunitySummary } from './types';
+
+const tenderOpportunityFilters: readonly TenderOpportunityFilter[] = ['all', 'pending_decision', 'go_authorized', 'in_preparation', 'submitted', 'closed'];
+
+export function filterOpportunitySummaries(rows: TenderOpportunitySummary[], filter: TenderOpportunityFilter): TenderOpportunitySummary[] {
+  if (!tenderOpportunityFilters.includes(filter)) throw new Error('Filtro de oportunidades inválido.');
+  if (filter === 'all') return rows;
+  return rows.filter(row => {
+    const status = row.tender_offer_status || 'pendiente_decision';
+    if (filter === 'pending_decision') return status === 'pendiente_decision' && !row.decision;
+    if (filter === 'go_authorized') return ['en_preparacion', 'presentada'].includes(status) && row.decision === 'go';
+    if (filter === 'in_preparation') return status === 'en_preparacion';
+    if (filter === 'submitted') return status === 'presentada';
+    return ['cerrada_no_go', 'adjudicada', 'perdida'].includes(status);
+  });
+}
 
 export function normalizeTenderModuleView(value: string): TenderModuleView {
   if (value === 'expedientes') return 'oportunidades';
@@ -7,7 +22,7 @@ export function normalizeTenderModuleView(value: string): TenderModuleView {
 }
 
 export function dossierPageQuery(page: number, limit: number) {
-  const safeLimit = Math.min(100, Math.max(1, Math.trunc(limit) || 50));
+  const safeLimit = Math.min(50, Math.max(1, Math.trunc(limit) || 50));
   const safePage = Math.max(1, Math.trunc(page) || 1);
   return { limit: safeLimit, offset: (safePage - 1) * safeLimit };
 }

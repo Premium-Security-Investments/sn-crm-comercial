@@ -6,10 +6,12 @@ const backends = ['../api/[...path].js', '../server/index.js'].map(path =>
   readFileSync(new URL(path, import.meta.url), 'utf8')
 );
 const tenderApi = readFileSync(new URL('../src/tenders/api.ts', import.meta.url), 'utf8');
-assert.match(tenderApi, /loadDossiers[\s\S]*?\/api\/tender-dossiers[\s\S]*?limit/);
+assert.match(tenderApi, /loadTenderOpportunities[\s\S]*?\/api\/tender-opportunities[\s\S]*?filter[\s\S]*?limit/);
 
 for (const source of backends) {
+  assert.match(source, /app\.get\('\/api\/tender-opportunities'/);
   assert.match(source, /app\.get\('\/api\/tender-dossiers'/);
+  assert.match(source, /listTenderOpportunities/);
   for (const field of [
     'opportunity_id', 'document_count', 'missing_document_count', 'document_import_status',
     'document_import_error', 'go_no_go', 'risk', 'checklist_progress', 'preparation_status',
@@ -119,6 +121,12 @@ function getHeader(req, name) {
   return Array.isArray(value) ? value[0] : value || '';
 }
 
+function postgrestIn(url, field) {
+  const value = url.searchParams.getAll(field).find(item => item.startsWith('in.('));
+  if (!value?.startsWith('in.(') || !value.endsWith(')')) return null;
+  return value.slice(4, -1).split(',').map(item => decodeURIComponent(item.replace(/^"|"$/g, '')));
+}
+
 async function listen(server) {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   return server.address().port;
@@ -158,13 +166,33 @@ const fakeSupabase = http.createServer((req, res) => {
     const manager = url.searchParams.get('profile_id') === 'eq.manager-profile';
     return json(res, 200, manager ? [{ permission_code: 'licitaciones' }] : []);
   }
+  if (url.pathname === '/rest/v1/psi_sales_opportunities') {
+    let rows = [
+      { id: 'good', tender_offer_status: 'en_preparacion' },
+      { id: 'broken', tender_offer_status: 'pendiente_decision' }
+    ];
+    const statuses = postgrestIn(url, 'tender_offer_status');
+    const ids = postgrestIn(url, 'id');
+    if (statuses) rows = rows.filter(row => statuses.includes(row.tender_offer_status));
+    if (ids) rows = rows.filter(row => ids.includes(row.id));
+    return json(res, 200, rows);
+  }
+  if (url.pathname === '/rest/v1/psi_tender_go_no_go_decisions') {
+    let rows = [{ id: 'decision-good', opportunity_id: 'good', decision: 'go', decided_at: '2026-07-14T10:05:00.000Z', psi_sales_profiles: { full_name: 'Directora' } }];
+    const opportunityIds = postgrestIn(url, 'opportunity_id');
+    if (opportunityIds) rows = rows.filter(row => opportunityIds.includes(row.opportunity_id));
+    return json(res, 200, rows);
+  }
   if (url.pathname === '/rest/v1/psi_public_tenders') {
     observed.tenderQueries.push(url.search);
     observed.ranges.push(getHeader(req, 'range'));
-    return json(res, 200, [
+    let rows = [
       { stable_key: 'SECOP-good', source: 'SECOP II', entity: 'Entidad', title: 'Servicio de vigilancia', converted_opportunity_id: 'good', tracking_updated_at: '2026-07-14T12:00:00.000Z', id: 'tender-good' },
       { stable_key: 'SECOP-broken', source: 'SECOP II', entity: 'Entidad rota', title: 'Servicio roto', converted_opportunity_id: 'broken', tracking_updated_at: '2026-07-14T11:00:00.000Z', id: 'tender-broken' }
-    ]);
+    ];
+    const opportunityIds = postgrestIn(url, 'converted_opportunity_id');
+    if (opportunityIds) rows = rows.filter(row => opportunityIds.includes(row.converted_opportunity_id));
+    return json(res, 200, rows);
   }
   if (url.pathname === '/rest/v1/psi_sales_interactions') {
     const opportunity = decodeURIComponent(url.searchParams.get('opportunity_id') || '').replace(/^eq\./, '');
@@ -179,7 +207,74 @@ process.env.NEXT_PUBLIC_SUPABASE_URL = `http://127.0.0.1:${fakePort}`;
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
 process.env.VERCEL = '1';
 
-const { buildTenderDossierSummary, default: app } = await import('../server/index.js');
+const { buildTenderDossierSummary, listTenderOpportunities, default: app } = await import('../server/index.js');
+
+function batchFilterDatabase() {
+  const calls = [];
+  const opportunities = [
+    { id: 'pending-open', tender_offer_status: 'pendiente_decision' },
+    { id: 'pending-decided', tender_offer_status: 'pendiente_decision' },
+    { id: 'go-active', tender_offer_status: 'en_preparacion' },
+    { id: 'go-revoked', tender_offer_status: 'en_preparacion' },
+    { id: 'go-presented', tender_offer_status: 'presentada' },
+    { id: 'closed', tender_offer_status: 'cerrada_no_go' },
+  ];
+  const decisions = [
+    { id: 'decision-pending', opportunity_id: 'pending-decided', decision: 'no_go', decided_at: '2026-07-14T10:00:00.000Z', psi_sales_profiles: { full_name: 'Directora' } },
+    { id: 'decision-active', opportunity_id: 'go-active', decision: 'go', decided_at: '2026-07-14T10:01:00.000Z', psi_sales_profiles: { full_name: 'Directora' } },
+    { id: 'decision-a', opportunity_id: 'go-revoked', decision: 'go', decided_at: '2026-07-14T10:02:00.000Z', psi_sales_profiles: { full_name: 'Directora' } },
+    { id: 'decision-z', opportunity_id: 'go-revoked', decision: 'no_go', decided_at: '2026-07-14T10:02:00.000Z', psi_sales_profiles: { full_name: 'Directora' } },
+    { id: 'decision-presented', opportunity_id: 'go-presented', decision: 'go', decided_at: '2026-07-14T10:03:00.000Z', psi_sales_profiles: { full_name: 'Directora' } },
+  ];
+  const tenders = opportunities.map((opportunity, index) => ({
+    ...tender, id: `tender-${opportunity.id}`, stable_key: `SECOP-${opportunity.id}`,
+    converted_opportunity_id: opportunity.id, tracking_updated_at: `2026-07-14T12:0${index}:00.000Z`,
+  }));
+  function query(table) {
+    let ids = null;
+    let statuses = null;
+    let from = 0;
+    let to = Infinity;
+    const api = {
+      select() { return api; }, not() { return api; }, order() { return api; },
+      in(field, values) {
+        if (field === 'id' || field === 'converted_opportunity_id' || field === 'opportunity_id') ids = values;
+        if (field === 'tender_offer_status') statuses = values;
+        return api;
+      },
+      range(offset, end) { from = offset; to = end; return api; },
+      then(resolve, reject) {
+        calls.push(table);
+        let rows = table === 'psi_sales_opportunities' ? opportunities : table === 'psi_tender_go_no_go_decisions' ? decisions : table === 'psi_public_tenders' ? tenders : [];
+        if (statuses) rows = rows.filter(row => statuses.includes(row.tender_offer_status));
+        if (ids) rows = rows.filter(row => ids.includes(row.id) || ids.includes(row.opportunity_id) || ids.includes(row.converted_opportunity_id));
+        if (table === 'psi_tender_go_no_go_decisions') rows = [...rows].sort((a, b) => b.decided_at.localeCompare(a.decided_at) || b.id.localeCompare(a.id));
+        if (table === 'psi_public_tenders') rows = rows.slice(from, to + 1);
+        return Promise.resolve({ data: rows, error: null }).then(resolve, reject);
+      }
+    };
+    return api;
+  }
+  return { calls, from: query, storage: { from: () => ({ createSignedUrl: async () => assert.fail('summary must not sign URLs') }) } };
+}
+
+const pendingDatabase = batchFilterDatabase();
+const pendingRows = await listTenderOpportunities(pendingDatabase, { filter: 'pending_decision', limit: '50', offset: '0' });
+assert.deepEqual(pendingRows.rows.map(row => row.opportunity_id), ['pending-open'], 'pending requires no latest decision before tender pagination');
+assert.deepEqual(pendingDatabase.calls.slice(0, 3), ['psi_sales_opportunities', 'psi_tender_go_no_go_decisions', 'psi_public_tenders'], 'semantic decision batch must occur before tender pagination');
+assert.equal(pendingDatabase.calls.filter(table => table === 'psi_tender_go_no_go_decisions').length, 1, 'filtered candidates use one decision batch reused by the page');
+
+const goDatabase = batchFilterDatabase();
+const goRows = await listTenderOpportunities(goDatabase, { filter: 'go_authorized', limit: '50', offset: '0' });
+assert.deepEqual(goRows.rows.map(row => row.opportunity_id), ['go-active', 'go-presented'], 'GO authorization requires the deterministic latest GO decision and allowed lifecycle state');
+assert.equal(goRows.rows.find(row => row.opportunity_id === 'go-active')?.decision, 'go');
+assert.equal(goRows.rows.find(row => row.opportunity_id === 'go-active')?.decided_by_name, 'Directora');
+assert.equal(goRows.rows.find(row => row.opportunity_id === 'go-active')?.decided_at, '2026-07-14T10:01:00.000Z');
+assert.equal(goDatabase.calls.filter(table => table === 'psi_tender_go_no_go_decisions').length, 1, 'GO filter must not issue per-row decision reads');
+
+const allDatabase = batchFilterDatabase();
+await listTenderOpportunities(allDatabase, { filter: 'all', limit: '2', offset: '0' });
+assert.deepEqual(allDatabase.calls.slice(0, 3), ['psi_public_tenders', 'psi_sales_opportunities', 'psi_tender_go_no_go_decisions'], 'all may page tenders first then enrich the page in batches');
 
 const success = await buildTenderDossierSummary(mockDatabaseByOpportunity(), tender);
 assert.equal(success.opportunity_id, 'good');
@@ -188,6 +283,8 @@ assert.equal(success.missing_document_count, 1);
 assert.equal(success.document_import_status, 'analisis_generado');
 assert.equal(success.document_import_error, null);
 assert.equal(success.go_no_go, 'GO condicionado');
+assert.equal(success.recommendation, 'GO condicionado');
+assert.equal(success.decision, null, 'una recomendación no se convierte en decisión humana');
 assert.equal(success.risk, 'Medio');
 assert.deepEqual(success.checklist_progress, { total: 8, auto_generated: 3, human_required: 2 });
 assert.equal(success.preparation_status, 'preparacion_oferta');
@@ -237,12 +334,25 @@ try {
   assert.ok(routeQuery.includes('offset=0'));
   assert.ok(routeQuery.includes('limit=2'));
 
+  const newEndpoint = await requestJson(appPort, '/api/tender-opportunities?filter=go_authorized&limit=50&offset=0', 'manager-token');
+  const legacyAlias = await requestJson(appPort, '/api/tender-dossiers?filter=go_authorized&limit=50&offset=0', 'manager-token');
+  assert.equal(newEndpoint.status, 200);
+  assert.equal(legacyAlias.status, 200);
+  assert.deepEqual(newEndpoint.body, legacyAlias.body, 'el alias y el endpoint nuevo delegan al mismo servicio');
+
+  assert.deepEqual(newEndpoint.body.map(row => row.opportunity_id), ['good']);
+  assert.equal(newEndpoint.body[0].decision, 'go');
+  assert.equal(newEndpoint.body[0].decided_by_name, 'Directora');
+  assert.equal(newEndpoint.body[0].decided_at, '2026-07-14T10:05:00.000Z');
+
   const defaultPage = await requestJson(appPort, '/api/tender-dossiers', 'manager-token');
   assert.equal(defaultPage.status, 200);
   assert.ok(observed.tenderQueries.at(-1).includes('limit=50'));
 
   const invalidLimit = await requestJson(appPort, '/api/tender-dossiers?limit=101', 'manager-token');
   assert.equal(invalidLimit.status, 400);
+  const invalidFilter = await requestJson(appPort, '/api/tender-opportunities?filter=legacy&limit=50', 'manager-token');
+  assert.equal(invalidFilter.status, 400);
 } finally {
   await Promise.all([
     new Promise(resolve => appServer.close(resolve)),

@@ -39,17 +39,23 @@ assert.match(main, /documentFocusRequested = focusTarget === 'documents'/, 'Oppo
 assert.match(main, /id="tender-document-review"/, 'TenderDocumentReviewPanel needs a stable document-focus anchor.');
 assert.match(main, /tabIndex=\{-1\}/, 'The document-focus anchor must be programmatically focusable.');
 
-for (const label of ['Abrir expediente', 'GO / NO GO', 'Documentos', 'Checklist', 'Pendientes humanos', 'SharePoint / OneDrive']) {
+for (const label of ['Abrir expediente', 'Recomendación del sistema', 'Decisión humana', 'Estado de oferta', 'Documentos', 'Checklist', 'Pendientes humanos', 'SharePoint / OneDrive']) {
   assert.ok(opportunities.includes(label), `Oportunidades debe mostrar ${label}`);
 }
 assert.match(opportunities, /Bandeja de oportunidades/);
 assert.match(opportunities, /<h2 id="tender-dossiers-heading">Oportunidades<\/h2>/);
 assert.match(opportunities, /Gestione oportunidades convertidas, su expediente, decisión y preparación\./);
 assert.match(opportunities, /\/api\/tender-documents-import/);
-assert.match(opportunities, /loadDossiers/);
+assert.match(opportunities, /loadTenderOpportunities/);
+assert.doesNotMatch(opportunities, /\/api\/tender-opportunities/, 'La vista debe depender del loader y no duplicar el contrato HTTP.');
+assert.match(apiSource, /loadTenderOpportunities[\s\S]*?\/api\/tender-opportunities/);
+for (const label of ['Todas', 'Pendiente de decisión', 'GO autorizado', 'En preparación', 'Presentadas', 'Cerradas']) assert.ok(opportunities.includes(label), `Oportunidades debe mostrar filtro ${label}`);
+assert.match(opportunities, /setFilter\([\s\S]*?setPage\(1\)/, 'Cambiar filtro debe reiniciar la página.');
 assert.match(opportunities, /dossier_error/);
+assert.doesNotMatch(opportunities, /<dt>GO \/ NO GO<\/dt>/, 'La recomendación ya cubre el dictamen; no debe duplicarse una fila legacy.');
 assert.doesNotMatch(opportunities, /Sincronizar fuentes oficiales|TenderCard|renderLegacy/, 'Oportunidades no debe reutilizar Radar ni el adaptador legado.');
-assert.match(configuration, /\/api\/tender-company-profile/);
+assert.match(configuration, /loadCompanyProfile/);
+assert.match(apiSource, /loadCompanyProfile[\s\S]*?\/api\/tender-company-profile/);
 assert.doesNotMatch(configuration, /tender-search-profiles|Guardar búsqueda|Búsquedas guardadas/);
 assert.ok(!configuration.includes("request('/api/tenders"), 'Configuración no debe cargar Radar.');
 assert.doesNotMatch(configuration, /renderLegacy/);
@@ -87,7 +93,7 @@ const bundle = buildSync({
 const utilsUrl = `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].contents).toString('base64')}`;
 const { dossierPageQuery, profileRadarHash, focusDocumentReviewArea, reloadCurrentDossierPage } = await import(utilsUrl);
 assert.deepEqual(dossierPageQuery(3, 25), { limit: 25, offset: 50 }, 'La paginación de expedientes debe calcular el offset de la página actual.');
-assert.deepEqual(dossierPageQuery(-4, 999), { limit: 100, offset: 0 }, 'La paginación debe acotar páginas y tamaño inválidos.');
+assert.deepEqual(dossierPageQuery(-4, 999), { limit: 50, offset: 0 }, 'La paginación debe acotar páginas y tamaño inválidos.');
 assert.equal(profileRadarHash('perfil con espacio'), '#/tenders?view=radar&profile=perfil%20con%20espacio', 'Aplicar un perfil debe preservar su id codificado en la URL del Radar.');
 const focused = { scrollIntoViewCalls: [], focusCalls: 0, scrollIntoView(options) { this.scrollIntoViewCalls.push(options); }, focus() { this.focusCalls += 1; } };
 assert.equal(focusDocumentReviewArea(focused), true, 'El foco documental debe desplazar y enfocar el área accesible.');

@@ -2302,21 +2302,14 @@ async function markTenderOpportunityDiscarded(database, opportunityId, currentPr
   }, currentProfile);
 }
 
-export async function buildTenderDossierSummary(database, tender) {
+export async function buildTenderOpportunitySummary(database, tender, { opportunity = null, latestDecision = null } = {}) {
   const fallback = {
-    ...dbTenderToPublic(tender),
-    opportunity_id: tender.converted_opportunity_id,
-    document_count: 0,
-    missing_document_count: 0,
-    document_import_status: 'error',
-    document_import_error: null,
-    go_no_go: 'Pendiente',
-    risk: 'Pendiente',
-    checklist_progress: null,
-    preparation_status: 'pendiente',
-    human_pending_count: 0,
-    sharepoint_status: 'pendiente',
-    sharepoint_url: null,
+    ...dbTenderToPublic(tender), opportunity_id: tender.converted_opportunity_id,
+    document_count: 0, missing_document_count: 0, document_import_status: 'error', document_import_error: null,
+    go_no_go: 'Pendiente', recommendation: 'Pendiente', decision: latestDecision?.decision || null,
+    decided_by_name: latestDecision?.psi_sales_profiles?.full_name || null, decided_at: latestDecision?.decided_at || null,
+    tender_offer_status: opportunity?.tender_offer_status || 'pendiente_decision', risk: 'Pendiente', checklist_progress: null,
+    preparation_status: 'pendiente', human_pending_count: 0, sharepoint_status: 'pendiente', sharepoint_url: null,
     dossier_error: 'No se pudo cargar el expediente.'
   };
   try {
@@ -2326,29 +2319,29 @@ export async function buildTenderDossierSummary(database, tender) {
     const analysis = records.analysis?.status === 'analisis_generado' ? records.analysis : null;
     const importFailureIsCurrent = records.import_error && (!analysis || !analysis.created_at || !records.import_error.created_at || Date.parse(records.import_error.created_at) >= Date.parse(analysis.created_at));
     const preparation = preparationRecords.preparation;
+    const recommendation = importFailureIsCurrent ? 'Pendiente' : analysis?.go_no_go?.decision || analysis?.recommendation || 'Pendiente';
     return {
-      ...fallback,
-      document_count: currentDocuments.length,
+      ...fallback, document_count: currentDocuments.length,
       missing_document_count: (analysis?.checklist || []).filter(item => /pendiente|falta/i.test(String(item))).length,
       document_import_status: importFailureIsCurrent ? 'fallo_importacion' : analysis ? 'analisis_generado' : currentDocuments.length ? 'documentos_cargados' : 'pendiente_documentos',
       document_import_error: importFailureIsCurrent ? 'La importación automática de documentos falló. Reintente o cargue los documentos manualmente.' : null,
-      go_no_go: importFailureIsCurrent ? 'Pendiente' : analysis?.go_no_go?.decision || analysis?.recommendation || 'Pendiente',
-      risk: importFailureIsCurrent ? 'Pendiente' : analysis?.go_no_go?.risk || analysis?.risk || 'Pendiente',
-      checklist_progress: preparation?.checklist_summary || null,
-      preparation_status: preparation?.status || 'pendiente',
-      human_pending_count: preparation?.human_required_items?.length || 0,
-      sharepoint_status: preparation?.sharepoint_folder?.status || 'pendiente',
-      sharepoint_url: preparation?.sharepoint_folder?.url || null,
-      dossier_error: null
+      go_no_go: recommendation, recommendation, risk: importFailureIsCurrent ? 'Pendiente' : analysis?.go_no_go?.risk || analysis?.risk || 'Pendiente',
+      checklist_progress: preparation?.checklist_summary || null, preparation_status: preparation?.status || 'pendiente',
+      human_pending_count: preparation?.human_required_items?.length || 0, sharepoint_status: preparation?.sharepoint_folder?.status || 'pendiente',
+      sharepoint_url: preparation?.sharepoint_folder?.url || null, dossier_error: null
     };
-  } catch (_error) {
-    return fallback;
-  }
+  } catch (_error) { return fallback; }
 }
+export const buildTenderDossierSummary = buildTenderOpportunitySummary;
 
 const tenderDossierDefaultLimit = 50;
-const tenderDossierMaxLimit = 100;
+const tenderDossierMaxLimit = 50;
 const tenderDossierMaxOffset = 10000;
+const tenderOpportunityFilters = new Set(['all', 'pending_decision', 'go_authorized', 'in_preparation', 'submitted', 'closed']);
+const tenderOfferStatusesByFilter = {
+  pending_decision: ['pendiente_decision'], go_authorized: ['en_preparacion', 'presentada'],
+  in_preparation: ['en_preparacion'], submitted: ['presentada'], closed: ['cerrada_no_go', 'adjudicada', 'perdida'],
+};
 function parseTenderDossierPage(query = {}) {
   const parse = (value, fallback, maximum, label) => {
     if (value === undefined || value === '') return fallback;
@@ -2359,23 +2352,65 @@ function parseTenderDossierPage(query = {}) {
   };
   const limit = parse(query.limit, tenderDossierDefaultLimit, tenderDossierMaxLimit, 'El límite');
   if (limit < 1) { const error = new Error(`El límite debe estar entre 1 y ${tenderDossierMaxLimit}.`); error.status = 400; throw error; }
-  return { limit, offset: parse(query.offset, 0, tenderDossierMaxOffset, 'El desplazamiento') };
+  const filter = String(query.filter || 'all');
+  if (!tenderOpportunityFilters.has(filter)) { const error = new Error('El filtro de oportunidades no es válido.'); error.status = 400; throw error; }
+  return { limit, offset: parse(query.offset, 0, tenderDossierMaxOffset, 'El desplazamiento'), filter };
 }
 
-app.get('/api/tender-dossiers', async (req, res) => {
-  try {
-    const { profile: currentProfile } = await getAuthContext(req);
-    requireTenderTrackingAccess(currentProfile);
-    const database = requireDb();
-    const { limit, offset } = parseTenderDossierPage(req.query);
-    const tenders = await must(database.from('psi_public_tenders').select('*').not('converted_opportunity_id', 'is', null).order('tracking_updated_at', { ascending: false }).order('id', { ascending: true }).range(offset, offset + limit - 1));
-    const dossiers = [];
-    for (const tender of tenders || []) dossiers.push(await buildTenderDossierSummary(database, tender));
-    res.set('X-Dossier-Limit', String(limit));
-    res.set('X-Dossier-Offset', String(offset));
-    res.json(dossiers);
-  } catch (error) { sendError(res, error, error?.status || 400); }
-});
+function matchesTenderOpportunityFilter(opportunity, latestDecision, filter) {
+  if (filter === 'pending_decision') return !latestDecision;
+  if (filter === 'go_authorized') return latestDecision?.decision === 'go';
+  return true;
+}
+
+async function loadLatestTenderDecisions(database, opportunityIds) {
+  if (!opportunityIds.length) return new Map();
+  const decisions = await must(database.from('psi_tender_go_no_go_decisions').select('id,opportunity_id,decision,decided_at,psi_sales_profiles(full_name)').in('opportunity_id', opportunityIds).order('decided_at', { ascending: false }).order('id', { ascending: false }));
+  const latestByOpportunity = new Map();
+  for (const decision of decisions || []) if (!latestByOpportunity.has(decision.opportunity_id)) latestByOpportunity.set(decision.opportunity_id, decision);
+  return latestByOpportunity;
+}
+
+/** Lists at most 50 rows. Status-filter candidates resolve their latest decisions in one deterministic batch before tender pagination; document reads remain isolated per card. */
+export async function listTenderOpportunities(database, query = {}) {
+  const { limit, offset, filter } = parseTenderDossierPage(query);
+  let opportunities = [];
+  let opportunityIds = null;
+  let latestDecisionsByOpportunity = new Map();
+  if (filter !== 'all') {
+    opportunities = await must(database.from('psi_sales_opportunities').select('id,tender_offer_status').in('tender_offer_status', tenderOfferStatusesByFilter[filter]));
+    latestDecisionsByOpportunity = await loadLatestTenderDecisions(database, opportunities.map(opportunity => opportunity.id));
+    opportunities = opportunities.filter(opportunity => matchesTenderOpportunityFilter(opportunity, latestDecisionsByOpportunity.get(opportunity.id), filter));
+    opportunityIds = opportunities.map(opportunity => opportunity.id);
+    if (!opportunityIds.length) return { rows: [], limit, offset, filter };
+  }
+  let tenderQuery = database.from('psi_public_tenders').select('*').not('converted_opportunity_id', 'is', null);
+  if (opportunityIds) tenderQuery = tenderQuery.in('converted_opportunity_id', opportunityIds);
+  const tenders = await must(tenderQuery.order('tracking_updated_at', { ascending: false }).order('id', { ascending: true }).range(offset, offset + limit - 1));
+  const visibleOpportunityIds = (tenders || []).map(tender => tender.converted_opportunity_id).filter(Boolean);
+  if (!opportunityIds && visibleOpportunityIds.length) {
+    opportunities = await must(database.from('psi_sales_opportunities').select('id,tender_offer_status').in('id', visibleOpportunityIds));
+    latestDecisionsByOpportunity = await loadLatestTenderDecisions(database, visibleOpportunityIds);
+  }
+  const opportunitiesById = new Map((opportunities || []).map(opportunity => [opportunity.id, opportunity]));
+  const rows = [];
+  for (const tender of tenders || []) rows.push(await buildTenderOpportunitySummary(database, tender, { opportunity: opportunitiesById.get(tender.converted_opportunity_id) || null, latestDecision: latestDecisionsByOpportunity.get(tender.converted_opportunity_id) || null }));
+  return { rows, limit, offset, filter };
+}
+
+async function sendTenderOpportunities(req, res) {
+  const { profile: currentProfile } = await getAuthContext(req);
+  requireTenderTrackingAccess(currentProfile);
+  const result = await listTenderOpportunities(requireDb(), req.query);
+  res.set('X-Tender-Opportunity-Limit', String(result.limit));
+  res.set('X-Tender-Opportunity-Offset', String(result.offset));
+  res.set('X-Tender-Opportunity-Filter', result.filter);
+  res.set('X-Dossier-Limit', String(result.limit));
+  res.set('X-Dossier-Offset', String(result.offset));
+  res.json(result.rows);
+}
+app.get('/api/tender-opportunities', async (req, res) => { try { await sendTenderOpportunities(req, res); } catch (error) { sendError(res, error, error?.status || 400); } });
+app.get('/api/tender-dossiers', async (req, res) => { try { await sendTenderOpportunities(req, res); } catch (error) { sendError(res, error, error?.status || 400); } });
 
 app.get('/api/tender-offer-preparation', async (req, res) => {
   try {
