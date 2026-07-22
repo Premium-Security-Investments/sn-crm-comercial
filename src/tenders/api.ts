@@ -17,12 +17,12 @@ export async function updateTracking<T>(request: TenderRequest, update: TenderTr
   return request<T>('/api/tender-tracking-update', { method: 'POST', body: JSON.stringify(update) });
 }
 
-export async function enterTrackingFromRadar<T = Record<string, unknown>>(request: TenderRequest, stableKey: string): Promise<T> {
+export async function enterTrackingFromRadar<T = Record<string, unknown>>(request: TenderRequest, stableKey: string, expectedTrackingUpdatedAt: string | null = null): Promise<T> {
   const id = String(stableKey || '').trim();
   if (!id) throw new Error('Debe indicar la licitación.');
   return request<T>(`/api/tender-status?id=${encodeURIComponent(id)}`, {
     method: 'PATCH',
-    body: JSON.stringify({ internal_status: 'en_revision' }),
+    body: JSON.stringify({ internal_status: 'en_revision', expected_tracking_updated_at: expectedTrackingUpdatedAt }),
   });
 }
 

@@ -87,7 +87,7 @@ export function TenderRadarView({ data, refresh, request, navigate, moduleNaviga
   const enterTracking = async (tender: PublicTender) => {
     setBusyId(tender.id); setError(null);
     try {
-      const updated = await enterTrackingFromRadar(request, tender.stable_key || tender.id);
+      const updated = await enterTrackingFromRadar(request, tender.stable_key || tender.id, tender.tracking_updated_at || null);
       setPayload(current => current ? { ...current, tenders: current.tenders.map(row => row.id === tender.id ? { ...row, ...updated, internal_status: 'en_revision' } : row) } : current);
       setNotice('Proceso enviado a Seguimiento.');
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }

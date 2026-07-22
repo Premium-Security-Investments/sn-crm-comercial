@@ -17,12 +17,12 @@ const calls = [];
 await enterTrackingFromRadar(async (path, options) => {
   calls.push({ path, options });
   return { internal_status: 'en_revision' };
-}, 'abc123stablekey');
+}, 'abc123stablekey', '2026-07-22T12:00:00.000Z');
 assert.equal(calls[0].path, '/api/tender-status?id=abc123stablekey');
 assert.equal(calls[0].options.method, 'PATCH');
-assert.deepEqual(JSON.parse(calls[0].options.body), { internal_status: 'en_revision' });
+assert.deepEqual(JSON.parse(calls[0].options.body), { internal_status: 'en_revision', expected_tracking_updated_at: '2026-07-22T12:00:00.000Z' });
 
-assert.match(radar, /enterTrackingFromRadar\(request, tender\.stable_key \|\| tender\.id\)/);
+assert.match(radar, /enterTrackingFromRadar\(request, tender\.stable_key \|\| tender\.id, tender\.tracking_updated_at \|\| null\)/);
 assert.doesNotMatch(radar, /updateTracking[^;]*tender\.id/);
 
 console.log('Radar enters tracking through stable tender key');
