@@ -16,7 +16,7 @@ function requireUuid(value, label) {
 }
 
 function nullableUuid(value, label) {
-  if (value === null || value === undefined || value === '') return null;
+  if (value === null || value === undefined) return null;
   return requireUuid(value, label);
 }
 
@@ -44,6 +44,13 @@ async function resolveTenderContext(database, opportunityId) {
   return { opportunity, tender };
 }
 
+function currentPreparation(preparations) {
+  return [...preparations].sort((left, right) => {
+    const occurredAt = String(right.occurred_at || '').localeCompare(String(left.occurred_at || ''));
+    return occurredAt || String(right.interaction_id).localeCompare(String(left.interaction_id));
+  })[0] || null;
+}
+
 async function getTenderDocumentsAndAnalysis(database, opportunityId) {
   const interactions = await must(database.from('psi_sales_interactions').select('id,notes,created_at,occurred_at').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true }));
   const documents = [];
@@ -53,13 +60,19 @@ async function getTenderDocumentsAndAnalysis(database, opportunityId) {
     const payload = parseInteractionJson(row.notes);
     if (payload?.kind === 'tender_document_upload') documents.push(...(payload.documents || []).map(document => ({ ...document, interaction_id: row.id })));
     if (payload?.kind === 'tender_document_analysis') analyses.push({ ...payload, interaction_id: row.id, created_at: row.created_at || row.occurred_at || null });
-    if (payload?.kind === 'tender_offer_preparation') preparations.push({ ...payload, interaction_id: row.id, created_at: row.created_at || row.occurred_at || null });
+    if (payload?.kind === 'tender_offer_preparation') preparations.push({
+      ...payload,
+      interaction_id: row.id,
+      created_at: row.created_at || row.occurred_at || null,
+      occurred_at: row.occurred_at || null,
+    });
   }
   return {
     documents: documents.filter(document => document.current !== false),
     analyses,
+    preparations,
     analysis: analyses.at(-1) || null,
-    preparation: preparations.at(-1) || null,
+    preparation: currentPreparation(preparations),
   };
 }
 
@@ -102,7 +115,10 @@ export async function callTenderGoNoGoDecision(database, input, currentProfile) 
     p_justification: nullableText(input?.justification),
     p_preparation: preparation,
   });
-  return { decision: result, preparation: records.preparation || (result.preparation_created ? preparation : null) };
+  const persistedPreparation = result.preparation_created
+    ? preparation
+    : (records.preparations || []).find(candidate => candidate.interaction_id === result.preparation_id) || null;
+  return { decision: result, preparation: persistedPreparation };
 }
 
 /** Read-side companion; it preserves the append-only decision history and visible preparation. */
