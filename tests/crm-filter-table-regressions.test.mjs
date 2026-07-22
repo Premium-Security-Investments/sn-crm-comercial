@@ -12,7 +12,9 @@ assert.match(opportunity, /matchesDashboardPeriod\(o, period\)/, 'Oportunidades 
 assert.match(opportunity, /\[q, owner, regional, stage, service, customerSegmentFilter, period, onlyActive, sortConfig\.key, sortConfig\.direction\]/, 'cambiar periodo reinicia la paginación');
 assert.match(opportunity, /empty="Período"/, 'Oportunidades renderiza el selector de periodo');
 assert.match(opportunity, /setPeriod\(''\)/, 'Limpiar restablece el periodo');
-assert.match(styles, /\.opportunity-filters\{grid-template-columns:minmax\(210px,1\.45fr\) repeat\(5,minmax\(120px,1fr\)\)\}/, 'Oportunidades usa seis columnas explícitas y dos filas sin columna implícita');
+assert.match(styles, /\.filters\.opportunity-filters\.compact-dashboard-filters\{grid-template-columns:minmax\(210px,1\.45fr\) repeat\(5,minmax\(120px,1fr\)\)\}/, 'Oportunidades usa seis columnas explícitas y dos filas con especificidad efectiva');
+assert.match(styles, /@media\(max-width:1240px\)\{\.filters\.opportunity-filters\.compact-dashboard-filters\{grid-template-columns:repeat\(3,minmax\(0,1fr\)\)\}\}/, 'Oportunidades conserva tres columnas en tablet con la misma especificidad');
+assert.match(styles, /@media\(max-width:760px\)\{\.filters\.opportunity-filters\.compact-dashboard-filters,\.opportunity-insight-grid\{grid-template-columns:1fr\}\}/, 'Oportunidades conserva una columna en móvil con la misma especificidad');
 
 const dashboardStart = main.indexOf('function ManagerDashboardV2');
 const dashboardEnd = main.indexOf('function ', dashboardStart + 30);
