@@ -201,7 +201,7 @@ function parseRoute(): Route {
   if (page === 'siio' || page === 'f2') return { page: 'siio' };
   if (page === 'goals') return { page: 'goals' };
   if (page === 'alerts') return { page: 'alerts' };
-  if (page === 'centinel' || page === 'vig-ia') return { page: 'centinel' };
+  if (page === 'centinel' || page === 'vig-ia') return { page: 'alerts' };
   if (page === 'users') return { page: 'users' };
   return { page: 'invalid' };
 }
@@ -428,13 +428,13 @@ function titleFor(route: Route) {
   if (route.page === 'siio') return 'SIIO Gerencial';
   if (route.page === 'consultant') return 'Detalle de consultor';
   if (route.page === 'goals') return 'Metas comerciales y cumplimiento';
-  if (route.page === 'alerts') return 'Alertas comerciales';
-  if (route.page === 'centinel') return 'Vig-IA — Reportes gerenciales';
+  if (route.page === 'alerts') return 'Prioridades Comerciales';
+  if (route.page === 'centinel') return 'Prioridades Comerciales';
   if (route.page === 'users') return 'Usuarios y permisos';
   return 'Inicio comercial';
 }
 function Nav({ route, currentProfile, onNavigate }: { route: Route; currentProfile: Profile | null; onNavigate?: () => void }) {
-  const isActiveHref = (href: string) => (route.page === 'home' && href === '#/') || href.includes(route.page) || (route.page === 'dashboard' && href === '#/dashboard2') || (route.page === 'centinel' && href === '#/vig-ia');
+  const isActiveHref = (href: string) => (route.page === 'home' && href === '#/') || href.includes(route.page) || (route.page === 'dashboard' && href === '#/dashboard2');
   const handleNav = () => { if (onNavigate) onNavigate(); };
   return <nav className="nav-domain-groups">
     {getVisibleNavGroups(currentProfile).map(group => <div className="nav-section" key={group.title}><span className="nav-section-title">{group.title}</span>{group.items.map(item => <a key={item.href} onClick={handleNav} className={`${item.page === 'tenders' ? 'nav-parent ' : ''}${isActiveHref(item.href) ? 'active' : ''}`} href={item.href}>{item.label}</a>)}</div>)}
@@ -452,8 +452,7 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
   if (route.page === 'siio') return <SiioDashboard currentProfile={data.currentProfile} />;
   if (route.page === 'consultant' && route.id) return <ConsultantDetail data={data} ownerId={route.id} />;
   if (route.page === 'goals') return <GoalsCompliance data={data} refresh={refresh} />;
-  if (route.page === 'alerts') return <CommercialAlerts data={data} />;
-  if (route.page === 'centinel') return <VigiaCommercial
+  if (route.page === 'alerts') return <VigiaCommercial
     canOpenDashboard={isModulePermissionEligible(data.currentProfile.role, 'modulo_dashboard_comercial') && Boolean(data.currentProfile.permissions?.includes('modulo_dashboard_comercial'))}
     canOpenOpportunity={isModulePermissionEligible(data.currentProfile.role, 'modulo_oportunidades') && Boolean(data.currentProfile.permissions?.includes('modulo_oportunidades'))}
   />;

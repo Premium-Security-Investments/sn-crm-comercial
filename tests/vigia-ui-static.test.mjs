@@ -22,7 +22,7 @@ const markers = [
   'vigia-priority-card',
   'vigia-score',
   'vigia-source-status',
-  "if (route.page === 'centinel') return <VigiaCommercial",
+  "if (route.page === 'alerts') return <VigiaCommercial",
   "canOpenDashboard={isModulePermissionEligible(data.currentProfile.role, 'modulo_dashboard_comercial')",
   "canOpenOpportunity={isModulePermissionEligible(data.currentProfile.role, 'modulo_oportunidades')",
   'canOpenDashboard && <a className="button"',
