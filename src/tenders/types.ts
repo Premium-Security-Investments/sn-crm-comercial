@@ -40,6 +40,31 @@ export type TenderOpportunitySummary = TenderDossier & {
   decided_at: string | null;
   tender_offer_status: TenderOfferStatus;
 };
-export type TenderCurrentProfile = { id: string; full_name: string; role: string; microsoft_email?: string | null; active?: boolean; permissions?: string[]; identity_type?: 'human' | 'agent' };
+export type TenderCurrentProfile = { id: string; full_name: string; role: string; microsoft_email?: string | null; active?: boolean; permissions?: string[]; identity_type?: 'human' | 'agent' | null };
+export type TenderDocumentAnalysis = {
+  interaction_id?: string;
+  recommendation: string;
+  risk: string;
+  summary: string;
+  generated_at: string;
+  findings?: string[];
+  commercial_fit?: { status?: string; positives?: string[]; concerns?: string[] };
+  [key: string]: unknown;
+};
+export type TenderGoNoGoDecision = {
+  id: string;
+  opportunity_id: string;
+  tender_id: string;
+  decision: 'go' | 'no_go';
+  analysis_interaction_id: string | null;
+  justification: string | null;
+  decided_by: string;
+  decided_at: string;
+  supersedes_decision_id?: string | null;
+  psi_sales_profiles?: { full_name?: string | null } | null;
+};
+export type TenderGoNoGoDecisionInput = { opportunity_id: string; decision: 'go' | 'no_go'; analysis_interaction_id: string; justification?: string | null };
+export type TenderOfferPreparation = { status: string; interaction_id?: string; [key: string]: unknown };
+export type TenderGoNoGoPayload = { decision: TenderGoNoGoDecision | null; history: TenderGoNoGoDecision[]; preparation: TenderOfferPreparation | null; analysis?: TenderDocumentAnalysis | null };
 export type TenderModuleData = { currentProfile: TenderCurrentProfile; profiles: Array<{ id: string; full_name: string; role: string }> };
 export type TendersModuleProps = { view: TenderModuleView; data: TenderModuleData; refresh: () => Promise<void>; request: TenderRequest; navigate: (hash: string) => void; children?: ReactNode };

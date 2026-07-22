@@ -30,11 +30,14 @@ for (const file of [server, api]) {
 }
 
 assert(src.includes('Expediente de Oferta'), 'UI debe mostrar el Expediente de Oferta.');
-assert(src.includes('Aprobar preparación de oferta'), 'UI actual conserva el texto hasta que Task 9 reemplace el control.');
+assert(src.includes('Autorizar GO'), 'Sin expediente la UI debe dirigir a la autorización formal GO.');
+assert(!src.includes('Aprobar preparación de oferta'), 'La UI no puede conservar el control legacy de preparación.');
+assert(!src.includes('/api/tender-offer-preparation-approve'), 'La UI no puede invocar la ruta legacy de preparación.');
 assert(src.includes('Documentos genéricos automáticos'), 'UI debe mostrar documentos genéricos automáticos.');
 assert(src.includes('Requiere intervención humana'), 'UI debe mostrar pendientes humanos.');
 assert(src.includes('Carpeta SharePoint / OneDrive'), 'UI debe mostrar estado/enlace de carpeta SharePoint/OneDrive.');
 assert(src.includes('Notas para el asistente'), 'UI debe tener espacio de notas para el asistente/comercial.');
 assert(src.includes('/api/tender-offer-preparation-note'), 'UI debe permitir guardar notas del asistente.');
+assert(/preparation\s*\?\s*<div className="document-analysis-grid"/.test(src), 'Las notas y el formulario deben quedar ocultos antes del GO.');
 
 console.log('tender offer preparation static checks passed');
