@@ -460,7 +460,7 @@ export function bootstrapCapabilities(profile) {
     vigia: can(profile, ACTIONS.MODULE_VIGIA_VIEW),
   });
 }
-const BOOTSTRAP_PROFILE_SELECT = 'id,full_name';
+const BOOTSTRAP_PROFILE_SELECT = 'id,full_name,role,active';
 function crmResource(ownerId, assignment = {}) {
   return { area_code: assignment.area_code || 'comercial', subarea_code: assignment.subarea_code ?? null, owner_id: ownerId };
 }
@@ -516,7 +516,11 @@ export function filterBootstrapForProfile(payload, currentProfile) {
   const goals = capabilities.goals || capabilities.dashboard || capabilities.alerts || capabilities.vigia ? scopedGoals : [];
   const profiles = (needsProfiles
     ? (globalScope ? payload.profiles : payload.profiles.filter(p => visibleOwnerIds.has(p.id)))
-    : []).map(({ id, full_name }) => ({ id, full_name }));
+    : []).map(({ id, full_name, role, active }) => ({
+      id,
+      full_name,
+      is_commercial: role === 'comercial' && active !== false,
+    }));
   const totals = opportunities.reduce((acc, o) => {
     acc.count += 1;
     acc.pipeline += Number(o.offer_value || 0);
