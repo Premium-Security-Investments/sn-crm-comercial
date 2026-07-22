@@ -9,6 +9,7 @@ export type CommercialPriorityRow = {
   stage_name?: string | null;
   service_type_code?: string | null;
   service_type_name?: string | null;
+  customer_segment?: string | null;
   level?: string | null;
   signals?: PrioritySignal[] | null;
   evidence?: { next_action_at?: string | null } | null;
@@ -20,11 +21,14 @@ export type CommercialPriorityFilters = {
   regional?: string;
   stage?: string;
   service?: string;
+  customerSegment?: string;
   level?: string;
   reviewedIds?: Set<string> | string[];
 };
 export function priorityHasSignal(row: CommercialPriorityRow, code: string): boolean;
 export function categoryFromAlertsHash(hash: string): string;
+export function filtersFromAlertsHash(hash: string): { category: string; owner: string; regional: string; stage: string; service: string; customerSegment: string; invalid: boolean };
+export function priorityHashFiltersAreValid(rows: CommercialPriorityRow[] | null | undefined, filters?: CommercialPriorityFilters & { invalid?: boolean }): boolean;
 export function priorityCategory(row: CommercialPriorityRow, category?: string): boolean;
 export function filterCommercialPriorities<T extends CommercialPriorityRow>(rows: T[] | null | undefined, filters?: CommercialPriorityFilters): T[];
-export function summarizeCommercialPriorities(rows: CommercialPriorityRow[] | null | undefined): { total: number; risk: number; missing: number; overdue: number; closing: number; managed: number; highValueStalled: number };
+export function summarizeCommercialPriorities(rows: CommercialPriorityRow[] | null | undefined): { total: number; risk: number; missing: number; overdue: number; closing: number; managed: number; highValueStalled: number; stalledSustentacion: number };

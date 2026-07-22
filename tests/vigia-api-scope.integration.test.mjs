@@ -37,7 +37,7 @@ const assignments = [
   { profile_id: 'owner-a', area_code: 'comercial', subarea_code: 'seguridad_fisica' },
   { profile_id: 'owner-b', area_code: 'comercial', subarea_code: 'tecnologia' },
 ];
-const row = (id, ownerId) => ({ id, owner_id: ownerId, owner_name: ownerId, company_name: `Empresa ${id}`, stage_code: 'prospecto', stage_name: 'Prospecto', stage_order: 1, service_type_code: 'vigilancia', service_type_name: 'Vigilancia', regional_nombre: 'Nacional', offer_value: 1, weighted_pipeline_value: 1, next_action_at: null, last_interaction_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', created_at: '2026-01-01T00:00:00Z', expected_close_date: null, customer_contact_name: 'NO DEBE LEERSE' });
+const row = (id, ownerId) => ({ id, owner_id: ownerId, owner_name: ownerId, company_name: `Empresa ${id}`, stage_code: 'prospecto', stage_name: 'Prospecto', stage_order: 1, service_type_code: 'vigilancia', service_type_name: 'Vigilancia', regional_nombre: 'Nacional', offer_value: 1, weighted_pipeline_value: 1, next_action_at: null, last_interaction_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', created_at: '2026-01-01T00:00:00Z', expected_close_date: null, customer_segment: id.endsWith('1') ? 'cliente_actual' : 'cliente_nuevo', customer_contact_name: 'NO DEBE LEERSE' });
 const globalRows = Array.from({ length: 1001 }, (_, index) => row(`global-${String(index).padStart(4, '0')}`, index % 2 ? 'owner-a' : 'owner-b'));
 let crmReads = 0;
 const crmQueries = [];
@@ -68,6 +68,17 @@ const fakeSupabase = http.createServer((req, res) => {
     const ownerFilter = url.searchParams.get('owner_id');
     let rows = ownerFilter ? [row('allowed', 'owner-a')] : globalRows;
     if (ownerFilter) assert.match(ownerFilter, /^in\.\([^)]*owner-a[^)]*\)$/);
+    const offset = Number(url.searchParams.get('offset') || 0);
+    const limit = Number(url.searchParams.get('limit') || 1000);
+    rows = rows.slice(offset, offset + limit).map(item => Object.fromEntries(select.map(key => [key, item[key]])));
+    return json(res, 200, rows);
+  }
+  if (url.pathname === '/rest/v1/psi_sales_opportunities') {
+    crmReads += 1; crmQueries.push(url);
+    const select = String(url.searchParams.get('select') || '').split(',');
+    assert.deepEqual(select, ['id', 'customer_segment'], 'consulta base minimizada');
+    const ownerFilter = url.searchParams.get('owner_id');
+    let rows = ownerFilter ? [row('allowed', 'owner-a')] : globalRows;
     const offset = Number(url.searchParams.get('offset') || 0);
     const limit = Number(url.searchParams.get('limit') || 1000);
     rows = rows.slice(offset, offset + limit).map(item => Object.fromEntries(select.map(key => [key, item[key]])));
@@ -115,6 +126,7 @@ try {
   assert.equal(response.status, 200);
   assert.equal(response.body.priorities.length, 1);
   assert.equal(response.body.priorities[0].owner_id, 'owner-a');
+  assert.equal(response.body.priorities[0].customer_segment, 'cliente_nuevo');
   assert.equal('customer_contact_name' in response.body.priorities[0], false);
   assert.ok(crmQueries.at(-1).searchParams.has('owner_id'), 'director consulta CRM con owner_id restringido');
 
@@ -122,12 +134,17 @@ try {
   response = await requestJson(appPort, '/api/vigia/priorities', 'manager-token');
   assert.equal(response.status, 200);
   assert.equal(response.body.totals.source_rows, 1001, 'paginación no trunca el snapshot');
-  assert.equal(crmReads - readsBeforeGlobal, 2, '1.001 filas requieren dos páginas');
+  assert.equal(crmReads - readsBeforeGlobal, 4, '1.001 filas requieren dos páginas por fuente minimizada');
 
   const readsBeforePost = crmReads;
   response = await requestJson(appPort, '/api/vigia/priorities', 'manager-token', 'POST');
   assert.equal(response.status, 405, 'endpoint es exclusivamente GET/read-only');
   assert.equal(crmReads, readsBeforePost, 'POST no lee CRM');
+
+  const readsBeforeBootstrapPost = crmReads;
+  response = await requestJson(appPort, '/api/bootstrap', 'manager-token', 'POST');
+  assert.equal(response.status, 405, 'bootstrap rechaza métodos distintos de GET');
+  assert.equal(crmReads, readsBeforeBootstrapPost, 'POST de bootstrap no lee CRM');
 } finally {
   console.error = originalConsoleError;
   if (appServer?.listening) await new Promise(resolve => appServer.close(resolve));
