@@ -19,7 +19,7 @@ type Stage = { code: string; name: string; stage_order: number; close_probabilit
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
 type CustomerSegment = 'cliente_nuevo' | 'cliente_actual';
 type AccessCatalog = { areas: Array<{ code: string; name: string }>; subareas: Array<{ code: string; area_code: string; name: string }>; permissions: Array<{ code: string; name: string; description: string }> };
-type Profile = { id: string; full_name: string; microsoft_email: string; role: string; active: boolean; commercial_area?: CommercialArea | null; can_edit_customer_segment?: boolean; areas?: AccessAssignment[]; permissions?: string[] };
+type Profile = { id: string; full_name: string; microsoft_email: string; role: string; active: boolean; is_commercial?: boolean; commercial_area?: CommercialArea | null; can_edit_customer_segment?: boolean; areas?: AccessAssignment[]; permissions?: string[] };
 type ServiceType = { code: string; name: string };
 type LossReason = { code: string; name: string };
 type SummaryRow = { stage_code: string; stage_name: string; stage_order: number; opportunities_count: number; total_offer_value: number; weighted_pipeline_value: number };
@@ -119,7 +119,7 @@ function normalizeRegion(value?: string | null): string {
   return lower.split(' ').map((part, index) => index > 0 && keepLower.has(part) ? part : part.charAt(0).toLocaleUpperCase('es-CO') + part.slice(1)).join(' ');
 }
 function isCommercialProfile(profile: Profile): boolean {
-  return Boolean(profile) && profile.role === 'comercial' && profile.active !== false;
+  return Boolean(profile) && (profile.is_commercial === true || (profile.role === 'comercial' && profile.active !== false));
 }
 function canonicalTenderKey(tender: PublicTender): string {
   const source = String(tender.source || '').trim().toLowerCase();
@@ -568,7 +568,7 @@ function sortTenderCards(rows: PublicTender[], tenderSortKey: TenderSortKey, ten
 }
 
 function OpportunityList({ data }: { data: Bootstrap }) {
-  const [q, setQ] = useState(hashQueryParam('q')); const [owner, setOwner] = useState(hashQueryParam('owner')); const [regional, setRegional] = useState(hashQueryParam('regional')); const [stage, setStage] = useState(hashQueryParam('stage')); const [service, setService] = useState(hashQueryParam('service')); const [customerSegmentFilter, setCustomerSegmentFilter] = useState(hashQueryParam('segment')); const [onlyActive, setOnlyActive] = useState(hashQueryParam('active') !== 'all');
+  const [q, setQ] = useState(hashQueryParam('q')); const [owner, setOwner] = useState(hashQueryParam('owner')); const [regional, setRegional] = useState(hashQueryParam('regional')); const [stage, setStage] = useState(hashQueryParam('stage')); const [service, setService] = useState(hashQueryParam('service')); const [customerSegmentFilter, setCustomerSegmentFilter] = useState(hashQueryParam('segment')); const [period, setPeriod] = useState<DashboardPeriodFilter>(hashQueryParam('period') as DashboardPeriodFilter); const [onlyActive, setOnlyActive] = useState(hashQueryParam('active') !== 'all');
   const [sortConfig, setSortConfig] = useState<SortConfig<'client'|'owner'|'regional'|'stage'|'product'|'segment'|'value'|'close'|'last'>>({ key: 'client', direction: 'asc' });
   const [opportunitiesPage, setOpportunitiesPage] = useState(1);
   const commercialProfiles = data.profiles.filter(isCommercialProfile);
@@ -577,8 +577,8 @@ function OpportunityList({ data }: { data: Bootstrap }) {
     data.opportunities.forEach(o => { const c = normalizeRegion(o.regional_nombre); if (c && !canonical.has(c)) canonical.set(c, c); });
     return Array.from(canonical.values()).sort((a,b) => a.localeCompare(b));
   }, [data.opportunities]);
-  const filtered = data.opportunities.filter(o => (!q || `${o.company_name} ${o.owner_name||''} ${o.sede||''} ${o.quote_city||''} ${o.regional_nombre||''} ${o.tipo_producto_original||''} ${o.service_type_name||''} ${o.legacy_excel_id||''}`.toLowerCase().includes(q.toLowerCase())) && (!owner || o.owner_id===owner) && (!regional || normalizeRegion(o.regional_nombre) === regional) && (!stage || o.stage_code===stage) && (!service || o.service_type_code===service) && (!customerSegmentFilter || o.customer_segment === customerSegmentFilter) && (!onlyActive || !isTerminalStage(o.stage_code)));
-  useEffect(() => { setOpportunitiesPage(1); }, [q, owner, regional, stage, service, customerSegmentFilter, onlyActive, sortConfig.key, sortConfig.direction]);
+  const filtered = data.opportunities.filter(o => matchesDashboardPeriod(o, period) && (!q || `${o.company_name} ${o.owner_name||''} ${o.sede||''} ${o.quote_city||''} ${o.regional_nombre||''} ${o.tipo_producto_original||''} ${o.service_type_name||''} ${o.legacy_excel_id||''}`.toLowerCase().includes(q.toLowerCase())) && (!owner || o.owner_id===owner) && (!regional || normalizeRegion(o.regional_nombre) === regional) && (!stage || o.stage_code===stage) && (!service || o.service_type_code===service) && (!customerSegmentFilter || o.customer_segment === customerSegmentFilter) && (!onlyActive || !isTerminalStage(o.stage_code)));
+  useEffect(() => { setOpportunitiesPage(1); }, [q, owner, regional, stage, service, customerSegmentFilter, period, onlyActive, sortConfig.key, sortConfig.direction]);
   const filteredTotals = filtered.reduce((acc, o) => {
     const value = Number(o.offer_value || 0);
     acc.pipeline += value;
@@ -614,7 +614,7 @@ function OpportunityList({ data }: { data: Bootstrap }) {
   const sortBy = (key: typeof sortConfig.key) => setSortConfig(current => nextSort(current, key));
   const pagedOpportunities = sortedOpportunities.slice((opportunitiesPage - 1) * OPPORTUNITIES_PAGE_SIZE, opportunitiesPage * OPPORTUNITIES_PAGE_SIZE);
   return <section className="stack">
-    <div className="filters opportunity-filters compact-dashboard-filters"><input placeholder="Buscar cliente, sede, ciudad o ID…" value={q} onChange={e=>setQ(e.target.value)} /> <Select value={owner} onChange={setOwner} options={commercialProfiles.map(p=>[p.id,p.full_name])} empty="Comerciales"/> <Select value={regional} onChange={setRegional} options={regionals.map(r=>[r,r])} empty="Regiones"/> <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Etapas"/> <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Productos"/><Select value={customerSegmentFilter} onChange={setCustomerSegmentFilter} options={customerSegmentOptions} empty="Clientes"/><label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label><button className="secondary" onClick={()=>{ setQ(''); setOwner(''); setRegional(''); setStage(''); setService(''); setCustomerSegmentFilter(''); setOnlyActive(true); }}>Limpiar</button></div>
+    <div className="filters opportunity-filters compact-dashboard-filters"><input placeholder="Buscar cliente, sede, ciudad o ID…" value={q} onChange={e=>setQ(e.target.value)} /> <Select value={period} onChange={v=>setPeriod(v as DashboardPeriodFilter)} options={[["todos","Todo el pipeline"],["mes_actual","Mes actual"],["proximos_30","Próximos 30 días"],["trimestre_actual","Trimestre actual"],["anio_actual","Año actual"]]} empty="Período"/> <Select value={owner} onChange={setOwner} options={commercialProfiles.map(p=>[p.id,p.full_name])} empty="Comerciales"/> <Select value={regional} onChange={setRegional} options={regionals.map(r=>[r,r])} empty="Regiones"/> <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Etapas"/> <Select value={service} onChange={setService} options={data.services.map(s=>[s.code,s.name])} empty="Productos"/><Select value={customerSegmentFilter} onChange={setCustomerSegmentFilter} options={customerSegmentOptions} empty="Clientes"/><label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label><button className="secondary" onClick={()=>{ setQ(''); setPeriod(''); setOwner(''); setRegional(''); setStage(''); setService(''); setCustomerSegmentFilter(''); setOnlyActive(true); }}>Limpiar</button></div>
     <p className="muted filter-summary"><strong>{filtered.length}</strong> de {data.opportunities.length} oportunidades visibles.</p>
     <div className="opportunity-insight-grid" aria-label="Indicadores de oportunidades filtradas">{opportunityInsightCards.map(card => <div key={card.label} className={`opportunity-insight-card ${card.tone}`}><small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>{card.label === 'Ticket promedio' && topFilteredOpportunity ? <em>Oportunidad líder: {fmtMoneyCompact(topFilteredOpportunity.offer_value)}</em> : null}</div>)}</div>
     <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Regional" sortKey="regional" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo producto" sortKey="product" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Tipo cliente" sortKey="segment" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Valor" sortKey="value" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Cierre estimado" sortKey="close" sortConfig={sortConfig} onSort={sortBy}/><SortableTh label="Último seguimiento" sortKey="last" sortConfig={sortConfig} onSort={sortBy}/></tr></thead><tbody>{pagedOpportunities.map(o => <tr key={o.id} className="clickable" onClick={() => go(`#/detail/${o.id}`)}><td><strong>{o.company_name}</strong><br/><small>{o.sede || o.quote_city || '—'}</small></td><td>{o.owner_name || '—'}</td><td>{normalizeRegion(o.regional_nombre) || '—'}</td><td><Badge>{o.stage_name}</Badge></td><td>{o.tipo_producto_original || o.service_type_name || '—'}</td><td><Badge tone={o.customer_segment ? 'blue' : 'amber'}>{customerSegmentLabel(o.customer_segment)}</Badge></td><td>{fmtMoney(o.offer_value)}</td><td>{fmtDate(o.expected_close_date)}</td><td>{fmtDate(o.last_interaction_at)}</td></tr>)}</tbody></table></div>
@@ -1398,6 +1398,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   type V2HeroMetricKey = 'cumplimiento' | 'pipeline' | 'cierres' | 'forecast';
   const [activeV2Metric, setActiveV2Metric] = useState<V2HeroMetricKey>('cumplimiento');
   const [period, setPeriod] = useState<DashboardPeriodFilter>('');
+  const [customerSegmentFilter, setCustomerSegmentFilter] = useState<CustomerSegment | ''>('');
   const [focusedDashboardTarget, setFocusedDashboardTarget] = useState<string | null>(null);
   const [q, setQ] = useState('');
   const initialVigiaFilters = useMemo(() => parseVigiaDashboardFilters(window.location.hash, {
@@ -1421,13 +1422,14 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     (!q || `${o.company_name} ${o.owner_name||''} ${o.sede||''} ${o.quote_city||''} ${o.regional_nombre||''} ${o.tipo_producto_original||''} ${o.service_type_name||''} ${o.legacy_excel_id||''}`.toLowerCase().includes(q.toLowerCase())) &&
     (!owner || ownerKey(o) === owner) &&
     (!regional || normalizeRegion(o.regional_nombre) === regional) &&
-    (!service || o.service_type_code === service);
+    (!service || o.service_type_code === service) &&
+    (!customerSegmentFilter || o.customer_segment === customerSegmentFilter);
   const scopedOpportunities = useMemo(() => data.opportunities.filter(o =>
     v2BaseScopeMatches(o) &&
     (!stage || o.stage_code === stage) &&
     (!onlyActive || !isTerminalStage(o.stage_code))
-  ), [data.opportunities, period, q, owner, regional, stage, service, onlyActive]);
-  const performanceRows = useMemo(() => data.opportunities.filter(v2BaseScopeMatches), [data.opportunities, period, q, owner, regional, service]);
+  ), [data.opportunities, period, q, owner, regional, stage, service, customerSegmentFilter, onlyActive]);
+  const performanceRows = useMemo(() => data.opportunities.filter(v2BaseScopeMatches), [data.opportunities, period, q, owner, regional, service, customerSegmentFilter]);
   const sourceRows = scopedOpportunities;
   const activeRows = sourceRows.filter(o => !isTerminalStage(o.stage_code));
   const performanceActiveRows = performanceRows.filter(o => !isTerminalStage(o.stage_code));
@@ -1549,7 +1551,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   };
   const v2MetricDetailRows = v2HeroMetricDetails[activeV2Metric];
   const v2ServiceName = service ? data.services.find(s => s.code === service)?.name || 'Seguridad Física' : 'Todos los productos';
-  const hasNonServiceFilters = Boolean(period || q || owner || regional || stage || onlyActive);
+  const hasNonServiceFilters = Boolean(period || q || owner || regional || stage || customerSegmentFilter || onlyActive);
   const v2HeroLabel = service && !hasNonServiceFilters ? `Servicio: ${v2ServiceName}` : 'Vista filtrada';
   const v2ScopeSummary = `${sourceRows.length}/${data.opportunities.length} oportunidades`;
   const lowComplianceRows = rankingRowsV2.filter(row => row.pct < 8 && row.count >= 10);
@@ -1652,8 +1654,9 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
         <Select value={owner} onChange={setOwner} options={commercialProfiles.map(p=>[p.id,p.full_name])} empty="Comerciales"/>
         <Select value={regional} onChange={setRegional} options={managerRegionalOptions.map(r=>[r,r])} empty="Regiones"/>
         <Select value={stage} onChange={setStage} options={data.stages.map(s=>[s.code,s.name])} empty="Etapas"/>
+        <Select value={customerSegmentFilter} onChange={v=>setCustomerSegmentFilter(v as CustomerSegment | '')} options={customerSegmentOptions} empty="Clientes"/>
         <label className="check-filter"><input type="checkbox" checked={onlyActive} onChange={e=>setOnlyActive(e.target.checked)} /> Pipeline activo</label>
-        <button className="secondary" onClick={()=>{ setPeriod(''); setQ(''); setOwner(''); setRegional(''); setStage(''); setService('seguridad_fisica'); setOnlyActive(false); }}>Limpiar</button>
+        <button className="secondary" onClick={()=>{ setPeriod(''); setCustomerSegmentFilter(''); setQ(''); setOwner(''); setRegional(''); setStage(''); setService('seguridad_fisica'); setOnlyActive(false); }}>Limpiar</button>
       </div>
     </section>
 
@@ -1713,8 +1716,8 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
         {!visibleProjectionRowsV2.length ? <EmptyState title="Sin presupuesto visible" text="Cuando existan metas o pipeline del producto seleccionado aparecerá la proyección por comercial." /> : <p className="muted">Unidad meta tomada del campo de cantidad unidades / puestos 24H cuando esté cargado; si falta, se estima desde presupuesto mensual.</p>}
       </Panel>
       <Panel title="Ventas acumuladas por comercial" id="v2-sales-accumulated-focus" className={focusClass('v2-sales-accumulated-focus')}>
-        <div className="tablewrap crm-readable-table v2-sales-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Clientes</th><th>Ene</th><th>Feb</th><th>Mar</th><th>Abr</th><th>May</th><th>Jun</th><th>Ventas acumuladas</th><th>Cumplimiento individual</th><th>Presupuesto</th></tr></thead><tbody>{monthlySalesRowsV2.map(row => <tr key={row.ownerId}>
-          <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td>{row.clients}</td>{row.months.map((value, index) => <td className="money-cell" key={`${row.ownerId}-${index}`}>{value ? fmtMoneyCompact(value) : '—'}</td>)}<td className="money-cell"><strong>{fmtMoney(row.accumulated)}</strong></td><td><strong className="numeric-value">{row.compliance === null ? '—' : `${row.compliance}%`}</strong></td><td className="money-cell">{fmtMoney(row.budget)}</td>
+        <div className="tablewrap crm-readable-table v2-sales-table"><table><thead><tr><th>Comercial</th><th>Regional</th><th>Clientes</th><th>Ene</th><th>Feb</th><th>Mar</th><th>Abr</th><th>May</th><th>Jun</th><th>Ventas acumuladas</th><th>Presupuesto</th><th>Cumplimiento individual</th></tr></thead><tbody>{monthlySalesRowsV2.map(row => <tr key={row.ownerId}>
+          <td><strong>{formatDisplayName(row.owner)}</strong></td><td>{formatRegionalLabel(row.regional)}</td><td>{row.clients}</td>{row.months.map((value, index) => <td className="money-cell" key={`${row.ownerId}-${index}`}>{value ? fmtMoneyCompact(value) : '—'}</td>)}<td className="money-cell"><strong>{fmtMoney(row.accumulated)}</strong></td><td className="money-cell">{fmtMoney(row.budget)}</td><td><strong className="numeric-value">{row.compliance === null ? '—' : `${row.compliance}%`}</strong></td>
         </tr>)}</tbody></table></div>
         {!monthlySalesRowsV2.length ? <EmptyState title="Sin ventas acumuladas" text="Cuando existan ventas aprobadas o presupuesto individual del producto seleccionado aparecerá el acumulado 2026." /> : null}
       </Panel>
