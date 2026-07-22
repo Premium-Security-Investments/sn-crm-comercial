@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { loadProfiles, loadRadar } from './api';
+import { enterTrackingFromRadar, loadProfiles, loadRadar } from './api';
 import { TENDER_OFFICIAL_SOURCES, TENDER_SN_REGIONS, deduplicateTenders, filterRadarTenders, sortTenderCards } from './radarUtils';
 import type { PublicTender, TenderConversionResult, TenderDeadlineFilter, TenderInternalStatus, TenderRadarPayload, TenderRegionKey, TenderScoreFilter, TenderSearchProfile, TenderSection, TenderSortKey, TenderValueFilter, TendersModuleProps } from './types';
 
@@ -70,10 +70,7 @@ export function TenderRadarView({ data, refresh, request, navigate, moduleNaviga
   const enterTracking = async (tender: PublicTender) => {
     setBusyId(tender.id); setError(null);
     try {
-      const updated = await request<Partial<PublicTender>>('/api/tender-tracking-update', {
-        method: 'POST',
-        body: JSON.stringify({ id: tender.id, tracking_status: 'pendiente_revision', tracking_owner_id: data.currentProfile.id, note: 'Proceso seleccionado desde Radar.', expected_tracking_updated_at: tender.tracking_updated_at ?? null }),
-      });
+      const updated = await enterTrackingFromRadar(request, tender.stable_key || tender.id);
       setPayload(current => current ? { ...current, tenders: current.tenders.map(row => row.id === tender.id ? { ...row, ...updated, internal_status: 'en_revision' } : row) } : current);
       setNotice('Proceso enviado a Seguimiento.');
     } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }

@@ -17,6 +17,15 @@ export async function updateTracking<T>(request: TenderRequest, update: TenderTr
   return request<T>('/api/tender-tracking-update', { method: 'POST', body: JSON.stringify(update) });
 }
 
+export async function enterTrackingFromRadar<T = Record<string, unknown>>(request: TenderRequest, stableKey: string): Promise<T> {
+  const id = String(stableKey || '').trim();
+  if (!id) throw new Error('Debe indicar la licitación.');
+  return request<T>(`/api/tender-status?id=${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ internal_status: 'en_revision' }),
+  });
+}
+
 export type TenderDossierPage = { limit?: number; offset?: number };
 export async function loadDossiers<T>(request: TenderRequest, page: TenderDossierPage = {}): Promise<T> {
   const limit = Math.min(100, Math.max(1, Math.trunc(page.limit ?? 50)));
