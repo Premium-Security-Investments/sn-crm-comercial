@@ -12,6 +12,8 @@ const panel = read('src/tenders/components/TenderGoNoGoDecisionPanel.tsx');
 const api = read('src/tenders/api.ts');
 const types = read('src/tenders/types.ts');
 const main = read('src/main.tsx');
+assert.match(panel, /opportunityName/);
+assert.match(panel, /<dt>Oportunidad<\/dt><dd>\{opportunityName\}<\/dd>/);
 
 for (const text of ['Recomendación del sistema', 'Decisión humana', 'Autorizar GO', 'Registrar NO GO', 'Justificación opcional']) {
   assert.match(panel, new RegExp(text), `El panel debe mostrar ${text}.`);

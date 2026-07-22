@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { loadTenderOpportunities } from './api';
 import { TenderStatusBadge } from './components/TenderStatusBadge';
 import { dossierPageQuery, reloadCurrentDossierPage as reloadDossierPage } from './viewUtils';
@@ -22,13 +22,18 @@ export function TenderOpportunitiesView({ request, navigate, moduleNavigation }:
   const [loading, setLoading] = useState(true);
   const [retrying, setRetrying] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const requestVersionRef = useRef(0);
 
   const query = useMemo(() => ({ ...dossierPageQuery(page, PAGE_SIZE), filter }), [filter, page]);
   const reloadCurrentDossierPage = async () => {
+    const requestVersion = ++requestVersionRef.current;
     setLoading(true); setError(null);
-    try { setRows(await reloadDossierPage<TenderOpportunitySummary[]>(page, PAGE_SIZE, nextQuery => loadTenderOpportunities<TenderOpportunitySummary[]>(request, { ...nextQuery, filter }))); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
-    finally { setLoading(false); }
+    try {
+      const nextRows = await reloadDossierPage<TenderOpportunitySummary[]>(page, PAGE_SIZE, nextQuery => loadTenderOpportunities<TenderOpportunitySummary[]>(request, { ...nextQuery, filter }));
+      if (requestVersion === requestVersionRef.current) setRows(nextRows);
+    }
+    catch (cause) { if (requestVersion === requestVersionRef.current) setError(cause instanceof Error ? cause.message : String(cause)); }
+    finally { if (requestVersion === requestVersionRef.current) setLoading(false); }
   };
   useEffect(() => { void reloadCurrentDossierPage(); }, [query.filter, query.limit, query.offset]);
 

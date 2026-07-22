@@ -6,6 +6,7 @@ import type { TenderCurrentProfile, TenderDocumentAnalysis, TenderGoNoGoDecision
 type Decision = 'go' | 'no_go';
 export type TenderGoNoGoDecisionPanelProps = {
   opportunityId: string;
+  opportunityName: string;
   analysis: TenderDocumentAnalysis | null;
   currentProfile: TenderCurrentProfile | null | undefined;
   request: TenderRequest;
@@ -17,7 +18,7 @@ const EMPTY_PAYLOAD: TenderGoNoGoPayload = { decision: null, history: [], prepar
 const date = (value?: string | null) => value ? new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : 'Sin fecha';
 const decisionLabel = (value?: string | null) => value === 'go' ? 'GO autorizado' : value === 'no_go' ? 'NO GO registrado' : 'Pendiente de decisión';
 
-export function TenderGoNoGoDecisionPanel({ opportunityId, analysis, currentProfile, request, onChanged }: TenderGoNoGoDecisionPanelProps) {
+export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, analysis, currentProfile, request, onChanged }: TenderGoNoGoDecisionPanelProps) {
   const [payload, setPayload] = useState<TenderGoNoGoPayload>(EMPTY_PAYLOAD);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
@@ -198,7 +199,7 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, analysis, currentProf
     {selectedDecision && <div className="tender-go-no-go-backdrop" role="presentation" onMouseDown={close}>
       <div className="tender-go-no-go-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="tender-go-no-go-confirm-title" onMouseDown={event => event.stopPropagation()}>
         <header><h4 id="tender-go-no-go-confirm-title" tabIndex={-1} ref={initialFocusRef}>Confirmar {selectedDecision === 'go' ? 'GO' : 'NO GO'}</h4><button type="button" className="secondary" onClick={close} disabled={busy} aria-label="Cerrar confirmación">Cerrar</button></header>
-        <dl><dt>Oportunidad</dt><dd>{opportunityId}</dd><dt>Recomendación del sistema</dt><dd>{analysis?.recommendation || 'No disponible'}</dd><dt>Riesgo</dt><dd>{risks[0] || analysis?.risk || 'No reportado'}</dd><dt>Decisión elegida</dt><dd>{selectedDecision === 'go' ? 'Autorizar GO' : 'Registrar NO GO'}</dd></dl>
+        <dl><dt>Oportunidad</dt><dd>{opportunityName}</dd><dt>Referencia</dt><dd>{opportunityId}</dd><dt>Recomendación del sistema</dt><dd>{analysis?.recommendation || 'No disponible'}</dd><dt>Riesgo</dt><dd>{risks[0] || analysis?.risk || 'No reportado'}</dd><dt>Decisión elegida</dt><dd>{selectedDecision === 'go' ? 'Autorizar GO' : 'Registrar NO GO'}</dd></dl>
         <label>Justificación opcional<textarea value={justification} onChange={event => setJustification(event.target.value)} disabled={busy} placeholder="Explique brevemente el criterio de la decisión." /></label>
         <footer><button type="button" className="secondary" onClick={close} disabled={busy}>Cancelar</button><button type="button" className={selectedDecision === 'no_go' ? 'danger' : ''} onClick={() => void submit()} disabled={busy || syncPending}>{busy ? 'Registrando…' : 'Confirmar decisión'}</button></footer>
       </div>

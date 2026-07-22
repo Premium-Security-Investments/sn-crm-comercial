@@ -1,5 +1,10 @@
 import { strict as assert } from 'node:assert';
+import { readFileSync } from 'node:fs';
 import { buildSync } from 'esbuild';
+
+const opportunitiesView = readFileSync(new URL('../src/tenders/TenderOpportunitiesView.tsx', import.meta.url), 'utf8');
+assert.match(opportunitiesView, /requestVersionRef/);
+assert.match(opportunitiesView, /requestVersion === requestVersionRef\.current/);
 
 const bundle = buildSync({
   entryPoints: [new URL('../src/tenders/viewUtils.ts', import.meta.url).pathname],
