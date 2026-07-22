@@ -1,0 +1,9 @@
+{
+  "contract_version": "1.0.0",
+  "capability_id": "agt002.dossier.read",
+  "correlation_id": "syn-corr-dossier-001",
+  "query": {
+    "opportunity_id": "syn-opportunity-002"
+  },
+  "source": "synthetic-authority-source"
+}

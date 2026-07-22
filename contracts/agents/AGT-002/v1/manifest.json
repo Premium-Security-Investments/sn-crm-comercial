@@ -1,0 +1,138 @@
+{
+  "agent_id": "AGT-002",
+  "contract_version": "1.0.0",
+  "schema_draft": "https://json-schema.org/draft/2020-12/schema",
+  "owner_system": "SIIO",
+  "status": "contract_only",
+  "immutable": true,
+  "capabilities": [
+    {
+      "id": "agt002.radar.read",
+      "mode": "read",
+      "persisted_results_only": true,
+      "canonical_producer": "psi_public_tenders",
+      "request_schema": "radar.request.schema.json",
+      "response_schema": "radar.response.schema.json",
+      "error_schema": "error.schema.json"
+    },
+    {
+      "id": "agt002.dossier.read",
+      "mode": "read",
+      "persisted_results_only": true,
+      "canonical_producer": "psi_sales_interactions[kind=tender_document_upload|tender_document_analysis]",
+      "request_schema": "dossier.request.schema.json",
+      "response_schema": "dossier.response.schema.json",
+      "error_schema": "error.schema.json"
+    },
+    {
+      "id": "agt002.analysis.read",
+      "mode": "read",
+      "persisted_results_only": true,
+      "canonical_producer": "psi_sales_interactions[kind=tender_document_analysis]",
+      "request_schema": "analysis.request.schema.json",
+      "response_schema": "analysis.response.schema.json",
+      "error_schema": "error.schema.json"
+    },
+    {
+      "id": "agt002.go_no_go.recommendation.read",
+      "mode": "read",
+      "persisted_results_only": true,
+      "canonical_producer": "psi_sales_interactions[kind=tender_document_analysis].go_no_go",
+      "request_schema": "go-no-go-recommendation.request.schema.json",
+      "response_schema": "go-no-go-recommendation.response.schema.json",
+      "error_schema": "error.schema.json"
+    }
+  ],
+  "fixtures": [
+    {
+      "path": "fixtures/valid-radar-request.json",
+      "schema": "radar.request.schema.json",
+      "valid": true
+    },
+    {
+      "path": "fixtures/invalid-radar-request-authority.json",
+      "schema": "radar.request.schema.json",
+      "valid": false
+    },
+    {
+      "path": "fixtures/valid-radar-response.json",
+      "schema": "radar.response.schema.json",
+      "valid": true
+    },
+    {
+      "path": "fixtures/invalid-radar-response-extra.json",
+      "schema": "radar.response.schema.json",
+      "valid": false
+    },
+    {
+      "path": "fixtures/valid-dossier-request.json",
+      "schema": "dossier.request.schema.json",
+      "valid": true
+    },
+    {
+      "path": "fixtures/invalid-dossier-request-authority.json",
+      "schema": "dossier.request.schema.json",
+      "valid": false
+    },
+    {
+      "path": "fixtures/valid-dossier-response.json",
+      "schema": "dossier.response.schema.json",
+      "valid": true
+    },
+    {
+      "path": "fixtures/invalid-dossier-response-extra.json",
+      "schema": "dossier.response.schema.json",
+      "valid": false
+    },
+    {
+      "path": "fixtures/valid-analysis-request.json",
+      "schema": "analysis.request.schema.json",
+      "valid": true
+    },
+    {
+      "path": "fixtures/invalid-analysis-request-authority.json",
+      "schema": "analysis.request.schema.json",
+      "valid": false
+    },
+    {
+      "path": "fixtures/valid-analysis-response.json",
+      "schema": "analysis.response.schema.json",
+      "valid": true
+    },
+    {
+      "path": "fixtures/invalid-analysis-response-noncanonical.json",
+      "schema": "analysis.response.schema.json",
+      "valid": false
+    },
+    {
+      "path": "fixtures/valid-go-no-go-recommendation-request.json",
+      "schema": "go-no-go-recommendation.request.schema.json",
+      "valid": true
+    },
+    {
+      "path": "fixtures/invalid-go-no-go-recommendation-request-authority.json",
+      "schema": "go-no-go-recommendation.request.schema.json",
+      "valid": false
+    },
+    {
+      "path": "fixtures/valid-go-no-go-recommendation-response.json",
+      "schema": "go-no-go-recommendation.response.schema.json",
+      "valid": true
+    },
+    {
+      "path": "fixtures/invalid-go-no-go-recommendation-response-extra.json",
+      "schema": "go-no-go-recommendation.response.schema.json",
+      "valid": false
+    },
+    {
+      "path": "fixtures/valid-error.json",
+      "schema": "error.schema.json",
+      "valid": true
+    },
+    {
+      "path": "fixtures/invalid-error-extra.json",
+      "schema": "error.schema.json",
+      "valid": false
+    }
+  ]
+}

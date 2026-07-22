@@ -1,0 +1,6 @@
+{
+  "contract_version": "1.0.0",
+  "capability_id": "agt003.priorities.read",
+  "correlation_id": "syn-corr-priority-001",
+  "query": {}
+}

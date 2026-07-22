@@ -1,0 +1,32 @@
+{
+  "contract_version": "1.0.0",
+  "capability_id": "agt002.dossier.read",
+  "correlation_id": "syn-corr-dossier-001",
+  "run_id": "syn-run-dossier-001",
+  "policy_version": "phase3a-p1-read-only",
+  "source": {
+    "system": "SIIO",
+    "dataset": "psi_sales_interactions",
+    "record_set_id": "syn-record-set-dossier-001",
+    "persisted": true
+  },
+  "cutoff_at": "2030-02-01T10:00:00Z",
+  "evidence": [
+    {
+      "evidence_id": "syn-evidence-dossier-001",
+      "evidence_type": "record",
+      "record_id": "syn-record-dossier-001",
+      "captured_at": "2030-02-01T10:00:00Z"
+    }
+  ],
+  "data": {
+    "dossier": {
+      "opportunity_id": "syn-opportunity-002",
+      "document_count": 1,
+      "missing_document_count": 0,
+      "analysis_status": "not_available",
+      "human_pending_count": 1,
+      "dossier_status": "partial"
+    }
+  }
+}

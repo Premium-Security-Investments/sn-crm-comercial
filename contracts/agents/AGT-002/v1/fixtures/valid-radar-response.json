@@ -1,0 +1,46 @@
+{
+  "contract_version": "1.0.0",
+  "capability_id": "agt002.radar.read",
+  "correlation_id": "syn-corr-radar-001",
+  "run_id": "syn-run-radar-001",
+  "policy_version": "phase3a-p1-read-only",
+  "source": {
+    "system": "SIIO",
+    "dataset": "psi_public_tenders",
+    "record_set_id": "syn-record-set-radar-001",
+    "persisted": true
+  },
+  "cutoff_at": "2030-02-01T10:00:00Z",
+  "evidence": [
+    {
+      "evidence_id": "syn-evidence-radar-001",
+      "evidence_type": "record",
+      "record_id": "syn-record-radar-001",
+      "captured_at": "2030-02-01T10:00:00Z"
+    }
+  ],
+  "data": {
+    "records": [
+      {
+        "source": "SYNTHETIC_SOURCE",
+        "section": "hacer",
+        "internal_status": "nueva",
+        "entity": "SYNTHETIC_ENTITY",
+        "title": "SYNTHETIC_TENDER",
+        "value": 2500,
+        "score": 80,
+        "reasons": [
+          "Synthetic fit signal."
+        ],
+        "risks": [
+          "Synthetic timing risk."
+        ],
+        "published_at": "2030-01-20T10:00:00Z",
+        "deadline_at": "2030-02-10T10:00:00Z",
+        "last_seen_at": "2030-02-01T09:00:00Z",
+        "tender_id": "syn-tender-001"
+      }
+    ],
+    "next_cursor": null
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "contract_version": "1.0.0",
+  "capability_id": "agt003.priorities.read",
+  "correlation_id": "syn-corr-priorities-001",
+  "run_id": "syn-run-priorities-001",
+  "policy_version": "gate0-v1.0",
+  "source": {
+    "system": "SIIO",
+    "dataset": "v_psi_sales_opportunity_enriched",
+    "record_set_id": "syn-record-set-priorities-001",
+    "persisted": false
+  },
+  "cutoff_at": "2030-02-01T09:59:00Z",
+  "evidence": [
+    {
+      "evidence_id": "syn-evidence-priorities-001",
+      "evidence_type": "record",
+      "record_id": "syn-record-priorities-001",
+      "captured_at": "2030-02-01T10:00:00Z"
+    }
+  ],
+  "data": {
+    "generated_at": "2030-02-01T10:00:00Z",
+    "source": {
+      "id": "CRM-F1",
+      "label": "CRM comercial",
+      "as_of": "2030-02-01T09:59:00Z"
+    },
+    "policy": {
+      "version": "gate0-v1.0",
+      "read_only": true,
+      "human_review_required": true
+    },
+    "totals": {
+      "source_rows": 1,
+      "visible_active": 1,
+      "prioritized": 1,
+      "high": 1,
+      "medium": 0,
+      "low": 0
+    },
+    "priorities": [
+      {
+        "id": "syn-opportunity-001",
+        "owner_id": null,
+        "owner_name": null,
+        "company_name": "SYNTHETIC_ENTITY",
+        "stage_code": "synthetic-stage",
+        "stage_name": "SYNTHETIC_STAGE",
+        "service_type_code": null,
+        "service_type_name": null,
+        "regional_nombre": "SYNTHETIC_REGION",
+        "customer_segment": null,
+        "offer_value": 1000,
+        "score": 1,
+        "level": "alto",
+        "signal_codes": [
+          "next_action_overdue",
+          "stalled_critical"
+        ],
+        "signals": [
+          {
+            "code": "next_action_overdue",
+            "label": "Synthetic overdue signal",
+            "points": 30,
+            "evidence": "Synthetic cutoff comparison."
+          },
+          {
+            "code": "stalled_critical",
+            "label": "Synthetic inactivity signal",
+            "points": 30,
+            "evidence": "Synthetic elapsed interval."
+          }
+        ],
+        "recommendation": "Revisar la gestión vencida y validar el siguiente paso.",
+        "explanation": "Requiere validación humana; no ejecuta acciones.",
+        "evidence": {
+          "activity_at": "2029-12-01T12:00:00Z",
+          "activity_basis": "updated_at",
+          "invalid_fields": [],
+          "inactive_days": 45,
+          "next_action_at": "2030-01-01T12:00:00Z",
+          "expected_close_date": null
+        },
+        "source": {
+          "id": "CRM-F1",
+          "label": "CRM comercial",
+          "as_of": "2030-02-01T09:59:00Z"
+        },
+        "stage_order": 4,
+        "weighted_pipeline_value": 700,
+        "next_action_at": "2030-01-01T12:00:00Z",
+        "last_interaction_at": "2029-12-01T12:00:00Z",
+        "updated_at": "2030-02-01T09:59:00Z",
+        "created_at": "2029-11-01T12:00:00Z",
+        "expected_close_date": null
+      }
+    ]
+  }
+}

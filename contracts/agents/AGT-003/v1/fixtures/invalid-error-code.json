@@ -1,0 +1,21 @@
+{
+  "contract_version": "1.0.0",
+  "capability_id": "agt003.priorities.read",
+  "correlation_id": "syn-corr-agt003-error",
+  "run_id": null,
+  "policy_version": "gate0-v1.0",
+  "source": {
+    "system": "SIIO",
+    "dataset": "v_psi_sales_opportunity_enriched",
+    "record_set_id": null,
+    "persisted": false
+  },
+  "cutoff_at": null,
+  "evidence": [],
+  "error": {
+    "code": "UNKNOWN_CODE",
+    "message": "Synthetic result is absent.",
+    "retryable": false,
+    "details": []
+  }
+}
