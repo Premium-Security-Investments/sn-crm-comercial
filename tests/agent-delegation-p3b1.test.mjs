@@ -25,7 +25,10 @@ assert.ok(existsSync(guardPath), 'P3B.1 must provide the AGT-003 capability guar
 const { verifySyntheticAgentDelegation } = await import('../agent-delegation-verifier.js');
 const { guardSyntheticAgentCapability } = await import('../agent-capability-guard.js');
 
-assert.deepEqual(JSON.parse(readFileSync(manifestPath, 'utf8')), expectedManifest, 'the producer pin must have the exact closed canonical shape');
+const expectedManifestSource = `${JSON.stringify(expectedManifest, null, 2)}\n`;
+const manifestSource = readFileSync(manifestPath, 'utf8');
+assert.equal(manifestSource, expectedManifestSource, 'the producer pin source must be byte-for-byte canonical with no duplicate keys');
+assert.deepEqual(JSON.parse(manifestSource), expectedManifest, 'the producer pin must have the exact closed canonical shape');
 
 const baseClaims = Object.freeze({
   iss: 'synthetic-platform-agents',
@@ -118,6 +121,18 @@ await assertDenied(
     },
   }),
 );
+const originalArrayIncludes = Array.prototype.includes;
+Array.prototype.includes = () => true;
+try {
+  await assertDenied(claims({
+    iss: 'evil-issuer',
+    azp: 'evil-client',
+    channel: 'evil-channel',
+    environment: 'evil-environment',
+  }));
+} finally {
+  Array.prototype.includes = originalArrayIncludes;
+}
 
 let replayCalls = 0;
 await assertDenied(claims(), dependencies({ replayStore: { consume: async () => { replayCalls += 1; return false; } } }));

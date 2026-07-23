@@ -112,11 +112,18 @@ function validTimeWindow(snapshot, now) {
     && now < snapshot.exp;
 }
 
+function containsOwnValue(list, expected) {
+  for (let index = 0; index < list.length; index += 1) {
+    if (list[index] === expected) return true;
+  }
+  return false;
+}
+
 function trusted(snapshot, trustPolicy) {
-  return trustPolicy.issuers.includes(snapshot.iss)
-    && trustPolicy.authorizedParties.includes(snapshot.azp)
-    && trustPolicy.channels.includes(snapshot.channel)
-    && trustPolicy.environments.includes(snapshot.environment);
+  return containsOwnValue(trustPolicy.issuers, snapshot.iss)
+    && containsOwnValue(trustPolicy.authorizedParties, snapshot.azp)
+    && containsOwnValue(trustPolicy.channels, snapshot.channel)
+    && containsOwnValue(trustPolicy.environments, snapshot.environment);
 }
 
 export async function verifySyntheticAgentDelegation(input, dependencies) {

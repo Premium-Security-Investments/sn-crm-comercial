@@ -85,11 +85,7 @@ function declaresPlatformOwner(value) {
 
 function isExactInstitutionalRequestPin(filePath, text) {
   if (filePath !== institutionalRequestPinRelativePath) return false;
-  try {
-    return JSON.stringify(JSON.parse(text)) === JSON.stringify(expectedInstitutionalRequestPin);
-  } catch {
-    return false;
-  }
+  return text === `${JSON.stringify(expectedInstitutionalRequestPin, null, 2)}\n`;
 }
 
 function auditRepository(root) {
@@ -220,6 +216,15 @@ assertMutationRejected(
 assertMutationRejected(
   institutionalRequestPinRelativePath,
   JSON.stringify({ ...expectedInstitutionalRequestPin, extra_owner: expectedPin.producer_owner }),
+  'institutional-request-pin',
+);
+const duplicateOwnerManifest = `${JSON.stringify(expectedInstitutionalRequestPin, null, 2)}\n`.replace(
+  `  "producer_owner": "${expectedPin.producer_owner}",`,
+  `  "producer_owner": "attacker",\n  "producer_owner": "${expectedPin.producer_owner}",`,
+);
+assertMutationRejected(
+  institutionalRequestPinRelativePath,
+  duplicateOwnerManifest,
   'institutional-request-pin',
 );
 
