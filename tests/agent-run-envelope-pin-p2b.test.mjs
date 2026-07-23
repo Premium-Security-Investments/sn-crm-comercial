@@ -28,12 +28,10 @@ assert.match(pin.producer_merge_sha, /^[a-f0-9]{40}$/, 'producer merge SHA must 
 assert.match(pin.sha256, /^[a-f0-9]{64}$/, 'contract SHA-256 must be 64 lowercase hex characters');
 
 const ignoredDirectoryNames = new Set(['.git', 'node_modules', 'dist', 'build', '.superpowers', '.cache', 'cache', '__pycache__']);
-const textExtensions = new Set(['.cjs', '.css', '.html', '.js', '.json', '.jsx', '.md', '.mjs', '.mts', '.sh', '.ts', '.tsx', '.txt', '.yaml', '.yml']);
 const distinctiveEnvelopeKeys = new Set([
   'requested_resource_digest',
   'resolved_scope_digest',
   'requester_channel',
-  'human_review_required',
   'approval_reference',
   'result_digest',
 ]);
@@ -66,6 +64,16 @@ function collectObjectKeys(value, keys = new Set()) {
   return keys;
 }
 
+function declaresPlatformOwner(value) {
+  if (Array.isArray(value)) return value.some(declaresPlatformOwner);
+  if (!value || typeof value !== 'object') return false;
+  return Object.entries(value).some(([key, nestedValue]) => {
+    const normalizedKey = key.toLowerCase().replaceAll('-', '_');
+    const isOwnerKey = normalizedKey === 'owner' || normalizedKey.endsWith('_owner') || normalizedKey === 'propietario';
+    return (isOwnerKey && nestedValue === expectedPin.producer_owner) || declaresPlatformOwner(nestedValue);
+  });
+}
+
 function auditRepository(root) {
   const violations = new Set();
   const namespaceRoot = join(root, 'contracts', 'agents', 'agent-run-envelope');
@@ -84,10 +92,12 @@ function auditRepository(root) {
       violations.add('envelope-path');
     }
 
-    if (isAllowedFile || (!textExtensions.has(extname(filePath)) && extname(filePath) !== '')) continue;
+    if (isAllowedFile) continue;
 
-    const text = readFileSync(file, 'utf8');
-    if (/\bproducer_owner\b\s*[:=]/.test(text)) {
+    const bytes = readFileSync(file);
+    if (bytes.includes(0)) continue;
+    const text = bytes.toString('utf8');
+    if (/\b(?:producer_)?owner\b\s*[:=]\s*['"]Plataforma Agentes['"]/.test(text)) {
       violations.add('producer-owner');
     }
     if (exactContractAnchors.some(anchor => text.includes(anchor))) {
@@ -102,9 +112,12 @@ function auditRepository(root) {
         violations.add('invalid-json');
         continue;
       }
+      if (declaresPlatformOwner(parsed)) {
+        violations.add('producer-owner');
+      }
       const envelopeKeyCount = [...collectObjectKeys(parsed)]
         .filter(key => distinctiveEnvelopeKeys.has(key)).length;
-      if (envelopeKeyCount >= 3) {
+      if (envelopeKeyCount >= 1) {
         violations.add('schema-copy');
       }
     }
@@ -121,28 +134,50 @@ function writeFixtureFile(root, relativePath, contents) {
   writeFileSync(target, contents);
 }
 
-const mutationRoot = mkdtempSync(join(tmpdir(), 'p2b-envelope-audit-'));
-try {
-  writeFixtureFile(mutationRoot, canonicalPinRelativePath, JSON.stringify(expectedPin));
-  writeFixtureFile(mutationRoot, 'contracts/agents/second-owner.json', JSON.stringify({ producer_owner: 'Plataforma Agentes' }));
-  writeFixtureFile(mutationRoot, 'contracts/agents/copied-schema.json', JSON.stringify({
-    $id: 'https://example.invalid/copied-envelope.json',
-    properties: {
-      requested_resource_digest: { type: 'string' },
-      resolved_scope_digest: { type: 'string' },
-      requester_channel: { type: 'string' },
-    },
-  }));
-  writeFixtureFile(mutationRoot, 'src/agent-run-envelope.js', "export const producer_owner = 'Plataforma Agentes';\n");
-
-  assert.deepEqual(
-    auditRepository(mutationRoot),
-    ['envelope-path', 'producer-owner', 'schema-copy'],
-    'repository audit must reject an owner without id, a changed-id schema copy, and an out-of-contract envelope implementation',
-  );
-} finally {
-  rmSync(mutationRoot, { recursive: true });
+function assertMutationRejected(relativePath, contents, expectedViolation) {
+  const mutationRoot = mkdtempSync(join(tmpdir(), 'p2b-envelope-audit-'));
+  try {
+    writeFixtureFile(mutationRoot, canonicalPinRelativePath, JSON.stringify(expectedPin));
+    writeFixtureFile(mutationRoot, relativePath, contents);
+    assert.ok(
+      auditRepository(mutationRoot).includes(expectedViolation),
+      `${relativePath} must be rejected as ${expectedViolation}`,
+    );
+  } finally {
+    rmSync(mutationRoot, { recursive: true });
+  }
 }
+
+assertMutationRejected(
+  'contracts/agents/second-owner.json',
+  JSON.stringify({ producer_owner: 'Plataforma Agentes' }),
+  'producer-owner',
+);
+assertMutationRejected(
+  'contracts/agents/copied-schema.json',
+  JSON.stringify({ $id: 'https://example.invalid/copied-envelope.json', properties: { requested_resource_digest: { type: 'string' } } }),
+  'schema-copy',
+);
+assertMutationRejected(
+  'src/agent-run-envelope.js',
+  "export const producer_owner = 'Plataforma Agentes';\n",
+  'envelope-path',
+);
+assertMutationRejected(
+  'implementation/run.py',
+  "producer_owner = 'Plataforma Agentes'\nendpoint = '/agent-runs'\n",
+  'producer-owner',
+);
+assertMutationRejected(
+  'contracts/agents/second-owner-generic.json',
+  JSON.stringify({ owner: 'Plataforma Agentes', contract_version: 'v2' }),
+  'producer-owner',
+);
+assertMutationRejected(
+  'contracts/agents/partial-schema.json',
+  JSON.stringify({ $id: 'https://example.invalid/partial.json', properties: { requested_resource_digest: {}, resolved_scope_digest: {} } }),
+  'schema-copy',
+);
 
 const serializedPin = JSON.stringify(pin);
 for (const forbiddenTerm of [
