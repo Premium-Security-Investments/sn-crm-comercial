@@ -9,6 +9,7 @@ const contractsRoot = join(repositoryRoot, 'contracts', 'agents');
 const pinPath = join(contractsRoot, 'agent-run-envelope', 'v1', 'manifest.json');
 const canonicalPinRelativePath = 'contracts/agents/agent-run-envelope/v1/manifest.json';
 const ownTestRelativePath = 'tests/agent-run-envelope-pin-p2b.test.mjs';
+const institutionalRequestPinRelativePath = 'contracts/agents/institutional-agent-request/v1/manifest.json';
 
 assert.ok(existsSync(pinPath), 'P2B must add the sole machine-readable run-envelope pin');
 
@@ -36,12 +37,16 @@ const distinctiveEnvelopeKeys = new Set([
   'result_digest',
 ]);
 const exactContractAnchors = [
-  expectedPin.producer_repo,
   expectedPin.producer_merge_sha,
   expectedPin.contract_path,
   expectedPin.contract_id,
   expectedPin.sha256,
 ];
+const allowedOwnershipFiles = new Set([
+  canonicalPinRelativePath,
+  ownTestRelativePath,
+  institutionalRequestPinRelativePath,
+]);
 
 function walkRelevantFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
@@ -87,6 +92,7 @@ function auditRepository(root) {
   for (const file of walkRelevantFiles(root)) {
     const filePath = relative(root, file).split('\\').join('/');
     const isAllowedFile = filePath === canonicalPinRelativePath || filePath === ownTestRelativePath;
+    const isAllowedOwnershipFile = allowedOwnershipFiles.has(filePath);
 
     if (!isAllowedFile && filePath.toLowerCase().includes('agent-run-envelope')) {
       violations.add('envelope-path');
@@ -96,7 +102,7 @@ function auditRepository(root) {
 
     const bytes = readFileSync(file);
     const text = bytes.toString('utf8');
-    if (/\b(?:producer_)?owner\b\s*[:=]\s*['"]Plataforma Agentes['"]/.test(text)) {
+    if (!isAllowedOwnershipFile && /\b(?:producer_)?owner\b\s*[:=]\s*['"]Plataforma Agentes['"]/.test(text)) {
       violations.add('producer-owner');
     }
     if (exactContractAnchors.some(anchor => text.includes(anchor))) {
@@ -111,7 +117,7 @@ function auditRepository(root) {
         violations.add('invalid-json');
         continue;
       }
-      if (declaresPlatformOwner(parsed)) {
+      if (!isAllowedOwnershipFile && declaresPlatformOwner(parsed)) {
         violations.add('producer-owner');
       }
       const envelopeKeyCount = [...collectObjectKeys(parsed)]
@@ -125,7 +131,11 @@ function auditRepository(root) {
   return [...violations].sort();
 }
 
-assert.deepEqual(auditRepository(repositoryRoot), [], 'repository must retain only the canonical run-envelope pin');
+assert.deepEqual(
+  auditRepository(repositoryRoot),
+  [],
+  'repository must retain only the canonical run-envelope pin while allowing the separately governed institutional-request pin',
+);
 
 function writeFixtureFile(root, relativePath, contents) {
   const target = join(root, relativePath);
