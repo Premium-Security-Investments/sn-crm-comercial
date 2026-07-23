@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-07-22
 
-**Estado:** aprobado en conversación; pendiente revisión del documento por Juan Botero
+**Estado:** implementado en rama; verificación automatizada verde; pendientes QA autenticada y gates productivos
 
 **Repositorio:** `Premium-Security-Investments/sn-crm-comercial`
 
