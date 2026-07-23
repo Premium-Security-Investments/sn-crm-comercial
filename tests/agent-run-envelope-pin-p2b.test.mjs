@@ -95,7 +95,6 @@ function auditRepository(root) {
     if (isAllowedFile) continue;
 
     const bytes = readFileSync(file);
-    if (bytes.includes(0)) continue;
     const text = bytes.toString('utf8');
     if (/\b(?:producer_)?owner\b\s*[:=]\s*['"]Plataforma Agentes['"]/.test(text)) {
       violations.add('producer-owner');
@@ -177,6 +176,11 @@ assertMutationRejected(
   'contracts/agents/partial-schema.json',
   JSON.stringify({ $id: 'https://example.invalid/partial.json', properties: { requested_resource_digest: {}, resolved_scope_digest: {} } }),
   'schema-copy',
+);
+assertMutationRejected(
+  'implementation/pin.bin',
+  Buffer.concat([Buffer.from([0]), Buffer.from("producer_owner = 'Plataforma Agentes'\n")]),
+  'producer-owner',
 );
 
 const serializedPin = JSON.stringify(pin);
