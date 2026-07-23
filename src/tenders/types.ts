@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-export type TenderModuleView = 'radar' | 'seguimiento' | 'expedientes' | 'perfiles';
+export type TenderModuleView = 'radar' | 'seguimiento' | 'oportunidades' | 'configuracion';
 export type TenderRequest = <T>(path: string, options?: RequestInit) => Promise<T>;
 export type TenderSection = 'hacer' | 'revisar' | 'descartar';
 export type TenderInternalStatus = 'nueva' | 'en_revision' | 'convertida_oportunidad' | 'descartada';
@@ -25,10 +25,70 @@ export type TenderTrackingUpdate = { id: string; tracking_owner_id: string; trac
 export type TenderTrackingEvent = { id: string; tender_id: string; event_type: string; note?: string | null; from_status?: string | null; to_status?: string | null; assigned_to?: string | null; next_action?: string | null; due_at?: string | null; blocker?: string | null; created_by?: string | null; created_at: string };
 export type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string; count?: number; message?: string };
 export type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
+export type TenderRadarFilters = { query: string; source: string; region: TenderRegionKey; deadline: TenderDeadlineFilter; value: TenderValueFilter; score: TenderScoreFilter; section: TenderSection | 'todas'; internalStatus: TenderInternalStatus | 'todas' };
 export type TenderDocumentImportStatus = 'analisis_generado' | 'fallo_importacion' | 'no_aplica';
 export type TenderConversionResult = { id: string; duplicate: boolean; document_import_status: TenderDocumentImportStatus; document_import_error: string | null };
 export type TenderSearchProfile = { id: string; name: string; description?: string | null; region_key: TenderRegionKey; source_filter: string; section_filter: TenderSection | 'todas'; internal_status_filter: TenderInternalStatus | 'todas'; deadline_filter: TenderDeadlineFilter; value_filter: TenderValueFilter; score_filter: TenderScoreFilter; query_text?: string | null; is_default?: boolean; created_at?: string; updated_at?: string };
 export type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; rup_status?: string | null; rup_updated_at?: string | null; rup_unspsc_codes?: string | null; authorized_services?: string | null; supervigilancia_license?: string | null; financial_capacity?: string | null; organizational_capacity?: string | null; experience_summary?: string | null; certifications?: string | null; recurring_documents?: string | null; disqualifications_notes?: string | null; useful_company_info?: string | null; source_document_name?: string | null; rup_import_notes?: string | null; updated_at?: string | null; updated_by_name?: string | null };
 export type TenderDossier = { tender_id?: string; opportunity_id: string; entity?: string; title?: string; source?: string; document_count: number; missing_document_count: number; document_import_status: string; document_import_error?: string | null; go_no_go?: string | null; risk?: string | null; checklist_progress?: { total?: number; auto_generated?: number; human_required?: number } | null; preparation_status?: string | null; human_pending_count?: number; sharepoint_status?: string | null; sharepoint_url?: string | null; dossier_error?: string | null };
-export type TenderModuleData = { currentProfile: { id: string; full_name: string; role: string; microsoft_email?: string | null }; profiles: Array<{ id: string; full_name: string; role: string }> };
+export type TenderOpportunityFilter = 'all' | 'pending_decision' | 'go_authorized' | 'in_preparation' | 'submitted' | 'closed';
+export type TenderOfferStatus = 'pendiente_decision' | 'en_preparacion' | 'lista_para_presentar' | 'presentada' | 'adjudicada' | 'no_adjudicada' | 'cerrada_no_go';
+export type TenderOpportunitySummary = TenderDossier & {
+  recommendation: string;
+  decision: 'go' | 'no_go' | null;
+  decided_by_name: string | null;
+  decided_at: string | null;
+  tender_offer_status: TenderOfferStatus;
+};
+export type TenderCurrentProfile = { id: string; full_name: string; role: string; microsoft_email?: string | null; active?: boolean; permissions?: string[]; identity_type?: 'human' | 'agent' | null };
+export type TenderDocumentAnalysis = {
+  interaction_id?: string;
+  recommendation: string;
+  risk: string;
+  summary: string;
+  generated_at: string;
+  findings?: string[];
+  commercial_fit?: { status?: string; positives?: string[]; concerns?: string[] };
+  [key: string]: unknown;
+};
+export type TenderGoNoGoDecision = {
+  id: string;
+  opportunity_id: string;
+  tender_id: string;
+  decision: 'go' | 'no_go';
+  analysis_interaction_id: string | null;
+  justification: string | null;
+  decided_by: string;
+  decided_at: string;
+  supersedes_decision_id?: string | null;
+  psi_sales_profiles?: { full_name?: string | null } | null;
+};
+export type TenderGoNoGoDecisionInput = { opportunity_id: string; decision: 'go' | 'no_go'; analysis_interaction_id: string; justification?: string | null };
+export type TenderOfferPreparation = { status: string; interaction_id?: string; [key: string]: unknown };
+export type TenderOfferStatusTransition = {
+  id: string;
+  opportunity_id: string;
+  tender_id: string;
+  actor_id: string;
+  from_status: Exclude<TenderOfferStatus, 'pendiente_decision' | 'cerrada_no_go' | 'adjudicada' | 'no_adjudicada'>;
+  to_status: Exclude<TenderOfferStatus, 'pendiente_decision' | 'cerrada_no_go' | 'en_preparacion'>;
+  note: string | null;
+  changed_at: string;
+  psi_sales_profiles?: { full_name?: string | null } | null;
+};
+export type TenderOfferStatusPayload = { status: TenderOfferStatus; history: TenderOfferStatusTransition[] };
+export type TenderOfferStatusTransitionInput = { opportunity_id: string; to_status: TenderOfferStatus; expected_current_status: TenderOfferStatus; note?: string | null };
+export type TenderGoNoGoPayload = { decision: TenderGoNoGoDecision | null; history: TenderGoNoGoDecision[]; preparation: TenderOfferPreparation | null; analysis?: TenderDocumentAnalysis | null };
+export type TenderGoNoGoPostPayload = {
+  decision: {
+    decision_id: string;
+    supersedes_decision_id: string | null;
+    decision: 'go' | 'no_go';
+    preparation_id: string | null;
+    preparation_created: boolean;
+    tender_offer_status: TenderOfferStatus;
+  };
+  preparation: TenderOfferPreparation | null;
+};
+export type TenderModuleData = { currentProfile: TenderCurrentProfile; profiles: Array<{ id: string; full_name: string; role: string }> };
 export type TendersModuleProps = { view: TenderModuleView; data: TenderModuleData; refresh: () => Promise<void>; request: TenderRequest; navigate: (hash: string) => void; children?: ReactNode };

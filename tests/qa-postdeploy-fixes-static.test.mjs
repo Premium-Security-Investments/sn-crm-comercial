@@ -5,7 +5,7 @@ const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 const radar = readFileSync(new URL('../src/tenders/TenderRadarView.tsx', import.meta.url), 'utf8');
 const radarUtils = readFileSync(new URL('../src/tenders/radarUtils.ts', import.meta.url), 'utf8');
-const profiles = readFileSync(new URL('../src/tenders/TenderProfilesView.tsx', import.meta.url), 'utf8');
+const configuration = readFileSync(new URL('../src/tenders/TenderConfigurationView.tsx', import.meta.url), 'utf8');
 
 const mainMarkers = [
   'const OPPORTUNITIES_PAGE_SIZE = 25',
@@ -31,7 +31,7 @@ for (const marker of ['const PAGE_SIZE = 24', 'setPage(', 'className="pagination
 for (const marker of ['function canonicalTenderKey(', 'function deduplicateTenders(', 'tenderStatusRank']) {
   assert.ok(radarUtils.includes(marker), `radarUtils.ts missing QA fix marker: ${marker}`);
 }
-assert.ok(profiles.includes('tender-profiles-view'), 'TenderProfilesView must retain an isolated profile-view marker.');
+assert.ok(configuration.includes('tender-configuration-view'), 'TenderConfigurationView must retain an isolated configuration-view marker.');
 
 const styleMarkers = [
   '.pagination',

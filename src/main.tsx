@@ -8,8 +8,11 @@ import { api, setApiAccessToken } from './apiClient';
 import { MODULE_PERMISSION_CODES, MODULE_PERMISSIONS, eligibleModulePermissions, isModulePermissionEligible } from '../module-access.js';
 import { SiioDashboard } from './siio/SiioDashboard';
 import { TendersModule } from './tenders/TendersModule';
+import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDecisionPanel';
+import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
 import type { TenderModuleView } from './tenders/types';
-import { focusDocumentReviewArea } from './tenders/viewUtils';
+import type { TenderDocumentAnalysis as TenderDocumentAnalysisShared } from './tenders/types';
+import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
 import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
 import { supabaseBrowser } from './supabaseBrowser';
 import { VigiaCommercial } from './vigia/VigiaCommercial';
@@ -19,7 +22,7 @@ type Stage = { code: string; name: string; stage_order: number; close_probabilit
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
 type CustomerSegment = 'cliente_nuevo' | 'cliente_actual';
 type AccessCatalog = { areas: Array<{ code: string; name: string }>; subareas: Array<{ code: string; area_code: string; name: string }>; permissions: Array<{ code: string; name: string; description: string }> };
-type Profile = { id: string; full_name: string; microsoft_email: string; role: string; active: boolean; is_commercial?: boolean; commercial_area?: CommercialArea | null; can_edit_customer_segment?: boolean; areas?: AccessAssignment[]; permissions?: string[] };
+type Profile = { id: string; full_name: string; microsoft_email: string; role: string; active: boolean; identity_type?: 'human' | 'agent' | null; is_commercial?: boolean; commercial_area?: CommercialArea | null; can_edit_customer_segment?: boolean; areas?: AccessAssignment[]; permissions?: string[] };
 type ServiceType = { code: string; name: string };
 type LossReason = { code: string; name: string };
 type SummaryRow = { stage_code: string; stage_name: string; stage_order: number; opportunities_count: number; total_offer_value: number; weighted_pipeline_value: number };
@@ -52,11 +55,11 @@ type TenderRegionKey = 'todas' | 'bog_cundinamarca' | 'med_antioquia' | 'eje_caf
 type PublicTender = { id: string; stable_key?: string; source: string; section: TenderSection; internal_status?: TenderInternalStatus; converted_opportunity_id?: string | null; reviewed_at?: string | null; detected_at?: string | null; last_seen_at?: string | null; entity: string; dept?: string; city?: string; ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string; category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null; score: number; reasons: string[]; risks: string[]; url?: string };
 type TenderDocumentStatus = 'pendiente_documentos' | 'documentos_cargados' | 'analisis_generado';
 type TenderDocumentRecord = { id: string; name: string; size: number; mime_type?: string | null; document_type: string; current: boolean; storage_path?: string; uploaded_at: string; uploaded_by?: string | null; signed_url?: string | null; extracted_text?: string | null };
-type TenderDocumentAnalysis = { recommendation: string; risk: string; summary: string; generated_at: string; findings?: string[]; detected_values?: Record<string, string[]>; matrix?: Array<{ category: string; status: string; detail: string }>; checklist?: string[]; report_title?: string; executive_semaphore?: Array<{ label: string; value: string; tone?: string }>; commercial_fit?: { status?: string; positives?: string[]; concerns?: string[] }; company_profile_crosscheck?: { status?: string; matches?: string[]; gaps?: string[]; profile_source?: string }; habilitating_requirements?: Array<{ front: string; status: string; action: string }>; committee_summary?: string; next_action?: string; go_no_go?: { decision?: string; risk?: string; blockers?: string[] } };
+type TenderDocumentAnalysis = TenderDocumentAnalysisShared & { risk: string; summary: string; generated_at: string; detected_values?: Record<string, string[]>; matrix?: Array<{ category: string; status: string; detail: string }>; checklist?: string[]; report_title?: string; executive_semaphore?: Array<{ label: string; value: string; tone?: string }>; company_profile_crosscheck?: { status?: string; matches?: string[]; gaps?: string[]; profile_source?: string }; habilitating_requirements?: Array<{ front: string; status: string; action: string }>; committee_summary?: string; next_action?: string; go_no_go?: { decision?: string; risk?: string; blockers?: string[] } };
 type TenderDocumentsPayload = { documents: TenderDocumentRecord[]; analysis: TenderDocumentAnalysis | null; analyses: TenderDocumentAnalysis[] };
 type TenderOfferPreparationDoc = { key: string; name: string; folder: string; status: string; owner: string; output?: string; reusable?: boolean; title?: string; priority?: string; reason?: string };
 type TenderOfferPreparation = { status: string; approved_at: string; approved_by?: string; control_message?: string; sharepoint_folder?: { status: string; provider: string; url?: string | null; root_name?: string; folders?: string[] }; generic_documents?: TenderOfferPreparationDoc[]; auto_generated_documents?: TenderOfferPreparationDoc[]; human_required_items?: TenderOfferPreparationDoc[]; assistant_notes?: string[]; checklist_summary?: { total: number; auto_generated: number; human_required: number; official_documents: number; has_analysis: boolean } };
-type TenderOfferPreparationPayload = { preparation: TenderOfferPreparation | null; preparations: TenderOfferPreparation[]; notes: Array<{ note: string; status?: string; created_at?: string; created_by?: string; created_by_name?: string }> };
+type TenderOfferPreparationPayload = { preparation: TenderOfferPreparation | null; preparations: TenderOfferPreparation[]; notes: Array<{ note: string; status?: string; created_at?: string; created_by?: string; created_by_name?: string }>; decision?: { decision?: 'go' | 'no_go' } | null; reason?: string };
 type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string; count?: number; message?: string };
 type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type TenderSearchProfile = { id: string; name: string; description?: string | null; region_key: TenderRegionKey; source_filter: string; section_filter: TenderSection | 'todas'; internal_status_filter: TenderInternalStatus | 'todas'; deadline_filter: TenderDeadlineFilter; value_filter: TenderValueFilter; score_filter: TenderScoreFilter; query_text?: string | null; is_default?: boolean; created_at?: string; updated_at?: string };
@@ -251,7 +254,7 @@ function alertRoute(status: string) { return `#/alerts?status=${encodeURICompone
 function managerAlertRoute(status: string) { return alertRoute(status); }
 function tenderDeepLink(tender: PublicTender) { return `#/tenders?tender=${encodeURIComponent(tender.id)}`; }
 function hashQueryParam(name: string) { return new URLSearchParams((window.location.hash.split('?')[1] || '')).get(name) || ''; }
-function tenderViewFromHash(): TenderModuleView { return (['radar','seguimiento','expedientes','perfiles'].includes(hashQueryParam('view')) ? hashQueryParam('view') : 'radar') as TenderModuleView; }
+function tenderViewFromHash(): TenderModuleView { return normalizeTenderModuleView(hashQueryParam('view')); }
 function isTerminalStage(stageCode?: string | null) { return ['aprobado','perdido','descartado'].includes(stageCode || ''); }
 function dashboardOpportunityDate(o: Opportunity) { return o.expected_close_date || o.quote_date || o.approved_at || o.updated_at || o.created_at; }
 function matchesDashboardPeriod(o: Opportunity, period: DashboardPeriodFilter) {
@@ -720,13 +723,31 @@ function Pagination({ page, pageSize, total, onChange, label }: { page: number; 
 }
 function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap; refresh: () => Promise<void> }) {
   const [detail, setDetail] = useState<{ opportunity: Opportunity; interactions: Interaction[] } | null>(null); const [error, setError] = useState<string | null>(null);
+  const [tenderAnalysis, setTenderAnalysis] = useState<TenderDocumentAnalysis | null>(null);
+  const [tenderRevision, setTenderRevision] = useState(0);
+  const detailRequestRef = useRef(0);
+  const activeDetailIdRef = useRef(id);
+  activeDetailIdRef.current = id;
   const documentReviewRef = useRef<HTMLDivElement>(null);
   const followUpRef = useRef<HTMLDivElement>(null);
   const focusTarget = new URLSearchParams(window.location.hash.split('?')[1] || '').get('focus');
   const documentFocusRequested = focusTarget === 'documents';
   const interactionFocusRequested = focusTarget === 'interaction';
-  const load = async () => { try { setDetail(await api(`/api/opportunity-detail?id=${encodeURIComponent(id)}`)); } catch(e) { setError(e instanceof Error ? e.message : String(e)); } };
-  useEffect(() => { load(); }, [id]);
+  const load = async () => {
+    const requestedId = id; const version = ++detailRequestRef.current;
+    try {
+      const next = await api<{ opportunity: Opportunity; interactions: Interaction[] }>(`/api/opportunity-detail?id=${encodeURIComponent(requestedId)}`);
+      if (version === detailRequestRef.current && activeDetailIdRef.current === requestedId) setDetail(next);
+    } catch(e) {
+      if (version === detailRequestRef.current && activeDetailIdRef.current === requestedId) setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  useEffect(() => {
+    activeDetailIdRef.current = id; detailRequestRef.current += 1;
+    setDetail(null); setError(null); setTenderAnalysis(null); setTenderRevision(0);
+    void load();
+    return () => { detailRequestRef.current += 1; };
+  }, [id]);
   useEffect(() => { if (documentFocusRequested && detail?.opportunity.service_type_code === 'licitacion_publica') focusDocumentReviewArea(documentReviewRef.current); }, [documentFocusRequested, detail?.opportunity.id]);
   useEffect(() => { if (interactionFocusRequested && detail?.opportunity.id) focusDocumentReviewArea(followUpRef.current); }, [interactionFocusRequested, detail?.opportunity.id]);
   if (error) return <div className="error">{error}</div>; if (!detail) return <div className="notice">Cargando detalle…</div>;
@@ -745,8 +766,9 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   return <section className="stack">
     <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p></div><div className="row-actions"><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>{o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <button className="danger" onClick={discardTenderOpportunity}>Sacar de oportunidad</button>}</div></div>
     <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Fecha creación" value={fmtDate(o.created_at)}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
-    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel opportunity={o} focusTargetRef={documentReviewRef} onReload={async()=>{await load(); await refresh();}} />}
-    {o.service_type_code === 'licitacion_publica' && <TenderOfferPreparationPanel opportunity={o} onReload={async()=>{await load(); await refresh();}} />}
+    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} focusTargetRef={documentReviewRef} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onReload={async()=>{await load(); await refresh();}} />}
+    {o.service_type_code === 'licitacion_publica' && <TenderGoNoGoDecisionPanel key={`tender-decision-${o.id}`} opportunityId={o.id} opportunityName={o.company_name || 'Oportunidad de licitación'} analysis={tenderAnalysis} currentProfile={data.currentProfile} request={api} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} />}
+    {o.service_type_code === 'licitacion_publica' && <TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} currentProfile={data.currentProfile} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} />}
     <div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><div id="opportunity-follow-up" className="opportunity-follow-up-anchor" tabIndex={-1} ref={followUpRef}><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div></div>
     <Panel title="Línea de seguimientos"><div className="timeline">{visibleInteractions.length ? visibleInteractions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel>
   </section>;
@@ -772,19 +794,29 @@ function fileToBase64(file: File) {
     reader.readAsDataURL(file);
   });
 }
-function TenderDocumentReviewPanel({ opportunity, onReload, focusTargetRef }: { opportunity: Opportunity; onReload?: () => Promise<void>; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
+function TenderDocumentReviewPanel({ opportunity, onReload, onAnalysisChanged, focusTargetRef }: { opportunity: Opportunity; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
   const [payload, setPayload] = useState<TenderDocumentsPayload>({ documents: [], analysis: null, analyses: [] });
   const [statusText, setStatusText] = useState('');
   const [busy, setBusy] = useState(false);
+  const requestVersionRef = useRef(0);
+  const activeOpportunityRef = useRef(opportunity.id);
+  activeOpportunityRef.current = opportunity.id;
   const documents = payload.documents || [];
   const analysis = payload.analysis;
   const status: TenderDocumentStatus = analysis ? 'analisis_generado' : documents.length ? 'documentos_cargados' : 'pendiente_documentos';
   const documentRisk = analysis?.risk || (!documents.length ? 'Pendiente' : 'Medio');
   const loadDocuments = async () => {
-    const data = await api<TenderDocumentsPayload>(`/api/tender-documents?id=${encodeURIComponent(opportunity.id)}`);
-    setPayload(data);
+    const requestedId = opportunity.id; const version = ++requestVersionRef.current;
+    const data = await api<TenderDocumentsPayload>(`/api/tender-documents?id=${encodeURIComponent(requestedId)}`);
+    if (version !== requestVersionRef.current || activeOpportunityRef.current !== requestedId) return;
+    setPayload(data); onAnalysisChanged?.(data.analysis || null);
   };
-  useEffect(() => { loadDocuments().catch(err => setStatusText(err instanceof Error ? err.message : String(err))); }, [opportunity.id]);
+  useEffect(() => {
+    activeOpportunityRef.current = opportunity.id; requestVersionRef.current += 1;
+    setPayload({ documents: [], analysis: null, analyses: [] }); setStatusText(''); setBusy(false); onAnalysisChanged?.(null);
+    void loadDocuments().catch(err => { if (activeOpportunityRef.current === opportunity.id) setStatusText(err instanceof Error ? err.message : String(err)); });
+    return () => { requestVersionRef.current += 1; };
+  }, [opportunity.id]);
   const addFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(event.currentTarget.files || []);
     event.currentTarget.value = '';
@@ -799,7 +831,7 @@ function TenderDocumentReviewPanel({ opportunity, onReload, focusTargetRef }: { 
         content_base64: await fileToBase64(file)
       })));
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-upload', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, files }) });
-      setPayload(data); setStatusText('Documentos guardados en Supabase y texto extraído.');
+      setPayload(data); onAnalysisChanged?.(data.analysis || null); setStatusText('Documentos guardados en Supabase y texto extraído.');
     } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }
   };
@@ -807,7 +839,7 @@ function TenderDocumentReviewPanel({ opportunity, onReload, focusTargetRef }: { 
     setBusy(true); setStatusText('Generando análisis documental…');
     try {
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-analyze', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
-      setPayload(data); setStatusText('Análisis persistente generado y compartido.');
+      setPayload(data); onAnalysisChanged?.(data.analysis || null); setStatusText('Análisis persistente generado y compartido.');
     } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }
   };
@@ -815,7 +847,7 @@ function TenderDocumentReviewPanel({ opportunity, onReload, focusTargetRef }: { 
     setBusy(true); setStatusText('Importando documentos oficiales desde SECOP/ESU y generando análisis…');
     try {
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-import', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
-      setPayload(data); setStatusText('Documentos oficiales importados automáticamente. Puede cargar documentos complementarios si hace falta.');
+      setPayload(data); onAnalysisChanged?.(data.analysis || null); setStatusText('Documentos oficiales importados automáticamente. Puede cargar documentos complementarios si hace falta.');
       await onReload?.();
     } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }
@@ -849,7 +881,7 @@ function TenderDocumentReviewPanel({ opportunity, onReload, focusTargetRef }: { 
     </div>
   </Panel></div>;
 }
-function TenderOfferPreparationPanel({ opportunity, onReload }: { opportunity: Opportunity; onReload?: () => Promise<void> }) {
+function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void> }) {
   const [payload, setPayload] = useState<TenderOfferPreparationPayload>({ preparation: null, preparations: [], notes: [] });
   const [statusText, setStatusText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -860,15 +892,7 @@ function TenderOfferPreparationPanel({ opportunity, onReload }: { opportunity: O
     setPayload(data);
   };
   useEffect(() => { loadPreparation().catch(err => setStatusText(err instanceof Error ? err.message : String(err))); }, [opportunity.id]);
-  const approvePreparation = async () => {
-    setBusy(true); setStatusText('Generando paquete inicial de preparación…');
-    try {
-      const data = await api<TenderOfferPreparationPayload>('/api/tender-offer-preparation-approve', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
-      setPayload(data); setStatusText('Expediente de Oferta creado. Se generaron documentos automáticos y pendientes humanos.');
-      await onReload?.();
-    } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
-    finally { setBusy(false); }
-  };
+
   const saveAssistantNote = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!note.trim()) return;
@@ -879,24 +903,26 @@ function TenderOfferPreparationPanel({ opportunity, onReload }: { opportunity: O
     } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }
   };
+  const authorizedPreparation = preparation && payload.decision?.decision === 'go' ? preparation : null;
   return <Panel title="Expediente de Oferta">
-    <div className="tender-document-panel">
+    {authorizedPreparation ? <div className="tender-document-panel">
       <div className="document-review-head">
-        <div><span className="eyebrow">Preparación después del GO</span><h3>Expediente de Oferta</h3><p>Al aprobar la presentación, el sistema genera automáticamente el paquete inicial, documentos genéricos y pendientes humanos. El asistente queda para intervenir donde falte criterio, archivos o aprobación.</p></div>
-        <div className="document-status-card"><small>Estado expediente</small><Badge tone={preparation ? 'green' : 'amber'}>{preparation ? 'Preparación aprobada' : 'Pendiente aprobación'}</Badge><strong>{preparation?.checklist_summary?.total || 0} ítems</strong></div>
-        <div className="document-risk-meter"><small>Carpeta SharePoint / OneDrive</small><strong>{preparation?.sharepoint_folder?.status || 'Pendiente'}</strong><span>{preparation?.sharepoint_folder?.root_name || 'Se creará al configurar integración Graph'}</span></div>
+        <div><span className="eyebrow">Preparación después del GO</span><h3>Expediente de Oferta</h3><p>La autorización formal GO genera automáticamente el paquete inicial, documentos genéricos y pendientes humanos. El asistente interviene donde falte criterio, archivos o aprobación.</p></div>
+        <div className="document-status-card"><small>Estado expediente</small><Badge tone="green">Preparación iniciada</Badge><strong>{authorizedPreparation.checklist_summary?.total || 0} ítems</strong></div>
+        <div className="document-risk-meter"><small>Carpeta SharePoint / OneDrive</small><strong>{authorizedPreparation.sharepoint_folder?.status || 'Pendiente'}</strong><span>{authorizedPreparation.sharepoint_folder?.root_name || 'Se creará al configurar integración Graph'}</span></div>
       </div>
-      <div className="document-upload-row"><button onClick={approvePreparation} disabled={busy}>Aprobar preparación de oferta</button>{preparation?.sharepoint_folder?.url ? <a className="button" href={preparation.sharepoint_folder.url} target="_blank" rel="noreferrer">Abrir carpeta</a> : <small className="muted">Carpeta SharePoint / OneDrive: vínculo pendiente de integración automática.</small>}</div>
+      <div className="document-upload-row">{authorizedPreparation.sharepoint_folder?.url ? <a className="button" href={authorizedPreparation.sharepoint_folder.url} target="_blank" rel="noreferrer">Abrir carpeta</a> : <small className="muted">Carpeta SharePoint / OneDrive: vínculo pendiente de integración automática.</small>}</div>
+      <TenderOfferStatusPanel opportunityId={opportunity.id} opportunityName={opportunity.company_name || 'Oportunidad de licitación'} currentProfile={currentProfile} request={api} onChanged={async () => { await loadPreparation(); await onChanged(); }} />
       {statusText && <div className="notice">{statusText}</div>}
-      {preparation ? <div className="document-analysis-grid">
-        <section className="document-analysis-card"><small>Generar paquete inicial de preparación</small><strong>{preparation.control_message || 'Paquete creado'}</strong><p>Documentos oficiales: {preparation.checklist_summary?.official_documents || 0} · Automáticos: {preparation.checklist_summary?.auto_generated || 0} · Requiere humano: {preparation.checklist_summary?.human_required || 0}</p></section>
-        <section className="document-analysis-card"><small>Documentos genéricos automáticos</small><ul>{(preparation.auto_generated_documents || []).map(doc => <li key={doc.key}><strong>{doc.name}</strong> · {doc.folder} · {doc.owner}</li>)}</ul></section>
-        <section className="document-analysis-card"><small>Requiere intervención humana</small><ul>{(preparation.human_required_items || []).map(item => <li key={item.key}><strong>{item.title || item.name}</strong> · {item.owner}<br/><span className="muted">{item.reason}</span></li>)}</ul></section>
-        <section className="document-analysis-card"><small>Carpeta SharePoint / OneDrive</small><strong>{preparation.sharepoint_folder?.root_name}</strong><div className="document-matrix">{(preparation.sharepoint_folder?.folders || []).slice(0, 8).map(folder => <div key={folder}><Badge tone="blue">carpeta</Badge><span>{folder}</span></div>)}</div></section>
-        <section className="document-analysis-card"><small>Notas para el asistente</small><ul>{(preparation.assistant_notes || []).map(item => <li key={item}>{item}</li>)}</ul>{payload.notes?.length ? <div className="timeline">{payload.notes.slice(-4).map((n, idx) => <div className="event" key={`${n.created_at}-${idx}`}><strong>{n.status || 'nota'}</strong><span>{fmtDate(n.created_at)} · {n.created_by_name || n.created_by || 'Usuario'}</span><p>{n.note}</p></div>)}</div> : null}</section>
+      <div className="document-analysis-grid">
+        <section className="document-analysis-card"><small>Generar paquete inicial de preparación</small><strong>{authorizedPreparation.control_message || 'Paquete creado'}</strong><p>Documentos oficiales: {authorizedPreparation.checklist_summary?.official_documents || 0} · Automáticos: {authorizedPreparation.checklist_summary?.auto_generated || 0} · Requiere humano: {authorizedPreparation.checklist_summary?.human_required || 0}</p></section>
+        <section className="document-analysis-card"><small>Documentos genéricos automáticos</small><ul>{(authorizedPreparation.auto_generated_documents || []).map(doc => <li key={doc.key}><strong>{doc.name}</strong> · {doc.folder} · {doc.owner}</li>)}</ul></section>
+        <section className="document-analysis-card"><small>Requiere intervención humana</small><ul>{(authorizedPreparation.human_required_items || []).map(item => <li key={item.key}><strong>{item.title || item.name}</strong> · {item.owner}<br/><span className="muted">{item.reason}</span></li>)}</ul></section>
+        <section className="document-analysis-card"><small>Carpeta SharePoint / OneDrive</small><strong>{authorizedPreparation.sharepoint_folder?.root_name}</strong><div className="document-matrix">{(authorizedPreparation.sharepoint_folder?.folders || []).slice(0, 8).map(folder => <div key={folder}><Badge tone="blue">carpeta</Badge><span>{folder}</span></div>)}</div></section>
+        <section className="document-analysis-card"><small>Notas para el asistente</small><ul>{(authorizedPreparation.assistant_notes || []).map(item => <li key={item}>{item}</li>)}</ul>{payload.notes?.length ? <div className="timeline">{payload.notes.slice(-4).map((n, idx) => <div className="event" key={`${n.created_at}-${idx}`}><strong>{n.status || 'nota'}</strong><span>{fmtDate(n.created_at)} · {n.created_by_name || n.created_by || 'Usuario'}</span><p>{n.note}</p></div>)}</div> : null}</section>
         <section className="document-analysis-card"><small>Informar qué necesitamos para seguir adelante</small><form onSubmit={saveAssistantNote} className="form"><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Ej: necesitamos que contabilidad confirme capital de trabajo y cargue estados financieros 2025…"/><button disabled={busy || !note.trim()}>Guardar nota para el asistente</button></form></section>
-      </div> : <div className="document-empty-state"><strong>Preparación aún no aprobada</strong><span>Cuando gerencia decida presentarse, use “Aprobar preparación de oferta” para crear el expediente, documentos genéricos automáticos y pendientes humanos.</span></div>}
-    </div>
+      </div>
+    </div> : <div className="document-empty-state"><strong>Preparación pendiente de autorización</strong><span>Autorizar GO en la decisión formal para crear el expediente, documentos genéricos automáticos y pendientes humanos. Hasta entonces este panel es de solo lectura.</span>{statusText && <div className="notice">{statusText}</div>}</div>}
   </Panel>;
 }
 function tenderDocumentTypeLabel(value: string) {

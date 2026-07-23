@@ -48,6 +48,7 @@ assert.deepEqual(ACTIONS, {
   CRM_OPPORTUNITY_EDIT: 'crm.opportunity.edit',
   CRM_OPPORTUNITY_REASSIGN: 'crm.opportunity.reassign',
   LICITACIONES_VIEW: 'licitaciones.view',
+  LICITACIONES_CONFIGURE: 'licitaciones.configure',
   LICITACIONES_SYNC: 'licitaciones.sync',
   LICITACIONES_DISCARD_PROPOSE: 'licitaciones.discard.propose',
   LICITACIONES_DISCARD_APPROVE: 'licitaciones.discard.approve',
@@ -72,8 +73,8 @@ assert.deepEqual(ACTIONS, {
   MODULE_OPPORTUNITIES_VIEW: 'module.opportunities.view',
   MODULE_GOALS_VIEW: 'module.goals.view',
   MODULE_USERS_VIEW: 'module.users.view',
-}, 'ACTIONS debe coincidir exactamente con el contrato estable de 34 acciones');
-assert.equal(actionValues.length, 34, 'ACTIONS debe exponer exactamente 34 códigos estables');
+}, 'ACTIONS debe coincidir exactamente con el contrato estable de 35 acciones');
+assert.equal(actionValues.length, 35, 'ACTIONS debe exponer exactamente 35 códigos estables');
 assert.equal(new Set(actionValues).size, actionValues.length, 'todos los códigos de acción deben ser únicos');
 assert.ok(actionValues.every((value) => typeof value === 'string' && value.length > 0), 'todos los códigos de acción deben ser strings no vacíos');
 const originalUsersManageAction = ACTIONS.USERS_MANAGE;
@@ -170,6 +171,11 @@ runCases('licitaciones', [
   { name: 'gerencia con permiso sincroniza', profile: tenderUser('gerencia'), action: ACTIONS.LICITACIONES_SYNC, resource: {}, expected: true },
   { name: 'director con permiso propone descarte', profile: tenderUser('director'), action: ACTIONS.LICITACIONES_DISCARD_PROPOSE, resource: {}, expected: true },
   { name: 'comercial con permiso recomienda go-no-go', profile: tenderUser('comercial'), action: ACTIONS.LICITACIONES_GO_NO_GO_RECOMMEND, resource: {}, expected: true },
+  { name: 'admin con permiso configura', profile: tenderUser('admin'), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: true },
+  { name: 'gerencia con permiso configura', profile: tenderUser('gerencia'), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: true },
+  { name: 'director con permiso configura', profile: tenderUser('director'), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: true },
+  { name: 'comercial con permiso no configura', profile: tenderUser('comercial'), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: false },
+  { name: 'director sin permiso no configura', profile: human('director'), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: false },
   { name: 'comercial con permiso no aprueba descarte', profile: tenderUser('comercial'), action: ACTIONS.LICITACIONES_DISCARD_APPROVE, resource: {}, expected: false },
   { name: 'director con permiso aprueba go-no-go', profile: tenderUser('director'), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: {}, expected: true },
   { name: 'director sin permiso no aprueba', profile: human('director'), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: {}, expected: false },

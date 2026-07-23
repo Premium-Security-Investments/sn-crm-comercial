@@ -28,7 +28,9 @@ for (const path of ['../api/[...path].js', '../server/index.js']) {
 
   const statusHandler = source.match(/async function setTenderStatus\([\s\S]*?\n}\n\nconst tenderTrackingIdPattern/);
   assert.ok(statusHandler, 'setTenderStatus must be present');
+  assert.match(statusHandler[0], /getPersistedTenderByStableKey\(database, stableKey\)/);
   assert.match(statusHandler[0], /callTenderTrackingUpdate\(database, tender\.id,/);
+  assert.match(statusHandler[0], /tracking_status: 'pendiente_revision'/);
   assert.match(statusHandler[0], /callTenderTrackingTransition\(database, tender\.id,/);
   assert.doesNotMatch(statusHandler[0], /\.from\('psi_public_tenders'\)\.update/);
   assert.match(statusHandler[0], /convertida_oportunidad.*conversión/i);

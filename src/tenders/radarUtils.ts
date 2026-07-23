@@ -57,14 +57,49 @@ export function tenderMatchesRegion(tender: PublicTender, regionKey: TenderRegio
   return TENDER_SN_REGIONS.find(region => region.key === regionKey)?.aliases.some(alias => haystack.includes(normalizeTenderText(alias))) || false;
 }
 
-export function tenderDeadlineBucket(tender: PublicTender): TenderDeadlineFilter | '31_plus' {
-  if (!tender.deadline) return 'sin_fecha';
-  const days = Math.ceil((new Date(tender.deadline).getTime() - Date.now()) / 86_400_000);
+type TenderCalendarDate = { key: string; dayNumber: number };
+
+function parseTenderCalendarDate(deadline: string | null | undefined): TenderCalendarDate | null {
+  if (!deadline) return null;
+  const match = String(deadline).match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-](\d{2}):?(\d{2}))?)?$/);
+  if (!match) return null;
+
+  const [, year, month, day, hour, minute, second, offsetHour, offsetMinute] = match;
+  const calendarDate = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (calendarDate.getUTCFullYear() !== Number(year) || calendarDate.getUTCMonth() !== Number(month) - 1 || calendarDate.getUTCDate() !== Number(day)) return null;
+  if (hour !== undefined && (Number(hour) > 23 || Number(minute) > 59 || second !== undefined && Number(second) > 59)) return null;
+  if (offsetHour !== undefined && (Number(offsetHour) > 23 || Number(offsetMinute) > 59)) return null;
+
+  return { key: `${year}-${month}-${day}`, dayNumber: calendarDate.getTime() / 86_400_000 };
+}
+
+function bogotaCalendarDate(now: Date): TenderCalendarDate | null {
+  if (Number.isNaN(now.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
+  const year = parts.find(part => part.type === 'year')?.value;
+  const month = parts.find(part => part.type === 'month')?.value;
+  const day = parts.find(part => part.type === 'day')?.value;
+  if (!year || !month || !day) return null;
+  const calendarDate = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  return { key: `${year}-${month}-${day}`, dayNumber: calendarDate.getTime() / 86_400_000 };
+}
+
+export function tenderDeadlineBucket(tender: PublicTender, now = new Date()): TenderDeadlineFilter | '31_plus' {
+  const deadline = parseTenderCalendarDate(tender.deadline);
+  const today = bogotaCalendarDate(now);
+  if (!deadline || !today) return 'sin_fecha';
+  const days = deadline.dayNumber - today.dayNumber;
   if (days < 0) return 'vencida';
   if (days <= 7) return '0_7';
   if (days <= 15) return '8_15';
   if (days <= 30) return '16_30';
   return '31_plus';
+}
+
+export function isTenderExpired(deadline: string | null | undefined, now = new Date()): boolean {
+  const deadlineDate = parseTenderCalendarDate(deadline);
+  const today = bogotaCalendarDate(now);
+  return Boolean(deadlineDate && today && deadlineDate.dayNumber < today.dayNumber);
 }
 
 export type RadarFilters = {

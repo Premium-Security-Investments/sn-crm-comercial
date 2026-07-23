@@ -32,10 +32,10 @@ const singleton = fs.readFileSync(path.join(src, 'supabaseBrowser.ts'), 'utf8');
 assert.match(singleton, /export const supabaseBrowser\s*=\s*createClient\s*\(/);
 
 const main = fs.readFileSync(path.join(src, 'main.tsx'), 'utf8');
-const tenderProfiles = fs.readFileSync(path.join(src, 'tenders', 'TenderProfilesView.tsx'), 'utf8');
+const tenderConfiguration = fs.readFileSync(path.join(src, 'tenders', 'TenderConfigurationView.tsx'), 'utf8');
 assert.match(main, /import \{ supabaseBrowser \} from '\.\/supabaseBrowser';/);
-assert.match(tenderProfiles, /import \{ supabaseBrowser \} from '\.\.\/supabaseBrowser';/);
+assert.match(tenderConfiguration, /import \{ supabaseBrowser \} from '\.\.\/supabaseBrowser';/);
 assert.doesNotMatch(main, /import \{[^}]*createClient[^}]*\} from '@supabase\/supabase-js';/);
-assert.doesNotMatch(tenderProfiles, /import \{[^}]*createClient[^}]*\} from '@supabase\/supabase-js';/);
+assert.doesNotMatch(tenderConfiguration, /import \{[^}]*createClient[^}]*\} from '@supabase\/supabase-js';/);
 
 console.log('Supabase browser singleton contract OK');

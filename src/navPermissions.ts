@@ -54,7 +54,7 @@ const navGroups: readonly NavGroupDefinition[] = [
   {
     title: 'Licitaciones',
     items: [
-      { href: '#/tenders?view=radar', label: 'Radar de oportunidades', page: 'tenders' },
+      { href: '#/tenders?view=radar', label: 'Radar', page: 'tenders' },
     ],
   },
   {

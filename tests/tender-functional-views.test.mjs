@@ -5,16 +5,16 @@ import { buildSync } from 'esbuild';
 const moduleSource = readFileSync(new URL('../src/tenders/TendersModule.tsx', import.meta.url), 'utf8');
 const tracking = readFileSync(new URL('../src/tenders/TenderTrackingView.tsx', import.meta.url), 'utf8');
 const radar = readFileSync(new URL('../src/tenders/TenderRadarView.tsx', import.meta.url), 'utf8');
-const dossiers = readFileSync(new URL('../src/tenders/TenderDossiersView.tsx', import.meta.url), 'utf8');
-const profiles = readFileSync(new URL('../src/tenders/TenderProfilesView.tsx', import.meta.url), 'utf8');
+const opportunities = readFileSync(new URL('../src/tenders/TenderOpportunitiesView.tsx', import.meta.url), 'utf8');
+const configuration = readFileSync(new URL('../src/tenders/TenderConfigurationView.tsx', import.meta.url), 'utf8');
 const apiSource = readFileSync(new URL('../src/tenders/api.ts', import.meta.url), 'utf8');
 const tabsSource = readFileSync(new URL('../src/tenders/components/TenderModuleTabs.tsx', import.meta.url), 'utf8');
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
 assert.match(moduleSource, /<TenderRadarView/);
 assert.match(moduleSource, /<TenderTrackingView/);
-assert.match(moduleSource, /<TenderDossiersView/);
-assert.match(moduleSource, /<TenderProfilesView/);
+assert.match(moduleSource, /<TenderOpportunitiesView/);
+assert.match(moduleSource, /<TenderConfigurationView/);
 assert.match(moduleSource, /\{props\.view === 'seguimiento' && <TenderTrackingView \{\.\.\.props\} moduleNavigation=\{moduleNavigation\} \/>\}/, 'Seguimiento debe seguir siendo una vista independiente y solo recibir composición visual compartida.');
 assert.doesNotMatch(moduleSource, /renderLegacy/, 'Ninguna de las cuatro vistas puede conservar el adaptador legado.');
 assert.match(apiSource, /export async function loadRadar/);
@@ -22,7 +22,10 @@ assert.match(apiSource, /export async function loadTracking/);
 assert.match(apiSource, /export async function loadDossiers/);
 assert.match(apiSource, /export async function loadProfiles/);
 assert.match(tabsSource, /navigate\(hash\)/, 'Tabs must navigate through the callback supplied by the module.');
-for (const label of ['Radar de oportunidades', 'Seguimiento', 'Expedientes', 'Perfiles de búsqueda']) assert.match(tabsSource, new RegExp(label));
+for (const label of ['Radar', 'Seguimiento', 'Oportunidades']) assert.match(tabsSource, new RegExp(`label: '${label}'`));
+assert.doesNotMatch(tabsSource, /Radar de oportunidades/);
+assert.doesNotMatch(tabsSource, />Expedientes</);
+assert.doesNotMatch(tabsSource, />Perfiles de búsqueda</);
 assert.match(main, /<TendersModule/);
 assert.doesNotMatch(main, /renderLegacy=/, 'main no debe conservar el renderer del tablero legado.');
 assert.doesNotMatch(main, /TendersRadar|TenderUnifiedBoard|TenderSectionPanel|TenderCompanyProfilePanel|TenderSearchProfilesPanel/, 'Los componentes del tablero legado deben retirarse de main.');
@@ -36,18 +39,26 @@ assert.match(main, /documentFocusRequested = focusTarget === 'documents'/, 'Oppo
 assert.match(main, /id="tender-document-review"/, 'TenderDocumentReviewPanel needs a stable document-focus anchor.');
 assert.match(main, /tabIndex=\{-1\}/, 'The document-focus anchor must be programmatically focusable.');
 
-for (const label of ['Abrir expediente', 'GO / NO GO', 'Documentos', 'Checklist', 'Pendientes humanos', 'SharePoint / OneDrive']) {
-  assert.ok(dossiers.includes(label), `Expedientes debe mostrar ${label}`);
+for (const label of ['Abrir expediente', 'Recomendación del sistema', 'Decisión humana', 'Estado de oferta', 'Documentos', 'Checklist', 'Pendientes humanos', 'SharePoint / OneDrive']) {
+  assert.ok(opportunities.includes(label), `Oportunidades debe mostrar ${label}`);
 }
-assert.match(dossiers, /\/api\/tender-documents-import/);
-assert.match(dossiers, /loadDossiers/);
-assert.match(dossiers, /dossier_error/);
-assert.doesNotMatch(dossiers, /Sincronizar fuentes oficiales|TenderCard|renderLegacy/, 'Expedientes no debe reutilizar Radar ni el adaptador legado.');
-assert.match(profiles, /\/api\/tender-search-profiles/);
-assert.match(profiles, /\/api\/tender-company-profile/);
-assert.ok(!profiles.includes("request('/api/tenders"), 'Perfiles no debe cargar Radar.');
-assert.match(profiles, /Aplicar en Radar/);
-assert.doesNotMatch(profiles, /renderLegacy/);
+assert.match(opportunities, /Bandeja de oportunidades/);
+assert.match(opportunities, /<h2 id="tender-dossiers-heading">Oportunidades<\/h2>/);
+assert.match(opportunities, /Gestione oportunidades convertidas, su expediente, decisión y preparación\./);
+assert.match(opportunities, /\/api\/tender-documents-import/);
+assert.match(opportunities, /loadTenderOpportunities/);
+assert.doesNotMatch(opportunities, /\/api\/tender-opportunities/, 'La vista debe depender del loader y no duplicar el contrato HTTP.');
+assert.match(apiSource, /loadTenderOpportunities[\s\S]*?\/api\/tender-opportunities/);
+for (const label of ['Todas', 'Pendiente de decisión', 'GO autorizado', 'En preparación', 'Presentadas', 'Cerradas']) assert.ok(opportunities.includes(label), `Oportunidades debe mostrar filtro ${label}`);
+assert.match(opportunities, /setFilter\([\s\S]*?setPage\(1\)/, 'Cambiar filtro debe reiniciar la página.');
+assert.match(opportunities, /dossier_error/);
+assert.doesNotMatch(opportunities, /<dt>GO \/ NO GO<\/dt>/, 'La recomendación ya cubre el dictamen; no debe duplicarse una fila legacy.');
+assert.doesNotMatch(opportunities, /Sincronizar fuentes oficiales|TenderCard|renderLegacy/, 'Oportunidades no debe reutilizar Radar ni el adaptador legado.');
+assert.match(configuration, /loadCompanyProfile/);
+assert.match(apiSource, /loadCompanyProfile[\s\S]*?\/api\/tender-company-profile/);
+assert.doesNotMatch(configuration, /tender-search-profiles|Guardar búsqueda|Búsquedas guardadas/);
+assert.ok(!configuration.includes("request('/api/tenders"), 'Configuración no debe cargar Radar.');
+assert.doesNotMatch(configuration, /renderLegacy/);
 assert.match(radar, /profile/, 'Radar debe reconocer el perfil de la URL.');
 
 for (const label of ['Responsable', 'Última revisión', 'Próxima acción', 'Fecha compromiso', 'Días sin gestión', 'Bloqueo', 'Nota', 'Historial']) {
@@ -82,7 +93,7 @@ const bundle = buildSync({
 const utilsUrl = `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].contents).toString('base64')}`;
 const { dossierPageQuery, profileRadarHash, focusDocumentReviewArea, reloadCurrentDossierPage } = await import(utilsUrl);
 assert.deepEqual(dossierPageQuery(3, 25), { limit: 25, offset: 50 }, 'La paginación de expedientes debe calcular el offset de la página actual.');
-assert.deepEqual(dossierPageQuery(-4, 999), { limit: 100, offset: 0 }, 'La paginación debe acotar páginas y tamaño inválidos.');
+assert.deepEqual(dossierPageQuery(-4, 999), { limit: 50, offset: 0 }, 'La paginación debe acotar páginas y tamaño inválidos.');
 assert.equal(profileRadarHash('perfil con espacio'), '#/tenders?view=radar&profile=perfil%20con%20espacio', 'Aplicar un perfil debe preservar su id codificado en la URL del Radar.');
 const focused = { scrollIntoViewCalls: [], focusCalls: 0, scrollIntoView(options) { this.scrollIntoViewCalls.push(options); }, focus() { this.focusCalls += 1; } };
 assert.equal(focusDocumentReviewArea(focused), true, 'El foco documental debe desplazar y enfocar el área accesible.');
@@ -92,6 +103,6 @@ assert.equal(focusDocumentReviewArea(null), false, 'Un detalle sin documentos no
 const reloadCalls = [];
 await reloadCurrentDossierPage(3, 25, async query => { reloadCalls.push(query); return ['same-page']; });
 assert.deepEqual(reloadCalls, [{ limit: 25, offset: 50 }], 'El reintento debe recargar la misma página local de Expedientes.');
-assert.match(dossiers, /await request\('\/api\/tender-documents-import'[\s\S]*await reloadCurrentDossierPage\(\)/, 'La recarga local nombrada debe ocurrir solo después del reintento protegido exitoso.');
+assert.match(opportunities, /await request\('\/api\/tender-documents-import'[\s\S]*await reloadCurrentDossierPage\(\)/, 'La recarga local nombrada debe ocurrir solo después del reintento protegido exitoso.');
 
 console.log('independent tender functional views and behavior passed');

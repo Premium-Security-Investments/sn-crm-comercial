@@ -7,6 +7,9 @@ import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import mammoth from 'mammoth';
 import AdmZip from 'adm-zip';
 import { callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
+import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
+import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
+import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
 import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
@@ -1464,7 +1467,7 @@ app.delete('/api/tender-search-profiles/:id', async (req, res) => {
 app.get('/api/tender-company-profile', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver esta ficha.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
     res.json(await getTenderCompanyProfile(requireDb()));
   } catch (error) { sendAuthError(res, error); }
 });
@@ -1472,7 +1475,7 @@ app.get('/api/tender-company-profile', async (req, res) => {
 app.put('/api/tender-company-profile', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede editar esta ficha.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     const database = requireDb();
     await saveTenderCompanyProfile(database, cleanTenderCompanyProfile(req.body, currentProfile));
     res.json(await getTenderCompanyProfile(database));
@@ -1482,7 +1485,7 @@ app.put('/api/tender-company-profile', async (req, res) => {
 app.post('/api/tender-company-profile-upload-url', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede cargar el RUP.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     const database = requireDb();
     const name = cleanFileName(req.body?.name || 'rup-actualizado.pdf');
     const size = Number(req.body?.size || 0);
@@ -1500,7 +1503,7 @@ app.post('/api/tender-company-profile-upload-url', async (req, res) => {
 app.post('/api/tender-company-profile-process-upload', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede procesar el RUP.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     const database = requireDb();
     const storagePath = String(req.body?.storage_path || '');
     if (!storagePath.startsWith('company-profile/rup/')) throw new Error('Ruta de RUP inválida.');
@@ -1520,7 +1523,7 @@ app.post('/api/tender-company-profile-process-upload', async (req, res) => {
 app.post('/api/tender-company-profile-upload', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede cargar el RUP.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     const database = requireDb();
     const name = cleanFileName(req.body?.name || 'rup-actualizado.pdf');
     const buffer = Buffer.from(String(req.body?.content_base64 || ''), 'base64');
@@ -2096,63 +2099,7 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
   return { documents: signed, analysis: analyses.at(-1) || null, analyses, import_error: importErrors.at(-1) || null };
 }
 
-function genericTenderOfferDocuments(opportunity, analysis) {
-  const sourceLabel = opportunity?.observaciones?.includes('esucontratacion.com') ? 'ESU' : opportunity?.observaciones?.includes('secop') ? 'SECOP' : 'Fuente oficial';
-  return [
-    { key: 'indice_expediente', name: 'Índice del expediente', folder: '00_Control', status: 'generado_automaticamente', owner: 'Sistema', output: 'Indice_Expediente.docx', reusable: true },
-    { key: 'checklist_maestro', name: 'Checklist maestro de documentos', folder: '00_Control', status: 'generado_automaticamente', owner: 'Sistema', output: 'Checklist_Maestro.xlsx', reusable: true },
-    { key: 'matriz_cumplimiento', name: 'Matriz de cumplimiento', folder: '00_Control', status: 'generado_automaticamente', owner: 'Sistema', output: 'Matriz_Cumplimiento.xlsx', reusable: true },
-    { key: 'resumen_gerencia', name: 'Resumen para gerencia', folder: '00_Control', status: 'generado_automaticamente', owner: 'Sistema', output: 'Resumen_Gerencia.docx', reusable: true },
-    { key: 'carta_presentacion', name: 'Carta de presentación', folder: '09_Borradores_IA', status: 'borrador_generado_requiere_revision', owner: 'Licitaciones', output: 'Carta_Presentacion_Borrador.docx', reusable: true },
-    { key: 'declaracion_no_inhabilidades', name: 'Declaración de no inhabilidades', folder: '09_Borradores_IA', status: 'borrador_generado_requiere_revision', owner: 'Jurídico', output: 'Declaracion_No_Inhabilidades_Borrador.docx', reusable: true },
-    { key: 'solicitud_poliza', name: 'Solicitud de póliza de seriedad a aseguradora', folder: '09_Borradores_IA', status: 'borrador_generado_requiere_revision', owner: 'Jurídico / Aseguradora', output: 'Solicitud_Poliza_Aseguradora.docx', reusable: true },
-    { key: 'correo_contabilidad', name: 'Correo a contabilidad con pendientes financieros', folder: '09_Borradores_IA', status: 'borrador_generado_requiere_revision', owner: 'Contabilidad', output: 'Correo_Contabilidad.docx', reusable: true },
-    { key: 'correo_juridico', name: 'Correo a jurídico con pendientes legales', folder: '09_Borradores_IA', status: 'borrador_generado_requiere_revision', owner: 'Jurídico', output: 'Correo_Juridico.docx', reusable: true },
-    { key: 'propuesta_tecnica_base', name: 'Propuesta técnica base', folder: '09_Borradores_IA', status: analysis?.commercial_fit?.status === 'Encaje detectado' ? 'borrador_generado_requiere_ajuste' : 'pendiente_informacion', owner: 'Operaciones / Comercial', output: 'Propuesta_Tecnica_Base.docx', reusable: false },
-    { key: 'documentos_oficiales', name: `Copia de documentos oficiales ${sourceLabel}`, folder: '01_Documentos_Oficiales', status: 'pendiente_sincronizar_sharepoint', owner: 'Sistema', output: 'Documentos oficiales descargados', reusable: false }
-  ];
-}
-function tenderOfferFolderStructure(opportunity) {
-  const safeName = String(opportunity?.company_name || 'Licitacion').replace(/[^\p{L}\p{N}\s_-]+/gu, '').trim().slice(0, 80) || 'Licitacion';
-  return {
-    root_name: `Licitaciones SN/${new Date().getFullYear()}/${safeName}`,
-    folders: ['00_Control','01_Documentos_Oficiales','02_Juridico','03_Financiero','04_Tecnico','05_Experiencia','06_Economico','07_Polizas','08_Formatos_Entidad','09_Borradores_IA','10_Final_Para_Revision','11_Presentado']
-  };
-}
-function buildTenderOfferPreparation(opportunity, documents = [], analysis = null, currentProfile = {}) {
-  const generic_documents = genericTenderOfferDocuments(opportunity, analysis);
-  const auto_generated_documents = generic_documents.filter(doc => doc.status.includes('generado') || doc.status.includes('borrador'));
-  const hasAnalysis = !!analysis;
-  const human_required_items = [
-    { key: 'validar_experiencia', title: 'Seleccionar experiencia específica aplicable', owner: 'Licitaciones / Comercial', priority: 'alta', status: 'requiere_intervencion_humana', reason: 'El sistema puede sugerir contratos, pero la experiencia final debe aprobarse humanamente.' },
-    { key: 'validar_financiero', title: 'Confirmar indicadores financieros y capital de trabajo', owner: 'Contabilidad', priority: 'alta', status: 'requiere_intervencion_humana', reason: 'Debe cruzarse contra estados financieros/RUP vigente.' },
-    { key: 'poliza_seriedad', title: 'Solicitar y validar póliza de seriedad', owner: 'Jurídico / Aseguradora', priority: 'alta', status: 'requiere_tercero', reason: 'Depende de aseguradora y requiere valor/vigencia correctos.' },
-    { key: 'camara_comercio', title: 'Cargar Cámara de Comercio actualizada', owner: 'Jurídico', priority: 'media', status: 'requiere_documento', reason: 'Documento genérico recurrente que debe mantenerse vigente.' },
-    { key: 'propuesta_economica', title: 'Definir y aprobar propuesta económica', owner: 'Comercial / Gerencia', priority: 'alta', status: 'requiere_decision', reason: 'El sistema no debe definir valores finales sin aprobación.' },
-    { key: 'revision_borradores', title: 'Revisar cartas/declaraciones generadas automáticamente', owner: 'Licitaciones', priority: 'media', status: 'requiere_revision', reason: 'Los borradores IA requieren revisión y firma.' }
-  ];
-  const assistant_notes = [
-    'Generar paquete inicial de preparación automáticamente al aprobar la presentación.',
-    'Necesitamos intervención humana para experiencia específica, financieros, póliza, propuesta económica y documentos vencibles.',
-    'Los documentos genéricos reutilizables deben mantenerse actualizados y copiarse a cada expediente nuevo.'
-  ];
-  return {
-    kind: 'tender_offer_preparation',
-    status: 'preparacion_oferta',
-    approved_at: new Date().toISOString(),
-    approved_by: currentProfile.full_name || currentProfile.microsoft_email || currentProfile.id || 'Sistema',
-    opportunity_id: opportunity.id,
-    opportunity_name: opportunity.company_name,
-    source_summary: { expected_close_date: opportunity.expected_close_date || null, offer_value: opportunity.offer_value || 0, decision: analysis?.recommendation || analysis?.go_no_go?.decision || 'Preparación aprobada por gerencia' },
-    sharepoint_folder: { status: 'pendiente_configurar_integracion', provider: 'SharePoint / OneDrive', url: null, ...tenderOfferFolderStructure(opportunity) },
-    generic_documents,
-    auto_generated_documents,
-    human_required_items,
-    assistant_notes,
-    checklist_summary: { total: generic_documents.length + human_required_items.length, auto_generated: auto_generated_documents.length, human_required: human_required_items.length, official_documents: documents.length, has_analysis: hasAnalysis },
-    control_message: `Paquete inicial de preparación creado: ${auto_generated_documents.length} documentos automáticos y ${human_required_items.length} pendientes humanos críticos.`
-  };
-}
+
 async function getTenderOfferPreparationRecords(database, opportunityId) {
   const interactions = await must(database.from('psi_sales_interactions').select('id,notes,occurred_at,created_at,created_by,psi_sales_profiles(full_name)').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true }));
   const preparations = [];
@@ -2356,21 +2303,14 @@ async function markTenderOpportunityDiscarded(database, opportunityId, currentPr
   }, currentProfile);
 }
 
-export async function buildTenderDossierSummary(database, tender) {
+export async function buildTenderOpportunitySummary(database, tender, { opportunity = null, latestDecision = null } = {}) {
   const fallback = {
-    ...dbTenderToPublic(tender),
-    opportunity_id: tender.converted_opportunity_id,
-    document_count: 0,
-    missing_document_count: 0,
-    document_import_status: 'error',
-    document_import_error: null,
-    go_no_go: 'Pendiente',
-    risk: 'Pendiente',
-    checklist_progress: null,
-    preparation_status: 'pendiente',
-    human_pending_count: 0,
-    sharepoint_status: 'pendiente',
-    sharepoint_url: null,
+    ...dbTenderToPublic(tender), opportunity_id: tender.converted_opportunity_id,
+    document_count: 0, missing_document_count: 0, document_import_status: 'error', document_import_error: null,
+    go_no_go: 'Pendiente', recommendation: 'Pendiente', decision: latestDecision?.decision || null,
+    decided_by_name: latestDecision?.psi_sales_profiles?.full_name || null, decided_at: latestDecision?.decided_at || null,
+    tender_offer_status: opportunity?.tender_offer_status || 'pendiente_decision', risk: 'Pendiente', checklist_progress: null,
+    preparation_status: 'pendiente', human_pending_count: 0, sharepoint_status: 'pendiente', sharepoint_url: null,
     dossier_error: 'No se pudo cargar el expediente.'
   };
   try {
@@ -2380,29 +2320,26 @@ export async function buildTenderDossierSummary(database, tender) {
     const analysis = records.analysis?.status === 'analisis_generado' ? records.analysis : null;
     const importFailureIsCurrent = records.import_error && (!analysis || !analysis.created_at || !records.import_error.created_at || Date.parse(records.import_error.created_at) >= Date.parse(analysis.created_at));
     const preparation = preparationRecords.preparation;
+    const recommendation = importFailureIsCurrent ? 'Pendiente' : analysis?.go_no_go?.decision || analysis?.recommendation || 'Pendiente';
     return {
-      ...fallback,
-      document_count: currentDocuments.length,
+      ...fallback, document_count: currentDocuments.length,
       missing_document_count: (analysis?.checklist || []).filter(item => /pendiente|falta/i.test(String(item))).length,
       document_import_status: importFailureIsCurrent ? 'fallo_importacion' : analysis ? 'analisis_generado' : currentDocuments.length ? 'documentos_cargados' : 'pendiente_documentos',
       document_import_error: importFailureIsCurrent ? 'La importación automática de documentos falló. Reintente o cargue los documentos manualmente.' : null,
-      go_no_go: importFailureIsCurrent ? 'Pendiente' : analysis?.go_no_go?.decision || analysis?.recommendation || 'Pendiente',
-      risk: importFailureIsCurrent ? 'Pendiente' : analysis?.go_no_go?.risk || analysis?.risk || 'Pendiente',
-      checklist_progress: preparation?.checklist_summary || null,
-      preparation_status: preparation?.status || 'pendiente',
-      human_pending_count: preparation?.human_required_items?.length || 0,
-      sharepoint_status: preparation?.sharepoint_folder?.status || 'pendiente',
-      sharepoint_url: preparation?.sharepoint_folder?.url || null,
-      dossier_error: null
+      go_no_go: recommendation, recommendation, risk: importFailureIsCurrent ? 'Pendiente' : analysis?.go_no_go?.risk || analysis?.risk || 'Pendiente',
+      checklist_progress: preparation?.checklist_summary || null, preparation_status: preparation?.status || 'pendiente',
+      human_pending_count: preparation?.human_required_items?.length || 0, sharepoint_status: preparation?.sharepoint_folder?.status || 'pendiente',
+      sharepoint_url: preparation?.sharepoint_folder?.url || null, dossier_error: null
     };
-  } catch (_error) {
-    return fallback;
-  }
+  } catch (_error) { return fallback; }
 }
+export const buildTenderDossierSummary = buildTenderOpportunitySummary;
 
 const tenderDossierDefaultLimit = 50;
-const tenderDossierMaxLimit = 100;
+const tenderDossierMaxLimit = 50;
 const tenderDossierMaxOffset = 10000;
+const tenderOpportunityFilters = new Set(['all', 'pending_decision', 'go_authorized', 'in_preparation', 'submitted', 'closed']);
+
 function parseTenderDossierPage(query = {}) {
   const parse = (value, fallback, maximum, label) => {
     if (value === undefined || value === '') return fallback;
@@ -2413,23 +2350,45 @@ function parseTenderDossierPage(query = {}) {
   };
   const limit = parse(query.limit, tenderDossierDefaultLimit, tenderDossierMaxLimit, 'El límite');
   if (limit < 1) { const error = new Error(`El límite debe estar entre 1 y ${tenderDossierMaxLimit}.`); error.status = 400; throw error; }
-  return { limit, offset: parse(query.offset, 0, tenderDossierMaxOffset, 'El desplazamiento') };
+  const filter = String(query.filter || 'all');
+  if (!tenderOpportunityFilters.has(filter)) { const error = new Error('El filtro de oportunidades no es válido.'); error.status = 400; throw error; }
+  return { limit, offset: parse(query.offset, 0, tenderDossierMaxOffset, 'El desplazamiento'), filter };
 }
 
-app.get('/api/tender-dossiers', async (req, res) => {
-  try {
-    const { profile: currentProfile } = await getAuthContext(req);
-    requireTenderTrackingAccess(currentProfile);
-    const database = requireDb();
-    const { limit, offset } = parseTenderDossierPage(req.query);
-    const tenders = await must(database.from('psi_public_tenders').select('*').not('converted_opportunity_id', 'is', null).order('tracking_updated_at', { ascending: false }).order('id', { ascending: true }).range(offset, offset + limit - 1));
-    const dossiers = [];
-    for (const tender of tenders || []) dossiers.push(await buildTenderDossierSummary(database, tender));
-    res.set('X-Dossier-Limit', String(limit));
-    res.set('X-Dossier-Offset', String(offset));
-    res.json(dossiers);
-  } catch (error) { sendError(res, error, error?.status || 400); }
-});
+/** Lists one SQL-bounded page (at most 50 rows); only document enrichment is per-card. */
+export async function listTenderOpportunities(database, query = {}) {
+  const { limit, offset, filter } = parseTenderDossierPage(query);
+  const page = await must(database.rpc('psi_list_tender_opportunity_page', {
+    p_filter: filter,
+    p_limit: limit,
+    p_offset: offset,
+  }));
+  if ((page || []).length > tenderDossierMaxLimit) throw new Error('La consulta paginada devolvió más de 50 oportunidades.');
+  const rows = [];
+  for (const pageRow of page || []) {
+    const tender = pageRow?.tender;
+    if (!tender) continue;
+    rows.push(await buildTenderOpportunitySummary(database, tender, {
+      opportunity: pageRow.opportunity || null,
+      latestDecision: pageRow.latest_decision || null,
+    }));
+  }
+  return { rows, limit, offset, filter };
+}
+
+async function sendTenderOpportunities(req, res) {
+  const { profile: currentProfile } = await getAuthContext(req);
+  requireTenderTrackingAccess(currentProfile);
+  const result = await listTenderOpportunities(requireDb(), req.query);
+  res.set('X-Tender-Opportunity-Limit', String(result.limit));
+  res.set('X-Tender-Opportunity-Offset', String(result.offset));
+  res.set('X-Tender-Opportunity-Filter', result.filter);
+  res.set('X-Dossier-Limit', String(result.limit));
+  res.set('X-Dossier-Offset', String(result.offset));
+  res.json(result.rows);
+}
+app.get('/api/tender-opportunities', async (req, res) => { try { await sendTenderOpportunities(req, res); } catch (error) { sendError(res, error, error?.status || 400); } });
+app.get('/api/tender-dossiers', async (req, res) => { try { await sendTenderOpportunities(req, res); } catch (error) { sendError(res, error, error?.status || 400); } });
 
 app.get('/api/tender-offer-preparation', async (req, res) => {
   try {
@@ -2438,22 +2397,45 @@ app.get('/api/tender-offer-preparation', async (req, res) => {
     const opportunityId = String(req.query.id || '');
     if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
     await ensureTenderOpportunity(database, opportunityId, currentProfile);
-    res.json(await getTenderOfferPreparationRecords(database, opportunityId));
+    const formal = await getTenderGoNoGoDecision(database, opportunityId, currentProfile);
+    if (formal.decision?.decision !== 'go') return res.json({ preparation: null, preparations: [], notes: [], decision: formal.decision, reason: 'no_go_or_pending' });
+    res.json({ ...(await getTenderOfferPreparationRecords(database, opportunityId)), decision: formal.decision });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.get('/api/tender-go-no-go-decision', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    res.json(await getTenderGoNoGoDecision(requireDb(), req.query.id, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-go-no-go-decision', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    res.status(201).json(await callTenderGoNoGoDecision(requireDb(), req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.get('/api/tender-offer-status', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    res.json(await getTenderOfferStatus(requireDb(), req.query.id, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-offer-status', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+    res.status(201).json(await callTenderOfferStatusTransition(requireDb(), req.body || {}, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
 app.post('/api/tender-offer-preparation-approve', async (req, res) => {
   try {
-    const { profile: currentProfile } = await getAuthContext(req);
-    const database = requireDb();
-    const opportunityId = String(req.body.opportunity_id || '');
-    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
-    const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
-    const documentRecords = await getTenderDocumentRecords(database, opportunityId);
-    const preparation = buildTenderOfferPreparation(opportunity, documentRecords.documents.filter(d => d.current !== false), documentRecords.analysis, currentProfile);
-    await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify(preparation) }).select('id').single());
-    await database.from('psi_sales_opportunities').update({ next_action_at: opportunity.expected_close_date || null }).eq('id', opportunityId).select('id').single();
-    res.status(201).json(await getTenderOfferPreparationRecords(database, opportunityId));
+    await getAuthContext(req);
+    res.status(410).json({ error: 'Use Autorizar GO para iniciar la preparación de oferta.' });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -2464,6 +2446,7 @@ app.post('/api/tender-offer-preparation-note', async (req, res) => {
     const opportunityId = String(req.body.opportunity_id || '');
     if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
     await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    await requireTenderGoForPreparation(database, opportunityId, currentProfile);
     const note = String(req.body.note || '').trim();
     if (!note) throw new Error('La nota para el asistente es obligatoria.');
     const payload = { kind: 'tender_offer_preparation_note', note, status: req.body.status || 'abierta', created_at: new Date().toISOString(), created_by: currentProfile.full_name || currentProfile.microsoft_email || currentProfile.id, purpose: 'Notas para el asistente / comercial: informar qué necesitamos del humano para seguir adelante.' };

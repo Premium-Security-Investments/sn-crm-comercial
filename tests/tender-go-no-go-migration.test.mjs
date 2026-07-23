@@ -1,0 +1,40 @@
+import { strict as assert } from 'node:assert';
+import { existsSync, readFileSync } from 'node:fs';
+
+const migrationPath = new URL('../supabase/migrations/022_tender_go_no_go_workflow.sql', import.meta.url);
+assert.equal(existsSync(migrationPath), true, 'La migración 022 debe existir.');
+const sql = readFileSync(migrationPath, 'utf8');
+
+assert.match(sql, /create table if not exists public\.psi_tender_go_no_go_decisions/i);
+assert.match(sql, /decision text not null[^,\n]*check \(decision in \('go',\s*'no_go'\)\)/i);
+assert.match(sql, /supersedes_decision_id uuid[^,\n]*references public\.psi_tender_go_no_go_decisions/i);
+assert.match(sql, /tender_offer_status text/i);
+assert.match(sql, /'pendiente_decision',\s*'en_preparacion',\s*'lista_para_presentar',\s*'presentada',\s*'adjudicada',\s*'no_adjudicada',\s*'cerrada_no_go'/i);
+assert.doesNotMatch(sql, /psi_sales_interactions_tender_offer_preparation_unique/i, 'el legado documento/kind no admite el índice parcial de tipo nuevo');
+assert.match(sql, /create or replace function public\.psi_safe_jsonb\(p_value text\)/i, 'notes no JSON deben ser seguras durante la migración/RPC');
+assert.match(sql, /interaction_type\s*=\s*'documento'/i);
+assert.match(sql, /->>\s*'kind'\s*=\s*'tender_offer_preparation'/i);
+assert.match(sql, /order by i\.occurred_at desc, i\.id desc/i, 'GO reutiliza la preparación compatible más reciente bajo el lock de oportunidad');
+assert.match(sql, /p_preparation is null or jsonb_typeof\(p_preparation\) <> 'object' or p_preparation\s*->>\s*'kind'\s*is distinct from\s*'tender_offer_preparation'/i, 'GO exige un objeto de preparación canónico');
+assert.match(sql, /p_analysis_interaction_id is not null and not exists[\s\S]*interaction_type\s*=\s*'documento'[\s\S]*tender_document_analysis/i, 'un análisis referenciado debe ser un análisis de licitación real');
+assert.match(sql, /alter column identity_type set default 'human'/i);
+assert.match(sql, /identity_type is null or identity_type in \('human', 'agent'\)/i);
+assert.match(sql, /create or replace function public\.psi_record_tender_go_no_go/i);
+assert.match(sql, /security definer/i);
+assert.match(sql, /set search_path = public, pg_temp/i);
+assert.match(sql, /for update/i);
+assert.match(sql, /psi_profile_permissions/i);
+assert.match(sql, /permission_code = 'licitaciones'/i);
+assert.match(sql, /coalesce\(p\.identity_type,\s*'human'\)\s*=\s*'human'/i, 'solo actores humanos pueden decidir');
+assert.match(sql, /revoke all on table public\.psi_tender_go_no_go_decisions from service_role/i, 'la migración limpia grants heredados');
+assert.match(sql, /revoke all on table public\.psi_tender_go_no_go_decisions from authenticated/i);
+assert.match(sql, /revoke all on table public\.psi_tender_go_no_go_decisions from public/i);
+assert.match(sql, /grant select on table public\.psi_tender_go_no_go_decisions to service_role/i, 'service_role puede leer el audit log');
+assert.doesNotMatch(sql, /grant\s+(?=[^;]*\b(insert|update|delete)\b)[^;]*on\s+table\s+public\.psi_tender_go_no_go_decisions\s+to\s+service_role/i, 'el audit log no permite DML directo a service_role');
+assert.match(sql, /revoke all on function public\.psi_record_tender_go_no_go/i);
+assert.match(sql, /grant execute on function public\.psi_record_tender_go_no_go[\s\S]*to service_role/i);
+assert.match(sql, /add column if not exists/i);
+assert.match(sql, /pg_constraint/i);
+assert.match(sql, /psi_tender_go_no_go_decisions_prevent_mutation/i);
+
+console.log('tender GO/NO-GO migration static contract passed');

@@ -3,8 +3,10 @@ import { strict as assert } from 'node:assert';
 import { buildSync } from 'esbuild';
 
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
-const profiles = readFileSync(new URL('../src/tenders/TenderProfilesView.tsx', import.meta.url), 'utf8');
+const configuration = readFileSync(new URL('../src/tenders/TenderConfigurationView.tsx', import.meta.url), 'utf8');
+const configurationActions = readFileSync(new URL('../src/tenders/tenderConfigurationActions.ts', import.meta.url), 'utf8');
 const radar = readFileSync(new URL('../src/tenders/TenderRadarView.tsx', import.meta.url), 'utf8');
+const savedSearches = readFileSync(new URL('../src/tenders/components/TenderSavedSearches.tsx', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
 const migration = readFileSync(new URL('../supabase/migrations/013_tender_search_profiles.sql', import.meta.url), 'utf8');
 
@@ -14,21 +16,22 @@ assert.match(migration, /unique\s*\(name\)/i, 'No deben duplicarse nombres de pe
 assert.match(api, /app\.get\('\/api\/tender-search-profiles'/, 'Debe existir endpoint GET de perfiles');
 assert.match(api, /app\.post\('\/api\/tender-search-profiles'/, 'Debe existir endpoint POST de perfiles');
 assert.match(api, /app\.delete\('\/api\/tender-search-profiles\/:id'/, 'Debe existir endpoint DELETE de perfiles');
-assert.match(profiles, /loadProfiles/, 'Perfiles debe cargar perfiles guardados desde su propia vista.');
-assert.match(profiles, /\/api\/tender-company-profile/, 'Perfiles debe cargar la ficha corporativa.');
-assert.match(profiles, /\/api\/tender-search-profiles/, 'Perfiles debe consumir los perfiles guardados.');
-assert.doesNotMatch(profiles, /\/api\/tenders/, 'Perfiles nunca debe cargar la cola del Radar.');
-assert.match(profiles, /profileRadarHash/, 'Aplicar debe construir la URL del Radar desde el id persistido.');
-assert.match(profiles, /Aplicar en Radar/);
-assert.match(radar, /profileId/, 'Radar debe leer el perfil solicitado en el hash.');
-assert.match(radar, /loadProfiles/, 'Radar debe leer el perfil guardado antes de filtrar la cola.');
+assert.match(configuration, /createTenderConfigurationActions/, 'Configuración debe delegar mutaciones al helper de acciones.');
+assert.doesNotMatch(configuration, /tender-search-profiles|TenderSearchProfile|profileRadarHash/, 'Configuración/RUP no debe gestionar búsquedas guardadas.');
+assert.doesNotMatch(configuration, /\/api\/tender-company-profile/, 'Configuración no debe retener endpoints de mutación extraídos.');
+assert.match(configurationActions, /\/api\/tender-company-profile/, 'El helper debe conservar el endpoint de ficha corporativa.');
+assert.match(configurationActions, /\/api\/tender-company-profile-upload-url/, 'El helper debe conservar el endpoint de URL de carga RUP.');
+assert.match(configurationActions, /\/api\/tender-company-profile-process-upload/, 'El helper debe conservar el endpoint de procesamiento RUP.');
+assert.match(radar, /<TenderSavedSearches/, 'Radar debe mostrar el gestor de búsquedas guardadas.');
+assert.match(radar, /loadProfiles/, 'Radar debe cargar los perfiles junto con sus datos.');
+assert.match(savedSearches, /\/api\/tender-search-profiles/, 'El gestor debe consumir el endpoint existente.');
 for (const field of ['query_text', 'source_filter', 'region_key', 'deadline_filter', 'value_filter', 'score_filter', 'section_filter', 'internal_status_filter']) {
   assert.match(radar, new RegExp(`profile\\.${field}`), `Radar debe aplicar el campo persistido ${field}.`);
 }
 assert.match(radar, /section_filter/, 'Radar debe aplicar la sección persistida del perfil.');
 assert.match(radar, /internal_status_filter/, 'Radar debe aplicar el estado interno persistido del perfil.');
 assert.match(radar, /Mostrando procesos convertidos/, 'Radar debe explicar que las oportunidades convertidas permanecen visibles.');
-assert.match(radar, /view=expedientes/, 'Radar debe ofrecer navegación explícita a Expedientes para convertidas.');
+assert.match(radar, /view=oportunidades/, 'Radar debe ofrecer navegación explícita a Oportunidades para convertidas.');
 assert.doesNotMatch(main, /loadSearchProfiles|saveCurrentSearchProfile|applySearchProfile/, 'main no debe retener la lógica de perfiles migrada.');
 
 const bundle = buildSync({
@@ -47,4 +50,4 @@ assert.deepEqual(filterRadarTenders(candidates, { ...baseFilters, section: 'revi
 assert.deepEqual(filterRadarTenders(candidates, { ...baseFilters, internalStatus: 'descartada' }).map(item => item.id), ['discard-descartar'], 'El perfil debe poder recuperar descartadas.');
 assert.deepEqual(filterRadarTenders(candidates, { ...baseFilters, internalStatus: 'convertida_oportunidad' }).map(item => item.id), ['converted'], 'Un perfil debe poder recuperar procesos convertidos dentro del Radar.');
 
-console.log('Tender search profile isolation and URL handoff passed');
+console.log('Tender saved search isolation and Radar application passed');
