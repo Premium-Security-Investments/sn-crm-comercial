@@ -9,6 +9,7 @@ const contractsRoot = join(repositoryRoot, 'contracts', 'agents');
 const pinPath = join(contractsRoot, 'agent-run-envelope', 'v1', 'manifest.json');
 const canonicalPinRelativePath = 'contracts/agents/agent-run-envelope/v1/manifest.json';
 const ownTestRelativePath = 'tests/agent-run-envelope-pin-p2b.test.mjs';
+const institutionalRequestPinRelativePath = 'contracts/agents/institutional-agent-request/v1/manifest.json';
 
 assert.ok(existsSync(pinPath), 'P2B must add the sole machine-readable run-envelope pin');
 
@@ -21,6 +22,14 @@ const expectedPin = {
   contract_id: 'https://agente-it.local/contracts/agent-run-envelope/v1/schema.json',
   sha256: 'f14d900cd15238657a233ac0415fdd6870547e36b1d6ed16f09c8e3dadcb1474',
   producer_owner: 'Plataforma Agentes',
+};
+const expectedInstitutionalRequestPin = {
+  producer_repo: expectedPin.producer_repo,
+  producer_merge_sha: 'a0df8fef764591f4e8cbcc72416af67bbee5543b',
+  contract_path: 'supabase/functions/_shared/institutional_agent_request.ts',
+  sha256: 'd363a61f6e0f80ee2e2782887a9972bb5f127ed088f0cd13340915040cc751da',
+  producer_owner: expectedPin.producer_owner,
+  status: 'inactive_synthetic',
 };
 
 assert.deepEqual(pin, expectedPin, 'the pin must have a closed shape with the exact canonical fields and ownership');
@@ -74,6 +83,11 @@ function declaresPlatformOwner(value) {
   });
 }
 
+function isExactInstitutionalRequestPin(filePath, text) {
+  if (filePath !== institutionalRequestPinRelativePath) return false;
+  return text === `${JSON.stringify(expectedInstitutionalRequestPin, null, 2)}\n`;
+}
+
 function auditRepository(root) {
   const violations = new Set();
   const namespaceRoot = join(root, 'contracts', 'agents', 'agent-run-envelope');
@@ -96,10 +110,18 @@ function auditRepository(root) {
 
     const bytes = readFileSync(file);
     const text = bytes.toString('utf8');
-    if (/\b(?:producer_)?owner\b\s*[:=]\s*['"]Plataforma Agentes['"]/.test(text)) {
+    const isExactInstitutionalPin = isExactInstitutionalRequestPin(filePath, text);
+    if (filePath === institutionalRequestPinRelativePath && !isExactInstitutionalPin) {
+      violations.add('institutional-request-pin');
+    }
+    if (!isExactInstitutionalPin && /\b(?:producer_)?owner\b\s*[:=]\s*['"]Plataforma Agentes['"]/.test(text)) {
       violations.add('producer-owner');
     }
-    if (exactContractAnchors.some(anchor => text.includes(anchor))) {
+    if (
+      exactContractAnchors.some(anchor =>
+        text.includes(anchor) && !(isExactInstitutionalPin && anchor === expectedPin.producer_repo)
+      )
+    ) {
       violations.add('canonical-anchor');
     }
 
@@ -111,7 +133,7 @@ function auditRepository(root) {
         violations.add('invalid-json');
         continue;
       }
-      if (declaresPlatformOwner(parsed)) {
+      if (!isExactInstitutionalPin && declaresPlatformOwner(parsed)) {
         violations.add('producer-owner');
       }
       const envelopeKeyCount = [...collectObjectKeys(parsed)]
@@ -125,7 +147,11 @@ function auditRepository(root) {
   return [...violations].sort();
 }
 
-assert.deepEqual(auditRepository(repositoryRoot), [], 'repository must retain only the canonical run-envelope pin');
+assert.deepEqual(
+  auditRepository(repositoryRoot),
+  [],
+  'repository must retain only the canonical run-envelope pin while allowing the separately governed institutional-request pin',
+);
 
 function writeFixtureFile(root, relativePath, contents) {
   const target = join(root, relativePath);
@@ -181,6 +207,25 @@ assertMutationRejected(
   'implementation/pin.bin',
   Buffer.concat([Buffer.from([0]), Buffer.from("producer_owner = 'Plataforma Agentes'\n")]),
   'producer-owner',
+);
+assertMutationRejected(
+  'notes/producer-repo.txt',
+  expectedPin.producer_repo,
+  'canonical-anchor',
+);
+assertMutationRejected(
+  institutionalRequestPinRelativePath,
+  JSON.stringify({ ...expectedInstitutionalRequestPin, extra_owner: expectedPin.producer_owner }),
+  'institutional-request-pin',
+);
+const duplicateOwnerManifest = `${JSON.stringify(expectedInstitutionalRequestPin, null, 2)}\n`.replace(
+  `  "producer_owner": "${expectedPin.producer_owner}",`,
+  `  "producer_owner": "attacker",\n  "producer_owner": "${expectedPin.producer_owner}",`,
+);
+assertMutationRejected(
+  institutionalRequestPinRelativePath,
+  duplicateOwnerManifest,
+  'institutional-request-pin',
 );
 
 const serializedPin = JSON.stringify(pin);

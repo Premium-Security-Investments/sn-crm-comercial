@@ -1,0 +1,8 @@
+{
+  "producer_repo": "Premium-Security-Investments/agente-it",
+  "producer_merge_sha": "a0df8fef764591f4e8cbcc72416af67bbee5543b",
+  "contract_path": "supabase/functions/_shared/institutional_agent_request.ts",
+  "sha256": "d363a61f6e0f80ee2e2782887a9972bb5f127ed088f0cd13340915040cc751da",
+  "producer_owner": "Plataforma Agentes",
+  "status": "inactive_synthetic"
+}
