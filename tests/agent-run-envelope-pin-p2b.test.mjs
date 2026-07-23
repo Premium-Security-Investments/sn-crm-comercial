@@ -23,6 +23,14 @@ const expectedPin = {
   sha256: 'f14d900cd15238657a233ac0415fdd6870547e36b1d6ed16f09c8e3dadcb1474',
   producer_owner: 'Plataforma Agentes',
 };
+const expectedInstitutionalRequestPin = {
+  producer_repo: expectedPin.producer_repo,
+  producer_merge_sha: 'a0df8fef764591f4e8cbcc72416af67bbee5543b',
+  contract_path: 'supabase/functions/_shared/institutional_agent_request.ts',
+  sha256: 'd363a61f6e0f80ee2e2782887a9972bb5f127ed088f0cd13340915040cc751da',
+  producer_owner: expectedPin.producer_owner,
+  status: 'inactive_synthetic',
+};
 
 assert.deepEqual(pin, expectedPin, 'the pin must have a closed shape with the exact canonical fields and ownership');
 assert.match(pin.producer_merge_sha, /^[a-f0-9]{40}$/, 'producer merge SHA must be a 40-hex SHA-1');
@@ -37,16 +45,12 @@ const distinctiveEnvelopeKeys = new Set([
   'result_digest',
 ]);
 const exactContractAnchors = [
+  expectedPin.producer_repo,
   expectedPin.producer_merge_sha,
   expectedPin.contract_path,
   expectedPin.contract_id,
   expectedPin.sha256,
 ];
-const allowedOwnershipFiles = new Set([
-  canonicalPinRelativePath,
-  ownTestRelativePath,
-  institutionalRequestPinRelativePath,
-]);
 
 function walkRelevantFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
@@ -79,6 +83,15 @@ function declaresPlatformOwner(value) {
   });
 }
 
+function isExactInstitutionalRequestPin(filePath, text) {
+  if (filePath !== institutionalRequestPinRelativePath) return false;
+  try {
+    return JSON.stringify(JSON.parse(text)) === JSON.stringify(expectedInstitutionalRequestPin);
+  } catch {
+    return false;
+  }
+}
+
 function auditRepository(root) {
   const violations = new Set();
   const namespaceRoot = join(root, 'contracts', 'agents', 'agent-run-envelope');
@@ -92,7 +105,6 @@ function auditRepository(root) {
   for (const file of walkRelevantFiles(root)) {
     const filePath = relative(root, file).split('\\').join('/');
     const isAllowedFile = filePath === canonicalPinRelativePath || filePath === ownTestRelativePath;
-    const isAllowedOwnershipFile = allowedOwnershipFiles.has(filePath);
 
     if (!isAllowedFile && filePath.toLowerCase().includes('agent-run-envelope')) {
       violations.add('envelope-path');
@@ -102,10 +114,18 @@ function auditRepository(root) {
 
     const bytes = readFileSync(file);
     const text = bytes.toString('utf8');
-    if (!isAllowedOwnershipFile && /\b(?:producer_)?owner\b\s*[:=]\s*['"]Plataforma Agentes['"]/.test(text)) {
+    const isExactInstitutionalPin = isExactInstitutionalRequestPin(filePath, text);
+    if (filePath === institutionalRequestPinRelativePath && !isExactInstitutionalPin) {
+      violations.add('institutional-request-pin');
+    }
+    if (!isExactInstitutionalPin && /\b(?:producer_)?owner\b\s*[:=]\s*['"]Plataforma Agentes['"]/.test(text)) {
       violations.add('producer-owner');
     }
-    if (exactContractAnchors.some(anchor => text.includes(anchor))) {
+    if (
+      exactContractAnchors.some(anchor =>
+        text.includes(anchor) && !(isExactInstitutionalPin && anchor === expectedPin.producer_repo)
+      )
+    ) {
       violations.add('canonical-anchor');
     }
 
@@ -117,7 +137,7 @@ function auditRepository(root) {
         violations.add('invalid-json');
         continue;
       }
-      if (!isAllowedOwnershipFile && declaresPlatformOwner(parsed)) {
+      if (!isExactInstitutionalPin && declaresPlatformOwner(parsed)) {
         violations.add('producer-owner');
       }
       const envelopeKeyCount = [...collectObjectKeys(parsed)]
@@ -191,6 +211,16 @@ assertMutationRejected(
   'implementation/pin.bin',
   Buffer.concat([Buffer.from([0]), Buffer.from("producer_owner = 'Plataforma Agentes'\n")]),
   'producer-owner',
+);
+assertMutationRejected(
+  'notes/producer-repo.txt',
+  expectedPin.producer_repo,
+  'canonical-anchor',
+);
+assertMutationRejected(
+  institutionalRequestPinRelativePath,
+  JSON.stringify({ ...expectedInstitutionalRequestPin, extra_owner: expectedPin.producer_owner }),
+  'institutional-request-pin',
 );
 
 const serializedPin = JSON.stringify(pin);

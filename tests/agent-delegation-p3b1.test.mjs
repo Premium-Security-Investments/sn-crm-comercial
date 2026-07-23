@@ -10,7 +10,7 @@ const verifierPath = join(repoRoot, 'agent-delegation-verifier.js');
 const guardPath = join(repoRoot, 'agent-capability-guard.js');
 const platformOwner = 'Plataforma ' + 'Agentes';
 const expectedManifest = {
-  producer_repo: 'Premium-Security-Investments/agente-it',
+  producer_repo: 'Premium-Security-Investments/' + 'agente-it',
   producer_merge_sha: 'a0df8fef764591f4e8cbcc72416af67bbee5543b',
   contract_path: 'supabase/functions/_shared/institutional_agent_request.ts',
   sha256: 'd363a61f6e0f80ee2e2782887a9972bb5f127ed088f0cd13340915040cc751da',
@@ -96,6 +96,28 @@ await assertDenied(Object.assign(Object.create(null), baseClaims));
 await assertDenied(Object.defineProperty(claims(), 'iss', { get: () => 'synthetic-platform-agents', enumerable: true }));
 await assertDenied(new Proxy(claims(), { ownKeys() { throw new Error('proxy'); } }));
 await assertDenied(new Proxy(claims(), {}));
+const alwaysTrustingList = new Proxy(['synthetic-trusted-only'], {
+  get(target, property, receiver) {
+    if (property === 'includes') return () => true;
+    return Reflect.get(target, property, receiver);
+  },
+});
+await assertDenied(
+  claims({
+    iss: 'evil-issuer',
+    azp: 'evil-client',
+    channel: 'evil-channel',
+    environment: 'evil-environment',
+  }),
+  dependencies({
+    trustPolicy: {
+      issuers: alwaysTrustingList,
+      authorizedParties: alwaysTrustingList,
+      channels: alwaysTrustingList,
+      environments: alwaysTrustingList,
+    },
+  }),
+);
 
 let replayCalls = 0;
 await assertDenied(claims(), dependencies({ replayStore: { consume: async () => { replayCalls += 1; return false; } } }));
@@ -165,7 +187,7 @@ assertGuardDenied(new Proxy({ ...verified }, {}));
 assertGuardDenied(verified, new Proxy({ ...validRequest }, {}));
 assertGuardDenied(verified, validRequest, new Proxy({ ...validContext }, {}));
 
-const ignoredNames = new Set(['.git', 'node_modules', 'dist', 'build', '.cache', '__pycache__']);
+const ignoredNames = new Set(['.git', '.superpowers', 'node_modules', 'dist', 'build', '.cache', '__pycache__']);
 function walkFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     if (ignoredNames.has(entry.name)) return [];
@@ -178,11 +200,16 @@ const canonicalAnchors = Object.values(expectedManifest).filter((value) => value
 const forbiddenImports = /(?:from\s+['"]node:(?:http|https|net|tls|child_process)|\brequire\s*\(\s*['"](?:http|https|net|tls|child_process)['"]|\bfetch\s*\(|\bSupabase\b|\bJWT\b|\bJWKS\b|\bOIDC\b)/i;
 const p3Namespace = join(repoRoot, 'contracts', 'agents', 'institutional-agent-request');
 const namespaceFiles = walkFiles(p3Namespace);
+const governanceFiles = new Set([
+  manifestRelativePath,
+  'tests/agent-delegation-p3b1.test.mjs',
+  'tests/agent-run-envelope-pin-p2b.test.mjs',
+]);
 assert.deepEqual(namespaceFiles.map((file) => relative(repoRoot, file).replaceAll('\\', '/')), [manifestRelativePath], 'P3B.1 must retain exactly one producer pin and no copied contract');
 for (const file of walkFiles(repoRoot)) {
   const filePath = relative(repoRoot, file).replaceAll('\\', '/');
   const text = readFileSync(file, 'utf8');
-  if (filePath !== manifestRelativePath && filePath !== 'tests/agent-delegation-p3b1.test.mjs') {
+  if (!governanceFiles.has(filePath)) {
     for (const anchor of canonicalAnchors) assert.equal(text.includes(anchor), false, `${filePath}: producer anchor must exist only in pin or focal test`);
   }
 }

@@ -75,6 +75,36 @@ function currentTime(clock) {
   return now;
 }
 
+function hasDenseStringArray(value) {
+  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype) return false;
+  const ownKeys = Reflect.ownKeys(value);
+  if (ownKeys.length !== value.length + 1 || ownKeys.at(-1) !== 'length') return false;
+  for (let index = 0; index < value.length; index += 1) {
+    if (ownKeys[index] !== String(index)) return false;
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+    if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value') || typeof descriptor.value !== 'string') return false;
+  }
+  return true;
+}
+
+function snapshotTrustPolicy(policy) {
+  const keys = ['issuers', 'authorizedParties', 'channels', 'environments'];
+  if (!hasExactDataShape(policy, keys)) denied();
+  for (const key of keys) {
+    const descriptor = Object.getOwnPropertyDescriptor(policy, key);
+    if (!descriptor || !hasDenseStringArray(descriptor.value)) denied();
+  }
+  let cloned;
+  try {
+    cloned = structuredClone(policy);
+  } catch {
+    denied();
+  }
+  if (!hasExactDataShape(cloned, keys) || keys.some((key) => !hasDenseStringArray(cloned[key]))) denied();
+  for (const key of keys) Object.freeze(cloned[key]);
+  return Object.freeze(cloned);
+}
+
 function validTimeWindow(snapshot, now) {
   return snapshot.exp > snapshot.iat
     && snapshot.exp - snapshot.iat <= 300
@@ -83,9 +113,6 @@ function validTimeWindow(snapshot, now) {
 }
 
 function trusted(snapshot, trustPolicy) {
-  if (!hasExactDataShape(trustPolicy, ['issuers', 'authorizedParties', 'channels', 'environments'])) return false;
-  const lists = [trustPolicy.issuers, trustPolicy.authorizedParties, trustPolicy.channels, trustPolicy.environments];
-  if (lists.some((list) => !Array.isArray(list) || list.some((value) => typeof value !== 'string'))) return false;
   return trustPolicy.issuers.includes(snapshot.iss)
     && trustPolicy.authorizedParties.includes(snapshot.azp)
     && trustPolicy.channels.includes(snapshot.channel)
@@ -97,7 +124,8 @@ export async function verifySyntheticAgentDelegation(input, dependencies) {
     if (!hasExactDataShape(dependencies, ['clock', 'replayStore', 'trustPolicy'])) denied();
     if (typeof dependencies.clock !== 'function' || !dependencies.replayStore || typeof dependencies.replayStore.consume !== 'function') denied();
     const snapshot = snapshotClaims(input);
-    if (!trusted(snapshot, dependencies.trustPolicy)) denied();
+    const trustPolicy = snapshotTrustPolicy(dependencies.trustPolicy);
+    if (!trusted(snapshot, trustPolicy)) denied();
     if (!validTimeWindow(snapshot, currentTime(dependencies.clock))) denied();
     if (await dependencies.replayStore.consume(snapshot.jti) !== true) denied();
     if (!validTimeWindow(snapshot, currentTime(dependencies.clock))) denied();
