@@ -9,6 +9,7 @@ import { MODULE_PERMISSION_CODES, MODULE_PERMISSIONS, eligibleModulePermissions,
 import { SiioDashboard } from './siio/SiioDashboard';
 import { TendersModule } from './tenders/TendersModule';
 import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDecisionPanel';
+import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
 import type { TenderModuleView } from './tenders/types';
 import type { TenderDocumentAnalysis as TenderDocumentAnalysisShared } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
@@ -767,7 +768,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Fecha creación" value={fmtDate(o.created_at)}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
     {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} focusTargetRef={documentReviewRef} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onReload={async()=>{await load(); await refresh();}} />}
     {o.service_type_code === 'licitacion_publica' && <TenderGoNoGoDecisionPanel key={`tender-decision-${o.id}`} opportunityId={o.id} opportunityName={o.company_name || 'Oportunidad de licitación'} analysis={tenderAnalysis} currentProfile={data.currentProfile} request={api} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} />}
-    {o.service_type_code === 'licitacion_publica' && <TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} />}
+    {o.service_type_code === 'licitacion_publica' && <TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} currentProfile={data.currentProfile} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} />}
     <div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><div id="opportunity-follow-up" className="opportunity-follow-up-anchor" tabIndex={-1} ref={followUpRef}><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div></div>
     <Panel title="Línea de seguimientos"><div className="timeline">{visibleInteractions.length ? visibleInteractions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel>
   </section>;
@@ -880,7 +881,7 @@ function TenderDocumentReviewPanel({ opportunity, onReload, onAnalysisChanged, f
     </div>
   </Panel></div>;
 }
-function TenderOfferPreparationPanel({ opportunity }: { opportunity: Opportunity }) {
+function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void> }) {
   const [payload, setPayload] = useState<TenderOfferPreparationPayload>({ preparation: null, preparations: [], notes: [] });
   const [statusText, setStatusText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -911,6 +912,7 @@ function TenderOfferPreparationPanel({ opportunity }: { opportunity: Opportunity
         <div className="document-risk-meter"><small>Carpeta SharePoint / OneDrive</small><strong>{authorizedPreparation.sharepoint_folder?.status || 'Pendiente'}</strong><span>{authorizedPreparation.sharepoint_folder?.root_name || 'Se creará al configurar integración Graph'}</span></div>
       </div>
       <div className="document-upload-row">{authorizedPreparation.sharepoint_folder?.url ? <a className="button" href={authorizedPreparation.sharepoint_folder.url} target="_blank" rel="noreferrer">Abrir carpeta</a> : <small className="muted">Carpeta SharePoint / OneDrive: vínculo pendiente de integración automática.</small>}</div>
+      <TenderOfferStatusPanel opportunityId={opportunity.id} opportunityName={opportunity.company_name || 'Oportunidad de licitación'} currentProfile={currentProfile} request={api} onChanged={async () => { await loadPreparation(); await onChanged(); }} />
       {statusText && <div className="notice">{statusText}</div>}
       <div className="document-analysis-grid">
         <section className="document-analysis-card"><small>Generar paquete inicial de preparación</small><strong>{authorizedPreparation.control_message || 'Paquete creado'}</strong><p>Documentos oficiales: {authorizedPreparation.checklist_summary?.official_documents || 0} · Automáticos: {authorizedPreparation.checklist_summary?.auto_generated || 0} · Requiere humano: {authorizedPreparation.checklist_summary?.human_required || 0}</p></section>

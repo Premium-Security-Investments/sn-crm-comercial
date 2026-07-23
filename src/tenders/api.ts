@@ -1,4 +1,4 @@
-import type { TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderRequest, TenderTrackingEvent, TenderTrackingUpdate } from './types';
+import type { TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRequest, TenderTrackingEvent, TenderTrackingUpdate } from './types';
 
 /** Explicit resource loaders: each tender view owns only the data it needs. */
 export async function loadRadar<T>(request: TenderRequest): Promise<T> {
@@ -55,4 +55,12 @@ export async function recordTenderGoNoGoDecision(request: TenderRequest, input: 
     method: 'POST',
     body: JSON.stringify(input),
   });
+}
+
+export async function loadTenderOfferStatus(request: TenderRequest, opportunityId: string): Promise<TenderOfferStatusPayload> {
+  return request<TenderOfferStatusPayload>(`/api/tender-offer-status?id=${encodeURIComponent(opportunityId)}`);
+}
+
+export async function recordTenderOfferStatusTransition(request: TenderRequest, input: TenderOfferStatusTransitionInput): Promise<{ status: import('./types').TenderOfferStatus; event: import('./types').TenderOfferStatusTransition }> {
+  return request('/api/tender-offer-status', { method: 'POST', body: JSON.stringify(input) });
 }

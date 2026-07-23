@@ -65,6 +65,19 @@ export type TenderGoNoGoDecision = {
 };
 export type TenderGoNoGoDecisionInput = { opportunity_id: string; decision: 'go' | 'no_go'; analysis_interaction_id: string; justification?: string | null };
 export type TenderOfferPreparation = { status: string; interaction_id?: string; [key: string]: unknown };
+export type TenderOfferStatusTransition = {
+  id: string;
+  opportunity_id: string;
+  tender_id: string;
+  actor_id: string;
+  from_status: Exclude<TenderOfferStatus, 'pendiente_decision' | 'cerrada_no_go' | 'adjudicada' | 'no_adjudicada'>;
+  to_status: Exclude<TenderOfferStatus, 'pendiente_decision' | 'cerrada_no_go' | 'en_preparacion'>;
+  note: string | null;
+  changed_at: string;
+  psi_sales_profiles?: { full_name?: string | null } | null;
+};
+export type TenderOfferStatusPayload = { status: TenderOfferStatus; history: TenderOfferStatusTransition[] };
+export type TenderOfferStatusTransitionInput = { opportunity_id: string; to_status: TenderOfferStatus; expected_current_status: TenderOfferStatus; note?: string | null };
 export type TenderGoNoGoPayload = { decision: TenderGoNoGoDecision | null; history: TenderGoNoGoDecision[]; preparation: TenderOfferPreparation | null; analysis?: TenderDocumentAnalysis | null };
 export type TenderGoNoGoPostPayload = {
   decision: {

@@ -8,6 +8,7 @@ import mammoth from 'mammoth';
 import AdmZip from 'adm-zip';
 import { callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
+import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
 import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
 import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
@@ -2413,6 +2414,21 @@ app.post('/api/tender-go-no-go-decision', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     res.status(201).json(await callTenderGoNoGoDecision(requireDb(), req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.get('/api/tender-offer-status', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    res.json(await getTenderOfferStatus(requireDb(), req.query.id, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-offer-status', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+    res.status(201).json(await callTenderOfferStatusTransition(requireDb(), req.body || {}, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
