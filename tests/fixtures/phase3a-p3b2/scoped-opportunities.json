@@ -1,0 +1,43 @@
+[
+  {
+    "id": "syn-opportunity-critical",
+    "owner_id": "syn-owner-001",
+    "owner_name": "SYNTHETIC_OWNER",
+    "company_name": "SYNTHETIC_ENTITY",
+    "stage_code": "negociacion",
+    "stage_name": "SYNTHETIC_STAGE",
+    "stage_order": 4,
+    "service_type_code": null,
+    "service_type_name": null,
+    "regional_nombre": "SYNTHETIC_REGION",
+    "customer_segment": null,
+    "offer_value": 100000000,
+    "weighted_pipeline_value": 70000000,
+    "next_action_at": null,
+    "last_interaction_at": "2029-12-01T12:00:00.000Z",
+    "updated_at": "2030-02-01T09:59:00.000Z",
+    "created_at": "2029-11-01T12:00:00.000Z",
+    "expected_close_date": "2030-01-15T12:00:00.000Z",
+    "internal_only": "must-not-leak"
+  },
+  {
+    "id": "syn-opportunity-terminal",
+    "owner_id": null,
+    "owner_name": null,
+    "company_name": "SYNTHETIC_TERMINAL_ENTITY",
+    "stage_code": "aprobado",
+    "stage_name": "SYNTHETIC_TERMINAL_STAGE",
+    "stage_order": 7,
+    "service_type_code": null,
+    "service_type_name": null,
+    "regional_nombre": null,
+    "customer_segment": null,
+    "offer_value": 1000,
+    "weighted_pipeline_value": 1000,
+    "next_action_at": null,
+    "last_interaction_at": null,
+    "updated_at": "2030-02-01T09:58:00.000Z",
+    "created_at": "2029-11-01T12:00:00.000Z",
+    "expected_close_date": null
+  }
+]

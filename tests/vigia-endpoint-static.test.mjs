@@ -6,7 +6,7 @@ const vercel = fs.readFileSync(new URL('../api/[...path].js', import.meta.url), 
 const backendTest = fs.readFileSync(new URL('./backend-module-guards.test.mjs', import.meta.url), 'utf8');
 
 for (const [name, source] of [['server', server], ['vercel', vercel]]) {
-  assert.ok(source.includes('prioritizeVigiaOpportunities'), `${name} imports deterministic Vig-IA engine`);
+  assert.ok(source.includes('buildAgt003PrioritiesData'), `${name} imports the shared deterministic AGT-003 service`);
   assert.ok(source.includes("vigia: ACTIONS.MODULE_VIGIA_VIEW"), `${name} protects Vig-IA as a module family`);
   assert.ok(source.includes("'GET /api/vigia/priorities': ['vigia', ACTIONS.MODULE_VIGIA_VIEW]"), `${name} inventories Vig-IA endpoint`);
   assert.ok(source.includes("app.get('/api/vigia/priorities'"), `${name} exposes dedicated endpoint`);
@@ -14,6 +14,7 @@ for (const [name, source] of [['server', server], ['vercel', vercel]]) {
   assert.ok(source.includes("expected_close_date';"), `${name} keeps the view allowlist compatible with the deployed schema`);
   assert.ok(source.includes("from('psi_sales_opportunities').select('id,customer_segment')"), `${name} reads customer segment explicitly from the base table`);
   assert.ok(source.includes('requirePrioritiesAction(currentProfile)'), `${name} checks inherited Prioridades modules before CRM read`);
+  assert.ok(source.includes('res.json(buildAgt003PrioritiesData(scopedRows))'), `${name} delegates final payload construction to the shared service`);
   const routeStart = source.indexOf("app.get('/api/vigia/priorities'");
   const route = source.slice(routeStart, source.indexOf("app.get('/api/bootstrap'", routeStart));
   assert.ok(route.indexOf('requirePrioritiesAction(currentProfile)') < route.indexOf('resolveVigiaOwnerScope(database, currentProfile)'), `${name} checks module before scope resolution`);

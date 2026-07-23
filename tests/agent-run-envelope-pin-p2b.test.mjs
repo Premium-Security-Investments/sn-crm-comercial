@@ -10,6 +10,10 @@ const pinPath = join(contractsRoot, 'agent-run-envelope', 'v1', 'manifest.json')
 const canonicalPinRelativePath = 'contracts/agents/agent-run-envelope/v1/manifest.json';
 const ownTestRelativePath = 'tests/agent-run-envelope-pin-p2b.test.mjs';
 const institutionalRequestPinRelativePath = 'contracts/agents/institutional-agent-request/v1/manifest.json';
+const separatelyGovernedP3b2Files = new Set([
+  'contracts/agents/siio-adapter/v1/manifest.json',
+  'tests/agent-agt003-synthetic-parity-p3b2.test.mjs',
+]);
 
 assert.ok(existsSync(pinPath), 'P2B must add the sole machine-readable run-envelope pin');
 
@@ -100,7 +104,9 @@ function auditRepository(root) {
 
   for (const file of walkRelevantFiles(root)) {
     const filePath = relative(root, file).split('\\').join('/');
-    const isAllowedFile = filePath === canonicalPinRelativePath || filePath === ownTestRelativePath;
+    const isAllowedFile = filePath === canonicalPinRelativePath
+      || filePath === ownTestRelativePath
+      || separatelyGovernedP3b2Files.has(filePath);
 
     if (!isAllowedFile && filePath.toLowerCase().includes('agent-run-envelope')) {
       violations.add('envelope-path');

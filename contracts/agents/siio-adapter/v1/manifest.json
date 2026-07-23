@@ -1,0 +1,14 @@
+{
+  "producer_repo": "Premium-Security-Investments/agente-it",
+  "producer_merge_sha": "988becc75f0e866688281db61dd3ec21e9ede17e",
+  "adapter_path": "supabase/functions/_shared/siio_adapter.ts",
+  "sha256": "b7dde69ae3b5df4437584e9bea7df225d420a1166fa02c268452f95969525caf",
+  "producer_owner": "Plataforma Agentes",
+  "status": "inactive_synthetic",
+  "origin": "synthetic://siio.local",
+  "route": "/synthetic/siio/agt003/priorities",
+  "capability": "agt003.priorities.read",
+  "contract_version": "1.0.0",
+  "request_schema_sha256": "8ee87729790a1bac067d704016fa9f9a1e2c46c423e4599b38871adcfa18ef58",
+  "response_schema_sha256": "7a2cbff1d9f4f0ae8ff8e82652535e22d1e6a981c569b89fac32f1add1e7603e"
+}

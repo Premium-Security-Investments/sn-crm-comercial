@@ -13,7 +13,7 @@ import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
 import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
-import { VIGIA_CONFIG, prioritizeVigiaOpportunities } from '../vigia-engine.js';
+import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1846,22 +1846,7 @@ app.get('/api/vigia/priorities', async (req, res) => {
       fetchVigiaCustomerSegments(database, ownerIds),
     ]);
     const scopedRows = attachVigiaCustomerSegments(viewRows, segmentRows);
-    const priorities = prioritizeVigiaOpportunities(scopedRows);
-    const asOf = scopedRows.map(row => row.updated_at).filter(value => value && !Number.isNaN(new Date(value).getTime())).sort().at(-1) || null;
-    res.json({
-      generated_at: new Date().toISOString(),
-      source: { id: VIGIA_CONFIG.sourceId, label: 'CRM comercial', as_of: asOf },
-      policy: { version: VIGIA_CONFIG.version, read_only: true, human_review_required: true },
-      totals: {
-        source_rows: scopedRows.length,
-        visible_active: scopedRows.filter(row => !VIGIA_CONFIG.terminalStages.includes(row.stage_code)).length,
-        prioritized: priorities.length,
-        high: priorities.filter(row => row.level === 'alto').length,
-        medium: priorities.filter(row => row.level === 'medio').length,
-        low: priorities.filter(row => row.level === 'bajo').length,
-      },
-      priorities,
-    });
+    res.json(buildAgt003PrioritiesData(scopedRows));
   } catch (error) { sendAuthError(res, error); }
 });
 app.all('/api/vigia/priorities', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));

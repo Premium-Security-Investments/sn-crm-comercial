@@ -217,8 +217,10 @@ const p3Namespace = join(repoRoot, 'contracts', 'agents', 'institutional-agent-r
 const namespaceFiles = walkFiles(p3Namespace);
 const governanceFiles = new Set([
   manifestRelativePath,
+  'contracts/agents/siio-adapter/v1/manifest.json',
   'tests/agent-delegation-p3b1.test.mjs',
   'tests/agent-run-envelope-pin-p2b.test.mjs',
+  'tests/agent-agt003-synthetic-parity-p3b2.test.mjs',
 ]);
 assert.deepEqual(namespaceFiles.map((file) => relative(repoRoot, file).replaceAll('\\', '/')), [manifestRelativePath], 'P3B.1 must retain exactly one producer pin and no copied contract');
 for (const file of walkFiles(repoRoot)) {
