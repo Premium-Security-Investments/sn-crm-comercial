@@ -254,4 +254,13 @@ for (const path of ['../server/index.js', '../api/[...path].js']) {
   assert.match(noteRoute[0], /await requireTenderGoForPreparation\(database, opportunityId, currentProfile\)/, 'Las notas deben validar GO vigente antes del insert.');
 }
 
+{
+  const root = { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', decision: 'go', decided_at: '2026-07-23T10:00:00Z', supersedes_decision_id: null };
+  const leaf = { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', decision: 'no_go', decided_at: '2026-07-23T09:00:00Z', supersedes_decision_id: root.id };
+  const { database } = fakeDatabase({ history: [root, leaf] });
+  const payload = await getTenderGoNoGoDecision(database, OPPORTUNITY_ID, directorProfile);
+  assert.equal(payload.decision.id, leaf.id, 'read side must choose the supersession leaf even when its timestamp is older');
+  assert.equal(payload.preparation, null, 'a leaf NO GO must hide prior preparation');
+}
+
 console.log('tender go/no-go API checks passed');

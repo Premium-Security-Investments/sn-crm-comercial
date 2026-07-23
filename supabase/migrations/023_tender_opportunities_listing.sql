@@ -2,6 +2,9 @@
 -- This is read-only and additive; it intentionally leaves the 022 status contract authoritative.
 begin;
 
+alter table if exists public.psi_tender_go_no_go_decisions
+  add column if not exists supersedes_decision_id uuid;
+
 create or replace function public.psi_list_tender_opportunity_page(p_filter text, p_limit int, p_offset int)
 returns table (tender jsonb, opportunity jsonb, latest_decision jsonb)
 language plpgsql
@@ -37,6 +40,10 @@ begin
     select d.*
     from public.psi_tender_go_no_go_decisions d
     where d.opportunity_id = o.id and d.tender_id = t.id
+      and not exists (
+        select 1 from public.psi_tender_go_no_go_decisions child
+        where child.supersedes_decision_id = d.id
+      )
     order by d.decided_at desc, d.id desc
     limit 1
   ) d on true

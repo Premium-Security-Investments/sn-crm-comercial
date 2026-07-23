@@ -2,6 +2,9 @@
 -- Additive: GO / NO-GO decisions remain governed exclusively by migration 022.
 begin;
 
+alter table if exists public.psi_tender_go_no_go_decisions
+  add column if not exists supersedes_decision_id uuid;
+
 create table if not exists public.psi_tender_offer_status_transitions (
   id uuid primary key default gen_random_uuid(),
   opportunity_id uuid not null references public.psi_sales_opportunities(id) on delete restrict,
@@ -93,6 +96,10 @@ begin
   select d.decision into v_latest_decision
     from public.psi_tender_go_no_go_decisions d
     where d.opportunity_id = p_opportunity_id and d.tender_id = v_tender.id
+      and not exists (
+        select 1 from public.psi_tender_go_no_go_decisions child
+        where child.supersedes_decision_id = d.id
+      )
     order by d.decided_at desc, d.id desc
     limit 1;
   if v_latest_decision is distinct from 'go' then

@@ -150,7 +150,16 @@ begin
     raise exception 'El análisis debe ser un análisis de licitación de la oportunidad indicada.' using errcode = '22023';
   end if;
 
-  select id into v_previous_id from public.psi_tender_go_no_go_decisions where opportunity_id = p_opportunity_id and tender_id = p_tender_id order by decided_at desc, id desc limit 1 for update;
+  select d.id into v_previous_id
+    from public.psi_tender_go_no_go_decisions d
+    where d.opportunity_id = p_opportunity_id
+      and d.tender_id = p_tender_id
+      and not exists (
+        select 1 from public.psi_tender_go_no_go_decisions child
+        where child.supersedes_decision_id = d.id
+      )
+    order by d.decided_at desc, d.id desc
+    limit 1;
   insert into public.psi_tender_go_no_go_decisions (opportunity_id, tender_id, decision, analysis_interaction_id, justification, decided_by, decided_at, supersedes_decision_id)
   values (p_opportunity_id, p_tender_id, p_decision, p_analysis_interaction_id, nullif(btrim(p_justification), ''), p_actor_id, v_now, v_previous_id)
   returning id into v_decision_id;

@@ -121,7 +121,13 @@ export async function callTenderGoNoGoDecision(database, input, currentProfile) 
   return { decision: result, preparation: persistedPreparation };
 }
 
-/** Read-side companion; preparation is visible only while the latest formal decision is GO. */
+function currentDecisionFromHistory(history) {
+  const rows = history || [];
+  const supersededIds = new Set(rows.map(row => row.supersedes_decision_id).filter(Boolean));
+  return rows.find(row => !supersededIds.has(row.id)) || rows[0] || null;
+}
+
+/** Read-side companion; preparation is visible only while the current supersession leaf is GO. */
 export async function getTenderGoNoGoDecision(database, opportunityId, currentProfile) {
   const id = requireUuid(opportunityId, 'una oportunidad válida');
   requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
@@ -130,7 +136,7 @@ export async function getTenderGoNoGoDecision(database, opportunityId, currentPr
     must(database.from('psi_tender_go_no_go_decisions').select('id,opportunity_id,tender_id,decision,analysis_interaction_id,justification,decided_by,decided_at,supersedes_decision_id,psi_sales_profiles(full_name)').eq('opportunity_id', id).eq('tender_id', tender.id).order('decided_at', { ascending: false }).order('id', { ascending: false })),
     getTenderDocumentsAndAnalysis(database, id),
   ]);
-  const decision = (history || [])[0] || null;
+  const decision = currentDecisionFromHistory(history);
   return { decision, history: history || [], preparation: decision?.decision === 'go' ? records.preparation : null, analysis: records.analysis };
 }
 

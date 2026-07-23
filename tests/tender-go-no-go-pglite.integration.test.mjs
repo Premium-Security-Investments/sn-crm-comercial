@@ -6,7 +6,7 @@ const migration = readFileSync(new URL('../supabase/migrations/022_tender_go_no_
 const ids = {
   admin: '11111111-1111-4111-8111-111111111111', director: '22222222-2222-4222-8222-222222222222', commercial: '33333333-3333-4333-8333-333333333333', agent: '88888888-8888-4888-8888-888888888888',
   opportunity: '44444444-4444-4444-8444-444444444444', tender: '55555555-5555-4555-8555-555555555555', analysis: '66666666-6666-4666-8666-666666666666', legacyDecision: '77777777-7777-4777-8777-777777777777',
-  oldPreparation: '99999999-9999-4999-8999-999999999991', newPreparation: '99999999-9999-4999-8999-999999999992', invalid: '99999999-9999-4999-8999-999999999993',
+  oldPreparation: '99999999-9999-4999-8999-999999999991', newPreparation: '99999999-9999-4999-8999-999999999992', invalid: '99999999-9999-4999-8999-999999999993', invertedLeaf: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
 };
 const one = async (db, sql, params = []) => (await db.query(sql, params)).rows[0];
 const count = async (db, sql, params = []) => Number((await one(db, sql, params)).count);
@@ -105,6 +105,17 @@ await (async function rejectsBadRolesAndRollsBackAuditFailure() {
   await db.exec(`create function public.fail_go_no_go_insert() returns trigger language plpgsql as $$ begin raise exception 'forced audit failure'; end $$; create trigger fail_go_no_go_insert before insert on public.psi_tender_go_no_go_decisions for each row execute function public.fail_go_no_go_insert();`);
   await assert.rejects(() => decide(db, ids.admin, 'go'), /forced audit failure/);
   assert.equal(await preparationCount(db), 0); assert.equal((await one(db, `select tender_offer_status from public.psi_sales_opportunities where id=$1`, [ids.opportunity])).tender_offer_status, null);
+  await db.close();
+})();
+
+await (async function supersedesChainLeafEvenWhenItsTimestampIsOlder() {
+  const db = await createLegacyDatabase(); await db.exec(migration);
+  await db.exec(`insert into public.psi_tender_go_no_go_decisions
+    (id, opportunity_id, tender_id, decision, decided_by, decided_at, supersedes_decision_id)
+    values ('${ids.invertedLeaf}', '${ids.opportunity}', '${ids.tender}', 'no_go', '${ids.admin}',
+      '2000-01-01T00:00:00Z', '${ids.legacyDecision}')`);
+  const result = await decide(db, ids.admin, 'go');
+  assert.equal(result.supersedes_decision_id, ids.invertedLeaf, 'new decision must extend the chain leaf, not the newest timestamp');
   await db.close();
 })();
 

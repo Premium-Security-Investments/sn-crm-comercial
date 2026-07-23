@@ -143,13 +143,14 @@ Antes de QA con datos reales se requiere autorización explícita para aplicar `
 
 ## Revisión independiente
 
-El primer paquete fue preparado sobre `c3304b4..7d65c0c` en:
+La revisión final detectó una carrera en la selección de la decisión GO/NO GO vigente cuando una rectificación esperaba el lock y conservaba un timestamp anterior. Se corrigió usando la hoja de `supersedes_decision_id` como fuente de verdad en escritura y en todos los readers SQL/API. La regresión se reprodujo en RED con timestamps invertidos y quedó GREEN; después se repitieron las 36 pruebas y todos los gates.
 
-- `.superpowers/sdd/review-c3304b4..7d65c0c.diff`
-
-La primera revisión detectó el bloqueante de estados post-GO; fue resuelto en `c565cd1`. El veredicto final posterior a la sincronización con `main` se registra en:
+Artefactos:
 
 - `.superpowers/sdd/task-10-review.md`
+- `.superpowers/sdd/task-10-final-review.md`
+
+El veredicto binario posterior al fix se ejecuta antes del PR.
 
 ## Conclusión
 
