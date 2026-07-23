@@ -1,0 +1,9 @@
+{
+  "producer_repo": "Premium-Security-Investments/agente-it",
+  "producer_merge_sha": "a4d914849126f870f0d66be4914ab6a89a6225ba",
+  "contract_version": "v1",
+  "contract_path": "catalog/agent-run-envelope-v1.schema.json",
+  "contract_id": "https://agente-it.local/contracts/agent-run-envelope/v1/schema.json",
+  "sha256": "f14d900cd15238657a233ac0415fdd6870547e36b1d6ed16f09c8e3dadcb1474",
+  "producer_owner": "Plataforma Agentes"
+}
