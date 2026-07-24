@@ -58,7 +58,7 @@ Este plan implementa el Lote 1 de SIIO, la frontera AGT-002 verificable y el ada
 - Produces: `validateAgt002TenderAnalysisRequest(value)` and `validateAgt002TenderAnalysisEnvelope(value)`.
 - Test-only fixture: `tests/fixtures/agt002-synthetic-responder.mjs` exports `buildSyntheticAgt002TenderAnalysis(snapshot)` exclusively for contract tests; production code never imports or fabrica envelopes `AGT-002`/`agent_ai`/`completed`.
 
-- [ ] **Step 1: Write the failing contract test**
+- [x] **Step 1: Write the failing contract test**
 
 ```js
 import { strict as assert } from 'node:assert';
@@ -88,13 +88,13 @@ assert.throws(() => validateAgt002TenderAnalysisEnvelope({ ...envelope, human_re
 console.log('AGT-002 tender analysis consumer contract passed');
 ```
 
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Run the test and verify RED**
 
 Run: `node tests/agt002-tender-analysis-contract.test.mjs`
 
 Expected: FAIL with `ERR_MODULE_NOT_FOUND` for `agt002-tender-adapter.js`.
 
-- [ ] **Step 3: Add strict request and response schemas**
+- [x] **Step 3: Add strict request and response schemas**
 
 The request schema must require exactly the top-level snapshot fields shown above. Its minimum closed taxonomy is:
 
@@ -143,7 +143,7 @@ The response schema must require exactly:
 
 Every finding/question item must require `id`, `text`, `critical`, and `evidence_refs`; `additionalProperties` must be `false` at every object level.
 
-- [ ] **Step 4: Implement the provider-neutral adapter and test-only fixture**
+- [x] **Step 4: Implement the provider-neutral adapter and test-only fixture**
 
 ```js
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -163,7 +163,7 @@ export function validateAgt002TenderAnalysisRequest(snapshot) {
 
 Place `buildSyntheticAgt002TenderAnalysis(snapshot)` in `tests/fixtures/agt002-synthetic-responder.mjs`, import it only from tests, and label it clearly as test-only. The fixture can exercise the envelope validator, but production code must never create an `AGT-002` / `agent_ai` / `completed` response.
 
-- [ ] **Step 5: Run and commit**
+- [x] **Step 5: Run and commit**
 
 Run: `node tests/agt002-tender-analysis-contract.test.mjs`
 
@@ -187,7 +187,7 @@ git commit -m "test(agents): define AGT-002 tender analysis boundary"
 - Produces tables `psi_tender_document_snapshots`, `psi_tender_analysis_runs`.
 - Produces RPCs `psi_record_tender_document_snapshot(...)` and `psi_record_tender_analysis_run(...)`.
 
-- [ ] **Step 1: Write a failing migration contract test**
+- [x] **Step 1: Write a failing migration contract test**
 
 Assert the migration contains:
 
@@ -202,13 +202,13 @@ for (const token of [
 ]) assert.match(migration, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
 ```
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `node tests/tender-analysis-foundation-migration.test.mjs`
 
 Expected: FAIL because migration 025 does not exist.
 
-- [ ] **Step 3: Write migration 025**
+- [x] **Step 3: Write migration 025**
 
 Create snapshots with UUID PK, opportunity/tender FKs, 64-character lowercase SHA-256 hashes, JSONB manifest/profile snapshot, actor and timestamp. Create runs with snapshot/opportunity/tender FKs, producer `siio_rules_v1|HERMES-INTERIM|AGT-002`, method `rules|agent_ai`, status `completed|failed`, result JSONB, `critical_open_count >= 0`, unique idempotency key, schema/policy/model/usage fields and timestamps. Enforce `rules` only for `siio_rules_v1` and `agent_ai` only for `HERMES-INTERIM`/`AGT-002`.
 
@@ -225,11 +225,11 @@ end if;
 
 Snapshots are deduplicated with `insert ... on conflict (opportunity_id, document_hash, profile_hash) do nothing` followed by a scoped select; runs are idempotent with `on conflict (idempotency_key) do nothing` followed by a scoped select. No conflict path mutates an immutable row.
 
-- [ ] **Step 4: Add PGlite tests**
+- [x] **Step 4: Add PGlite tests**
 
 Cover: re-execution, dedupe, wrong opportunity/tender, bad hash, unauthorized producer, malformed result, duplicate idempotency key, service-role direct insert denied, authenticated direct insert denied, and no mutation through UPDATE/DELETE.
 
-- [ ] **Step 5: Run and commit**
+- [x] **Step 5: Run and commit**
 
 Run:
 
@@ -259,7 +259,7 @@ git commit -m "feat(tenders): add typed analysis snapshots and runs"
 - Produces `buildTenderSnapshotInput(records, companyProfile)`, `registerSiioRulesAnalysis(database, context)`, `getCurrentTenderAnalysis(database, opportunityId)`.
 - Returns `{run_id, snapshot_id, producer:'siio_rules_v1', method:'rules', status, current, result}`.
 
-- [ ] **Step 1: Write failing tests for deterministic identity**
+- [x] **Step 1: Write failing tests for deterministic identity**
 
 ```js
 const left = buildTenderSnapshotInput([{ id:'b', name:'B' }, { id:'a', name:'A' }], { version: 1 });
@@ -271,13 +271,13 @@ assert.equal(left.documents[0].id, 'a');
 
 Also statically assert both backend entrypoints call `registerSiioRulesAnalysis` after `buildTenderDocumentAnalysis`, and no UI string calls it IA.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `node tests/tender-analysis-rules-registration.test.mjs`
 
 Expected: FAIL with missing module/function.
 
-- [ ] **Step 3: Implement canonical JSON hashing and RPC registration**
+- [x] **Step 3: Implement canonical JSON hashing and RPC registration**
 
 ```js
 import { createHash } from 'node:crypto';
@@ -292,11 +292,11 @@ export function buildTenderSnapshotInput(documents, companyProfile) {
 
 `registerSiioRulesAnalysis` calls the two RPCs and writes `producer='siio_rules_v1'`, `method='rules'`, `policy_version='siio-rules-v1'`, zero usage/cost, and an idempotency key derived from opportunity + snapshot + policy.
 
-- [ ] **Step 4: Replace both direct legacy analysis inserts**
+- [x] **Step 4: Replace both direct legacy analysis inserts**
 
 Keep the readable timeline interaction for compatibility, but include only the returned `analysis_run_id` and label `Preanálisis por reglas SIIO`. The typed run is authoritative.
 
-- [ ] **Step 5: Run focused tests and parity**
+- [x] **Step 5: Run focused tests and parity**
 
 ```bash
 node tests/tender-analysis-rules-registration.test.mjs
@@ -306,7 +306,7 @@ npm run check:backend-parity
 
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add tender-analysis-foundation.js server/index.js 'api/[...path].js' tests/tender-analysis-rules-registration.test.mjs
@@ -325,17 +325,17 @@ git commit -m "feat(tenders): register rules analysis as authenticated runs"
 **Interfaces:**
 - Produces `assertPublicInteractionPayload(notes)` used by `POST /api/opportunities/:id/interactions`.
 
-- [ ] **Step 1: Write failing route tests**
+- [x] **Step 1: Write failing route tests**
 
 Test rejection with HTTP 403/400 for `tender_document_upload`, `tender_document_analysis`, `tender_document_import_error`, `tender_document_clarification`, and `tender_offer_preparation`; permit ordinary `seguimiento` notes and malformed user text that is not parsed as an internal object.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `node tests/tender-internal-interaction-kinds.test.mjs`
 
 Expected: FAIL because the generic route accepts reserved kinds.
 
-- [ ] **Step 3: Implement one exact guard in both entrypoints**
+- [x] **Step 3: Implement one exact guard in both entrypoints**
 
 ```js
 const RESERVED_TENDER_INTERACTION_KINDS = new Set([
@@ -353,7 +353,7 @@ function assertPublicInteractionPayload(notes) {
 
 Invoke before every generic interaction insert.
 
-- [ ] **Step 4: Run, parity-check and commit**
+- [x] **Step 4: Run, parity-check and commit**
 
 ```bash
 node tests/tender-internal-interaction-kinds.test.mjs
@@ -379,17 +379,17 @@ git commit -m "fix(tenders): reserve internal documentary events"
 - GO/NO GO input changes from `analysis_interaction_id` to required `analysis_run_id`.
 - Decision history preserves legacy `analysis_interaction_id` and adds nullable `analysis_run_id`.
 
-- [ ] **Step 1: Write failing PGlite gates**
+- [x] **Step 1: Write failing PGlite gates**
 
 Cover: null run, fabricated UUID, run from another opportunity, failed run, historical snapshot, AGT-002 run with critical questions, current SIIO rules run, current authenticated `HERMES-INTERIM` run, current AGT-002 run without critical questions, and mandatory justification for both decisions.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `node tests/tender-analysis-go-gate-pglite.integration.test.mjs`
 
 Expected: FAIL because `analysis_run_id` and current-snapshot checks do not exist.
 
-- [ ] **Step 3: Extend the decision table and RPC**
+- [x] **Step 3: Extend the decision table and RPC**
 
 Add `analysis_run_id uuid references psi_tender_analysis_runs(id) on delete restrict`. In `psi_record_tender_go_no_go`, lock and validate the run:
 
@@ -408,11 +408,11 @@ if nullif(btrim(p_justification),'') is null then raise exception 'La justificac
 
 Keep a compatibility wrapper only for reading old decisions; all new writes use the new signature.
 
-- [ ] **Step 4: Update service and UI types**
+- [x] **Step 4: Update service and UI types**
 
 `TenderDocumentAnalysis` must require `run_id`, `snapshot_id`, `producer`, `method`, `status`, `current`, and `critical_open_count`. Submit `analysis_run_id: analysis.run_id`; disable both decision buttons if the run is absent, failed or stale, and disable GO when critical count is positive.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 ```bash
 node tests/tender-analysis-go-gate-pglite.integration.test.mjs
@@ -423,7 +423,7 @@ node tests/tender-go-no-go-pglite.integration.test.mjs
 
 Expected: all pass, including legacy-row reads.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add supabase/migrations/025_tender_analysis_foundation.sql tender-go-no-go-rpc.js src/tenders/types.ts src/tenders/components/TenderGoNoGoDecisionPanel.tsx tests/tender-analysis-go-gate-pglite.integration.test.mjs tests/tender-go-no-go-*.test.mjs
@@ -444,7 +444,7 @@ git commit -m "fix(tenders): require current authenticated analysis for decision
 - Consumes `TenderDocumentAnalysis` from Task 5.
 - Produces visible sections: recommendation, vigencia/method, strengths, weaknesses/blockers, open questions, unverified, next action, and collapsed `Cómo funciona`.
 
-- [ ] **Step 1: Write failing static UI tests**
+- [x] **Step 1: Write failing static UI tests**
 
 Assert presence of:
 
@@ -456,13 +456,13 @@ assert.doesNotMatch(main, /const favorable = .*\/GO\//);
 
 Also assert exact unfavorable states are checked before any positive GO state.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `node tests/tender-decision-brief-ui.test.mjs`
 
 Expected: FAIL on missing decision-oriented labels and legacy “Dictamen”.
 
-- [ ] **Step 3: Implement the decision brief**
+- [x] **Step 3: Implement the decision brief**
 
 Use semantic sections and a `<details><summary>Cómo funciona</summary>…</details>`. Map legacy rules output conservatively:
 
@@ -476,14 +476,14 @@ const methodLabel = analysis.producer === 'AGT-002' ? 'Análisis AGT-002' : anal
 
 Do not add the clarification textbox in this task; it remains behind the approved intelligent-engine activation gate.
 
-- [ ] **Step 4: Fix exact status tones**
+- [x] **Step 4: Fix exact status tones**
 
 ```ts
 const unfavorable = new Set(['no_go', 'cerrada_no_go', 'no_adjudicada']);
 const tone = unfavorable.has(normalizedStatus) ? 'red' : normalizedStatus === 'go' || normalizedStatus === 'adjudicada' ? 'green' : 'amber';
 ```
 
-- [ ] **Step 5: Run and commit**
+- [x] **Step 5: Run and commit**
 
 ```bash
 node tests/tender-decision-brief-ui.test.mjs
@@ -511,7 +511,7 @@ git commit -m "feat(tenders): present documentary decision brief"
 - Produces `createHermesTenderAnalysisEngine({ transport, baseUrl, apiKey, provider, model, policyVersion, timeoutMs, budget })`.
 - Production transport uses Hermes API Server `POST /v1/chat/completions`; test transport is injected and performs no network call.
 
-- [ ] **Step 1: Write failing domain and transport tests**
+- [x] **Step 1: Write failing domain and transport tests**
 
 Cover all of the following:
 
@@ -536,13 +536,13 @@ The injected transport test must prove:
 - raw provider errors are sanitized;
 - no production module imports the test fixture.
 
-- [ ] **Step 2: Run and verify RED**
+- [x] **Step 2: Run and verify RED**
 
 Run: `node tests/hermes-interim-tender-analysis.test.mjs`
 
 Expected: FAIL with missing `tender-analysis-domain.js` or `hermes-tender-analysis-adapter.js`.
 
-- [ ] **Step 3: Implement the common domain validator and selector**
+- [x] **Step 3: Implement the common domain validator and selector**
 
 ```js
 const PRODUCER_METHOD = new Map([
@@ -561,7 +561,7 @@ export function validateTenderAnalysisResult(value) {
 
 `agt002-tender-adapter.js` maps an institutional AGT-002 envelope to this domain without changing its producer. No adapter may relabel Hermes output as AGT-002.
 
-- [ ] **Step 4: Implement the Hermes API Server adapter with injected transport**
+- [x] **Step 4: Implement the Hermes API Server adapter with injected transport**
 
 The production request shape is:
 
@@ -587,7 +587,7 @@ Requirements:
 - never retry schema/policy/budget failures;
 - return safe errors without response bodies or credentials.
 
-- [ ] **Step 5: Add a deployment-readiness guard and runbook**
+- [x] **Step 5: Add a deployment-readiness guard and runbook**
 
 The engine remains unavailable unless all variables exist and the selector explicitly says `hermes_interim`:
 
@@ -603,7 +603,7 @@ HERMES_INTERIM_MAX_COST_USD=[approved]
 
 The runbook must require a dedicated Hermes profile `psi-licitaciones-interim`, API Server bearer authentication, loopback/private binding, no browser CORS, stateless calls, fresh analysis context, and all operational toolsets disabled. It must document verification via authenticated `/v1/toolsets`, `/v1/capabilities`, and `/health/detailed`. Do not create the profile, store a secret, restart the gateway or activate the variables in this task.
 
-- [ ] **Step 6: Run and commit**
+- [x] **Step 6: Run and commit**
 
 ```bash
 node tests/hermes-interim-tender-analysis.test.mjs
@@ -627,7 +627,7 @@ Expected: tests/build PASS; no network call, profile mutation, secret write, gat
 **Interfaces:**
 - Produces a reproducible PASS/FAIL record; does not deploy or mutate production.
 
-- [ ] **Step 1: Verify v1 immutability**
+- [x] **Step 1: Verify v1 immutability**
 
 Run the literal SHA-256 test from Task 1 and:
 
@@ -637,7 +637,7 @@ git diff c531bdb -- contracts/agents/AGT-002/v1
 
 Expected: no output.
 
-- [ ] **Step 2: Run focused suites**
+- [x] **Step 2: Run focused suites**
 
 ```bash
 node tests/agt002-tender-analysis-contract.test.mjs
@@ -655,7 +655,7 @@ node tests/tender-go-no-go-pglite.integration.test.mjs
 
 Expected: every command exits 0 and prints `passed`.
 
-- [ ] **Step 3: Run global gates**
+- [x] **Step 3: Run global gates**
 
 ```bash
 npm run check:backend-parity
@@ -667,11 +667,11 @@ git status --short
 
 Expected: parity PASS, build PASS, all test scripts PASS, no whitespace errors, only the verification evidence file modified before final commit.
 
-- [ ] **Step 4: Record evidence**
+- [x] **Step 4: Record evidence**
 
 The evidence document must list commit range, commands, exact exit status, migrations not applied remotely, Hermes transport and AGT-002 runtime not called, production not deployed, and residual gates: Hermes provider/model/data-region/budget/profile activation plus institutional AGT-002 v2 approval and technical identity.
 
-- [ ] **Step 5: Request code review and commit closeout**
+- [x] **Step 5: Request code review and commit closeout**
 
 Run the requesting-code-review workflow, fix only findings within this plan, rerun affected tests, then:
 
