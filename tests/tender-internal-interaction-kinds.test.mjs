@@ -14,10 +14,10 @@ function parseInteractionJson(notes) {
   try { return JSON.parse(notes || '{}'); } catch { return null; }
 }
 
-function loadPublicInteractionGuard(source, path) {
-  const implementation = source.match(/const RESERVED_TENDER_INTERACTION_KINDS = new Set\(\[[\s\S]*?\]\);\nfunction assertPublicInteractionPayload\(notes\) \{[\s\S]*?\n\}/);
-  assert.ok(implementation, `${path} must define the reserved tender interaction guard`);
-  return new Function('parseInteractionJson', `${implementation[0]}\nreturn assertPublicInteractionPayload;`)(parseInteractionJson);
+function loadPublicInteractionPreparation(source, path) {
+  const implementation = source.match(/const RESERVED_TENDER_INTERACTION_KINDS = new Set\([\s\S]*?\);\nfunction assertPublicInteractionPayload\(notes\) \{[\s\S]*?\n\}\nfunction preparePublicInteractionNotes\(notes\) \{[\s\S]*?\n\}/);
+  assert.ok(implementation, `${path} must define the public interaction note preparation helper`);
+  return new Function('parseInteractionJson', `${implementation[0]}\nreturn preparePublicInteractionNotes;`)(parseInteractionJson);
 }
 
 function routeBody(source, route) {
@@ -30,28 +30,51 @@ function routeBody(source, route) {
 
 for (const path of backendPaths) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-  const assertPublicInteractionPayload = loadPublicInteractionGuard(source, path);
+  const preparePublicInteractionNotes = loadPublicInteractionPreparation(source, path);
+  const helperStart = source.indexOf('function preparePublicInteractionNotes(notes) {');
+  const helperEnd = source.indexOf('\n}\nfunction normalizeDocumentType', helperStart);
+  const helperBody = source.slice(helperStart, helperEnd + 2);
+  assert.ok(helperBody.indexOf('assertPublicInteractionPayload(notes);') < helperBody.indexOf('JSON.stringify(notes)'), `${path} must guard raw notes before serializing object notes`);
 
   for (const kind of reservedKinds) {
-    assert.throws(
-      () => assertPublicInteractionPayload(JSON.stringify({ kind })),
-      (error) => error?.status === 403 && /ruta interna autorizada/i.test(error.message),
-      `${path} must reject ${kind} from a generic interaction payload`,
-    );
+    for (const notes of [JSON.stringify({ kind }), { kind }]) {
+      assert.throws(
+        () => preparePublicInteractionNotes(notes),
+        (error) => error?.status === 403 && /ruta interna autorizada/i.test(error.message),
+        `${path} must reject ${kind} from generic interaction notes in ${typeof notes} form`,
+      );
+    }
   }
 
-  assert.doesNotThrow(() => assertPublicInteractionPayload('Seguimiento comercial ordinario.'), `${path} must preserve ordinary seguimiento notes`);
-  assert.doesNotThrow(() => assertPublicInteractionPayload('{not valid JSON'), `${path} must preserve malformed user text that is not an internal object`);
-  assert.doesNotThrow(() => assertPublicInteractionPayload(JSON.stringify({ kind: 'seguimiento', note: 'Llamar mañana.' })), `${path} must preserve non-reserved structured notes`);
+  assert.equal(
+    preparePublicInteractionNotes({ kind: 'seguimiento', note: 'Llamar mañana.' }),
+    JSON.stringify({ kind: 'seguimiento', note: 'Llamar mañana.' }),
+    `${path} must serialize non-reserved structured notes after guarding their raw value`,
+  );
+  assert.equal(preparePublicInteractionNotes('  Seguimiento comercial ordinario.  '), 'Seguimiento comercial ordinario.', `${path} must preserve ordinary seguimiento notes`);
+  assert.equal(preparePublicInteractionNotes('  {not valid JSON  '), '{not valid JSON', `${path} must preserve malformed user text that is not an internal object`);
+  assert.throws(() => preparePublicInteractionNotes('   '), /nota del seguimiento es obligatoria/i, `${path} must require nonempty notes`);
 
   for (const route of ['/api/opportunities/:id/interactions', '/api/opportunity-interactions']) {
     const body = routeBody(source, route);
-    assert.match(body, /const notes = String\(req\.body\.notes \|\| ''\)\.trim\(\);[\s\S]*?assertPublicInteractionPayload\(notes\);[\s\S]*?psi_sales_interactions'\)\.insert\(row\)/, `${path} must guard ${route} before its generic insert`);
+    const prepareCall = body.indexOf('const notes = preparePublicInteractionNotes(req.body.notes);');
+    const insert = body.indexOf("psi_sales_interactions').insert(row)");
+    assert.ok(prepareCall >= 0, `${path} must call preparePublicInteractionNotes directly with raw req.body.notes in ${route}`);
+    assert.ok(insert >= 0 && prepareCall < insert, `${path} must prepare generic ${route} notes before its insert`);
+    assert.doesNotMatch(body, /String\(req\.body\.notes/, `${path} must not stringify req.body.notes before the generic ${route} guard`);
   }
+
+  let inserts = 0;
+  assert.throws(() => {
+    const notes = preparePublicInteractionNotes({ kind: reservedKinds[0] });
+    inserts += 1;
+    return notes;
+  }, (error) => error?.status === 403, `${path} must fail preparation before a generic insert can execute`);
+  assert.equal(inserts, 0, `${path} must prevent a reserved object payload from reaching a generic insert`);
 
   for (const route of ['/api/tender-documents-upload', '/api/tender-documents-analyze']) {
     const body = routeBody(source, route);
-    assert.doesNotMatch(body, /assertPublicInteractionPayload/, `${path} must leave authorized ${route} writes available`);
+    assert.doesNotMatch(body, /assertPublicInteractionPayload|preparePublicInteractionNotes/, `${path} must leave authorized ${route} writes available`);
   }
 }
 
