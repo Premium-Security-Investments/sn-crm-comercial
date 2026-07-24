@@ -16,7 +16,7 @@ export type TenderGoNoGoDecisionPanelProps = {
 
 const EMPTY_PAYLOAD: TenderGoNoGoPayload = { decision: null, history: [], preparation: null };
 const date = (value?: string | null) => value ? new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : 'Sin fecha';
-const decisionLabel = (value?: string | null) => value === 'go' ? 'GO autorizado' : value === 'no_go' ? 'NO GO registrado' : 'Pendiente de decisión';
+const decisionLabel = (value?: string | null) => value === 'go' ? 'GO registrado' : value === 'no_go' ? 'NO GO registrado' : 'Pendiente de decisión';
 
 export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, analysis, currentProfile, request, onChanged }: TenderGoNoGoDecisionPanelProps) {
   const [payload, setPayload] = useState<TenderGoNoGoPayload>(EMPTY_PAYLOAD);
@@ -36,7 +36,6 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
   const allowed = canApproveTenderGoNoGo(currentProfile);
   const decisionGate = tenderDecisionGate(analysis);
   const recommendation = tenderRecommendationLabel(analysis?.recommendation);
-  const risks = useMemo(() => [analysis?.risk, ...(analysis?.findings || []), ...(analysis?.commercial_fit?.concerns || [])].filter((item): item is string => Boolean(item && item.trim())), [analysis]);
   const analysisWarnings = useMemo(() => {
     const warnings: string[] = [];
     if (!analysis) warnings.push('El análisis no está disponible. La decisión humana autorizada permanece habilitada.');
@@ -173,7 +172,7 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
       restoreFocus();
       setSyncPending(true);
       setBusy(false);
-      setStatus(submittedDecision === 'go' ? 'GO autorizado y expediente de oferta actualizado.' : 'NO GO registrado; el expediente queda en solo lectura.');
+      setStatus(submittedDecision === 'go' ? 'GO registrado y expediente de oferta actualizado.' : 'NO GO registrado; el expediente queda en solo lectura.');
       const reloaded = await load(true, true);
       if (!reloaded) {
         setStatus('La decisión ya está registrada; no fue posible actualizar la vista. Puede reintentar sin duplicar la decisión.');
@@ -200,15 +199,15 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
       <div className="tender-go-no-go-status"><small>Decisión vigente</small><strong>{loading ? 'Cargando…' : decisionLabel(current?.decision)}</strong><span>{current ? `${current.psi_sales_profiles?.full_name || current.decided_by} · ${date(current.decided_at)}` : 'Sin decisión humana registrada'}</span></div>
     </header>
     <div className="tender-go-no-go-grid">
-      <article><small>Recomendación del sistema</small><strong>{recommendation}</strong><p>{analysis?.summary || 'La recomendación no está disponible; la persona autorizada conserva la decisión.'}</p></article>
+      <article><small>Recomendación del sistema</small><strong>{recommendation}</strong></article>
       <article><small>Decisión humana</small><strong>{decisionLabel(current?.decision)}</strong><p>{current?.justification || 'Sin comentario humano.'}</p>{current && <span>Actor: {current.psi_sales_profiles?.full_name || current.decided_by} · {date(current.decided_at)}</span>}</article>
     </div>
-    <div className="tender-go-no-go-risks"><strong>Riesgos y hallazgos relevantes</strong>{risks.length ? <ul>{risks.slice(0, 6).map((risk, index) => <li key={`${risk}-${index}`}>{risk}</li>)}</ul> : <p>Sin riesgos adicionales reportados por el análisis vigente.</p>}</div>
+
     {analysisWarnings.length > 0 && <div className="notice" role="alert"><strong>Advertencias del análisis</strong><ul>{analysisWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul><p>Estas advertencias no autorizan ni bloquean la decisión humana.</p></div>}
     {status && <div className="notice" role="status">{status}</div>}
     {syncPending && <div className="tender-go-no-go-actions"><button type="button" className="secondary" onClick={() => void reconcile()} disabled={busy}>{busy ? 'Actualizando…' : 'Reintentar actualización'}</button></div>}
     {allowed ? <div className="tender-go-no-go-actions">
-      <button type="button" onClick={event => open('go', event.currentTarget)} disabled={!decisionGate.canGo || busy || loading || syncPending}>Autorizar GO</button>
+      <button type="button" onClick={event => open('go', event.currentTarget)} disabled={!decisionGate.canGo || busy || loading || syncPending}>Registrar GO</button>
       <button type="button" className="danger" onClick={event => open('no_go', event.currentTarget)} disabled={!decisionGate.canNoGo || busy || loading || syncPending}>Registrar NO GO</button>
       <p className="muted">AGT-002 recomienda; la persona autorizada conserva la autoridad absoluta para GO o NO GO.</p>
     </div> : <p className="muted">Solo Admin, Gerencia o Dirección de Licitaciones con permiso pueden registrar una decisión. La decisión vigente permanece disponible en solo lectura.</p>}
@@ -216,7 +215,7 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
     {selectedDecision && <div className="tender-go-no-go-backdrop" role="presentation" onMouseDown={close}>
       <div className="tender-go-no-go-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="tender-go-no-go-confirm-title" onMouseDown={event => event.stopPropagation()}>
         <header><h4 id="tender-go-no-go-confirm-title" tabIndex={-1} ref={initialFocusRef}>Confirmar {selectedDecision === 'go' ? 'GO' : 'NO GO'}</h4><button type="button" className="secondary" onClick={close} disabled={busy} aria-label="Cerrar confirmación">Cerrar</button></header>
-        <dl><dt>Oportunidad</dt><dd>{opportunityName}</dd><dt>Referencia</dt><dd>{opportunityId}</dd><dt>Recomendación del sistema</dt><dd>{recommendation}</dd><dt>Riesgo</dt><dd>{risks[0] || analysis?.risk || 'No reportado'}</dd><dt>Decisión elegida</dt><dd>{selectedDecision === 'go' ? 'Autorizar GO' : 'Registrar NO GO'}</dd></dl>
+        <dl><dt>Oportunidad</dt><dd>{opportunityName}</dd><dt>Referencia</dt><dd>{opportunityId}</dd><dt>Recomendación del sistema</dt><dd>{recommendation}</dd><dt>Decisión elegida</dt><dd>{selectedDecision === 'go' ? 'Registrar GO' : 'Registrar NO GO'}</dd></dl>
         {analysisWarnings.length > 0 && <div className="notice" role="alert"><ul>{analysisWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul></div>}
         <label>Comentario opcional<textarea value={justification} onChange={event => setJustification(event.target.value)} disabled={busy} placeholder="Puede documentar brevemente el criterio de la decisión." /></label>
         <footer><button type="button" className="secondary" onClick={close} disabled={busy}>Cancelar</button><button type="button" className={selectedDecision === 'no_go' ? 'danger' : ''} onClick={() => void submit()} disabled={busy || syncPending}>{busy ? 'Registrando…' : 'Confirmar decisión'}</button></footer>

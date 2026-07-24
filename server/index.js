@@ -2015,7 +2015,7 @@ function buildTenderGoNoGoVerdict(opportunity, documents, context = {}) {
   ];
   const commercial_fit = {
     status: hasCoreFit ? 'Encaje detectado' : 'Encaje débil',
-    positives: positiveSignals.length ? positiveSignals.map(s => `Objeto/documentos mencionan ${s}.`) : ['No se detectaron términos fuertes de seguridad, vigilancia o tecnología.'],
+    positives: positiveSignals.length ? [`El objeto y los documentos incluyen ${positiveSignals.join(', ')}; esto indica un encaje preliminar con servicios de seguridad que debe confirmarse contra las capacidades y requisitos de SN.`] : ['No se encontró evidencia textual suficiente para establecer un encaje preliminar con servicios de seguridad.'],
     concerns: [!hasCoreFit && 'Objeto podría estar fuera del core SN.', hasAdenda && 'Existe adenda: usar versión vigente antes de decidir.'].filter(Boolean)
   };
   const company_profile_crosscheck = {
@@ -2031,7 +2031,7 @@ function buildTenderGoNoGoVerdict(opportunity, documents, context = {}) {
     { front: 'Experiencia', status: normalized.includes('experiencia') || finds.smmlv.length ? 'Validar contra RUP' : 'Confirmar', action: finds.smmlv.length ? `Revisar equivalencia de ${finds.smmlv.join(' / ')} en contratos SN.` : 'Confirmar contratos similares exigidos.' },
     { front: 'Formatos y pólizas', status: hasFormats ? 'Cargados/parcial' : 'Pendiente', action: 'Listar formatos obligatorios, póliza de seriedad y anexos firmables.' }
   ];
-  const next_action = finalDecision.startsWith('DESCARTAR') ? 'Marcar como descartada si no hay señal comercial adicional.' : blockers.length ? 'Completar documentos críticos y regenerar dictamen.' : 'Enviar a revisión de licitaciones con pliego, anexos y cruce RUP/financiero.';
+  const next_action = finalDecision.startsWith('DESCARTAR') ? 'Marcar como descartada si no hay señal comercial adicional.' : blockers.length ? 'Completar documentos críticos y actualizar la conclusión preliminar.' : 'Enviar a revisión de licitaciones con pliego, anexos y cruce RUP/financiero.';
   const committee_summary = `GO / NO GO SN — ${finalDecision}. ${opportunity.company_name}: ${hasCoreFit ? 'encaje preliminar con servicios SN' : 'encaje comercial débil'}; riesgo ${risk}. ${blockers.length ? `Bloqueadores: ${blockers.join(' ')}` : 'Base documental mínima disponible.'} Siguiente acción: ${next_action}`;
   return { decision: finalDecision, risk, executive_semaphore, commercial_fit, company_profile_crosscheck, habilitating_requirements, blockers, next_action, committee_summary };
 }
@@ -2048,11 +2048,11 @@ function buildTenderDocumentAnalysis(opportunity, documents, companyProfile = {}
     years: Array.from(text.matchAll(/(\d+)\s*años?/gi)).slice(0, 5).map(m => m[0]),
   };
   const signals = [
-    normalized.includes('coordinador') ? 'Menciona coordinador / supervisor operativo.' : 'No se detectó coordinador en el texto extraído.',
-    normalized.includes('capital de trabajo') ? 'Menciona capital de trabajo.' : 'Validar capital de trabajo en documentos financieros.',
-    normalized.includes('rup') ? 'Menciona RUP / experiencia habilitante.' : 'No se detectó RUP en el texto extraído.',
-    normalized.includes('cctv') || normalized.includes('videovigilancia') ? 'Incluye componente CCTV / videovigilancia.' : 'No se detectó componente CCTV explícito.',
-    normalized.includes('poliza') || normalized.includes('póliza') ? 'Menciona pólizas / seriedad de oferta.' : 'Validar pólizas requeridas.'
+    normalized.includes('coordinador') ? 'El alcance documental incluye coordinación o supervisión operativa; falta validar perfiles y dedicación exigidos.' : 'No se encontró evidencia textual suficiente para confirmar una función de coordinación.',
+    normalized.includes('capital de trabajo') ? 'El análisis detectó una referencia al capital de trabajo; falta validar el valor exigido y el soporte financiero de SN.' : 'El capital de trabajo exigido continúa pendiente de verificación documental.',
+    normalized.includes('rup') ? 'El análisis detectó una referencia al RUP o a experiencia habilitante; falta validar su vigencia y equivalencia.' : 'La experiencia habilitante y el RUP continúan pendientes de verificación documental.',
+    normalized.includes('cctv') || normalized.includes('videovigilancia') ? 'El alcance documental incluye videovigilancia; falta confirmar los requisitos técnicos y la capacidad aplicable de SN.' : 'No se encontró evidencia textual suficiente para confirmar un componente de videovigilancia.',
+    normalized.includes('poliza') || normalized.includes('póliza') ? 'El análisis detectó una referencia a pólizas o seriedad de oferta; falta confirmar tipo, cobertura, cuantía y vigencia.' : 'Las pólizas requeridas continúan pendientes de verificación documental.'
   ];
   const missingCritical = [!hasPliego && 'pliego', !hasTechnical && 'anexo técnico'].filter(Boolean);
   const goNoGo = buildTenderGoNoGoVerdict(opportunity, documents, { text, normalized, hasPliego, hasTechnical, hasAdenda, hasFormats, finds, companyProfile });
@@ -2453,7 +2453,7 @@ app.post('/api/tender-offer-status', async (req, res) => {
 app.post('/api/tender-offer-preparation-approve', async (req, res) => {
   try {
     await getAuthContext(req);
-    res.status(410).json({ error: 'Use Autorizar GO para iniciar la preparación de oferta.' });
+    res.status(410).json({ error: 'Use Registrar GO para iniciar la preparación de oferta.' });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

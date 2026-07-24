@@ -18,7 +18,7 @@ const main = read('src/main.tsx');
 assert.match(panel, /opportunityName/);
 assert.match(panel, /<dt>Oportunidad<\/dt><dd>\{opportunityName\}<\/dd>/);
 
-for (const text of ['Recomendación del sistema', 'Decisión humana', 'Autorizar GO', 'Registrar NO GO', 'Comentario opcional']) {
+for (const text of ['Recomendación del sistema', 'Decisión humana', 'Registrar GO', 'Registrar NO GO', 'Comentario opcional']) {
   assert.match(panel, new RegExp(text), `El panel debe mostrar ${text}.`);
 }
 assert.match(panel, /role="dialog"|<dialog/, 'La decisión debe pedir confirmación accesible.');
@@ -28,7 +28,9 @@ assert.match(panel, /await onChanged\s*\(\)/, 'Al guardar debe notificar al deta
 for (const warning of ['recomendación contraria', 'preguntas críticas', 'obsoleto', 'falló', 'no está disponible']) assert.match(panel, new RegExp(warning, 'i'), `La UI debe advertir: ${warning}.`);
 assert.doesNotMatch(gateSource, /analysis\?\.status\s*===\s*'completed'|critical_open_count[\s\S]*?<=\s*0/, 'El estado del análisis y las preguntas críticas no pueden convertirse en gates humanos.');
 assert.match(panel, /history/, 'La UI debe mostrar el historial inmutable.');
-assert.match(panel, /findings|concerns/, 'La UI debe exponer hallazgos o alertas relevantes.');
+assert.doesNotMatch(panel, /tender-go-no-go-risks|Riesgos y hallazgos relevantes/, 'El cierre humano no debe repetir la lista de riesgos ya documentada en el brief.');
+assert.doesNotMatch(panel, /analysis\?\.summary/, 'El cierre humano no debe repetir el resumen completo del brief documental.');
+assert.doesNotMatch(panel, /analysis\?\.questions/, 'Dudas abiertas debe vivir una sola vez en el brief documental.');
 assert.match(api, /loadTenderGoNoGoDecision[\s\S]*encodeURIComponent\(opportunityId\)/, 'GET debe codificar el ID.');
 assert.match(api, /recordTenderGoNoGoDecision[\s\S]*\/api\/tender-go-no-go-decision[\s\S]*method:\s*'POST'[\s\S]*JSON\.stringify\(input\)/, 'POST debe enviar el input JSON formal.');
 assert.match(types, /TenderGoNoGoDecisionInput/, 'Deben existir tipos de input GO/NO GO.');
@@ -42,7 +44,8 @@ assert.match(main, /<TenderGoNoGoDecisionPanel[\s\S]*?opportunityId=\{o\.id\}[\s
 assert.match(main, /key=\{`tender-preparation-\$\{o\.id\}-\$\{tenderRevision\}`\}/, 'La preparación debe recargar después de una decisión formal y aislarse por oportunidad.');
 assert.doesNotMatch(main, />Aprobar preparación de oferta</, 'No puede quedar el control legacy de preparación.');
 assert.doesNotMatch(main, /\/api\/tender-offer-preparation-approve/, 'La UI no puede invocar la aprobación legacy.');
-assert.match(main, /Autorizar GO/, 'Sin preparación la UI debe dirigir a la decisión formal GO.');
+assert.match(main, /Registrar GO/, 'Sin preparación la UI debe dirigir al registro formal GO.');
+assert.doesNotMatch(panel, /Autorizar GO|GO autorizado/, 'La experiencia visible debe llamar Registrar GO sin cambiar los permisos backend.');
 assert.match(panel, /const submittedDecision = selectedDecision/, 'El submit debe capturar la decisión antes de limpiar el modal.');
 assert.match(panel, /setSelectedDecision\(null\);\s*setJustification\(''\);[\s\S]*?await load\(true, true\)/, 'Un éxito debe cerrar explícitamente el modal antes de sincronizar y conservar la vista optimista.');
 assert.match(panel, /let persistedSuccessfully = false[\s\S]*?persistedSuccessfully = true/, 'El flujo debe distinguir persistencia exitosa de sincronización posterior.');

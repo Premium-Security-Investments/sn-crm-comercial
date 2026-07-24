@@ -26,12 +26,12 @@ for (const file of [server, api]) {
   const alias = file.match(/app\.post\('\/api\/tender-offer-preparation-approve'[\s\S]*?\n}\);/);
   assert(alias, 'La ruta anterior debe permanecer como alias controlado durante la transición.');
   assert(alias[0].includes('await getAuthContext(req);'), 'El alias anterior debe autenticar antes de responder.');
-  assert(alias[0].includes("res.status(410).json({ error: 'Use Autorizar GO para iniciar la preparación de oferta.' });"), 'El alias anterior debe dirigir al flujo GO autorizado.');
+  assert(alias[0].includes("res.status(410).json({ error: 'Use Registrar GO para iniciar la preparación de oferta.' });"), 'El alias anterior debe dirigir al flujo de registro GO.');
   assert(!/requireDb|\.from\(|\.rpc\(|storage/.test(alias[0]), 'El alias anterior no puede escribir ni acceder a BD/storage.');
 }
 
 assert(src.includes('Expediente de Oferta'), 'UI debe mostrar el Expediente de Oferta.');
-assert(src.includes('Autorizar GO'), 'Sin expediente la UI debe dirigir a la autorización formal GO.');
+assert(src.includes('Registrar GO'), 'Sin expediente la UI debe dirigir al registro formal GO.');
 assert(!src.includes('Aprobar preparación de oferta'), 'La UI no puede conservar el control legacy de preparación.');
 assert(!src.includes('/api/tender-offer-preparation-approve'), 'La UI no puede invocar la ruta legacy de preparación.');
 assert(src.includes('Documentos genéricos automáticos'), 'UI debe mostrar documentos genéricos automáticos.');

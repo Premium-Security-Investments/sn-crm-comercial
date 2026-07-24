@@ -297,7 +297,7 @@ for (const path of ['../server/index.js', '../api/[...path].js']) {
   const alias = source.match(/app\.post\('\/api\/tender-offer-preparation-approve'[\s\S]*?\n}\);/);
   assert.ok(alias, 'legacy alias must remain explicit');
   assert.match(alias[0], /getAuthContext\(req\)/, 'legacy alias still authenticates');
-  assert.match(alias[0], /status\(410\)\.json\(\{ error: 'Use Autorizar GO para iniciar la preparación de oferta\.' \}\)/);
+  assert.match(alias[0], /status\(410\)\.json\(\{ error: 'Use Registrar GO para iniciar la preparación de oferta\.' \}\)/);
   assert.doesNotMatch(alias[0], /requireDb|\.from\(|\.rpc\(|storage/, 'legacy alias must not access database or storage');
   const noteRoute = source.match(/app\.post\('\/api\/tender-offer-preparation-note'[\s\S]*?\n}\);/);
   assert.ok(noteRoute, 'preparation-note route must remain available');

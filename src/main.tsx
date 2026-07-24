@@ -10,7 +10,7 @@ import { SiioDashboard } from './siio/SiioDashboard';
 import { TendersModule } from './tenders/TendersModule';
 import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDecisionPanel';
 import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
-import { normalizeTenderEvidence, tenderAnalysisMethodLabel, tenderDecisionStatusTone } from './tenders/tenderDecisionBrief';
+import { normalizeTenderEvidence, tenderAnalysisMethodLabel, tenderDecisionStatusTone, tenderNextAction } from './tenders/tenderDecisionBrief';
 import type { TenderModuleView } from './tenders/types';
 import type { TenderDocumentAnalysis as TenderDocumentAnalysisShared } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
@@ -890,7 +890,7 @@ function TenderDocumentReviewPanel({ opportunity, onReload, onAnalysisChanged, f
           <section><h4>Debilidades y bloqueadores</h4><TenderEvidenceList items={weaknesses} empty="Sin debilidades o bloqueadores documentales registrados."/></section>
           <section><h4>Dudas abiertas</h4><TenderEvidenceList items={questions} empty="Sin dudas abiertas registradas."/></section>
           <section><h4>Información no verificada</h4><TenderEvidenceList items={unverified} empty="Sin información no verificada registrada."/></section>
-          <section className="tender-decision-next-action"><h4>Siguiente acción</h4><p>{analysis.next_action || 'Sin siguiente acción documentada; revisar el expediente con Licitaciones.'}</p></section>
+          <section className="tender-decision-next-action"><h4>Siguiente acción</h4><p>{tenderNextAction(analysis.next_action) || 'Sin siguiente acción documentada; revisar el expediente con Licitaciones.'}</p></section>
         </div>
         <details className="tender-decision-brief-help"><summary>Cómo funciona</summary><p>Esta conclusión preliminar organiza únicamente la evidencia disponible. No autoriza GO / NO GO; una persona con permiso formal debe tomar esa decisión.</p></details>
       </section>}
@@ -923,7 +923,7 @@ function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged }:
   return <Panel title="Expediente de Oferta">
     {authorizedPreparation ? <div className="tender-document-panel">
       <div className="document-review-head">
-        <div><span className="eyebrow">Preparación después del GO</span><h3>Expediente de Oferta</h3><p>La autorización formal GO genera automáticamente el paquete inicial, documentos genéricos y pendientes humanos. El asistente interviene donde falte criterio, archivos o aprobación.</p></div>
+        <div><span className="eyebrow">Preparación después de registrar GO</span><h3>Expediente de Oferta</h3><p>El registro formal GO genera automáticamente el paquete inicial, documentos genéricos y pendientes humanos. El asistente interviene donde falte criterio, archivos o aprobación.</p></div>
         <div className="document-status-card"><small>Estado expediente</small><Badge tone="green">Preparación iniciada</Badge><strong>{authorizedPreparation.checklist_summary?.total || 0} ítems</strong></div>
         <div className="document-risk-meter"><small>Carpeta SharePoint / OneDrive</small><strong>{authorizedPreparation.sharepoint_folder?.status || 'Pendiente'}</strong><span>{authorizedPreparation.sharepoint_folder?.root_name || 'Se creará al configurar integración Graph'}</span></div>
       </div>
@@ -938,7 +938,7 @@ function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged }:
         <section className="document-analysis-card"><small>Notas para el asistente</small><ul>{(authorizedPreparation.assistant_notes || []).map(item => <li key={item}>{item}</li>)}</ul>{payload.notes?.length ? <div className="timeline">{payload.notes.slice(-4).map((n, idx) => <div className="event" key={`${n.created_at}-${idx}`}><strong>{n.status || 'nota'}</strong><span>{fmtDate(n.created_at)} · {n.created_by_name || n.created_by || 'Usuario'}</span><p>{n.note}</p></div>)}</div> : null}</section>
         <section className="document-analysis-card"><small>Informar qué necesitamos para seguir adelante</small><form onSubmit={saveAssistantNote} className="form"><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Ej: necesitamos que contabilidad confirme capital de trabajo y cargue estados financieros 2025…"/><button disabled={busy || !note.trim()}>Guardar nota para el asistente</button></form></section>
       </div>
-    </div> : <div className="document-empty-state"><strong>Preparación pendiente de autorización</strong><span>Autorizar GO en la decisión formal para crear el expediente, documentos genéricos automáticos y pendientes humanos. Hasta entonces este panel es de solo lectura.</span>{statusText && <div className="notice">{statusText}</div>}</div>}
+    </div> : <div className="document-empty-state"><strong>Preparación pendiente de registrar GO</strong><span>Registrar GO en la decisión formal para crear el expediente, documentos genéricos automáticos y pendientes humanos. Hasta entonces este panel es de solo lectura.</span>{statusText && <div className="notice">{statusText}</div>}</div>}
   </Panel>;
 }
 function tenderDocumentTypeLabel(value: string) {

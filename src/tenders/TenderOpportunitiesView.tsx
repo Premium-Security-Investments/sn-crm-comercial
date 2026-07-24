@@ -52,7 +52,7 @@ export function TenderOpportunitiesView({ request, navigate, moduleNavigation }:
     {moduleNavigation}
     {error && <div className="error" role="alert">{error}</div>}
     <label className="field"><span>Filtrar oportunidades</span><select value={filter} onChange={event => { setFilter(event.target.value as TenderOpportunityFilter); setPage(1); }} disabled={loading}>
-      <option value="all">Todas</option><option value="pending_decision">Pendiente de decisión</option><option value="go_authorized">GO autorizado</option><option value="in_preparation">En preparación</option><option value="submitted">Presentadas</option><option value="closed">Cerradas</option>
+      <option value="all">Todas</option><option value="pending_decision">Pendiente de decisión</option><option value="go_authorized">GO registrado</option><option value="in_preparation">En preparación</option><option value="submitted">Presentadas</option><option value="closed">Cerradas</option>
     </select></label>
     {!rows.length ? <div className="notice">No hay expedientes convertidos en esta página.</div> : <div className="tracking-queue">{rows.map(dossier => <article key={dossier.opportunity_id} className="card tracking-row">
       <div className="tracking-row-head"><div><div className="tender-card-kickers"><TenderStatusBadge label={dossier.document_import_status} tone={tone(dossier.document_import_status)} /><TenderStatusBadge label={dossier.risk || 'Riesgo pendiente'} tone={tone(dossier.risk)} /></div><h3>{dossier.entity || 'Oportunidad convertida'}</h3><p>{dossier.title || dossier.opportunity_id}</p></div><TenderStatusBadge label={dossier.tender_offer_status || 'pendiente_decision'} tone={tone(dossier.tender_offer_status)} /></div>

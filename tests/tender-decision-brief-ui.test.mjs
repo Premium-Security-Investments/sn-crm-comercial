@@ -6,6 +6,8 @@ const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 const briefHelperPath = new URL('../src/tenders/tenderDecisionBrief.ts', import.meta.url);
 const briefHelper = readFileSync(briefHelperPath, 'utf8');
+const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
+const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
 const decisionSource = `${main}\n${briefHelper}`;
 const reviewPanel = main.match(/function TenderDocumentReviewPanel[\s\S]*?\n}\nfunction TenderOfferPreparationPanel/)?.[0] || '';
 
@@ -25,6 +27,10 @@ for (const text of [
 }
 
 assert.doesNotMatch(reviewPanel, /Dictamen GO \/ NO GO SN/, 'La revisión no debe presentar un dictamen de GO/NO GO.');
+for (const backend of [server, api]) {
+  assert.doesNotMatch(backend, /Objeto\/documentos mencionan|Menciona coordinador|Menciona capital de trabajo|Menciona RUP|Menciona pólizas/, 'El análisis visible debe expresar conclusiones y pendientes, no listas de palabras detectadas.');
+  assert.match(backend, /encaje preliminar con servicios de seguridad que debe confirmarse/, 'El encaje comercial debe presentarse como conclusión preliminar y verificable.');
+}
 assert.doesNotMatch(main, /const favorable = .*\/GO\//, 'La UI no debe inferir una decisión con una regex favorable.');
 assert.match(main, /const strengths = analysis\?\.strengths \?\? analysis\?\.commercial_fit\?\.positives \?\? \[\]/, 'Fortalezas debe preferir la carga tipada y degradar al legado.');
 assert.match(main, /const weaknesses = analysis\?\.weaknesses \?\? analysis\?\.blockers \?\? analysis\?\.commercial_fit\?\.concerns \?\? \[\]/, 'Debilidades debe mapear bloqueadores y alertas legadas sin inventar evidencia.');
@@ -46,7 +52,7 @@ assert.match(styles, /\.tender-decision-brief/, 'El brief debe tener estilos com
 
 const bundle = buildSync({ entryPoints: [briefHelperPath.pathname], bundle: true, platform: 'node', format: 'esm', write: false });
 const helperUrl = `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].contents).toString('base64')}`;
-const { normalizeTenderEvidence, tenderAnalysisMethodLabel, tenderDecisionStatusTone } = await import(helperUrl);
+const { normalizeTenderEvidence, tenderAnalysisMethodLabel, tenderDecisionStatusTone, tenderNextAction } = await import(helperUrl);
 assert.deepEqual(
   normalizeTenderEvidence([' Evidencia directa ', { text: ' Hallazgo tipado ' }, { detail: 'no usar' }, { text: '   ' }, null]),
   ['Evidencia directa', 'Hallazgo tipado'],
@@ -54,6 +60,16 @@ assert.deepEqual(
 );
 assert.deepEqual(normalizeTenderEvidence([]), [], 'Una lista vacía debe llegar vacía para activar el mensaje honesto de la sección.');
 assert.deepEqual(normalizeTenderEvidence({ text: 'no es lista' }), [], 'Un payload no-array debe fallar cerrado sin renderizar objetos.');
+assert.deepEqual(
+  normalizeTenderEvidence(['capital de trabajo', 'rup', 'señal no catalogada']),
+  [
+    'El análisis detectó una referencia al capital de trabajo; falta validar el valor exigido y el soporte financiero de SN.',
+    'El análisis detectó una referencia al RUP o a experiencia habilitante; falta validar su vigencia y equivalencia.',
+    'señal no catalogada',
+  ],
+  'Las señales conocidas deben convertirse en conclusiones legibles sin alterar conclusiones no catalogadas.',
+);
+assert.equal(tenderNextAction('Completar documentos críticos y regenerar dictamen.'), 'Completar documentos críticos y actualizar la conclusión preliminar.', 'La siguiente acción visible no debe presentar un dictamen.');
 assert.equal(tenderDecisionStatusTone('NO GO'), 'red');
 assert.equal(tenderDecisionStatusTone('GO condicionado'), 'amber');
 assert.equal(tenderDecisionStatusTone('GO'), 'green');
