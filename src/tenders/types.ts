@@ -58,7 +58,19 @@ export type TenderDocumentAnalysis = {
   generated_at: string;
   findings?: string[];
   commercial_fit?: { status?: string; positives?: string[]; concerns?: string[] };
+  strengths?: TenderAnalysisFinding[];
+  weaknesses?: TenderAnalysisFinding[];
+  blockers?: TenderAnalysisFinding[];
+  questions?: TenderAnalysisFinding[];
+  unverified?: TenderAnalysisFinding[];
+  next_action?: string;
   [key: string]: unknown;
+};
+export type TenderAnalysisFinding = string | {
+  id?: string;
+  text?: string;
+  critical?: boolean;
+  evidence_refs?: string[];
 };
 export type TenderGoNoGoDecision = {
   id: string;

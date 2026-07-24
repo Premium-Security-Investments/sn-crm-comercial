@@ -794,6 +794,27 @@ function fileToBase64(file: File) {
     reader.readAsDataURL(file);
   });
 }
+function tenderAnalysisMethodLabel(producer: TenderDocumentAnalysis['producer']) {
+  return producer === 'AGT-002'
+    ? 'Análisis AGT-002'
+    : producer === 'HERMES-INTERIM'
+      ? 'Análisis asistido por Hermes — transitorio'
+      : 'Preanálisis por reglas SIIO';
+}
+function tenderDecisionStatusTone(status: string | null | undefined) {
+  const normalizedStatus = String(status || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const unfavorable = new Set(['no_go', 'cerrada_no_go', 'no_adjudicada']);
+  return unfavorable.has(normalizedStatus) ? 'red' : normalizedStatus === 'go' || normalizedStatus === 'adjudicada' ? 'green' : 'amber';
+}
+function tenderAnalysisFindingText(item: unknown) {
+  if (typeof item === 'string') return item;
+  if (item && typeof item === 'object' && 'text' in item && typeof item.text === 'string') return item.text;
+  return null;
+}
+function TenderEvidenceList({ items, empty }: { items: unknown[]; empty: string }) {
+  const visible = items.map(tenderAnalysisFindingText).filter((item): item is string => !!item);
+  return visible.length ? <ul>{visible.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <p className="muted">{empty}</p>;
+}
 function TenderDocumentReviewPanel({ opportunity, onReload, onAnalysisChanged, focusTargetRef }: { opportunity: Opportunity; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
   const [payload, setPayload] = useState<TenderDocumentsPayload>({ documents: [], analysis: null, analyses: [] });
   const [statusText, setStatusText] = useState('');
@@ -852,6 +873,11 @@ function TenderDocumentReviewPanel({ opportunity, onReload, onAnalysisChanged, f
     } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }
   };
+  const strengths = analysis?.strengths ?? analysis?.commercial_fit?.positives ?? [];
+  const weaknesses = analysis?.weaknesses ?? analysis?.blockers ?? analysis?.commercial_fit?.concerns ?? [];
+  const questions = analysis?.questions ?? [];
+  const unverified = analysis?.unverified ?? analysis?.company_profile_crosscheck?.gaps ?? [];
+  const methodLabel = analysis ? tenderAnalysisMethodLabel(analysis.producer) : 'Preanálisis por reglas SIIO';
   return <div id="tender-document-review" tabIndex={-1} ref={focusTargetRef}><Panel title="Revisión documental" >
     <div className="tender-document-panel">
       <div className="document-review-head">
@@ -870,14 +896,20 @@ function TenderDocumentReviewPanel({ opportunity, onReload, onAnalysisChanged, f
         <Badge tone="blue">{tenderDocumentTypeLabel(doc.document_type)}</Badge>
         <span className="document-current">{doc.current ? 'Vigente' : 'No vigente'}</span>
       </div>)}</div> : <div className="document-empty-state"><strong>Pendiente de documentos</strong><span>Documentos oficiales importados automáticamente al convertir; si falta algo, cargue documentos complementarios.</span></div>}
-      {analysis && <div className="document-analysis-grid">
-        <section className="document-analysis-card"><small>Dictamen GO / NO GO SN · Resumen ejecutivo documental</small><strong>{analysis.recommendation}</strong><p>{analysis.summary}</p>{analysis.executive_semaphore?.length ? <div className="document-matrix"><small>Semáforo ejecutivo</small>{analysis.executive_semaphore.map(item => <div key={`${item.label}-${item.value}`}><Badge tone={item.tone === 'red' ? 'red' : item.tone === 'green' ? 'green' : item.tone === 'blue' ? 'blue' : 'amber'}>{item.label}</Badge><span><strong>{item.value}</strong></span></div>)}</div> : null}</section>
-        <section className="document-analysis-card"><small>Encaje comercial</small><strong>{analysis.commercial_fit?.status || 'Por validar'}</strong>{analysis.commercial_fit?.positives?.length ? <ul>{analysis.commercial_fit.positives.map(item => <li key={item}>{item}</li>)}</ul> : null}{analysis.commercial_fit?.concerns?.length ? <p className="muted">Alertas: {analysis.commercial_fit.concerns.join(' · ')}</p> : null}</section>
-        <section className="document-analysis-card"><small>Cruce ficha/RUP SN</small><strong>{analysis.company_profile_crosscheck?.status || 'Cruce pendiente'}</strong>{analysis.company_profile_crosscheck?.matches?.length ? <ul>{analysis.company_profile_crosscheck.matches.map(item => <li key={item}>{item}</li>)}</ul> : null}{analysis.company_profile_crosscheck?.gaps?.length ? <p className="muted">Pendiente: {analysis.company_profile_crosscheck.gaps.join(' · ')}</p> : null}</section>
-        <section className="document-analysis-card"><small>Requisitos habilitantes</small><div className="document-matrix">{(analysis.habilitating_requirements || []).map(row => <div key={`${row.front}-${row.status}`}><Badge tone={row.status === 'Pendiente' ? 'amber' : 'blue'}>{row.front}</Badge><span><strong>{row.status}</strong> · {row.action}</span></div>)}</div></section>
-        <section className="document-analysis-card"><small>Matriz de cumplimiento</small><div className="document-matrix">{(analysis.matrix || []).map(row => <div key={`${row.category}-${row.status}`}><Badge tone={row.status === 'Pendiente' ? 'amber' : 'blue'}>{row.category}</Badge><span><strong>{row.status}</strong> · {row.detail}</span></div>)}</div></section>
-        <section className="document-analysis-card"><small>Resumen para comité</small><p>{analysis.committee_summary || analysis.summary}</p><small>Siguiente acción recomendada</small><strong>{analysis.next_action || 'Revisar con licitaciones'}</strong><small>Checklist SN</small>{analysis.checklist?.length ? <ul>{analysis.checklist.slice(0, 3).map(item => <li key={item}>{item}</li>)}</ul> : null}<small>Generado: {fmtDate(analysis.generated_at)}</small></section>
-      </div>}
+      {analysis && <section className="tender-decision-brief" aria-label="Conclusión preliminar de licitación">
+        <header className="tender-decision-brief-head">
+          <div><small>Recomendación preliminar</small><strong>{analysis.recommendation || 'Requiere revisión'}</strong><p>{analysis.summary || 'Sin resumen documental disponible.'}</p></div>
+          <div className="tender-decision-brief-status"><Badge tone={tenderDecisionStatusTone(analysis.recommendation)}>{analysis.current ? 'Vigente' : 'Obsoleto'}</Badge><span>{methodLabel}</span><small>{analysis.completed_at ? `Actualizado: ${fmtDate(analysis.completed_at)}` : `Generado: ${fmtDate(analysis.generated_at)}`}</small></div>
+        </header>
+        <div className="tender-decision-brief-grid">
+          <section><h4>Fortalezas</h4><TenderEvidenceList items={strengths} empty="Sin fortalezas documentales registradas."/></section>
+          <section><h4>Debilidades y bloqueadores</h4><TenderEvidenceList items={weaknesses} empty="Sin debilidades o bloqueadores documentales registrados."/></section>
+          <section><h4>Dudas abiertas</h4><TenderEvidenceList items={questions} empty="Sin dudas abiertas registradas."/></section>
+          <section><h4>Información no verificada</h4><TenderEvidenceList items={unverified} empty="Sin información no verificada registrada."/></section>
+          <section className="tender-decision-next-action"><h4>Siguiente acción</h4><p>{analysis.next_action || 'Sin siguiente acción documentada; revisar el expediente con Licitaciones.'}</p></section>
+        </div>
+        <details className="tender-decision-brief-help"><summary>Cómo funciona</summary><p>Esta conclusión preliminar organiza únicamente la evidencia disponible. No autoriza GO / NO GO; una persona con permiso formal debe tomar esa decisión.</p></details>
+      </section>}
     </div>
   </Panel></div>;
 }

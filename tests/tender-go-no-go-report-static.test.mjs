@@ -21,12 +21,10 @@ for (const file of [server, api]) {
   assert(file.includes('buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile)'), 'Análisis debe recibir ficha/RUP en importación/manual.');
 }
 
-assert(src.includes('Dictamen GO / NO GO SN'), 'UI debe presentar el reporte como Dictamen GO / NO GO SN.');
-assert(src.includes('Semáforo ejecutivo'), 'UI debe mostrar semáforo ejecutivo.');
-assert(src.includes('Encaje comercial'), 'UI debe mostrar encaje comercial.');
-assert(src.includes('Cruce ficha/RUP SN'), 'UI debe mostrar cruce contra ficha/RUP.');
-assert(src.includes('Requisitos habilitantes'), 'UI debe mostrar requisitos habilitantes.');
-assert(src.includes('Resumen para comité'), 'UI debe mostrar resumen para comité.');
-assert(src.includes('Siguiente acción recomendada'), 'UI debe mostrar próxima acción recomendada.');
+assert(!src.includes('Dictamen GO / NO GO SN'), 'UI no debe confundir una recomendación asistida con un dictamen humano.');
+for (const label of ['Recomendación preliminar', 'Fortalezas', 'Debilidades y bloqueadores', 'Dudas abiertas', 'Información no verificada', 'Siguiente acción', 'Cómo funciona']) {
+  assert(src.includes(label), `UI debe presentar ${label}.`);
+}
+assert(src.includes('No autoriza GO / NO GO'), 'UI debe explicar que el brief no reemplaza la decisión humana.');
 
 console.log('tender GO/NO GO report static checks passed');
