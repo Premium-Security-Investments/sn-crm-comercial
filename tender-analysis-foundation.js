@@ -18,6 +18,41 @@ function sha256(value) {
   return createHash('sha256').update(JSON.stringify(stable(value))).digest('hex');
 }
 
+function contentSha256(content) {
+  return createHash('sha256').update(content).digest('hex');
+}
+
+function normalizeDocumentContent(value) {
+  return String(value ?? '').replace(/\r\n?/g, '\n');
+}
+
+function stableDocumentId(document, content) {
+  const explicitId = [document?.id, document?.source_document_id]
+    .find(value => value != null && String(value).trim());
+  if (explicitId != null) return String(explicitId).trim();
+  return sha256({
+    name: String(document?.name ?? ''),
+    document_type: String(document?.document_type ?? ''),
+    content,
+  });
+}
+
+function canonicalDocument(document) {
+  const content = normalizeDocumentContent(document?.content ?? document?.extracted_text);
+  return {
+    document_id: stableDocumentId(document, content),
+    name: String(document?.name ?? ''),
+    document_type: String(document?.document_type ?? ''),
+    content,
+    content_sha256: contentSha256(content),
+    current: document?.current !== false,
+  };
+}
+
+function canonicalRulesResult(result) {
+  return stable(Object.fromEntries(Object.entries(result).filter(([key]) => key !== 'generated_at')));
+}
+
 function requireId(value, label) {
   if (!value || typeof value !== 'string') throw new Error(`${label} es obligatorio para registrar el preanálisis.`);
   return value;
@@ -36,9 +71,13 @@ function countCriticalOpenQuestions(result) {
 }
 
 export function buildTenderSnapshotInput(records, companyProfile) {
-  const documents = [...(records || [])]
-    .sort((left, right) => String(left?.id || '').localeCompare(String(right?.id || '')))
-    .map(({ extracted_text, signed_url, ...document }) => stable(document));
+  const documentsById = new Map();
+  for (const record of records || []) {
+    const document = canonicalDocument(record);
+    documentsById.set(document.document_id, document);
+  }
+  const documents = [...documentsById.values()]
+    .sort((left, right) => left.document_id.localeCompare(right.document_id));
   const profile = stable(companyProfile || {});
   return {
     documents,
@@ -56,6 +95,7 @@ export async function registerSiioRulesAnalysis(database, context) {
   if (!result || typeof result !== 'object' || Array.isArray(result)) {
     throw new Error('El preanálisis por reglas requiere su resultado estructurado real.');
   }
+  const canonicalResult = canonicalRulesResult(result);
 
   const snapshot = buildTenderSnapshotInput(context.documents, context.company_profile);
   const snapshotRecord = unwrapRpc(await database.rpc('psi_record_tender_document_snapshot', {
@@ -68,6 +108,7 @@ export async function registerSiioRulesAnalysis(database, context) {
     p_actor_id: actorId,
   }));
   const snapshotId = requireId(snapshotRecord.id, 'El snapshot documental');
+  const criticalOpenCount = countCriticalOpenQuestions(canonicalResult);
   const runRecord = unwrapRpc(await database.rpc('psi_record_tender_analysis_run', {
     p_snapshot_id: snapshotId,
     p_opportunity_id: opportunityId,
@@ -75,8 +116,8 @@ export async function registerSiioRulesAnalysis(database, context) {
     p_producer: RULES_PRODUCER,
     p_method: RULES_METHOD,
     p_status: 'completed',
-    p_result: result,
-    p_critical_open_count: countCriticalOpenQuestions(result),
+    p_result: canonicalResult,
+    p_critical_open_count: criticalOpenCount,
     p_idempotency_key: sha256({ opportunity_id: opportunityId, snapshot_id: snapshotId, policy_version: RULES_POLICY_VERSION }),
     p_schema_version: RULES_SCHEMA_VERSION,
     p_policy_version: RULES_POLICY_VERSION,
@@ -91,8 +132,8 @@ export async function registerSiioRulesAnalysis(database, context) {
     method: RULES_METHOD,
     status: runRecord.status || 'completed',
     current: true,
-    result,
-    critical_open_count: runRecord.critical_open_count ?? countCriticalOpenQuestions(result),
+    result: canonicalResult,
+    critical_open_count: runRecord.critical_open_count ?? criticalOpenCount,
   };
 }
 
@@ -106,9 +147,12 @@ export async function getCurrentTenderAnalysis(database, opportunityId) {
     .limit(1);
   if (latestSnapshotResponse?.error) throw new Error(latestSnapshotResponse.error.message || String(latestSnapshotResponse.error));
   const latestSnapshot = Array.isArray(latestSnapshotResponse?.data) ? latestSnapshotResponse.data[0] : latestSnapshotResponse?.data;
+  if (!latestSnapshot?.id) return null;
   const response = await database.from('psi_tender_analysis_runs')
     .select('id,snapshot_id,producer,method,status,result,critical_open_count,created_at,completed_at')
     .eq('opportunity_id', normalizedOpportunityId)
+    .eq('snapshot_id', latestSnapshot.id)
+    .eq('status', 'completed')
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .limit(1);
@@ -121,7 +165,7 @@ export async function getCurrentTenderAnalysis(database, opportunityId) {
     producer: run.producer,
     method: run.method,
     status: run.status,
-    current: run.snapshot_id === latestSnapshot?.id,
+    current: true,
     result: run.result,
     critical_open_count: run.critical_open_count ?? 0,
     created_at: run.created_at || null,

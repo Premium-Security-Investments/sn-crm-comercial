@@ -15,97 +15,192 @@ const ids = {
 };
 
 const documents = [
-  { id: 'b', name: 'B', document_type: 'pliego', extracted_text: 'no incluir', signed_url: 'https://private.example/b', current: true },
-  { id: 'a', name: 'A', document_type: 'anexo_tecnico', extracted_text: 'no incluir', signed_url: 'https://private.example/a', current: true },
+  {
+    id: 'b', name: 'B', document_type: 'pliego', extracted_text: 'línea uno\r\nlínea dos\rfin',
+    signed_url: 'https://private.example/b', uploaded_at: '2026-07-24T10:00:00.000Z', interaction_id: 'first', uploaded_by: 'Ana', current: true,
+  },
+  {
+    id: 'a', name: 'A', document_type: 'anexo_tecnico', extracted_text: 'anexo',
+    signed_url: 'https://private.example/a', uploaded_at: '2026-07-24T10:00:00.000Z', interaction_id: 'first', uploaded_by: 'Ana', current: true,
+  },
 ];
 
 const left = buildTenderSnapshotInput(documents, { version: 1, nested: { z: 'z', a: 'a' } });
 const right = buildTenderSnapshotInput([...documents].reverse(), { nested: { a: 'a', z: 'z' }, version: 1 });
 assert.equal(left.document_hash, right.document_hash);
 assert.equal(left.profile_hash, right.profile_hash);
-assert.equal(left.documents[0].id, 'a');
-assert.equal(left.documents[0].extracted_text, undefined);
-assert.equal(left.documents[0].signed_url, undefined);
+assert.deepEqual(left.documents, [
+  { document_id: 'a', name: 'A', document_type: 'anexo_tecnico', content: 'anexo', content_sha256: 'be9ae4ef7a2251bda1b46cbf7d43acb2ccee6cb1cefab613eb4e38f45336bd04', current: true },
+  { document_id: 'b', name: 'B', document_type: 'pliego', content: 'línea uno\nlínea dos\nfin', content_sha256: '45a4934a5c9236ba587cde5e212ae8eb3c9d40c57b26a0f23be57445297df74d', current: true },
+]);
 assert.deepEqual(left.company_profile, { nested: { a: 'a', z: 'z' }, version: 1 });
 
-const calls = [];
-const database = {
-  async rpc(name, params) {
-    calls.push({ name, params });
-    if (name === 'psi_record_tender_document_snapshot') return { data: { id: ids.snapshot }, error: null };
-    if (name === 'psi_record_tender_analysis_run') return { data: { id: ids.run, snapshot_id: ids.snapshot, producer: 'siio_rules_v1', method: 'rules', status: 'completed' }, error: null };
-    throw new Error(`unexpected RPC ${name}`);
-  },
+const reimportedDocuments = [
+  { ...documents[0], uploaded_at: '2026-07-25T10:00:00.000Z', interaction_id: 'second', uploaded_by: 'Beto', signed_url: 'https://other.example/b' },
+  { ...documents[1], uploaded_at: '2026-07-25T10:00:00.000Z', interaction_id: 'second', uploaded_by: 'Beto', signed_url: 'https://other.example/a' },
+  ...documents,
+];
+const reimported = buildTenderSnapshotInput(reimportedDocuments, { version: 1, nested: { a: 'a', z: 'z' } });
+assert.equal(reimported.document_hash, left.document_hash, 'unchanged re-import metadata must not change the semantic manifest');
+assert.deepEqual(reimported.documents, left.documents);
+
+const changedContent = buildTenderSnapshotInput([
+  ...documents,
+  { ...documents[0], extracted_text: 'línea actualizada', uploaded_at: '2026-07-26T10:00:00.000Z', interaction_id: 'third' },
+], { version: 1, nested: { a: 'a', z: 'z' } });
+assert.notEqual(changedContent.document_hash, left.document_hash);
+assert.equal(changedContent.documents.filter(document => document.document_id === 'b').length, 1);
+assert.equal(changedContent.documents.find(document => document.document_id === 'b').content, 'línea actualizada');
+
+const fallbackIdentity = buildTenderSnapshotInput([
+  { source_document_id: 'source-1', name: 'Source', document_type: 'pliego', extracted_text: 'source text' },
+  { id: '   ', source_document_id: 'source-2', name: 'Blank ID', document_type: 'pliego', extracted_text: 'source fallback text' },
+  { name: 'No ID', document_type: 'otro', extracted_text: 'identity text' },
+], {});
+assert.equal(fallbackIdentity.documents.find(document => document.name === 'Source').document_id, 'source-1');
+assert.equal(fallbackIdentity.documents.find(document => document.name === 'Blank ID').document_id, 'source-2');
+assert.match(fallbackIdentity.documents.find(document => document.name === 'No ID').document_id, /^[a-f0-9]{64}$/);
+
+function createSemanticReplayDatabase() {
+  let snapshot = null;
+  let run = null;
+  const calls = [];
+  return {
+    calls,
+    async rpc(name, params) {
+      calls.push({ name, params });
+      if (name === 'psi_record_tender_document_snapshot') {
+        const semanticSnapshot = {
+          opportunity_id: params.p_opportunity_id,
+          tender_id: params.p_tender_id,
+          document_hash: params.p_document_hash,
+          profile_hash: params.p_profile_hash,
+          document_manifest: params.p_document_manifest,
+          profile_snapshot: params.p_profile_snapshot,
+        };
+        if (snapshot) assert.deepEqual(semanticSnapshot, snapshot, 'snapshot replay must be semantically identical');
+        else snapshot = semanticSnapshot;
+        return { data: { id: ids.snapshot }, error: null };
+      }
+      if (name === 'psi_record_tender_analysis_run') {
+        const semanticRun = {
+          snapshot_id: params.p_snapshot_id,
+          opportunity_id: params.p_opportunity_id,
+          tender_id: params.p_tender_id,
+          producer: params.p_producer,
+          method: params.p_method,
+          status: params.p_status,
+          result: params.p_result,
+          critical_open_count: params.p_critical_open_count,
+          idempotency_key: params.p_idempotency_key,
+          schema_version: params.p_schema_version,
+          policy_version: params.p_policy_version,
+          model: params.p_model,
+          usage: params.p_usage,
+        };
+        if (run) assert.deepEqual(semanticRun, run, 'run replay must be semantically identical');
+        else run = semanticRun;
+        return { data: { id: ids.run, snapshot_id: ids.snapshot, producer: 'siio_rules_v1', method: 'rules', status: 'completed', critical_open_count: params.p_critical_open_count }, error: null };
+      }
+      throw new Error(`unexpected RPC ${name}`);
+    },
+  };
+}
+
+const database = createSemanticReplayDatabase();
+const firstPresentationResult = {
+  recommendation: 'GO condicionado', generated_at: '2026-07-24T10:00:00.000Z',
+  nested: { generated_at: 'must remain semantic' }, questions: [{ critical: true }],
 };
-const result = { recommendation: 'GO condicionado', questions: [{ critical: true }] };
-const registered = await registerSiioRulesAnalysis(database, {
-  opportunity_id: ids.opportunity,
-  tender_id: ids.tender,
-  actor_id: ids.actor,
-  documents,
-  company_profile: { version: 1 },
-  result,
+const secondPresentationResult = { ...firstPresentationResult, generated_at: '2026-07-24T10:00:01.000Z' };
+const firstRegistered = await registerSiioRulesAnalysis(database, {
+  opportunity_id: ids.opportunity, tender_id: ids.tender, actor_id: ids.actor,
+  documents, company_profile: { version: 1 }, result: firstPresentationResult,
 });
-assert.equal(registered.run_id, ids.run);
-assert.equal(registered.snapshot_id, ids.snapshot);
-assert.equal(registered.producer, 'siio_rules_v1');
-assert.equal(registered.method, 'rules');
-assert.equal(registered.status, 'completed');
-assert.equal(registered.current, true);
-assert.deepEqual(registered.result, result);
-assert.deepEqual(calls.map(call => call.name), ['psi_record_tender_document_snapshot', 'psi_record_tender_analysis_run']);
-assert.equal(calls[0].params.p_actor_id, ids.actor);
-assert.equal(calls[1].params.p_producer, 'siio_rules_v1');
-assert.equal(calls[1].params.p_method, 'rules');
-assert.equal(calls[1].params.p_status, 'completed');
-assert.equal(calls[1].params.p_policy_version, 'siio-rules-v1');
-assert.equal(calls[1].params.p_model, null);
-assert.deepEqual(calls[1].params.p_usage, { input_tokens: 0, output_tokens: 0, cost_usd: 0 });
-assert.equal(calls[1].params.p_critical_open_count, 1);
-assert.match(calls[1].params.p_idempotency_key, /^[0-9a-f]{64}$/);
+const secondRegistered = await registerSiioRulesAnalysis(database, {
+  opportunity_id: ids.opportunity, tender_id: ids.tender, actor_id: ids.actor,
+  documents: reimportedDocuments, company_profile: { version: 1 }, result: secondPresentationResult,
+});
+assert.equal(firstRegistered.run_id, ids.run);
+assert.equal(firstRegistered.snapshot_id, ids.snapshot);
+assert.equal(firstRegistered.producer, 'siio_rules_v1');
+assert.equal(firstRegistered.method, 'rules');
+assert.equal(firstRegistered.status, 'completed');
+assert.equal(firstRegistered.current, true);
+assert.deepEqual(firstRegistered.result, { recommendation: 'GO condicionado', nested: { generated_at: 'must remain semantic' }, questions: [{ critical: true }] });
+assert.deepEqual(secondRegistered.result, firstRegistered.result);
+assert.equal(firstPresentationResult.generated_at, '2026-07-24T10:00:00.000Z', 'canonicalization must not mutate the legacy presentation result');
+assert.deepEqual(database.calls.map(call => call.name), [
+  'psi_record_tender_document_snapshot', 'psi_record_tender_analysis_run',
+  'psi_record_tender_document_snapshot', 'psi_record_tender_analysis_run',
+]);
+const firstRunPayload = database.calls[1].params;
+const secondRunPayload = database.calls[3].params;
+assert.equal(firstRunPayload.p_producer, 'siio_rules_v1');
+assert.equal(firstRunPayload.p_method, 'rules');
+assert.equal(firstRunPayload.p_status, 'completed');
+assert.equal(firstRunPayload.p_policy_version, 'siio-rules-v1');
+assert.equal(firstRunPayload.p_model, null);
+assert.deepEqual(firstRunPayload.p_usage, { input_tokens: 0, output_tokens: 0, cost_usd: 0 });
+assert.equal(firstRunPayload.p_critical_open_count, 1);
+assert.match(firstRunPayload.p_idempotency_key, /^[0-9a-f]{64}$/);
+assert.deepEqual(secondRunPayload.p_result, firstRunPayload.p_result);
+assert.equal(secondRunPayload.p_idempotency_key, firstRunPayload.p_idempotency_key);
+assert.equal(firstRunPayload.p_result.generated_at, undefined);
 
 const failedDatabase = { async rpc() { return { data: null, error: { message: 'RPC unavailable' } }; } };
 await assert.rejects(() => registerSiioRulesAnalysis(failedDatabase, {
-  opportunity_id: ids.opportunity, tender_id: ids.tender, actor_id: ids.actor, documents, company_profile: {}, result,
+  opportunity_id: ids.opportunity, tender_id: ids.tender, actor_id: ids.actor, documents, company_profile: {}, result: firstPresentationResult,
 }), /RPC unavailable/);
 
-const currentDatabase = {
-  from(table) {
-    const filters = [];
-    const chain = {
-      select() { return chain; },
-      eq(key, value) { filters.push([key, value]); return chain; },
-      order() { return chain; },
-      limit() {
-        if (table === 'psi_tender_document_snapshots') return Promise.resolve({ data: [{ id: ids.snapshot }], error: null });
-        assert.equal(table, 'psi_tender_analysis_runs');
-        return Promise.resolve({ data: [{ id: ids.run, snapshot_id: ids.snapshot, producer: 'siio_rules_v1', method: 'rules', status: 'completed', result, critical_open_count: 1 }], error: null });
-      },
-    };
-    return chain;
-  },
-};
-const current = await getCurrentTenderAnalysis(currentDatabase, ids.opportunity);
-assert.equal(current.run_id, ids.run);
-assert.equal(current.current, true);
-assert.deepEqual(current.result, result);
+function createCurrentAnalysisDatabase({ latestSnapshot, runs }) {
+  const queries = [];
+  return {
+    queries,
+    from(table) {
+      const filters = [];
+      const chain = {
+        select() { return chain; },
+        eq(key, value) { filters.push([key, value]); return chain; },
+        order() { return chain; },
+        limit() {
+          queries.push({ table, filters: [...filters] });
+          if (table === 'psi_tender_document_snapshots') return Promise.resolve({ data: latestSnapshot ? [latestSnapshot] : [], error: null });
+          const filter = Object.fromEntries(filters);
+          const matching = runs.filter(run => run.opportunity_id === filter.opportunity_id && run.snapshot_id === filter.snapshot_id && run.status === filter.status);
+          return Promise.resolve({ data: matching.slice().sort((left, right) => String(right.created_at).localeCompare(String(left.created_at))).slice(0, 1), error: null });
+        },
+      };
+      return chain;
+    },
+  };
+}
 
-const staleDatabase = {
-  from(table) {
-    const chain = {
-      select() { return chain; },
-      eq() { return chain; },
-      order() { return chain; },
-      limit() {
-        if (table === 'psi_tender_document_snapshots') return Promise.resolve({ data: [{ id: '77777777-7777-4777-8777-777777777777' }], error: null });
-        return Promise.resolve({ data: [{ id: ids.run, snapshot_id: ids.snapshot, producer: 'siio_rules_v1', method: 'rules', status: 'completed', result, critical_open_count: 1 }], error: null });
-      },
-    };
-    return chain;
-  },
-};
-const stale = await getCurrentTenderAnalysis(staleDatabase, ids.opportunity);
-assert.equal(stale.current, false, 'a run for an older snapshot must not be current');
+const currentResult = { recommendation: 'GO condicionado', questions: [{ critical: true }] };
+const currentSnapshot = { id: '77777777-7777-4777-8777-777777777777' };
+const currentDatabase = createCurrentAnalysisDatabase({
+  latestSnapshot: currentSnapshot,
+  runs: [
+    { id: 'old-run', opportunity_id: ids.opportunity, snapshot_id: ids.snapshot, producer: 'siio_rules_v1', method: 'rules', status: 'completed', result: { recommendation: 'old' }, critical_open_count: 0, created_at: '2026-07-24T12:00:00.000Z' },
+    { id: ids.run, opportunity_id: ids.opportunity, snapshot_id: currentSnapshot.id, producer: 'siio_rules_v1', method: 'rules', status: 'completed', result: currentResult, critical_open_count: 1, created_at: '2026-07-24T11:00:00.000Z' },
+  ],
+});
+const current = await getCurrentTenderAnalysis(currentDatabase, ids.opportunity);
+assert.equal(current.run_id, ids.run, 'a late old-snapshot run must not hide the current-snapshot run');
+assert.equal(current.snapshot_id, currentSnapshot.id);
+assert.equal(current.current, true);
+assert.deepEqual(current.result, currentResult);
+assert.deepEqual(currentDatabase.queries[1].filters, [
+  ['opportunity_id', ids.opportunity],
+  ['snapshot_id', currentSnapshot.id],
+  ['status', 'completed'],
+]);
+
+const noSnapshotDatabase = createCurrentAnalysisDatabase({ latestSnapshot: null, runs: [] });
+assert.equal(await getCurrentTenderAnalysis(noSnapshotDatabase, ids.opportunity), null);
+assert.equal(noSnapshotDatabase.queries.length, 1);
+const noCurrentRunDatabase = createCurrentAnalysisDatabase({ latestSnapshot: currentSnapshot, runs: [{ id: 'failed', opportunity_id: ids.opportunity, snapshot_id: currentSnapshot.id, status: 'failed' }] });
+assert.equal(await getCurrentTenderAnalysis(noCurrentRunDatabase, ids.opportunity), null);
 
 for (const path of ['../api/[...path].js', '../server/index.js']) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
