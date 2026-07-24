@@ -10,6 +10,7 @@ import { SiioDashboard } from './siio/SiioDashboard';
 import { TendersModule } from './tenders/TendersModule';
 import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDecisionPanel';
 import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
+import { normalizeTenderEvidence, tenderAnalysisMethodLabel, tenderDecisionStatusTone } from './tenders/tenderDecisionBrief';
 import type { TenderModuleView } from './tenders/types';
 import type { TenderDocumentAnalysis as TenderDocumentAnalysisShared } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
@@ -794,25 +795,8 @@ function fileToBase64(file: File) {
     reader.readAsDataURL(file);
   });
 }
-function tenderAnalysisMethodLabel(producer: TenderDocumentAnalysis['producer']) {
-  return producer === 'AGT-002'
-    ? 'Análisis AGT-002'
-    : producer === 'HERMES-INTERIM'
-      ? 'Análisis asistido por Hermes — transitorio'
-      : 'Preanálisis por reglas SIIO';
-}
-function tenderDecisionStatusTone(status: string | null | undefined) {
-  const normalizedStatus = String(status || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-  const unfavorable = new Set(['no_go', 'cerrada_no_go', 'no_adjudicada']);
-  return unfavorable.has(normalizedStatus) ? 'red' : normalizedStatus === 'go' || normalizedStatus === 'adjudicada' ? 'green' : 'amber';
-}
-function tenderAnalysisFindingText(item: unknown) {
-  if (typeof item === 'string') return item;
-  if (item && typeof item === 'object' && 'text' in item && typeof item.text === 'string') return item.text;
-  return null;
-}
 function TenderEvidenceList({ items, empty }: { items: unknown[]; empty: string }) {
-  const visible = items.map(tenderAnalysisFindingText).filter((item): item is string => !!item);
+  const visible = normalizeTenderEvidence(items);
   return visible.length ? <ul>{visible.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <p className="muted">{empty}</p>;
 }
 function TenderDocumentReviewPanel({ opportunity, onReload, onAnalysisChanged, focusTargetRef }: { opportunity: Opportunity; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
