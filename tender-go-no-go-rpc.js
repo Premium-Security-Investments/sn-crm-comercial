@@ -3,7 +3,6 @@ import { getCurrentTenderAnalysis } from './tender-analysis-foundation.js';
 import { buildTenderOfferPreparation } from './tender-offer-preparation.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const LOWERCASE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 function goNoGoError(message, status = 400) {
   const error = new Error(message);
@@ -17,11 +16,6 @@ function requireUuid(value, label) {
   return id;
 }
 
-function requireLowercaseUuid(value, label) {
-  const id = String(value || '').trim();
-  if (!LOWERCASE_UUID_PATTERN.test(id)) throw goNoGoError(`Debe indicar ${label}.`);
-  return id;
-}
 
 function nullableUuid(value, label) {
   if (value === null || value === undefined) return null;
@@ -102,7 +96,7 @@ export async function callTenderGoNoGoDecision(database, input, currentProfile) 
   const actorId = requireUuid(currentProfile?.id, 'un actor válido');
   const decision = String(input?.decision || '').trim();
   if (!new Set(['go', 'no_go']).has(decision)) throw goNoGoError('La decisión debe ser go o no_go.');
-  const analysisRunId = requireLowercaseUuid(input?.analysis_run_id, 'un análisis válido');
+  const analysisRunId = requireUuid(input?.analysis_run_id, 'un análisis válido').toLowerCase();
   const justification = requiredText(input?.justification, 'una justificación');
   requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
 

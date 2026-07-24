@@ -49,6 +49,8 @@ export type TenderDocumentAnalysis = {
   status: 'completed' | 'failed';
   current: boolean;
   critical_open_count: number;
+  created_at?: string | null;
+  completed_at?: string | null;
   interaction_id?: string | null;
   recommendation: string;
   risk: string;

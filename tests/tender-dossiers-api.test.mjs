@@ -34,6 +34,16 @@ function interactionQuery(rows, error = null) {
   };
 }
 
+function typedAnalysisQuery(rowsForOpportunity) {
+  let opportunityId = null;
+  return {
+    select() { return this; },
+    eq(field, value) { if (field === 'opportunity_id') opportunityId = value; return this; },
+    order() { return this; },
+    limit(count) { return Promise.resolve({ data: rowsForOpportunity(opportunityId).slice(0, count), error: null }); },
+  };
+}
+
 function importedError(created_at = '2026-07-14T10:03:00.000Z') {
   return {
     id: `error-${created_at}`,
@@ -88,6 +98,15 @@ const interactionsByOpportunity = {
 function mockDatabaseByOpportunity({ failOpportunityId = null } = {}) {
   return {
     from(table) {
+      if (table === 'psi_tender_document_snapshots') {
+        return typedAnalysisQuery(opportunityId => opportunityId === 'good' ? [{ id: 'snapshot-good' }] : []);
+      }
+      if (table === 'psi_tender_analysis_runs') {
+        return typedAnalysisQuery(opportunityId => opportunityId === 'good' ? [{
+          id: 'run-good', snapshot_id: 'snapshot-good', producer: 'siio_rules_v1', method: 'rules', status: 'completed',
+          result: JSON.parse(generatedAnalysis.notes), critical_open_count: 0, created_at: generatedAnalysis.created_at, completed_at: generatedAnalysis.created_at,
+        }] : []);
+      }
       assert.equal(table, 'psi_sales_interactions');
       return {
         select() { return this; },
@@ -210,6 +229,17 @@ const fakeSupabase = http.createServer(async (req, res) => {
     const opportunity = decodeURIComponent(url.searchParams.get('opportunity_id') || '').replace(/^eq\./, '');
     if (opportunity === 'broken') return json(res, 500, { message: 'lectura fallida' });
     return json(res, 200, interactionsByOpportunity[opportunity] || []);
+  }
+  if (url.pathname === '/rest/v1/psi_tender_document_snapshots') {
+    const opportunity = decodeURIComponent(url.searchParams.get('opportunity_id') || '').replace(/^eq\./, '');
+    return json(res, 200, opportunity === 'good' ? [{ id: 'snapshot-good' }] : []);
+  }
+  if (url.pathname === '/rest/v1/psi_tender_analysis_runs') {
+    const opportunity = decodeURIComponent(url.searchParams.get('opportunity_id') || '').replace(/^eq\./, '');
+    return json(res, 200, opportunity === 'good' ? [{
+      id: 'run-good', snapshot_id: 'snapshot-good', producer: 'siio_rules_v1', method: 'rules', status: 'completed',
+      result: JSON.parse(generatedAnalysis.notes), critical_open_count: 0, created_at: generatedAnalysis.created_at, completed_at: generatedAnalysis.created_at,
+    }] : []);
   }
   return json(res, 404, { message: `Unhandled Supabase path ${url.pathname}` });
 });

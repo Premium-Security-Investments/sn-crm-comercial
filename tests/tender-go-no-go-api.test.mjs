@@ -241,13 +241,20 @@ for (const input of [
   { opportunity_id: OPPORTUNITY_ID, decision: 'unknown', analysis_run_id: ANALYSIS_RUN_ID, justification: 'because' },
   { opportunity_id: OPPORTUNITY_ID, decision: 'go', analysis_run_id: '', justification: 'because' },
   { opportunity_id: OPPORTUNITY_ID, decision: 'go', analysis_run_id: '   ', justification: 'because' },
-  { opportunity_id: OPPORTUNITY_ID, decision: 'go', analysis_run_id: ANALYSIS_RUN_ID.toUpperCase(), justification: 'because' },
+  { opportunity_id: OPPORTUNITY_ID, decision: 'go', analysis_run_id: 'not-a-uuid', justification: 'because' },
   { opportunity_id: OPPORTUNITY_ID, decision: 'go', analysis_run_id: ANALYSIS_RUN_ID, justification: '  ' },
 ]) {
   const { database, observed } = fakeDatabase();
   await assert.rejects(() => callTenderGoNoGoDecision(database, input, directorProfile), /oportunidad válida|decisión debe ser go o no_go|análisis válido|justificación/i);
   assert.equal(observed.targetAccesses, 0, 'invalid opportunity, decision, typed run, or justification must fail before target database access');
   assert.equal(observed.rpc.length, 0);
+}
+
+{
+  const { database, observed } = fakeDatabase();
+  await decide(database, { analysis_run_id: ANALYSIS_RUN_ID.toUpperCase() });
+  assert.equal(observed.rpc.length, 1, 'uppercase UUID spelling must reach the decision RPC');
+  assert.equal(observed.rpc[0].args.p_analysis_run_id, ANALYSIS_RUN_ID, 'valid UUID input must normalize before current-run comparison and RPC submission');
 }
 
 for (const profile of [

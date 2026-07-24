@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { loadTenderGoNoGoDecision, recordTenderGoNoGoDecision } from '../api';
 import { canApproveTenderGoNoGo } from '../permissions';
+import { tenderDecisionGate } from '../tenderDecisionGate';
 import type { TenderCurrentProfile, TenderDocumentAnalysis, TenderGoNoGoDecision, TenderGoNoGoPayload, TenderRequest } from '../types';
 
 type Decision = 'go' | 'no_go';
@@ -13,7 +14,6 @@ export type TenderGoNoGoDecisionPanelProps = {
   onChanged: () => Promise<void> | void;
 };
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMPTY_PAYLOAD: TenderGoNoGoPayload = { decision: null, history: [], preparation: null };
 const date = (value?: string | null) => value ? new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : 'Sin fecha';
 const decisionLabel = (value?: string | null) => value === 'go' ? 'GO autorizado' : value === 'no_go' ? 'NO GO registrado' : 'Pendiente de decisión';
@@ -34,8 +34,9 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   activeOpportunityRef.current = opportunityId;
   const allowed = canApproveTenderGoNoGo(currentProfile);
-  const hasCurrentAnalysis = Boolean(analysis?.run_id && UUID.test(analysis.run_id) && analysis.status === 'completed' && analysis.current === true);
-  const goBlockedByCriticalQuestions = Boolean(analysis && analysis.critical_open_count > 0);
+  const decisionGate = tenderDecisionGate(analysis);
+  const hasCurrentAnalysis = decisionGate.canNoGo;
+  const goBlockedByCriticalQuestions = hasCurrentAnalysis && !decisionGate.canGo;
   const risks = useMemo(() => [analysis?.risk, ...(analysis?.findings || []), ...(analysis?.commercial_fit?.concerns || [])].filter((item): item is string => Boolean(item && item.trim())), [analysis]);
 
   const load = useCallback(async (preserveStatus = false, preservePayload = false): Promise<boolean> => {
@@ -195,7 +196,7 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
     {status && <div className="notice" role="status">{status}</div>}
     {syncPending && <div className="tender-go-no-go-actions"><button type="button" className="secondary" onClick={() => void reconcile()} disabled={busy}>{busy ? 'Actualizando…' : 'Reintentar actualización'}</button></div>}
     {allowed ? <div className="tender-go-no-go-actions">
-      <button type="button" onClick={event => open('go', event.currentTarget)} disabled={!hasCurrentAnalysis || goBlockedByCriticalQuestions || busy || loading || syncPending}>Autorizar GO</button>
+      <button type="button" onClick={event => open('go', event.currentTarget)} disabled={!decisionGate.canGo || busy || loading || syncPending}>Autorizar GO</button>
       <button type="button" className="danger" onClick={event => open('no_go', event.currentTarget)} disabled={!hasCurrentAnalysis || busy || loading || syncPending}>Registrar NO GO</button>
       {!hasCurrentAnalysis && <p className="muted">Hace falta un análisis tipado, completado y vigente antes de registrar una decisión.</p>}
       {hasCurrentAnalysis && goBlockedByCriticalQuestions && <p className="muted">GO está bloqueado hasta resolver las preguntas críticas abiertas. Puede registrar NO GO con justificación.</p>}

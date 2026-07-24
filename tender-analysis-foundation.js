@@ -172,3 +172,23 @@ export async function getCurrentTenderAnalysis(database, opportunityId) {
     completed_at: run.completed_at || null,
   };
 }
+
+/** Produces the document-API analysis payload without allowing result JSON to forge typed-run authority. */
+export function presentCurrentTenderAnalysis(currentAnalysis) {
+  if (!currentAnalysis) return null;
+  const result = currentAnalysis.result && typeof currentAnalysis.result === 'object' && !Array.isArray(currentAnalysis.result)
+    ? currentAnalysis.result
+    : {};
+  return {
+    ...result,
+    run_id: currentAnalysis.run_id,
+    snapshot_id: currentAnalysis.snapshot_id,
+    producer: currentAnalysis.producer,
+    method: currentAnalysis.method,
+    status: currentAnalysis.status,
+    current: currentAnalysis.current,
+    critical_open_count: currentAnalysis.critical_open_count,
+    created_at: currentAnalysis.created_at || null,
+    completed_at: currentAnalysis.completed_at || null,
+  };
+}

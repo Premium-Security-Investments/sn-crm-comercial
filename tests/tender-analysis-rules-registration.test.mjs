@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import {
   buildTenderSnapshotInput,
   getCurrentTenderAnalysis,
+  presentCurrentTenderAnalysis,
   registerSiioRulesAnalysis,
 } from '../tender-analysis-foundation.js';
 
@@ -202,13 +203,44 @@ assert.equal(noSnapshotDatabase.queries.length, 1);
 const noCurrentRunDatabase = createCurrentAnalysisDatabase({ latestSnapshot: currentSnapshot, runs: [{ id: 'failed', opportunity_id: ids.opportunity, snapshot_id: currentSnapshot.id, status: 'failed' }] });
 assert.equal(await getCurrentTenderAnalysis(noCurrentRunDatabase, ids.opportunity), null);
 
+const presented = presentCurrentTenderAnalysis({
+  run_id: ids.run,
+  snapshot_id: currentSnapshot.id,
+  producer: 'siio_rules_v1',
+  method: 'rules',
+  status: 'completed',
+  current: true,
+  critical_open_count: 0,
+  created_at: '2026-07-24T11:00:00.000Z',
+  completed_at: '2026-07-24T11:01:00.000Z',
+  result: {
+    recommendation: 'GO', summary: 'Lista para decisión humana.', run_id: 'malicious-run', snapshot_id: 'malicious-snapshot', producer: 'AGT-002', method: 'agent_ai', status: 'failed', current: false, critical_open_count: 99, created_at: 'malicious-created', completed_at: 'malicious-completed',
+  },
+});
+assert.equal(presentCurrentTenderAnalysis(null), null, 'missing typed current run stays absent even when legacy history exists');
+assert.equal(presented.recommendation, 'GO');
+assert.equal(presented.run_id, ids.run, 'authoritative typed metadata must override result keys');
+assert.equal(presented.snapshot_id, currentSnapshot.id);
+assert.equal(presented.producer, 'siio_rules_v1');
+assert.equal(presented.method, 'rules');
+assert.equal(presented.status, 'completed');
+assert.equal(presented.current, true);
+assert.equal(presented.critical_open_count, 0);
+assert.equal(presented.created_at, '2026-07-24T11:00:00.000Z');
+assert.equal(presented.completed_at, '2026-07-24T11:01:00.000Z');
+
 for (const path of ['../api/[...path].js', '../server/index.js']) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-  assert.match(source, /registerSiioRulesAnalysis/);
+  assert.match(source, /import \{ getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis \} from '\.\.\/tender-analysis-foundation\.js';/);
   const generated = source.match(/const analysis = buildTenderDocumentAnalysis[\s\S]{0,700}registerSiioRulesAnalysis/);
   assert.ok(generated, `${path} must register the rules result after building it`);
   assert.match(source, /Preanálisis por reglas SIIO/);
   assert.doesNotMatch(source, /(?:IA|inteligencia artificial|Hermes|AGT-002)[^\n]{0,80}Preanálisis por reglas SIIO/i);
+  const records = source.match(/async function getTenderDocumentRecords[\s\S]*?\n}\n\n/);
+  assert.ok(records, `${path} must retain the shared tender-document response builder`);
+  assert.match(records[0], /getCurrentTenderAnalysis\(database, opportunityId\)/, `${path} must resolve the typed current analysis, not infer authority from timeline history`);
+  assert.match(records[0], /analysis:\s*presentCurrentTenderAnalysis\(currentAnalysis\)/, `${path} must present typed metadata plus analysis result to every document response path`);
+  assert.match(records[0], /analyses,/, `${path} must preserve legacy timeline history for compatibility`);
 }
 
 console.log('tender rules analysis registration passed');

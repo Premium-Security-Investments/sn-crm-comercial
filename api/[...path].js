@@ -10,7 +10,7 @@ import { callTenderOpportunityConversion, callTenderOpportunityDiscard, callTend
 import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
 import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
 import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
-import { registerSiioRulesAnalysis } from '../tender-analysis-foundation.js';
+import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis } from '../tender-analysis-foundation.js';
 import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
@@ -2101,7 +2101,8 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
     const { data } = await database.storage.from(tenderDocumentBucket).createSignedUrl(doc.storage_path, 3600);
     return { ...doc, signed_url: data?.signedUrl || null };
   })) : documents;
-  return { documents: signed, analysis: analyses.at(-1) || null, analyses, import_error: importErrors.at(-1) || null };
+  const currentAnalysis = await getCurrentTenderAnalysis(database, opportunityId);
+  return { documents: signed, analysis: presentCurrentTenderAnalysis(currentAnalysis), analyses, import_error: importErrors.at(-1) || null };
 }
 
 
@@ -2334,7 +2335,7 @@ export async function buildTenderOpportunitySummary(database, tender, { opportun
     const records = await getTenderDocumentRecords(database, tender.converted_opportunity_id, { includeSignedUrls: false });
     const preparationRecords = await getTenderOfferPreparationRecords(database, tender.converted_opportunity_id);
     const currentDocuments = records.documents.filter(document => document.current !== false);
-    const analysis = records.analysis?.status === 'analisis_generado' ? records.analysis : null;
+    const analysis = records.analysis?.status === 'completed' && records.analysis?.current === true ? records.analysis : null;
     const importFailureIsCurrent = records.import_error && (!analysis || !analysis.created_at || !records.import_error.created_at || Date.parse(records.import_error.created_at) >= Date.parse(analysis.created_at));
     const preparation = preparationRecords.preparation;
     const recommendation = importFailureIsCurrent ? 'Pendiente' : analysis?.go_no_go?.decision || analysis?.recommendation || 'Pendiente';

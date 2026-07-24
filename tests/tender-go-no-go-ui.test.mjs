@@ -2,13 +2,16 @@ import { strict as assert } from 'node:assert';
 import { existsSync, readFileSync } from 'node:fs';
 import { buildSync } from 'esbuild';
 import { ACTIONS, can } from '../access-control.js';
+import { presentCurrentTenderAnalysis } from '../tender-analysis-foundation.js';
 
 const read = relative => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8');
 const panelPath = new URL('../src/tenders/components/TenderGoNoGoDecisionPanel.tsx', import.meta.url);
 const permissionsPath = new URL('../src/tenders/permissions.ts', import.meta.url);
+const decisionGatePath = new URL('../src/tenders/tenderDecisionGate.ts', import.meta.url);
 
 assert.equal(existsSync(panelPath), true, 'Debe existir el panel formal GO/NO GO.');
 const panel = read('src/tenders/components/TenderGoNoGoDecisionPanel.tsx');
+const gateSource = read('src/tenders/tenderDecisionGate.ts');
 const api = read('src/tenders/api.ts');
 const types = read('src/tenders/types.ts');
 const main = read('src/main.tsx');
@@ -23,9 +26,9 @@ assert.match(panel, /recordTenderGoNoGoDecision/, 'La confirmación debe usar la
 assert.match(panel, /analysis_run_id:\s*analysis\.run_id/, 'Debe auditar el ID exacto del análisis tipado vigente.');
 assert.match(panel, /await onChanged\s*\(\)/, 'Al guardar debe notificar al detalle para recargar expediente.');
 assert.match(panel, /analysis.*run_id|run_id.*analysis/, 'Sin análisis tipado vigente el panel debe explicar el bloqueo.');
-assert.match(panel, /analysis\.status\s*===\s*'completed'/, 'Ambas decisiones deben requerir un análisis completado.');
-assert.match(panel, /analysis\.current\s*===\s*true/, 'Ambas decisiones deben requerir el snapshot vigente.');
-assert.match(panel, /critical_open_count\s*>\s*0/, 'GO debe bloquearse con preguntas críticas abiertas.');
+assert.match(gateSource, /analysis\?\.status\s*===\s*'completed'/, 'Ambas decisiones deben requerir un análisis completado.');
+assert.match(gateSource, /analysis\?\.current\s*===\s*true/, 'Ambas decisiones deben requerir el snapshot vigente.');
+assert.match(gateSource, /critical_open_count[\s\S]*?<=\s*0/, 'GO debe bloquearse con preguntas críticas abiertas.');
 assert.match(panel, /history/, 'La UI debe mostrar el historial inmutable.');
 assert.match(panel, /findings|concerns/, 'La UI debe exponer hallazgos o alertas relevantes.');
 assert.match(api, /loadTenderGoNoGoDecision[\s\S]*encodeURIComponent\(opportunityId\)/, 'GET debe codificar el ID.');
@@ -78,5 +81,21 @@ assert.match(panel, /requestVersionRef|requestVersion/, 'Las cargas deben descar
 assert.match(panel, /syncPending/, 'Un POST persistido debe bloquear reintentos mientras sincroniza.');
 assert.match(panel, /document\.activeElement|previouslyFocused/, 'El modal debe recordar el foco previo.');
 assert.match(panel, /Escape|Tab/, 'El modal debe manejar Escape y trap de Tab.');
+
+const gateBundle = buildSync({ entryPoints: [decisionGatePath.pathname], bundle: true, platform: 'node', format: 'esm', write: false });
+const gateUrl = `data:text/javascript;base64,${Buffer.from(gateBundle.outputFiles[0].contents).toString('base64')}`;
+const { tenderDecisionGate } = await import(gateUrl);
+const actualDocumentResponse = {
+  documents: [],
+  analyses: [{ kind: 'tender_document_analysis', status: 'analisis_generado', analysis_run_id: 'legacy-run' }],
+  analysis: presentCurrentTenderAnalysis({
+    run_id: '33333333-3333-4333-8333-33333333333a', snapshot_id: '55555555-5555-4555-8555-555555555555', producer: 'siio_rules_v1', method: 'rules', status: 'completed', current: true, critical_open_count: 0,
+    result: { recommendation: 'GO', summary: 'Análisis tipado vigente.' },
+  }),
+};
+assert.deepEqual(tenderDecisionGate(actualDocumentResponse.analysis), { canGo: true, canNoGo: true }, 'the actual presented document response enables both decisions when current analysis has no critical questions');
+assert.deepEqual(tenderDecisionGate({ ...actualDocumentResponse.analysis, critical_open_count: 1 }), { canGo: false, canNoGo: true }, 'critical questions block only GO');
+assert.deepEqual(tenderDecisionGate(null), { canGo: false, canNoGo: false }, 'missing typed analysis blocks both decisions');
+assert.deepEqual(tenderDecisionGate({ ...actualDocumentResponse.analysis, current: false }), { canGo: false, canNoGo: false }, 'stale typed analysis blocks both decisions');
 
 console.log('tender GO/NO GO UI checks passed');
