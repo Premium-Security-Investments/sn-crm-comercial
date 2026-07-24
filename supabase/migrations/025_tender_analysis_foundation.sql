@@ -208,14 +208,22 @@ begin
   select * into v_run
   from public.psi_tender_analysis_runs
   where idempotency_key = p_idempotency_key
-    and snapshot_id = p_snapshot_id
-    and opportunity_id = p_opportunity_id
-    and tender_id = p_tender_id
-    and producer = p_producer
-    and method = p_method
-    and status = p_status
   for share;
   if not found then
+    raise exception 'La clave de idempotencia ya pertenece a otro análisis.' using errcode = '23505';
+  end if;
+  if v_run.snapshot_id is distinct from p_snapshot_id
+     or v_run.opportunity_id is distinct from p_opportunity_id
+     or v_run.tender_id is distinct from p_tender_id
+     or v_run.producer is distinct from p_producer
+     or v_run.method is distinct from p_method
+     or v_run.status is distinct from p_status
+     or v_run.result is distinct from p_result
+     or v_run.critical_open_count is distinct from p_critical_open_count
+     or v_run.schema_version is distinct from p_schema_version
+     or v_run.policy_version is distinct from p_policy_version
+     or v_run.model is distinct from nullif(btrim(p_model), '')
+     or v_run.usage is distinct from p_usage then
     raise exception 'La clave de idempotencia ya pertenece a otro análisis.' using errcode = '23505';
   end if;
 

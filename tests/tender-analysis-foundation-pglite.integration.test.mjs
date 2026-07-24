@@ -60,6 +60,7 @@ await (async function snapshotsAreImmutableDeduplicatedAndScoped() {
   await assert.rejects(() => snapshot(db, { documentHash: 'A'.repeat(64) }), /hash/i);
   await assert.rejects(() => snapshot(db, { documentHash: 'a'.repeat(63) }), /hash/i);
   await assert.rejects(() => snapshot(db, { actor: null }), /actor|null/i);
+  await assert.rejects(() => snapshot(db, { documentHash: 'c'.repeat(64), actor: '66666666-6666-4666-8666-666666666666' }), /foreign key/i);
   await db.exec('set role service_role');
   await assert.rejects(() => db.query(`insert into public.psi_tender_document_snapshots (opportunity_id,tender_id,document_hash,profile_hash,document_manifest,profile_snapshot) values ('${ids.opportunity}','${ids.tender}','${documentHash}','${profileHash}', '{}'::jsonb, '{}'::jsonb)`), /permission denied/i);
   await db.exec('reset role; set role authenticated');
@@ -75,8 +76,15 @@ await (async function runsRequireAuthorizedConsistentCompletedResultsAndAreImmut
   const first = await run(db, savedSnapshot.id); const retry = await run(db, savedSnapshot.id);
   assert.equal(first.id, retry.id);
   assert.equal(Number((await one(db, 'select count(*)::int as count from public.psi_tender_analysis_runs')).count), 1);
+  await assert.rejects(() => run(db, savedSnapshot.id, { result: { recommendation: 'advance' } }), /idempotencia|clave/i);
+  await assert.rejects(() => run(db, savedSnapshot.id, { policyVersion: 'siio-rules-v2' }), /idempotencia|clave/i);
   await assert.rejects(() => run(db, savedSnapshot.id, { producer: 'other', idempotencyKey: 'unauthorized' }), /productor/i);
   await assert.rejects(() => run(db, savedSnapshot.id, { producer: 'HERMES-INTERIM', method: 'rules', idempotencyKey: 'bad-pair' }), /método/i);
+  for (const [producer, idempotencyKey] of [['HERMES-INTERIM', 'hermes-interim-agent-ai'], ['AGT-002', 'agt-002-agent-ai']]) {
+    const agentRun = await run(db, savedSnapshot.id, { producer, method: 'agent_ai', idempotencyKey });
+    assert.equal(agentRun.producer, producer);
+    assert.equal(agentRun.status, 'completed');
+  }
   await assert.rejects(() => run(db, savedSnapshot.id, { result: null, idempotencyKey: 'no-result' }), /resultado estructurado/i);
   await assert.rejects(() => run(db, savedSnapshot.id, { opportunity: ids.wrongOpportunity, idempotencyKey: 'wrong-opportunity' }), /no coincide|vinculado/i);
   await assert.rejects(() => run(db, savedSnapshot.id, { tender: ids.wrongTender, idempotencyKey: 'wrong-tender' }), /no coincide|vinculado/i);
