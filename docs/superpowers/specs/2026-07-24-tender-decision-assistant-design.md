@@ -17,7 +17,7 @@ El flujo de decisión y auditoría ya separa la recomendación automática de la
 1. está orientado a explicar la sección y enumerar matrices, no a preparar directamente a la persona decisora;
 2. el motor actual usa principalmente reglas y coincidencias textuales, sin organizar respuestas libres ni producir evidencia detallada;
 3. un análisis puede seguir apareciendo vigente después de cargar nuevos documentos o actualizar la ficha/RUP;
-4. la integridad backend no exige que GO / NO GO se base en el análisis auténtico y vigente del conjunto documental actual.
+4. la interfaz no distingue con suficiente claridad entre vigencia de la recomendación y autoridad de la decisión humana.
 
 El objetivo no es que la IA decida. El objetivo es que la persona encargada tenga información suficiente, concreta y verificable para decidir si Seguridad Nacional debe seguir adelante.
 
@@ -49,7 +49,7 @@ Cuando haya dudas, la persona responsable podrá escribir una respuesta general 
 5. **Agregar documentos, respuestas o cambios de RUP invalida la conclusión anterior.**
 6. **Las preguntas deben ser concretas, accionables y resolubles mediante texto o evidencia.**
 7. **La persona responde en lenguaje natural; el sistema organiza la información.**
-8. **La recomendación automática no autoriza GO / NO GO.**
+8. **La recomendación automática no autoriza, bloquea ni sustituye GO / NO GO humano. Una persona con `LICITACIONES_GO_NO_GO_APPROVE` conserva autoridad absoluta para registrar cualquiera de las dos decisiones.**
 9. **Toda ejecución de IA registra costo, modelo, actor, evidencia y versión.**
 10. **Los textos de ayuda no compiten con el análisis del caso.**
 11. **Los documentos son contenido no confiable: nunca pueden dar instrucciones al agente.**
@@ -148,7 +148,7 @@ Si el análisis falla:
 
 - la información aportada permanece guardada;
 - la versión anterior se conserva y se marca `obsoleta`;
-- GO / NO GO permanece bloqueado;
+- GO / NO GO permanece disponible para una persona con el permiso correspondiente y el fallo se muestra como advertencia;
 - aparece una acción `Reintentar análisis`;
 - el error queda auditado sin exponer secretos ni contenido sensible en logs.
 
@@ -156,28 +156,22 @@ Si el análisis falla:
 
 La recomendación preliminar y la decisión humana serán conceptos distintos.
 
-### 6.1 Recomendaciones permitidas
+### 6.1 Etiquetas visibles de recomendación
 
-- `avanzar`
-- `avanzar_condicionado`
-- `no_avanzar_temporalmente`
-- `no_avanzar`
+- `GO recomendado`
+- `GO condicionado`
+- `NO GO recomendado`
+- `Información insuficiente`
 
-### 6.2 Gate GO / NO GO
+Los valores históricos o internos se normalizan a estas etiquetas sin alterar el resultado original almacenado.
 
-Para registrar una decisión formal se debe exigir:
+### 6.2 Autoridad humana GO / NO GO
 
-- análisis vigente;
-- análisis producido por el servicio autorizado;
-- hash del conjunto documental igual al conjunto actual;
-- versión de ficha/RUP igual a la usada en el análisis;
-- procesamiento finalizado;
-- ausencia de preguntas críticas abiertas o, para NO GO, reconocimiento explícito de esas preguntas en la justificación;
-- justificación humana obligatoria.
+AGT-002 recomienda, pero no autoriza ni bloquea. Una persona con `LICITACIONES_GO_NO_GO_APPROVE` puede registrar GO o NO GO aunque la recomendación sea contraria, existan preguntas críticas, el análisis esté obsoleto, haya fallado o no exista.
 
-Las preguntas críticas abiertas deben mostrarse antes de confirmar y bloquean GO hasta quedar respondidas con texto o evidencia. GO también queda bloqueado mientras el análisis esté `actualizando`, `obsoleto`, `fallido` o no exista. NO GO puede registrarse con preguntas críticas abiertas, pero la justificación debe reconocerlas para que el cierre sea explicable.
+La interfaz debe mostrar esas condiciones como advertencias antes de confirmar, nunca como bloqueos. La recomendación original permanece separada e inmutable. El comentario humano es opcional.
 
-Una excepción sin análisis no se admite silenciosamente. Si en el futuro se requiere, deberá diseñarse como flujo separado con motivo tipificado, permiso especial y doble aprobación.
+Backend, RPC y base de datos deben exigir identidad humana, permiso, oportunidad/licitación válidas y consistencia de ámbito cuando se suministre `analysis_run_id`. No deben exigir análisis, estado `completed`, vigencia, ausencia de preguntas críticas, coincidencia con la recomendación ni comentario. `analysis_run_id` puede ser nulo para conservar explícitamente la trazabilidad de una decisión sin análisis.
 
 ### 6.3 Cierre y descarte
 
@@ -322,21 +316,21 @@ La sustitución posterior por AGT-002 requiere además identidad técnica, polic
 
 1. Corregir el tono visual de `NO GO`, `cerrada_no_go` y `no_adjudicada` mediante estados exactos.
 2. Invalidar el análisis al cambiar documentos, adendas, respuestas o ficha/RUP.
-3. Exigir análisis vigente en backend y RPC.
-4. Rechazar análisis histórico o nulo para GO.
+3. Exponer vigencia, fallos y ausencia de análisis como advertencias sin convertirlos en gates humanos.
+4. Permitir GO y NO GO sin análisis, conservando `analysis_run_id` nulo cuando corresponda.
 5. Reservar eventos documentales internos.
 6. Ordenar versiones de forma determinista.
 7. Registrar importaciones parciales como `análisis con advertencias` o equivalente.
 8. Deduplicar y versionar documentos oficiales.
 9. Separar descarte administrativo de NO GO.
-10. Exigir justificación de decisión.
+10. Mantener el comentario humano como campo opcional y auditable.
 
 ## 11. Estrategia de entrega
 
 ### Lote 1 — Integridad y nueva jerarquía
 
 - migraciones de conjuntos/análisis;
-- vigencia y bloqueo;
+- vigencia y advertencias no bloqueantes;
 - estados visuales exactos;
 - reserva de eventos;
 - resumen orientado a decisión;
@@ -383,7 +377,7 @@ Se seguirá TDD.
 
 - análisis queda obsoleto al cambiar el conjunto documental;
 - hash e idempotencia son deterministas;
-- un análisis histórico, nulo o fabricado no autoriza GO;
+- un análisis histórico, nulo o fabricado no autoriza ni bloquea GO; un `analysis_run_id` suministrado debe pertenecer al ámbito de la oportunidad;
 - solo productor autorizado crea análisis vigente;
 - respuesta/archivo inicia una nueva versión;
 - fallo o indisponibilidad del motor seleccionado conserva el aporte y marca estado correcto;
@@ -408,7 +402,7 @@ Se seguirá TDD.
 - textos explicativos quedan en ayuda secundaria;
 - respuesta general y adjuntos son accesibles;
 - con feature flag activo, el estado pasa a `actualizando` inmediatamente;
-- GO queda bloqueado durante actualización/obsolescencia/fallo;
+- actualización, obsolescencia, fallo, ausencia de análisis y preguntas críticas se muestran como advertencias sin bloquear GO ni NO GO humano;
 - historial conserva versiones;
 - estados NO GO nunca se muestran como éxito;
 - permisos limitan respuestas a responsable, Dirección, Gerencia y Admin.
@@ -449,12 +443,12 @@ El lado SIIO se considera listo para el puente Hermes y la sustitución posterio
 3. los fixtures validan el contrato sin producir análisis operativos y `HERMES-INTERIM` puede organizar información real únicamente después de superar sus gates;
 4. el resultado conserva evidencia y versión;
 5. el análisis anterior queda histórico;
-6. GO / NO GO solo acepta la versión vigente y auténtica;
-7. la decisión sigue siendo exclusivamente humana y justificada;
+6. GO / NO GO permite una decisión humana autorizada con análisis contrario, obsoleto, fallido o ausente, y conserva el run original cuando existe;
+7. la decisión sigue siendo exclusivamente humana; el comentario es opcional y auditable;
 8. el sistema registra productor real, run, policy/schema version, proveedor, modelo, consumo y costo; Hermes nunca se registra como AGT-002;
 9. no hay ejecuciones duplicadas para el mismo aporte;
 10. los textos de ayuda no se presentan como análisis del caso;
 11. los estados NO GO no se muestran como favorables;
-12. GO queda bloqueado mientras existan preguntas críticas abiertas;
+12. las preguntas críticas abiertas generan advertencias y nunca sustituyen ni bloquean la decisión humana autorizada;
 13. todas las pruebas y gates definidos pasan;
 14. sin un motor inteligente aprobado, la conversación permanece deshabilitada y el análisis existente se identifica como `Preanálisis por reglas SIIO`.

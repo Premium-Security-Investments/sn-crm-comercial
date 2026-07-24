@@ -96,17 +96,16 @@ export async function callTenderGoNoGoDecision(database, input, currentProfile) 
   const actorId = requireUuid(currentProfile?.id, 'un actor válido');
   const decision = String(input?.decision || '').trim();
   if (!new Set(['go', 'no_go']).has(decision)) throw goNoGoError('La decisión debe ser go o no_go.');
-  const analysisRunId = requireUuid(input?.analysis_run_id, 'un análisis válido').toLowerCase();
-  const justification = requiredText(input?.justification, 'una justificación');
+  const analysisRunId = nullableUuid(input?.analysis_run_id, 'un análisis válido')?.toLowerCase() || null;
+  const justification = nullableText(input?.justification);
   requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
 
   const { opportunity, tender } = await resolveTenderContext(database, opportunityId);
   const records = await getTenderDocumentsAndAnalysis(database, opportunityId);
-  const currentAnalysis = await getCurrentTenderAnalysis(database, opportunityId);
-  if (!currentAnalysis || currentAnalysis.run_id !== analysisRunId) {
-    throw goNoGoError('El análisis indicado no es el análisis vigente de esta oportunidad.');
-  }
-  const effectiveAnalysis = { ...(currentAnalysis.result || {}), ...currentAnalysis };
+  const availableAnalysis = await getCurrentTenderAnalysis(database, opportunityId);
+  const effectiveAnalysis = availableAnalysis?.run_id === analysisRunId && availableAnalysis.status === 'completed'
+    ? { ...(availableAnalysis.result || {}), ...availableAnalysis }
+    : null;
   const preparation = decision === 'go'
     ? buildTenderOfferPreparation(opportunity, records.documents, effectiveAnalysis, currentProfile)
     : null;

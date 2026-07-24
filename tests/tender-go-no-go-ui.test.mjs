@@ -18,24 +18,22 @@ const main = read('src/main.tsx');
 assert.match(panel, /opportunityName/);
 assert.match(panel, /<dt>Oportunidad<\/dt><dd>\{opportunityName\}<\/dd>/);
 
-for (const text of ['Recomendación del sistema', 'Decisión humana', 'Autorizar GO', 'Registrar NO GO', 'Justificación obligatoria']) {
+for (const text of ['Recomendación del sistema', 'Decisión humana', 'Autorizar GO', 'Registrar NO GO', 'Comentario opcional']) {
   assert.match(panel, new RegExp(text), `El panel debe mostrar ${text}.`);
 }
 assert.match(panel, /role="dialog"|<dialog/, 'La decisión debe pedir confirmación accesible.');
 assert.match(panel, /recordTenderGoNoGoDecision/, 'La confirmación debe usar la API formal.');
-assert.match(panel, /analysis_run_id:\s*analysis\.run_id/, 'Debe auditar el ID exacto del análisis tipado vigente.');
+assert.match(panel, /analysis_run_id:\s*analysis\?\.run_id \|\| null/, 'Debe conservar el run disponible y registrar null cuando no existe análisis.');
 assert.match(panel, /await onChanged\s*\(\)/, 'Al guardar debe notificar al detalle para recargar expediente.');
-assert.match(panel, /analysis.*run_id|run_id.*analysis/, 'Sin análisis tipado vigente el panel debe explicar el bloqueo.');
-assert.match(gateSource, /analysis\?\.status\s*===\s*'completed'/, 'Ambas decisiones deben requerir un análisis completado.');
-assert.match(gateSource, /analysis\?\.current\s*===\s*true/, 'Ambas decisiones deben requerir el snapshot vigente.');
-assert.match(gateSource, /critical_open_count[\s\S]*?<=\s*0/, 'GO debe bloquearse con preguntas críticas abiertas.');
+for (const warning of ['recomendación contraria', 'preguntas críticas', 'obsoleto', 'falló', 'no está disponible']) assert.match(panel, new RegExp(warning, 'i'), `La UI debe advertir: ${warning}.`);
+assert.doesNotMatch(gateSource, /analysis\?\.status\s*===\s*'completed'|critical_open_count[\s\S]*?<=\s*0/, 'El estado del análisis y las preguntas críticas no pueden convertirse en gates humanos.');
 assert.match(panel, /history/, 'La UI debe mostrar el historial inmutable.');
 assert.match(panel, /findings|concerns/, 'La UI debe exponer hallazgos o alertas relevantes.');
 assert.match(api, /loadTenderGoNoGoDecision[\s\S]*encodeURIComponent\(opportunityId\)/, 'GET debe codificar el ID.');
 assert.match(api, /recordTenderGoNoGoDecision[\s\S]*\/api\/tender-go-no-go-decision[\s\S]*method:\s*'POST'[\s\S]*JSON\.stringify\(input\)/, 'POST debe enviar el input JSON formal.');
 assert.match(types, /TenderGoNoGoDecisionInput/, 'Deben existir tipos de input GO/NO GO.');
 assert.match(types, /run_id:\s*string/, 'El análisis debe exponer el run_id tipado requerido.');
-assert.match(types, /analysis_run_id:\s*string/, 'El input GO/NO GO debe requerir analysis_run_id.');
+assert.match(types, /analysis_run_id\?:\s*string \| null/, 'El input GO/NO GO debe aceptar ausencia de análisis.');
 assert.match(main, /TenderGoNoGoDecisionPanel/, 'El detalle debe integrar el panel formal.');
 assert.match(main, /onAnalysisChanged/, 'La revisión documental debe elevar el análisis vigente.');
 assert.match(main, /onAnalysisChanged\?:\s*\(analysis: TenderDocumentAnalysis \| null\)/, 'La revisión documental debe exponer el análisis vigente al detalle.');
@@ -93,9 +91,22 @@ const actualDocumentResponse = {
     result: { recommendation: 'GO', summary: 'Análisis tipado vigente.' },
   }),
 };
-assert.deepEqual(tenderDecisionGate(actualDocumentResponse.analysis), { canGo: true, canNoGo: true }, 'the actual presented document response enables both decisions when current analysis has no critical questions');
-assert.deepEqual(tenderDecisionGate({ ...actualDocumentResponse.analysis, critical_open_count: 1 }), { canGo: false, canNoGo: true }, 'critical questions block only GO');
-assert.deepEqual(tenderDecisionGate(null), { canGo: false, canNoGo: false }, 'missing typed analysis blocks both decisions');
-assert.deepEqual(tenderDecisionGate({ ...actualDocumentResponse.analysis, current: false }), { canGo: false, canNoGo: false }, 'stale typed analysis blocks both decisions');
+for (const analysis of [
+  actualDocumentResponse.analysis,
+  { ...actualDocumentResponse.analysis, recommendation: 'do_not_advance', critical_open_count: 1 },
+  { ...actualDocumentResponse.analysis, status: 'failed' },
+  { ...actualDocumentResponse.analysis, current: false },
+  null,
+]) assert.deepEqual(tenderDecisionGate(analysis), { canGo: true, canNoGo: true }, 'analysis state never blocks an authorized human decision');
+
+const { tenderRecommendationLabel } = await import(gateUrl);
+assert.equal(tenderRecommendationLabel('advance'), 'GO recomendado');
+assert.equal(tenderRecommendationLabel('avanzar'), 'GO recomendado');
+assert.equal(tenderRecommendationLabel('advance_conditionally'), 'GO condicionado');
+assert.equal(tenderRecommendationLabel('avanzar_condicionado'), 'GO condicionado');
+assert.equal(tenderRecommendationLabel('do_not_advance'), 'NO GO recomendado');
+assert.equal(tenderRecommendationLabel('no_avanzar'), 'NO GO recomendado');
+assert.equal(tenderRecommendationLabel('pause'), 'Información insuficiente');
+assert.equal(tenderRecommendationLabel('no_avanzar_temporalmente'), 'Información insuficiente');
 
 console.log('tender GO/NO GO UI checks passed');

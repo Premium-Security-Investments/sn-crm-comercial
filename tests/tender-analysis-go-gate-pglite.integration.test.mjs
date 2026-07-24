@@ -51,64 +51,74 @@ async function run(db, snapshotId, {
   method = producer === 'siio_rules_v1' ? 'rules' : 'agent_ai',
   status = 'completed',
   criticalOpenCount = 0,
+  recommendation = 'pause',
   idempotencyKey,
 } = {}) {
   return (await one(db, `select public.psi_record_tender_analysis_run($1::uuid,$2::uuid,$3::uuid,$4::text,$5::text,$6::text,$7::jsonb,$8::int,$9::text,$10::text,$11::text,$12::text,$13::jsonb) as result`, [
-    snapshotId, opportunity, tender, producer, method, status, status === 'completed' ? JSON.stringify({ recommendation: 'pause' }) : null,
+    snapshotId, opportunity, tender, producer, method, status, status === 'completed' ? JSON.stringify({ recommendation }) : null,
     criticalOpenCount, idempotencyKey || `${producer}-${status}-${criticalOpenCount}-${snapshotId}`, '2.0', 'test-policy', null, JSON.stringify({}),
   ])).result;
 }
 
-async function decide(db, { decision = 'go', analysisRunId, justification = 'Justificación humana requerida' } = {}) {
+async function decide(db, { decision = 'go', analysisRunId = null, justification = null } = {}) {
   return (await one(db, `select public.psi_record_tender_go_no_go($1::uuid,$2::uuid,$3::uuid,$4::text,$5::uuid,$6::text,$7::jsonb) as result`, [
     ids.opportunity, ids.tender, ids.actor, decision, analysisRunId ?? null, justification, decision === 'go' ? JSON.stringify({ kind: 'tender_offer_preparation' }) : null,
   ])).result;
 }
 
-await (async function bindsEveryNewDecisionToACompletedCurrentAnalysisRun() {
+await (async function authorizedHumanDecisionDoesNotDependOnAnalysisState() {
   const db = await createDatabase();
   const legacy = await one(db, `select analysis_interaction_id, analysis_run_id, justification from public.psi_tender_go_no_go_decisions where justification = 'Decisión legacy'`);
   assert.deepEqual(legacy, { analysis_interaction_id: null, analysis_run_id: null, justification: 'Decisión legacy' }, 'legacy decision rows remain readable after typed-run migration');
-  const currentSnapshot = await snapshot(db, { marker: 'a' });
-  const currentRules = await run(db, currentSnapshot.id, { idempotencyKey: 'current-rules' });
 
-  await assert.rejects(() => decide(db, { analysisRunId: null }), /análisis vigente|required|requiere/i);
-  await assert.rejects(() => decide(db, { analysisRunId: ids.fabricatedRun }), /análisis vigente|required|requiere/i);
-  await assert.rejects(() => decide(db, { analysisRunId: currentRules.id, justification: '   ' }), /justificación/i);
+  const withoutAnalysis = await decide(db);
+  assert.equal(withoutAnalysis.decision, 'go', 'an authorized human may record GO without analysis');
+  const withoutAnalysisRow = await one(db, `select analysis_run_id, justification, decided_by, decided_at is not null as has_decided_at from public.psi_tender_go_no_go_decisions where id=$1`, [withoutAnalysis.decision_id]);
+  assert.deepEqual(withoutAnalysisRow, { analysis_run_id: null, justification: null, decided_by: ids.actor, has_decided_at: true });
+
+  const currentSnapshot = await snapshot(db, { marker: 'a' });
+  const currentRules = await run(db, currentSnapshot.id, { idempotencyKey: 'current-rules', recommendation: 'do_not_advance' });
+  await assert.rejects(() => decide(db, { analysisRunId: ids.fabricatedRun }), /análisis|oportunidad|licitación/i);
   const go = await decide(db, { analysisRunId: currentRules.id });
-  assert.equal(go.decision, 'go', 'a current completed SIIO rules run may support GO');
+  assert.equal(go.decision, 'go', 'a human GO may contradict the recommendation');
+  const preserved = await one(db, `select result->>'recommendation' as recommendation from public.psi_tender_analysis_runs where id=$1`, [currentRules.id]);
+  assert.equal(preserved.recommendation, 'do_not_advance', 'the original recommendation remains immutable after the human decision');
 
   const otherSnapshot = await snapshot(db, { opportunity: ids.otherOpportunity, tender: ids.otherTender, marker: 'c' });
   const otherRun = await run(db, otherSnapshot.id, { opportunity: ids.otherOpportunity, tender: ids.otherTender, idempotencyKey: 'other-run' });
-  await assert.rejects(() => decide(db, { analysisRunId: otherRun.id }), /análisis vigente|oportunidad|licitación/i);
+  await assert.rejects(() => decide(db, { analysisRunId: otherRun.id }), /análisis|oportunidad|licitación/i);
 
   const failed = await run(db, currentSnapshot.id, { status: 'failed', idempotencyKey: 'failed-run' });
-  await assert.rejects(() => decide(db, { analysisRunId: failed.id }), /análisis vigente/i);
+  assert.equal((await decide(db, { analysisRunId: failed.id })).decision, 'go', 'a failed analysis warns but does not block an authorized human');
 
   const staleSnapshot = await snapshot(db, { marker: 'd' });
   const staleRun = await run(db, staleSnapshot.id, { idempotencyKey: 'stale-run' });
   await snapshot(db, { marker: 'e' });
-  await assert.rejects(() => decide(db, { analysisRunId: staleRun.id }), /obsoleto|vigente/i);
+  assert.equal((await decide(db, { analysisRunId: staleRun.id })).decision, 'go', 'a stale analysis warns but does not block an authorized human');
   await db.close();
 })();
 
-await (async function blocksOnlyGoForCriticalQuestionsAndAcceptsCurrentAuthenticatedEngines() {
+await (async function criticalQuestionsAndProducerRecommendationNeverAuthorizeOrBlockTheHuman() {
   const db = await createDatabase();
   const firstSnapshot = await snapshot(db, { marker: 'f' });
   const criticalAgt = await run(db, firstSnapshot.id, { producer: 'AGT-002', criticalOpenCount: 1, idempotencyKey: 'critical-agt' });
-  await assert.rejects(() => decide(db, { analysisRunId: criticalAgt.id }), /preguntas críticas/i);
+  assert.equal((await decide(db, { analysisRunId: criticalAgt.id })).decision, 'go', 'critical questions remain warnings and cannot block human GO');
   const noGo = await decide(db, { decision: 'no_go', analysisRunId: criticalAgt.id });
-  assert.equal(noGo.decision, 'no_go', 'NO GO may record open critical questions with a justification');
+  assert.equal(noGo.decision, 'no_go', 'NO GO also remains available');
 
   const hermesSnapshot = await snapshot(db, { marker: 'a' });
   const hermes = await run(db, hermesSnapshot.id, { producer: 'HERMES-INTERIM', idempotencyKey: 'current-hermes' });
-  const hermesNoGo = await decide(db, { decision: 'no_go', analysisRunId: hermes.id });
-  assert.equal(hermesNoGo.decision, 'no_go', 'a current authenticated HERMES-INTERIM run may support NO GO');
+  assert.equal((await decide(db, { decision: 'no_go', analysisRunId: hermes.id })).decision, 'no_go');
+  await db.close();
+})();
 
-  const agtSnapshot = await snapshot(db, { marker: 'b' });
-  const agt = await run(db, agtSnapshot.id, { producer: 'AGT-002', idempotencyKey: 'current-agt' });
-  const agtGo = await decide(db, { analysisRunId: agt.id });
-  assert.equal(agtGo.decision, 'go', 'a current AGT-002 run without critical questions may support GO');
+await (async function unauthorizedAndTechnicalIdentitiesRemainBlocked() {
+  const db = await createDatabase();
+  await db.exec(`update public.psi_sales_profiles set identity_type='agent' where id='${ids.actor}'`);
+  await assert.rejects(() => decide(db), /permisos/i);
+  await db.exec(`update public.psi_sales_profiles set identity_type='human' where id='${ids.actor}'; delete from public.psi_profile_permissions where profile_id='${ids.actor}'`);
+  await assert.rejects(() => decide(db), /permisos/i);
+  assert.equal(Number((await one(db, `select count(*)::int as count from public.psi_tender_go_no_go_decisions where justification is null`)).count), 0, 'rejected identities cannot create decisions');
   await db.close();
 })();
 

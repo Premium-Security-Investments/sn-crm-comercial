@@ -148,16 +148,18 @@ export async function getCurrentTenderAnalysis(database, opportunityId) {
   if (latestSnapshotResponse?.error) throw new Error(latestSnapshotResponse.error.message || String(latestSnapshotResponse.error));
   const latestSnapshot = Array.isArray(latestSnapshotResponse?.data) ? latestSnapshotResponse.data[0] : latestSnapshotResponse?.data;
   if (!latestSnapshot?.id) return null;
-  const response = await database.from('psi_tender_analysis_runs')
-    .select('id,snapshot_id,producer,method,status,result,critical_open_count,created_at,completed_at')
-    .eq('opportunity_id', normalizedOpportunityId)
-    .eq('snapshot_id', latestSnapshot.id)
-    .eq('status', 'completed')
-    .order('created_at', { ascending: false })
-    .order('id', { ascending: false })
-    .limit(1);
-  if (response?.error) throw new Error(response.error.message || String(response.error));
-  const run = Array.isArray(response?.data) ? response.data[0] : response?.data;
+
+  const selectLatestRun = async (snapshotId = null) => {
+    let query = database.from('psi_tender_analysis_runs')
+      .select('id,snapshot_id,producer,method,status,result,critical_open_count,created_at,completed_at')
+      .eq('opportunity_id', normalizedOpportunityId);
+    if (snapshotId) query = query.eq('snapshot_id', snapshotId);
+    const response = await query.order('created_at', { ascending: false }).order('id', { ascending: false }).limit(1);
+    if (response?.error) throw new Error(response.error.message || String(response.error));
+    return Array.isArray(response?.data) ? response.data[0] : response?.data;
+  };
+
+  const run = await selectLatestRun(latestSnapshot.id) || await selectLatestRun();
   if (!run) return null;
   return {
     run_id: run.id,
@@ -165,7 +167,7 @@ export async function getCurrentTenderAnalysis(database, opportunityId) {
     producer: run.producer,
     method: run.method,
     status: run.status,
-    current: true,
+    current: run.snapshot_id === latestSnapshot.id,
     result: run.result,
     critical_open_count: run.critical_open_count ?? 0,
     created_at: run.created_at || null,

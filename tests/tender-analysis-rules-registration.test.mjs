@@ -167,8 +167,7 @@ function createCurrentAnalysisDatabase({ latestSnapshot, runs }) {
         limit() {
           queries.push({ table, filters: [...filters] });
           if (table === 'psi_tender_document_snapshots') return Promise.resolve({ data: latestSnapshot ? [latestSnapshot] : [], error: null });
-          const filter = Object.fromEntries(filters);
-          const matching = runs.filter(run => run.opportunity_id === filter.opportunity_id && run.snapshot_id === filter.snapshot_id && run.status === filter.status);
+          const matching = runs.filter(run => Object.entries(Object.fromEntries(filters)).every(([key, value]) => run[key] === value));
           return Promise.resolve({ data: matching.slice().sort((left, right) => String(right.created_at).localeCompare(String(left.created_at))).slice(0, 1), error: null });
         },
       };
@@ -194,14 +193,24 @@ assert.deepEqual(current.result, currentResult);
 assert.deepEqual(currentDatabase.queries[1].filters, [
   ['opportunity_id', ids.opportunity],
   ['snapshot_id', currentSnapshot.id],
-  ['status', 'completed'],
 ]);
 
 const noSnapshotDatabase = createCurrentAnalysisDatabase({ latestSnapshot: null, runs: [] });
 assert.equal(await getCurrentTenderAnalysis(noSnapshotDatabase, ids.opportunity), null);
 assert.equal(noSnapshotDatabase.queries.length, 1);
-const noCurrentRunDatabase = createCurrentAnalysisDatabase({ latestSnapshot: currentSnapshot, runs: [{ id: 'failed', opportunity_id: ids.opportunity, snapshot_id: currentSnapshot.id, status: 'failed' }] });
-assert.equal(await getCurrentTenderAnalysis(noCurrentRunDatabase, ids.opportunity), null);
+const noCurrentRunDatabase = createCurrentAnalysisDatabase({ latestSnapshot: currentSnapshot, runs: [{ id: 'failed', opportunity_id: ids.opportunity, snapshot_id: currentSnapshot.id, producer: 'AGT-002', method: 'agent_ai', status: 'failed', result: null, critical_open_count: 0, created_at: '2026-07-24T13:00:00.000Z' }] });
+const failedCurrent = await getCurrentTenderAnalysis(noCurrentRunDatabase, ids.opportunity);
+assert.equal(failedCurrent.run_id, 'failed');
+assert.equal(failedCurrent.status, 'failed');
+assert.equal(failedCurrent.current, true);
+
+const staleOnlyDatabase = createCurrentAnalysisDatabase({
+  latestSnapshot: currentSnapshot,
+  runs: [{ id: 'stale-only', opportunity_id: ids.opportunity, snapshot_id: ids.snapshot, producer: 'siio_rules_v1', method: 'rules', status: 'completed', result: { recommendation: 'pause' }, critical_open_count: 2, created_at: '2026-07-24T14:00:00.000Z' }],
+});
+const staleOnly = await getCurrentTenderAnalysis(staleOnlyDatabase, ids.opportunity);
+assert.equal(staleOnly.run_id, 'stale-only');
+assert.equal(staleOnly.current, false, 'the latest available old-snapshot run remains visible as a warning, not an authorization gate');
 
 const presented = presentCurrentTenderAnalysis({
   run_id: ids.run,

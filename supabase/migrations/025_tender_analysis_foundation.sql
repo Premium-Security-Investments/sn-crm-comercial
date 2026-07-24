@@ -272,7 +272,6 @@ declare
   v_opportunity public.psi_sales_opportunities%rowtype;
   v_tender public.psi_public_tenders%rowtype;
   v_analysis public.psi_tender_analysis_runs%rowtype;
-  v_latest_snapshot uuid;
   v_previous_id uuid;
   v_decision_id uuid;
   v_preparation_id uuid;
@@ -282,12 +281,6 @@ declare
 begin
   if p_decision is null or p_decision not in ('go', 'no_go') then
     raise exception 'La decisión debe ser go o no_go.' using errcode = '22023';
-  end if;
-  if nullif(btrim(p_justification), '') is null then
-    raise exception 'La justificación es obligatoria.' using errcode = '22023';
-  end if;
-  if p_analysis_run_id is null then
-    raise exception 'Requiere análisis vigente.' using errcode = '22023';
   end if;
   if not exists (
     select 1 from public.psi_sales_profiles p
@@ -309,23 +302,14 @@ begin
     raise exception 'La oportunidad no tiene origen de licitación pública.' using errcode = '22023';
   end if;
 
-  select r.* into v_analysis
-  from public.psi_tender_analysis_runs r
-  where r.id = p_analysis_run_id and r.opportunity_id = p_opportunity_id and r.tender_id = p_tender_id
-  for share;
-  if not found or v_analysis.status <> 'completed' then
-    raise exception 'Requiere análisis vigente.' using errcode = '22023';
-  end if;
-  select s.id into v_latest_snapshot
-  from public.psi_tender_document_snapshots s
-  where s.opportunity_id = p_opportunity_id and s.tender_id = p_tender_id
-  order by s.created_at desc, s.id desc
-  limit 1;
-  if v_analysis.snapshot_id is distinct from v_latest_snapshot then
-    raise exception 'El análisis está obsoleto.' using errcode = '22023';
-  end if;
-  if p_decision = 'go' and v_analysis.critical_open_count > 0 then
-    raise exception 'GO está bloqueado por preguntas críticas abiertas.' using errcode = '22023';
+  if p_analysis_run_id is not null then
+    select r.* into v_analysis
+    from public.psi_tender_analysis_runs r
+    where r.id = p_analysis_run_id and r.opportunity_id = p_opportunity_id and r.tender_id = p_tender_id
+    for share;
+    if not found then
+      raise exception 'El análisis indicado no pertenece a esta oportunidad y licitación.' using errcode = '22023';
+    end if;
   end if;
 
   select d.id into v_previous_id

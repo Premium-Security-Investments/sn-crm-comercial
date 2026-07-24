@@ -159,6 +159,14 @@ function decide(database, input = {}, profile = directorProfile) {
 }
 
 {
+  const { database, observed } = fakeDatabase({ snapshots: [], runs: [] });
+  await decide(database, { analysis_run_id: null, justification: '' });
+  assert.equal(observed.rpc.length, 1, 'missing analysis must still reach the authorized decision RPC');
+  assert.equal(observed.rpc[0].args.p_analysis_run_id, null);
+  assert.equal(observed.rpc[0].args.p_justification, null, 'human comment is optional');
+}
+
+{
   const { database, observed } = fakeDatabase();
   const result = await decide(database);
   assert.equal(observed.rpc.length, 1, 'GO must make exactly one mediated RPC call');
@@ -239,14 +247,11 @@ function decide(database, input = {}, profile = directorProfile) {
 for (const input of [
   { opportunity_id: 'invalid', decision: 'go', analysis_run_id: ANALYSIS_RUN_ID, justification: 'because' },
   { opportunity_id: OPPORTUNITY_ID, decision: 'unknown', analysis_run_id: ANALYSIS_RUN_ID, justification: 'because' },
-  { opportunity_id: OPPORTUNITY_ID, decision: 'go', analysis_run_id: '', justification: 'because' },
-  { opportunity_id: OPPORTUNITY_ID, decision: 'go', analysis_run_id: '   ', justification: 'because' },
   { opportunity_id: OPPORTUNITY_ID, decision: 'go', analysis_run_id: 'not-a-uuid', justification: 'because' },
-  { opportunity_id: OPPORTUNITY_ID, decision: 'go', analysis_run_id: ANALYSIS_RUN_ID, justification: '  ' },
 ]) {
   const { database, observed } = fakeDatabase();
-  await assert.rejects(() => callTenderGoNoGoDecision(database, input, directorProfile), /oportunidad válida|decisión debe ser go o no_go|análisis válido|justificación/i);
-  assert.equal(observed.targetAccesses, 0, 'invalid opportunity, decision, typed run, or justification must fail before target database access');
+  await assert.rejects(() => callTenderGoNoGoDecision(database, input, directorProfile), /oportunidad válida|decisión debe ser go o no_go|análisis válido/i);
+  assert.equal(observed.targetAccesses, 0, 'invalid opportunity, decision, or typed run must fail before target database access');
   assert.equal(observed.rpc.length, 0);
 }
 
@@ -277,8 +282,8 @@ for (const profile of [
       { id: ANALYSIS_RUN_ID, snapshot_id: currentSnapshot.id, opportunity_id: OPPORTUNITY_ID, status: 'completed', result: { recommendation: 'GO' }, created_at: '2026-07-03T00:00:00.000Z' },
     ],
   });
-  await assert.rejects(() => decide(database, { analysis_run_id: STALE_ANALYSIS_RUN_ID }), /análisis indicado no es el análisis vigente/i);
-  assert.equal(observed.rpc.length, 0, 'a stale typed run must not reach the write RPC');
+  await decide(database, { analysis_run_id: STALE_ANALYSIS_RUN_ID });
+  assert.equal(observed.rpc.length, 1, 'a stale typed run remains auditable and cannot block an authorized human');
   const payload = await getTenderGoNoGoDecision(database, OPPORTUNITY_ID, directorProfile);
   assert.equal(payload.analysis.run_id, ANALYSIS_RUN_ID, 'read side reports the completed run for the latest snapshot, not a newer stale-snapshot run');
 }

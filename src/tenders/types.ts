@@ -52,10 +52,10 @@ export type TenderDocumentAnalysis = {
   created_at?: string | null;
   completed_at?: string | null;
   interaction_id?: string | null;
-  recommendation: string;
-  risk: string;
-  summary: string;
-  generated_at: string;
+  recommendation?: string;
+  risk?: string;
+  summary?: string;
+  generated_at?: string;
   findings?: string[];
   commercial_fit?: { status?: string; positives?: string[]; concerns?: string[] };
   strengths?: TenderAnalysisFinding[];
@@ -85,7 +85,7 @@ export type TenderGoNoGoDecision = {
   supersedes_decision_id?: string | null;
   psi_sales_profiles?: { full_name?: string | null } | null;
 };
-export type TenderGoNoGoDecisionInput = { opportunity_id: string; decision: 'go' | 'no_go'; analysis_run_id: string; justification: string };
+export type TenderGoNoGoDecisionInput = { opportunity_id: string; decision: 'go' | 'no_go'; analysis_run_id?: string | null; justification?: string | null };
 export type TenderOfferPreparation = { status: string; interaction_id?: string; [key: string]: unknown };
 export type TenderOfferStatusTransition = {
   id: string;
