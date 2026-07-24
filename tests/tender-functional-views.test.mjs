@@ -49,7 +49,7 @@ assert.match(opportunities, /\/api\/tender-documents-import/);
 assert.match(opportunities, /loadTenderOpportunities/);
 assert.doesNotMatch(opportunities, /\/api\/tender-opportunities/, 'La vista debe depender del loader y no duplicar el contrato HTTP.');
 assert.match(apiSource, /loadTenderOpportunities[\s\S]*?\/api\/tender-opportunities/);
-for (const label of ['Todas', 'Pendiente de decisión', 'GO autorizado', 'En preparación', 'Presentadas', 'Cerradas']) assert.ok(opportunities.includes(label), `Oportunidades debe mostrar filtro ${label}`);
+for (const label of ['Todas', 'Pendiente de decisión', 'GO registrado', 'En preparación', 'Presentadas', 'Cerradas']) assert.ok(opportunities.includes(label), `Oportunidades debe mostrar filtro ${label}`);
 assert.match(opportunities, /setFilter\([\s\S]*?setPage\(1\)/, 'Cambiar filtro debe reiniciar la página.');
 assert.match(opportunities, /dossier_error/);
 assert.doesNotMatch(opportunities, /<dt>GO \/ NO GO<\/dt>/, 'La recomendación ya cubre el dictamen; no debe duplicarse una fila legacy.');

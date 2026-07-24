@@ -2,33 +2,40 @@ import { strict as assert } from 'node:assert';
 import { existsSync, readFileSync } from 'node:fs';
 import { buildSync } from 'esbuild';
 import { ACTIONS, can } from '../access-control.js';
+import { presentCurrentTenderAnalysis } from '../tender-analysis-foundation.js';
 
 const read = relative => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8');
 const panelPath = new URL('../src/tenders/components/TenderGoNoGoDecisionPanel.tsx', import.meta.url);
 const permissionsPath = new URL('../src/tenders/permissions.ts', import.meta.url);
+const decisionGatePath = new URL('../src/tenders/tenderDecisionGate.ts', import.meta.url);
 
 assert.equal(existsSync(panelPath), true, 'Debe existir el panel formal GO/NO GO.');
 const panel = read('src/tenders/components/TenderGoNoGoDecisionPanel.tsx');
+const gateSource = read('src/tenders/tenderDecisionGate.ts');
 const api = read('src/tenders/api.ts');
 const types = read('src/tenders/types.ts');
 const main = read('src/main.tsx');
 assert.match(panel, /opportunityName/);
 assert.match(panel, /<dt>Oportunidad<\/dt><dd>\{opportunityName\}<\/dd>/);
 
-for (const text of ['Recomendación del sistema', 'Decisión humana', 'Autorizar GO', 'Registrar NO GO', 'Justificación opcional']) {
+for (const text of ['Recomendación del sistema', 'Decisión humana', 'Registrar GO', 'Registrar NO GO', 'Comentario opcional']) {
   assert.match(panel, new RegExp(text), `El panel debe mostrar ${text}.`);
 }
 assert.match(panel, /role="dialog"|<dialog/, 'La decisión debe pedir confirmación accesible.');
 assert.match(panel, /recordTenderGoNoGoDecision/, 'La confirmación debe usar la API formal.');
-assert.match(panel, /analysis_interaction_id:\s*analysis\.interaction_id/, 'Debe auditar el ID exacto del análisis vigente.');
+assert.match(panel, /analysis_run_id:\s*analysis\?\.run_id \|\| null/, 'Debe conservar el run disponible y registrar null cuando no existe análisis.');
 assert.match(panel, /await onChanged\s*\(\)/, 'Al guardar debe notificar al detalle para recargar expediente.');
-assert.match(panel, /analysis.*interaction_id|interaction_id.*analysis/, 'Sin análisis vigente el panel debe explicar el bloqueo.');
+for (const warning of ['recomendación contraria', 'preguntas críticas', 'obsoleto', 'falló', 'no está disponible']) assert.match(panel, new RegExp(warning, 'i'), `La UI debe advertir: ${warning}.`);
+assert.doesNotMatch(gateSource, /analysis\?\.status\s*===\s*'completed'|critical_open_count[\s\S]*?<=\s*0/, 'El estado del análisis y las preguntas críticas no pueden convertirse en gates humanos.');
 assert.match(panel, /history/, 'La UI debe mostrar el historial inmutable.');
-assert.match(panel, /findings|concerns/, 'La UI debe exponer hallazgos o alertas relevantes.');
+assert.doesNotMatch(panel, /tender-go-no-go-risks|Riesgos y hallazgos relevantes/, 'El cierre humano no debe repetir la lista de riesgos ya documentada en el brief.');
+assert.doesNotMatch(panel, /analysis\?\.summary/, 'El cierre humano no debe repetir el resumen completo del brief documental.');
+assert.doesNotMatch(panel, /analysis\?\.questions/, 'Dudas abiertas debe vivir una sola vez en el brief documental.');
 assert.match(api, /loadTenderGoNoGoDecision[\s\S]*encodeURIComponent\(opportunityId\)/, 'GET debe codificar el ID.');
 assert.match(api, /recordTenderGoNoGoDecision[\s\S]*\/api\/tender-go-no-go-decision[\s\S]*method:\s*'POST'[\s\S]*JSON\.stringify\(input\)/, 'POST debe enviar el input JSON formal.');
 assert.match(types, /TenderGoNoGoDecisionInput/, 'Deben existir tipos de input GO/NO GO.');
-assert.match(types, /interaction_id\??:\s*string/, 'El análisis debe exponer interaction_id del registro persistido.');
+assert.match(types, /run_id:\s*string/, 'El análisis debe exponer el run_id tipado requerido.');
+assert.match(types, /analysis_run_id\?:\s*string \| null/, 'El input GO/NO GO debe aceptar ausencia de análisis.');
 assert.match(main, /TenderGoNoGoDecisionPanel/, 'El detalle debe integrar el panel formal.');
 assert.match(main, /onAnalysisChanged/, 'La revisión documental debe elevar el análisis vigente.');
 assert.match(main, /onAnalysisChanged\?:\s*\(analysis: TenderDocumentAnalysis \| null\)/, 'La revisión documental debe exponer el análisis vigente al detalle.');
@@ -37,7 +44,8 @@ assert.match(main, /<TenderGoNoGoDecisionPanel[\s\S]*?opportunityId=\{o\.id\}[\s
 assert.match(main, /key=\{`tender-preparation-\$\{o\.id\}-\$\{tenderRevision\}`\}/, 'La preparación debe recargar después de una decisión formal y aislarse por oportunidad.');
 assert.doesNotMatch(main, />Aprobar preparación de oferta</, 'No puede quedar el control legacy de preparación.');
 assert.doesNotMatch(main, /\/api\/tender-offer-preparation-approve/, 'La UI no puede invocar la aprobación legacy.');
-assert.match(main, /Autorizar GO/, 'Sin preparación la UI debe dirigir a la decisión formal GO.');
+assert.match(main, /Registrar GO/, 'Sin preparación la UI debe dirigir al registro formal GO.');
+assert.doesNotMatch(panel, /Autorizar GO|GO autorizado/, 'La experiencia visible debe llamar Registrar GO sin cambiar los permisos backend.');
 assert.match(panel, /const submittedDecision = selectedDecision/, 'El submit debe capturar la decisión antes de limpiar el modal.');
 assert.match(panel, /setSelectedDecision\(null\);\s*setJustification\(''\);[\s\S]*?await load\(true, true\)/, 'Un éxito debe cerrar explícitamente el modal antes de sincronizar y conservar la vista optimista.');
 assert.match(panel, /let persistedSuccessfully = false[\s\S]*?persistedSuccessfully = true/, 'El flujo debe distinguir persistencia exitosa de sincronización posterior.');
@@ -74,5 +82,34 @@ assert.match(panel, /requestVersionRef|requestVersion/, 'Las cargas deben descar
 assert.match(panel, /syncPending/, 'Un POST persistido debe bloquear reintentos mientras sincroniza.');
 assert.match(panel, /document\.activeElement|previouslyFocused/, 'El modal debe recordar el foco previo.');
 assert.match(panel, /Escape|Tab/, 'El modal debe manejar Escape y trap de Tab.');
+
+const gateBundle = buildSync({ entryPoints: [decisionGatePath.pathname], bundle: true, platform: 'node', format: 'esm', write: false });
+const gateUrl = `data:text/javascript;base64,${Buffer.from(gateBundle.outputFiles[0].contents).toString('base64')}`;
+const { tenderDecisionGate } = await import(gateUrl);
+const actualDocumentResponse = {
+  documents: [],
+  analyses: [{ kind: 'tender_document_analysis', status: 'analisis_generado', analysis_run_id: 'legacy-run' }],
+  analysis: presentCurrentTenderAnalysis({
+    run_id: '33333333-3333-4333-8333-33333333333a', snapshot_id: '55555555-5555-4555-8555-555555555555', producer: 'siio_rules_v1', method: 'rules', status: 'completed', current: true, critical_open_count: 0,
+    result: { recommendation: 'GO', summary: 'Análisis tipado vigente.' },
+  }),
+};
+for (const analysis of [
+  actualDocumentResponse.analysis,
+  { ...actualDocumentResponse.analysis, recommendation: 'do_not_advance', critical_open_count: 1 },
+  { ...actualDocumentResponse.analysis, status: 'failed' },
+  { ...actualDocumentResponse.analysis, current: false },
+  null,
+]) assert.deepEqual(tenderDecisionGate(analysis), { canGo: true, canNoGo: true }, 'analysis state never blocks an authorized human decision');
+
+const { tenderRecommendationLabel } = await import(gateUrl);
+assert.equal(tenderRecommendationLabel('advance'), 'GO recomendado');
+assert.equal(tenderRecommendationLabel('avanzar'), 'GO recomendado');
+assert.equal(tenderRecommendationLabel('advance_conditionally'), 'GO condicionado');
+assert.equal(tenderRecommendationLabel('avanzar_condicionado'), 'GO condicionado');
+assert.equal(tenderRecommendationLabel('do_not_advance'), 'NO GO recomendado');
+assert.equal(tenderRecommendationLabel('no_avanzar'), 'NO GO recomendado');
+assert.equal(tenderRecommendationLabel('pause'), 'Información insuficiente');
+assert.equal(tenderRecommendationLabel('no_avanzar_temporalmente'), 'Información insuficiente');
 
 console.log('tender GO/NO GO UI checks passed');

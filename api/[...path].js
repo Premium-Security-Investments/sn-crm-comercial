@@ -10,6 +10,7 @@ import { callTenderOpportunityConversion, callTenderOpportunityDiscard, callTend
 import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
 import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
 import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
+import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis } from '../tender-analysis-foundation.js';
 import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
@@ -1903,6 +1904,25 @@ const tenderDocumentTypes = ['pliego','estudios_previos','anexo_tecnico','adenda
 function parseInteractionJson(notes) {
   try { return JSON.parse(notes || '{}'); } catch { return null; }
 }
+const RESERVED_TENDER_INTERACTION_KINDS = new Set([
+  'tender_document_upload', 'tender_document_analysis', 'tender_document_import_error',
+  'tender_document_clarification', 'tender_offer_preparation',
+]);
+function assertPublicInteractionPayload(notes) {
+  const payload = typeof notes === 'string' ? parseInteractionJson(notes) : notes;
+  if (payload?.kind && RESERVED_TENDER_INTERACTION_KINDS.has(payload.kind)) {
+    const error = new Error('Este tipo de evento solo puede crearse por la ruta interna autorizada.');
+    error.status = 403;
+    throw error;
+  }
+}
+function preparePublicInteractionNotes(notes) {
+  assertPublicInteractionPayload(notes);
+  const preparedNotes = typeof notes === 'object' && notes !== null ? JSON.stringify(notes) : String(notes || '');
+  const normalizedNotes = preparedNotes.trim();
+  if (!normalizedNotes) throw new Error('La nota del seguimiento es obligatoria.');
+  return normalizedNotes;
+}
 function normalizeDocumentType(value, filename = '') {
   if (tenderDocumentTypes.includes(value)) return value;
   const name = normTenderText(filename);
@@ -1995,7 +2015,7 @@ function buildTenderGoNoGoVerdict(opportunity, documents, context = {}) {
   ];
   const commercial_fit = {
     status: hasCoreFit ? 'Encaje detectado' : 'Encaje débil',
-    positives: positiveSignals.length ? positiveSignals.map(s => `Objeto/documentos mencionan ${s}.`) : ['No se detectaron términos fuertes de seguridad, vigilancia o tecnología.'],
+    positives: positiveSignals.length ? [`El objeto y los documentos incluyen ${positiveSignals.join(', ')}; esto indica un encaje preliminar con servicios de seguridad que debe confirmarse contra las capacidades y requisitos de SN.`] : ['No se encontró evidencia textual suficiente para establecer un encaje preliminar con servicios de seguridad.'],
     concerns: [!hasCoreFit && 'Objeto podría estar fuera del core SN.', hasAdenda && 'Existe adenda: usar versión vigente antes de decidir.'].filter(Boolean)
   };
   const company_profile_crosscheck = {
@@ -2011,7 +2031,7 @@ function buildTenderGoNoGoVerdict(opportunity, documents, context = {}) {
     { front: 'Experiencia', status: normalized.includes('experiencia') || finds.smmlv.length ? 'Validar contra RUP' : 'Confirmar', action: finds.smmlv.length ? `Revisar equivalencia de ${finds.smmlv.join(' / ')} en contratos SN.` : 'Confirmar contratos similares exigidos.' },
     { front: 'Formatos y pólizas', status: hasFormats ? 'Cargados/parcial' : 'Pendiente', action: 'Listar formatos obligatorios, póliza de seriedad y anexos firmables.' }
   ];
-  const next_action = finalDecision.startsWith('DESCARTAR') ? 'Marcar como descartada si no hay señal comercial adicional.' : blockers.length ? 'Completar documentos críticos y regenerar dictamen.' : 'Enviar a revisión de licitaciones con pliego, anexos y cruce RUP/financiero.';
+  const next_action = finalDecision.startsWith('DESCARTAR') ? 'Marcar como descartada si no hay señal comercial adicional.' : blockers.length ? 'Completar documentos críticos y actualizar la conclusión preliminar.' : 'Enviar a revisión de licitaciones con pliego, anexos y cruce RUP/financiero.';
   const committee_summary = `GO / NO GO SN — ${finalDecision}. ${opportunity.company_name}: ${hasCoreFit ? 'encaje preliminar con servicios SN' : 'encaje comercial débil'}; riesgo ${risk}. ${blockers.length ? `Bloqueadores: ${blockers.join(' ')}` : 'Base documental mínima disponible.'} Siguiente acción: ${next_action}`;
   return { decision: finalDecision, risk, executive_semaphore, commercial_fit, company_profile_crosscheck, habilitating_requirements, blockers, next_action, committee_summary };
 }
@@ -2028,11 +2048,11 @@ function buildTenderDocumentAnalysis(opportunity, documents, companyProfile = {}
     years: Array.from(text.matchAll(/(\d+)\s*años?/gi)).slice(0, 5).map(m => m[0]),
   };
   const signals = [
-    normalized.includes('coordinador') ? 'Menciona coordinador / supervisor operativo.' : 'No se detectó coordinador en el texto extraído.',
-    normalized.includes('capital de trabajo') ? 'Menciona capital de trabajo.' : 'Validar capital de trabajo en documentos financieros.',
-    normalized.includes('rup') ? 'Menciona RUP / experiencia habilitante.' : 'No se detectó RUP en el texto extraído.',
-    normalized.includes('cctv') || normalized.includes('videovigilancia') ? 'Incluye componente CCTV / videovigilancia.' : 'No se detectó componente CCTV explícito.',
-    normalized.includes('poliza') || normalized.includes('póliza') ? 'Menciona pólizas / seriedad de oferta.' : 'Validar pólizas requeridas.'
+    normalized.includes('coordinador') ? 'El alcance documental incluye coordinación o supervisión operativa; falta validar perfiles y dedicación exigidos.' : 'No se encontró evidencia textual suficiente para confirmar una función de coordinación.',
+    normalized.includes('capital de trabajo') ? 'El análisis detectó una referencia al capital de trabajo; falta validar el valor exigido y el soporte financiero de SN.' : 'El capital de trabajo exigido continúa pendiente de verificación documental.',
+    normalized.includes('rup') ? 'El análisis detectó una referencia al RUP o a experiencia habilitante; falta validar su vigencia y equivalencia.' : 'La experiencia habilitante y el RUP continúan pendientes de verificación documental.',
+    normalized.includes('cctv') || normalized.includes('videovigilancia') ? 'El alcance documental incluye videovigilancia; falta confirmar los requisitos técnicos y la capacidad aplicable de SN.' : 'No se encontró evidencia textual suficiente para confirmar un componente de videovigilancia.',
+    normalized.includes('poliza') || normalized.includes('póliza') ? 'El análisis detectó una referencia a pólizas o seriedad de oferta; falta confirmar tipo, cobertura, cuantía y vigencia.' : 'Las pólizas requeridas continúan pendientes de verificación documental.'
   ];
   const missingCritical = [!hasPliego && 'pliego', !hasTechnical && 'anexo técnico'].filter(Boolean);
   const goNoGo = buildTenderGoNoGoVerdict(opportunity, documents, { text, normalized, hasPliego, hasTechnical, hasAdenda, hasFormats, finds, companyProfile });
@@ -2047,7 +2067,7 @@ function buildTenderDocumentAnalysis(opportunity, documents, companyProfile = {}
     { category: 'Formatos', status: hasFormats ? 'Cargados' : 'Pendiente', detail: hasFormats ? 'Formatos disponibles para checklist de entrega.' : 'Cargar formatos anexos antes de ofertar.' },
   ];
   return {
-    kind: 'tender_document_analysis', report_title: 'Dictamen GO / NO GO SN', status: 'analisis_generado', recommendation, risk, generated_at: new Date().toISOString(),
+    kind: 'tender_document_analysis', report_title: 'Preanálisis por reglas SIIO', status: 'analisis_generado', recommendation, risk, generated_at: new Date().toISOString(),
     summary: `${recommendation} para ${opportunity.company_name}. ${missingCritical.length ? `Faltan documentos críticos: ${missingCritical.join(', ')}.` : 'Hay base documental mínima para revisión comercial y licitatoria.'} ${hasAdenda ? 'Priorizar Adenda como versión vigente.' : 'Confirmar si existen adendas.'}`,
     findings: signals, detected_values: finds, matrix, go_no_go: goNoGo,
     executive_semaphore: goNoGo.executive_semaphore,
@@ -2081,7 +2101,8 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
     const { data } = await database.storage.from(tenderDocumentBucket).createSignedUrl(doc.storage_path, 3600);
     return { ...doc, signed_url: data?.signedUrl || null };
   })) : documents;
-  return { documents: signed, analysis: analyses.at(-1) || null, analyses, import_error: importErrors.at(-1) || null };
+  const currentAnalysis = await getCurrentTenderAnalysis(database, opportunityId);
+  return { documents: signed, analysis: presentCurrentTenderAnalysis(currentAnalysis), analyses, import_error: importErrors.at(-1) || null };
 }
 
 
@@ -2104,6 +2125,14 @@ async function ensureTenderOpportunity(database, id, profile) {
   return opportunity;
 }
 
+async function getTenderIdForOpportunity(database, opportunityId) {
+  const tender = await must(database.from('psi_public_tenders')
+    .select('id')
+    .eq('converted_opportunity_id', opportunityId)
+    .maybeSingle());
+  if (!tender?.id) throw new Error('La oportunidad no está vinculada a una licitación para registrar el preanálisis.');
+  return tender.id;
+}
 
 function getTenderSourceUrlFromOpportunity(opportunity) {
   const notes = String(opportunity?.observaciones || '');
@@ -2236,7 +2265,11 @@ async function importTenderDocumentsFromOfficialSource(database, opportunityId, 
     if (currentDocs.length) {
       const companyProfile = await getTenderCompanyProfile(database);
       const analysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
-      await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ ...analysis, auto_import: true, source: sourceLabel }) }).select('id').single());
+      const registered = await registerSiioRulesAnalysis(database, {
+        opportunity_id: opportunityId, tender_id: await getTenderIdForOpportunity(database, opportunityId), actor_id: currentProfile.id,
+        documents: currentDocs, company_profile: companyProfile, result: analysis,
+      });
+      await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ ...analysis, analysis_run_id: registered.run_id, report_title: 'Preanálisis por reglas SIIO', auto_import: true, source: sourceLabel }) }).select('id').single());
       analysisGenerated = true;
     }
   }
@@ -2302,7 +2335,7 @@ export async function buildTenderOpportunitySummary(database, tender, { opportun
     const records = await getTenderDocumentRecords(database, tender.converted_opportunity_id, { includeSignedUrls: false });
     const preparationRecords = await getTenderOfferPreparationRecords(database, tender.converted_opportunity_id);
     const currentDocuments = records.documents.filter(document => document.current !== false);
-    const analysis = records.analysis?.status === 'analisis_generado' ? records.analysis : null;
+    const analysis = records.analysis?.status === 'completed' && records.analysis?.current === true ? records.analysis : null;
     const importFailureIsCurrent = records.import_error && (!analysis || !analysis.created_at || !records.import_error.created_at || Date.parse(records.import_error.created_at) >= Date.parse(analysis.created_at));
     const preparation = preparationRecords.preparation;
     const recommendation = importFailureIsCurrent ? 'Pendiente' : analysis?.go_no_go?.decision || analysis?.recommendation || 'Pendiente';
@@ -2420,7 +2453,7 @@ app.post('/api/tender-offer-status', async (req, res) => {
 app.post('/api/tender-offer-preparation-approve', async (req, res) => {
   try {
     await getAuthContext(req);
-    res.status(410).json({ error: 'Use Autorizar GO para iniciar la preparación de oferta.' });
+    res.status(410).json({ error: 'Use Registrar GO para iniciar la preparación de oferta.' });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -2484,7 +2517,11 @@ app.post('/api/tender-documents-analyze', async (req, res) => {
     if (!currentDocs.length) throw new Error('Debe cargar documentos antes de analizar.');
     const companyProfile = await getTenderCompanyProfile(database);
     const analysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
-    await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify(analysis) }).select('id').single());
+    const registered = await registerSiioRulesAnalysis(database, {
+      opportunity_id: opportunityId, tender_id: await getTenderIdForOpportunity(database, opportunityId), actor_id: currentProfile.id,
+      documents: currentDocs, company_profile: companyProfile, result: analysis,
+    });
+    await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ ...analysis, analysis_run_id: registered.run_id, report_title: 'Preanálisis por reglas SIIO' }) }).select('id').single());
     res.json(await getTenderDocumentRecords(database, opportunityId));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -2634,8 +2671,7 @@ app.post('/api/opportunities/:id/interactions', async (req, res) => {
     requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
-    const notes = String(req.body.notes || '').trim();
-    if (!notes) throw new Error('La nota del seguimiento es obligatoria.');
+    const notes = preparePublicInteractionNotes(req.body.notes);
     const occurred_at = req.body.occurred_at || new Date().toISOString();
     const interaction_type = req.body.interaction_type || 'nota';
     const created_by = globalCrmScopeRoles.has(currentProfile?.role) ? (req.body.created_by || currentProfile.id) : currentProfile.id;
@@ -2692,8 +2728,7 @@ app.post('/api/opportunity-interactions', async (req, res) => {
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
     await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
-    const notes = String(req.body.notes || '').trim();
-    if (!notes) throw new Error('La nota del seguimiento es obligatoria.');
+    const notes = preparePublicInteractionNotes(req.body.notes);
     const occurred_at = req.body.occurred_at || new Date().toISOString();
     const interaction_type = req.body.interaction_type || 'nota';
     const created_by = globalCrmScopeRoles.has(currentProfile?.role) ? (req.body.created_by || currentProfile.id) : currentProfile.id;
