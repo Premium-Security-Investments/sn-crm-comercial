@@ -4,7 +4,7 @@
 
 **Goal:** Entregar en SIIO una fuente de verdad tipada, vigente y auditable para el análisis documental y GO / NO GO, más una frontera contractual preparada para AGT-002 sin construir una IA paralela ni activar conversaciones en producción.
 
-**Architecture:** SIIO captura un snapshot inmutable de documentos y ficha/RUP, registra cada preanálisis por reglas como una ejecución auténtica y liga GO / NO GO al `analysis_run_id` vigente. El contrato AGT-002 v1 permanece intacto; una interfaz consumidora nueva valida envelopes sintéticos durante desarrollo y queda desactivada en producción hasta que el runtime institucional esté listo.
+**Architecture:** SIIO captura un snapshot inmutable de documentos y ficha/RUP, registra cada preanálisis por reglas como una ejecución auténtica y liga GO / NO GO al `analysis_run_id` vigente. El contrato AGT-002 v1 permanece intacto; una interfaz consumidora nueva valida requests y envelopes institucionales reales. Los envelopes sintéticos sólo existen como fixtures de pruebas y nunca forman parte del runtime.
 
 **Tech Stack:** Node.js ESM, Express, React + TypeScript, Supabase/PostgreSQL, PGlite, JSON Schema draft 2020-12, pruebas Node script y build Vite.
 
@@ -31,7 +31,7 @@ Este plan implementa el Lote 1 de SIIO y la frontera contractual verificable con
 
 - `supabase/migrations/025_tender_analysis_foundation.sql`: snapshots, runs, RLS, funciones de persistencia y gate GO / NO GO.
 - `tender-analysis-foundation.js`: normalización, hashing, registro y lectura del análisis vigente.
-- `agt002-tender-adapter.js`: validación del envelope institucional; no contiene SDK de proveedores.
+- `agt002-tender-adapter.js`: validación de request y envelope institucionales; no contiene SDK de proveedores ni respondedor sintético.
 - `contracts/agents/AGT-002/v2-draft/*.schema.json`: contrato consumidor propuesto; no activa ni reemplaza v1.
 - `server/index.js` y `api/[...path].js`: rutas documentales, tipos reservados y lectura del análisis tipado.
 - `tender-go-no-go-rpc.js`: decisión ligada a `analysis_run_id`.
@@ -52,7 +52,8 @@ Este plan implementa el Lote 1 de SIIO y la frontera contractual verificable con
 
 **Interfaces:**
 - Consumes: completed SIIO snapshot `{snapshot_id, opportunity_id, tender_id, document_hash, profile_hash, documents, company_profile}`.
-- Produces: `validateAgt002TenderAnalysisEnvelope(value)` and `buildSyntheticAgt002TenderAnalysis(snapshot)`.
+- Produces: `validateAgt002TenderAnalysisRequest(value)` and `validateAgt002TenderAnalysisEnvelope(value)`.
+- Test-only fixture: `tests/fixtures/agt002-synthetic-responder.mjs` exports `buildSyntheticAgt002TenderAnalysis(snapshot)` exclusively for contract tests; production code never imports or fabrica envelopes `AGT-002`/`agent_ai`/`completed`.
 
 - [ ] **Step 1: Write the failing contract test**
 
@@ -60,7 +61,8 @@ Este plan implementa el Lote 1 de SIIO y la frontera contractual verificable con
 import { strict as assert } from 'node:assert';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { validateAgt002TenderAnalysisEnvelope, buildSyntheticAgt002TenderAnalysis } from '../agt002-tender-adapter.js';
+import { validateAgt002TenderAnalysisEnvelope, validateAgt002TenderAnalysisRequest } from '../agt002-tender-adapter.js';
+import { buildSyntheticAgt002TenderAnalysis } from './fixtures/agt002-synthetic-responder.mjs';
 
 const v1Files = ['manifest.json', 'analysis.request.schema.json', 'analysis.response.schema.json'];
 const v1Hash = createHash('sha256').update(v1Files.map(name => readFileSync(new URL(`../contracts/agents/AGT-002/v1/${name}`, import.meta.url))).join('\n')).digest('hex');
@@ -70,8 +72,11 @@ const snapshot = {
   snapshot_id: '11111111-1111-4111-8111-111111111111',
   opportunity_id: '22222222-2222-4222-8222-222222222222',
   tender_id: '33333333-3333-4333-8333-333333333333',
-  document_hash: 'a'.repeat(64), profile_hash: 'b'.repeat(64), documents: [], company_profile: {},
+  document_hash: 'a'.repeat(64), profile_hash: 'b'.repeat(64),
+  documents: [{ document_id:'doc-001', name:'Pliego', document_type:'pliego', content:'...', content_sha256:'c'.repeat(64), current:true }],
+  company_profile: { profile_version:'rup-2026-07', fields:[{ key:'annual_revenue', label:'Ingresos anuales', value:'500000000', source:'RUP' }] },
 };
+assert.deepEqual(validateAgt002TenderAnalysisRequest(snapshot), snapshot);
 const envelope = buildSyntheticAgt002TenderAnalysis(snapshot);
 assert.equal(validateAgt002TenderAnalysisEnvelope(envelope).agent_id, 'AGT-002');
 assert.equal(envelope.human_review_required, true);
@@ -87,6 +92,27 @@ Run: `node tests/agt002-tender-analysis-contract.test.mjs`
 Expected: FAIL with `ERR_MODULE_NOT_FOUND` for `agt002-tender-adapter.js`.
 
 - [ ] **Step 3: Add strict request and response schemas**
+
+The request schema must require exactly the top-level snapshot fields shown above. Its minimum closed taxonomy is:
+
+```json
+{
+  "documents": [{
+    "document_id": "non-empty string",
+    "name": "non-empty string",
+    "document_type": "non-empty string",
+    "content": "string",
+    "content_sha256": "64 lowercase hex",
+    "current": "boolean"
+  }],
+  "company_profile": {
+    "profile_version": "non-empty string",
+    "fields": [{ "key": "string", "label": "string", "value": "string", "source": "string|null" }]
+  }
+}
+```
+
+Every request object is closed with `additionalProperties: false`. `validateAgt002TenderAnalysisRequest` must be exactly equivalent: reject extra keys, malformed UUID/hash fields, wrong nested types, or incomplete document/profile items.
 
 The response schema must require exactly:
 
@@ -114,7 +140,7 @@ The response schema must require exactly:
 
 Every finding/question item must require `id`, `text`, `critical`, and `evidence_refs`; `additionalProperties` must be `false` at every object level.
 
-- [ ] **Step 4: Implement the provider-neutral adapter and synthetic responder**
+- [ ] **Step 4: Implement the provider-neutral adapter and test-only fixture**
 
 ```js
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -126,17 +152,13 @@ export function validateAgt002TenderAnalysisEnvelope(value) {
   for (const key of ['strengths', 'weaknesses', 'blockers', 'questions', 'unverified']) if (!Array.isArray(value[key])) throw new Error(`${key} debe ser arreglo.`);
   return value;
 }
-export function buildSyntheticAgt002TenderAnalysis(snapshot) {
-  return {
-    schema_version: '2.0-draft', agent_id: 'AGT-002', run_id: crypto.randomUUID(), policy_version: 'synthetic-v1',
-    snapshot_id: snapshot.snapshot_id, status: 'completed', method: 'agent_ai', recommendation: 'pause',
-    summary: 'Respuesta sintética de integración; no usar en producción.', strengths: [], weaknesses: [], blockers: [],
-    questions: [{ id: 'q-docs', text: 'Validar evidencia documental.', critical: true, evidence_refs: [] }], unverified: [],
-    next_action: 'Esperar activación institucional de AGT-002.', human_review_required: true,
-    usage: { provider: 'synthetic', model: 'synthetic', input_tokens: 0, output_tokens: 0, cost_usd: 0 },
-  };
+export function validateAgt002TenderAnalysisRequest(snapshot) {
+  // Exact structural validation matching the closed request schema.
+  // This adapter only validates institutional inputs/outputs; it never fabricates one.
 }
 ```
+
+Place `buildSyntheticAgt002TenderAnalysis(snapshot)` in `tests/fixtures/agt002-synthetic-responder.mjs`, import it only from tests, and label it clearly as test-only. The fixture can exercise the envelope validator, but production code must never create an `AGT-002` / `agent_ai` / `completed` response.
 
 - [ ] **Step 5: Run and commit**
 
@@ -145,7 +167,7 @@ Run: `node tests/agt002-tender-analysis-contract.test.mjs`
 Expected: `AGT-002 tender analysis consumer contract passed`
 
 ```bash
-git add contracts/agents/AGT-002/v2-draft agt002-tender-adapter.js tests/agt002-tender-analysis-contract.test.mjs
+git add contracts/agents/AGT-002/v2-draft agt002-tender-adapter.js tests/fixtures/agt002-synthetic-responder.mjs tests/agt002-tender-analysis-contract.test.mjs
 git commit -m "test(agents): define AGT-002 tender analysis boundary"
 ```
 
