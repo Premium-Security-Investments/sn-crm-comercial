@@ -99,6 +99,31 @@ No se ejecutó una segunda revisión.
 - El warning de tamaño de chunk Vite permanece sin cambios y no pertenece a este paquete.
 - Conversación, borradores, descarga adicional, SharePoint y activación real siguen fuera de alcance.
 
-## 8. Punto de reanudación
+## 8. Verificación funcional de `#psi-general`
 
-Esperar revisión del canal funcional `<#1500725230908346481>`. No abrir PR, hacer push, merge, deployment, migración remota ni iniciar el siguiente paquete sin autorización explícita.
+La revisión de requisitos posterior al cierre confirmó el comportamiento del gate y detectó un único faltante documental: la especificación no enumeraba el alcance aprobado de preparación asistida posterior al GO. Se corrigió la especificación, sin cambiar código, para incluir:
+
+- matriz de cumplimiento, checklist, índice y cronograma;
+- resumen ejecutivo y propuesta técnica base;
+- carta de presentación, matriz de riesgos, preguntas de aclaración y solicitudes internas;
+- borradores siempre versionados y sujetos a revisión humana;
+- almacenamiento privado SIIO/Supabase durante el MVP;
+- exclusión de propuesta económica, firmas, declaraciones jurídicas definitivas, comunicaciones automáticas y presentación en SECOP;
+- SharePoint pospuesto a una acción humana confirmada posterior.
+
+Después de esa corrección documental, a las `2026-07-24T16:54:26Z`, se repitieron los gates completos:
+
+| Comando | Resultado fresco |
+|---|---:|
+| `tests/*.test.mjs` | PASS — 111/111 |
+| `npx tsc --noEmit` | PASS |
+| `npm run check:backend-parity` | PASS |
+| `npm run check:siio-agents` | PASS |
+| `npm run build` | PASS |
+| `git diff --check` | PASS |
+
+No se abrió una segunda revisión independiente; fue una comprobación mecánica contra el brief canónico y una corrección documental acotada.
+
+## 9. Punto de reanudación
+
+El paquete obtiene PASS funcional local después de la verificación de `#psi-general`. No abrir PR, hacer push, merge, deployment, migración remota ni iniciar el siguiente paquete sin autorización explícita de Juan.

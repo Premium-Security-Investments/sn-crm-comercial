@@ -180,6 +180,27 @@ Backend, RPC y base de datos deben exigir identidad humana, permiso, oportunidad
 - Una decisión de negocio para no continuar se registra como NO GO.
 - Una corrección administrativa de conversión errónea usa una acción separada, restringida y auditada.
 
+### 6.4 Preparación asistida después del GO
+
+Cuando la responsable registra GO, SIIO habilita la preparación de oferta aunque la recomendación del agente haya sido contraria, insuficiente o no haya estado disponible. Las advertencias y la recomendación original permanecen visibles e inmutables.
+
+Dentro del primer MVP, AGT-002 —o `HERMES-INTERIM` mientras AGT-002 no esté operativo— podrá organizar el expediente y producir borradores sujetos siempre a revisión humana de:
+
+- matriz de cumplimiento;
+- checklist;
+- índice del expediente;
+- cronograma;
+- resumen ejecutivo;
+- propuesta técnica base;
+- carta de presentación;
+- matriz de riesgos;
+- preguntas de aclaración;
+- solicitudes internas de información.
+
+Este alcance no incluye propuesta económica, cifras no sustentadas, firmas, declaraciones jurídicas definitivas, comunicaciones automáticas ni presentación en SECOP u otra plataforma. Todos los documentos generados son borradores versionados y deben identificar evidencia, información faltante y responsable de revisión.
+
+Los archivos, análisis y borradores del MVP viven en el almacenamiento privado existente de SIIO/Supabase. SharePoint queda para una etapa posterior y únicamente mediante una acción humana confirmada de archivo o publicación.
+
 ## 7. Arquitectura de datos
 
 El análisis válido dejará de depender exclusivamente de JSON libre dentro de `psi_sales_interactions.notes`.
@@ -357,7 +378,16 @@ La sustitución posterior por AGT-002 requiere además identidad técnica, polic
 - cambio de motor sin reescribir UI, snapshots ni historia;
 - retiro controlado de `HERMES-INTERIM` después del gate AGT-002.
 
-### Lote 3 — Evidencia avanzada
+### Lote 3 — Preparación asistida posterior al GO
+
+- organización versionada del expediente;
+- matriz de cumplimiento, checklist, índice y cronograma;
+- borradores técnicos y de control definidos en la sección 6.4;
+- trazabilidad entre cada borrador, la evidencia fuente y la versión del análisis;
+- revisión humana obligatoria antes de aprobar, compartir o usar cualquier documento;
+- prohibición técnica de propuesta económica, firma, declaración jurídica definitiva, envío o presentación automática.
+
+### Lote 4 — Evidencia avanzada
 
 - OCR;
 - Excel y ZIP profundo;
@@ -367,7 +397,7 @@ La sustitución posterior por AGT-002 requiere además identidad técnica, polic
 - diferencias entre versiones;
 - tareas por frente.
 
-SIIO puede desplegar el Lote 1 de forma independiente. El Lote 2 puede integrarse con fixtures y habilitarse primero con documentos sintéticos o anonimizados; el uso de datos productivos requiere el gate Hermes específico. Lote 2B sustituye el motor por AGT-002 cuando esté operativo. Lote 3 se mantiene separado.
+SIIO puede desplegar el Lote 1 de forma independiente. El Lote 2 puede integrarse con fixtures y habilitarse primero con documentos sintéticos o anonimizados; el uso de datos productivos requiere el gate Hermes específico. Lote 2B sustituye el motor por AGT-002 cuando esté operativo. Lote 3 completa el alcance aprobado del primer MVP posterior al GO. Lote 4 se mantiene separado como evidencia avanzada.
 
 ## 12. Estrategia de pruebas
 
@@ -427,7 +457,7 @@ Antes de despliegue:
 - presentación automática en SECOP;
 - firma o envío de documentos;
 - decisión GO / NO GO por IA;
-- generación completa de oferta final;
+- generación completa de oferta final, propuesta económica o documentos jurídicos definitivos; esto no excluye los borradores técnicos y de control de la sección 6.4;
 - creación automática de SharePoint sin gate de integración;
 - OCR y análisis profundo de Excel/ZIP en los dos primeros lotes;
 - corrección automática de datos productivos existentes;
@@ -452,3 +482,4 @@ El lado SIIO se considera listo para el puente Hermes y la sustitución posterio
 12. las preguntas críticas abiertas generan advertencias y nunca sustituyen ni bloquean la decisión humana autorizada;
 13. todas las pruebas y gates definidos pasan;
 14. sin un motor inteligente aprobado, la conversación permanece deshabilitada y el análisis existente se identifica como `Preanálisis por reglas SIIO`.
+15. después de un GO humano, SIIO puede organizar el expediente y generar los borradores de la sección 6.4 sin producir propuesta económica, firmar, declarar jurídicamente, enviar ni presentar automáticamente.
