@@ -42,7 +42,14 @@ export type TenderOpportunitySummary = TenderDossier & {
 };
 export type TenderCurrentProfile = { id: string; full_name: string; role: string; microsoft_email?: string | null; active?: boolean; permissions?: string[]; identity_type?: 'human' | 'agent' | null };
 export type TenderDocumentAnalysis = {
-  interaction_id?: string;
+  run_id: string;
+  snapshot_id: string;
+  producer: 'siio_rules_v1' | 'HERMES-INTERIM' | 'AGT-002';
+  method: 'rules' | 'agent_ai';
+  status: 'completed' | 'failed';
+  current: boolean;
+  critical_open_count: number;
+  interaction_id?: string | null;
   recommendation: string;
   risk: string;
   summary: string;
@@ -57,13 +64,14 @@ export type TenderGoNoGoDecision = {
   tender_id: string;
   decision: 'go' | 'no_go';
   analysis_interaction_id: string | null;
+  analysis_run_id: string | null;
   justification: string | null;
   decided_by: string;
   decided_at: string;
   supersedes_decision_id?: string | null;
   psi_sales_profiles?: { full_name?: string | null } | null;
 };
-export type TenderGoNoGoDecisionInput = { opportunity_id: string; decision: 'go' | 'no_go'; analysis_interaction_id: string; justification?: string | null };
+export type TenderGoNoGoDecisionInput = { opportunity_id: string; decision: 'go' | 'no_go'; analysis_run_id: string; justification: string };
 export type TenderOfferPreparation = { status: string; interaction_id?: string; [key: string]: unknown };
 export type TenderOfferStatusTransition = {
   id: string;

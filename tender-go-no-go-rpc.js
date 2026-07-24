@@ -1,7 +1,9 @@
 import { ACTIONS, requireAction } from './access-control.js';
+import { getCurrentTenderAnalysis } from './tender-analysis-foundation.js';
 import { buildTenderOfferPreparation } from './tender-offer-preparation.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const LOWERCASE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 function goNoGoError(message, status = 400) {
   const error = new Error(message);
@@ -15,6 +17,12 @@ function requireUuid(value, label) {
   return id;
 }
 
+function requireLowercaseUuid(value, label) {
+  const id = String(value || '').trim();
+  if (!LOWERCASE_UUID_PATTERN.test(id)) throw goNoGoError(`Debe indicar ${label}.`);
+  return id;
+}
+
 function nullableUuid(value, label) {
   if (value === null || value === undefined) return null;
   return requireUuid(value, label);
@@ -22,6 +30,12 @@ function nullableUuid(value, label) {
 
 function nullableText(value, max = 1200) {
   return String(value || '').trim().slice(0, max) || null;
+}
+
+function requiredText(value, label, max = 1200) {
+  const text = nullableText(value, max);
+  if (!text) throw goNoGoError(`Debe indicar ${label}.`);
+  return text;
 }
 
 async function must(query) {
@@ -88,21 +102,17 @@ export async function callTenderGoNoGoDecision(database, input, currentProfile) 
   const actorId = requireUuid(currentProfile?.id, 'un actor válido');
   const decision = String(input?.decision || '').trim();
   if (!new Set(['go', 'no_go']).has(decision)) throw goNoGoError('La decisión debe ser go o no_go.');
-  const analysisInteractionId = nullableUuid(input?.analysis_interaction_id, 'un análisis válido');
+  const analysisRunId = requireLowercaseUuid(input?.analysis_run_id, 'un análisis válido');
+  const justification = requiredText(input?.justification, 'una justificación');
   requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
 
   const { opportunity, tender } = await resolveTenderContext(database, opportunityId);
   const records = await getTenderDocumentsAndAnalysis(database, opportunityId);
-  const analysisWasSpecified = Object.prototype.hasOwnProperty.call(input || {}, 'analysis_interaction_id');
-  const effectiveAnalysis = analysisWasSpecified
-    ? (analysisInteractionId === null
-      ? null
-      : (records.analyses || []).find(analysis => analysis.interaction_id === analysisInteractionId))
-    : records.analysis;
-  if (analysisWasSpecified && analysisInteractionId !== null && !effectiveAnalysis) {
-    throw goNoGoError('El análisis indicado no pertenece a los análisis cargados para esta oportunidad.');
+  const currentAnalysis = await getCurrentTenderAnalysis(database, opportunityId);
+  if (!currentAnalysis || currentAnalysis.run_id !== analysisRunId) {
+    throw goNoGoError('El análisis indicado no es el análisis vigente de esta oportunidad.');
   }
-  const effectiveAnalysisInteractionId = effectiveAnalysis?.interaction_id || null;
+  const effectiveAnalysis = { ...(currentAnalysis.result || {}), ...currentAnalysis };
   const preparation = decision === 'go'
     ? buildTenderOfferPreparation(opportunity, records.documents, effectiveAnalysis, currentProfile)
     : null;
@@ -111,8 +121,8 @@ export async function callTenderGoNoGoDecision(database, input, currentProfile) 
     p_tender_id: tender.id,
     p_actor_id: actorId,
     p_decision: decision,
-    p_analysis_interaction_id: effectiveAnalysisInteractionId,
-    p_justification: nullableText(input?.justification),
+    p_analysis_run_id: analysisRunId,
+    p_justification: justification,
     p_preparation: preparation,
   });
   const persistedPreparation = result.preparation_created
@@ -133,11 +143,11 @@ export async function getTenderGoNoGoDecision(database, opportunityId, currentPr
   requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
   const { tender } = await resolveTenderContext(database, id);
   const [history, records] = await Promise.all([
-    must(database.from('psi_tender_go_no_go_decisions').select('id,opportunity_id,tender_id,decision,analysis_interaction_id,justification,decided_by,decided_at,supersedes_decision_id,psi_sales_profiles(full_name)').eq('opportunity_id', id).eq('tender_id', tender.id).order('decided_at', { ascending: false }).order('id', { ascending: false })),
+    must(database.from('psi_tender_go_no_go_decisions').select('id,opportunity_id,tender_id,decision,analysis_interaction_id,analysis_run_id,justification,decided_by,decided_at,supersedes_decision_id,psi_sales_profiles(full_name)').eq('opportunity_id', id).eq('tender_id', tender.id).order('decided_at', { ascending: false }).order('id', { ascending: false })),
     getTenderDocumentsAndAnalysis(database, id),
   ]);
   const decision = currentDecisionFromHistory(history);
-  return { decision, history: history || [], preparation: decision?.decision === 'go' ? records.preparation : null, analysis: records.analysis };
+  return { decision, history: history || [], preparation: decision?.decision === 'go' ? records.preparation : null, analysis: await getCurrentTenderAnalysis(database, id) };
 }
 
 /** Shared gate for every preparation read/write path; NO_GO never reveals or mutates prior preparation. */

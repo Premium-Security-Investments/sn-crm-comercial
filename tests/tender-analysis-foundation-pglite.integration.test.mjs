@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
 const migration = readFileSync(new URL('../supabase/migrations/025_tender_analysis_foundation.sql', import.meta.url), 'utf8');
+const decisionMigration = readFileSync(new URL('../supabase/migrations/022_tender_go_no_go_workflow.sql', import.meta.url), 'utf8');
 const ids = {
   actor: '11111111-1111-4111-8111-111111111111',
   opportunity: '22222222-2222-4222-8222-222222222222',
@@ -18,13 +19,19 @@ async function createDatabase() {
   const db = new PGlite();
   await db.exec(`
     create role authenticated; create role service_role; alter role service_role bypassrls; grant service_role to current_user;
-    create table public.psi_sales_profiles (id uuid primary key);
-    create table public.psi_sales_opportunities (id uuid primary key);
+    create table public.psi_sales_profiles (id uuid primary key, active boolean not null default true, role text not null default 'admin', microsoft_email text not null default 'test@example.test', identity_type text default 'human');
+    create table public.psi_access_permissions (code text primary key, active boolean not null default true);
+    create table public.psi_profile_permissions (profile_id uuid not null references public.psi_sales_profiles(id), permission_code text not null references public.psi_access_permissions(code), primary key(profile_id, permission_code));
+    create table public.psi_sales_opportunities (id uuid primary key, tipo_producto_original text, external_source text);
     create table public.psi_public_tenders (id uuid primary key, converted_opportunity_id uuid);
+    create table public.psi_sales_interactions (id uuid primary key default gen_random_uuid(), opportunity_id uuid not null, interaction_type text not null, created_by uuid not null, occurred_at timestamptz not null default now(), notes text);
     insert into public.psi_sales_profiles values ('${ids.actor}');
-    insert into public.psi_sales_opportunities values ('${ids.opportunity}'), ('${ids.wrongOpportunity}');
+    insert into public.psi_access_permissions values ('licitaciones', true);
+    insert into public.psi_profile_permissions values ('${ids.actor}', 'licitaciones');
+    insert into public.psi_sales_opportunities values ('${ids.opportunity}', 'Licitación Pública', 'secop_radar:current'), ('${ids.wrongOpportunity}', 'Licitación Pública', 'secop_radar:other');
     insert into public.psi_public_tenders values ('${ids.tender}', '${ids.opportunity}'), ('${ids.wrongTender}', '${ids.wrongOpportunity}');
   `);
+  await db.exec(decisionMigration);
   await db.exec(migration);
   return db;
 }

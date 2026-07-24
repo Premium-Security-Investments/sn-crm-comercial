@@ -1,13 +1,18 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
+import {
+  callTenderGoNoGoDecision,
+  getTenderGoNoGoDecision,
+  requireTenderGoForPreparation,
+} from '../tender-go-no-go-rpc.js';
 
 const OPPORTUNITY_ID = '11111111-1111-4111-8111-111111111111';
 const TENDER_ID = '22222222-2222-4222-8222-222222222222';
-const ANALYSIS_OLD_ID = '33333333-3333-4333-8333-333333333333';
-const ANALYSIS_LATEST_ID = '88888888-8888-4888-888888888888';
-const UNKNOWN_ANALYSIS_ID = '99999999-9999-4999-8999-999999999999';
+const ANALYSIS_RUN_ID = '33333333-3333-4333-8333-33333333333a';
+const STALE_ANALYSIS_RUN_ID = '88888888-8888-4888-8888-88888888888b';
+const LEGACY_ANALYSIS_INTERACTION_ID = '99999999-9999-4999-8999-999999999999';
 const ACTOR_ID = '44444444-4444-4444-8444-444444444444';
+
 const HISTORICAL_PREPARATION = Object.freeze({
   kind: 'tender_offer_preparation',
   status: 'preparacion_oferta',
@@ -43,77 +48,96 @@ const directorProfile = {
   full_name: 'Directora de Licitaciones',
 };
 
-function query(data, onAccess) {
+function comparable(value) {
+  return value == null ? '' : String(value);
+}
+
+function query(rows, onAccess) {
+  const filters = [];
+  const orders = [];
+  let limit = null;
+  const materialize = () => {
+    let result = [...rows];
+    for (const [key, value] of filters) result = result.filter(row => row?.[key] === value);
+    for (const [key, options] of [...orders].reverse()) {
+      const direction = options?.ascending === false ? -1 : 1;
+      result.sort((left, right) => comparable(left?.[key]).localeCompare(comparable(right?.[key])) * direction);
+    }
+    return limit == null ? result : result.slice(0, limit);
+  };
+  const response = data => ({ data, error: null });
   const chain = {
     select() { return chain; },
-    eq() { return chain; },
-    order() { return chain; },
-    maybeSingle() { onAccess?.(); return Promise.resolve({ data, error: null }); },
-    single() { onAccess?.(); return Promise.resolve({ data, error: null }); },
-    then(resolve, reject) { onAccess?.(); return Promise.resolve({ data, error: null }).then(resolve, reject); },
+    eq(key, value) { filters.push([key, value]); return chain; },
+    order(key, options) { orders.push([key, options]); return chain; },
+    limit(value) { limit = value; return chain; },
+    maybeSingle() { onAccess?.(); return Promise.resolve(response(materialize()[0] || null)); },
+    single() { onAccess?.(); return Promise.resolve(response(materialize()[0] || null)); },
+    then(resolve, reject) { onAccess?.(); return Promise.resolve(response(materialize())).then(resolve, reject); },
   };
   return chain;
 }
 
+function preparationInteraction(preparation) {
+  return {
+    id: preparation.interaction_id,
+    opportunity_id: OPPORTUNITY_ID,
+    interaction_type: 'documento',
+    notes: JSON.stringify({ ...preparation, kind: 'tender_offer_preparation' }),
+    created_at: preparation.created_at,
+    occurred_at: preparation.occurred_at,
+  };
+}
+
 function fakeDatabase({
-  onTargetAccess = () => {},
   preparationCreated = true,
-  historicalPreparation = null,
-  historicalPreparations = [],
   preparationId,
+  preparations = [],
   history = [],
+  snapshots = [{ id: '66666666-6666-4666-8666-666666666666', opportunity_id: OPPORTUNITY_ID, created_at: '2026-07-03T00:00:00.000Z' }],
+  runs = [{
+    id: ANALYSIS_RUN_ID,
+    snapshot_id: '66666666-6666-4666-8666-666666666666',
+    opportunity_id: OPPORTUNITY_ID,
+    producer: 'siio_rules_v1',
+    method: 'rules',
+    status: 'completed',
+    critical_open_count: 0,
+    result: { recommendation: 'GO', summary: 'Análisis vigente' },
+    created_at: '2026-07-03T00:00:00.000Z',
+  }],
 } = {}) {
-  const observed = { rpc: [], targetAccesses: 0 };
+  const observed = { rpc: [], targetAccesses: 0, tables: [] };
+  const targetAccess = () => { observed.targetAccesses += 1; };
   const interactions = [
     {
       id: '55555555-5555-4555-8555-555555555555',
+      opportunity_id: OPPORTUNITY_ID,
+      interaction_type: 'documento',
       notes: JSON.stringify({ kind: 'tender_document_upload', documents: [{ id: 'doc-1', name: 'Pliego.pdf', current: true, document_type: 'pliego' }] }),
       created_at: '2026-07-01T00:00:00.000Z',
+      occurred_at: '2026-07-01T00:00:00.000Z',
     },
-    {
-      id: ANALYSIS_OLD_ID,
-      notes: JSON.stringify({ kind: 'tender_document_analysis', status: 'analisis_generado', recommendation: 'NO_GO', commercial_fit: { status: 'Sin encaje' } }),
-      created_at: '2026-07-02T00:00:00.000Z',
-    },
-    {
-      id: ANALYSIS_LATEST_ID,
-      notes: JSON.stringify({ kind: 'tender_document_analysis', status: 'analisis_generado', recommendation: 'GO', commercial_fit: { status: 'Encaje detectado' } }),
-      created_at: '2026-07-03T00:00:00.000Z',
-    },
+    ...preparations.map(preparationInteraction),
   ];
-  if (historicalPreparation) {
-    interactions.push({
-      id: historicalPreparation.interaction_id,
-      notes: JSON.stringify({ ...historicalPreparation, kind: 'tender_offer_preparation' }),
-      created_at: historicalPreparation.created_at,
-      occurred_at: historicalPreparation.occurred_at,
-    });
-  }
-  for (const preparation of historicalPreparations) {
-    interactions.push({
-      id: preparation.interaction_id,
-      notes: JSON.stringify({ ...preparation, kind: 'tender_offer_preparation' }),
-      created_at: preparation.created_at,
-      occurred_at: preparation.occurred_at,
-    });
-  }
   const database = {
     from(table) {
-      const target = ['v_psi_sales_opportunity_enriched', 'psi_public_tenders', 'psi_sales_interactions'].includes(table);
-      const access = target ? () => { observed.targetAccesses += 1; onTargetAccess(); } : undefined;
-      if (table === 'v_psi_sales_opportunity_enriched') return query({ id: OPPORTUNITY_ID, company_name: 'Entidad pública', service_type_code: 'licitacion_publica', expected_close_date: '2026-08-01', offer_value: 1000 }, access);
-      if (table === 'psi_public_tenders') return query({ id: TENDER_ID, converted_opportunity_id: OPPORTUNITY_ID }, access);
-      if (table === 'psi_sales_interactions') return query(interactions, access);
-      if (table === 'psi_tender_go_no_go_decisions') return query(history);
+      observed.tables.push(table);
+      if (table === 'v_psi_sales_opportunity_enriched') return query([{ id: OPPORTUNITY_ID, company_name: 'Entidad pública', service_type_code: 'licitacion_publica', expected_close_date: '2026-08-01', offer_value: 1000 }], targetAccess);
+      if (table === 'psi_public_tenders') return query([{ id: TENDER_ID, converted_opportunity_id: OPPORTUNITY_ID }], targetAccess);
+      if (table === 'psi_sales_interactions') return query(interactions, targetAccess);
+      if (table === 'psi_tender_document_snapshots') return query(snapshots, targetAccess);
+      if (table === 'psi_tender_analysis_runs') return query(runs, targetAccess);
+      if (table === 'psi_tender_go_no_go_decisions') return query(history, targetAccess);
       throw new Error(`unexpected table ${table}`);
     },
     async rpc(name, args) {
       observed.rpc.push({ name, args });
       return {
         data: {
-          decision_id: '66666666-6666-4666-8666-666666666666',
+          decision_id: '77777777-7777-4777-8777-777777777777',
           decision: args.p_decision,
-          preparation_id: args.p_decision === 'go' ? (preparationId || '77777777-7777-4777-8777-777777777777') : null,
+          preparation_id: args.p_decision === 'go' ? (preparationId || '77777777-7777-4777-8777-777777777778') : null,
           preparation_created: preparationCreated,
           tender_offer_status: args.p_decision === 'go' ? 'en_preparacion' : 'cerrada_no_go',
         },
@@ -124,108 +148,106 @@ function fakeDatabase({
   return { database, observed };
 }
 
-function decide(database, input = {}) {
-  return callTenderGoNoGoDecision(database, { opportunity_id: OPPORTUNITY_ID, decision: 'go', ...input }, directorProfile);
+function decide(database, input = {}, profile = directorProfile) {
+  return callTenderGoNoGoDecision(database, {
+    opportunity_id: OPPORTUNITY_ID,
+    decision: 'go',
+    analysis_run_id: ANALYSIS_RUN_ID,
+    justification: 'Margen y capacidad aprobados',
+    ...input,
+  }, profile);
 }
 
 {
   const { database, observed } = fakeDatabase();
-  const result = await decide(database, { analysis_interaction_id: ANALYSIS_OLD_ID, justification: '' });
+  const result = await decide(database);
   assert.equal(observed.rpc.length, 1, 'GO must make exactly one mediated RPC call');
   assert.equal(observed.rpc[0].name, 'psi_record_tender_go_no_go');
   assert.equal(observed.rpc[0].args.p_actor_id, ACTOR_ID);
   assert.equal(observed.rpc[0].args.p_tender_id, TENDER_ID);
   assert.equal(observed.rpc[0].args.p_decision, 'go');
-  assert.equal(observed.rpc[0].args.p_analysis_interaction_id, ANALYSIS_OLD_ID, 'explicit analysis must be audited by the RPC');
-  assert.equal(observed.rpc[0].args.p_justification, null);
-  assert.equal(observed.rpc[0].args.p_preparation.source_summary.decision, 'NO_GO', 'builder must use the explicitly selected analysis, not latest');
+  assert.equal(observed.rpc[0].args.p_analysis_run_id, ANALYSIS_RUN_ID, 'new decisions bind the typed analysis run');
+  assert.equal(Object.hasOwn(observed.rpc[0].args, 'p_analysis_interaction_id'), false, 'legacy interaction IDs are never write inputs');
+  assert.equal(observed.rpc[0].args.p_justification, 'Margen y capacidad aprobados');
   assert.equal(result.preparation, observed.rpc[0].args.p_preparation, 'created preparation must return the payload submitted to the RPC');
 }
 
 {
   const { database, observed } = fakeDatabase();
-  await decide(database);
-  assert.equal(observed.rpc.length, 1);
-  assert.equal(observed.rpc[0].args.p_analysis_interaction_id, ANALYSIS_LATEST_ID, 'omitted analysis must use the current/latest analysis for the RPC audit');
-  assert.equal(observed.rpc[0].args.p_preparation.source_summary.decision, 'GO', 'omitted analysis must build from latest analysis');
-}
-
-{
-  const { database, observed } = fakeDatabase();
-  await decide(database, { analysis_interaction_id: null });
-  assert.equal(observed.rpc.length, 1);
-  assert.equal(observed.rpc[0].args.p_analysis_interaction_id, null, 'explicit null permits a decision without analysis');
-  assert.equal(observed.rpc[0].args.p_preparation.checklist_summary.has_analysis, false, 'explicit null builds GO preparation without analysis');
-  assert.equal(observed.rpc[0].args.p_preparation.source_summary.decision, 'Preparación aprobada por gerencia');
-}
-
-{
-  const { database, observed } = fakeDatabase();
-  await decide(database, { decision: 'no_go', analysis_interaction_id: ANALYSIS_OLD_ID });
+  await decide(database, { decision: 'no_go', justification: 'Riesgo técnico no aceptable' });
   assert.equal(observed.rpc.length, 1);
   assert.equal(observed.rpc[0].args.p_preparation, null, 'NO GO must not build a preparation');
-  assert.equal(observed.rpc[0].args.p_analysis_interaction_id, ANALYSIS_OLD_ID, 'NO GO must audit the effective explicit analysis');
-}
-
-{
-  const { database, observed } = fakeDatabase();
-  await decide(database, { decision: 'no_go' });
-  assert.equal(observed.rpc.length, 1);
-  assert.equal(observed.rpc[0].args.p_preparation, null, 'NO GO must not build a preparation');
-  assert.equal(observed.rpc[0].args.p_analysis_interaction_id, ANALYSIS_LATEST_ID, 'NO GO must audit latest analysis when omitted');
-}
-
-{
-  const { database, observed } = fakeDatabase();
-  await assert.rejects(() => decide(database, { analysis_interaction_id: UNKNOWN_ANALYSIS_ID }), /análisis.*oportunidad|análisis.*cargad/i);
-  assert.equal(observed.rpc.length, 0, 'foreign analysis must fail before the RPC');
+  assert.equal(observed.rpc[0].args.p_justification, 'Riesgo técnico no aceptable');
 }
 
 {
   const { database, observed } = fakeDatabase({
     preparationCreated: false,
     preparationId: HISTORICAL_PREPARATION.interaction_id,
-    historicalPreparation: HISTORICAL_PREPARATION,
+    preparations: [HISTORICAL_PREPARATION, SQL_CURRENT_PREPARATION],
   });
   const result = await decide(database);
   assert.equal(observed.rpc.length, 1);
-  assert.deepEqual(result.preparation, HISTORICAL_PREPARATION, 'reused preparation must return the actually persisted historical interaction, not a new payload');
+  assert.deepEqual(result.preparation, HISTORICAL_PREPARATION, 'reused preparation must return the exact persisted historical interaction by preparation_id');
   assert.notEqual(result.preparation, observed.rpc[0].args.p_preparation, 'reused preparation must not pretend the newly-built payload persisted');
 }
 
 {
+  const history = [{
+    id: '77777777-7777-4777-8777-777777777777',
+    opportunity_id: OPPORTUNITY_ID,
+    tender_id: TENDER_ID,
+    decision: 'go',
+    analysis_interaction_id: LEGACY_ANALYSIS_INTERACTION_ID,
+    analysis_run_id: ANALYSIS_RUN_ID,
+    decided_at: '2026-07-10T00:00:00.000Z',
+  }];
   const { database } = fakeDatabase({
     preparationCreated: false,
     preparationId: SQL_CURRENT_PREPARATION.interaction_id,
-    historicalPreparations: [SQL_CURRENT_PREPARATION, CREATED_AT_CURRENT_PREPARATION],
-    history: [{ id: '77777777-7777-4777-8777-777777777777', decision: 'go' }],
+    preparations: [SQL_CURRENT_PREPARATION, CREATED_AT_CURRENT_PREPARATION],
+    history,
   });
   const result = await decide(database);
-  assert.equal(result.decision.preparation_id, SQL_CURRENT_PREPARATION.interaction_id, 'fake RPC must return the preparation selected by SQL');
-  assert.deepEqual(result.preparation, SQL_CURRENT_PREPARATION, 'reused POST preparation must match the exact SQL-selected interaction id, not created_at order');
+  assert.equal(result.decision.preparation_id, SQL_CURRENT_PREPARATION.interaction_id);
+  assert.deepEqual(result.preparation, SQL_CURRENT_PREPARATION, 'POST must return the RPC-selected interaction, not the newest created_at row');
   const readResult = await getTenderGoNoGoDecision(database, OPPORTUNITY_ID, directorProfile);
-  assert.deepEqual(readResult.preparation, SQL_CURRENT_PREPARATION, 'GET preparation must use SQL occurred_at DESC, id DESC order');
+  assert.deepEqual(readResult.preparation, SQL_CURRENT_PREPARATION, 'GET preparation must use occurred_at DESC and interaction_id DESC, not created_at');
+  assert.equal(readResult.history[0].analysis_interaction_id, LEGACY_ANALYSIS_INTERACTION_ID, 'history keeps legacy analysis linkage readable');
+  assert.equal(readResult.history[0].analysis_run_id, ANALYSIS_RUN_ID, 'history exposes the typed analysis-run linkage');
 }
 
 {
-  const noGo = { id: '99999999-9999-4999-8999-999999999998', decision: 'no_go', decided_at: '2026-07-11T00:00:00.000Z' };
-  const go = { id: '99999999-9999-4999-8999-999999999997', decision: 'go', decided_at: '2026-07-10T00:00:00.000Z' };
-  const { database } = fakeDatabase({ historicalPreparation: HISTORICAL_PREPARATION, history: [noGo, go] });
+  const noGo = { id: '99999999-9999-4999-8999-999999999998', opportunity_id: OPPORTUNITY_ID, tender_id: TENDER_ID, decision: 'no_go', decided_at: '2026-07-11T00:00:00.000Z' };
+  const go = { id: '99999999-9999-4999-8999-999999999997', opportunity_id: OPPORTUNITY_ID, tender_id: TENDER_ID, decision: 'go', decided_at: '2026-07-10T00:00:00.000Z' };
+  const { database } = fakeDatabase({ preparations: [HISTORICAL_PREPARATION], history: [noGo, go] });
   const result = await getTenderGoNoGoDecision(database, OPPORTUNITY_ID, directorProfile);
   assert.equal(result.decision.decision, 'no_go');
-  assert.equal(result.preparation, null, 'Una decisión NO_GO posterior no puede exponer una preparación histórica.');
-  await assert.rejects(() => requireTenderGoForPreparation(database, OPPORTUNITY_ID, directorProfile), error => error?.status === 409, 'Las notas deben rechazar NO_GO vigente antes de insertar.');
+  assert.equal(result.preparation, null, 'a current NO_GO cannot expose historical preparation');
+  await assert.rejects(() => requireTenderGoForPreparation(database, OPPORTUNITY_ID, directorProfile), error => error?.status === 409, 'preparation notes must reject a current NO_GO before insert');
+}
+
+{
+  const root = { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', opportunity_id: OPPORTUNITY_ID, tender_id: TENDER_ID, decision: 'go', decided_at: '2026-07-23T10:00:00Z', supersedes_decision_id: null };
+  const leaf = { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', opportunity_id: OPPORTUNITY_ID, tender_id: TENDER_ID, decision: 'no_go', decided_at: '2026-07-23T09:00:00Z', supersedes_decision_id: root.id };
+  const { database } = fakeDatabase({ preparations: [HISTORICAL_PREPARATION], history: [root, leaf] });
+  const payload = await getTenderGoNoGoDecision(database, OPPORTUNITY_ID, directorProfile);
+  assert.equal(payload.decision.id, leaf.id, 'read side must choose the supersession leaf even when its timestamp is older');
+  assert.equal(payload.preparation, null, 'a leaf NO GO must hide prior preparation');
 }
 
 for (const input of [
-  { opportunity_id: 'invalid', decision: 'go' },
-  { opportunity_id: OPPORTUNITY_ID, decision: 'unknown' },
-  { opportunity_id: OPPORTUNITY_ID, decision: 'go', analysis_interaction_id: '' },
-  { opportunity_id: OPPORTUNITY_ID, decision: 'go', analysis_interaction_id: '   ' },
+  { opportunity_id: 'invalid', decision: 'go', analysis_run_id: ANALYSIS_RUN_ID, justification: 'because' },
+  { opportunity_id: OPPORTUNITY_ID, decision: 'unknown', analysis_run_id: ANALYSIS_RUN_ID, justification: 'because' },
+  { opportunity_id: OPPORTUNITY_ID, decision: 'go', analysis_run_id: '', justification: 'because' },
+  { opportunity_id: OPPORTUNITY_ID, decision: 'go', analysis_run_id: '   ', justification: 'because' },
+  { opportunity_id: OPPORTUNITY_ID, decision: 'go', analysis_run_id: ANALYSIS_RUN_ID.toUpperCase(), justification: 'because' },
+  { opportunity_id: OPPORTUNITY_ID, decision: 'go', analysis_run_id: ANALYSIS_RUN_ID, justification: '  ' },
 ]) {
   const { database, observed } = fakeDatabase();
-  await assert.rejects(() => callTenderGoNoGoDecision(database, input, directorProfile), /oportunidad válida|decisión debe ser go o no_go|análisis válido/i);
-  assert.equal(observed.targetAccesses, 0, 'invalid input must not access target records');
+  await assert.rejects(() => callTenderGoNoGoDecision(database, input, directorProfile), /oportunidad válida|decisión debe ser go o no_go|análisis válido|justificación/i);
+  assert.equal(observed.targetAccesses, 0, 'invalid opportunity, decision, typed run, or justification must fail before target database access');
+  assert.equal(observed.rpc.length, 0);
 }
 
 for (const profile of [
@@ -233,9 +255,25 @@ for (const profile of [
   { ...directorProfile, permissions: [] },
 ]) {
   const { database, observed } = fakeDatabase();
-  await assert.rejects(() => callTenderGoNoGoDecision(database, { opportunity_id: OPPORTUNITY_ID, decision: 'go' }, profile), /autorización/i);
-  assert.equal(observed.targetAccesses, 0, 'unauthorized actors must fail before target access');
+  await assert.rejects(() => decide(database, {}, profile), /autorización/i);
+  assert.equal(observed.targetAccesses, 0, 'unauthorized actors must fail before target database access');
   assert.equal(observed.rpc.length, 0);
+}
+
+{
+  const staleSnapshot = { id: '12121212-1212-4121-8121-121212121212', opportunity_id: OPPORTUNITY_ID, created_at: '2026-07-02T00:00:00.000Z' };
+  const currentSnapshot = { id: '13131313-1313-4131-8131-131313131313', opportunity_id: OPPORTUNITY_ID, created_at: '2026-07-03T00:00:00.000Z' };
+  const { database, observed } = fakeDatabase({
+    snapshots: [staleSnapshot, currentSnapshot],
+    runs: [
+      { id: STALE_ANALYSIS_RUN_ID, snapshot_id: staleSnapshot.id, opportunity_id: OPPORTUNITY_ID, status: 'completed', result: { recommendation: 'GO' }, created_at: '2026-07-04T00:00:00.000Z' },
+      { id: ANALYSIS_RUN_ID, snapshot_id: currentSnapshot.id, opportunity_id: OPPORTUNITY_ID, status: 'completed', result: { recommendation: 'GO' }, created_at: '2026-07-03T00:00:00.000Z' },
+    ],
+  });
+  await assert.rejects(() => decide(database, { analysis_run_id: STALE_ANALYSIS_RUN_ID }), /análisis indicado no es el análisis vigente/i);
+  assert.equal(observed.rpc.length, 0, 'a stale typed run must not reach the write RPC');
+  const payload = await getTenderGoNoGoDecision(database, OPPORTUNITY_ID, directorProfile);
+  assert.equal(payload.analysis.run_id, ANALYSIS_RUN_ID, 'read side reports the completed run for the latest snapshot, not a newer stale-snapshot run');
 }
 
 for (const path of ['../server/index.js', '../api/[...path].js']) {
@@ -248,19 +286,10 @@ for (const path of ['../server/index.js', '../api/[...path].js']) {
   assert.ok(alias, 'legacy alias must remain explicit');
   assert.match(alias[0], /getAuthContext\(req\)/, 'legacy alias still authenticates');
   assert.match(alias[0], /status\(410\)\.json\(\{ error: 'Use Autorizar GO para iniciar la preparación de oferta\.' \}\)/);
-  assert.doesNotMatch(alias[0], /requireDb|\.from\(|\.rpc\(|storage/);
+  assert.doesNotMatch(alias[0], /requireDb|\.from\(|\.rpc\(|storage/, 'legacy alias must not access database or storage');
   const noteRoute = source.match(/app\.post\('\/api\/tender-offer-preparation-note'[\s\S]*?\n}\);/);
-  assert.ok(noteRoute, 'Debe conservarse la ruta de notas.');
-  assert.match(noteRoute[0], /await requireTenderGoForPreparation\(database, opportunityId, currentProfile\)/, 'Las notas deben validar GO vigente antes del insert.');
-}
-
-{
-  const root = { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', decision: 'go', decided_at: '2026-07-23T10:00:00Z', supersedes_decision_id: null };
-  const leaf = { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', decision: 'no_go', decided_at: '2026-07-23T09:00:00Z', supersedes_decision_id: root.id };
-  const { database } = fakeDatabase({ history: [root, leaf] });
-  const payload = await getTenderGoNoGoDecision(database, OPPORTUNITY_ID, directorProfile);
-  assert.equal(payload.decision.id, leaf.id, 'read side must choose the supersession leaf even when its timestamp is older');
-  assert.equal(payload.preparation, null, 'a leaf NO GO must hide prior preparation');
+  assert.ok(noteRoute, 'preparation-note route must remain available');
+  assert.match(noteRoute[0], /await requireTenderGoForPreparation\(database, opportunityId, currentProfile\)/, 'preparation notes must validate the current GO before insert');
 }
 
 console.log('tender go/no-go API checks passed');

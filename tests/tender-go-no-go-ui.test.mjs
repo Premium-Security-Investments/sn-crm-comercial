@@ -15,20 +15,24 @@ const main = read('src/main.tsx');
 assert.match(panel, /opportunityName/);
 assert.match(panel, /<dt>Oportunidad<\/dt><dd>\{opportunityName\}<\/dd>/);
 
-for (const text of ['Recomendación del sistema', 'Decisión humana', 'Autorizar GO', 'Registrar NO GO', 'Justificación opcional']) {
+for (const text of ['Recomendación del sistema', 'Decisión humana', 'Autorizar GO', 'Registrar NO GO', 'Justificación obligatoria']) {
   assert.match(panel, new RegExp(text), `El panel debe mostrar ${text}.`);
 }
 assert.match(panel, /role="dialog"|<dialog/, 'La decisión debe pedir confirmación accesible.');
 assert.match(panel, /recordTenderGoNoGoDecision/, 'La confirmación debe usar la API formal.');
-assert.match(panel, /analysis_interaction_id:\s*analysis\.interaction_id/, 'Debe auditar el ID exacto del análisis vigente.');
+assert.match(panel, /analysis_run_id:\s*analysis\.run_id/, 'Debe auditar el ID exacto del análisis tipado vigente.');
 assert.match(panel, /await onChanged\s*\(\)/, 'Al guardar debe notificar al detalle para recargar expediente.');
-assert.match(panel, /analysis.*interaction_id|interaction_id.*analysis/, 'Sin análisis vigente el panel debe explicar el bloqueo.');
+assert.match(panel, /analysis.*run_id|run_id.*analysis/, 'Sin análisis tipado vigente el panel debe explicar el bloqueo.');
+assert.match(panel, /analysis\.status\s*===\s*'completed'/, 'Ambas decisiones deben requerir un análisis completado.');
+assert.match(panel, /analysis\.current\s*===\s*true/, 'Ambas decisiones deben requerir el snapshot vigente.');
+assert.match(panel, /critical_open_count\s*>\s*0/, 'GO debe bloquearse con preguntas críticas abiertas.');
 assert.match(panel, /history/, 'La UI debe mostrar el historial inmutable.');
 assert.match(panel, /findings|concerns/, 'La UI debe exponer hallazgos o alertas relevantes.');
 assert.match(api, /loadTenderGoNoGoDecision[\s\S]*encodeURIComponent\(opportunityId\)/, 'GET debe codificar el ID.');
 assert.match(api, /recordTenderGoNoGoDecision[\s\S]*\/api\/tender-go-no-go-decision[\s\S]*method:\s*'POST'[\s\S]*JSON\.stringify\(input\)/, 'POST debe enviar el input JSON formal.');
 assert.match(types, /TenderGoNoGoDecisionInput/, 'Deben existir tipos de input GO/NO GO.');
-assert.match(types, /interaction_id\??:\s*string/, 'El análisis debe exponer interaction_id del registro persistido.');
+assert.match(types, /run_id:\s*string/, 'El análisis debe exponer el run_id tipado requerido.');
+assert.match(types, /analysis_run_id:\s*string/, 'El input GO/NO GO debe requerir analysis_run_id.');
 assert.match(main, /TenderGoNoGoDecisionPanel/, 'El detalle debe integrar el panel formal.');
 assert.match(main, /onAnalysisChanged/, 'La revisión documental debe elevar el análisis vigente.');
 assert.match(main, /onAnalysisChanged\?:\s*\(analysis: TenderDocumentAnalysis \| null\)/, 'La revisión documental debe exponer el análisis vigente al detalle.');
