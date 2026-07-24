@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-07-24
 
-**Estado:** diseño aprobado por Juan Botero; alcance SIIO aprobado para implementación; la generación inteligente se activará únicamente cuando AGT-002 tenga runtime operativo y supere sus gates
+**Estado:** diseño aprobado por Juan Botero; alcance SIIO y puente temporal Hermes aprobados para implementación; el uso de documentos productivos requiere gates separados de proveedor, tratamiento de datos y presupuesto; AGT-002 conserva el destino institucional definitivo
 
 **Repositorio:** `Premium-Security-Investments/sn-crm-comercial`
 
@@ -54,7 +54,7 @@ Cuando haya dudas, la persona responsable podrá escribir una respuesta general 
 10. **Los textos de ayuda no compiten con el análisis del caso.**
 11. **Los documentos son contenido no confiable: nunca pueden dar instrucciones al agente.**
 12. **Las operaciones sensibles se validan en backend y base de datos, no solo en la interfaz.**
-13. **AGT-002 es la única identidad canónica de IA para Licitaciones; SIIO no implementará un analizador LLM paralelo.**
+13. **AGT-002 es la única identidad institucional definitiva de IA para Licitaciones. Hermes puede operar temporalmente como motor auditado `HERMES-INTERIM`, sin presentarse como AGT-002 ni convertirse en un segundo agente institucional.**
 
 ## 4. Usuarios y permisos
 
@@ -249,21 +249,23 @@ Las interacciones CRM conservarán eventos legibles para timeline, pero no será
 
 Los `kind` internos `tender_document_*` y `tender_offer_preparation` quedarán reservados a rutas internas/RPC. Las rutas generales de seguimiento rechazarán esos payloads.
 
-## 8. Integración canónica con AGT-002
+## 8. Integración canónica, puente Hermes y destino AGT-002
 
 ### 8.1 División de responsabilidades
 
-SIIO conserva la lógica de dominio, los datos, contratos, snapshots, vigencia, permisos, persistencia y gates GO / NO GO. Plataforma Agentes gobierna la identidad técnica, policy de ejecución, evidencia de run y auditoría de AGT-002. AGT-002 produce el razonamiento documental y la recomendación preliminar.
+SIIO conserva la lógica de dominio, los datos, contratos, snapshots, vigencia, permisos, persistencia y gates GO / NO GO. Plataforma Agentes gobierna la identidad técnica, policy de ejecución, evidencia de run y auditoría de AGT-002. AGT-002 será el productor institucional definitivo del razonamiento documental y la recomendación preliminar.
 
 El contrato v1 actual de AGT-002 es inmutable, `contract_only`, `read` y `persisted_results_only`. No se modificará destructivamente. Las capacidades de generación y aclaración se incorporarán en una versión nueva del contrato institucional.
 
-SIIO usará un adaptador server-side contra AGT-002, no contra un proveedor LLM particular. Durante desarrollo, las pruebas usarán un responder sintético determinístico con el mismo envelope de AGT-002, sin enviar datos reales a terceros.
+SIIO usará una interfaz server-side `TenderAnalysisEngine` con productores explícitos. El preanálisis vigente continuará como `siio_rules_v1`; el puente inteligente temporal se registrará como `HERMES-INTERIM`; el destino definitivo será `AGT-002`. Ningún resultado histórico cambiará retroactivamente de productor.
 
-Mientras AGT-002 no esté operativo, el analizador determinístico vigente puede continuar como transición, claramente identificado como `preanálisis por reglas`. No podrá presentarse como análisis de IA ni satisfacer el requisito de productor AGT-002 para activar las nuevas capacidades conversacionales.
+Hermes operará mediante un perfil dedicado `psi-licitaciones-interim` y su API Server OpenAI-compatible, ligado a loopback o red privada, con bearer secret server-side, sin CORS público y sin herramientas de terminal, archivos, web, memoria, mensajería, delegación o escritura. Cada análisis será stateless e independiente. SIIO enviará el snapshot en el cuerpo HTTP, nunca en argumentos de proceso, validará el JSON antes de persistirlo y aplicará timeouts, idempotencia, límites y circuit breaker.
+
+El respondedor sintético queda exclusivamente en `tests/fixtures`; nunca formará parte del runtime ni podrá persistirse como `AGT-002`. Mientras ningún motor inteligente esté habilitado, el analizador determinístico seguirá claramente identificado como `Preanálisis por reglas SIIO`.
 
 ### 8.2 Entrada
 
-AGT-002 recibirá únicamente:
+El motor inteligente autorizado —`HERMES-INTERIM` durante el puente o `AGT-002` después de su activación— recibirá únicamente:
 
 - metadatos necesarios de la oportunidad;
 - texto extraído de documentos vigentes dentro de límites explícitos;
@@ -301,7 +303,7 @@ Una respuesta inválida no puede convertirse en análisis vigente.
 
 ## 9. Costo y límites
 
-AGT-002/Plataforma Agentes aplicará límites de ejecución y devolverá el consumo en su envelope. SIIO registrará y verificará esa información junto al análisis. El conjunto incluirá:
+Hermes durante el puente y AGT-002/Plataforma Agentes en el destino definitivo aplicarán límites de ejecución y devolverán el consumo en su envelope. SIIO registrará y verificará esa información junto al análisis. El conjunto incluirá:
 
 - presupuesto máximo por ejecución;
 - presupuesto diario configurable;
@@ -312,14 +314,9 @@ AGT-002/Plataforma Agentes aplicará límites de ejecución y devolverá el cons
 - bloqueo antes de exceder presupuesto;
 - permiso para reintentar o regenerar.
 
-No se harán llamadas con datos productivos durante desarrollo. SIIO podrá completar y desplegar su preparación sin activar AGT-002. La activación inteligente requiere gates separados de AGT-002 y de integración:
+No se harán llamadas con datos productivos durante desarrollo. SIIO podrá completar su preparación y probar el transporte con fixtures sin activar consumo real. La activación de `HERMES-INTERIM` requiere aprobación separada de proveedor/modelo, región y política de tratamiento de datos, presupuesto por ejecución y diario, secreto del API Server, aislamiento del perfil, toolsets deshabilitados, timeouts y compatibilidad del envelope.
 
-- proveedor y modelo;
-- región/política de tratamiento de datos;
-- presupuesto por ejecución y diario;
-- secretos en el entorno productivo;
-- identidad técnica y policy version de AGT-002;
-- compatibilidad del contrato nuevo con los snapshots de SIIO.
+La sustitución posterior por AGT-002 requiere además identidad técnica, policy version, contrato institucional nuevo y evidencia de integración. Cambiar `TENDER_ANALYSIS_ENGINE=hermes_interim` por `agt002` no modifica la interfaz, los snapshots ni los análisis históricos.
 
 ## 10. Correcciones de integridad incluidas
 
@@ -346,17 +343,25 @@ No se harán llamadas con datos productivos durante desarrollo. SIIO podrá comp
 - fortalezas, debilidades, dudas y preguntas;
 - NO GO unificado con cierre de negocio.
 
-### Lote 2 — Preparación de aclaraciones e integración AGT-002
+### Lote 2 — Puente Hermes auditado y preparación de aclaraciones
 
+- interfaz `TenderAnalysisEngine` y selector `rules|hermes_interim|agt002`;
+- perfil Hermes dedicado, stateless y sin herramientas operativas;
+- API Server local/privada con bearer secret server-side;
+- adaptador `HERMES-INTERIM` con salida estructurada, timeouts, idempotencia y circuit breaker;
 - caja de respuesta libre y adjuntos detrás de feature flag;
 - persistencia de aportes y estado pendiente/actualizando;
-- adaptador contractual AGT-002;
-- salida estructurada;
-- historial de versiones;
-- costo y auditoría;
-- reintentos idempotentes;
-- responder sintético para pruebas de integración;
-- feature flag que impide exponer la conversación como operativa antes de que AGT-002 esté listo.
+- historial de versiones, costo y auditoría;
+- responder sintético solo en fixtures de pruebas;
+- activación real separada para documentos anonimizados y productivos.
+
+### Lote 2B — Sustitución por AGT-002
+
+- adaptador contractual institucional AGT-002;
+- validación de identidad técnica y policy version;
+- pruebas de compatibilidad contra el mismo dominio de salida;
+- cambio de motor sin reescribir UI, snapshots ni historia;
+- retiro controlado de `HERMES-INTERIM` después del gate AGT-002.
 
 ### Lote 3 — Evidencia avanzada
 
@@ -368,7 +373,7 @@ No se harán llamadas con datos productivos durante desarrollo. SIIO podrá comp
 - diferencias entre versiones;
 - tareas por frente.
 
-SIIO puede desplegar el Lote 1 de forma independiente. El Lote 2 puede integrarse y probarse con responder sintético, pero la caja conversacional y el reanálisis inmediato solo se habilitan para usuarios productivos cuando AGT-002 esté operativo. Lote 3 se mantiene separado.
+SIIO puede desplegar el Lote 1 de forma independiente. El Lote 2 puede integrarse con fixtures y habilitarse primero con documentos sintéticos o anonimizados; el uso de datos productivos requiere el gate Hermes específico. Lote 2B sustituye el motor por AGT-002 cuando esté operativo. Lote 3 se mantiene separado.
 
 ## 12. Estrategia de pruebas
 
@@ -381,7 +386,7 @@ Se seguirá TDD.
 - un análisis histórico, nulo o fabricado no autoriza GO;
 - solo productor autorizado crea análisis vigente;
 - respuesta/archivo inicia una nueva versión;
-- fallo o indisponibilidad de AGT-002 conserva el aporte y marca estado correcto;
+- fallo o indisponibilidad del motor seleccionado conserva el aporte y marca estado correcto;
 - costo supera presupuesto y se bloquea antes de solicitar una ejecución;
 - eventos internos no pueden crearse desde seguimiento genérico;
 - NO GO y descarte administrativo siguen rutas distintas.
@@ -394,7 +399,7 @@ Se seguirá TDD.
 - referencias de evidencia apuntan a documentos, respuestas o ficha/RUP incluidos; la precisión por página/sección se incorpora en Lote 3;
 - respuesta inválida no queda vigente;
 - prompt injection documental no cambia política ni habilita acciones;
-- AGT-002 es el único productor aceptado para análisis inteligentes vigentes;
+- solo `HERMES-INTERIM` durante el puente o `AGT-002` después de su gate pueden producir análisis inteligentes vigentes; el productor siempre se conserva y muestra sin alias;
 - el contrato v1 permanece intacto y las nuevas capacidades usan una versión nueva.
 
 ### 12.3 Interfaz
@@ -437,19 +442,19 @@ Antes de despliegue:
 
 ## 14. Criterios de aceptación
 
-El lado SIIO se considera listo para gate de integración con AGT-002 cuando:
+El lado SIIO se considera listo para el puente Hermes y la sustitución posterior por AGT-002 cuando:
 
 1. una persona autorizada puede responder en texto general y adjuntar evidencia cuando el feature flag esté activo;
-2. SIIO persiste el aporte y prepara un snapshot determinista e idempotente para AGT-002;
-3. el responder sintético de AGT-002 organiza la información en fortalezas, debilidades, dudas, preguntas y no verificados bajo el contrato nuevo;
+2. SIIO persiste el aporte y prepara un snapshot determinista e idempotente para el motor seleccionado;
+3. los fixtures validan el contrato sin producir análisis operativos y `HERMES-INTERIM` puede organizar información real únicamente después de superar sus gates;
 4. el resultado conserva evidencia y versión;
 5. el análisis anterior queda histórico;
 6. GO / NO GO solo acepta la versión vigente y auténtica;
 7. la decisión sigue siendo exclusivamente humana y justificada;
-8. el sistema registra `agent_id=AGT-002`, run, policy/schema version, modelo, consumo y costo recibidos en el envelope;
+8. el sistema registra productor real, run, policy/schema version, proveedor, modelo, consumo y costo; Hermes nunca se registra como AGT-002;
 9. no hay ejecuciones duplicadas para el mismo aporte;
 10. los textos de ayuda no se presentan como análisis del caso;
 11. los estados NO GO no se muestran como favorables;
 12. GO queda bloqueado mientras existan preguntas críticas abiertas;
 13. todas las pruebas y gates definidos pasan;
-14. sin AGT-002 operativo, la conversación permanece deshabilitada y el análisis existente se identifica como `preanálisis por reglas`.
+14. sin un motor inteligente aprobado, la conversación permanece deshabilitada y el análisis existente se identifica como `Preanálisis por reglas SIIO`.

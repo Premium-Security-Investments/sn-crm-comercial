@@ -2,15 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Entregar en SIIO una fuente de verdad tipada, vigente y auditable para el análisis documental y GO / NO GO, más una frontera contractual preparada para AGT-002 sin construir una IA paralela ni activar conversaciones en producción.
+**Goal:** Entregar en SIIO una fuente de verdad tipada, vigente y auditable para análisis documental y GO / NO GO, integrar Hermes como motor temporal `HERMES-INTERIM` apagado por defecto y sustituible, y conservar AGT-002 como destino institucional sin activar datos productivos ni despliegue.
 
-**Architecture:** SIIO captura un snapshot inmutable de documentos y ficha/RUP, registra cada preanálisis por reglas como una ejecución auténtica y liga GO / NO GO al `analysis_run_id` vigente. El contrato AGT-002 v1 permanece intacto; una interfaz consumidora nueva valida requests y envelopes institucionales reales. Los envelopes sintéticos sólo existen como fixtures de pruebas y nunca forman parte del runtime.
+**Architecture:** SIIO captura un snapshot inmutable y liga GO / NO GO al `analysis_run_id` vigente. `TenderAnalysisEngine` selecciona `rules`, `hermes_interim` o `agt002`; cada resultado conserva su productor real. Hermes usa un perfil dedicado y API Server stateless local/privado sin herramientas operativas. AGT-002 v1 permanece intacto y el respondedor sintético existe solo en fixtures.
 
 **Tech Stack:** Node.js ESM, Express, React + TypeScript, Supabase/PostgreSQL, PGlite, JSON Schema draft 2020-12, pruebas Node script y build Vite.
 
 ## Global Constraints
 
-- AGT-002 es la única identidad canónica de IA para Licitaciones; SIIO no implementa ni llama directamente un proveedor LLM.
+- AGT-002 es la única identidad institucional definitiva de IA. Hermes puede operar temporalmente como `HERMES-INTERIM`, sin alias AGT-002 y sin que SIIO llame directamente un proveedor LLM.
 - El análisis actual se etiqueta `Preanálisis por reglas SIIO`; nunca se presenta como IA ni como dictamen definitivo.
 - El contrato `contracts/agents/AGT-002/v1/**` es inmutable y debe conservar su hash de árbol.
 - GO / NO GO es exclusivamente humano, con permiso `LICITACIONES_GO_NO_GO_APPROVE` y justificación obligatoria.
@@ -18,12 +18,12 @@
 - Preguntas críticas abiertas bloquean GO.
 - Las rutas generales de interacciones rechazan `tender_document_*` y `tender_offer_preparation`.
 - `NO GO`, `cerrada_no_go` y `no_adjudicada` nunca usan tono favorable.
-- No desplegar producción ni ejecutar migraciones remotas en este plan.
+- No desplegar producción, ejecutar migraciones remotas ni enviar documentos reales a Hermes en este plan. El transporte real queda apagado por defecto hasta aprobar proveedor/modelo, tratamiento de datos y presupuesto.
 - Mantener paridad exacta entre `server/index.js` y `api/[...path].js` mediante `npm run check:backend-parity`.
 
 ## Plan Boundary
 
-Este plan implementa el Lote 1 de SIIO y la frontera contractual verificable con AGT-002. No implementa la caja de aclaraciones, adjuntos de respuesta, ejecución asíncrona ni feature flag conversacional del Lote 2; esos cambios requieren el contrato operativo aprobado de AGT-002 y tendrán un plan sucesor. Esta separación permite desplegar integridad, vigencia y nueva jerarquía sin fingir que el runtime inteligente ya existe.
+Este plan implementa el Lote 1 de SIIO, la frontera AGT-002 verificable y el adaptador temporal Hermes detrás de un selector apagado por defecto. No implementa aún la caja de aclaraciones ni adjuntos. Las pruebas del puente usan transporte inyectado; no realizan llamadas reales. La activación con datos sintéticos/anonimizados y luego productivos tendrá gates separados. AGT-002 sustituirá el motor sin cambiar snapshots, UI ni historia.
 
 ---
 
@@ -32,6 +32,8 @@ Este plan implementa el Lote 1 de SIIO y la frontera contractual verificable con
 - `supabase/migrations/025_tender_analysis_foundation.sql`: snapshots, runs, RLS, funciones de persistencia y gate GO / NO GO.
 - `tender-analysis-foundation.js`: normalización, hashing, registro y lectura del análisis vigente.
 - `agt002-tender-adapter.js`: validación de request y envelope institucionales; no contiene SDK de proveedores ni respondedor sintético.
+- `tender-analysis-engine.js`: selector de productor y contrato de dominio común.
+- `hermes-tender-analysis-adapter.js`: cliente API Server stateless, productor `HERMES-INTERIM`, validación, timeout y circuit breaker; sin SDK LLM.
 - `contracts/agents/AGT-002/v2-draft/*.schema.json`: contrato consumidor propuesto; no activa ni reemplaza v1.
 - `server/index.js` y `api/[...path].js`: rutas documentales, tipos reservados y lectura del análisis tipado.
 - `tender-go-no-go-rpc.js`: decisión ligada a `analysis_run_id`.
@@ -39,6 +41,7 @@ Este plan implementa el Lote 1 de SIIO y la frontera contractual verificable con
 - `src/main.tsx`: resumen orientado a decisión y etiqueta de método.
 - `src/tenders/components/TenderGoNoGoDecisionPanel.tsx`: gate visual por vigencia y preguntas críticas.
 - `tests/tender-analysis-foundation-*.test.mjs`: contratos, migración, API, UI y seguridad.
+- `tests/hermes-interim-tender-analysis.test.mjs`: transporte inyectado, aislamiento, productor, costo, timeout, feature flag y ausencia de llamadas reales.
 
 ---
 
@@ -143,7 +146,7 @@ Every finding/question item must require `id`, `text`, `critical`, and `evidence
 - [ ] **Step 4: Implement the provider-neutral adapter and test-only fixture**
 
 ```js
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 export function validateAgt002TenderAnalysisEnvelope(value) {
   if (!value || value.agent_id !== 'AGT-002') throw new Error('El productor debe ser AGT-002.');
   if (!UUID.test(String(value.run_id || '')) || !UUID.test(String(value.snapshot_id || ''))) throw new Error('Run y snapshot deben ser UUID.');
@@ -193,7 +196,7 @@ for (const token of [
   'create table if not exists public.psi_tender_document_snapshots',
   'create table if not exists public.psi_tender_analysis_runs',
   'unique (opportunity_id, document_hash, profile_hash)',
-  "check (producer in ('siio_rules_v1', 'AGT-002'))",
+  "check (producer in ('siio_rules_v1', 'HERMES-INTERIM', 'AGT-002'))",
   'psi_record_tender_document_snapshot', 'psi_record_tender_analysis_run',
   'revoke all on table public.psi_tender_analysis_runs from authenticated',
 ]) assert.match(migration, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
@@ -207,12 +210,12 @@ Expected: FAIL because migration 025 does not exist.
 
 - [ ] **Step 3: Write migration 025**
 
-Create snapshots with UUID PK, opportunity/tender FKs, 64-character lowercase SHA-256 hashes, JSONB manifest/profile snapshot, actor and timestamp. Create runs with snapshot/opportunity/tender FKs, producer, method `rules|agent_ai`, status `completed|failed`, result JSONB, `critical_open_count >= 0`, unique idempotency key, schema/policy/model/usage fields and timestamps.
+Create snapshots with UUID PK, opportunity/tender FKs, 64-character lowercase SHA-256 hashes, JSONB manifest/profile snapshot, actor and timestamp. Create runs with snapshot/opportunity/tender FKs, producer `siio_rules_v1|HERMES-INTERIM|AGT-002`, method `rules|agent_ai`, status `completed|failed`, result JSONB, `critical_open_count >= 0`, unique idempotency key, schema/policy/model/usage fields and timestamps. Enforce `rules` only for `siio_rules_v1` and `agent_ai` only for `HERMES-INTERIM`/`AGT-002`.
 
 Both tables must revoke direct authenticated writes. Security-definer RPCs must:
 
 ```sql
-if p_producer not in ('siio_rules_v1', 'AGT-002') then
+if p_producer not in ('siio_rules_v1', 'HERMES-INTERIM', 'AGT-002') then
   raise exception 'Productor de análisis no autorizado.' using errcode = '22023';
 end if;
 if p_status = 'completed' and (p_result is null or jsonb_typeof(p_result) <> 'object') then
@@ -378,7 +381,7 @@ git commit -m "fix(tenders): reserve internal documentary events"
 
 - [ ] **Step 1: Write failing PGlite gates**
 
-Cover: null run, fabricated UUID, run from another opportunity, failed run, historical snapshot, AGT-002 run with critical questions, current SIIO rules run, current AGT-002 run without critical questions, and mandatory justification for both decisions.
+Cover: null run, fabricated UUID, run from another opportunity, failed run, historical snapshot, AGT-002 run with critical questions, current SIIO rules run, current authenticated `HERMES-INTERIM` run, current AGT-002 run without critical questions, and mandatory justification for both decisions.
 
 - [ ] **Step 2: Run and verify RED**
 
@@ -468,10 +471,10 @@ const strengths = analysis.strengths ?? analysis.commercial_fit?.positives ?? []
 const weaknesses = analysis.weaknesses ?? analysis.blockers ?? analysis.commercial_fit?.concerns ?? [];
 const questions = analysis.questions ?? [];
 const unverified = analysis.unverified ?? analysis.company_profile_crosscheck?.gaps ?? [];
-const methodLabel = analysis.producer === 'AGT-002' ? 'Análisis AGT-002' : 'Preanálisis por reglas SIIO';
+const methodLabel = analysis.producer === 'AGT-002' ? 'Análisis AGT-002' : analysis.producer === 'HERMES-INTERIM' ? 'Análisis asistido por Hermes — transitorio' : 'Preanálisis por reglas SIIO';
 ```
 
-Do not add the clarification textbox in this task; it remains behind the AGT-002 activation gate.
+Do not add the clarification textbox in this task; it remains behind the approved intelligent-engine activation gate.
 
 - [ ] **Step 4: Fix exact status tones**
 
@@ -492,7 +495,130 @@ git commit -m "feat(tenders): present documentary decision brief"
 
 ---
 
-### Task 7: Full verification and non-production closeout
+### Task 7: Add the audited Hermes interim engine behind a hard-off gate
+
+**Files:**
+- Create: `tender-analysis-domain.js`
+- Create: `tender-analysis-engine.js`
+- Create: `hermes-tender-analysis-adapter.js`
+- Modify: `agt002-tender-adapter.js`
+- Create: `tests/hermes-interim-tender-analysis.test.mjs`
+- Create: `docs/runbooks/hermes-interim-tender-analysis.md`
+
+**Interfaces:**
+- Produces `validateTenderAnalysisResult(value)`, accepting only an internally consistent producer/method pair: `siio_rules_v1/rules`, `HERMES-INTERIM/agent_ai`, or `AGT-002/agent_ai`.
+- Produces `createTenderAnalysisEngine({ mode, rulesEngine, hermesEngine, agt002Engine })`; allowed modes are `rules`, `hermes_interim`, `agt002` and unknown/missing intelligent dependencies fail closed.
+- Produces `createHermesTenderAnalysisEngine({ transport, baseUrl, apiKey, provider, model, policyVersion, timeoutMs, budget })`.
+- Production transport uses Hermes API Server `POST /v1/chat/completions`; test transport is injected and performs no network call.
+
+- [ ] **Step 1: Write failing domain and transport tests**
+
+Cover all of the following:
+
+```js
+assert.throws(() => createTenderAnalysisEngine({ mode:'hermes_interim' }).analyze(snapshot), /no configurado/i);
+assert.equal(validateTenderAnalysisResult(hermesResult).producer, 'HERMES-INTERIM');
+assert.throws(() => validateTenderAnalysisResult({ ...hermesResult, producer:'AGT-002' }), /identidad|productor/i);
+assert.throws(() => validateTenderAnalysisResult({ ...hermesResult, human_review_required:false }), /revisión humana/i);
+```
+
+The injected transport test must prove:
+
+- URL is loopback or an explicitly configured private/allowlisted HTTPS endpoint;
+- bearer key is sent only in the header and never embedded in prompt, logs, result or errors;
+- endpoint is `/v1/chat/completions` with `stream:false` and no conversation/session persistence;
+- system policy marks documents as untrusted data and forbids GO / NO GO, writes, sends and claims without evidence;
+- user message contains the canonical snapshot JSON;
+- timeout aborts the request;
+- malformed/fenced/non-object output is rejected safely;
+- `usage` records configured provider/model, input/output tokens, pricing version and computed estimated cost;
+- daily/per-run budget is checked before the transport call;
+- raw provider errors are sanitized;
+- no production module imports the test fixture.
+
+- [ ] **Step 2: Run and verify RED**
+
+Run: `node tests/hermes-interim-tender-analysis.test.mjs`
+
+Expected: FAIL with missing `tender-analysis-domain.js` or `hermes-tender-analysis-adapter.js`.
+
+- [ ] **Step 3: Implement the common domain validator and selector**
+
+```js
+const PRODUCER_METHOD = new Map([
+  ['siio_rules_v1', 'rules'],
+  ['HERMES-INTERIM', 'agent_ai'],
+  ['AGT-002', 'agent_ai'],
+]);
+export function validateTenderAnalysisResult(value) {
+  if (!value || PRODUCER_METHOD.get(value.producer) !== value.method) throw new Error('Productor o método de análisis inválido.');
+  if (value.human_review_required !== true) throw new Error('La revisión humana es obligatoria.');
+  if (!UUID.test(value.run_id) || !UUID.test(value.snapshot_id)) throw new Error('Identidad de análisis inválida.');
+  for (const key of ['strengths','weaknesses','blockers','questions','unverified']) if (!Array.isArray(value[key])) throw new Error(`${key} debe ser arreglo.`);
+  return value;
+}
+```
+
+`agt002-tender-adapter.js` maps an institutional AGT-002 envelope to this domain without changing its producer. No adapter may relabel Hermes output as AGT-002.
+
+- [ ] **Step 4: Implement the Hermes API Server adapter with injected transport**
+
+The production request shape is:
+
+```js
+{
+  model: 'psi-licitaciones-interim',
+  stream: false,
+  messages: [
+    { role:'system', content: HERMES_TENDER_POLICY },
+    { role:'user', content: JSON.stringify(snapshot) },
+  ],
+}
+```
+
+Requirements:
+
+- use `Authorization: Bearer <server-secret>` and `Content-Type: application/json`;
+- never pass documents in CLI arguments;
+- parse only one strict JSON object from `choices[0].message.content`;
+- overwrite/reject producer metadata so accepted output is exactly `HERMES-INTERIM` and cannot claim `AGT-002`;
+- validate through `validateTenderAnalysisResult` before returning;
+- implement AbortController timeout and one bounded retry only for a retry-safe transport failure under the same idempotency key;
+- never retry schema/policy/budget failures;
+- return safe errors without response bodies or credentials.
+
+- [ ] **Step 5: Add a deployment-readiness guard and runbook**
+
+The engine remains unavailable unless all variables exist and the selector explicitly says `hermes_interim`:
+
+```text
+TENDER_ANALYSIS_ENGINE=hermes_interim
+HERMES_INTERIM_BASE_URL=http://127.0.0.1:<dedicated-port>
+HERMES_INTERIM_API_KEY=[secret]
+HERMES_INTERIM_PROVIDER=[approved]
+HERMES_INTERIM_MODEL=[approved]
+HERMES_INTERIM_POLICY_VERSION=[approved]
+HERMES_INTERIM_MAX_COST_USD=[approved]
+```
+
+The runbook must require a dedicated Hermes profile `psi-licitaciones-interim`, API Server bearer authentication, loopback/private binding, no browser CORS, stateless calls, fresh analysis context, and all operational toolsets disabled. It must document verification via authenticated `/v1/toolsets`, `/v1/capabilities`, and `/health/detailed`. Do not create the profile, store a secret, restart the gateway or activate the variables in this task.
+
+- [ ] **Step 6: Run and commit**
+
+```bash
+node tests/hermes-interim-tender-analysis.test.mjs
+node tests/agt002-tender-analysis-contract.test.mjs
+npm run build
+git diff --check
+git add tender-analysis-domain.js tender-analysis-engine.js hermes-tender-analysis-adapter.js agt002-tender-adapter.js tests/hermes-interim-tender-analysis.test.mjs docs/runbooks/hermes-interim-tender-analysis.md
+git commit -m "feat(tenders): add gated Hermes interim analysis engine"
+```
+
+Expected: tests/build PASS; no network call, profile mutation, secret write, gateway restart or real analysis.
+
+---
+
+### Task 8: Full verification and non-production closeout
 
 **Files:**
 - Modify: `docs/superpowers/plans/2026-07-24-siio-tender-decision-foundation.md` (checkboxes only)
@@ -515,6 +641,7 @@ Expected: no output.
 
 ```bash
 node tests/agt002-tender-analysis-contract.test.mjs
+node tests/hermes-interim-tender-analysis.test.mjs
 node tests/tender-analysis-foundation-migration.test.mjs
 node tests/tender-analysis-foundation-pglite.integration.test.mjs
 node tests/tender-analysis-rules-registration.test.mjs
@@ -542,7 +669,7 @@ Expected: parity PASS, build PASS, all test scripts PASS, no whitespace errors, 
 
 - [ ] **Step 4: Record evidence**
 
-The evidence document must list commit range, commands, exact exit status, migrations not applied remotely, AGT-002 runtime not called, production not deployed, and residual gates: institutional AGT-002 v2 approval, technical identity, provider/data-region, budget and feature flag.
+The evidence document must list commit range, commands, exact exit status, migrations not applied remotely, Hermes transport and AGT-002 runtime not called, production not deployed, and residual gates: Hermes provider/model/data-region/budget/profile activation plus institutional AGT-002 v2 approval and technical identity.
 
 - [ ] **Step 5: Request code review and commit closeout**
 

@@ -75,3 +75,10 @@ Se congeló AGT-002 v1 mediante una prueba de hash byte-a-byte y se añadió la 
 
 - Fix commit: `76c05e938fe11eb4e89d17be6fb49706a44a4a23` — `fix(agents): validate closed AGT-002 tender snapshots`.
 - Auto-revisión: se confirmó que el runtime sólo exporta validadores, que cada nivel nuevo de la request schema usa `additionalProperties: false`, que los rechazos cubren claves extra, hashes en mayúscula, tipos anidados y campos obligatorios vacíos, y que no se modificó AGT-002 v1.
+
+## Fix UUID canónico — 2026-07-24
+
+- Se añadió una regresión que usa `AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA`: conserva una estructura UUID válida, pero usa mayúsculas y debe ser rechazada por la request runtime igual que por la schema v2-draft.
+- **RED:** con el modificador `/i` todavía presente, `node tests/agt002-tender-analysis-contract.test.mjs` terminó con `AssertionError: Missing expected exception` (exit 1).
+- **GREEN:** se retiró sólo `/i` del regex UUID de `agt002-tender-adapter.js`; `node tests/agt002-tender-analysis-contract.test.mjs` → `AGT-002 tender analysis consumer contract passed`.
+- Verificación adicional: `node tests/agent-contracts-p1a.test.mjs` → `P1A SIIO agent contracts OK`; `npm run build` → exit 0 (persiste únicamente el warning preexistente de chunk >500 kB).

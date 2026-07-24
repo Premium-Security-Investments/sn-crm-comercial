@@ -39,6 +39,7 @@ const snapshot = {
 assert.deepEqual(validateAgt002TenderAnalysisRequest(snapshot), snapshot);
 for (const invalidSnapshot of [
   { ...snapshot, unexpected: true },
+  { ...snapshot, snapshot_id: 'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA' },
   { ...snapshot, document_hash: 'A'.repeat(64) },
   { ...snapshot, documents: [{ ...snapshot.documents[0], content_sha256: 'C'.repeat(64) }] },
   { ...snapshot, documents: [{ ...snapshot.documents[0], document_id: '' }] },
