@@ -1904,6 +1904,18 @@ const tenderDocumentTypes = ['pliego','estudios_previos','anexo_tecnico','adenda
 function parseInteractionJson(notes) {
   try { return JSON.parse(notes || '{}'); } catch { return null; }
 }
+const RESERVED_TENDER_INTERACTION_KINDS = new Set([
+  'tender_document_upload', 'tender_document_analysis', 'tender_document_import_error',
+  'tender_document_clarification', 'tender_offer_preparation',
+]);
+function assertPublicInteractionPayload(notes) {
+  const payload = typeof notes === 'string' ? parseInteractionJson(notes) : notes;
+  if (payload?.kind && RESERVED_TENDER_INTERACTION_KINDS.has(payload.kind)) {
+    const error = new Error('Este tipo de evento solo puede crearse por la ruta interna autorizada.');
+    error.status = 403;
+    throw error;
+  }
+}
 function normalizeDocumentType(value, filename = '') {
   if (tenderDocumentTypes.includes(value)) return value;
   const name = normTenderText(filename);
@@ -2653,6 +2665,7 @@ app.post('/api/opportunities/:id/interactions', async (req, res) => {
     await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const notes = String(req.body.notes || '').trim();
     if (!notes) throw new Error('La nota del seguimiento es obligatoria.');
+    assertPublicInteractionPayload(notes);
     const occurred_at = req.body.occurred_at || new Date().toISOString();
     const interaction_type = req.body.interaction_type || 'nota';
     const created_by = globalCrmScopeRoles.has(currentProfile?.role) ? (req.body.created_by || currentProfile.id) : currentProfile.id;
@@ -2711,6 +2724,7 @@ app.post('/api/opportunity-interactions', async (req, res) => {
     await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
     const notes = String(req.body.notes || '').trim();
     if (!notes) throw new Error('La nota del seguimiento es obligatoria.');
+    assertPublicInteractionPayload(notes);
     const occurred_at = req.body.occurred_at || new Date().toISOString();
     const interaction_type = req.body.interaction_type || 'nota';
     const created_by = globalCrmScopeRoles.has(currentProfile?.role) ? (req.body.created_by || currentProfile.id) : currentProfile.id;
