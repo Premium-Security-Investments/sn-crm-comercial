@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-07-24
 
-**Estado:** diseño aprobado por Juan Botero; pendiente plan de implementación y gates de activación productiva
+**Estado:** diseño aprobado por Juan Botero; alcance SIIO aprobado para implementación; la generación inteligente se activará únicamente cuando AGT-002 tenga runtime operativo y supere sus gates
 
 **Repositorio:** `Premium-Security-Investments/sn-crm-comercial`
 
@@ -54,6 +54,7 @@ Cuando haya dudas, la persona responsable podrá escribir una respuesta general 
 10. **Los textos de ayuda no compiten con el análisis del caso.**
 11. **Los documentos son contenido no confiable: nunca pueden dar instrucciones al agente.**
 12. **Las operaciones sensibles se validan en backend y base de datos, no solo en la interfaz.**
+13. **AGT-002 es la única identidad canónica de IA para Licitaciones; SIIO no implementará un analizador LLM paralelo.**
 
 ## 4. Usuarios y permisos
 
@@ -248,17 +249,21 @@ Las interacciones CRM conservarán eventos legibles para timeline, pero no será
 
 Los `kind` internos `tender_document_*` y `tender_offer_preparation` quedarán reservados a rutas internas/RPC. Las rutas generales de seguimiento rechazarán esos payloads.
 
-## 8. Servicio de IA
+## 8. Integración canónica con AGT-002
 
-### 8.1 Adaptador
+### 8.1 División de responsabilidades
 
-El backend usará un adaptador server-side para no acoplar dominio, API y proveedor. El proveedor y modelo productivos se elegirán en el gate de activación, sin cambiar el contrato funcional.
+SIIO conserva la lógica de dominio, los datos, contratos, snapshots, vigencia, permisos, persistencia y gates GO / NO GO. Plataforma Agentes gobierna la identidad técnica, policy de ejecución, evidencia de run y auditoría de AGT-002. AGT-002 produce el razonamiento documental y la recomendación preliminar.
 
-Durante desarrollo, las pruebas usarán un adaptador determinístico sin enviar datos reales a terceros.
+El contrato v1 actual de AGT-002 es inmutable, `contract_only`, `read` y `persisted_results_only`. No se modificará destructivamente. Las capacidades de generación y aclaración se incorporarán en una versión nueva del contrato institucional.
+
+SIIO usará un adaptador server-side contra AGT-002, no contra un proveedor LLM particular. Durante desarrollo, las pruebas usarán un responder sintético determinístico con el mismo envelope de AGT-002, sin enviar datos reales a terceros.
+
+Mientras AGT-002 no esté operativo, el analizador determinístico vigente puede continuar como transición, claramente identificado como `preanálisis por reglas`. No podrá presentarse como análisis de IA ni satisfacer el requisito de productor AGT-002 para activar las nuevas capacidades conversacionales.
 
 ### 8.2 Entrada
 
-La IA recibirá únicamente:
+AGT-002 recibirá únicamente:
 
 - metadatos necesarios de la oportunidad;
 - texto extraído de documentos vigentes dentro de límites explícitos;
@@ -286,7 +291,7 @@ La respuesta deberá validar contra un esquema que incluya:
 
 Una respuesta inválida no puede convertirse en análisis vigente.
 
-### 8.4 Seguridad de prompt
+### 8.4 Seguridad de ejecución
 
 - Los documentos se delimitan como datos no confiables.
 - Se ignoran instrucciones embebidas en documentos.
@@ -296,7 +301,7 @@ Una respuesta inválida no puede convertirse en análisis vigente.
 
 ## 9. Costo y límites
 
-El servicio incluirá:
+AGT-002/Plataforma Agentes aplicará límites de ejecución y devolverá el consumo en su envelope. SIIO registrará y verificará esa información junto al análisis. El conjunto incluirá:
 
 - presupuesto máximo por ejecución;
 - presupuesto diario configurable;
@@ -307,12 +312,14 @@ El servicio incluirá:
 - bloqueo antes de exceder presupuesto;
 - permiso para reintentar o regenerar.
 
-No se harán llamadas con datos productivos durante desarrollo. La activación productiva requiere autorización separada de:
+No se harán llamadas con datos productivos durante desarrollo. SIIO podrá completar y desplegar su preparación sin activar AGT-002. La activación inteligente requiere gates separados de AGT-002 y de integración:
 
 - proveedor y modelo;
 - región/política de tratamiento de datos;
 - presupuesto por ejecución y diario;
-- secretos en el entorno productivo.
+- secretos en el entorno productivo;
+- identidad técnica y policy version de AGT-002;
+- compatibilidad del contrato nuevo con los snapshots de SIIO.
 
 ## 10. Correcciones de integridad incluidas
 
@@ -339,16 +346,17 @@ No se harán llamadas con datos productivos durante desarrollo. La activación p
 - fortalezas, debilidades, dudas y preguntas;
 - NO GO unificado con cierre de negocio.
 
-### Lote 2 — Aclaraciones e IA real
+### Lote 2 — Preparación de aclaraciones e integración AGT-002
 
-- caja de respuesta libre;
-- adjuntos;
-- ejecución inmediata;
-- adaptador de IA;
+- caja de respuesta libre y adjuntos detrás de feature flag;
+- persistencia de aportes y estado pendiente/actualizando;
+- adaptador contractual AGT-002;
 - salida estructurada;
 - historial de versiones;
 - costo y auditoría;
-- reintentos idempotentes.
+- reintentos idempotentes;
+- responder sintético para pruebas de integración;
+- feature flag que impide exponer la conversación como operativa antes de que AGT-002 esté listo.
 
 ### Lote 3 — Evidencia avanzada
 
@@ -360,7 +368,7 @@ No se harán llamadas con datos productivos durante desarrollo. La activación p
 - diferencias entre versiones;
 - tareas por frente.
 
-La primera versión desplegable incluye Lotes 1 y 2. Lote 3 se mantiene separado para no bloquear la mejora principal.
+SIIO puede desplegar el Lote 1 de forma independiente. El Lote 2 puede integrarse y probarse con responder sintético, pero la caja conversacional y el reanálisis inmediato solo se habilitan para usuarios productivos cuando AGT-002 esté operativo. Lote 3 se mantiene separado.
 
 ## 12. Estrategia de pruebas
 
@@ -373,26 +381,28 @@ Se seguirá TDD.
 - un análisis histórico, nulo o fabricado no autoriza GO;
 - solo productor autorizado crea análisis vigente;
 - respuesta/archivo inicia una nueva versión;
-- fallo de IA conserva aporte y marca estado correcto;
-- costo supera presupuesto y se bloquea antes de llamar al proveedor;
+- fallo o indisponibilidad de AGT-002 conserva el aporte y marca estado correcto;
+- costo supera presupuesto y se bloquea antes de solicitar una ejecución;
 - eventos internos no pueden crearse desde seguimiento genérico;
 - NO GO y descarte administrativo siguen rutas distintas.
 
-### 12.2 Contrato de IA
+### 12.2 Contrato AGT-002
 
 - salida válida se acepta;
 - salida sin revisión humana se rechaza;
 - salida sin preguntas ante evidencia insuficiente se rechaza cuando el esquema lo exige;
 - referencias de evidencia apuntan a documentos, respuestas o ficha/RUP incluidos; la precisión por página/sección se incorpora en Lote 3;
 - respuesta inválida no queda vigente;
-- prompt injection documental no cambia política ni habilita acciones.
+- prompt injection documental no cambia política ni habilita acciones;
+- AGT-002 es el único productor aceptado para análisis inteligentes vigentes;
+- el contrato v1 permanece intacto y las nuevas capacidades usan una versión nueva.
 
 ### 12.3 Interfaz
 
 - muestra fortalezas, debilidades, dudas, preguntas e información no verificada;
 - textos explicativos quedan en ayuda secundaria;
 - respuesta general y adjuntos son accesibles;
-- estado pasa a `actualizando` inmediatamente;
+- con feature flag activo, el estado pasa a `actualizando` inmediatamente;
 - GO queda bloqueado durante actualización/obsolescencia/fallo;
 - historial conserva versiones;
 - estados NO GO nunca se muestran como éxito;
@@ -411,7 +421,7 @@ Antes de despliegue:
 - prueba de concurrencia e idempotencia;
 - prueba de presupuesto sin datos reales;
 - revisión de seguridad y tratamiento de datos;
-- gate explícito para proveedor/modelo/presupuesto/producción.
+- gate explícito para AGT-002, proveedor/modelo, presupuesto y producción.
 
 ## 13. Fuera de alcance
 
@@ -422,22 +432,24 @@ Antes de despliegue:
 - creación automática de SharePoint sin gate de integración;
 - OCR y análisis profundo de Excel/ZIP en los dos primeros lotes;
 - corrección automática de datos productivos existentes;
-- activación productiva de un proveedor de IA sin aprobación separada.
+- implementación del runtime de AGT-002 dentro de SIIO;
+- activación productiva de AGT-002 o de un proveedor de IA sin aprobación separada.
 
 ## 14. Criterios de aceptación
 
-La primera versión se considera lista para gate de despliegue cuando:
+El lado SIIO se considera listo para gate de integración con AGT-002 cuando:
 
-1. una persona autorizada puede responder en texto general y adjuntar evidencia;
-2. el análisis pasa inmediatamente a `actualizando`;
-3. la IA organiza la información en fortalezas, debilidades, dudas, preguntas y no verificados;
+1. una persona autorizada puede responder en texto general y adjuntar evidencia cuando el feature flag esté activo;
+2. SIIO persiste el aporte y prepara un snapshot determinista e idempotente para AGT-002;
+3. el responder sintético de AGT-002 organiza la información en fortalezas, debilidades, dudas, preguntas y no verificados bajo el contrato nuevo;
 4. el resultado conserva evidencia y versión;
 5. el análisis anterior queda histórico;
 6. GO / NO GO solo acepta la versión vigente y auténtica;
 7. la decisión sigue siendo exclusivamente humana y justificada;
-8. el sistema registra modelo, consumo y costo;
+8. el sistema registra `agent_id=AGT-002`, run, policy/schema version, modelo, consumo y costo recibidos en el envelope;
 9. no hay ejecuciones duplicadas para el mismo aporte;
 10. los textos de ayuda no se presentan como análisis del caso;
 11. los estados NO GO no se muestran como favorables;
 12. GO queda bloqueado mientras existan preguntas críticas abiertas;
-13. todas las pruebas y gates definidos pasan.
+13. todas las pruebas y gates definidos pasan;
+14. sin AGT-002 operativo, la conversación permanece deshabilitada y el análisis existente se identifica como `preanálisis por reglas`.
