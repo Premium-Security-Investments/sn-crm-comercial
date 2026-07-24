@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:psi:siio:agents:agt002:v2-draft:analysis-run.request",
+  "title": "AGT-002 tender analysis snapshot",
+  "description": "Closed SIIO snapshot consumed by the provider-neutral AGT-002 analysis boundary.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "snapshot_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "opportunity_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tender_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "document_hash": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "profile_hash": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "documents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    "company_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "required": []
+    }
+  },
+  "required": [
+    "snapshot_id",
+    "opportunity_id",
+    "tender_id",
+    "document_hash",
+    "profile_hash",
+    "documents",
+    "company_profile"
+  ]
+}
