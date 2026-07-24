@@ -65,6 +65,18 @@ const responseFields = ['schema_version', 'agent_id', 'run_id', 'policy_version'
 const documentFields = ['document_id', 'name', 'document_type', 'content', 'content_sha256', 'current'];
 const companyProfileFields = ['profile_version', 'fields'];
 const companyFieldFields = ['key', 'label', 'value', 'source'];
+const uppercaseUuid = 'AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA';
+
+for (const field of ['run_id', 'snapshot_id']) {
+  const pattern = responseSchema.properties[field].pattern;
+  assert.ok(pattern, `response schema must define a lowercase UUID pattern for ${field}`);
+  assert.equal(new RegExp(pattern).test(uppercaseUuid), false, `response schema must reject uppercase ${field}`);
+  assert.throws(
+    () => validateAgt002TenderAnalysisEnvelope({ ...envelope, [field]: uppercaseUuid }),
+    /Run y snapshot deben ser UUID/,
+    `runtime envelope validator must reject uppercase ${field}`,
+  );
+}
 
 function assertClosedObjects(schema, location = '$') {
   if (schema.type === 'object') {
