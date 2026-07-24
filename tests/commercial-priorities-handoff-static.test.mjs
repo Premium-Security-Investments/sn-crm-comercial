@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 const main = fs.readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const priorities = fs.readFileSync(new URL('../src/vigia/VigiaCommercial.tsx', import.meta.url), 'utf8');
+const styles = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
 for (const mapping of [
   /label: 'Valor en riesgo'[^\n]*priorityStatus: 'risk'/,
@@ -34,5 +35,6 @@ const handoffFragments = [
   ...priorities.matchAll(/priority-context-summary[^\n]*/g),
 ].map(match => match[0]).join('\n');
 assert.doesNotMatch(handoffFragments, /api\(|fetch\(|POST|PUT|PATCH|DELETE/, 'seguir o limpiar el handoff no debe ejecutar escrituras');
+assert.match(styles, /@media\(max-width:640px\)\{[^}]*\.priority-context-summary\{[^}]*flex-direction:column[^}]*\}[^}]*\.priority-context-summary \.secondary-button\{[^}]*width:100%/s, 'el resumen contextual debe apilarse y mantener el botón táctil en móvil');
 
 console.log('Dashboard → Prioridades contextual handoff static contract passed');
