@@ -360,4 +360,29 @@ revoke all on function public.psi_record_tender_go_no_go(uuid, uuid, uuid, text,
 revoke all on function public.psi_record_tender_go_no_go(uuid, uuid, uuid, text, uuid, text, jsonb) from service_role;
 grant execute on function public.psi_record_tender_go_no_go(uuid, uuid, uuid, text, uuid, text, jsonb) to service_role;
 
+-- Side-effect-free runtime readiness probe.  It verifies the exact 025
+-- relations and RPC overloads without invoking either mutating function.
+create or replace function public.psi_tender_analysis_foundation_ready()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select
+    to_regclass('public.psi_tender_document_snapshots') is not null
+    and to_regclass('public.psi_tender_analysis_runs') is not null
+    and to_regprocedure('public.psi_record_tender_document_snapshot(uuid,uuid,text,text,jsonb,jsonb,uuid)') is not null
+    and to_regprocedure('public.psi_record_tender_analysis_run(uuid,uuid,uuid,text,text,text,jsonb,integer,text,text,text,text,jsonb)') is not null
+    and to_regprocedure('public.psi_record_tender_go_no_go(uuid,uuid,uuid,text,uuid,text,jsonb)') is not null
+    and has_function_privilege('service_role', 'public.psi_record_tender_document_snapshot(uuid,uuid,text,text,jsonb,jsonb,uuid)', 'EXECUTE')
+    and has_function_privilege('service_role', 'public.psi_record_tender_analysis_run(uuid,uuid,uuid,text,text,text,jsonb,integer,text,text,text,text,jsonb)', 'EXECUTE')
+    and has_function_privilege('service_role', 'public.psi_record_tender_go_no_go(uuid,uuid,uuid,text,uuid,text,jsonb)', 'EXECUTE');
+$$;
+
+revoke all on function public.psi_tender_analysis_foundation_ready() from public;
+revoke all on function public.psi_tender_analysis_foundation_ready() from authenticated;
+revoke all on function public.psi_tender_analysis_foundation_ready() from service_role;
+grant execute on function public.psi_tender_analysis_foundation_ready() to service_role;
+
 commit;

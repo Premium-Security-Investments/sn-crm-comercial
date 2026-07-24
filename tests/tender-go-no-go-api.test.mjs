@@ -293,7 +293,13 @@ for (const path of ['../server/index.js', '../api/[...path].js']) {
   assert.match(source, /import \{ callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation \} from '\.\.\/tender-go-no-go-rpc\.js';/);
   assert.match(source, /app\.get\('\/api\/tender-go-no-go-decision'/);
   assert.match(source, /app\.post\('\/api\/tender-go-no-go-decision'/);
-  assert.match(source, /callTenderGoNoGoDecision\(requireDb\(\), req\.body \|\| \{\}, currentProfile\)/);
+  const decisionRoute = source.match(/app\.post\('\/api\/tender-go-no-go-decision'[\s\S]*?\n}\);/);
+  assert.ok(decisionRoute, 'GO/NO GO route must remain available');
+  assert.match(
+    decisionRoute[0],
+    /const database = requireDb\(\);[\s\S]*await requireTenderAnalysisFoundation\(database\);[\s\S]*callTenderGoNoGoDecision\(database, req\.body \|\| \{\}, currentProfile\)/,
+    'GO/NO GO must verify migration 025 before recording the human decision',
+  );
   const alias = source.match(/app\.post\('\/api\/tender-offer-preparation-approve'[\s\S]*?\n}\);/);
   assert.ok(alias, 'legacy alias must remain explicit');
   assert.match(alias[0], /getAuthContext\(req\)/, 'legacy alias still authenticates');

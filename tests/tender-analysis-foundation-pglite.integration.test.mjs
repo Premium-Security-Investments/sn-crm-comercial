@@ -107,4 +107,23 @@ await (async function runsRequireAuthorizedConsistentCompletedResultsAndAreImmut
   await db.close();
 })();
 
+await (async function readinessFailsClosedWhenServiceRoleExecuteDrifts() {
+  const signatures = [
+    'public.psi_record_tender_document_snapshot(uuid, uuid, text, text, jsonb, jsonb, uuid)',
+    'public.psi_record_tender_analysis_run(uuid, uuid, uuid, text, text, text, jsonb, integer, text, text, text, text, jsonb)',
+    'public.psi_record_tender_go_no_go(uuid, uuid, uuid, text, uuid, text, jsonb)',
+  ];
+  for (const signature of signatures) {
+    const db = await createDatabase();
+    await db.exec('set role service_role');
+    assert.equal((await one(db, 'select public.psi_tender_analysis_foundation_ready() as ready')).ready, true);
+    await db.exec('reset role');
+    await db.exec(`revoke execute on function ${signature} from service_role`);
+    await db.exec('set role service_role');
+    assert.equal((await one(db, 'select public.psi_tender_analysis_foundation_ready() as ready')).ready, false, `readiness must detect service_role EXECUTE drift on ${signature}`);
+    await db.exec('reset role');
+    await db.close();
+  }
+})();
+
 console.log('PGlite tender analysis foundation integration passed');

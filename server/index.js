@@ -11,6 +11,7 @@ import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPr
 import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
 import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
 import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis } from '../tender-analysis-foundation.js';
+import { isTenderAnalysisFoundationUnavailable, requireTenderAnalysisFoundation } from '../tender-analysis-foundation-availability.js';
 import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
@@ -33,8 +34,12 @@ if (!supabaseUrl || !serviceKey) {
 const db = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 
 function sendError(res, error, status = 500) {
+  if (isTenderAnalysisFoundationUnavailable(error)) {
+    console.warn('tender_analysis_foundation_unavailable', { event: 'tender_analysis_foundation_unavailable' });
+    return res.status(503).json({ error: 'La fundación de análisis documental no está disponible.', code: 'TENDER_ANALYSIS_FOUNDATION_UNAVAILABLE' });
+  }
   console.error(error);
-  res.status(status).json({ error: error?.message || String(error) });
+  return res.status(status).json({ error: error?.message || String(error) });
 }
 
 async function must(query) {
@@ -2087,6 +2092,7 @@ function buildTenderDocumentAnalysis(opportunity, documents, companyProfile = {}
   };
 }
 async function getTenderDocumentRecords(database, opportunityId, { includeSignedUrls = true } = {}) {
+  await requireTenderAnalysisFoundation(database);
   const interactions = await must(database.from('psi_sales_interactions').select('id,notes,occurred_at,created_at,created_by,psi_sales_profiles(full_name)').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true }));
   const documents = [];
   const analyses = [];
@@ -2208,6 +2214,7 @@ async function saveTenderDocumentBuffer(database, opportunityId, file, currentPr
   return { id, name, size: buffer.length, mime_type: file.mime_type || null, document_type: documentType, current: file.current !== false, storage_path: storagePath, uploaded_at: new Date().toISOString(), extracted_text: extractedText, auto_import: !!sourceMeta.auto_import, source_url: sourceMeta.source_url || null, source_document_id: sourceMeta.source_document_id || null };
 }
 async function importTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze = true } = {}) {
+  await requireTenderAnalysisFoundation(database);
   const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
   const sourceUrl = getTenderSourceUrlFromOpportunity(opportunity);
   const officialUrl = secopOfficialUrl(sourceUrl);
@@ -2424,14 +2431,18 @@ app.get('/api/tender-offer-preparation', async (req, res) => {
 app.get('/api/tender-go-no-go-decision', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    res.json(await getTenderGoNoGoDecision(requireDb(), req.query.id, currentProfile));
+    const database = requireDb();
+    await requireTenderAnalysisFoundation(database);
+    res.json(await getTenderGoNoGoDecision(database, req.query.id, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
 app.post('/api/tender-go-no-go-decision', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    res.status(201).json(await callTenderGoNoGoDecision(requireDb(), req.body || {}, currentProfile));
+    const database = requireDb();
+    await requireTenderAnalysisFoundation(database);
+    res.status(201).json(await callTenderGoNoGoDecision(database, req.body || {}, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -2477,6 +2488,7 @@ app.get('/api/tender-documents', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
+    await requireTenderAnalysisFoundation(database);
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
     await ensureTenderOpportunity(database, id, currentProfile);
@@ -2488,6 +2500,7 @@ app.post('/api/tender-documents-upload', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
+    await requireTenderAnalysisFoundation(database);
     const opportunityId = String(req.body.opportunity_id || '');
     const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
     const files = Array.isArray(req.body.files) ? req.body.files : [];
@@ -2510,6 +2523,7 @@ app.post('/api/tender-documents-analyze', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
+    await requireTenderAnalysisFoundation(database);
     const opportunityId = String(req.body.opportunity_id || '');
     const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
     const records = await getTenderDocumentRecords(database, opportunityId);
@@ -2531,6 +2545,7 @@ app.post('/api/tender-documents-import', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
+    await requireTenderAnalysisFoundation(database);
     const opportunityId = String(req.body.opportunity_id || '');
     if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
     res.json(await importTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze: true }));

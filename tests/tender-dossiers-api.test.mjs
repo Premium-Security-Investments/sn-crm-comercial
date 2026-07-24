@@ -116,6 +116,11 @@ function mockDatabaseByOpportunity({ failOpportunityId = null } = {}) {
         }
       };
     },
+    async rpc(name, args) {
+      assert.equal(name, 'psi_tender_analysis_foundation_ready');
+      assert.deepEqual(args, {});
+      return { data: true, error: null };
+    },
     storage: {
       from() {
         return {
@@ -184,6 +189,13 @@ const fakeSupabase = http.createServer(async (req, res) => {
   if (url.pathname === '/rest/v1/psi_profile_permissions') {
     const manager = url.searchParams.get('profile_id') === 'eq.manager-profile';
     return json(res, 200, manager ? [{ permission_code: 'licitaciones' }] : []);
+  }
+  if (url.pathname === '/rest/v1/rpc/psi_tender_analysis_foundation_ready') {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    const args = JSON.parse(body || '{}');
+    assert.deepEqual(args, {}, 'el readiness probe debe ser read-only y sin argumentos');
+    return json(res, 200, true);
   }
   if (url.pathname === '/rest/v1/rpc/psi_list_tender_opportunity_page') {
     let body = '';
