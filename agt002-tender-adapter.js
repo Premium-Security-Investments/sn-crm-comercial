@@ -1,3 +1,5 @@
+import { validateTenderAnalysisResult } from './tender-analysis-domain.js';
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
 const ENVELOPE_KEYS = [
@@ -107,4 +109,10 @@ export function validateAgt002TenderAnalysisEnvelope(value) {
     throw new Error('El uso AGT-002 no es válido.');
   }
   return value;
+}
+
+/** Maps the closed institutional envelope into the shared tender domain without relabeling it. */
+export function adaptAgt002TenderAnalysis(envelope) {
+  const validated = validateAgt002TenderAnalysisEnvelope(envelope);
+  return validateTenderAnalysisResult({ ...validated, producer: 'AGT-002' });
 }
