@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { categoryFromAlertsHash, filtersFromAlertsHash, filterCommercialPriorities, priorityHashFiltersAreValid, summarizeCommercialPriorities } from '../src/vigia/priority-filters.js';
+import { categoryFromAlertsHash, filtersFromAlertsHash, filterCommercialPriorities, prioritiesHashFromDashboard, priorityContextSummary, priorityHashFiltersAreValid, summarizeCommercialPriorities } from '../src/vigia/priority-filters.js';
 
 const signal = code => ({ code, label: code, points: 1, evidence: code });
 const row = (id, overrides = {}) => ({
@@ -70,5 +70,38 @@ assert.equal(filtersFromAlertsHash('#/alerts?status=risk&admin=true').category, 
 assert.equal(filtersFromAlertsHash('#/alerts?owner=owner-a&owner=owner-b').category, '__invalid__', 'parámetro duplicado falla cerrado');
 assert.equal(priorityHashFiltersAreValid(rows, filtersFromAlertsHash('#/alerts?owner=owner-b&regional=Medellín&stage=negociacion&service=tecnologia&segment=cliente_nuevo')), true);
 assert.equal(priorityHashFiltersAreValid(rows, filtersFromAlertsHash('#/alerts?owner=owner-desconocido')), false, 'valor fuera de opciones visibles falla cerrado');
+const regionalAliasRow = row('regional-alias', { regional_nombre: 'Distrito Capital de Bogota.' });
+const canonicalRegionalFilters = filtersFromAlertsHash('#/alerts?regional=Bogot%C3%A1');
+assert.equal(priorityHashFiltersAreValid([regionalAliasRow], canonicalRegionalFilters), true, 'regional canónica del Dashboard debe validar contra alias CRM equivalente');
+assert.deepEqual(filterCommercialPriorities([regionalAliasRow], { regional: 'Bogotá' }).map(item => item.id), ['regional-alias'], 'handoff regional conserva el mismo alcance pese a alias de representación');
+
+assert.equal(
+  prioritiesHashFromDashboard('overdue', {
+    owner: 'owner/a',
+    regional: 'Bogotá',
+    stage: 'negociacion',
+    service: 'seguridad_fisica',
+    segment: 'cliente_actual',
+    q: 'dato libre que no cruza',
+    period: 'anio_actual',
+    active: '1',
+  }),
+  '#/alerts?status=overdue&owner=owner%2Fa&regional=Bogot%C3%A1&stage=negociacion&service=seguridad_fisica&segment=cliente_actual',
+  'el handoff codifica y transporta sólo filtros autorizados',
+);
+assert.equal(prioritiesHashFromDashboard('missing', { owner: '', regional: '', stage: '', service: '', segment: '' }), '#/alerts?status=missing', 'filtros vacíos se omiten');
+const invalidHandoff = prioritiesHashFromDashboard('inventado', { owner: 'owner-a' });
+assert.equal(categoryFromAlertsHash(invalidHandoff), '__invalid__', 'status interno desconocido falla cerrado en el parser de destino');
+assert.equal(
+  priorityContextSummary(filtersFromAlertsHash('#/alerts?status=stalled&owner=owner-a&regional=Bogot%C3%A1&stage=sustentacion&service=vigilancia&segment=cliente_actual'), {
+    owner: 'Ana Comercial',
+    service: 'Vigilancia',
+    segment: 'Cliente actual',
+  }),
+  'Sustentación estancada · Comercial: Ana Comercial · Región: Bogotá · Etapa: sustentacion · Producto: Vigilancia · Cliente: Cliente actual',
+  'el resumen conserva categoría y alcance en formato compacto',
+);
+assert.equal(priorityContextSummary(filtersFromAlertsHash('#/alerts')), 'Bandeja completa', 'ruta base conserva contexto vacío compatible');
+assert.equal(priorityContextSummary(filtersFromAlertsHash('#/alerts?status=desconocido')), 'Contexto inválido', 'contexto manipulado no se presenta como válido');
 
 console.log('Prioridades Comerciales filter contract passed');

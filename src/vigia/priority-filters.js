@@ -2,6 +2,21 @@ function normalized(value) {
   return String(value || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
+const REGIONAL_ALIASES = Object.freeze({
+  bogota: 'bogota',
+  'distrito capital de bogota': 'bogota',
+  medellin: 'medellin',
+  antioquia: 'antioquia',
+  'eje cafetero': 'eje cafetero',
+  risaralda: 'risaralda',
+  'valle del cauca': 'valle del cauca',
+});
+
+function normalizedRegional(value) {
+  const key = normalized(value).replace(/[.]+$/g, '').replace(/\s+/g, ' ').trim();
+  return REGIONAL_ALIASES[key] || key;
+}
+
 export function priorityHasSignal(row, code) {
   return Array.isArray(row?.signals) && row.signals.some(signal => signal?.code === code);
 }
@@ -20,6 +35,37 @@ const VALID_CUSTOMER_SEGMENTS = new Set(['cliente_nuevo', 'cliente_actual']);
 const VALID_CATEGORIES = new Set(Object.values(LEGACY_ALERT_CATEGORY_MAP));
 const ALLOWED_HASH_FILTERS = new Set(['status', 'owner', 'regional', 'stage', 'service', 'segment']);
 const INVALID_FILTER = '__invalid__';
+const CATEGORY_LABELS = Object.freeze({
+  risk: 'Pipeline en riesgo',
+  missing: 'Sin próxima acción',
+  overdue: 'Vencidas',
+  managed: 'Gestión vigente',
+  closing: 'Cierres próximos',
+  high_value_stalled: 'Alto valor estancado',
+  stalled_sustentacion: 'Sustentación estancada',
+});
+
+export function prioritiesHashFromDashboard(status, filters = {}) {
+  const params = new URLSearchParams();
+  params.set('status', LEGACY_ALERT_CATEGORY_MAP[status] ? status : INVALID_FILTER);
+  for (const key of ['owner', 'regional', 'stage', 'service', 'segment']) {
+    const value = String(filters?.[key] || '').trim();
+    if (value) params.set(key, value);
+  }
+  return `#/alerts?${params.toString()}`;
+}
+
+export function priorityContextSummary(filters = {}, labels = {}) {
+  if (filters.invalid || filters.category === INVALID_FILTER || filters.customerSegment === INVALID_FILTER) return 'Contexto inválido';
+  const parts = [];
+  if (filters.category) parts.push(CATEGORY_LABELS[filters.category] || 'Categoría inválida');
+  if (filters.owner) parts.push(`Comercial: ${labels.owner || filters.owner}`);
+  if (filters.regional) parts.push(`Región: ${labels.regional || filters.regional}`);
+  if (filters.stage) parts.push(`Etapa: ${labels.stage || filters.stage}`);
+  if (filters.service) parts.push(`Producto: ${labels.service || filters.service}`);
+  if (filters.customerSegment) parts.push(`Cliente: ${labels.segment || filters.customerSegment}`);
+  return parts.join(' · ') || 'Bandeja completa';
+}
 
 export function filtersFromAlertsHash(hash) {
   const query = String(hash || '').split('?')[1] || '';
@@ -50,7 +96,7 @@ export function priorityHashFiltersAreValid(rows, filters = {}) {
   if (filters.category && !VALID_CATEGORIES.has(filters.category)) return false;
   const matches = (filter, field) => !filter || rows.some(row => row?.[field] === filter);
   return matches(filters.owner, 'owner_id')
-    && matches(filters.regional, 'regional_nombre')
+    && (!filters.regional || rows.some(row => normalizedRegional(row?.regional_nombre) === normalizedRegional(filters.regional)))
     && matches(filters.stage, 'stage_code')
     && matches(filters.service, 'service_type_code')
     && matches(filters.customerSegment, 'customer_segment');
@@ -76,7 +122,7 @@ export function filterCommercialPriorities(rows, filters = {}) {
     if (reviewedIds.has(row?.id)) return false;
     if (!priorityCategory(row, filters.category)) return false;
     if (filters.owner && row?.owner_id !== filters.owner) return false;
-    if (filters.regional && row?.regional_nombre !== filters.regional) return false;
+    if (filters.regional && normalizedRegional(row?.regional_nombre) !== normalizedRegional(filters.regional)) return false;
     if (filters.stage && row?.stage_code !== filters.stage) return false;
     if (filters.service && row?.service_type_code !== filters.service) return false;
     if (filters.customerSegment && row?.customer_segment !== filters.customerSegment) return false;

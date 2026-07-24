@@ -18,6 +18,7 @@ import { setAreaScopeSelection, type AccessAssignment } from './profileAccessSta
 import { supabaseBrowser } from './supabaseBrowser';
 import { VigiaCommercial } from './vigia/VigiaCommercial';
 import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
+import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
@@ -1656,11 +1657,12 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     map.set(key, existing);
     return map;
   }, new Map<string, { ownerId: string; owner: string; regional: string; active: number; overdue: number; missing: number; stale: number; overdueValue: number; missingValue: number; staleValue: number; riskValue: number }>()).values()).filter(row => row.overdue || row.missing || row.stale).sort((a,b)=>b.riskValue-a.riskValue || (b.overdue+b.missing+b.stale)-(a.overdue+a.missing+a.stale)).slice(0, 8);
+  const priorityLinkFilters = { owner, regional, stage, service, segment: customerSegmentFilter };
   const v2RiskSummaryCards = [
-    { label: 'Valor en riesgo', value: v2CommercialAlertRows.reduce((sum,row)=>sum+row.riskValue,0), detail: `${v2CommercialAlertRows.length} comerciales con alertas`, tone: v2CommercialAlertRows.length ? 'red' : 'green' },
-    { label: 'Vencidas', value: v2CommercialAlertRows.reduce((sum,row)=>sum+row.overdueValue,0), detail: `${v2OverdueRows.length} oportunidades vencidas`, tone: v2OverdueRows.length ? 'red' : 'green' },
-    { label: 'Sin agenda', value: v2CommercialAlertRows.reduce((sum,row)=>sum+row.missingValue,0), detail: `${v2MissingAgendaRows.length} oportunidades sin próxima acción`, tone: v2MissingAgendaRows.length ? 'amber' : 'green' },
-    { label: 'Sin seguimiento', value: v2CommercialAlertRows.reduce((sum,row)=>sum+row.staleValue,0), detail: `${v2CriticalOpportunityRows.filter(row => Number(row.inactiveDays || 0) >= 10 && !['overdue','missing'].includes(row.action.code)).length} oportunidades estancadas`, tone: v2CommercialAlertRows.some(row => row.stale) ? 'amber' : 'green' },
+    { label: 'Valor en riesgo', value: v2CommercialAlertRows.reduce((sum,row)=>sum+row.riskValue,0), detail: `${v2CommercialAlertRows.length} comerciales con alertas`, tone: v2CommercialAlertRows.length ? 'red' : 'green', priorityStatus: 'risk' },
+    { label: 'Vencidas', value: v2CommercialAlertRows.reduce((sum,row)=>sum+row.overdueValue,0), detail: `${v2OverdueRows.length} oportunidades vencidas`, tone: v2OverdueRows.length ? 'red' : 'green', priorityStatus: 'overdue' },
+    { label: 'Sin agenda', value: v2CommercialAlertRows.reduce((sum,row)=>sum+row.missingValue,0), detail: `${v2MissingAgendaRows.length} oportunidades sin próxima acción`, tone: v2MissingAgendaRows.length ? 'amber' : 'green', priorityStatus: 'missing' },
+    { label: 'Sin seguimiento', value: v2CommercialAlertRows.reduce((sum,row)=>sum+row.staleValue,0), detail: `${v2CriticalOpportunityRows.filter(row => Number(row.inactiveDays || 0) >= 10 && !['overdue','missing'].includes(row.action.code)).length} oportunidades estancadas`, tone: v2CommercialAlertRows.some(row => row.stale) ? 'amber' : 'green', priorityStatus: 'risk' },
   ];
   const v2CommercialHealthCards = rankingRowsV2.map(row => {
     const ownerActiveRows = v2ActionRows.filter(r => ownerKey(r.opportunity) === row.ownerId);
@@ -1818,7 +1820,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
     <section id="v2-management-alerts" className="v2-component-block diagnostico-alertas" aria-label="5. Gestión comercial que requiere atención">
       <div className="v2-section-heading"><span>5. Gestión comercial que requiere atención</span><h2>Quién necesita apoyo hoy</h2><p>Alertas agrupadas por comercial: vencidas, sin agenda, sin seguimiento reciente y valor en riesgo.</p></div>
       <Panel title="Valor en riesgo por gestión comercial">
-        <div className="commercial-risk-summary">{v2RiskSummaryCards.map(card => <a className={`commercial-risk-card ${card.tone}`} key={card.label} href="#/alerts">
+        <div className="commercial-risk-summary">{v2RiskSummaryCards.map(card => <a className={`commercial-risk-card ${card.tone}`} key={card.label} href={prioritiesHashFromDashboard(card.priorityStatus, priorityLinkFilters)}>
           <small>{card.label}</small><strong className="numeric-value">{fmtMoneyCompact(card.value)}</strong><span>{card.detail}</span>
         </a>)}</div>
       </Panel>
@@ -1832,7 +1834,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
         <div className="executive-signals">
           <a className={v2Concentration >= 55 ? 'signal-card warn clickable-card' : 'signal-card ok clickable-card'} href={`#/opportunities?stage=${encodeURIComponent(v2StageLeader?.stageCode || '')}`}><small>Riesgo de concentración del pipeline</small><strong className="numeric-value">{v2Concentration}%</strong><span>{v2StageLeader?.stageName || 'Sin etapa dominante'}</span><em>{v2Concentration >= 55 ? 'Ver etapa dominante →' : 'Distribución saludable'}</em></a>
           <a className={compliancePct === null ? 'signal-card warn clickable-card' : compliancePct >= 80 ? 'signal-card ok clickable-card' : 'signal-card danger clickable-card'} href="#/goals"><small>Cumplimiento vs presupuesto</small><strong className="numeric-value">{compliancePct === null ? '—' : `${compliancePct}%`}</strong><span>{fmtMoneyCompact(totalApproved)} aprobado</span><em>Ver metas →</em></a>
-          <a className={v2ManagedRatio >= 70 ? 'signal-card ok clickable-card' : v2ManagedRatio >= 45 ? 'signal-card warn clickable-card' : 'signal-card danger clickable-card'} href="#/alerts"><small>Disciplina de agenda</small><strong className="numeric-value">{v2ManagedRatio}%</strong><span>{v2MissingAgendaRows.length + v2OverdueRows.length} sin control</span><em>Ver alertas →</em></a>
+          <a className={v2ManagedRatio >= 70 ? 'signal-card ok clickable-card' : v2ManagedRatio >= 45 ? 'signal-card warn clickable-card' : 'signal-card danger clickable-card'} href={prioritiesHashFromDashboard('missing', priorityLinkFilters)}><small>Disciplina de agenda</small><strong className="numeric-value">{v2ManagedRatio}%</strong><span>{v2MissingAgendaRows.length + v2OverdueRows.length} sin control</span><em>Ver prioridades sin agenda →</em></a>
           <a className={v2GoalAveragePct === null ? 'signal-card warn clickable-card' : v2GoalAveragePct >= 100 ? 'signal-card ok clickable-card' : v2GoalAveragePct >= 80 ? 'signal-card warn clickable-card' : 'signal-card danger clickable-card'} href="#/goals"><small>Cumplimiento meta mes</small><strong className="numeric-value">{v2GoalAveragePct === null ? '—' : `${v2GoalAveragePct}%`}</strong><span>Ventas, prospectos y cotizaciones</span><em>{v2GoalAveragePct === null ? 'Cargar metas reales →' : 'Ver cumplimiento →'}</em></a>
         </div>
       </Panel>

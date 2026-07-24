@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../apiClient';
-import { filtersFromAlertsHash, filterCommercialPriorities, priorityHashFiltersAreValid, summarizeCommercialPriorities } from './priority-filters.js';
+import { filtersFromAlertsHash, filterCommercialPriorities, priorityContextSummary, priorityHashFiltersAreValid, summarizeCommercialPriorities } from './priority-filters.js';
 
 type VigiaLevel = 'alto' | 'medio' | 'bajo' | 'sin_prioridad';
 type VigiaSignal = { code: string; label: string; points: number; evidence: string };
@@ -77,6 +77,7 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
   const [service, setService] = useState(initialHashFilters.service);
   const [customerSegment, setCustomerSegment] = useState(initialHashFilters.customerSegment);
   const [hashInvalid, setHashInvalid] = useState(initialHashFilters.invalid);
+  const [linkedContext, setLinkedContext] = useState(Boolean(window.location.hash.split('?')[1]));
   const [feedback, setFeedback] = useState<Record<string, Feedback>>({});
 
   const load = async () => {
@@ -101,6 +102,7 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
       setService(filters.service);
       setCustomerSegment(filters.customerSegment);
       setHashInvalid(filters.invalid);
+      setLinkedContext(Boolean(window.location.hash.split('?')[1]));
     };
     window.addEventListener('hashchange', syncFiltersFromHash);
     return () => window.removeEventListener('hashchange', syncFiltersFromHash);
@@ -136,8 +138,16 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
   const stageOptions = useMemo(() => uniqueOptions(priorities, row => row.stage_code, row => row.stage_name), [priorities]);
   const serviceOptions = useMemo(() => uniqueOptions(priorities, row => row.service_type_code, row => row.service_type_name), [priorities]);
   const hasFilters = Boolean(category || level || query || owner || regional || stage || service || customerSegment || hashInvalid);
+  const linkedContextSummary = priorityContextSummary({ category, owner, regional, stage, service, customerSegment, invalid: hashInvalid }, {
+    owner: ownerOptions.find(([value]) => value === owner)?.[1],
+    regional,
+    stage: stageOptions.find(([value]) => value === stage)?.[1],
+    service: serviceOptions.find(([value]) => value === service)?.[1],
+    segment: customerSegmentOptions.find(([value]) => value === customerSegment)?.[1],
+  });
   const resetFilters = () => {
     setCategory(''); setLevel(''); setQuery(''); setOwner(''); setRegional(''); setStage(''); setService(''); setCustomerSegment(''); setHashInvalid(false);
+    setLinkedContext(false);
     if (window.location.hash.includes('?')) window.history.replaceState(null, '', '#/alerts');
   };
   const toggleCategory = (next: OperationalCategory) => setCategory(current => current === next ? '' : next);
@@ -161,8 +171,10 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
 
     {invalidLink && <section className="state error" role="alert"><strong>El enlace contiene filtros inválidos o no disponibles para su alcance.</strong><span>Restablezca los filtros para volver a la bandeja autorizada.</span></section>}
 
+    {payload && linkedContext && !invalidLink && <section className="priority-context-summary" aria-label="Contexto recibido del Dashboard"><div><strong>Contexto recibido del Dashboard</strong><span>{linkedContextSummary}</span></div><button className="secondary" onClick={resetFilters}>Limpiar contexto</button></section>}
+
     <section className="priority-filter-panel">
-      <div className="priority-filter-heading"><div><strong>Filtros de gestión</strong><span>Los filtros se combinan sobre la misma lectura de AGT-003.</span></div>{hasFilters && <button className="secondary" onClick={resetFilters}>Limpiar</button>}</div>
+      <div className="priority-filter-heading"><div><strong>Filtros de gestión</strong><span>Los filtros se combinan sobre la misma lectura de AGT-003.</span></div>{hasFilters && !linkedContext && <button className="secondary" onClick={resetFilters}>Limpiar</button>}</div>
       <div className="priority-filter-grid">
         <label className="priority-search"><span>Buscar</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Empresa o comercial" /></label>
         <label><span>Comercial</span><select value={owner} onChange={event => setOwner(event.target.value)}><option value="">Todos</option>{ownerOptions.map(([value, optionLabel]) => <option key={value} value={value}>{optionLabel}</option>)}</select></label>

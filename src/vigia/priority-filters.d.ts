@@ -25,7 +25,23 @@ export type CommercialPriorityFilters = {
   level?: string;
   reviewedIds?: Set<string> | string[];
 };
+export type DashboardPriorityLinkFilters = {
+  owner?: string | null;
+  regional?: string | null;
+  stage?: string | null;
+  service?: string | null;
+  segment?: string | null;
+};
+export type PriorityContextLabels = {
+  owner?: string;
+  regional?: string;
+  stage?: string;
+  service?: string;
+  segment?: string;
+};
 export function priorityHasSignal(row: CommercialPriorityRow, code: string): boolean;
+export function prioritiesHashFromDashboard(status: string, filters?: DashboardPriorityLinkFilters): string;
+export function priorityContextSummary(filters?: CommercialPriorityFilters & { invalid?: boolean }, labels?: PriorityContextLabels): string;
 export function categoryFromAlertsHash(hash: string): string;
 export function filtersFromAlertsHash(hash: string): { category: string; owner: string; regional: string; stage: string; service: string; customerSegment: string; invalid: boolean };
 export function priorityHashFiltersAreValid(rows: CommercialPriorityRow[] | null | undefined, filters?: CommercialPriorityFilters & { invalid?: boolean }): boolean;
