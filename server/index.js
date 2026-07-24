@@ -10,6 +10,7 @@ import { callTenderOpportunityConversion, callTenderOpportunityDiscard, callTend
 import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
 import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
 import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
+import { registerSiioRulesAnalysis } from '../tender-analysis-foundation.js';
 import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
@@ -2047,7 +2048,7 @@ function buildTenderDocumentAnalysis(opportunity, documents, companyProfile = {}
     { category: 'Formatos', status: hasFormats ? 'Cargados' : 'Pendiente', detail: hasFormats ? 'Formatos disponibles para checklist de entrega.' : 'Cargar formatos anexos antes de ofertar.' },
   ];
   return {
-    kind: 'tender_document_analysis', report_title: 'Dictamen GO / NO GO SN', status: 'analisis_generado', recommendation, risk, generated_at: new Date().toISOString(),
+    kind: 'tender_document_analysis', report_title: 'Preanálisis por reglas SIIO', status: 'analisis_generado', recommendation, risk, generated_at: new Date().toISOString(),
     summary: `${recommendation} para ${opportunity.company_name}. ${missingCritical.length ? `Faltan documentos críticos: ${missingCritical.join(', ')}.` : 'Hay base documental mínima para revisión comercial y licitatoria.'} ${hasAdenda ? 'Priorizar Adenda como versión vigente.' : 'Confirmar si existen adendas.'}`,
     findings: signals, detected_values: finds, matrix, go_no_go: goNoGo,
     executive_semaphore: goNoGo.executive_semaphore,
@@ -2104,6 +2105,14 @@ async function ensureTenderOpportunity(database, id, profile) {
   return opportunity;
 }
 
+async function getTenderIdForOpportunity(database, opportunityId) {
+  const tender = await must(database.from('psi_public_tenders')
+    .select('id')
+    .eq('converted_opportunity_id', opportunityId)
+    .maybeSingle());
+  if (!tender?.id) throw new Error('La oportunidad no está vinculada a una licitación para registrar el preanálisis.');
+  return tender.id;
+}
 
 function getTenderSourceUrlFromOpportunity(opportunity) {
   const notes = String(opportunity?.observaciones || '');
@@ -2236,7 +2245,11 @@ async function importTenderDocumentsFromOfficialSource(database, opportunityId, 
     if (currentDocs.length) {
       const companyProfile = await getTenderCompanyProfile(database);
       const analysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
-      await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ ...analysis, auto_import: true, source: sourceLabel }) }).select('id').single());
+      const registered = await registerSiioRulesAnalysis(database, {
+        opportunity_id: opportunityId, tender_id: await getTenderIdForOpportunity(database, opportunityId), actor_id: currentProfile.id,
+        documents: currentDocs, company_profile: companyProfile, result: analysis,
+      });
+      await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ ...analysis, analysis_run_id: registered.run_id, report_title: 'Preanálisis por reglas SIIO', auto_import: true, source: sourceLabel }) }).select('id').single());
       analysisGenerated = true;
     }
   }
@@ -2484,7 +2497,11 @@ app.post('/api/tender-documents-analyze', async (req, res) => {
     if (!currentDocs.length) throw new Error('Debe cargar documentos antes de analizar.');
     const companyProfile = await getTenderCompanyProfile(database);
     const analysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
-    await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify(analysis) }).select('id').single());
+    const registered = await registerSiioRulesAnalysis(database, {
+      opportunity_id: opportunityId, tender_id: await getTenderIdForOpportunity(database, opportunityId), actor_id: currentProfile.id,
+      documents: currentDocs, company_profile: companyProfile, result: analysis,
+    });
+    await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ ...analysis, analysis_run_id: registered.run_id, report_title: 'Preanálisis por reglas SIIO' }) }).select('id').single());
     res.json(await getTenderDocumentRecords(database, opportunityId));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
