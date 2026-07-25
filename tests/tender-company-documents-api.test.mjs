@@ -51,7 +51,9 @@ for (const source of [read('server/index.js'), read('api/[...path].js')]) {
   }
   assert.match(source, /company-profile\/documents\//, 'las cargas generales usan ruta privada de documentos');
 }
-assert.match(read('src/tenders/types.ts'), /TenderCompanyDocument/);
+const documentType = read('src/tenders/types.ts');
+assert.match(documentType, /TenderCompanyDocument/);
+assert.doesNotMatch(documentType, /source_document_name:\s*string/, 'display_name es el nombre contractual; no se exige una columna inexistente');
 assert.match(read('src/tenders/tenderConfigurationActions.ts'), /uploadCompanyDocument/);
 assert.match(read('src/tenders/api.ts'), /loadCompanyProcurementDocuments/);
 console.log('tender company documents API contract passed');

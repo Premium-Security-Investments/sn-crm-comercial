@@ -795,10 +795,22 @@ function cleanCompanyDocumentMetadata(body) {
   const issuedAt = String(body?.issuedAt || body?.issued_at || '').trim();
   const expiresAt = body?.expiresAt ?? body?.expires_at ?? null;
   const replaceDocumentId = body?.replaceDocumentId ?? body?.replace_document_id ?? null;
-  if (!documentType || !displayName || !/^\d{4}-\d{2}-\d{2}$/.test(issuedAt)) throw new Error('Tipo, nombre visible y fecha de expedición son obligatorios.');
-  if (expiresAt !== null && expiresAt !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(String(expiresAt))) throw new Error('La fecha de vencimiento no es válida.');
-  if (expiresAt && String(expiresAt) < issuedAt) throw new Error('La fecha de vencimiento no puede ser anterior a la expedición.');
-  return { documentType, displayName, issuedAt, expiresAt: expiresAt || null, replaceDocumentId: replaceDocumentId || null };
+  const normalizedExpiresAt = expiresAt === null || expiresAt === '' ? null : String(expiresAt).trim();
+  if (!documentType || !displayName || !isCalendarDate(issuedAt)) throw clientInputError('Tipo, nombre visible y fecha de expedición son obligatorios.');
+  if (normalizedExpiresAt && !isCalendarDate(normalizedExpiresAt)) throw clientInputError('La fecha de vencimiento no es válida.');
+  if (normalizedExpiresAt && normalizedExpiresAt < issuedAt) throw clientInputError('La fecha de vencimiento no puede ser anterior a la expedición.');
+  return { documentType, displayName, issuedAt, expiresAt: normalizedExpiresAt, replaceDocumentId: replaceDocumentId || null };
+}
+function clientInputError(message) {
+  const error = new Error(message);
+  error.status = 400;
+  return error;
+}
+function isCalendarDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 function companyDocumentStoragePath(profile, name, size) {
   const id = createHash('sha256').update(`company-profile:${profile.id}:${Date.now()}:${name}:${size}`).digest('hex').slice(0, 24);
@@ -1516,9 +1528,9 @@ app.post('/api/tender-company-document-upload-url', async (req, res) => {
     requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     const metadata = cleanCompanyDocumentMetadata(req.body);
     const name = cleanFileName(req.body?.name || metadata.displayName);
-    const size = Number(req.body?.size || 0);
-    if (!size) throw new Error('Debe seleccionar un documento empresarial válido.');
-    if (size > RUP_MAX_BYTES) throw new Error('El documento empresarial supera 50MB.');
+    const size = Number(req.body?.size);
+    if (!Number.isFinite(size) || size <= 0) throw clientInputError('Debe seleccionar un documento empresarial válido.');
+    if (size > RUP_MAX_BYTES) throw clientInputError('El documento empresarial supera 50MB.');
     const database = requireDb();
     await ensureTenderBucket(database);
     const path = companyDocumentStoragePath(currentProfile, name, size);
@@ -1534,14 +1546,14 @@ app.post('/api/tender-company-document-process-upload', async (req, res) => {
     requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     const metadata = cleanCompanyDocumentMetadata(req.body);
     const storagePath = String(req.body?.storage_path || '');
-    if (!storagePath.startsWith(`company-profile/documents/${currentProfile.id}/`) || storagePath.includes('..')) throw new Error('Ruta de documento empresarial inválida.');
+    if (!storagePath.startsWith(`company-profile/documents/${currentProfile.id}/`) || storagePath.includes('..')) throw clientInputError('Ruta de documento empresarial inválida.');
     const name = cleanFileName(req.body?.name || storagePath.split('/').at(-1) || metadata.displayName);
     const database = requireDb();
     const { data, error } = await database.storage.from(tenderDocumentBucket).download(storagePath);
     if (error) throw error;
     const buffer = Buffer.from(await data.arrayBuffer());
-    if (!buffer.length) throw new Error('El documento empresarial cargado está vacío.');
-    if (buffer.length > RUP_MAX_BYTES) throw new Error('El documento empresarial supera 50MB.');
+    if (!buffer.length) throw clientInputError('El documento empresarial cargado está vacío.');
+    if (buffer.length > RUP_MAX_BYTES) throw clientInputError('El documento empresarial supera 50MB.');
     await recordCompanyProcurementDocument(database, { ...metadata, content: buffer, storagePath, mimeType: req.body?.mime_type || 'application/octet-stream', sizeBytes: buffer.length, uploadedBy: currentProfile.id });
     if (metadata.documentType === 'rup') {
       const extractedText = await extractTextFromTenderFile(buffer, name, req.body?.mime_type || '');
@@ -1568,9 +1580,9 @@ app.post('/api/tender-company-profile-upload-url', async (req, res) => {
     requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     const database = requireDb();
     const name = cleanFileName(req.body?.name || 'rup-actualizado.pdf');
-    const size = Number(req.body?.size || 0);
-    if (!size) throw new Error('Debe seleccionar un archivo RUP válido.');
-    if (size > RUP_MAX_BYTES) throw new Error('El RUP supera 50MB. Reduzca el archivo o cargue una versión PDF/DOCX más liviana.');
+    const size = Number(req.body?.size);
+    if (!Number.isFinite(size) || size <= 0) throw clientInputError('Debe seleccionar un archivo RUP válido.');
+    if (size > RUP_MAX_BYTES) throw clientInputError('El RUP supera 50MB. Reduzca el archivo o cargue una versión PDF/DOCX más liviana.');
     await ensureTenderBucket(database);
     const id = createHash('sha256').update(`company-profile:${Date.now()}:${name}:${size}`).digest('hex').slice(0, 24);
     const storagePath = `company-profile/rup/${id}-${name}`;
@@ -1586,12 +1598,13 @@ app.post('/api/tender-company-profile-process-upload', async (req, res) => {
     requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     const database = requireDb();
     const storagePath = String(req.body?.storage_path || '');
-    if (!storagePath.startsWith('company-profile/rup/')) throw new Error('Ruta de RUP inválida.');
+    if (!storagePath.startsWith('company-profile/rup/')) throw clientInputError('Ruta de RUP inválida.');
     const name = cleanFileName(req.body?.name || storagePath.split('/').at(-1) || 'rup-actualizado.pdf');
     const { data, error } = await database.storage.from(tenderDocumentBucket).download(storagePath);
     if (error) throw error;
     const buffer = Buffer.from(await data.arrayBuffer());
-    if (!buffer.length) throw new Error('El RUP cargado está vacío.');
+    if (!buffer.length) throw clientInputError('El RUP cargado está vacío.');
+    if (buffer.length > RUP_MAX_BYTES) throw clientInputError('El RUP supera 50MB. Reduzca el archivo o cargue una versión PDF/DOCX más liviana.');
     const extractedText = await extractTextFromTenderFile(buffer, name, req.body?.mime_type || '');
     const existing = await getTenderCompanyProfile(database);
     const payload = cleanTenderCompanyProfile(parseRupCompanyProfile(extractedText, existing, name), currentProfile);
@@ -2017,8 +2030,8 @@ function cleanFileName(name) { return String(name || 'documento').replace(/[^a-z
 async function ensureTenderBucket(database) {
   const existing = await database.storage.getBucket(tenderDocumentBucket);
   if (!existing.error) {
-    const currentLimit = Number(existing.data?.file_size_limit || existing.data?.fileSizeLimit || 0);
-    if (currentLimit && currentLimit < RUP_MAX_BYTES) {
+    const currentLimit = Number(existing.data?.file_size_limit ?? existing.data?.fileSizeLimit);
+    if (!Number.isFinite(currentLimit) || currentLimit <= 0 || currentLimit !== RUP_MAX_BYTES) {
       const { error: updateError } = await database.storage.updateBucket(tenderDocumentBucket, { public: false, fileSizeLimit: RUP_MAX_BYTES });
       if (updateError) throw updateError;
     }
