@@ -3,8 +3,17 @@ function isPrivateIpv4(hostname: string) {
   if (!ipv4) return false;
   const octets = ipv4.slice(1).map(Number);
   if (octets.some(value => value > 255)) return true;
-  const [first, second] = octets;
-  return first === 0 || first === 10 || first === 127 || first >= 224 || (first === 169 && second === 254) || (first === 172 && second >= 16 && second <= 31) || (first === 192 && second === 168);
+  const [first, second, third] = octets;
+  return first === 0
+    || first === 10
+    || first === 127
+    || first >= 224
+    || (first === 100 && second >= 64 && second <= 127)
+    || (first === 169 && second === 254)
+    || (first === 172 && second >= 16 && second <= 31)
+    || (first === 192 && ((second === 0 && (third === 0 || third === 2)) || second === 168))
+    || (first === 198 && (second === 18 || second === 19 || (second === 51 && third === 100)))
+    || (first === 203 && second === 0 && third === 113);
 }
 
 function isPrivateHostname(hostname: string) {
@@ -15,7 +24,7 @@ function isPrivateHostname(hostname: string) {
   if (normalized === '::' || normalized === '::1') return true;
   const firstHextetText = normalized.split(':').find(Boolean) || '0';
   const firstHextet = Number.parseInt(firstHextetText, 16);
-  if ((firstHextet >= 0xfc00 && firstHextet <= 0xfdff) || firstHextet >= 0xfe80) return true;
+  if ((firstHextet >= 0xfc00 && firstHextet <= 0xfdff) || firstHextet >= 0xfe80 || /^2001:0?db8(?::|$)/.test(normalized)) return true;
   const mappedHex = normalized.match(/(?:^|:)ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
   if (mappedHex) {
     const high = Number.parseInt(mappedHex[1], 16);

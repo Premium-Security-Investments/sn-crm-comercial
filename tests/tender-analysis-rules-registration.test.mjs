@@ -116,11 +116,16 @@ const firstPresentationResult = {
 const secondPresentationResult = { ...firstPresentationResult, generated_at: '2026-07-24T10:00:01.000Z' };
 const firstRegistered = await registerSiioRulesAnalysis(database, {
   opportunity_id: ids.opportunity, tender_id: ids.tender, actor_id: ids.actor,
-  documents, company_profile: { version: 1 }, result: firstPresentationResult,
+  documents, company_profile: { version: 1 }, result: firstPresentationResult, refresh_token: ids.snapshot,
 });
 const secondRegistered = await registerSiioRulesAnalysis(database, {
   opportunity_id: ids.opportunity, tender_id: ids.tender, actor_id: ids.actor,
-  documents: reimportedDocuments, company_profile: { version: 1 }, result: secondPresentationResult,
+  documents: reimportedDocuments, company_profile: { version: 1 }, result: secondPresentationResult, refresh_token: ids.snapshot,
+});
+const governedSnapshot = { ...buildTenderSnapshotInput(documents, { version: 1 }), id: ids.snapshot };
+const reusedRegistered = await registerSiioRulesAnalysis(database, {
+  opportunity_id: ids.opportunity, tender_id: ids.tender, actor_id: ids.actor,
+  documents, company_profile: { version: 1 }, result: firstPresentationResult, snapshot_record: governedSnapshot,
 });
 assert.equal(firstRegistered.run_id, ids.run);
 assert.equal(firstRegistered.snapshot_id, ids.snapshot);
@@ -130,10 +135,12 @@ assert.equal(firstRegistered.status, 'completed');
 assert.equal(firstRegistered.current, true);
 assert.deepEqual(firstRegistered.result, { recommendation: 'GO condicionado', nested: { generated_at: 'must remain semantic' }, questions: [{ critical: true }] });
 assert.deepEqual(secondRegistered.result, firstRegistered.result);
+assert.equal(reusedRegistered.snapshot_id, ids.snapshot, 'analysis may reuse an already governed snapshot without republishing its pointer');
 assert.equal(firstPresentationResult.generated_at, '2026-07-24T10:00:00.000Z', 'canonicalization must not mutate the legacy presentation result');
 assert.deepEqual(database.calls.map(call => call.name), [
   'psi_record_tender_document_snapshot', 'psi_record_tender_analysis_run',
   'psi_record_tender_document_snapshot', 'psi_record_tender_analysis_run',
+  'psi_record_tender_analysis_run',
 ]);
 const firstRunPayload = database.calls[1].params;
 const secondRunPayload = database.calls[3].params;
@@ -151,24 +158,28 @@ assert.equal(firstRunPayload.p_result.generated_at, undefined);
 
 const failedDatabase = { async rpc() { return { data: null, error: { message: 'RPC unavailable' } }; } };
 await assert.rejects(() => registerSiioRulesAnalysis(failedDatabase, {
-  opportunity_id: ids.opportunity, tender_id: ids.tender, actor_id: ids.actor, documents, company_profile: {}, result: firstPresentationResult,
+  opportunity_id: ids.opportunity, tender_id: ids.tender, actor_id: ids.actor, documents, company_profile: {}, result: firstPresentationResult, refresh_token: ids.snapshot,
 }), /RPC unavailable/);
 
-function createCurrentAnalysisDatabase({ latestSnapshot, runs }) {
+function createCurrentAnalysisDatabase({ latestSnapshot, runs, refreshInProgress = false }) {
   const queries = [];
   return {
     queries,
     from(table) {
       const filters = [];
+      const materialize = () => {
+        if (table === 'psi_tender_document_state') return latestSnapshot ? [{ opportunity_id: ids.opportunity, current_snapshot_id: latestSnapshot.id, refresh_in_progress: refreshInProgress }] : [];
+        if (table === 'psi_tender_document_snapshots') return latestSnapshot ? [latestSnapshot] : [];
+        return runs.filter(run => Object.entries(Object.fromEntries(filters)).every(([key, value]) => run[key] === value));
+      };
       const chain = {
         select() { return chain; },
         eq(key, value) { filters.push([key, value]); return chain; },
         order() { return chain; },
+        maybeSingle() { queries.push({ table, filters: [...filters] }); return Promise.resolve({ data: materialize()[0] || null, error: null }); },
         limit() {
           queries.push({ table, filters: [...filters] });
-          if (table === 'psi_tender_document_snapshots') return Promise.resolve({ data: latestSnapshot ? [latestSnapshot] : [], error: null });
-          const matching = runs.filter(run => Object.entries(Object.fromEntries(filters)).every(([key, value]) => run[key] === value));
-          return Promise.resolve({ data: matching.slice().sort((left, right) => String(right.created_at).localeCompare(String(left.created_at))).slice(0, 1), error: null });
+          return Promise.resolve({ data: materialize().slice().sort((left, right) => String(right.created_at).localeCompare(String(left.created_at))).slice(0, 1), error: null });
         },
       };
       return chain;
@@ -190,7 +201,7 @@ assert.equal(current.run_id, ids.run, 'a late old-snapshot run must not hide the
 assert.equal(current.snapshot_id, currentSnapshot.id);
 assert.equal(current.current, true);
 assert.deepEqual(current.result, currentResult);
-assert.deepEqual(currentDatabase.queries[1].filters, [
+assert.deepEqual(currentDatabase.queries[2].filters, [
   ['opportunity_id', ids.opportunity],
   ['snapshot_id', currentSnapshot.id],
 ]);
@@ -245,16 +256,37 @@ assert.equal(presented.completed_at, '2026-07-24T11:01:00.000Z');
 
 for (const path of ['../api/[...path].js', '../server/index.js']) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-  assert.match(source, /import \{ getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis \} from '\.\.\/tender-analysis-foundation\.js';/);
+  assert.match(source, /import \{ getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot \} from '\.\.\/tender-analysis-foundation\.js';/);
+  const officialRefresh = source.match(/async function refreshTenderDocumentsFromOfficialSource[\s\S]*?\n}\nasync function convertTenderToOpportunity/);
+  assert.ok(officialRefresh, `${path} must retain the governed official-document refresh`);
+  const officialWriteIndex = officialRefresh[0].indexOf('refreshTenderDocumentBatch');
+  const officialTokenIndex = officialRefresh[0].indexOf('psi_begin_tender_document_refresh');
+  const officialSnapshotIndex = officialRefresh[0].indexOf('registerTenderDocumentSnapshot');
+  assert.ok(officialWriteIndex >= 0 && officialTokenIndex > officialWriteIndex && officialSnapshotIndex > officialTokenIndex, `${path} must open the publication token after its own writes and before publishing the snapshot`);
+  assert.match(source, /registerTenderDocumentSnapshot\(database, \{[\s\S]{0,220}refresh_token: refreshToken/, `${path} must close the governed refresh with its token`);
+  assert.match(officialRefresh[0], /snapshot_record: registeredSnapshot/, `${path} must reuse the governed official snapshot for optional analysis instead of republishing cached documents`);
+  assert.match(source, /const refreshSummary[\s\S]{0,1800}registerTenderDocumentSnapshot[\s\S]{0,600}runOptionalTenderAnalysis/, `${path} must persist the refreshed document snapshot before optional analysis`);
   const generated = source.match(/const analysis = buildTenderDocumentAnalysis[\s\S]{0,700}registerSiioRulesAnalysis/);
   assert.ok(generated, `${path} must register the rules result after building it`);
   assert.match(source, /Preanálisis por reglas SIIO/);
   assert.doesNotMatch(source, /(?:IA|inteligencia artificial|Hermes|AGT-002)[^\n]{0,80}Preanálisis por reglas SIIO/i);
   const records = source.match(/async function getTenderDocumentRecords[\s\S]*?\n}\n\n/);
   assert.ok(records, `${path} must retain the shared tender-document response builder`);
-  assert.match(records[0], /getCurrentTenderAnalysis\(database, opportunityId, compatibleDocuments\)/, `${path} must resolve the typed current analysis against the current document hash, not infer authority from timeline history`);
+  assert.match(records[0], /getCurrentTenderAnalysis\(database, opportunityId, compatibleDocuments\.filter\(document => document\.current !== false\)\)/, `${path} must resolve the typed current analysis against current documents only, not obsolete legacy versions`);
   assert.match(records[0], /analysis:\s*presentCurrentTenderAnalysis\(currentAnalysis\)/, `${path} must present typed metadata plus analysis result to every document response path`);
   assert.match(records[0], /analyses,/, `${path} must preserve legacy timeline history for compatibility`);
+
+  const manualUpload = source.match(/app\.post\('\/api\/tender-documents-upload'[\s\S]*?\n}\);/);
+  assert.ok(manualUpload, `${path} must retain the manual tender-document upload endpoint`);
+  const manualWriteIndex = manualUpload[0].indexOf('saveTenderDocumentBuffer');
+  const manualTokenIndex = manualUpload[0].indexOf('psi_begin_tender_document_refresh');
+  const manualSnapshotIndex = manualUpload[0].indexOf('registerTenderDocumentSnapshot');
+  assert.ok(manualWriteIndex >= 0 && manualTokenIndex > manualWriteIndex && manualSnapshotIndex > manualTokenIndex, `${path} must open the manual publication token after its own writes and before publishing the snapshot`);
+  assert.match(manualUpload[0], /psi_sales_interactions[\s\S]*?insert[\s\S]*?registerTenderDocumentSnapshot\(database, \{[\s\S]*?refresh_token: refreshToken/, `${path} must close a manual upload by advancing the authoritative current snapshot`);
+
+  const manualAnalysis = source.match(/app\.post\('\/api\/tender-documents-analyze'[\s\S]*?\n}\);/);
+  assert.ok(manualAnalysis, `${path} must retain explicit documentary analysis`);
+  assert.match(manualAnalysis[0], /psi_begin_tender_document_refresh[\s\S]*?getTenderDocumentRecords[\s\S]*?registerSiioRulesAnalysis[\s\S]*?refresh_token: refreshToken/, `${path} must tokenize explicit analysis before reading and publishing its documentary snapshot`);
 }
 
 console.log('tender rules analysis registration passed');

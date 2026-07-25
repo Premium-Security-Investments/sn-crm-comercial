@@ -4,6 +4,7 @@ import { PGlite } from '@electric-sql/pglite';
 
 const decisionMigration = readFileSync(new URL('../supabase/migrations/022_tender_go_no_go_workflow.sql', import.meta.url), 'utf8');
 const analysisMigration = readFileSync(new URL('../supabase/migrations/025_tender_analysis_foundation.sql', import.meta.url), 'utf8');
+const currentDecisionMigration = readFileSync(new URL('../supabase/migrations/027_tender_decision_current_analysis.sql', import.meta.url), 'utf8');
 const ids = {
   actor: '11111111-1111-4111-8111-111111111111',
   opportunity: '22222222-2222-4222-8222-222222222222',
@@ -23,6 +24,7 @@ async function createDatabase() {
     create table public.psi_profile_permissions (profile_id uuid not null references public.psi_sales_profiles(id), permission_code text not null references public.psi_access_permissions(code), primary key(profile_id, permission_code));
     create table public.psi_sales_opportunities (id uuid primary key, tipo_producto_original text, external_source text);
     create table public.psi_public_tenders (id uuid primary key, converted_opportunity_id uuid);
+    create table public.psi_tender_document_versions (id uuid primary key default gen_random_uuid(), opportunity_id uuid not null, current boolean not null default true);
     create table public.psi_sales_interactions (id uuid primary key default gen_random_uuid(), opportunity_id uuid not null, interaction_type text not null, created_by uuid not null, occurred_at timestamptz not null default now(), notes text);
     insert into public.psi_sales_profiles values ('${ids.actor}', true, 'admin', 'admin@example.test', 'human');
     insert into public.psi_access_permissions values ('licitaciones', true);
@@ -34,14 +36,23 @@ async function createDatabase() {
   await db.exec(`insert into public.psi_tender_go_no_go_decisions (opportunity_id, tender_id, decision, analysis_interaction_id, justification, decided_by)
     values ('${ids.opportunity}', '${ids.tender}', 'no_go', null, 'Decisión legacy', '${ids.actor}')`);
   await db.exec(analysisMigration);
+  await db.exec(currentDecisionMigration);
+  assert.equal((await one(db, `select public.psi_tender_analysis_foundation_ready() as ready`)).ready, true, '027 readiness exige y detecta ambos triggers de invalidación');
   return db;
 }
 
-async function snapshot(db, { opportunity = ids.opportunity, tender = ids.tender, marker }) {
+async function snapshot(db, { opportunity = ids.opportunity, tender = ids.tender, marker, refreshToken = null, governed = true }) {
+  const publicationToken = refreshToken || (governed
+    ? (await one(db, `select public.psi_begin_tender_document_refresh($1::uuid,$2::uuid) as token`, [opportunity, tender])).token
+    : null);
   const hash = marker.repeat(64);
-  return (await one(db, `select public.psi_record_tender_document_snapshot($1::uuid,$2::uuid,$3::text,$4::text,$5::jsonb,$6::jsonb,$7::uuid) as result`, [
-    opportunity, tender, hash, 'b'.repeat(64), JSON.stringify({ documents: [{ marker }] }), JSON.stringify({ version: marker }), ids.actor,
+  return (await one(db, `select public.psi_record_tender_document_snapshot($1::uuid,$2::uuid,$3::text,$4::text,$5::jsonb,$6::jsonb,$7::uuid,$8::uuid) as result`, [
+    opportunity, tender, hash, 'b'.repeat(64), JSON.stringify({ documents: [{ marker }] }), JSON.stringify({ version: marker }), ids.actor, publicationToken,
   ])).result;
+}
+
+async function beginRefresh(db) {
+  return (await one(db, `select public.psi_begin_tender_document_refresh($1::uuid,$2::uuid) as token`, [ids.opportunity, ids.tender])).token;
 }
 
 async function run(db, snapshotId, {
@@ -60,9 +71,10 @@ async function run(db, snapshotId, {
   ])).result;
 }
 
-async function decide(db, { decision = 'go', analysisRunId = null, justification = null } = {}) {
-  return (await one(db, `select public.psi_record_tender_go_no_go($1::uuid,$2::uuid,$3::uuid,$4::text,$5::uuid,$6::text,$7::jsonb) as result`, [
+async function decide(db, { decision = 'go', analysisRunId = null, justification = null, documentHash = 'a'.repeat(64) } = {}) {
+  return (await one(db, `select public.psi_record_tender_go_no_go($1::uuid,$2::uuid,$3::uuid,$4::text,$5::uuid,$6::text,$7::jsonb,$8::text) as result`, [
     ids.opportunity, ids.tender, ids.actor, decision, analysisRunId ?? null, justification, decision === 'go' ? JSON.stringify({ kind: 'tender_offer_preparation' }) : null,
+    documentHash,
   ])).result;
 }
 
@@ -89,12 +101,45 @@ await (async function authorizedHumanDecisionDoesNotDependOnAnalysisState() {
   await assert.rejects(() => decide(db, { analysisRunId: otherRun.id }), /análisis|oportunidad|licitación/i);
 
   const failed = await run(db, currentSnapshot.id, { status: 'failed', idempotencyKey: 'failed-run' });
-  assert.equal((await decide(db, { analysisRunId: failed.id })).decision, 'go', 'a failed analysis warns but does not block an authorized human');
+  await assert.rejects(() => decide(db, { analysisRunId: failed.id }), /completado/i, 'a failed run cannot be declared current');
+  assert.equal((await decide(db)).decision, 'go', 'a failed analysis does not block an authorized human decision without an anchored run');
 
   const staleSnapshot = await snapshot(db, { marker: 'd' });
   const staleRun = await run(db, staleSnapshot.id, { idempotencyKey: 'stale-run' });
   await snapshot(db, { marker: 'e' });
-  assert.equal((await decide(db, { analysisRunId: staleRun.id })).decision, 'go', 'a stale analysis warns but does not block an authorized human');
+  await assert.rejects(() => decide(db, { analysisRunId: staleRun.id, documentHash: 'd'.repeat(64) }), /snapshot|reemplazado|vigente/i, 'a stale run cannot be declared current');
+  assert.equal((await decide(db, { documentHash: 'e'.repeat(64) })).decision, 'go', 'a stale analysis does not block an authorized human decision without an anchored run');
+  const backToA = await snapshot(db, { marker: 'd' });
+  assert.equal(backToA.id, staleSnapshot.id, 'A→B→A reutiliza la evidencia inmutable A');
+  assert.equal((await decide(db, { analysisRunId: staleRun.id, documentHash: 'd'.repeat(64) })).analysis_run_id, staleRun.id, 'el puntero vigente vuelve a A aunque created_at sea antiguo');
+
+  const refreshToken = await beginRefresh(db);
+  await assert.rejects(() => decide(db, { analysisRunId: staleRun.id, documentHash: 'd'.repeat(64) }), /estable|curso|vigente/i, 'no se ancla un run mientras el refresh está abierto');
+  assert.equal((await decide(db, { analysisRunId: null, documentHash: 'd'.repeat(64) })).decision, 'go', 'la decisión humana sin análisis permanece disponible durante refresh');
+  await snapshot(db, { marker: 'd', refreshToken });
+  assert.equal((await decide(db, { analysisRunId: staleRun.id, documentHash: 'd'.repeat(64) })).analysis_run_id, staleRun.id, 'cerrar el refresh con su token restaura el anclaje vigente');
+
+  await db.exec(`insert into public.psi_sales_interactions (opportunity_id, interaction_type, created_by, notes)
+    values ('${ids.opportunity}', 'documento', '${ids.actor}', '{"kind":"tender_document_upload","documents":[{"id":"manual-b"}]}')`);
+  assert.equal((await one(db, `select current_snapshot_id from public.psi_tender_document_state where opportunity_id=$1`, [ids.opportunity])).current_snapshot_id, null, 'una carga manual directa invalida atómicamente el puntero autoritativo');
+  await assert.rejects(() => decide(db, { analysisRunId: staleRun.id, documentHash: 'd'.repeat(64) }), /estable|vigente|snapshot/i, 'un caller service-role no puede anclar A después de cargar manualmente B');
+  assert.equal((await decide(db, { analysisRunId: null, documentHash: 'e'.repeat(64) })).decision, 'go', 'invalidar el puntero no bloquea la decisión humana sin análisis');
+
+  await snapshot(db, { marker: 'd' });
+  const obsoleteRefreshToken = await beginRefresh(db);
+  await db.exec(`insert into public.psi_tender_document_versions (opportunity_id, current) values ('${ids.opportunity}', true)`);
+  assert.equal((await one(db, `select current_snapshot_id from public.psi_tender_document_state where opportunity_id=$1`, [ids.opportunity])).current_snapshot_id, null, 'una escritura tipada directa invalida atómicamente el puntero autoritativo');
+  await assert.rejects(
+    () => snapshot(db, { marker: 'f', governed: false }),
+    /token|vigente|actualización/i,
+    'una publicación sin token no puede volver a fijar un conjunto leído antes de la mutación',
+  );
+  await assert.rejects(
+    () => snapshot(db, { marker: 'f', refreshToken: obsoleteRefreshToken }),
+    /token|vigente|actualización/i,
+    'una mutación concurrente revoca el token y evita que un refresh viejo publique un snapshot obsoleto',
+  );
+  await assert.rejects(() => decide(db, { analysisRunId: staleRun.id, documentHash: 'd'.repeat(64) }), /estable|vigente|snapshot/i, 'una versión tipada nueva impide anclar un run previo');
   await db.close();
 })();
 
@@ -102,8 +147,8 @@ await (async function criticalQuestionsAndProducerRecommendationNeverAuthorizeOr
   const db = await createDatabase();
   const firstSnapshot = await snapshot(db, { marker: 'f' });
   const criticalAgt = await run(db, firstSnapshot.id, { producer: 'AGT-002', criticalOpenCount: 1, idempotencyKey: 'critical-agt' });
-  assert.equal((await decide(db, { analysisRunId: criticalAgt.id })).decision, 'go', 'critical questions remain warnings and cannot block human GO');
-  const noGo = await decide(db, { decision: 'no_go', analysisRunId: criticalAgt.id });
+  assert.equal((await decide(db, { analysisRunId: criticalAgt.id, documentHash: 'f'.repeat(64) })).decision, 'go', 'critical questions remain warnings and cannot block human GO');
+  const noGo = await decide(db, { decision: 'no_go', analysisRunId: criticalAgt.id, documentHash: 'f'.repeat(64) });
   assert.equal(noGo.decision, 'no_go', 'NO GO also remains available');
 
   const hermesSnapshot = await snapshot(db, { marker: 'a' });

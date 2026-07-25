@@ -87,6 +87,25 @@ export function buildTenderSnapshotInput(records, companyProfile) {
   };
 }
 
+export async function registerTenderDocumentSnapshot(database, context) {
+  const opportunityId = requireId(context?.opportunity_id, 'La oportunidad');
+  const tenderId = requireId(context?.tender_id, 'La licitación');
+  const actorId = requireId(context?.actor_id, 'El actor');
+  const refreshToken = requireId(context?.refresh_token, 'El token de actualización documental');
+  const snapshot = buildTenderSnapshotInput(context.documents, context.company_profile);
+  const record = unwrapRpc(await database.rpc('psi_record_tender_document_snapshot', {
+    p_opportunity_id: opportunityId,
+    p_tender_id: tenderId,
+    p_document_hash: snapshot.document_hash,
+    p_profile_hash: snapshot.profile_hash,
+    p_document_manifest: { documents: snapshot.documents },
+    p_profile_snapshot: snapshot.company_profile,
+    p_actor_id: actorId,
+    p_refresh_token: refreshToken,
+  }));
+  return { ...snapshot, ...record, id: requireId(record.id, 'El snapshot documental') };
+}
+
 export async function registerSiioRulesAnalysis(database, context) {
   const opportunityId = requireId(context?.opportunity_id, 'La oportunidad');
   const tenderId = requireId(context?.tender_id, 'La licitación');
@@ -97,16 +116,18 @@ export async function registerSiioRulesAnalysis(database, context) {
   }
   const canonicalResult = canonicalRulesResult(result);
 
-  const snapshot = buildTenderSnapshotInput(context.documents, context.company_profile);
-  const snapshotRecord = unwrapRpc(await database.rpc('psi_record_tender_document_snapshot', {
-    p_opportunity_id: opportunityId,
-    p_tender_id: tenderId,
-    p_document_hash: snapshot.document_hash,
-    p_profile_hash: snapshot.profile_hash,
-    p_document_manifest: { documents: snapshot.documents },
-    p_profile_snapshot: snapshot.company_profile,
-    p_actor_id: actorId,
-  }));
+  const expectedSnapshot = buildTenderSnapshotInput(context.documents, context.company_profile);
+  let snapshotRecord;
+  if (context?.snapshot_record) {
+    const providedSnapshotId = requireId(context.snapshot_record.id, 'El snapshot documental');
+    if (context.snapshot_record.document_hash !== expectedSnapshot.document_hash
+      || context.snapshot_record.profile_hash !== expectedSnapshot.profile_hash) {
+      throw new Error('El snapshot documental gobernado no coincide con los documentos y perfil analizados.');
+    }
+    snapshotRecord = { ...expectedSnapshot, ...context.snapshot_record, id: providedSnapshotId };
+  } else {
+    snapshotRecord = await registerTenderDocumentSnapshot(database, context);
+  }
   const snapshotId = requireId(snapshotRecord.id, 'El snapshot documental');
   const criticalOpenCount = countCriticalOpenQuestions(canonicalResult);
   const runRecord = unwrapRpc(await database.rpc('psi_record_tender_analysis_run', {
@@ -139,14 +160,19 @@ export async function registerSiioRulesAnalysis(database, context) {
 
 export async function getCurrentTenderAnalysis(database, opportunityId, currentDocuments = null) {
   const normalizedOpportunityId = requireId(opportunityId, 'La oportunidad');
-  const latestSnapshotResponse = await database.from('psi_tender_document_snapshots')
-    .select('id,document_hash')
+  const stateResponse = await database.from('psi_tender_document_state')
+    .select('current_snapshot_id,refresh_in_progress')
     .eq('opportunity_id', normalizedOpportunityId)
-    .order('created_at', { ascending: false })
-    .order('id', { ascending: false })
-    .limit(1);
-  if (latestSnapshotResponse?.error) throw new Error(latestSnapshotResponse.error.message || String(latestSnapshotResponse.error));
-  const latestSnapshot = Array.isArray(latestSnapshotResponse?.data) ? latestSnapshotResponse.data[0] : latestSnapshotResponse?.data;
+    .maybeSingle();
+  if (stateResponse?.error) throw new Error(stateResponse.error.message || String(stateResponse.error));
+  const state = stateResponse?.data;
+  if (!state?.current_snapshot_id) return null;
+  const snapshotResponse = await database.from('psi_tender_document_snapshots')
+    .select('id,document_hash')
+    .eq('id', state.current_snapshot_id)
+    .maybeSingle();
+  if (snapshotResponse?.error) throw new Error(snapshotResponse.error.message || String(snapshotResponse.error));
+  const latestSnapshot = snapshotResponse?.data;
   if (!latestSnapshot?.id) return null;
 
   const selectLatestRun = async (snapshotId = null) => {
@@ -169,7 +195,7 @@ export async function getCurrentTenderAnalysis(database, opportunityId, currentD
     producer: run.producer,
     method: run.method,
     status: run.status,
-    current: run.snapshot_id === latestSnapshot.id && documentsMatchSnapshot,
+    current: !state.refresh_in_progress && run.snapshot_id === latestSnapshot.id && documentsMatchSnapshot,
     result: run.result,
     critical_open_count: run.critical_open_count ?? 0,
     created_at: run.created_at || null,

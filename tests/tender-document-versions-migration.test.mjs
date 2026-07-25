@@ -88,7 +88,11 @@ assert.match(migration, /create unique index if not exists psi_tender_document_v
 assert.match(migration, /revoke all on table public\.psi_tender_document_versions from authenticated/i);
 assert.match(migration, /revoke all on table public\.psi_tender_document_versions from service_role[\s\S]*grant select on table public\.psi_tender_document_versions to service_role/i, 'service_role sólo debe recuperar SELECT directo.');
 assert.match(migration, /extracted_text text not null check \(nullif\(btrim\(extracted_text\), ''\) is not null and octet_length\(extracted_text\) <= 10 \* 1024 \* 1024\)/i);
-assert.ok(migration.includes("p_source_url !~ '^https?://[^/[:space:]]+"), 'La URL debe exigir una autoridad no vacía.');
+assert.match(migration, /psi_is_public_https_url/i, 'La URL persistida debe usar una política SQL pública y HTTPS.');
+assert.doesNotMatch(migration, /\^https\?\:\/\//i, 'La persistencia no puede admitir HTTP.');
+for (const marker of ['username', 'password', 'port', 'private', 'loopback', 'link-local', 'ula', 'ipv4-mapped']) {
+  assert.match(migration, new RegExp(marker, 'i'), `La política SQL debe documentar o validar ${marker}.`);
+}
 assert.match(migration, /if v_previous\.id is not null then[\s\S]*set current = false/i, 'La desactivación debe depender de una versión previa real, no de FOUND tras un agregado.');
 assert.match(migration, /jsonb_build_array\(p_opportunity_id, v_source, v_source_document_id\)::text/i, 'El lock debe serializar una identidad sin delimitadores ambiguos.');
 assert.match(migration, /revoke all on function public\.psi_record_tender_document_version[\s\S]*from authenticated/i);

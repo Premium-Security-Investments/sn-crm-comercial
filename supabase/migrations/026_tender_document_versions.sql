@@ -2,6 +2,65 @@
 -- only the corporate document register; tender-specific document versions land later.
 begin;
 
+create or replace function public.psi_is_public_https_url(p_url text)
+returns boolean
+language plpgsql
+immutable
+strict
+set search_path = public, pg_temp
+as $$
+declare
+  v_authority text;
+  v_host text;
+  v_ip inet;
+begin
+  -- Reject non-HTTPS URLs, whitespace, username/password credentials and explicit ports.
+  if left(lower(p_url), 8) <> 'https://' or p_url ~ '[[:space:]]' then return false; end if;
+  v_authority := split_part(split_part(split_part(substr(p_url, 9), '/', 1), '?', 1), '#', 1);
+  if nullif(v_authority, '') is null or position('@' in v_authority) > 0 then return false; end if;
+
+  if left(v_authority, 1) = '[' then
+    if v_authority !~ '^\[[0-9a-fA-F:.]+\]$' then return false; end if;
+    v_host := substr(v_authority, 2, length(v_authority) - 2);
+  else
+    if position(':' in v_authority) > 0 then return false; end if;
+    v_host := lower(v_authority);
+  end if;
+
+  begin
+    if v_host ~ '^[0-9]+(\.[0-9]+){3}$' or left(v_authority, 1) = '[' then
+      v_ip := v_host::inet;
+      if family(v_ip) = 4 then
+        -- private, loopback, link-local, CGNAT, benchmark, documentation and reserved IPv4.
+        return not (v_ip <<= inet '0.0.0.0/8' or v_ip <<= inet '10.0.0.0/8'
+          or v_ip <<= inet '100.64.0.0/10' or v_ip <<= inet '127.0.0.0/8'
+          or v_ip <<= inet '169.254.0.0/16' or v_ip <<= inet '172.16.0.0/12'
+          or v_ip <<= inet '192.0.0.0/24' or v_ip <<= inet '192.0.2.0/24'
+          or v_ip <<= inet '192.168.0.0/16' or v_ip <<= inet '198.18.0.0/15'
+          or v_ip <<= inet '198.51.100.0/24' or v_ip <<= inet '203.0.113.0/24'
+          or v_ip <<= inet '224.0.0.0/4' or v_ip <<= inet '240.0.0.0/4');
+      end if;
+      -- IPv6 unspecified/loopback, IPv4-mapped, ULA, link-local, documentation and multicast.
+      return not (v_ip = inet '::' or v_ip = inet '::1' or v_ip <<= inet '::ffff:0:0/96'
+        or v_ip <<= inet 'fc00::/7' or v_ip <<= inet 'fe80::/10'
+        or v_ip <<= inet '2001:db8::/32' or v_ip <<= inet 'ff00::/8');
+    end if;
+  exception when invalid_text_representation then
+    return false;
+  end;
+
+  -- Hostnames only; reject ambiguous numeric/hex IPv4 spellings plus localhost and mDNS/private suffixes.
+  return length(v_host) <= 253 and v_host ~ '^[a-z0-9][a-z0-9.-]*[a-z0-9]$'
+    and v_host !~ '^[0-9.]+$' and v_host !~ '^0x[0-9a-f]+$'
+    and position('..' in v_host) = 0 and v_host <> 'localhost'
+    and v_host not like '%.localhost' and v_host not like '%.local';
+end;
+$$;
+
+revoke all on function public.psi_is_public_https_url(text) from public;
+revoke all on function public.psi_is_public_https_url(text) from authenticated;
+revoke all on function public.psi_is_public_https_url(text) from service_role;
+
 create table if not exists public.psi_company_procurement_documents (
   id uuid primary key default gen_random_uuid(),
   document_type text not null check (nullif(btrim(document_type), '') is not null),
@@ -173,7 +232,7 @@ create table if not exists public.psi_tender_document_versions (
   size_bytes bigint not null check (size_bytes > 0 and size_bytes <= 50 * 1024 * 1024),
   document_type text not null check (nullif(btrim(document_type), '') is not null),
   extracted_text text not null check (nullif(btrim(extracted_text), '') is not null and octet_length(extracted_text) <= 10 * 1024 * 1024),
-  source_url text check (source_url is null or source_url ~ '^https?://[^/[:space:]]+([/?#][^[:space:]]*)?$'),
+  source_url text check (source_url is null or public.psi_is_public_https_url(source_url)),
   current boolean not null default true,
   actor_id uuid not null references public.psi_sales_profiles(id) on delete restrict,
   created_at timestamptz not null default now(),
@@ -240,8 +299,8 @@ begin
   if octet_length(p_extracted_text) > 10 * 1024 * 1024 then
     raise exception 'El texto extraído no puede superar 10 MB.' using errcode = '22023';
   end if;
-  if p_source_url is not null and (btrim(p_source_url) <> p_source_url or p_source_url !~ '^https?://[^/[:space:]]+([/?#][^[:space:]]*)?$') then
-    raise exception 'La URL de origen debe ser HTTP(S) válida.' using errcode = '22023';
+  if p_source_url is not null and (btrim(p_source_url) <> p_source_url or not public.psi_is_public_https_url(p_source_url)) then
+    raise exception 'La URL de origen debe ser HTTPS pública, sin credenciales ni puerto explícito.' using errcode = '22023';
   end if;
   if not exists (
     select 1 from public.psi_public_tenders t

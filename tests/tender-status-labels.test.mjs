@@ -52,7 +52,7 @@ assert.equal(tenderSharePointStatusLabel('pendiente_configurar_integracion'), 'I
 assert.equal(tenderPreparationStatusLabel('raw_nuevo'), 'Estado no reconocido');
 
 assert.equal(ui.safePublicTenderSourceUrl('https://www.secop.gov.co/proceso/1'), 'https://www.secop.gov.co/proceso/1');
-for (const unsafe of ['javascript:alert(1)', 'http://secop.gov.co/proceso', 'https://localhost/x', 'https://127.0.0.1/x', 'https://10.0.0.2/x', 'https://user:pass@secop.gov.co/x', 'https://secop.gov.co:8443/x', 'https://[::]/x', 'https://[::ffff:127.0.0.1]/x', 'https://[fe90::1]/x']) {
+for (const unsafe of ['javascript:alert(1)', 'http://secop.gov.co/proceso', 'https://localhost/x', 'https://127.0.0.1/x', 'https://127.1/x', 'https://2130706433/x', 'https://0x7f000001/x', 'https://10.0.0.2/x', 'https://100.64.0.1/x', 'https://192.0.2.1/x', 'https://198.18.0.1/x', 'https://user:pass@secop.gov.co/x', 'https://secop.gov.co:8443/x', 'https://[::]/x', 'https://[::ffff:127.0.0.1]/x', 'https://[fe90::1]/x', 'https://[2001:db8::1]/x']) {
   assert.equal(ui.safePublicTenderSourceUrl(unsafe), null, `Debe rechazar ${unsafe}`);
 }
 assert.equal(ui.safePublicTenderSourceUrl('https://[2606:4700:4700::1111]/x'), 'https://[2606:4700:4700::1111]/x');

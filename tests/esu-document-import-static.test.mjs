@@ -13,6 +13,9 @@ function assert(condition, message) {
 for (const file of [server, api]) {
   assert(file.includes('listEsuDocumentsFromProcessUrl'), 'Debe existir importador de documentos ESU desde /procesos/view/<id>.');
   assert(file.includes('downloadEsuDocument'), 'Debe descargar documentos ESU oficiales desde /procesos/descargar/...');
+  assert(file.includes('safeOfficialFetch') && file.includes('validateOfficialHttpsUrl'), 'Toda descarga oficial debe validar host/ruta/DNS antes de red y revalidar redirects.');
+  assert(!/downloadEsuDocument[\s\S]{0,300}fetch\(doc\.url/.test(file), 'ESU no debe usar fetch directo sobre href del HTML.');
+  assert(!/downloadSecopDocument[\s\S]{0,350}fetch\(doc\.url_descarga_documento\.url/.test(file), 'SECOP no debe usar fetch directo sobre URL entregada por datos.gov.');
   assert(file.includes("source: 'ESU Contratación'"), 'La interacción documental debe identificar fuente ESU Contratación.');
   assert(file.includes("tender.source === 'ESU Contratación'"), 'La conversión a oportunidad debe disparar importación automática para ESU.');
   assert(file.includes('community.secop.gov.co') && file.includes('esucontratacion.com'), 'El importador oficial debe soportar SECOP II y ESU, no solo SECOP.');

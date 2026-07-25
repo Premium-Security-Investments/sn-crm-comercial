@@ -5,6 +5,7 @@ import {
   getTenderGoNoGoDecision,
   requireTenderGoForPreparation,
 } from '../tender-go-no-go-rpc.js';
+import { buildTenderSnapshotInput } from '../tender-analysis-foundation.js';
 
 const OPPORTUNITY_ID = '11111111-1111-4111-8111-111111111111';
 const TENDER_ID = '22222222-2222-4222-8222-222222222222';
@@ -12,6 +13,8 @@ const ANALYSIS_RUN_ID = '33333333-3333-4333-8333-33333333333a';
 const STALE_ANALYSIS_RUN_ID = '88888888-8888-4888-8888-88888888888b';
 const LEGACY_ANALYSIS_INTERACTION_ID = '99999999-9999-4999-8999-999999999999';
 const ACTOR_ID = '44444444-4444-4444-8444-444444444444';
+const CURRENT_DOCUMENTS = [{ id: 'doc-1', name: 'Pliego.pdf', current: true, document_type: 'pliego' }];
+const CURRENT_DOCUMENT_HASH = buildTenderSnapshotInput(CURRENT_DOCUMENTS, {}).document_hash;
 
 const HISTORICAL_PREPARATION = Object.freeze({
   kind: 'tender_offer_preparation',
@@ -94,7 +97,8 @@ function fakeDatabase({
   preparationId,
   preparations = [],
   history = [],
-  snapshots = [{ id: '66666666-6666-4666-8666-666666666666', opportunity_id: OPPORTUNITY_ID, created_at: '2026-07-03T00:00:00.000Z' }],
+  snapshots = [{ id: '66666666-6666-4666-8666-666666666666', opportunity_id: OPPORTUNITY_ID, document_hash: CURRENT_DOCUMENT_HASH, created_at: '2026-07-03T00:00:00.000Z' }],
+  states = snapshots.length ? [{ opportunity_id: OPPORTUNITY_ID, current_snapshot_id: snapshots[0].id, refresh_in_progress: false }] : [],
   runs = [{
     id: ANALYSIS_RUN_ID,
     snapshot_id: '66666666-6666-4666-8666-666666666666',
@@ -114,7 +118,7 @@ function fakeDatabase({
       id: '55555555-5555-4555-8555-555555555555',
       opportunity_id: OPPORTUNITY_ID,
       interaction_type: 'documento',
-      notes: JSON.stringify({ kind: 'tender_document_upload', documents: [{ id: 'doc-1', name: 'Pliego.pdf', current: true, document_type: 'pliego' }] }),
+      notes: JSON.stringify({ kind: 'tender_document_upload', documents: CURRENT_DOCUMENTS }),
       created_at: '2026-07-01T00:00:00.000Z',
       occurred_at: '2026-07-01T00:00:00.000Z',
     },
@@ -126,6 +130,8 @@ function fakeDatabase({
       if (table === 'v_psi_sales_opportunity_enriched') return query([{ id: OPPORTUNITY_ID, company_name: 'Entidad pública', service_type_code: 'licitacion_publica', expected_close_date: '2026-08-01', offer_value: 1000 }], targetAccess);
       if (table === 'psi_public_tenders') return query([{ id: TENDER_ID, converted_opportunity_id: OPPORTUNITY_ID }], targetAccess);
       if (table === 'psi_sales_interactions') return query(interactions, targetAccess);
+      if (table === 'psi_tender_document_versions') return query([], targetAccess);
+      if (table === 'psi_tender_document_state') return query(states, targetAccess);
       if (table === 'psi_tender_document_snapshots') return query(snapshots, targetAccess);
       if (table === 'psi_tender_analysis_runs') return query(runs, targetAccess);
       if (table === 'psi_tender_go_no_go_decisions') return query(history, targetAccess);
@@ -175,9 +181,19 @@ function decide(database, input = {}, profile = directorProfile) {
   assert.equal(observed.rpc[0].args.p_tender_id, TENDER_ID);
   assert.equal(observed.rpc[0].args.p_decision, 'go');
   assert.equal(observed.rpc[0].args.p_analysis_run_id, ANALYSIS_RUN_ID, 'new decisions bind the typed analysis run');
+  assert.equal(observed.rpc[0].args.p_document_hash, CURRENT_DOCUMENT_HASH, 'la RPC recibe el hash documental vigente calculado desde los documentos actuales');
   assert.equal(Object.hasOwn(observed.rpc[0].args, 'p_analysis_interaction_id'), false, 'legacy interaction IDs are never write inputs');
   assert.equal(observed.rpc[0].args.p_justification, 'Margen y capacidad aprobados');
   assert.equal(result.preparation, observed.rpc[0].args.p_preparation, 'created preparation must return the payload submitted to the RPC');
+}
+
+{
+  const { database, observed } = fakeDatabase({
+    snapshots: [{ id: '66666666-6666-4666-8666-666666666666', opportunity_id: OPPORTUNITY_ID, document_hash: '0'.repeat(64), created_at: '2026-07-03T00:00:00.000Z' }],
+  });
+  await decide(database);
+  assert.equal(observed.rpc[0].args.p_analysis_run_id, null, 'un run de un hash documental histórico no puede declararse vigente en la decisión');
+  assert.equal(observed.rpc[0].args.p_document_hash, CURRENT_DOCUMENT_HASH);
 }
 
 {
@@ -277,6 +293,7 @@ for (const profile of [
   const currentSnapshot = { id: '13131313-1313-4131-8131-131313131313', opportunity_id: OPPORTUNITY_ID, created_at: '2026-07-03T00:00:00.000Z' };
   const { database, observed } = fakeDatabase({
     snapshots: [staleSnapshot, currentSnapshot],
+    states: [{ opportunity_id: OPPORTUNITY_ID, current_snapshot_id: currentSnapshot.id, refresh_in_progress: false }],
     runs: [
       { id: STALE_ANALYSIS_RUN_ID, snapshot_id: staleSnapshot.id, opportunity_id: OPPORTUNITY_ID, status: 'completed', result: { recommendation: 'GO' }, created_at: '2026-07-04T00:00:00.000Z' },
       { id: ANALYSIS_RUN_ID, snapshot_id: currentSnapshot.id, opportunity_id: OPPORTUNITY_ID, status: 'completed', result: { recommendation: 'GO' }, created_at: '2026-07-03T00:00:00.000Z' },
