@@ -49,14 +49,20 @@ export function TenderConfigurationView({ request, moduleNavigation, canConfigur
 
   const load = async () => {
     setLoading(true); setMessage(null);
-    try {
-      const [profile, nextDocuments] = await Promise.all([loadCompanyProfile<TenderCompanyProfile>(request), loadCompanyProcurementDocuments(request)]);
-      const nextCompany = { ...emptyCompany, ...profile };
+    const [profileResult, documentsResult] = await Promise.allSettled([
+      loadCompanyProfile<TenderCompanyProfile>(request),
+      loadCompanyProcurementDocuments(request),
+    ]);
+    const failures: string[] = [];
+    if (profileResult.status === 'fulfilled') {
+      const nextCompany = { ...emptyCompany, ...profileResult.value };
       setPersistedCompany(nextCompany);
       if (!editing) setDraftCompany(nextCompany);
-      setDocuments(nextDocuments);
-    } catch (cause) { setMessage(cause instanceof Error ? cause.message : String(cause)); }
-    finally { setLoading(false); }
+    } else failures.push(`No fue posible cargar la ficha: ${profileResult.reason instanceof Error ? profileResult.reason.message : String(profileResult.reason)}`);
+    if (documentsResult.status === 'fulfilled') setDocuments(documentsResult.value);
+    else failures.push(`No fue posible cargar el inventario: ${documentsResult.reason instanceof Error ? documentsResult.reason.message : String(documentsResult.reason)}`);
+    setMessage(failures.length ? failures.join(' ') : null);
+    setLoading(false);
   };
   useEffect(() => { void load(); }, []);
 
@@ -142,9 +148,18 @@ export function TenderConfigurationView({ request, moduleNavigation, canConfigur
           const nextCompany = { ...emptyCompany, ...updated };
           setPersistedCompany(nextCompany);
           if (!editing) setDraftCompany(nextCompany);
-          setDocuments(await loadCompanyProcurementDocuments(request));
+          setUploadDialog(null);
+          resetUploadForm();
+          restoreFocus();
+          setMessage('RUP cargado y ficha actualizada.');
+          try {
+            setDocuments(await loadCompanyProcurementDocuments(request));
+          } catch (refreshCause) {
+            const detail = refreshCause instanceof Error ? refreshCause.message : String(refreshCause);
+            setMessage(`RUP cargado y ficha actualizada. No fue posible refrescar el inventario: ${detail}`);
+          }
         }
-        setMessage('RUP cargado y ficha actualizada.');
+        return;
       } else {
         const result = await mutationActions.uploadCompanyDocument(uploadFile, { documentType, displayName: displayName.trim(), issuedAt, expiresAt: expiresAt || null });
         if (result) {
