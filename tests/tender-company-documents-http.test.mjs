@@ -41,6 +41,7 @@ const actor = {
 };
 const state = {
   bucketUpdates: [], signedUploads: [], signedReads: [], downloads: [], rpcCalls: [],
+  bucketPublic: false, bucketLimit: 0,
   rpcFails: false,
   documents: [{
     id: 'document-1', document_type: 'certificado', display_name: 'Certificado de existencia', issued_at: '2026-01-01', expires_at: '2026-12-31',
@@ -68,11 +69,17 @@ const fakeSupabase = http.createServer((req, res) => {
     });
   }
   if (url.pathname === '/storage/v1/bucket/tender-documents') {
-    if (req.method === 'GET') return json(res, 200, { id: 'tender-documents', public: false, file_size_limit: 0 });
+    if (req.method === 'GET') return json(res, 200, { id: 'tender-documents', public: state.bucketPublic, file_size_limit: state.bucketLimit });
     if (req.method === 'PUT') {
       let payload = '';
       req.on('data', chunk => { payload += chunk; });
-      return req.on('end', () => { state.bucketUpdates.push(JSON.parse(payload)); json(res, 200, { id: 'tender-documents' }); });
+      return req.on('end', () => {
+        const update = JSON.parse(payload);
+        state.bucketUpdates.push(update);
+        state.bucketPublic = update.public;
+        state.bucketLimit = update.file_size_limit;
+        json(res, 200, { id: 'tender-documents' });
+      });
     }
   }
   const signedUpload = url.pathname.match(/^\/storage\/v1\/object\/upload\/sign\/tender-documents\/(.+)$/);
@@ -147,6 +154,15 @@ try {
   assert.equal(state.bucketUpdates.length, 1, 'bucket ilimitado se corrige');
   assert.equal(state.bucketUpdates[0].file_size_limit, MAX_BYTES, 'bucket queda limitado a 50MB');
   assert.equal(state.bucketUpdates[0].public, false, 'bucket se conserva privado');
+
+  state.bucketPublic = true;
+  const publicBucketTicket = await requestJson(appPort, '/api/tender-company-document-upload-url', 'POST', {
+    documentType: 'certificado', displayName: 'Certificado público', issuedAt: '2026-01-01', name: 'publico.pdf', size: 20,
+  });
+  assert.equal(publicBucketTicket.status, 200);
+  assert.equal(state.bucketUpdates.length, 2, 'bucket público se corrige aunque ya tenga el límite correcto');
+  assert.equal(state.bucketUpdates[1].public, false, 'corrección vuelve privado el bucket');
+  assert.equal(state.bucketUpdates[1].file_size_limit, MAX_BYTES, 'corrección conserva el límite de 50MB');
 
   const otherActor = await requestJson(appPort, '/api/tender-company-document-process-upload', 'POST', {
     documentType: 'certificado', displayName: 'Certificado', issuedAt: '2026-01-01', storage_path: 'company-profile/documents/profile-2/foreign.pdf', name: 'foreign.pdf', mime_type: 'application/pdf',

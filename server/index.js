@@ -2031,7 +2031,7 @@ async function ensureTenderBucket(database) {
   const existing = await database.storage.getBucket(tenderDocumentBucket);
   if (!existing.error) {
     const currentLimit = Number(existing.data?.file_size_limit ?? existing.data?.fileSizeLimit);
-    if (!Number.isFinite(currentLimit) || currentLimit <= 0 || currentLimit !== RUP_MAX_BYTES) {
+    if (!Number.isFinite(currentLimit) || currentLimit <= 0 || currentLimit !== RUP_MAX_BYTES || existing.data?.public !== false) {
       const { error: updateError } = await database.storage.updateBucket(tenderDocumentBucket, { public: false, fileSizeLimit: RUP_MAX_BYTES });
       if (updateError) throw updateError;
     }
