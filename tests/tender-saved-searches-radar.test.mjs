@@ -11,8 +11,16 @@ assert.ok(existsSync(savedSearchesPath), 'Radar debe tener un componente propio 
 const savedSearches = readFileSync(savedSearchesPath, 'utf8');
 
 assert.match(radar, /<TenderSavedSearches/);
+assert.match(savedSearches, /const \[saveOpen, setSaveOpen\]/, 'Guardar debe iniciar cerrado mediante estado propio.');
+assert.match(savedSearches, /const \[libraryOpen, setLibraryOpen\]/, 'La biblioteca debe iniciar cerrada mediante estado propio.');
+assert.match(savedSearches, /aria-haspopup="dialog"/, 'Los disparadores deben anunciar que abren dialogs.');
+assert.match(savedSearches, /const libraryCloseRef = useRef<HTMLButtonElement \| null>\(null\)/, 'La biblioteca debe conservar una referencia al control de cierre.');
+assert.match(savedSearches, /ref=\{libraryCloseRef\}[^>]*aria-label="Cerrar búsquedas guardadas"/, 'Al abrir la biblioteca, el foco debe ir al botón Cerrar, no al título.');
+assert.doesNotMatch(savedSearches, /libraryTitleRef/, 'No debe existir una referencia de título obsoleta para el foco inicial.');
 assert.match(savedSearches, />Guardar búsqueda</);
 assert.match(savedSearches, />Búsquedas guardadas</);
+assert.match(savedSearches, /\{libraryOpen && <div className="tender-saved-profiles">/, 'La biblioteca solo debe renderizarse al abrirse.');
+assert.doesNotMatch(savedSearches.slice(0, savedSearches.indexOf('{libraryOpen &&')), /tender-saved-profiles/, 'La lista no debe renderizarse antes de su bloque condicionado.');
 assert.match(savedSearches, /\/api\/tender-search-profiles/);
 assert.doesNotMatch(savedSearches, /tender-company-profile|RUP|Información empresa/);
 assert.match(moduleSource, /props\.view === 'configuracion' && <TenderConfigurationView/, 'Configuración debe seguir montando la ficha corporativa fuera de los tabs.');
