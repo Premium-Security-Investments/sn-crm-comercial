@@ -225,9 +225,12 @@ await (async function tenderDocumentRpcRejectsInvalidActorsMetadataAndDirectWrit
   await assert.rejects(() => recordTenderDocument(db, { storagePath: 'other/private.pdf' }), /ruta/i);
   await assert.rejects(() => recordTenderDocument(db, { sizeBytes: 50 * 1024 * 1024 + 1 }), /tamaño/i);
   await assert.rejects(() => recordTenderDocument(db, { name: ' ', contentHash: hash('d') }), /obligatorios/i);
-  await assert.rejects(() => recordTenderDocument(db, { sourceUrl: 'ftp://unsafe.example/doc', contentHash: hash('e') }), /URL/i);
+  await assert.rejects(() => recordTenderDocument(db, { extractedText: '   ', contentHash: hash('e') }), /obligatorios/i);
+  await assert.rejects(() => recordTenderDocument(db, { sourceUrl: 'ftp://unsafe.example/doc', contentHash: hash('f') }), /URL/i);
+  await assert.rejects(() => recordTenderDocument(db, { sourceUrl: 'http:///missing-host', contentHash: hash('0') }), /URL/i);
   await db.exec('set role service_role');
-  await assert.rejects(() => db.query(`insert into public.psi_tender_document_versions (opportunity_id, tender_id, source, source_document_id, version, name, content_hash, storage_path, mime_type, size_bytes, document_type, actor_id) values ('${ids.opportunity}', '${ids.tender}', 'secop', 'direct', 1, 'direct', '${hash('f')}', 'tender-documents/${ids.opportunity}/direct.pdf', 'application/pdf', 1, 'pliego', '${ids.actor}')`), /permission denied/i);
+  await assert.doesNotReject(() => db.query('select id from public.psi_tender_document_versions limit 1'));
+  await assert.rejects(() => db.query(`insert into public.psi_tender_document_versions (opportunity_id, tender_id, source, source_document_id, version, name, content_hash, storage_path, mime_type, size_bytes, document_type, extracted_text, actor_id) values ('${ids.opportunity}', '${ids.tender}', 'secop', 'direct', 1, 'direct', '${hash('f')}', 'tender-documents/${ids.opportunity}/direct.pdf', 'application/pdf', 1, 'pliego', 'Texto', '${ids.actor}')`), /permission denied/i);
   await db.exec('reset role; set role authenticated');
   await assert.rejects(() => recordTenderDocument(db, { contentHash: hash('f') }), /permission denied/i);
   await db.close();

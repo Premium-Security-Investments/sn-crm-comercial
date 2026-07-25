@@ -172,8 +172,8 @@ create table if not exists public.psi_tender_document_versions (
   mime_type text not null check (nullif(btrim(mime_type), '') is not null),
   size_bytes bigint not null check (size_bytes > 0 and size_bytes <= 50 * 1024 * 1024),
   document_type text not null check (nullif(btrim(document_type), '') is not null),
-  extracted_text text,
-  source_url text check (source_url is null or source_url ~ '^https?://[^[:space:]]+$'),
+  extracted_text text not null check (nullif(btrim(extracted_text), '') is not null and octet_length(extracted_text) <= 10 * 1024 * 1024),
+  source_url text check (source_url is null or source_url ~ '^https?://[^/[:space:]]+([/?#][^[:space:]]*)?$'),
   current boolean not null default true,
   actor_id uuid not null references public.psi_sales_profiles(id) on delete restrict,
   created_at timestamptz not null default now(),
@@ -190,6 +190,7 @@ alter table public.psi_tender_document_versions enable row level security;
 revoke all on table public.psi_tender_document_versions from public;
 revoke all on table public.psi_tender_document_versions from authenticated;
 revoke all on table public.psi_tender_document_versions from service_role;
+grant select on table public.psi_tender_document_versions to service_role;
 
 create or replace function public.psi_record_tender_document_version(
   p_opportunity_id uuid,
@@ -220,8 +221,9 @@ begin
   if p_opportunity_id is null or p_tender_id is null
      or nullif(v_source, '') is null or nullif(v_source_document_id, '') is null
      or nullif(btrim(p_name), '') is null or nullif(btrim(p_mime_type), '') is null
-     or nullif(btrim(p_document_type), '') is null then
-    raise exception 'La oportunidad, licitación, identidad, nombre, MIME y tipo documental son obligatorios.' using errcode = '22023';
+     or nullif(btrim(p_document_type), '') is null
+     or nullif(btrim(p_extracted_text), '') is null then
+    raise exception 'La oportunidad, licitación, identidad, nombre, MIME, tipo y texto extraído son obligatorios.' using errcode = '22023';
   end if;
   if p_content_hash is null or p_content_hash !~ '^[0-9a-f]{64}$' then
     raise exception 'El hash del documento debe ser SHA-256 hexadecimal en minúscula.' using errcode = '22023';
@@ -235,7 +237,10 @@ begin
   if p_size_bytes is null or p_size_bytes <= 0 or p_size_bytes > 50 * 1024 * 1024 then
     raise exception 'El tamaño del documento debe estar entre 1 byte y 50 MB.' using errcode = '22023';
   end if;
-  if p_source_url is not null and (btrim(p_source_url) <> p_source_url or p_source_url !~ '^https?://[^[:space:]]+$') then
+  if octet_length(p_extracted_text) > 10 * 1024 * 1024 then
+    raise exception 'El texto extraído no puede superar 10 MB.' using errcode = '22023';
+  end if;
+  if p_source_url is not null and (btrim(p_source_url) <> p_source_url or p_source_url !~ '^https?://[^/[:space:]]+([/?#][^[:space:]]*)?$') then
     raise exception 'La URL de origen debe ser HTTP(S) válida.' using errcode = '22023';
   end if;
   if not exists (
@@ -254,7 +259,7 @@ begin
   end if;
 
   -- One transaction-scoped identity lock serializes retries and simultaneous refreshes.
-  perform pg_advisory_xact_lock(hashtextextended(p_opportunity_id::text || ':' || v_source || ':' || v_source_document_id, 0));
+  perform pg_advisory_xact_lock(hashtextextended(jsonb_build_array(p_opportunity_id, v_source, v_source_document_id)::text, 0));
 
   select * into v_document
   from public.psi_tender_document_versions
@@ -287,7 +292,7 @@ begin
     and source = v_source
     and source_document_id = v_source_document_id;
 
-  if found then
+  if v_previous.id is not null then
     update public.psi_tender_document_versions set current = false where id = v_previous.id;
   end if;
 
