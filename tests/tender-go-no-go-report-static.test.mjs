@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
 const src = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+const analysisSection = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -23,8 +24,8 @@ for (const file of [server, api]) {
 
 assert(!src.includes('Dictamen GO / NO GO SN'), 'UI no debe confundir una recomendación asistida con un dictamen humano.');
 for (const label of ['Recomendación preliminar', 'Fortalezas', 'Debilidades y bloqueadores', 'Dudas abiertas', 'Información no verificada', 'Siguiente acción', 'Cómo funciona']) {
-  assert(src.includes(label), `UI debe presentar ${label}.`);
+  assert(analysisSection.includes(label), `UI debe presentar ${label}.`);
 }
-assert(src.includes('No autoriza GO / NO GO'), 'UI debe explicar que el brief no reemplaza la decisión humana.');
+assert(analysisSection.includes('No autoriza GO / NO GO'), 'UI debe explicar que el brief no reemplaza la decisión humana.');
 
 console.log('tender GO/NO GO report static checks passed');

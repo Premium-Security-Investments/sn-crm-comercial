@@ -13,6 +13,7 @@ import { TenderDetailNavigation, resolveTenderSourceUrl } from './tenders/compon
 import { TenderDocumentSection } from './tenders/components/TenderDocumentSection';
 import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDecisionPanel';
 import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
+import { tenderSharePointStatusLabel } from './tenders/statusLabels';
 import type { TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderModuleView } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
 import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
@@ -874,14 +875,15 @@ function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged }:
     finally { setBusy(false); }
   };
   const authorizedPreparation = preparation && payload.decision?.decision === 'go' ? preparation : null;
+  const sharePointUrl = resolveTenderSourceUrl(authorizedPreparation?.sharepoint_folder?.url);
   return <Panel title="Expediente de Oferta">
     {authorizedPreparation ? <div className="tender-document-panel">
       <div className="document-review-head">
         <div><span className="eyebrow">Preparación después de registrar GO</span><h3>Expediente de Oferta</h3><p>El registro formal GO genera automáticamente el paquete inicial, documentos genéricos y pendientes humanos. El asistente interviene donde falte criterio, archivos o aprobación.</p></div>
         <div className="document-status-card"><small>Estado expediente</small><Badge tone="green">Preparación iniciada</Badge><strong>{authorizedPreparation.checklist_summary?.total || 0} ítems</strong></div>
-        <div className="document-risk-meter"><small>Carpeta SharePoint / OneDrive</small><strong>{authorizedPreparation.sharepoint_folder?.status || 'Pendiente'}</strong><span>{authorizedPreparation.sharepoint_folder?.root_name || 'Se creará al configurar integración Graph'}</span></div>
+        <div className="document-risk-meter"><small>Carpeta SharePoint / OneDrive</small><strong>{tenderSharePointStatusLabel(authorizedPreparation.sharepoint_folder?.status)}</strong><span>{authorizedPreparation.sharepoint_folder?.root_name || 'Se creará al configurar integración Graph'}</span></div>
       </div>
-      <div className="document-upload-row">{authorizedPreparation.sharepoint_folder?.url ? <a className="button" href={authorizedPreparation.sharepoint_folder.url} target="_blank" rel="noreferrer">Abrir carpeta</a> : <small className="muted">Carpeta SharePoint / OneDrive: vínculo pendiente de integración automática.</small>}</div>
+      <div className="document-upload-row">{sharePointUrl ? <a className="button" href={sharePointUrl} target="_blank" rel="noreferrer">Abrir carpeta</a> : <small className="muted">Carpeta SharePoint / OneDrive: vínculo pendiente de integración automática.</small>}</div>
       <TenderOfferStatusPanel opportunityId={opportunity.id} opportunityName={opportunity.company_name || 'Oportunidad de licitación'} currentProfile={currentProfile} request={api} onChanged={async () => { await loadPreparation(); await onChanged(); }} />
       {statusText && <div className="notice">{statusText}</div>}
       <div className="document-analysis-grid">

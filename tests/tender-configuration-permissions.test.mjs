@@ -17,8 +17,8 @@ const api = read('api/[...path].js');
 
 assert.doesNotMatch(tabs, />Configuración</, 'Configuración debe quedar fuera de tabs operativos.');
 assert.match(moduleSource, />Configuración</, 'Configuración debe ser un botón secundario fuera de tabs.');
-assert.match(configuration, /Base habilitante SN/);
-assert.match(configuration, /Cargar RUP/);
+assert.match(configuration, /Base empresarial de licitaciones/);
+assert.match(configuration, /Actualizar RUP/);
 assert.doesNotMatch(configuration, /Guardar búsqueda|Búsquedas guardadas/);
 assert.doesNotMatch(moduleSource, /TenderProfilesView/, 'La vista mezclada debe retirarse después de actualizar sus consumidores.');
 

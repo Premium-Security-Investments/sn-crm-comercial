@@ -14,6 +14,8 @@ const tenderApi = readFileSync(new URL('../src/tenders/api.ts', import.meta.url)
 const viewUtils = readFileSync(new URL('../src/tenders/viewUtils.ts', import.meta.url), 'utf8');
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
+const documentSection = readFileSync(new URL('../src/tenders/components/TenderDocumentSection.tsx', import.meta.url), 'utf8');
+const analysisSection = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8');
 
 assert.ok(main.includes("'tenders'") && nav.includes("#/tenders?view=radar"), 'Frontend debe incluir la ruta y el catálogo central de Licitaciones.');
 assert.match(nav, /tenders: 'licitaciones'/, 'Licitaciones debe mapearse a su capability central.');
@@ -45,9 +47,9 @@ assert.ok(configuration.includes('loadCompanyProfile') && !configuration.include
 assert.doesNotMatch(configuration, /tender-search-profiles|profileRadarHash/, 'Configuración no debe gestionar perfiles de búsqueda.');
 assert.ok(radar.includes('TenderSavedSearches') && viewUtils.includes('view=radar&profile=${encodeURIComponent(profileId)}'), 'Un perfil guardado debe aplicarse mediante URL codificada al Radar.');
 
-for (const marker of ['TenderDocumentReviewPanel', 'Estado documental', 'Analizar documentos', 'TenderOfferPreparationPanel']) {
-  assert.ok(main.includes(marker), `El detalle protegido debe conservar: ${marker}`);
-}
+for (const marker of ['TenderDocumentReviewPanel', 'TenderOfferPreparationPanel']) assert.ok(main.includes(marker), `El detalle protegido debe conservar: ${marker}`);
+assert.ok(documentSection.includes('Documentos vigentes del proceso'), 'El detalle debe conservar la revisión documental extraída.');
+assert.ok(analysisSection.includes('Generar análisis preliminar'), 'El detalle debe conservar la acción separada de análisis.');
 for (const handler of [server, api]) {
   assert.ok(handler.includes("if (!process.env.VERCEL)") && handler.includes('app.listen(port'), 'El handler debe arrancar localmente sin abrir un puerto dentro de Vercel.');
   assert.ok(handler.includes("app.post('/api/tender-convert'"), 'Backend debe conservar conversión protegida.');

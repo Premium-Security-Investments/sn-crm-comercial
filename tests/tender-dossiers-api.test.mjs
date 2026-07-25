@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
+import { buildTenderSnapshotInput } from '../tender-analysis-foundation.js';
 
 const backends = ['../api/[...path].js', '../server/index.js'].map(path =>
   readFileSync(new URL(path, import.meta.url), 'utf8')
@@ -80,6 +81,10 @@ const upload = {
   created_at: '2026-07-14T10:00:00.000Z',
   psi_sales_profiles: { full_name: 'Ana' }
 };
+const currentDocumentHash = buildTenderSnapshotInput([
+  { id: 'doc-1', name: 'pliego.pdf', current: true, storage_path: 'good/pliego.pdf' },
+  { id: 'doc-2', name: 'obsolete.pdf', current: false, storage_path: 'good/obsolete.pdf' },
+], {}).document_hash;
 
 const preparation = {
   id: 'prep-1',
@@ -100,7 +105,7 @@ function mockDatabaseByOpportunity({ failOpportunityId = null } = {}) {
     from(table) {
       if (table === 'psi_tender_document_versions') return interactionQuery([]);
       if (table === 'psi_tender_document_snapshots') {
-        return typedAnalysisQuery(opportunityId => opportunityId === 'good' ? [{ id: 'snapshot-good' }] : []);
+        return typedAnalysisQuery(opportunityId => opportunityId === 'good' ? [{ id: 'snapshot-good', document_hash: currentDocumentHash }] : []);
       }
       if (table === 'psi_tender_analysis_runs') {
         return typedAnalysisQuery(opportunityId => opportunityId === 'good' ? [{

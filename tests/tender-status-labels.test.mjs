@@ -1,5 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { buildSync } from 'esbuild';
+import { readFileSync } from 'node:fs';
 
 const bundle = buildSync({
   entryPoints: [new URL('../src/tenders/statusLabels.ts', import.meta.url).pathname],
@@ -51,9 +52,14 @@ assert.equal(tenderSharePointStatusLabel('pendiente_configurar_integracion'), 'I
 assert.equal(tenderPreparationStatusLabel('raw_nuevo'), 'Estado no reconocido');
 
 assert.equal(ui.safePublicTenderSourceUrl('https://www.secop.gov.co/proceso/1'), 'https://www.secop.gov.co/proceso/1');
-for (const unsafe of ['javascript:alert(1)', 'http://secop.gov.co/proceso', 'https://localhost/x', 'https://127.0.0.1/x', 'https://10.0.0.2/x', 'https://user:pass@secop.gov.co/x']) {
+for (const unsafe of ['javascript:alert(1)', 'http://secop.gov.co/proceso', 'https://localhost/x', 'https://127.0.0.1/x', 'https://10.0.0.2/x', 'https://user:pass@secop.gov.co/x', 'https://secop.gov.co:8443/x', 'https://[::]/x', 'https://[::ffff:127.0.0.1]/x', 'https://[fe90::1]/x']) {
   assert.equal(ui.safePublicTenderSourceUrl(unsafe), null, `Debe rechazar ${unsafe}`);
 }
+assert.equal(ui.safePublicTenderSourceUrl('https://[2606:4700:4700::1111]/x'), 'https://[2606:4700:4700::1111]/x');
+const mainSource = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+assert.match(mainSource, /tenderSharePointStatusLabel\(authorizedPreparation\.sharepoint_folder\?\.status\)/, 'El detalle debe humanizar el estado SharePoint.');
+assert.match(mainSource, /resolveTenderSourceUrl\(authorizedPreparation\?\.sharepoint_folder\?\.url\)/, 'El detalle debe validar la URL de la carpeta antes de enlazarla.');
+assert.doesNotMatch(mainSource, /href=\{authorizedPreparation\.sharepoint_folder\.url\}/, 'El detalle no debe enlazar directamente una URL de SharePoint sin validar.');
 let active = new Set();
 active = ui.beginTenderRefresh(active, 'A');
 active = ui.beginTenderRefresh(active, 'B');
