@@ -24,6 +24,26 @@ const decisionLabels: Record<string, string> = {
   no_go: 'NO GO',
 };
 
+const preparationLabels: Record<string, string> = {
+  pendiente: 'Preparación pendiente',
+  preparacion_oferta: 'Preparación de oferta',
+  en_preparacion: 'En preparación',
+  lista_para_presentar: 'Lista para presentar',
+  presentada: 'Presentada',
+  adjudicada: 'Adjudicada',
+  no_adjudicada: 'No adjudicada',
+  cerrada_no_go: 'Cerrada por NO GO',
+};
+
+const sharePointLabels: Record<string, string> = {
+  pendiente: 'Integración pendiente',
+  pendiente_configurar_integracion: 'Integración pendiente de configuración',
+  configurada: 'Integración configurada',
+  creada: 'Carpeta creada',
+  creado: 'Carpeta creada',
+  error: 'Integración no disponible',
+};
+
 const tones: Record<string, TenderStatusTone> = {
   no_go: 'danger',
   cerrada_no_go: 'danger',
@@ -59,6 +79,14 @@ export function tenderOfferStatusLabel(value?: string | null) {
 
 export function tenderDecisionLabel(value?: string | null) {
   return decisionLabels[String(value || '').toLowerCase()] || 'Decisión pendiente';
+}
+
+export function tenderPreparationStatusLabel(value?: string | null) {
+  return preparationLabels[String(value || '').toLowerCase()] || 'Estado no reconocido';
+}
+
+export function tenderSharePointStatusLabel(value?: string | null) {
+  return sharePointLabels[String(value || '').toLowerCase()] || 'Estado no reconocido';
 }
 
 export function tenderStatusTone(value?: string | null): TenderStatusTone {

@@ -1,3 +1,5 @@
+import { safePublicTenderSourceUrl } from '../tenderUiState';
+
 type TenderDetailNavigationProps = {
   entity: string;
   sourceUrl?: string | null;
@@ -14,19 +16,11 @@ const progress = [
   ['tender-follow-up', 'Seguimiento'],
 ] as const;
 
-function safeHttpUrl(value?: string | null) {
-  if (!value) return null;
-  try {
-    const parsed = new URL(value.trim());
-    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.toString() : null;
-  } catch { return null; }
-}
-
 export function resolveTenderSourceUrl(sourceUrl?: string | null, observations?: string | null) {
-  const structured = safeHttpUrl(sourceUrl);
+  const structured = safePublicTenderSourceUrl(sourceUrl);
   if (structured) return structured;
   const historical = String(observations || '').match(/Link fuente:\s*(https?:\/\/\S+)/i)?.[1] || null;
-  return safeHttpUrl(historical);
+  return safePublicTenderSourceUrl(historical);
 }
 
 export function TenderDetailNavigation({ entity, sourceUrl, observations, onBack }: TenderDetailNavigationProps) {

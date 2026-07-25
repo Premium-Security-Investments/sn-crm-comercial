@@ -34,6 +34,8 @@ assert.doesNotMatch(tabs, />Expedientes</);
 assert.doesNotMatch(tabs, />Perfiles de búsqueda</);
 for (const source of [opportunities, radar, tracking]) {
   assert.match(source, /tenderDocumentStatusLabel/, 'las vistas deben presentar estados documentales humanos');
+  assert.match(source, /safePublicTenderSourceUrl/, 'las vistas deben validar la URL antes de renderizarla');
+  assert.doesNotMatch(source, /href=\{(?:dossier|tender)\.url\}/, 'ninguna vista debe enlazar una URL externa cruda');
 }
 assert.match(opportunities, /Abrir fuente oficial/);
 assert.match(opportunities, /Actualizar documentos/);

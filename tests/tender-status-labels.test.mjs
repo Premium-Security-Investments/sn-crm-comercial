@@ -13,8 +13,18 @@ const {
   tenderDecisionLabel,
   tenderDocumentStatusLabel,
   tenderOfferStatusLabel,
+  tenderPreparationStatusLabel,
+  tenderSharePointStatusLabel,
   tenderStatusTone,
 } = await import(moduleUrl);
+const uiBundle = buildSync({
+  entryPoints: [new URL('../src/tenders/tenderUiState.ts', import.meta.url).pathname],
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  write: false,
+});
+const ui = await import(`data:text/javascript;base64,${Buffer.from(uiBundle.outputFiles[0].contents).toString('base64')}`);
 
 assert.equal(tenderOfferStatusLabel('pendiente_decision'), 'Decisión pendiente');
 assert.equal(tenderOfferStatusLabel('en_preparacion'), 'En preparación');
@@ -36,5 +46,19 @@ assert.equal(tenderDecisionLabel('go'), 'GO');
 assert.equal(tenderDecisionLabel('no_go'), 'NO GO');
 assert.equal(tenderDecisionLabel(null), 'Decisión pendiente');
 assert.equal(tenderStatusTone('estado_desconocido'), 'neutral');
+assert.equal(tenderPreparationStatusLabel('preparacion_oferta'), 'Preparación de oferta');
+assert.equal(tenderSharePointStatusLabel('pendiente_configurar_integracion'), 'Integración pendiente de configuración');
+assert.equal(tenderPreparationStatusLabel('raw_nuevo'), 'Estado no reconocido');
+
+assert.equal(ui.safePublicTenderSourceUrl('https://www.secop.gov.co/proceso/1'), 'https://www.secop.gov.co/proceso/1');
+for (const unsafe of ['javascript:alert(1)', 'http://secop.gov.co/proceso', 'https://localhost/x', 'https://127.0.0.1/x', 'https://10.0.0.2/x', 'https://user:pass@secop.gov.co/x']) {
+  assert.equal(ui.safePublicTenderSourceUrl(unsafe), null, `Debe rechazar ${unsafe}`);
+}
+let active = new Set();
+active = ui.beginTenderRefresh(active, 'A');
+active = ui.beginTenderRefresh(active, 'B');
+assert.deepEqual([...active].sort(), ['A', 'B']);
+active = ui.finishTenderRefresh(active, 'A');
+assert.deepEqual([...active], ['B'], 'Finalizar A no debe borrar el busy de B.');
 
 console.log('tender human status labels passed');
