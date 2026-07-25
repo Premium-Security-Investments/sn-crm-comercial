@@ -98,6 +98,7 @@ const interactionsByOpportunity = {
 function mockDatabaseByOpportunity({ failOpportunityId = null } = {}) {
   return {
     from(table) {
+      if (table === 'psi_tender_document_versions') return interactionQuery([]);
       if (table === 'psi_tender_document_snapshots') {
         return typedAnalysisQuery(opportunityId => opportunityId === 'good' ? [{ id: 'snapshot-good' }] : []);
       }
@@ -242,6 +243,7 @@ const fakeSupabase = http.createServer(async (req, res) => {
     if (opportunity === 'broken') return json(res, 500, { message: 'lectura fallida' });
     return json(res, 200, interactionsByOpportunity[opportunity] || []);
   }
+  if (url.pathname === '/rest/v1/psi_tender_document_versions') return json(res, 200, []);
   if (url.pathname === '/rest/v1/psi_tender_document_snapshots') {
     const opportunity = decodeURIComponent(url.searchParams.get('opportunity_id') || '').replace(/^eq\./, '');
     return json(res, 200, opportunity === 'good' ? [{ id: 'snapshot-good' }] : []);
@@ -277,6 +279,7 @@ function rpcPageDatabase() {
       return { data: page.slice(0, args.p_limit), error: null };
     },
     from(table) {
+      if (table === 'psi_tender_document_versions') return interactionQuery([]);
       assert.equal(table, 'psi_sales_interactions', 'la lista no debe leer tablas candidatas; sólo el builder documental por tarjeta');
       return { select() { return this; }, eq() { return interactionQuery([]); } };
     },

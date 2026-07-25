@@ -88,7 +88,7 @@ for (const path of backendPaths) {
   const upload = routeBlock(source, 'post', '/api/tender-documents-upload');
   assert.match(upload, /await requireTenderAnalysisFoundation\(database\);[\s\S]*await ensureTenderBucket\(database\)/, 'carga debe verificar antes de Storage');
   const importRoute = routeBlock(source, 'post', '/api/tender-documents-import');
-  assert.match(importRoute, /await requireTenderAnalysisFoundation\(database\);[\s\S]*importTenderDocumentsFromOfficialSource/, 'importación debe verificar antes de importar');
+  assert.match(importRoute, /await requireTenderAnalysisFoundation\(database\);[\s\S]*refreshTenderDocumentsFromOfficialSource/, 'actualización debe verificar antes de importar');
   const sendErrorStart = source.indexOf('function sendError(res, error, status = 500) {');
   const sendErrorEnd = source.indexOf('\nasync function must', sendErrorStart);
   const sendError = source.slice(sendErrorStart, sendErrorEnd);

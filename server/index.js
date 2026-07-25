@@ -17,6 +17,7 @@ import { ACTIONS } from '../access-control.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
 import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
+import { mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2182,6 +2183,18 @@ function buildTenderDocumentAnalysis(opportunity, documents, companyProfile = {}
 async function getTenderDocumentRecords(database, opportunityId, { includeSignedUrls = true } = {}) {
   await requireTenderAnalysisFoundation(database);
   const interactions = await must(database.from('psi_sales_interactions').select('id,notes,occurred_at,created_at,created_by,psi_sales_profiles(full_name)').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true }));
+  const typedVersionsResponse = await database.from('psi_tender_document_versions')
+    .select('id,name,document_type,content_hash,storage_path,mime_type,size_bytes,current,source,source_document_id,source_url,extracted_text,created_at')
+    .eq('opportunity_id', opportunityId)
+    .eq('current', true);
+  if (typedVersionsResponse.error) throw typedVersionsResponse.error;
+  const typedDocuments = (typedVersionsResponse.data || []).map(version => ({
+    id: version.id, name: version.name, size: version.size_bytes, mime_type: version.mime_type,
+    document_type: version.document_type, current: version.current, storage_path: version.storage_path,
+    uploaded_at: version.created_at, extracted_text: version.extracted_text, auto_import: true,
+    source: version.source, source_url: version.source_url, source_document_id: version.source_document_id,
+    content_hash: version.content_hash,
+  }));
   const documents = [];
   const analyses = [];
   const importErrors = [];
@@ -2191,10 +2204,11 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
     if (payload?.kind === 'tender_document_analysis') analyses.push({ ...payload, interaction_id: row.id, created_at: row.created_at, created_by_name: row.psi_sales_profiles?.full_name || null });
     if (payload?.kind === 'tender_document_import_error') importErrors.push({ kind: payload.kind, source: payload.source || null, created_at: row.created_at, failure_marker: 'fallo_importacion' });
   }
-  const signed = includeSignedUrls ? await Promise.all(documents.map(async doc => {
+  const compatibleDocuments = mergeTenderDocumentRecords(typedDocuments, documents);
+  const signed = includeSignedUrls ? await Promise.all(compatibleDocuments.map(async doc => {
     const { data } = await database.storage.from(tenderDocumentBucket).createSignedUrl(doc.storage_path, 3600);
     return { ...doc, signed_url: data?.signedUrl || null };
-  })) : documents;
+  })) : compatibleDocuments;
   const currentAnalysis = await getCurrentTenderAnalysis(database, opportunityId);
   return { documents: signed, analysis: presentCurrentTenderAnalysis(currentAnalysis), analyses, import_error: importErrors.at(-1) || null };
 }
@@ -2301,12 +2315,24 @@ async function saveTenderDocumentBuffer(database, opportunityId, file, currentPr
   if (uploadError) throw uploadError;
   return { id, name, size: buffer.length, mime_type: file.mime_type || null, document_type: documentType, current: file.current !== false, storage_path: storagePath, uploaded_at: new Date().toISOString(), extracted_text: extractedText, auto_import: !!sourceMeta.auto_import, source_url: sourceMeta.source_url || null, source_document_id: sourceMeta.source_document_id || null };
 }
-async function importTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze = true } = {}) {
+async function getCurrentTenderDocumentVersion(database, opportunityId, source, sourceDocumentId) {
+  const normalizedSource = String(source || '').trim().toLowerCase();
+  const normalizedSourceDocumentId = normalizeTenderSourceDocumentId(sourceDocumentId);
+  const { data, error } = await database.from('psi_tender_document_versions')
+    .select('id,content_hash,storage_path')
+    .eq('opportunity_id', opportunityId)
+    .eq('source', normalizedSource)
+    .eq('source_document_id', normalizedSourceDocumentId)
+    .eq('current', true)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+async function refreshTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze = true } = {}) {
   await requireTenderAnalysisFoundation(database);
   const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
   const sourceUrl = getTenderSourceUrlFromOpportunity(opportunity);
   const officialUrl = secopOfficialUrl(sourceUrl);
-  await ensureTenderBucket(database);
   let sourceLabel = '';
   let sourceContext = {};
   let toDownload = [];
@@ -2321,7 +2347,7 @@ async function importTenderDocumentsFromOfficialSource(database, opportunityId, 
       mime_type: doc.extensi_n === 'pdf' ? 'application/pdf' : 'application/octet-stream',
       document_type: normalizeDocumentType('', doc.nombre_archivo),
       source_url: doc.url_descarga_documento.url,
-      source_document_id: doc.id_documento,
+      source_document_id: String(doc.id_documento || createHash('sha256').update(String(doc.url_descarga_documento.url)).digest('hex').slice(0, 24)),
       download: () => downloadSecopDocument(doc, officialUrl),
       errorPrefix: 'SECOP'
     }));
@@ -2342,37 +2368,59 @@ async function importTenderDocumentsFromOfficialSource(database, opportunityId, 
   } else {
     throw new Error('La importación automática solo está disponible para enlaces oficiales SECOP II o ESU Contratación. Use carga manual para otras fuentes.');
   }
-  const uploaded = [];
-  for (const doc of toDownload) {
-    try {
-      const buffer = await doc.download();
-      uploaded.push(await saveTenderDocumentBuffer(database, opportunityId, { name: doc.name, buffer, mime_type: doc.mime_type, document_type: doc.document_type, current: true }, currentProfile, { auto_import: true, source_url: doc.source_url, source_document_id: doc.source_document_id }));
-    } catch (error) {
-      const importErrorText = doc.errorPrefix === 'ESU' ? `Error al importar desde ESU: ${error?.message || error}` : `Error al importar desde SECOP: ${error?.message || error}`;
-      uploaded.push({ id: `error-${doc.source_document_id}`, name: doc.name, size: 0, mime_type: null, document_type: normalizeDocumentType(doc.document_type, doc.name), current: false, storage_path: null, uploaded_at: new Date().toISOString(), extracted_text: importErrorText, auto_import: true, source_url: doc.source_url || null, source_document_id: doc.source_document_id });
-    }
-  }
-  await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_upload', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, documents: uploaded }) }).select('id').single());
-  let analysisGenerated = false;
-  if (analyze) {
-    const records = await getTenderDocumentRecords(database, opportunityId);
-    const currentDocs = records.documents.filter(d => d.current !== false);
-    if (currentDocs.length) {
+  const tenderId = await getTenderIdForOpportunity(database, opportunityId);
+  const refreshResults = await refreshTenderDocumentBatch(toDownload, async doc => {
+    const sourceDocumentId = normalizeTenderSourceDocumentId(doc.source_document_id);
+    const currentVersion = await getCurrentTenderDocumentVersion(database, opportunityId, sourceLabel, sourceDocumentId);
+    return refreshOfficialTenderDocument({
+      opportunityId,
+      source: sourceLabel,
+      document: { ...doc, source_document_id: sourceDocumentId },
+      currentVersion,
+      download: item => item.download(),
+      cleanName: cleanFileName,
+      extractText: extractTextFromTenderFile,
+      ensureStorage: () => ensureTenderBucket(database),
+      upload: async (storagePath, buffer, mimeType) => {
+        const { error } = await database.storage.from(tenderDocumentBucket).upload(storagePath, buffer, { contentType: mimeType, upsert: true });
+        if (error) throw error;
+      },
+      recordVersion: async version => {
+        const response = await database.rpc('psi_record_tender_document_version', {
+          p_opportunity_id: opportunityId, p_tender_id: tenderId, p_source: sourceLabel, p_source_document_id: version.source_document_id,
+          p_name: version.name, p_content_hash: version.content_hash, p_storage_path: version.storage_path,
+          p_mime_type: version.mime_type || 'application/octet-stream', p_size_bytes: version.size_bytes,
+          p_document_type: normalizeDocumentType(version.document_type, version.name), p_extracted_text: version.extracted_text,
+          p_source_url: version.source_url || null, p_actor_id: currentProfile.id,
+        });
+        if (response.error) throw response.error;
+        return response.data;
+      },
+    });
+  });
+  const refreshSummary = summarizeTenderDocumentRefresh(refreshResults);
+  await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_refresh', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, ...refreshSummary, results: refreshResults }) }).select('id').single());
+  const analysisGenerated = await runOptionalTenderAnalysis({
+    analyze,
+    loadCurrentDocuments: async () => {
+      const records = await getTenderDocumentRecords(database, opportunityId);
+      return records.documents.filter(document => document.current !== false);
+    },
+    generate: async currentDocs => {
       const companyProfile = await getTenderCompanyProfile(database);
       const analysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
       const registered = await registerSiioRulesAnalysis(database, {
-        opportunity_id: opportunityId, tender_id: await getTenderIdForOpportunity(database, opportunityId), actor_id: currentProfile.id,
+        opportunity_id: opportunityId, tender_id: tenderId, actor_id: currentProfile.id,
         documents: currentDocs, company_profile: companyProfile, result: analysis,
       });
       await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ ...analysis, analysis_run_id: registered.run_id, report_title: 'Preanálisis por reglas SIIO', auto_import: true, source: sourceLabel }) }).select('id').single());
-      analysisGenerated = true;
-    }
-  }
+    },
+  });
   const records = await getTenderDocumentRecords(database, opportunityId);
   return {
     ...records,
-    imported_count: uploaded.filter(doc => doc.current !== false).length,
-    failed_count: uploaded.filter(doc => doc.current === false).length,
+    ...refreshSummary,
+    imported_count: refreshSummary.new_count + refreshSummary.updated_count + refreshSummary.unchanged_count,
     analysis_generated: analysisGenerated && Boolean(records.analysis)
   };
 }
@@ -2388,7 +2436,7 @@ async function convertTenderToOpportunity(database, tender, currentProfile) {
   let document_import_error = null;
   if ((tender.source === 'SECOP II' || tender.source === 'ESU Contratación') && tender.url) {
     try {
-      const importResult = await importTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze: true });
+      const importResult = await refreshTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze: true });
       document_import_status = importResult.analysis_generated ? 'analisis_generado' : 'fallo_importacion';
       if (!importResult.analysis_generated) {
         document_import_error = `No se pudo generar análisis: ${importResult.imported_count} documentos vigentes, ${importResult.failed_count} fallidos.`;
@@ -2636,7 +2684,7 @@ app.post('/api/tender-documents-import', async (req, res) => {
     await requireTenderAnalysisFoundation(database);
     const opportunityId = String(req.body.opportunity_id || '');
     if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
-    res.json(await importTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze: true }));
+    res.json(await refreshTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze: false }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

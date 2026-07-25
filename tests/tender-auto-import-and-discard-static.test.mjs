@@ -9,7 +9,7 @@ function assert(condition, message) {
 }
 
 for (const file of [server, api]) {
-  assert(file.includes('importTenderDocumentsFromOfficialSource'), 'Al convertir licitación debe existir importación automática de documentos oficiales.');
+  assert(file.includes('refreshTenderDocumentsFromOfficialSource'), 'Al convertir licitación debe existir actualización automática de documentos oficiales.');
   assert(file.includes('resolveSecopProcessByExactUrl'), 'La importación SECOP debe resolver por urlproceso/noticeUID exacto, no por número suelto.');
   assert(file.includes('SECOP_DOCUMENTS_RESOURCE'), 'Debe consultar el dataset oficial de documentos SECOP II.');
   assert(file.includes('auto_import: true'), 'Los documentos importados automáticamente deben quedar marcados como auto_import.');
