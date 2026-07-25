@@ -32,7 +32,7 @@
 
 - [ ] **Step 1: Ampliar pruebas en rojo**
 
-Exigir identidad `(opportunity_id, source, source_document_id, version)`, SHA-256, `current`, actor, URL/ruta, texto extraído y timestamps. La integración registra contenido A dos veces y contenido B una vez: A repetido devuelve `unchanged`; B crea versión 2 y deja una sola vigente.
+Exigir `tender_id`, identidad `(opportunity_id, source, source_document_id, version)`, `supersedes_version_id`, SHA-256, `current`, actor, URL/ruta, texto extraído y timestamps. La integración registra contenido A dos veces y contenido B una vez: A repetido devuelve `unchanged`; B crea versión 2, enlaza la versión anterior y deja una sola vigente. También prueba dos actualizaciones concurrentes y rechaza escritura directa fuera de la RPC.
 
 - [ ] **Step 2: Ejecutar y comprobar fallo**
 
@@ -68,6 +68,7 @@ git commit -m "feat(tenders): version official tender documents"
 
 **Files:**
 - Create: `tender-document-versioning.js`
+- Modify: `tender-analysis-foundation.js`
 - Modify: `server/index.js`
 - Modify: `api/[...path].js`
 - Modify: `src/tenders/types.ts`
@@ -107,12 +108,16 @@ Antes de subir, consultar `psi_tender_document_versions` por oportunidad/fuente/
 
 `getTenderDocumentRecords` combina versiones tipadas vigentes con documentos manuales/históricos no reemplazados. Deduplica por `source_document_id` y prioriza la tabla tipada. El snapshot usa sólo vigentes.
 
-- [ ] **Step 6: Verificar**
+- [ ] **Step 6: Calcular vigencia real del análisis**
+
+Extender `getCurrentTenderAnalysis` para comparar `document_hash` y `profile_hash` del snapshot asociado al run con los hashes reconstruidos desde evidencia y Base empresarial actuales. `canonicalDocument` debe preferir `content_sha256` binario persistido y usar texto extraído sólo como insumo. Un cambio documental, edición de perfil o reemplazo de RUP devuelve `current:false`; el mismo hash permanece vigente. No mutar runs/snapshots históricos.
+
+- [ ] **Step 7: Verificar**
 
 Run: `node tests/tender-official-document-refresh.test.mjs && node tests/tender-auto-analysis-contract.test.mjs && node tests/tender-analysis-rules-registration.test.mjs && npm run check:backend-parity`
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add tender-document-versioning.js server/index.js 'api/[...path].js' src/tenders/types.ts tests/tender-official-document-refresh.test.mjs tests/tender-auto-analysis-contract.test.mjs tests/tender-auto-import-and-discard-static.test.mjs
@@ -171,6 +176,9 @@ git commit -m "feat(tenders): clarify lifecycle labels and opportunity actions"
 **Files:**
 - Create: `src/tenders/components/TenderDetailNavigation.tsx`
 - Modify: `src/main.tsx`
+- Modify: `server/index.js`
+- Modify: `api/[...path].js`
+- Modify: `src/tenders/types.ts`
 - Modify: `src/styles.css`
 - Create: `tests/tender-detail-navigation.test.mjs`
 
@@ -189,7 +197,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implementar componente**
 
-Usar links hash/anclas o botones que llamen `scrollIntoView({ block: 'start' })`, `aria-current` para Oportunidades y scroll horizontal en móvil. Derivar source URL de un campo estructurado; sólo como fallback parsear el URL histórico de observaciones.
+Usar links hash/anclas o botones que llamen `scrollIntoView({ block: 'start' })`, `aria-current` para Oportunidades y scroll horizontal en móvil. Enriquecer `GET /api/opportunity-detail` con la licitación vinculada por `converted_opportunity_id` y consumir su URL estructurada; no inferirla desde Observaciones. Mantener paridad backend.
 
 - [ ] **Step 4: Verificar y commit**
 
