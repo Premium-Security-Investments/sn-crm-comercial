@@ -1986,6 +1986,10 @@ app.get('/api/opportunities/:id', async (req, res) => {
     const id = req.params.id;
     await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
     const opportunity = await attachCommercialMetadata(database, await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', id).single()));
+    const tenderSource = opportunity.service_type_code === 'licitacion_publica'
+      ? await must(database.from('psi_public_tenders').select('url').eq('converted_opportunity_id', id).maybeSingle())
+      : null;
+    opportunity.source_url = tenderSource?.url || getTenderSourceUrlFromOpportunity(opportunity) || null;
     const interactions = await must(database.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
     res.json({ opportunity, interactions });
   } catch (error) { sendError(res, error); }
@@ -2848,6 +2852,10 @@ app.get('/api/opportunity-detail', async (req, res) => {
     if (!id) throw new Error('Debe indicar la oportunidad.');
     await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
     const opportunity = await attachCommercialMetadata(database, await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', id).single()));
+    const tenderSource = opportunity.service_type_code === 'licitacion_publica'
+      ? await must(database.from('psi_public_tenders').select('url').eq('converted_opportunity_id', id).maybeSingle())
+      : null;
+    opportunity.source_url = tenderSource?.url || getTenderSourceUrlFromOpportunity(opportunity) || null;
     const interactions = await must(database.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
     res.json({ opportunity, interactions });
   } catch (error) { sendError(res, error); }
