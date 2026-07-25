@@ -65,8 +65,27 @@ export type TenderDocumentAnalysis = {
   blockers?: TenderAnalysisFinding[];
   questions?: TenderAnalysisFinding[];
   unverified?: TenderAnalysisFinding[];
+  company_profile_crosscheck?: { status?: string; matches?: string[]; gaps?: TenderAnalysisFinding[]; profile_source?: string };
   next_action?: string;
   [key: string]: unknown;
+};
+export type TenderDocumentRecord = {
+  id: string;
+  name: string;
+  size: number;
+  mime_type?: string | null;
+  document_type: string;
+  current: boolean;
+  storage_path?: string;
+  uploaded_at: string;
+  uploaded_by?: string | null;
+  signed_url?: string | null;
+  extracted_text?: string | null;
+};
+export type TenderDocumentsPayload = Partial<TenderDocumentRefreshResult> & {
+  documents: TenderDocumentRecord[];
+  analysis: TenderDocumentAnalysis | null;
+  analyses: TenderDocumentAnalysis[];
 };
 export type TenderAnalysisFinding = string | {
   id?: string;

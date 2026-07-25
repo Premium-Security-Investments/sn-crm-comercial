@@ -2213,7 +2213,7 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
     const { data } = await database.storage.from(tenderDocumentBucket).createSignedUrl(doc.storage_path, 3600);
     return { ...doc, signed_url: data?.signedUrl || null };
   })) : compatibleDocuments;
-  const currentAnalysis = await getCurrentTenderAnalysis(database, opportunityId);
+  const currentAnalysis = await getCurrentTenderAnalysis(database, opportunityId, compatibleDocuments);
   return { documents: signed, analysis: presentCurrentTenderAnalysis(currentAnalysis), analyses, import_error: importErrors.at(-1) || null };
 }
 

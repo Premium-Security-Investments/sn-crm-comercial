@@ -8,12 +8,12 @@ import { api, setApiAccessToken } from './apiClient';
 import { MODULE_PERMISSION_CODES, MODULE_PERMISSIONS, eligibleModulePermissions, isModulePermissionEligible } from '../module-access.js';
 import { SiioDashboard } from './siio/SiioDashboard';
 import { TendersModule } from './tenders/TendersModule';
-import { TenderDetailNavigation } from './tenders/components/TenderDetailNavigation';
+import { TenderAnalysisSection } from './tenders/components/TenderAnalysisSection';
+import { TenderDetailNavigation, resolveTenderSourceUrl } from './tenders/components/TenderDetailNavigation';
+import { TenderDocumentSection } from './tenders/components/TenderDocumentSection';
 import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDecisionPanel';
 import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
-import { normalizeTenderEvidence, tenderAnalysisMethodLabel, tenderDecisionStatusTone, tenderNextAction } from './tenders/tenderDecisionBrief';
-import type { TenderModuleView } from './tenders/types';
-import type { TenderDocumentAnalysis as TenderDocumentAnalysisShared } from './tenders/types';
+import type { TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderModuleView } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
 import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
 import { supabaseBrowser } from './supabaseBrowser';
@@ -56,10 +56,6 @@ type TenderScoreFilter = 'todas' | 'alto' | 'medio' | 'bajo';
 type TenderSortKey = 'deadline' | 'value' | 'score' | 'entity' | 'source';
 type TenderRegionKey = 'todas' | 'bog_cundinamarca' | 'med_antioquia' | 'eje_cafetero' | 'cali_valle' | 'costa_caribe' | 'santanderes' | 'sur_occidente' | 'otros';
 type PublicTender = { id: string; stable_key?: string; source: string; section: TenderSection; internal_status?: TenderInternalStatus; converted_opportunity_id?: string | null; reviewed_at?: string | null; detected_at?: string | null; last_seen_at?: string | null; entity: string; dept?: string; city?: string; ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string; category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null; score: number; reasons: string[]; risks: string[]; url?: string };
-type TenderDocumentStatus = 'pendiente_documentos' | 'documentos_cargados' | 'analisis_generado';
-type TenderDocumentRecord = { id: string; name: string; size: number; mime_type?: string | null; document_type: string; current: boolean; storage_path?: string; uploaded_at: string; uploaded_by?: string | null; signed_url?: string | null; extracted_text?: string | null };
-type TenderDocumentAnalysis = TenderDocumentAnalysisShared & { risk: string; summary: string; generated_at: string; detected_values?: Record<string, string[]>; matrix?: Array<{ category: string; status: string; detail: string }>; checklist?: string[]; report_title?: string; executive_semaphore?: Array<{ label: string; value: string; tone?: string }>; company_profile_crosscheck?: { status?: string; matches?: string[]; gaps?: string[]; profile_source?: string }; habilitating_requirements?: Array<{ front: string; status: string; action: string }>; committee_summary?: string; next_action?: string; go_no_go?: { decision?: string; risk?: string; blockers?: string[] } };
-type TenderDocumentsPayload = { documents: TenderDocumentRecord[]; analysis: TenderDocumentAnalysis | null; analyses: TenderDocumentAnalysis[] };
 type TenderOfferPreparationDoc = { key: string; name: string; folder: string; status: string; owner: string; output?: string; reusable?: boolean; title?: string; priority?: string; reason?: string };
 type TenderOfferPreparation = { status: string; approved_at: string; approved_by?: string; control_message?: string; sharepoint_folder?: { status: string; provider: string; url?: string | null; root_name?: string; folders?: string[] }; generic_documents?: TenderOfferPreparationDoc[]; auto_generated_documents?: TenderOfferPreparationDoc[]; human_required_items?: TenderOfferPreparationDoc[]; assistant_notes?: string[]; checklist_summary?: { total: number; auto_generated: number; human_required: number; official_documents: number; has_analysis: boolean } };
 type TenderOfferPreparationPayload = { preparation: TenderOfferPreparation | null; preparations: TenderOfferPreparation[]; notes: Array<{ note: string; status?: string; created_at?: string; created_by?: string; created_by_name?: string }>; decision?: { decision?: 'go' | 'no_go' } | null; reason?: string };
@@ -782,16 +778,6 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
 const tenderDocumentTypeOptions = [
   ['pliego','Pliego'], ['estudios_previos','Estudios previos'], ['anexo_tecnico','Anexo técnico'], ['adenda','Adenda'], ['formatos','Formatos'], ['otro','Otro']
 ];
-function documentStatusLabel(status: TenderDocumentStatus) {
-  if (status === 'analisis_generado') return 'Análisis generado';
-  if (status === 'documentos_cargados') return 'Documentos cargados';
-  return 'Pendiente de documentos';
-}
-function documentStatusTone(status: TenderDocumentStatus) { return status === 'analisis_generado' ? 'success' : status === 'documentos_cargados' ? 'amber' : 'blue'; }
-function fmtFileSize(bytes: number) {
-  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toLocaleString('es-CO', { maximumFractionDigits: 1 })} MB`;
-  return `${Math.max(1, Math.round(bytes / 1000)).toLocaleString('es-CO')} KB`;
-}
 function fileToBase64(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -800,21 +786,16 @@ function fileToBase64(file: File) {
     reader.readAsDataURL(file);
   });
 }
-function TenderEvidenceList({ items, empty }: { items: unknown[]; empty: string }) {
-  const visible = normalizeTenderEvidence(items);
-  return visible.length ? <ul>{visible.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <p className="muted">{empty}</p>;
-}
 function TenderDocumentReviewPanel({ opportunity, onReload, onAnalysisChanged, focusTargetRef }: { opportunity: Opportunity; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
   const [payload, setPayload] = useState<TenderDocumentsPayload>({ documents: [], analysis: null, analyses: [] });
   const [statusText, setStatusText] = useState('');
+  const [refreshResult, setRefreshResult] = useState<TenderDocumentRefreshResult | null>(null);
   const [busy, setBusy] = useState(false);
   const requestVersionRef = useRef(0);
   const activeOpportunityRef = useRef(opportunity.id);
   activeOpportunityRef.current = opportunity.id;
   const documents = payload.documents || [];
   const analysis = payload.analysis;
-  const status: TenderDocumentStatus = analysis ? 'analisis_generado' : documents.length ? 'documentos_cargados' : 'pendiente_documentos';
-  const documentRisk = analysis?.risk || (!documents.length ? 'Pendiente' : 'Medio');
   const loadDocuments = async () => {
     const requestedId = opportunity.id; const version = ++requestVersionRef.current;
     const data = await api<TenderDocumentsPayload>(`/api/tender-documents?id=${encodeURIComponent(requestedId)}`);
@@ -823,7 +804,7 @@ function TenderDocumentReviewPanel({ opportunity, onReload, onAnalysisChanged, f
   };
   useEffect(() => {
     activeOpportunityRef.current = opportunity.id; requestVersionRef.current += 1;
-    setPayload({ documents: [], analysis: null, analyses: [] }); setStatusText(''); setBusy(false); onAnalysisChanged?.(null);
+    setPayload({ documents: [], analysis: null, analyses: [] }); setRefreshResult(null); setStatusText(''); setBusy(false); onAnalysisChanged?.(null);
     void loadDocuments().catch(err => { if (activeOpportunityRef.current === opportunity.id) setStatusText(err instanceof Error ? err.message : String(err)); });
     return () => { requestVersionRef.current += 1; };
   }, [opportunity.id]);
@@ -854,53 +835,21 @@ function TenderDocumentReviewPanel({ opportunity, onReload, onAnalysisChanged, f
     finally { setBusy(false); }
   };
   const importOfficialDocuments = async () => {
-    setBusy(true); setStatusText('Importando documentos oficiales desde SECOP/ESU y generando análisis…');
+    setBusy(true); setStatusText('Actualizando documentos oficiales desde la fuente…');
     try {
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-import', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
-      setPayload(data); onAnalysisChanged?.(data.analysis || null); setStatusText('Documentos oficiales importados automáticamente. Puede cargar documentos complementarios si hace falta.');
+      setPayload(data); onAnalysisChanged?.(data.analysis || null);
+      setRefreshResult({ new_count: Number(data.new_count || 0), updated_count: Number(data.updated_count || 0), unchanged_count: Number(data.unchanged_count || 0), failed_count: Number(data.failed_count || 0), analysis_generated: Boolean(data.analysis_generated) });
+      setStatusText('Documentos oficiales actualizados. El análisis existente no fue regenerado.');
       await onReload?.();
     } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }
   };
-  const strengths = analysis?.strengths ?? analysis?.commercial_fit?.positives ?? [];
-  const weaknesses = analysis?.weaknesses ?? analysis?.blockers ?? analysis?.commercial_fit?.concerns ?? [];
-  const questions = analysis?.questions ?? [];
-  const unverified = analysis?.unverified ?? analysis?.company_profile_crosscheck?.gaps ?? [];
-  const methodLabel = analysis ? tenderAnalysisMethodLabel(analysis.producer) : 'Preanálisis por reglas SIIO';
-  return <div id="tender-document-review" tabIndex={-1} ref={focusTargetRef}><Panel title="Revisión documental" >
-    <div className="tender-document-panel">
-      <div className="document-review-head">
-        <div><span className="eyebrow">Oportunidad de licitación</span><h3>Documentos del proceso</h3><p>Al convertir desde el radar, el sistema importa los documentos oficiales SECOP/ESU y genera el análisis. La carga manual queda para documentos complementarios, adendas o archivos internos.</p></div>
-        <div className="document-status-card"><small>Estado documental</small><Badge tone={documentStatusTone(status)}>{documentStatusLabel(status)}</Badge><strong>{documents.length} archivo(s)</strong></div>
-        <div className="document-risk-meter"><small>Riesgo documental</small><strong>{documentRisk}</strong><span>Persistente y separado del score radar</span></div>
-      </div>
-      <div className="document-upload-row">
-        <button onClick={importOfficialDocuments} disabled={busy}>Importar/Reintentar documentos oficiales</button>
-        <label className="document-upload-box">Subir documentos complementarios<input multiple type="file" accept=".pdf,.docx,.zip,.txt,.csv,.xlsx,.xls" onChange={addFiles} disabled={busy}/><small>PDF/Word/TXT/ZIP. Subir pliego, estudios previos, anexo técnico, adendas, formatos u otros solo como documentos complementarios si la fuente oficial falla o falta algo.</small></label>
-        <button onClick={analyzeDocuments} disabled={busy || !documents.length}>Analizar documentos</button>
-      </div>
-      {statusText && <div className="notice">{statusText}</div>}
-      {documents.length ? <div className="document-list">{documents.map(doc => <div className="document-row" key={doc.id}>
-        <div><strong>{doc.signed_url ? <a href={doc.signed_url} target="_blank" rel="noreferrer">{doc.name}</a> : doc.name}</strong><small>{fmtFileSize(doc.size)} · {fmtDate(doc.uploaded_at)} · {doc.uploaded_by || 'Sistema'}</small></div>
-        <Badge tone="blue">{tenderDocumentTypeLabel(doc.document_type)}</Badge>
-        <span className="document-current">{doc.current ? 'Vigente' : 'No vigente'}</span>
-      </div>)}</div> : <div className="document-empty-state"><strong>Pendiente de documentos</strong><span>Documentos oficiales importados automáticamente al convertir; si falta algo, cargue documentos complementarios.</span></div>}
-      {analysis && <section id="tender-analysis" className="tender-decision-brief tender-detail-anchor" aria-label="Conclusión preliminar de licitación">
-        <header className="tender-decision-brief-head">
-          <div><small>Recomendación preliminar</small><strong>{analysis.recommendation || 'Requiere revisión'}</strong><p>{analysis.summary || 'Sin resumen documental disponible.'}</p></div>
-          <div className="tender-decision-brief-status"><Badge tone={tenderDecisionStatusTone(analysis.recommendation)}>{analysis.current ? 'Vigente' : 'Obsoleto'}</Badge><span>{methodLabel}</span><small>{analysis.completed_at ? `Actualizado: ${fmtDate(analysis.completed_at)}` : `Generado: ${fmtDate(analysis.generated_at)}`}</small></div>
-        </header>
-        <div className="tender-decision-brief-grid">
-          <section><h4>Fortalezas</h4><TenderEvidenceList items={strengths} empty="Sin fortalezas documentales registradas."/></section>
-          <section><h4>Debilidades y bloqueadores</h4><TenderEvidenceList items={weaknesses} empty="Sin debilidades o bloqueadores documentales registrados."/></section>
-          <section><h4>Dudas abiertas</h4><TenderEvidenceList items={questions} empty="Sin dudas abiertas registradas."/></section>
-          <section><h4>Información no verificada</h4><TenderEvidenceList items={unverified} empty="Sin información no verificada registrada."/></section>
-          <section className="tender-decision-next-action"><h4>Siguiente acción</h4><p>{tenderNextAction(analysis.next_action) || 'Sin siguiente acción documentada; revisar el expediente con Licitaciones.'}</p></section>
-        </div>
-        <details className="tender-decision-brief-help"><summary>Cómo funciona</summary><p>Esta conclusión preliminar organiza únicamente la evidencia disponible. No autoriza GO / NO GO; una persona con permiso formal debe tomar esa decisión.</p></details>
-      </section>}
-    </div>
-  </Panel></div>;
+  const sourceUrl = resolveTenderSourceUrl(opportunity.source_url, opportunity.observaciones);
+  return <div id="tender-document-review" className="tender-guided-review" tabIndex={-1} ref={focusTargetRef}>
+    <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} sourceUrl={sourceUrl} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
+    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} onAnalyze={() => void analyzeDocuments()} />
+  </div>;
 }
 function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void> }) {
   const [payload, setPayload] = useState<TenderOfferPreparationPayload>({ preparation: null, preparations: [], notes: [] });

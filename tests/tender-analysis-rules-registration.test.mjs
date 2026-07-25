@@ -177,7 +177,7 @@ function createCurrentAnalysisDatabase({ latestSnapshot, runs }) {
 }
 
 const currentResult = { recommendation: 'GO condicionado', questions: [{ critical: true }] };
-const currentSnapshot = { id: '77777777-7777-4777-8777-777777777777' };
+const currentSnapshot = { id: '77777777-7777-4777-8777-777777777777', document_hash: buildTenderSnapshotInput(documents, {}).document_hash };
 const currentDatabase = createCurrentAnalysisDatabase({
   latestSnapshot: currentSnapshot,
   runs: [
@@ -194,6 +194,11 @@ assert.deepEqual(currentDatabase.queries[1].filters, [
   ['opportunity_id', ids.opportunity],
   ['snapshot_id', currentSnapshot.id],
 ]);
+const stillCurrent = await getCurrentTenderAnalysis(currentDatabase, ids.opportunity, reimportedDocuments);
+assert.equal(stillCurrent.current, true, 'reimportar el mismo contenido no invalida el análisis');
+const changedDocuments = documents.map((document, index) => index === 0 ? { ...document, content: `${document.content} ADENDA` } : document);
+const staleAfterRefresh = await getCurrentTenderAnalysis(currentDatabase, ids.opportunity, changedDocuments);
+assert.equal(staleAfterRefresh.current, false, 'cambiar los documentos actuales debe conservar pero marcar desactualizado el análisis previo');
 
 const noSnapshotDatabase = createCurrentAnalysisDatabase({ latestSnapshot: null, runs: [] });
 assert.equal(await getCurrentTenderAnalysis(noSnapshotDatabase, ids.opportunity), null);
@@ -247,7 +252,7 @@ for (const path of ['../api/[...path].js', '../server/index.js']) {
   assert.doesNotMatch(source, /(?:IA|inteligencia artificial|Hermes|AGT-002)[^\n]{0,80}Preanálisis por reglas SIIO/i);
   const records = source.match(/async function getTenderDocumentRecords[\s\S]*?\n}\n\n/);
   assert.ok(records, `${path} must retain the shared tender-document response builder`);
-  assert.match(records[0], /getCurrentTenderAnalysis\(database, opportunityId\)/, `${path} must resolve the typed current analysis, not infer authority from timeline history`);
+  assert.match(records[0], /getCurrentTenderAnalysis\(database, opportunityId, compatibleDocuments\)/, `${path} must resolve the typed current analysis against the current document hash, not infer authority from timeline history`);
   assert.match(records[0], /analysis:\s*presentCurrentTenderAnalysis\(currentAnalysis\)/, `${path} must present typed metadata plus analysis result to every document response path`);
   assert.match(records[0], /analyses,/, `${path} must preserve legacy timeline history for compatibility`);
 }

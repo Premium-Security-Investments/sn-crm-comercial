@@ -137,10 +137,10 @@ export async function registerSiioRulesAnalysis(database, context) {
   };
 }
 
-export async function getCurrentTenderAnalysis(database, opportunityId) {
+export async function getCurrentTenderAnalysis(database, opportunityId, currentDocuments = null) {
   const normalizedOpportunityId = requireId(opportunityId, 'La oportunidad');
   const latestSnapshotResponse = await database.from('psi_tender_document_snapshots')
-    .select('id')
+    .select('id,document_hash')
     .eq('opportunity_id', normalizedOpportunityId)
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
@@ -161,13 +161,15 @@ export async function getCurrentTenderAnalysis(database, opportunityId) {
 
   const run = await selectLatestRun(latestSnapshot.id) || await selectLatestRun();
   if (!run) return null;
+  const documentsMatchSnapshot = !Array.isArray(currentDocuments)
+    || buildTenderSnapshotInput(currentDocuments, {}).document_hash === latestSnapshot.document_hash;
   return {
     run_id: run.id,
     snapshot_id: run.snapshot_id,
     producer: run.producer,
     method: run.method,
     status: run.status,
-    current: run.snapshot_id === latestSnapshot.id,
+    current: run.snapshot_id === latestSnapshot.id && documentsMatchSnapshot,
     result: run.result,
     critical_open_count: run.critical_open_count ?? 0,
     created_at: run.created_at || null,
