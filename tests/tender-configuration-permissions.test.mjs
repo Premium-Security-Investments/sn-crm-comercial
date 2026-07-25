@@ -25,11 +25,14 @@ assert.doesNotMatch(moduleSource, /TenderProfilesView/, 'La vista mezclada debe 
 for (const source of [server, api]) {
   assert.match(source, /ACTIONS\.LICITACIONES_CONFIGURE/);
   assert.match(source, /app\.get\('\/api\/tender-company-profile'[\s\S]*?requireAction\(currentProfile, ACTIONS\.LICITACIONES_VIEW\)/, 'GET debe conservar permiso de lectura.');
+  assert.match(source, /app\.get\('\/api\/tender-company-documents'[\s\S]*?requireAction\(currentProfile, ACTIONS\.LICITACIONES_VIEW\)/, 'Inventario documental debe exigir lectura.');
   for (const [method, endpoint] of [
     ['put', '/api/tender-company-profile'],
     ['post', '/api/tender-company-profile-upload-url'],
     ['post', '/api/tender-company-profile-process-upload'],
     ['post', '/api/tender-company-profile-upload'],
+    ['post', '/api/tender-company-document-upload-url'],
+    ['post', '/api/tender-company-document-process-upload'],
   ]) {
     const escaped = endpoint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     assert.match(source, new RegExp(`app\\.${method}\\('${escaped}'[\\s\\S]*?requireAction\\(currentProfile, ACTIONS\\.LICITACIONES_CONFIGURE\\)`), `${method.toUpperCase()} ${endpoint} debe exigir configuración.`);

@@ -16,6 +16,7 @@ import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
 import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
+import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -788,6 +789,29 @@ async function saveTenderCompanyProfile(database, payload) {
   delete fallbackPayload.updated_by;
   await must(database.from('psi_tender_radar_runs').insert({ triggered_by: payload.updated_by, mode: 'company_profile', summary: JSON.stringify(fallbackPayload) }).select('id').single());
 }
+function cleanCompanyDocumentMetadata(body) {
+  const documentType = String(body?.documentType || body?.document_type || '').trim().toLowerCase();
+  const displayName = String(body?.displayName || body?.display_name || '').trim();
+  const issuedAt = String(body?.issuedAt || body?.issued_at || '').trim();
+  const expiresAt = body?.expiresAt ?? body?.expires_at ?? null;
+  const replaceDocumentId = body?.replaceDocumentId ?? body?.replace_document_id ?? null;
+  if (!documentType || !displayName || !/^\d{4}-\d{2}-\d{2}$/.test(issuedAt)) throw new Error('Tipo, nombre visible y fecha de expedición son obligatorios.');
+  if (expiresAt !== null && expiresAt !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(String(expiresAt))) throw new Error('La fecha de vencimiento no es válida.');
+  if (expiresAt && String(expiresAt) < issuedAt) throw new Error('La fecha de vencimiento no puede ser anterior a la expedición.');
+  return { documentType, displayName, issuedAt, expiresAt: expiresAt || null, replaceDocumentId: replaceDocumentId || null };
+}
+function companyDocumentStoragePath(profile, name, size) {
+  const id = createHash('sha256').update(`company-profile:${profile.id}:${Date.now()}:${name}:${size}`).digest('hex').slice(0, 24);
+  return `company-profile/documents/${profile.id}/${id}-${name}`;
+}
+async function presentCompanyProcurementDocuments(database) {
+  const documents = await listCompanyProcurementDocuments(database);
+  return Promise.all(documents.map(async document => {
+    const { data, error } = await database.storage.from(tenderDocumentBucket).createSignedUrl(document.storage_path, 15 * 60);
+    if (error) throw error;
+    return { ...document, url: data?.signedUrl || null };
+  }));
+}
 function normTenderText(value) { return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
 const tenderTerminalStatusTerms = ['revocado', 'declarado desierto', 'desierto', 'cancelado', 'cancelada'];
 function isTenderTerminalStatus(value) {
@@ -1478,6 +1502,56 @@ app.get('/api/tender-company-profile', async (req, res) => {
   } catch (error) { sendAuthError(res, error); }
 });
 
+app.get('/api/tender-company-documents', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    res.json(await presentCompanyProcurementDocuments(requireDb()));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-document-upload-url', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
+    const metadata = cleanCompanyDocumentMetadata(req.body);
+    const name = cleanFileName(req.body?.name || metadata.displayName);
+    const size = Number(req.body?.size || 0);
+    if (!size) throw new Error('Debe seleccionar un documento empresarial válido.');
+    if (size > RUP_MAX_BYTES) throw new Error('El documento empresarial supera 50MB.');
+    const database = requireDb();
+    await ensureTenderBucket(database);
+    const path = companyDocumentStoragePath(currentProfile, name, size);
+    const { data, error } = await database.storage.from(tenderDocumentBucket).createSignedUploadUrl(path);
+    if (error) throw error;
+    res.json({ path, token: data.token });
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-document-process-upload', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
+    const metadata = cleanCompanyDocumentMetadata(req.body);
+    const storagePath = String(req.body?.storage_path || '');
+    if (!storagePath.startsWith(`company-profile/documents/${currentProfile.id}/`) || storagePath.includes('..')) throw new Error('Ruta de documento empresarial inválida.');
+    const name = cleanFileName(req.body?.name || storagePath.split('/').at(-1) || metadata.displayName);
+    const database = requireDb();
+    const { data, error } = await database.storage.from(tenderDocumentBucket).download(storagePath);
+    if (error) throw error;
+    const buffer = Buffer.from(await data.arrayBuffer());
+    if (!buffer.length) throw new Error('El documento empresarial cargado está vacío.');
+    if (buffer.length > RUP_MAX_BYTES) throw new Error('El documento empresarial supera 50MB.');
+    await recordCompanyProcurementDocument(database, { ...metadata, content: buffer, storagePath, mimeType: req.body?.mime_type || 'application/octet-stream', sizeBytes: buffer.length, uploadedBy: currentProfile.id });
+    if (metadata.documentType === 'rup') {
+      const extractedText = await extractTextFromTenderFile(buffer, name, req.body?.mime_type || '');
+      const existing = await getTenderCompanyProfile(database);
+      await saveTenderCompanyProfile(database, cleanTenderCompanyProfile(parseRupCompanyProfile(extractedText, existing, name), currentProfile));
+    }
+    res.status(201).json({ profile: await getTenderCompanyProfile(database), documents: await presentCompanyProcurementDocuments(database) });
+  } catch (error) { sendAuthError(res, error); }
+});
+
 app.put('/api/tender-company-profile', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -1521,6 +1595,7 @@ app.post('/api/tender-company-profile-process-upload', async (req, res) => {
     const extractedText = await extractTextFromTenderFile(buffer, name, req.body?.mime_type || '');
     const existing = await getTenderCompanyProfile(database);
     const payload = cleanTenderCompanyProfile(parseRupCompanyProfile(extractedText, existing, name), currentProfile);
+    await recordCompanyProcurementDocument(database, { documentType: 'rup', displayName: name, issuedAt: payload.rup_updated_at || new Date().toISOString().slice(0, 10), expiresAt: null, content: buffer, storagePath, mimeType: req.body?.mime_type || 'application/octet-stream', sizeBytes: buffer.length, uploadedBy: currentProfile.id });
     await saveTenderCompanyProfile(database, payload);
     res.json(await getTenderCompanyProfile(database));
   } catch (error) { sendAuthError(res, error); }
