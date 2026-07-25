@@ -27,6 +27,9 @@ assert.match(moduleSource, /props\.view === 'configuracion' && <TenderConfigurat
 assert.match(savedSearches, /window\.confirm/, 'Eliminar debe exigir confirmación.');
 assert.match(savedSearches, /onApply\(/, 'Aplicar debe actualizar los filtros del Radar mediante callback.');
 assert.doesNotMatch(savedSearches, /\bnavigate\b/, 'Aplicar no debe navegar fuera del Radar.');
+assert.match(savedSearches, /!saveOpen && !libraryOpen && message && <div className="notice" role="status">\{message\}<\/div>/, 'El éxito solo debe anunciarse fuera cuando ambos diálogos estén cerrados.');
+assert.match(savedSearches, /saveOpen && message && <div className="error" role="alert">\{message\}<\/div>/, 'La validación o fallo de Guardar debe ser visible y accesible dentro de su diálogo.');
+assert.match(savedSearches, /libraryOpen && message && <div className="error" role="alert">\{message\}<\/div>/, 'El fallo de Eliminar debe ser visible y accesible dentro de la biblioteca activa.');
 
 assert.match(radar, /export async function loadRadarAndProfiles/, 'Radar debe tener una carga coordinada que degrade perfiles sin ocultar sus resultados.');
 assert.match(radar, /Promise\.allSettled/, 'La carga de Radar y perfiles debe esperar resultados independientes.');
