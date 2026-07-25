@@ -48,4 +48,44 @@ assert.doesNotMatch(migration, /p_expires_at\s*<\s*current_date/i, 'La expiraciÃ
 assert.match(migration, /revoke all on function public\.psi_record_company_procurement_document[\s\S]*from authenticated/i);
 assert.match(migration, /grant execute on function public\.psi_record_company_procurement_document[\s\S]*to service_role/i);
 
+for (const token of [
+  'create table if not exists public.psi_tender_document_versions',
+  'opportunity_id uuid not null references public.psi_sales_opportunities(id)',
+  'tender_id uuid not null references public.psi_public_tenders(id)',
+  'source text not null',
+  'source_document_id text not null',
+  'version integer not null',
+  'supersedes_version_id uuid references public.psi_tender_document_versions(id)',
+  'name text not null',
+  'content_hash text not null',
+  'storage_path text not null',
+  'mime_type text not null',
+  'size_bytes bigint not null',
+  'document_type text not null',
+  'extracted_text text',
+  'source_url text',
+  'current boolean not null default true',
+  'actor_id uuid not null references public.psi_sales_profiles(id)',
+  'unique (opportunity_id, source, source_document_id, version)',
+  'psi_tender_document_versions_one_current_identity',
+  'psi_record_tender_document_version',
+  'pg_advisory_xact_lock',
+  'security definer',
+  'set search_path = public, pg_temp',
+  "p_storage_path not like 'tender-documents/%'",
+  "p_content_hash !~ '^[0-9a-f]{64}$'",
+  'p_size_bytes > 50 * 1024 * 1024',
+  "coalesce(p.identity_type, 'human') in ('human', 'agent')",
+  "'status', 'unchanged'",
+  'grant execute on function public.psi_record_tender_document_version',
+  'to service_role',
+]) assert.match(migration, new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), `tender version migration missing marker: ${token}`);
+
+assert.match(migration, /check \(content_hash ~ '\^\[0-9a-f\]\{64\}\$'\)/i);
+assert.match(migration, /check \(storage_path like 'tender-documents\/%'[\s\S]*?\)/i);
+assert.match(migration, /check \(size_bytes > 0 and size_bytes <= 50 \* 1024 \* 1024\)/i);
+assert.match(migration, /create unique index if not exists psi_tender_document_versions_one_current_identity[\s\S]*where current/i);
+assert.match(migration, /revoke all on table public\.psi_tender_document_versions from authenticated/i);
+assert.match(migration, /revoke all on function public\.psi_record_tender_document_version[\s\S]*from authenticated/i);
+
 console.log('tender document versions migration contract passed');

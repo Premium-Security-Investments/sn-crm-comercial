@@ -8,6 +8,8 @@ const ids = {
   actor: '11111111-1111-4111-8111-111111111111',
   inactiveActor: '22222222-2222-4222-8222-222222222222',
   agentActor: '33333333-3333-4333-8333-333333333333',
+  opportunity: '44444444-4444-4444-8444-444444444444',
+  tender: '55555555-5555-4555-8555-555555555555',
 };
 const hash = character => character.repeat(64);
 const one = async (db, sql, params = []) => (await db.query(sql, params)).rows[0];
@@ -22,6 +24,10 @@ async function createDatabase() {
     create schema auth;
     create function auth.jwt() returns jsonb language sql stable as $$ select '{}'::jsonb $$;
     create function public.psi_sales_set_updated_at() returns trigger language plpgsql as $$ begin new.updated_at = now(); return new; end $$;
+    create table public.psi_sales_opportunities (id uuid primary key);
+    create table public.psi_public_tenders (id uuid primary key, converted_opportunity_id uuid references public.psi_sales_opportunities(id));
+    insert into public.psi_sales_opportunities (id) values ('${ids.opportunity}');
+    insert into public.psi_public_tenders (id, converted_opportunity_id) values ('${ids.tender}', '${ids.opportunity}');
     create table public.psi_sales_profiles (
       id uuid primary key,
       active boolean not null default true,
@@ -50,6 +56,21 @@ async function record(db, overrides = {}) {
   ) as result`, [
     input.documentType, input.displayName, input.issuedAt, input.expiresAt, input.contentHash,
     input.storagePath, input.mimeType, input.sizeBytes, input.uploadedBy, input.replaceDocumentId,
+  ])).result;
+}
+
+async function recordTenderDocument(db, overrides = {}) {
+  const input = {
+    opportunityId: ids.opportunity, tenderId: ids.tender, source: 'secop', sourceDocumentId: 'official-42',
+    name: 'Pliego oficial.pdf', contentHash: hash('a'), storagePath: `tender-documents/${ids.opportunity}/official-42/a.pdf`,
+    mimeType: 'application/pdf', sizeBytes: 1024, documentType: 'pliego', extractedText: 'Texto oficial',
+    sourceUrl: 'https://www.colombiacompra.gov.co/document/official-42', actorId: ids.actor, ...overrides,
+  };
+  return (await one(db, `select public.psi_record_tender_document_version(
+    $1::uuid,$2::uuid,$3::text,$4::text,$5::text,$6::text,$7::text,$8::text,$9::bigint,$10::text,$11::text,$12::text,$13::uuid
+  ) as result`, [
+    input.opportunityId, input.tenderId, input.source, input.sourceDocumentId, input.name, input.contentHash,
+    input.storagePath, input.mimeType, input.sizeBytes, input.documentType, input.extractedText, input.sourceUrl, input.actorId,
   ])).result;
 }
 
@@ -161,6 +182,54 @@ await (async function rpcEnforcesRoleBoundaryAndRejectsInvalidInputs() {
   await assert.rejects(() => record(db, { contentHash: hash('9'), storagePath: 'company-profile/authenticated.pdf' }), /permission denied/i);
   await assert.rejects(() => db.query(`insert into public.psi_company_procurement_documents (document_type, display_name, issued_at, content_hash, storage_path, mime_type, size_bytes, uploaded_by) values ('rup', 'direct', '2026-01-01', '${hash('f')}', 'company-profile/direct.pdf', 'application/pdf', 1, '${ids.actor}')`), /permission denied/i);
   await db.exec('reset role');
+  await db.close();
+})();
+
+await (async function tenderDocumentVersionsAreIdempotentAndKeepExactlyOneCurrentVersion() {
+  const db = await createDatabase();
+  const first = await recordTenderDocument(db);
+  const retry = await recordTenderDocument(db, { name: 'Nombre cambiado no muta el original' });
+  const second = await recordTenderDocument(db, {
+    contentHash: hash('b'), storagePath: `tender-documents/${ids.opportunity}/official-42/b.pdf`, extractedText: 'Texto oficial actualizado',
+  });
+  assert.equal(first.status, 'created');
+  assert.equal(first.version, 1);
+  assert.equal(retry.status, 'unchanged');
+  assert.equal(retry.id, first.id);
+  assert.equal(retry.version, 1);
+  assert.equal(second.status, 'created');
+  assert.equal(second.version, 2);
+  const rows = (await db.query(`select version, current, content_hash, supersedes_version_id from public.psi_tender_document_versions order by version`)).rows;
+  assert.deepEqual(rows.map(({ version, current, content_hash }) => ({ version, current, content_hash })), [
+    { version: 1, current: false, content_hash: hash('a') },
+    { version: 2, current: true, content_hash: hash('b') },
+  ]);
+  assert.equal(rows[1].supersedes_version_id, first.id);
+  const concurrent = await Promise.all([
+    recordTenderDocument(db, { contentHash: hash('c'), storagePath: `tender-documents/${ids.opportunity}/official-42/c.pdf` }),
+    recordTenderDocument(db, { contentHash: hash('d'), storagePath: `tender-documents/${ids.opportunity}/official-42/d.pdf` }),
+  ]);
+  assert.deepEqual(concurrent.map(result => result.version).sort((a, b) => a - b), [3, 4]);
+  const afterConcurrentWrites = (await db.query(`select version, current from public.psi_tender_document_versions order by version`)).rows;
+  assert.equal(afterConcurrentWrites.filter(row => row.current).length, 1);
+  assert.deepEqual(afterConcurrentWrites.map(row => row.version), [1, 2, 3, 4]);
+  await db.close();
+})();
+
+await (async function tenderDocumentRpcRejectsInvalidActorsMetadataAndDirectWrites() {
+  const db = await createDatabase();
+  await assert.doesNotReject(() => recordTenderDocument(db, { actorId: ids.agentActor }));
+  await assert.rejects(() => recordTenderDocument(db, { actorId: ids.inactiveActor, contentHash: hash('c') }), /actor/i);
+  await assert.rejects(() => recordTenderDocument(db, { contentHash: 'A'.repeat(64) }), /hash/i);
+  await assert.rejects(() => recordTenderDocument(db, { storagePath: `tender-documents/${ids.opportunity}/a/../b.pdf` }), /ruta/i);
+  await assert.rejects(() => recordTenderDocument(db, { storagePath: 'other/private.pdf' }), /ruta/i);
+  await assert.rejects(() => recordTenderDocument(db, { sizeBytes: 50 * 1024 * 1024 + 1 }), /tamaño/i);
+  await assert.rejects(() => recordTenderDocument(db, { name: ' ', contentHash: hash('d') }), /obligatorios/i);
+  await assert.rejects(() => recordTenderDocument(db, { sourceUrl: 'ftp://unsafe.example/doc', contentHash: hash('e') }), /URL/i);
+  await db.exec('set role service_role');
+  await assert.rejects(() => db.query(`insert into public.psi_tender_document_versions (opportunity_id, tender_id, source, source_document_id, version, name, content_hash, storage_path, mime_type, size_bytes, document_type, actor_id) values ('${ids.opportunity}', '${ids.tender}', 'secop', 'direct', 1, 'direct', '${hash('f')}', 'tender-documents/${ids.opportunity}/direct.pdf', 'application/pdf', 1, 'pliego', '${ids.actor}')`), /permission denied/i);
+  await db.exec('reset role; set role authenticated');
+  await assert.rejects(() => recordTenderDocument(db, { contentHash: hash('f') }), /permission denied/i);
   await db.close();
 })();
 
