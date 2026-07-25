@@ -19,7 +19,8 @@ create table if not exists public.psi_company_procurement_documents (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check (expires_at is null or expires_at >= issued_at),
-  unique (document_type, version)
+  unique (document_type, version),
+  unique (document_type, content_hash)
 );
 
 create index if not exists psi_company_procurement_documents_current_idx
@@ -84,6 +85,26 @@ begin
       and coalesce(p.identity_type, 'human') = 'human'
   ) then
     raise exception 'El actor que carga el documento debe ser un perfil humano activo.' using errcode = '42501';
+  end if;
+
+  -- Low-volume corporate uploads serialize as one transaction so retries and
+  -- version assignment cannot race across document types.
+  lock table public.psi_company_procurement_documents in share row exclusive mode;
+
+  select * into v_document
+  from public.psi_company_procurement_documents
+  where document_type = v_document_type
+    and content_hash = p_content_hash;
+  if found then
+    return jsonb_build_object(
+      'id', v_document.id,
+      'document_type', v_document.document_type,
+      'version', v_document.version,
+      'current', v_document.current,
+      'issued_at', v_document.issued_at,
+      'expires_at', v_document.expires_at,
+      'created_at', v_document.created_at
+    );
   end if;
 
   if p_replace_document_id is not null then

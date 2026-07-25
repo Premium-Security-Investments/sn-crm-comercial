@@ -32,6 +32,7 @@ for (const token of [
   "p_content_hash !~ '^[0-9a-f]{64}$'",
   'p_size_bytes > 50 * 1024 * 1024',
   "v_document_type = 'rup'",
+  'lock table public.psi_company_procurement_documents in share row exclusive mode',
   'max(version)',
   'grant execute on function public.psi_record_company_procurement_document',
   'to service_role',
@@ -41,6 +42,7 @@ assert.match(migration, /check \(content_hash ~ '\^\[0-9a-f\]\{64\}\$'\)/i);
 assert.match(migration, /check \(storage_path like 'company-profile\/%'\)/i);
 assert.match(migration, /check \(size_bytes > 0 and size_bytes <= 50 \* 1024 \* 1024\)/i);
 assert.match(migration, /unique \(document_type, version\)/i);
+assert.match(migration, /unique \(document_type, content_hash\)/i, 'El hash debe ser idempotente dentro del tipo de documento.');
 assert.match(migration, /current` means latest registered version, not temporal validity/i);
 assert.doesNotMatch(migration, /p_expires_at\s*<\s*current_date/i, 'La expiración temporal no puede impedir el registro.');
 assert.match(migration, /revoke all on function public\.psi_record_company_procurement_document[\s\S]*from authenticated/i);

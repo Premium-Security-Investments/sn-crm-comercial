@@ -7,6 +7,7 @@ const migration = readFileSync(new URL('../supabase/migrations/026_tender_docume
 const ids = {
   actor: '11111111-1111-4111-8111-111111111111',
   inactiveActor: '22222222-2222-4222-8222-222222222222',
+  agentActor: '33333333-3333-4333-8333-333333333333',
 };
 const hash = character => character.repeat(64);
 const one = async (db, sql, params = []) => (await db.query(sql, params)).rows[0];
@@ -30,7 +31,8 @@ async function createDatabase() {
     );
     insert into public.psi_sales_profiles (id, active, identity_type) values
       ('${ids.actor}', true, 'human'),
-      ('${ids.inactiveActor}', false, 'human');
+      ('${ids.inactiveActor}', false, 'human'),
+      ('${ids.agentActor}', true, 'agent');
   `);
   await db.exec(profileMigration);
   await db.exec(migration);
@@ -64,6 +66,24 @@ await (async function rupVersionsRemainAuditableAndOnlyNewestIsCurrent() {
   assert.equal(rows.length, 2);
   assert.equal(rows.filter(row => row.current).length, 1);
   assert.equal(rows.find(row => row.current).version, 2);
+  await db.close();
+})();
+
+await (async function retryingAnExistingTypeAndHashReturnsTheOriginalVersionWithoutChangingCurrentRows() {
+  const db = await createDatabase();
+  const first = await record(db);
+  const latest = await record(db, {
+    displayName: 'RUP renovado', issuedAt: '2027-01-01', expiresAt: '2027-12-31',
+    contentHash: hash('b'), storagePath: 'company-profile/rup-v2.pdf',
+  });
+  const retry = await record(db, { contentHash: hash('a') });
+  assert.equal(retry.id, first.id);
+  assert.equal(retry.version, first.version);
+  assert.equal(retry.current, false);
+  assert.deepEqual((await db.query(`select id, version, current from public.psi_company_procurement_documents where document_type='rup' order by version`)).rows, [
+    { id: first.id, version: 1, current: false },
+    { id: latest.id, version: 2, current: true },
+  ]);
   await db.close();
 })();
 
@@ -106,16 +126,39 @@ await (async function categoriesCanRemainCurrentUnlessAnExplicitReplacementIsPro
   await db.close();
 })();
 
-await (async function rpcRejectsInvalidInputsAndDirectWrites() {
+await (async function sameNonRupTypeCanKeepMultipleCurrentRowsWithoutAnExplicitReplacement() {
+  const db = await createDatabase();
+  const first = await record(db, {
+    documentType: 'certificate', displayName: 'Certificado A', contentHash: hash('1'), storagePath: 'company-profile/certificate-a.pdf',
+  });
+  const second = await record(db, {
+    documentType: 'certificate', displayName: 'Certificado B', contentHash: hash('2'), storagePath: 'company-profile/certificate-b.pdf',
+  });
+  assert.deepEqual([first.version, second.version], [1, 2]);
+  assert.deepEqual((await db.query(`select version, current from public.psi_company_procurement_documents where document_type='certificate' order by version`)).rows, [
+    { version: 1, current: true },
+    { version: 2, current: true },
+  ]);
+  await db.close();
+})();
+
+await (async function rpcEnforcesRoleBoundaryAndRejectsInvalidInputs() {
   const db = await createDatabase();
   await assert.rejects(() => record(db, { contentHash: 'A'.repeat(64) }), /hash/i);
   await assert.rejects(() => record(db, { storagePath: 'other/rup.pdf' }), /ruta/i);
+  await assert.rejects(() => record(db, { storagePath: 'company-profile/a/../rup.pdf' }), /ruta/i);
   await assert.rejects(() => record(db, { sizeBytes: 0 }), /tamaño/i);
+  await assert.doesNotReject(() => record(db, { sizeBytes: 50 * 1024 * 1024 }));
+  await assert.rejects(() => record(db, { sizeBytes: 50 * 1024 * 1024 + 1 }), /tamaño/i);
   await assert.rejects(() => record(db, { issuedAt: '2026-12-31', expiresAt: '2026-01-01' }), /fechas/i);
   await assert.rejects(() => record(db, { uploadedBy: ids.inactiveActor }), /actor/i);
+  await assert.rejects(() => record(db, { uploadedBy: ids.agentActor }), /actor/i);
   await db.exec('set role service_role');
+  const serviceRoleRecord = await record(db, { contentHash: hash('b'), storagePath: 'company-profile/service-role.pdf' });
+  assert.equal(serviceRoleRecord.version, 2);
   await assert.rejects(() => db.query(`insert into public.psi_company_procurement_documents (document_type, display_name, issued_at, content_hash, storage_path, mime_type, size_bytes, uploaded_by) values ('rup', 'direct', '2026-01-01', '${hash('f')}', 'company-profile/direct.pdf', 'application/pdf', 1, '${ids.actor}')`), /permission denied/i);
   await db.exec('reset role; set role authenticated');
+  await assert.rejects(() => record(db, { contentHash: hash('9'), storagePath: 'company-profile/authenticated.pdf' }), /permission denied/i);
   await assert.rejects(() => db.query(`insert into public.psi_company_procurement_documents (document_type, display_name, issued_at, content_hash, storage_path, mime_type, size_bytes, uploaded_by) values ('rup', 'direct', '2026-01-01', '${hash('f')}', 'company-profile/direct.pdf', 'application/pdf', 1, '${ids.actor}')`), /permission denied/i);
   await db.exec('reset role');
   await db.close();
