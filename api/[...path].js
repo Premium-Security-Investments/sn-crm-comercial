@@ -12,6 +12,7 @@ import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender
 import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
 import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot } from '../tender-analysis-foundation.js';
 import { isTenderAnalysisFoundationUnavailable, requireTenderAnalysisFoundation } from '../tender-analysis-foundation-availability.js';
+import { buildTenderDeepAnalysis } from '../tender-deep-analysis.js';
 import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
@@ -2138,6 +2139,7 @@ function buildTenderGoNoGoVerdict(opportunity, documents, context = {}) {
   return { decision: finalDecision, risk, executive_semaphore, commercial_fit, company_profile_crosscheck, habilitating_requirements, blockers, next_action, committee_summary };
 }
 function buildTenderDocumentAnalysis(opportunity, documents, companyProfile = {}) {
+  const deepAnalysis = buildTenderDeepAnalysis(documents, companyProfile);
   const text = documents.map(d => `\n--- ${d.document_type}: ${d.name} ---\n${d.extracted_text || ''}`).join('\n').slice(0, 220000);
   const normalized = normTenderText(text);
   const hasPliego = documents.some(d => d.document_type === 'pliego' || normTenderText(d.name).includes('pliego'));
@@ -2169,7 +2171,7 @@ function buildTenderDocumentAnalysis(opportunity, documents, companyProfile = {}
     { category: 'Formatos', status: hasFormats ? 'Cargados' : 'Pendiente', detail: hasFormats ? 'Formatos disponibles para checklist de entrega.' : 'Cargar formatos anexos antes de ofertar.' },
   ];
   return {
-    kind: 'tender_document_analysis', report_title: 'Preanálisis por reglas SIIO', status: 'analisis_generado', recommendation, risk, generated_at: new Date().toISOString(),
+    kind: 'tender_document_analysis', report_title: 'Preanálisis por reglas SIIO', status: 'analisis_generado', recommendation, risk, generated_at: new Date().toISOString(), deep_analysis: deepAnalysis,
     summary: `${recommendation} para ${opportunity.company_name}. ${missingCritical.length ? `Faltan documentos críticos: ${missingCritical.join(', ')}.` : 'Hay base documental mínima para revisión comercial y licitatoria.'} ${hasAdenda ? 'Priorizar Adenda como versión vigente.' : 'Confirmar si existen adendas.'}`,
     findings: signals, detected_values: finds, matrix, go_no_go: goNoGo,
     executive_semaphore: goNoGo.executive_semaphore,
