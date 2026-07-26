@@ -73,6 +73,8 @@ El módulo expondrá extractores aislados:
 
 No se requiere migración: el JSON de resultado de `psi_tender_analysis_runs` ya admite campos estructurados adicionales y permanece ligado al snapshot documental vigente.
 
+**Bump obligatorio de versión de política/esquema.** Este lote cambia la forma del `result` producido para oportunidades que ya tienen un análisis vigente con el mismo `snapshot_id`. Como `idempotency_key = sha256({opportunity_id, snapshot_id, policy_version})` (`tender-analysis-foundation.js`) y `psi_record_tender_analysis_run` rechaza con `'La clave de idempotencia ya pertenece a otro análisis.'` (23505, `supabase/migrations/025_tender_analysis_foundation.sql:200-224`) cualquier intento de reutilizar esa clave con un `result` distinto, la implementación de este lote debe incrementar `RULES_POLICY_VERSION` y `RULES_SCHEMA_VERSION` en el mismo cambio que introduce los nuevos extractores. Esto genera una nueva `idempotency_key` para el mismo `(opportunity_id, snapshot_id)` y evita el choque en producción cuando se reanalice una oportunidad ya analizada antes del despliegue. Sin este bump, todo reanálisis posterior al despliegue sobre un snapshot ya registrado falla. Este bump afecta únicamente `RULES_POLICY_VERSION`/`RULES_SCHEMA_VERSION`; el productor visible `RULES_PRODUCER = 'siio_rules_v1'` (principio 9) no cambia.
+
 ## 6. Contrato de salida
 
 Cada requisito tendrá esta forma conceptual:
@@ -108,6 +110,8 @@ Cada requisito tendrá esta forma conceptual:
 Los identificadores serán estables por tipo de requisito. Evidencias repetidas se deduplicarán mediante contenido normalizado y documento.
 
 `status: confirmed` significa exclusivamente que el requisito del pliego quedó extraído con condiciones materiales y evidencia suficientes. **No significa que Seguridad Nacional cumpla.** El posible cumplimiento o gap empresarial se expresa únicamente en `company_crosscheck` y se muestra con una etiqueta separada.
+
+**Mapeo obligatorio `severity` → `questions[].critical`.** `countCriticalOpenQuestions` (`tender-analysis-foundation.js`) cuenta `result.questions[].critical === true` y ese total alimenta `critical_open_count`, que `TenderGoNoGoDecisionPanel.tsx` usa para advertir "Hay N preguntas críticas abiertas" en el panel de decisión humana. `buildRequirementAnalysis` debe emitir, para cada requisito con `question` no vacío, una entrada en `result.questions[]` cuyo campo `critical` sea `true` si y solo si `severity === 'critical'` y `status` es `pending`, `unverifiable`, o `company_crosscheck.status` es `gap`; en cualquier otro caso (`severity` distinto de `critical`, o requisito ya `confirmed`/`partial` sin gap comprobable) `critical` es `false`. Esta regla es explícita y no queda a discreción de la implementación: sin ella, `critical_open_count` puede quedar en 0 incluso con bloqueadores críticos reales, dando una falsa sensación de ausencia de riesgo.
 
 ## 7. Política por frente
 
@@ -192,6 +196,8 @@ La matriz estructurada será la fuente para:
 
 La ausencia, obsolescencia o fallo del análisis continúa siendo una advertencia no bloqueante para GO/NO GO humano.
 
+**Compatibilidad con `tender-offer-preparation.js`.** Este módulo consume hoy `analysis?.commercial_fit?.status` (para decidir el estado de `propuesta_tecnica_base`) y `analysis?.go_no_go?.decision` (para `source_summary.decision`), ambos fuera del alcance de este lote pero dependientes del mismo objeto `analysis`. Este lote **preserva sin cambio de forma** los campos existentes `commercial_fit`, `go_no_go` (incluyendo `go_no_go.decision`), `executive_semaphore`, `habilitating_requirements` y `committee_summary`: siguen calculándose igual que hoy y se añaden junto a la nueva matriz estructurada (`legal`, `financial`, `technical`, `questions`, etc.), nunca en su lugar. Ningún campo de este grupo se renombra ni se elimina en este lote.
+
 ## 11. Interfaz
 
 El brief actual se conserva y se amplía con:
@@ -243,6 +249,9 @@ Se usarán fixtures sintéticos, pequeños y específicos.
 3. Cambiar documentos invalida el análisis como hoy.
 4. GO y NO GO humanos siguen disponibles con análisis contrario, obsoleto, fallido o ausente.
 5. Ambos backends permanecen idénticos.
+6. Reanálisis sobre snapshot ya registrado con contrato antiguo: dado un `psi_tender_analysis_runs` existente con `policy_version`/`schema_version` previos al bump de este lote y el mismo `snapshot_id`, ejecutar el análisis con los nuevos extractores debe persistir con éxito (nueva `idempotency_key` derivada del `policy_version` incrementado) en vez de fallar con `'La clave de idempotencia ya pertenece a otro análisis.'` (23505).
+7. Un requisito con `severity: critical` y `status: pending` (o `company_crosscheck.status: gap`) produce una entrada `questions[]` con `critical: true`, y `countCriticalOpenQuestions`/`critical_open_count` refleja ese conteo; un requisito `confirmed` o de severidad distinta de `critical` no incrementa el conteo.
+8. `tender-offer-preparation.js` sigue leyendo `analysis.commercial_fit.status` y `analysis.go_no_go.decision` sin cambios: con un `analysis` que incluye la nueva matriz estructurada, `buildTenderOfferPreparation` produce el mismo `status` de `propuesta_tecnica_base` y el mismo `source_summary.decision` que antes del lote.
 
 ### 13.4 UI
 
