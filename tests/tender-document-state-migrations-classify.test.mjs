@@ -25,12 +25,12 @@ const fullyApplied = {
 
 {
   const result = classify(fullyPending);
-  assert.deepEqual(result, { migration026: false, migration027: false, status: 'pending' });
+  assert.deepEqual(result, { migration026: false, migration027: false, status: 'pending', structural026: false, structural027: false });
 }
 
 {
   const result = classify(fullyApplied);
-  assert.deepEqual(result, { migration026: true, migration027: true, status: 'applied' });
+  assert.deepEqual(result, { migration026: true, migration027: true, status: 'applied', structural026: true, structural027: true });
 }
 
 {
@@ -108,6 +108,42 @@ const fullyApplied = {
   for (const key of Object.keys(okRow)) {
     assert.equal(prerequisitesOk({ ...okRow, [key]: null }), false, `missing ${key} must fail prerequisites`);
   }
+}
+
+{
+  // preflight must accept either the pre-027 (025-era, 7-arg) overload of
+  // psi_record_tender_go_no_go OR the post-027 (8-arg) overload — an
+  // environment where 027 is already applied has dropped the 7-arg overload
+  // outright, so requiring it unconditionally makes preflight fail-closed
+  // even though prerequisites are genuinely satisfied.
+  const base = {
+    t_go_no_go_decisions: 'x', t_snapshots: 'x', t_runs: 'x', t_opportunities: 'x', t_tenders: 'x',
+    t_profiles: 'x', t_interactions: 'x', fn_safe_jsonb: 'x',
+  };
+  assert.equal(prerequisitesOk({ ...base, fn_go_no_go_025: 'x', fn_go_no_go_027: null }), true, '025-era 7-arg overload alone must satisfy prerequisites');
+  assert.equal(prerequisitesOk({ ...base, fn_go_no_go_025: null, fn_go_no_go_027: 'x' }), true, '027-applied 8-arg overload alone must satisfy prerequisites (fail-closed regression: neither overload was accepted)');
+  assert.equal(prerequisitesOk({ ...base, fn_go_no_go_025: null, fn_go_no_go_027: null }), false, 'must still fail closed when neither overload exists');
+}
+
+{
+  // Production incident: 026/027's tables/functions/triggers/service_role
+  // grants/RLS are all fully present, but a stray anon/authenticated/public
+  // grant survives on all three tables (the actual bug: migrations never
+  // revoked from anon). classify() must never fold this into 'pending' —
+  // doing so made rollback() a silent no-op that reported success without
+  // touching anything, because rollback() only drops structure it believes
+  // is present.
+  const row = {
+    ...fullyApplied,
+    grants_company_docs_unsafe: 7, grants_tender_doc_versions_unsafe: 7, grants_document_state_unsafe: 7,
+  };
+  const result = classify(row);
+  assert.equal(result.migration026, false);
+  assert.equal(result.migration027, false);
+  assert.notEqual(result.status, 'pending', 'structure present with unsafe grants must never classify as pending');
+  assert.equal(result.status, 'partial');
+  assert.equal(result.structural026, true, 'classify() must expose structural presence for 026 independent of grants/RLS');
+  assert.equal(result.structural027, true, 'classify() must expose structural presence for 027 independent of grants/RLS');
 }
 
 console.log('tender document state migrations classify unit test passed');

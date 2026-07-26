@@ -104,6 +104,7 @@ $$;
 revoke all on function public.psi_record_tender_document_snapshot(uuid, uuid, text, text, jsonb, jsonb, uuid) from public;
 revoke all on function public.psi_record_tender_document_snapshot(uuid, uuid, text, text, jsonb, jsonb, uuid) from authenticated;
 revoke all on function public.psi_record_tender_document_snapshot(uuid, uuid, text, text, jsonb, jsonb, uuid) from service_role;
+revoke all on function public.psi_record_tender_document_snapshot(uuid, uuid, text, text, jsonb, jsonb, uuid) from anon;
 grant execute on function public.psi_record_tender_document_snapshot(uuid, uuid, text, text, jsonb, jsonb, uuid) to service_role;
 
 -- Restaura la firma de decisión GO/NO GO de 025 (7 argumentos, sin hash documental).
@@ -212,6 +213,7 @@ $$;
 revoke all on function public.psi_record_tender_go_no_go(uuid, uuid, uuid, text, uuid, text, jsonb) from public;
 revoke all on function public.psi_record_tender_go_no_go(uuid, uuid, uuid, text, uuid, text, jsonb) from authenticated;
 revoke all on function public.psi_record_tender_go_no_go(uuid, uuid, uuid, text, uuid, text, jsonb) from service_role;
+revoke all on function public.psi_record_tender_go_no_go(uuid, uuid, uuid, text, uuid, text, jsonb) from anon;
 grant execute on function public.psi_record_tender_go_no_go(uuid, uuid, uuid, text, uuid, text, jsonb) to service_role;
 
 -- Restaura el readiness de 025 (sin dependencias de 026/027).
@@ -236,6 +238,7 @@ $$;
 revoke all on function public.psi_tender_analysis_foundation_ready() from public;
 revoke all on function public.psi_tender_analysis_foundation_ready() from authenticated;
 revoke all on function public.psi_tender_analysis_foundation_ready() from service_role;
+revoke all on function public.psi_tender_analysis_foundation_ready() from anon;
 grant execute on function public.psi_tender_analysis_foundation_ready() to service_role;
 
 commit;

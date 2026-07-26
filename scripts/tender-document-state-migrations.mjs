@@ -9,6 +9,13 @@ const ROLLBACK_026 = resolve(root, 'supabase/rollbacks/026_tender_document_versi
 
 // Read-only. Distinguishes prerequisites from 022 (GO/NO GO decisions) and
 // 025 (analysis foundation) that must exist before 026/027 can be applied.
+// psi_record_tender_go_no_go is checked under both its pre-027 (025-era,
+// 7-arg) and post-027 (8-arg) overloads: 027 drops the 7-arg overload
+// outright when applied, so an environment where 027 is already live would
+// otherwise fail this fail-closed check even though prerequisites are
+// genuinely satisfied — only one of the two overloads existing at a time is
+// ever expected; requiring exactly the 025 one made preflight unusable once
+// 027 landed.
 export const PREREQUISITES_SQL = `
 select
   to_regclass('public.psi_tender_go_no_go_decisions')::text as t_go_no_go_decisions,
@@ -19,13 +26,15 @@ select
   to_regclass('public.psi_sales_profiles')::text as t_profiles,
   to_regclass('public.psi_sales_interactions')::text as t_interactions,
   to_regprocedure('public.psi_safe_jsonb(text)')::text as fn_safe_jsonb,
-  to_regprocedure('public.psi_record_tender_go_no_go(uuid,uuid,uuid,text,uuid,text,jsonb)')::text as fn_go_no_go_025;
+  to_regprocedure('public.psi_record_tender_go_no_go(uuid,uuid,uuid,text,uuid,text,jsonb)')::text as fn_go_no_go_025,
+  to_regprocedure('public.psi_record_tender_go_no_go(uuid,uuid,uuid,text,uuid,text,jsonb,text)')::text as fn_go_no_go_027;
 `;
 
 export function prerequisitesOk(row) {
   return Boolean(row.t_go_no_go_decisions) && Boolean(row.t_snapshots) && Boolean(row.t_runs)
     && Boolean(row.t_opportunities) && Boolean(row.t_tenders) && Boolean(row.t_profiles)
-    && Boolean(row.t_interactions) && Boolean(row.fn_safe_jsonb) && Boolean(row.fn_go_no_go_025);
+    && Boolean(row.t_interactions) && Boolean(row.fn_safe_jsonb)
+    && (Boolean(row.fn_go_no_go_025) || Boolean(row.fn_go_no_go_027));
 }
 
 // Read-only. Structural markers for 026 and 027, each independently gated
@@ -70,26 +79,45 @@ select
 
 // Pure function: classifies the exact row shape returned by STATE_SQL into
 // per-migration booleans plus an overall pending/partial/applied status.
-// Each migration runs as a single transaction, so the only real intermediate
-// state is "026 applied, 027 not yet" — anything else (e.g. structures
-// present but grants revoked mid-rollback) must also read as partial, never
-// as silently applied.
+//
+// Structural presence (objects/triggers/service_role grants — did the
+// migration's CREATE/GRANT statements run) is tracked separately from
+// security posture (RLS enabled, no anon/authenticated/public grants
+// leaked). This split matters because Supabase's default ACLs grant anon
+// full privileges automatically at CREATE time: a migration that forgets an
+// explicit `revoke ... from anon` leaves structurally-complete objects with
+// unsafe grants. Collapsing that into "not applied" the same way as
+// "nothing was created" made `status` read as 'pending' even though every
+// table/function/trigger existed — and rollback() (which only drops
+// structure it believes is present) silently no-op'd on that false
+// 'pending' reading while reporting success. `status` is therefore derived
+// from structural presence for the pending/partial boundary: 'pending' only
+// when neither migration's structure exists at all; 'partial' whenever any
+// structure is present but the pair isn't fully (structurally +
+// security-wise) applied — covering both the real single-transaction
+// intermediate state (026 done, 027 not yet) and structure-present-but-
+// insecure states alike, so rollback() always has real work to do whenever
+// status isn't 'pending'.
 export function classify(row) {
-  const migration026 = Boolean(row.t_company_docs) && Boolean(row.t_tender_doc_versions)
+  const structural026 = Boolean(row.t_company_docs) && Boolean(row.t_tender_doc_versions)
     && Boolean(row.fn_is_public_https_url) && Boolean(row.fn_record_company_doc) && Boolean(row.fn_record_tender_doc_version)
-    && row.grant_company_doc === true && row.grant_tender_doc_version === true
-    && row.rls_company_docs === true && row.rls_tender_doc_versions === true
+    && row.grant_company_doc === true && row.grant_tender_doc_version === true;
+  const secure026 = row.rls_company_docs === true && row.rls_tender_doc_versions === true
     && Number(row.grants_company_docs_unsafe) === 0 && Number(row.grants_tender_doc_versions_unsafe) === 0;
-  const migration027 = Boolean(row.t_document_state) && Boolean(row.fn_begin_refresh)
+  const migration026 = structural026 && secure026;
+
+  const structural027 = Boolean(row.t_document_state) && Boolean(row.fn_begin_refresh)
     && Boolean(row.fn_record_snapshot_8arg) && Boolean(row.fn_go_no_go_8arg)
     && Number(row.trg_legacy) === 1 && Number(row.trg_typed) === 1
-    && row.grant_begin_refresh === true && row.grant_foundation_ready === true
-    && row.rls_document_state === true && Number(row.grants_document_state_unsafe) === 0;
+    && row.grant_begin_refresh === true && row.grant_foundation_ready === true;
+  const secure027 = row.rls_document_state === true && Number(row.grants_document_state_unsafe) === 0;
+  const migration027 = structural027 && secure027;
+
   let status;
   if (migration026 && migration027) status = 'applied';
-  else if (!migration026 && !migration027) status = 'pending';
+  else if (!structural026 && !structural027) status = 'pending';
   else status = 'partial';
-  return { migration026, migration027, status };
+  return { migration026, migration027, status, structural026, structural027 };
 }
 
 export async function readStatus(execSql) {
@@ -120,12 +148,16 @@ export async function verify(execSql) {
 
 // Reverse (LIFO) order: 027's rollback runs before 026's. Each rollback file
 // has its own fail-closed guard enforcing this order independently.
+// Gated on structural presence (not the fully-secure migration026/027
+// flags): a migration whose structure exists but whose grants/RLS are
+// invalid must still be rolled back, or this becomes the exact no-op that
+// silently reported ROLLBACK_OK without touching anything.
 export async function rollback(execSql) {
   const before = await readStatus(execSql);
-  if (before.migration027) {
+  if (before.structural027) {
     await execSql(readFileSync(ROLLBACK_027, 'utf8'));
   }
-  if (before.migration026) {
+  if (before.structural026) {
     await execSql(readFileSync(ROLLBACK_026, 'utf8'));
   }
   const after = await readStatus(execSql);
