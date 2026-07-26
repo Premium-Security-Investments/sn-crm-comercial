@@ -214,3 +214,155 @@ export function extractTechnicalRequirements(documents) {
     unverifiable_documents: unverifiableDocuments(canonical),
   };
 }
+
+// Solo los requisitos con un campo de ficha/RUP numérico comparable entran aquí; el
+// requisito técnico de este corte no tiene equivalente cuantificable en la ficha (§9 del
+// diseño: no se aceptan equivalencias por similitud textual), por lo que su cruce siempre
+// queda `unavailable`.
+const COMPANY_PROFILE_CROSSCHECK_CONFIG = {
+  'legal-guarantee-policy': { field: 'guarantee_capacity_pct', valueKind: 'percentage', comparison: 'at_least' },
+  'financial-working-capital': { field: 'working_capital', valueKind: 'money', comparison: 'at_least' },
+};
+
+function parseNumericValue(raw, kind) {
+  if (kind === 'percentage') {
+    const match = raw.match(/[\d.,]+/);
+    return match ? Number(match[0].replace(',', '.')) : null;
+  }
+  if (kind === 'money') {
+    const digits = raw.replace(/[^\d]/g, '');
+    return digits ? Number(digits) : null;
+  }
+  return null;
+}
+
+function crosscheckRequirement(requirement, companyProfile) {
+  const config = COMPANY_PROFILE_CROSSCHECK_CONFIG[requirement.id];
+  if (!config) return { status: 'unavailable', company_evidence: null };
+
+  const requiredValue = requirement.values.find(value => value.kind === config.valueKind);
+  if (!requiredValue) return { status: 'unavailable', company_evidence: null };
+
+  const requiredNumber = parseNumericValue(requiredValue.raw, config.valueKind);
+  const companyRaw = companyProfile?.[config.field];
+  if (requiredNumber == null || typeof companyRaw !== 'number' || !Number.isFinite(companyRaw)) {
+    return { status: 'unavailable', company_evidence: null };
+  }
+
+  if (requirement.status === 'partial') {
+    return {
+      status: 'partial',
+      company_evidence: `La ficha declara ${config.field} = ${companyRaw}, pero el requisito del pliego no precisa aún el valor/vigencia completos para comparar con certeza.`,
+    };
+  }
+
+  const meetsThreshold = config.comparison === 'at_least' ? companyRaw >= requiredNumber : companyRaw <= requiredNumber;
+  if (meetsThreshold) {
+    return {
+      status: 'match',
+      company_evidence: `La ficha declara ${config.field} = ${companyRaw}, que cumple el umbral exigido (${requiredNumber}).`,
+    };
+  }
+  return {
+    status: 'gap',
+    company_evidence: `La ficha declara ${config.field} = ${companyRaw}, por debajo del umbral exigido (${requiredNumber}).`,
+  };
+}
+
+export function crosscheckCompanyProfile(requirements, companyProfile) {
+  const profile = companyProfile || {};
+  return requirements.map(requirement => ({
+    ...requirement,
+    company_crosscheck: crosscheckRequirement(requirement, profile),
+  }));
+}
+
+function isRequirementCritical(requirement) {
+  return requirement.severity === 'critical'
+    && (requirement.status === 'pending' || requirement.status === 'unverifiable' || requirement.company_crosscheck.status === 'gap');
+}
+
+function dedupeUnverifiableDocuments(entries) {
+  const seen = new Set();
+  const result = [];
+  for (const entry of [...entries].sort((left, right) => left.document_id.localeCompare(right.document_id))) {
+    if (seen.has(entry.document_id)) continue;
+    seen.add(entry.document_id);
+    result.push(entry);
+  }
+  return result;
+}
+
+export function buildRequirementAnalysis(documents, companyProfile) {
+  const legal = extractLegalRequirements(documents);
+  const financial = extractFinancialRequirements(documents);
+  const technical = extractTechnicalRequirements(documents);
+
+  const legalWithCrosscheck = crosscheckCompanyProfile(legal.requirements, companyProfile);
+  const financialWithCrosscheck = crosscheckCompanyProfile(financial.requirements, companyProfile);
+  const technicalWithCrosscheck = crosscheckCompanyProfile(technical.requirements, companyProfile);
+  const allRequirements = [...legalWithCrosscheck, ...financialWithCrosscheck, ...technicalWithCrosscheck];
+
+  const unverifiableDocumentsFound = dedupeUnverifiableDocuments([
+    ...legal.unverifiable_documents,
+    ...financial.unverifiable_documents,
+    ...technical.unverifiable_documents,
+  ]);
+
+  const coverage = {
+    total: allRequirements.length,
+    confirmed: allRequirements.filter(requirement => requirement.status === 'confirmed').length,
+    partial: allRequirements.filter(requirement => requirement.status === 'partial').length,
+    indication: allRequirements.filter(requirement => requirement.status === 'indication').length,
+    pending: allRequirements.filter(requirement => requirement.status === 'pending').length,
+    unverifiable: allRequirements.filter(requirement => requirement.status === 'unverifiable').length,
+    unverifiable_documents: unverifiableDocumentsFound.length,
+  };
+
+  const strengths = allRequirements
+    .filter(requirement => requirement.company_crosscheck.status === 'match')
+    .map(requirement => `${requirement.label}: ${requirement.company_crosscheck.company_evidence}`);
+
+  const weaknesses = allRequirements
+    .filter(requirement => requirement.status === 'partial' || requirement.status === 'indication' || requirement.company_crosscheck.status === 'gap')
+    .map(requirement => `${requirement.label}: ${requirement.rationale}`);
+
+  const blockers = allRequirements
+    .filter(isRequirementCritical)
+    .map(requirement => `${requirement.label}: ${requirement.rationale}`);
+
+  const questions = allRequirements
+    .filter(requirement => typeof requirement.question === 'string' && requirement.question.length > 0)
+    .map(requirement => ({
+      id: requirement.id,
+      front: requirement.front,
+      question: requirement.question,
+      critical: isRequirementCritical(requirement),
+    }));
+
+  const unverified = allRequirements
+    .filter(requirement => requirement.status === 'indication')
+    .map(requirement => `${requirement.label}: ${requirement.rationale}`);
+
+  const next_action = blockers.length
+    ? `Completar evidencia crítica pendiente antes de decidir: ${blockers.length} bloqueador(es) abierto(s).`
+    : questions.some(question => question.critical)
+      ? 'Resolver preguntas críticas abiertas antes de decidir.'
+      : questions.length
+        ? 'Resolver dudas abiertas antes de decidir.'
+        : 'Base documental suficiente para revisión; no hay bloqueadores ni preguntas críticas abiertas en este corte.';
+
+  return {
+    legal: legalWithCrosscheck,
+    financial: financialWithCrosscheck,
+    technical: technicalWithCrosscheck,
+    coverage,
+    strengths,
+    weaknesses,
+    blockers,
+    questions,
+    unverified,
+    next_action,
+    unverifiable_documents: unverifiableDocumentsFound,
+  };
+}
