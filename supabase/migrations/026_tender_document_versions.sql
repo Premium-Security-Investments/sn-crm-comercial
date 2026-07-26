@@ -60,6 +60,7 @@ $$;
 revoke all on function public.psi_is_public_https_url(text) from public;
 revoke all on function public.psi_is_public_https_url(text) from authenticated;
 revoke all on function public.psi_is_public_https_url(text) from service_role;
+revoke all on function public.psi_is_public_https_url(text) from anon;
 
 create table if not exists public.psi_company_procurement_documents (
   id uuid primary key default gen_random_uuid(),
@@ -96,6 +97,7 @@ alter table public.psi_company_procurement_documents enable row level security;
 revoke all on table public.psi_company_procurement_documents from public;
 revoke all on table public.psi_company_procurement_documents from authenticated;
 revoke all on table public.psi_company_procurement_documents from service_role;
+revoke all on table public.psi_company_procurement_documents from anon;
 
 create or replace function public.psi_record_company_procurement_document(
   p_document_type text,
@@ -213,6 +215,7 @@ $$;
 revoke all on function public.psi_record_company_procurement_document(text, text, date, date, text, text, text, bigint, uuid, uuid) from public;
 revoke all on function public.psi_record_company_procurement_document(text, text, date, date, text, text, text, bigint, uuid, uuid) from authenticated;
 revoke all on function public.psi_record_company_procurement_document(text, text, date, date, text, text, text, bigint, uuid, uuid) from service_role;
+revoke all on function public.psi_record_company_procurement_document(text, text, date, date, text, text, text, bigint, uuid, uuid) from anon;
 grant execute on function public.psi_record_company_procurement_document(text, text, date, date, text, text, text, bigint, uuid, uuid) to service_role;
 
 -- Official tender documents are a separate append-only version register.  Their
@@ -249,6 +252,7 @@ alter table public.psi_tender_document_versions enable row level security;
 revoke all on table public.psi_tender_document_versions from public;
 revoke all on table public.psi_tender_document_versions from authenticated;
 revoke all on table public.psi_tender_document_versions from service_role;
+revoke all on table public.psi_tender_document_versions from anon;
 grant select on table public.psi_tender_document_versions to service_role;
 
 create or replace function public.psi_record_tender_document_version(
@@ -380,6 +384,7 @@ $$;
 revoke all on function public.psi_record_tender_document_version(uuid, uuid, text, text, text, text, text, text, bigint, text, text, text, uuid) from public;
 revoke all on function public.psi_record_tender_document_version(uuid, uuid, text, text, text, text, text, text, bigint, text, text, text, uuid) from authenticated;
 revoke all on function public.psi_record_tender_document_version(uuid, uuid, text, text, text, text, text, text, bigint, text, text, text, uuid) from service_role;
+revoke all on function public.psi_record_tender_document_version(uuid, uuid, text, text, text, text, text, text, bigint, text, text, text, uuid) from anon;
 grant execute on function public.psi_record_tender_document_version(uuid, uuid, text, text, text, text, text, text, bigint, text, text, text, uuid) to service_role;
 
 commit;

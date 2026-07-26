@@ -25,7 +25,7 @@ function pgliteExecSql(db) {
 async function createPreMigrationDatabase() {
   const db = new PGlite();
   await db.exec(`
-    create role authenticated; create role service_role; alter role service_role bypassrls; grant service_role to current_user;
+    create role authenticated; create role service_role; create role anon; alter role service_role bypassrls; grant service_role to current_user;
     create function public.psi_sales_set_updated_at() returns trigger language plpgsql as $$ begin new.updated_at = now(); return new; end $$;
     create table public.psi_sales_profiles (id uuid primary key, active boolean not null default true, role text not null default 'admin', microsoft_email text not null default 'test@example.test', identity_type text default 'human');
     create table public.psi_access_permissions (code text primary key, active boolean not null default true);

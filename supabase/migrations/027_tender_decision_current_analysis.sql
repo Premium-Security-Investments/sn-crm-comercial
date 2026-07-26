@@ -17,6 +17,7 @@ alter table public.psi_tender_document_state enable row level security;
 revoke all on table public.psi_tender_document_state from public;
 revoke all on table public.psi_tender_document_state from authenticated;
 revoke all on table public.psi_tender_document_state from service_role;
+revoke all on table public.psi_tender_document_state from anon;
 grant select on table public.psi_tender_document_state to service_role;
 
 -- Any caller capable of mutating the live document set must invalidate the
@@ -66,6 +67,7 @@ $$;
 revoke all on function public.psi_invalidate_tender_state_from_legacy_upload() from public;
 revoke all on function public.psi_invalidate_tender_state_from_legacy_upload() from authenticated;
 revoke all on function public.psi_invalidate_tender_state_from_legacy_upload() from service_role;
+revoke all on function public.psi_invalidate_tender_state_from_legacy_upload() from anon;
 drop trigger if exists psi_invalidate_tender_state_from_legacy_upload on public.psi_sales_interactions;
 create trigger psi_invalidate_tender_state_from_legacy_upload
 after insert or update or delete on public.psi_sales_interactions
@@ -109,6 +111,7 @@ $$;
 revoke all on function public.psi_invalidate_tender_state_from_typed_version() from public;
 revoke all on function public.psi_invalidate_tender_state_from_typed_version() from authenticated;
 revoke all on function public.psi_invalidate_tender_state_from_typed_version() from service_role;
+revoke all on function public.psi_invalidate_tender_state_from_typed_version() from anon;
 drop trigger if exists psi_invalidate_tender_state_from_typed_version on public.psi_tender_document_versions;
 create trigger psi_invalidate_tender_state_from_typed_version
 after insert or update or delete on public.psi_tender_document_versions
@@ -154,6 +157,7 @@ $$;
 revoke all on function public.psi_begin_tender_document_refresh(uuid, uuid) from public;
 revoke all on function public.psi_begin_tender_document_refresh(uuid, uuid) from authenticated;
 revoke all on function public.psi_begin_tender_document_refresh(uuid, uuid) from service_role;
+revoke all on function public.psi_begin_tender_document_refresh(uuid, uuid) from anon;
 grant execute on function public.psi_begin_tender_document_refresh(uuid, uuid) to service_role;
 
 -- Replace the old snapshot overload so every observation moves the explicit current pointer.
@@ -240,6 +244,7 @@ $$;
 revoke all on function public.psi_record_tender_document_snapshot(uuid, uuid, text, text, jsonb, jsonb, uuid, uuid) from public;
 revoke all on function public.psi_record_tender_document_snapshot(uuid, uuid, text, text, jsonb, jsonb, uuid, uuid) from authenticated;
 revoke all on function public.psi_record_tender_document_snapshot(uuid, uuid, text, text, jsonb, jsonb, uuid, uuid) from service_role;
+revoke all on function public.psi_record_tender_document_snapshot(uuid, uuid, text, text, jsonb, jsonb, uuid, uuid) from anon;
 grant execute on function public.psi_record_tender_document_snapshot(uuid, uuid, text, text, jsonb, jsonb, uuid, uuid) to service_role;
 
 -- Remove the seven-argument decision overload so document-hash validation cannot be bypassed.
@@ -357,6 +362,7 @@ $$;
 revoke all on function public.psi_record_tender_go_no_go(uuid, uuid, uuid, text, uuid, text, jsonb, text) from public;
 revoke all on function public.psi_record_tender_go_no_go(uuid, uuid, uuid, text, uuid, text, jsonb, text) from authenticated;
 revoke all on function public.psi_record_tender_go_no_go(uuid, uuid, uuid, text, uuid, text, jsonb, text) from service_role;
+revoke all on function public.psi_record_tender_go_no_go(uuid, uuid, uuid, text, uuid, text, jsonb, text) from anon;
 grant execute on function public.psi_record_tender_go_no_go(uuid, uuid, uuid, text, uuid, text, jsonb, text) to service_role;
 
 create or replace function public.psi_tender_analysis_foundation_ready()
@@ -388,6 +394,7 @@ $$;
 revoke all on function public.psi_tender_analysis_foundation_ready() from public;
 revoke all on function public.psi_tender_analysis_foundation_ready() from authenticated;
 revoke all on function public.psi_tender_analysis_foundation_ready() from service_role;
+revoke all on function public.psi_tender_analysis_foundation_ready() from anon;
 grant execute on function public.psi_tender_analysis_foundation_ready() to service_role;
 
 commit;
