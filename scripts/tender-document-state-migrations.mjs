@@ -59,7 +59,13 @@ select
     else false end as grant_begin_refresh,
   case when to_regprocedure('public.psi_tender_analysis_foundation_ready()') is not null
     then has_function_privilege('service_role', 'public.psi_tender_analysis_foundation_ready()', 'EXECUTE')
-    else false end as grant_foundation_ready;
+    else false end as grant_foundation_ready,
+  (select relrowsecurity from pg_class where oid = to_regclass('public.psi_company_procurement_documents')) as rls_company_docs,
+  (select relrowsecurity from pg_class where oid = to_regclass('public.psi_tender_document_versions')) as rls_tender_doc_versions,
+  (select relrowsecurity from pg_class where oid = to_regclass('public.psi_tender_document_state')) as rls_document_state,
+  (select count(*)::int from information_schema.role_table_grants where table_schema = 'public' and table_name = 'psi_company_procurement_documents' and lower(grantee) in ('anon', 'authenticated', 'public')) as grants_company_docs_unsafe,
+  (select count(*)::int from information_schema.role_table_grants where table_schema = 'public' and table_name = 'psi_tender_document_versions' and lower(grantee) in ('anon', 'authenticated', 'public')) as grants_tender_doc_versions_unsafe,
+  (select count(*)::int from information_schema.role_table_grants where table_schema = 'public' and table_name = 'psi_tender_document_state' and lower(grantee) in ('anon', 'authenticated', 'public')) as grants_document_state_unsafe;
 `;
 
 // Pure function: classifies the exact row shape returned by STATE_SQL into
@@ -71,11 +77,14 @@ select
 export function classify(row) {
   const migration026 = Boolean(row.t_company_docs) && Boolean(row.t_tender_doc_versions)
     && Boolean(row.fn_is_public_https_url) && Boolean(row.fn_record_company_doc) && Boolean(row.fn_record_tender_doc_version)
-    && row.grant_company_doc === true && row.grant_tender_doc_version === true;
+    && row.grant_company_doc === true && row.grant_tender_doc_version === true
+    && row.rls_company_docs === true && row.rls_tender_doc_versions === true
+    && Number(row.grants_company_docs_unsafe) === 0 && Number(row.grants_tender_doc_versions_unsafe) === 0;
   const migration027 = Boolean(row.t_document_state) && Boolean(row.fn_begin_refresh)
     && Boolean(row.fn_record_snapshot_8arg) && Boolean(row.fn_go_no_go_8arg)
     && Number(row.trg_legacy) === 1 && Number(row.trg_typed) === 1
-    && row.grant_begin_refresh === true && row.grant_foundation_ready === true;
+    && row.grant_begin_refresh === true && row.grant_foundation_ready === true
+    && row.rls_document_state === true && Number(row.grants_document_state_unsafe) === 0;
   let status;
   if (migration026 && migration027) status = 'applied';
   else if (!migration026 && !migration027) status = 'pending';

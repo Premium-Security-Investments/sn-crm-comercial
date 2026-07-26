@@ -73,6 +73,16 @@ await (async function applyVerifyRollbackReapplyPreservesDataAndBehavior() {
   assert.equal(applied.status, 'applied');
   await verify(execSql); // read-only, must not throw
 
+  // 2a. Security: RLS enabled and no anon/authenticated/public grants on the
+  // sensitive document tables 026/027 create — verified directly against
+  // catalogs, independent of classify()'s own reading of the same signal.
+  for (const table of ['psi_company_procurement_documents', 'psi_tender_document_versions', 'psi_tender_document_state']) {
+    const rlsRow = await one(db, `select relrowsecurity from pg_class where oid = to_regclass('public.${table}')`);
+    assert.equal(rlsRow.relrowsecurity, true, `${table} must have row level security enabled`);
+    const grantsRow = await one(db, `select count(*)::int as count from information_schema.role_table_grants where table_schema='public' and table_name='${table}' and lower(grantee) in ('anon','authenticated','public')`);
+    assert.equal(grantsRow.count, 0, `${table} must not grant anon/authenticated/public`);
+  }
+
   // 2b. Re-running apply must be a no-op (026/027 are not blindly re-runnable — see rollback safety test).
   const [row] = await execSql(STATE_SQL);
   assert.equal(classify(row).status, 'applied');

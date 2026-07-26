@@ -7,6 +7,8 @@ const fullyPending = {
   grant_company_doc: false, grant_tender_doc_version: false,
   t_document_state: null, fn_begin_refresh: null, fn_record_snapshot_8arg: null, fn_go_no_go_8arg: null,
   trg_legacy: 0, trg_typed: 0, grant_begin_refresh: false, grant_foundation_ready: false,
+  rls_company_docs: null, rls_tender_doc_versions: null, rls_document_state: null,
+  grants_company_docs_unsafe: 0, grants_tender_doc_versions_unsafe: 0, grants_document_state_unsafe: 0,
 };
 
 const fullyApplied = {
@@ -17,6 +19,8 @@ const fullyApplied = {
   t_document_state: 'psi_tender_document_state', fn_begin_refresh: 'psi_begin_tender_document_refresh',
   fn_record_snapshot_8arg: 'psi_record_tender_document_snapshot', fn_go_no_go_8arg: 'psi_record_tender_go_no_go',
   trg_legacy: 1, trg_typed: 1, grant_begin_refresh: true, grant_foundation_ready: true,
+  rls_company_docs: true, rls_tender_doc_versions: true, rls_document_state: true,
+  grants_company_docs_unsafe: 0, grants_tender_doc_versions_unsafe: 0, grants_document_state_unsafe: 0,
 };
 
 {
@@ -36,6 +40,8 @@ const fullyApplied = {
     fn_is_public_https_url: fullyApplied.fn_is_public_https_url, fn_record_company_doc: fullyApplied.fn_record_company_doc,
     fn_record_tender_doc_version: fullyApplied.fn_record_tender_doc_version,
     grant_company_doc: true, grant_tender_doc_version: true,
+    rls_company_docs: true, rls_tender_doc_versions: true,
+    grants_company_docs_unsafe: 0, grants_tender_doc_versions_unsafe: 0,
   } });
   assert.equal(result.migration026, true);
   assert.equal(result.migration027, false);
@@ -51,6 +57,45 @@ const fullyApplied = {
 {
   // Missing exactly one trigger must not be misclassified as applied.
   const result = classify({ ...fullyApplied, trg_typed: 0 });
+  assert.equal(result.status, 'partial');
+}
+
+{
+  // RLS disabled on a 026 table (structures/grants otherwise intact) must not be misclassified as applied.
+  const result = classify({ ...fullyApplied, rls_company_docs: false });
+  assert.equal(result.migration026, false);
+  assert.equal(result.status, 'partial');
+}
+
+{
+  const result = classify({ ...fullyApplied, rls_tender_doc_versions: false });
+  assert.equal(result.migration026, false);
+  assert.equal(result.status, 'partial');
+}
+
+{
+  // A stray grant to anon/authenticated/public on a 026 table must not be misclassified as applied.
+  const result = classify({ ...fullyApplied, grants_company_docs_unsafe: 1 });
+  assert.equal(result.migration026, false);
+  assert.equal(result.status, 'partial');
+}
+
+{
+  const result = classify({ ...fullyApplied, grants_tender_doc_versions_unsafe: 1 });
+  assert.equal(result.migration026, false);
+  assert.equal(result.status, 'partial');
+}
+
+{
+  // RLS disabled on 027's document-state table must not be misclassified as applied.
+  const result = classify({ ...fullyApplied, rls_document_state: false });
+  assert.equal(result.migration027, false);
+  assert.equal(result.status, 'partial');
+}
+
+{
+  const result = classify({ ...fullyApplied, grants_document_state_unsafe: 2 });
+  assert.equal(result.migration027, false);
   assert.equal(result.status, 'partial');
 }
 
