@@ -162,6 +162,52 @@ export async function apply(execSql) {
   }
 }
 
+// Production's exec_sql RPC runs the SQL it receives via `EXECUTE` inside a
+// PL/pgSQL function body; Postgres does not allow transaction-control
+// statements (BEGIN/COMMIT/...) through EXECUTE (SQLSTATE 0A000). 026/027's
+// migration/rollback files are still written as self-contained top-level
+// transactions (for direct psql/PGlite application), so this strips only the
+// exact top-level `begin;` ... `commit;` wrapper before the SQL goes out over
+// RPC — never touching the canonical files on disk, never touching internal
+// (bare, semicolon-less) PL/pgSQL `begin ... end;` blocks, and failing closed
+// (throwing) on anything that isn't the exact expected shape rather than
+// guessing what to strip. Atomicity is preserved because each migration/
+// rollback file is still sent as exactly one RPC call, and a single top-level
+// SQL statement already runs inside its own implicit transaction.
+export function stripTopLevelTransactionWrapper(sql) {
+  const lines = sql.split(/\r?\n/);
+  const beginLineIdxs = [];
+  const commitLineIdxs = [];
+  lines.forEach((line, idx) => {
+    const trimmed = line.trim();
+    if (/^begin\s*;$/i.test(trimmed)) beginLineIdxs.push(idx);
+    if (/^commit\s*;$/i.test(trimmed)) commitLineIdxs.push(idx);
+  });
+
+  if (beginLineIdxs.length === 0 && commitLineIdxs.length === 0) {
+    return sql;
+  }
+
+  let firstContentIdx = 0;
+  while (firstContentIdx < lines.length && /^\s*(--.*)?$/.test(lines[firstContentIdx])) firstContentIdx++;
+  let lastContentIdx = lines.length - 1;
+  while (lastContentIdx >= 0 && lines[lastContentIdx].trim() === '') lastContentIdx--;
+
+  const wellFormed = beginLineIdxs.length === 1 && commitLineIdxs.length === 1
+    && beginLineIdxs[0] === firstContentIdx && commitLineIdxs[0] === lastContentIdx
+    && commitLineIdxs[0] > beginLineIdxs[0];
+
+  if (!wellFormed) {
+    throw new Error('exec_sql normalization: formato inesperado. Se esperaba exactamente un "begin;" como primera sentencia y un "commit;" como última sentencia (wrapper transaccional top-level de un archivo de migración/rollback); abortando en modo cerrado sin enviar nada a RPC.');
+  }
+
+  return [
+    ...lines.slice(0, beginLineIdxs[0]),
+    ...lines.slice(beginLineIdxs[0] + 1, commitLineIdxs[0]),
+    ...lines.slice(commitLineIdxs[0] + 1),
+  ].join('\n').trim();
+}
+
 function loadEnvFile(envPath) {
   for (const raw of readFileSync(envPath, 'utf8').split(/\r?\n/)) {
     const line = raw.trim();
@@ -173,19 +219,26 @@ function loadEnvFile(envPath) {
   }
 }
 
-function createExecSql() {
-  const envPath = process.env.ENV_FILE || resolve(root, '.env.local');
-  loadEnvFile(envPath);
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!base || !serviceKey) throw new Error('Faltan NEXT_PUBLIC_SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY.');
+// fetchImpl/baseUrl/serviceKey are test-only injection points; the CLI entry
+// point below always calls this with no arguments, which preserves the exact
+// original .env.local-loading behavior.
+export function createExecSql({ fetchImpl = fetch, envPath, baseUrl, serviceKey } = {}) {
+  let base = baseUrl;
+  let key = serviceKey;
+  if (!base || !key) {
+    loadEnvFile(envPath || process.env.ENV_FILE || resolve(root, '.env.local'));
+    base = base || process.env.NEXT_PUBLIC_SUPABASE_URL;
+    key = key || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  }
+  if (!base || !key) throw new Error('Faltan NEXT_PUBLIC_SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY.');
   const endpoint = `${base.replace(/\/$/, '')}/rest/v1/rpc/exec_sql`;
 
   return async function execSql(sql) {
-    const response = await fetch(endpoint, {
+    const normalized = stripTopLevelTransactionWrapper(sql.trim()).trim().replace(/;\s*$/, '');
+    const response = await fetchImpl(endpoint, {
       method: 'POST',
-      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sql: sql.trim().replace(/;\s*$/, '') }),
+      headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sql: normalized }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.ok !== true) {
