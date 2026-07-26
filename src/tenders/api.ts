@@ -46,6 +46,10 @@ export async function loadCompanyProfile<T>(request: TenderRequest): Promise<T> 
   return request<T>('/api/tender-company-profile');
 }
 
+export async function loadCompanyProcurementDocuments(request: TenderRequest): Promise<import('./types').TenderCompanyDocument[]> {
+  return request<import('./types').TenderCompanyDocument[]>('/api/tender-company-documents');
+}
+
 export async function loadTenderGoNoGoDecision(request: TenderRequest, opportunityId: string): Promise<TenderGoNoGoPayload> {
   return request<TenderGoNoGoPayload>(`/api/tender-go-no-go-decision?id=${encodeURIComponent(opportunityId)}`);
 }

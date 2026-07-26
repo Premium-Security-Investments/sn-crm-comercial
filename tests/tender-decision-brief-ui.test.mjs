@@ -6,9 +6,11 @@ const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 const briefHelperPath = new URL('../src/tenders/tenderDecisionBrief.ts', import.meta.url);
 const briefHelper = readFileSync(briefHelperPath, 'utf8');
+let analysisSection = '';
+try { analysisSection = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8'); } catch {}
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
-const decisionSource = `${main}\n${briefHelper}`;
+const decisionSource = `${analysisSection}\n${briefHelper}`;
 const reviewPanel = main.match(/function TenderDocumentReviewPanel[\s\S]*?\n}\nfunction TenderOfferPreparationPanel/)?.[0] || '';
 
 for (const text of [
@@ -32,15 +34,15 @@ for (const backend of [server, api]) {
   assert.match(backend, /encaje preliminar con servicios de seguridad que debe confirmarse/, 'El encaje comercial debe presentarse como conclusión preliminar y verificable.');
 }
 assert.doesNotMatch(main, /const favorable = .*\/GO\//, 'La UI no debe inferir una decisión con una regex favorable.');
-assert.match(main, /const strengths = analysis\?\.strengths \?\? analysis\?\.commercial_fit\?\.positives \?\? \[\]/, 'Fortalezas debe preferir la carga tipada y degradar al legado.');
-assert.match(main, /const weaknesses = analysis\?\.weaknesses \?\? analysis\?\.blockers \?\? analysis\?\.commercial_fit\?\.concerns \?\? \[\]/, 'Debilidades debe mapear bloqueadores y alertas legadas sin inventar evidencia.');
-assert.match(main, /const questions = analysis\?\.questions \?\? \[\]/, 'Dudas abiertas debe consumir las preguntas tipadas.');
-assert.match(main, /const unverified = analysis\?\.unverified \?\? analysis\?\.company_profile_crosscheck\?\.gaps \?\? \[\]/, 'Información no verificada debe degradar a brechas del perfil.');
-assert.match(main, /<details[\s\S]*?<summary>Cómo funciona<\/summary>/, 'La ayuda debe quedar colapsada por defecto.');
+assert.match(analysisSection, /const strengths = analysis\?\.strengths \?\? analysis\?\.commercial_fit\?\.positives \?\? \[\]/, 'Fortalezas debe preferir la carga tipada y degradar al legado.');
+assert.match(analysisSection, /const weaknesses = analysis\?\.weaknesses \?\? analysis\?\.blockers \?\? analysis\?\.commercial_fit\?\.concerns \?\? \[\]/, 'Debilidades debe mapear bloqueadores y alertas legadas sin inventar evidencia.');
+assert.match(analysisSection, /const questions = analysis\?\.questions \?\? \[\]/, 'Dudas abiertas debe consumir las preguntas tipadas.');
+assert.match(analysisSection, /const unverified = analysis\?\.unverified \?\? analysis\?\.company_profile_crosscheck\?\.gaps \?\? \[\]/, 'Información no verificada debe degradar a brechas del perfil.');
+assert.match(analysisSection, /<details[\s\S]*?<summary>Cómo funciona<\/summary>/, 'La ayuda debe quedar colapsada por defecto.');
 assert.doesNotMatch(reviewPanel, /<textarea|Escriba lo que sabe|responda las preguntas pendientes/i, 'El brief no debe incluir la caja de aclaración antes de activar el motor inteligente.');
 
 for (const emptyState of ['Sin fortalezas', 'Sin debilidades', 'Sin dudas abiertas', 'Sin información no verificada']) {
-  assert.match(main, new RegExp(emptyState), `Una sección vacía debe comunicar ${emptyState}.`);
+  assert.match(analysisSection, new RegExp(emptyState), `Una sección vacía debe comunicar ${emptyState}.`);
 }
 
 const unfavorableIndex = briefHelper.indexOf("new Set(['no_go', 'cerrada_no_go', 'no_adjudicada'])");

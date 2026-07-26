@@ -8,8 +8,8 @@ const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf
 const migration = readFileSync(new URL('../supabase/migrations/012_company_procurement_profile.sql', import.meta.url), 'utf8');
 
 for (const marker of [
-  'loadCompanyProfile', 'createTenderConfigurationActions', 'Cargar RUP', 'Información empresa',
-  'Guardar información de empresa', 'Nombre legal', 'NIT', 'RUP / códigos UNSPSC',
+  'loadCompanyProfile', 'createTenderConfigurationActions', 'Actualizar RUP', 'Información empresa',
+  'Guardar cambios', 'Nombre legal', 'NIT', 'RUP / códigos UNSPSC',
   'Servicios autorizados', 'Licencia SuperVigilancia', 'Capacidad financiera',
   'Experiencia habilitante', 'Información útil para cruzar contra pliegos',
 ]) assert.ok(configuration.includes(marker), `TenderConfigurationView missing marker: ${marker}`);

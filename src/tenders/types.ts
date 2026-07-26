@@ -26,11 +26,13 @@ export type TenderTrackingEvent = { id: string; tender_id: string; event_type: s
 export type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string; count?: number; message?: string };
 export type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 export type TenderRadarFilters = { query: string; source: string; region: TenderRegionKey; deadline: TenderDeadlineFilter; value: TenderValueFilter; score: TenderScoreFilter; section: TenderSection | 'todas'; internalStatus: TenderInternalStatus | 'todas' };
-export type TenderDocumentImportStatus = 'analisis_generado' | 'fallo_importacion' | 'no_aplica';
+export type TenderDocumentImportStatus = 'analisis_generado' | 'documentos_cargados' | 'fallo_importacion' | 'pendiente_documentos' | 'no_aplica' | 'error';
 export type TenderConversionResult = { id: string; duplicate: boolean; document_import_status: TenderDocumentImportStatus; document_import_error: string | null };
+export type TenderDocumentRefreshResult = { new_count: number; updated_count: number; unchanged_count: number; failed_count: number; analysis_generated: boolean };
 export type TenderSearchProfile = { id: string; name: string; description?: string | null; region_key: TenderRegionKey; source_filter: string; section_filter: TenderSection | 'todas'; internal_status_filter: TenderInternalStatus | 'todas'; deadline_filter: TenderDeadlineFilter; value_filter: TenderValueFilter; score_filter: TenderScoreFilter; query_text?: string | null; is_default?: boolean; created_at?: string; updated_at?: string };
 export type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; rup_status?: string | null; rup_updated_at?: string | null; rup_unspsc_codes?: string | null; authorized_services?: string | null; supervigilancia_license?: string | null; financial_capacity?: string | null; organizational_capacity?: string | null; experience_summary?: string | null; certifications?: string | null; recurring_documents?: string | null; disqualifications_notes?: string | null; useful_company_info?: string | null; source_document_name?: string | null; rup_import_notes?: string | null; updated_at?: string | null; updated_by_name?: string | null };
-export type TenderDossier = { tender_id?: string; opportunity_id: string; entity?: string; title?: string; source?: string; document_count: number; missing_document_count: number; document_import_status: string; document_import_error?: string | null; go_no_go?: string | null; risk?: string | null; checklist_progress?: { total?: number; auto_generated?: number; human_required?: number } | null; preparation_status?: string | null; human_pending_count?: number; sharepoint_status?: string | null; sharepoint_url?: string | null; dossier_error?: string | null };
+export type TenderCompanyDocument = { id: string; document_type: string; display_name: string; issued_at?: string | null; expires_at?: string | null; version: number; current: boolean; state: 'vigente' | 'vence_pronto' | 'vencido' | 'sin_vencimiento'; mime_type?: string | null; size_bytes: number; created_at: string; uploaded_by_name?: string | null; url?: string | null };
+export type TenderDossier = { tender_id?: string; opportunity_id: string; entity?: string; title?: string; source?: string; url?: string | null; document_count: number; missing_document_count: number; document_import_status: string; document_import_error?: string | null; go_no_go?: string | null; risk?: string | null; checklist_progress?: { total?: number; auto_generated?: number; human_required?: number } | null; preparation_status?: string | null; human_pending_count?: number; sharepoint_status?: string | null; sharepoint_url?: string | null; dossier_error?: string | null };
 export type TenderOpportunityFilter = 'all' | 'pending_decision' | 'go_authorized' | 'in_preparation' | 'submitted' | 'closed';
 export type TenderOfferStatus = 'pendiente_decision' | 'en_preparacion' | 'lista_para_presentar' | 'presentada' | 'adjudicada' | 'no_adjudicada' | 'cerrada_no_go';
 export type TenderOpportunitySummary = TenderDossier & {
@@ -63,8 +65,27 @@ export type TenderDocumentAnalysis = {
   blockers?: TenderAnalysisFinding[];
   questions?: TenderAnalysisFinding[];
   unverified?: TenderAnalysisFinding[];
+  company_profile_crosscheck?: { status?: string; matches?: string[]; gaps?: TenderAnalysisFinding[]; profile_source?: string };
   next_action?: string;
   [key: string]: unknown;
+};
+export type TenderDocumentRecord = {
+  id: string;
+  name: string;
+  size: number;
+  mime_type?: string | null;
+  document_type: string;
+  current: boolean;
+  storage_path?: string;
+  uploaded_at: string;
+  uploaded_by?: string | null;
+  signed_url?: string | null;
+  extracted_text?: string | null;
+};
+export type TenderDocumentsPayload = Partial<TenderDocumentRefreshResult> & {
+  documents: TenderDocumentRecord[];
+  analysis: TenderDocumentAnalysis | null;
+  analyses: TenderDocumentAnalysis[];
 };
 export type TenderAnalysisFinding = string | {
   id?: string;

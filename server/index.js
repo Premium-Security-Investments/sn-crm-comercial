@@ -10,12 +10,15 @@ import { callTenderOpportunityConversion, callTenderOpportunityDiscard, callTend
 import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
 import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
 import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
-import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis } from '../tender-analysis-foundation.js';
+import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot } from '../tender-analysis-foundation.js';
 import { isTenderAnalysisFoundationUnavailable, requireTenderAnalysisFoundation } from '../tender-analysis-foundation-availability.js';
 import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
 import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
+import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
+import { mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
+import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -614,6 +617,9 @@ const tenderSources = {
 };
 const SECOP_PROCESSES_RESOURCE = 'https://www.datos.gov.co/resource/p6dx-8zbt.json';
 const SECOP_DOCUMENTS_RESOURCE = 'https://www.datos.gov.co/resource/dmgg-8hin.json';
+const DATOS_GOV_FETCH_POLICY = { allowedHosts: ['www.datos.gov.co'], allowedPath: /^\/resource\/[a-z0-9-]+\.json$/i };
+const SECOP_DOCUMENT_FETCH_POLICY = { allowedHosts: ['community.secop.gov.co', 'secop.gov.co', '*.secop.gov.co', 'colombiacompra.gov.co', '*.colombiacompra.gov.co', 'www.datos.gov.co'] };
+const ESU_FETCH_POLICY = { allowedHosts: ['esucontratacion.com', 'www.esucontratacion.com'], allowedPath: /^\/procesos(?:\/|$)/i };
 const TVEC_EVENTS_URL = 'https://operaciones.colombiacompra.gov.co/eventos-cotizacion-tvec';
 const ESU_CONTRATACION_ORIGIN = 'https://esucontratacion.com';
 const ESU_CONTRATACION_URL = `${ESU_CONTRATACION_ORIGIN}/procesos/index`;
@@ -787,6 +793,41 @@ async function saveTenderCompanyProfile(database, payload) {
   delete fallbackPayload.singleton_key;
   delete fallbackPayload.updated_by;
   await must(database.from('psi_tender_radar_runs').insert({ triggered_by: payload.updated_by, mode: 'company_profile', summary: JSON.stringify(fallbackPayload) }).select('id').single());
+}
+function cleanCompanyDocumentMetadata(body) {
+  const documentType = String(body?.documentType || body?.document_type || '').trim().toLowerCase();
+  const displayName = String(body?.displayName || body?.display_name || '').trim();
+  const issuedAt = String(body?.issuedAt || body?.issued_at || '').trim();
+  const expiresAt = body?.expiresAt ?? body?.expires_at ?? null;
+  const replaceDocumentId = body?.replaceDocumentId ?? body?.replace_document_id ?? null;
+  const normalizedExpiresAt = expiresAt === null || expiresAt === '' ? null : String(expiresAt).trim();
+  if (!documentType || !displayName || !isCalendarDate(issuedAt)) throw clientInputError('Tipo, nombre visible y fecha de expedición son obligatorios.');
+  if (normalizedExpiresAt && !isCalendarDate(normalizedExpiresAt)) throw clientInputError('La fecha de vencimiento no es válida.');
+  if (normalizedExpiresAt && normalizedExpiresAt < issuedAt) throw clientInputError('La fecha de vencimiento no puede ser anterior a la expedición.');
+  return { documentType, displayName, issuedAt, expiresAt: normalizedExpiresAt, replaceDocumentId: replaceDocumentId || null };
+}
+function clientInputError(message) {
+  const error = new Error(message);
+  error.status = 400;
+  return error;
+}
+function isCalendarDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+function companyDocumentStoragePath(profile, name, size) {
+  const id = createHash('sha256').update(`company-profile:${profile.id}:${Date.now()}:${name}:${size}`).digest('hex').slice(0, 24);
+  return `company-profile/documents/${profile.id}/${id}-${name}`;
+}
+async function presentCompanyProcurementDocuments(database) {
+  const documents = await listCompanyProcurementDocuments(database);
+  return Promise.all(documents.map(async document => {
+    const { data, error } = await database.storage.from(tenderDocumentBucket).createSignedUrl(document.storage_path, 15 * 60);
+    if (error) throw error;
+    return { ...document, url: data?.signedUrl || null };
+  }));
 }
 function normTenderText(value) { return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
 const tenderTerminalStatusTerms = ['revocado', 'declarado desierto', 'desierto', 'cancelado', 'cancelada'];
@@ -1051,7 +1092,7 @@ function normalizeEsuProcess(process, detail = null) {
   return { ...withId, id: stableTenderKey(withId), stable_key: stableTenderKey(withId), internal_status: 'nueva', converted_opportunity_id: null };
 }
 async function fetchEsuHtml(url, options = {}) {
-  const response = await fetch(url, { ...options, headers: { 'User-Agent': 'SN-CRM-ESU-Tenders-Radar/1.0', ...(options.headers || {}) } });
+  const response = await safeOfficialFetch(url, ESU_FETCH_POLICY, { ...options, maxBytes: 10 * 1024 * 1024, headers: { 'User-Agent': 'SN-CRM-ESU-Tenders-Radar/1.0', ...(options.headers || {}) } });
   if (!response.ok) throw new Error(`ESU Contratación directo respondió ${response.status}`);
   const html = await response.text();
   if (/Not Acceptable|Mod_Security|Incapsula|_Incapsula_Resource/i.test(html)) throw new Error('bloqueo anti-bot/mod_security de ESU Contratación directo');
@@ -1478,6 +1519,56 @@ app.get('/api/tender-company-profile', async (req, res) => {
   } catch (error) { sendAuthError(res, error); }
 });
 
+app.get('/api/tender-company-documents', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_VIEW);
+    res.json(await presentCompanyProcurementDocuments(requireDb()));
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-document-upload-url', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
+    const metadata = cleanCompanyDocumentMetadata(req.body);
+    const name = cleanFileName(req.body?.name || metadata.displayName);
+    const size = Number(req.body?.size);
+    if (!Number.isFinite(size) || size <= 0) throw clientInputError('Debe seleccionar un documento empresarial válido.');
+    if (size > RUP_MAX_BYTES) throw clientInputError('El documento empresarial supera 50MB.');
+    const database = requireDb();
+    await ensureTenderBucket(database);
+    const path = companyDocumentStoragePath(currentProfile, name, size);
+    const { data, error } = await database.storage.from(tenderDocumentBucket).createSignedUploadUrl(path);
+    if (error) throw error;
+    res.json({ path, token: data.token });
+  } catch (error) { sendAuthError(res, error); }
+});
+
+app.post('/api/tender-company-document-process-upload', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
+    const metadata = cleanCompanyDocumentMetadata(req.body);
+    const storagePath = String(req.body?.storage_path || '');
+    if (!storagePath.startsWith(`company-profile/documents/${currentProfile.id}/`) || storagePath.includes('..')) throw clientInputError('Ruta de documento empresarial inválida.');
+    const name = cleanFileName(req.body?.name || storagePath.split('/').at(-1) || metadata.displayName);
+    const database = requireDb();
+    const { data, error } = await database.storage.from(tenderDocumentBucket).download(storagePath);
+    if (error) throw error;
+    const buffer = Buffer.from(await data.arrayBuffer());
+    if (!buffer.length) throw clientInputError('El documento empresarial cargado está vacío.');
+    if (buffer.length > RUP_MAX_BYTES) throw clientInputError('El documento empresarial supera 50MB.');
+    await recordCompanyProcurementDocument(database, { ...metadata, content: buffer, storagePath, mimeType: req.body?.mime_type || 'application/octet-stream', sizeBytes: buffer.length, uploadedBy: currentProfile.id });
+    if (metadata.documentType === 'rup') {
+      const extractedText = await extractTextFromTenderFile(buffer, name, req.body?.mime_type || '');
+      const existing = await getTenderCompanyProfile(database);
+      await saveTenderCompanyProfile(database, cleanTenderCompanyProfile(parseRupCompanyProfile(extractedText, existing, name), currentProfile));
+    }
+    res.status(201).json({ profile: await getTenderCompanyProfile(database), documents: await presentCompanyProcurementDocuments(database) });
+  } catch (error) { sendAuthError(res, error); }
+});
+
 app.put('/api/tender-company-profile', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -1494,9 +1585,9 @@ app.post('/api/tender-company-profile-upload-url', async (req, res) => {
     requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     const database = requireDb();
     const name = cleanFileName(req.body?.name || 'rup-actualizado.pdf');
-    const size = Number(req.body?.size || 0);
-    if (!size) throw new Error('Debe seleccionar un archivo RUP válido.');
-    if (size > RUP_MAX_BYTES) throw new Error('El RUP supera 50MB. Reduzca el archivo o cargue una versión PDF/DOCX más liviana.');
+    const size = Number(req.body?.size);
+    if (!Number.isFinite(size) || size <= 0) throw clientInputError('Debe seleccionar un archivo RUP válido.');
+    if (size > RUP_MAX_BYTES) throw clientInputError('El RUP supera 50MB. Reduzca el archivo o cargue una versión PDF/DOCX más liviana.');
     await ensureTenderBucket(database);
     const id = createHash('sha256').update(`company-profile:${Date.now()}:${name}:${size}`).digest('hex').slice(0, 24);
     const storagePath = `company-profile/rup/${id}-${name}`;
@@ -1512,15 +1603,17 @@ app.post('/api/tender-company-profile-process-upload', async (req, res) => {
     requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     const database = requireDb();
     const storagePath = String(req.body?.storage_path || '');
-    if (!storagePath.startsWith('company-profile/rup/')) throw new Error('Ruta de RUP inválida.');
+    if (!storagePath.startsWith('company-profile/rup/')) throw clientInputError('Ruta de RUP inválida.');
     const name = cleanFileName(req.body?.name || storagePath.split('/').at(-1) || 'rup-actualizado.pdf');
     const { data, error } = await database.storage.from(tenderDocumentBucket).download(storagePath);
     if (error) throw error;
     const buffer = Buffer.from(await data.arrayBuffer());
-    if (!buffer.length) throw new Error('El RUP cargado está vacío.');
+    if (!buffer.length) throw clientInputError('El RUP cargado está vacío.');
+    if (buffer.length > RUP_MAX_BYTES) throw clientInputError('El RUP supera 50MB. Reduzca el archivo o cargue una versión PDF/DOCX más liviana.');
     const extractedText = await extractTextFromTenderFile(buffer, name, req.body?.mime_type || '');
     const existing = await getTenderCompanyProfile(database);
     const payload = cleanTenderCompanyProfile(parseRupCompanyProfile(extractedText, existing, name), currentProfile);
+    await recordCompanyProcurementDocument(database, { documentType: 'rup', displayName: name, issuedAt: payload.rup_updated_at || new Date().toISOString().slice(0, 10), expiresAt: null, content: buffer, storagePath, mimeType: req.body?.mime_type || 'application/octet-stream', sizeBytes: buffer.length, uploadedBy: currentProfile.id });
     await saveTenderCompanyProfile(database, payload);
     res.json(await getTenderCompanyProfile(database));
   } catch (error) { sendAuthError(res, error); }
@@ -1897,6 +1990,10 @@ app.get('/api/opportunities/:id', async (req, res) => {
     const id = req.params.id;
     await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
     const opportunity = await attachCommercialMetadata(database, await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', id).single()));
+    const tenderSource = opportunity.service_type_code === 'licitacion_publica'
+      ? await must(database.from('psi_public_tenders').select('url').eq('converted_opportunity_id', id).maybeSingle())
+      : null;
+    opportunity.source_url = tenderSource?.url || getTenderSourceUrlFromOpportunity(opportunity) || null;
     const interactions = await must(database.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
     res.json({ opportunity, interactions });
   } catch (error) { sendError(res, error); }
@@ -1942,8 +2039,8 @@ function cleanFileName(name) { return String(name || 'documento').replace(/[^a-z
 async function ensureTenderBucket(database) {
   const existing = await database.storage.getBucket(tenderDocumentBucket);
   if (!existing.error) {
-    const currentLimit = Number(existing.data?.file_size_limit || existing.data?.fileSizeLimit || 0);
-    if (currentLimit && currentLimit < RUP_MAX_BYTES) {
+    const currentLimit = Number(existing.data?.file_size_limit ?? existing.data?.fileSizeLimit);
+    if (!Number.isFinite(currentLimit) || currentLimit <= 0 || currentLimit !== RUP_MAX_BYTES || existing.data?.public !== false) {
       const { error: updateError } = await database.storage.updateBucket(tenderDocumentBucket, { public: false, fileSizeLimit: RUP_MAX_BYTES });
       if (updateError) throw updateError;
     }
@@ -2094,6 +2191,18 @@ function buildTenderDocumentAnalysis(opportunity, documents, companyProfile = {}
 async function getTenderDocumentRecords(database, opportunityId, { includeSignedUrls = true } = {}) {
   await requireTenderAnalysisFoundation(database);
   const interactions = await must(database.from('psi_sales_interactions').select('id,notes,occurred_at,created_at,created_by,psi_sales_profiles(full_name)').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true }));
+  const typedVersionsResponse = await database.from('psi_tender_document_versions')
+    .select('id,name,document_type,content_hash,storage_path,mime_type,size_bytes,current,source,source_document_id,source_url,extracted_text,created_at')
+    .eq('opportunity_id', opportunityId)
+    .eq('current', true);
+  if (typedVersionsResponse.error) throw typedVersionsResponse.error;
+  const typedDocuments = (typedVersionsResponse.data || []).map(version => ({
+    id: version.id, name: version.name, size: version.size_bytes, mime_type: version.mime_type,
+    document_type: version.document_type, current: version.current, storage_path: version.storage_path,
+    uploaded_at: version.created_at, extracted_text: version.extracted_text, auto_import: true,
+    source: version.source, source_url: version.source_url, source_document_id: version.source_document_id,
+    content_hash: version.content_hash,
+  }));
   const documents = [];
   const analyses = [];
   const importErrors = [];
@@ -2103,11 +2212,12 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
     if (payload?.kind === 'tender_document_analysis') analyses.push({ ...payload, interaction_id: row.id, created_at: row.created_at, created_by_name: row.psi_sales_profiles?.full_name || null });
     if (payload?.kind === 'tender_document_import_error') importErrors.push({ kind: payload.kind, source: payload.source || null, created_at: row.created_at, failure_marker: 'fallo_importacion' });
   }
-  const signed = includeSignedUrls ? await Promise.all(documents.map(async doc => {
+  const compatibleDocuments = mergeTenderDocumentRecords(typedDocuments, documents);
+  const signed = includeSignedUrls ? await Promise.all(compatibleDocuments.map(async doc => {
     const { data } = await database.storage.from(tenderDocumentBucket).createSignedUrl(doc.storage_path, 3600);
     return { ...doc, signed_url: data?.signedUrl || null };
-  })) : documents;
-  const currentAnalysis = await getCurrentTenderAnalysis(database, opportunityId);
+  })) : compatibleDocuments;
+  const currentAnalysis = await getCurrentTenderAnalysis(database, opportunityId, compatibleDocuments.filter(document => document.current !== false));
   return { documents: signed, analysis: presentCurrentTenderAnalysis(currentAnalysis), analyses, import_error: importErrors.at(-1) || null };
 }
 
@@ -2154,7 +2264,7 @@ function secopOfficialUrl(url) {
   return noticeUID ? `https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=${noticeUID}` : String(url || '');
 }
 async function fetchDatosGovJson(url, label) {
-  const response = await fetch(url, { headers: { 'User-Agent': 'SN-CRM-SECOP-Documents/1.0 (+https://seguridad-nacional-crm.vercel.app)', 'Accept': 'application/json' } });
+  const response = await safeOfficialFetch(url, DATOS_GOV_FETCH_POLICY, { maxBytes: 10 * 1024 * 1024, headers: { 'User-Agent': 'SN-CRM-SECOP-Documents/1.0 (+https://seguridad-nacional-crm.vercel.app)', 'Accept': 'application/json' } });
   if (!response.ok) throw new Error(`${label} respondió ${response.status}`);
   return await response.json();
 }
@@ -2173,7 +2283,7 @@ async function listSecopDocumentsByPortfolio(portfolioId) {
   return (docs || []).filter(d => d?.url_descarga_documento?.url && d?.nombre_archivo);
 }
 async function downloadSecopDocument(doc, referer) {
-  const response = await fetch(doc.url_descarga_documento.url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36', 'Accept': 'application/pdf,application/octet-stream,*/*', 'Referer': referer } });
+  const response = await safeOfficialFetch(doc.url_descarga_documento.url, SECOP_DOCUMENT_FETCH_POLICY, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36', 'Accept': 'application/pdf,application/octet-stream,*/*', 'Referer': referer } });
   if (!response.ok) throw new Error(`Documento ${doc.nombre_archivo} respondió ${response.status}`);
   const arrayBuffer = await response.arrayBuffer();
   return Buffer.from(arrayBuffer);
@@ -2186,12 +2296,17 @@ function selectPriorityTenderDocuments(docs, nameGetter = d => d?.nombre_archivo
 async function listEsuDocumentsFromProcessUrl(sourceUrl) {
   const processUrl = String(sourceUrl || '');
   if (!/^https:\/\/esucontratacion\.com\/procesos\/view\/\d+/i.test(processUrl)) throw new Error('La oportunidad no tiene enlace ESU /procesos/view/<id> para importar documentos automáticamente.');
+  validateOfficialHttpsUrl(processUrl, { ...ESU_FETCH_POLICY, allowedPath: /^\/procesos\/view\/\d+\/?$/i });
   const html = await fetchEsuHtml(processUrl);
   const detail = parseEsuProcessDetail(html, processUrl);
-  return (detail.documents || []).filter(d => d.url && /\/procesos\/descargar\//i.test(d.url));
+  return (detail.documents || []).filter(d => {
+    if (!d.url || !/\/procesos\/descargar\//i.test(d.url)) return false;
+    try { validateOfficialHttpsUrl(d.url, { ...ESU_FETCH_POLICY, allowedPath: /^\/procesos\/descargar\/\d+\/?$/i }); return true; }
+    catch { return false; }
+  });
 }
 async function downloadEsuDocument(doc, referer) {
-  const response = await fetch(doc.url, { headers: { 'User-Agent': 'SN-CRM-ESU-Documents/1.0', 'Accept': 'application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/zip,application/octet-stream,*/*', 'Referer': referer } });
+  const response = await safeOfficialFetch(doc.url, { ...ESU_FETCH_POLICY, allowedPath: /^\/procesos\/descargar\/\d+\/?$/i }, { headers: { 'User-Agent': 'SN-CRM-ESU-Documents/1.0', 'Accept': 'application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/zip,application/octet-stream,*/*', 'Referer': referer } });
   if (!response.ok) throw new Error(`Documento ${doc.name} respondió ${response.status}`);
   const arrayBuffer = await response.arrayBuffer();
   return Buffer.from(arrayBuffer);
@@ -2213,12 +2328,24 @@ async function saveTenderDocumentBuffer(database, opportunityId, file, currentPr
   if (uploadError) throw uploadError;
   return { id, name, size: buffer.length, mime_type: file.mime_type || null, document_type: documentType, current: file.current !== false, storage_path: storagePath, uploaded_at: new Date().toISOString(), extracted_text: extractedText, auto_import: !!sourceMeta.auto_import, source_url: sourceMeta.source_url || null, source_document_id: sourceMeta.source_document_id || null };
 }
-async function importTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze = true } = {}) {
+async function getCurrentTenderDocumentVersion(database, opportunityId, source, sourceDocumentId) {
+  const normalizedSource = String(source || '').trim().toLowerCase();
+  const normalizedSourceDocumentId = normalizeTenderSourceDocumentId(sourceDocumentId);
+  const { data, error } = await database.from('psi_tender_document_versions')
+    .select('id,content_hash,storage_path')
+    .eq('opportunity_id', opportunityId)
+    .eq('source', normalizedSource)
+    .eq('source_document_id', normalizedSourceDocumentId)
+    .eq('current', true)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+async function refreshTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze = true } = {}) {
   await requireTenderAnalysisFoundation(database);
   const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
   const sourceUrl = getTenderSourceUrlFromOpportunity(opportunity);
   const officialUrl = secopOfficialUrl(sourceUrl);
-  await ensureTenderBucket(database);
   let sourceLabel = '';
   let sourceContext = {};
   let toDownload = [];
@@ -2233,7 +2360,7 @@ async function importTenderDocumentsFromOfficialSource(database, opportunityId, 
       mime_type: doc.extensi_n === 'pdf' ? 'application/pdf' : 'application/octet-stream',
       document_type: normalizeDocumentType('', doc.nombre_archivo),
       source_url: doc.url_descarga_documento.url,
-      source_document_id: doc.id_documento,
+      source_document_id: String(doc.id_documento || createHash('sha256').update(String(doc.url_descarga_documento.url)).digest('hex').slice(0, 24)),
       download: () => downloadSecopDocument(doc, officialUrl),
       errorPrefix: 'SECOP'
     }));
@@ -2254,37 +2381,66 @@ async function importTenderDocumentsFromOfficialSource(database, opportunityId, 
   } else {
     throw new Error('La importación automática solo está disponible para enlaces oficiales SECOP II o ESU Contratación. Use carga manual para otras fuentes.');
   }
-  const uploaded = [];
-  for (const doc of toDownload) {
-    try {
-      const buffer = await doc.download();
-      uploaded.push(await saveTenderDocumentBuffer(database, opportunityId, { name: doc.name, buffer, mime_type: doc.mime_type, document_type: doc.document_type, current: true }, currentProfile, { auto_import: true, source_url: doc.source_url, source_document_id: doc.source_document_id }));
-    } catch (error) {
-      const importErrorText = doc.errorPrefix === 'ESU' ? `Error al importar desde ESU: ${error?.message || error}` : `Error al importar desde SECOP: ${error?.message || error}`;
-      uploaded.push({ id: `error-${doc.source_document_id}`, name: doc.name, size: 0, mime_type: null, document_type: normalizeDocumentType(doc.document_type, doc.name), current: false, storage_path: null, uploaded_at: new Date().toISOString(), extracted_text: importErrorText, auto_import: true, source_url: doc.source_url || null, source_document_id: doc.source_document_id });
-    }
-  }
-  await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_upload', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, documents: uploaded }) }).select('id').single());
-  let analysisGenerated = false;
-  if (analyze) {
-    const records = await getTenderDocumentRecords(database, opportunityId);
-    const currentDocs = records.documents.filter(d => d.current !== false);
-    if (currentDocs.length) {
-      const companyProfile = await getTenderCompanyProfile(database);
-      const analysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
+  const tenderId = await getTenderIdForOpportunity(database, opportunityId);
+  const refreshResults = await refreshTenderDocumentBatch(toDownload, async doc => {
+    const sourceDocumentId = normalizeTenderSourceDocumentId(doc.source_document_id);
+    const currentVersion = await getCurrentTenderDocumentVersion(database, opportunityId, sourceLabel, sourceDocumentId);
+    return refreshOfficialTenderDocument({
+      opportunityId,
+      source: sourceLabel,
+      document: { ...doc, source_document_id: sourceDocumentId },
+      currentVersion,
+      download: item => item.download(),
+      cleanName: cleanFileName,
+      extractText: extractTextFromTenderFile,
+      ensureStorage: () => ensureTenderBucket(database),
+      upload: async (storagePath, buffer, mimeType) => {
+        const { error } = await database.storage.from(tenderDocumentBucket).upload(storagePath, buffer, { contentType: mimeType, upsert: true });
+        if (error) throw error;
+      },
+      recordVersion: async version => {
+        const response = await database.rpc('psi_record_tender_document_version', {
+          p_opportunity_id: opportunityId, p_tender_id: tenderId, p_source: sourceLabel, p_source_document_id: version.source_document_id,
+          p_name: version.name, p_content_hash: version.content_hash, p_storage_path: version.storage_path,
+          p_mime_type: version.mime_type || 'application/octet-stream', p_size_bytes: version.size_bytes,
+          p_document_type: normalizeDocumentType(version.document_type, version.name), p_extracted_text: version.extracted_text,
+          p_source_url: version.source_url || null, p_actor_id: currentProfile.id,
+        });
+        if (response.error) throw response.error;
+        return response.data;
+      },
+    });
+  });
+  const refreshSummary = summarizeTenderDocumentRefresh(refreshResults);
+  await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_refresh', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, ...refreshSummary, results: refreshResults }) }).select('id').single());
+  const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
+  if (beginRefresh.error) throw beginRefresh.error;
+  const refreshToken = String(beginRefresh.data || '').trim();
+  if (!refreshToken) throw new Error('No fue posible iniciar la actualización documental gobernada.');
+  const refreshedRecords = await getTenderDocumentRecords(database, opportunityId);
+  const currentDocs = refreshedRecords.documents.filter(document => document.current !== false);
+  const companyProfile = await getTenderCompanyProfile(database);
+  const registeredSnapshot = await registerTenderDocumentSnapshot(database, {
+    opportunity_id: opportunityId, tender_id: tenderId, actor_id: currentProfile.id, refresh_token: refreshToken,
+    documents: currentDocs, company_profile: companyProfile,
+  });
+  const analysisGenerated = await runOptionalTenderAnalysis({
+    analyze,
+    loadCurrentDocuments: async () => currentDocs,
+    generate: async documents => {
+      const analysis = buildTenderDocumentAnalysis(opportunity, documents, companyProfile);
       const registered = await registerSiioRulesAnalysis(database, {
-        opportunity_id: opportunityId, tender_id: await getTenderIdForOpportunity(database, opportunityId), actor_id: currentProfile.id,
-        documents: currentDocs, company_profile: companyProfile, result: analysis,
+        opportunity_id: opportunityId, tender_id: tenderId, actor_id: currentProfile.id,
+        documents, company_profile: companyProfile, result: analysis, snapshot_record: registeredSnapshot,
       });
       await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ ...analysis, analysis_run_id: registered.run_id, report_title: 'Preanálisis por reglas SIIO', auto_import: true, source: sourceLabel }) }).select('id').single());
-      analysisGenerated = true;
-    }
-  }
+    },
+  });
   const records = await getTenderDocumentRecords(database, opportunityId);
   return {
     ...records,
-    imported_count: uploaded.filter(doc => doc.current !== false).length,
-    failed_count: uploaded.filter(doc => doc.current === false).length,
+    ...refreshSummary,
+    imported_count: refreshSummary.new_count + refreshSummary.updated_count + refreshSummary.unchanged_count,
     analysis_generated: analysisGenerated && Boolean(records.analysis)
   };
 }
@@ -2300,7 +2456,7 @@ async function convertTenderToOpportunity(database, tender, currentProfile) {
   let document_import_error = null;
   if ((tender.source === 'SECOP II' || tender.source === 'ESU Contratación') && tender.url) {
     try {
-      const importResult = await importTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze: true });
+      const importResult = await refreshTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze: true });
       document_import_status = importResult.analysis_generated ? 'analisis_generado' : 'fallo_importacion';
       if (!importResult.analysis_generated) {
         document_import_error = `No se pudo generar análisis: ${importResult.imported_count} documentos vigentes, ${importResult.failed_count} fallidos.`;
@@ -2505,16 +2661,33 @@ app.post('/api/tender-documents-upload', async (req, res) => {
     const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
     const files = Array.isArray(req.body.files) ? req.body.files : [];
     if (!files.length) throw new Error('Debe adjuntar al menos un documento.');
-    await ensureTenderBucket(database);
-    const uploaded = [];
-    for (const file of files.slice(0, 8)) {
+    const preparedFiles = files.slice(0, 8).map(file => {
       const name = cleanFileName(file.name);
       const buffer = Buffer.from(String(file.content_base64 || ''), 'base64');
       if (!buffer.length) throw new Error(`Archivo vacío: ${name}`);
       if (buffer.length > RUP_MAX_BYTES) throw new Error(`Archivo supera 50MB: ${name}`);
+      return { file, name, buffer };
+    });
+    const tenderId = await getTenderIdForOpportunity(database, opportunityId);
+    await ensureTenderBucket(database);
+    const uploaded = [];
+    for (const { file, name, buffer } of preparedFiles) {
       uploaded.push(await saveTenderDocumentBuffer(database, opportunityId, { name, buffer, mime_type: file.mime_type || '', document_type: file.document_type, current: file.current }, currentProfile));
     }
     await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_upload', opportunity: opportunity.company_name, documents: uploaded }) }).select('id').single());
+    const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
+    if (beginRefresh.error) throw beginRefresh.error;
+    const refreshToken = String(beginRefresh.data || '').trim();
+    if (!refreshToken) throw new Error('No fue posible abrir la actualización documental manual.');
+    const records = await getTenderDocumentRecords(database, opportunityId, { includeSignedUrls: false });
+    await registerTenderDocumentSnapshot(database, {
+      opportunity_id: opportunityId,
+      tender_id: tenderId,
+      actor_id: currentProfile.id,
+      documents: records.documents.filter(document => document.current !== false),
+      company_profile: await getTenderCompanyProfile(database),
+      refresh_token: refreshToken,
+    });
     res.status(201).json(await getTenderDocumentRecords(database, opportunityId));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -2526,14 +2699,19 @@ app.post('/api/tender-documents-analyze', async (req, res) => {
     await requireTenderAnalysisFoundation(database);
     const opportunityId = String(req.body.opportunity_id || '');
     const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const tenderId = await getTenderIdForOpportunity(database, opportunityId);
+    const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
+    if (beginRefresh.error) throw beginRefresh.error;
+    const refreshToken = String(beginRefresh.data || '').trim();
+    if (!refreshToken) throw new Error('No fue posible abrir el análisis documental gobernado.');
     const records = await getTenderDocumentRecords(database, opportunityId);
     const currentDocs = records.documents.filter(d => d.current !== false);
     if (!currentDocs.length) throw new Error('Debe cargar documentos antes de analizar.');
     const companyProfile = await getTenderCompanyProfile(database);
     const analysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
     const registered = await registerSiioRulesAnalysis(database, {
-      opportunity_id: opportunityId, tender_id: await getTenderIdForOpportunity(database, opportunityId), actor_id: currentProfile.id,
-      documents: currentDocs, company_profile: companyProfile, result: analysis,
+      opportunity_id: opportunityId, tender_id: tenderId, actor_id: currentProfile.id,
+      documents: currentDocs, company_profile: companyProfile, result: analysis, refresh_token: refreshToken,
     });
     await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ ...analysis, analysis_run_id: registered.run_id, report_title: 'Preanálisis por reglas SIIO' }) }).select('id').single());
     res.json(await getTenderDocumentRecords(database, opportunityId));
@@ -2548,7 +2726,7 @@ app.post('/api/tender-documents-import', async (req, res) => {
     await requireTenderAnalysisFoundation(database);
     const opportunityId = String(req.body.opportunity_id || '');
     if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
-    res.json(await importTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze: true }));
+    res.json(await refreshTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze: false }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -2712,6 +2890,10 @@ app.get('/api/opportunity-detail', async (req, res) => {
     if (!id) throw new Error('Debe indicar la oportunidad.');
     await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW);
     const opportunity = await attachCommercialMetadata(database, await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', id).single()));
+    const tenderSource = opportunity.service_type_code === 'licitacion_publica'
+      ? await must(database.from('psi_public_tenders').select('url').eq('converted_opportunity_id', id).maybeSingle())
+      : null;
+    opportunity.source_url = tenderSource?.url || getTenderSourceUrlFromOpportunity(opportunity) || null;
     const interactions = await must(database.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
     res.json({ opportunity, interactions });
   } catch (error) { sendError(res, error); }

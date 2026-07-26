@@ -1,6 +1,7 @@
 import { ACTIONS, requireAction } from './access-control.js';
-import { getCurrentTenderAnalysis } from './tender-analysis-foundation.js';
+import { buildTenderSnapshotInput, getCurrentTenderAnalysis } from './tender-analysis-foundation.js';
 import { buildTenderOfferPreparation } from './tender-offer-preparation.js';
+import { mergeTenderDocumentRecords } from './tender-document-versioning.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -60,7 +61,10 @@ function currentPreparation(preparations) {
 }
 
 async function getTenderDocumentsAndAnalysis(database, opportunityId) {
-  const interactions = await must(database.from('psi_sales_interactions').select('id,notes,created_at,occurred_at').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true }));
+  const [interactions, typedDocuments] = await Promise.all([
+    must(database.from('psi_sales_interactions').select('id,notes,created_at,occurred_at').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true })),
+    must(database.from('psi_tender_document_versions').select('id,opportunity_id,tender_id,source,source_document_id,version,supersedes_version_id,name,content_hash,storage_path,mime_type,size_bytes,document_type,extracted_text,source_url,current,actor_id,created_at').eq('opportunity_id', opportunityId).order('created_at', { ascending: true })),
+  ]);
   const documents = [];
   const analyses = [];
   const preparations = [];
@@ -76,7 +80,7 @@ async function getTenderDocumentsAndAnalysis(database, opportunityId) {
     });
   }
   return {
-    documents: documents.filter(document => document.current !== false),
+    documents: mergeTenderDocumentRecords(typedDocuments || [], documents).filter(document => document.current !== false),
     analyses,
     preparations,
     analysis: analyses.at(-1) || null,
@@ -102,10 +106,12 @@ export async function callTenderGoNoGoDecision(database, input, currentProfile) 
 
   const { opportunity, tender } = await resolveTenderContext(database, opportunityId);
   const records = await getTenderDocumentsAndAnalysis(database, opportunityId);
-  const availableAnalysis = await getCurrentTenderAnalysis(database, opportunityId);
-  const effectiveAnalysis = availableAnalysis?.run_id === analysisRunId && availableAnalysis.status === 'completed'
+  const documentHash = buildTenderSnapshotInput(records.documents, {}).document_hash;
+  const availableAnalysis = await getCurrentTenderAnalysis(database, opportunityId, records.documents);
+  const effectiveAnalysis = availableAnalysis?.run_id === analysisRunId && availableAnalysis.status === 'completed' && availableAnalysis.current === true
     ? { ...(availableAnalysis.result || {}), ...availableAnalysis }
     : null;
+  const effectiveAnalysisRunId = effectiveAnalysis ? analysisRunId : null;
   const preparation = decision === 'go'
     ? buildTenderOfferPreparation(opportunity, records.documents, effectiveAnalysis, currentProfile)
     : null;
@@ -114,9 +120,10 @@ export async function callTenderGoNoGoDecision(database, input, currentProfile) 
     p_tender_id: tender.id,
     p_actor_id: actorId,
     p_decision: decision,
-    p_analysis_run_id: analysisRunId,
+    p_analysis_run_id: effectiveAnalysisRunId,
     p_justification: justification,
     p_preparation: preparation,
+    p_document_hash: documentHash,
   });
   const persistedPreparation = result.preparation_created
     ? preparation
@@ -140,7 +147,7 @@ export async function getTenderGoNoGoDecision(database, opportunityId, currentPr
     getTenderDocumentsAndAnalysis(database, id),
   ]);
   const decision = currentDecisionFromHistory(history);
-  return { decision, history: history || [], preparation: decision?.decision === 'go' ? records.preparation : null, analysis: await getCurrentTenderAnalysis(database, id) };
+  return { decision, history: history || [], preparation: decision?.decision === 'go' ? records.preparation : null, analysis: await getCurrentTenderAnalysis(database, id, records.documents) };
 }
 
 /** Shared gate for every preparation read/write path; NO_GO never reveals or mutates prior preparation. */

@@ -31,7 +31,7 @@ assert.doesNotMatch(main, /renderLegacy=/, 'main no debe conservar el renderer d
 assert.doesNotMatch(main, /TendersRadar|TenderUnifiedBoard|TenderSectionPanel|TenderCompanyProfilePanel|TenderSearchProfilesPanel/, 'Los componentes del tablero legado deben retirarse de main.');
 assert.match(main, /TenderDocumentReviewPanel/);
 assert.match(main, /TenderOfferPreparationPanel/);
-assert.match(main, /import type \{ TenderModuleView \} from '\.\/tenders\/types';/, 'main must use the tender module view type from the authoritative module types.');
+assert.match(main, /import type \{[^}]*TenderModuleView[^}]*\} from '\.\/tenders\/types';/, 'main must use the tender module view type from the authoritative module types.');
 assert.doesNotMatch(main, /type TenderModuleView =/, 'main must not redeclare the tender module view union locally.');
 assert.match(main, /focusDocumentReviewArea/, 'OpportunityDetail must consume the document focus request through the accessible focus helper.');
 assert.match(main, /const focusTarget = new URLSearchParams\(window\.location\.hash\.split\('\?'\)\[1\] \|\| ''\)\.get\('focus'\)/, 'OpportunityDetail must read the focus query parameter passed by Expedientes.');
@@ -103,6 +103,6 @@ assert.equal(focusDocumentReviewArea(null), false, 'Un detalle sin documentos no
 const reloadCalls = [];
 await reloadCurrentDossierPage(3, 25, async query => { reloadCalls.push(query); return ['same-page']; });
 assert.deepEqual(reloadCalls, [{ limit: 25, offset: 50 }], 'El reintento debe recargar la misma página local de Expedientes.');
-assert.match(opportunities, /await request\('\/api\/tender-documents-import'[\s\S]*await reloadCurrentDossierPage\(\)/, 'La recarga local nombrada debe ocurrir solo después del reintento protegido exitoso.');
+assert.match(opportunities, /await request(?:<[^>]+>)?\('\/api\/tender-documents-import'[\s\S]*await reloadCurrentDossierPage\(\)/, 'La recarga local nombrada debe ocurrir solo después del reintento protegido exitoso.');
 
 console.log('independent tender functional views and behavior passed');

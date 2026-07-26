@@ -20,7 +20,7 @@ for (const path of ['../api/[...path].js', '../server/index.js']) {
   assert.doesNotMatch(conversion[0], /\.from\('psi_sales_opportunities'\)\.insert/);
   assert.doesNotMatch(conversion[0], /\.from\('psi_sales_opportunities'\)\.select\('id'\)\.eq\('external_source'/);
   assert.doesNotMatch(conversion[0], /markTenderConverted/);
-  assert.match(conversion[0], /await importTenderDocumentsFromOfficialSource\(database, opportunityId, currentProfile, \{ analyze: true \}\)/);
+  assert.match(conversion[0], /await refreshTenderDocumentsFromOfficialSource\(database, opportunityId, currentProfile, \{ analyze: true \}\)/);
 }
 
 console.log('atomic tender conversion handler contract passed');

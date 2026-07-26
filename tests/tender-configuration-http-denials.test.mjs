@@ -118,6 +118,8 @@ try {
     ['POST', '/api/tender-company-profile-upload-url', { name: 'rup.pdf', mime_type: 'application/pdf', size: 1 }],
     ['POST', '/api/tender-company-profile-process-upload', { storage_path: 'company-profile/rup/blocked.pdf', name: 'blocked.pdf', mime_type: 'application/pdf' }],
     ['POST', '/api/tender-company-profile-upload', { name: 'blocked.txt', mime_type: 'text/plain', content_base64: Buffer.from('blocked').toString('base64') }],
+    ['POST', '/api/tender-company-document-upload-url', { documentType: 'certificado', displayName: 'Bloqueado', issuedAt: '2026-01-01', name: 'blocked.pdf', mime_type: 'application/pdf', size: 1 }],
+    ['POST', '/api/tender-company-document-process-upload', { documentType: 'certificado', displayName: 'Bloqueado', issuedAt: '2026-01-01', storage_path: 'company-profile/documents/commercial-profile/blocked.pdf', name: 'blocked.pdf', mime_type: 'application/pdf' }],
   ];
   let deniedWrites = 0;
   for (const actor of ['commercial-token', 'director-no-permission-token', 'agent-token']) {
@@ -130,7 +132,7 @@ try {
       deniedWrites += 1;
     }
   }
-  assert.equal(deniedWrites, 12, 'los 3 actores cubren los 4 writes sin acceder al target');
+  assert.equal(deniedWrites, 18, 'los 3 actores cubren los 6 writes sin acceder al target');
 } finally {
   console.error = originalConsoleError;
   if (appServer?.listening) await new Promise(resolve => appServer.close(resolve));

@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import http from 'node:http';
 import { readFileSync } from 'node:fs';
+import { buildTenderSnapshotInput } from '../tender-analysis-foundation.js';
 
 const backends = ['../api/[...path].js', '../server/index.js'].map(path =>
   readFileSync(new URL(path, import.meta.url), 'utf8')
@@ -36,11 +37,17 @@ function interactionQuery(rows, error = null) {
 
 function typedAnalysisQuery(rowsForOpportunity) {
   let opportunityId = null;
+  const filters = [];
+  const rows = () => {
+    const inferredOpportunity = opportunityId || (filters.some(([field, value]) => field === 'id' && value === 'snapshot-good') ? 'good' : null);
+    return rowsForOpportunity(inferredOpportunity).filter(row => filters.every(([field, value]) => row?.[field] === value));
+  };
   return {
     select() { return this; },
-    eq(field, value) { if (field === 'opportunity_id') opportunityId = value; return this; },
+    eq(field, value) { filters.push([field, value]); if (field === 'opportunity_id') opportunityId = value; return this; },
     order() { return this; },
-    limit(count) { return Promise.resolve({ data: rowsForOpportunity(opportunityId).slice(0, count), error: null }); },
+    maybeSingle() { return Promise.resolve({ data: rows()[0] || null, error: null }); },
+    limit(count) { return Promise.resolve({ data: rows().slice(0, count), error: null }); },
   };
 }
 
@@ -80,6 +87,9 @@ const upload = {
   created_at: '2026-07-14T10:00:00.000Z',
   psi_sales_profiles: { full_name: 'Ana' }
 };
+const currentDocumentHash = buildTenderSnapshotInput([
+  { id: 'doc-1', name: 'pliego.pdf', current: true, storage_path: 'good/pliego.pdf' },
+], {}).document_hash;
 
 const preparation = {
   id: 'prep-1',
@@ -98,12 +108,16 @@ const interactionsByOpportunity = {
 function mockDatabaseByOpportunity({ failOpportunityId = null } = {}) {
   return {
     from(table) {
+      if (table === 'psi_tender_document_versions') return interactionQuery([]);
+      if (table === 'psi_tender_document_state') {
+        return typedAnalysisQuery(opportunityId => opportunityId === 'good' ? [{ opportunity_id: 'good', current_snapshot_id: 'snapshot-good', refresh_in_progress: false }] : []);
+      }
       if (table === 'psi_tender_document_snapshots') {
-        return typedAnalysisQuery(opportunityId => opportunityId === 'good' ? [{ id: 'snapshot-good' }] : []);
+        return typedAnalysisQuery(opportunityId => opportunityId === 'good' ? [{ id: 'snapshot-good', document_hash: currentDocumentHash }] : []);
       }
       if (table === 'psi_tender_analysis_runs') {
         return typedAnalysisQuery(opportunityId => opportunityId === 'good' ? [{
-          id: 'run-good', snapshot_id: 'snapshot-good', producer: 'siio_rules_v1', method: 'rules', status: 'completed',
+          id: 'run-good', snapshot_id: 'snapshot-good', opportunity_id: 'good', producer: 'siio_rules_v1', method: 'rules', status: 'completed',
           result: JSON.parse(generatedAnalysis.notes), critical_open_count: 0, created_at: generatedAnalysis.created_at, completed_at: generatedAnalysis.created_at,
         }] : []);
       }
@@ -242,6 +256,11 @@ const fakeSupabase = http.createServer(async (req, res) => {
     if (opportunity === 'broken') return json(res, 500, { message: 'lectura fallida' });
     return json(res, 200, interactionsByOpportunity[opportunity] || []);
   }
+  if (url.pathname === '/rest/v1/psi_tender_document_versions') return json(res, 200, []);
+  if (url.pathname === '/rest/v1/psi_tender_document_state') {
+    const opportunity = decodeURIComponent(url.searchParams.get('opportunity_id') || '').replace(/^eq\./, '');
+    return json(res, 200, opportunity === 'good' ? { opportunity_id: 'good', current_snapshot_id: 'snapshot-good', refresh_in_progress: false } : null);
+  }
   if (url.pathname === '/rest/v1/psi_tender_document_snapshots') {
     const opportunity = decodeURIComponent(url.searchParams.get('opportunity_id') || '').replace(/^eq\./, '');
     return json(res, 200, opportunity === 'good' ? [{ id: 'snapshot-good' }] : []);
@@ -277,6 +296,7 @@ function rpcPageDatabase() {
       return { data: page.slice(0, args.p_limit), error: null };
     },
     from(table) {
+      if (table === 'psi_tender_document_versions') return interactionQuery([]);
       assert.equal(table, 'psi_sales_interactions', 'la lista no debe leer tablas candidatas; sólo el builder documental por tarjeta');
       return { select() { return this; }, eq() { return interactionQuery([]); } };
     },
