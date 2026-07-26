@@ -53,9 +53,24 @@ La migración no debe relajarse. La corrección requerida está en los fixtures 
 
 - No existe una regresión nueva del corte.
 - La base compila, mantiene paridad y construye.
-- El baseline **no es verde** hasta corregir los dos fixtures PGlite.
-- No se permitirá el gate productivo mientras estas dos pruebas sigan fallando.
+- El baseline inicial no era verde hasta corregir los dos fixtures PGlite.
+- El gate productivo permanece condicionado a conservar estas pruebas verdes.
 
-## Siguiente acción
+## Remediación local del baseline
 
-Aplicar TDD a los dos fixtures PGlite, demostrar RED actual por rol ausente, añadir únicamente el bootstrap de roles Supabase requerido y volver a ejecutar la matriz PGlite completa antes de iniciar cambios de producto.
+Se confirmó el patrón en `tests/tender-document-state-migrations-pglite.integration.test.mjs`, cuyo bootstrap sí crea los tres roles Supabase relevantes. Se añadió únicamente `create role anon` a los dos fixtures fallidos; no se modificó SQL productivo, migraciones ni aserciones.
+
+Verificación posterior fresca:
+
+| Verificación | Resultado |
+|---|---:|
+| Archivos `tests/*.test.mjs` | 131/131 PASS |
+| Matriz `tests/*pglite*.test.mjs` | PASS |
+| `npx tsc --noEmit` | PASS |
+| `npm run check:backend-parity` | PASS |
+| `npm run build` | PASS |
+| `git diff --check` | PASS |
+
+## Estado del gate
+
+**BASELINE_PASS.** Las dos fallas preexistentes quedaron cerradas en fixtures locales y la rama está habilitada para iniciar cambios de producto mediante TDD.

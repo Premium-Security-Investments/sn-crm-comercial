@@ -18,7 +18,7 @@ const one = async (db, sql, params = []) => (await db.query(sql, params)).rows[0
 async function createDatabase() {
   const db = new PGlite();
   await db.exec(`
-    create role authenticated; create role service_role; alter role service_role bypassrls; grant service_role to current_user;
+    create role authenticated; create role service_role; create role anon; alter role service_role bypassrls; grant service_role to current_user;
     create table public.psi_sales_profiles (id uuid primary key, active boolean not null default true, role text not null, microsoft_email text not null, identity_type text default 'human');
     create table public.psi_access_permissions (code text primary key, active boolean not null default true);
     create table public.psi_profile_permissions (profile_id uuid not null references public.psi_sales_profiles(id), permission_code text not null references public.psi_access_permissions(code), primary key(profile_id, permission_code));

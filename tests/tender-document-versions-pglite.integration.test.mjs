@@ -19,6 +19,7 @@ async function createDatabase() {
   await db.exec(`
     create role authenticated;
     create role service_role;
+    create role anon;
     alter role service_role bypassrls;
     grant service_role to current_user;
     create schema auth;
