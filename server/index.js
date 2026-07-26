@@ -1996,7 +1996,7 @@ app.get('/api/opportunities/:id', async (req, res) => {
     opportunity.source_url = tenderSource?.url || getTenderSourceUrlFromOpportunity(opportunity) || null;
     const interactions = await must(database.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
     res.json({ opportunity, interactions });
-  } catch (error) { sendError(res, error); }
+  } catch (error) { sendAuthError(res, error); }
 });
 
 
@@ -2896,7 +2896,7 @@ app.get('/api/opportunity-detail', async (req, res) => {
     opportunity.source_url = tenderSource?.url || getTenderSourceUrlFromOpportunity(opportunity) || null;
     const interactions = await must(database.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
     res.json({ opportunity, interactions });
-  } catch (error) { sendError(res, error); }
+  } catch (error) { sendAuthError(res, error); }
 });
 
 app.put('/api/opportunity', async (req, res) => {
