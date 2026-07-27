@@ -1,4 +1,4 @@
-import { normalizeTenderEvidence, tenderAnalysisMethodLabel, tenderDecisionStatusTone, tenderNextAction } from '../tenderDecisionBrief';
+import { normalizeTenderEvidence, tenderAnalysisMethodLabel, tenderAnalysisProducerDisclosure, tenderDecisionStatusTone, tenderNextAction } from '../tenderDecisionBrief';
 import type { TenderDocumentAnalysis, TenderDocumentRecord, TenderDocumentsPayload } from '../types';
 
 type TenderAnalysisSectionProps = {
@@ -44,6 +44,6 @@ export function TenderAnalysisSection({ analysis, documents, busy, onAnalyze, ca
     </article>}
     {analysisEngine?.fallback && <div className="notice" role="status"><strong>Fallback seguro aplicado.</strong> AGT-002 Preview no estuvo disponible ({analysisEngine.reason === 'not_configured' ? 'no configurado' : 'servicio no disponible'}); se conservó el preanálisis determinístico por reglas.</div>}
     {analysisEngine?.used === 'AGT-002' && <div className="notice" role="status"><strong>Revisión humana obligatoria.</strong> AGT-002 produjo una recomendación preliminar{analysisEngine.reused ? ' reutilizada por idempotencia' : ''}; no autoriza GO / NO GO.</div>}
-    <div className="tender-analysis-actions"><button type="button" onClick={onAnalyze} disabled={busy || !hasDocuments}>{busy ? 'Procesando…' : actionLabel}</button>{canRunPreview && <button type="button" onClick={onAnalyzePreview} disabled={busy || !hasDocuments}>{busy ? 'Procesando…' : 'Ejecutar AGT-002 Preview'}</button>}{analysis && <small>Productor real: {tenderAnalysisMethodLabel(analysis.producer)}</small>}</div>
+    <div className="tender-analysis-actions"><button type="button" onClick={onAnalyze} disabled={busy || !hasDocuments}>{busy ? 'Procesando…' : actionLabel}</button>{canRunPreview && <button type="button" onClick={onAnalyzePreview} disabled={busy || !hasDocuments}>{busy ? 'Procesando…' : 'Ejecutar AGT-002 Preview'}</button>}{analysis && <small>Productor real: {tenderAnalysisMethodLabel(analysis.producer)} · {tenderAnalysisProducerDisclosure(analysis.producer)}</small>}</div>
   </section>;
 }

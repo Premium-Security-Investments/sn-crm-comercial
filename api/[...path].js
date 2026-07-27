@@ -3062,7 +3062,7 @@ app.get('/api/tender-processing-status', async (req, res) => {
     if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
     const { data, error } = await database
       .from('psi_tender_processing_jobs')
-      .select('id,status,current_step,documents_discovered,documents_processed,documents_imported,documents_unchanged,documents_failed,snapshot_id,analysis_run_id,last_error_code,last_error_message,updated_at')
+      .select('id,idempotency_key,status,current_step,documents_discovered,documents_processed,documents_imported,documents_unchanged,documents_failed,snapshot_id,analysis_run_id,last_error_code,last_error_message,updated_at')
       .eq('opportunity_id', opportunityId)
       .order('created_at', { ascending: false })
       .limit(1)
@@ -3070,13 +3070,22 @@ app.get('/api/tender-processing-status', async (req, res) => {
     if (error) throw error;
     if (!data) {
       return res.json({
-        job_id: null, status: 'no_job', current_step: null,
+        job_id: null, idempotency_key: null, status: 'no_job', current_step: null,
         counts: { discovered: 0, processed: 0, imported: 0, unchanged: 0, failed: 0 },
+        failed_items: [],
         snapshot_id: null, analysis_run_id: null, last_error_code: null, last_error_message: null, updated_at: null,
       });
     }
+    const { data: failedItems, error: failedItemsError } = await database
+      .from('psi_tender_document_import_items')
+      .select('id,name,status,last_error_code,last_error_message')
+      .eq('job_id', data.id)
+      .in('status', ['failed_retryable', 'failed_terminal'])
+      .order('updated_at', { ascending: false });
+    if (failedItemsError) throw failedItemsError;
     res.json({
       job_id: data.id,
+      idempotency_key: data.idempotency_key,
       status: data.status,
       current_step: data.current_step,
       counts: {
@@ -3086,6 +3095,7 @@ app.get('/api/tender-processing-status', async (req, res) => {
         unchanged: data.documents_unchanged,
         failed: data.documents_failed,
       },
+      failed_items: failedItems || [],
       snapshot_id: data.snapshot_id,
       analysis_run_id: data.analysis_run_id,
       last_error_code: data.last_error_code,

@@ -18,7 +18,7 @@ import { tenderAnalysisMethodLabel } from './tenders/tenderDecisionBrief';
 import { loadTrackingEvents, postActuation } from './tenders/api';
 import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
 import { tenderSharePointStatusLabel } from './tenders/statusLabels';
-import type { TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderTrackingEvent } from './tenders/types';
+import type { TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderProcessingStatus, TenderTrackingEvent } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
 import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
 import { supabaseBrowser } from './supabaseBrowser';
@@ -816,6 +816,7 @@ function fileToBase64(file: File) {
 }
 function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAnalysisChanged, onNavigationStateChanged, focusTargetRef }: { opportunity: Opportunity; currentProfile: Profile; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; onNavigationStateChanged?: (documents: TenderPanelState<TenderDocumentNavigationValue>, analysis: TenderPanelState<TenderDocumentAnalysis | null>) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
   const [payload, setPayload] = useState<TenderDocumentsPayload>({ documents: [], analysis: null, analyses: [] });
+  const [processingStatus, setProcessingStatus] = useState<TenderProcessingStatus | null>(null);
   const [statusText, setStatusText] = useState('');
   const [refreshResult, setRefreshResult] = useState<TenderDocumentRefreshResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -835,11 +836,18 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     if (version !== requestVersionRef.current || activeOpportunityRef.current !== requestedId) return;
     setPayload(data); onAnalysisChanged?.(data.analysis || null); emitNavigationPayload(data);
   };
+  const loadProcessingStatus = async () => {
+    const requestedId = opportunity.id;
+    const state = await api<TenderProcessingStatus>(`/api/tender-processing-status?opportunity_id=${encodeURIComponent(requestedId)}`);
+    if (activeOpportunityRef.current === requestedId) setProcessingStatus(state);
+  };
   useEffect(() => {
     activeOpportunityRef.current = opportunity.id; requestVersionRef.current += 1;
-    setPayload({ documents: [], analysis: null, analyses: [] }); setRefreshResult(null); setStatusText(''); setBusy(false); onAnalysisChanged?.(null); onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
+    setPayload({ documents: [], analysis: null, analyses: [] }); setProcessingStatus(null); setRefreshResult(null); setStatusText(''); setBusy(false); onAnalysisChanged?.(null); onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
     void loadDocuments().catch(err => { if (activeOpportunityRef.current === opportunity.id) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'error', message }); } });
-    return () => { requestVersionRef.current += 1; };
+    void loadProcessingStatus().catch(err => { if (activeOpportunityRef.current === opportunity.id) setStatusText(err instanceof Error ? err.message : String(err)); });
+    const processingTimer = window.setInterval(() => void loadProcessingStatus().catch(() => undefined), 10_000);
+    return () => { requestVersionRef.current += 1; window.clearInterval(processingTimer); };
   }, [opportunity.id]);
   const addFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(event.currentTarget.files || []);
@@ -896,8 +904,20 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'ready', value: payload.analysis || null }); }
     finally { setBusy(false); }
   };
+  const retryDurableProcessing = async () => {
+    if (!processingStatus?.idempotency_key) return;
+    setBusy(true); setStatusText('Reintentando procesamiento documental…');
+    try {
+      await api('/api/tender-processing-retry', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, idempotency_key: processingStatus.idempotency_key }) });
+      await loadProcessingStatus(); setStatusText('Procesamiento reencolado.');
+    } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
+  };
+  const processingActive = Boolean(processingStatus && !['no_job', 'completed', 'cancelled'].includes(processingStatus.status));
+  const processingRetryable = Boolean(processingStatus?.idempotency_key && ['retry_wait', 'needs_attention'].includes(processingStatus.status));
   const sourceUrl = resolveTenderSourceUrl(opportunity.source_url, opportunity.observaciones);
   return <div id="tender-document-review" className="tender-guided-review" tabIndex={-1} ref={focusTargetRef}>
+    {processingActive && processingStatus && <div className="notice" role="status"><strong>Procesando documentos en segundo plano</strong><p>Paso actual: {processingStatus.current_step || processingStatus.status}. Procesados {processingStatus.counts.processed} de {processingStatus.counts.discovered}; importados {processingStatus.counts.imported}; sin cambios {processingStatus.counts.unchanged}; fallidos {processingStatus.counts.failed}.</p>{processingStatus.last_error_message && <p>{processingStatus.last_error_message}</p>}{processingStatus.failed_items.length > 0 && <ul>{processingStatus.failed_items.map(item => <li key={item.id}><strong>{item.name}</strong>: {item.last_error_message || item.last_error_code || item.status}</li>)}</ul>}{processingRetryable && <button type="button" disabled={busy} onClick={() => void retryDurableProcessing()}>Reintentar</button>}</div>}
     <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} sourceUrl={sourceUrl} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
     <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} onAnalyze={() => void analyzeDocuments()} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} analysisEngine={payload.analysis_engine} />
   </div>;
