@@ -22,6 +22,7 @@ import { mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOff
 import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
 import { createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
 import { claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim } from '../agt002-preview-persistence.js';
+import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -829,22 +830,10 @@ async function presentCompanyProcurementDocuments(database) {
     return { ...document, url: data?.signedUrl || null };
   }));
 }
-function normTenderText(value) { return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
-const tenderTerminalStatusTerms = ['revocado', 'declarado desierto', 'desierto', 'cancelado', 'cancelada'];
-function isTenderTerminalStatus(value) {
-  const text = normTenderText(value);
-  return tenderTerminalStatusTerms.some(term => text.includes(normTenderText(term)));
-}
-function tenderStatusSearchText(item) {
-  const raw = item?.raw || item || {};
-  return [
-    item?.status, raw.fase, raw.estado_del_procedimiento, raw.estado_del_proceso, raw.estado,
-    raw.descripcion_estado, raw.estado_resumen, raw.resultado, raw.comentario_entidad_estatal
-  ].filter(Boolean).join(' ');
-}
+function normTenderText(value) { return normalizeTenderStatusText(value); }
 function isTenderTrackable(item) {
   const text = tenderText(item?.raw || item || {});
-  return !isTenderTerminalStatus(tenderStatusSearchText(item)) && !tenderDisqualifyingTerms.some(term => text.includes(normTenderText(term)));
+  return isTenderTrackableStatus(item) && !tenderDisqualifyingTerms.some(term => text.includes(normTenderText(term)));
 }
 function tenderMoney(value) { const n = Number(String(value || '0').replace(/[^0-9.-]/g, '')); return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0; }
 function tenderDate(value) { if (!value) return null; const d = new Date(value); return Number.isNaN(d.getTime()) ? null : d; }
@@ -907,7 +896,7 @@ function normalizeTender(row, source, scored) {
     ref: isSecop2 ? row.referencia_del_proceso || '' : row.numero_de_proceso || '', process_id: isSecop2 ? row.id_del_proceso || '' : '',
     title: isSecop2 ? row.nombre_del_procedimiento || row.descripci_n_del_procedimiento || 'Sin objeto' : row.objeto_a_contratar || row.detalle_del_objeto_a_contratar || 'Sin objeto',
     desc: isSecop2 ? row.descripci_n_del_procedimiento || '' : row.detalle_del_objeto_a_contratar || '',
-    value, status: isSecop2 ? row.fase || row.estado_del_procedimiento || '' : row.estado_del_proceso || '', category: isSecop2 ? row.codigo_principal_de_categoria || '' : '',
+    value, status: officialTenderStatus(row, source), category: isSecop2 ? row.codigo_principal_de_categoria || '' : '',
     published: (isSecop2 ? row.fecha_de_publicacion_del : row.fecha_de_cargue_en_el_secop) || null, deadline: deadline || null, days, window: tenderWindow(days),
     score: scored.score, reasons: scored.reasons, risks: scored.risks, url: url || '', raw: row
   };
@@ -948,7 +937,7 @@ async function fetchSecopSource(source, cfg) {
   const response = await fetch(`${cfg.base}?${params.toString()}`, { headers: { 'User-Agent': 'SN-CRM-Tenders-Radar/2.0' } });
   if (!response.ok) throw new Error(`${source} respondió ${response.status}`);
   const rows = await response.json();
-  return rows.filter(row => !isEsuEntityRow(row, source) && isTenderTrackable(row)).map(row => ({ row, scored: scoreTender(row) })).filter(x => hasTenderServiceSignal(x.scored)).map(x => normalizeTender(x.row, source, x.scored));
+  return rows.filter(row => !isEsuEntityRow(row, source)).map(row => ({ row, scored: scoreTender(row) })).filter(x => hasTenderServiceSignal(x.scored)).map(x => normalizeTender(x.row, source, x.scored));
 }
 function stripTenderHtml(value) {
   return String(value || '')
@@ -1192,7 +1181,8 @@ async function fetchPublicTenderRadar() {
     const source = tasks[index].source;
     if (result.status === 'fulfilled') {
       batches.push(result.value);
-      diagnostics.push({ source, status: 'ok', count: result.value.length, message: result.value.length ? `${result.value.length} candidato(s)` : 'Sin candidatos relevantes hoy' });
+      const visibleCount = result.value.filter(t => (t.days === null || t.days >= 0) && isTenderTrackable(t)).length;
+      diagnostics.push({ source, status: 'ok', count: visibleCount, message: visibleCount ? `${visibleCount} candidato(s)` : 'Sin candidatos relevantes hoy' });
     } else {
       const message = source === 'TVEC'
         ? `TVEC no disponible temporalmente: ${result.reason?.message || result.reason}`
@@ -1203,17 +1193,16 @@ async function fetchPublicTenderRadar() {
     }
   });
   const seen = new Set();
-  const tenders = batches.flat().filter(t => {
-    if (t.days !== null && t.days < 0) return false;
-    if (!isTenderTrackable(t)) return false;
+  const persistenceTenders = batches.flat().filter(t => {
     const key = t.stable_key || stableTenderKey(t);
     if (seen.has(key)) return false;
     seen.add(key); return true;
-  }).sort((a,b) => {
+  });
+  const tenders = persistenceTenders.filter(t => (t.days === null || t.days >= 0) && isTenderTrackable(t)).sort((a,b) => {
     const sectionOrder = { hacer: 0, revisar: 1, prioridad_baja: 2 };
     return sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score || (a.days ?? 999) - (b.days ?? 999);
   });
-  return { tenders, diagnostics };
+  return { tenders, persistenceTenders, diagnostics };
 }
 function radarPayload(tenders, generatedAt = new Date().toISOString(), source = 'live', diagnostics = []) {
   const normalized = tenders.map(t => ({ ...t, id: t.stable_key || t.id || stableTenderKey(t), stable_key: t.stable_key || t.id || stableTenderKey(t) }));
@@ -1324,13 +1313,14 @@ async function enrichLiveTendersWithConversions(database, tenders) {
 async function persistTenderRadar(database, actorProfile, mode = 'manual') {
   const fetchedPayload = await fetchPublicTenderRadar();
   const fetched = fetchedPayload.tenders;
+  const persistenceTenders = fetchedPayload.persistenceTenders || fetched;
   const diagnostics = fetchedPayload.diagnostics;
   if (!(await tenderTableAvailable(database))) {
     const live = await enrichLiveTendersWithConversions(database, fetched);
     return radarPayload(live, new Date().toISOString(), 'live_no_table', diagnostics);
   }
   const now = new Date().toISOString();
-  const rows = fetched.map(t => ({
+  const rows = persistenceTenders.map(t => ({
     stable_key: stableTenderKey(t), source: t.source, section: t.section, entity: t.entity, dept: t.dept || null, city: t.city || null,
     ref: t.ref || null, process_id: t.process_id || null, title: t.title, description: t.desc || null, value: Number(t.value || 0),
     status: t.status || null, category: t.category || null, published_at: t.published || null, deadline_at: t.deadline || null,
@@ -1340,7 +1330,7 @@ async function persistTenderRadar(database, actorProfile, mode = 'manual') {
     const { error: upsertError } = await database.from('psi_public_tenders').upsert(rows, { onConflict: 'stable_key', defaultToNull: false });
     if (upsertError) throw upsertError;
   }
-  await database.from('psi_tender_radar_runs').insert({ run_at: now, triggered_by: actorProfile?.id || null, mode, count_total: rows.length, count_hacer: rows.filter(r => r.section === 'hacer').length, count_revisar: rows.filter(r => r.section === 'revisar').length, count_prioridad_baja: rows.filter(r => r.section === 'prioridad_baja').length, summary: `Radar multifuente sincronizado: ${rows.length} procesos/eventos. ${diagnostics.map(d => `${d.source}: ${d.status}`).join(' · ')}` });
+  await database.from('psi_tender_radar_runs').insert({ run_at: now, triggered_by: actorProfile?.id || null, mode, count_total: fetched.length, count_hacer: fetched.filter(r => r.section === 'hacer').length, count_revisar: fetched.filter(r => r.section === 'revisar').length, count_prioridad_baja: fetched.filter(r => r.section === 'prioridad_baja').length, summary: `Radar multifuente sincronizado: ${fetched.length} procesos/eventos visibles; ${rows.length} actualizados. ${diagnostics.map(d => `${d.source}: ${d.status}`).join(' · ')}` });
   const persisted = await readPersistedTenderRadar(database);
   return { ...persisted, diagnostics };
 }
@@ -1388,12 +1378,36 @@ function buildTenderOpportunityPayload(tender, owner) {
 }
 async function getPersistedTenderByStableKey(database, stableKey) {
   const { data, error } = await database.from('psi_public_tenders')
-    .select('id,stable_key,internal_status,converted_opportunity_id,tracking_updated_at')
+    .select('*')
     .eq('stable_key', stableKey)
     .maybeSingle();
   if (error) throw error;
   if (!data) throw trackingError('La licitación persistida no existe; no se puede omitir la trazabilidad de seguimiento.', 409);
   return data;
+}
+function escapeSocrataLiteral(value) { return String(value || '').replaceAll("'", "''"); }
+async function revalidateTenderOfficialStatus(tender) {
+  if (!['SECOP I', 'SECOP II'].includes(tender?.source)) return tender;
+  const isSecop2 = tender.source === 'SECOP II';
+  const cfg = tenderSources[tender.source];
+  const identityField = isSecop2 ? 'id_del_proceso' : 'numero_de_proceso';
+  const identityValue = isSecop2 ? tender.process_id : tender.ref;
+  if (!cfg || !identityValue) throw trackingError('No se pudo verificar el estado oficial vigente. Actualice el radar antes de convertir.', 409);
+  const params = new URLSearchParams({
+    '$select': cfg.select,
+    '$where': `${identityField}='${escapeSocrataLiteral(identityValue)}'`,
+    '$limit': '2',
+  });
+  let response;
+  try {
+    response = await fetch(`${cfg.base}?${params.toString()}`, { headers: { 'User-Agent': 'SN-CRM-Tender-Conversion-Guard/1.0' } });
+  } catch {
+    throw trackingError('SECOP no está disponible para verificar el estado vigente. Actualice el radar e intente nuevamente.', 409);
+  }
+  if (!response.ok) throw trackingError('SECOP no pudo verificar el estado vigente. Actualice el radar e intente nuevamente.', 409);
+  const rows = await response.json();
+  if (!Array.isArray(rows) || rows.length !== 1) throw trackingError('No se pudo confirmar un único proceso vigente en SECOP. Actualice el radar antes de convertir.', 409);
+  return { ...tender, status: officialTenderStatus(rows[0], tender.source), raw: rows[0] };
 }
 async function setTenderStatus(database, stableKey, internalStatus, currentProfile) {
   if (!tenderInternalStatuses.includes(internalStatus)) throw new Error('Estado interno de licitación inválido.');
@@ -2449,25 +2463,30 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
 async function convertTenderToOpportunity(database, tender, currentProfile) {
   if (!tender?.source || !tender?.entity || !tender?.title) throw new Error('Licitación inválida para convertir.');
   if (!(await tenderTableAvailable(database))) throw new Error('La tabla psi_public_tenders aún no existe. Aplica la migración para convertir licitaciones.');
+  const stableKey = String(tender.stable_key || tender.id || stableTenderKey(tender)).trim();
+  const tenderRecord = await getPersistedTenderByStableKey(database, stableKey);
+  if (!isTenderTrackableStatus(tenderRecord)) throw trackingError('No se puede convertir una licitación cancelada, revocada o declarada desierta.', 409);
+  const officialState = await revalidateTenderOfficialStatus(tenderRecord);
+  if (!isTenderTrackableStatus(officialState)) throw trackingError('No se puede convertir una licitación cancelada, revocada o declarada desierta.', 409);
+  const canonicalTender = dbTenderToPublic({ ...tenderRecord, status: officialState.status, raw: officialState.raw });
   const owner = await findTenderOwner(database, currentProfile);
-  const payload = buildTenderOpportunityPayload(tender, currentProfile.role === 'comercial' ? currentProfile : owner);
-  const tenderRecord = await getPersistedTenderByStableKey(database, stableTenderKey(tender));
+  const payload = buildTenderOpportunityPayload(canonicalTender, currentProfile.role === 'comercial' ? currentProfile : owner);
   const conversion = await callTenderOpportunityConversion(database, tenderRecord.id, payload, tenderRecord.tracking_updated_at, currentProfile);
   const opportunityId = conversion.opportunity_id;
   let document_import_status = 'no_aplica';
   let document_import_error = null;
-  if ((tender.source === 'SECOP II' || tender.source === 'ESU Contratación') && tender.url) {
+  if ((canonicalTender.source === 'SECOP II' || canonicalTender.source === 'ESU Contratación') && canonicalTender.url) {
     try {
       const importResult = await refreshTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze: true });
       document_import_status = importResult.analysis_generated ? 'analisis_generado' : 'fallo_importacion';
       if (!importResult.analysis_generated) {
         document_import_error = `No se pudo generar análisis: ${importResult.imported_count} documentos vigentes, ${importResult.failed_count} fallidos.`;
-        await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_import_error', auto_import: true, source: tender.source, error: document_import_error }) }).select('id').single());
+        await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_import_error', auto_import: true, source: canonicalTender.source, error: document_import_error }) }).select('id').single());
       }
     } catch (error) {
       document_import_status = 'fallo_importacion';
       document_import_error = error?.message || String(error);
-      await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_import_error', auto_import: true, source: tender.source, error: document_import_error }) }).select('id').single());
+      await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_import_error', auto_import: true, source: canonicalTender.source, error: document_import_error }) }).select('id').single());
     }
   }
   return { id: opportunityId, duplicate: !!conversion.duplicate, document_import_status, document_import_error };
