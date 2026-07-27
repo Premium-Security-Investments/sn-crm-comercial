@@ -1,13 +1,15 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import mammoth from 'mammoth';
 import AdmZip from 'adm-zip';
 import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 import { isTenderDurablePipelineEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
+import { createTenderProcessingWorker } from '../tender-processing-worker.js';
+import { appendTenderProcessingEvent, claimTenderProcessingJob, getTenderProcessingJobActor, recordTenderImportItem, updateTenderProcessingJob } from '../tender-processing-worker-rpc.js';
 import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
 import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
 import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
@@ -2526,6 +2528,166 @@ async function markTenderOpportunityDiscarded(database, opportunityId, currentPr
   }, currentProfile);
 }
 
+async function resolveTenderPipelineSourceContext(database, opportunityId) {
+  const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', opportunityId).single());
+  const sourceUrl = getTenderSourceUrlFromOpportunity(opportunity);
+  const officialUrl = secopOfficialUrl(sourceUrl);
+  if (/community\.secop\.gov\.co/i.test(officialUrl)) {
+    return { opportunity, sourceLabel: 'SECOP II', referer: officialUrl, sourceUrl };
+  }
+  if (/^https:\/\/esucontratacion\.com\/procesos\/view\/\d+/i.test(sourceUrl)) {
+    return { opportunity, sourceLabel: 'ESU Contratación', referer: sourceUrl, sourceUrl };
+  }
+  throw new Error('La importación automática solo está disponible para enlaces oficiales SECOP II o ESU Contratación.');
+}
+
+/** Wires the durable worker (tender-processing-worker.js) to real DB RPCs and
+ * to the same SECOP/ESU/AGT-002 helpers already used by the synchronous
+ * compat path, so the internal endpoint never re-implements that logic. */
+function buildTenderProcessingWorkerDeps(database) {
+  return {
+    now: () => Date.now(),
+    claimJob: () => claimTenderProcessingJob(database, { leaseSeconds: 90 }),
+    updateJob: (jobId, leaseId, patch) => updateTenderProcessingJob(database, jobId, leaseId, patch),
+    recordImportItem: item => recordTenderImportItem(database, item),
+    appendEvent: event => appendTenderProcessingEvent(database, event),
+
+    revalidateOfficialStatus: async ({ tenderId }) => {
+      const tenderRow = await must(database.from('psi_public_tenders').select('*').eq('id', tenderId).single());
+      const officialState = await revalidateTenderOfficialStatus(tenderRow);
+      return { terminal: !isTenderTrackableStatus(officialState) };
+    },
+
+    discoverDocuments: async ({ jobId, opportunityId }) => {
+      const { sourceLabel, referer, sourceUrl } = await resolveTenderPipelineSourceContext(database, opportunityId);
+      let docs;
+      if (sourceLabel === 'SECOP II') {
+        const process = await resolveSecopProcessByExactUrl(referer);
+        docs = await listSecopDocumentsByPortfolio(process.id_del_portafolio);
+      } else {
+        docs = await listEsuDocumentsFromProcessUrl(sourceUrl);
+      }
+      const nameGetter = d => (sourceLabel === 'SECOP II' ? d.nombre_archivo : d.name);
+      const selected = selectPriorityTenderDocuments(docs, nameGetter);
+      const items = selected.map(doc => {
+        const name = nameGetter(doc);
+        const url = sourceLabel === 'SECOP II' ? doc.url_descarga_documento.url : doc.url;
+        const sourceDocumentId = normalizeTenderSourceDocumentId(sourceLabel === 'SECOP II'
+          ? String(doc.id_documento || createHash('sha256').update(String(url)).digest('hex').slice(0, 24))
+          : esuDocumentId(doc));
+        return { source: sourceLabel, sourceDocumentId, sourceUrl: url, name, critical: normalizeDocumentType('', name) === 'pliego' };
+      });
+      for (const item of items) {
+        await recordTenderImportItem(database, { jobId, ...item, status: 'pending' });
+      }
+      return items;
+    },
+
+    importOneDocument: async ({ jobId, opportunityId, tenderId, document }) => {
+      const { referer } = await resolveTenderPipelineSourceContext(database, opportunityId);
+      const actor = await getTenderProcessingJobActor(database, jobId);
+      const sourceDocumentId = normalizeTenderSourceDocumentId(document.sourceDocumentId);
+      const currentVersion = await getCurrentTenderDocumentVersion(database, opportunityId, document.source, sourceDocumentId);
+      const result = await refreshOfficialTenderDocument({
+        opportunityId,
+        source: document.source,
+        document: {
+          name: document.name,
+          mime_type: document.name?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream',
+          document_type: normalizeDocumentType('', document.name),
+          source_url: document.sourceUrl,
+          source_document_id: sourceDocumentId,
+        },
+        currentVersion,
+        download: doc => (document.source === 'SECOP II'
+          ? downloadSecopDocument({ url_descarga_documento: { url: doc.source_url }, nombre_archivo: doc.name }, referer)
+          : downloadEsuDocument({ url: doc.source_url, name: doc.name }, referer)),
+        cleanName: cleanFileName,
+        extractText: extractTextFromTenderFile,
+        ensureStorage: () => ensureTenderBucket(database),
+        upload: async (storagePath, buffer, mimeType) => {
+          const { error } = await database.storage.from(tenderDocumentBucket).upload(storagePath, buffer, { contentType: mimeType, upsert: true });
+          if (error) throw error;
+        },
+        recordVersion: async version => {
+          const response = await database.rpc('psi_record_tender_document_version', {
+            p_opportunity_id: opportunityId, p_tender_id: tenderId, p_source: document.source, p_source_document_id: version.source_document_id,
+            p_name: version.name, p_content_hash: version.content_hash, p_storage_path: version.storage_path,
+            p_mime_type: version.mime_type || 'application/octet-stream', p_size_bytes: version.size_bytes,
+            p_document_type: normalizeDocumentType(version.document_type, version.name), p_extracted_text: version.extracted_text,
+            p_source_url: version.source_url || null, p_actor_id: actor.requested_by,
+          });
+          if (response.error) throw response.error;
+          return response.data;
+        },
+      });
+      return {
+        status: result.status === 'unchanged' ? 'unchanged' : 'imported',
+        hasText: true,
+        documentVersionId: result.version?.id || currentVersion?.id || null,
+      };
+    },
+
+    publishSnapshot: async ({ jobId, tenderId, opportunityId }) => {
+      const actor = await getTenderProcessingJobActor(database, jobId);
+      const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
+      if (beginRefresh.error) throw beginRefresh.error;
+      const refreshToken = String(beginRefresh.data || '').trim();
+      if (!refreshToken) throw new Error('No fue posible iniciar la publicación gobernada del snapshot.');
+      const records = await getTenderDocumentRecords(database, opportunityId);
+      const currentDocs = records.documents.filter(document => document.current !== false);
+      const companyProfile = await getTenderCompanyProfile(database);
+      const registered = await registerTenderDocumentSnapshot(database, {
+        opportunity_id: opportunityId, tender_id: tenderId, actor_id: actor.requested_by,
+        refresh_token: refreshToken, documents: currentDocs, company_profile: companyProfile,
+      });
+      return { id: registered.id };
+    },
+
+    requestAgt002: async ({ jobId, tenderId, opportunityId, snapshotId }) => {
+      // Worker interno no puede autoautorizar IA: el gate de custodia humano
+      // (Task 3.4 / psi_authorize_tender_analysis) es la única puerta.
+      const actor = await getTenderProcessingJobActor(database, jobId);
+      if (!actor.analysis_authorized_by) return { status: 'rules_fallback' };
+      if (!isTenderAutoAnalysisEnabled(process.env)) return { status: 'rules_fallback' };
+      if (!isAgt002PreviewConfigured(process.env)) return { status: 'rules_fallback' };
+
+      const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', opportunityId).single());
+      const records = await getTenderDocumentRecords(database, opportunityId);
+      const currentDocs = records.documents.filter(document => document.current !== false);
+      const companyProfile = await getTenderCompanyProfile(database);
+      const deepAnalysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
+
+      let claimId = null;
+      let idempotencyKey = null;
+      try {
+        const config = getAgt002PreviewRuntimeConfig(process.env);
+        idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion: config.policyVersion, model: config.model });
+        const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
+        if (claim.status === 'existing') {
+          const existingRun = await findAgt002PreviewRun(database, idempotencyKey);
+          if (!existingRun) return { status: 'error', error: new Error('La ejecución AGT-002 reservada no está disponible.') };
+          return { status: 'completed', analysisRunId: existingRun.run_id };
+        }
+        if (claim.status === 'in_progress') return { status: 'busy' };
+        if (claim.status === 'quota' || claim.status === 'saturated') return { status: claim.status };
+        claimId = claim.claim_id;
+        const engine = createAgt002PreviewRuntime({ environment: process.env, countDailyRuns: () => countAgt002PreviewRunsToday(database) });
+        const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId }, { idempotencyKey });
+        const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope });
+        return { status: 'completed', analysisRunId: registeredRun.run_id };
+      } catch (error) {
+        return { status: 'error', error };
+      } finally {
+        if (claimId && idempotencyKey) {
+          try { await releaseAgt002PreviewClaim(database, { idempotencyKey, claimId }); }
+          catch { console.warn('agt002_preview_claim_release_failed', { event: 'agt002_preview_claim_release_failed' }); }
+        }
+      }
+    },
+  };
+}
+
 export async function buildTenderOpportunitySummary(database, tender, { opportunity = null, latestDecision = null } = {}) {
   const fallback = {
     ...dbTenderToPublic(tender), opportunity_id: tender.converted_opportunity_id,
@@ -2944,6 +3106,20 @@ app.post('/api/tender-analysis-authorize', async (req, res) => {
     const { error } = await database.rpc('psi_authorize_tender_analysis', { p_job_id: jobId, p_authorized_by: currentProfile.id });
     if (error) throw error;
     res.json({ status: 'ok' });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/internal/tender-processing-worker', async (req, res) => {
+  try {
+    if (!isTenderDurablePipelineEnabled(process.env)) { const error = new Error('No disponible.'); error.status = 404; throw error; }
+    const expectedSecret = Buffer.from(String(process.env.TENDER_WORKER_SCHEDULER_SECRET || ''), 'utf8');
+    const providedSecret = Buffer.from(String(req.headers['x-tender-worker-secret'] || ''), 'utf8');
+    const secretsMatch = expectedSecret.length > 0 && providedSecret.length === expectedSecret.length && timingSafeEqual(providedSecret, expectedSecret);
+    if (!secretsMatch) { const error = new Error('No autorizado.'); error.status = 403; throw error; }
+    const database = requireDb();
+    const worker = createTenderProcessingWorker(buildTenderProcessingWorkerDeps(database));
+    const result = await worker.runOnce({});
+    res.json({ processed: result?.status && result.status !== 'empty' ? 1 : 0 });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
