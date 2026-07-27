@@ -6,6 +6,7 @@ const compact = value => value.replace(/\s+/g, '');
 
 const siioNavigation = read('src/siio/SiioNavigation.tsx');
 const tenderTabs = read('src/tenders/components/TenderModuleTabs.tsx');
+const tenderNavigation = read('src/tenders/components/TenderModuleNavigation.tsx');
 const tendersModule = read('src/tenders/TendersModule.tsx');
 const styles = compact(read('src/styles.css'));
 const siioStyles = compact(read('src/siio/siio.css'));
@@ -30,7 +31,9 @@ assert.match(styles, /\.module-segmented-navbutton\.active[^{}]*\{[^}]*backgroun
 assert.match(styles, /\.module-segmented-navbutton:focus-visible\{[^}]*outline:/, 'el foco de teclado debe ser visible');
 assert.doesNotMatch(siioStyles, /\.siio-dashboard\.siio-navigation\{[^}]*display:flex/, 'SIIO no debe reintroducir layout flex vertical');
 
-assert.match(tendersModule, /const moduleNavigation = <>\s*<TenderModuleTabs/, 'el módulo debe construir una única navegación interna con el acceso secundario protegido.');
+assert.match(tendersModule, /<TenderModuleNavigation/, 'el módulo debe reutilizar una única navegación interna.');
+assert.match(tenderNavigation, /<TenderModuleTabs/, 'la navegación compartida debe contener los tabs operativos.');
+assert.match(tenderNavigation, /canConfigureTenders/, 'el acceso secundario debe conservar su protección por permisos.');
 assert.doesNotMatch(tendersModule, /<TenderModuleTabs[^>]*\/>\s*\{props\.view/, 'las pestañas no deben permanecer antes del encabezado contextual');
 for (const { path, source } of tenderViews) {
   assert.match(source, /moduleNavigation:\s*ReactNode/, `${path} debe aceptar la navegación compartida`);
