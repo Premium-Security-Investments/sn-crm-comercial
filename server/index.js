@@ -26,6 +26,7 @@ import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fe
 import { createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
 import { claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim } from '../agt002-preview-persistence.js';
 import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
+import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../tender-actuation-types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1496,6 +1497,33 @@ app.get('/api/tender-tracking-events', async (req, res) => {
     const events = rows.slice(0, limit);
     const next_cursor = rows.length > limit ? `${events[events.length - 1].created_at},${events[events.length - 1].id}` : null;
     res.json({ events, next_cursor });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-actuation', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireTenderTrackingAccess(currentProfile);
+    const database = requireDb();
+    const tenderId = requireTenderTrackingId(req.body?.tender_id);
+    await getTenderTrackingTender(database, tenderId);
+    const actuationType = String(req.body?.type || '').trim();
+    assertPublicActuationType(actuationType);
+    const note = String(req.body?.note || '').trim();
+    if (!note) throw trackingError('La descripción de la actuación es obligatoria.');
+    const { data, error } = await database.rpc('psi_append_tender_tracking_event', {
+      p_tender_id: tenderId,
+      p_event_type: actuationType,
+      p_actor_kind: 'human',
+      p_created_by: currentProfile.id,
+      p_source_ref_type: null,
+      p_source_ref_id: null,
+      p_metadata: null,
+      p_note: note,
+      p_singular: false,
+    });
+    if (error) throw error;
+    res.json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
