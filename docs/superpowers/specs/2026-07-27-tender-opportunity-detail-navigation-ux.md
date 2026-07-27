@@ -1,8 +1,8 @@
 # Diseño UX — navegación compacta de Ver expediente
 
-**Fecha:** 2026-07-27  
-**Estado:** aprobado por Juan Botero en conversación  
-**Repositorio:** `Premium-Security-Investments/sn-crm-comercial`  
+**Fecha:** 2026-07-27
+**Estado:** aprobado por Juan Botero en conversación
+**Repositorio:** `Premium-Security-Investments/sn-crm-comercial`
 **Alcance:** detalle de oportunidades de Licitación Pública (`Ver expediente`)
 
 ## 1. Problema
