@@ -112,4 +112,23 @@ for (const field of ['strengths', 'weaknesses', 'blockers', 'questions', 'unveri
 }
 assertClosedObjects(requestSchema);
 assertClosedObjects(responseSchema);
+
+function validEnvelopeFixture() {
+  return buildSyntheticAgt002TenderAnalysis(snapshot);
+}
+
+function testAcceptsPreviewSchemaVersion() {
+  const envelope = { ...validEnvelopeFixture(), schema_version: '2.0-preview.1' };
+  const result = validateAgt002TenderAnalysisEnvelope(envelope);
+  assert.equal(result.schema_version, '2.0-preview.1');
+}
+
+function testStillRejectsUnknownSchemaVersion() {
+  const envelope = { ...validEnvelopeFixture(), schema_version: '1.0-legacy' };
+  assert.throws(() => validateAgt002TenderAnalysisEnvelope(envelope), /versión de esquema/i);
+}
+
+testAcceptsPreviewSchemaVersion();
+testStillRejectsUnknownSchemaVersion();
+
 console.log('AGT-002 tender analysis consumer contract passed');
