@@ -1467,6 +1467,19 @@ app.get('/api/tender-tracking', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
+const TENDER_TRACKING_EVENTS_DEFAULT_LIMIT = 50;
+const TENDER_TRACKING_EVENTS_MAX_LIMIT = 200;
+
+function parseTenderTrackingEventsCursor(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const separatorIndex = raw.lastIndexOf(',');
+  const createdAt = separatorIndex > 0 ? raw.slice(0, separatorIndex) : '';
+  const id = separatorIndex > 0 ? raw.slice(separatorIndex + 1) : '';
+  if (!createdAt || Number.isNaN(Date.parse(createdAt)) || !tenderTrackingIdPattern.test(id)) throw trackingError('Cursor de historial inválido.');
+  return { createdAt, id };
+}
+
 app.get('/api/tender-tracking-events', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -1474,7 +1487,15 @@ app.get('/api/tender-tracking-events', async (req, res) => {
     const database = requireDb();
     const tenderId = requireTenderTrackingId(req.query.id);
     await getTenderTrackingTender(database, tenderId);
-    res.json(await must(database.from('psi_tender_tracking_events').select('*').eq('tender_id', tenderId).order('created_at', { ascending: false })) || []);
+    const limit = Math.min(TENDER_TRACKING_EVENTS_MAX_LIMIT, Math.max(1, Number.parseInt(req.query.limit, 10) || TENDER_TRACKING_EVENTS_DEFAULT_LIMIT));
+    const cursor = parseTenderTrackingEventsCursor(req.query.cursor);
+    let query = database.from('psi_tender_tracking_events').select('*').eq('tender_id', tenderId)
+      .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(limit + 1);
+    if (cursor) query = query.or(`created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`);
+    const rows = (await must(query)) || [];
+    const events = rows.slice(0, limit);
+    const next_cursor = rows.length > limit ? `${events[events.length - 1].created_at},${events[events.length - 1].id}` : null;
+    res.json({ events, next_cursor });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
