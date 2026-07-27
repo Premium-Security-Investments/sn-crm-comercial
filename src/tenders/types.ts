@@ -86,6 +86,7 @@ export type TenderDocumentsPayload = Partial<TenderDocumentRefreshResult> & {
   documents: TenderDocumentRecord[];
   analysis: TenderDocumentAnalysis | null;
   analyses: TenderDocumentAnalysis[];
+  analysis_engine?: { requested: 'AGT-002'; used: 'AGT-002' | 'siio_rules_v1'; fallback: boolean; reason?: 'not_configured' | 'preview_unavailable'; reused?: boolean; human_review_required: true };
 };
 export type TenderAnalysisFinding = string | {
   id?: string;

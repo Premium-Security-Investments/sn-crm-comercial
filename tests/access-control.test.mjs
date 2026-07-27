@@ -184,6 +184,12 @@ runCases('licitaciones', [
   { name: 'agent técnico puede recomendar', profile: agent(), action: ACTIONS.LICITACIONES_GO_NO_GO_RECOMMEND, resource: { technical_authorized: true }, expected: true },
   { name: 'agent técnico no recomienda sin autorización técnica', profile: agent(), action: ACTIONS.LICITACIONES_GO_NO_GO_RECOMMEND, resource: {}, expected: false },
   { name: 'agent técnico no aprueba', profile: agent(), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: { technical_authorized: true }, expected: false },
+  { name: 'admin con permiso ejecuta análisis IA', profile: tenderUser('admin'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: true },
+  { name: 'gerencia con permiso ejecuta análisis IA', profile: tenderUser('gerencia'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: true },
+  { name: 'director con permiso ejecuta análisis IA', profile: tenderUser('director'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: true },
+  { name: 'director sin permiso de licitaciones no ejecuta análisis IA', profile: human('director'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
+  { name: 'comercial con permiso no ejecuta análisis IA', profile: tenderUser('comercial'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
+  { name: 'colaborador con permiso no ejecuta análisis IA', profile: tenderUser('colaborador'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
 ], ({ profile: candidate, action, resource }) => can(candidate, action, resource));
 
 runCases('SIIO', [

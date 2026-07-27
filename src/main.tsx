@@ -21,6 +21,7 @@ import { supabaseBrowser } from './supabaseBrowser';
 import { VigiaCommercial } from './vigia/VigiaCommercial';
 import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
+import { ACTIONS, can } from '../access-control.js';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
@@ -769,7 +770,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
       <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p></div><div className="row-actions"><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>{o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <button className="danger" onClick={discardTenderOpportunity}>Sacar de oportunidad</button>}</div></div>
       <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Fecha creación" value={fmtDate(o.created_at)}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
     </div>
-    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} focusTargetRef={documentReviewRef} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onReload={async()=>{await load(); await refresh();}} />}
+    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} currentProfile={data.currentProfile} focusTargetRef={documentReviewRef} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onReload={async()=>{await load(); await refresh();}} />}
     {o.service_type_code === 'licitacion_publica' && <div id="tender-decision" className="tender-detail-anchor"><TenderGoNoGoDecisionPanel key={`tender-decision-${o.id}`} opportunityId={o.id} opportunityName={o.company_name || 'Oportunidad de licitación'} analysis={tenderAnalysis} currentProfile={data.currentProfile} request={api} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /></div>}
     {o.service_type_code === 'licitacion_publica' && <div id="tender-preparation" className="tender-detail-anchor"><TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} currentProfile={data.currentProfile} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /></div>}
     <div id="tender-follow-up" className="tender-detail-anchor"><div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><div id="opportunity-follow-up" className="opportunity-follow-up-anchor" tabIndex={-1} ref={followUpRef}><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div></div>
@@ -787,7 +788,7 @@ function fileToBase64(file: File) {
     reader.readAsDataURL(file);
   });
 }
-function TenderDocumentReviewPanel({ opportunity, onReload, onAnalysisChanged, focusTargetRef }: { opportunity: Opportunity; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
+function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAnalysisChanged, focusTargetRef }: { opportunity: Opportunity; currentProfile: Profile; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
   const [payload, setPayload] = useState<TenderDocumentsPayload>({ documents: [], analysis: null, analyses: [] });
   const [statusText, setStatusText] = useState('');
   const [refreshResult, setRefreshResult] = useState<TenderDocumentRefreshResult | null>(null);
@@ -835,6 +836,15 @@ function TenderDocumentReviewPanel({ opportunity, onReload, onAnalysisChanged, f
     } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }
   };
+  const analyzeDocumentsWithAgt002 = async () => {
+    setBusy(true); setStatusText('Ejecutando AGT-002 Preview con revisión humana obligatoria…');
+    try {
+      const data = await api<TenderDocumentsPayload>('/api/tender-documents-analyze-agent-preview', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
+      setPayload(data); onAnalysisChanged?.(data.analysis || null);
+      setStatusText(data.analysis_engine?.fallback ? 'AGT-002 no estuvo disponible; se aplicó fallback seguro por reglas.' : 'AGT-002 Preview completado. La recomendación requiere revisión humana.');
+    } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
+  };
   const importOfficialDocuments = async () => {
     setBusy(true); setStatusText('Actualizando documentos oficiales desde la fuente…');
     try {
@@ -849,7 +859,7 @@ function TenderDocumentReviewPanel({ opportunity, onReload, onAnalysisChanged, f
   const sourceUrl = resolveTenderSourceUrl(opportunity.source_url, opportunity.observaciones);
   return <div id="tender-document-review" className="tender-guided-review" tabIndex={-1} ref={focusTargetRef}>
     <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} sourceUrl={sourceUrl} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
-    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} onAnalyze={() => void analyzeDocuments()} />
+    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} onAnalyze={() => void analyzeDocuments()} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} analysisEngine={payload.analysis_engine} />
   </div>;
 }
 function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void> }) {

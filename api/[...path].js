@@ -20,6 +20,8 @@ import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
 import { mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
 import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
+import { createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
+import { claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim } from '../agt002-preview-persistence.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2720,6 +2722,76 @@ app.post('/api/tender-documents-analyze', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
+app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.AI_ANALYSIS_RUN);
+    const database = requireDb();
+    await requireTenderAnalysisFoundation(database);
+    const opportunityId = String(req.body.opportunity_id || '');
+    const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const tenderId = await getTenderIdForOpportunity(database, opportunityId);
+    const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
+    if (beginRefresh.error) throw beginRefresh.error;
+    const refreshToken = String(beginRefresh.data || '').trim();
+    if (!refreshToken) throw new Error('No fue posible abrir el análisis documental gobernado.');
+    const records = await getTenderDocumentRecords(database, opportunityId);
+    const currentDocs = records.documents.filter(document => document.current !== false);
+    if (!currentDocs.length) throw new Error('Debe cargar documentos antes de analizar.');
+    const companyProfile = await getTenderCompanyProfile(database);
+    const registeredSnapshot = await registerTenderDocumentSnapshot(database, {
+      opportunity_id: opportunityId, tender_id: tenderId, actor_id: currentProfile.id, refresh_token: refreshToken,
+      documents: currentDocs, company_profile: companyProfile,
+    });
+    const deepAnalysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
+
+    const useRulesFallback = async reason => {
+      const rulesRun = await registerSiioRulesAnalysis(database, {
+        opportunity_id: opportunityId, tender_id: tenderId, actor_id: currentProfile.id,
+        documents: currentDocs, company_profile: companyProfile, result: deepAnalysis, snapshot_record: registeredSnapshot,
+      });
+      const payload = await getTenderDocumentRecords(database, opportunityId);
+      return res.json({
+        ...payload,
+        analysis: presentCurrentTenderAnalysis(rulesRun) || payload.analysis,
+        analysis_engine: { requested: 'AGT-002', used: 'siio_rules_v1', fallback: true, reason, human_review_required: true },
+      });
+    };
+
+    if (!isAgt002PreviewConfigured(process.env)) return useRulesFallback('not_configured');
+    let claimId = null;
+    let idempotencyKey = null;
+    try {
+      const config = getAgt002PreviewRuntimeConfig(process.env);
+      idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId: registeredSnapshot.id, policyVersion: config.policyVersion, model: config.model });
+      const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
+      if (claim.status === 'existing') {
+        const existingRun = await findAgt002PreviewRun(database, idempotencyKey);
+        if (!existingRun) throw new Error('La ejecución AGT-002 reservada no está disponible.');
+        const payload = await getTenderDocumentRecords(database, opportunityId);
+        return res.json({ ...payload, analysis: presentCurrentTenderAnalysis(existingRun), analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, reused: true, human_review_required: true } });
+      }
+      if (claim.status === 'in_progress') {
+        return res.status(409).json({ error: 'AGT-002 Preview ya está procesando este snapshot.', analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, in_progress: true, human_review_required: true } });
+      }
+      if (claim.status === 'quota' || claim.status === 'saturated') return useRulesFallback(claim.status);
+      claimId = claim.claim_id;
+      const engine = createAgt002PreviewRuntime({ environment: process.env, countDailyRuns: () => countAgt002PreviewRunsToday(database) });
+      const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id }, { idempotencyKey });
+      const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope });
+      const payload = await getTenderDocumentRecords(database, opportunityId);
+      return res.json({ ...payload, analysis: presentCurrentTenderAnalysis(registeredRun), analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, reused: false, human_review_required: true } });
+    } catch {
+      console.warn('agt002_preview_fallback', { event: 'agt002_preview_fallback', reason: 'preview_unavailable' });
+      return useRulesFallback('preview_unavailable');
+    } finally {
+      if (claimId && idempotencyKey) {
+        try { await releaseAgt002PreviewClaim(database, { idempotencyKey, claimId }); }
+        catch { console.warn('agt002_preview_claim_release_failed', { event: 'agt002_preview_claim_release_failed' }); }
+      }
+    }
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
 
 app.post('/api/tender-documents-import', async (req, res) => {
   try {
