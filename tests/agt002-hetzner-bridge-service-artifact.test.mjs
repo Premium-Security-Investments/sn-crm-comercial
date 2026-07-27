@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const unit = readFileSync(new URL('../ops/agt002-hetzner-bridge/agt002-bridge.service', import.meta.url), 'utf8');
+const caddyfile = readFileSync(new URL('../ops/agt002-hetzner-bridge/Caddyfile', import.meta.url), 'utf8');
 
 function serviceLines(unitText) {
   return unitText.split('\n').map(line => line.trim()).filter(Boolean);
@@ -30,8 +31,14 @@ function testProtectSystemStrictStillPresent() {
   assert.ok(lines.includes('ProtectHome=true'), 'ProtectHome=true debe permanecer.');
 }
 
+function testCaddyUsesTheFixedLoopbackPort() {
+  assert.match(caddyfile, /^\s*reverse_proxy 127\.0\.0\.1:8787\s*$/m, 'Caddy debe apuntar al puerto loopback fijo del bridge.');
+  assert.doesNotMatch(caddyfile, /AGT002_BRIDGE_LISTEN_PORT/, 'Caddy no debe depender de una variable que su unidad systemd no recibe.');
+}
+
 testPrivateTmpIsEnabled();
 testCodexHomeIsPinnedUnderOptNotHome();
 testReadWritePathsCoversCodexHomeAndVar();
 testProtectSystemStrictStillPresent();
+testCaddyUsesTheFixedLoopbackPort();
 console.log('agt002-hetzner-bridge-service-artifact.test.mjs OK');
