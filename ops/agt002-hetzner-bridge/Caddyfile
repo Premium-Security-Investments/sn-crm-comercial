@@ -1,0 +1,4 @@
+# Revisar y aplicar manualmente en Hetzner durante la Tarea 14 (Fase 1). No aplicado por este plan.
+agt002.5-78-140-24.sslip.io {
+	reverse_proxy 127.0.0.1:{$AGT002_BRIDGE_LISTEN_PORT}
+}
