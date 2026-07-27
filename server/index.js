@@ -2934,6 +2934,19 @@ app.post('/api/tender-processing-retry', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
+app.post('/api/tender-analysis-authorize', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.AI_ANALYSIS_RUN);
+    const database = requireDb();
+    const jobId = String(req.body?.job_id || '');
+    if (!jobId) throw new Error('Debe indicar el proceso de importación a autorizar.');
+    const { error } = await database.rpc('psi_authorize_tender_analysis', { p_job_id: jobId, p_authorized_by: currentProfile.id });
+    if (error) throw error;
+    res.json({ status: 'ok' });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 app.post('/api/tender-opportunity-discard', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
