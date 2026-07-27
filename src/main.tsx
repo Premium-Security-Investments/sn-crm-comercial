@@ -12,9 +12,11 @@ import { TenderAnalysisSection } from './tenders/components/TenderAnalysisSectio
 import { TenderDetailNavigation, resolveTenderSourceUrl } from './tenders/components/TenderDetailNavigation';
 import { TenderDocumentSection } from './tenders/components/TenderDocumentSection';
 import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDecisionPanel';
+import { TenderModuleNavigation } from './tenders/components/TenderModuleNavigation';
 import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
+import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
 import { tenderSharePointStatusLabel } from './tenders/statusLabels';
-import type { TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderModuleView } from './tenders/types';
+import type { TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
 import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
 import { supabaseBrowser } from './supabaseBrowser';
@@ -277,7 +279,7 @@ function lastUpdatedLabel(rows: Opportunity[]) {
 function todayDateInputValue() { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0,10); }
 function startOfToday() { const d = new Date(); d.setHours(0,0,0,0); return d; }
 function daysSince(value?: string | null) { if (!value) return null; const diff = startOfToday().getTime() - new Date(value).getTime(); return Math.max(0, Math.floor(diff / 86_400_000)); }
-function nextActionStatus(o: Pick<Opportunity, 'stage_code' | 'next_action_at' | 'last_interaction_at' | 'updated_at' | 'created_at'>) {
+function nextActionStatus(o: Pick<Opportunity, 'stage_code' | 'next_action_at' | 'last_interaction_at' | 'updated_at' | 'created_at'>): TenderFollowUpNavigationValue & { tone: string } {
   if (isTerminalStage(o.stage_code)) return { code: 'closed', label: 'Cerrada', tone: 'success', detail: 'No requiere próxima gestión' };
   if (!o.next_action_at) return { code: 'missing', label: 'Sin agenda', tone: 'danger', detail: 'Programar próxima gestión' };
   const today = startOfToday();
@@ -725,6 +727,10 @@ function Pagination({ page, pageSize, total, onChange, label }: { page: number; 
 function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap; refresh: () => Promise<void> }) {
   const [detail, setDetail] = useState<{ opportunity: Opportunity; interactions: Interaction[] } | null>(null); const [error, setError] = useState<string | null>(null);
   const [tenderAnalysis, setTenderAnalysis] = useState<TenderDocumentAnalysis | null>(null);
+  const [tenderDocumentNavigationState, setTenderDocumentNavigationState] = useState<TenderPanelState<TenderDocumentNavigationValue>>({ phase: 'loading' });
+  const [tenderAnalysisNavigationState, setTenderAnalysisNavigationState] = useState<TenderPanelState<TenderDocumentAnalysis | null>>({ phase: 'loading' });
+  const [tenderDecisionNavigationState, setTenderDecisionNavigationState] = useState<TenderPanelState<TenderGoNoGoDecision | null>>({ phase: 'loading' });
+  const [tenderPreparationNavigationState, setTenderPreparationNavigationState] = useState<TenderPanelState<TenderPreparationNavigationValue>>({ phase: 'loading' });
   const [tenderRevision, setTenderRevision] = useState(0);
   const detailRequestRef = useRef(0);
   const activeDetailIdRef = useRef(id);
@@ -746,6 +752,10 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   useEffect(() => {
     activeDetailIdRef.current = id; detailRequestRef.current += 1;
     setDetail(null); setError(null); setTenderAnalysis(null); setTenderRevision(0);
+    setTenderDocumentNavigationState({ phase: 'loading' });
+    setTenderAnalysisNavigationState({ phase: 'loading' });
+    setTenderDecisionNavigationState({ phase: 'loading' });
+    setTenderPreparationNavigationState({ phase: 'loading' });
     void load();
     return () => { detailRequestRef.current += 1; };
   }, [id]);
@@ -755,6 +765,13 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   const o = detail.opportunity;
   const visibleInteractions = detail.interactions.filter(i => i.interaction_type !== 'documento');
   const action = nextActionStatus(o);
+  const tenderNavigationSnapshot: TenderDetailStatusSnapshot = {
+    documents: tenderDocumentNavigationState,
+    analysis: tenderAnalysisNavigationState,
+    decision: tenderDecisionNavigationState,
+    preparation: tenderPreparationNavigationState,
+    followUp: action,
+  };
   const lastDays = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
   const discardTenderOpportunity = async () => {
     const reason = window.prompt('Motivo para sacar de oportunidad / descartar esta licitación:', 'No óptima después del análisis documental');
@@ -765,14 +782,15 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
   };
   return <section className="stack">
-    {o.service_type_code === 'licitacion_publica' && <TenderDetailNavigation entity={o.company_name} sourceUrl={o.source_url} observations={o.observaciones} onBack={() => go('#/tenders?view=oportunidades')} />}
     <div id="tender-summary" className="tender-detail-anchor">
       <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p></div><div className="row-actions"><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>{o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <button className="danger" onClick={discardTenderOpportunity}>Sacar de oportunidad</button>}</div></div>
-      <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Fecha creación" value={fmtDate(o.created_at)}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
     </div>
-    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} currentProfile={data.currentProfile} focusTargetRef={documentReviewRef} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onReload={async()=>{await load(); await refresh();}} />}
-    {o.service_type_code === 'licitacion_publica' && <div id="tender-decision" className="tender-detail-anchor"><TenderGoNoGoDecisionPanel key={`tender-decision-${o.id}`} opportunityId={o.id} opportunityName={o.company_name || 'Oportunidad de licitación'} analysis={tenderAnalysis} currentProfile={data.currentProfile} request={api} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /></div>}
-    {o.service_type_code === 'licitacion_publica' && <div id="tender-preparation" className="tender-detail-anchor"><TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} currentProfile={data.currentProfile} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /></div>}
+    {o.service_type_code === 'licitacion_publica' && <TenderModuleNavigation active="oportunidades" navigate={go} currentProfile={data.currentProfile} />}
+    {o.service_type_code === 'licitacion_publica' && <TenderDetailNavigation entity={o.company_name} sourceUrl={o.source_url} observations={o.observaciones} statusSnapshot={tenderNavigationSnapshot} onBack={() => go('#/tenders?view=oportunidades')} />}
+    <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Fecha creación" value={fmtDate(o.created_at)}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
+    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} currentProfile={data.currentProfile} focusTargetRef={documentReviewRef} onNavigationStateChanged={(documents, analysis) => { if (activeDetailIdRef.current === o.id) { setTenderDocumentNavigationState(documents); setTenderAnalysisNavigationState(analysis); } }} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onReload={async()=>{await load(); await refresh();}} />}
+    {o.service_type_code === 'licitacion_publica' && <div id="tender-decision" className="tender-detail-anchor"><TenderGoNoGoDecisionPanel key={`tender-decision-${o.id}`} opportunityId={o.id} opportunityName={o.company_name || 'Oportunidad de licitación'} analysis={tenderAnalysis} currentProfile={data.currentProfile} request={api} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderDecisionNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /></div>}
+    {o.service_type_code === 'licitacion_publica' && <div id="tender-preparation" className="tender-detail-anchor"><TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} currentProfile={data.currentProfile} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderPreparationNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /></div>}
     <div id="tender-follow-up" className="tender-detail-anchor"><div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><div id="opportunity-follow-up" className="opportunity-follow-up-anchor" tabIndex={-1} ref={followUpRef}><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div></div>
     <Panel title="Línea de seguimientos"><div className="timeline">{visibleInteractions.length ? visibleInteractions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel></div>
   </section>;
@@ -788,7 +806,7 @@ function fileToBase64(file: File) {
     reader.readAsDataURL(file);
   });
 }
-function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAnalysisChanged, focusTargetRef }: { opportunity: Opportunity; currentProfile: Profile; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
+function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAnalysisChanged, onNavigationStateChanged, focusTargetRef }: { opportunity: Opportunity; currentProfile: Profile; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; onNavigationStateChanged?: (documents: TenderPanelState<TenderDocumentNavigationValue>, analysis: TenderPanelState<TenderDocumentAnalysis | null>) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
   const [payload, setPayload] = useState<TenderDocumentsPayload>({ documents: [], analysis: null, analyses: [] });
   const [statusText, setStatusText] = useState('');
   const [refreshResult, setRefreshResult] = useState<TenderDocumentRefreshResult | null>(null);
@@ -798,16 +816,21 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
   activeOpportunityRef.current = opportunity.id;
   const documents = payload.documents || [];
   const analysis = payload.analysis;
+  const emitNavigationPayload = (data: TenderDocumentsPayload) => onNavigationStateChanged?.(
+    { phase: 'ready', value: { currentDocumentCount: (data.documents || []).filter(document => document.current !== false).length, importError: Boolean(data.import_error) } },
+    { phase: 'ready', value: data.analysis || null },
+  );
   const loadDocuments = async () => {
     const requestedId = opportunity.id; const version = ++requestVersionRef.current;
+    onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
     const data = await api<TenderDocumentsPayload>(`/api/tender-documents?id=${encodeURIComponent(requestedId)}`);
     if (version !== requestVersionRef.current || activeOpportunityRef.current !== requestedId) return;
-    setPayload(data); onAnalysisChanged?.(data.analysis || null);
+    setPayload(data); onAnalysisChanged?.(data.analysis || null); emitNavigationPayload(data);
   };
   useEffect(() => {
     activeOpportunityRef.current = opportunity.id; requestVersionRef.current += 1;
-    setPayload({ documents: [], analysis: null, analyses: [] }); setRefreshResult(null); setStatusText(''); setBusy(false); onAnalysisChanged?.(null);
-    void loadDocuments().catch(err => { if (activeOpportunityRef.current === opportunity.id) setStatusText(err instanceof Error ? err.message : String(err)); });
+    setPayload({ documents: [], analysis: null, analyses: [] }); setRefreshResult(null); setStatusText(''); setBusy(false); onAnalysisChanged?.(null); onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
+    void loadDocuments().catch(err => { if (activeOpportunityRef.current === opportunity.id) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'error', message }); } });
     return () => { requestVersionRef.current += 1; };
   }, [opportunity.id]);
   const addFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -815,6 +838,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     event.currentTarget.value = '';
     if (!selected.length) return;
     setBusy(true); setStatusText('Subiendo y extrayendo texto…');
+    onNavigationStateChanged?.({ phase: 'pending', label: 'Carga documental en curso' }, { phase: 'ready', value: payload.analysis || null });
     try {
       const files = await Promise.all(selected.slice(0, 8).map(async file => ({
         name: file.name,
@@ -824,16 +848,17 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
         content_base64: await fileToBase64(file)
       })));
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-upload', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, files }) });
-      setPayload(data); onAnalysisChanged?.(data.analysis || null); setStatusText('Documentos guardados en Supabase y texto extraído.');
-    } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
+      setPayload(data); onAnalysisChanged?.(data.analysis || null); emitNavigationPayload(data); setStatusText('Documentos guardados en Supabase y texto extraído.');
+    } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'ready', value: payload.analysis || null }); }
     finally { setBusy(false); }
   };
   const analyzeDocuments = async () => {
     setBusy(true); setStatusText('Generando análisis documental…');
+    onNavigationStateChanged?.({ phase: 'ready', value: { currentDocumentCount: documents.filter(document => document.current !== false).length, importError: Boolean(payload.import_error) } }, { phase: 'pending', label: 'Análisis en curso' });
     try {
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-analyze', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
-      setPayload(data); onAnalysisChanged?.(data.analysis || null); setStatusText('Análisis persistente generado y compartido.');
-    } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
+      setPayload(data); onAnalysisChanged?.(data.analysis || null); emitNavigationPayload(data); setStatusText('Análisis persistente generado y compartido.');
+    } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'ready', value: { currentDocumentCount: documents.filter(document => document.current !== false).length, importError: Boolean(payload.import_error) } }, { phase: 'error', message }); }
     finally { setBusy(false); }
   };
   const analyzeDocumentsWithAgt002 = async () => {
@@ -847,13 +872,20 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
   };
   const importOfficialDocuments = async () => {
     setBusy(true); setStatusText('Actualizando documentos oficiales desde la fuente…');
+    onNavigationStateChanged?.({ phase: 'pending', label: 'Importación documental en curso' }, { phase: 'ready', value: payload.analysis || null });
     try {
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-import', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
       setPayload(data); onAnalysisChanged?.(data.analysis || null);
-      setRefreshResult({ new_count: Number(data.new_count || 0), updated_count: Number(data.updated_count || 0), unchanged_count: Number(data.unchanged_count || 0), failed_count: Number(data.failed_count || 0), analysis_generated: Boolean(data.analysis_generated) });
+      const failedCount = Number(data.failed_count || 0);
+      if (failedCount > 0) onNavigationStateChanged?.({ phase: 'error', message: `Falló la importación de ${failedCount} documento(s)` }, { phase: 'ready', value: data.analysis || null });
+      else onNavigationStateChanged?.(
+        { phase: 'ready', value: { currentDocumentCount: (data.documents || []).filter(document => document.current !== false).length, importError: false } },
+        { phase: 'ready', value: data.analysis || null },
+      );
+      setRefreshResult({ new_count: Number(data.new_count || 0), updated_count: Number(data.updated_count || 0), unchanged_count: Number(data.unchanged_count || 0), failed_count: failedCount, analysis_generated: Boolean(data.analysis_generated) });
       setStatusText('Documentos oficiales actualizados. El análisis existente no fue regenerado.');
       await onReload?.();
-    } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
+    } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'ready', value: payload.analysis || null }); }
     finally { setBusy(false); }
   };
   const sourceUrl = resolveTenderSourceUrl(opportunity.source_url, opportunity.observaciones);
@@ -862,17 +894,27 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} onAnalyze={() => void analyzeDocuments()} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} analysisEngine={payload.analysis_engine} />
   </div>;
 }
-function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void> }) {
+function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, onNavigationStateChanged }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void>; onNavigationStateChanged?: (state: TenderPanelState<TenderPreparationNavigationValue>) => void }) {
   const [payload, setPayload] = useState<TenderOfferPreparationPayload>({ preparation: null, preparations: [], notes: [] });
   const [statusText, setStatusText] = useState('');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
   const preparation = payload.preparation;
+  const emitPreparationNavigationState = (data: TenderOfferPreparationPayload) => onNavigationStateChanged?.({
+    phase: 'ready',
+    value: {
+      preparationStatus: data.preparation?.status || null,
+      decision: data.decision?.decision || null,
+      humanPendingCount: data.preparation?.human_required_items?.length || 0,
+    },
+  });
   const loadPreparation = async () => {
+    onNavigationStateChanged?.({ phase: 'loading' });
     const data = await api<TenderOfferPreparationPayload>(`/api/tender-offer-preparation?id=${encodeURIComponent(opportunity.id)}`);
     setPayload(data);
+    emitPreparationNavigationState(data);
   };
-  useEffect(() => { loadPreparation().catch(err => setStatusText(err instanceof Error ? err.message : String(err))); }, [opportunity.id]);
+  useEffect(() => { loadPreparation().catch(err => { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }); }); }, [opportunity.id]);
 
   const saveAssistantNote = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -880,8 +922,8 @@ function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged }:
     setBusy(true); setStatusText('Guardando nota para el asistente…');
     try {
       const data = await api<TenderOfferPreparationPayload>('/api/tender-offer-preparation-note', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, note }) });
-      setPayload(data); setNote(''); setStatusText('Nota guardada en el expediente.');
-    } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
+      setPayload(data); emitPreparationNavigationState(data); setNote(''); setStatusText('Nota guardada en el expediente.');
+    } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }); }
     finally { setBusy(false); }
   };
   const authorizedPreparation = preparation && payload.decision?.decision === 'go' ? preparation : null;

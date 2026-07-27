@@ -12,11 +12,13 @@ assert.equal(existsSync(permissionsPath), true, 'El helper de permisos de Config
 const tabs = read('src/tenders/components/TenderModuleTabs.tsx');
 const configuration = read('src/tenders/TenderConfigurationView.tsx');
 const moduleSource = read('src/tenders/TendersModule.tsx');
+const moduleNavigation = read('src/tenders/components/TenderModuleNavigation.tsx');
 const server = read('server/index.js');
 const api = read('api/[...path].js');
 
 assert.doesNotMatch(tabs, />Configuración</, 'Configuración debe quedar fuera de tabs operativos.');
-assert.match(moduleSource, />Configuración</, 'Configuración debe ser un botón secundario fuera de tabs.');
+assert.match(moduleSource, /TenderModuleNavigation/, 'El módulo debe reutilizar la navegación compacta compartida.');
+assert.match(moduleNavigation, />Configuración</, 'Configuración debe ser un botón secundario fuera de tabs.');
 assert.match(configuration, /Base empresarial de licitaciones/);
 assert.match(configuration, /Actualizar RUP/);
 assert.doesNotMatch(configuration, /Guardar búsqueda|Búsquedas guardadas/);
