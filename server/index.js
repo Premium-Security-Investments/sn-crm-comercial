@@ -1448,8 +1448,8 @@ function requireTenderTrackingId(value) {
   return tenderId;
 }
 
-async function getTenderTrackingTender(database, tenderId) {
-  const { data, error } = await database.from('psi_public_tenders').select('*').eq('id', tenderId).maybeSingle();
+async function getTenderTrackingTender(database, tenderReferenceId) {
+  const { data, error } = await database.from('psi_public_tenders').select('*').or(`id.eq.${tenderReferenceId},converted_opportunity_id.eq.${tenderReferenceId}`).maybeSingle();
   if (error) throw error;
   if (!data) throw trackingError('La licitación no existe.', 404);
   return data;
@@ -1487,10 +1487,10 @@ app.get('/api/tender-tracking-events', async (req, res) => {
     requireTenderTrackingAccess(currentProfile);
     const database = requireDb();
     const tenderId = requireTenderTrackingId(req.query.id);
-    await getTenderTrackingTender(database, tenderId);
+    const tender = await getTenderTrackingTender(database, tenderId);
     const limit = Math.min(TENDER_TRACKING_EVENTS_MAX_LIMIT, Math.max(1, Number.parseInt(req.query.limit, 10) || TENDER_TRACKING_EVENTS_DEFAULT_LIMIT));
     const cursor = parseTenderTrackingEventsCursor(req.query.cursor);
-    let query = database.from('psi_tender_tracking_events').select('*').eq('tender_id', tenderId)
+    let query = database.from('psi_tender_tracking_events').select('*').eq('tender_id', tender.id)
       .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(limit + 1);
     if (cursor) query = query.or(`created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`);
     const rows = (await must(query)) || [];
@@ -1506,13 +1506,13 @@ app.post('/api/tender-actuation', async (req, res) => {
     requireTenderTrackingAccess(currentProfile);
     const database = requireDb();
     const tenderId = requireTenderTrackingId(req.body?.tender_id);
-    await getTenderTrackingTender(database, tenderId);
+    const tender = await getTenderTrackingTender(database, tenderId);
     const actuationType = String(req.body?.type || '').trim();
     assertPublicActuationType(actuationType);
     const note = String(req.body?.note || '').trim();
     if (!note) throw trackingError('La descripción de la actuación es obligatoria.');
     const { data, error } = await database.rpc('psi_append_tender_tracking_event', {
-      p_tender_id: tenderId,
+      p_tender_id: tender.id,
       p_event_type: actuationType,
       p_actor_kind: 'human',
       p_created_by: currentProfile.id,
