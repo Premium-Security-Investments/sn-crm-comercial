@@ -146,6 +146,67 @@ async function testSynchronousThrowInCodexClientReleasesBusyAndFailsClosed() {
   });
 }
 
+// Regression for the production smoke bug: a completed request body makes the
+// server IncomingMessage emit 'close' immediately after 'end', while the codex
+// run is still in flight. If disconnect cancellation keys off req 'close', it
+// aborts every real request and the injected client fails with
+// AGT002_CODEX_CANCELLED (mapped to 500) before any model output.
+function abortAwareClient() {
+  return {
+    run: ({ signal } = {}) => new Promise((resolve, reject) => {
+      const cancel = () => {
+        const error = new Error('La ejecución de AGT-002 Preview fue cancelada.');
+        error.code = 'AGT002_CODEX_CANCELLED';
+        reject(error);
+      };
+      if (signal?.aborted) return cancel();
+      // Model latency: give req 'close' a chance to (wrongly) abort us first.
+      const timer = setTimeout(() => resolve({ content: '{"ok":true}', usage: { input_tokens: 1, output_tokens: 2 }, rate_limit: null }), 60);
+      signal?.addEventListener('abort', () => { clearTimeout(timer); cancel(); }, { once: true });
+    }),
+  };
+}
+
+async function testCompletedRequestBodyDoesNotCancelRun() {
+  await withServer(abortAwareClient(), async (base) => {
+    const payload = { model: 'gpt-x', policy: 'p', input: { a: 1 }, outputSchema: { type: 'object' }, timeoutMs: 5000, idempotencyKey: 'idem-close-1' };
+    const body = JSON.stringify(payload);
+    const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+    const result = await response.json();
+    assert.equal(response.status, 200, `Una petición HTTP normal no debe cancelarse; recibido ${response.status} ${JSON.stringify(result)}`);
+    assert.deepEqual(result, { content: '{"ok":true}', usage: { input_tokens: 1, output_tokens: 2 }, rate_limit: null });
+  });
+}
+
+async function testClientDisconnectStillCancelsRun() {
+  let observeAbort;
+  const abortObserved = new Promise(resolve => { observeAbort = resolve; });
+  const client = {
+    run: ({ signal } = {}) => new Promise((_, reject) => {
+      signal?.addEventListener('abort', () => {
+        observeAbort(true);
+        const error = new Error('La ejecución de AGT-002 Preview fue cancelada.');
+        error.code = 'AGT002_CODEX_CANCELLED';
+        reject(error);
+      }, { once: true });
+    }),
+  };
+  await withServer(client, async (base) => {
+    const controller = new AbortController();
+    const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-disc-1' };
+    const body = JSON.stringify(payload);
+    const pending = fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body, signal: controller.signal });
+    pending.catch(() => {});
+    await new Promise(resolve => setTimeout(resolve, 50));
+    controller.abort();
+    const result = await Promise.race([
+      abortObserved,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('El servidor no propagó la desconexión del cliente al run de Codex.')), 2000)),
+    ]);
+    assert.equal(result, true, 'La desconexión real del cliente debe seguir cancelando el run de Codex.');
+  });
+}
+
 async function testLoginRequiredMappedTo503() {
   const client = { run: async () => { const error = new Error('login'); error.code = 'AGT002_CODEX_LOGIN_REQUIRED'; throw error; } };
   await withServer(client, async (base) => {
@@ -170,4 +231,6 @@ await testConcurrencyOneRejectsSecondRequest();
 await testProviderErrorMappedTo502();
 await testLoginRequiredMappedTo503();
 await testSynchronousThrowInCodexClientReleasesBusyAndFailsClosed();
+await testCompletedRequestBodyDoesNotCancelRun();
+await testClientDisconnectStillCancelsRun();
 console.log('agt002-hetzner-bridge-server.test.mjs Step 5 OK');

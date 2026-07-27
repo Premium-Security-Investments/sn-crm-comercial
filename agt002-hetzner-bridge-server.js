@@ -81,7 +81,13 @@ export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore =
       const startedAt = Date.now();
       const correlationId = randomUUID();
       const controller = new AbortController();
-      req.on('close', () => controller.abort());
+      // Cancel only on a real client disconnect. The request IncomingMessage
+      // emits 'close' immediately after 'end' on every completed body, so
+      // keying off req 'close' would abort each legitimate request. The
+      // response 'close' fires before 'finish' only when the connection drops
+      // before we flush the reply, so writableFinished distinguishes a genuine
+      // disconnect from normal completion.
+      res.on('close', () => { if (!res.writableFinished) controller.abort(); });
 
       const handleError = error => {
         busy = false;
