@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { bridgeRunUrl, resolveAgt002BridgeHost } from './agt002-bridge-host.js';
 import { sha256Hex, buildCanonicalString, signCanonicalString } from './agt002-hetzner-bridge-signing.js';
 
 function transportError(message, code) {
@@ -48,7 +49,7 @@ async function readBoundedJson(response, maxBytes) {
   return JSON.parse(Buffer.concat(chunks.map(chunk => Buffer.from(chunk))).toString('utf8'));
 }
 
-export function createAgt002HetznerBridgeClient({ url, hmacSecret, fetchImpl = fetch, randomNonce = () => randomUUID(), now = () => Math.floor(Date.now() / 1000) } = {}) {
+export function createAgt002HetznerBridgeClient({ url = bridgeRunUrl(resolveAgt002BridgeHost()), hmacSecret, fetchImpl = fetch, randomNonce = () => randomUUID(), now = () => Math.floor(Date.now() / 1000) } = {}) {
   if (typeof url !== 'string' || !url.trim()) throw new Error('El puente AGT-002 requiere una URL configurada.');
   if (typeof hmacSecret !== 'string' || hmacSecret.length < 32) throw new Error('El puente AGT-002 requiere un secreto HMAC de al menos 32 bytes.');
   const path = new URL(url).pathname;
