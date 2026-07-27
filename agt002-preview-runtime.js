@@ -1,8 +1,8 @@
-import { createCodexAppServerClient } from './agt002-preview-codex-client.js';
+import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.js';
 import { AGT002_PREVIEW_POLICY, createAgt002PreviewEngine } from './agt002-preview-engine.js';
 
 export const AGT002_PREVIEW_ENGINE_ID = 'agt002_codex_preview';
-const REQUIRED_ENV_KEYS = ['AGT002_PREVIEW_MODEL', 'AGT002_CODEX_APP_SERVER_BIN'];
+const REQUIRED_ENV_KEYS = ['AGT002_PREVIEW_MODEL', 'AGT002_HETZNER_BRIDGE_URL', 'AGT002_HETZNER_BRIDGE_HMAC_SECRET'];
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_CONCURRENT = 2;
 const DEFAULT_DAILY_MAX_RUNS = 20;
@@ -52,9 +52,9 @@ function positiveIntFromEnv(environment, key, fallback) {
 export function createAgt002PreviewRuntime({ environment = process.env, countDailyRuns } = {}) {
   const config = getAgt002PreviewRuntimeConfig(environment);
 
-  const client = createCodexAppServerClient({
-    command: environment.AGT002_CODEX_APP_SERVER_BIN,
-    args: nonEmpty(environment.AGT002_CODEX_APP_SERVER_ARGS) ? JSON.parse(environment.AGT002_CODEX_APP_SERVER_ARGS) : ['app-server'],
+  const client = createAgt002HetznerBridgeClient({
+    url: environment.AGT002_HETZNER_BRIDGE_URL,
+    hmacSecret: environment.AGT002_HETZNER_BRIDGE_HMAC_SECRET,
   });
 
   return createAgt002PreviewEngine({

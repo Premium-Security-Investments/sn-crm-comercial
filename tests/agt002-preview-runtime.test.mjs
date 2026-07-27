@@ -6,7 +6,8 @@ function baseEnv(overrides = {}) {
   return {
     TENDER_ANALYSIS_ENGINE: 'agt002_codex_preview',
     AGT002_PREVIEW_MODEL: 'synthetic-codex-model',
-    AGT002_CODEX_APP_SERVER_BIN: '/usr/local/bin/codex',
+    AGT002_HETZNER_BRIDGE_URL: 'https://agt002.5-78-140-24.sslip.io/v1/agt002-preview/run',
+    AGT002_HETZNER_BRIDGE_HMAC_SECRET: 'a'.repeat(32),
     ...overrides,
   };
 }
@@ -15,7 +16,8 @@ assert.equal(isAgt002PreviewConfigured({}), false);
 assert.equal(isAgt002PreviewConfigured(baseEnv({ TENDER_ANALYSIS_ENGINE: undefined })), false);
 assert.equal(isAgt002PreviewConfigured(baseEnv({ TENDER_ANALYSIS_ENGINE: 'agt002_openai_preview' })), false, 'only the Codex App Server engine id is accepted; the legacy OpenAI-key plan id must not silently enable this runtime');
 assert.equal(isAgt002PreviewConfigured(baseEnv({ AGT002_PREVIEW_MODEL: '' })), false);
-assert.equal(isAgt002PreviewConfigured(baseEnv({ AGT002_CODEX_APP_SERVER_BIN: '   ' })), false);
+assert.equal(isAgt002PreviewConfigured(baseEnv({ AGT002_HETZNER_BRIDGE_URL: '   ' })), false);
+assert.equal(isAgt002PreviewConfigured(baseEnv({ AGT002_HETZNER_BRIDGE_HMAC_SECRET: '   ' })), false);
 assert.equal(isAgt002PreviewConfigured(baseEnv()), true);
 
 // Fails closed when unconfigured; never constructs a client/spawns anything.
@@ -54,5 +56,30 @@ assert.throws(
 
 const source = readFileSync(new URL('../agt002-preview-runtime.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /OPENAI_API_KEY|HERMES_INTERIM_API_KEY|Authorization|Bearer/i, 'the runtime must never manage an API key or bearer token');
+
+function testConfiguredRequiresHetznerBridgeUrlAndSecret() {
+  const baseEnv = { TENDER_ANALYSIS_ENGINE: 'agt002_codex_preview', AGT002_PREVIEW_MODEL: 'gpt-x' };
+  assert.equal(isAgt002PreviewConfigured(baseEnv), false, 'sin URL de puente, debe fallar cerrado (kill switch apagado por defecto)');
+  assert.equal(isAgt002PreviewConfigured({ ...baseEnv, AGT002_HETZNER_BRIDGE_URL: 'https://agt002.5-78-140-24.sslip.io/v1/agt002-preview/run' }), false, 'sin secreto HMAC, debe fallar cerrado');
+  assert.equal(isAgt002PreviewConfigured({
+    ...baseEnv,
+    AGT002_HETZNER_BRIDGE_URL: 'https://agt002.5-78-140-24.sslip.io/v1/agt002-preview/run',
+    AGT002_HETZNER_BRIDGE_HMAC_SECRET: 'a'.repeat(32),
+  }), true);
+}
+
+function testRuntimeBuildsHetznerBridgeClientNotLocalSpawn() {
+  const environment = {
+    TENDER_ANALYSIS_ENGINE: 'agt002_codex_preview',
+    AGT002_PREVIEW_MODEL: 'gpt-x',
+    AGT002_HETZNER_BRIDGE_URL: 'https://agt002.5-78-140-24.sslip.io/v1/agt002-preview/run',
+    AGT002_HETZNER_BRIDGE_HMAC_SECRET: 'a'.repeat(32),
+  };
+  const engine = createAgt002PreviewRuntime({ environment, countDailyRuns: async () => 0 });
+  assert.equal(typeof engine.analyze, 'function');
+}
+
+testConfiguredRequiresHetznerBridgeUrlAndSecret();
+testRuntimeBuildsHetznerBridgeClientNotLocalSpawn();
 
 console.log('AGT-002 Preview runtime factory (fail-closed environment wiring) passed');
