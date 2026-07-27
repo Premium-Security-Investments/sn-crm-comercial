@@ -1,3 +1,5 @@
+import { jobIdempotencyKey } from './tender-pipeline-idempotency.js';
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TRACKING_STATUSES = new Set(['pendiente_revision', 'analizando', 'esperando_informacion', 'listo_para_decision', 'bloqueado']);
 const GENERIC_TRANSITION_STATUSES = new Set(['nueva', 'descartada']);
@@ -99,6 +101,34 @@ export async function callTenderOpportunityConversion(database, tenderId, payloa
     p_observaciones: payload.observaciones,
     p_expected_tracking_updated_at: nullableTimestamp(expectedTrackingUpdatedAt),
   });
+}
+
+/** Idempotent: a repeated call for the same tender/opportunity/pipeline version
+ * recovers the active job instead of creating a duplicate. */
+export async function callCreateTenderProcessingJob(database, { tenderId, opportunityId, pipelineVersion, requestedBy }) {
+  const id = requireUuid(tenderId, 'una licitación válida');
+  const opportunity = requireUuid(opportunityId, 'una oportunidad válida');
+  const actorId = requireUuid(requestedBy, 'un actor válido');
+  const version = String(pipelineVersion || '').trim();
+  if (!version) throw trackingError('Debe indicar la versión del pipeline.');
+
+  const idempotencyKey = jobIdempotencyKey({ tenderId: id, opportunityId: opportunity, pipelineVersion: version });
+  const created = await rpc(database, 'psi_create_tender_processing_job', {
+    p_tender_id: id,
+    p_opportunity_id: opportunity,
+    p_pipeline_version: version,
+    p_idempotency_key: idempotencyKey,
+    p_requested_by: actorId,
+  });
+
+  const { data: job, error } = await database
+    .from('psi_tender_processing_jobs')
+    .select('status,current_step')
+    .eq('id', created.job_id)
+    .single();
+  if (error) throw error;
+
+  return { job_id: created.job_id, status: job.status, current_step: job.current_step };
 }
 
 export async function callTenderTrackingTransition(database, tenderId, input, currentProfile) {

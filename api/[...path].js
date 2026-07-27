@@ -6,7 +6,8 @@ import { createClient } from '@supabase/supabase-js';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import mammoth from 'mammoth';
 import AdmZip from 'adm-zip';
-import { callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
+import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
+import { isTenderDurablePipelineEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
 import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
 import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
 import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
@@ -2015,6 +2016,7 @@ app.get('/api/opportunities/:id', async (req, res) => {
 });
 
 
+const TENDER_PIPELINE_VERSION = 'v1';
 const tenderDocumentBucket = 'tender-documents';
 const RUP_MAX_BYTES = 50 * 1024 * 1024;
 const tenderDocumentTypes = ['pliego','estudios_previos','anexo_tecnico','adenda','formatos','otro'];
@@ -2473,6 +2475,25 @@ async function convertTenderToOpportunity(database, tender, currentProfile) {
   const payload = buildTenderOpportunityPayload(canonicalTender, currentProfile.role === 'comercial' ? currentProfile : owner);
   const conversion = await callTenderOpportunityConversion(database, tenderRecord.id, payload, tenderRecord.tracking_updated_at, currentProfile);
   const opportunityId = conversion.opportunity_id;
+  if (isTenderDurablePipelineEnabled(process.env)) {
+    const job = await callCreateTenderProcessingJob(database, {
+      tenderId: tenderRecord.id,
+      opportunityId,
+      pipelineVersion: TENDER_PIPELINE_VERSION,
+      requestedBy: currentProfile.id,
+    });
+    return {
+      id: opportunityId,
+      tender_id: tenderRecord.id,
+      duplicate: !!conversion.duplicate,
+      processing: {
+        job_id: job.job_id,
+        status: job.status,
+        current_step: job.current_step,
+        automatic_analysis: isTenderAutoAnalysisEnabled(process.env),
+      },
+    };
+  }
   let document_import_status = 'no_aplica';
   let document_import_error = null;
   if ((canonicalTender.source === 'SECOP II' || canonicalTender.source === 'ESU Contratación') && canonicalTender.url) {
