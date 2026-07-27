@@ -83,6 +83,7 @@ export type TenderDocumentRecord = {
   extracted_text?: string | null;
 };
 export type TenderDocumentsPayload = Partial<TenderDocumentRefreshResult> & {
+  import_error?: { kind?: string; source?: string | null; created_at?: string | null; failure_marker?: string | null } | null;
   documents: TenderDocumentRecord[];
   analysis: TenderDocumentAnalysis | null;
   analyses: TenderDocumentAnalysis[];

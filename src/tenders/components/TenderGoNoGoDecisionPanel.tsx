@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadTenderGoNoGoDecision, recordTenderGoNoGoDecision } from '../api';
 import { canApproveTenderGoNoGo } from '../permissions';
 import { tenderDecisionGate, tenderRecommendationLabel } from '../tenderDecisionGate';
+import type { TenderPanelState } from '../detailNavigationState';
 import type { TenderCurrentProfile, TenderDocumentAnalysis, TenderGoNoGoDecision, TenderGoNoGoPayload, TenderRequest } from '../types';
 
 type Decision = 'go' | 'no_go';
@@ -12,13 +13,14 @@ export type TenderGoNoGoDecisionPanelProps = {
   currentProfile: TenderCurrentProfile | null | undefined;
   request: TenderRequest;
   onChanged: () => Promise<void> | void;
+  onNavigationStateChanged?: (state: TenderPanelState<TenderGoNoGoDecision | null>) => void;
 };
 
 const EMPTY_PAYLOAD: TenderGoNoGoPayload = { decision: null, history: [], preparation: null };
 const date = (value?: string | null) => value ? new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : 'Sin fecha';
 const decisionLabel = (value?: string | null) => value === 'go' ? 'GO registrado' : value === 'no_go' ? 'NO GO registrado' : 'Pendiente de decisión';
 
-export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, analysis, currentProfile, request, onChanged }: TenderGoNoGoDecisionPanelProps) {
+export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, analysis, currentProfile, request, onChanged, onNavigationStateChanged }: TenderGoNoGoDecisionPanelProps) {
   const [payload, setPayload] = useState<TenderGoNoGoPayload>(EMPTY_PAYLOAD);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
@@ -32,6 +34,8 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const initialFocusRef = useRef<HTMLHeadingElement | null>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const onNavigationStateChangedRef = useRef(onNavigationStateChanged);
+  onNavigationStateChangedRef.current = onNavigationStateChanged;
   activeOpportunityRef.current = opportunityId;
   const allowed = canApproveTenderGoNoGo(currentProfile);
   const decisionGate = tenderDecisionGate(analysis);
@@ -55,15 +59,21 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
     const requestVersion = ++requestVersionRef.current;
     const requestedId = opportunityId;
     setLoading(true);
+    onNavigationStateChangedRef.current?.({ phase: 'loading' });
     if (!preservePayload) setPayload(EMPTY_PAYLOAD);
     if (!preserveStatus) setStatus('');
     try {
       const next = await loadTenderGoNoGoDecision(request, requestedId);
       if (requestVersion !== requestVersionRef.current || activeOpportunityRef.current !== requestedId) return false;
       setPayload(next);
+      onNavigationStateChangedRef.current?.({ phase: 'ready', value: next.decision });
       return true;
     } catch (error) {
-      if (requestVersion === requestVersionRef.current && activeOpportunityRef.current === requestedId) setStatus(error instanceof Error ? error.message : String(error));
+      if (requestVersion === requestVersionRef.current && activeOpportunityRef.current === requestedId) {
+        const message = error instanceof Error ? error.message : String(error);
+        setStatus(message);
+        onNavigationStateChangedRef.current?.({ phase: 'error', message });
+      }
       return false;
     } finally {
       if (requestVersion === requestVersionRef.current && activeOpportunityRef.current === requestedId) setLoading(false);
@@ -144,6 +154,7 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
     let persistedSuccessfully = false;
     setBusy(true);
     setStatus('Registrando decisión formal…');
+    onNavigationStateChangedRef.current?.({ phase: 'pending', label: 'Registrando decisión humana' });
     try {
       const persisted = await recordTenderGoNoGoDecision(request, {
         opportunity_id: opportunityId,
@@ -167,6 +178,7 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
         psi_sales_profiles: currentProfile ? { full_name: currentProfile.full_name } : null,
       };
       setPayload(previous => ({ ...previous, decision: optimistic, preparation: submittedDecision === 'go' ? persisted.preparation : null, history: [optimistic, ...previous.history.filter(entry => entry.id !== optimistic.id)] }));
+      onNavigationStateChangedRef.current?.({ phase: 'ready', value: optimistic });
       setSelectedDecision(null);
       setJustification('');
       restoreFocus();
@@ -186,6 +198,7 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
           ? `La decisión ya está registrada; la vista sigue pendiente de actualización. ${error instanceof Error ? error.message : String(error)}`
           : `No fue posible registrar la decisión. ${error instanceof Error ? error.message : String(error)}`);
         if (!persistedSuccessfully) setSyncPending(false);
+        if (!persistedSuccessfully) onNavigationStateChangedRef.current?.({ phase: 'error', message: error instanceof Error ? error.message : String(error) });
       }
     } finally {
       if (activeOpportunityRef.current === opportunityId) setBusy(false);

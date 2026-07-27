@@ -1,20 +1,15 @@
+import { useEffect, useMemo, useState } from 'react';
+import { TENDER_DETAIL_SECTIONS, resolveTenderDetailIndicators } from '../detailNavigationState';
+import type { TenderDetailSectionId, TenderDetailStatusSnapshot } from '../detailNavigationState';
 import { safePublicTenderSourceUrl } from '../tenderUiState';
 
 type TenderDetailNavigationProps = {
   entity: string;
   sourceUrl?: string | null;
   observations?: string | null;
+  statusSnapshot: TenderDetailStatusSnapshot;
   onBack: () => void;
 };
-
-const progress = [
-  ['tender-summary', 'Resumen'],
-  ['tender-document-review', 'Revisión documental'],
-  ['tender-analysis', 'Análisis / preanálisis'],
-  ['tender-decision', 'GO / NO GO'],
-  ['tender-preparation', 'Preparación'],
-  ['tender-follow-up', 'Seguimiento'],
-] as const;
 
 export function resolveTenderSourceUrl(sourceUrl?: string | null, observations?: string | null) {
   const structured = safePublicTenderSourceUrl(sourceUrl);
@@ -23,23 +18,56 @@ export function resolveTenderSourceUrl(sourceUrl?: string | null, observations?:
   return safePublicTenderSourceUrl(historical);
 }
 
-export function TenderDetailNavigation({ entity, sourceUrl, observations, onBack }: TenderDetailNavigationProps) {
+export function TenderDetailNavigation({ entity, sourceUrl, observations, statusSnapshot, onBack }: TenderDetailNavigationProps) {
   const officialUrl = resolveTenderSourceUrl(sourceUrl, observations);
-  const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const [activeSection, setActiveSection] = useState<TenderDetailSectionId>('tender-summary');
+  const indicators = useMemo(() => resolveTenderDetailIndicators(statusSnapshot), [statusSnapshot]);
+
+  useEffect(() => {
+    const sections = TENDER_DETAIL_SECTIONS
+      .map(section => document.getElementById(section.id))
+      .filter((section): section is HTMLElement => Boolean(section));
+    if (!sections.length || typeof IntersectionObserver === 'undefined') return;
+    const visibility = new Map<HTMLElement, number>(sections.map(section => [section, 0]));
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) visibility.set(entry.target as HTMLElement, entry.isIntersecting ? entry.intersectionRatio : 0);
+      const visible = sections
+        .map(section => ({ section, ratio: visibility.get(section) || 0 }))
+        .filter(item => item.ratio > 0)
+        .sort((a, b) => b.ratio - a.ratio || Math.abs(a.section.getBoundingClientRect().top) - Math.abs(b.section.getBoundingClientRect().top));
+      const id = visible[0]?.section.id as TenderDetailSectionId | undefined;
+      if (id) setActiveSection(id);
+    }, { rootMargin: '-20% 0px -65% 0px', threshold: [0, 0.1, 0.5] });
+    sections.forEach(section => observer.observe(section));
+    return () => observer.disconnect();
+  }, []);
+
+  const scrollTo = (id: TenderDetailSectionId) => {
+    setActiveSection(id);
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return <div className="tender-detail-navigation">
-    <nav className="tender-detail-breadcrumb" aria-label="Ruta del expediente">
-      <button type="button" className="link-button" onClick={onBack}>Licitaciones</button>
-      <span aria-hidden="true">/</span>
-      <button type="button" className="link-button" aria-current="page" onClick={onBack}>Oportunidades</button>
-      <span aria-hidden="true">/</span>
-      <span>{entity || 'Expediente'}</span>
+    <button type="button" className="link-button tender-detail-back" onClick={onBack}>← Oportunidades</button>
+    <strong className="tender-detail-entity" title={entity || 'Expediente'}>{entity || 'Expediente'}</strong>
+    <nav className="tender-detail-sections" aria-label="Secciones del expediente">
+      {TENDER_DETAIL_SECTIONS.map(({ id, label, accessibleLabel }) => {
+        const indicator = indicators[id];
+        const accessibleState = indicator ? ` Estado: ${indicator.label}.` : '';
+        return <button
+          type="button"
+          key={id}
+          className="tender-detail-section"
+          aria-current={activeSection === id ? 'location' : undefined}
+          aria-label={`${accessibleLabel}.${accessibleState}`}
+          title={indicator?.label}
+          onClick={() => scrollTo(id)}
+        >
+          {indicator && <span className={`tender-detail-indicator tone-${indicator.tone}`} aria-hidden="true" />}
+          <span>{label}</span>
+        </button>;
+      })}
     </nav>
-    <div className="tender-detail-actions">
-      <button type="button" className="secondary" onClick={onBack}>Volver a Oportunidades</button>
-      {officialUrl && <a className="button secondary" href={officialUrl} target="_blank" rel="noreferrer">Abrir fuente oficial</a>}
-    </div>
-    <nav className="tender-detail-progress" aria-label="Línea de avance del expediente">
-      {progress.map(([id, label], index) => <button type="button" key={id} onClick={() => scrollTo(id)}><span>{index + 1}</span>{label}</button>)}
-    </nav>
+    {officialUrl && <a className="tender-detail-source" aria-label="Abrir fuente oficial en una pestaña nueva" href={officialUrl} target="_blank" rel="noreferrer">Fuente oficial <span aria-hidden="true">↗</span></a>}
   </div>;
 }
