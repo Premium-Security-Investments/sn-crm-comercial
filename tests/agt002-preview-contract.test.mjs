@@ -20,7 +20,9 @@ assert.deepEqual([...AGT002_PREVIEW_RECOMMENDATIONS].sort(), ['advance', 'advanc
   assert.equal(schema.additionalProperties, false);
   assert.deepEqual(schema.required.slice().sort(), ['blockers', 'human_review_required', 'next_action', 'questions', 'recommendation', 'strengths', 'summary', 'unverified', 'weaknesses'].sort());
   assert.deepEqual(schema.properties.recommendation.enum.slice().sort(), [...AGT002_PREVIEW_RECOMMENDATIONS].sort());
-  assert.equal(schema.properties.human_review_required.const, true);
+  // Regression: the real Codex App Server rejects a bare `const` keyword with
+  // `invalid_json_schema` — every const node must also declare its `type`.
+  assert.deepEqual(schema.properties.human_review_required, { type: 'boolean', const: true });
   for (const field of ['strengths', 'weaknesses', 'blockers', 'questions', 'unverified']) {
     const itemSchema = schema.properties[field].items;
     assert.equal(schema.properties[field].type, 'array');

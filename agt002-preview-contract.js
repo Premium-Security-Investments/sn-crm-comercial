@@ -31,7 +31,7 @@ export const AGT002_PREVIEW_OUTPUT_JSON_SCHEMA = {
     questions: { type: 'array', items: findingSchema },
     unverified: { type: 'array', items: findingSchema },
     next_action: { type: 'string', minLength: 1 },
-    human_review_required: { const: true },
+    human_review_required: { type: 'boolean', const: true },
   },
 };
 
