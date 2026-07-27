@@ -664,7 +664,7 @@ const tenderFocusTerms = { 'bogotá': 22, 'bogota': 22, 'distrito capital': 20, 
 const tenderInternalStatuses = ['nueva','en_revision','descartada','convertida_oportunidad'];
 export function canViewTenders(profile) { return can(profile, ACTIONS.LICITACIONES_VIEW); }
 const tenderRegionKeys = ['todas','bog_cundinamarca','med_antioquia','eje_cafetero','cali_valle','costa_caribe','santanderes','sur_occidente','otros'];
-const tenderSectionFilters = ['todas','hacer','revisar','descartar'];
+const tenderSectionFilters = ['todas','hacer','revisar','prioridad_baja'];
 const tenderDeadlineFilters = ['todas','0_7','8_15','16_30','vencida','sin_fecha'];
 const tenderValueFilters = ['todas','sin_valor','lt_50m','50m_500m','500m_plus','1000m_plus'];
 const tenderScoreFilters = ['todas','alto','medio','bajo'];
@@ -789,13 +789,10 @@ async function attachTenderCompanyProfileUpdater(database, data, updatedAt, upda
   return { ...data, updated_at: data.updated_at || updatedAt || null, updated_by_name: updatedByName };
 }
 async function saveTenderCompanyProfile(database, payload) {
-  const result = await database.from('psi_company_procurement_profile').upsert(payload, { onConflict: 'singleton_key' }).select('id').single();
-  if (!result.error) return;
-  if (!['PGRST205','42P01'].includes(result.error.code)) throw result.error;
-  const fallbackPayload = { ...payload };
-  delete fallbackPayload.singleton_key;
-  delete fallbackPayload.updated_by;
-  await must(database.from('psi_tender_radar_runs').insert({ triggered_by: payload.updated_by, mode: 'company_profile', summary: JSON.stringify(fallbackPayload) }).select('id').single());
+  await must(database.rpc('psi_upsert_company_procurement_profile', {
+    p_actor_id: payload.updated_by,
+    p_payload: payload,
+  }));
 }
 function cleanCompanyDocumentMetadata(body) {
   const documentType = String(body?.documentType || body?.document_type || '').trim().toLowerCase();
@@ -892,8 +889,8 @@ function scoreTender(row) {
   return { score, reasons: [...new Set(reasons)].slice(0, 7), risks: [...new Set(risks)].slice(0, 5) };
 }
 function classifyTenderSection(tender) {
-  if (tender.risks.some(r => r.includes('no ofertable'))) return 'descartar';
-  if (tender.score < 70 || (tender.value > 0 && tender.value < 50000000)) return 'descartar';
+  if (tender.risks.some(r => r.includes('no ofertable'))) return 'prioridad_baja';
+  if (tender.score < 70 || (tender.value > 0 && tender.value < 50000000)) return 'prioridad_baja';
   if ((tender.days !== null && tender.days <= 10) || tender.score >= 180 || tender.value >= 1000000000) return 'hacer';
   return 'revisar';
 }
@@ -951,7 +948,7 @@ async function fetchSecopSource(source, cfg) {
   const response = await fetch(`${cfg.base}?${params.toString()}`, { headers: { 'User-Agent': 'SN-CRM-Tenders-Radar/2.0' } });
   if (!response.ok) throw new Error(`${source} respondió ${response.status}`);
   const rows = await response.json();
-  return rows.filter(row => !isEsuEntityRow(row, source) && isTenderTrackable(row)).map(row => ({ row, scored: scoreTender(row) })).filter(x => x.scored.score >= 35 && hasTenderServiceSignal(x.scored)).map(x => normalizeTender(x.row, source, x.scored));
+  return rows.filter(row => !isEsuEntityRow(row, source) && isTenderTrackable(row)).map(row => ({ row, scored: scoreTender(row) })).filter(x => hasTenderServiceSignal(x.scored)).map(x => normalizeTender(x.row, source, x.scored));
 }
 function stripTenderHtml(value) {
   return String(value || '')
@@ -1148,14 +1145,15 @@ async function fetchEsuProcesses() {
   await tryAddRows({ name: 'convocados', run: () => searchEsuProcesses({ estadoId: '19' }) });
   await tryAddRows({ name: 'categorías relevantes', run: () => searchEsuProcesses({ estadoId: '19', categoryIds: Object.keys(ESU_RELEVANT_CATEGORY_IDS) }) });
   for (const keyword of ESU_RELEVANT_KEYWORDS) await tryAddRows({ name: `keyword ${keyword}`, run: () => searchEsuProcesses({ estadoId: '19', keyword }) });
-  const preliminary = Array.from(seen.values()).map(row => normalizeEsuProcess(row)).filter(t => t.score >= 35).filter(t => t.days === null || t.days >= 0).filter(isTenderTrackable).sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999)).slice(0, 40);
+  const preliminary = Array.from(seen.values()).map(row => normalizeEsuProcess(row)).filter(t => t.days === null || t.days >= 0).filter(isTenderTrackable).sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
   const enriched = [];
-  for (const tender of preliminary) {
+  for (const [index, tender] of preliminary.entries()) {
+    if (index >= 40) { enriched.push(tender); continue; }
     const sourceRow = seen.get(parseEsuProcessId(tender.url));
     const detail = await fetchEsuProcessDetail(sourceRow);
     enriched.push(normalizeEsuProcess(sourceRow, detail));
   }
-  return enriched.filter(t => t.score >= 35).filter(t => t.days === null || t.days >= 0).filter(isTenderTrackable).sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
+  return enriched.filter(t => t.days === null || t.days >= 0).filter(isTenderTrackable).sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
 }
 async function fetchEsuDatosGovProcesses() {
   const start = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10) + 'T00:00:00';
@@ -1170,7 +1168,7 @@ async function fetchEsuDatosGovProcesses() {
       for (const row of rows) {
         if (!isEsuEntityRow(row, source)) continue;
         const tender = normalizeEsuDatosGovProcess(row, source);
-        if (tender.score < 35 || (tender.days !== null && tender.days < 0) || !isTenderTrackable(tender)) continue;
+        if ((tender.days !== null && tender.days < 0) || !isTenderTrackable(tender)) continue;
         const key = `${tender.source_origin}:${tender.ref}:${tender.title}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -1212,9 +1210,9 @@ async function fetchPublicTenderRadar() {
     if (seen.has(key)) return false;
     seen.add(key); return true;
   }).sort((a,b) => {
-    const sectionOrder = { hacer: 0, revisar: 1, descartar: 2 };
+    const sectionOrder = { hacer: 0, revisar: 1, prioridad_baja: 2 };
     return sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score || (a.days ?? 999) - (b.days ?? 999);
-  }).slice(0, 80);
+  });
   return { tenders, diagnostics };
 }
 function radarPayload(tenders, generatedAt = new Date().toISOString(), source = 'live', diagnostics = []) {
@@ -1227,7 +1225,7 @@ function radarPayload(tenders, generatedAt = new Date().toISOString(), source = 
       all: normalized.length,
       hacer: normalized.filter(t => t.section === 'hacer').length,
       revisar: normalized.filter(t => t.section === 'revisar').length,
-      descartar: normalized.filter(t => t.section === 'descartar').length,
+      prioridadBaja: normalized.filter(t => t.section === 'prioridad_baja').length,
       highValue: normalized.filter(t => Number(t.value || 0) >= 500000000).length,
       urgent: normalized.filter(t => t.days !== null && t.days !== undefined && t.days <= 7).length,
       enRevision: normalized.filter(t => t.internal_status === 'en_revision').length,
@@ -1308,7 +1306,7 @@ async function readPersistedTenderRadar(database) {
   const mergedRows = Array.from(new Map([...(data || []), ...convertedRows].map((row, index) => [row.stable_key || row.id || `radar-row-${index}`, row])).values());
   const rows = mergedRows.filter(row => isConvertedTenderRecord(row) || isTenderTrackable(row)).map(dbTenderToPublic).filter(t => isConvertedTenderRecord(t) || !['SECOP I','SECOP II'].includes(t.source) || hasTenderServiceSignal(t)).sort((a,b) => {
     const statusOrder = { nueva: 0, en_revision: 1, convertida_oportunidad: 2, descartada: 3 };
-    const sectionOrder = { hacer: 0, revisar: 1, descartar: 2 };
+    const sectionOrder = { hacer: 0, revisar: 1, prioridad_baja: 2 };
     return (statusOrder[a.internal_status] ?? 9) - (statusOrder[b.internal_status] ?? 9) || sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score;
   });
   return radarPayload(rows, latestRunAt || rows[0]?.last_seen_at || new Date().toISOString(), 'supabase', [{ source: 'Supabase', status: 'ok', count: rows.length, message: latestRunAt ? `Radar historizado desde última corrida (${latestRunResult.data?.mode || 'run'})` : 'Radar historizado' }]);
@@ -1342,7 +1340,7 @@ async function persistTenderRadar(database, actorProfile, mode = 'manual') {
     const { error: upsertError } = await database.from('psi_public_tenders').upsert(rows, { onConflict: 'stable_key', defaultToNull: false });
     if (upsertError) throw upsertError;
   }
-  await database.from('psi_tender_radar_runs').insert({ run_at: now, triggered_by: actorProfile?.id || null, mode, count_total: rows.length, count_hacer: rows.filter(r => r.section === 'hacer').length, count_revisar: rows.filter(r => r.section === 'revisar').length, count_descartar: rows.filter(r => r.section === 'descartar').length, summary: `Radar multifuente sincronizado: ${rows.length} procesos/eventos. ${diagnostics.map(d => `${d.source}: ${d.status}`).join(' · ')}` });
+  await database.from('psi_tender_radar_runs').insert({ run_at: now, triggered_by: actorProfile?.id || null, mode, count_total: rows.length, count_hacer: rows.filter(r => r.section === 'hacer').length, count_revisar: rows.filter(r => r.section === 'revisar').length, count_prioridad_baja: rows.filter(r => r.section === 'prioridad_baja').length, summary: `Radar multifuente sincronizado: ${rows.length} procesos/eventos. ${diagnostics.map(d => `${d.source}: ${d.status}`).join(' · ')}` });
   const persisted = await readPersistedTenderRadar(database);
   return { ...persisted, diagnostics };
 }
@@ -1501,7 +1499,7 @@ app.get('/api/tender-search-profiles', async (req, res) => {
 app.post('/api/tender-search-profiles', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede guardar perfiles de búsqueda.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     res.status(201).json(await saveTenderSearchProfile(requireDb(), req.body, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -1509,7 +1507,7 @@ app.post('/api/tender-search-profiles', async (req, res) => {
 app.delete('/api/tender-search-profiles/:id', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede eliminar perfiles de búsqueda.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     res.json(await deleteTenderSearchProfile(requireDb(), req.params.id));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -1660,7 +1658,7 @@ app.patch('/api/tenders/:id/status', async (req, res) => {
 app.post('/api/tenders/convert', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver este radar.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONVERT);
     const database = requireDb();
     const tender = req.body?.tender || req.body;
     const result = await convertTenderToOpportunity(database, tender, currentProfile);
@@ -1692,7 +1690,7 @@ app.patch('/api/tender-status', async (req, res) => {
 app.post('/api/tender-convert', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver este radar.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONVERT);
     const database = requireDb();
     const tender = req.body?.tender || req.body;
     const result = await convertTenderToOpportunity(database, tender, currentProfile);

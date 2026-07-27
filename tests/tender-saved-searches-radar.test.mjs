@@ -43,7 +43,7 @@ const radarBundle = buildSync({
 });
 const radarUrl = `data:text/javascript;base64,${Buffer.from(radarBundle.outputFiles[0].contents).toString('base64')}`;
 const { loadRadarAndProfiles } = await import(radarUrl);
-const radarPayload = { generatedAt: '2026-07-22T00:00:00.000Z', totals: { all: 0, hacer: 0, revisar: 0, descartar: 0, highValue: 0, urgent: 0 }, tenders: [] };
+const radarPayload = { generatedAt: '2026-07-22T00:00:00.000Z', totals: { all: 0, hacer: 0, revisar: 0, prioridadBaja: 0, highValue: 0, urgent: 0 }, tenders: [] };
 const degraded = await loadRadarAndProfiles(
   () => Promise.resolve(radarPayload),
   () => Promise.reject(new Error('Perfiles temporalmente no disponibles')),

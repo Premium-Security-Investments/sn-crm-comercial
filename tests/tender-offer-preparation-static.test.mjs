@@ -10,12 +10,13 @@ function assert(condition, message) {
 }
 
 assert(preparation.includes("kind: 'tender_offer_preparation'"), 'El builder compartido debe conservar el expediente JSON trazable.');
-assert(preparation.includes('generic_documents'), 'Expediente debe incluir documentos genéricos reutilizables.');
-assert(preparation.includes('auto_generated_documents'), 'Expediente debe generar documentos automáticos iniciales.');
+assert(preparation.includes('planned_documents'), 'Expediente debe incluir documentos planificados.');
+assert(!preparation.includes('auto_generated_documents'), 'Expediente no debe afirmar generación automática inexistente.');
+assert(!preparation.includes('generado_automaticamente'), 'Los estados deben describir planificación, no archivos inexistentes.');
 assert(preparation.includes('human_required_items'), 'Expediente debe separar pendientes que requieren intervención humana.');
 assert(preparation.includes('sharepoint_folder'), 'Expediente debe reservar vínculo/estado de carpeta SharePoint/OneDrive.');
 assert(preparation.includes('assistant_notes'), 'Expediente debe tener espacio de notas para informar qué se necesita del humano.');
-assert(preparation.includes('Generar paquete inicial de preparación'), 'Debe quedar claro que el paquete inicial se genera proactivamente.');
+assert(preparation.includes('Plan de preparación registrado'), 'Debe quedar claro que el plan se registra proactivamente sin afirmar archivos inexistentes.');
 
 for (const file of [server, api]) {
   assert(file.includes("import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';"), 'Backend debe compartir el builder rico de preparación.');
@@ -34,7 +35,7 @@ assert(src.includes('Expediente de Oferta'), 'UI debe mostrar el Expediente de O
 assert(src.includes('Registrar GO'), 'Sin expediente la UI debe dirigir al registro formal GO.');
 assert(!src.includes('Aprobar preparación de oferta'), 'La UI no puede conservar el control legacy de preparación.');
 assert(!src.includes('/api/tender-offer-preparation-approve'), 'La UI no puede invocar la ruta legacy de preparación.');
-assert(src.includes('Documentos genéricos automáticos'), 'UI debe mostrar documentos genéricos automáticos.');
+assert(src.includes('Documentos por generar'), 'UI debe mostrar documentos planificados sin afirmar generación automática.');
 assert(src.includes('Requiere intervención humana'), 'UI debe mostrar pendientes humanos.');
 assert(src.includes('Carpeta SharePoint / OneDrive'), 'UI debe mostrar estado/enlace de carpeta SharePoint/OneDrive.');
 assert(src.includes('Notas para el asistente'), 'UI debe tener espacio de notas para el asistente/comercial.');
