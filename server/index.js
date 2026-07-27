@@ -3109,7 +3109,7 @@ app.post('/api/tender-analysis-authorize', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
-app.post('/api/internal/tender-processing-worker', async (req, res) => {
+app.post('/api/tender-processing-worker-run', async (req, res) => {
   try {
     if (!isTenderDurablePipelineEnabled(process.env)) { const error = new Error('No disponible.'); error.status = 404; throw error; }
     const expectedSecret = Buffer.from(String(process.env.TENDER_WORKER_SCHEDULER_SECRET || ''), 'utf8');

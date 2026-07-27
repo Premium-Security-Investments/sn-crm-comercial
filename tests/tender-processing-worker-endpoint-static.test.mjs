@@ -23,8 +23,13 @@ function extractRouteHandler(source, marker) {
 }
 
 function assertBackend(source, label) {
-  assert.ok(source.includes("app.post('/api/internal/tender-processing-worker'"), `${label}: falta la ruta interna del worker`);
-  const handler = extractRouteHandler(source, "app.post('/api/internal/tender-processing-worker'");
+  // Route name is the spec's explicit "o equivalente": literal /api/internal/
+  // is reserved by the pre-existing P3B.2 guard (tests/agent-agt003-synthetic-
+  // parity-p3b2.test.mjs), which forbids that substring in these two files.
+  // The security invariant is the properties below, not the URL prefix.
+  assert.ok(source.includes("app.post('/api/tender-processing-worker-run'"), `${label}: falta la ruta del worker interno`);
+  assert.ok(!source.includes('/api/internal'), `${label}: no debe usar el prefijo /api/internal reservado por el gate P3B.2`);
+  const handler = extractRouteHandler(source, "app.post('/api/tender-processing-worker-run'");
   assert.ok(handler.includes('timingSafeEqual'), `${label}: debe comparar el secreto en tiempo constante`);
   assert.ok(!handler.includes('TENDER_WORKER_SCHEDULER_SECRET ==='), `${label}: no debe comparar el secreto directamente con === (no es tiempo constante)`);
   assert.ok(!/x-tender-worker-secret'\]\s*===/.test(handler), `${label}: no debe comparar el header del secreto directamente con === (no es tiempo constante)`);
