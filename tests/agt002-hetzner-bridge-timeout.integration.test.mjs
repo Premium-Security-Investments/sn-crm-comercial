@@ -22,7 +22,14 @@ function slowCodexClient({ interruptCalls }) {
   };
 }
 
-async function testServerTimesOutIndependentlyOfSlowProvider() {
+// The fake codexClient below never honors timeoutMs or the abort signal it
+// receives — it just resolves 5s late. There is no server-side timeout
+// enforcement to observe here; what actually ends the request is the
+// bridge CLIENT's own margin timer (timeoutMs + 2s, see
+// agt002-hetzner-bridge-client.js), which aborts the in-flight fetch and
+// lets req.on('close') release the server's busy flag. This test validates
+// that client-side margin timeout, not an independent server watchdog.
+async function testClientMarginTimeoutAbortsSlowProviderRequest() {
   const codexClient = { run: ({ timeoutMs }) => new Promise((resolve) => setTimeout(resolve, timeoutMs + 5_000)) };
   const server = createServer(createAgt002BridgeServer({ hmacSecret: SECRET, codexClient }));
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
@@ -59,6 +66,6 @@ async function testClientAbortTriggersServerInterruptAndNoOrphanProcess() {
   }
 }
 
-await testServerTimesOutIndependentlyOfSlowProvider();
+await testClientMarginTimeoutAbortsSlowProviderRequest();
 await testClientAbortTriggersServerInterruptAndNoOrphanProcess();
 console.log('agt002-hetzner-bridge-timeout.integration.test.mjs OK');

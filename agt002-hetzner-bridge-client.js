@@ -11,6 +11,43 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+const MAX_RESPONSE_BYTES = 262_144;
+
+/**
+ * Reads and JSON-parses the bridge response bounded to MAX_RESPONSE_BYTES,
+ * regardless of whether the server sent a (possibly forged) Content-Length —
+ * the byte count is enforced against the actual stream, not the header.
+ * Falls back to response.json() for fakes that don't expose a readable body
+ * (existing tests), since those never stream untrusted bytes anyway.
+ */
+async function readBoundedJson(response, maxBytes) {
+  const declaredLength = Number(response.headers?.get?.('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw transportError('La respuesta de AGT-002 Preview no tiene una estructura segura.', 'AGT002_CODEX_INVALID_RESPONSE');
+  }
+  if (!response.body || typeof response.body.getReader !== 'function') {
+    return response.json();
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let received = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.length;
+      if (received > maxBytes) {
+        try { await reader.cancel(); } catch { /* best effort */ }
+        throw transportError('La respuesta de AGT-002 Preview no tiene una estructura segura.', 'AGT002_CODEX_INVALID_RESPONSE');
+      }
+      chunks.push(value);
+    }
+  } finally {
+    try { reader.releaseLock(); } catch { /* best effort */ }
+  }
+  return JSON.parse(Buffer.concat(chunks.map(chunk => Buffer.from(chunk))).toString('utf8'));
+}
+
 export function createAgt002HetznerBridgeClient({ url, hmacSecret, fetchImpl = fetch, randomNonce = () => randomUUID(), now = () => Math.floor(Date.now() / 1000) } = {}) {
   if (typeof url !== 'string' || !url.trim()) throw new Error('El puente AGT-002 requiere una URL configurada.');
   if (typeof hmacSecret !== 'string' || hmacSecret.length < 32) throw new Error('El puente AGT-002 requiere un secreto HMAC de al menos 32 bytes.');
@@ -59,8 +96,11 @@ export function createAgt002HetznerBridgeClient({ url, hmacSecret, fetchImpl = f
       }
 
       let payload;
-      try { payload = await response.json(); }
-      catch { throw transportError('La respuesta de AGT-002 Preview no tiene una estructura segura.', 'AGT002_CODEX_INVALID_RESPONSE'); }
+      try { payload = await readBoundedJson(response, MAX_RESPONSE_BYTES); }
+      catch (error) {
+        if (error?.code === 'AGT002_CODEX_INVALID_RESPONSE') throw error;
+        throw transportError('La respuesta de AGT-002 Preview no tiene una estructura segura.', 'AGT002_CODEX_INVALID_RESPONSE');
+      }
 
       if (!response.ok) {
         throw transportError('El servicio de AGT-002 Preview devolvió un error.', payload?.error?.code || 'AGT002_BRIDGE_INTERNAL');

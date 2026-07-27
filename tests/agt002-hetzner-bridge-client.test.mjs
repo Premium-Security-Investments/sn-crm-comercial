@@ -16,6 +16,31 @@ function fakeFetch({ status = 200, jsonBody, capture }) {
   };
 }
 
+function fakeStreamBody(chunkSizes) {
+  let index = 0;
+  const state = { cancelled: false };
+  state.getReader = () => ({
+    async read() {
+      if (index >= chunkSizes.length) return { done: true, value: undefined };
+      const value = new Uint8Array(chunkSizes[index]).fill(97);
+      index += 1;
+      return { done: false, value };
+    },
+    async cancel() { state.cancelled = true; },
+    releaseLock() { /* no-op */ },
+  });
+  return state;
+}
+
+function fakeFetchWithBody({ status = 200, headers = {}, body }) {
+  return async () => ({
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: (name) => headers[name.toLowerCase()] ?? null },
+    body,
+  });
+}
+
 async function testExposesSameRunSignatureAndResolvesSameShape() {
   const client = createAgt002HetznerBridgeClient({
     url: URL_, hmacSecret: SECRET,
@@ -76,6 +101,64 @@ async function testNonOkResponseRejectsWithProvidedCode() {
   );
 }
 
+function fakeStreamBodyFromText(text, chunkLength = 8) {
+  const bytes = Buffer.from(text, 'utf8');
+  const state = { cancelled: false };
+  let offset = 0;
+  state.getReader = () => ({
+    async read() {
+      if (offset >= bytes.length) return { done: true, value: undefined };
+      const value = bytes.subarray(offset, Math.min(offset + chunkLength, bytes.length));
+      offset += value.length;
+      return { done: false, value };
+    },
+    async cancel() { state.cancelled = true; },
+    releaseLock() { /* no-op */ },
+  });
+  return state;
+}
+
+async function testStreamedResponseUnderCapParsesCorrectly() {
+  const jsonBody = JSON.stringify({ content: '{"ok":true}', usage: { input_tokens: 5, output_tokens: 6 }, rate_limit: null });
+  const client = createAgt002HetznerBridgeClient({
+    url: URL_, hmacSecret: SECRET,
+    fetchImpl: fakeFetchWithBody({ body: fakeStreamBodyFromText(jsonBody) }),
+    randomNonce: () => 'n'.repeat(16), now: () => 1_000,
+  });
+  const result = await client.run({ model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-stream-ok' });
+  assert.deepEqual(result, { content: '{"ok":true}', usage: { input_tokens: 5, output_tokens: 6 }, rate_limit: null });
+}
+
+async function testExcessiveContentLengthRejectedWithoutReadingBody() {
+  const client = createAgt002HetznerBridgeClient({
+    url: URL_, hmacSecret: SECRET,
+    fetchImpl: fakeFetchWithBody({ headers: { 'content-length': '400000' }, body: fakeStreamBody([400_000]) }),
+    randomNonce: () => 'n'.repeat(16), now: () => 1_000,
+  });
+  await assert.rejects(
+    () => client.run({ model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-7' }),
+    (error) => {
+      assert.equal(error.code, 'AGT002_CODEX_INVALID_RESPONSE');
+      assert.equal(error.message.includes('400000'), false, 'El error no debe filtrar el tamaño declarado.');
+      return true;
+    },
+  );
+}
+
+async function testExcessiveStreamBodyRejectedEvenWithoutContentLength() {
+  const body = fakeStreamBody([100_000, 100_000, 100_000]);
+  const client = createAgt002HetznerBridgeClient({
+    url: URL_, hmacSecret: SECRET,
+    fetchImpl: fakeFetchWithBody({ body }),
+    randomNonce: () => 'n'.repeat(16), now: () => 1_000,
+  });
+  await assert.rejects(
+    () => client.run({ model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-8' }),
+    (error) => { assert.equal(error.code, 'AGT002_CODEX_INVALID_RESPONSE'); return true; },
+  );
+  assert.equal(body.cancelled, true, 'El lector del stream debe cancelarse al exceder el límite, no seguir drenando datos.');
+}
+
 async function testTransportFailureRejectsWithSafeTransportCode() {
   const client = createAgt002HetznerBridgeClient({
     url: URL_, hmacSecret: SECRET,
@@ -93,5 +176,8 @@ await testCwdIsNeverSentOverNetwork();
 await testSignalIsNeverSerializedInBody();
 await testRequestIsCorrectlySignedForServerCanonical();
 await testNonOkResponseRejectsWithProvidedCode();
+await testStreamedResponseUnderCapParsesCorrectly();
+await testExcessiveContentLengthRejectedWithoutReadingBody();
+await testExcessiveStreamBodyRejectedEvenWithoutContentLength();
 await testTransportFailureRejectsWithSafeTransportCode();
 console.log('agt002-hetzner-bridge-client.test.mjs OK');

@@ -83,7 +83,23 @@ export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore =
       const controller = new AbortController();
       req.on('close', () => controller.abort());
 
-      codexClient.run({ model, policy, input, outputSchema, timeoutMs, idempotencyKey, signal: controller.signal })
+      const handleError = error => {
+        busy = false;
+        const code = error?.code || 'AGT002_BRIDGE_INTERNAL';
+        const status = CODE_TO_STATUS[code] || 500;
+        logBridgeEvent('agt002_bridge_error', { correlation_id: correlationId, code, latency_ms: Date.now() - startedAt });
+        sendError(res, status, code);
+      };
+
+      let runResult;
+      try {
+        runResult = codexClient.run({ model, policy, input, outputSchema, timeoutMs, idempotencyKey, signal: controller.signal });
+      } catch (error) {
+        handleError(error);
+        return;
+      }
+
+      Promise.resolve(runResult)
         .then(result => {
           busy = false;
           logBridgeEvent('agt002_bridge_success', {
@@ -92,13 +108,7 @@ export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore =
           });
           sendJson(res, 200, result);
         })
-        .catch(error => {
-          busy = false;
-          const code = error?.code || 'AGT002_BRIDGE_INTERNAL';
-          const status = CODE_TO_STATUS[code] || 500;
-          logBridgeEvent('agt002_bridge_error', { correlation_id: correlationId, code, latency_ms: Date.now() - startedAt });
-          sendError(res, status, code);
-        });
+        .catch(handleError);
     });
   };
 }

@@ -128,6 +128,24 @@ async function testProviderErrorMappedTo502() {
   });
 }
 
+async function testSynchronousThrowInCodexClientReleasesBusyAndFailsClosed() {
+  const client = { run: () => { throw new Error('sync boom, must never leak to the caller'); } };
+  await withServer(client, async (base) => {
+    const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-sync-1' };
+    const firstBody = JSON.stringify(payload);
+    const first = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(firstBody, { nonce: 'q'.repeat(16) }), body: firstBody });
+    assert.equal(first.status, 500, 'Un throw síncrono debe responder fail-closed, no dejar la petición colgada.');
+    const firstResult = await first.json();
+    assert.equal(firstResult.error.code, 'AGT002_BRIDGE_INTERNAL');
+    assert.equal(JSON.stringify(firstResult).includes('sync boom'), false, 'El detalle del throw síncrono no debe filtrarse al caller.');
+
+    const secondPayload = { ...payload, idempotencyKey: 'idem-sync-2' };
+    const secondBody = JSON.stringify(secondPayload);
+    const second = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(secondBody, { nonce: 'r'.repeat(16) }), body: secondBody });
+    assert.notEqual(second.status, 409, 'busy no debe quedar atascado tras un throw síncrono del cliente Codex.');
+  });
+}
+
 async function testLoginRequiredMappedTo503() {
   const client = { run: async () => { const error = new Error('login'); error.code = 'AGT002_CODEX_LOGIN_REQUIRED'; throw error; } };
   await withServer(client, async (base) => {
@@ -151,4 +169,5 @@ await testCwdInBodyRejected();
 await testConcurrencyOneRejectsSecondRequest();
 await testProviderErrorMappedTo502();
 await testLoginRequiredMappedTo503();
+await testSynchronousThrowInCodexClientReleasesBusyAndFailsClosed();
 console.log('agt002-hetzner-bridge-server.test.mjs Step 5 OK');
