@@ -30,10 +30,34 @@ function testFindEligibleProfilesDefaultNeverThrowsOnMinimalProfile() {
   assert.deepEqual(findEligibleProfiles(profiles), []);
 }
 
+// Production parity: the real AI_ANALYSIS_RUN gate (via the default predicate)
+// must yield exactly the ratified custody set. Only profiles holding explicit
+// tender custody (licitaciones + licitaciones_custodia) may spend AGT-002 quota,
+// regardless of role. Katherine (comercial, custody) is eligible; Luis (admin,
+// no custody) is not; Juan (admin, custody) is.
+function humanProfile(id, role, permissions) {
+  return { id, role, active: true, identity_type: 'human', areas: [], permissions };
+}
+
+function testDefaultEligibilityMatchesRatifiedCustodySet() {
+  const juan = humanProfile('juan-botero', 'admin', ['licitaciones', 'licitaciones_custodia']);
+  const katherine = humanProfile('katherine-valencia', 'comercial', ['licitaciones', 'licitaciones_custodia']);
+  const luis = humanProfile('luis-lopez', 'admin', ['licitaciones']);
+  const inactiveCustodian = humanProfile('inactive-custodian', 'comercial', ['licitaciones', 'licitaciones_custodia']);
+  inactiveCustodian.active = false;
+  const nonHumanAgent = { id: 'agt-002', active: true, identity_type: 'agent', areas: [], permissions: [] };
+
+  const eligible = findEligibleProfiles([juan, katherine, luis, inactiveCustodian, nonHumanAgent]);
+  const expected = ['juan-botero', 'katherine-valencia'];
+  assert.deepEqual([...eligible].sort(), [...expected].sort());
+  assert.deepEqual(diffEligibility(eligible, expected), { extra: [], missing: [], ok: true });
+}
+
 testDiffEligibilityExactMatch();
 testDiffEligibilityDetectsExtraProfile();
 testDiffEligibilityDetectsMissingProfile();
 testDiffEligibilityDetectsBothExtraAndMissing();
 testFindEligibleProfilesUsesInjectedPredicate();
 testFindEligibleProfilesDefaultNeverThrowsOnMinimalProfile();
+testDefaultEligibilityMatchesRatifiedCustodySet();
 console.log('agt002-hetzner-bridge-rbac-audit.test.mjs OK');

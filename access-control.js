@@ -330,9 +330,11 @@ export function can(profile, action, resource = {}) {
       return hasHumanRole(profile, PRIVILEGED_ROLES);
 
     case ACTIONS.AI_ANALYSIS_RUN:
-      // Only identities that can already register a formal GO/NO GO may spend
-      // AGT-002 Preview quota; AGT-002 itself never authorizes that decision.
-      return canHumanTenderAction(profile) && hasHumanRole(profile, new Set(['admin', 'gerencia', 'director']));
+      // Only profiles holding explicit tender custody (licitaciones +
+      // licitaciones_custodia) may spend AGT-002 Preview quota, regardless of
+      // role; AGT-002 never authorizes GO/NO GO, which stays a separate human
+      // decision gated below.
+      return canTenderCustodyAction(profile);
     default:
       return false;
   }

@@ -187,12 +187,19 @@ runCases('licitaciones', [
   { name: 'agent técnico puede recomendar', profile: agent(), action: ACTIONS.LICITACIONES_GO_NO_GO_RECOMMEND, resource: { technical_authorized: true }, expected: true },
   { name: 'agent técnico no recomienda sin autorización técnica', profile: agent(), action: ACTIONS.LICITACIONES_GO_NO_GO_RECOMMEND, resource: {}, expected: false },
   { name: 'agent técnico no aprueba', profile: agent(), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: { technical_authorized: true }, expected: false },
-  { name: 'admin con permiso ejecuta análisis IA', profile: tenderUser('admin'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: true },
-  { name: 'gerencia con permiso ejecuta análisis IA', profile: tenderUser('gerencia'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: true },
-  { name: 'director con permiso ejecuta análisis IA', profile: tenderUser('director'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: true },
+  // AGT-002: gastar cupo de AI_ANALYSIS_RUN exige custodia explícita de
+  // licitaciones (licitaciones + licitaciones_custodia). El rol por sí solo
+  // nunca alcanza y GO/NO GO permanece como una decisión humana separada.
+  { name: 'comercial con custodia ejecuta análisis IA', profile: tenderUser('comercial', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: true },
+  { name: 'admin con custodia ejecuta análisis IA', profile: tenderUser('admin', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: true },
+  { name: 'admin solo con licitaciones no ejecuta análisis IA', profile: tenderUser('admin'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
+  { name: 'gerencia solo con licitaciones no ejecuta análisis IA', profile: tenderUser('gerencia'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
+  { name: 'director solo con licitaciones no ejecuta análisis IA', profile: tenderUser('director'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
+  { name: 'comercial solo con licitaciones no ejecuta análisis IA', profile: tenderUser('comercial'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
+  { name: 'comercial con custodia sin licitaciones no ejecuta análisis IA', profile: human('comercial', { permissions: ['licitaciones_custodia'] }), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
   { name: 'director sin permiso de licitaciones no ejecuta análisis IA', profile: human('director'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
-  { name: 'comercial con permiso no ejecuta análisis IA', profile: tenderUser('comercial'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
-  { name: 'colaborador con permiso no ejecuta análisis IA', profile: tenderUser('colaborador'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
+  { name: 'colaborador solo con licitaciones no ejecuta análisis IA', profile: tenderUser('colaborador'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
+  { name: 'comercial con custodia pero inactivo falla cerrado', profile: tenderUser('comercial', { active: false, permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
 ], ({ profile: candidate, action, resource }) => can(candidate, action, resource));
 
 runCases('SIIO', [
