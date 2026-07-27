@@ -2884,6 +2884,56 @@ app.get('/api/tender-processing-status', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
+app.post('/api/tender-processing-retry', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONVERT);
+    const database = requireDb();
+    const opportunityId = String(req.body?.opportunity_id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    const idempotencyKey = String(req.body?.idempotency_key || '').trim();
+    if (!idempotencyKey) throw new Error('Debe indicar la clave de idempotencia del proceso.');
+    const { data: job, error } = await database
+      .from('psi_tender_processing_jobs')
+      .select('id,tender_id,status,current_step,lease_id')
+      .eq('opportunity_id', opportunityId)
+      .eq('idempotency_key', idempotencyKey)
+      .maybeSingle();
+    if (error) throw error;
+    if (!job) throw new Error('No existe un proceso de importación para esa oportunidad y clave.');
+    if (job.status === 'cancelled' || job.status === 'completed') {
+      const terminalError = new Error('No se puede reintentar un proceso cancelado o finalizado.');
+      terminalError.status = 409;
+      throw terminalError;
+    }
+    if (job.status !== 'needs_attention' && job.status !== 'retry_wait') {
+      const stateError = new Error('El proceso no está en un estado que admita reintento.');
+      stateError.status = 409;
+      throw stateError;
+    }
+    const nextStatus = job.current_step === 'analysis' ? 'waiting_agent_capacity' : 'importing_documents';
+    const updateResult = await database.rpc('psi_update_tender_processing_job', {
+      p_job_id: job.id,
+      p_lease_id: job.lease_id,
+      p_patch: { status: nextStatus, next_attempt_at: new Date().toISOString(), last_error_code: null, last_error_message: null },
+    });
+    if (updateResult.error) throw updateResult.error;
+    const eventResult = await database.rpc('psi_append_tender_tracking_event', {
+      p_tender_id: job.tender_id,
+      p_event_type: 'pipeline_queued',
+      p_actor_kind: 'human',
+      p_created_by: currentProfile.id,
+      p_source_ref_type: 'job',
+      p_source_ref_id: job.id,
+      p_metadata: { retry: true },
+      p_note: null,
+      p_singular: false,
+    });
+    if (eventResult.error) throw eventResult.error;
+    res.json({ job_id: job.id, status: nextStatus });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 app.post('/api/tender-opportunity-discard', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
