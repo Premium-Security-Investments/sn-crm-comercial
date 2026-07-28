@@ -1,5 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { AGT002_PREVIEW_POLICY, createAgt002PreviewEngine } from '../agt002-preview-engine.js';
+import { AGT002_PREVIEW_OUTPUT_JSON_SCHEMA } from '../agt002-preview-contract.js';
 
 const context = {
   opportunity: { id: 'opp-1', company_name: 'Entidad de prueba', title: 'Vigilancia' },
@@ -83,6 +84,18 @@ for (const text of ['datos no confiables', 'GO / NO GO', 'herramientas', 'eviden
   assert.equal(client.calls[0].outputSchema.type, 'object');
   assert.equal(client.calls[0].outputSchema.additionalProperties, false);
   assert.equal(client.calls[0].outputSchema.properties.human_review_required.const, true);
+  for (const field of ['strengths', 'weaknesses', 'blockers', 'questions', 'unverified']) {
+    assert.deepEqual(
+      client.calls[0].outputSchema.properties[field].items.properties.evidence_refs.items.enum,
+      ['document:doc-01', 'document:doc-02'],
+      `${field} debe restringir evidence_refs al snapshot enviado`,
+    );
+  }
+  assert.equal(
+    Object.hasOwn(AGT002_PREVIEW_OUTPUT_JSON_SCHEMA.properties.strengths.items.properties.evidence_refs.items, 'enum'),
+    false,
+    'el schema base compartido no debe mutarse al crear el enum dinámico',
+  );
 }
 
 // Valid JSON wrapped in peripheral whitespace (trailing newline, etc.) must still be

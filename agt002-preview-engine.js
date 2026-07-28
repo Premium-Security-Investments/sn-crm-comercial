@@ -14,6 +14,15 @@ export const AGT002_PREVIEW_POLICY = [
 
 const SAFE_UNAVAILABLE = 'AGT-002 Preview no está disponible en este momento.';
 const SAFE_INVALID = 'AGT-002 Preview no produjo una respuesta válida.';
+const FINDING_FIELDS = ['strengths', 'weaknesses', 'blockers', 'questions', 'unverified'];
+
+function outputSchemaForEvidenceIds(allowedEvidenceIds) {
+  const schema = JSON.parse(JSON.stringify(AGT002_PREVIEW_OUTPUT_JSON_SCHEMA));
+  for (const field of FINDING_FIELDS) {
+    schema.properties[field].items.properties.evidence_refs.items.enum = [...allowedEvidenceIds];
+  }
+  return schema;
+}
 const SAFE_QUOTA = 'AGT-002 Preview alcanzó su cuota diaria de ejecuciones y no se llamó al proveedor.';
 const SAFE_CONCURRENCY = 'AGT-002 Preview está saturado; intente nuevamente en unos segundos.';
 
@@ -62,7 +71,9 @@ export function createAgt002PreviewEngine({
 
   async function runOnce(previewInput, idempotencyKey, signal) {
     const allowedEvidenceIds = collectAgt002PreviewEvidenceIds(previewInput);
-    const raw = await client.run({ model, policy: policyText, input: previewInput, outputSchema: AGT002_PREVIEW_OUTPUT_JSON_SCHEMA, timeoutMs, idempotencyKey, signal });
+    if (!allowedEvidenceIds.length) throw safe(SAFE_INVALID);
+    const outputSchema = outputSchemaForEvidenceIds(allowedEvidenceIds);
+    const raw = await client.run({ model, policy: policyText, input: previewInput, outputSchema, timeoutMs, idempotencyKey, signal });
 
     let parsed;
     try {
