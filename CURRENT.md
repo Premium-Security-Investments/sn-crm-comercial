@@ -1,12 +1,15 @@
 # CURRENT — SIIO Comercial / Licitaciones / AGT-002
 
-**Corte:** 2026-07-27 22:35 COT · 2026-07-28 03:35 UTC  
-**Producción:** https://seguridad-nacional-crm.vercel.app  
-**Resultado del smoke:** HTTP 200
+**Corte autoritativo:** 2026-07-28 07:01 COT · 2026-07-28 12:01 UTC
+**Producción:** https://seguridad-nacional-crm.vercel.app
+**Commit productivo:** `9c7a9120e750d5ef4fd8c65b81432af8cf0cad04`
+**Deployment Vercel:** `dpl_FF6UjyJshBJWjUcXYoe6FDNJRTC1` · `Ready`
 
 ## 1. Regla funcional vigente
 
-El encargado de Licitaciones selecciona manualmente un caso del Radar y lo convierte en **Oportunidad**. Esa conversión humana es el gate funcional para entrar al pipeline durable y, una vez cumplidas las precondiciones documentales y de autorización, ejecutar AGT-002.
+El encargado de Licitaciones selecciona manualmente un caso del Radar y lo convierte en **Oportunidad**. Esa conversión humana es el gate funcional para entrar al pipeline durable y ejecutar AGT-002 cuando se cumplan las precondiciones documentales.
+
+No existe un segundo gate humano de `analysis_authorized_by`: el worker registra técnicamente al actor de la conversión, pero solo acepta casos con vínculo consistente `Radar → converted_opportunity_id → Oportunidad`. Los casos no convertidos fallan cerrados.
 
 AGT-002 no debe:
 
@@ -16,69 +19,74 @@ AGT-002 no debe:
 - decidir GO/NO GO;
 - enviar, firmar o presentar ofertas.
 
-`TENDER_AUTO_ANALYSIS=on` está activo en producción. Su alcance está limitado por la cola durable: solo jobs ligados a `converted_opportunity_id`, snapshot válido, autorización y controles fail-closed.
+`TENDER_AUTO_ANALYSIS=on` está activo en producción y limitado por la cola durable, snapshot válido, controles fail-closed, idempotencia y concurrencia máxima de una ejecución.
 
 ## 2. Estado autoritativo de las tres oportunidades
 
-| Oportunidad | Documentos / snapshot | Job durable | AGT-002 |
+| Oportunidad | Documentos / snapshot vigente | Job durable | AGT-002 |
 |---|---|---|---|
-| **Aerocivil** | 40 documentos; snapshot vigente `d0b1c106-e9ab-47e6-9766-2a1bf08d6df3` | Flujo controlado completado | **Completado y vigente**. Run `4001a76e-11f6-41d5-8f9e-d1b7d4ec3ed6`; recomendación `advance_conditionally` |
-| **INDER Medellín** | 8/8 importados; snapshot `e4d8c803-902b-40cc-bbde-84f6f250bc17` | `awaiting_analysis_authorization` · paso `analysis` | **Pendiente**; todavía no existe run persistido |
-| **Bucaramanga — videovigilancia LPR** | 12 procesados: 7 importados y 5 fallidos; sin snapshot | `needs_attention` · paso `documents` | **Pendiente**; no puede analizarse hasta resolver el frente documental |
+| **Aerocivil** | 40 documentos; snapshot `d0b1c106-e9ab-47e6-9766-2a1bf08d6df3` | Flujo controlado completado | **Completado/current** · run `4001a76e-11f6-41d5-8f9e-d1b7d4ec3ed6` · `advance_conditionally` |
+| **INDER Medellín** | 8/8 importados; snapshot `e4d8c803-902b-40cc-bbde-84f6f250bc17` | Job `fddcb080-9a15-45e5-834b-4c75959ce262` · `completed/done` | **Completado/current** · run `3b41eb0c-24ff-42ab-a31a-f4ef6c73b85f` · `pause` |
+| **Bucaramanga — videovigilancia LPR** | 12/12 importados; snapshot `02c1283e-cb10-4fa3-a7e2-7f041b77ff12` | Job `374195eb-a590-44f3-834b-e7e5ba28f118` · `completed/done` | **Completado/current** · run `8ef997a2-fe7c-4de4-96a5-e62d04fd8593` · `advance_conditionally` |
 
-Los dos jobs históricos faltantes fueron creados mediante la RPC idempotente, exclusivamente para las oportunidades ya convertidas manualmente. No se crearon jobs para casos que permanecen en el Radar.
+Las recomendaciones son insumos para revisión humana. No constituyen decisión GO/NO GO ni autorización para firmar, enviar o presentar una oferta.
 
-## 3. Cambios productivos verificados hoy
+## 3. Recuperación documental de Bucaramanga
 
-- Se corrigió el registro secuencial de documentos: ahora usa concurrencia acotada de cinco RPCs.
-- Se corrigió la carrera de `safe-official-fetch` que leía `response.socket.remoteAddress` después de que Node liberaba el socket.
-- El scheduler de Hetzner quedó con timeout HTTP de 120 segundos y `TimeoutStartSec=130s`; systemd mantiene ejecución oneshot sin solapamiento.
-- El worker volvió a avanzar y persistir fases: descubrimiento, importación y snapshot.
-- SECOP respondió correctamente para los dos procesos pendientes; la fuente oficial tenía 18 documentos para INDER y 30 para Bucaramanga antes de la selección prioritaria del pipeline.
+Cinco PDFs oficiales SECOP históricamente clasificados como terminales fueron reabiertos con guardas, reclasificados como críticos y recuperados sin insertar evidencia no verificada:
+
+- concepto técnico: 18 páginas;
+- estudios del sector: 48 páginas;
+- dos minutas: 6 páginas cada una;
+- requerimiento técnico: 58 páginas.
+
+La recuperación OCR en español cubrió **136/136 páginas, con cero timeouts**. Los PDFs originales se conservaron en almacenamiento privado y el texto OCR se persistió mediante el versionado documental gobernado. El resultado final fue 12 importados, 0 fallidos.
+
+Auditoría append-only: evento `case_note` `1753629b-6a5f-4df9-bdb4-427e32cbf660`, vinculado al job de Bucaramanga y marcado con `event_key=document_ocr_recovery_completed`.
+
+## 4. Release técnico
+
+- PR técnica única fusionada: **#34**.
+- `main` y producción: `9c7a9120e750d5ef4fd8c65b81432af8cf0cad04`.
+- Migraciones durables **032–037** aplicadas y verificadas.
+- Deployment Vercel `dpl_FF6UjyJshBJWjUcXYoe6FDNJRTC1`: `Ready`.
+- URL productiva: https://seguridad-nacional-crm.vercel.app.
+
+La revisión técnica independiente del lote terminó **RESOLVED · NO CRITICAL/IMPORTANT** después de corregir los límites efectivos de reintento, `attempt_count`, `next_attempt_at`, contadores acumulados y transiciones a `needs_attention`.
 
 ### QA ejecutado
 
-- `safe-official-fetch` / política SSRF: PASS.
-- Concurrencia documental: PASS.
-- Durable tender worker: PASS.
-- Scheduler systemd: PASS.
-- Paridad backend/API: PASS.
+- 195/195 archivos de pruebas: PASS.
+- Integraciones SIIO, agentes y permisos: PASS.
+- Integraciones PGlite de autorización, jobs, RPC y migraciones: PASS.
+- Paridad Express/Vercel: PASS.
 - Build TypeScript + Vite: PASS.
 - `git diff --check`: PASS.
+- Scanner de secretos: sin credenciales reales; solo fixtures sintéticos.
 - Producción raíz: HTTP 200.
 
-## 4. Estado de código y despliegue
+## 5. Verificación final de consistencia
 
-La producción actual contiene cambios desplegados desde la rama:
+Consulta autoritativa Supabase del 2026-07-28 12:01 UTC:
 
-- `feat/agt002-hetzner-runtime-bridge`
-- commit desplegado y publicado: `a530cd8b458d7a78b18d0f711e786cc7c681f43b`
+- 3/3 oportunidades mantienen conversión manual válida;
+- 3/3 tienen snapshot vigente;
+- 3/3 tienen exactamente un run AGT-002 `completed` asociado al snapshot vigente;
+- jobs activos: **0**;
+- leases de jobs o documentos: **0**;
+- claims AGT-002 activos: **0**;
+- claims vencidos: **0**;
+- items documentales pendientes o fallidos en INDER/Bucaramanga: **0**;
+- errores terminales pendientes: **0**.
 
-La rama técnica coincide con su remoto y estaba limpia al cierre. Sin embargo:
+## 6. Deuda separada no bloqueante
 
-- `origin/main` estaba en `495c4fcb490402d40b8395475f3f8cc7c3c1eba6`;
-- no existía PR abierto o cerrado para `feat/agt002-hetzner-runtime-bridge`;
-- por tanto, existe **drift deliberado pendiente de normalización**: producción incluye código aún no integrado a `main`.
+- `/api/health` en el dominio Vercel devuelve actualmente el shell SPA y no un healthcheck backend JSON dedicado. El pipeline durable sí completó desde el scheduler externo y Supabase confirmó persistencia; la observabilidad del endpoint debe corregirse como tarea separada.
+- El disco de Hetzner fue observado cerca del 86 %. Programar mantenimiento separado y reversible; no mezclarlo con el cierre funcional de AGT-002.
+- No se ejecutó prueba destructiva de rollback ni kill switch en producción.
 
-No declarar cierre de release técnica hasta crear/revisar el PR, pasar CI, fusionar y confirmar despliegue desde la rama canónica.
+## 7. Cierre
 
-## 5. Pendientes y límites
+**PSI/AGT-002 queda cerrado operativamente para Aerocivil, INDER Medellín y Bucaramanga LPR: 3/3 `completed/current`, sin duplicados activos, claims ni leases huérfanos.**
 
-1. **INDER:** registrar o resolver la autorización nominal que falta. La intención de negocio es que la conversión manual sea el gate; el estado `awaiting_analysis_authorization` muestra que la implementación todavía exige una autorización técnica adicional para este job histórico.
-2. **Bucaramanga:** revisar los cinco import-items fallidos, recuperar al menos el conjunto documental utilizable y publicar snapshot. No reintentar AGT-002 sin snapshot.
-3. **Ambas pendientes:** ejecutar AGT-002 real y verificar, por cada oportunidad, run `completed`, resultado estructurado, auditoría, cuota, lease final y correspondencia con el snapshot vigente.
-4. **Worker:** estabilizar la duración por invocación. Durante la importación hubo timeouts de Vercel; el pipeline avanzó gracias a persistencia durable y reintentos, pero el tamaño de lote debe revisarse antes de considerar cerrado el frente operativo.
-5. **Rama técnica:** preparar una única revisión del lote, abrir PR hacia `main`, corregir solo hallazgos Critical/Important o regresiones y completar la ruta CI/merge/deploy/smoke.
-6. **Hetzner:** disco observado al 86%; programar mantenimiento separado, sin mezclarlo con la validación funcional de AGT-002.
-
-## 6. Punto exacto para retomar
-
-Retomar desde las dos precondiciones pendientes, sin volver a analizar Aerocivil:
-
-1. resolver autorización de **INDER**;
-2. diagnosticar y recuperar los cinco documentos fallidos de **Bucaramanga**;
-3. ejecutar AGT-002 para esas dos oportunidades y cerrar únicamente después de verificar persistencia y auditoría en Supabase.
-
----
-
-**Límite del cierre:** una de tres oportunidades tiene AGT-002 completado; dos de tres continúan pendientes. No hubo envío, firma, presentación de oferta ni decisión GO/NO GO automatizada.
+Este cierre no automatiza decisiones comerciales ni jurídicas. GO/NO GO, firma, envío y presentación de ofertas permanecen bajo control humano.
