@@ -1521,6 +1521,7 @@ const TENDER_BUSINESS_EVENT_TYPES = [
   'entered_tracking', 'tracking_updated', 'assigned', 'blocked', 'unblocked', 'returned_to_radar', 'converted', 'discarded',
   'requirement_pending', 'information_requested', 'addendum_reviewed', 'observation_recorded', 'internal_meeting', 'case_note',
   'go_decided', 'no_go_decided', 'offer_preparation_started', 'offer_submitted', 'awarded', 'not_awarded', 'cancelled', 'deserted',
+  'dossier_seeded', 'dossier_artifact_approved', 'offer_ready_for_submission',
 ];
 const TENDER_TECHNICAL_EVENT_TYPES = [
   'detected', 'pipeline_queued', 'document_discovery_started', 'document_import_progress', 'document_import_completed',

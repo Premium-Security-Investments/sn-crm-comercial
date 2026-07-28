@@ -171,6 +171,9 @@ await (async function backendsRegisterSevenRoutesWithParity() {
     "app.post('/api/tender-dossier-seed'",
   ];
   for (const route of routes) assert.ok(server.includes(route), `falta ruta ${route}`);
+  for (const eventType of ['dossier_seeded', 'dossier_artifact_approved', 'offer_ready_for_submission']) {
+    assert.match(server, new RegExp(`TENDER_BUSINESS_EVENT_TYPES[\\s\\S]*?'${eventType}'`), `${eventType} debe estar visible en el historial comercial`);
+  }
 })();
 
 console.log('tender dossier adapter + routes passed');
