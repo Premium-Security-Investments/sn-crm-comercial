@@ -7,6 +7,8 @@ const m017 = strip(readFileSync(new URL('../supabase/migrations/017_tender_track
 const m032 = strip(readFileSync(new URL('../supabase/migrations/032_tender_processing_jobs.sql', import.meta.url), 'utf8'));
 const m033 = strip(readFileSync(new URL('../supabase/migrations/033_tender_tracking_events_unified.sql', import.meta.url), 'utf8'));
 const m034 = strip(readFileSync(new URL('../supabase/migrations/034_tender_processing_rpc.sql', import.meta.url), 'utf8'));
+const m035 = strip(readFileSync(new URL('../supabase/migrations/035_tender_analysis_authorization.sql', import.meta.url), 'utf8'));
+const m037 = strip(readFileSync(new URL('../supabase/migrations/037_tender_retry_limits.sql', import.meta.url), 'utf8'));
 
 const T = '33333333-3333-4333-8333-333333333333';
 const O = '55555555-5555-4555-8555-555555555555';
@@ -34,6 +36,8 @@ async function db() {
   await pg.exec(m032);
   await pg.exec(m033);
   await pg.exec(m034);
+  await pg.exec(m035);
+  await pg.exec(m037);
   return pg;
 }
 
@@ -67,6 +71,25 @@ async function run() {
   assert.equal((await pg.query(`select status from public.psi_tender_processing_jobs where id='${a.job_id}'`)).rows[0].status, 'discovering_documents');
 
   await assert.rejects(pg.query(`select public.psi_update_tender_processing_job('${a.job_id}', gen_random_uuid(), '{"status":"needs_attention"}'::jsonb)`), /lease/i);
+
+  const retryAt = '2030-01-01T00:00:00Z';
+  for (let i = 0; i < 2; i += 1) {
+    await pg.query(`select public.psi_record_tender_import_item(
+      '${a.job_id}','SECOP II','doc-retry','https://example/doc','Pliego.pdf','failed_retryable',true,null,
+      'TENDER_DOC_SOURCE_UNAVAILABLE','mantenimiento','${retryAt}'::timestamptz
+    )`);
+  }
+  let item = (await pg.query(`select attempt_count, next_attempt_at from public.psi_tender_document_import_items where job_id='${a.job_id}' and source_document_id='doc-retry'`)).rows[0];
+  assert.equal(item.attempt_count, 2);
+  assert.equal(new Date(item.next_attempt_at).toISOString(), '2030-01-01T00:00:00.000Z');
+
+  await pg.query(`select public.psi_record_tender_import_item(
+    '${a.job_id}','SECOP II','doc-retry','https://example/doc','Pliego.pdf','imported',true,null,
+    null,null,null
+  )`);
+  item = (await pg.query(`select attempt_count, next_attempt_at from public.psi_tender_document_import_items where job_id='${a.job_id}' and source_document_id='doc-retry'`)).rows[0];
+  assert.equal(item.attempt_count, 2, 'la recuperación conserva el historial de intentos');
+  assert.equal(item.next_attempt_at, null, 'la recuperación limpia el backoff');
 
   console.log('tender-processing-rpc pglite integration passed');
 }

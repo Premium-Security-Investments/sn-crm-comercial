@@ -20,14 +20,18 @@ export async function claimTenderProcessingJob(database, { leaseSeconds = 90 } =
 
   const { data: importItems, error: itemsError } = await database
     .from('psi_tender_document_import_items')
-    .select('source,source_document_id,source_url,name,status,critical,attempt_count')
+    .select('source,source_document_id,source_url,name,status,critical,attempt_count,next_attempt_at')
     .eq('job_id', claim.job_id)
     .order('created_at', { ascending: true })
     .limit(50);
   if (itemsError) throw itemsError;
 
   const allItems = importItems || [];
-  const pendingItems = allItems.filter(item => ['pending', 'failed_retryable'].includes(item.status));
+  const nowMs = Date.now();
+  const pendingItems = allItems.filter(item =>
+    ['pending', 'failed_retryable'].includes(item.status)
+      && (!item.next_attempt_at || Date.parse(item.next_attempt_at) <= nowMs)
+  );
 
   return {
     job_id: claim.job_id,
@@ -61,7 +65,7 @@ export async function updateTenderProcessingJob(database, jobId, leaseId, patch)
   return rpc(database, 'psi_update_tender_processing_job', { p_job_id: jobId, p_lease_id: leaseId, p_patch: patch });
 }
 
-export async function recordTenderImportItem(database, { jobId, source, sourceDocumentId, sourceUrl, name, status, critical, documentVersionId, lastErrorCode, lastErrorMessage }) {
+export async function recordTenderImportItem(database, { jobId, source, sourceDocumentId, sourceUrl, name, status, critical, documentVersionId, lastErrorCode, lastErrorMessage, nextAttemptAt }) {
   return rpc(database, 'psi_record_tender_import_item', {
     p_job_id: jobId,
     p_source: source,
@@ -73,6 +77,7 @@ export async function recordTenderImportItem(database, { jobId, source, sourceDo
     p_document_version_id: documentVersionId || null,
     p_last_error_code: lastErrorCode || null,
     p_last_error_message: lastErrorMessage || null,
+    p_next_attempt_at: nextAttemptAt || null,
   });
 }
 

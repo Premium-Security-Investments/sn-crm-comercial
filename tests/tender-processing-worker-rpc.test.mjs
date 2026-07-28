@@ -70,6 +70,7 @@ async function claimComposesFullShapeWhenClaimed() {
           { source: 'SECOP II', source_document_id: 'd1', source_url: 'https://x', name: 'Pliego', status: 'pending', critical: true, attempt_count: 0 },
           { source: 'SECOP II', source_document_id: 'd2', source_url: 'https://x/2', name: 'Anexo', status: 'imported', critical: false, attempt_count: 0 },
           { source: 'SECOP II', source_document_id: 'd3', source_url: 'https://x/3', name: 'Minuta', status: 'failed_terminal', critical: true, attempt_count: 0 },
+          { source: 'SECOP II', source_document_id: 'd4', source_url: 'https://x/4', name: 'Pliego futuro', status: 'failed_retryable', critical: true, attempt_count: 1, next_attempt_at: '2999-01-01T00:00:00Z' },
         ], error: null },
       },
     },
@@ -98,6 +99,7 @@ async function recordImportItemMapsCamelCaseToRpcParams() {
     p_job_id: 'job-1', p_source: 'SECOP II', p_source_document_id: 'd1', p_source_url: 'https://x',
     p_name: 'Pliego', p_status: 'imported', p_critical: true, p_document_version_id: 'v-1',
     p_last_error_code: null, p_last_error_message: null,
+ p_next_attempt_at: null,
   });
 }
 

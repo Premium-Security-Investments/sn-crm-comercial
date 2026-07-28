@@ -1,4 +1,4 @@
-import { classifyPipelineError, computeBackoffMs } from './tender-pipeline-backoff.js';
+import { classifyPipelineError, computeBackoffMs, MAX_ATTEMPTS } from './tender-pipeline-backoff.js';
 
 function safeMessage(error) {
   return typeof error?.message === 'string' ? error.message : 'error desconocido';
@@ -67,16 +67,21 @@ export function createTenderProcessingWorker(deps) {
       let failedTerminal = 0;
       let failedRetryable = 0;
       let processed = 0;
+      let failedDelta = 0;
+      let resolvedPriorFailures = 0;
+      let earliestRetryAt = null;
       let anyUsableText = claim.any_usable_text === true;
       let anyCriticalTerminalFailure = claim.any_critical_terminal_failure === true;
 
       for (const doc of batch) {
         if (now() - startedAt >= timeBudgetMs) break;
-        processed += 1;
+        const priorAttempts = Number(doc.attemptCount || 0);
+        if (priorAttempts === 0) processed += 1;
         try {
           const result = await importOneDocument({ jobId, tenderId, opportunityId, document: doc });
           if (result.status === 'imported') imported += 1;
           else if (result.status === 'unchanged') unchanged += 1;
+          if (priorAttempts > 0) resolvedPriorFailures += 1;
           if (result.hasText) anyUsableText = true;
           await recordImportItem({
             jobId, source: doc.source, sourceDocumentId: doc.sourceDocumentId,
@@ -85,9 +90,12 @@ export function createTenderProcessingWorker(deps) {
           });
         } catch (error) {
           const classification = classifyPipelineError(error);
-          if (classification === 'retryable') {
+          const nextAttempt = priorAttempts + 1;
+          if (priorAttempts === 0) failedDelta += 1;
+          if (classification === 'retryable' && nextAttempt < MAX_ATTEMPTS) {
             failedRetryable += 1;
-            const nextAttemptAt = new Date(now() + computeBackoffMs({ attempt: (doc.attemptCount || 0) + 1 })).toISOString();
+            const nextAttemptAt = new Date(now() + computeBackoffMs({ attempt: nextAttempt })).toISOString();
+            if (!earliestRetryAt || nextAttemptAt < earliestRetryAt) earliestRetryAt = nextAttemptAt;
             await recordImportItem({
               jobId, source: doc.source, sourceDocumentId: doc.sourceDocumentId,
               sourceUrl: doc.sourceUrl, name: doc.name, status: 'failed_retryable',
@@ -97,10 +105,13 @@ export function createTenderProcessingWorker(deps) {
           } else {
             failedTerminal += 1;
             if (doc.critical) anyCriticalTerminalFailure = true;
+            const exhaustedCode = classification === 'retryable'
+              ? `${error.code || 'TENDER_DOC_RETRY'}_MAX_ATTEMPTS`
+              : error.code;
             await recordImportItem({
               jobId, source: doc.source, sourceDocumentId: doc.sourceDocumentId,
               sourceUrl: doc.sourceUrl, name: doc.name, status: 'failed_terminal',
-              critical: doc.critical || false, lastErrorCode: error.code, lastErrorMessage: safeMessage(error),
+              critical: doc.critical || false, lastErrorCode: exhaustedCode, lastErrorMessage: safeMessage(error),
             });
           }
         }
@@ -112,7 +123,8 @@ export function createTenderProcessingWorker(deps) {
         documents_processed: (claim.documents_processed || 0) + processed,
         documents_imported: (claim.documents_imported || 0) + imported,
         documents_unchanged: (claim.documents_unchanged || 0) + unchanged,
-        documents_failed: (claim.documents_failed || 0) + failed,
+        documents_failed: Math.max(0, (claim.documents_failed || 0) + failedDelta - resolvedPriorFailures),
+        next_attempt_at: failedRetryable > 0 ? earliestRetryAt : null,
       };
 
       // Retryable failures mean the batch isn't fully resolved yet: stay in
@@ -171,7 +183,24 @@ export function createTenderProcessingWorker(deps) {
       }
 
       if (result.status === 'quota' || result.status === 'saturated' || result.status === 'busy') {
-        await updateJob(jobId, leaseId, { status: 'waiting_agent_capacity', current_step: 'analysis' });
+        const nextAttempt = (claim.attempt_count || 0) + 1;
+        const errorCode = `AGT002_${result.status.toUpperCase()}`;
+        if (nextAttempt >= MAX_ATTEMPTS) {
+          await updateJob(jobId, leaseId, {
+            status: 'needs_attention', current_step: 'analysis', attempt_count: nextAttempt,
+            next_attempt_at: null, last_error_code: `${errorCode}_MAX_ATTEMPTS`,
+            last_error_message: `Capacidad AGT-002 no disponible tras ${nextAttempt} intentos`,
+          });
+          await appendEvent({
+            tenderId, eventType: 'analysis_failed', actorKind: 'system',
+            sourceRefType: 'job', sourceRefId: jobId,
+          });
+          return { status: 'needs_attention', job_id: jobId, reason: result.status };
+        }
+        await updateJob(jobId, leaseId, {
+          status: 'waiting_agent_capacity', current_step: 'analysis', attempt_count: nextAttempt,
+          next_attempt_at: new Date(now() + computeBackoffMs({ attempt: nextAttempt })).toISOString(),
+        });
         return { status: 'waiting_agent_capacity', job_id: jobId, reason: result.status };
       }
 
@@ -188,11 +217,27 @@ export function createTenderProcessingWorker(deps) {
 
       const classification = classifyPipelineError(result.error || {});
       if (classification === 'retryable') {
+        const nextAttempt = (claim.attempt_count || 0) + 1;
+        if (nextAttempt < MAX_ATTEMPTS) {
+          await updateJob(jobId, leaseId, {
+            status: 'waiting_agent_capacity', current_step: 'analysis',
+            attempt_count: nextAttempt,
+            next_attempt_at: new Date(now() + computeBackoffMs({ attempt: nextAttempt })).toISOString(),
+          });
+          return { status: 'waiting_agent_capacity', job_id: jobId, reason: 'retry' };
+        }
+
         await updateJob(jobId, leaseId, {
-          status: 'waiting_agent_capacity', current_step: 'analysis',
-          attempt_count: (claim.attempt_count || 0) + 1,
+          status: 'needs_attention', current_step: 'analysis', attempt_count: nextAttempt,
+          next_attempt_at: null,
+          last_error_code: `${result.error?.code || 'AGT002_RETRY'}_MAX_ATTEMPTS`,
+          last_error_message: safeMessage(result.error || {}),
         });
-        return { status: 'waiting_agent_capacity', job_id: jobId, reason: 'retry' };
+        await appendEvent({
+          tenderId, eventType: 'analysis_failed', actorKind: 'system',
+          sourceRefType: 'job', sourceRefId: jobId,
+        });
+        return { status: 'needs_attention', job_id: jobId };
       }
 
       await updateJob(jobId, leaseId, {

@@ -1,5 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { createTenderProcessingWorker } from '../tender-processing-worker.js';
+import { MAX_ATTEMPTS } from '../tender-pipeline-backoff.js';
 
 function makeDeps(overrides = {}) {
   const calls = {
@@ -71,13 +72,13 @@ async function run() {
 
   // 3) importOneDocument lanza error retryable -> item failed_retryable con next_attempt_at; job NO needs_attention aún.
   {
-    const pending = [{ source: 'SECOP II', sourceDocumentId: 'd1', name: 'Pliego', critical: false }];
+    const pending = [{ source: 'SECOP II', sourceDocumentId: 'd1', name: 'Pliego', critical: false, attemptCount: 1 }];
     const err = new Error('timeout'); err.code = 'AGT002_CODEX_TIMEOUT';
     const { deps, calls } = makeDeps({
       claimJob: async () => ({
         job_id: 'job-3', lease_id: 'lease-3', tender_id: 'tender-3', opportunity_id: 'opp-3',
         status: 'importing_documents', current_step: 'documents',
-        documents_discovered: 1, documents_processed: 0, documents_imported: 0, documents_unchanged: 0, documents_failed: 0,
+        documents_discovered: 1, documents_processed: 1, documents_imported: 0, documents_unchanged: 0, documents_failed: 1,
         pending_documents: pending,
       }),
       importOneDocument: async () => { throw err; },
@@ -88,7 +89,30 @@ async function run() {
     assert.equal(calls.recordImportItem[0].status, 'failed_retryable');
     assert.ok(calls.recordImportItem[0].nextAttemptAt);
     assert.equal(calls.updateJob[0].patch.status, 'importing_documents');
+    assert.equal(calls.updateJob[0].patch.next_attempt_at, calls.recordImportItem[0].nextAttemptAt, 'el job debe respetar el backoff del item');
+    assert.equal(calls.updateJob[0].patch.documents_processed, 1, 'un retry no vuelve a contar el mismo documento');
+    assert.equal(calls.updateJob[0].patch.documents_failed, 1, 'un retry no infla el contador de fallos');
     assert.notEqual(result.status, 'needs_attention');
+  }
+
+  // 3a) último intento retryable de documento crítico -> terminal + needs_attention.
+  {
+    const pending = [{ source: 'SECOP II', sourceDocumentId: 'd-max', name: 'Pliego definitivo.pdf', critical: true, attemptCount: MAX_ATTEMPTS - 1 }];
+    const err = new Error('SECOP en mantenimiento'); err.code = 'TENDER_DOC_SOURCE_UNAVAILABLE';
+    const { deps, calls } = makeDeps({
+      claimJob: async () => ({
+        job_id: 'job-3a', lease_id: 'lease-3a', tender_id: 'tender-3a', opportunity_id: 'opp-3a',
+        status: 'importing_documents', current_step: 'documents',
+        documents_discovered: 1, documents_processed: 1, documents_imported: 0, documents_unchanged: 0, documents_failed: 1,
+        pending_documents: pending,
+      }),
+      importOneDocument: async () => { throw err; },
+    });
+    const result = await createTenderProcessingWorker(deps).runOnce({ batchSize: 1 });
+    assert.equal(calls.recordImportItem[0].status, 'failed_terminal');
+    assert.equal(result.status, 'needs_attention');
+    assert.equal(calls.updateJob[0].patch.status, 'needs_attention');
+    assert.equal(calls.updateJob[0].patch.next_attempt_at, null);
   }
 
   // 3b) un fallo crítico terminal quedó persistido en un batch anterior
@@ -176,6 +200,24 @@ async function run() {
     assert.equal(result.status, 'waiting_agent_capacity');
     assert.equal(calls.updateJob[0].patch.status, 'waiting_agent_capacity');
     assert.notEqual(calls.updateJob[0].patch.status, 'completed');
+  }
+
+  // 5a) último error retryable de AGT-002 -> needs_attention, sin loop infinito.
+  {
+    const err = new Error('bridge timeout'); err.code = 'AGT002_CODEX_TIMEOUT';
+    const { deps, calls } = makeDeps({
+      claimJob: async () => ({
+        job_id: 'job-5a', lease_id: 'lease-5a', tender_id: 'tender-5a', opportunity_id: 'opp-5a',
+        status: 'waiting_agent_capacity', current_step: 'analysis', snapshot_id: 'snap-5a',
+        attempt_count: MAX_ATTEMPTS - 1,
+      }),
+      requestAgt002: async () => ({ status: 'failed', error: err }),
+    });
+    const result = await createTenderProcessingWorker(deps).runOnce({});
+    assert.equal(result.status, 'needs_attention');
+    assert.equal(calls.updateJob[0].patch.status, 'needs_attention');
+    assert.equal(calls.updateJob[0].patch.attempt_count, MAX_ATTEMPTS);
+    assert.ok(calls.appendEvent.some(event => event.eventType === 'analysis_failed'));
   }
 
   // 6) preanálisis por reglas mostrado -> nunca completa el pipeline (evento visible, sin fallback silencioso).
