@@ -95,7 +95,7 @@ Usar el patrón defensivo de AGT-002, no su semántica. Configuración server-si
 ## Tarea 5 — Persistencia append-only
 
 **Crear**
-- `supabase/migrations/039_agt003_copilot_runs.sql`
+- `supabase/migrations/040_agt003_copilot_runs.sql`
 - `agt003-copilot-persistence.js`
 - `tests/agt003-copilot-persistence.test.mjs`
 - `tests/agt003-copilot-pglite.integration.test.mjs`
