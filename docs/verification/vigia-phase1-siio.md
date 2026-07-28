@@ -61,7 +61,7 @@ La verificación final también ejecuta todos los archivos `tests/*.test.mjs`, l
 
 ## Configuración segura
 
-El repositorio usa `.env.local.example` como plantilla canónica. `AGT003_COPILOT_ENABLED=false` permanece por defecto. URL, key ID, secreto de firma y modelo son variables exclusivamente server-side; nunca se exponen con prefijo `VITE_` ni se registran en logs.
+El repositorio usa `.env.local.example` como plantilla canónica. `AGT003_COPILOT_ENGINE=disabled` permanece por defecto. URL del bridge, secreto HMAC, protocolo wire y modelo son variables exclusivamente server-side; nunca se exponen con prefijo `VITE_` ni se registran en logs. Un bridge AGT-003 dedicado usa `AGT003_COPILOT_WIRE_PROTOCOL=agt003`; la reutilización temporal del transporte gobernado AGT-002 exige `agt002` explícito.
 
 ## Gates pendientes de rollout
 

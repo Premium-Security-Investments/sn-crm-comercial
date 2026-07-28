@@ -47,6 +47,9 @@ export function getAgt003CopilotRuntimeConfig(environment = process.env) {
     maxConcurrent,
     dailyMaxRuns,
     leaseSeconds,
+    wireProtocol: nonEmpty(environment.AGT003_COPILOT_WIRE_PROTOCOL)
+      ? environment.AGT003_COPILOT_WIRE_PROTOCOL.trim()
+      : 'agt003',
   };
 }
 
@@ -55,6 +58,7 @@ export function createAgt003CopilotRuntime({ environment = process.env, countDai
   const client = createAgt003CopilotBridgeClient({
     url: environment.AGT003_COPILOT_BRIDGE_URL,
     hmacSecret: environment.AGT003_COPILOT_HMAC_SECRET,
+    wireProtocol: config.wireProtocol,
   });
   return createAgt003CopilotEngine({
     client,

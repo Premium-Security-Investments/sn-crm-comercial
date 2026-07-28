@@ -37,11 +37,13 @@ async function readBoundedJson(response) {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
-export function createAgt003CopilotBridgeClient({ url, hmacSecret, fetchImpl = fetch, randomNonce = randomUUID, now = () => Math.floor(Date.now() / 1000) } = {}) {
+export function createAgt003CopilotBridgeClient({ url, hmacSecret, wireProtocol = 'agt003', fetchImpl = fetch, randomNonce = randomUUID, now = () => Math.floor(Date.now() / 1000) } = {}) {
   let endpoint;
   try { endpoint = new URL(url); } catch { throw new Error('El puente AGT-003 requiere una URL HTTPS configurada.'); }
   if (endpoint.protocol !== 'https:') throw new Error('El puente AGT-003 requiere una URL HTTPS configurada.');
   if (typeof hmacSecret !== 'string' || Buffer.byteLength(hmacSecret) < 32) throw new Error('El puente AGT-003 requiere un secreto HMAC de al menos 32 bytes.');
+  if (!['agt002', 'agt003'].includes(wireProtocol)) throw new Error('El protocolo wire del puente AGT-003 no es válido.');
+  const headerNamespace = wireProtocol.toUpperCase();
 
   return {
     async run({ model, policy, input, outputSchema, timeoutMs = 30_000, idempotencyKey = randomUUID(), signal } = {}) {
@@ -66,9 +68,9 @@ export function createAgt003CopilotBridgeClient({ url, hmacSecret, fetchImpl = f
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-AGT003-Timestamp': timestamp,
-            'X-AGT003-Nonce': nonce,
-            'X-AGT003-Signature': signCanonicalString(hmacSecret, canonical),
+            [`X-${headerNamespace}-Timestamp`]: timestamp,
+            [`X-${headerNamespace}-Nonce`]: nonce,
+            [`X-${headerNamespace}-Signature`]: signCanonicalString(hmacSecret, canonical),
             'Idempotency-Key': idempotencyKey,
           },
           body,

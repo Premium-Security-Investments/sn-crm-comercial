@@ -22,7 +22,9 @@ assert.throws(() => getAgt003CopilotRuntimeConfig(env({ AGT003_COPILOT_TIMEOUT_M
 assert.throws(() => getAgt003CopilotRuntimeConfig(env({ AGT003_COPILOT_MAX_CONCURRENT: '0' })), /no está configurado/i);
 assert.throws(() => getAgt003CopilotRuntimeConfig(env({ AGT003_COPILOT_TIMEOUT_MS: '600000' })), /no está configurado/i);
 const config = getAgt003CopilotRuntimeConfig(env({ AGT003_COPILOT_TIMEOUT_MS: '5000', AGT003_COPILOT_MAX_CONCURRENT: '1', AGT003_COPILOT_DAILY_MAX_RUNS: '4' }));
-assert.deepEqual(config, { model: 'synthetic-model', policyVersion: 'agt003-copilot-policy-v1', timeoutMs: 5000, maxConcurrent: 1, dailyMaxRuns: 4, leaseSeconds: 20 });
+assert.deepEqual(config, { model: 'synthetic-model', policyVersion: 'agt003-copilot-policy-v1', timeoutMs: 5000, maxConcurrent: 1, dailyMaxRuns: 4, leaseSeconds: 20, wireProtocol: 'agt003' });
+assert.equal(getAgt003CopilotRuntimeConfig(env({ AGT003_COPILOT_WIRE_PROTOCOL: 'agt002' })).wireProtocol, 'agt002');
+assert.throws(() => createAgt003CopilotRuntime({ environment: env({ AGT003_COPILOT_WIRE_PROTOCOL: 'legacy' }), countDailyRuns: async () => 0 }), /protocolo/i);
 const runtime = createAgt003CopilotRuntime({ environment: env(), countDailyRuns: async () => 0 });
 assert.equal(typeof runtime.draft, 'function');
 

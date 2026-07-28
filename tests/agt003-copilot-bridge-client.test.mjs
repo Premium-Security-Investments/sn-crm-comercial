@@ -34,6 +34,20 @@ assert.equal(verifySignatureConstantTime(signCanonicalString(SECRET, canonical),
 assert.equal(JSON.parse(captured.init.body).signal, undefined);
 assert.equal(JSON.parse(captured.init.body).cwd, undefined);
 
+let reusedTransport;
+const compatible = createAgt003CopilotBridgeClient({
+  url: 'https://agents.example.test/v1/agt002-preview/run',
+  hmacSecret: SECRET,
+  wireProtocol: 'agt002',
+  fetchImpl: fakeFetch({ payload: { content: '{}', usage: { input_tokens: 1, output_tokens: 1 } }, capture: value => { reusedTransport = value; } }),
+  randomNonce: () => 'r'.repeat(16),
+  now: () => 2000,
+});
+await compatible.run({ model: 'model-x', policy: 'policy', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-2' });
+assert.equal(reusedTransport.init.headers['X-AGT002-Timestamp'], '2000');
+assert.equal(reusedTransport.init.headers['X-AGT003-Timestamp'], undefined);
+assert.throws(() => createAgt003CopilotBridgeClient({ url: URL, hmacSecret: SECRET, wireProtocol: 'legacy' }), /protocolo/i);
+
 const invalid = createAgt003CopilotBridgeClient({ url: URL, hmacSecret: SECRET, fetchImpl: fakeFetch({ payload: { content: 4, usage: {} } }) });
 await assert.rejects(() => invalid.run({ model: 'm', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5, idempotencyKey: 'i' }), error => error.code === 'AGT003_COPILOT_INVALID_RESPONSE');
 const unavailable = createAgt003CopilotBridgeClient({ url: URL, hmacSecret: SECRET, fetchImpl: fakeFetch({ throws: true }) });
