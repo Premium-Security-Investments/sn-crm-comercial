@@ -3168,19 +3168,32 @@ app.post('/api/tender-analysis-authorize', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
-app.post('/api/tender-processing-worker-run', async (req, res) => {
+function secretMatches(expectedValue, providedValue) {
+  const expected = Buffer.from(String(expectedValue || ''), 'utf8');
+  const provided = Buffer.from(String(providedValue || ''), 'utf8');
+  return expected.length > 0 && provided.length === expected.length && timingSafeEqual(provided, expected);
+}
+
+function isTenderWorkerSchedulerAuthorized(req) {
+  const authorization = String(req.headers.authorization || '');
+  const bearerSecret = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  return secretMatches(process.env.TENDER_WORKER_SCHEDULER_SECRET, req.headers['x-tender-worker-secret'])
+    || secretMatches(process.env.CRON_SECRET, bearerSecret);
+}
+
+async function runTenderProcessingWorker(req, res) {
   try {
     if (!isTenderDurablePipelineEnabled(process.env)) { const error = new Error('No disponible.'); error.status = 404; throw error; }
-    const expectedSecret = Buffer.from(String(process.env.TENDER_WORKER_SCHEDULER_SECRET || ''), 'utf8');
-    const providedSecret = Buffer.from(String(req.headers['x-tender-worker-secret'] || ''), 'utf8');
-    const secretsMatch = expectedSecret.length > 0 && providedSecret.length === expectedSecret.length && timingSafeEqual(providedSecret, expectedSecret);
-    if (!secretsMatch) { const error = new Error('No autorizado.'); error.status = 403; throw error; }
+    if (!isTenderWorkerSchedulerAuthorized(req)) { const error = new Error('No autorizado.'); error.status = 403; throw error; }
     const database = requireDb();
     const worker = createTenderProcessingWorker(buildTenderProcessingWorkerDeps(database));
     const result = await worker.runOnce({});
     res.json({ processed: result?.status && result.status !== 'empty' ? 1 : 0 });
   } catch (error) { sendError(res, error, error?.status || 400); }
-});
+}
+
+app.post('/api/tender-processing-worker-run', runTenderProcessingWorker);
+app.get('/api/tender-processing-worker-run', runTenderProcessingWorker);
 
 app.post('/api/tender-opportunity-discard', async (req, res) => {
   try {
