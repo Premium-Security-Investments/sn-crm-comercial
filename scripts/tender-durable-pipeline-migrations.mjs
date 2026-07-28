@@ -8,9 +8,13 @@ export const MIGRATION_FILES = [
   '033_tender_tracking_events_unified.sql',
   '034_tender_processing_rpc.sql',
   '035_tender_analysis_authorization.sql',
+  '036_tender_processing_job_auto_authorization.sql',
+  '037_tender_retry_limits.sql',
 ];
 
 export const ROLLBACK_FILES = [
+  '037_tender_retry_limits_rollback.sql',
+  '036_tender_processing_job_auto_authorization_rollback.sql',
   '035_tender_analysis_authorization_rollback.sql',
   '034_tender_processing_rpc_rollback.sql',
   '033_tender_tracking_events_unified_rollback.sql',
@@ -96,13 +100,15 @@ select
     where n.nspname = 'public' and p.proname in (
       'psi_create_tender_processing_job', 'psi_claim_tender_processing_job', 'psi_update_tender_processing_job',
       'psi_append_tender_tracking_event', 'psi_record_tender_import_item', 'psi_authorize_tender_analysis'
-    )) as fn_count;
+    )) as fn_count,
+  to_regprocedure('public.psi_record_tender_import_item(uuid,text,text,text,text,text,boolean,uuid,text,text,timestamptz)')::text as fn_retry_record;
 `;
 
 // Read-only. Never executes migration or rollback SQL.
 export async function verify(execSql) {
   const [row] = await execSql(VERIFY_SQL);
-  const ok = Boolean(row.t_jobs) && Boolean(row.t_items) && Number(row.fn_count) >= 6;
+  const ok = Boolean(row.t_jobs) && Boolean(row.t_items) && Number(row.fn_count) >= 6
+    && Boolean(row.fn_retry_record);
   if (!ok) {
     return { ok: false, row };
   }
