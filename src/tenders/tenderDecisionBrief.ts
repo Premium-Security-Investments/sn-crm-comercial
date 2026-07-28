@@ -2,7 +2,7 @@ import type { TenderDocumentAnalysis } from './types';
 
 export function tenderAnalysisMethodLabel(producer: TenderDocumentAnalysis['producer']) {
   return producer === 'AGT-002'
-    ? 'Análisis AGT-002'
+    ? 'Análisis Vig-IA'
     : producer === 'HERMES-INTERIM'
       ? 'Análisis asistido por Hermes — transitorio'
       : 'Preanálisis por reglas SIIO';
@@ -10,7 +10,7 @@ export function tenderAnalysisMethodLabel(producer: TenderDocumentAnalysis['prod
 
 export function tenderAnalysisProducerDisclosure(producer: TenderDocumentAnalysis['producer']) {
   return producer === 'AGT-002'
-    ? 'Agente AGT-002 con revisión humana obligatoria'
+    ? 'Vig-IA con revisión humana obligatoria'
     : producer === 'HERMES-INTERIM'
       ? 'Asistencia transitoria de Hermes con revisión humana obligatoria'
       : 'Determinístico por reglas SIIO; no fue producido por un agente';

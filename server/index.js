@@ -665,6 +665,15 @@ const tenderPositiveTerms = {
   'videovigilancia': 35, 'video vigilancia': 35, 'control de acceso': 30, 'biometrico': 22, 'biométrico': 22,
   'alarma': 22, 'monitoreo': 22, 'circuito cerrado': 30, 'guardas': 28, 'cedi': 20, 'bodega': 10
 };
+// Terms specific enough, on their own, to prove a process is about a PSI-offerable service
+// (vigilancia, seguridad privada, CCTV/videovigilancia, control de acceso). Everything else in
+// tenderPositiveTerms is a generic/low-signal word (alarma, monitoreo, cedi, bodega, biométrico)
+// that only adds ranking weight once eligibility is already established by a core term.
+const tenderCoreServiceTerms = new Set([
+  'vigilancia y seguridad privada', 'vigilancia y seguridad', 'servicios de vigilancia', 'servicio de vigilancia',
+  'vigilancia armada', 'vigilancia privada', 'vigilancia', 'seguridad privada', 'seguridad electronica', 'seguridad electrónica',
+  'cctv', 'videovigilancia', 'video vigilancia', 'control de acceso', 'circuito cerrado', 'guardas'
+]);
 const tenderDisqualifyingTerms = [
   'interventoria', 'interventoría',
   'vehiculo blindado', 'vehículo blindado', 'vehiculos blindados', 'vehículos blindados',
@@ -856,22 +865,31 @@ function tenderDate(value) { if (!value) return null; const d = new Date(value);
 function tenderDaysUntil(value) { const d = tenderDate(value); if (!d) return null; const today = new Date(); today.setHours(0,0,0,0); d.setHours(0,0,0,0); return Math.round((d.getTime() - today.getTime()) / 86400000); }
 function tenderWindow(days) { if (days === null) return 'sin fecha de cierre reportada'; if (days <= 7) return 'urgente (0-7 días)'; if (days <= 15) return 'revisar rápido (8-15 días)'; if (days <= 30) return 'buena ventana (16-30 días)'; return 'ventana amplia'; }
 function tenderText(row) { return normTenderText(Object.values(row || {}).filter(v => typeof v === 'string').join(' ')); }
+// Scoped to the objeto/título/descripción-like fields declared per source (tenderSources[*].nameFields)
+// instead of every string in the raw row, so an entity/department name or an unrelated field can never
+// by itself produce a positive-term match. Falls back to the whole row only when no fields are declared.
+function tenderObjectText(row, nameFields) {
+  if (!Array.isArray(nameFields) || !nameFields.length) return tenderText(row);
+  return normTenderText(nameFields.map(field => (typeof row?.[field] === 'string' ? row[field] : '')).join(' '));
+}
 function stableTenderKey(tender) {
   const base = [tender.source, tender.process_id || tender.ref, tender.entity, tender.title].map(v => normTenderText(v)).join('|');
   return createHash('sha1').update(base).digest('hex').slice(0, 20);
 }
-const tenderPositiveReasonSet = new Set(Object.keys(tenderPositiveTerms).map(term => normTenderText(term)));
-const tenderPositiveEntries = Object.entries(tenderPositiveTerms).map(([term, pts]) => [term, pts, normTenderText(term)]).sort((a, b) => b[2].length - a[2].length);
+const tenderPositiveEntries = Object.entries(tenderPositiveTerms).map(([term, pts]) => [term, pts, normTenderText(term), tenderCoreServiceTerms.has(term)]).sort((a, b) => b[2].length - a[2].length);
+// Eligibility (and its read-path re-validation over persisted `reasons`) is decided purely from
+// whether a core PSI-service term matched — never from a generic word, a value/foco-zone bonus, or a
+// re-scan of the whole raw row. Fails closed (ineligible) when reasons are missing.
 function hasTenderServiceSignal(item) {
   const reasons = item?.reasons || [];
-  const text = item?.raw ? tenderText(item.raw) : tenderText(item);
-  return reasons.some(reason => tenderPositiveReasonSet.has(normTenderText(reason))) || tenderPositiveEntries.some(([, , term]) => text.includes(term));
+  return reasons.some(reason => tenderCoreServiceTerms.has(reason));
 }
-function scoreTender(row) {
+function scoreTender(row, nameFields) {
+  const objectText = tenderObjectText(row, nameFields);
   const text = tenderText(row); let score = 0; const reasons = []; const risks = [];
   const matchedPositiveTerms = [];
   for (const [term, pts, normalizedTerm] of tenderPositiveEntries) {
-    if (text.includes(normalizedTerm) && !matchedPositiveTerms.some(matched => matched.includes(normalizedTerm) || normalizedTerm.includes(matched))) {
+    if (objectText.includes(normalizedTerm) && !matchedPositiveTerms.some(matched => matched.includes(normalizedTerm) || normalizedTerm.includes(matched))) {
       matchedPositiveTerms.push(normalizedTerm);
       score += pts;
       reasons.push(term);
@@ -927,7 +945,7 @@ function isEsuEntityRow(row, source) {
     || /\bseguridad\b.*\burbana\b.*\besu\b/.test(entity);
 }
 function normalizeEsuDatosGovProcess(row, originalSource) {
-  const scored = scoreTender(row);
+  const scored = scoreTender(row, tenderSources[originalSource]?.nameFields);
   scored.score += 20;
   scored.reasons = [...new Set([`ESU vía datos.gov.co / ${originalSource}`, ...(scored.reasons || [])])];
   scored.risks = [...new Set([...(scored.risks || []), 'ESU vía datos.gov.co: validar fecha de cierre en SECOP/portal ESU', 'ESU vía datos.gov.co: validar documentos asociados y presupuesto antes de recomendar'])];
@@ -953,7 +971,7 @@ async function fetchSecopSource(source, cfg) {
   const response = await fetch(`${cfg.base}?${params.toString()}`, { headers: { 'User-Agent': 'SN-CRM-Tenders-Radar/2.0' } });
   if (!response.ok) throw new Error(`${source} respondió ${response.status}`);
   const rows = await response.json();
-  return rows.filter(row => !isEsuEntityRow(row, source)).map(row => ({ row, scored: scoreTender(row) })).filter(x => hasTenderServiceSignal(x.scored)).map(x => normalizeTender(x.row, source, x.scored));
+  return rows.filter(row => !isEsuEntityRow(row, source)).map(row => ({ row, scored: scoreTender(row, cfg.nameFields) })).filter(x => hasTenderServiceSignal(x.scored)).map(x => normalizeTender(x.row, source, x.scored));
 }
 function stripTenderHtml(value) {
   return String(value || '')
@@ -1079,7 +1097,7 @@ function normalizeEsuProcess(process, detail = null) {
     cuantia_proceso: 0,
     ruta_proceso_en_secop_i: process.url || ESU_CONTRATACION_URL
   };
-  const scored = scoreTender(row);
+  const scored = scoreTender(row, tenderSources['SECOP I'].nameFields);
   if (normTenderText(estado).includes('convocado')) { scored.score += 20; scored.reasons = [...new Set([...(scored.reasons || []), 'ESU convocado'])]; }
   if ((detail?.documents || []).length) scored.reasons = [...new Set([...(scored.reasons || []), 'documentos ESU disponibles'])];
   const deadline = fechaCierre || null;
@@ -2299,7 +2317,25 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
     return { ...doc, signed_url: data?.signedUrl || null };
   })) : compatibleDocuments;
   const currentAnalysis = await getCurrentTenderAnalysis(database, opportunityId, compatibleDocuments.filter(document => document.current !== false));
-  return { documents: signed, analysis: presentCurrentTenderAnalysis(currentAnalysis), analyses, import_error: importErrors.at(-1) || null };
+  const presentedAnalysis = presentCurrentTenderAnalysis(currentAnalysis);
+  const questionResponses = presentedAnalysis?.run_id ? await getTenderQuestionResponses(database, opportunityId, presentedAnalysis.run_id) : [];
+  return { documents: signed, analysis: presentedAnalysis, analyses, question_responses: questionResponses, import_error: importErrors.at(-1) || null };
+}
+
+async function getTenderQuestionResponses(database, opportunityId, analysisRunId) {
+  let query = database.from('psi_tender_question_responses')
+    .select('id,opportunity_id,analysis_run_id,question_id,question_text,status,response,evidence_notes,responded_by,responded_at,psi_sales_profiles(full_name)')
+    .eq('opportunity_id', opportunityId);
+  if (analysisRunId) query = query.eq('analysis_run_id', analysisRunId);
+  const response = await query.order('responded_at', { ascending: false }).limit(200);
+  if (response.error) {
+    const code = String(response.error.code || '');
+    const message = String(response.error.message || '');
+    const missingRelation = Number(response.status) === 404 || ['42P01', 'PGRST205'].includes(code) || (/psi_tender_question_responses/i.test(message) && /does not exist|could not find|unhandled/i.test(message));
+    if (missingRelation) return [];
+    throw response.error;
+  }
+  return (response.data || []).map(row => ({ ...row, responded_by_name: row.psi_sales_profiles?.full_name || null, psi_sales_profiles: undefined }));
 }
 
 
@@ -2905,6 +2941,40 @@ app.post('/api/tender-offer-preparation-note', async (req, res) => {
     const payload = { kind: 'tender_offer_preparation_note', note, status: req.body.status || 'abierta', created_at: new Date().toISOString(), created_by: currentProfile.full_name || currentProfile.microsoft_email || currentProfile.id, purpose: 'Notas para el asistente / comercial: informar qué necesitamos del humano para seguir adelante.' };
     await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify(payload) }).select('id').single());
     res.status(201).json(await getTenderOfferPreparationRecords(database, opportunityId));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.get('/api/tender-question-responses', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    const opportunityId = String(req.query.opportunity_id || '');
+    const analysisRunId = String(req.query.analysis_run_id || '');
+    if (!opportunityId || !analysisRunId) throw new Error('Debe indicar la oportunidad y la corrida de análisis.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.json({ question_responses: await getTenderQuestionResponses(database, opportunityId, analysisRunId) });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-question-responses', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    const opportunityId = String(req.body.opportunity_id || '');
+    const analysisRunId = String(req.body.analysis_run_id || '');
+    if (!opportunityId || !analysisRunId) throw new Error('Debe indicar la oportunidad y la corrida de análisis.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const recorded = await must(database.rpc('psi_record_tender_question_response', {
+      p_opportunity_id: opportunityId,
+      p_analysis_run_id: analysisRunId,
+      p_question_id: String(req.body.question_id || ''),
+      p_question_text: String(req.body.question_text || ''),
+      p_status: String(req.body.status || ''),
+      p_response: String(req.body.response || ''),
+      p_evidence_notes: req.body.evidence_notes == null ? null : String(req.body.evidence_notes),
+      p_responded_by: currentProfile.id,
+    }));
+    res.status(201).json({ question_response: recorded, question_responses: await getTenderQuestionResponses(database, opportunityId, analysisRunId) });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

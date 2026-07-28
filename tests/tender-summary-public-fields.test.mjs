@@ -14,10 +14,12 @@ const privateBranchStart = privateBranchMarker + '</> : '.length;
 const privateBranchEnd = main.indexOf('</div>}', privateBranchStart) + '</div>}'.length;
 const privateBlock = main.slice(privateBranchStart, privateBranchEnd);
 
-// The four required groups must exist in the public (licitación) branch.
-for (const group of ['Proceso oficial', 'Cronograma y cuantía', 'Gestión interna', 'Expediente y análisis']) {
-  assert.match(publicBlock, new RegExp(`<Panel title="${group}"`), `Debe existir el grupo "${group}" en el resumen público.`);
+// Public data is intentionally consolidated to avoid four oversized, repetitive groups.
+assert.match(publicBlock, /<Panel title="Resumen de la oportunidad">/, 'Debe existir el resumen público consolidado.');
+for (const duplicatedGroup of ['Proceso oficial', 'Cronograma y cuantía', 'Gestión interna', 'Expediente y análisis']) {
+  assert.doesNotMatch(publicBlock, new RegExp(`<Panel title="${duplicatedGroup}"`), `No debe reaparecer el grupo redundante "${duplicatedGroup}".`);
 }
+assert.match(publicBlock, /<details className="tender-opportunity-technical">/, 'Los datos de auditoría deben conservarse en un detalle secundario.');
 
 // The required labels must exist in the public branch.
 for (const label of ['Entidad', 'Cierre oficial', 'Días restantes', 'Snapshot', 'Productor']) {

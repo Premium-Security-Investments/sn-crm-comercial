@@ -109,6 +109,7 @@ function mockDatabaseByOpportunity({ failOpportunityId = null } = {}) {
   return {
     from(table) {
       if (table === 'psi_tender_document_versions') return interactionQuery([]);
+      if (table === 'psi_tender_question_responses') return typedAnalysisQuery(() => []);
       if (table === 'psi_tender_document_state') {
         return typedAnalysisQuery(opportunityId => opportunityId === 'good' ? [{ opportunity_id: 'good', current_snapshot_id: 'snapshot-good', refresh_in_progress: false }] : []);
       }
@@ -272,6 +273,7 @@ const fakeSupabase = http.createServer(async (req, res) => {
       result: JSON.parse(generatedAnalysis.notes), critical_open_count: 0, created_at: generatedAnalysis.created_at, completed_at: generatedAnalysis.created_at,
     }] : []);
   }
+  if (url.pathname === '/rest/v1/psi_tender_question_responses') return json(res, 200, []);
   return json(res, 404, { message: `Unhandled Supabase path ${url.pathname}` });
 });
 
@@ -297,6 +299,7 @@ function rpcPageDatabase() {
     },
     from(table) {
       if (table === 'psi_tender_document_versions') return interactionQuery([]);
+      if (table === 'psi_tender_question_responses') return typedAnalysisQuery(() => []);
       assert.equal(table, 'psi_sales_interactions', 'la lista no debe leer tablas candidatas; sólo el builder documental por tarjeta');
       return { select() { return this; }, eq() { return interactionQuery([]); } };
     },

@@ -273,7 +273,8 @@ for (const path of ['../api/[...path].js', '../server/index.js']) {
   const records = source.match(/async function getTenderDocumentRecords[\s\S]*?\n}\n\n/);
   assert.ok(records, `${path} must retain the shared tender-document response builder`);
   assert.match(records[0], /getCurrentTenderAnalysis\(database, opportunityId, compatibleDocuments\.filter\(document => document\.current !== false\)\)/, `${path} must resolve the typed current analysis against current documents only, not obsolete legacy versions`);
-  assert.match(records[0], /analysis:\s*presentCurrentTenderAnalysis\(currentAnalysis\)/, `${path} must present typed metadata plus analysis result to every document response path`);
+  assert.match(records[0], /const presentedAnalysis = presentCurrentTenderAnalysis\(currentAnalysis\)/, `${path} must present typed metadata plus analysis result to every document response path`);
+  assert.match(records[0], /question_responses:\s*questionResponses/, `${path} must include traceable human question responses without mutating the analysis`);
   assert.match(records[0], /analyses,/, `${path} must preserve legacy timeline history for compatibility`);
 
   const manualUpload = source.match(/app\.post\('\/api\/tender-documents-upload'[\s\S]*?\n}\);/);
