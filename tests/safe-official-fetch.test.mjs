@@ -1,5 +1,8 @@
 import { strict as assert } from 'node:assert';
-import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
+import { responseRemoteAddress, safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
+
+assert.equal(responseRemoteAddress({ socket: { remoteAddress: '1.1.1.1' } }, { address: '8.8.8.8' }), '1.1.1.1');
+assert.equal(responseRemoteAddress({ socket: null }, { address: '8.8.8.8' }), '8.8.8.8', 'closed response sockets must use the DNS-validated pinned target');
 
 const esu = { allowedHosts: ['esucontratacion.com', 'www.esucontratacion.com'], allowedPath: /^\/procesos\/(?:view|descargar)\/\d+/ };
 assert.equal(validateOfficialHttpsUrl('https://esucontratacion.com/procesos/view/123', esu).hostname, 'esucontratacion.com');
