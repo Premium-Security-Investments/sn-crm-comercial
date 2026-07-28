@@ -3187,7 +3187,7 @@ async function runTenderProcessingWorker(req, res) {
     if (!isTenderWorkerSchedulerAuthorized(req)) { const error = new Error('No autorizado.'); error.status = 403; throw error; }
     const database = requireDb();
     const worker = createTenderProcessingWorker(buildTenderProcessingWorkerDeps(database));
-    const result = await worker.runOnce({});
+    const result = await worker.runOnce({ timeBudgetMs: 45_000 });
     res.json({ processed: result?.status && result.status !== 'empty' ? 1 : 0 });
   } catch (error) { sendError(res, error, error?.status || 400); }
 }

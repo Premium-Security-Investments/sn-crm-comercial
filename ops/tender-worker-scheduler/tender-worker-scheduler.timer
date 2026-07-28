@@ -1,0 +1,13 @@
+[Unit]
+Description=Run SIIO durable tender worker every minute
+
+[Timer]
+OnBootSec=60s
+OnUnitInactiveSec=60s
+AccuracySec=1s
+RandomizedDelaySec=0
+Persistent=false
+Unit=tender-worker-scheduler.service
+
+[Install]
+WantedBy=timers.target

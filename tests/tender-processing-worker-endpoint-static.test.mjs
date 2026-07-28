@@ -23,6 +23,7 @@ function assertBackend(source, label) {
   assert.ok(block.includes("req.headers['x-tender-worker-secret']"), `${label}: debe conservar el header del scheduler externo`);
   assert.ok(!block.includes('getAuthContext'), `${label}: no debe requerir sesión de navegador`);
   assert.ok(block.includes('requireDb()'), `${label}: debe usar el cliente de service role`);
+  assert.ok(block.includes('timeBudgetMs: 45_000'), `${label}: debe terminar antes del límite serverless de 60 segundos`);
   assert.ok(!block.includes('req.body.opportunity_id') && !block.includes('req.body?.opportunity_id'), `${label}: no debe aceptar un expediente arbitrario`);
   assert.ok(block.includes('isTenderDurablePipelineEnabled'), `${label}: debe estar detrás del flag durable`);
 }
@@ -31,7 +32,12 @@ function run() {
   assertBackend(serverSource, 'server/index.js');
   assertBackend(apiSource, 'api/[...path].js');
   assert.ok(buffersAreEqual(serverBuffer, apiBuffer), 'server/index.js y api/[...path].js deben ser byte-idénticos');
-  assert.deepEqual(vercelConfig.crons, [{ path: '/api/tender-processing-worker-run', schedule: '* * * * *' }], 'Vercel debe ejecutar el worker cada minuto');
+  // El plan Hobby de Vercel rechaza crons con cadencia menor a un día: el
+  // scheduling del worker corre desde un systemd timer en Hetzner (ver
+  // ops/tender-worker-scheduler/), no desde vercel.json. El endpoint conserva
+  // el header GET/POST y el autorizador por secreto para ese caller externo.
+  assert.ok(!('crons' in vercelConfig), 'vercel.json no debe declarar crons: son incompatibles con el plan Hobby');
+  assert.equal(vercelConfig.functions?.['api/[...path].js']?.maxDuration, 60, 'la función del worker debe permitir hasta 60 segundos');
   console.log('tender-processing-worker-endpoint-static passed');
 }
 run();
