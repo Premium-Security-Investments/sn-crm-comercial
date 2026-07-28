@@ -4,6 +4,8 @@
 **Rama:** `feat/vigia-phase1-opportunity-copilot`  
 **Checkpoint previo al bloque final:** `59900f6`
 
+> Este documento preserva la evidencia local previa al rollout. El estado productivo posterior está registrado en [`vigia-phase1-rollout-2026-07-28.md`](./vigia-phase1-rollout-2026-07-28.md).
+
 ## Alcance verificado
 
 Slice local y sintético:
