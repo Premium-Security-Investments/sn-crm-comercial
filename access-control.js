@@ -39,6 +39,7 @@ export const ACTIONS = Object.freeze({
   BOARD_APPROVE: 'board.approve',
   BOARD_PUBLISH: 'board.publish',
   AI_ANALYSIS_RUN: 'ai.analysis.run',
+  AI_COMMERCIAL_DRAFT_RUN: 'ai.commercial_draft.run',
   MODULE_SIIO_VIEW: 'module.siio.view',
   MODULE_VIGIA_VIEW: 'module.vigia.view',
   MODULE_DASHBOARD_VIEW: 'module.dashboard.view',
@@ -328,6 +329,14 @@ export function can(profile, action, resource = {}) {
     case ACTIONS.BOARD_APPROVE:
     case ACTIONS.BOARD_PUBLISH:
       return hasHumanRole(profile, PRIVILEGED_ROLES);
+
+    case ACTIONS.AI_COMMERCIAL_DRAFT_RUN:
+      if (!validCrmResource(resource)
+        || !hasEligibleModule(profile, 'modulo_vig_ia')
+        || !hasEligibleModule(profile, 'modulo_oportunidades')) return false;
+      return hasHumanRole(profile, PRIVILEGED_ROLES)
+        || canDirectorCommercialResource(profile, resource)
+        || (hasHumanRole(profile, COMMERCIAL_ROLES) && ownsResource(profile, resource, 'owner_id'));
 
     case ACTIONS.AI_ANALYSIS_RUN:
       // Only profiles holding explicit tender custody (licitaciones +

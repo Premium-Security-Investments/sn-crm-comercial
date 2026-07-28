@@ -33,7 +33,9 @@ assert.equal(isModulePermissionEligible('director', 'modulo_siio_gerencial'), tr
 assert.equal(isModulePermissionEligible('junta', 'modulo_siio_gerencial'), true);
 assert.equal(isModulePermissionEligible('junta', 'modulo_dashboard_comercial'), false);
 assert.equal(isModulePermissionEligible('comercial', 'modulo_oportunidades'), true);
+assert.equal(isModulePermissionEligible('comercial', 'modulo_vig_ia'), true, 'el comercial puede recibir Vig-IA para usar el copiloto sobre su propio scope');
 assert.equal(isModulePermissionEligible('colaborador', 'modulo_oportunidades'), true);
+assert.equal(isModulePermissionEligible('colaborador', 'modulo_vig_ia'), false);
 assert.equal(isModulePermissionEligible('desconocido', 'modulo_metas'), false);
 
 const commercialModules = eligibleModulePermissions('comercial');

@@ -72,6 +72,11 @@ assert.equal(duplicate.id, saved.id, 'same immutable payload reuses the persiste
 await assert.rejects(() => record(db, key, reserved.claim_id, { outputHash: hash('f') }), /idempotencia|conflicto/i);
 assert.equal(Number((await one(db, 'select count(*)::int as count from public.psi_agt003_copilot_runs')).count), 1);
 assert.equal(Number((await one(db, 'select count(*)::int as count from public.psi_agt003_copilot_claims')).count), 0, 'terminal record releases its claim');
+const foundByKey = (await one(db, 'select public.psi_get_agt003_copilot_run_by_key($1::text) as result', [key])).result;
+const foundById = (await one(db, 'select public.psi_get_agt003_copilot_run_by_id($1::uuid) as result', [saved.id])).result;
+assert.equal(foundByKey.id, saved.id);
+assert.equal(foundById.opportunity_id, ids.opportunity);
+assert.equal((await one(db, 'select public.psi_get_agt003_copilot_run_by_key($1::text) as result', [hash('missing')])).result, null);
 
 const noClaimKey = hash('0');
 await assert.rejects(() => record(db, noClaimKey, '33333333-3333-4333-8333-333333333333'), /reserva|claim/i);
@@ -99,9 +104,11 @@ await assert.rejects(() => db.query('delete from public.psi_agt003_copilot_feedb
 
 await db.exec('set role service_role');
 assert.equal((await claim(db, key, 20, 1)).status, 'existing');
+assert.equal((await one(db, 'select public.psi_get_agt003_copilot_run_by_id($1::uuid) as result', [saved.id])).result.id, saved.id);
 await assert.rejects(() => db.query(`insert into public.psi_agt003_copilot_runs(idempotency_key,opportunity_id,snapshot_id,actor_id,contract_version,capability_id,policy_version,model,status,output,usage,input_hash,output_hash,completed_at) values ($1,'${ids.opportunity}','s','${ids.actor}','2','c','p','m','completed','{}','{}',$2,$3,now())`, [hash('3'), hash('a'), hash('b')]), /permission denied/i);
 await db.exec('reset role; set role authenticated');
 await assert.rejects(() => claim(db, hash('4')), /permission denied/i);
+await assert.rejects(() => one(db, 'select public.psi_get_agt003_copilot_run_by_id($1::uuid) as result', [saved.id]), /permission denied/i);
 await assert.rejects(() => db.query('select * from public.psi_agt003_copilot_runs'), /permission denied/i);
 await db.exec('reset role; set role anon');
 await assert.rejects(() => claim(db, hash('5')), /permission denied/i);

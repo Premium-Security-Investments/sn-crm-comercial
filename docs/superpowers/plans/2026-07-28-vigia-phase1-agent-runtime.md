@@ -56,7 +56,7 @@ Plataforma Agentes genera; SIIO sigue siendo owner de datos, permisos, scoring, 
 **Modificar**
 - `supabase/functions/_shared/capacidades.ts`
 - `supabase/functions/_shared/capacidad_institucional.ts`
-- `supabase/functions/_shared/institutional_agent_request.ts`
+- módulo compartido de solicitud institucional (`institutional-agent-request`, sin duplicar la ruta canónica fijada por SIIO)
 - `supabase/functions/_shared/perfil_institucional.ts`
 - `tests/capacidades_test.ts`
 - `tests/capacidad_institucional_test.ts`

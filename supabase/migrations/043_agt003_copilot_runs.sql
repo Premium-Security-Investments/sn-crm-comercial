@@ -140,6 +140,38 @@ begin
 end;
 $$;
 
+create or replace function public.psi_get_agt003_copilot_run_by_key(
+  p_idempotency_key text
+) returns jsonb
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select to_jsonb(r)
+  from (
+    select id, opportunity_id, idempotency_key, status, output, failure_code, created_at, completed_at
+    from public.psi_agt003_copilot_runs
+    where idempotency_key = p_idempotency_key
+  ) r;
+$$;
+
+create or replace function public.psi_get_agt003_copilot_run_by_id(
+  p_run_id uuid
+) returns jsonb
+language sql
+stable
+security definer
+set search_path = public, pg_temp
+as $$
+  select to_jsonb(r)
+  from (
+    select id, opportunity_id, idempotency_key, status, output, failure_code, created_at, completed_at
+    from public.psi_agt003_copilot_runs
+    where id = p_run_id
+  ) r;
+$$;
+
 create or replace function public.psi_release_agt003_copilot_claim(
   p_idempotency_key text,
   p_claim_id uuid
@@ -346,6 +378,10 @@ $$;
 
 revoke all on function public.psi_claim_agt003_copilot_run(text, integer, integer, integer) from public, anon, authenticated, service_role;
 grant execute on function public.psi_claim_agt003_copilot_run(text, integer, integer, integer) to service_role;
+revoke all on function public.psi_get_agt003_copilot_run_by_key(text) from public, anon, authenticated, service_role;
+grant execute on function public.psi_get_agt003_copilot_run_by_key(text) to service_role;
+revoke all on function public.psi_get_agt003_copilot_run_by_id(uuid) from public, anon, authenticated, service_role;
+grant execute on function public.psi_get_agt003_copilot_run_by_id(uuid) to service_role;
 revoke all on function public.psi_release_agt003_copilot_claim(text, uuid) from public, anon, authenticated, service_role;
 grant execute on function public.psi_release_agt003_copilot_claim(text, uuid) to service_role;
 revoke all on function public.psi_record_agt003_copilot_run(text, uuid, uuid, uuid, text, text, text, text, text, jsonb, jsonb, text, text) from public, anon, authenticated, service_role;

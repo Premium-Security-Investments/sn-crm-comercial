@@ -52,6 +52,26 @@ export async function claimAgt003CopilotRun(database, { idempotencyKey, dailyMax
   return { status: result.status };
 }
 
+export async function findAgt003CopilotRunByKey(database, idempotencyKey) {
+  const key = requireText(idempotencyKey, 'La clave de idempotencia');
+  const response = await database.rpc('psi_get_agt003_copilot_run_by_key', { p_idempotency_key: key });
+  if (response?.error) throw new Error(response.error.message || String(response.error));
+  if (response?.data == null) return null;
+  const row = response.data;
+  if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error('La consulta Vig-IA devolvió una ejecución inválida.');
+  return { ...row, run_id: requireText(row.id, 'La ejecución Vig-IA') };
+}
+
+export async function findAgt003CopilotRunById(database, runId) {
+  const id = requireText(runId, 'La ejecución Vig-IA');
+  const response = await database.rpc('psi_get_agt003_copilot_run_by_id', { p_run_id: id });
+  if (response?.error) throw new Error(response.error.message || String(response.error));
+  if (response?.data == null) return null;
+  const row = response.data;
+  if (!row || typeof row !== 'object' || Array.isArray(row)) throw new Error('La consulta Vig-IA devolvió una ejecución inválida.');
+  return { ...row, run_id: requireText(row.id, 'La ejecución Vig-IA') };
+}
+
 export async function releaseAgt003CopilotClaim(database, { idempotencyKey, claimId }) {
   const released = unwrapRpc(await database.rpc('psi_release_agt003_copilot_claim', {
     p_idempotency_key: requireText(idempotencyKey, 'La clave de idempotencia'),

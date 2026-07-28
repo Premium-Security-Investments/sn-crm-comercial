@@ -25,7 +25,7 @@ const ROLE_MODULE_CEILINGS = new Map([
   ['admin', ALL_MODULES],
   ['gerencia', new Set(MODULE_PERMISSION_CODES.filter(code => code !== 'modulo_usuarios'))],
   ['director', new Set(MODULE_PERMISSION_CODES.filter(code => code !== 'modulo_usuarios'))],
-  ['comercial', new Set(['modulo_alertas_comerciales', 'modulo_oportunidades', 'modulo_metas', 'licitaciones'])],
+  ['comercial', new Set(['modulo_vig_ia', 'modulo_alertas_comerciales', 'modulo_oportunidades', 'modulo_metas', 'licitaciones'])],
   ['colaborador', new Set(['modulo_alertas_comerciales', 'modulo_oportunidades', 'modulo_metas'])],
   ['junta', new Set(['modulo_siio_gerencial'])],
 ]);

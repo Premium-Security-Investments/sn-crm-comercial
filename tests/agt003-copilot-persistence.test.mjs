@@ -6,6 +6,8 @@ import {
   claimAgt003CopilotRun,
   computeAgt003CopilotHash,
   computeAgt003CopilotIdempotencyKey,
+  findAgt003CopilotRunById,
+  findAgt003CopilotRunByKey,
   recordAgt003CopilotFeedback,
   recordAgt003CopilotFailure,
   recordAgt003CopilotRun,
@@ -44,6 +46,19 @@ for (const status of ['existing', 'in_progress', 'quota', 'saturated']) {
 const claimed = await claimAgt003CopilotRun(rpcDatabase(async () => ({ data: { status: 'claimed', claim_id: ids.claim }, error: null })), { idempotencyKey: key, dailyMaxRuns: 20, maxConcurrent: 2, leaseSeconds: 45 });
 assert.deepEqual(claimed, { status: 'claimed', claim_id: ids.claim });
 await assert.rejects(() => claimAgt003CopilotRun(rpcDatabase(async () => ({ data: { status: 'claimed' }, error: null })), { idempotencyKey: key, dailyMaxRuns: 20, maxConcurrent: 2, leaseSeconds: 45 }), /identificador/i);
+
+const persistedRun = { id: ids.run, opportunity_id: ids.opportunity, idempotency_key: key, status: 'completed', output: response, failure_code: null, created_at: '2030-02-01T10:02:00.000Z', completed_at: '2030-02-01T10:02:00.000Z' };
+assert.deepEqual(await findAgt003CopilotRunByKey(rpcDatabase(async (name, args) => {
+  assert.equal(name, 'psi_get_agt003_copilot_run_by_key');
+  assert.deepEqual(args, { p_idempotency_key: key });
+  return { data: persistedRun, error: null };
+}), key), { ...persistedRun, run_id: ids.run });
+assert.deepEqual(await findAgt003CopilotRunById(rpcDatabase(async (name, args) => {
+  assert.equal(name, 'psi_get_agt003_copilot_run_by_id');
+  assert.deepEqual(args, { p_run_id: ids.run });
+  return { data: persistedRun, error: null };
+}), ids.run), { ...persistedRun, run_id: ids.run });
+assert.equal(await findAgt003CopilotRunByKey(rpcDatabase(async () => ({ data: null, error: null })), key), null);
 
 assert.equal(await releaseAgt003CopilotClaim(rpcDatabase(async (name, args) => {
   assert.equal(name, 'psi_release_agt003_copilot_claim');
