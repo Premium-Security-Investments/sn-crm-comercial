@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
-const migration = readFileSync(new URL('../supabase/migrations/040_agt003_copilot_runs.sql', import.meta.url), 'utf8');
+const migration = readFileSync(new URL('../supabase/migrations/043_agt003_copilot_runs.sql', import.meta.url), 'utf8');
 const ids = {
   actor: '11111111-1111-4111-8111-111111111111',
   opportunity: '22222222-2222-4222-8222-222222222222',
