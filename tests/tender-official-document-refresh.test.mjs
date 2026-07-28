@@ -103,6 +103,69 @@ await (async function partialFailureDoesNotStopTheBatch() {
   assert.match(results[0].error, /SECOP: descarga fallida/);
 })();
 
+await (async function secopMaintenanceHtmlIsRetryableNotEmptyText() {
+  const maintenance = Buffer.from('<!DOCTYPE html><html><head><title>Maintenance</title></head><body>¡La plataforma no está disponible!</body></html>');
+  await assert.rejects(
+    () => refreshOfficialTenderDocument({
+      opportunityId: 'opp-1', source: 'SECOP II', document: { ...officialDocument, source_document_id: 'doc-maintenance', name: 'minuta.pdf' },
+      currentVersion: null,
+      download: async () => maintenance,
+      extractText: async () => { throw new Error('extractText must not parse an HTML maintenance page as PDF'); },
+      ensureStorage: async () => { throw new Error('ensureStorage must not run while SECOP is unavailable'); },
+      upload: async () => { throw new Error('upload must not run while SECOP is unavailable'); },
+      recordVersion: async () => { throw new Error('recordVersion must not run while SECOP is unavailable'); },
+    }),
+    error => {
+      assert.equal(error.code, 'TENDER_DOC_SOURCE_UNAVAILABLE');
+      assert.equal(error.status, 503);
+      return true;
+    }
+  );
+})();
+
+await (async function emptyExtractedTextThrowsClassifiableTerminalCode() {
+  // Bucaramanga LPR (job 374195eb): 5 import items failed with this exact
+  // message and last_error_code=null because the throw never tagged .code,
+  // so classifyPipelineError() silently fell through to its 'operational'
+  // default instead of the intended terminal TENDER_DOC_EMPTY_TEXT.
+  await assert.rejects(
+    () => refreshOfficialTenderDocument({
+      opportunityId: 'opp-1', source: 'SECOP II', document: { ...officialDocument, source_document_id: 'doc-empty' },
+      currentVersion: null,
+      download: async () => content,
+      cleanName: value => value.replace(/^\.\.\//, ''),
+      extractText: async () => '   ',
+      ensureStorage: async () => { throw new Error('ensureStorage must not run when text is unverifiable'); },
+      upload: async () => { throw new Error('upload must not run when text is unverifiable'); },
+      recordVersion: async () => { throw new Error('recordVersion must not run when text is unverifiable'); },
+    }),
+    error => {
+      assert.equal(error.code, 'TENDER_DOC_EMPTY_TEXT', 'empty extracted text must carry the terminal code the pipeline classifier expects');
+      assert.match(error.message, /No fue posible extraer texto verificable/);
+      return true;
+    }
+  );
+})();
+
+await (async function oversizedDownloadThrowsClassifiableTerminalCode() {
+  const oversized = Buffer.alloc(50 * 1024 * 1024 + 1);
+  await assert.rejects(
+    () => refreshOfficialTenderDocument({
+      opportunityId: 'opp-1', source: 'SECOP II', document: { ...officialDocument, source_document_id: 'doc-big' },
+      currentVersion: null,
+      download: async () => oversized,
+      extractText: async () => { throw new Error('extractText must not run past the size gate'); },
+      ensureStorage: async () => { throw new Error('ensureStorage must not run past the size gate'); },
+      upload: async () => { throw new Error('upload must not run past the size gate'); },
+      recordVersion: async () => { throw new Error('recordVersion must not run past the size gate'); },
+    }),
+    error => {
+      assert.equal(error.code, 'TENDER_DOC_SIZE_EXCEEDED', 'oversized downloads must carry the terminal code the pipeline classifier expects');
+      return true;
+    }
+  );
+})();
+
 await (async function manualRefreshNeverLoadsOrGeneratesAnalysis() {
   let loads = 0;
   let generations = 0;

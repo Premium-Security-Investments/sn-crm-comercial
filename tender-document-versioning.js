@@ -3,6 +3,11 @@ import { createHash } from 'node:crypto';
 const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
 const MAX_EXTRACTED_TEXT_BYTES = 10 * 1024 * 1024;
 
+function isHtmlInterstitial(buffer) {
+  const prefix = buffer.subarray(0, 4096).toString('utf8').trimStart().toLowerCase();
+  return prefix.startsWith('<!doctype html') || prefix.startsWith('<html') || prefix.includes('<html ');
+}
+
 function pathSegment(value, fallback = 'document') {
   const normalized = String(value ?? '').trim()
     .replace(/\.{2,}/g, '-')
@@ -42,14 +47,28 @@ export async function refreshOfficialTenderDocument({
   const sourceDocumentId = normalizeTenderSourceDocumentId(document.source_document_id);
   const buffer = await download(document);
   if (!buffer?.length) throw new Error(`Archivo vacío: ${document.name}`);
-  if (buffer.length > MAX_DOCUMENT_BYTES) throw new Error(`Archivo supera 50MB: ${document.name}`);
+  if (buffer.length > MAX_DOCUMENT_BYTES) {
+    const error = new Error(`Archivo supera 50MB: ${document.name}`);
+    error.code = 'TENDER_DOC_SIZE_EXCEEDED';
+    throw error;
+  }
+  const name = cleanName(document.name);
+  if (isHtmlInterstitial(buffer)) {
+    const error = new Error(`La fuente oficial devolvió HTML en lugar del documento: ${name}`);
+    error.code = 'TENDER_DOC_SOURCE_UNAVAILABLE';
+    error.status = 503;
+    throw error;
+  }
   const contentHash = tenderDocumentContentHash(buffer);
   if (currentVersion?.content_hash === contentHash) {
     return { status: 'unchanged', source_document_id: sourceDocumentId };
   }
-  const name = cleanName(document.name);
   const extractedText = await extractText(buffer, name, document.mime_type || '');
-  if (!String(extractedText || '').trim()) throw new Error(`No fue posible extraer texto verificable: ${name}`);
+  if (!String(extractedText || '').trim()) {
+    const error = new Error(`No fue posible extraer texto verificable: ${name}`);
+    error.code = 'TENDER_DOC_EMPTY_TEXT';
+    throw error;
+  }
   if (Buffer.byteLength(extractedText, 'utf8') > MAX_EXTRACTED_TEXT_BYTES) throw new Error(`El texto extraído supera 10MB: ${name}`);
   const storagePath = tenderDocumentVersionPath({ opportunityId, sourceDocumentId, contentHash, name });
   await ensureStorage();

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 export type TenderModuleView = 'radar' | 'seguimiento' | 'oportunidades' | 'configuracion';
 export type TenderRequest = <T>(path: string, options?: RequestInit) => Promise<T>;
-export type TenderSection = 'hacer' | 'revisar' | 'descartar';
+export type TenderSection = 'hacer' | 'revisar' | 'prioridad_baja';
 export type TenderInternalStatus = 'nueva' | 'en_revision' | 'convertida_oportunidad' | 'descartada';
 export type TenderDeadlineFilter = 'todas' | '0_7' | '8_15' | '16_30' | 'vencida' | 'sin_fecha';
 export type TenderValueFilter = 'todas' | 'sin_valor' | 'lt_50m' | '50m_500m' | '500m_plus' | '1000m_plus';
@@ -22,13 +22,15 @@ export type PublicTender = {
   score: number; reasons: string[]; risks: string[]; url?: string;
 };
 export type TenderTrackingUpdate = { id: string; tracking_owner_id: string; tracking_status: TenderTrackingStatus; tracking_next_action?: string | null; tracking_due_at?: string | null; tracking_blocker?: string | null; note?: string | null; expected_tracking_updated_at: string | null };
-export type TenderTrackingEvent = { id: string; tender_id: string; event_type: string; note?: string | null; from_status?: string | null; to_status?: string | null; assigned_to?: string | null; next_action?: string | null; due_at?: string | null; blocker?: string | null; created_by?: string | null; created_at: string };
+export type TenderTrackingEvent = { id: string; tender_id: string; event_type: string; actor_kind?: 'human' | 'system' | 'agent' | null; note?: string | null; from_status?: string | null; to_status?: string | null; assigned_to?: string | null; next_action?: string | null; due_at?: string | null; blocker?: string | null; created_by?: string | null; source_ref_type?: string | null; source_ref_id?: string | null; metadata?: Record<string, unknown> | null; created_at: string };
+export type TenderTrackingEventsPage = { events: TenderTrackingEvent[]; next_cursor: string | null };
 export type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string; count?: number; message?: string };
-export type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
+export type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; prioridadBaja: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 export type TenderRadarFilters = { query: string; source: string; region: TenderRegionKey; deadline: TenderDeadlineFilter; value: TenderValueFilter; score: TenderScoreFilter; section: TenderSection | 'todas'; internalStatus: TenderInternalStatus | 'todas' };
 export type TenderDocumentImportStatus = 'analisis_generado' | 'documentos_cargados' | 'fallo_importacion' | 'pendiente_documentos' | 'no_aplica' | 'error';
 export type TenderConversionResult = { id: string; duplicate: boolean; document_import_status: TenderDocumentImportStatus; document_import_error: string | null };
 export type TenderDocumentRefreshResult = { new_count: number; updated_count: number; unchanged_count: number; failed_count: number; analysis_generated: boolean };
+export type TenderProcessingStatus = { job_id: string | null; idempotency_key: string | null; status: string; current_step: string | null; counts: { discovered: number; processed: number; imported: number; unchanged: number; failed: number }; failed_items: Array<{ id: string; name: string; status: 'failed_retryable' | 'failed_terminal'; last_error_code?: string | null; last_error_message?: string | null }>; snapshot_id: string | null; analysis_run_id: string | null; last_error_code: string | null; last_error_message: string | null; updated_at: string | null };
 export type TenderSearchProfile = { id: string; name: string; description?: string | null; region_key: TenderRegionKey; source_filter: string; section_filter: TenderSection | 'todas'; internal_status_filter: TenderInternalStatus | 'todas'; deadline_filter: TenderDeadlineFilter; value_filter: TenderValueFilter; score_filter: TenderScoreFilter; query_text?: string | null; is_default?: boolean; created_at?: string; updated_at?: string };
 export type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; rup_status?: string | null; rup_updated_at?: string | null; rup_unspsc_codes?: string | null; authorized_services?: string | null; supervigilancia_license?: string | null; financial_capacity?: string | null; organizational_capacity?: string | null; experience_summary?: string | null; certifications?: string | null; recurring_documents?: string | null; disqualifications_notes?: string | null; useful_company_info?: string | null; source_document_name?: string | null; rup_import_notes?: string | null; updated_at?: string | null; updated_by_name?: string | null };
 export type TenderCompanyDocument = { id: string; document_type: string; display_name: string; issued_at?: string | null; expires_at?: string | null; version: number; current: boolean; state: 'vigente' | 'vence_pronto' | 'vencido' | 'sin_vencimiento'; mime_type?: string | null; size_bytes: number; created_at: string; uploaded_by_name?: string | null; url?: string | null };
@@ -87,6 +89,7 @@ export type TenderDocumentsPayload = Partial<TenderDocumentRefreshResult> & {
   documents: TenderDocumentRecord[];
   analysis: TenderDocumentAnalysis | null;
   analyses: TenderDocumentAnalysis[];
+  analysis_engine?: { requested: 'AGT-002'; used: 'AGT-002' | 'siio_rules_v1'; fallback: boolean; reason?: 'not_configured' | 'preview_unavailable'; reused?: boolean; human_review_required: true };
 };
 export type TenderAnalysisFinding = string | {
   id?: string;

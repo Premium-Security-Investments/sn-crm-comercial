@@ -48,6 +48,7 @@ assert.deepEqual(ACTIONS, {
   CRM_OPPORTUNITY_EDIT: 'crm.opportunity.edit',
   CRM_OPPORTUNITY_REASSIGN: 'crm.opportunity.reassign',
   LICITACIONES_VIEW: 'licitaciones.view',
+  LICITACIONES_CONVERT: 'licitaciones.convert',
   LICITACIONES_CONFIGURE: 'licitaciones.configure',
   LICITACIONES_SYNC: 'licitaciones.sync',
   LICITACIONES_DISCARD_PROPOSE: 'licitaciones.discard.propose',
@@ -73,8 +74,8 @@ assert.deepEqual(ACTIONS, {
   MODULE_OPPORTUNITIES_VIEW: 'module.opportunities.view',
   MODULE_GOALS_VIEW: 'module.goals.view',
   MODULE_USERS_VIEW: 'module.users.view',
-}, 'ACTIONS debe coincidir exactamente con el contrato estable de 35 acciones');
-assert.equal(actionValues.length, 35, 'ACTIONS debe exponer exactamente 35 códigos estables');
+}, 'ACTIONS debe coincidir exactamente con el contrato estable de 36 acciones');
+assert.equal(actionValues.length, 36, 'ACTIONS debe exponer exactamente 36 códigos estables');
 assert.equal(new Set(actionValues).size, actionValues.length, 'todos los códigos de acción deben ser únicos');
 assert.ok(actionValues.every((value) => typeof value === 'string' && value.length > 0), 'todos los códigos de acción deben ser strings no vacíos');
 const originalUsersManageAction = ACTIONS.USERS_MANAGE;
@@ -171,11 +172,13 @@ runCases('licitaciones', [
   { name: 'gerencia con permiso sincroniza', profile: tenderUser('gerencia'), action: ACTIONS.LICITACIONES_SYNC, resource: {}, expected: true },
   { name: 'director con permiso propone descarte', profile: tenderUser('director'), action: ACTIONS.LICITACIONES_DISCARD_PROPOSE, resource: {}, expected: true },
   { name: 'comercial con permiso recomienda go-no-go', profile: tenderUser('comercial'), action: ACTIONS.LICITACIONES_GO_NO_GO_RECOMMEND, resource: {}, expected: true },
-  { name: 'admin con permiso configura', profile: tenderUser('admin'), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: true },
-  { name: 'gerencia con permiso configura', profile: tenderUser('gerencia'), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: true },
-  { name: 'director con permiso configura', profile: tenderUser('director'), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: true },
+  { name: 'admin sin custodia no configura', profile: tenderUser('admin'), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: false },
+  { name: 'gerencia sin custodia no configura', profile: tenderUser('gerencia'), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: false },
+  { name: 'director con custodia configura', profile: tenderUser('director', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: true },
   { name: 'comercial con permiso no configura', profile: tenderUser('comercial'), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: false },
   { name: 'director sin permiso no configura', profile: human('director'), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: false },
+  { name: 'admin sin custodia no convierte', profile: tenderUser('admin'), action: ACTIONS.LICITACIONES_CONVERT, resource: {}, expected: false },
+  { name: 'encargada con custodia convierte', profile: tenderUser('director', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_CONVERT, resource: {}, expected: true },
   { name: 'comercial con permiso no aprueba descarte', profile: tenderUser('comercial'), action: ACTIONS.LICITACIONES_DISCARD_APPROVE, resource: {}, expected: false },
   { name: 'director con permiso aprueba go-no-go', profile: tenderUser('director'), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: {}, expected: true },
   { name: 'director sin permiso no aprueba', profile: human('director'), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: {}, expected: false },
@@ -184,6 +187,19 @@ runCases('licitaciones', [
   { name: 'agent técnico puede recomendar', profile: agent(), action: ACTIONS.LICITACIONES_GO_NO_GO_RECOMMEND, resource: { technical_authorized: true }, expected: true },
   { name: 'agent técnico no recomienda sin autorización técnica', profile: agent(), action: ACTIONS.LICITACIONES_GO_NO_GO_RECOMMEND, resource: {}, expected: false },
   { name: 'agent técnico no aprueba', profile: agent(), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: { technical_authorized: true }, expected: false },
+  // AGT-002: gastar cupo de AI_ANALYSIS_RUN exige custodia explícita de
+  // licitaciones (licitaciones + licitaciones_custodia). El rol por sí solo
+  // nunca alcanza y GO/NO GO permanece como una decisión humana separada.
+  { name: 'comercial con custodia ejecuta análisis IA', profile: tenderUser('comercial', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: true },
+  { name: 'admin con custodia ejecuta análisis IA', profile: tenderUser('admin', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: true },
+  { name: 'admin solo con licitaciones no ejecuta análisis IA', profile: tenderUser('admin'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
+  { name: 'gerencia solo con licitaciones no ejecuta análisis IA', profile: tenderUser('gerencia'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
+  { name: 'director solo con licitaciones no ejecuta análisis IA', profile: tenderUser('director'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
+  { name: 'comercial solo con licitaciones no ejecuta análisis IA', profile: tenderUser('comercial'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
+  { name: 'comercial con custodia sin licitaciones no ejecuta análisis IA', profile: human('comercial', { permissions: ['licitaciones_custodia'] }), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
+  { name: 'director sin permiso de licitaciones no ejecuta análisis IA', profile: human('director'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
+  { name: 'colaborador solo con licitaciones no ejecuta análisis IA', profile: tenderUser('colaborador'), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
+  { name: 'comercial con custodia pero inactivo falla cerrado', profile: tenderUser('comercial', { active: false, permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.AI_ANALYSIS_RUN, resource: {}, expected: false },
 ], ({ profile: candidate, action, resource }) => can(candidate, action, resource));
 
 runCases('SIIO', [

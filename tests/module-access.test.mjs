@@ -1,5 +1,7 @@
 import { strict as assert } from 'node:assert';
 import {
+  CAPABILITY_PERMISSION_CODES,
+  CAPABILITY_PERMISSIONS,
   MODULE_PERMISSIONS,
   MODULE_PERMISSION_CODES,
   eligibleModulePermissions,
@@ -20,6 +22,9 @@ assert.equal(new Set(MODULE_PERMISSION_CODES).size, MODULE_PERMISSION_CODES.leng
 assert.ok(MODULE_PERMISSIONS.every(item => item.code && item.name && item.description));
 assert.equal(Object.isFrozen(MODULE_PERMISSIONS), true, 'el catálogo no puede mutarse');
 assert.ok(MODULE_PERMISSIONS.every(Object.isFrozen), 'cada módulo no puede mutarse');
+assert.deepEqual(CAPABILITY_PERMISSION_CODES, ['licitaciones_custodia']);
+assert.equal(CAPABILITY_PERMISSIONS[0].name, 'Custodia de Licitaciones');
+assert.equal(MODULE_PERMISSION_CODES.includes('licitaciones_custodia'), false, 'La custodia no debe convertirse en módulo de navegación.');
 assert.deepEqual(eligibleModulePermissions('junta'), ['modulo_siio_gerencial']);
 assert.equal(isModulePermissionEligible('admin', 'modulo_usuarios'), true);
 assert.equal(isModulePermissionEligible('gerencia', 'modulo_usuarios'), false);

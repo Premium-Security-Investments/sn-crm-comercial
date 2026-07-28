@@ -8,6 +8,14 @@ export function tenderAnalysisMethodLabel(producer: TenderDocumentAnalysis['prod
       : 'Preanálisis por reglas SIIO';
 }
 
+export function tenderAnalysisProducerDisclosure(producer: TenderDocumentAnalysis['producer']) {
+  return producer === 'AGT-002'
+    ? 'Agente AGT-002 con revisión humana obligatoria'
+    : producer === 'HERMES-INTERIM'
+      ? 'Asistencia transitoria de Hermes con revisión humana obligatoria'
+      : 'Determinístico por reglas SIIO; no fue producido por un agente';
+}
+
 export function tenderDecisionStatusTone(status: string | null | undefined): 'red' | 'green' | 'amber' {
   const normalizedStatus = String(status || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   const unfavorable = new Set(['no_go', 'cerrada_no_go', 'no_adjudicada']);

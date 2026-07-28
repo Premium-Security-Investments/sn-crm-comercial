@@ -1,24 +1,34 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import mammoth from 'mammoth';
 import AdmZip from 'adm-zip';
-import { callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
+import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
+import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
+import { createTenderProcessingWorker } from '../tender-processing-worker.js';
+import { appendTenderProcessingEvent, claimTenderProcessingJob, getTenderProcessingJobActor, recordTenderImportItem, updateTenderProcessingJob } from '../tender-processing-worker-rpc.js';
+import { runInConcurrentChunks } from '../tender-concurrency.js';
 import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
 import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
 import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
 import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot } from '../tender-analysis-foundation.js';
 import { isTenderAnalysisFoundationUnavailable, requireTenderAnalysisFoundation } from '../tender-analysis-foundation-availability.js';
+import { buildTenderDeepAnalysis } from '../tender-deep-analysis.js';
 import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
 import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
 import { mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
+import { isCriticalTenderDocument } from '../tender-critical-documents.js';
 import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
+import { createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
+import { claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim } from '../agt002-preview-persistence.js';
+import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
+import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../tender-actuation-types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -463,6 +473,15 @@ function recomputeSummary(stages, opportunities) {
     };
   });
 }
+export function clientProfileForTenderUi(profile, environment = process.env) {
+  if (!profile || isTenderPublicUiEnabled(environment)) return profile;
+  if (!Array.isArray(profile.permissions) || !profile.permissions.includes('licitaciones')) return profile;
+  return {
+    ...profile,
+    permissions: profile.permissions.filter(permission => permission !== 'licitaciones'),
+  };
+}
+
 export function bootstrapCapabilities(profile) {
   return Object.freeze({
     opportunities: can(profile, ACTIONS.MODULE_OPPORTUNITIES_VIEW),
@@ -502,7 +521,7 @@ function readableOwnerIds(profile, profiles, ownerAssignments, globalScope) {
   }
   return ids;
 }
-export function filterBootstrapForProfile(payload, currentProfile) {
+export function filterBootstrapForProfile(payload, currentProfile, environment = process.env) {
   const { profileAssignments = [], ...publicPayload } = payload;
   const capabilities = bootstrapCapabilities(currentProfile);
   const globalScope = globalCrmScopeRoles.has(currentProfile?.role);
@@ -540,7 +559,7 @@ export function filterBootstrapForProfile(payload, currentProfile) {
     if (o.stage_code === 'aprobado') acc.approved += Number(o.offer_value || 0);
     return acc;
   }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
-  return { ...publicPayload, summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals, totals: capabilities.dashboard || capabilities.vigia ? totals : { count: 0, pipeline: 0, weighted: 0, approved: 0 }, currentProfile };
+  return { ...publicPayload, summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals, totals: capabilities.dashboard || capabilities.vigia ? totals : { count: 0, pipeline: 0, weighted: 0, approved: 0 }, currentProfile: clientProfileForTenderUi(currentProfile, environment) };
 }
 function opportunityOwnerError(message, status) {
   const error = new Error(message);
@@ -620,6 +639,7 @@ const SECOP_DOCUMENTS_RESOURCE = 'https://www.datos.gov.co/resource/dmgg-8hin.js
 const DATOS_GOV_FETCH_POLICY = { allowedHosts: ['www.datos.gov.co'], allowedPath: /^\/resource\/[a-z0-9-]+\.json$/i };
 const SECOP_DOCUMENT_FETCH_POLICY = { allowedHosts: ['community.secop.gov.co', 'secop.gov.co', '*.secop.gov.co', 'colombiacompra.gov.co', '*.colombiacompra.gov.co', 'www.datos.gov.co'] };
 const ESU_FETCH_POLICY = { allowedHosts: ['esucontratacion.com', 'www.esucontratacion.com'], allowedPath: /^\/procesos(?:\/|$)/i };
+const TENDER_DISCOVERY_RECORD_CONCURRENCY = 5;
 const TVEC_EVENTS_URL = 'https://operaciones.colombiacompra.gov.co/eventos-cotizacion-tvec';
 const ESU_CONTRATACION_ORIGIN = 'https://esucontratacion.com';
 const ESU_CONTRATACION_URL = `${ESU_CONTRATACION_ORIGIN}/procesos/index`;
@@ -661,7 +681,7 @@ const tenderFocusTerms = { 'bogotá': 22, 'bogota': 22, 'distrito capital': 20, 
 const tenderInternalStatuses = ['nueva','en_revision','descartada','convertida_oportunidad'];
 export function canViewTenders(profile) { return can(profile, ACTIONS.LICITACIONES_VIEW); }
 const tenderRegionKeys = ['todas','bog_cundinamarca','med_antioquia','eje_cafetero','cali_valle','costa_caribe','santanderes','sur_occidente','otros'];
-const tenderSectionFilters = ['todas','hacer','revisar','descartar'];
+const tenderSectionFilters = ['todas','hacer','revisar','prioridad_baja'];
 const tenderDeadlineFilters = ['todas','0_7','8_15','16_30','vencida','sin_fecha'];
 const tenderValueFilters = ['todas','sin_valor','lt_50m','50m_500m','500m_plus','1000m_plus'];
 const tenderScoreFilters = ['todas','alto','medio','bajo'];
@@ -786,13 +806,10 @@ async function attachTenderCompanyProfileUpdater(database, data, updatedAt, upda
   return { ...data, updated_at: data.updated_at || updatedAt || null, updated_by_name: updatedByName };
 }
 async function saveTenderCompanyProfile(database, payload) {
-  const result = await database.from('psi_company_procurement_profile').upsert(payload, { onConflict: 'singleton_key' }).select('id').single();
-  if (!result.error) return;
-  if (!['PGRST205','42P01'].includes(result.error.code)) throw result.error;
-  const fallbackPayload = { ...payload };
-  delete fallbackPayload.singleton_key;
-  delete fallbackPayload.updated_by;
-  await must(database.from('psi_tender_radar_runs').insert({ triggered_by: payload.updated_by, mode: 'company_profile', summary: JSON.stringify(fallbackPayload) }).select('id').single());
+  await must(database.rpc('psi_upsert_company_procurement_profile', {
+    p_actor_id: payload.updated_by,
+    p_payload: payload,
+  }));
 }
 function cleanCompanyDocumentMetadata(body) {
   const documentType = String(body?.documentType || body?.document_type || '').trim().toLowerCase();
@@ -829,22 +846,10 @@ async function presentCompanyProcurementDocuments(database) {
     return { ...document, url: data?.signedUrl || null };
   }));
 }
-function normTenderText(value) { return String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
-const tenderTerminalStatusTerms = ['revocado', 'declarado desierto', 'desierto', 'cancelado', 'cancelada'];
-function isTenderTerminalStatus(value) {
-  const text = normTenderText(value);
-  return tenderTerminalStatusTerms.some(term => text.includes(normTenderText(term)));
-}
-function tenderStatusSearchText(item) {
-  const raw = item?.raw || item || {};
-  return [
-    item?.status, raw.fase, raw.estado_del_procedimiento, raw.estado_del_proceso, raw.estado,
-    raw.descripcion_estado, raw.estado_resumen, raw.resultado, raw.comentario_entidad_estatal
-  ].filter(Boolean).join(' ');
-}
+function normTenderText(value) { return normalizeTenderStatusText(value); }
 function isTenderTrackable(item) {
   const text = tenderText(item?.raw || item || {});
-  return !isTenderTerminalStatus(tenderStatusSearchText(item)) && !tenderDisqualifyingTerms.some(term => text.includes(normTenderText(term)));
+  return isTenderTrackableStatus(item) && !tenderDisqualifyingTerms.some(term => text.includes(normTenderText(term)));
 }
 function tenderMoney(value) { const n = Number(String(value || '0').replace(/[^0-9.-]/g, '')); return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0; }
 function tenderDate(value) { if (!value) return null; const d = new Date(value); return Number.isNaN(d.getTime()) ? null : d; }
@@ -889,8 +894,8 @@ function scoreTender(row) {
   return { score, reasons: [...new Set(reasons)].slice(0, 7), risks: [...new Set(risks)].slice(0, 5) };
 }
 function classifyTenderSection(tender) {
-  if (tender.risks.some(r => r.includes('no ofertable'))) return 'descartar';
-  if (tender.score < 70 || (tender.value > 0 && tender.value < 50000000)) return 'descartar';
+  if (tender.risks.some(r => r.includes('no ofertable'))) return 'prioridad_baja';
+  if (tender.score < 70 || (tender.value > 0 && tender.value < 50000000)) return 'prioridad_baja';
   if ((tender.days !== null && tender.days <= 10) || tender.score >= 180 || tender.value >= 1000000000) return 'hacer';
   return 'revisar';
 }
@@ -907,7 +912,7 @@ function normalizeTender(row, source, scored) {
     ref: isSecop2 ? row.referencia_del_proceso || '' : row.numero_de_proceso || '', process_id: isSecop2 ? row.id_del_proceso || '' : '',
     title: isSecop2 ? row.nombre_del_procedimiento || row.descripci_n_del_procedimiento || 'Sin objeto' : row.objeto_a_contratar || row.detalle_del_objeto_a_contratar || 'Sin objeto',
     desc: isSecop2 ? row.descripci_n_del_procedimiento || '' : row.detalle_del_objeto_a_contratar || '',
-    value, status: isSecop2 ? row.fase || row.estado_del_procedimiento || '' : row.estado_del_proceso || '', category: isSecop2 ? row.codigo_principal_de_categoria || '' : '',
+    value, status: officialTenderStatus(row, source), category: isSecop2 ? row.codigo_principal_de_categoria || '' : '',
     published: (isSecop2 ? row.fecha_de_publicacion_del : row.fecha_de_cargue_en_el_secop) || null, deadline: deadline || null, days, window: tenderWindow(days),
     score: scored.score, reasons: scored.reasons, risks: scored.risks, url: url || '', raw: row
   };
@@ -948,7 +953,7 @@ async function fetchSecopSource(source, cfg) {
   const response = await fetch(`${cfg.base}?${params.toString()}`, { headers: { 'User-Agent': 'SN-CRM-Tenders-Radar/2.0' } });
   if (!response.ok) throw new Error(`${source} respondió ${response.status}`);
   const rows = await response.json();
-  return rows.filter(row => !isEsuEntityRow(row, source) && isTenderTrackable(row)).map(row => ({ row, scored: scoreTender(row) })).filter(x => x.scored.score >= 35 && hasTenderServiceSignal(x.scored)).map(x => normalizeTender(x.row, source, x.scored));
+  return rows.filter(row => !isEsuEntityRow(row, source)).map(row => ({ row, scored: scoreTender(row) })).filter(x => hasTenderServiceSignal(x.scored)).map(x => normalizeTender(x.row, source, x.scored));
 }
 function stripTenderHtml(value) {
   return String(value || '')
@@ -1145,14 +1150,15 @@ async function fetchEsuProcesses() {
   await tryAddRows({ name: 'convocados', run: () => searchEsuProcesses({ estadoId: '19' }) });
   await tryAddRows({ name: 'categorías relevantes', run: () => searchEsuProcesses({ estadoId: '19', categoryIds: Object.keys(ESU_RELEVANT_CATEGORY_IDS) }) });
   for (const keyword of ESU_RELEVANT_KEYWORDS) await tryAddRows({ name: `keyword ${keyword}`, run: () => searchEsuProcesses({ estadoId: '19', keyword }) });
-  const preliminary = Array.from(seen.values()).map(row => normalizeEsuProcess(row)).filter(t => t.score >= 35).filter(t => t.days === null || t.days >= 0).filter(isTenderTrackable).sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999)).slice(0, 40);
+  const preliminary = Array.from(seen.values()).map(row => normalizeEsuProcess(row)).filter(t => t.days === null || t.days >= 0).filter(isTenderTrackable).sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
   const enriched = [];
-  for (const tender of preliminary) {
+  for (const [index, tender] of preliminary.entries()) {
+    if (index >= 40) { enriched.push(tender); continue; }
     const sourceRow = seen.get(parseEsuProcessId(tender.url));
     const detail = await fetchEsuProcessDetail(sourceRow);
     enriched.push(normalizeEsuProcess(sourceRow, detail));
   }
-  return enriched.filter(t => t.score >= 35).filter(t => t.days === null || t.days >= 0).filter(isTenderTrackable).sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
+  return enriched.filter(t => t.days === null || t.days >= 0).filter(isTenderTrackable).sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
 }
 async function fetchEsuDatosGovProcesses() {
   const start = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10) + 'T00:00:00';
@@ -1167,7 +1173,7 @@ async function fetchEsuDatosGovProcesses() {
       for (const row of rows) {
         if (!isEsuEntityRow(row, source)) continue;
         const tender = normalizeEsuDatosGovProcess(row, source);
-        if (tender.score < 35 || (tender.days !== null && tender.days < 0) || !isTenderTrackable(tender)) continue;
+        if ((tender.days !== null && tender.days < 0) || !isTenderTrackable(tender)) continue;
         const key = `${tender.source_origin}:${tender.ref}:${tender.title}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -1191,7 +1197,8 @@ async function fetchPublicTenderRadar() {
     const source = tasks[index].source;
     if (result.status === 'fulfilled') {
       batches.push(result.value);
-      diagnostics.push({ source, status: 'ok', count: result.value.length, message: result.value.length ? `${result.value.length} candidato(s)` : 'Sin candidatos relevantes hoy' });
+      const visibleCount = result.value.filter(t => (t.days === null || t.days >= 0) && isTenderTrackable(t)).length;
+      diagnostics.push({ source, status: 'ok', count: visibleCount, message: visibleCount ? `${visibleCount} candidato(s)` : 'Sin candidatos relevantes hoy' });
     } else {
       const message = source === 'TVEC'
         ? `TVEC no disponible temporalmente: ${result.reason?.message || result.reason}`
@@ -1202,17 +1209,16 @@ async function fetchPublicTenderRadar() {
     }
   });
   const seen = new Set();
-  const tenders = batches.flat().filter(t => {
-    if (t.days !== null && t.days < 0) return false;
-    if (!isTenderTrackable(t)) return false;
+  const persistenceTenders = batches.flat().filter(t => {
     const key = t.stable_key || stableTenderKey(t);
     if (seen.has(key)) return false;
     seen.add(key); return true;
-  }).sort((a,b) => {
-    const sectionOrder = { hacer: 0, revisar: 1, descartar: 2 };
+  });
+  const tenders = persistenceTenders.filter(t => (t.days === null || t.days >= 0) && isTenderTrackable(t)).sort((a,b) => {
+    const sectionOrder = { hacer: 0, revisar: 1, prioridad_baja: 2 };
     return sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score || (a.days ?? 999) - (b.days ?? 999);
-  }).slice(0, 80);
-  return { tenders, diagnostics };
+  });
+  return { tenders, persistenceTenders, diagnostics };
 }
 function radarPayload(tenders, generatedAt = new Date().toISOString(), source = 'live', diagnostics = []) {
   const normalized = tenders.map(t => ({ ...t, id: t.stable_key || t.id || stableTenderKey(t), stable_key: t.stable_key || t.id || stableTenderKey(t) }));
@@ -1224,7 +1230,7 @@ function radarPayload(tenders, generatedAt = new Date().toISOString(), source = 
       all: normalized.length,
       hacer: normalized.filter(t => t.section === 'hacer').length,
       revisar: normalized.filter(t => t.section === 'revisar').length,
-      descartar: normalized.filter(t => t.section === 'descartar').length,
+      prioridadBaja: normalized.filter(t => t.section === 'prioridad_baja').length,
       highValue: normalized.filter(t => Number(t.value || 0) >= 500000000).length,
       urgent: normalized.filter(t => t.days !== null && t.days !== undefined && t.days <= 7).length,
       enRevision: normalized.filter(t => t.internal_status === 'en_revision').length,
@@ -1305,7 +1311,7 @@ async function readPersistedTenderRadar(database) {
   const mergedRows = Array.from(new Map([...(data || []), ...convertedRows].map((row, index) => [row.stable_key || row.id || `radar-row-${index}`, row])).values());
   const rows = mergedRows.filter(row => isConvertedTenderRecord(row) || isTenderTrackable(row)).map(dbTenderToPublic).filter(t => isConvertedTenderRecord(t) || !['SECOP I','SECOP II'].includes(t.source) || hasTenderServiceSignal(t)).sort((a,b) => {
     const statusOrder = { nueva: 0, en_revision: 1, convertida_oportunidad: 2, descartada: 3 };
-    const sectionOrder = { hacer: 0, revisar: 1, descartar: 2 };
+    const sectionOrder = { hacer: 0, revisar: 1, prioridad_baja: 2 };
     return (statusOrder[a.internal_status] ?? 9) - (statusOrder[b.internal_status] ?? 9) || sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score;
   });
   return radarPayload(rows, latestRunAt || rows[0]?.last_seen_at || new Date().toISOString(), 'supabase', [{ source: 'Supabase', status: 'ok', count: rows.length, message: latestRunAt ? `Radar historizado desde última corrida (${latestRunResult.data?.mode || 'run'})` : 'Radar historizado' }]);
@@ -1323,13 +1329,14 @@ async function enrichLiveTendersWithConversions(database, tenders) {
 async function persistTenderRadar(database, actorProfile, mode = 'manual') {
   const fetchedPayload = await fetchPublicTenderRadar();
   const fetched = fetchedPayload.tenders;
+  const persistenceTenders = fetchedPayload.persistenceTenders || fetched;
   const diagnostics = fetchedPayload.diagnostics;
   if (!(await tenderTableAvailable(database))) {
     const live = await enrichLiveTendersWithConversions(database, fetched);
     return radarPayload(live, new Date().toISOString(), 'live_no_table', diagnostics);
   }
   const now = new Date().toISOString();
-  const rows = fetched.map(t => ({
+  const rows = persistenceTenders.map(t => ({
     stable_key: stableTenderKey(t), source: t.source, section: t.section, entity: t.entity, dept: t.dept || null, city: t.city || null,
     ref: t.ref || null, process_id: t.process_id || null, title: t.title, description: t.desc || null, value: Number(t.value || 0),
     status: t.status || null, category: t.category || null, published_at: t.published || null, deadline_at: t.deadline || null,
@@ -1339,7 +1346,7 @@ async function persistTenderRadar(database, actorProfile, mode = 'manual') {
     const { error: upsertError } = await database.from('psi_public_tenders').upsert(rows, { onConflict: 'stable_key', defaultToNull: false });
     if (upsertError) throw upsertError;
   }
-  await database.from('psi_tender_radar_runs').insert({ run_at: now, triggered_by: actorProfile?.id || null, mode, count_total: rows.length, count_hacer: rows.filter(r => r.section === 'hacer').length, count_revisar: rows.filter(r => r.section === 'revisar').length, count_descartar: rows.filter(r => r.section === 'descartar').length, summary: `Radar multifuente sincronizado: ${rows.length} procesos/eventos. ${diagnostics.map(d => `${d.source}: ${d.status}`).join(' · ')}` });
+  await database.from('psi_tender_radar_runs').insert({ run_at: now, triggered_by: actorProfile?.id || null, mode, count_total: fetched.length, count_hacer: fetched.filter(r => r.section === 'hacer').length, count_revisar: fetched.filter(r => r.section === 'revisar').length, count_prioridad_baja: fetched.filter(r => r.section === 'prioridad_baja').length, summary: `Radar multifuente sincronizado: ${fetched.length} procesos/eventos visibles; ${rows.length} actualizados. ${diagnostics.map(d => `${d.source}: ${d.status}`).join(' · ')}` });
   const persisted = await readPersistedTenderRadar(database);
   return { ...persisted, diagnostics };
 }
@@ -1387,12 +1394,36 @@ function buildTenderOpportunityPayload(tender, owner) {
 }
 async function getPersistedTenderByStableKey(database, stableKey) {
   const { data, error } = await database.from('psi_public_tenders')
-    .select('id,stable_key,internal_status,converted_opportunity_id,tracking_updated_at')
+    .select('*')
     .eq('stable_key', stableKey)
     .maybeSingle();
   if (error) throw error;
   if (!data) throw trackingError('La licitación persistida no existe; no se puede omitir la trazabilidad de seguimiento.', 409);
   return data;
+}
+function escapeSocrataLiteral(value) { return String(value || '').replaceAll("'", "''"); }
+async function revalidateTenderOfficialStatus(tender) {
+  if (!['SECOP I', 'SECOP II'].includes(tender?.source)) return tender;
+  const isSecop2 = tender.source === 'SECOP II';
+  const cfg = tenderSources[tender.source];
+  const identityField = isSecop2 ? 'id_del_proceso' : 'numero_de_proceso';
+  const identityValue = isSecop2 ? tender.process_id : tender.ref;
+  if (!cfg || !identityValue) throw trackingError('No se pudo verificar el estado oficial vigente. Actualice el radar antes de convertir.', 409);
+  const params = new URLSearchParams({
+    '$select': cfg.select,
+    '$where': `${identityField}='${escapeSocrataLiteral(identityValue)}'`,
+    '$limit': '2',
+  });
+  let response;
+  try {
+    response = await fetch(`${cfg.base}?${params.toString()}`, { headers: { 'User-Agent': 'SN-CRM-Tender-Conversion-Guard/1.0' } });
+  } catch {
+    throw trackingError('SECOP no está disponible para verificar el estado vigente. Actualice el radar e intente nuevamente.', 409);
+  }
+  if (!response.ok) throw trackingError('SECOP no pudo verificar el estado vigente. Actualice el radar e intente nuevamente.', 409);
+  const rows = await response.json();
+  if (!Array.isArray(rows) || rows.length !== 1) throw trackingError('No se pudo confirmar un único proceso vigente en SECOP. Actualice el radar antes de convertir.', 409);
+  return { ...tender, status: officialTenderStatus(rows[0], tender.source), raw: rows[0] };
 }
 async function setTenderStatus(database, stableKey, internalStatus, currentProfile) {
   if (!tenderInternalStatuses.includes(internalStatus)) throw new Error('Estado interno de licitación inválido.');
@@ -1429,8 +1460,8 @@ function requireTenderTrackingId(value) {
   return tenderId;
 }
 
-async function getTenderTrackingTender(database, tenderId) {
-  const { data, error } = await database.from('psi_public_tenders').select('*').eq('id', tenderId).maybeSingle();
+async function getTenderTrackingTender(database, tenderReferenceId) {
+  const { data, error } = await database.from('psi_public_tenders').select('*').or(`id.eq.${tenderReferenceId},converted_opportunity_id.eq.${tenderReferenceId}`).maybeSingle();
   if (error) throw error;
   if (!data) throw trackingError('La licitación no existe.', 404);
   return data;
@@ -1449,14 +1480,62 @@ app.get('/api/tender-tracking', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
+const TENDER_TRACKING_EVENTS_DEFAULT_LIMIT = 50;
+const TENDER_TRACKING_EVENTS_MAX_LIMIT = 200;
+
+function parseTenderTrackingEventsCursor(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const separatorIndex = raw.lastIndexOf(',');
+  const createdAt = separatorIndex > 0 ? raw.slice(0, separatorIndex) : '';
+  const id = separatorIndex > 0 ? raw.slice(separatorIndex + 1) : '';
+  if (!createdAt || Number.isNaN(Date.parse(createdAt)) || !tenderTrackingIdPattern.test(id)) throw trackingError('Cursor de historial inválido.');
+  return { createdAt, id };
+}
+
 app.get('/api/tender-tracking-events', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     requireTenderTrackingAccess(currentProfile);
     const database = requireDb();
     const tenderId = requireTenderTrackingId(req.query.id);
-    await getTenderTrackingTender(database, tenderId);
-    res.json(await must(database.from('psi_tender_tracking_events').select('*').eq('tender_id', tenderId).order('created_at', { ascending: false })) || []);
+    const tender = await getTenderTrackingTender(database, tenderId);
+    const limit = Math.min(TENDER_TRACKING_EVENTS_MAX_LIMIT, Math.max(1, Number.parseInt(req.query.limit, 10) || TENDER_TRACKING_EVENTS_DEFAULT_LIMIT));
+    const cursor = parseTenderTrackingEventsCursor(req.query.cursor);
+    let query = database.from('psi_tender_tracking_events').select('*').eq('tender_id', tender.id)
+      .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(limit + 1);
+    if (cursor) query = query.or(`created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`);
+    const rows = (await must(query)) || [];
+    const events = rows.slice(0, limit);
+    const next_cursor = rows.length > limit ? `${events[events.length - 1].created_at},${events[events.length - 1].id}` : null;
+    res.json({ events, next_cursor });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-actuation', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireTenderTrackingAccess(currentProfile);
+    const database = requireDb();
+    const tenderId = requireTenderTrackingId(req.body?.tender_id);
+    const tender = await getTenderTrackingTender(database, tenderId);
+    const actuationType = String(req.body?.type || '').trim();
+    assertPublicActuationType(actuationType);
+    const note = String(req.body?.note || '').trim();
+    if (!note) throw trackingError('La descripción de la actuación es obligatoria.');
+    const { data, error } = await database.rpc('psi_append_tender_tracking_event', {
+      p_tender_id: tender.id,
+      p_event_type: actuationType,
+      p_actor_kind: 'human',
+      p_created_by: currentProfile.id,
+      p_source_ref_type: null,
+      p_source_ref_id: null,
+      p_metadata: null,
+      p_note: note,
+      p_singular: false,
+    });
+    if (error) throw error;
+    res.json(data);
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
@@ -1498,7 +1577,7 @@ app.get('/api/tender-search-profiles', async (req, res) => {
 app.post('/api/tender-search-profiles', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede guardar perfiles de búsqueda.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     res.status(201).json(await saveTenderSearchProfile(requireDb(), req.body, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -1506,7 +1585,7 @@ app.post('/api/tender-search-profiles', async (req, res) => {
 app.delete('/api/tender-search-profiles/:id', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede eliminar perfiles de búsqueda.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
     res.json(await deleteTenderSearchProfile(requireDb(), req.params.id));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
@@ -1657,7 +1736,7 @@ app.patch('/api/tenders/:id/status', async (req, res) => {
 app.post('/api/tenders/convert', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver este radar.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONVERT);
     const database = requireDb();
     const tender = req.body?.tender || req.body;
     const result = await convertTenderToOpportunity(database, tender, currentProfile);
@@ -1689,7 +1768,7 @@ app.patch('/api/tender-status', async (req, res) => {
 app.post('/api/tender-convert', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (!canViewTenders(currentProfile)) { const error = new Error('Solo dirección o licitaciones puede ver este radar.'); error.status = 403; throw error; }
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONVERT);
     const database = requireDb();
     const tender = req.body?.tender || req.body;
     const result = await convertTenderToOpportunity(database, tender, currentProfile);
@@ -1996,10 +2075,11 @@ app.get('/api/opportunities/:id', async (req, res) => {
     opportunity.source_url = tenderSource?.url || getTenderSourceUrlFromOpportunity(opportunity) || null;
     const interactions = await must(database.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
     res.json({ opportunity, interactions });
-  } catch (error) { sendError(res, error); }
+  } catch (error) { sendAuthError(res, error); }
 });
 
 
+const TENDER_PIPELINE_VERSION = 'v1';
 const tenderDocumentBucket = 'tender-documents';
 const RUP_MAX_BYTES = 50 * 1024 * 1024;
 const tenderDocumentTypes = ['pliego','estudios_previos','anexo_tecnico','adenda','formatos','otro'];
@@ -2138,6 +2218,7 @@ function buildTenderGoNoGoVerdict(opportunity, documents, context = {}) {
   return { decision: finalDecision, risk, executive_semaphore, commercial_fit, company_profile_crosscheck, habilitating_requirements, blockers, next_action, committee_summary };
 }
 function buildTenderDocumentAnalysis(opportunity, documents, companyProfile = {}) {
+  const deepAnalysis = buildTenderDeepAnalysis(documents, companyProfile);
   const text = documents.map(d => `\n--- ${d.document_type}: ${d.name} ---\n${d.extracted_text || ''}`).join('\n').slice(0, 220000);
   const normalized = normTenderText(text);
   const hasPliego = documents.some(d => d.document_type === 'pliego' || normTenderText(d.name).includes('pliego'));
@@ -2169,7 +2250,7 @@ function buildTenderDocumentAnalysis(opportunity, documents, companyProfile = {}
     { category: 'Formatos', status: hasFormats ? 'Cargados' : 'Pendiente', detail: hasFormats ? 'Formatos disponibles para checklist de entrega.' : 'Cargar formatos anexos antes de ofertar.' },
   ];
   return {
-    kind: 'tender_document_analysis', report_title: 'Preanálisis por reglas SIIO', status: 'analisis_generado', recommendation, risk, generated_at: new Date().toISOString(),
+    kind: 'tender_document_analysis', report_title: 'Preanálisis por reglas SIIO', status: 'analisis_generado', recommendation, risk, generated_at: new Date().toISOString(), deep_analysis: deepAnalysis,
     summary: `${recommendation} para ${opportunity.company_name}. ${missingCritical.length ? `Faltan documentos críticos: ${missingCritical.join(', ')}.` : 'Hay base documental mínima para revisión comercial y licitatoria.'} ${hasAdenda ? 'Priorizar Adenda como versión vigente.' : 'Confirmar si existen adendas.'}`,
     findings: signals, detected_values: finds, matrix, go_no_go: goNoGo,
     executive_semaphore: goNoGo.executive_semaphore,
@@ -2447,25 +2528,49 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
 async function convertTenderToOpportunity(database, tender, currentProfile) {
   if (!tender?.source || !tender?.entity || !tender?.title) throw new Error('Licitación inválida para convertir.');
   if (!(await tenderTableAvailable(database))) throw new Error('La tabla psi_public_tenders aún no existe. Aplica la migración para convertir licitaciones.');
+  const stableKey = String(tender.stable_key || tender.id || stableTenderKey(tender)).trim();
+  const tenderRecord = await getPersistedTenderByStableKey(database, stableKey);
+  if (!isTenderTrackableStatus(tenderRecord)) throw trackingError('No se puede convertir una licitación cancelada, revocada o declarada desierta.', 409);
+  const officialState = await revalidateTenderOfficialStatus(tenderRecord);
+  if (!isTenderTrackableStatus(officialState)) throw trackingError('No se puede convertir una licitación cancelada, revocada o declarada desierta.', 409);
+  const canonicalTender = dbTenderToPublic({ ...tenderRecord, status: officialState.status, raw: officialState.raw });
   const owner = await findTenderOwner(database, currentProfile);
-  const payload = buildTenderOpportunityPayload(tender, currentProfile.role === 'comercial' ? currentProfile : owner);
-  const tenderRecord = await getPersistedTenderByStableKey(database, stableTenderKey(tender));
+  const payload = buildTenderOpportunityPayload(canonicalTender, currentProfile.role === 'comercial' ? currentProfile : owner);
   const conversion = await callTenderOpportunityConversion(database, tenderRecord.id, payload, tenderRecord.tracking_updated_at, currentProfile);
   const opportunityId = conversion.opportunity_id;
+  if (isTenderDurablePipelineEnabled(process.env)) {
+    const job = await callCreateTenderProcessingJob(database, {
+      tenderId: tenderRecord.id,
+      opportunityId,
+      pipelineVersion: TENDER_PIPELINE_VERSION,
+      requestedBy: currentProfile.id,
+    });
+    return {
+      id: opportunityId,
+      tender_id: tenderRecord.id,
+      duplicate: !!conversion.duplicate,
+      processing: {
+        job_id: job.job_id,
+        status: job.status,
+        current_step: job.current_step,
+        automatic_analysis: isTenderAutoAnalysisEnabled(process.env),
+      },
+    };
+  }
   let document_import_status = 'no_aplica';
   let document_import_error = null;
-  if ((tender.source === 'SECOP II' || tender.source === 'ESU Contratación') && tender.url) {
+  if ((canonicalTender.source === 'SECOP II' || canonicalTender.source === 'ESU Contratación') && canonicalTender.url) {
     try {
       const importResult = await refreshTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze: true });
       document_import_status = importResult.analysis_generated ? 'analisis_generado' : 'fallo_importacion';
       if (!importResult.analysis_generated) {
         document_import_error = `No se pudo generar análisis: ${importResult.imported_count} documentos vigentes, ${importResult.failed_count} fallidos.`;
-        await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_import_error', auto_import: true, source: tender.source, error: document_import_error }) }).select('id').single());
+        await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_import_error', auto_import: true, source: canonicalTender.source, error: document_import_error }) }).select('id').single());
       }
     } catch (error) {
       document_import_status = 'fallo_importacion';
       document_import_error = error?.message || String(error);
-      await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_import_error', auto_import: true, source: tender.source, error: document_import_error }) }).select('id').single());
+      await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_import_error', auto_import: true, source: canonicalTender.source, error: document_import_error }) }).select('id').single());
     }
   }
   return { id: opportunityId, duplicate: !!conversion.duplicate, document_import_status, document_import_error };
@@ -2482,6 +2587,169 @@ async function markTenderOpportunityDiscarded(database, opportunityId, currentPr
     note: notes,
     expected_tracking_updated_at: tender?.tracking_updated_at ?? null,
   }, currentProfile);
+}
+
+async function resolveTenderPipelineSourceContext(database, opportunityId) {
+  const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', opportunityId).single());
+  const sourceUrl = getTenderSourceUrlFromOpportunity(opportunity);
+  const officialUrl = secopOfficialUrl(sourceUrl);
+  if (/community\.secop\.gov\.co/i.test(officialUrl)) {
+    return { opportunity, sourceLabel: 'SECOP II', referer: officialUrl, sourceUrl };
+  }
+  if (/^https:\/\/esucontratacion\.com\/procesos\/view\/\d+/i.test(sourceUrl)) {
+    return { opportunity, sourceLabel: 'ESU Contratación', referer: sourceUrl, sourceUrl };
+  }
+  throw new Error('La importación automática solo está disponible para enlaces oficiales SECOP II o ESU Contratación.');
+}
+
+/** Wires the durable worker (tender-processing-worker.js) to real DB RPCs and
+ * to the same SECOP/ESU/AGT-002 helpers already used by the synchronous
+ * compat path, so the internal endpoint never re-implements that logic. */
+function buildTenderProcessingWorkerDeps(database) {
+  return {
+    now: () => Date.now(),
+    claimJob: () => claimTenderProcessingJob(database, { leaseSeconds: 90 }),
+    updateJob: (jobId, leaseId, patch) => updateTenderProcessingJob(database, jobId, leaseId, patch),
+    recordImportItem: item => recordTenderImportItem(database, item),
+    appendEvent: event => appendTenderProcessingEvent(database, event),
+
+    revalidateOfficialStatus: async ({ tenderId }) => {
+      const tenderRow = await must(database.from('psi_public_tenders').select('*').eq('id', tenderId).single());
+      const officialState = await revalidateTenderOfficialStatus(tenderRow);
+      return { terminal: !isTenderTrackableStatus(officialState) };
+    },
+
+    discoverDocuments: async ({ jobId, opportunityId }) => {
+      const { sourceLabel, referer, sourceUrl } = await resolveTenderPipelineSourceContext(database, opportunityId);
+      let docs;
+      if (sourceLabel === 'SECOP II') {
+        const process = await resolveSecopProcessByExactUrl(referer);
+        docs = await listSecopDocumentsByPortfolio(process.id_del_portafolio);
+      } else {
+        docs = await listEsuDocumentsFromProcessUrl(sourceUrl);
+      }
+      const nameGetter = d => (sourceLabel === 'SECOP II' ? d.nombre_archivo : d.name);
+      const selected = selectPriorityTenderDocuments(docs, nameGetter);
+      const items = selected.map(doc => {
+        const name = nameGetter(doc);
+        const url = sourceLabel === 'SECOP II' ? doc.url_descarga_documento.url : doc.url;
+        const sourceDocumentId = normalizeTenderSourceDocumentId(sourceLabel === 'SECOP II'
+          ? String(doc.id_documento || createHash('sha256').update(String(url)).digest('hex').slice(0, 24))
+          : esuDocumentId(doc));
+        return { source: sourceLabel, sourceDocumentId, sourceUrl: url, name, critical: isCriticalTenderDocument(name) };
+      });
+      // Bounded concurrency: up to 40 items (selectPriorityTenderDocuments)
+      // each need their own recordTenderImportItem RPC round-trip. Sequential
+      // awaits ran past the caller's request timeout before updateJob could
+      // run; unlimited Promise.all would still risk saturating the DB pool.
+      await runInConcurrentChunks(items, TENDER_DISCOVERY_RECORD_CONCURRENCY, item =>
+        recordTenderImportItem(database, { jobId, ...item, status: 'pending' }));
+      return items;
+    },
+
+    importOneDocument: async ({ jobId, opportunityId, tenderId, document }) => {
+      const { referer } = await resolveTenderPipelineSourceContext(database, opportunityId);
+      const actor = await getTenderProcessingJobActor(database, jobId);
+      const sourceDocumentId = normalizeTenderSourceDocumentId(document.sourceDocumentId);
+      const currentVersion = await getCurrentTenderDocumentVersion(database, opportunityId, document.source, sourceDocumentId);
+      const result = await refreshOfficialTenderDocument({
+        opportunityId,
+        source: document.source,
+        document: {
+          name: document.name,
+          mime_type: document.name?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream',
+          document_type: normalizeDocumentType('', document.name),
+          source_url: document.sourceUrl,
+          source_document_id: sourceDocumentId,
+        },
+        currentVersion,
+        download: doc => (document.source === 'SECOP II'
+          ? downloadSecopDocument({ url_descarga_documento: { url: doc.source_url }, nombre_archivo: doc.name }, referer)
+          : downloadEsuDocument({ url: doc.source_url, name: doc.name }, referer)),
+        cleanName: cleanFileName,
+        extractText: extractTextFromTenderFile,
+        ensureStorage: () => ensureTenderBucket(database),
+        upload: async (storagePath, buffer, mimeType) => {
+          const { error } = await database.storage.from(tenderDocumentBucket).upload(storagePath, buffer, { contentType: mimeType, upsert: true });
+          if (error) throw error;
+        },
+        recordVersion: async version => {
+          const response = await database.rpc('psi_record_tender_document_version', {
+            p_opportunity_id: opportunityId, p_tender_id: tenderId, p_source: document.source, p_source_document_id: version.source_document_id,
+            p_name: version.name, p_content_hash: version.content_hash, p_storage_path: version.storage_path,
+            p_mime_type: version.mime_type || 'application/octet-stream', p_size_bytes: version.size_bytes,
+            p_document_type: normalizeDocumentType(version.document_type, version.name), p_extracted_text: version.extracted_text,
+            p_source_url: version.source_url || null, p_actor_id: actor.requested_by,
+          });
+          if (response.error) throw response.error;
+          return response.data;
+        },
+      });
+      return {
+        status: result.status === 'unchanged' ? 'unchanged' : 'imported',
+        hasText: true,
+        documentVersionId: result.version?.id || currentVersion?.id || null,
+      };
+    },
+
+    publishSnapshot: async ({ jobId, tenderId, opportunityId }) => {
+      const actor = await getTenderProcessingJobActor(database, jobId);
+      const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
+      if (beginRefresh.error) throw beginRefresh.error;
+      const refreshToken = String(beginRefresh.data || '').trim();
+      if (!refreshToken) throw new Error('No fue posible iniciar la publicación gobernada del snapshot.');
+      const records = await getTenderDocumentRecords(database, opportunityId);
+      const currentDocs = records.documents.filter(document => document.current !== false);
+      const companyProfile = await getTenderCompanyProfile(database);
+      const registered = await registerTenderDocumentSnapshot(database, {
+        opportunity_id: opportunityId, tender_id: tenderId, actor_id: actor.requested_by,
+        refresh_token: refreshToken, documents: currentDocs, company_profile: companyProfile,
+      });
+      return { id: registered.id };
+    },
+
+    requestAgt002: async ({ jobId, tenderId, opportunityId, snapshotId }) => {
+      // Worker interno no puede autoautorizar IA: el gate de custodia humano
+      // (Task 3.4 / psi_authorize_tender_analysis) es la única puerta.
+      const actor = await getTenderProcessingJobActor(database, jobId);
+      if (!actor.analysis_authorized_by) return { status: 'rules_fallback' };
+      if (!isTenderAutoAnalysisEnabled(process.env)) return { status: 'rules_fallback' };
+      if (!isAgt002PreviewConfigured(process.env)) return { status: 'rules_fallback' };
+
+      const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', opportunityId).single());
+      const records = await getTenderDocumentRecords(database, opportunityId);
+      const currentDocs = records.documents.filter(document => document.current !== false);
+      const companyProfile = await getTenderCompanyProfile(database);
+      const deepAnalysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
+
+      let claimId = null;
+      let idempotencyKey = null;
+      try {
+        const config = getAgt002PreviewRuntimeConfig(process.env);
+        idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion: config.policyVersion, model: config.model });
+        const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
+        if (claim.status === 'existing') {
+          const existingRun = await findAgt002PreviewRun(database, idempotencyKey);
+          if (!existingRun) return { status: 'error', error: new Error('La ejecución AGT-002 reservada no está disponible.') };
+          return { status: 'completed', analysisRunId: existingRun.run_id };
+        }
+        if (claim.status === 'in_progress') return { status: 'busy' };
+        if (claim.status === 'quota' || claim.status === 'saturated') return { status: claim.status };
+        claimId = claim.claim_id;
+        const engine = createAgt002PreviewRuntime({ environment: process.env, countDailyRuns: () => countAgt002PreviewRunsToday(database) });
+        const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId }, { idempotencyKey });
+        const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope });
+        return { status: 'completed', analysisRunId: registeredRun.run_id };
+      } catch (error) {
+        return { status: 'error', error };
+      } finally {
+        if (claimId && idempotencyKey) {
+          try { await releaseAgt002PreviewClaim(database, { idempotencyKey, claimId }); }
+          catch { console.warn('agt002_preview_claim_release_failed', { event: 'agt002_preview_claim_release_failed' }); }
+        }
+      }
+    },
+  };
 }
 
 export async function buildTenderOpportunitySummary(database, tender, { opportunity = null, latestDecision = null } = {}) {
@@ -2718,6 +2986,76 @@ app.post('/api/tender-documents-analyze', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
+app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.AI_ANALYSIS_RUN);
+    const database = requireDb();
+    await requireTenderAnalysisFoundation(database);
+    const opportunityId = String(req.body.opportunity_id || '');
+    const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const tenderId = await getTenderIdForOpportunity(database, opportunityId);
+    const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
+    if (beginRefresh.error) throw beginRefresh.error;
+    const refreshToken = String(beginRefresh.data || '').trim();
+    if (!refreshToken) throw new Error('No fue posible abrir el análisis documental gobernado.');
+    const records = await getTenderDocumentRecords(database, opportunityId);
+    const currentDocs = records.documents.filter(document => document.current !== false);
+    if (!currentDocs.length) throw new Error('Debe cargar documentos antes de analizar.');
+    const companyProfile = await getTenderCompanyProfile(database);
+    const registeredSnapshot = await registerTenderDocumentSnapshot(database, {
+      opportunity_id: opportunityId, tender_id: tenderId, actor_id: currentProfile.id, refresh_token: refreshToken,
+      documents: currentDocs, company_profile: companyProfile,
+    });
+    const deepAnalysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
+
+    const useRulesFallback = async reason => {
+      const rulesRun = await registerSiioRulesAnalysis(database, {
+        opportunity_id: opportunityId, tender_id: tenderId, actor_id: currentProfile.id,
+        documents: currentDocs, company_profile: companyProfile, result: deepAnalysis, snapshot_record: registeredSnapshot,
+      });
+      const payload = await getTenderDocumentRecords(database, opportunityId);
+      return res.json({
+        ...payload,
+        analysis: presentCurrentTenderAnalysis(rulesRun) || payload.analysis,
+        analysis_engine: { requested: 'AGT-002', used: 'siio_rules_v1', fallback: true, reason, human_review_required: true },
+      });
+    };
+
+    if (!isAgt002PreviewConfigured(process.env)) return useRulesFallback('not_configured');
+    let claimId = null;
+    let idempotencyKey = null;
+    try {
+      const config = getAgt002PreviewRuntimeConfig(process.env);
+      idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId: registeredSnapshot.id, policyVersion: config.policyVersion, model: config.model });
+      const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
+      if (claim.status === 'existing') {
+        const existingRun = await findAgt002PreviewRun(database, idempotencyKey);
+        if (!existingRun) throw new Error('La ejecución AGT-002 reservada no está disponible.');
+        const payload = await getTenderDocumentRecords(database, opportunityId);
+        return res.json({ ...payload, analysis: presentCurrentTenderAnalysis(existingRun), analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, reused: true, human_review_required: true } });
+      }
+      if (claim.status === 'in_progress') {
+        return res.status(409).json({ error: 'AGT-002 Preview ya está procesando este snapshot.', analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, in_progress: true, human_review_required: true } });
+      }
+      if (claim.status === 'quota' || claim.status === 'saturated') return useRulesFallback(claim.status);
+      claimId = claim.claim_id;
+      const engine = createAgt002PreviewRuntime({ environment: process.env, countDailyRuns: () => countAgt002PreviewRunsToday(database) });
+      const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id }, { idempotencyKey });
+      const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope });
+      const payload = await getTenderDocumentRecords(database, opportunityId);
+      return res.json({ ...payload, analysis: presentCurrentTenderAnalysis(registeredRun), analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, reused: false, human_review_required: true } });
+    } catch {
+      console.warn('agt002_preview_fallback', { event: 'agt002_preview_fallback', reason: 'preview_unavailable' });
+      return useRulesFallback('preview_unavailable');
+    } finally {
+      if (claimId && idempotencyKey) {
+        try { await releaseAgt002PreviewClaim(database, { idempotencyKey, claimId }); }
+        catch { console.warn('agt002_preview_claim_release_failed', { event: 'agt002_preview_claim_release_failed' }); }
+      }
+    }
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
 
 app.post('/api/tender-documents-import', async (req, res) => {
   try {
@@ -2729,6 +3067,148 @@ app.post('/api/tender-documents-import', async (req, res) => {
     res.json(await refreshTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze: false }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
+
+app.get('/api/tender-processing-status', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireTenderTrackingAccess(currentProfile);
+    const database = requireDb();
+    const opportunityId = String(req.query.opportunity_id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    const { data, error } = await database
+      .from('psi_tender_processing_jobs')
+      .select('id,idempotency_key,status,current_step,documents_discovered,documents_processed,documents_imported,documents_unchanged,documents_failed,snapshot_id,analysis_run_id,last_error_code,last_error_message,updated_at')
+      .eq('opportunity_id', opportunityId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) {
+      return res.json({
+        job_id: null, idempotency_key: null, status: 'no_job', current_step: null,
+        counts: { discovered: 0, processed: 0, imported: 0, unchanged: 0, failed: 0 },
+        failed_items: [],
+        snapshot_id: null, analysis_run_id: null, last_error_code: null, last_error_message: null, updated_at: null,
+      });
+    }
+    const { data: failedItems, error: failedItemsError } = await database
+      .from('psi_tender_document_import_items')
+      .select('id,name,status,last_error_code,last_error_message')
+      .eq('job_id', data.id)
+      .in('status', ['failed_retryable', 'failed_terminal'])
+      .order('updated_at', { ascending: false });
+    if (failedItemsError) throw failedItemsError;
+    res.json({
+      job_id: data.id,
+      idempotency_key: data.idempotency_key,
+      status: data.status,
+      current_step: data.current_step,
+      counts: {
+        discovered: data.documents_discovered,
+        processed: data.documents_processed,
+        imported: data.documents_imported,
+        unchanged: data.documents_unchanged,
+        failed: data.documents_failed,
+      },
+      failed_items: failedItems || [],
+      snapshot_id: data.snapshot_id,
+      analysis_run_id: data.analysis_run_id,
+      last_error_code: data.last_error_code,
+      last_error_message: data.last_error_message,
+      updated_at: data.updated_at,
+    });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-processing-retry', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_CONVERT);
+    const database = requireDb();
+    const opportunityId = String(req.body?.opportunity_id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    const idempotencyKey = String(req.body?.idempotency_key || '').trim();
+    if (!idempotencyKey) throw new Error('Debe indicar la clave de idempotencia del proceso.');
+    const { data: job, error } = await database
+      .from('psi_tender_processing_jobs')
+      .select('id,tender_id,status,current_step,lease_id')
+      .eq('opportunity_id', opportunityId)
+      .eq('idempotency_key', idempotencyKey)
+      .maybeSingle();
+    if (error) throw error;
+    if (!job) throw new Error('No existe un proceso de importación para esa oportunidad y clave.');
+    if (job.status === 'cancelled' || job.status === 'completed') {
+      const terminalError = new Error('No se puede reintentar un proceso cancelado o finalizado.');
+      terminalError.status = 409;
+      throw terminalError;
+    }
+    if (job.status !== 'needs_attention' && job.status !== 'retry_wait') {
+      const stateError = new Error('El proceso no está en un estado que admita reintento.');
+      stateError.status = 409;
+      throw stateError;
+    }
+    const nextStatus = job.current_step === 'analysis' ? 'waiting_agent_capacity' : 'importing_documents';
+    const updateResult = await database.rpc('psi_update_tender_processing_job', {
+      p_job_id: job.id,
+      p_lease_id: job.lease_id,
+      p_patch: { status: nextStatus, next_attempt_at: new Date().toISOString(), last_error_code: null, last_error_message: null },
+    });
+    if (updateResult.error) throw updateResult.error;
+    const eventResult = await database.rpc('psi_append_tender_tracking_event', {
+      p_tender_id: job.tender_id,
+      p_event_type: 'pipeline_queued',
+      p_actor_kind: 'human',
+      p_created_by: currentProfile.id,
+      p_source_ref_type: 'job',
+      p_source_ref_id: job.id,
+      p_metadata: { retry: true },
+      p_note: null,
+      p_singular: false,
+    });
+    if (eventResult.error) throw eventResult.error;
+    res.json({ job_id: job.id, status: nextStatus });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-analysis-authorize', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.AI_ANALYSIS_RUN);
+    const database = requireDb();
+    const jobId = String(req.body?.job_id || '');
+    if (!jobId) throw new Error('Debe indicar el proceso de importación a autorizar.');
+    const { error } = await database.rpc('psi_authorize_tender_analysis', { p_job_id: jobId, p_authorized_by: currentProfile.id });
+    if (error) throw error;
+    res.json({ status: 'ok' });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+function secretMatches(expectedValue, providedValue) {
+  const expected = Buffer.from(String(expectedValue || ''), 'utf8');
+  const provided = Buffer.from(String(providedValue || ''), 'utf8');
+  return expected.length > 0 && provided.length === expected.length && timingSafeEqual(provided, expected);
+}
+
+function isTenderWorkerSchedulerAuthorized(req) {
+  const authorization = String(req.headers.authorization || '');
+  const bearerSecret = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  return secretMatches(process.env.TENDER_WORKER_SCHEDULER_SECRET, req.headers['x-tender-worker-secret'])
+    || secretMatches(process.env.CRON_SECRET, bearerSecret);
+}
+
+async function runTenderProcessingWorker(req, res) {
+  try {
+    if (!isTenderDurablePipelineEnabled(process.env)) { const error = new Error('No disponible.'); error.status = 404; throw error; }
+    if (!isTenderWorkerSchedulerAuthorized(req)) { const error = new Error('No autorizado.'); error.status = 403; throw error; }
+    const database = requireDb();
+    const worker = createTenderProcessingWorker(buildTenderProcessingWorkerDeps(database));
+    const result = await worker.runOnce({ timeBudgetMs: 45_000 });
+    res.json({ processed: result?.status && result.status !== 'empty' ? 1 : 0 });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+}
+
+app.post('/api/tender-processing-worker-run', runTenderProcessingWorker);
+app.get('/api/tender-processing-worker-run', runTenderProcessingWorker);
 
 app.post('/api/tender-opportunity-discard', async (req, res) => {
   try {
@@ -2896,7 +3376,7 @@ app.get('/api/opportunity-detail', async (req, res) => {
     opportunity.source_url = tenderSource?.url || getTenderSourceUrlFromOpportunity(opportunity) || null;
     const interactions = await must(database.from('psi_sales_interactions').select('*, psi_sales_profiles(full_name)').eq('opportunity_id', id).order('occurred_at', { ascending: false }));
     res.json({ opportunity, interactions });
-  } catch (error) { sendError(res, error); }
+  } catch (error) { sendAuthError(res, error); }
 });
 
 app.put('/api/opportunity', async (req, res) => {

@@ -80,7 +80,7 @@ assert.throws(() => validateTenderAnalysisResult({ ...baseResult, weaknesses: {}
 const { producer: _producer, ...agtPayload } = baseResult;
 assert.equal(adaptAgt002TenderAnalysis({
   ...agtPayload,
-  schema_version: '2.0-draft',
+  schema_version: '2.0-preview.1',
   agent_id: 'AGT-002',
   policy_version: 'agt-policy-v1',
   usage: { provider: 'institutional', model: 'agt-002', input_tokens: 0, output_tokens: 0, cost_usd: 0 },

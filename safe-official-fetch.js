@@ -56,6 +56,10 @@ export async function resolveOfficialTarget(url, policy, lookup = dnsLookup) {
   return { url: parsed, address: addresses[0].address, family: Number(addresses[0].family) };
 }
 
+export function responseRemoteAddress(response, target) {
+  return response?.socket?.remoteAddress || target?.address || null;
+}
+
 function pinnedHttpsRequest(target, { method = 'GET', body = null, headers = {}, maxBytes = 50 * 1024 * 1024, timeoutMs = 20_000 } = {}) {
   return new Promise((resolve, reject) => {
     const request = https.request(target.url, {
@@ -64,6 +68,10 @@ function pinnedHttpsRequest(target, { method = 'GET', body = null, headers = {},
         ? callback(null, [{ address: target.address, family: target.family }])
         : callback(null, target.address, target.family),
     }, response => {
+      // IncomingMessage.socket may be nulled by Node after the stream ends.
+      // Capture the peer while headers arrive; target.address is the already
+      // DNS-validated and pinned public fallback.
+      const remoteAddress = responseRemoteAddress(response, target);
       const chunks = [];
       let total = 0;
       response.on('data', chunk => {
@@ -74,7 +82,7 @@ function pinnedHttpsRequest(target, { method = 'GET', body = null, headers = {},
         }
         chunks.push(chunk);
       });
-      response.on('end', () => resolve({ status: response.statusCode || 0, headers: response.headers, body: Buffer.concat(chunks), remoteAddress: response.socket.remoteAddress }));
+      response.on('end', () => resolve({ status: response.statusCode || 0, headers: response.headers, body: Buffer.concat(chunks), remoteAddress }));
     });
     request.setTimeout(timeoutMs, () => request.destroy(new Error('Tiempo de espera agotado al consultar la fuente oficial.')));
     request.on('socket', socket => socket.once('secureConnect', () => {

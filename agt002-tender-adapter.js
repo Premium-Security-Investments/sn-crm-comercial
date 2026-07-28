@@ -88,7 +88,7 @@ export function validateAgt002TenderAnalysisRequest(snapshot) {
 
 export function validateAgt002TenderAnalysisEnvelope(value) {
   if (!exactKeys(value, ENVELOPE_KEYS)) throw new Error('El envelope AGT-002 debe ser cerrado.');
-  if (value.schema_version !== '2.0-draft') throw new Error('La versión de esquema AGT-002 no es compatible.');
+  if (value.schema_version !== '2.0-preview.1') throw new Error('La versión de esquema AGT-002 no es compatible.');
   if (value.agent_id !== 'AGT-002') throw new Error('El productor debe ser AGT-002.');
   if (!isUuid(value.run_id) || !isUuid(value.snapshot_id)) throw new Error('Run y snapshot deben ser UUID.');
   if (!nonEmptyString(value.policy_version)) throw new Error('La política debe ser texto.');

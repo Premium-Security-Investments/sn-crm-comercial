@@ -5,7 +5,7 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 import { canAccessRoute, canManageUsers as navCanManageUsers, canViewTenders as navCanViewTenders, getVisibleNavGroups, isManagementRole as navIsManagementRole } from './navPermissions';
 import { api, setApiAccessToken } from './apiClient';
-import { MODULE_PERMISSION_CODES, MODULE_PERMISSIONS, eligibleModulePermissions, isModulePermissionEligible } from '../module-access.js';
+import { CAPABILITY_PERMISSION_CODES, CAPABILITY_PERMISSIONS, MODULE_PERMISSION_CODES, MODULE_PERMISSIONS, eligibleModulePermissions, isModulePermissionEligible } from '../module-access.js';
 import { SiioDashboard } from './siio/SiioDashboard';
 import { TendersModule } from './tenders/TendersModule';
 import { TenderAnalysisSection } from './tenders/components/TenderAnalysisSection';
@@ -14,15 +14,18 @@ import { TenderDocumentSection } from './tenders/components/TenderDocumentSectio
 import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDecisionPanel';
 import { TenderModuleNavigation } from './tenders/components/TenderModuleNavigation';
 import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
+import { tenderAnalysisMethodLabel } from './tenders/tenderDecisionBrief';
+import { loadTrackingEvents, postActuation } from './tenders/api';
 import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
 import { tenderSharePointStatusLabel } from './tenders/statusLabels';
-import type { TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView } from './tenders/types';
+import type { TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderProcessingStatus, TenderTrackingEvent } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
 import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
 import { supabaseBrowser } from './supabaseBrowser';
 import { VigiaCommercial } from './vigia/VigiaCommercial';
 import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
+import { ACTIONS, can } from '../access-control.js';
 
 type Stage = { code: string; name: string; stage_order: number; close_probability: number; is_terminal: boolean };
 type CommercialArea = 'seguridad_fisica' | 'tecnologia' | 'licitacion_publica';
@@ -48,7 +51,7 @@ type MonthlyKpi = { owner_id?: string | null; owner_name: string | null; period_
 type SalesGoal = { id?: string; user_id: string | null; period_month: string; service_type_code: string | null; regional_nombre?: string | null; operational_unit_target?: number; quote_target: number; prospect_target: number; sales_budget: number; created_at?: string; updated_at?: string };
 type Bootstrap = { summary: SummaryRow[]; opportunities: Opportunity[]; profiles: Profile[]; stages: Stage[]; services: ServiceType[]; lossReasons: LossReason[]; stalled: Opportunity[]; topClosing: Opportunity[]; monthlyKpis: MonthlyKpi[]; goals: SalesGoal[]; totals: { count: number; pipeline: number; weighted: number; approved: number }; currentProfile: Profile };
 type UserPayload = { full_name: string; microsoft_email: string; role: string; active: boolean; password?: string; send_invite?: boolean; areas: AccessAssignment[]; permissions: string[]; can_edit_customer_segment?: boolean };
-type TenderSection = 'hacer' | 'revisar' | 'descartar';
+type TenderSection = 'hacer' | 'revisar' | 'prioridad_baja';
 type TenderInternalStatus = 'nueva' | 'en_revision' | 'convertida_oportunidad' | 'descartada';
 type TenderQuickFilter = 'hacer' | 'en_revision' | 'high_value' | 'convertidas' | null;
 type TenderFastFilter = 'hacer' | 'revisar' | 'nuevas' | 'urgentes' | 'alto_valor' | 'alto_encaje' | null;
@@ -60,10 +63,10 @@ type TenderSortKey = 'deadline' | 'value' | 'score' | 'entity' | 'source';
 type TenderRegionKey = 'todas' | 'bog_cundinamarca' | 'med_antioquia' | 'eje_cafetero' | 'cali_valle' | 'costa_caribe' | 'santanderes' | 'sur_occidente' | 'otros';
 type PublicTender = { id: string; stable_key?: string; source: string; section: TenderSection; internal_status?: TenderInternalStatus; converted_opportunity_id?: string | null; reviewed_at?: string | null; detected_at?: string | null; last_seen_at?: string | null; entity: string; dept?: string; city?: string; ref?: string; process_id?: string; title: string; desc?: string; value: number; status?: string; category?: string; published?: string | null; deadline?: string | null; window?: string; days?: number | null; score: number; reasons: string[]; risks: string[]; url?: string };
 type TenderOfferPreparationDoc = { key: string; name: string; folder: string; status: string; owner: string; output?: string; reusable?: boolean; title?: string; priority?: string; reason?: string };
-type TenderOfferPreparation = { status: string; approved_at: string; approved_by?: string; control_message?: string; sharepoint_folder?: { status: string; provider: string; url?: string | null; root_name?: string; folders?: string[] }; generic_documents?: TenderOfferPreparationDoc[]; auto_generated_documents?: TenderOfferPreparationDoc[]; human_required_items?: TenderOfferPreparationDoc[]; assistant_notes?: string[]; checklist_summary?: { total: number; auto_generated: number; human_required: number; official_documents: number; has_analysis: boolean } };
+type TenderOfferPreparation = { status: string; approved_at: string; approved_by?: string; control_message?: string; sharepoint_folder?: { status: string; provider: string; url?: string | null; root_name?: string; folders?: string[] }; planned_documents?: TenderOfferPreparationDoc[]; auto_generated_documents?: TenderOfferPreparationDoc[]; human_required_items?: TenderOfferPreparationDoc[]; assistant_notes?: string[]; checklist_summary?: { total: number; planned?: number; auto_generated?: number; human_required: number; official_documents: number; has_analysis: boolean } };
 type TenderOfferPreparationPayload = { preparation: TenderOfferPreparation | null; preparations: TenderOfferPreparation[]; notes: Array<{ note: string; status?: string; created_at?: string; created_by?: string; created_by_name?: string }>; decision?: { decision?: 'go' | 'no_go' } | null; reason?: string };
 type TenderSourceDiagnostic = { source: string; status: 'ok' | 'error' | string; count?: number; message?: string };
-type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; descartar: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
+type TenderRadarPayload = { generatedAt: string; source?: string; diagnostics?: TenderSourceDiagnostic[]; totals: { all: number; hacer: number; revisar: number; prioridadBaja: number; highValue: number; urgent: number; enRevision?: number; convertidas?: number; descartadas?: number }; tenders: PublicTender[] };
 type TenderSearchProfile = { id: string; name: string; description?: string | null; region_key: TenderRegionKey; source_filter: string; section_filter: TenderSection | 'todas'; internal_status_filter: TenderInternalStatus | 'todas'; deadline_filter: TenderDeadlineFilter; value_filter: TenderValueFilter; score_filter: TenderScoreFilter; query_text?: string | null; is_default?: boolean; created_at?: string; updated_at?: string };
 type TenderCompanyProfile = { legal_name?: string | null; nit?: string | null; rup_status?: string | null; rup_updated_at?: string | null; rup_unspsc_codes?: string | null; authorized_services?: string | null; supervigilancia_license?: string | null; financial_capacity?: string | null; organizational_capacity?: string | null; experience_summary?: string | null; certifications?: string | null; recurring_documents?: string | null; disqualifications_notes?: string | null; useful_company_info?: string | null; source_document_name?: string | null; rup_import_notes?: string | null; updated_at?: string | null; updated_by_name?: string | null };
 type Route = { page: 'home' | 'opportunities' | 'tenders' | 'detail' | 'new' | 'edit' | 'dashboard' | 'dashboard2' | 'consultant' | 'goals' | 'alerts' | 'centinel' | 'users' | 'siio' | 'invalid'; id?: string };
@@ -220,6 +223,7 @@ function fmtMoneyCompact(n: number | null | undefined) {
   return '$ 0 M';
 }
 function fmtDate(value?: string | null) { return value ? dateFmt.format(new Date(value)) : '—'; }
+function tenderDaysRemainingLabel(value: string | null | undefined) { if (!value) return 'Sin fecha'; const [year, month, day] = value.slice(0, 10).split('-').map(Number); const today = new Date(); const remaining = Math.round((Date.UTC(year, month - 1, day) - Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())) / 86_400_000); return remaining < 0 ? 'Vencida' : `${remaining} día(s)`; }
 function formatDisplayName(value?: string | null) {
   const cleaned = String(value || '').trim().replace(/\s+/g, ' ');
   if (!cleaned) return '—';
@@ -786,12 +790,17 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     </div>
     {o.service_type_code === 'licitacion_publica' && <TenderModuleNavigation active="oportunidades" navigate={go} currentProfile={data.currentProfile} />}
     {o.service_type_code === 'licitacion_publica' && <TenderDetailNavigation entity={o.company_name} sourceUrl={o.source_url} observations={o.observaciones} statusSnapshot={tenderNavigationSnapshot} onBack={() => go('#/tenders?view=oportunidades')} />}
-    <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Fecha creación" value={fmtDate(o.created_at)}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>
-    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} focusTargetRef={documentReviewRef} onNavigationStateChanged={(documents, analysis) => { if (activeDetailIdRef.current === o.id) { setTenderDocumentNavigationState(documents); setTenderAnalysisNavigationState(analysis); } }} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onReload={async()=>{await load(); await refresh();}} />}
+    {o.service_type_code === 'licitacion_publica' ? <>
+      <Panel title="Proceso oficial"><div className="grid three"><Info label="Entidad" value={o.company_name}/><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Fuente oficial" value={o.source_url ? 'Enlace disponible' : 'Sin enlace'}/></div></Panel>
+      <Panel title="Cronograma y cuantía"><div className="grid three"><Info label="Cierre oficial" value={fmtDate(o.expected_close_date)}/><Info label="Días restantes" value={tenderDaysRemainingLabel(o.expected_close_date)}/><Info label="Cuantía" value={fmtMoney(o.offer_value)}/></div></Panel>
+      <Panel title="Gestión interna"><div className="grid three"><Info label="Responsable" value={o.owner_name || 'Sin comercial'}/><Info label="Etapa" value={o.stage_name}/><Info label="Fecha de registro" value={fmtDate(o.created_at)}/></div></Panel>
+      <Panel title="Expediente y análisis"><div className="grid three"><Info label="Snapshot" value={tenderAnalysis?.snapshot_id || 'Pendiente'}/><Info label="Productor" value={tenderAnalysis ? tenderAnalysisMethodLabel(tenderAnalysis.producer) : 'Pendiente'}/><Info label="Estado" value={tenderAnalysis?.status || 'Esperando documentos'}/></div></Panel>
+    </> : <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Fecha creación" value={fmtDate(o.created_at)}/><Info label="Cierre estimado" value={fmtDate(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>}
+    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} currentProfile={data.currentProfile} focusTargetRef={documentReviewRef} onNavigationStateChanged={(documents, analysis) => { if (activeDetailIdRef.current === o.id) { setTenderDocumentNavigationState(documents); setTenderAnalysisNavigationState(analysis); } }} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onReload={async()=>{await load(); await refresh();}} />}
     {o.service_type_code === 'licitacion_publica' && <div id="tender-decision" className="tender-detail-anchor"><TenderGoNoGoDecisionPanel key={`tender-decision-${o.id}`} opportunityId={o.id} opportunityName={o.company_name || 'Oportunidad de licitación'} analysis={tenderAnalysis} currentProfile={data.currentProfile} request={api} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderDecisionNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /></div>}
     {o.service_type_code === 'licitacion_publica' && <div id="tender-preparation" className="tender-detail-anchor"><TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} currentProfile={data.currentProfile} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderPreparationNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /></div>}
-    <div id="tender-follow-up" className="tender-detail-anchor"><div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><div id="opportunity-follow-up" className="opportunity-follow-up-anchor" tabIndex={-1} ref={followUpRef}><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div></div>
-    <Panel title="Línea de seguimientos"><div className="timeline">{visibleInteractions.length ? visibleInteractions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel></div>
+    <div id="tender-follow-up" className="tender-detail-anchor">{o.service_type_code === 'licitacion_publica' ? <PublicTenderFollowUp opportunity={o} profiles={data.profiles} currentProfile={data.currentProfile} /> : <><div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><div id="opportunity-follow-up" className="opportunity-follow-up-anchor" tabIndex={-1} ref={followUpRef}><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div></div>
+    <Panel title="Línea de seguimientos"><div className="timeline">{visibleInteractions.length ? visibleInteractions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel></>}</div>
   </section>;
 }
 const tenderDocumentTypeOptions = [
@@ -805,8 +814,9 @@ function fileToBase64(file: File) {
     reader.readAsDataURL(file);
   });
 }
-function TenderDocumentReviewPanel({ opportunity, onReload, onAnalysisChanged, onNavigationStateChanged, focusTargetRef }: { opportunity: Opportunity; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; onNavigationStateChanged?: (documents: TenderPanelState<TenderDocumentNavigationValue>, analysis: TenderPanelState<TenderDocumentAnalysis | null>) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
+function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAnalysisChanged, onNavigationStateChanged, focusTargetRef }: { opportunity: Opportunity; currentProfile: Profile; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; onNavigationStateChanged?: (documents: TenderPanelState<TenderDocumentNavigationValue>, analysis: TenderPanelState<TenderDocumentAnalysis | null>) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
   const [payload, setPayload] = useState<TenderDocumentsPayload>({ documents: [], analysis: null, analyses: [] });
+  const [processingStatus, setProcessingStatus] = useState<TenderProcessingStatus | null>(null);
   const [statusText, setStatusText] = useState('');
   const [refreshResult, setRefreshResult] = useState<TenderDocumentRefreshResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -826,11 +836,18 @@ function TenderDocumentReviewPanel({ opportunity, onReload, onAnalysisChanged, o
     if (version !== requestVersionRef.current || activeOpportunityRef.current !== requestedId) return;
     setPayload(data); onAnalysisChanged?.(data.analysis || null); emitNavigationPayload(data);
   };
+  const loadProcessingStatus = async () => {
+    const requestedId = opportunity.id;
+    const state = await api<TenderProcessingStatus>(`/api/tender-processing-status?opportunity_id=${encodeURIComponent(requestedId)}`);
+    if (activeOpportunityRef.current === requestedId) setProcessingStatus(state);
+  };
   useEffect(() => {
     activeOpportunityRef.current = opportunity.id; requestVersionRef.current += 1;
-    setPayload({ documents: [], analysis: null, analyses: [] }); setRefreshResult(null); setStatusText(''); setBusy(false); onAnalysisChanged?.(null); onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
+    setPayload({ documents: [], analysis: null, analyses: [] }); setProcessingStatus(null); setRefreshResult(null); setStatusText(''); setBusy(false); onAnalysisChanged?.(null); onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
     void loadDocuments().catch(err => { if (activeOpportunityRef.current === opportunity.id) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'error', message }); } });
-    return () => { requestVersionRef.current += 1; };
+    void loadProcessingStatus().catch(err => { if (activeOpportunityRef.current === opportunity.id) setStatusText(err instanceof Error ? err.message : String(err)); });
+    const processingTimer = window.setInterval(() => void loadProcessingStatus().catch(() => undefined), 10_000);
+    return () => { requestVersionRef.current += 1; window.clearInterval(processingTimer); };
   }, [opportunity.id]);
   const addFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(event.currentTarget.files || []);
@@ -860,6 +877,15 @@ function TenderDocumentReviewPanel({ opportunity, onReload, onAnalysisChanged, o
     } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'ready', value: { currentDocumentCount: documents.filter(document => document.current !== false).length, importError: Boolean(payload.import_error) } }, { phase: 'error', message }); }
     finally { setBusy(false); }
   };
+  const analyzeDocumentsWithAgt002 = async () => {
+    setBusy(true); setStatusText('Ejecutando AGT-002 Preview con revisión humana obligatoria…');
+    try {
+      const data = await api<TenderDocumentsPayload>('/api/tender-documents-analyze-agent-preview', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
+      setPayload(data); onAnalysisChanged?.(data.analysis || null);
+      setStatusText(data.analysis_engine?.fallback ? 'AGT-002 no estuvo disponible; se aplicó fallback seguro por reglas.' : 'AGT-002 Preview completado. La recomendación requiere revisión humana.');
+    } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
+  };
   const importOfficialDocuments = async () => {
     setBusy(true); setStatusText('Actualizando documentos oficiales desde la fuente…');
     onNavigationStateChanged?.({ phase: 'pending', label: 'Importación documental en curso' }, { phase: 'ready', value: payload.analysis || null });
@@ -878,10 +904,22 @@ function TenderDocumentReviewPanel({ opportunity, onReload, onAnalysisChanged, o
     } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'ready', value: payload.analysis || null }); }
     finally { setBusy(false); }
   };
+  const retryDurableProcessing = async () => {
+    if (!processingStatus?.idempotency_key) return;
+    setBusy(true); setStatusText('Reintentando procesamiento documental…');
+    try {
+      await api('/api/tender-processing-retry', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, idempotency_key: processingStatus.idempotency_key }) });
+      await loadProcessingStatus(); setStatusText('Procesamiento reencolado.');
+    } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
+    finally { setBusy(false); }
+  };
+  const processingActive = Boolean(processingStatus && !['no_job', 'completed', 'cancelled'].includes(processingStatus.status));
+  const processingRetryable = Boolean(processingStatus?.idempotency_key && ['retry_wait', 'needs_attention'].includes(processingStatus.status));
   const sourceUrl = resolveTenderSourceUrl(opportunity.source_url, opportunity.observaciones);
   return <div id="tender-document-review" className="tender-guided-review" tabIndex={-1} ref={focusTargetRef}>
+    {processingActive && processingStatus && <div className="notice" role="status"><strong>Procesando documentos en segundo plano</strong><p>Paso actual: {processingStatus.current_step || processingStatus.status}. Procesados {processingStatus.counts.processed} de {processingStatus.counts.discovered}; importados {processingStatus.counts.imported}; sin cambios {processingStatus.counts.unchanged}; fallidos {processingStatus.counts.failed}.</p>{processingStatus.last_error_message && <p>{processingStatus.last_error_message}</p>}{processingStatus.failed_items.length > 0 && <ul>{processingStatus.failed_items.map(item => <li key={item.id}><strong>{item.name}</strong>: {item.last_error_message || item.last_error_code || item.status}</li>)}</ul>}{processingRetryable && <button type="button" disabled={busy} onClick={() => void retryDurableProcessing()}>Reintentar</button>}</div>}
     <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} sourceUrl={sourceUrl} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
-    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} onAnalyze={() => void analyzeDocuments()} />
+    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} onAnalyze={() => void analyzeDocuments()} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} analysisEngine={payload.analysis_engine} />
   </div>;
 }
 function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, onNavigationStateChanged }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void>; onNavigationStateChanged?: (state: TenderPanelState<TenderPreparationNavigationValue>) => void }) {
@@ -929,8 +967,8 @@ function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, o
       <TenderOfferStatusPanel opportunityId={opportunity.id} opportunityName={opportunity.company_name || 'Oportunidad de licitación'} currentProfile={currentProfile} request={api} onChanged={async () => { await loadPreparation(); await onChanged(); }} />
       {statusText && <div className="notice">{statusText}</div>}
       <div className="document-analysis-grid">
-        <section className="document-analysis-card"><small>Generar paquete inicial de preparación</small><strong>{authorizedPreparation.control_message || 'Paquete creado'}</strong><p>Documentos oficiales: {authorizedPreparation.checklist_summary?.official_documents || 0} · Automáticos: {authorizedPreparation.checklist_summary?.auto_generated || 0} · Requiere humano: {authorizedPreparation.checklist_summary?.human_required || 0}</p></section>
-        <section className="document-analysis-card"><small>Documentos genéricos automáticos</small><ul>{(authorizedPreparation.auto_generated_documents || []).map(doc => <li key={doc.key}><strong>{doc.name}</strong> · {doc.folder} · {doc.owner}</li>)}</ul></section>
+        <section className="document-analysis-card"><small>Plan inicial de preparación</small><strong>{authorizedPreparation.control_message || 'Plan registrado'}</strong><p>Documentos oficiales: {authorizedPreparation.checklist_summary?.official_documents || 0} · Planificados: {authorizedPreparation.checklist_summary?.planned ?? authorizedPreparation.checklist_summary?.auto_generated ?? 0} · Requiere humano: {authorizedPreparation.checklist_summary?.human_required || 0}</p></section>
+        <section className="document-analysis-card"><small>Documentos por generar</small><ul>{(authorizedPreparation.planned_documents || authorizedPreparation.auto_generated_documents || []).map(doc => <li key={doc.key}><strong>{doc.name}</strong> · {doc.folder} · {doc.owner}</li>)}</ul></section>
         <section className="document-analysis-card"><small>Requiere intervención humana</small><ul>{(authorizedPreparation.human_required_items || []).map(item => <li key={item.key}><strong>{item.title || item.name}</strong> · {item.owner}<br/><span className="muted">{item.reason}</span></li>)}</ul></section>
         <section className="document-analysis-card"><small>Carpeta SharePoint / OneDrive</small><strong>{authorizedPreparation.sharepoint_folder?.root_name}</strong><div className="document-matrix">{(authorizedPreparation.sharepoint_folder?.folders || []).slice(0, 8).map(folder => <div key={folder}><Badge tone="blue">carpeta</Badge><span>{folder}</span></div>)}</div></section>
         <section className="document-analysis-card"><small>Notas para el asistente</small><ul>{(authorizedPreparation.assistant_notes || []).map(item => <li key={item}>{item}</li>)}</ul>{payload.notes?.length ? <div className="timeline">{payload.notes.slice(-4).map((n, idx) => <div className="event" key={`${n.created_at}-${idx}`}><strong>{n.status || 'nota'}</strong><span>{fmtDate(n.created_at)} · {n.created_by_name || n.created_by || 'Usuario'}</span><p>{n.note}</p></div>)}</div> : null}</section>
@@ -957,6 +995,43 @@ function FollowUpForm({ opportunityId, profiles, currentProfile, onSaved }: { op
   const [form, setForm] = useState({ interaction_type: 'nota', notes: '', occurred_at: new Date().toISOString().slice(0,16), created_by: currentProfile.id, next_action_at: '' }); const [status, setStatus] = useState('');
   const save = async (e: React.FormEvent) => { e.preventDefault(); setStatus('Guardando…'); try { await api(`/api/opportunity-interactions?id=${encodeURIComponent(opportunityId)}`, { method:'POST', body: JSON.stringify({ ...form, occurred_at: new Date(form.occurred_at).toISOString(), next_action_at: form.next_action_at ? new Date(form.next_action_at).toISOString() : null, created_by: form.created_by || null }) }); setForm({...form, notes:''}); setStatus('Seguimiento registrado.'); await onSaved(); } catch(err) { setStatus(err instanceof Error ? err.message : String(err)); } };
   return <Panel title="Registrar seguimiento"><form onSubmit={save} className="form"><Select value={form.interaction_type} onChange={v=>setForm({...form, interaction_type:v})} options={interactionTypes.map(t=>[t,t])} empty="Tipo"/>{profiles.length > 1 && <Select value={form.created_by} onChange={v=>setForm({...form, created_by:v})} options={profiles.map(p=>[p.id,p.full_name])} empty="Quién registra"/>}<label>Fecha del seguimiento<input type="datetime-local" value={form.occurred_at} onChange={e=>setForm({...form, occurred_at:e.target.value})}/></label><label>Programar próxima gestión<input type="datetime-local" value={form.next_action_at} onChange={e=>setForm({...form, next_action_at:e.target.value})}/></label><textarea required placeholder="Nota del seguimiento" value={form.notes} onChange={e=>setForm({...form, notes:e.target.value})}/><button>Guardar seguimiento</button>{status && <small>{status}</small>}</form></Panel>;
+}
+const publicActuationOptions = [['requirement_pending','Requerimiento pendiente'],['information_requested','Información solicitada'],['addendum_reviewed','Adenda revisada'],['observation_recorded','Observación registrada'],['internal_meeting','Reunión interna'],['case_note','Nota del caso']];
+function publicActuationLabel(value: string) { return publicActuationOptions.find(([code]) => code === value)?.[1] || value.split('_').join(' '); }
+function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { opportunity: Opportunity; profiles: Profile[]; currentProfile: Profile }) {
+  const [events, setEvents] = useState<TenderTrackingEvent[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [type, setType] = useState('case_note');
+  const [note, setNote] = useState('');
+  const [status, setStatus] = useState('');
+  const [loading, setLoading] = useState(false);
+  const loadPage = async (cursor: string | null) => {
+    setLoading(true);
+    try {
+      const page = await loadTrackingEvents(api, opportunity.id, cursor);
+      setEvents(current => cursor ? [...current, ...page.events] : page.events);
+      setNextCursor(page.next_cursor);
+    } finally { setLoading(false); }
+  };
+  useEffect(() => {
+    setEvents([]); setNextCursor(null); setStatus('');
+    void loadPage(null).catch(error => setStatus(error instanceof Error ? error.message : String(error)));
+  }, [opportunity.id]);
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault(); setStatus('Guardando actuación…');
+    try {
+      await postActuation(api, { tender_id: opportunity.id, type, note });
+      setNote(''); setStatus('Actuación registrada.');
+      await loadPage(null);
+    } catch (error) { setStatus(error instanceof Error ? error.message : String(error)); }
+  };
+  const actorLabel = (event: TenderTrackingEvent) => event.actor_kind === 'system' ? 'Sistema' : profiles.find(profile => profile.id === event.created_by)?.full_name || (event.actor_kind === 'agent' ? 'Agente SIIO' : 'Usuario registrado');
+  const eventLink = (event: TenderTrackingEvent) => typeof event.metadata?.source_url === 'string' ? event.metadata.source_url : null;
+  return <div className="stack">
+    <Panel title="Datos del proceso"><dl><Dt label="Entidad" value={opportunity.company_name}/><Dt label="Sector" value={opportunity.economic_sector}/><Dt label="Ciudad" value={opportunity.quote_city}/><Dt label="Cierre oficial" value={fmtDate(opportunity.expected_close_date)}/><Dt label="Cuantía" value={fmtMoney(opportunity.offer_value)}/></dl>{opportunity.source_url && <a href={opportunity.source_url} target="_blank" rel="noreferrer">Abrir fuente oficial</a>}</Panel>
+    <Panel title="Registrar actuación o novedad"><form onSubmit={save} className="form"><Select value={type} onChange={setType} options={publicActuationOptions} empty="Tipo de actuación"/><textarea required placeholder="Describe la actuación o novedad del proceso" value={note} onChange={event => setNote(event.target.value)}/><small>Registrado por: {currentProfile.full_name}</small><button disabled={!note.trim()}>Guardar actuación</button>{status && <small>{status}</small>}</form></Panel>
+    <Panel title="Historial del proceso"><div className="timeline">{events.length ? events.map(event => <div className="event" key={event.id}><strong>{publicActuationLabel(event.event_type)}</strong><span>{fmtDate(event.created_at)} · {actorLabel(event)}</span>{event.note && <p>{event.note}</p>}{eventLink(event) && <a href={eventLink(event) || undefined} target="_blank" rel="noreferrer">Ver fuente asociada</a>}</div>) : <p className="muted">{loading ? 'Cargando historial…' : 'Sin actuaciones registradas.'}</p>}</div>{nextCursor && <button className="secondary" disabled={loading} onClick={() => void loadPage(nextCursor).catch(error => setStatus(error instanceof Error ? error.message : String(error)))}>{loading ? 'Cargando…' : 'Cargar más'}</button>}</Panel>
+  </div>;
 }
 function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; refresh: () => Promise<void> }) {
   const existing = id ? data.opportunities.find(o => o.id === id) : undefined;
@@ -2335,7 +2410,7 @@ function CentinelAssistant({ data }: { data: Bootstrap }) {
       {!!result.ownerSummaryRows?.length && <div className="tablewrap centinel-summary-table"><table><thead><tr><th>Comercial</th><th>Oportunidades</th><th>Valor asociado</th><th>Acción sugerida</th></tr></thead><tbody>{result.ownerSummaryRows.map(row => <tr key={row.owner}><td><strong>{row.owner}</strong></td><td>{row.count}</td><td>{fmtMoney(row.value)}</td><td>{row.nextStep}</td></tr>)}</tbody></table></div>}
       {!!result.goalComplianceRows?.length && <div className="tablewrap centinel-summary-table"><table><thead><tr><th>Comercial</th><th>Mes</th><th>Meta</th><th>Ventas aprobadas</th><th>Cumplimiento</th><th>Brecha</th></tr></thead><tbody>{result.goalComplianceRows.map(row => <tr key={`${row.owner}-${row.period}`}><td><strong>{row.owner}</strong></td><td>{row.period}</td><td>{fmtMoney(row.budget)}</td><td>{fmtMoney(row.approved)}</td><td><Badge tone={row.compliance >= 100 ? 'success' : row.compliance >= 80 ? 'amber' : 'danger'}>{row.compliance}%</Badge></td><td>{row.gap ? fmtMoney(row.gap) : 'Superada'}</td></tr>)}</tbody></table></div>}
       {isTenderResult && <div className="tablewrap centinel-result-table"><table><thead><tr><SortableTh label="Entidad" sortKey="entity" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Sección" sortKey="section" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Estado interno" sortKey="status" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Valor" sortKey="value" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Cierre" sortKey="deadline" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/><SortableTh label="Score" sortKey="score" sortConfig={centinelTenderSortConfig} onSort={sortCentinelTenderBy}/></tr></thead><tbody>{visibleTenderRows.map(t => (
-        <tr key={t.id} className="clickable" onClick={() => go(tenderDeepLink(t))}><td><strong>{t.entity}</strong><br/><small>{t.ref || t.process_id || t.city || '—'}</small></td><td><Badge tone={t.section === 'hacer' ? 'amber' : t.section === 'descartar' ? 'danger' : 'blue'}>{t.section === 'hacer' ? 'Hacer hoy' : t.section === 'revisar' ? 'Revisar' : 'Validar'}</Badge></td><td><Badge tone={tenderStatusTone(t.internal_status)}>{tenderStatusLabel(t.internal_status)}</Badge></td><td>{fmtMoney(t.value)}</td><td>{fmtDate(t.deadline)}</td><td>{t.score}</td></tr>
+        <tr key={t.id} className="clickable" onClick={() => go(tenderDeepLink(t))}><td><strong>{t.entity}</strong><br/><small>{t.ref || t.process_id || t.city || '—'}</small></td><td><Badge tone={t.section === 'hacer' ? 'amber' : t.section === 'prioridad_baja' ? 'blue' : 'blue'}>{t.section === 'hacer' ? 'Hacer hoy' : t.section === 'revisar' ? 'Revisar' : 'Prioridad baja'}</Badge></td><td><Badge tone={tenderStatusTone(t.internal_status)}>{tenderStatusLabel(t.internal_status)}</Badge></td><td>{fmtMoney(t.value)}</td><td>{t.deadline ? fmtDate(t.deadline) : 'Sin fecha'}</td><td>Score {t.score}</td></tr>
       ))}</tbody></table></div>}
       {!isTenderResult && result.mode !== 'goals' && <div className="tablewrap centinel-result-table"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Comercial" sortKey="owner" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Valor" sortKey="value" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/><SortableTh label="Días sin seguimiento" sortKey="inactive" sortConfig={centinelOpportunitySortConfig} onSort={sortCentinelOpportunityBy}/></tr></thead><tbody>{visibleRows.map(o => {
         const action = nextActionStatus(o);
@@ -2550,6 +2625,13 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
   const selectedModuleNames = form.permissions
     .filter(permission => MODULE_PERMISSION_CODES.includes(permission))
     .map(permission => moduleNamesByCode.get(permission) || catalog.permissions.find(item => item.code === permission)?.name || formatDisplayName(permission));
+  const capabilityNamesByCode = new Map(CAPABILITY_PERMISSIONS.map(capability => [capability.code, capability.name]));
+  const capabilityPermissions = catalog.permissions
+    .filter(permission => CAPABILITY_PERMISSION_CODES.includes(permission.code))
+    .map(permission => ({ ...permission, name: capabilityNamesByCode.get(permission.code) || permission.name }));
+  const selectedCapabilityNames = form.permissions
+    .filter(permission => CAPABILITY_PERMISSION_CODES.includes(permission))
+    .map(permission => capabilityNamesByCode.get(permission) || catalog.permissions.find(item => item.code === permission)?.name || formatDisplayName(permission));
   const sortedUsers = [...users].sort((a,b) => {
     const value = (u: Profile) => usersSortConfig.key === 'name' ? u.full_name : usersSortConfig.key === 'email' ? u.microsoft_email : usersSortConfig.key === 'role' ? u.role : usersSortConfig.key === 'area' ? scopesLabel(u) : usersSortConfig.key === 'permission' ? permissionsLabel(u) : usersSortConfig.key === 'segment' ? (u.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado') : (u.active ? 'Activo' : 'Inactivo');
     return compareSortValues(value(a), value(b), usersSortConfig.direction);
@@ -2583,7 +2665,18 @@ function UsersAdmin({ currentProfile }: { currentProfile: Profile }) {
         </label>)}
         {catalogStatus === 'ready' && eligibleModules.length === 0 && <p className="muted">Este rol no tiene módulos elegibles.</p>}
       </fieldset>
-      <aside className="access-permission wide"><strong>Resumen antes de guardar</strong><small>Módulos seleccionados: {selectedModuleNames.length ? selectedModuleNames.join(', ') : 'Ninguno'}</small><small>Áreas asignadas: {form.areas.length ? form.areas.map(scopeLabel).join(', ') : 'Sin alcance asignado'}</small></aside>
+      <fieldset className="access-permission wide">
+        <legend>Capacidades operativas exclusivas</legend>
+        <p>Asigna solo a la persona responsable. Estas capacidades no crean módulos ni navegación adicional.</p>
+        {catalogStatus === 'ready' && capabilityPermissions.map(permission => <label className="checkline" key={permission.code}>
+          <input type="checkbox" checked={form.permissions.includes(permission.code)} onChange={e => setForm(current => ({
+            ...current,
+            permissions: e.target.checked ? [...new Set([...current.permissions, permission.code])] : current.permissions.filter(item => item !== permission.code),
+          }))}/>
+          {permission.name}<small>{permission.description}</small>
+        </label>)}
+      </fieldset>
+      <aside className="access-permission wide"><strong>Resumen antes de guardar</strong><small>Módulos seleccionados: {selectedModuleNames.length ? selectedModuleNames.join(', ') : 'Ninguno'}</small><small>Capacidades exclusivas: {selectedCapabilityNames.length ? selectedCapabilityNames.join(', ') : 'Ninguna'}</small><small>Áreas asignadas: {form.areas.length ? form.areas.map(scopeLabel).join(', ') : 'Sin alcance asignado'}</small></aside>
       <label className="checkline"><input type="checkbox" checked={!!form.can_edit_customer_segment} onChange={e=>setForm({...form, can_edit_customer_segment:e.target.checked})}/> Habilitar edición posterior de Cliente Nuevo / Cliente Actual</label>{!editingUserId && <label>Clave temporal<input type="password" minLength={8} value={form.password || ''} onChange={e=>setForm({...form, password:e.target.value})} placeholder={form.send_invite ? 'Opcional si envías correo' : 'Mínimo 8 caracteres'}/></label>}<label>Estado<Select value={form.active ? 'true' : 'false'} onChange={v=>setForm({...form, active:v==='true'})} options={[['true','Activo'],['false','Inactivo']]} empty="Estado"/></label><label className="checkline"><input type="checkbox" checked={!!form.send_invite} onChange={e=>setForm({...form, send_invite:e.target.checked})}/> {editingUserId ? 'Enviar correo seguro para definir o restablecer acceso' : 'Enviar correo de invitación para activar el acceso'}</label><div className="formactions"><button disabled={catalogStatus !== 'ready'}>{editingUserId ? 'Actualizar usuario' : 'Guardar usuario'}</button>{editingUserId && <button type="button" className="secondary" onClick={cancelEdit}>Cancelar edición</button>}{status && <span>{status}</span>}</div>
     </form></Panel></div>
     <Panel title="Perfiles actuales"><div className="tablewrap"><table><thead><tr><SortableTh label="Nombre" sortKey="name" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Email" sortKey="email" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Rol" sortKey="role" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Áreas" sortKey="area" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Permisos" sortKey="permission" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Segmento" sortKey="segment" sortConfig={usersSortConfig} onSort={sortUsersBy}/><SortableTh label="Estado" sortKey="status" sortConfig={usersSortConfig} onSort={sortUsersBy}/><th>Acciones</th></tr></thead><tbody>{sortedUsers.map(p => <tr key={p.id}><td><strong>{p.full_name}</strong></td><td>{p.microsoft_email}</td><td><Badge>{roleLabel(p.role)}</Badge></td><td>{scopesLabel(p)}</td><td>{permissionsLabel(p)}</td><td>{p.can_edit_customer_segment ? 'Puede editar' : 'Bloqueado'}</td><td>{p.active ? 'Activo' : 'Inactivo'}</td><td><button type="button" className="secondary" onClick={() => startEdit(p)}>Editar</button></td></tr>)}</tbody></table></div></Panel>

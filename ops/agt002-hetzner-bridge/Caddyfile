@@ -1,0 +1,7 @@
+# Artefacto declarativo: revisar y aplicar manualmente en el Gate 7.4. No aplicado por este cambio.
+# Host canónico: AGT002_BRIDGE_HOST=agt002.5-78-140-24.sslip.io.
+# Si el DNS efectivo exige la forma con puntos, usar explícitamente
+# AGT002_BRIDGE_HOST=agt002.5.78.140.24.sslip.io y regenerar/revisar este vhost antes de aplicarlo.
+agt002.5-78-140-24.sslip.io {
+	reverse_proxy 127.0.0.1:8787
+}

@@ -56,7 +56,7 @@ const fakeSupabase = http.createServer((req, res) => {
   if (url.pathname === '/auth/v1/user') return json(res, 200, actor.user);
   if (url.pathname === '/rest/v1/psi_sales_profiles') return json(res, 200, actor.profile);
   if (url.pathname === '/rest/v1/psi_profile_area_assignments') return json(res, 200, []);
-  if (url.pathname === '/rest/v1/psi_profile_permissions') return json(res, 200, [{ permission_code: 'licitaciones' }]);
+  if (url.pathname === '/rest/v1/psi_profile_permissions') return json(res, 200, [{ permission_code: 'licitaciones' }, { permission_code: 'licitaciones_custodia' }]);
   if (url.pathname === '/rest/v1/psi_company_procurement_profile') return json(res, 200, { singleton_key: 'seguridad_nacional', legal_name: 'Seguridad Nacional', updated_by: null });
   if (url.pathname === '/rest/v1/psi_company_procurement_documents') return json(res, 200, state.documents);
   if (url.pathname === '/rest/v1/rpc/psi_record_company_procurement_document') {

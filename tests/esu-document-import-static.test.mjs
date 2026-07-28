@@ -17,7 +17,7 @@ for (const file of [server, api]) {
   assert(!/downloadEsuDocument[\s\S]{0,300}fetch\(doc\.url/.test(file), 'ESU no debe usar fetch directo sobre href del HTML.');
   assert(!/downloadSecopDocument[\s\S]{0,350}fetch\(doc\.url_descarga_documento\.url/.test(file), 'SECOP no debe usar fetch directo sobre URL entregada por datos.gov.');
   assert(file.includes("source: 'ESU Contratación'"), 'La interacción documental debe identificar fuente ESU Contratación.');
-  assert(file.includes("tender.source === 'ESU Contratación'"), 'La conversión a oportunidad debe disparar importación automática para ESU.');
+  assert(file.includes("canonicalTender.source === 'ESU Contratación'"), 'La conversión a oportunidad debe disparar importación automática para ESU usando la fuente canónica persistida.');
   assert(file.includes('community.secop.gov.co') && file.includes('esucontratacion.com'), 'El importador oficial debe soportar SECOP II y ESU, no solo SECOP.');
   assert(!file.includes('La importación automática solo está disponible para enlaces SECOP II'), 'El mensaje no debe bloquear ESU como carga manual.');
   assert(file.includes("errorPrefix: 'ESU'"), 'Los errores por documento ESU deben quedar identificados sin tumbar todo el lote.');

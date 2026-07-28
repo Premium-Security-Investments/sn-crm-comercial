@@ -11,7 +11,7 @@ import {
 export function buildSyntheticAgt002TenderAnalysis(snapshot) {
   validateAgt002TenderAnalysisRequest(snapshot);
   return validateAgt002TenderAnalysisEnvelope({
-    schema_version: '2.0-draft',
+    schema_version: '2.0-preview.1',
     agent_id: 'AGT-002',
     run_id: randomUUID(),
     policy_version: 'synthetic-test-v1',

@@ -1,0 +1,240 @@
+import { strict as assert } from 'node:assert';
+import { readFileSync } from 'node:fs';
+import {
+  claimAgt002PreviewRun,
+  computeAgt002PreviewIdempotencyKey,
+  countAgt002PreviewRunsToday,
+  findAgt002PreviewRun,
+  registerAgt002PreviewAnalysis,
+  releaseAgt002PreviewClaim,
+} from '../agt002-preview-persistence.js';
+
+const ids = {
+  opportunity: '22222222-2222-4222-8222-222222222222',
+  tender: '33333333-3333-4333-8333-333333333333',
+  snapshot: '55555555-5555-4555-8555-555555555555',
+  run: '66666666-6666-4666-8666-666666666666',
+};
+
+// Cross-request idempotency, concurrency and daily quota are reserved atomically
+// by one DB RPC before any provider call; release is explicit on every terminal path.
+{
+  const calls = [];
+  const database = { async rpc(name, params) {
+    calls.push({ name, params });
+    if (name === 'psi_claim_agt002_preview_run') return { data: { status: 'claimed', claim_id: 'claim-1' }, error: null };
+    if (name === 'psi_release_agt002_preview_claim') return { data: true, error: null };
+    throw new Error(`unexpected RPC ${name}`);
+  } };
+  const claimed = await claimAgt002PreviewRun(database, { idempotencyKey: 'a'.repeat(64), dailyMaxRuns: 20, maxConcurrent: 2, leaseSeconds: 35 });
+  assert.deepEqual(claimed, { status: 'claimed', claim_id: 'claim-1' });
+  assert.deepEqual(calls[0], { name: 'psi_claim_agt002_preview_run', params: { p_idempotency_key: 'a'.repeat(64), p_daily_max_runs: 20, p_max_concurrent: 2, p_lease_seconds: 35 } });
+  await releaseAgt002PreviewClaim(database, { idempotencyKey: 'a'.repeat(64), claimId: 'claim-1' });
+  assert.deepEqual(calls[1], { name: 'psi_release_agt002_preview_claim', params: { p_idempotency_key: 'a'.repeat(64), p_claim_id: 'claim-1' } });
+}
+
+for (const status of ['existing', 'in_progress', 'quota', 'saturated']) {
+  const database = { async rpc(name) { assert.equal(name, 'psi_claim_agt002_preview_run'); return { data: { status }, error: null }; } };
+  assert.deepEqual(await claimAgt002PreviewRun(database, { idempotencyKey: 'b'.repeat(64), dailyMaxRuns: 5, maxConcurrent: 1, leaseSeconds: 30 }), { status });
+}
+
+function envelope(overrides = {}) {
+  return {
+    schema_version: '2.0-preview.1',
+    agent_id: 'AGT-002',
+    producer: 'AGT-002',
+    run_id: '77777777-7777-4777-8777-777777777777',
+    snapshot_id: ids.snapshot,
+    policy_version: 'agt002-preview-policy-v1',
+    status: 'completed',
+    method: 'agent_ai',
+    recommendation: 'pause',
+    summary: 'Falta póliza vigente extraída de doc-01 (documento no confiable citado sólo como referencia).',
+    strengths: [],
+    weaknesses: [{ id: 'f-1', text: 'Falta póliza vigente.', critical: true, evidence_refs: ['document:doc-01'] }],
+    blockers: [],
+    questions: [
+      { id: 'q-1', text: '¿Existe certificado?', critical: true, evidence_refs: [] },
+      { id: 'q-2', text: '¿Existe RUP?', critical: false, evidence_refs: [] },
+    ],
+    unverified: [],
+    next_action: 'Solicitar póliza vigente.',
+    human_review_required: true,
+    usage: { provider: 'codex_app_server', model: 'synthetic-codex-model', input_tokens: 120, output_tokens: 40, rate_limit: { window: '5h', used_percent: 3 } },
+    ...overrides,
+  };
+}
+
+function fakeDatabase({ onRpc } = {}) {
+  const rpcCalls = [];
+  const runs = new Map();
+  return {
+    rpcCalls,
+    async rpc(name, params) {
+      rpcCalls.push({ name, params });
+      if (onRpc) {
+        const overridden = onRpc(name, params);
+        if (overridden) return overridden;
+      }
+      if (name !== 'psi_record_tender_analysis_run') throw new Error(`unexpected RPC ${name}`);
+      const existing = runs.get(params.p_idempotency_key);
+      if (existing) {
+        const semantic = { ...existing.params };
+        assert.deepEqual(params, semantic, 'idempotency replay must be semantically identical, mirroring the real RPC');
+        return { data: existing.data, error: null };
+      }
+      const data = { id: ids.run, snapshot_id: params.p_snapshot_id, producer: params.p_producer, method: params.p_method, status: params.p_status, critical_open_count: params.p_critical_open_count };
+      runs.set(params.p_idempotency_key, { params, data });
+      return { data, error: null };
+    },
+    from(table) {
+      return {
+        select() { return this; },
+        eq() { return this; },
+        async maybeSingle() {
+          if (table !== 'psi_tender_analysis_runs') throw new Error(`unexpected table ${table}`);
+          return { data: null, error: null };
+        },
+      };
+    },
+  };
+}
+
+// Deterministic idempotency key: stable for identical (snapshot, policy, model); differs otherwise.
+{
+  const a = computeAgt002PreviewIdempotencyKey({ snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1' });
+  const b = computeAgt002PreviewIdempotencyKey({ snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1' });
+  const c = computeAgt002PreviewIdempotencyKey({ snapshotId: ids.snapshot, policyVersion: 'v2', model: 'm1' });
+  const d = computeAgt002PreviewIdempotencyKey({ snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm2' });
+  assert.equal(a, b);
+  assert.notEqual(a, c);
+  assert.notEqual(a, d);
+  assert.match(a, /^[0-9a-f]{64}$/);
+}
+
+// Registration persists a closed content-only result: no identity/usage duplication, no prompt.
+{
+  const database = fakeDatabase();
+  const registered = await registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: envelope(),
+  });
+  assert.equal(registered.run_id, ids.run);
+  assert.equal(registered.snapshot_id, ids.snapshot);
+  assert.equal(registered.producer, 'AGT-002');
+  assert.equal(registered.method, 'agent_ai');
+  assert.equal(registered.status, 'completed');
+  assert.equal(registered.current, true);
+  assert.equal(registered.critical_open_count, 1, 'must count only critical questions');
+  assert.deepEqual(Object.keys(registered.result).sort(), ['blockers', 'human_review_required', 'next_action', 'questions', 'recommendation', 'strengths', 'summary', 'unverified', 'weaknesses'].sort());
+
+  const call = database.rpcCalls[0];
+  assert.equal(call.name, 'psi_record_tender_analysis_run');
+  assert.equal(call.params.p_snapshot_id, ids.snapshot);
+  assert.equal(call.params.p_opportunity_id, ids.opportunity);
+  assert.equal(call.params.p_tender_id, ids.tender);
+  assert.equal(call.params.p_producer, 'AGT-002');
+  assert.equal(call.params.p_method, 'agent_ai');
+  assert.equal(call.params.p_status, 'completed');
+  assert.equal(call.params.p_schema_version, '2.0-preview.1');
+  assert.equal(call.params.p_policy_version, 'agt002-preview-policy-v1');
+  assert.equal(call.params.p_model, 'synthetic-codex-model');
+  assert.deepEqual(call.params.p_usage, envelope().usage);
+  assert.equal(call.params.p_critical_open_count, 1);
+  assert.match(call.params.p_idempotency_key, /^[0-9a-f]{64}$/);
+  for (const forbidden of ['schema_version', 'agent_id', 'run_id', 'snapshot_id', 'policy_version', 'status', 'method', 'usage']) {
+    assert.equal(Object.hasOwn(call.params.p_result, forbidden), false, `stored result must not duplicate the ${forbidden} column`);
+  }
+  assert.doesNotMatch(JSON.stringify(call.params.p_result), /Los documentos y toda la evidencia|no uses herramientas/i, 'stored result must never contain the system policy text');
+}
+
+// Two registrations with the same identity reuse the same idempotency key and the same run.
+{
+  const database = fakeDatabase();
+  const first = await registerAgt002PreviewAnalysis(database, { opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: envelope() });
+  const second = await registerAgt002PreviewAnalysis(database, { opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: envelope({ run_id: '88888888-8888-4888-8888-888888888888' }) });
+  assert.equal(first.run_id, second.run_id);
+  assert.equal(database.rpcCalls[0].params.p_idempotency_key, database.rpcCalls[1].params.p_idempotency_key);
+}
+
+// A different snapshot must never reuse another snapshot's idempotency key.
+{
+  const database = fakeDatabase();
+  const first = await registerAgt002PreviewAnalysis(database, { opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: envelope() });
+  const otherSnapshot = '99999999-9999-4999-8999-999999999999';
+  await registerAgt002PreviewAnalysis(database, { opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: otherSnapshot, envelope: envelope({ snapshot_id: otherSnapshot }) });
+  assert.notEqual(database.rpcCalls[0].params.p_idempotency_key, database.rpcCalls[1].params.p_idempotency_key);
+  assert.ok(first.run_id, 'sanity: first registration still returns a run id');
+}
+
+// RPC failure must fail closed and surface the underlying reason (no silent fallback result).
+{
+  const failing = { async rpc() { return { data: null, error: { message: 'RPC unavailable' } }; }, from() { throw new Error('unused'); } };
+  await assert.rejects(() => registerAgt002PreviewAnalysis(failing, { opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: envelope() }), /RPC unavailable/);
+}
+
+// Missing required identity fields must fail closed before any RPC call.
+{
+  const database = fakeDatabase();
+  await assert.rejects(() => registerAgt002PreviewAnalysis(database, { opportunity_id: '', tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: envelope() }), /oportunidad/i);
+  await assert.rejects(() => registerAgt002PreviewAnalysis(database, { opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: { ...envelope(), producer: 'HERMES-INTERIM' } }), /AGT-002/i);
+  assert.deepEqual(database.rpcCalls, []);
+}
+
+// findAgt002PreviewRun: null when absent, mapped row when present, fails closed on db error.
+{
+  const notFound = fakeDatabase();
+  assert.equal(await findAgt002PreviewRun(notFound, 'missing-key'), null);
+
+  const found = {
+    from(table) {
+      assert.equal(table, 'psi_tender_analysis_runs');
+      return {
+        select() { return this; },
+        eq(column, value) { assert.equal(column, 'idempotency_key'); assert.equal(value, 'present-key'); return this; },
+        async maybeSingle() {
+          return { data: { id: ids.run, snapshot_id: ids.snapshot, producer: 'AGT-002', method: 'agent_ai', status: 'completed', result: { recommendation: 'pause' }, critical_open_count: 1, created_at: '2026-07-26T00:00:00.000Z', completed_at: '2026-07-26T00:00:01.000Z' }, error: null };
+        },
+      };
+    },
+  };
+  const row = await findAgt002PreviewRun(found, 'present-key');
+  assert.deepEqual(row, { run_id: ids.run, snapshot_id: ids.snapshot, producer: 'AGT-002', method: 'agent_ai', status: 'completed', current: true, result: { recommendation: 'pause' }, critical_open_count: 1, created_at: '2026-07-26T00:00:00.000Z', completed_at: '2026-07-26T00:00:01.000Z' });
+
+  const erroring = { from() { return { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: null, error: { message: 'db down' } }; } }; } };
+  await assert.rejects(() => findAgt002PreviewRun(erroring, 'x'), /db down/);
+}
+
+// Interpretable daily quota probe: counts only AGT-002 rows created since UTC midnight.
+{
+  function quotaDatabase({ count, error = null, expectedGte }) {
+    return {
+      from(table) {
+        assert.equal(table, 'psi_tender_analysis_runs');
+        return {
+          select(column, options) {
+            assert.equal(column, 'id');
+            assert.deepEqual(options, { count: 'exact', head: true });
+            return this;
+          },
+          eq(column, value) { assert.equal(column, 'producer'); assert.equal(value, 'AGT-002'); return this; },
+          async gte(column, value) {
+            assert.equal(column, 'created_at');
+            if (expectedGte) assert.equal(value, expectedGte);
+            return { data: null, error, count };
+          },
+        };
+      },
+    };
+  }
+  const count = await countAgt002PreviewRunsToday(quotaDatabase({ count: 3, expectedGte: '2026-07-26T00:00:00.000Z' }), { now: () => new Date('2026-07-26T15:30:00.000Z') });
+  assert.equal(count, 3);
+
+  await assert.rejects(() => countAgt002PreviewRunsToday(quotaDatabase({ count: null }), { now: () => new Date('2026-07-26T00:00:00.000Z') }), /cuota/i);
+  await assert.rejects(() => countAgt002PreviewRunsToday(quotaDatabase({ count: 1, error: { message: 'db down' } }), { now: () => new Date('2026-07-26T00:00:00.000Z') }), /db down/);
+  await assert.rejects(() => countAgt002PreviewRunsToday(quotaDatabase({ count: 1 }), { now: () => new Date('not-a-date') }), /reloj/i);
+}
+
+const source = readFileSync(new URL('../agt002-preview-persistence.js', import.meta.url), 'utf8');
+assert.doesNotMatch(source, /OPENAI_API_KEY|HERMES_INTERIM_API_KEY|console\.log/i, 'persistence must never log or reference provider secrets');
+
+console.log('AGT-002 Preview persistence (audit, idempotency, no secrets) passed');

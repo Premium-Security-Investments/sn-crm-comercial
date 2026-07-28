@@ -1,0 +1,155 @@
+import { createHash } from 'node:crypto';
+
+const CONTENT_KEYS = ['recommendation', 'summary', 'strengths', 'weaknesses', 'blockers', 'questions', 'unverified', 'next_action', 'human_review_required'];
+
+function requireId(value, label) {
+  if (!value || typeof value !== 'string') throw new Error(`${label} es obligatorio para registrar AGT-002 Preview.`);
+  return value;
+}
+
+function countCriticalOpenQuestions(content) {
+  return Array.isArray(content?.questions) ? content.questions.filter(question => question?.critical === true).length : 0;
+}
+
+function unwrapRpc(response) {
+  if (response?.error) throw new Error(response.error.message || String(response.error));
+  if (!response || response.data == null) throw new Error('La RPC de AGT-002 Preview no devolvió un resultado.');
+  return response.data;
+}
+
+/** Deterministic per (snapshot, policy, model): the DB enforces a single successful run per identity. */
+export function computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model }) {
+  return createHash('sha256').update(`agt002-preview\0${snapshotId}\0${policyVersion}\0${model}`).digest('hex');
+}
+
+/** Atomically reserves one cross-request provider slot in PostgreSQL. */
+export async function claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns, maxConcurrent, leaseSeconds }) {
+  const key = requireId(idempotencyKey, 'La clave de idempotencia');
+  if (![dailyMaxRuns, maxConcurrent, leaseSeconds].every(value => Number.isInteger(value) && value > 0)) {
+    throw new Error('Los límites de la reserva AGT-002 Preview no son válidos.');
+  }
+  const result = unwrapRpc(await database.rpc('psi_claim_agt002_preview_run', {
+    p_idempotency_key: key,
+    p_daily_max_runs: dailyMaxRuns,
+    p_max_concurrent: maxConcurrent,
+    p_lease_seconds: leaseSeconds,
+  }));
+  const status = result?.status;
+  if (!['claimed', 'existing', 'in_progress', 'quota', 'saturated'].includes(status)) {
+    throw new Error('La reserva AGT-002 Preview devolvió un estado inválido.');
+  }
+  if (status === 'claimed' && (typeof result.claim_id !== 'string' || !result.claim_id)) {
+    throw new Error('La reserva AGT-002 Preview no devolvió su identificador.');
+  }
+  return status === 'claimed' ? { status, claim_id: result.claim_id } : { status };
+}
+
+/** Releases a provider slot after persistence or a failed attempt; stale leases also expire in DB. */
+export async function releaseAgt002PreviewClaim(database, { idempotencyKey, claimId }) {
+  const key = requireId(idempotencyKey, 'La clave de idempotencia');
+  const claim = requireId(claimId, 'La reserva');
+  const released = unwrapRpc(await database.rpc('psi_release_agt002_preview_claim', {
+    p_idempotency_key: key,
+    p_claim_id: claim,
+  }));
+  if (released !== true) throw new Error('No fue posible liberar la reserva AGT-002 Preview.');
+  return true;
+}
+
+/**
+ * Persists a completed AGT-002 Preview run via the existing append-only RPC.
+ * Only the model's own closed findings are stored: no prompt, no document
+ * text, no policy text, and no credential ever reaches this module.
+ */
+export async function registerAgt002PreviewAnalysis(database, context) {
+  const opportunityId = requireId(context?.opportunity_id, 'La oportunidad');
+  const tenderId = requireId(context?.tender_id, 'La licitación');
+  const snapshotId = requireId(context?.snapshot_id, 'El snapshot documental');
+  const envelope = context?.envelope;
+  if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
+    throw new Error('AGT-002 Preview requiere su envelope estructurado real.');
+  }
+  if (envelope.producer !== 'AGT-002' || envelope.agent_id !== 'AGT-002' || envelope.method !== 'agent_ai') {
+    throw new Error('Sólo se puede registrar un envelope con identidad AGT-002.');
+  }
+  const usage = envelope.usage;
+  if (!usage || typeof usage !== 'object' || Array.isArray(usage) || typeof usage.model !== 'string' || !usage.model.trim()) {
+    throw new Error('AGT-002 Preview requiere un uso (usage) con modelo real.');
+  }
+  const policyVersion = envelope.policy_version;
+  if (typeof policyVersion !== 'string' || !policyVersion.trim()) {
+    throw new Error('AGT-002 Preview requiere una versión de política real.');
+  }
+
+  const content = Object.fromEntries(CONTENT_KEYS.map(key => [key, envelope[key]]));
+  const criticalOpenCount = countCriticalOpenQuestions(content);
+  const idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model: usage.model });
+
+  const runRecord = unwrapRpc(await database.rpc('psi_record_tender_analysis_run', {
+    p_snapshot_id: snapshotId,
+    p_opportunity_id: opportunityId,
+    p_tender_id: tenderId,
+    p_producer: 'AGT-002',
+    p_method: 'agent_ai',
+    p_status: 'completed',
+    p_result: content,
+    p_critical_open_count: criticalOpenCount,
+    p_idempotency_key: idempotencyKey,
+    p_schema_version: envelope.schema_version,
+    p_policy_version: policyVersion,
+    p_model: usage.model,
+    p_usage: usage,
+  }));
+  const runId = requireId(runRecord.id, 'La ejecución de AGT-002 Preview');
+  return {
+    run_id: runId,
+    snapshot_id: runRecord.snapshot_id || snapshotId,
+    producer: runRecord.producer || 'AGT-002',
+    method: runRecord.method || 'agent_ai',
+    status: runRecord.status || 'completed',
+    current: true,
+    result: content,
+    critical_open_count: runRecord.critical_open_count ?? criticalOpenCount,
+  };
+}
+
+/** Interpretable daily quota probe: counts only AGT-002 Preview runs since UTC midnight, never a client-supplied number. */
+export async function countAgt002PreviewRunsToday(database, { now = () => new Date() } = {}) {
+  const current = now();
+  if (!(current instanceof Date) || Number.isNaN(current.getTime())) {
+    throw new Error('El reloj de la cuota diaria de AGT-002 Preview no es válido.');
+  }
+  const startOfDayUtc = new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth(), current.getUTCDate())).toISOString();
+  const response = await database.from('psi_tender_analysis_runs')
+    .select('id', { count: 'exact', head: true })
+    .eq('producer', 'AGT-002')
+    .gte('created_at', startOfDayUtc);
+  if (response?.error) throw new Error(response.error.message || String(response.error));
+  const count = response?.count;
+  if (!Number.isInteger(count) || count < 0) throw new Error('No se pudo calcular la cuota diaria de AGT-002 Preview.');
+  return count;
+}
+
+/** Looks up an existing AGT-002 Preview run by idempotency key so callers can skip re-invoking the model entirely. */
+export async function findAgt002PreviewRun(database, idempotencyKey) {
+  const key = requireId(idempotencyKey, 'La clave de idempotencia');
+  const response = await database.from('psi_tender_analysis_runs')
+    .select('id,snapshot_id,producer,method,status,result,critical_open_count,created_at,completed_at')
+    .eq('idempotency_key', key)
+    .maybeSingle();
+  if (response?.error) throw new Error(response.error.message || String(response.error));
+  const row = response?.data;
+  if (!row) return null;
+  return {
+    run_id: row.id,
+    snapshot_id: row.snapshot_id,
+    producer: row.producer,
+    method: row.method,
+    status: row.status,
+    current: true,
+    result: row.result,
+    critical_open_count: row.critical_open_count ?? 0,
+    created_at: row.created_at || null,
+    completed_at: row.completed_at || null,
+  };
+}

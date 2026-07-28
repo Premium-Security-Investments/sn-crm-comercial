@@ -20,6 +20,7 @@ export const ACTIONS = Object.freeze({
   CRM_OPPORTUNITY_EDIT: 'crm.opportunity.edit',
   CRM_OPPORTUNITY_REASSIGN: 'crm.opportunity.reassign',
   LICITACIONES_VIEW: 'licitaciones.view',
+  LICITACIONES_CONVERT: 'licitaciones.convert',
   LICITACIONES_CONFIGURE: 'licitaciones.configure',
   LICITACIONES_SYNC: 'licitaciones.sync',
   LICITACIONES_DISCARD_PROPOSE: 'licitaciones.discard.propose',
@@ -49,6 +50,7 @@ export const ACTIONS = Object.freeze({
 
 const KNOWN_ACTIONS = new Set(Object.values(ACTIONS));
 const TENDER_PERMISSION = 'licitaciones';
+const TENDER_CUSTODY_PERMISSION = 'licitaciones_custodia';
 const HUMAN_TENDER_ROLES = new Set(['admin', 'gerencia', 'director', 'comercial']);
 const PRIVILEGED_ROLES = new Set(['admin', 'gerencia']);
 const EXPLICIT_SCOPE_ROLES = new Set(['director', 'comercial', 'colaborador']);
@@ -190,6 +192,12 @@ function canHumanTenderAction(profile) {
   return hasHumanRole(profile, HUMAN_TENDER_ROLES) && hasPermission(profile, TENDER_PERMISSION);
 }
 
+function canTenderCustodyAction(profile) {
+  return isHuman(profile)
+    && hasPermission(profile, TENDER_PERMISSION)
+    && hasPermission(profile, TENDER_CUSTODY_PERMISSION);
+}
+
 function canSiioAssignedAction(profile, resource) {
   if (hasHumanRole(profile, PRIVILEGED_ROLES)) return true;
   if (hasHumanRole(profile, DIRECTOR_ROLE)) return canScopeResource(profile, resource);
@@ -293,8 +301,10 @@ export function can(profile, action, resource = {}) {
       return canHumanTenderAction(profile);
     case ACTIONS.LICITACIONES_DISCARD_APPROVE:
     case ACTIONS.LICITACIONES_GO_NO_GO_APPROVE:
-    case ACTIONS.LICITACIONES_CONFIGURE:
       return canHumanTenderAction(profile) && hasHumanRole(profile, new Set(['admin', 'gerencia', 'director']));
+    case ACTIONS.LICITACIONES_CONVERT:
+    case ACTIONS.LICITACIONES_CONFIGURE:
+      return canTenderCustodyAction(profile);
 
     case ACTIONS.SIIO_AREA_VIEW:
     case ACTIONS.SIIO_SUBJECT_CREATE:
@@ -320,6 +330,11 @@ export function can(profile, action, resource = {}) {
       return hasHumanRole(profile, PRIVILEGED_ROLES);
 
     case ACTIONS.AI_ANALYSIS_RUN:
+      // Only profiles holding explicit tender custody (licitaciones +
+      // licitaciones_custodia) may spend AGT-002 Preview quota, regardless of
+      // role; AGT-002 never authorizes GO/NO GO, which stays a separate human
+      // decision gated below.
+      return canTenderCustodyAction(profile);
     default:
       return false;
   }

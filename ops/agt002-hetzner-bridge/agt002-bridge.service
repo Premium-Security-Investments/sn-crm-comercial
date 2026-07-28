@@ -1,0 +1,24 @@
+# Revisar y aplicar manualmente en Hetzner durante la Tarea 14 (Fase 1). No aplicado por este plan.
+[Unit]
+Description=AGT-002 Hetzner bridge (temporary, 30-day bridge)
+After=network.target
+
+[Service]
+Type=simple
+User=agt002-bridge
+Group=agt002-bridge
+EnvironmentFile=/etc/agt002-bridge/agt002-bridge.env
+Environment=CODEX_HOME=/opt/agt002-bridge/.codex
+ExecStart=/usr/bin/node /opt/agt002-bridge/ops/agt002-hetzner-bridge/run-server.mjs
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/agt002-bridge/.codex /opt/agt002-bridge/var
+CPUQuota=100%
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

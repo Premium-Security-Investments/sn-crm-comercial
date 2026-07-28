@@ -104,8 +104,8 @@ export function TenderTrackingView({ data, refresh, request, navigate, moduleNav
     if (events[tender.id]) return;
     setEventsLoadingId(tender.id);
     try {
-      const loadedEvents = await loadTrackingEvents(request, tender.id);
-      setEvents(current => ({ ...current, [tender.id]: loadedEvents }));
+      const loadedPage = await loadTrackingEvents(request, tender.id);
+      setEvents(current => ({ ...current, [tender.id]: loadedPage.events }));
     } catch (cause) { setEventsError(cause instanceof Error ? cause.message : String(cause)); }
     finally { setEventsLoadingId(null); }
   };
