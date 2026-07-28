@@ -15,7 +15,7 @@ const ids = {
 };
 const db = new PGlite();
 await db.exec(`
-  create role authenticated; create role service_role; alter role service_role bypassrls; grant service_role to current_user;
+  create role anon; create role authenticated; create role service_role; alter role service_role bypassrls; grant anon, service_role to current_user;
   create table public.psi_sales_profiles (id uuid primary key, full_name text, active boolean not null default true, identity_type text not null default 'human');
   create table public.psi_sales_opportunities (id uuid primary key);
   create table public.psi_public_tenders (id uuid primary key, converted_opportunity_id uuid not null);
@@ -45,6 +45,10 @@ await assert.rejects(() => record({ status: 'invalid' }), /estado/i);
 await assert.rejects(() => record({ response: '   ' }), /respuesta/i);
 await assert.rejects(() => db.query(`update public.psi_tender_question_responses set status='resolved'`), /append-only/i);
 await assert.rejects(() => db.query(`delete from public.psi_tender_question_responses`), /append-only/i);
+await db.exec('set role anon');
+await assert.rejects(() => db.query('select * from public.psi_tender_question_responses'), /permission denied/i);
+await assert.rejects(() => record({ response: 'Intento anónimo.' }), /permission denied/i);
+await db.exec('reset role');
 await db.exec('set role service_role');
 await assert.rejects(() => db.query(`insert into public.psi_tender_question_responses(opportunity_id,analysis_run_id,question_id,question_text,status,response,responded_by) values ('${ids.opportunity}','${ids.run}','q-x','x','resolved','x','${ids.human}')`), /permission denied/i);
 const viaRpc = await record({ response: 'Desde RPC.' });

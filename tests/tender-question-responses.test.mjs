@@ -17,6 +17,8 @@ assert.match(migration, /pending.*resolved.*not_applicable/s, 'La migración deb
 assert.match(migration, /responded_by/, 'Autor debe derivarse y persistirse en servidor.');
 assert.match(migration, /responded_at/, 'Fecha debe derivarse y persistirse en servidor.');
 assert.match(migration, /revoke all on table public\.psi_tender_question_responses/, 'No debe haber escritura directa desde cliente.');
+assert.match(migration, /revoke all on table public\.psi_tender_question_responses from anon/, 'Supabase no debe conservar grants directos del default ACL para anon.');
+assert.match(migration, /revoke all on function public\.psi_record_tender_question_response\(uuid,uuid,text,text,text,text,text,uuid\) from anon/, 'anon no debe ejecutar el RPC gobernado directamente.');
 assert.match(migration, /psi_record_tender_question_response/, 'La escritura debe pasar por RPC gobernado.');
 
 for (const source of [server, api]) {

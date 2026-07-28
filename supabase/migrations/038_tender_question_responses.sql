@@ -32,6 +32,7 @@ create trigger psi_tender_question_responses_immutable
 
 alter table public.psi_tender_question_responses enable row level security;
 revoke all on table public.psi_tender_question_responses from public;
+revoke all on table public.psi_tender_question_responses from anon;
 revoke all on table public.psi_tender_question_responses from authenticated;
 revoke all on table public.psi_tender_question_responses from service_role;
 grant select on table public.psi_tender_question_responses to service_role;
@@ -110,6 +111,7 @@ end;
 $$;
 
 revoke all on function public.psi_record_tender_question_response(uuid,uuid,text,text,text,text,text,uuid) from public;
+revoke all on function public.psi_record_tender_question_response(uuid,uuid,text,text,text,text,text,uuid) from anon;
 revoke all on function public.psi_record_tender_question_response(uuid,uuid,text,text,text,text,text,uuid) from authenticated;
 grant execute on function public.psi_record_tender_question_response(uuid,uuid,text,text,text,text,text,uuid) to service_role;
 
