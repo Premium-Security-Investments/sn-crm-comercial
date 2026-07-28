@@ -11,7 +11,7 @@ const markers = [
   'function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }',
   "api<VigiaPayload>('/api/vigia/priorities')",
   'Prioridades Comerciales',
-  'Impulsado por Vig-IA · AGT-003',
+  'Impulsado por Vig-IA',
   'Prioridades explicables del CRM',
   'CRM-F1',
   'Requiere validación humana; no ejecuta acciones.',
@@ -30,6 +30,7 @@ const markers = [
   'canOpenOpportunity && <a className="button secondary"',
 ];
 for (const marker of markers) assert.ok(ui.includes(marker), `Vig-IA UI missing marker: ${marker}`);
+assert.ok(!component.includes('AGT-003'), 'Vig-IA UI must not expose the internal AGT-003 identifier');
 assert.ok(main.includes('parseVigiaDashboardFilters(window.location.hash'), 'dashboard consumes validated Vig-IA hash filters');
 assert.ok(parser.includes("params.get('owner')") && parser.includes("params.get('stage')") && parser.includes("params.get('service')"), 'dashboard deep-link parser applies governed filters');
 assert.ok(parser.includes('VIGIA_DASHBOARD_FILTER_KEYS') && parser.includes("__invalid_vigia_filter__"), 'dashboard deep-link rejects unknown or malformed filters to empty scope');

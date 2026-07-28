@@ -1,0 +1,34 @@
+{
+  "agent_id": "AGT-003",
+  "visible_name": "Vig-IA",
+  "contract_version": "2.0-draft.1",
+  "schema_draft": "https://json-schema.org/draft/2020-12/schema",
+  "owner_system": "SIIO",
+  "status": "draft_inactive",
+  "immutable": false,
+  "capabilities": [
+    {
+      "id": "agt003.opportunity-copilot.preview",
+      "mode": "preview",
+      "persisted_results_only": false,
+      "request_schema": "opportunity-copilot.request.schema.json",
+      "response_schema": "opportunity-copilot.response.schema.json",
+      "human_review_required": true,
+      "external_send_allowed": false,
+      "crm_write_allowed": false,
+      "public_research_allowed": false
+    }
+  ],
+  "fixtures": [
+    {
+      "path": "fixtures/valid-opportunity-copilot-request.json",
+      "schema": "opportunity-copilot.request.schema.json",
+      "valid": true
+    },
+    {
+      "path": "fixtures/valid-opportunity-copilot-response.json",
+      "schema": "opportunity-copilot.response.schema.json",
+      "valid": true
+    }
+  ]
+}

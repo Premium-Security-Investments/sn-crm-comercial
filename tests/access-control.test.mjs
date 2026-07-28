@@ -67,6 +67,7 @@ assert.deepEqual(ACTIONS, {
   BOARD_APPROVE: 'board.approve',
   BOARD_PUBLISH: 'board.publish',
   AI_ANALYSIS_RUN: 'ai.analysis.run',
+  AI_COMMERCIAL_DRAFT_RUN: 'ai.commercial_draft.run',
   MODULE_SIIO_VIEW: 'module.siio.view',
   MODULE_VIGIA_VIEW: 'module.vigia.view',
   MODULE_DASHBOARD_VIEW: 'module.dashboard.view',
@@ -74,8 +75,8 @@ assert.deepEqual(ACTIONS, {
   MODULE_OPPORTUNITIES_VIEW: 'module.opportunities.view',
   MODULE_GOALS_VIEW: 'module.goals.view',
   MODULE_USERS_VIEW: 'module.users.view',
-}, 'ACTIONS debe coincidir exactamente con el contrato estable de 36 acciones');
-assert.equal(actionValues.length, 36, 'ACTIONS debe exponer exactamente 36 códigos estables');
+}, 'ACTIONS debe coincidir exactamente con el contrato estable de 37 acciones');
+assert.equal(actionValues.length, 37, 'ACTIONS debe exponer exactamente 37 códigos estables');
 assert.equal(new Set(actionValues).size, actionValues.length, 'todos los códigos de acción deben ser únicos');
 assert.ok(actionValues.every((value) => typeof value === 'string' && value.length > 0), 'todos los códigos de acción deben ser strings no vacíos');
 const originalUsersManageAction = ACTIONS.USERS_MANAGE;
@@ -166,6 +167,17 @@ runCases('CRM', [
   { name: 'director con alcance Comercial reasigna', profile: commercialDirector([{ area_code: 'comercial', subarea_code: null }]), action: ACTIONS.CRM_OPPORTUNITY_REASSIGN, resource: ownOpportunity, expected: true },
   { name: 'comercial no reasigna', profile: human('comercial'), action: ACTIONS.CRM_OPPORTUNITY_REASSIGN, resource: ownOpportunity, expected: false },
 ], ({ profile: candidate, action, resource }) => can(candidate, action, resource));
+
+runCases('Vig-IA borrador comercial', [
+  { name: 'comercial con ambos módulos ejecuta sobre oportunidad propia', profile: human('comercial', { permissions: ['modulo_vig_ia', 'modulo_oportunidades'] }), resource: ownOpportunity, expected: true },
+  { name: 'comercial sin Vig-IA falla cerrado', profile: human('comercial', { permissions: ['modulo_oportunidades'] }), resource: ownOpportunity, expected: false },
+  { name: 'comercial sin Oportunidades falla cerrado', profile: human('comercial', { permissions: ['modulo_vig_ia'] }), resource: ownOpportunity, expected: false },
+  { name: 'comercial con ambos módulos no ejecuta sobre oportunidad ajena', profile: human('comercial', { permissions: ['modulo_vig_ia', 'modulo_oportunidades'] }), resource: { ...ownOpportunity, owner_id: 'other' }, expected: false },
+  { name: 'director con ambos módulos y scope ejecuta', profile: commercialDirector([{ area_code: 'comercial', subarea_code: 'norte' }], { permissions: ['modulo_vig_ia', 'modulo_oportunidades'] }), resource: ownOpportunity, expected: true },
+  { name: 'director con ambos módulos fuera de scope falla', profile: commercialDirector([{ area_code: 'comercial', subarea_code: 'sur' }], { permissions: ['modulo_vig_ia', 'modulo_oportunidades'] }), resource: ownOpportunity, expected: false },
+  { name: 'gerencia con ambos módulos ejecuta', profile: human('gerencia', { permissions: ['modulo_vig_ia', 'modulo_oportunidades'] }), resource: ownOpportunity, expected: true },
+  { name: 'agente no puede ejecutar aunque aparente módulos y scope', profile: agent({ permissions: ['modulo_vig_ia', 'modulo_oportunidades'] }), resource: ownOpportunity, expected: false },
+], ({ profile: candidate, resource }) => can(candidate, ACTIONS.AI_COMMERCIAL_DRAFT_RUN, resource));
 
 runCases('licitaciones', [
   { name: 'admin sin permiso no consulta', profile: human('admin'), action: ACTIONS.LICITACIONES_VIEW, resource: {}, expected: false },

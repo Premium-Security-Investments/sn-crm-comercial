@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://siio.local/contracts/agents/AGT-003/v2-draft/opportunity-copilot.request.schema.json",
+  "title": "AGT-003 opportunity copilot preview request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "capability_id",
+    "correlation_id",
+    "snapshot_id",
+    "opportunity",
+    "interactions",
+    "approved_assets",
+    "authority"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "2.0-draft.1"
+    },
+    "capability_id": {
+      "const": "agt003.opportunity-copilot.preview"
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "snapshot_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "opportunity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "opportunity_id",
+        "title",
+        "company_name",
+        "stage",
+        "service",
+        "owner_name",
+        "facts"
+      ],
+      "properties": {
+        "opportunity_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "company_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "service": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "facts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 30,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "evidence_id",
+              "field",
+              "value",
+              "source"
+            ],
+            "properties": {
+              "evidence_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "field": {
+                "type": "string",
+                "minLength": 1
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "source": {
+                "const": "SIIO"
+              }
+            }
+          }
+        }
+      }
+    },
+    "interactions": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "interaction_id",
+          "interaction_type",
+          "occurred_at",
+          "summary",
+          "evidence_id",
+          "untrusted_crm_text"
+        ],
+        "properties": {
+          "interaction_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "interaction_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "evidence_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "untrusted_crm_text": {
+            "const": true
+          }
+        }
+      }
+    },
+    "approved_assets": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "asset_id",
+          "title",
+          "asset_type",
+          "url",
+          "status",
+          "valid_until",
+          "tags"
+        ],
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "asset_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^https://"
+          },
+          "status": {
+            "const": "approved"
+          },
+          "valid_until": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "tags": {
+            "type": "array",
+            "maxItems": 20,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "read_only",
+        "human_review_required",
+        "external_send_allowed",
+        "crm_write_allowed",
+        "public_research_allowed"
+      ],
+      "properties": {
+        "read_only": {
+          "const": true
+        },
+        "human_review_required": {
+          "const": true
+        },
+        "external_send_allowed": {
+          "const": false
+        },
+        "crm_write_allowed": {
+          "const": false
+        },
+        "public_research_allowed": {
+          "const": false
+        }
+      }
+    }
+  }
+}

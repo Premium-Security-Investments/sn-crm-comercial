@@ -16,7 +16,7 @@ for (const forbidden of ['function CommercialAlerts', '<CommercialAlerts']) {
 
 for (const marker of [
   'Prioridades Comerciales',
-  'Impulsado por Vig-IA · AGT-003',
+  'Impulsado por Vig-IA',
   'Filtros de gestión',
   'Pipeline en riesgo',
   'Sin próxima acción',

@@ -30,6 +30,10 @@ import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
 import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
+import { createAgt003CopilotApi } from '../agt003-copilot-api.js';
+import { createAgt003CopilotRuntime, getAgt003CopilotRuntimeConfig, isAgt003CopilotConfigured } from '../agt003-copilot-runtime.js';
+import { claimAgt003CopilotRun, computeAgt003CopilotHash, findAgt003CopilotRunById, findAgt003CopilotRunByKey, recordAgt003CopilotFeedback, recordAgt003CopilotFailure, recordAgt003CopilotRun, releaseAgt003CopilotClaim } from '../agt003-copilot-persistence.js';
+import { loadVigiaApprovedAssets } from '../vigia-approved-assets.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
 import { mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
 import { isCriticalTenderDocument } from '../tender-critical-documents.js';
@@ -105,6 +109,8 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/goals': ['goals', ACTIONS.MODULE_GOALS_VIEW],
   'PUT /api/goals': ['goals', ACTIONS.MODULE_GOALS_VIEW],
   'GET /api/vigia/priorities': ['vigia', ACTIONS.MODULE_VIGIA_VIEW],
+  'POST /api/vigia/copilot/generate': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
+  'POST /api/vigia/copilot/feedback': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
 
   'GET /api/tenders': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'GET /api/users': ['users', ACTIONS.USERS_MANAGE],
@@ -2063,6 +2069,59 @@ function attachVigiaCustomerSegments(rows, segmentRows) {
   return rows.map(row => ({ ...row, customer_segment: segmentById.get(row.id) ?? null }));
 }
 
+const VIGIA_COPILOT_OPPORTUNITY_SELECT = 'id,owner_id,owner_name,company_name,stage_name,service_type_name,offer_value,expected_close_date,next_action_at,updated_at';
+const VIGIA_APPROVED_ASSETS_PATH = path.join(__dirname, '..', 'config', 'vigia-approved-assets.v1.json');
+
+async function resolveAgt003OpportunityResource(database, opportunityId, profile) {
+  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id').eq('id', opportunityId).single());
+  const assignments = await must(database.from('psi_profile_area_assignments').select('area_code,subarea_code').eq('profile_id', opportunity.owner_id));
+  const authorized = assignments.find(assignment => can(profile, ACTIONS.AI_COMMERCIAL_DRAFT_RUN, crmResource(opportunity.owner_id, assignment)));
+  return crmResource(opportunity.owner_id, authorized);
+}
+
+async function loadAgt003OpportunityContext(database, opportunityId) {
+  const row = await must(database.from('v_psi_sales_opportunity_enriched').select(VIGIA_COPILOT_OPPORTUNITY_SELECT).eq('id', opportunityId).single());
+  const interactions = await must(database.from('psi_sales_interactions')
+    .select('id,interaction_type,occurred_at,created_at,notes')
+    .eq('opportunity_id', opportunityId)
+    .order('occurred_at', { ascending: false })
+    .limit(20));
+  const opportunity = {
+    id: row.id,
+    title: row.company_name,
+    company_name: row.company_name,
+    stage: row.stage_name,
+    service: row.service_type_name,
+    owner_name: row.owner_name,
+    offer_value: row.offer_value,
+    expected_close_date: row.expected_close_date,
+    next_action_date: row.next_action_at,
+  };
+  return {
+    opportunity,
+    interactions,
+    snapshotId: computeAgt003CopilotHash({ opportunity, interactions }),
+  };
+}
+
+function createBackendAgt003CopilotApi(database) {
+  return createAgt003CopilotApi({
+    isConfigured: () => isAgt003CopilotConfigured(process.env),
+    getConfig: () => getAgt003CopilotRuntimeConfig(process.env),
+    resolveOpportunityResource: (opportunityId, profile) => resolveAgt003OpportunityResource(database, opportunityId, profile),
+    loadOpportunityContext: opportunityId => loadAgt003OpportunityContext(database, opportunityId),
+    loadApprovedAssets: () => loadVigiaApprovedAssets({ path: VIGIA_APPROVED_ASSETS_PATH }),
+    claimRun: options => claimAgt003CopilotRun(database, options),
+    findRunByKey: idempotencyKey => findAgt003CopilotRunByKey(database, idempotencyKey),
+    findRunById: runId => findAgt003CopilotRunById(database, runId),
+    createRuntime: () => createAgt003CopilotRuntime({ environment: process.env }),
+    recordRun: options => recordAgt003CopilotRun(database, options),
+    recordFailure: options => recordAgt003CopilotFailure(database, options),
+    releaseClaim: options => releaseAgt003CopilotClaim(database, options),
+    recordFeedback: options => recordAgt003CopilotFeedback(database, options),
+  });
+}
+
 app.get('/api/vigia/priorities', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -2078,6 +2137,24 @@ app.get('/api/vigia/priorities', async (req, res) => {
   } catch (error) { sendAuthError(res, error); }
 });
 app.all('/api/vigia/priorities', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
+app.post('/api/vigia/copilot/generate', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    const result = await createBackendAgt003CopilotApi(requireDb()).generate({ profile, body: req.body });
+    res.status(result.reused ? 200 : 201).json(result);
+  } catch (error) { sendAuthError(res, error); }
+});
+app.all('/api/vigia/copilot/generate', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
+
+app.post('/api/vigia/copilot/feedback', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    const result = await createBackendAgt003CopilotApi(requireDb()).feedback({ profile, body: req.body });
+    res.status(201).json(result);
+  } catch (error) { sendAuthError(res, error); }
+});
+app.all('/api/vigia/copilot/feedback', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
 
 app.get('/api/bootstrap', async (req, res) => {
   try {
