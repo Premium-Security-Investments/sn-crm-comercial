@@ -10,15 +10,16 @@ assert.ok(script.includes('set -euo pipefail'), 'script must fail closed');
 assert.ok(script.includes('${TENDER_WORKER_URL:?'), 'script must require URL');
 assert.ok(script.includes('${TENDER_WORKER_SECRET:?'), 'script must require secret');
 assert.ok(script.includes('--fail-with-body'), 'HTTP errors must fail the unit');
-assert.ok(script.includes('--max-time 20'), 'request must have a bounded timeout');
+assert.ok(script.includes('--max-time 120'), 'request must have a bounded timeout long enough for document processing');
 assert.ok(script.includes('--request POST'), 'scheduler must use POST');
 assert.ok(script.includes('x-tender-worker-secret:'), 'scheduler must send the dedicated secret header');
 assert.equal(statSync(new URL('run-tender-worker.sh', root)).mode & 0o111, 0o111, 'script must be executable');
 
 assert.ok(service.includes('Type=oneshot'), 'service must not overlap');
+assert.ok(service.includes('TimeoutStartSec=130s'), 'service timeout must exceed the bounded HTTP timeout');
 assert.ok(service.includes('User=tender-worker-scheduler'), 'service must use a dedicated user');
 assert.ok(service.includes('EnvironmentFile=/etc/tender-worker-scheduler/env'), 'secret must stay outside the repo');
-assert.ok(service.includes('TimeoutStartSec=25s'), 'systemd timeout must bound execution');
+assert.ok(service.includes('TimeoutStartSec=130s'), 'systemd timeout must bound execution above the HTTP timeout');
 for (const guard of ['NoNewPrivileges=true', 'ProtectSystem=strict', 'ProtectHome=true', 'CapabilityBoundingSet=']) {
   assert.ok(service.includes(guard), `missing systemd hardening: ${guard}`);
 }

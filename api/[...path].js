@@ -10,6 +10,7 @@ import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTen
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
 import { createTenderProcessingWorker } from '../tender-processing-worker.js';
 import { appendTenderProcessingEvent, claimTenderProcessingJob, getTenderProcessingJobActor, recordTenderImportItem, updateTenderProcessingJob } from '../tender-processing-worker-rpc.js';
+import { runInConcurrentChunks } from '../tender-concurrency.js';
 import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
 import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
 import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
@@ -637,6 +638,7 @@ const SECOP_DOCUMENTS_RESOURCE = 'https://www.datos.gov.co/resource/dmgg-8hin.js
 const DATOS_GOV_FETCH_POLICY = { allowedHosts: ['www.datos.gov.co'], allowedPath: /^\/resource\/[a-z0-9-]+\.json$/i };
 const SECOP_DOCUMENT_FETCH_POLICY = { allowedHosts: ['community.secop.gov.co', 'secop.gov.co', '*.secop.gov.co', 'colombiacompra.gov.co', '*.colombiacompra.gov.co', 'www.datos.gov.co'] };
 const ESU_FETCH_POLICY = { allowedHosts: ['esucontratacion.com', 'www.esucontratacion.com'], allowedPath: /^\/procesos(?:\/|$)/i };
+const TENDER_DISCOVERY_RECORD_CONCURRENCY = 5;
 const TVEC_EVENTS_URL = 'https://operaciones.colombiacompra.gov.co/eventos-cotizacion-tvec';
 const ESU_CONTRATACION_ORIGIN = 'https://esucontratacion.com';
 const ESU_CONTRATACION_URL = `${ESU_CONTRATACION_ORIGIN}/procesos/index`;
@@ -2635,9 +2637,12 @@ function buildTenderProcessingWorkerDeps(database) {
           : esuDocumentId(doc));
         return { source: sourceLabel, sourceDocumentId, sourceUrl: url, name, critical: normalizeDocumentType('', name) === 'pliego' };
       });
-      for (const item of items) {
-        await recordTenderImportItem(database, { jobId, ...item, status: 'pending' });
-      }
+      // Bounded concurrency: up to 40 items (selectPriorityTenderDocuments)
+      // each need their own recordTenderImportItem RPC round-trip. Sequential
+      // awaits ran past the caller's request timeout before updateJob could
+      // run; unlimited Promise.all would still risk saturating the DB pool.
+      await runInConcurrentChunks(items, TENDER_DISCOVERY_RECORD_CONCURRENCY, item =>
+        recordTenderImportItem(database, { jobId, ...item, status: 'pending' }));
       return items;
     },
 
