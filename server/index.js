@@ -7,7 +7,7 @@ import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import mammoth from 'mammoth';
 import AdmZip from 'adm-zip';
 import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
-import { isTenderDurablePipelineEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
+import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
 import { createTenderProcessingWorker } from '../tender-processing-worker.js';
 import { appendTenderProcessingEvent, claimTenderProcessingJob, getTenderProcessingJobActor, recordTenderImportItem, updateTenderProcessingJob } from '../tender-processing-worker-rpc.js';
 import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
@@ -471,6 +471,15 @@ function recomputeSummary(stages, opportunities) {
     };
   });
 }
+export function clientProfileForTenderUi(profile, environment = process.env) {
+  if (!profile || isTenderPublicUiEnabled(environment)) return profile;
+  if (!Array.isArray(profile.permissions) || !profile.permissions.includes('licitaciones')) return profile;
+  return {
+    ...profile,
+    permissions: profile.permissions.filter(permission => permission !== 'licitaciones'),
+  };
+}
+
 export function bootstrapCapabilities(profile) {
   return Object.freeze({
     opportunities: can(profile, ACTIONS.MODULE_OPPORTUNITIES_VIEW),
@@ -510,7 +519,7 @@ function readableOwnerIds(profile, profiles, ownerAssignments, globalScope) {
   }
   return ids;
 }
-export function filterBootstrapForProfile(payload, currentProfile) {
+export function filterBootstrapForProfile(payload, currentProfile, environment = process.env) {
   const { profileAssignments = [], ...publicPayload } = payload;
   const capabilities = bootstrapCapabilities(currentProfile);
   const globalScope = globalCrmScopeRoles.has(currentProfile?.role);
@@ -548,7 +557,7 @@ export function filterBootstrapForProfile(payload, currentProfile) {
     if (o.stage_code === 'aprobado') acc.approved += Number(o.offer_value || 0);
     return acc;
   }, { count: 0, pipeline: 0, weighted: 0, approved: 0 });
-  return { ...publicPayload, summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals, totals: capabilities.dashboard || capabilities.vigia ? totals : { count: 0, pipeline: 0, weighted: 0, approved: 0 }, currentProfile };
+  return { ...publicPayload, summary, opportunities, profiles, stages, services, lossReasons, stalled, topClosing, monthlyKpis, goals, totals: capabilities.dashboard || capabilities.vigia ? totals : { count: 0, pipeline: 0, weighted: 0, approved: 0 }, currentProfile: clientProfileForTenderUi(currentProfile, environment) };
 }
 function opportunityOwnerError(message, status) {
   const error = new Error(message);
