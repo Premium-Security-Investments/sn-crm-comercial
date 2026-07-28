@@ -6,7 +6,7 @@ const runId = '22222222-2222-4222-8222-222222222222';
 const claimId = '33333333-3333-4333-8333-333333333333';
 const profile = {
   id: 'user-comercial', active: true, identity_type: 'human', role: 'comercial',
-  permissions: ['modulo_vig_ia', 'modulo_oportunidades'], areas: [],
+  permissions: ['modulo_vig_ia', 'modulo_oportunidades', 'vigia_copilot_pilot'], areas: [],
 };
 const resource = { area_code: 'comercial', subarea_code: 'norte', owner_id: profile.id };
 const opportunity = {

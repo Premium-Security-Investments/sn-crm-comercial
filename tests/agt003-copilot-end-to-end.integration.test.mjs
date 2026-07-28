@@ -4,7 +4,7 @@ import { createAgt003CopilotApi } from '../agt003-copilot-api.js';
 import { createAgt003CopilotEngine } from '../agt003-copilot-engine.js';
 
 const opportunityId = '11111111-1111-4111-8111-111111111111';
-const profile = { id: 'human-1', active: true, identity_type: 'human', role: 'comercial', permissions: ['modulo_vig_ia', 'modulo_oportunidades'], areas: [] };
+const profile = { id: 'human-1', active: true, identity_type: 'human', role: 'comercial', permissions: ['modulo_vig_ia', 'modulo_oportunidades', 'vigia_copilot_pilot'], areas: [] };
 const valid = JSON.parse(readFileSync(new URL('../contracts/agents/AGT-003/v2-draft/fixtures/valid-opportunity-copilot-response.json', import.meta.url), 'utf8'));
 const brief = structuredClone(valid.brief);
 brief.facts = [];
