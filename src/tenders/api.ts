@@ -1,4 +1,4 @@
-import type { TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
+import type { TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
 
 /** Explicit resource loaders: each tender view owns only the data it needs. */
 export async function loadRadar<T>(request: TenderRequest): Promise<T> {
@@ -74,4 +74,41 @@ export async function loadTenderOfferStatus(request: TenderRequest, opportunityI
 
 export async function recordTenderOfferStatusTransition(request: TenderRequest, input: TenderOfferStatusTransitionInput): Promise<{ status: import('./types').TenderOfferStatus; event: import('./types').TenderOfferStatusTransition }> {
   return request('/api/tender-offer-status', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function loadTenderDossierWorkspace(request: TenderRequest, opportunityId: string): Promise<TenderDossierWorkspace> {
+  return request<TenderDossierWorkspace>(`/api/tender-dossier-workspace?id=${encodeURIComponent(opportunityId)}`);
+}
+
+export async function createTenderDossierItem(request: TenderRequest, input: {
+  opportunity_id: string; item_key?: string; title: string; item_type: string; required: boolean;
+}): Promise<{ item: TenderDossierItem }> {
+  return request('/api/tender-dossier-item', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function appendTenderDossierItemAction(request: TenderRequest, input: TenderDossierItemActionInput): Promise<{ item: TenderDossierItem }> {
+  return request('/api/tender-dossier-item-action', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function createTenderDossierArtifact(request: TenderRequest, input: {
+  opportunity_id: string; artifact_key?: string; title: string; required: boolean;
+}): Promise<{ artifact: TenderDossierArtifact }> {
+  return request('/api/tender-dossier-artifact', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function addTenderDossierArtifactVersion(request: TenderRequest, input: {
+  opportunity_id: string; artifact_id: string; content_kind: 'markdown' | 'texto' | 'metadata';
+  content_text?: string | null; content_metadata?: Record<string, unknown> | null;
+}): Promise<{ artifact: TenderDossierArtifact; version_id: string }> {
+  return request('/api/tender-dossier-artifact-version', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function recordTenderDossierArtifactReview(request: TenderRequest, input: {
+  opportunity_id: string; version_id: string; decision: 'aprobado' | 'rechazado'; comment?: string | null;
+}): Promise<{ artifact: TenderDossierArtifact }> {
+  return request('/api/tender-dossier-artifact-review', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function seedTenderDossier(request: TenderRequest, opportunityId: string): Promise<TenderDossierWorkspace> {
+  return request('/api/tender-dossier-seed', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunityId }) });
 }

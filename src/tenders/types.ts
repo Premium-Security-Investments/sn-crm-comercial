@@ -44,6 +44,72 @@ export type TenderOpportunitySummary = TenderDossier & {
   decided_at: string | null;
   tender_offer_status: TenderOfferStatus;
 };
+export type TenderDossierAssignee = { id: string; full_name: string; role: string; active?: boolean; identity_type?: 'human' | 'agent' | null };
+export type TenderDossierItemStatus = 'pendiente' | 'en_progreso' | 'listo' | 'bloqueado';
+export type TenderDossierItemApplicability = 'requerido' | 'no_aplica';
+export type TenderDossierItemType = 'documento' | 'pendiente_humano' | 'general';
+export type TenderDossierItem = {
+  id: string;
+  item_key: string;
+  title: string;
+  item_type: TenderDossierItemType;
+  required: boolean;
+  origin: 'seed_go' | 'human';
+  status: TenderDossierItemStatus;
+  applicability: TenderDossierItemApplicability;
+  assignee_id: string | null;
+  assignee_name: string | null;
+  target_date: string | null;
+  latest_evidence: { kind: 'texto' | 'url'; text: string | null; url: string | null; at: string } | null;
+};
+export type TenderDossierArtifactVersion = {
+  id: string;
+  version: number;
+  content_kind: 'markdown' | 'texto' | 'metadata';
+  content_text: string | null;
+  content_metadata: Record<string, unknown> | null;
+  author_id: string;
+  created_at: string;
+};
+export type TenderDossierArtifact = {
+  id: string;
+  artifact_key: string;
+  title: string;
+  required: boolean;
+  origin: 'seed_go' | 'human';
+  current_version: TenderDossierArtifactVersion | null;
+  review_status: 'pendiente' | 'aprobado' | 'rechazado';
+  has_approved_version: boolean;
+  version_count: number;
+};
+export type TenderDossierReadinessReference = { item_key?: string; artifact_key?: string; title: string };
+export type TenderDossierReadiness = {
+  ready: boolean;
+  pending_required_items: TenderDossierReadinessReference[];
+  blocking_items: TenderDossierReadinessReference[];
+  active_blockers: TenderDossierReadinessReference[];
+  unapproved_artifacts: TenderDossierReadinessReference[];
+};
+export type TenderDossierWorkspace = {
+  opportunity_id: string;
+  checklist: TenderDossierItem[];
+  artifacts: TenderDossierArtifact[];
+  readiness: TenderDossierReadiness;
+  can_mark_ready: boolean;
+};
+export type TenderDossierItemActionInput = {
+  opportunity_id: string;
+  item_id: string;
+  action_type: 'status_changed' | 'assigned' | 'evidence_attached' | 'marked_not_applicable' | 'requirement_changed' | 'reopened';
+  to_status?: TenderDossierItemStatus | null;
+  assignee_id?: string | null;
+  target_date?: string | null;
+  evidence_kind?: 'texto' | 'url' | null;
+  evidence_text?: string | null;
+  evidence_url?: string | null;
+  justification?: string | null;
+  note?: string | null;
+};
 export type TenderCurrentProfile = { id: string; full_name: string; role: string; microsoft_email?: string | null; active?: boolean; permissions?: string[]; identity_type?: 'human' | 'agent' | null };
 export type TenderDocumentAnalysis = {
   run_id: string;
