@@ -36,7 +36,9 @@ assert.match(claimsMigration, /pg_advisory_xact_lock/, 'capacity decisions must 
 assert.match(claimsMigration, /psi_agt002_preview_claims/, 'cross-request reservations require a durable lease table');
 assert.match(claimsMigration, /not exists[\s\S]*psi_tender_analysis_runs/, 'daily quota must include in-flight claims without double-counting completed runs');
 
-assert.match(engine, /outputSchema: AGT002_PREVIEW_OUTPUT_JSON_SCHEMA/, 'engine must hand the closed schema to Codex turn/start');
+assert.match(engine, /const outputSchema = outputSchemaForEvidenceIds\(allowedEvidenceIds\)/, 'engine must derive a closed schema from the evidence ids present in the snapshot');
+assert.match(engine, /evidence_refs\.items\.enum = \[\.\.\.allowedEvidenceIds\]/, 'derived schema must close evidence references to the allowed ids');
+assert.match(engine, /client\.run\(\{ model, policy: policyText, input: previewInput, outputSchema,/, 'engine must hand the evidence-closed schema to Codex turn/start');
 assert.match(ui, /can\(currentProfile, ACTIONS\.AI_ANALYSIS_RUN\)/, 'UI button must be capability-gated');
 assert.match(ui, /tender-documents-analyze-agent-preview/, 'UI must call the dedicated preview endpoint');
 assert.match(section, /Ejecutar AGT-002 Preview/, 'UI must expose a separate preview action');
