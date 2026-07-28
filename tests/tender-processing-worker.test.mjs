@@ -91,6 +91,56 @@ async function run() {
     assert.notEqual(result.status, 'needs_attention');
   }
 
+  // 3b) un fallo crítico terminal quedó persistido en un batch anterior
+  //     (claim.any_critical_terminal_failure); el batch final del mismo job
+  //     sí importa un documento con texto. El job NUNCA puede pasar a
+  //     ready_for_snapshot solo porque el ÚLTIMO batch tuvo éxito local:
+  //     un fallo crítico no puede excluirse silenciosamente (Bucaramanga LPR,
+  //     job 374195eb).
+  {
+    const pending = [{ source: 'SECOP II', sourceDocumentId: 'd2', name: 'Anexo Precios.xlsx', critical: false }];
+    const { deps, calls } = makeDeps({
+      claimJob: async () => ({
+        job_id: 'job-3b', lease_id: 'lease-3b', tender_id: 'tender-3b', opportunity_id: 'opp-3b',
+        status: 'importing_documents', current_step: 'documents',
+        documents_discovered: 2, documents_processed: 1, documents_imported: 0, documents_unchanged: 0, documents_failed: 1,
+        pending_documents: pending,
+        any_usable_text: false,
+        any_critical_terminal_failure: true,
+      }),
+      importOneDocument: async () => ({ status: 'imported', hasText: true }),
+    });
+    const worker = createTenderProcessingWorker(deps);
+    const result = await worker.runOnce({ batchSize: 3 });
+    assert.equal(result.status, 'needs_attention', 'un fallo crítico de un batch anterior debe bloquear el snapshot aunque el batch final importe con éxito');
+    assert.equal(calls.updateJob[0].patch.status, 'needs_attention');
+  }
+
+  // 3c) simétricamente: el batch final no logra texto usable por sí solo,
+  //     pero un batch anterior ya dejó evidencia usable (claim.any_usable_text)
+  //     y no hay fallos críticos en ningún batch -> el job SÍ debe avanzar
+  //     a ready_for_snapshot en vez de quedar needs_attention por accidente
+  //     de orden de batch.
+  {
+    const err = new Error('texto no verificable'); err.code = 'TENDER_DOC_EMPTY_TEXT';
+    const pending = [{ source: 'SECOP II', sourceDocumentId: 'd3', name: 'Formato menor.pdf', critical: false }];
+    const { deps, calls } = makeDeps({
+      claimJob: async () => ({
+        job_id: 'job-3c', lease_id: 'lease-3c', tender_id: 'tender-3c', opportunity_id: 'opp-3c',
+        status: 'importing_documents', current_step: 'documents',
+        documents_discovered: 2, documents_processed: 1, documents_imported: 1, documents_unchanged: 0, documents_failed: 0,
+        pending_documents: pending,
+        any_usable_text: true,
+        any_critical_terminal_failure: false,
+      }),
+      importOneDocument: async () => { throw err; },
+    });
+    const worker = createTenderProcessingWorker(deps);
+    const result = await worker.runOnce({ batchSize: 3 });
+    assert.equal(result.status, 'ready_for_snapshot', 'evidencia usable de un batch anterior no puede perderse por un batch final sin éxito local');
+    assert.equal(calls.updateJob[0].patch.status, 'ready_for_snapshot');
+  }
+
   // 4) snapshot utilizable -> publishSnapshot llamado y evento snapshot_published.
   {
     const { deps, calls } = makeDeps({

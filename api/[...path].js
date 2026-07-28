@@ -23,6 +23,7 @@ import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-a
 import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
 import { mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
+import { isCriticalTenderDocument } from '../tender-critical-documents.js';
 import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
 import { createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
 import { claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim } from '../agt002-preview-persistence.js';
@@ -2635,7 +2636,7 @@ function buildTenderProcessingWorkerDeps(database) {
         const sourceDocumentId = normalizeTenderSourceDocumentId(sourceLabel === 'SECOP II'
           ? String(doc.id_documento || createHash('sha256').update(String(url)).digest('hex').slice(0, 24))
           : esuDocumentId(doc));
-        return { source: sourceLabel, sourceDocumentId, sourceUrl: url, name, critical: normalizeDocumentType('', name) === 'pliego' };
+        return { source: sourceLabel, sourceDocumentId, sourceUrl: url, name, critical: isCriticalTenderDocument(name) };
       });
       // Bounded concurrency: up to 40 items (selectPriorityTenderDocuments)
       // each need their own recordTenderImportItem RPC round-trip. Sequential

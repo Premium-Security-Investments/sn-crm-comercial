@@ -42,14 +42,22 @@ export async function refreshOfficialTenderDocument({
   const sourceDocumentId = normalizeTenderSourceDocumentId(document.source_document_id);
   const buffer = await download(document);
   if (!buffer?.length) throw new Error(`Archivo vacío: ${document.name}`);
-  if (buffer.length > MAX_DOCUMENT_BYTES) throw new Error(`Archivo supera 50MB: ${document.name}`);
+  if (buffer.length > MAX_DOCUMENT_BYTES) {
+    const error = new Error(`Archivo supera 50MB: ${document.name}`);
+    error.code = 'TENDER_DOC_SIZE_EXCEEDED';
+    throw error;
+  }
   const contentHash = tenderDocumentContentHash(buffer);
   if (currentVersion?.content_hash === contentHash) {
     return { status: 'unchanged', source_document_id: sourceDocumentId };
   }
   const name = cleanName(document.name);
   const extractedText = await extractText(buffer, name, document.mime_type || '');
-  if (!String(extractedText || '').trim()) throw new Error(`No fue posible extraer texto verificable: ${name}`);
+  if (!String(extractedText || '').trim()) {
+    const error = new Error(`No fue posible extraer texto verificable: ${name}`);
+    error.code = 'TENDER_DOC_EMPTY_TEXT';
+    throw error;
+  }
   if (Buffer.byteLength(extractedText, 'utf8') > MAX_EXTRACTED_TEXT_BYTES) throw new Error(`El texto extraído supera 10MB: ${name}`);
   const storagePath = tenderDocumentVersionPath({ opportunityId, sourceDocumentId, contentHash, name });
   await ensureStorage();

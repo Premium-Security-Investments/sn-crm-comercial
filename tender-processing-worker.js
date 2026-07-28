@@ -67,8 +67,8 @@ export function createTenderProcessingWorker(deps) {
       let failedTerminal = 0;
       let failedRetryable = 0;
       let processed = 0;
-      let anyUsableText = false;
-      let anyCriticalTerminalFailure = false;
+      let anyUsableText = claim.any_usable_text === true;
+      let anyCriticalTerminalFailure = claim.any_critical_terminal_failure === true;
 
       for (const doc of batch) {
         if (now() - startedAt >= timeBudgetMs) break;

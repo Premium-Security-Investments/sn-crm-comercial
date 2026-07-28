@@ -18,14 +18,16 @@ export async function claimTenderProcessingJob(database, { leaseSeconds = 90 } =
     .single();
   if (jobError) throw jobError;
 
-  const { data: pendingItems, error: itemsError } = await database
+  const { data: importItems, error: itemsError } = await database
     .from('psi_tender_document_import_items')
-    .select('source,source_document_id,source_url,name,critical,attempt_count')
+    .select('source,source_document_id,source_url,name,status,critical,attempt_count')
     .eq('job_id', claim.job_id)
-    .in('status', ['pending', 'failed_retryable'])
     .order('created_at', { ascending: true })
     .limit(50);
   if (itemsError) throw itemsError;
+
+  const allItems = importItems || [];
+  const pendingItems = allItems.filter(item => ['pending', 'failed_retryable'].includes(item.status));
 
   return {
     job_id: claim.job_id,
@@ -42,6 +44,8 @@ export async function claimTenderProcessingJob(database, { leaseSeconds = 90 } =
     documents_unchanged: job.documents_unchanged,
     documents_failed: job.documents_failed,
     attempt_count: job.attempt_count,
+    any_usable_text: allItems.some(item => ['imported', 'unchanged'].includes(item.status)),
+    any_critical_terminal_failure: allItems.some(item => item.status === 'failed_terminal' && item.critical === true),
     pending_documents: (pendingItems || []).map(item => ({
       source: item.source,
       sourceDocumentId: item.source_document_id,

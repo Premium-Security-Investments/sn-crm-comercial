@@ -66,7 +66,11 @@ async function claimComposesFullShapeWhenClaimed() {
         single: { data: { requested_by: 'u-1', analysis_authorized_by: null, snapshot_id: null, documents_processed: 1, documents_imported: 1, documents_unchanged: 0, documents_failed: 0, attempt_count: 0 }, error: null },
       },
       psi_tender_document_import_items: {
-        list: { data: [{ source: 'SECOP II', source_document_id: 'd1', source_url: 'https://x', name: 'Pliego', critical: true, attempt_count: 0 }], error: null },
+        list: { data: [
+          { source: 'SECOP II', source_document_id: 'd1', source_url: 'https://x', name: 'Pliego', status: 'pending', critical: true, attempt_count: 0 },
+          { source: 'SECOP II', source_document_id: 'd2', source_url: 'https://x/2', name: 'Anexo', status: 'imported', critical: false, attempt_count: 0 },
+          { source: 'SECOP II', source_document_id: 'd3', source_url: 'https://x/3', name: 'Minuta', status: 'failed_terminal', critical: true, attempt_count: 0 },
+        ], error: null },
       },
     },
   });
@@ -77,6 +81,8 @@ async function claimComposesFullShapeWhenClaimed() {
   assert.equal(claim.pending_documents.length, 1);
   assert.equal(claim.pending_documents[0].sourceDocumentId, 'd1');
   assert.equal(claim.pending_documents[0].critical, true);
+  assert.equal(claim.any_usable_text, true);
+  assert.equal(claim.any_critical_terminal_failure, true);
 }
 
 async function updateForwardsPatchVerbatim() {
