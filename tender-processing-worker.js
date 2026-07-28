@@ -14,7 +14,13 @@ export function createTenderProcessingWorker(deps) {
     publishSnapshot, requestAgt002, now,
   } = deps;
 
-  async function runOnce({ batchSize = 3, timeBudgetMs = 90000 } = {}) {
+  // batchSize defaults to 1: a single official-source document download can
+  // take up to the pinned-fetch network timeout (safe-official-fetch.js:
+  // 20s, more with redirects) and the per-batch loop below only checks the
+  // time budget BETWEEN documents, never mid-download. Queuing more than one
+  // document per invocation risks exceeding both timeBudgetMs and the
+  // platform's hard request ceiling (vercel.json maxDuration=60s).
+  async function runOnce({ batchSize = 1, timeBudgetMs = 90000 } = {}) {
     const claim = await claimJob();
     if (!claim || claim.status === 'empty') {
       return { status: 'empty' };

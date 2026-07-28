@@ -184,6 +184,36 @@ async function run() {
     assert.ok(calls.updateJob.every(c => c.leaseId === 'lease-9-xyz'));
   }
 
+  // 10) batchSize por defecto (sin especificar) = 1 documento por invocación.
+  // Cada descarga oficial puede tardar hasta el timeout de red pinneada
+  // (safe-official-fetch.js: 20s, hasta ~80s con la cadena de redirects
+  // permitida) y el worker solo revisa el presupuesto de tiempo ANTES de
+  // iniciar cada documento del lote, nunca a mitad de una descarga. Encolar
+  // varios documentos por invocación (batchSize>1) arriesga exceder tanto el
+  // timeBudgetMs del propio worker como el límite duro de la plataforma
+  // (vercel.json api/[...path].js maxDuration=60s). Un documento por
+  // invocación es la corrección mínima durable.
+  {
+    const pending = Array.from({ length: 3 }, (_, i) => ({ source: 'SECOP II', sourceDocumentId: `d${i}`, name: `Doc ${i}`, critical: false }));
+    const { deps, calls, advanceClock } = makeDeps({
+      claimJob: async () => ({
+        job_id: 'job-10', lease_id: 'lease-10', tender_id: 'tender-10', opportunity_id: 'opp-10',
+        status: 'importing_documents', current_step: 'documents',
+        documents_discovered: 3, documents_processed: 0, documents_imported: 0, documents_unchanged: 0, documents_failed: 0,
+        pending_documents: pending,
+      }),
+      // Simulates a realistic slow official-source download: each document
+      // burns a third of the worker's time budget, well under any single
+      // per-document network timeout.
+      importOneDocument: async () => { advanceClock(20_000); return { status: 'imported', hasText: true }; },
+    });
+    const worker = createTenderProcessingWorker(deps);
+    const result = await worker.runOnce({ timeBudgetMs: 45_000 });
+    assert.equal(result.status, 'batch_processed');
+    assert.equal(calls.recordImportItem.length, 1, 'debe importar como máximo un documento por invocación por defecto');
+    assert.equal(result.remaining, 2);
+  }
+
   console.log('tender-processing-worker contract passed');
 }
 
