@@ -21,16 +21,38 @@ function validHttps(value) {
   try { return new URL(value).protocol === 'https:'; } catch { return false; }
 }
 
+function resolveRuntimeValues(environment = {}) {
+  const wireProtocol = nonEmpty(environment.AGT003_COPILOT_WIRE_PROTOCOL)
+    ? environment.AGT003_COPILOT_WIRE_PROTOCOL.trim()
+    : 'agt003';
+  const shared = wireProtocol === 'agt002';
+  return {
+    wireProtocol,
+    model: nonEmpty(environment.AGT003_COPILOT_MODEL)
+      ? environment.AGT003_COPILOT_MODEL
+      : (shared ? environment.AGT002_PREVIEW_MODEL : undefined),
+    bridgeUrl: nonEmpty(environment.AGT003_COPILOT_BRIDGE_URL)
+      ? environment.AGT003_COPILOT_BRIDGE_URL
+      : (shared ? environment.AGT002_HETZNER_BRIDGE_URL : undefined),
+    hmacSecret: nonEmpty(environment.AGT003_COPILOT_HMAC_SECRET)
+      ? environment.AGT003_COPILOT_HMAC_SECRET
+      : (shared ? environment.AGT002_HETZNER_BRIDGE_HMAC_SECRET : undefined),
+  };
+}
+
 export function isAgt003CopilotConfigured(environment = process.env) {
+  const resolved = resolveRuntimeValues(environment);
   return environment?.AGT003_COPILOT_ENGINE === AGT003_COPILOT_ENGINE_ID
-    && nonEmpty(environment.AGT003_COPILOT_MODEL)
-    && validHttps(environment.AGT003_COPILOT_BRIDGE_URL)
-    && typeof environment.AGT003_COPILOT_HMAC_SECRET === 'string'
-    && Buffer.byteLength(environment.AGT003_COPILOT_HMAC_SECRET) >= 32;
+    && ['agt002', 'agt003'].includes(resolved.wireProtocol)
+    && nonEmpty(resolved.model)
+    && validHttps(resolved.bridgeUrl)
+    && typeof resolved.hmacSecret === 'string'
+    && Buffer.byteLength(resolved.hmacSecret) >= 32;
 }
 
 export function getAgt003CopilotRuntimeConfig(environment = process.env) {
   if (!isAgt003CopilotConfigured(environment)) throw new Error('Vig-IA no está configurado.');
+  const resolved = resolveRuntimeValues(environment);
   const timeoutMs = positiveInt(environment, 'AGT003_COPILOT_TIMEOUT_MS', DEFAULT_TIMEOUT_MS);
   const maxConcurrent = positiveInt(environment, 'AGT003_COPILOT_MAX_CONCURRENT', DEFAULT_MAX_CONCURRENT);
   const dailyMaxRuns = positiveInt(environment, 'AGT003_COPILOT_DAILY_MAX_RUNS', DEFAULT_DAILY_MAX_RUNS);
@@ -39,7 +61,7 @@ export function getAgt003CopilotRuntimeConfig(environment = process.env) {
     throw new Error('Vig-IA no está configurado.');
   }
   return {
-    model: environment.AGT003_COPILOT_MODEL.trim(),
+    model: resolved.model.trim(),
     policyVersion: nonEmpty(environment.AGT003_COPILOT_POLICY_VERSION)
       ? environment.AGT003_COPILOT_POLICY_VERSION.trim()
       : AGT003_COPILOT_DEFAULT_POLICY_VERSION,
@@ -47,17 +69,16 @@ export function getAgt003CopilotRuntimeConfig(environment = process.env) {
     maxConcurrent,
     dailyMaxRuns,
     leaseSeconds,
-    wireProtocol: nonEmpty(environment.AGT003_COPILOT_WIRE_PROTOCOL)
-      ? environment.AGT003_COPILOT_WIRE_PROTOCOL.trim()
-      : 'agt003',
+    wireProtocol: resolved.wireProtocol,
   };
 }
 
 export function createAgt003CopilotRuntime({ environment = process.env, countDailyRuns } = {}) {
   const config = getAgt003CopilotRuntimeConfig(environment);
+  const resolved = resolveRuntimeValues(environment);
   const client = createAgt003CopilotBridgeClient({
-    url: environment.AGT003_COPILOT_BRIDGE_URL,
-    hmacSecret: environment.AGT003_COPILOT_HMAC_SECRET,
+    url: resolved.bridgeUrl,
+    hmacSecret: resolved.hmacSecret,
     wireProtocol: config.wireProtocol,
   });
   return createAgt003CopilotEngine({
