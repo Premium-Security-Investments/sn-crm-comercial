@@ -13,6 +13,15 @@ import { appendTenderProcessingEvent, claimTenderProcessingJob, getTenderProcess
 import { runInConcurrentChunks } from '../tender-concurrency.js';
 import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
 import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
+import {
+  getTenderDossierWorkspace,
+  callCreateTenderDossierItem,
+  callAppendTenderDossierItemAction,
+  callCreateTenderDossierArtifact,
+  callAddTenderDossierArtifactVersion,
+  callRecordTenderDossierArtifactReview,
+  callSeedTenderDossier,
+} from '../tender-dossier-rpc.js';
 import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
 import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot } from '../tender-analysis-foundation.js';
 import { isTenderAnalysisFoundationUnavailable, requireTenderAnalysisFoundation } from '../tender-analysis-foundation-availability.js';
@@ -2940,6 +2949,71 @@ app.post('/api/tender-offer-status', async (req, res) => {
     const { profile: currentProfile } = await getAuthContext(req);
     requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
     res.status(201).json(await callTenderOfferStatusTransition(requireDb(), req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.get('/api/tender-dossier-workspace', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    const opportunityId = String(req.query.id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    res.json(await getTenderDossierWorkspace(database, opportunityId, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-dossier-item', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
+    res.status(201).json(await callCreateTenderDossierItem(database, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-dossier-item-action', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
+    res.status(201).json(await callAppendTenderDossierItemAction(database, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-dossier-artifact', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
+    res.status(201).json(await callCreateTenderDossierArtifact(database, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-dossier-artifact-version', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
+    res.status(201).json(await callAddTenderDossierArtifactVersion(database, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-dossier-artifact-review', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
+    res.status(201).json(await callRecordTenderDossierArtifactReview(database, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-dossier-seed', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await ensureTenderOpportunity(database, String(req.body?.opportunity_id || ''), currentProfile);
+    res.status(201).json(await callSeedTenderDossier(database, req.body || {}, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
