@@ -105,8 +105,8 @@ for (const analysis of [
 const { tenderRecommendationLabel } = await import(gateUrl);
 assert.equal(tenderRecommendationLabel('advance'), 'GO recomendado');
 assert.equal(tenderRecommendationLabel('avanzar'), 'GO recomendado');
-assert.equal(tenderRecommendationLabel('advance_conditionally'), 'GO condicionado');
-assert.equal(tenderRecommendationLabel('avanzar_condicionado'), 'GO condicionado');
+assert.equal(tenderRecommendationLabel('advance_conditionally'), 'Avanzar de forma condicionada');
+assert.equal(tenderRecommendationLabel('avanzar_condicionado'), 'Avanzar de forma condicionada');
 assert.equal(tenderRecommendationLabel('do_not_advance'), 'NO GO recomendado');
 assert.equal(tenderRecommendationLabel('no_avanzar'), 'NO GO recomendado');
 assert.equal(tenderRecommendationLabel('pause'), 'Información insuficiente');
