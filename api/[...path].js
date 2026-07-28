@@ -1508,6 +1508,16 @@ app.get('/api/tender-tracking', async (req, res) => {
 
 const TENDER_TRACKING_EVENTS_DEFAULT_LIMIT = 50;
 const TENDER_TRACKING_EVENTS_MAX_LIMIT = 200;
+const TENDER_BUSINESS_EVENT_TYPES = [
+  'entered_tracking', 'tracking_updated', 'assigned', 'blocked', 'unblocked', 'returned_to_radar', 'converted', 'discarded',
+  'requirement_pending', 'information_requested', 'addendum_reviewed', 'observation_recorded', 'internal_meeting', 'case_note',
+  'go_decided', 'no_go_decided', 'offer_preparation_started', 'offer_submitted', 'awarded', 'not_awarded', 'cancelled', 'deserted',
+];
+const TENDER_TECHNICAL_EVENT_TYPES = [
+  'detected', 'pipeline_queued', 'document_discovery_started', 'document_import_progress', 'document_import_completed',
+  'document_import_partial', 'document_import_failed', 'snapshot_published', 'analysis_queued', 'analysis_started',
+  'analysis_completed', 'analysis_failed', 'analysis_rules_fallback_shown',
+];
 
 function parseTenderTrackingEventsCursor(value) {
   const raw = String(value || '').trim();
@@ -1528,7 +1538,11 @@ app.get('/api/tender-tracking-events', async (req, res) => {
     const tender = await getTenderTrackingTender(database, tenderId);
     const limit = Math.min(TENDER_TRACKING_EVENTS_MAX_LIMIT, Math.max(1, Number.parseInt(req.query.limit, 10) || TENDER_TRACKING_EVENTS_DEFAULT_LIMIT));
     const cursor = parseTenderTrackingEventsCursor(req.query.cursor);
+    const scope = String(req.query.scope || 'business');
+    if (!['business', 'technical'].includes(scope)) throw trackingError('Alcance de historial inválido.');
+    const eventTypes = scope === 'technical' ? TENDER_TECHNICAL_EVENT_TYPES : TENDER_BUSINESS_EVENT_TYPES;
     let query = database.from('psi_tender_tracking_events').select('*').eq('tender_id', tender.id)
+      .in('event_type', eventTypes)
       .order('created_at', { ascending: false }).order('id', { ascending: false }).limit(limit + 1);
     if (cursor) query = query.or(`created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`);
     const rows = (await must(query)) || [];

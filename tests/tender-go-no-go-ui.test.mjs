@@ -16,7 +16,7 @@ const api = read('src/tenders/api.ts');
 const types = read('src/tenders/types.ts');
 const main = read('src/main.tsx');
 assert.match(panel, /opportunityName/);
-assert.match(panel, /<dt>Oportunidad<\/dt><dd>\{opportunityName\}<\/dd>/);
+assert.doesNotMatch(panel, /<dt>Oportunidad<\/dt>/, 'El modal no debe repetir datos ya visibles de la oportunidad.');
 
 for (const text of ['Recomendación del sistema', 'Decisión humana', 'Registrar GO', 'Registrar NO GO', 'Comentario opcional']) {
   assert.match(panel, new RegExp(text), `El panel debe mostrar ${text}.`);

@@ -96,6 +96,12 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
     triggerRef.current = trigger;
     setSelectedDecision(decision);
   };
+  const scrollToPreparation = useCallback(() => {
+    const target = document.getElementById('tender-preparation');
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const focusable = target?.querySelector<HTMLElement>('button, input, textarea, select, [tabindex]:not([tabindex="-1"])');
+    focusable?.focus({ preventScroll: true });
+  }, []);
 
   useEffect(() => {
     requestVersionRef.current += 1;
@@ -191,7 +197,10 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
         return;
       }
       await onChanged();
-      if (activeOpportunityRef.current === opportunityId) setSyncPending(false);
+      if (activeOpportunityRef.current === opportunityId) {
+        setSyncPending(false);
+        if (submittedDecision === 'go') requestAnimationFrame(scrollToPreparation);
+      }
     } catch (error) {
       if (activeOpportunityRef.current === opportunityId) {
         setStatus(persistedSuccessfully
@@ -207,16 +216,15 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
 
   const current = payload.decision;
   return <section className="tender-go-no-go-panel" aria-labelledby="tender-go-no-go-heading">
-    <header className="tender-go-no-go-head">
-      <div><span className="eyebrow">Control formal de licitación</span><h3 id="tender-go-no-go-heading">Decisión GO / NO GO</h3><p>La recomendación asistida no autoriza la oferta. La decisión humana queda auditada y no se edita ni elimina.</p></div>
-      <div className="tender-go-no-go-status"><small>Decisión vigente</small><strong>{loading ? 'Cargando…' : decisionLabel(current?.decision)}</strong><span>{current ? `${current.psi_sales_profiles?.full_name || current.decided_by} · ${date(current.decided_at)}` : 'Sin decisión humana registrada'}</span></div>
-    </header>
-    <div className="tender-go-no-go-grid">
-      <article><small>Recomendación del sistema</small><strong>{recommendation}</strong></article>
-      <article><small>Decisión humana</small><strong>{decisionLabel(current?.decision)}</strong><p>{current?.justification || 'Sin comentario humano.'}</p>{current && <span>Actor: {current.psi_sales_profiles?.full_name || current.decided_by} · {date(current.decided_at)}</span>}</article>
+    <header className="tender-go-no-go-head"><div><span className="eyebrow">Control formal de licitación</span><h3 id="tender-go-no-go-heading">Decisión GO / NO GO</h3><p>Vig-IA recomienda; la decisión y el avance operativo pertenecen a la persona autorizada.</p></div></header>
+    <div className="tender-go-no-go-grid tender-go-no-go-summary">
+      <article><small>Recomendación del sistema</small><strong>{recommendation}</strong><span>Referencia de apoyo; no autoriza la oferta.</span></article>
+      <article className="tender-go-no-go-current"><small>Decisión humana vigente</small><strong>{loading ? 'Cargando…' : decisionLabel(current?.decision)}</strong>{current ? <><p>{current.justification || 'Sin comentario humano.'}</p><span>{current.psi_sales_profiles?.full_name || current.decided_by} · {date(current.decided_at)}</span></> : <span>Sin decisión humana registrada</span>}</article>
+      {current?.decision === 'go' && <article className="tender-go-no-go-next"><small>Estado operativo</small><strong>Preparación iniciada</strong><p><b>Siguiente paso:</b> completar el expediente y dejar la oferta lista para presentar.</p><button type="button" className="secondary" onClick={scrollToPreparation}>Abrir expediente de oferta</button></article>}
+      {current?.decision === 'no_go' && <article className="tender-go-no-go-next"><small>Estado operativo</small><strong>Proceso cerrado por NO GO</strong><p><b>Siguiente paso:</b> conservar la decisión y su evidencia para consulta.</p></article>}
     </div>
 
-    {analysisWarnings.length > 0 && <div className="notice" role="alert"><strong>Advertencias del análisis</strong><ul>{analysisWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul><p>Estas advertencias no autorizan ni bloquean la decisión humana.</p></div>}
+    {analysisWarnings.length > 0 && <details className="tender-go-no-go-warnings"><summary>Alertas del análisis ({analysisWarnings.length})</summary><ul>{analysisWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul><p>Estas advertencias no autorizan ni bloquean la decisión humana.</p></details>}
     {status && <div className="notice" role="status">{status}</div>}
     {syncPending && <div className="tender-go-no-go-actions"><button type="button" className="secondary" onClick={() => void reconcile()} disabled={busy}>{busy ? 'Actualizando…' : 'Reintentar actualización'}</button></div>}
     {allowed ? <div className="tender-go-no-go-actions">
@@ -224,11 +232,11 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
       <button type="button" className="danger" onClick={event => open('no_go', event.currentTarget)} disabled={!decisionGate.canNoGo || busy || loading || syncPending}>Registrar NO GO</button>
       <p className="muted">Vig-IA recomienda; la persona autorizada conserva la autoridad absoluta para GO o NO GO.</p>
     </div> : <p className="muted">Solo Admin, Gerencia o Dirección de Licitaciones con permiso pueden registrar una decisión. La decisión vigente permanece disponible en solo lectura.</p>}
-    <section className="tender-go-no-go-history" aria-label="Historial inmutable de decisiones"><strong>Historial inmutable</strong>{loading ? <p>Cargando historial…</p> : payload.history.length ? <ol>{payload.history.map(entry => <li key={entry.id}><strong>{decisionLabel(entry.decision)}</strong><span>{entry.psi_sales_profiles?.full_name || entry.decided_by} · {date(entry.decided_at)}</span>{entry.justification && <p>{entry.justification}</p>}</li>)}</ol> : <p>Sin entradas previas.</p>}</section>
+    <details className="tender-go-no-go-history"><summary>Historial de decisiones</summary>{loading ? <p>Cargando historial…</p> : payload.history.length ? <ol>{payload.history.map(entry => <li key={entry.id}><strong>{decisionLabel(entry.decision)}</strong><span>{entry.psi_sales_profiles?.full_name || entry.decided_by} · {date(entry.decided_at)}</span>{entry.justification && <p>{entry.justification}</p>}</li>)}</ol> : <p>Sin entradas previas.</p>}</details>
     {selectedDecision && <div className="tender-go-no-go-backdrop" role="presentation" onMouseDown={close}>
       <div className="tender-go-no-go-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="tender-go-no-go-confirm-title" onMouseDown={event => event.stopPropagation()}>
         <header><h4 id="tender-go-no-go-confirm-title" tabIndex={-1} ref={initialFocusRef}>Confirmar {selectedDecision === 'go' ? 'GO' : 'NO GO'}</h4><button type="button" className="secondary" onClick={close} disabled={busy} aria-label="Cerrar confirmación">Cerrar</button></header>
-        <dl><dt>Oportunidad</dt><dd>{opportunityName}</dd><dt>Referencia</dt><dd>{opportunityId}</dd><dt>Recomendación del sistema</dt><dd>{recommendation}</dd><dt>Decisión elegida</dt><dd>{selectedDecision === 'go' ? 'Registrar GO' : 'Registrar NO GO'}</dd></dl>
+        <p className="tender-go-no-go-confirmation"><strong>Decisión elegida:</strong> {selectedDecision === 'go' ? 'Registrar GO e iniciar la preparación de la oferta.' : 'Registrar NO GO y cerrar el proceso.'}</p>
         {analysisWarnings.length > 0 && <div className="notice" role="alert"><ul>{analysisWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul></div>}
         <label>Comentario opcional<textarea value={justification} onChange={event => setJustification(event.target.value)} disabled={busy} placeholder="Puede documentar brevemente el criterio de la decisión." /></label>
         <footer><button type="button" className="secondary" onClick={close} disabled={busy}>Cancelar</button><button type="button" className={selectedDecision === 'no_go' ? 'danger' : ''} onClick={() => void submit()} disabled={busy || syncPending}>{busy ? 'Registrando…' : 'Confirmar decisión'}</button></footer>

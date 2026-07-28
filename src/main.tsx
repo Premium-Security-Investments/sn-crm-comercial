@@ -15,10 +15,10 @@ import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDeci
 import { TenderModuleNavigation } from './tenders/components/TenderModuleNavigation';
 import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
 import { tenderAnalysisMethodLabel } from './tenders/tenderDecisionBrief';
-import { loadTrackingEvents, postActuation } from './tenders/api';
+import { loadTenderGoNoGoDecision, loadTenderOfferStatus, loadTrackingEvents, postActuation } from './tenders/api';
 import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
 import { tenderSharePointStatusLabel } from './tenders/statusLabels';
-import type { TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderProcessingStatus, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
+import type { TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
 import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
 import { supabaseBrowser } from './supabaseBrowser';
@@ -982,7 +982,7 @@ function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, o
         <div className="document-status-card"><small>Estado expediente</small><Badge tone="green">Preparación iniciada</Badge><strong>{authorizedPreparation.checklist_summary?.total || 0} ítems</strong></div>
         <div className="document-risk-meter"><small>Carpeta SharePoint / OneDrive</small><strong>{tenderSharePointStatusLabel(authorizedPreparation.sharepoint_folder?.status)}</strong><span>{authorizedPreparation.sharepoint_folder?.root_name || 'Se creará al configurar integración Graph'}</span></div>
       </div>
-      <div className="document-upload-row">{sharePointUrl ? <a className="button" href={sharePointUrl} target="_blank" rel="noreferrer">Abrir carpeta</a> : <small className="muted">Carpeta SharePoint / OneDrive: vínculo pendiente de integración automática.</small>}</div>
+      <div className="document-upload-row">{sharePointUrl ? <a className="button" href={sharePointUrl} target="_blank" rel="noopener noreferrer">Abrir carpeta</a> : <p className="muted">Carpeta de oferta aún no conectada. Mientras se habilita la integración, los documentos se gestionan directamente en el expediente.</p>}</div>
       <TenderOfferStatusPanel opportunityId={opportunity.id} opportunityName={opportunity.company_name || 'Oportunidad de licitación'} currentProfile={currentProfile} request={api} onChanged={async () => { await loadPreparation(); await onChanged(); }} />
       {statusText && <div className="notice">{statusText}</div>}
       <div className="document-analysis-grid">
@@ -990,8 +990,8 @@ function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, o
         <section className="document-analysis-card"><small>Documentos por generar</small><ul>{(authorizedPreparation.planned_documents || authorizedPreparation.auto_generated_documents || []).map(doc => <li key={doc.key}><strong>{doc.name}</strong> · {doc.folder} · {doc.owner}</li>)}</ul></section>
         <section className="document-analysis-card"><small>Requiere intervención humana</small><ul>{(authorizedPreparation.human_required_items || []).map(item => <li key={item.key}><strong>{item.title || item.name}</strong> · {item.owner}<br/><span className="muted">{item.reason}</span></li>)}</ul></section>
         <section className="document-analysis-card"><small>Carpeta SharePoint / OneDrive</small><strong>{authorizedPreparation.sharepoint_folder?.root_name}</strong><div className="document-matrix">{(authorizedPreparation.sharepoint_folder?.folders || []).slice(0, 8).map(folder => <div key={folder}><Badge tone="blue">carpeta</Badge><span>{folder}</span></div>)}</div></section>
-        <section className="document-analysis-card"><small>Notas para el asistente</small><ul>{(authorizedPreparation.assistant_notes || []).map(item => <li key={item}>{item}</li>)}</ul>{payload.notes?.length ? <div className="timeline">{payload.notes.slice(-4).map((n, idx) => <div className="event" key={`${n.created_at}-${idx}`}><strong>{n.status || 'nota'}</strong><span>{fmtDate(n.created_at)} · {n.created_by_name || n.created_by || 'Usuario'}</span><p>{n.note}</p></div>)}</div> : null}</section>
-        <section className="document-analysis-card"><small>Informar qué necesitamos para seguir adelante</small><form onSubmit={saveAssistantNote} className="form"><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Ej: necesitamos que contabilidad confirme capital de trabajo y cargue estados financieros 2025…"/><button disabled={busy || !note.trim()}>Guardar nota para el asistente</button></form></section>
+        <section className="document-analysis-card"><small>Notas del sistema sobre el plan</small><ul>{(authorizedPreparation.assistant_notes || []).map(item => <li key={item}>{item}</li>)}</ul></section>
+        <section className="document-analysis-card"><small>Nota interna de preparación</small><p className="muted">Esta nota queda en el historial del expediente para el equipo. No es procesada ni respondida automáticamente por Vig-IA.</p>{payload.notes?.length ? <div className="timeline">{payload.notes.slice(-4).map((n, idx) => <div className="event" key={`${n.created_at}-${idx}`}><strong>{n.status || 'nota'}</strong><span>{fmtDate(n.created_at)} · {n.created_by_name || n.created_by || 'Usuario'}</span><p>{n.note}</p></div>)}</div> : null}<form onSubmit={saveAssistantNote} className="form"><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Ej: necesitamos que contabilidad confirme capital de trabajo y cargue estados financieros 2025…"/><button disabled={busy || !note.trim()}>Guardar nota interna</button></form></section>
       </div>
     </div> : <div className="document-empty-state"><strong>Preparación pendiente de registrar GO</strong><span>Registrar GO en la decisión formal para crear el expediente, documentos genéricos automáticos y pendientes humanos. Hasta entonces este panel es de solo lectura.</span>{statusText && <div className="notice">{statusText}</div>}</div>}
   </Panel>;
@@ -1016,9 +1016,31 @@ function FollowUpForm({ opportunityId, profiles, currentProfile, onSaved }: { op
   return <Panel title="Registrar seguimiento"><form onSubmit={save} className="form"><Select value={form.interaction_type} onChange={v=>setForm({...form, interaction_type:v})} options={interactionTypes.map(t=>[t,t])} empty="Tipo"/>{profiles.length > 1 && <Select value={form.created_by} onChange={v=>setForm({...form, created_by:v})} options={profiles.map(p=>[p.id,p.full_name])} empty="Quién registra"/>}<label>Fecha del seguimiento<input type="datetime-local" value={form.occurred_at} onChange={e=>setForm({...form, occurred_at:e.target.value})}/></label><label>Programar próxima gestión<input type="datetime-local" value={form.next_action_at} onChange={e=>setForm({...form, next_action_at:e.target.value})}/></label><textarea required placeholder="Nota del seguimiento" value={form.notes} onChange={e=>setForm({...form, notes:e.target.value})}/><button>Guardar seguimiento</button>{status && <small>{status}</small>}</form></Panel>;
 }
 const publicActuationOptions = [['requirement_pending','Requerimiento pendiente'],['information_requested','Información solicitada'],['addendum_reviewed','Adenda revisada'],['observation_recorded','Observación registrada'],['internal_meeting','Reunión interna'],['case_note','Nota del caso']];
-function publicActuationLabel(value: string) { return publicActuationOptions.find(([code]) => code === value)?.[1] || value.split('_').join(' '); }
+const businessEventLabels: Record<string, string> = {
+  entered_tracking: 'Ingresó a seguimiento', tracking_updated: 'Seguimiento actualizado', assigned: 'Responsable asignado',
+  blocked: 'Proceso bloqueado', unblocked: 'Proceso desbloqueado', returned_to_radar: 'Devuelta al Radar',
+  converted: 'Convertida en oportunidad', discarded: 'Oportunidad descartada', requirement_pending: 'Requerimiento pendiente',
+  information_requested: 'Información solicitada', addendum_reviewed: 'Adenda revisada', observation_recorded: 'Observación registrada',
+  internal_meeting: 'Reunión interna', case_note: 'Nota del caso', go_decided: 'GO registrado', no_go_decided: 'NO GO registrado',
+  offer_preparation_started: 'Preparación de oferta iniciada', offer_submitted: 'Oferta presentada', awarded: 'Oferta adjudicada',
+  not_awarded: 'Oferta no adjudicada', cancelled: 'Proceso cancelado', deserted: 'Proceso desierto',
+};
+const technicalEventLabels: Record<string, string> = {
+  detected: 'Proceso detectado', pipeline_queued: 'Procesamiento en cola', document_discovery_started: 'Búsqueda documental iniciada',
+  document_import_progress: 'Importación documental en curso', document_import_completed: 'Importación documental completada',
+  document_import_partial: 'Importación documental parcial', document_import_failed: 'Importación documental fallida',
+  snapshot_published: 'Versión documental consolidada', analysis_queued: 'Análisis en cola', analysis_started: 'Análisis iniciado',
+  analysis_completed: 'Análisis completado', analysis_failed: 'Análisis fallido', analysis_rules_fallback_shown: 'Análisis alternativo mostrado',
+};
+const offerStatusLabels: Record<string, string> = { en_preparacion: 'En preparación', lista_para_presentar: 'Lista para presentar', presentada: 'Presentada', adjudicada: 'Adjudicada', no_adjudicada: 'No adjudicada', cerrada_no_go: 'Cerrada NO GO' };
+function publicActuationLabel(value: string) { return businessEventLabels[value] || 'Hito del proceso'; }
+function technicalActuationLabel(value: string) { return technicalEventLabels[value] || 'Evento técnico'; }
+type TenderProcessHistoryItem = { id: string; title: string; createdAt: string; actor: string; note?: string | null; sourceUrl?: string | null };
 function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { opportunity: Opportunity; profiles: Profile[]; currentProfile: Profile }) {
   const [events, setEvents] = useState<TenderTrackingEvent[]>([]);
+  const [technicalEvents, setTechnicalEvents] = useState<TenderTrackingEvent[]>([]);
+  const [decisions, setDecisions] = useState<TenderGoNoGoDecision[]>([]);
+  const [offerHistory, setOfferHistory] = useState<TenderOfferStatusTransition[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [type, setType] = useState('case_note');
   const [note, setNote] = useState('');
@@ -1027,13 +1049,23 @@ function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { oppor
   const loadPage = async (cursor: string | null) => {
     setLoading(true);
     try {
-      const page = await loadTrackingEvents(api, opportunity.id, cursor);
+      const page = await loadTrackingEvents(api, opportunity.id, cursor, 'business');
       setEvents(current => cursor ? [...current, ...page.events] : page.events);
       setNextCursor(page.next_cursor);
+      if (!cursor) {
+        const [technical, decisionPayload, statusPayload] = await Promise.all([
+          loadTrackingEvents(api, opportunity.id, null, 'technical'),
+          loadTenderGoNoGoDecision(api, opportunity.id),
+          loadTenderOfferStatus(api, opportunity.id),
+        ]);
+        setTechnicalEvents(technical.events);
+        setDecisions(decisionPayload.history || []);
+        setOfferHistory(statusPayload.history || []);
+      }
     } finally { setLoading(false); }
   };
   useEffect(() => {
-    setEvents([]); setNextCursor(null); setStatus('');
+    setEvents([]); setTechnicalEvents([]); setDecisions([]); setOfferHistory([]); setNextCursor(null); setStatus('');
     void loadPage(null).catch(error => setStatus(error instanceof Error ? error.message : String(error)));
   }, [opportunity.id]);
   const save = async (event: React.FormEvent) => {
@@ -1044,11 +1076,21 @@ function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { oppor
       await loadPage(null);
     } catch (error) { setStatus(error instanceof Error ? error.message : String(error)); }
   };
-  const actorLabel = (event: TenderTrackingEvent) => event.actor_kind === 'system' ? 'Sistema' : profiles.find(profile => profile.id === event.created_by)?.full_name || (event.actor_kind === 'agent' ? 'Agente SIIO' : 'Usuario registrado');
+  const actorLabel = (event: TenderTrackingEvent) => event.actor_kind === 'system' ? 'Sistema' : profiles.find(profile => profile.id === event.created_by)?.full_name || (event.actor_kind === 'agent' ? 'Vig-IA' : 'Usuario registrado');
   const eventLink = (event: TenderTrackingEvent) => typeof event.metadata?.source_url === 'string' ? event.metadata.source_url : null;
+  const processHistory = useMemo<TenderProcessHistoryItem[]>(() => [
+    ...events.filter(event => {
+      if (decisions.length && ['go_decided', 'no_go_decided'].includes(event.event_type)) return false;
+      if (offerHistory.length && event.event_type === 'offer_preparation_started') return false;
+      return true;
+    }).map(event => ({ id: `tracking-${event.id}`, title: publicActuationLabel(event.event_type), createdAt: event.created_at, actor: actorLabel(event), note: event.note, sourceUrl: eventLink(event) })),
+    ...decisions.map(decision => ({ id: `decision-${decision.id}`, title: decision.decision === 'go' ? 'GO registrado' : 'NO GO registrado', createdAt: decision.decided_at, actor: decision.psi_sales_profiles?.full_name || decision.decided_by || 'Persona autorizada', note: decision.justification })),
+    ...offerHistory.map(event => ({ id: `offer-${event.id}`, title: `${offerStatusLabels[event.from_status] || event.from_status} → ${offerStatusLabels[event.to_status] || event.to_status}`, createdAt: event.changed_at, actor: event.psi_sales_profiles?.full_name || event.actor_id || 'Persona autorizada', note: event.note })),
+  ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [events, decisions, offerHistory, profiles]);
   return <div className="stack">
     <Panel title="Registrar actuación o novedad"><form onSubmit={save} className="form"><Select value={type} onChange={setType} options={publicActuationOptions} empty="Tipo de actuación"/><textarea required placeholder="Describe la actuación o novedad del proceso" value={note} onChange={event => setNote(event.target.value)}/><small>Registrado por: {currentProfile.full_name}</small><button disabled={!note.trim()}>Guardar actuación</button>{status && <small>{status}</small>}</form></Panel>
-    <Panel title="Historial del proceso"><div className="timeline">{events.length ? events.map(event => <div className="event" key={event.id}><strong>{publicActuationLabel(event.event_type)}</strong><span>{fmtDate(event.created_at)} · {actorLabel(event)}</span>{event.note && <p>{event.note}</p>}{eventLink(event) && <a href={eventLink(event) || undefined} target="_blank" rel="noreferrer">Ver fuente asociada</a>}</div>) : <p className="muted">{loading ? 'Cargando historial…' : 'Sin actuaciones registradas.'}</p>}</div>{nextCursor && <button className="secondary" disabled={loading} onClick={() => void loadPage(nextCursor).catch(error => setStatus(error instanceof Error ? error.message : String(error)))}>{loading ? 'Cargando…' : 'Cargar más'}</button>}</Panel>
+    <Panel title="Historial del proceso"><p className="muted">Decisiones, cambios de estado y actuaciones que explican la evolución comercial de la oportunidad.</p><div className="timeline">{processHistory.length ? processHistory.map(item => <div className="event" key={item.id}><strong>{item.title}</strong><span>{fmtDate(item.createdAt)} · {item.actor}</span>{item.note && <p>{item.note}</p>}{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Ver fuente asociada</a>}</div>) : <p className="muted">{loading ? 'Cargando historial…' : 'Sin hitos comerciales registrados.'}</p>}</div>{nextCursor && <button className="secondary" disabled={loading} onClick={() => void loadPage(nextCursor).catch(error => setStatus(error instanceof Error ? error.message : String(error)))}>{loading ? 'Cargando…' : 'Cargar más'}</button>}</Panel>
+    <details className="tender-technical-audit"><summary>Auditoría técnica de Vig-IA</summary><p className="muted">Procesamiento documental, análisis y fallas técnicas. No representa el avance comercial.</p><div className="timeline">{technicalEvents.length ? technicalEvents.map(event => <div className="event" key={event.id}><strong>{technicalActuationLabel(event.event_type)}</strong><span>{fmtDate(event.created_at)} · {actorLabel(event)}</span>{event.note && <p>{event.note}</p>}</div>) : <p className="muted">Sin eventos técnicos registrados.</p>}</div></details>
   </div>;
 }
 function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; refresh: () => Promise<void> }) {

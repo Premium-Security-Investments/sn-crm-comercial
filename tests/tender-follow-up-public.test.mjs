@@ -18,7 +18,7 @@ assert.doesNotMatch(main, /<Panel title="Datos del proceso">/, 'Seguimiento no d
 assert.match(main, /<Panel title="Resumen de la oportunidad">/, 'La ficha pública debe mostrar un resumen consolidado antes del seguimiento.');
 assert.match(main, /<Panel title="Registrar actuación o novedad">/, 'Debe mostrar el formulario público');
 assert.match(main, /<Panel title="Historial del proceso">/, 'Debe mostrar el historial unificado');
-assert.match(main, /loadTrackingEvents\(api, opportunity\.id, cursor\)/, 'El historial público debe cargar páginas por cursor');
+assert.match(main, /loadTrackingEvents\(api, opportunity\.id, cursor, 'business'\)/, 'El historial público debe cargar páginas comerciales por cursor');
 assert.match(main, /postActuation\(api, \{ tender_id: opportunity\.id, type, note \}\)/, 'La actuación debe usar el endpoint tipado');
 assert.match(main, /Registrado por: \{currentProfile\.full_name\}/, 'El actor debe derivarse del perfil actual');
 

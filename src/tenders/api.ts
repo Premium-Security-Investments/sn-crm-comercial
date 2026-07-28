@@ -9,9 +9,10 @@ export async function loadTracking<T>(request: TenderRequest): Promise<T> {
   return request<T>('/api/tender-tracking');
 }
 
-export async function loadTrackingEvents(request: TenderRequest, tenderId: string, cursor?: string | null): Promise<TenderTrackingEventsPage> {
+export async function loadTrackingEvents(request: TenderRequest, tenderId: string, cursor?: string | null, scope: 'business' | 'technical' = 'business'): Promise<TenderTrackingEventsPage> {
   const query = new URLSearchParams({ id: tenderId, limit: '50' });
   if (cursor) query.set('cursor', cursor);
+  query.set('scope', scope);
   return request<TenderTrackingEventsPage>(`/api/tender-tracking-events?${query.toString()}`);
 }
 
