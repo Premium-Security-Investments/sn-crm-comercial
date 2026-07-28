@@ -1,0 +1,45 @@
+{
+  "contract_version": "2.0-draft.1",
+  "capability_id": "agt003.opportunity-copilot.preview",
+  "correlation_id": "corr-synthetic-001",
+  "snapshot_id": "snapshot-synthetic-001",
+  "policy_version": "vigia-commercial-draft-v1",
+  "model": "synthetic-structured-model",
+  "generated_at": "2030-02-01T10:01:00.000Z",
+  "brief": {
+    "summary": "La oportunidad está en contacto inicial y se relaciona con seguridad electrónica.",
+    "facts": [
+      {
+        "text": "La oportunidad está en contacto inicial.",
+        "evidence_refs": [
+          "evidence:opportunity:stage"
+        ]
+      }
+    ],
+    "inferences": [
+      {
+        "text": "Conviene aclarar el número de sedes antes de proponer alcance.",
+        "evidence_refs": [
+          "evidence:interaction:001"
+        ],
+        "confidence": "medium"
+      }
+    ],
+    "missing_information": [
+      "Cantidad y ubicación de las sedes."
+    ],
+    "contact_objective": "Acordar una reunión breve de descubrimiento.",
+    "strategy": "Usar un mensaje consultivo y evitar comprometer una solución antes del levantamiento.",
+    "draft": {
+      "subject": "Conversación sobre cobertura de seguridad física",
+      "body": "Hola, quisiera coordinar una conversación breve para entender la cobertura requerida y preparar una orientación adecuada. Este borrador requiere revisión humana."
+    },
+    "recommended_asset_ids": [
+      "asset-synthetic-001"
+    ],
+    "warnings": [
+      "No se dispone aún de número ni ubicación de sedes."
+    ],
+    "human_review_required": true
+  }
+}
