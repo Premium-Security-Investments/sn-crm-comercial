@@ -54,7 +54,7 @@ export function createAgt002PreviewEngine({
 
     let parsed;
     try {
-      if (typeof raw?.content !== 'string' || raw.content.trim() !== raw.content) throw new Error('shape');
+      if (typeof raw?.content !== 'string' || !raw.content.trim()) throw new Error('shape');
       parsed = JSON.parse(raw.content);
     } catch {
       throw safe(SAFE_INVALID);

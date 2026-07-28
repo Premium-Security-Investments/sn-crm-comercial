@@ -85,6 +85,19 @@ for (const text of ['datos no confiables', 'GO / NO GO', 'herramientas', 'eviden
   assert.equal(client.calls[0].outputSchema.properties.human_review_required.const, true);
 }
 
+// Valid JSON wrapped in peripheral whitespace (trailing newline, etc.) must still be
+// accepted: JSON.parse tolerates it and the bridge legitimately returns it that way.
+{
+  const client = fakeClient(async () => ({
+    content: `\n  ${JSON.stringify(validModelOutput())}\n`,
+    usage: { input_tokens: 120, output_tokens: 40 },
+  }));
+  const engine = createAgt002PreviewEngine({ client, ...baseEngineOptions() });
+  const result = await engine.analyze(context);
+  assert.equal(result.status, 'completed');
+  assert.equal(result.human_review_required, true);
+}
+
 // Citation discipline enforced end-to-end: a hallucinated evidence_id is rejected safely.
 {
   const client = fakeClient(async () => ({
