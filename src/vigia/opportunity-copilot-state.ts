@@ -35,7 +35,9 @@ export type OpportunityCopilotState =
 export function canRenderOpportunityCopilot(profile: CopilotProfile | null | undefined, serviceTypeCode: string | null | undefined) {
   if (!profile?.active || profile.identity_type === 'agent' || serviceTypeCode === 'licitacion_publica') return false;
   const permissions = new Set(profile.permissions || []);
-  return permissions.has('modulo_vig_ia') && permissions.has('modulo_oportunidades');
+  return permissions.has('modulo_vig_ia')
+    && permissions.has('modulo_oportunidades')
+    && permissions.has('vigia_copilot_pilot');
 }
 
 export function createOpportunityCopilotState(opportunityId: string): OpportunityCopilotState {

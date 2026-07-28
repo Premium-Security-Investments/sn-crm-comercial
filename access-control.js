@@ -333,7 +333,8 @@ export function can(profile, action, resource = {}) {
     case ACTIONS.AI_COMMERCIAL_DRAFT_RUN:
       if (!validCrmResource(resource)
         || !hasEligibleModule(profile, 'modulo_vig_ia')
-        || !hasEligibleModule(profile, 'modulo_oportunidades')) return false;
+        || !hasEligibleModule(profile, 'modulo_oportunidades')
+        || !hasPermission(profile, 'vigia_copilot_pilot')) return false;
       return hasHumanRole(profile, PRIVILEGED_ROLES)
         || canDirectorCommercialResource(profile, resource)
         || (hasHumanRole(profile, COMMERCIAL_ROLES) && ownsResource(profile, resource, 'owner_id'));

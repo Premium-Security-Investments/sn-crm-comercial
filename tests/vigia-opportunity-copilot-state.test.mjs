@@ -17,8 +17,9 @@ const {
 
 const opportunityA = '11111111-1111-4111-8111-111111111111';
 const opportunityB = '22222222-2222-4222-8222-222222222222';
-const profile = { active: true, identity_type: 'human', permissions: ['modulo_vig_ia', 'modulo_oportunidades'] };
+const profile = { active: true, identity_type: 'human', permissions: ['modulo_vig_ia', 'modulo_oportunidades', 'vigia_copilot_pilot'] };
 assert.equal(canRenderOpportunityCopilot(profile, 'seguridad_fisica'), true);
+assert.equal(canRenderOpportunityCopilot({ ...profile, permissions: ['modulo_vig_ia', 'modulo_oportunidades'] }, 'seguridad_fisica'), false);
 assert.equal(canRenderOpportunityCopilot(profile, 'licitacion_publica'), false);
 assert.equal(canRenderOpportunityCopilot({ ...profile, identity_type: 'agent' }, 'seguridad_fisica'), false);
 assert.equal(canRenderOpportunityCopilot({ ...profile, permissions: ['modulo_vig_ia'] }, 'seguridad_fisica'), false);

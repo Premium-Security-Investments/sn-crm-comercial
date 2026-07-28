@@ -169,13 +169,15 @@ runCases('CRM', [
 ], ({ profile: candidate, action, resource }) => can(candidate, action, resource));
 
 runCases('Vig-IA borrador comercial', [
-  { name: 'comercial con ambos módulos ejecuta sobre oportunidad propia', profile: human('comercial', { permissions: ['modulo_vig_ia', 'modulo_oportunidades'] }), resource: ownOpportunity, expected: true },
+  { name: 'comercial con ambos módulos ejecuta sobre oportunidad propia', profile: human('comercial', { permissions: ['modulo_vig_ia', 'modulo_oportunidades', 'vigia_copilot_pilot'] }), resource: ownOpportunity, expected: true },
+  { name: 'admin con módulos pero sin permiso piloto falla cerrado', profile: human('admin', { permissions: ['modulo_vig_ia', 'modulo_oportunidades'] }), resource: ownOpportunity, expected: false },
+  { name: 'gerencia con módulos y permiso piloto ejecuta', profile: human('gerencia', { permissions: ['modulo_vig_ia', 'modulo_oportunidades', 'vigia_copilot_pilot'] }), resource: ownOpportunity, expected: true },
   { name: 'comercial sin Vig-IA falla cerrado', profile: human('comercial', { permissions: ['modulo_oportunidades'] }), resource: ownOpportunity, expected: false },
   { name: 'comercial sin Oportunidades falla cerrado', profile: human('comercial', { permissions: ['modulo_vig_ia'] }), resource: ownOpportunity, expected: false },
   { name: 'comercial con ambos módulos no ejecuta sobre oportunidad ajena', profile: human('comercial', { permissions: ['modulo_vig_ia', 'modulo_oportunidades'] }), resource: { ...ownOpportunity, owner_id: 'other' }, expected: false },
-  { name: 'director con ambos módulos y scope ejecuta', profile: commercialDirector([{ area_code: 'comercial', subarea_code: 'norte' }], { permissions: ['modulo_vig_ia', 'modulo_oportunidades'] }), resource: ownOpportunity, expected: true },
+  { name: 'director con ambos módulos y scope ejecuta', profile: commercialDirector([{ area_code: 'comercial', subarea_code: 'norte' }], { permissions: ['modulo_vig_ia', 'modulo_oportunidades', 'vigia_copilot_pilot'] }), resource: ownOpportunity, expected: true },
   { name: 'director con ambos módulos fuera de scope falla', profile: commercialDirector([{ area_code: 'comercial', subarea_code: 'sur' }], { permissions: ['modulo_vig_ia', 'modulo_oportunidades'] }), resource: ownOpportunity, expected: false },
-  { name: 'gerencia con ambos módulos ejecuta', profile: human('gerencia', { permissions: ['modulo_vig_ia', 'modulo_oportunidades'] }), resource: ownOpportunity, expected: true },
+  { name: 'gerencia con ambos módulos ejecuta', profile: human('gerencia', { permissions: ['modulo_vig_ia', 'modulo_oportunidades', 'vigia_copilot_pilot'] }), resource: ownOpportunity, expected: true },
   { name: 'agente no puede ejecutar aunque aparente módulos y scope', profile: agent({ permissions: ['modulo_vig_ia', 'modulo_oportunidades'] }), resource: ownOpportunity, expected: false },
 ], ({ profile: candidate, resource }) => can(candidate, ACTIONS.AI_COMMERCIAL_DRAFT_RUN, resource));
 
