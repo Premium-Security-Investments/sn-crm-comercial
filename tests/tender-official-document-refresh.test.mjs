@@ -103,6 +103,26 @@ await (async function partialFailureDoesNotStopTheBatch() {
   assert.match(results[0].error, /SECOP: descarga fallida/);
 })();
 
+await (async function secopMaintenanceHtmlIsRetryableNotEmptyText() {
+  const maintenance = Buffer.from('<!DOCTYPE html><html><head><title>Maintenance</title></head><body>¡La plataforma no está disponible!</body></html>');
+  await assert.rejects(
+    () => refreshOfficialTenderDocument({
+      opportunityId: 'opp-1', source: 'SECOP II', document: { ...officialDocument, source_document_id: 'doc-maintenance', name: 'minuta.pdf' },
+      currentVersion: null,
+      download: async () => maintenance,
+      extractText: async () => { throw new Error('extractText must not parse an HTML maintenance page as PDF'); },
+      ensureStorage: async () => { throw new Error('ensureStorage must not run while SECOP is unavailable'); },
+      upload: async () => { throw new Error('upload must not run while SECOP is unavailable'); },
+      recordVersion: async () => { throw new Error('recordVersion must not run while SECOP is unavailable'); },
+    }),
+    error => {
+      assert.equal(error.code, 'TENDER_DOC_SOURCE_UNAVAILABLE');
+      assert.equal(error.status, 503);
+      return true;
+    }
+  );
+})();
+
 await (async function emptyExtractedTextThrowsClassifiableTerminalCode() {
   // Bucaramanga LPR (job 374195eb): 5 import items failed with this exact
   // message and last_error_code=null because the throw never tagged .code,

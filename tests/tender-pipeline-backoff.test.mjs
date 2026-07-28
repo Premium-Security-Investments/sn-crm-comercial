@@ -8,6 +8,7 @@ assert.equal(classifyPipelineError({ code: 'AGT002_QUOTA' }), 'retryable');
 assert.equal(classifyPipelineError({ code: 'AGT002_BUSY' }), 'retryable');
 assert.equal(classifyPipelineError({ code: 'TENDER_DOC_HTTP_429' }), 'retryable');
 assert.equal(classifyPipelineError({ code: 'TENDER_DOC_HTTP_5XX' }), 'retryable');
+assert.equal(classifyPipelineError({ code: 'TENDER_DOC_SOURCE_UNAVAILABLE' }), 'retryable');
 assert.equal(classifyPipelineError({ status: 503 }), 'retryable');
 assert.equal(classifyPipelineError({ status: 429 }), 'retryable');
 
