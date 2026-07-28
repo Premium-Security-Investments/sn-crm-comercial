@@ -17,7 +17,7 @@ for (const text of [
   'Recomendación preliminar',
   'Preanálisis por reglas SIIO',
   'Análisis asistido por Hermes — transitorio',
-  'Análisis AGT-002',
+  'Análisis Vig-IA',
   'Fortalezas',
   'Debilidades y bloqueadores',
   'Dudas abiertas',
@@ -36,10 +36,11 @@ for (const backend of [server, api]) {
 assert.doesNotMatch(main, /const favorable = .*\/GO\//, 'La UI no debe inferir una decisión con una regex favorable.');
 assert.match(analysisSection, /const strengths = analysis\?\.strengths \?\? analysis\?\.commercial_fit\?\.positives \?\? \[\]/, 'Fortalezas debe preferir la carga tipada y degradar al legado.');
 assert.match(analysisSection, /const weaknesses = analysis\?\.weaknesses \?\? analysis\?\.blockers \?\? analysis\?\.commercial_fit\?\.concerns \?\? \[\]/, 'Debilidades debe mapear bloqueadores y alertas legadas sin inventar evidencia.');
-assert.match(analysisSection, /const questions = analysis\?\.questions \?\? \[\]/, 'Dudas abiertas debe consumir las preguntas tipadas.');
+assert.match(analysisSection, /const questions = \(analysis\?\.questions \?\? \[\]\)\.map\(normalizeQuestion\)/, 'Dudas abiertas debe consumir y normalizar las preguntas tipadas.');
 assert.match(analysisSection, /const unverified = analysis\?\.unverified \?\? analysis\?\.company_profile_crosscheck\?\.gaps \?\? \[\]/, 'Información no verificada debe degradar a brechas del perfil.');
 assert.match(analysisSection, /<details[\s\S]*?<summary>Cómo funciona<\/summary>/, 'La ayuda debe quedar colapsada por defecto.');
-assert.doesNotMatch(reviewPanel, /<textarea|Escriba lo que sabe|responda las preguntas pendientes/i, 'El brief no debe incluir la caja de aclaración antes de activar el motor inteligente.');
+assert.match(analysisSection, /Responder duda|Actualizar respuesta/, 'El brief debe permitir responder cada duda de forma trazable.');
+assert.match(analysisSection, /No autoriza GO \/ NO GO/, 'La respuesta humana no debe confundirse con una decisión GO/NO GO.');
 
 for (const emptyState of ['Sin fortalezas', 'Sin debilidades', 'Sin dudas abiertas', 'Sin información no verificada']) {
   assert.match(analysisSection, new RegExp(emptyState), `Una sección vacía debe comunicar ${emptyState}.`);

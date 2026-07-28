@@ -14,7 +14,8 @@ assert.match(api, /'\/api\/tender-actuation'/, 'postActuation debe usar el endpo
 assert.match(trackingView, /loadedPage\.events/, 'TenderTrackingView debe consumir la respuesta paginada real');
 
 assert.match(main, /o\.service_type_code === 'licitacion_publica' \? <PublicTenderFollowUp/, 'Seguimiento debe tener rama pública especializada');
-assert.match(main, /<Panel title="Datos del proceso">/, 'Debe mostrar Datos del proceso');
+assert.doesNotMatch(main, /<Panel title="Datos del proceso">/, 'Seguimiento no debe repetir la ficha pública consolidada.');
+assert.match(main, /<Panel title="Resumen de la oportunidad">/, 'La ficha pública debe mostrar un resumen consolidado antes del seguimiento.');
 assert.match(main, /<Panel title="Registrar actuación o novedad">/, 'Debe mostrar el formulario público');
 assert.match(main, /<Panel title="Historial del proceso">/, 'Debe mostrar el historial unificado');
 assert.match(main, /loadTrackingEvents\(api, opportunity\.id, cursor\)/, 'El historial público debe cargar páginas por cursor');

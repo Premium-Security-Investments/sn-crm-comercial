@@ -89,6 +89,7 @@ export type TenderDocumentsPayload = Partial<TenderDocumentRefreshResult> & {
   documents: TenderDocumentRecord[];
   analysis: TenderDocumentAnalysis | null;
   analyses: TenderDocumentAnalysis[];
+  question_responses?: TenderQuestionResponse[];
   analysis_engine?: { requested: 'AGT-002'; used: 'AGT-002' | 'siio_rules_v1'; fallback: boolean; reason?: 'not_configured' | 'preview_unavailable'; reused?: boolean; human_review_required: true };
 };
 export type TenderAnalysisFinding = string | {
@@ -97,6 +98,21 @@ export type TenderAnalysisFinding = string | {
   critical?: boolean;
   evidence_refs?: string[];
 };
+export type TenderQuestionResponseStatus = 'pending' | 'resolved' | 'not_applicable';
+export type TenderQuestionResponse = {
+  id: string;
+  opportunity_id: string;
+  analysis_run_id: string;
+  question_id: string;
+  question_text: string;
+  status: TenderQuestionResponseStatus;
+  response: string;
+  evidence_notes?: string | null;
+  responded_by: string;
+  responded_by_name?: string | null;
+  responded_at: string;
+};
+export type TenderQuestionResponseInput = Pick<TenderQuestionResponse, 'analysis_run_id' | 'question_id' | 'question_text' | 'status' | 'response'> & { evidence_notes?: string | null };
 export type TenderGoNoGoDecision = {
   id: string;
   opportunity_id: string;
