@@ -34,18 +34,36 @@ assert.deepEqual(ROLLBACK_FILES, [
   '032_tender_processing_jobs_rollback.sql',
 ]);
 
-// apply(fakeExec) invoca fakeExec una vez por migración, en el mismo orden de MIGRATION_FILES.
+// apply(fakeExec) detecta una instalación limpia y aplica las seis migraciones en orden.
 {
   const calls = [];
-  const fakeExec = async (sql) => { calls.push(sql); return []; };
+  const state = { m032: false, m033: false, m034: false, m035: false, m036: false, m037: false };
+  const fakeExec = async (sql) => {
+    calls.push(sql);
+    return /as m032/i.test(sql) ? [state] : [];
+  };
   await apply(fakeExec);
-  assert.equal(calls.length, MIGRATION_FILES.length);
-  assert.match(calls[0], /psi_tender_processing_jobs/);
-  assert.match(calls[1], /psi_tender_tracking_events/);
-  assert.match(calls[2], /psi_create_tender_processing_job/);
-  assert.match(calls[3], /psi_append_tender_tracking_event/);
-  assert.match(calls[4], /converted_opportunity_id/);
-  assert.match(calls[5], /p_next_attempt_at/);
+  assert.equal(calls.length, MIGRATION_FILES.length + 1);
+  assert.match(calls[1], /psi_tender_processing_jobs/);
+  assert.match(calls[2], /psi_tender_tracking_events/);
+  assert.match(calls[3], /psi_create_tender_processing_job/);
+  assert.match(calls[4], /psi_append_tender_tracking_event/);
+  assert.match(calls[5], /converted_opportunity_id/);
+  assert.match(calls[6], /p_next_attempt_at/);
+}
+
+// apply incremental: producción con 032-035 presentes solo recibe 036-037.
+{
+  const calls = [];
+  const state = { m032: true, m033: true, m034: true, m035: true, m036: false, m037: false };
+  const fakeExec = async (sql) => {
+    calls.push(sql);
+    return /as m032/i.test(sql) ? [state] : [];
+  };
+  await apply(fakeExec);
+  assert.equal(calls.length, 3);
+  assert.match(calls[1], /converted_opportunity_id/);
+  assert.match(calls[2], /p_next_attempt_at/);
 }
 
 // rollback(fakeExec) invoca fakeExec una vez por rollback, en orden LIFO.

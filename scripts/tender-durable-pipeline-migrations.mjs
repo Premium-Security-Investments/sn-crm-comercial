@@ -83,6 +83,36 @@ export function prerequisitesOk(row) {
     && Boolean(row.t_tracking_events) && Boolean(row.t_snapshots) && Boolean(row.t_runs) && Boolean(row.t_versions);
 }
 
+const MIGRATION_STATE_SQL = `
+select
+  (to_regclass('public.psi_tender_processing_jobs') is not null
+    and to_regclass('public.psi_tender_document_import_items') is not null) as m032,
+  (exists (select 1 from information_schema.columns
+      where table_schema='public' and table_name='psi_tender_tracking_events' and column_name='actor_kind')
+    and to_regprocedure('public.psi_append_tender_tracking_event(uuid,text,text,uuid,text,uuid,jsonb,text,boolean)') is not null) as m033,
+  (to_regprocedure('public.psi_create_tender_processing_job(uuid,uuid,text,text,uuid)') is not null
+    and to_regprocedure('public.psi_claim_tender_processing_job(integer)') is not null
+    and to_regprocedure('public.psi_update_tender_processing_job(uuid,uuid,jsonb)') is not null) as m034,
+  (to_regprocedure('public.psi_authorize_tender_analysis(uuid,uuid)') is not null
+    and to_regprocedure('public.psi_record_tender_import_item(uuid,text,text,text,text,text,boolean,uuid,text,text)') is not null) as m035,
+  case
+    when to_regprocedure('public.psi_create_tender_processing_job(uuid,uuid,text,text,uuid)') is null then false
+    else position('converted_opportunity_id' in pg_get_functiondef(
+      to_regprocedure('public.psi_create_tender_processing_job(uuid,uuid,text,text,uuid)')
+    )) > 0
+  end as m036,
+  (to_regprocedure('public.psi_record_tender_import_item(uuid,text,text,text,text,text,boolean,uuid,text,text,timestamptz)') is not null) as m037;
+`;
+
+function dbBool(value) {
+  return value === true || value === 'true' || value === 1 || value === '1';
+}
+
+export async function detectMigrationState(execSql) {
+  const [row = {}] = await execSql(MIGRATION_STATE_SQL);
+  return Object.fromEntries(['m032','m033','m034','m035','m036','m037'].map(key => [key, dbBool(row[key])]));
+}
+
 // Read-only. Fails closed: throws instead of guessing when 017/022/025/026/027/028 are missing.
 export async function preflight(execSql) {
   const [row] = await execSql(PREREQUISITES_SQL);
@@ -117,7 +147,15 @@ export async function verify(execSql) {
 }
 
 export async function apply(execSql) {
-  for (const fileName of MIGRATION_FILES) {
+  const state = await detectMigrationState(execSql);
+  // 036 replaces a function created by 034/035. If 035 is absent, replay 036
+  // after it even if a stale body happens to contain the marker.
+  if (!state.m035) state.m036 = false;
+  const pending = MIGRATION_FILES.filter((_, index) => {
+    const key = `m${String(index + 32).padStart(3, '0')}`;
+    return !state[key];
+  });
+  for (const fileName of pending) {
     await execSql(readMigration(fileName));
   }
   console.log('APPLY_OK');
