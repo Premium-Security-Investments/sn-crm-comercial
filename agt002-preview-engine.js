@@ -25,6 +25,18 @@ function safe(message) {
   return new Error(message);
 }
 
+function classifyOutputValidationFailure(error) {
+  const message = String(error?.message || '');
+  if (/evidence_id que no fue enviado/i.test(message)) return 'unknown_evidence_id';
+  if (/omite claves obligatorias/i.test(message)) return 'missing_key';
+  if (/claves inesperadas/i.test(message)) return 'unexpected_key';
+  if (/recomendación.*no es válida/i.test(message)) return 'invalid_recommendation';
+  if (/human_review_required|requiere revisión humana/i.test(message)) return 'human_review_required';
+  if (/hallazgos cerrados|debe ser un arreglo/i.test(message)) return 'invalid_findings';
+  if (/resumen|siguiente acción/i.test(message)) return 'missing_text';
+  return 'invalid_schema';
+}
+
 export function createAgt002PreviewEngine({
   client,
   model,
@@ -57,13 +69,15 @@ export function createAgt002PreviewEngine({
       if (typeof raw?.content !== 'string' || !raw.content.trim()) throw new Error('shape');
       parsed = JSON.parse(raw.content);
     } catch {
+      console.warn('agt002_preview_output_rejected', { event: 'agt002_preview_output_rejected', code: 'invalid_json' });
       throw safe(SAFE_INVALID);
     }
 
     let validatedOutput;
     try {
       validatedOutput = validateAgt002PreviewModelOutput(parsed, { allowedEvidenceIds });
-    } catch {
+    } catch (error) {
+      console.warn('agt002_preview_output_rejected', { event: 'agt002_preview_output_rejected', code: classifyOutputValidationFailure(error) });
       throw safe(SAFE_INVALID);
     }
 
