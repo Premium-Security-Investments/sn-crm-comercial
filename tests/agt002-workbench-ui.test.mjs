@@ -106,4 +106,12 @@ assert.match(panel, /import\s*\{\s*TenderDossierVigiaWorkbench\s*\}\s*from\s*'.\
 assert.match(panel, /\{workspace\.workbench_enabled\s*&&\s*<TenderDossierVigiaWorkbench/);
 assert.doesNotMatch(panel, /localStorage|sessionStorage|location\.search|URLSearchParams/, 'el panel no debe usar bypasses de flag');
 
+// --- responsive containment: controls and content must remain usable on mobile ---
+assert.match(shellCss, /\.agent-workbench\{[^}]*min-width:0;[^}]*max-width:100%;/s, 'el shell debe contener su ancho');
+assert.match(shellCss, /\.agent-workbench-jobs li>span\{[^}]*min-width:0;[^}]*overflow-wrap:anywhere;?\}/s, 'los errores de job deben poder envolver texto');
+assert.match(shellCss, /\.agent-workbench-artifacts>ul[^}]*list-style:none/s, 'artefactos no deben mostrar bullets residuales');
+assert.match(shellCss, /@media\(max-width:640px\)[\s\S]*\.agent-workbench-composer\{grid-template-columns:minmax\(0,1fr\)\}/, 'el composer debe apilarse en móvil');
+assert.match(shellCss, /@media\(max-width:640px\)[\s\S]*\.agent-workbench-jobs li\{[^}]*flex-direction:column;?\}/, 'el reintento debe apilarse en móvil');
+assert.match(shellCss, /@media\(max-width:640px\)[\s\S]*\.agent-workbench-review-actions\{[^}]*flex-direction:column;?\}/, 'las decisiones deben apilarse en móvil');
+
 console.log('agt002 workbench UI static checks passed');
