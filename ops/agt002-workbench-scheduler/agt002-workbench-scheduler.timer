@@ -1,9 +1,9 @@
 [Unit]
-Description=Run the SIIO Vig-IA workbench drain (AGT-002) every minute
+Description=Run the SIIO Vig-IA workbench drain (AGT-002) every 15 minutes
 
 [Timer]
 OnBootSec=60s
-OnUnitInactiveSec=60s
+OnUnitInactiveSec=15min
 AccuracySec=1s
 RandomizedDelaySec=0
 Persistent=false

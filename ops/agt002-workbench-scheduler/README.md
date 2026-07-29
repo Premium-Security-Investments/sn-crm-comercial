@@ -1,6 +1,6 @@
 # Scheduler externo de la Mesa Vig-IA (AGT-002)
 
-Scheduler productivo continuo del Workbench. Ejecuta ciclos independientes cada minuto; systemd evita solapamiento del propio timer, mientras cada ciclo reclama y procesa el trabajo disponible. El kill switch de Vercel y `systemctl stop` se conservan exclusivamente para incidentes o mantenimiento.
+Scheduler productivo continuo del Workbench. Ejecuta ciclos independientes cada 15 minutos; systemd evita solapamiento del propio timer, mientras cada ciclo reclama y procesa el trabajo disponible. Los ciclos vacíos no llaman al modelo. El kill switch de Vercel y `systemctl stop` se conservan exclusivamente para incidentes o mantenimiento.
 
 ## Archivos
 
