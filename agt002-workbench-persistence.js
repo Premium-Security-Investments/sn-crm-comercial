@@ -70,15 +70,25 @@ export function getAgt002Workbench(database, { opportunityId, actorId }) {
   });
 }
 
+export function retryAgt002WorkbenchJob(database, input) {
+  assertExactKeys(input, ['opportunityId', 'actorId', 'jobId'], 'retry');
+  return rpc(database, 'psi_retry_agt002_workbench_job', {
+    p_opportunity_id: input.opportunityId,
+    p_actor_id: input.actorId,
+    p_job_id: input.jobId,
+  });
+}
+
 export function appendAgt002HumanMessage(database, input) {
   assertExactKeys(input, [
-    'opportunityId', 'actorId', 'threadId', 'content', 'contextLinks', 'idempotencyKey',
+    'opportunityId', 'actorId', 'threadId', 'messageId', 'content', 'contextLinks', 'idempotencyKey',
     'contractVersion', 'policyVersion', 'capabilityId', 'snapshotId', 'baseVersionId',
   ], 'mensaje humano');
   return rpc(database, 'psi_append_agt002_workbench_message', {
     p_opportunity_id: input.opportunityId,
     p_actor_id: input.actorId,
     p_thread_id: input.threadId,
+    p_message_id: input.messageId,
     p_content: input.content,
     p_context_links: input.contextLinks,
     p_idempotency_key: input.idempotencyKey,

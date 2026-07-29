@@ -76,6 +76,7 @@ const queued = await appendAgt002HumanMessage(database, {
   opportunityId: ids.opportunity,
   actorId: ids.actor,
   threadId: ids.thread,
+  messageId: ids.message,
   content: 'Liste faltantes.',
   contextLinks: [],
   idempotencyKey: hashA,

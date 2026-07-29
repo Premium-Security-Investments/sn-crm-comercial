@@ -218,7 +218,7 @@ end;
 $$;
 
 create or replace function public.psi_append_agt002_workbench_message(
-  p_opportunity_id uuid,p_actor_id uuid,p_thread_id uuid,p_content text,p_context_links jsonb,
+  p_opportunity_id uuid,p_actor_id uuid,p_thread_id uuid,p_message_id uuid,p_content text,p_context_links jsonb,
   p_idempotency_key text,p_contract_version text,p_policy_version text,p_capability_id text,
   p_snapshot_id uuid,p_base_version_id uuid default null
 ) returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
@@ -230,7 +230,7 @@ begin
     or p_contract_version <> 'agt002.dossier-workbench.v1'
     or p_policy_version <> 'agt002.dossier-workbench.policy.v1'
     or p_capability_id not in ('agt002.dossier-workbench.reply.v1','agt002.dossier-workbench.draft.v1','agt002.dossier-workbench.learning-proposal.v1')
-    or p_snapshot_id is null or p_context_links is null or jsonb_typeof(p_context_links)<>'array'
+    or p_message_id is null or p_snapshot_id is null or p_context_links is null or jsonb_typeof(p_context_links)<>'array'
     or jsonb_array_length(p_context_links)>20 then
     raise exception 'El mensaje de la Mesa no es válido.' using errcode='22023';
   end if;
@@ -241,8 +241,8 @@ begin
   select id into v_existing from public.psi_agt002_workbench_jobs where idempotency_key=p_idempotency_key;
   if found then return jsonb_build_object('status','existing','job_id',v_existing); end if;
 
-  insert into public.psi_agt002_workbench_messages(thread_id,opportunity_id,author_id,author_kind,content,idempotency_key)
-  values(p_thread_id,p_opportunity_id,p_actor_id,'human',btrim(p_content),p_idempotency_key)
+  insert into public.psi_agt002_workbench_messages(id,thread_id,opportunity_id,author_id,author_kind,content,idempotency_key)
+  values(p_message_id,p_thread_id,p_opportunity_id,p_actor_id,'human',btrim(p_content),p_idempotency_key)
   returning id into v_message_id;
 
   for v_link in select value from jsonb_array_elements(p_context_links) loop
@@ -289,6 +289,23 @@ begin
     'required_actions',coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at,a.id) from public.psi_agt002_workbench_required_actions a where a.opportunity_id=p_opportunity_id),'[]'::jsonb),
     'learning_proposals',coalesce((select jsonb_agg(to_jsonb(p) order by p.created_at,p.id) from public.psi_agt002_learning_proposals p where p.opportunity_id=p_opportunity_id),'[]'::jsonb)
   );
+end;
+$$;
+
+create or replace function public.psi_retry_agt002_workbench_job(p_opportunity_id uuid,p_actor_id uuid,p_job_id uuid)
+returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
+declare v_latest text; v_id uuid;
+begin
+  perform public.psi_assert_agt002_workbench_actor(p_actor_id,false);
+  if not exists(select 1 from public.psi_agt002_workbench_jobs where id=p_job_id and opportunity_id=p_opportunity_id) then
+    raise exception 'El trabajo no pertenece al expediente.' using errcode='23514';
+  end if;
+  select event_type into v_latest from public.psi_agt002_workbench_job_events
+    where job_id=p_job_id order by created_at desc,id desc limit 1;
+  if v_latest<>'failed' then raise exception 'Sólo un trabajo fallido puede reintentarse.' using errcode='23514'; end if;
+  insert into public.psi_agt002_workbench_job_events(job_id,event_type,event_metadata)
+  values(p_job_id,'released',jsonb_build_object('requested_by',p_actor_id)) returning id into v_id;
+  return jsonb_build_object('status','released','event_id',v_id);
 end;
 $$;
 
@@ -446,8 +463,9 @@ declare sig text;
 begin
   foreach sig in array array[
     'psi_get_or_create_agt002_workbench_thread(uuid,uuid)',
-    'psi_append_agt002_workbench_message(uuid,uuid,uuid,text,jsonb,text,text,text,text,uuid,uuid)',
+    'psi_append_agt002_workbench_message(uuid,uuid,uuid,uuid,text,jsonb,text,text,text,text,uuid,uuid)',
     'psi_get_agt002_workbench(uuid,uuid)',
+    'psi_retry_agt002_workbench_job(uuid,uuid,uuid)',
     'psi_review_agt002_learning_proposal(uuid,uuid,uuid,text,text,text)',
     'psi_claim_agt002_workbench_job(text,integer,integer,integer)',
     'psi_append_agt002_workbench_job_event(uuid,uuid,text,jsonb)',

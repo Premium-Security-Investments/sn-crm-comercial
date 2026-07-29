@@ -12,6 +12,9 @@ const ids = Object.freeze({
   tender: '33333333-3333-4333-8333-333333333333',
   snapshot: '44444444-4444-4444-8444-444444444444',
   learningProposal: '55555555-5555-4555-8555-555555555555',
+  replyMessage: '66666666-6666-4666-8666-666666666661',
+  learningMessage: '66666666-6666-4666-8666-666666666662',
+  draftMessage: '66666666-6666-4666-8666-666666666663',
 });
 const key = char => char.repeat(64);
 
@@ -90,15 +93,15 @@ await assert.rejects(
 await db.exec('reset role');
 
 const replyQueued = (await db.query(
-  `select public.psi_append_agt002_workbench_message($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) as r`,
-  [ids.opportunity, ids.operator, thread.id, 'Liste faltantes.', [], key('a'),
+  `select public.psi_append_agt002_workbench_message($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) as r`,
+  [ids.opportunity, ids.operator, thread.id, ids.replyMessage, 'Liste faltantes.', [], key('a'),
     'agt002.dossier-workbench.v1', 'agt002.dossier-workbench.policy.v1',
     'agt002.dossier-workbench.reply.v1', ids.snapshot, null],
 )).rows[0].r;
 assert.equal(replyQueued.status, 'queued');
 const duplicate = (await db.query(
-  `select public.psi_append_agt002_workbench_message($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) as r`,
-  [ids.opportunity, ids.operator, thread.id, 'Liste faltantes.', [], key('a'),
+  `select public.psi_append_agt002_workbench_message($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) as r`,
+  [ids.opportunity, ids.operator, thread.id, ids.replyMessage, 'Liste faltantes.', [], key('a'),
     'agt002.dossier-workbench.v1', 'agt002.dossier-workbench.policy.v1',
     'agt002.dossier-workbench.reply.v1', ids.snapshot, null],
 )).rows[0].r;
@@ -127,8 +130,8 @@ assert.equal(savedReply.status, 'completed');
 assert.equal((await db.query(`select count(*)::int as n from public.psi_agt002_workbench_required_actions`)).rows[0].n, 1);
 
 const learningQueued = (await db.query(
-  `select public.psi_append_agt002_workbench_message($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) as r`,
-  [ids.opportunity, ids.operator, thread.id, 'Proponga aprendizaje.', [], key('b'),
+  `select public.psi_append_agt002_workbench_message($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) as r`,
+  [ids.opportunity, ids.operator, thread.id, ids.learningMessage, 'Proponga aprendizaje.', [], key('b'),
     'agt002.dossier-workbench.v1', 'agt002.dossier-workbench.policy.v1',
     'agt002.dossier-workbench.learning-proposal.v1', ids.snapshot, null],
 )).rows[0].r;
@@ -167,8 +170,8 @@ const v1 = (await db.query(
   [ids.opportunity, artifact.id, ids.operator],
 )).rows[0].r;
 const draftQueued = (await db.query(
-  `select public.psi_append_agt002_workbench_message($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) as r`,
-  [ids.opportunity, ids.operator, thread.id, 'Redacte versión.', [], key('c'),
+  `select public.psi_append_agt002_workbench_message($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) as r`,
+  [ids.opportunity, ids.operator, thread.id, ids.draftMessage, 'Redacte versión.', [], key('c'),
     'agt002.dossier-workbench.v1', 'agt002.dossier-workbench.policy.v1',
     'agt002.dossier-workbench.draft.v1', ids.snapshot, v1.version_id],
 )).rows[0].r;

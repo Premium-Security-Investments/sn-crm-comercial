@@ -17,6 +17,7 @@ const rpcs = [
   'psi_get_or_create_agt002_workbench_thread',
   'psi_append_agt002_workbench_message',
   'psi_get_agt002_workbench',
+  'psi_retry_agt002_workbench_job',
   'psi_review_agt002_learning_proposal',
   'psi_claim_agt002_workbench_job',
   'psi_append_agt002_workbench_job_event',
