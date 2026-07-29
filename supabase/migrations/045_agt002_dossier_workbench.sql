@@ -639,6 +639,24 @@ revoke all on function public.psi_append_agt002_agent_result(uuid,uuid,uuid,json
 revoke all on function public.psi_append_agt002_agent_artifact_version(uuid,uuid,uuid,uuid,uuid,text,text,jsonb)
   from public, anon, authenticated, service_role;
 
+-- Endurecimiento de ACL: psi_project_tender_dossier_artifact heredaba de la migración 040
+-- su ACL por defecto (proacl NULL => EXECUTE implícito de PUBLIC). Se corrige aquí para
+-- que sólo service_role pueda ejecutarla; las llamadas internas (security definer) siguen
+-- ejecutándose como owner y no dependen del grant.
+revoke all on function public.psi_project_tender_dossier_artifact(uuid) from public, anon, authenticated;
+grant execute on function public.psi_project_tender_dossier_artifact(uuid) to service_role;
+
+-- Helpers SECURITY DEFINER internos de la Mesa: nadie los invoca directamente salvo, por
+-- consistencia, service_role. Se revoca a PUBLIC/anon/authenticated/service_role y luego se
+-- concede execute sólo a service_role. Las invocaciones internas se ejecutan como owner, así
+-- que revocar EXECUTE de PUBLIC no rompe la cadena security definer.
+revoke all on function public.psi_assert_agt002_workbench_actor(uuid,boolean) from public, anon, authenticated, service_role;
+grant execute on function public.psi_assert_agt002_workbench_actor(uuid,boolean) to service_role;
+revoke all on function public.psi_assert_agt002_workbench_agent(uuid) from public, anon, authenticated, service_role;
+grant execute on function public.psi_assert_agt002_workbench_agent(uuid) to service_role;
+revoke all on function public.psi_assert_agt002_workbench_claim(uuid,uuid) from public, anon, authenticated, service_role;
+grant execute on function public.psi_assert_agt002_workbench_claim(uuid,uuid) to service_role;
+
 -- Funciones públicas sólo para service_role.
 do $$
 declare sig text;
