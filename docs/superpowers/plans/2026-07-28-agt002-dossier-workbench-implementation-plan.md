@@ -4,7 +4,7 @@
 
 **Goal:** Construir la Mesa de trabajo post-GO de Vig-IA dentro del expediente de Licitaciones: conversación contextual durable, borradores versionados con revisión humana, fuentes/faltantes, acciones requeridas y aprendizaje gobernado, sin conectar ni activar todavía AGT-002 real.
 
-**Architecture:** Se crea un dominio conversacional propio de AGT-002 en la migración `044`, separado de AGT-003 y del pipeline documental. Hilos, mensajes, vínculos, trabajos y eventos son append-only; el estado de trabajo se proyecta desde eventos. La versión documental producida por agente se añade mediante un RPC interno con `base_version_id` optimista y procedencia al trabajo originador; nunca crea revisión. Un API Express/Vercel deriva el actor de sesión y queda cerrado por un kill switch cableado a `false`. El frontend usa un shell reutilizable, configurado para Vig-IA, pero no se monta mientras el backend informe `enabled:false`. El worker se prueba sólo con un respondedor sintético inyectado desde `tests/fixtures/`; no existe bridge productivo en este lote.
+**Architecture:** Se crea un dominio conversacional propio de AGT-002 en la migración `045`, separado de AGT-003 y del pipeline documental. Hilos, mensajes, vínculos, trabajos y eventos son append-only; el estado de trabajo se proyecta desde eventos. La versión documental producida por agente se añade mediante un RPC interno con `base_version_id` optimista y procedencia al trabajo originador; nunca crea revisión. Un API Express/Vercel deriva el actor de sesión y queda cerrado por un kill switch cableado a `false`. El frontend usa un shell reutilizable, configurado para Vig-IA, pero no se monta mientras el backend informe `enabled:false`. El worker se prueba sólo con un respondedor sintético inyectado desde `tests/fixtures/`; no existe bridge productivo en este lote.
 
 **Tech Stack:** PostgreSQL/Supabase (`plpgsql`, RLS, `SECURITY DEFINER`, service-role-only), Node.js ESM + Express, React + TypeScript + Vite, CSS plano, Node native test runner por archivo, PGlite, esbuild y Chrome headless para QA visual local.
 
@@ -32,7 +32,7 @@
 
 ### Crear
 
-- `supabase/migrations/044_agt002_dossier_workbench.sql` — dominio, permisos, RPC, grants, RLS e integración aditiva con versiones.
+- `supabase/migrations/045_agt002_dossier_workbench.sql` — dominio, permisos, RPC, grants, RLS e integración aditiva con versiones.
 - `agt002-workbench-contract.js` — contratos cerrados, capacidades y validadores puros.
 - `agt002-workbench-persistence.js` — adapter único de RPC y hashes/idempotencia.
 - `agt002-workbench-api.js` — handlers puros con actor de sesión, autorización y kill switch.
@@ -238,10 +238,10 @@ git commit -m "feat(tenders): definir contrato y custodia de Mesa Vig-IA"
 
 ---
 
-## Task 2: Migración 044 — dominio append-only y RLS fail-closed
+## Task 2: Migración 045 — dominio append-only y RLS fail-closed
 
 **Files:**
-- Create: `supabase/migrations/044_agt002_dossier_workbench.sql`
+- Create: `supabase/migrations/045_agt002_dossier_workbench.sql`
 - Create: `tests/agt002-workbench-migration.test.mjs`
 - Create: `tests/agt002-workbench-pglite.integration.test.mjs`
 
@@ -268,11 +268,11 @@ Exigir `enable row level security`, revoke a `anon, authenticated`, grants sólo
 
 Run: `node tests/agt002-workbench-migration.test.mjs`
 
-Expected: FAIL porque `044_agt002_dossier_workbench.sql` no existe.
+Expected: FAIL porque `045_agt002_dossier_workbench.sql` no existe.
 
 - [ ] **Step 2: Escribir RED PGlite del dominio**
 
-El fixture crea roles/tablas prerequisito mínimos, aplica `040`, luego `044` dos veces. Debe verificar:
+El fixture crea roles/tablas prerequisito mínimos, aplica `040`, luego `045` dos veces. Debe verificar:
 
 ```js
 await assert.rejects(() => queryAsAuthenticated('select * from public.psi_agt002_workbench_messages'));
@@ -345,12 +345,12 @@ node tests/agt002-workbench-migration.test.mjs
 node tests/agt002-workbench-pglite.integration.test.mjs
 ```
 
-Expected: ambos `passed`; segunda aplicación de `044` no altera conteos ni falla.
+Expected: ambos `passed`; segunda aplicación de `045` no altera conteos ni falla.
 
 - [ ] **Step 7: Commit local**
 
 ```bash
-git add supabase/migrations/044_agt002_dossier_workbench.sql tests/agt002-workbench-migration.test.mjs tests/agt002-workbench-pglite.integration.test.mjs
+git add supabase/migrations/045_agt002_dossier_workbench.sql tests/agt002-workbench-migration.test.mjs tests/agt002-workbench-pglite.integration.test.mjs
 git commit -m "feat(tenders): crear dominio durable de Mesa Vig-IA"
 ```
 
@@ -724,7 +724,7 @@ git commit -m "feat(tenders): añadir worker sintético durable de Mesa Vig-IA"
 **Files:**
 - Modify: `tests/agt002-workbench-pglite.integration.test.mjs`
 - Create: `tests/agt002-workbench-end-to-end.integration.test.mjs`
-- Modify if RED exposes a defect: `supabase/migrations/044_agt002_dossier_workbench.sql`
+- Modify if RED exposes a defect: `supabase/migrations/045_agt002_dossier_workbench.sql`
 - Modify if adapter mapping is incomplete: `agt002-workbench-persistence.js`
 
 **Interfaces:**
@@ -787,7 +787,7 @@ node tests/tender-dossier-offer-gate-pglite.integration.test.mjs
 Expected: `passed`; el gate de presentación existente continúa exigiendo aprobación de la versión vigente.
 
 ```bash
-git add supabase/migrations/044_agt002_dossier_workbench.sql agt002-workbench-persistence.js tests/agt002-workbench-pglite.integration.test.mjs tests/agt002-workbench-end-to-end.integration.test.mjs
+git add supabase/migrations/045_agt002_dossier_workbench.sql agt002-workbench-persistence.js tests/agt002-workbench-pglite.integration.test.mjs tests/agt002-workbench-end-to-end.integration.test.mjs
 git commit -m "test(tenders): cerrar versiones y aprendizaje de Mesa Vig-IA"
 ```
 

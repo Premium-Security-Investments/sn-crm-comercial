@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const sql = readFileSync(new URL('../supabase/migrations/044_agt002_dossier_workbench.sql', import.meta.url), 'utf8');
+const sql = readFileSync(new URL('../supabase/migrations/045_agt002_dossier_workbench.sql', import.meta.url), 'utf8');
 const normalized = sql.toLowerCase();
 const tables = [
   'psi_agt002_workbench_threads',

@@ -13,7 +13,7 @@ import { ACTIONS, can } from '../access-control.js';
 // End-to-end de la Mesa Vig-IA: versión agente + revisión por custodia + aprendizaje
 // gobernado, atravesando worker → adapter → RPC transaccional contra PGlite real.
 const dossierMigration = readFileSync(new URL('../supabase/migrations/040_tender_dossier_workspace.sql', import.meta.url), 'utf8');
-const workbenchMigration = readFileSync(new URL('../supabase/migrations/044_agt002_dossier_workbench.sql', import.meta.url), 'utf8');
+const workbenchMigration = readFileSync(new URL('../supabase/migrations/045_agt002_dossier_workbench.sql', import.meta.url), 'utf8');
 
 const ids = Object.freeze({
   operator: '11111111-1111-4111-8111-111111111111',
