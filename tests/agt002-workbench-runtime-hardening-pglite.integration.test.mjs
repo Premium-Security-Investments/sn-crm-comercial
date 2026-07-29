@@ -10,6 +10,8 @@ const dossierMigration = readFileSync(new URL('../supabase/migrations/040_tender
 const pilotMigration = readFileSync(new URL('../supabase/migrations/044_agt003_copilot_pilot_permission.sql', import.meta.url), 'utf8');
 const workbenchMigration = readFileSync(new URL('../supabase/migrations/045_agt002_dossier_workbench.sql', import.meta.url), 'utf8');
 const hardeningMigration = readFileSync(new URL('../supabase/migrations/046_agt002_workbench_runtime_hardening.sql', import.meta.url), 'utf8');
+const unlimitedMigration = readFileSync(new URL('../supabase/migrations/048_agt002_workbench_unlimited_production.sql', import.meta.url), 'utf8');
+const unlimitedRollback = readFileSync(new URL('../supabase/rollbacks/048_agt002_workbench_unlimited_production_rollback.sql', import.meta.url), 'utf8');
 const hardeningRollback = readFileSync(new URL('../supabase/rollbacks/046_agt002_workbench_runtime_hardening_rollback.sql', import.meta.url), 'utf8');
 
 const ids = Object.freeze({
@@ -284,6 +286,43 @@ async function latestEvent(db, jobId) {
 
   await db.close();
   console.log('AGT-002 046: reclamar el mismo trabajo tras liberarlo consume un solo cupo distinto');
+}
+
+// --- 048: zero caps mean unlimited, positive caps remain available, rollback is exact ---
+{
+  const db = await freshDb();
+  await db.exec(unlimitedMigration);
+  const thread = await getOrCreateThread(db);
+  const jobs = [];
+  for (let i = 0; i < 101; i += 1) jobs.push(await queueJob(db, thread.id));
+
+  const claimed = [];
+  for (let i = 0; i < 101; i += 1) {
+    const result = await claim(db, { worker: `unlimited-${i}`, daily: 0, concurrent: 0 });
+    assert.equal(result.status, 'claimed', `claim ilimitado ${i + 1} no debe bloquearse`);
+    claimed.push(result.job.id);
+  }
+  assert.equal(new Set(claimed).size, 101);
+  assert.equal((await claim(db, { daily: 0, concurrent: 0 })).status, 'empty');
+  await assert.rejects(() => claim(db, { daily: -1, concurrent: 0 }), /22023|válidos/i);
+  await assert.rejects(() => claim(db, { daily: 0, concurrent: -1 }), /22023|válidos/i);
+
+  await db.exec(unlimitedRollback);
+  await assert.rejects(() => claim(db, { daily: 0, concurrent: 0 }), /22023|límites/i);
+  await db.close();
+  console.log('AGT-002 048: 101 trabajos sin cuota/concurrencia artificial; negativos rechazados; rollback exacto');
+}
+
+{
+  const db = await freshDb();
+  await db.exec(unlimitedMigration);
+  const thread = await getOrCreateThread(db);
+  await queueJob(db, thread.id);
+  await queueJob(db, thread.id);
+  assert.equal((await claim(db, { daily: 10, concurrent: 1 })).status, 'claimed');
+  assert.equal((await claim(db, { daily: 10, concurrent: 1 })).status, 'saturated');
+  await db.close();
+  console.log('AGT-002 048: caps positivos opcionales conservan comportamiento acotado');
 }
 
 // --- Duplicate terminal message blocked by partial unique index ---

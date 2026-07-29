@@ -29,8 +29,6 @@ export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore =
   if (typeof hmacSecret !== 'string' || hmacSecret.length < 32) throw new Error('El puente AGT-002 requiere un secreto HMAC de al menos 32 bytes.');
   if (!codexClient || typeof codexClient.run !== 'function') throw new Error('El puente AGT-002 requiere un cliente Codex inyectado.');
 
-  let busy = false;
-
   return function requestListener(req, res) {
     if (req.method !== 'POST') return sendError(res, 405, 'AGT002_BRIDGE_METHOD_NOT_ALLOWED');
     const url = new URL(req.url, 'http://127.0.0.1');
@@ -76,8 +74,6 @@ export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore =
       }
       if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) return sendError(res, 400, 'AGT002_BRIDGE_BAD_REQUEST');
 
-      if (busy) return sendError(res, 409, 'AGT002_BRIDGE_BUSY');
-      busy = true;
       const startedAt = Date.now();
       const correlationId = randomUUID();
       const controller = new AbortController();
@@ -90,7 +86,6 @@ export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore =
       res.on('close', () => { if (!res.writableFinished) controller.abort(); });
 
       const handleError = error => {
-        busy = false;
         const code = error?.code || 'AGT002_BRIDGE_INTERNAL';
         const status = CODE_TO_STATUS[code] || 500;
         logBridgeEvent('agt002_bridge_error', { correlation_id: correlationId, code, latency_ms: Date.now() - startedAt });
@@ -107,7 +102,6 @@ export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore =
 
       Promise.resolve(runResult)
         .then(result => {
-          busy = false;
           logBridgeEvent('agt002_bridge_success', {
             correlation_id: correlationId, code: 'OK', latency_ms: Date.now() - startedAt,
             input_tokens: result.usage.input_tokens, output_tokens: result.usage.output_tokens,
