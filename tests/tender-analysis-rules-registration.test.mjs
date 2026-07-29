@@ -305,7 +305,8 @@ for (const path of ['../api/[...path].js', '../server/index.js']) {
   assert.doesNotMatch(source, /(?:IA|inteligencia artificial|Hermes|AGT-002)[^\n]{0,80}Preanálisis por reglas SIIO/i);
   const records = source.match(/async function getTenderDocumentRecords[\s\S]*?\n}\n\n/);
   assert.ok(records, `${path} must retain the shared tender-document response builder`);
-  assert.match(records[0], /getCurrentTenderAnalysis\([\s\S]{0,320}compatibleDocuments\.filter\(document => document\.current !== false\)[\s\S]{0,180}canonicalOnly: agt002AnalysisConfig\.AGT002_CANONICAL_ONLY === true/, `${path} must resolve only canonical Vig-IA analysis for current documents when the flag is enabled`);
+  assert.match(records[0], /const canonicalOnly = agt002AnalysisConfig\.AGT002_CANONICAL_ONLY === true/, `${path} must derive canonical mode once for current analysis and latest attempt`);
+  assert.match(records[0], /getCurrentTenderAnalysis\([\s\S]{0,320}compatibleDocuments\.filter\(document => document\.current !== false\)[\s\S]{0,100}\{ canonicalOnly \}/, `${path} must resolve only canonical Vig-IA analysis for current documents when the flag is enabled`);
   assert.match(records[0], /const presentedAnalysis = presentCurrentTenderAnalysis\(currentAnalysis\)/, `${path} must present typed metadata plus analysis result to every document response path`);
   assert.match(records[0], /question_responses:\s*questionResponses/, `${path} must include traceable human question responses without mutating the analysis`);
   assert.match(records[0], /analyses,/, `${path} must preserve legacy timeline history for compatibility`);

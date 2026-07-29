@@ -41,7 +41,7 @@ import { mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOff
 import { isCriticalTenderDocument } from '../tender-critical-documents.js';
 import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
 import { createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
-import { appendAgt002AnalysisAttempt, claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim } from '../agt002-preview-persistence.js';
+import { appendAgt002AnalysisAttempt, claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, getLatestAgt002AnalysisAttempt, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim } from '../agt002-preview-persistence.js';
 import { getAgt002WorkbenchApi, postAgt002LearningReviewApi, postAgt002MessageApi, postAgt002RetryApi } from '../agt002-workbench-api.js';
 import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt002WorkbenchDrain } from '../agt002-workbench-runtime.js';
 import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
@@ -2444,15 +2444,24 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
     const { data } = await database.storage.from(tenderDocumentBucket).createSignedUrl(doc.storage_path, 3600);
     return { ...doc, signed_url: data?.signedUrl || null };
   })) : compatibleDocuments;
+  const canonicalOnly = agt002AnalysisConfig.AGT002_CANONICAL_ONLY === true;
   const currentAnalysis = await getCurrentTenderAnalysis(
     database,
     opportunityId,
     compatibleDocuments.filter(document => document.current !== false),
-    { canonicalOnly: agt002AnalysisConfig.AGT002_CANONICAL_ONLY === true },
+    { canonicalOnly },
   );
+  const latestAnalysisAttempt = canonicalOnly ? await getLatestAgt002AnalysisAttempt(database, opportunityId) : null;
   const presentedAnalysis = presentCurrentTenderAnalysis(currentAnalysis);
   const questionResponses = presentedAnalysis?.run_id ? await getTenderQuestionResponses(database, opportunityId, presentedAnalysis.run_id) : [];
-  return { documents: signed, analysis: presentedAnalysis, analyses, question_responses: questionResponses, import_error: importErrors.at(-1) || null };
+  return {
+    documents: signed,
+    analysis: presentedAnalysis,
+    analyses,
+    question_responses: questionResponses,
+    import_error: importErrors.at(-1) || null,
+    ...(canonicalOnly ? { analysis_attempt: latestAnalysisAttempt } : {}),
+  };
 }
 
 async function getTenderQuestionResponses(database, opportunityId, analysisRunId) {

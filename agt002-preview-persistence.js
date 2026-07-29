@@ -141,6 +141,30 @@ export async function appendAgt002AnalysisAttempt(database, context, { eventKeyG
   }));
 }
 
+/** Returns the latest safe lifecycle projection; raw provider error messages never leave persistence. */
+export async function getLatestAgt002AnalysisAttempt(database, opportunityId, { snapshotId = null } = {}) {
+  const normalizedOpportunityId = requireId(opportunityId, 'La oportunidad');
+  let query = database.from('psi_agt002_analysis_attempt_events')
+    .select('id,snapshot_id,tender_id,attempt_key,producer,state,error_code,analysis_run_id,created_at')
+    .eq('opportunity_id', normalizedOpportunityId);
+  if (snapshotId != null) query = query.eq('snapshot_id', requireId(snapshotId, 'El snapshot documental'));
+  const response = await query.order('created_at', { ascending: false }).order('id', { ascending: false }).limit(1);
+  if (response?.error) throw new Error(response.error.message || String(response.error));
+  const row = Array.isArray(response?.data) ? response.data[0] : response?.data;
+  if (!row) return null;
+  return {
+    event_id: row.id,
+    snapshot_id: row.snapshot_id,
+    tender_id: row.tender_id,
+    attempt_key: row.attempt_key,
+    producer: row.producer,
+    state: row.state,
+    error_code: row.error_code || null,
+    analysis_run_id: row.analysis_run_id || null,
+    created_at: row.created_at || null,
+  };
+}
+
 /** Interpretable daily quota probe: counts only AGT-002 Preview runs since UTC midnight, never a client-supplied number. */
 export async function countAgt002PreviewRunsToday(database, { now = () => new Date() } = {}) {
   const current = now();

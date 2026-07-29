@@ -228,12 +228,24 @@ export type TenderDocumentRecord = {
   signed_url?: string | null;
   extracted_text?: string | null;
 };
+export type TenderAnalysisAttempt = {
+  event_id: string;
+  snapshot_id: string;
+  tender_id: string;
+  attempt_key: string;
+  producer: 'AGT-002';
+  state: 'queued' | 'running' | 'completed' | 'retry_wait' | 'needs_attention' | 'unavailable';
+  error_code: string | null;
+  analysis_run_id: string | null;
+  created_at: string | null;
+};
 export type TenderDocumentsPayload = Partial<TenderDocumentRefreshResult> & {
   import_error?: { kind?: string; source?: string | null; created_at?: string | null; failure_marker?: string | null } | null;
   documents: TenderDocumentRecord[];
   analysis: TenderDocumentAnalysis | null;
   analyses: TenderDocumentAnalysis[];
   question_responses?: TenderQuestionResponse[];
+  analysis_attempt?: TenderAnalysisAttempt | null;
   analysis_engine?: { requested: 'AGT-002'; used: 'AGT-002' | 'siio_rules_v1'; fallback: boolean; reason?: 'not_configured' | 'preview_unavailable'; reused?: boolean; human_review_required: true };
 };
 export type TenderAnalysisFinding = string | {
