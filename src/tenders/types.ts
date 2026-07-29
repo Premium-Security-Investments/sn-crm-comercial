@@ -96,6 +96,84 @@ export type TenderDossierWorkspace = {
   artifacts: TenderDossierArtifact[];
   readiness: TenderDossierReadiness;
   can_mark_ready: boolean;
+  workbench_enabled: boolean;
+};
+export type TenderDossierWorkbenchContextLink = { kind: string; id: string; label: string; source_ref: string };
+export type TenderDossierWorkbenchMessage = {
+  id: string;
+  thread_id: string;
+  opportunity_id: string;
+  author_id: string;
+  author_kind: 'human' | 'agent';
+  visible_agent_name: string | null;
+  content: string;
+  idempotency_key: string | null;
+  origin_job_id: string | null;
+  created_at: string;
+};
+export type TenderDossierWorkbenchJob = {
+  id: string;
+  thread_id: string;
+  origin_message_id: string;
+  opportunity_id: string;
+  tender_id: string;
+  snapshot_id: string;
+  base_version_id: string | null;
+  capability_id: string;
+  contract_version: string;
+  policy_version: string;
+  context_links: TenderDossierWorkbenchContextLink[];
+  message: string;
+  requested_by: string;
+  idempotency_key: string;
+  created_at: string;
+};
+export type TenderDossierWorkbenchRequiredAction = {
+  id: string;
+  job_id: string;
+  message_id: string;
+  opportunity_id: string;
+  action_text: string;
+  created_at: string;
+};
+export type TenderDossierWorkbenchLearningProposal = {
+  id: string;
+  job_id: string;
+  opportunity_id: string;
+  source_message_id: string;
+  proposal_type: 'pattern' | 'preference' | 'rule' | 'source';
+  proposed_rule: string;
+  requested_scope: 'tender' | 'entity' | 'modality_sector' | 'psi_rule';
+  valid_from: string;
+  valid_until: string | null;
+  source_links: TenderDossierWorkbenchContextLink[];
+  created_at: string;
+};
+export type TenderDossierWorkbench = {
+  enabled: true;
+  thread_id: string | null;
+  messages: TenderDossierWorkbenchMessage[];
+  jobs: TenderDossierWorkbenchJob[];
+  required_actions: TenderDossierWorkbenchRequiredAction[];
+  learning_proposals: TenderDossierWorkbenchLearningProposal[];
+};
+export type TenderDossierWorkbenchMessageInput = {
+  opportunity_id: string;
+  thread_id: string;
+  client_message_id: string;
+  content: string;
+  context_links: TenderDossierWorkbenchContextLink[];
+  capability_id: string;
+  snapshot_id: string;
+  base_version_id: string | null;
+};
+export type TenderDossierWorkbenchRetryInput = { opportunity_id: string; job_id: string };
+export type TenderDossierWorkbenchLearningReviewInput = {
+  opportunity_id: string;
+  proposal_id: string;
+  decision: 'approved' | 'rejected';
+  scope: string | null;
+  comment: string | null;
 };
 export type TenderDossierItemActionInput = {
   opportunity_id: string;

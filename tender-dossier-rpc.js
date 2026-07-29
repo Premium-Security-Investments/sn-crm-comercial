@@ -112,7 +112,7 @@ export async function getTenderDossierWorkspace(database, opportunityId, current
   requireOperationalAccess(currentProfile);
   const workspace = await rpc(database, 'psi_get_tender_dossier_workspace', { p_opportunity_id: id });
   const ready = workspace?.readiness?.ready === true;
-  return { ...(workspace || {}), can_mark_ready: ready && canApprove(currentProfile) };
+  return { ...(workspace || {}), can_mark_ready: ready && canApprove(currentProfile), workbench_enabled: false };
 }
 
 export async function callCreateTenderDossierItem(database, input, currentProfile) {

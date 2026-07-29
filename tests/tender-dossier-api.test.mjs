@@ -83,10 +83,17 @@ await (async function readsWorkspaceAndComputesManagerGate() {
     args: { p_opportunity_id: OPP },
   });
   assert.equal(workspace.can_mark_ready, true);
+  assert.equal(workspace.workbench_enabled, false);
 
   const dbCommercial = fakeDb(() => ({ checklist: [], artifacts: [], readiness: { ready: true } }));
   const commercialWorkspace = await getTenderDossierWorkspace(dbCommercial, OPP, commercial);
   assert.equal(commercialWorkspace.can_mark_ready, false);
+})();
+
+await (async function workbenchEnabledFlagIsServerLiteral() {
+  const db = fakeDb(() => ({ checklist: [], artifacts: [], readiness: { ready: true }, workbench_enabled: true }));
+  const workspace = await getTenderDossierWorkspace(db, OPP, director);
+  assert.equal(workspace.workbench_enabled, false, 'workbench_enabled debe ser un literal del servidor, no de la BD ni del cliente');
 })();
 
 await (async function noAplicaRequiresManagerBeforeDb() {
