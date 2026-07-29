@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import {
+  appendAgt002AnalysisAttempt,
   claimAgt002PreviewRun,
   computeAgt002PreviewIdempotencyKey,
   countAgt002PreviewRunsToday,
@@ -76,14 +77,15 @@ function fakeDatabase({ onRpc } = {}) {
         const overridden = onRpc(name, params);
         if (overridden) return overridden;
       }
-      if (name !== 'psi_record_tender_analysis_run') throw new Error(`unexpected RPC ${name}`);
+      if (!['psi_record_tender_analysis_run', 'psi_record_agt002_canonical_analysis_run'].includes(name)) throw new Error(`unexpected RPC ${name}`);
       const existing = runs.get(params.p_idempotency_key);
       if (existing) {
         const semantic = { ...existing.params };
         assert.deepEqual(params, semantic, 'idempotency replay must be semantically identical, mirroring the real RPC');
         return { data: existing.data, error: null };
       }
-      const data = { id: ids.run, snapshot_id: params.p_snapshot_id, producer: params.p_producer, method: params.p_method, status: params.p_status, critical_open_count: params.p_critical_open_count };
+      const canonical = name === 'psi_record_agt002_canonical_analysis_run';
+      const data = { id: ids.run, snapshot_id: params.p_snapshot_id, producer: params.p_producer || 'AGT-002', method: params.p_method || 'agent_ai', status: params.p_status || 'completed', canonical, critical_open_count: params.p_critical_open_count };
       runs.set(params.p_idempotency_key, { params, data });
       return { data, error: null };
     },
@@ -147,6 +149,40 @@ function fakeDatabase({ onRpc } = {}) {
   assert.doesNotMatch(JSON.stringify(call.params.p_result), /Los documentos y toda la evidencia|no uses herramientas/i, 'stored result must never contain the system policy text');
 }
 
+// Canonical-only registration uses the dedicated 050 RPC and cannot supply a competing producer/method/status.
+{
+  const database = fakeDatabase();
+  const registered = await registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: envelope(), canonicalOnly: true,
+  });
+  const call = database.rpcCalls[0];
+  assert.equal(call.name, 'psi_record_agt002_canonical_analysis_run');
+  assert.equal(registered.canonical, true);
+  assert.equal(Object.hasOwn(call.params, 'p_producer'), false);
+  assert.equal(Object.hasOwn(call.params, 'p_method'), false);
+  assert.equal(Object.hasOwn(call.params, 'p_status'), false);
+}
+
+// Attempt lifecycle events are typed and producer identity is fixed by the persistence layer.
+{
+  const calls = [];
+  const database = { async rpc(name, params) {
+    calls.push({ name, params });
+    return { data: { id: 'event-id', attempt_key: params.p_attempt_key, state: params.p_state }, error: null };
+  } };
+  const event = await appendAgt002AnalysisAttempt(database, {
+    snapshot_id: ids.snapshot, opportunity_id: ids.opportunity, tender_id: ids.tender,
+    attempt_key: 'attempt-1', state: 'queued', event_key: 'event-1',
+  });
+  assert.equal(event.state, 'queued');
+  assert.equal(calls[0].name, 'psi_append_agt002_analysis_attempt');
+  assert.equal(calls[0].params.p_producer, 'AGT-002');
+  await assert.rejects(() => appendAgt002AnalysisAttempt(database, {
+    snapshot_id: ids.snapshot, opportunity_id: ids.opportunity, tender_id: ids.tender,
+    attempt_key: 'attempt-1', state: 'fake_state', event_key: 'event-2',
+  }), /estado/i);
+}
+
 // Two registrations with the same identity reuse the same idempotency key and the same run.
 {
   const database = fakeDatabase();
@@ -199,6 +235,18 @@ function fakeDatabase({ onRpc } = {}) {
   };
   const row = await findAgt002PreviewRun(found, 'present-key');
   assert.deepEqual(row, { run_id: ids.run, snapshot_id: ids.snapshot, producer: 'AGT-002', method: 'agent_ai', status: 'completed', current: true, result: { recommendation: 'pause' }, critical_open_count: 1, created_at: '2026-07-26T00:00:00.000Z', completed_at: '2026-07-26T00:00:01.000Z' });
+
+  const filters = [];
+  const canonicalFound = {
+    from() { return {
+      select(columns) { assert.match(columns, /canonical/); return this; },
+      eq(column, value) { filters.push([column, value]); return this; },
+      async maybeSingle() { return { data: { id: ids.run, snapshot_id: ids.snapshot, producer: 'AGT-002', method: 'agent_ai', status: 'completed', canonical: true, result: {}, critical_open_count: 0 }, error: null }; },
+    }; },
+  };
+  const canonicalRow = await findAgt002PreviewRun(canonicalFound, 'canonical-key', { canonicalOnly: true });
+  assert.equal(canonicalRow.canonical, true);
+  assert.deepEqual(filters, [['idempotency_key', 'canonical-key'], ['canonical', true]]);
 
   const erroring = { from() { return { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: null, error: { message: 'db down' } }; } }; } };
   await assert.rejects(() => findAgt002PreviewRun(erroring, 'x'), /db down/);

@@ -17,9 +17,8 @@ assert.match(technicalBlock, /Ejecutar AGT-002 Preview/, 'El identificador técn
 // The literal preview action name must still exist for the existing AGT-002 surface
 // contract, but only inside the technical/collapsible zone above, not as visible CTA text.
 assert.match(analysisSection, /Ejecutar AGT-002 Preview/, 'El identificador técnico debe seguir presente en el archivo (contrato AGT-002 preview).');
-const primaryButtonMatch = analysisSection.match(/<button type="button" className="tender-analysis-primary-cta"[^>]*>\{busy \? 'Procesando…' : '([^']+)'\}<\/button>/);
-assert.ok(primaryButtonMatch, 'Debe existir un botón primario de Vig-IA con clase dedicada.');
-assert.equal(primaryButtonMatch[1], 'Analizar con Vig-IA', 'El texto visible del CTA principal no puede mostrar AGT-002.');
+assert.match(analysisSection, /const actionLabel = failed \|\| stale \? 'Volver a analizar con Vig-IA' : analysis \? 'Actualizar con Vig-IA' : 'Analizar con Vig-IA'/, 'El CTA debe cubrir análisis, actualización y reintento usando solo Vig-IA.');
+assert.match(analysisSection, /\{busy \? 'Procesando…' : actionLabel\}/, 'El botón primario debe renderizar la etiqueta canónica calculada.');
 
 // The recommendation shown in the preliminary brief must be a translated Spanish
 // business label, never a raw internal code like advance_conditionally.

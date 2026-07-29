@@ -236,6 +236,22 @@ async function run() {
     assert.ok(calls.appendEvent.some(e => e.eventType === 'analysis_rules_fallback_shown'));
   }
 
+  // 6a) Vig-IA indisponible -> espera con backoff; nunca completa ni crea fallback.
+  {
+    const { deps, calls } = makeDeps({
+      claimJob: async () => ({
+        job_id: 'job-6a', lease_id: 'lease-6a', tender_id: 'tender-6a', opportunity_id: 'opp-6a',
+        status: 'waiting_agent_capacity', current_step: 'analysis', snapshot_id: 'snap-6a', attempt_count: 0,
+      }),
+      requestAgt002: async () => ({ status: 'unavailable' }),
+    });
+    const result = await createTenderProcessingWorker(deps).runOnce({});
+    assert.equal(result.status, 'waiting_agent_capacity');
+    assert.equal(calls.updateJob[0].patch.status, 'waiting_agent_capacity');
+    assert.equal(calls.updateJob[0].patch.attempt_count, 1);
+    assert.match(calls.updateJob[0].patch.next_attempt_at, /^\d{4}-/);
+  }
+
   // 7) analysis run real completado -> job completed, evento analysis_completed.
   {
     const { deps, calls } = makeDeps({

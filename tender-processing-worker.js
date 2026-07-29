@@ -210,7 +210,7 @@ export function createTenderProcessingWorker(deps) {
         return { status: 'completed', job_id: jobId };
       }
 
-      if (result.status === 'quota' || result.status === 'saturated' || result.status === 'busy') {
+      if (result.status === 'quota' || result.status === 'saturated' || result.status === 'busy' || result.status === 'unavailable') {
         const nextAttempt = (claim.attempt_count || 0) + 1;
         const errorCode = `AGT002_${result.status.toUpperCase()}`;
         if (nextAttempt >= MAX_ATTEMPTS) {

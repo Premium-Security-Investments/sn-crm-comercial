@@ -41,7 +41,7 @@ import { mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOff
 import { isCriticalTenderDocument } from '../tender-critical-documents.js';
 import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
 import { createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
-import { claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim } from '../agt002-preview-persistence.js';
+import { appendAgt002AnalysisAttempt, claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim } from '../agt002-preview-persistence.js';
 import { getAgt002WorkbenchApi, postAgt002LearningReviewApi, postAgt002MessageApi, postAgt002RetryApi } from '../agt002-workbench-api.js';
 import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt002WorkbenchDrain } from '../agt002-workbench-runtime.js';
 import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
@@ -2444,7 +2444,12 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
     const { data } = await database.storage.from(tenderDocumentBucket).createSignedUrl(doc.storage_path, 3600);
     return { ...doc, signed_url: data?.signedUrl || null };
   })) : compatibleDocuments;
-  const currentAnalysis = await getCurrentTenderAnalysis(database, opportunityId, compatibleDocuments.filter(document => document.current !== false));
+  const currentAnalysis = await getCurrentTenderAnalysis(
+    database,
+    opportunityId,
+    compatibleDocuments.filter(document => document.current !== false),
+    { canonicalOnly: agt002AnalysisConfig.AGT002_CANONICAL_ONLY === true },
+  );
   const presentedAnalysis = presentCurrentTenderAnalysis(currentAnalysis);
   const questionResponses = presentedAnalysis?.run_id ? await getTenderQuestionResponses(database, opportunityId, presentedAnalysis.run_id) : [];
   return { documents: signed, analysis: presentedAnalysis, analyses, question_responses: questionResponses, import_error: importErrors.at(-1) || null };
@@ -2887,12 +2892,27 @@ function buildTenderProcessingWorkerDeps(database) {
     },
 
     requestAgt002: async ({ jobId, tenderId, opportunityId, snapshotId }) => {
-      // Worker interno no puede autoautorizar IA: el gate de custodia humano
-      // (Task 3.4 / psi_authorize_tender_analysis) es la única puerta.
       const actor = await getTenderProcessingJobActor(database, jobId);
-      if (!actor.analysis_authorized_by) return { status: 'rules_fallback' };
-      if (!isTenderAutoAnalysisEnabled(process.env)) return { status: 'rules_fallback' };
-      if (!isAgt002PreviewConfigured(process.env)) return { status: 'rules_fallback' };
+      const canonicalOnly = agt002AnalysisConfig.AGT002_CANONICAL_ONLY === true;
+      const attemptContext = { snapshot_id: snapshotId, opportunity_id: opportunityId, tender_id: tenderId };
+      const appendAttempt = (attemptKey, state, extra = {}) => appendAgt002AnalysisAttempt(database, {
+        ...attemptContext, attempt_key: attemptKey, state, ...extra,
+      });
+      const unavailable = async reason => {
+        if (!canonicalOnly) return { status: 'rules_fallback' };
+        const attemptKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion: `unavailable:${reason}`, model: 'unavailable' });
+        try {
+          await appendAttempt(attemptKey, 'queued');
+          await appendAttempt(attemptKey, 'unavailable', { error_code: `AGT002_${reason.toUpperCase()}`, error_message: 'Vig-IA no está disponible; el análisis queda pendiente.' });
+        } catch (error) {
+          return { status: 'error', error };
+        }
+        return { status: 'unavailable', reason };
+      };
+
+      if (!actor.analysis_authorized_by) return unavailable('not_authorized');
+      if (!isTenderAutoAnalysisEnabled(process.env)) return unavailable('auto_disabled');
+      if (!isAgt002PreviewConfigured(process.env)) return unavailable('not_configured');
 
       const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', opportunityId).single());
       const records = await getTenderDocumentRecords(database, opportunityId);
@@ -2902,23 +2922,40 @@ function buildTenderProcessingWorkerDeps(database) {
 
       let claimId = null;
       let idempotencyKey = null;
+      let attemptStarted = false;
       try {
         const config = getAgt002PreviewRuntimeConfig(process.env);
         idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion: config.policyVersion, model: config.model });
         const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
         if (claim.status === 'existing') {
-          const existingRun = await findAgt002PreviewRun(database, idempotencyKey);
-          if (!existingRun) return { status: 'error', error: new Error('La ejecución AGT-002 reservada no está disponible.') };
+          const existingRun = await findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly });
+          if (!existingRun) return { status: 'error', error: new Error('La ejecución Vig-IA reservada no está disponible.') };
           return { status: 'completed', analysisRunId: existingRun.run_id };
         }
         if (claim.status === 'in_progress') return { status: 'busy' };
-        if (claim.status === 'quota' || claim.status === 'saturated') return { status: claim.status };
+        if (claim.status === 'quota' || claim.status === 'saturated') {
+          if (canonicalOnly) {
+            await appendAttempt(idempotencyKey, 'queued');
+            await appendAttempt(idempotencyKey, 'retry_wait', { error_code: `AGT002_${claim.status.toUpperCase()}`, error_message: 'Vig-IA está esperando capacidad.' });
+          }
+          return { status: claim.status };
+        }
         claimId = claim.claim_id;
+        if (canonicalOnly) {
+          await appendAttempt(idempotencyKey, 'queued');
+          attemptStarted = true;
+          await appendAttempt(idempotencyKey, 'running');
+        }
         const engine = createAgt002PreviewRuntime({ environment: process.env, countDailyRuns: () => countAgt002PreviewRunsToday(database) });
-        const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId }, { idempotencyKey });
-        const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope });
+        const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId, canonicalOnly }, { idempotencyKey });
+        const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly });
+        if (canonicalOnly) await appendAttempt(idempotencyKey, 'completed', { analysis_run_id: registeredRun.run_id });
         return { status: 'completed', analysisRunId: registeredRun.run_id };
       } catch (error) {
+        if (canonicalOnly && attemptStarted && idempotencyKey) {
+          try { await appendAttempt(idempotencyKey, 'unavailable', { error_code: error?.code || 'AGT002_UNAVAILABLE', error_message: 'Vig-IA no completó el análisis; se reintentará.' }); }
+          catch { console.warn('agt002_attempt_state_failed', { event: 'agt002_attempt_state_failed' }); }
+        }
         return { status: 'error', error };
       } finally {
         if (claimId && idempotencyKey) {
@@ -3357,6 +3394,15 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
       documents: currentDocs, company_profile: companyProfile,
     });
     const deepAnalysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
+    const canonicalOnly = agt002AnalysisConfig.AGT002_CANONICAL_ONLY === true;
+    const appendAttempt = (attemptKey, state, extra = {}) => appendAgt002AnalysisAttempt(database, {
+      snapshot_id: registeredSnapshot.id, opportunity_id: opportunityId, tender_id: tenderId,
+      attempt_key: attemptKey, state, ...extra,
+    });
+    const sendCanonicalState = (httpStatus, state, reason) => res.status(httpStatus).json({
+      error: state === 'retry_wait' ? 'Vig-IA está esperando capacidad; el análisis sigue pendiente.' : 'Vig-IA no está disponible; no se generó un análisis alternativo.',
+      analysis_engine: { requested: 'AGT-002', used: null, fallback: false, state, reason, human_review_required: true },
+    });
 
     const useRulesFallback = async reason => {
       const rulesRun = await registerSiioRulesAnalysis(database, {
@@ -3371,32 +3417,60 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
       });
     };
 
-    if (!isAgt002PreviewConfigured(process.env)) return useRulesFallback('not_configured');
+    if (!isAgt002PreviewConfigured(process.env)) {
+      if (!canonicalOnly) return useRulesFallback('not_configured');
+      const unavailableKey = computeAgt002PreviewIdempotencyKey({ snapshotId: registeredSnapshot.id, policyVersion: 'unavailable:not_configured', model: 'unavailable' });
+      try {
+        await appendAttempt(unavailableKey, 'queued');
+        await appendAttempt(unavailableKey, 'unavailable', { error_code: 'AGT002_NOT_CONFIGURED', error_message: 'Vig-IA no está disponible; el análisis queda pendiente.' });
+      } catch { console.warn('agt002_attempt_state_failed', { event: 'agt002_attempt_state_failed' }); }
+      return sendCanonicalState(503, 'unavailable', 'not_configured');
+    }
     let claimId = null;
     let idempotencyKey = null;
+    let attemptStarted = false;
     try {
       const config = getAgt002PreviewRuntimeConfig(process.env);
       idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId: registeredSnapshot.id, policyVersion: config.policyVersion, model: config.model });
       const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
       if (claim.status === 'existing') {
-        const existingRun = await findAgt002PreviewRun(database, idempotencyKey);
-        if (!existingRun) throw new Error('La ejecución AGT-002 reservada no está disponible.');
+        const existingRun = await findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly });
+        if (!existingRun) throw new Error('La ejecución Vig-IA reservada no está disponible.');
         const payload = await getTenderDocumentRecords(database, opportunityId);
-        return res.json({ ...payload, analysis: presentCurrentTenderAnalysis(existingRun), analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, reused: true, human_review_required: true } });
+        return res.json({ ...payload, analysis: presentCurrentTenderAnalysis(existingRun), analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, state: 'completed', reused: true, human_review_required: true } });
       }
       if (claim.status === 'in_progress') {
-        return res.status(409).json({ error: 'AGT-002 Preview ya está procesando este snapshot.', analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, in_progress: true, human_review_required: true } });
+        return res.status(409).json({ error: 'Vig-IA ya está procesando este snapshot.', analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, state: 'running', in_progress: true, human_review_required: true } });
       }
-      if (claim.status === 'quota' || claim.status === 'saturated') return useRulesFallback(claim.status);
+      if (claim.status === 'quota' || claim.status === 'saturated') {
+        if (!canonicalOnly) return useRulesFallback(claim.status);
+        await appendAttempt(idempotencyKey, 'queued');
+        await appendAttempt(idempotencyKey, 'retry_wait', { error_code: `AGT002_${claim.status.toUpperCase()}`, error_message: 'Vig-IA está esperando capacidad.' });
+        return sendCanonicalState(429, 'retry_wait', claim.status);
+      }
       claimId = claim.claim_id;
+      if (canonicalOnly) {
+        await appendAttempt(idempotencyKey, 'queued');
+        attemptStarted = true;
+        await appendAttempt(idempotencyKey, 'running');
+      }
       const engine = createAgt002PreviewRuntime({ environment: process.env, countDailyRuns: () => countAgt002PreviewRunsToday(database) });
-      const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id }, { idempotencyKey });
-      const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope });
+      const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id, canonicalOnly }, { idempotencyKey });
+      const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope, canonicalOnly });
+      if (canonicalOnly) await appendAttempt(idempotencyKey, 'completed', { analysis_run_id: registeredRun.run_id });
       const payload = await getTenderDocumentRecords(database, opportunityId);
-      return res.json({ ...payload, analysis: presentCurrentTenderAnalysis(registeredRun), analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, reused: false, human_review_required: true } });
-    } catch {
-      console.warn('agt002_preview_fallback', { event: 'agt002_preview_fallback', reason: 'preview_unavailable' });
-      return useRulesFallback('preview_unavailable');
+      return res.json({ ...payload, analysis: presentCurrentTenderAnalysis(registeredRun), analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, state: 'completed', reused: false, human_review_required: true } });
+    } catch (error) {
+      if (!canonicalOnly) {
+        console.warn('agt002_preview_fallback', { event: 'agt002_preview_fallback', reason: 'preview_unavailable' });
+        return useRulesFallback('preview_unavailable');
+      }
+      if (attemptStarted && idempotencyKey) {
+        try { await appendAttempt(idempotencyKey, 'unavailable', { error_code: error?.code || 'AGT002_UNAVAILABLE', error_message: 'Vig-IA no completó el análisis; se reintentará.' }); }
+        catch { console.warn('agt002_attempt_state_failed', { event: 'agt002_attempt_state_failed' }); }
+      }
+      console.warn('agt002_canonical_unavailable', { event: 'agt002_canonical_unavailable' });
+      return sendCanonicalState(503, 'unavailable', 'preview_unavailable');
     } finally {
       if (claimId && idempotencyKey) {
         try { await releaseAgt002PreviewClaim(database, { idempotencyKey, claimId }); }

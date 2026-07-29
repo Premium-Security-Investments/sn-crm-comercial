@@ -20,8 +20,8 @@ assert.match(documents, /documentsByType|groupedDocuments/);
 assert.doesNotMatch(documents, /<details[^>]*\sopen(?:=|>)/, 'Listado/uploader deben iniciar cerrados.');
 
 for (const state of ['Análisis pendiente', 'Análisis desactualizado', 'Análisis fallido', 'Sin documentos']) assert.match(analysis, new RegExp(state));
-assert.match(analysis, /Generar análisis preliminar/);
-assert.match(analysis, /Actualizar análisis/);
+for (const label of ['Analizar con Vig-IA', 'Actualizar con Vig-IA', 'Volver a analizar con Vig-IA']) assert.match(analysis, new RegExp(label));
+assert.doesNotMatch(analysis, /Generar análisis preliminar|Actualizar análisis/, 'No debe reaparecer una acción determinística equivalente a Vig-IA.');
 assert.match(analysis, /tenderAnalysisMethodLabel\(analysis\.producer\)/);
 assert.match(analysis, /id="tender-analysis"/);
 assert.doesNotMatch(main, /analysis\s*&&\s*<TenderAnalysisSection/, 'La sección de análisis siempre debe renderizarse.');

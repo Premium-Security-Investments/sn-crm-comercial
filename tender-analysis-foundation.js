@@ -158,7 +158,7 @@ export async function registerSiioRulesAnalysis(database, context) {
   };
 }
 
-export async function getCurrentTenderAnalysis(database, opportunityId, currentDocuments = null) {
+export async function getCurrentTenderAnalysis(database, opportunityId, currentDocuments = null, { canonicalOnly = false } = {}) {
   const normalizedOpportunityId = requireId(opportunityId, 'La oportunidad');
   const stateResponse = await database.from('psi_tender_document_state')
     .select('current_snapshot_id,refresh_in_progress')
@@ -177,15 +177,17 @@ export async function getCurrentTenderAnalysis(database, opportunityId, currentD
 
   const selectLatestRun = async (snapshotId = null) => {
     let query = database.from('psi_tender_analysis_runs')
-      .select('id,snapshot_id,producer,method,status,result,critical_open_count,created_at,completed_at')
+      .select(`id,snapshot_id,producer,method,status,result,critical_open_count,created_at,completed_at${canonicalOnly ? ',canonical' : ''}`)
       .eq('opportunity_id', normalizedOpportunityId);
+    if (canonicalOnly) query = query.eq('canonical', true);
     if (snapshotId) query = query.eq('snapshot_id', snapshotId);
     const response = await query.order('created_at', { ascending: false }).order('id', { ascending: false }).limit(1);
     if (response?.error) throw new Error(response.error.message || String(response.error));
     return Array.isArray(response?.data) ? response.data[0] : response?.data;
   };
 
-  const run = await selectLatestRun(latestSnapshot.id) || await selectLatestRun();
+  const currentSnapshotRun = await selectLatestRun(latestSnapshot.id);
+  const run = currentSnapshotRun || (canonicalOnly ? null : await selectLatestRun());
   if (!run) return null;
   const documentsMatchSnapshot = !Array.isArray(currentDocuments)
     || buildTenderSnapshotInput(currentDocuments, {}).document_hash === latestSnapshot.document_hash;
@@ -195,6 +197,7 @@ export async function getCurrentTenderAnalysis(database, opportunityId, currentD
     producer: run.producer,
     method: run.method,
     status: run.status,
+    ...(canonicalOnly ? { canonical: run.canonical === true } : {}),
     current: !state.refresh_in_progress && run.snapshot_id === latestSnapshot.id && documentsMatchSnapshot,
     result: run.result,
     critical_open_count: run.critical_open_count ?? 0,
@@ -216,6 +219,7 @@ export function presentCurrentTenderAnalysis(currentAnalysis) {
     producer: currentAnalysis.producer,
     method: currentAnalysis.method,
     status: currentAnalysis.status,
+    ...(typeof currentAnalysis.canonical === 'boolean' ? { canonical: currentAnalysis.canonical } : {}),
     current: currentAnalysis.current,
     critical_open_count: currentAnalysis.critical_open_count,
     created_at: currentAnalysis.created_at || null,

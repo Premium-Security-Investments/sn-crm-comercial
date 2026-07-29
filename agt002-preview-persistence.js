@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 const CONTENT_KEYS = ['recommendation', 'summary', 'strengths', 'weaknesses', 'blockers', 'questions', 'unverified', 'next_action', 'human_review_required'];
 
@@ -85,13 +85,11 @@ export async function registerAgt002PreviewAnalysis(database, context) {
   const criticalOpenCount = countCriticalOpenQuestions(content);
   const idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model: usage.model });
 
-  const runRecord = unwrapRpc(await database.rpc('psi_record_tender_analysis_run', {
+  const canonicalOnly = context?.canonicalOnly === true;
+  const commonParams = {
     p_snapshot_id: snapshotId,
     p_opportunity_id: opportunityId,
     p_tender_id: tenderId,
-    p_producer: 'AGT-002',
-    p_method: 'agent_ai',
-    p_status: 'completed',
     p_result: content,
     p_critical_open_count: criticalOpenCount,
     p_idempotency_key: idempotencyKey,
@@ -99,7 +97,11 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     p_policy_version: policyVersion,
     p_model: usage.model,
     p_usage: usage,
-  }));
+  };
+  const runRecord = unwrapRpc(await database.rpc(
+    canonicalOnly ? 'psi_record_agt002_canonical_analysis_run' : 'psi_record_tender_analysis_run',
+    canonicalOnly ? commonParams : { ...commonParams, p_producer: 'AGT-002', p_method: 'agent_ai', p_status: 'completed' },
+  ));
   const runId = requireId(runRecord.id, 'La ejecución de AGT-002 Preview');
   return {
     run_id: runId,
@@ -107,10 +109,36 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     producer: runRecord.producer || 'AGT-002',
     method: runRecord.method || 'agent_ai',
     status: runRecord.status || 'completed',
+    canonical: runRecord.canonical === true || canonicalOnly,
     current: true,
     result: content,
     critical_open_count: runRecord.critical_open_count ?? criticalOpenCount,
   };
+}
+
+/** Appends one immutable lifecycle event for a canonical Vig-IA attempt. */
+export async function appendAgt002AnalysisAttempt(database, context, { eventKeyGenerator = randomUUID } = {}) {
+  const snapshotId = requireId(context?.snapshot_id, 'El snapshot documental');
+  const opportunityId = requireId(context?.opportunity_id, 'La oportunidad');
+  const tenderId = requireId(context?.tender_id, 'La licitación');
+  const attemptKey = requireId(context?.attempt_key, 'La clave del intento');
+  const state = requireId(context?.state, 'El estado del intento');
+  if (!['queued', 'running', 'completed', 'retry_wait', 'needs_attention', 'unavailable'].includes(state)) {
+    throw new Error('El estado del intento AGT-002 no es válido.');
+  }
+  const eventKey = requireId(context?.event_key || eventKeyGenerator(), 'La clave del evento');
+  return unwrapRpc(await database.rpc('psi_append_agt002_analysis_attempt', {
+    p_snapshot_id: snapshotId,
+    p_opportunity_id: opportunityId,
+    p_tender_id: tenderId,
+    p_attempt_key: attemptKey,
+    p_event_key: eventKey,
+    p_producer: 'AGT-002',
+    p_state: state,
+    p_error_code: context?.error_code || null,
+    p_error_message: context?.error_message || null,
+    p_analysis_run_id: context?.analysis_run_id || null,
+  }));
 }
 
 /** Interpretable daily quota probe: counts only AGT-002 Preview runs since UTC midnight, never a client-supplied number. */
@@ -131,12 +159,13 @@ export async function countAgt002PreviewRunsToday(database, { now = () => new Da
 }
 
 /** Looks up an existing AGT-002 Preview run by idempotency key so callers can skip re-invoking the model entirely. */
-export async function findAgt002PreviewRun(database, idempotencyKey) {
+export async function findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly = false } = {}) {
   const key = requireId(idempotencyKey, 'La clave de idempotencia');
-  const response = await database.from('psi_tender_analysis_runs')
-    .select('id,snapshot_id,producer,method,status,result,critical_open_count,created_at,completed_at')
-    .eq('idempotency_key', key)
-    .maybeSingle();
+  let query = database.from('psi_tender_analysis_runs')
+    .select(`id,snapshot_id,producer,method,status,result,critical_open_count,created_at,completed_at${canonicalOnly ? ',canonical' : ''}`)
+    .eq('idempotency_key', key);
+  if (canonicalOnly) query = query.eq('canonical', true);
+  const response = await query.maybeSingle();
   if (response?.error) throw new Error(response.error.message || String(response.error));
   const row = response?.data;
   if (!row) return null;
@@ -146,6 +175,7 @@ export async function findAgt002PreviewRun(database, idempotencyKey) {
     producer: row.producer,
     method: row.method,
     status: row.status,
+    ...(canonicalOnly ? { canonical: row.canonical === true } : {}),
     current: true,
     result: row.result,
     critical_open_count: row.critical_open_count ?? 0,
