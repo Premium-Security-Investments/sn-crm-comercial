@@ -48,6 +48,8 @@ assert.deepEqual(ACTIONS, {
   CRM_OPPORTUNITY_EDIT: 'crm.opportunity.edit',
   CRM_OPPORTUNITY_REASSIGN: 'crm.opportunity.reassign',
   LICITACIONES_VIEW: 'licitaciones.view',
+  LICITACIONES_WORKBENCH_USE: 'licitaciones.workbench.use',
+  LICITACIONES_WORKBENCH_CUSTODY: 'licitaciones.workbench.custody',
   LICITACIONES_CONVERT: 'licitaciones.convert',
   LICITACIONES_CONFIGURE: 'licitaciones.configure',
   LICITACIONES_SYNC: 'licitaciones.sync',
@@ -75,8 +77,8 @@ assert.deepEqual(ACTIONS, {
   MODULE_OPPORTUNITIES_VIEW: 'module.opportunities.view',
   MODULE_GOALS_VIEW: 'module.goals.view',
   MODULE_USERS_VIEW: 'module.users.view',
-}, 'ACTIONS debe coincidir exactamente con el contrato estable de 37 acciones');
-assert.equal(actionValues.length, 37, 'ACTIONS debe exponer exactamente 37 códigos estables');
+}, 'ACTIONS debe coincidir exactamente con el contrato estable de 39 acciones');
+assert.equal(actionValues.length, 39, 'ACTIONS debe exponer exactamente 39 códigos estables');
 assert.equal(new Set(actionValues).size, actionValues.length, 'todos los códigos de acción deben ser únicos');
 assert.ok(actionValues.every((value) => typeof value === 'string' && value.length > 0), 'todos los códigos de acción deben ser strings no vacíos');
 const originalUsersManageAction = ACTIONS.USERS_MANAGE;
@@ -183,6 +185,12 @@ runCases('Vig-IA borrador comercial', [
 
 runCases('licitaciones', [
   { name: 'admin sin permiso no consulta', profile: human('admin'), action: ACTIONS.LICITACIONES_VIEW, resource: {}, expected: false },
+  { name: 'operador de licitaciones usa la Mesa', profile: tenderUser('comercial'), action: ACTIONS.LICITACIONES_WORKBENCH_USE, resource: {}, expected: true },
+  { name: 'colaborador no usa la Mesa aunque aparente permiso', profile: tenderUser('colaborador'), action: ACTIONS.LICITACIONES_WORKBENCH_USE, resource: {}, expected: false },
+  { name: 'encargada comercial con custodia revisa documentos y aprendizaje', profile: tenderUser('comercial', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_WORKBENCH_CUSTODY, resource: {}, expected: true },
+  { name: 'operador sin custodia no revisa documentos ni aprendizaje', profile: tenderUser('comercial'), action: ACTIONS.LICITACIONES_WORKBENCH_CUSTODY, resource: {}, expected: false },
+  { name: 'custodia comercial no recibe autoridad go-no-go', profile: tenderUser('comercial', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_GO_NO_GO_APPROVE, resource: {}, expected: false },
+  { name: 'agente no puede usar ni custodiar la Mesa', profile: agent(), action: ACTIONS.LICITACIONES_WORKBENCH_USE, resource: { technical_authorized: true }, expected: false },
   { name: 'gerencia con permiso sincroniza', profile: tenderUser('gerencia'), action: ACTIONS.LICITACIONES_SYNC, resource: {}, expected: true },
   { name: 'director con permiso propone descarte', profile: tenderUser('director'), action: ACTIONS.LICITACIONES_DISCARD_PROPOSE, resource: {}, expected: true },
   { name: 'comercial con permiso recomienda go-no-go', profile: tenderUser('comercial'), action: ACTIONS.LICITACIONES_GO_NO_GO_RECOMMEND, resource: {}, expected: true },

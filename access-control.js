@@ -20,6 +20,8 @@ export const ACTIONS = Object.freeze({
   CRM_OPPORTUNITY_EDIT: 'crm.opportunity.edit',
   CRM_OPPORTUNITY_REASSIGN: 'crm.opportunity.reassign',
   LICITACIONES_VIEW: 'licitaciones.view',
+  LICITACIONES_WORKBENCH_USE: 'licitaciones.workbench.use',
+  LICITACIONES_WORKBENCH_CUSTODY: 'licitaciones.workbench.custody',
   LICITACIONES_CONVERT: 'licitaciones.convert',
   LICITACIONES_CONFIGURE: 'licitaciones.configure',
   LICITACIONES_SYNC: 'licitaciones.sync',
@@ -296,6 +298,7 @@ export function can(profile, action, resource = {}) {
         && (hasHumanRole(profile, PRIVILEGED_ROLES) || canDirectorCommercialResource(profile, resource));
 
     case ACTIONS.LICITACIONES_VIEW:
+    case ACTIONS.LICITACIONES_WORKBENCH_USE:
     case ACTIONS.LICITACIONES_SYNC:
     case ACTIONS.LICITACIONES_DISCARD_PROPOSE:
     case ACTIONS.LICITACIONES_GO_NO_GO_RECOMMEND:
@@ -305,6 +308,7 @@ export function can(profile, action, resource = {}) {
       return canHumanTenderAction(profile) && hasHumanRole(profile, new Set(['admin', 'gerencia', 'director']));
     case ACTIONS.LICITACIONES_CONVERT:
     case ACTIONS.LICITACIONES_CONFIGURE:
+    case ACTIONS.LICITACIONES_WORKBENCH_CUSTODY:
       return canTenderCustodyAction(profile);
 
     case ACTIONS.SIIO_AREA_VIEW:
