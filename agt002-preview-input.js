@@ -1,3 +1,5 @@
+import { buildAgt002ObjectiveValidations } from './agt002-objective-validations.js';
+
 export const AGT002_MAX_DOCUMENTS = 12;
 export const AGT002_MAX_DOCUMENT_CHARS = 3000;
 export const AGT002_MAX_TOTAL_DOCUMENT_CHARS = 36000;
@@ -67,11 +69,11 @@ function prepareCompanyProfile(companyProfile) {
   return profile;
 }
 
-export function buildAgt002PreviewInput({ opportunity = {}, documents = [], companyProfile = {}, deepAnalysis = {}, snapshotId }) {
+export function buildAgt002PreviewInput({ opportunity = {}, documents = [], companyProfile = {}, deepAnalysis = {}, snapshotId, canonicalOnly = false }) {
   if (typeof snapshotId !== 'string' || !snapshotId.trim()) {
     throw new Error('AGT-002 Preview requiere un snapshot documental vigente.');
   }
-  return {
+  const input = {
     schema_version: '1.0',
     snapshot_id: snapshotId.trim(),
     opportunity: {
@@ -80,7 +82,9 @@ export function buildAgt002PreviewInput({ opportunity = {}, documents = [], comp
       title: redactText(opportunity?.title ?? opportunity?.opportunity_name ?? ''),
     },
     company_profile: prepareCompanyProfile(companyProfile),
-    deep_analysis: sanitizeValue(deepAnalysis),
     documents: prepareDocuments(documents),
   };
+  if (canonicalOnly) input.objective_validations = sanitizeValue(buildAgt002ObjectiveValidations(deepAnalysis));
+  else input.deep_analysis = sanitizeValue(deepAnalysis);
+  return input;
 }
