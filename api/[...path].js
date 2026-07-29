@@ -48,6 +48,7 @@ import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatu
 import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../tender-actuation-types.js';
 import { buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
+import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2926,6 +2927,7 @@ function buildTenderProcessingWorkerDeps(database) {
 
       const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(AGT002_OPPORTUNITY_CONTEXT_SELECT).eq('id', opportunityId).single());
       const contextV2Sections = await loadAgt002OpportunityContextV2(database, { opportunityId, tenderId, opportunity });
+      const companyDossierV2 = await loadAgt002CompanyDossier(database);
       const records = await getTenderDocumentRecords(database, opportunityId);
       const currentDocs = records.documents.filter(document => document.current !== false);
       const companyProfile = await getTenderCompanyProfile(database);
@@ -2958,7 +2960,7 @@ function buildTenderProcessingWorkerDeps(database) {
           await appendAttempt(idempotencyKey, 'running');
         }
         const engine = createAgt002PreviewRuntime({ environment: process.env, countDailyRuns: () => countAgt002PreviewRunsToday(database) });
-        const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections }, { idempotencyKey });
+        const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
         const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly });
         if (canonicalOnly) await appendAttempt(idempotencyKey, 'completed', { analysis_run_id: registeredRun.run_id });
         return { status: 'completed', analysisRunId: registeredRun.run_id };
@@ -3393,6 +3395,7 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
     const opportunity = await ensureTenderOpportunity(database, opportunityId, currentProfile);
     const tenderId = await getTenderIdForOpportunity(database, opportunityId);
     const contextV2Sections = await loadAgt002OpportunityContextV2(database, { opportunityId, tenderId });
+    const companyDossierV2 = await loadAgt002CompanyDossier(database);
     const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
     if (beginRefresh.error) throw beginRefresh.error;
     const refreshToken = String(beginRefresh.data || '').trim();
@@ -3467,7 +3470,7 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
         await appendAttempt(idempotencyKey, 'running');
       }
       const engine = createAgt002PreviewRuntime({ environment: process.env, countDailyRuns: () => countAgt002PreviewRunsToday(database) });
-      const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id, canonicalOnly, contextV2Sections }, { idempotencyKey });
+      const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
       const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope, canonicalOnly });
       if (canonicalOnly) await appendAttempt(idempotencyKey, 'completed', { analysis_run_id: registeredRun.run_id });
       const payload = await getTenderDocumentRecords(database, opportunityId);
