@@ -91,29 +91,30 @@ async function testCwdInBodyRejected() {
   });
 }
 
-async function testConcurrencyOneRejectsSecondRequest() {
-  const server = createServer(createAgt002BridgeServer({ hmacSecret: SECRET, codexClient: neverResolvingClient() }));
-  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const { port } = server.address();
-  const base = `http://127.0.0.1:${port}`;
-  try {
+async function testConcurrentRequestsAreAccepted() {
+  let active = 0;
+  let maxActive = 0;
+  const client = {
+    run: async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise(resolve => setTimeout(resolve, 75));
+      active -= 1;
+      return { content: '{"ok":true}', usage: { input_tokens: 1, output_tokens: 2 }, rate_limit: null };
+    },
+  };
+  await withServer(client, async (base) => {
     const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-3' };
     const firstBody = JSON.stringify(payload);
-    const firstRequest = fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(firstBody), body: firstBody });
-    await new Promise(resolve => setTimeout(resolve, 50));
-    const secondPayload = { ...payload, idempotencyKey: 'idem-4' };
-    const secondBody = JSON.stringify(secondPayload);
-    const secondResponse = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(secondBody, { nonce: 'm'.repeat(16) }), body: secondBody });
-    assert.equal(secondResponse.status, 409);
-    const secondResult = await secondResponse.json();
-    assert.equal(secondResult.error.code, 'AGT002_BRIDGE_BUSY');
-    firstRequest.catch(() => {});
-  } finally {
-    // The first request's codexClient never resolves, so its connection is never idle;
-    // force-close it here or server.close() would hang waiting for a response that never comes.
-    server.closeAllConnections();
-    await new Promise(resolve => server.close(resolve));
-  }
+    const secondBody = JSON.stringify({ ...payload, idempotencyKey: 'idem-4' });
+    const [first, second] = await Promise.all([
+      fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(firstBody), body: firstBody }),
+      fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(secondBody, { nonce: 'm'.repeat(16) }), body: secondBody }),
+    ]);
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 200);
+    assert.equal(maxActive, 2, 'el bridge no debe serializar artificialmente solicitudes independientes');
+  });
 }
 
 async function testProviderErrorMappedTo502() {
@@ -227,7 +228,7 @@ console.log('agt002-hetzner-bridge-server.test.mjs Step 1 OK');
 
 await testSuccessResponseShape();
 await testCwdInBodyRejected();
-await testConcurrencyOneRejectsSecondRequest();
+await testConcurrentRequestsAreAccepted();
 await testProviderErrorMappedTo502();
 await testLoginRequiredMappedTo503();
 await testSynchronousThrowInCodexClientReleasesBusyAndFailsClosed();

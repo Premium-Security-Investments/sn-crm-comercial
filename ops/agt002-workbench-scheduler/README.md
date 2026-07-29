@@ -1,6 +1,6 @@
 # Scheduler externo de la Mesa Vig-IA (AGT-002)
 
-Artefacto manual para ejecutar un único ciclo acotado del Workbench cada minuto. **El repositorio no instala, inicia ni habilita estas unidades.** El runtime y el drain de Vercel deben permanecer apagados hasta completar migración 046, secretos, bridge y piloto autorizado.
+Scheduler productivo continuo del Workbench. Ejecuta ciclos independientes cada minuto; systemd evita solapamiento del propio timer, mientras cada ciclo reclama y procesa el trabajo disponible. El kill switch de Vercel y `systemctl stop` se conservan exclusivamente para incidentes o mantenimiento.
 
 ## Archivos
 
@@ -16,8 +16,8 @@ Artefacto manual para ejecutar un único ciclo acotado del Workbench cada minuto
 3. Crear `/etc/agt002-workbench-scheduler/env` desde `env.example`, propietario `root:agt002-workbench-scheduler`, modo `0640`.
 4. Copiar `.service` y `.timer` a `/etc/systemd/system/`.
 5. Ejecutar `systemd-analyze verify` sobre ambas unidades.
-6. Probar **una sola vez** con `systemctl start agt002-workbench-scheduler.service` y revisar `journalctl -u agt002-workbench-scheduler.service`.
-7. Solo después del piloto autorizado: `systemctl enable --now agt002-workbench-scheduler.timer`.
+6. Validar el servicio con `systemctl start agt002-workbench-scheduler.service` y revisar `journalctl -u agt002-workbench-scheduler.service`.
+7. Activar producción continua: `systemctl enable --now agt002-workbench-scheduler.timer`.
 
 ## Kill switch y rollback operativo
 

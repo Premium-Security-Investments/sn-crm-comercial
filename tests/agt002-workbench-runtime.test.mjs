@@ -64,20 +64,19 @@ assert.equal(isAgt002WorkbenchDrainEnabled(baseEnv({ AGT002_WORKBENCH_AGENT_ID: 
 assert.equal(isAgt002WorkbenchDrainEnabled(baseEnv({ AGT002_WORKBENCH_WORKER_ID: '   ' })), false);
 assert.equal(isAgt002WorkbenchDrainEnabled(baseEnv({ AGT002_WORKBENCH_WORKER_ID: undefined })), false);
 
-// --- dailyMaxJobs: default 1, bounded, malformed fails closed ---
+// --- caps opcionales: 0 significa ilimitado; negativos/malformados fallan cerrado ---
 assert.throws(() => getAgt002WorkbenchRuntimeConfig(baseEnv({ AGT002_WORKBENCH_RUNTIME: undefined })), /no est[aá] configurad/i);
-assert.equal(getAgt002WorkbenchRuntimeConfig(baseEnv()).dailyMaxJobs, 1, 'el cupo diario por defecto es 1');
+assert.equal(getAgt002WorkbenchRuntimeConfig(baseEnv()).dailyMaxJobs, 0, 'sin variable no hay cuota diaria artificial');
+assert.equal(getAgt002WorkbenchRuntimeConfig(baseEnv({ AGT002_WORKBENCH_DAILY_MAX_JOBS: '0' })).dailyMaxJobs, 0);
 assert.equal(getAgt002WorkbenchRuntimeConfig(baseEnv({ AGT002_WORKBENCH_DAILY_MAX_JOBS: '5' })).dailyMaxJobs, 5);
-assert.equal(isAgt002WorkbenchDrainEnabled(baseEnv({ AGT002_WORKBENCH_DAILY_MAX_JOBS: '0' })), false);
 assert.equal(isAgt002WorkbenchDrainEnabled(baseEnv({ AGT002_WORKBENCH_DAILY_MAX_JOBS: '-1' })), false);
 assert.equal(isAgt002WorkbenchDrainEnabled(baseEnv({ AGT002_WORKBENCH_DAILY_MAX_JOBS: 'not-a-number' })), false);
-assert.equal(isAgt002WorkbenchDrainEnabled(baseEnv({ AGT002_WORKBENCH_DAILY_MAX_JOBS: '100000' })), false, 'el cupo diario debe estar acotado');
+assert.equal(isAgt002WorkbenchDrainEnabled(baseEnv({ AGT002_WORKBENCH_DAILY_MAX_JOBS: '2147483648' })), false);
 
-// --- maxConcurrent must equal exactly 1 ---
-assert.equal(getAgt002WorkbenchRuntimeConfig(baseEnv()).maxConcurrent, 1);
-assert.equal(isAgt002WorkbenchDrainEnabled(baseEnv({ AGT002_WORKBENCH_MAX_CONCURRENT: '1' })), true);
-assert.equal(isAgt002WorkbenchDrainEnabled(baseEnv({ AGT002_WORKBENCH_MAX_CONCURRENT: '2' })), false);
-assert.equal(isAgt002WorkbenchDrainEnabled(baseEnv({ AGT002_WORKBENCH_MAX_CONCURRENT: '0' })), false);
+assert.equal(getAgt002WorkbenchRuntimeConfig(baseEnv()).maxConcurrent, 0, 'sin variable no hay tope artificial de concurrencia');
+assert.equal(isAgt002WorkbenchDrainEnabled(baseEnv({ AGT002_WORKBENCH_MAX_CONCURRENT: '0' })), true);
+assert.equal(getAgt002WorkbenchRuntimeConfig(baseEnv({ AGT002_WORKBENCH_MAX_CONCURRENT: '2' })).maxConcurrent, 2);
+assert.equal(isAgt002WorkbenchDrainEnabled(baseEnv({ AGT002_WORKBENCH_MAX_CONCURRENT: '-1' })), false);
 
 // --- timeout 1..45000, default 30000 ---
 assert.equal(getAgt002WorkbenchRuntimeConfig(baseEnv()).timeoutMs, 30_000);

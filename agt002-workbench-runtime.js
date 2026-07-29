@@ -15,8 +15,8 @@ export const AGT002_WORKBENCH_ENGINE_ID = 'agt002_workbench_bridge_v1';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_TIMEOUT_MS = 45_000;
-const DEFAULT_DAILY_MAX_JOBS = 1;
-const MAX_DAILY_MAX_JOBS = 100;
+const DEFAULT_DAILY_MAX_JOBS = 0;
+const MAX_OPTIONAL_CAP = 2_147_483_647;
 const DEFAULT_SWEEP_MAX = 25;
 const MAX_SWEEP_MAX = 500;
 const MAX_LEASE_SECONDS = 600;
@@ -87,9 +87,11 @@ export function getAgt002WorkbenchRuntimeConfig(environment = process.env) {
   if (!nonEmpty(workerId)) throw new Error('La Mesa Vig-IA no está configurada: falta el identificador de worker.');
 
   const dailyMaxJobs = boundedIntFromEnv(environment.AGT002_WORKBENCH_DAILY_MAX_JOBS, {
-    min: 1, max: MAX_DAILY_MAX_JOBS, fallback: DEFAULT_DAILY_MAX_JOBS,
+    min: 0, max: MAX_OPTIONAL_CAP, fallback: DEFAULT_DAILY_MAX_JOBS,
   });
-  const maxConcurrent = boundedIntFromEnv(environment.AGT002_WORKBENCH_MAX_CONCURRENT, { min: 1, max: 1, fallback: 1 });
+  const maxConcurrent = boundedIntFromEnv(environment.AGT002_WORKBENCH_MAX_CONCURRENT, {
+    min: 0, max: MAX_OPTIONAL_CAP, fallback: 0,
+  });
   const timeoutMs = boundedIntFromEnv(environment.AGT002_WORKBENCH_TIMEOUT_MS, {
     min: 1, max: MAX_TIMEOUT_MS, fallback: DEFAULT_TIMEOUT_MS,
   });
@@ -99,9 +101,8 @@ export function getAgt002WorkbenchRuntimeConfig(environment = process.env) {
 
   if (!Number.isInteger(dailyMaxJobs) || !Number.isInteger(maxConcurrent)
     || !Number.isInteger(timeoutMs) || !Number.isInteger(sweepMax)) {
-    throw new Error('La Mesa Vig-IA no está configurada: un límite numérico es inválido o está fuera de rango.');
+    throw new Error('La Mesa Vig-IA no está configurada: un valor numérico es inválido o está fuera de rango.');
   }
-  if (maxConcurrent !== 1) throw new Error('La Mesa Vig-IA no está configurada: maxConcurrent debe ser exactamente 1 en esta fase.');
 
   const leaseSeconds = Math.ceil(timeoutMs / 1000) + 15;
   if (leaseSeconds > MAX_LEASE_SECONDS) throw new Error('La Mesa Vig-IA no está configurada: el lease derivado excede el máximo permitido.');
