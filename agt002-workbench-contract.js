@@ -66,7 +66,7 @@ const CONTEXT_KINDS = new Set(['artifact', 'source', 'requirement', 'action', 'm
 const CONTENT_KINDS = new Set(['markdown', 'texto', 'metadata']);
 const LEARNING_TYPES = new Set(['pattern', 'preference', 'rule', 'source']);
 const LEARNING_SCOPES = new Set(['tender', 'entity', 'modality_sector', 'psi_rule']);
-const PROHIBITED_AGENT_AUTHORITY = /\b(?:he aprobado|ya aprobé|aprobaré|firmaré|enviaré|radicaré|presentaré)\b/i;
+const PROHIBITED_AGENT_AUTHORITY = /(?<![\p{L}\p{N}_])(?:he aprobado|ya aprobé|aprobaré|firmaré|enviaré|radicaré|presentaré)(?![\p{L}\p{N}_])/iu;
 
 function isRecord(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
