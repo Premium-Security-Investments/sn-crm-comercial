@@ -681,14 +681,19 @@ const tenderPositiveTerms = {
   'videovigilancia': 35, 'video vigilancia': 35, 'control de acceso': 30, 'biometrico': 22, 'biométrico': 22,
   'alarma': 22, 'monitoreo': 22, 'circuito cerrado': 30, 'guardas': 28, 'cedi': 20, 'bodega': 10
 };
-// Terms specific enough, on their own, to prove a process is about a PSI-offerable service
-// (vigilancia, seguridad privada, CCTV/videovigilancia, control de acceso). Everything else in
-// tenderPositiveTerms is a generic/low-signal word (alarma, monitoreo, cedi, bodega, biométrico)
-// that only adds ranking weight once eligibility is already established by a core term.
+// Terms specific enough, on their own, to prove a process is about a PSI-offerable service.
+// Bare "vigilancia" and "guardas" only rank a candidate; they require explicit physical-security context.
+const tenderContextualPhysicalSecurityReason = 'vigilancia física contextual';
+const tenderPhysicalSecurityContextTerms = [
+  'vigilancia fisica', 'puesto de vigilancia', 'puestos de vigilancia', 'proteccion de instalaciones',
+  'proteccion de bienes', 'proteccion de personas', 'bienes y personas', 'custodia', 'seguridad perimetral',
+  'servicio canino', 'vigilancia canina', 'con armas', 'sin armas', 'sedes institucionales'
+].map(normTenderText);
 const tenderCoreServiceTerms = new Set([
   'vigilancia y seguridad privada', 'vigilancia y seguridad', 'servicios de vigilancia', 'servicio de vigilancia',
-  'vigilancia armada', 'vigilancia privada', 'vigilancia', 'seguridad privada', 'seguridad electronica', 'seguridad electrónica',
-  'cctv', 'videovigilancia', 'video vigilancia', 'control de acceso', 'circuito cerrado', 'guardas'
+  'vigilancia armada', 'vigilancia privada', 'seguridad privada', 'seguridad electronica', 'seguridad electrónica',
+  'cctv', 'videovigilancia', 'video vigilancia', 'control de acceso', 'circuito cerrado',
+  tenderContextualPhysicalSecurityReason
 ]);
 const tenderDisqualifyingTerms = [
   'interventoria', 'interventoría',
@@ -904,11 +909,17 @@ const tenderPositiveEntries = Object.entries(tenderPositiveTerms).map(([term, pt
 // Eligibility (and its read-path re-validation over persisted `reasons`) is decided purely from
 // whether a core PSI-service term matched — never from a generic word, a value/foco-zone bonus, or a
 // re-scan of the whole raw row. Fails closed (ineligible) when reasons are missing.
-function hasTenderServiceSignal(item) {
-  const reasons = item?.reasons || [];
-  return reasons.some(reason => tenderCoreServiceTerms.has(reason));
+function hasTenderPhysicalSecurityContext(text) {
+  return text.includes(normTenderText('vigilancia')) && tenderPhysicalSecurityContextTerms.some(term => text.includes(term));
 }
-function scoreTender(row, nameFields) {
+export function hasTenderServiceSignal(item) {
+  const reasons = item?.reasons || [];
+  if (reasons.some(reason => tenderCoreServiceTerms.has(reason))) return true;
+  if (!reasons.includes('vigilancia')) return false;
+  const text = item?.raw ? tenderText(item.raw) : tenderText(item);
+  return hasTenderPhysicalSecurityContext(text);
+}
+export function scoreTender(row, nameFields) {
   const objectText = tenderObjectText(row, nameFields);
   const text = tenderText(row); let score = 0; const reasons = []; const risks = [];
   const matchedPositiveTerms = [];
@@ -918,6 +929,9 @@ function scoreTender(row, nameFields) {
       score += pts;
       reasons.push(term);
     }
+  }
+  if (reasons.includes('vigilancia') && hasTenderPhysicalSecurityContext(objectText)) {
+    reasons.push(tenderContextualPhysicalSecurityReason);
   }
   const matchedFocusTerms = new Set();
   for (const [term, pts] of Object.entries(tenderFocusTerms)) {

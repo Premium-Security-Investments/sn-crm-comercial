@@ -7,6 +7,29 @@ process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'tender-relevance-test-key';
 for (const [index, backendPath] of ['../server/index.js', '../api/[...path].js'].entries()) {
   const backend = await import(`${backendPath}?non-security-context=${index}`);
   assert.equal(typeof backend.isTenderTrackable, 'function', `${backendPath} debe exponer isTenderTrackable para verificar relevancia.`);
+  assert.equal(typeof backend.scoreTender, 'function', `${backendPath} debe exponer scoreTender para probar la señal comercial real.`);
+  assert.equal(typeof backend.hasTenderServiceSignal, 'function', `${backendPath} debe exponer hasTenderServiceSignal para probar el gate del Radar.`);
+
+  const objectFields = ['nombre_del_procedimiento', 'descripci_n_del_procedimiento'];
+  const sanitaryInspectionTender = {
+    nombre_del_procedimiento: 'PRESTACION DE SERVICIOS PROFESIONALES',
+    descripci_n_del_procedimiento: 'PRESTACION DE SERVICIOS DE APOYO A LA GESTION PARA FORTALECER LAS ACCIONES DE INSPECCION VIGILANCIA PROMOCION Y PREVENCION DE RIESGOS SANITARIOS Y AMBIENTALES DEL PROGRAMA DE AGUA Y SANEAMIENTO EN EL MARCO DEL EJE ESTRATEGICO DE SALUD AMBIENTAL RELACIONADAS CON EL AGUA PARA CONSUMO HUMANO Y LOS ESTABLECIMIENTOS SUJETOS A VIGILANCIA',
+    entidad: 'MUNICIPIO DE PEREIRA- OFICIAL',
+    ciudad_entidad: 'Pereira',
+    departamento_entidad: 'Risaralda',
+    precio_base: '12133333',
+  };
+  const sanitaryScored = backend.scoreTender(sanitaryInspectionTender, objectFields);
+  assert.equal(backend.hasTenderServiceSignal(sanitaryScored), false, `${backendPath} no debe aceptar vigilancia aislada en inspección sanitaria/ambiental.`);
+  assert.equal(backend.hasTenderServiceSignal({ reasons: ['vigilancia'] }), false, `${backendPath} debe retirar del Radar historizado los registros admitidos sólo por la palabra vigilancia.`);
+
+  const contextualPhysicalSecurityTender = {
+    nombre_del_procedimiento: 'Contratar vigilancia para proteger las instalaciones, bienes y personas de la entidad',
+    descripci_n_del_procedimiento: 'Cobertura permanente en las sedes institucionales.',
+    precio_base: '750000000',
+  };
+  const contextualScored = backend.scoreTender(contextualPhysicalSecurityTender, objectFields);
+  assert.equal(backend.hasTenderServiceSignal(contextualScored), true, `${backendPath} debe conservar vigilancia con contexto explícito de seguridad física.`);
 
   const avianHealthTender = {
     nombre_del_procedimiento: 'Aunar esfuerzos para mantener el estatus sanitario libre de Influenza Aviar',
