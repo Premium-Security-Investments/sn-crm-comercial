@@ -4,6 +4,7 @@ import { loadTenderDossierWorkspace, seedTenderDossier } from '../api';
 import type { TenderDossierAssignee, TenderDossierWorkspace, TenderOfferStatus, TenderRequest } from '../types';
 import { TenderDossierArtifacts } from './TenderDossierArtifacts';
 import { TenderDossierChecklist } from './TenderDossierChecklist';
+import { TenderDossierVigiaWorkbench } from './TenderDossierVigiaWorkbench';
 
 const ACTIVE_STATUSES = new Set<TenderOfferStatus>(['en_preparacion', 'lista_para_presentar', 'presentada', 'adjudicada', 'no_adjudicada']);
 
@@ -88,6 +89,8 @@ export function TenderDossierWorkspacePanel({ opportunityId, request, profiles, 
         <TenderDossierChecklist opportunityId={opportunityId} workspace={workspace} request={request} profiles={profiles} canApprove={canApprove} onChanged={reload} />
         <TenderDossierArtifacts opportunityId={opportunityId} artifacts={workspace.artifacts} request={request} canApprove={canApprove} onChanged={reload} />
       </div>}
+
+      {workspace.workbench_enabled && <TenderDossierVigiaWorkbench opportunityId={opportunityId} request={request} />}
     </>}
   </section>;
 }

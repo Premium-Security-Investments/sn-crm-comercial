@@ -37,4 +37,9 @@ assert.match(main, /TenderDossierWorkspacePanel/);
 assert.match(main, /profiles=\{data\.profiles\}/);
 assert.match(main, /tender_offer_status/);
 
+// Mesa Vig-IA: shell desactivado — sólo se monta bajo workbench_enabled, sin bypass.
+assert.match(panel, /import\s*\{\s*TenderDossierVigiaWorkbench\s*\}\s*from\s*'.\/TenderDossierVigiaWorkbench';/);
+assert.match(panel, /\{workspace\.workbench_enabled\s*&&\s*<TenderDossierVigiaWorkbench/);
+assert.doesNotMatch(panel, /localStorage|sessionStorage|location\.search|URLSearchParams/, 'el panel no debe usar bypasses del kill switch');
+
 console.log('tender dossier UI static checks passed');

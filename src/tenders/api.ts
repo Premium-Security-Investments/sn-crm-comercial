@@ -1,4 +1,4 @@
-import type { TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
+import type { TenderDossierArtifact, TenderDossierItem, TenderDossierItemActionInput, TenderDossierWorkbench, TenderDossierWorkbenchLearningReviewInput, TenderDossierWorkbenchMessageInput, TenderDossierWorkbenchRetryInput, TenderDossierWorkspace, TenderGoNoGoDecisionInput, TenderGoNoGoPayload, TenderGoNoGoPostPayload, TenderOfferStatusPayload, TenderOfferStatusTransitionInput, TenderRequest, TenderTrackingEventsPage, TenderTrackingUpdate } from './types';
 
 /** Explicit resource loaders: each tender view owns only the data it needs. */
 export async function loadRadar<T>(request: TenderRequest): Promise<T> {
@@ -111,4 +111,20 @@ export async function recordTenderDossierArtifactReview(request: TenderRequest, 
 
 export async function seedTenderDossier(request: TenderRequest, opportunityId: string): Promise<TenderDossierWorkspace> {
   return request('/api/tender-dossier-seed', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunityId }) });
+}
+
+export async function loadTenderDossierWorkbench(request: TenderRequest, opportunityId: string): Promise<TenderDossierWorkbench> {
+  return request<TenderDossierWorkbench>(`/api/tender-dossier-workbench?id=${encodeURIComponent(opportunityId)}`);
+}
+
+export async function postTenderDossierWorkbenchMessage(request: TenderRequest, input: TenderDossierWorkbenchMessageInput): Promise<unknown> {
+  return request('/api/tender-dossier-workbench/messages', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function retryTenderDossierWorkbenchJob(request: TenderRequest, input: TenderDossierWorkbenchRetryInput): Promise<unknown> {
+  return request('/api/tender-dossier-workbench/jobs/retry', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export async function reviewTenderDossierWorkbenchLearning(request: TenderRequest, input: TenderDossierWorkbenchLearningReviewInput): Promise<unknown> {
+  return request('/api/tender-dossier-workbench/learning/review', { method: 'POST', body: JSON.stringify(input) });
 }
