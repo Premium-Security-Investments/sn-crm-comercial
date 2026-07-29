@@ -41,9 +41,14 @@ assert.match(engine, /evidence_refs\.items\.enum = \[\.\.\.allowedEvidenceIds\]/
 assert.match(engine, /client\.run\(\{ model, policy: policyText, input: previewInput, outputSchema,/, 'engine must hand the evidence-closed schema to Codex turn/start');
 assert.match(ui, /can\(currentProfile, ACTIONS\.AI_ANALYSIS_RUN\)/, 'UI button must be capability-gated');
 assert.match(ui, /tender-documents-analyze-agent-preview/, 'UI must call the dedicated preview endpoint');
-assert.match(section, /Ejecutar AGT-002 Preview/, 'UI must expose a separate preview action');
+assert.match(section, /Analizar con Vig-IA/, 'UI must expose the canonical Vig-IA action');
+assert.match(section, /Actualizar con Vig-IA/, 'UI must label refreshes as Vig-IA updates');
+assert.match(section, /Volver a analizar con Vig-IA/, 'UI must label stale or failed retries explicitly');
+assert.doesNotMatch(section, /Generar análisis preliminar|>Actualizar análisis</, 'deterministic analysis labels may not remain postconversion');
+assert.doesNotMatch(section, /onAnalyze:\s*\(\)\s*=>\s*void|onClick=\{onAnalyze\}/, 'deterministic analysis callback may not remain');
+assert.doesNotMatch(ui, /const analyzeDocuments = async/, 'opportunity UI may not retain a deterministic analysis handler');
 assert.match(section, /Revisión humana obligatoria/, 'UI must display the human-review requirement');
-assert.match(section, /Fallback seguro aplicado/, 'UI must disclose deterministic fallback');
+assert.match(section, /Fallback seguro aplicado/, 'UI must disclose deterministic fallback while rollback mode remains available');
 assert.match(section, /Citas de evidencia/, 'UI must expose evidence references');
 
 for (const source of [serverRoute, vercelRoute, engine]) {

@@ -889,15 +889,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'ready', value: payload.analysis || null }); }
     finally { setBusy(false); }
   };
-  const analyzeDocuments = async () => {
-    setBusy(true); setStatusText('Generando análisis documental…');
-    onNavigationStateChanged?.({ phase: 'ready', value: { currentDocumentCount: documents.filter(document => document.current !== false).length, importError: Boolean(payload.import_error) } }, { phase: 'pending', label: 'Análisis en curso' });
-    try {
-      const data = await api<TenderDocumentsPayload>('/api/tender-documents-analyze', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
-      setPayload(data); onAnalysisChanged?.(data.analysis || null); emitNavigationPayload(data); setStatusText('Análisis persistente generado y compartido.');
-    } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'ready', value: { currentDocumentCount: documents.filter(document => document.current !== false).length, importError: Boolean(payload.import_error) } }, { phase: 'error', message }); }
-    finally { setBusy(false); }
-  };
+
   const analyzeDocumentsWithAgt002 = async () => {
     setBusy(true); setStatusText('Analizando con Vig-IA; la revisión humana sigue siendo obligatoria…');
     try {
@@ -957,7 +949,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
   return <div id="tender-document-review" className="tender-guided-review" tabIndex={-1} ref={focusTargetRef}>
     {processingVisible && processingStatus && <div className="notice" role="status"><strong>{processingActive ? 'Procesando documentos en segundo plano' : tenderProcessingLabel(processingStatus.status)}</strong><p>{tenderProcessingLabel(processingStatus.status)}{processingStatus.current_step ? ` · Paso técnico: ${processingStatus.current_step}` : ''}. Detectados {processingStatus.counts.discovered}; procesados {processingStatus.counts.processed}; pendientes {processingPending}; importados {processingStatus.counts.imported}; sin cambios {processingStatus.counts.unchanged}; fallidos {processingStatus.counts.failed}.</p>{processingStatus.snapshot_id && <p>Snapshot persistido: {processingStatus.snapshot_id}</p>}{processingStatus.analysis_run_id && <p>Análisis persistido: {processingStatus.analysis_run_id}</p>}{processingStatus.last_error_message && <p>{processingStatus.last_error_message}</p>}{processingStatus.failed_items.length > 0 && <ul>{processingStatus.failed_items.map(item => <li key={item.id}><strong>{item.name}</strong>: {item.last_error_message || item.last_error_code || item.status}</li>)}</ul>}{processingRetryable && <button type="button" disabled={busy} onClick={() => void retryDurableProcessing()}>Reintentar</button>}</div>}
     <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} sourceUrl={sourceUrl} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
-    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} onAnalyze={() => void analyzeDocuments()} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type !== 'agent'} onSaveQuestionResponse={saveQuestionResponse} />
+    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type !== 'agent'} onSaveQuestionResponse={saveQuestionResponse} />
   </div>;
 }
 function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, onNavigationStateChanged }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void>; onNavigationStateChanged?: (state: TenderPanelState<TenderPreparationNavigationValue>) => void }) {

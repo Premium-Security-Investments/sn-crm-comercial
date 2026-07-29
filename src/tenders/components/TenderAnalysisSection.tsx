@@ -7,7 +7,6 @@ type TenderAnalysisSectionProps = {
   analysis: TenderDocumentAnalysis | null;
   documents: TenderDocumentRecord[];
   busy: boolean;
-  onAnalyze: () => void;
   canRunPreview: boolean;
   onAnalyzePreview: () => void;
   analysisEngine?: TenderDocumentsPayload['analysis_engine'];
@@ -85,7 +84,7 @@ function QuestionResponseCard({ question, analysisRunId, responses, canAnswer, d
   </article>;
 }
 
-export function TenderAnalysisSection({ analysis, documents, busy, onAnalyze, canRunPreview, onAnalyzePreview, analysisEngine, questionResponses = [], canAnswerQuestions = false, onSaveQuestionResponse }: TenderAnalysisSectionProps) {
+export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview, onAnalyzePreview, analysisEngine, questionResponses = [], canAnswerQuestions = false, onSaveQuestionResponse }: TenderAnalysisSectionProps) {
   const strengths = analysis?.strengths ?? analysis?.commercial_fit?.positives ?? [];
   const weaknesses = analysis?.weaknesses ?? analysis?.blockers ?? analysis?.commercial_fit?.concerns ?? [];
   const questions = (analysis?.questions ?? []).map(normalizeQuestion);
@@ -94,14 +93,14 @@ export function TenderAnalysisSection({ analysis, documents, busy, onAnalyze, ca
   const failed = analysis?.status === 'failed';
   const stale = Boolean(analysis && !analysis.current);
   const state = !hasDocuments ? 'Sin documentos' : failed ? 'Análisis fallido' : stale ? 'Análisis desactualizado' : !analysis ? 'Análisis pendiente' : 'Análisis vigente';
-  const actionLabel = analysis ? 'Actualizar análisis' : 'Generar análisis preliminar';
+  const actionLabel = failed || stale ? 'Volver a analizar con Vig-IA' : analysis ? 'Actualizar con Vig-IA' : 'Analizar con Vig-IA';
   const citedEvidence = [...new Set([analysis?.strengths, analysis?.weaknesses, analysis?.blockers, analysis?.questions, analysis?.unverified]
     .flatMap(items => Array.isArray(items) ? items : [])
     .flatMap(item => typeof item === 'object' && item && Array.isArray(item.evidence_refs) ? item.evidence_refs : []))];
 
   return <section id="tender-analysis" className="tender-analysis-section tender-detail-anchor" aria-labelledby="tender-analysis-title">
-    <header className="tender-analysis-header"><div><span className="eyebrow">Paso previo a la decisión humana</span><h3 id="tender-analysis-title">Análisis / preanálisis</h3><p>Organiza la evidencia disponible y señala pendientes. No registra ni autoriza GO / NO GO.</p></div><div className={`tender-analysis-state state-${failed ? 'failed' : stale ? 'stale' : analysis ? 'ready' : 'pending'}`}><strong>{state}</strong>{analysis && <span>{tenderAnalysisMethodLabel(analysis.producer)}</span>}</div></header>
-    {!hasDocuments && <div className="document-empty-state"><strong>Sin documentos</strong><span>Actualice o cargue documentos antes de generar el análisis preliminar.</span></div>}
+    <header className="tender-analysis-header"><div><span className="eyebrow">Paso previo a la decisión humana</span><h3 id="tender-analysis-title">Análisis con Vig-IA</h3><p>Organiza la evidencia disponible y señala pendientes. No registra ni autoriza GO / NO GO.</p></div><div className={`tender-analysis-state state-${failed ? 'failed' : stale ? 'stale' : analysis ? 'ready' : 'pending'}`}><strong>{state}</strong>{analysis && <span>{tenderAnalysisMethodLabel(analysis.producer)}</span>}</div></header>
+    {!hasDocuments && <div className="document-empty-state"><strong>Sin documentos</strong><span>Actualice o cargue documentos antes de analizar con Vig-IA.</span></div>}
     {hasDocuments && !analysis && <div className="document-empty-state"><strong>Análisis pendiente</strong><span>Hay documentos vigentes, pero todavía no existe una conclusión preliminar para revisar.</span></div>}
     {failed && <div className="error" role="alert"><strong>Análisis fallido.</strong> El último intento no produjo una conclusión utilizable. Puede intentarlo nuevamente sin afectar la decisión humana.</div>}
     {stale && <div className="notice" role="status"><strong>Análisis desactualizado.</strong> El contenido histórico se conserva para trazabilidad, pero los documentos vigentes cambiaron.</div>}
@@ -114,8 +113,7 @@ export function TenderAnalysisSection({ analysis, documents, busy, onAnalyze, ca
     {analysisEngine?.fallback && <div className="notice" role="status"><strong>Fallback seguro aplicado.</strong> Vig-IA no estuvo disponible ({analysisEngine.reason === 'not_configured' ? 'no configurado' : 'servicio no disponible'}); se conservó el preanálisis determinístico por reglas.</div>}
     {analysisEngine?.used === 'AGT-002' && <div className="notice" role="status"><strong>Revisión humana obligatoria.</strong> Vig-IA produjo una recomendación preliminar{analysisEngine.reused ? ' reutilizada por idempotencia' : ''}; no autoriza GO / NO GO.</div>}
     <div className="tender-analysis-actions">
-      {canRunPreview && <button type="button" className="tender-analysis-primary-cta" onClick={onAnalyzePreview} disabled={busy || !hasDocuments}>{busy ? 'Procesando…' : 'Analizar con Vig-IA'}</button>}
-      <button type="button" className={canRunPreview ? 'secondary' : ''} onClick={onAnalyze} disabled={busy || !hasDocuments}>{busy ? 'Procesando…' : actionLabel}</button>
+      {canRunPreview && <button type="button" className="tender-analysis-primary-cta" onClick={onAnalyzePreview} disabled={busy || !hasDocuments}>{busy ? 'Procesando…' : actionLabel}</button>}
       {analysis && <small>Productor real: {tenderAnalysisMethodLabel(analysis.producer)} · {tenderAnalysisProducerDisclosure(analysis.producer)}</small>}
     </div>
     {canRunPreview && <details className="tender-analysis-technical"><summary>Detalles técnicos y auditoría (Vig-IA)</summary><p>Vig-IA se ejecuta mediante el motor AGT-002 con revisión humana obligatoria. Nombre técnico de esta acción para auditoría: «Ejecutar AGT-002 Preview».</p></details>}
