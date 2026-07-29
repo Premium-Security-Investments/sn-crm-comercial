@@ -12,7 +12,13 @@ export function createTenderProcessingWorker(deps) {
     claimJob, updateJob, recordImportItem, appendEvent,
     revalidateOfficialStatus, discoverDocuments, importOneDocument,
     publishSnapshot, requestAgt002, now,
+    analysisConfig = Object.freeze({}),
   } = deps;
+
+  // Reserved for phase-gated behavior. Keeping the injected configuration in
+  // the worker contract now lets later phases branch without reading process
+  // environment directly; with every flag off it is intentionally inert.
+  void analysisConfig;
 
   // batchSize defaults to 1: a single official-source document download can
   // take up to the pinned-fetch network timeout (safe-official-fetch.js:

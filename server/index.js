@@ -44,6 +44,7 @@ import { getAgt002WorkbenchApi, postAgt002LearningReviewApi, postAgt002MessageAp
 import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt002WorkbenchDrain } from '../agt002-workbench-runtime.js';
 import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
 import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../tender-actuation-types.js';
+import { buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -60,6 +61,7 @@ if (!supabaseUrl || !serviceKey) {
 }
 
 const db = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+const agt002AnalysisConfig = buildAgt002AnalysisConfig(process.env);
 
 function sendError(res, error, status = 500) {
   if (isTenderAnalysisFoundationUnavailable(error)) {
@@ -2767,6 +2769,7 @@ async function resolveTenderPipelineSourceContext(database, opportunityId) {
  * compat path, so the internal endpoint never re-implements that logic. */
 function buildTenderProcessingWorkerDeps(database) {
   return {
+    analysisConfig: agt002AnalysisConfig,
     now: () => Date.now(),
     claimJob: () => claimTenderProcessingJob(database, { leaseSeconds: 90 }),
     updateJob: (jobId, leaseId, patch) => updateTenderProcessingJob(database, jobId, leaseId, patch),
