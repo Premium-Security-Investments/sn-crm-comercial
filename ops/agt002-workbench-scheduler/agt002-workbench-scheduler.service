@@ -1,0 +1,30 @@
+[Unit]
+Description=SIIO Vig-IA workbench drain scheduler (AGT-002)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=agt002-workbench-scheduler
+Group=agt002-workbench-scheduler
+EnvironmentFile=/etc/agt002-workbench-scheduler/env
+ExecStart=/opt/agt002-workbench-scheduler/run-agt002-workbench-worker.sh
+TimeoutStartSec=70s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

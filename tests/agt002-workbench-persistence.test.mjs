@@ -8,6 +8,7 @@ import {
   computeAgt002WorkbenchIdempotencyKey,
   getAgt002Workbench,
   reviewAgt002LearningProposal,
+  sweepExpiredLeases,
 } from '../agt002-workbench-persistence.js';
 import {
   AGT002_WORKBENCH_CAPABILITIES,
@@ -161,6 +162,27 @@ responses.set('psi_get_agt002_workbench', Object.assign(new Error('boom'), { cod
 await assert.rejects(
   () => getAgt002Workbench(database, { opportunityId: ids.opportunity, actorId: ids.actor }),
   error => error.code === 'P0002' && error.message === 'boom',
+);
+
+// --- sweepExpiredLeases: validated wrapper around the 046 RPC (Phase B1) ---
+responses.set('psi_sweep_agt002_workbench_expired_leases', { status: 'swept', released: 2, job_ids: [ids.job], max: 10, more: false });
+const swept = await sweepExpiredLeases(database, { max: 10 });
+assert.equal(swept.status, 'swept');
+assert.equal(swept.released, 2);
+assert.deepEqual(calls.at(-1), { name: 'psi_sweep_agt002_workbench_expired_leases', args: { p_max: 10 } });
+
+assert.throws(() => sweepExpiredLeases(database, { max: 10, extra: true }), /cerrad|claves/i);
+assert.throws(() => sweepExpiredLeases(database, {}), /cerrad|claves/i);
+for (const bad of [0, -1, 501, 1.5, '10', null, undefined]) {
+  assert.throws(() => sweepExpiredLeases(database, { max: bad }), /max/i, `max=${bad} debe rechazarse`);
+}
+assert.doesNotThrow(() => sweepExpiredLeases(database, { max: 500 }));
+assert.doesNotThrow(() => sweepExpiredLeases(database, { max: 1 }));
+
+responses.set('psi_sweep_agt002_workbench_expired_leases', Object.assign(new Error('barrido falló'), { code: '22023' }));
+await assert.rejects(
+  () => sweepExpiredLeases(database, { max: 10 }),
+  error => error.code === '22023' && error.message === 'barrido falló',
 );
 
 console.log('AGT-002 workbench persistence passed');

@@ -137,6 +137,7 @@ for (const route of [
   "app.post('/api/tender-dossier-workbench/jobs/retry'",
   "app.post('/api/tender-dossier-workbench/learning/review'",
 ]) assert.ok(server.includes(route), `falta ruta ${route}`);
-assert.match(server, /AGT002_WORKBENCH_RUNTIME_ENABLED\s*=\s*false/);
+assert.match(server, /isAgt002WorkbenchApiEnabled\(process\.env\)/, 'las rutas deben evaluar el gate fail-closed por solicitud');
+assert.doesNotMatch(server, /AGT002_WORKBENCH_RUNTIME_ENABLED\s*=\s*false/, 'no debe sobrevivir el literal antiguo');
 
 console.log('AGT-002 workbench API + route parity passed');

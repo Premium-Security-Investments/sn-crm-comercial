@@ -164,6 +164,18 @@ export function appendAgt002AgentArtifactVersion(database, input) {
   });
 }
 
+// Barrido de leases expirados (migración 046): identifica trabajos cuyo último
+// evento es `claimed` con lease vencido y los libera para reclamarse de nuevo.
+// Validado aquí porque `p_max` acota el trabajo por invocación del drain; un valor
+// fuera de rango debe fallar en JS antes de gastar un viaje de red al RPC.
+export function sweepExpiredLeases(database, input) {
+  assertExactKeys(input, ['max'], 'barrido de leases');
+  if (!Number.isInteger(input.max) || input.max <= 0 || input.max > 500) {
+    throw new TypeError('max debe ser un entero entre 1 y 500 para el barrido de leases.');
+  }
+  return rpc(database, 'psi_sweep_agt002_workbench_expired_leases', { p_max: input.max });
+}
+
 export function reviewAgt002LearningProposal(database, input) {
   assertExactKeys(input, ['opportunityId', 'actorId', 'proposalId', 'decision', 'scope', 'comment'], 'revisión de aprendizaje');
   return rpc(database, 'psi_review_agt002_learning_proposal', {

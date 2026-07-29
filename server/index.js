@@ -41,6 +41,7 @@ import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fe
 import { createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
 import { claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim } from '../agt002-preview-persistence.js';
 import { getAgt002WorkbenchApi, postAgt002LearningReviewApi, postAgt002MessageApi, postAgt002RetryApi } from '../agt002-workbench-api.js';
+import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt002WorkbenchDrain } from '../agt002-workbench-runtime.js';
 import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
 import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../tender-actuation-types.js';
 
@@ -79,9 +80,6 @@ function requireDb() {
   if (!db) throw new Error('Server environment is missing Supabase credentials.');
   return db;
 }
-
-const AGT002_WORKBENCH_RUNTIME_ENABLED = false;
-
 
 const managementRoles = ['director','gerencia','admin'];
 const globalCrmScopeRoles = new Set(['gerencia', 'admin']);
@@ -3102,7 +3100,7 @@ app.get('/api/tender-dossier-workbench', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
-    res.json(await getAgt002WorkbenchApi(database, String(req.query.id || ''), currentProfile, { enabled: AGT002_WORKBENCH_RUNTIME_ENABLED }));
+    res.json(await getAgt002WorkbenchApi(database, String(req.query.id || ''), currentProfile, { enabled: isAgt002WorkbenchApiEnabled(process.env) }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.all('/api/tender-dossier-workbench', (req, res) => { res.status(405).json({ error: 'Método no permitido.' }); });
@@ -3111,7 +3109,7 @@ app.post('/api/tender-dossier-workbench/messages', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
-    res.status(201).json(await postAgt002MessageApi(database, req.body || {}, currentProfile, { enabled: AGT002_WORKBENCH_RUNTIME_ENABLED }));
+    res.status(201).json(await postAgt002MessageApi(database, req.body || {}, currentProfile, { enabled: isAgt002WorkbenchApiEnabled(process.env) }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.all('/api/tender-dossier-workbench/messages', (req, res) => { res.status(405).json({ error: 'Método no permitido.' }); });
@@ -3120,7 +3118,7 @@ app.post('/api/tender-dossier-workbench/jobs/retry', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
-    res.status(201).json(await postAgt002RetryApi(database, req.body || {}, currentProfile, { enabled: AGT002_WORKBENCH_RUNTIME_ENABLED }));
+    res.status(201).json(await postAgt002RetryApi(database, req.body || {}, currentProfile, { enabled: isAgt002WorkbenchApiEnabled(process.env) }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.all('/api/tender-dossier-workbench/jobs/retry', (req, res) => { res.status(405).json({ error: 'Método no permitido.' }); });
@@ -3129,10 +3127,46 @@ app.post('/api/tender-dossier-workbench/learning/review', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
     const database = requireDb();
-    res.status(201).json(await postAgt002LearningReviewApi(database, req.body || {}, currentProfile, { enabled: AGT002_WORKBENCH_RUNTIME_ENABLED }));
+    res.status(201).json(await postAgt002LearningReviewApi(database, req.body || {}, currentProfile, { enabled: isAgt002WorkbenchApiEnabled(process.env) }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.all('/api/tender-dossier-workbench/learning/review', (req, res) => { res.status(405).json({ error: 'Método no permitido.' }); });
+
+function isAgt002WorkbenchWorkerAuthorized(req) {
+  const authorization = String(req.headers.authorization || '');
+  const bearerSecret = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  return secretMatches(process.env.AGT002_WORKBENCH_WORKER_SECRET, req.headers['x-agt002-workbench-secret'])
+    || secretMatches(process.env.CRON_SECRET, bearerSecret);
+}
+
+// Semilla de inyección de dependencias exclusiva de pruebas: nunca se usa en
+// producción (nada la asigna fuera de tests/). Permite probar el endpoint real vía
+// HTTP en loopback sin requerir un puente HTTPS real; el puente de producción real
+// se sigue construyendo desde configuración cuando esto es null.
+let agt002WorkbenchWorkerTestBridgeClient = null;
+export function __setAgt002WorkbenchWorkerTestBridgeClient(client) { agt002WorkbenchWorkerTestBridgeClient = client; }
+
+async function runAgt002WorkbenchDrainOnce(req, res) {
+  try {
+    if (!isAgt002WorkbenchDrainEnabled(process.env)) { const error = new Error('No disponible.'); error.status = 404; throw error; }
+    if (!isAgt002WorkbenchWorkerAuthorized(req)) { const error = new Error('No autorizado.'); error.status = 403; throw error; }
+  } catch (error) { return sendError(res, error, error.status || 400); }
+  try {
+    const database = requireDb();
+    const drain = createAgt002WorkbenchDrain({
+      database,
+      environment: process.env,
+      ...(agt002WorkbenchWorkerTestBridgeClient ? { bridgeClient: agt002WorkbenchWorkerTestBridgeClient } : {}),
+    });
+    const result = await drain.runOnce();
+    res.json(result);
+  } catch (error) {
+    console.warn('agt002_workbench_worker_run_failed', { event: 'agt002_workbench_worker_run_failed' });
+    res.status(503).json({ error: 'La Mesa Vig-IA no está disponible en este momento.', code: 'AGT002_WORKBENCH_WORKER_UNAVAILABLE' });
+  }
+}
+app.post('/api/tender-dossier-workbench/worker/run', runAgt002WorkbenchDrainOnce);
+app.all('/api/tender-dossier-workbench/worker/run', (req, res) => { res.status(405).json({ error: 'Método no permitido.' }); });
 
 app.post('/api/tender-offer-preparation-approve', async (req, res) => {
   try {
