@@ -131,6 +131,20 @@ export function appendAgt002AgentResult(database, { jobId, claimId, agentId, inp
   });
 }
 
+// Persistencia terminal atómica del trabajo agente: mensaje + acciones requeridas +
+// propuesta y/o versión documental + evento completed en una sola transacción RPC.
+// El worker exige exactamente esta firma; versión y resultado nunca se separan.
+export function completeAgt002WorkbenchJob(database, { jobId, claimId, agentId, input, result }) {
+  validateAgt002WorkbenchJobInput(input);
+  validateAgt002WorkbenchResult(result, { input });
+  return rpc(database, 'psi_complete_agt002_workbench_job', {
+    p_job_id: jobId,
+    p_claim_id: claimId,
+    p_agent_id: agentId,
+    p_result: result,
+  });
+}
+
 export function appendAgt002AgentArtifactVersion(database, input) {
   assertObject(input, 'versión agente');
   if (!Object.hasOwn(input, 'baseVersionId')) throw new TypeError('baseVersionId es obligatorio, incluso cuando es null.');

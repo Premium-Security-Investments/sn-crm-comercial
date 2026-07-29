@@ -21,6 +21,9 @@ const rpcs = [
   'psi_review_agt002_learning_proposal',
   'psi_claim_agt002_workbench_job',
   'psi_append_agt002_workbench_job_event',
+  'psi_complete_agt002_workbench_job',
+];
+const legacyRpcs = [
   'psi_append_agt002_agent_result',
   'psi_append_agt002_agent_artifact_version',
 ];
@@ -33,10 +36,17 @@ for (const rpc of rpcs) {
   assert.match(normalized, new RegExp(`create or replace function public\\.${rpc}\\(`));
   assert.match(normalized, new RegExp(`'${rpc}\\(`));
 }
+for (const rpc of legacyRpcs) {
+  assert.match(normalized, new RegExp(`create or replace function public\\.${rpc}\\(`));
+}
 
 assert.match(normalized, /execute format\('alter table public\.%i enable row level security'/);
 assert.match(normalized, /execute format\('revoke all on table public\.%i from public, anon, authenticated'/);
 assert.match(normalized, /execute format\('grant execute on function public\.%s to service_role'/);
+const serviceRoleGrantSection = normalized.slice(normalized.indexOf('-- funciones públicas sólo para service_role.'));
+assert.match(serviceRoleGrantSection, /psi_complete_agt002_workbench_job\(uuid,uuid,uuid,jsonb\)/);
+assert.doesNotMatch(serviceRoleGrantSection, /psi_append_agt002_agent_result\(/);
+assert.doesNotMatch(serviceRoleGrantSection, /psi_append_agt002_agent_artifact_version\(/);
 
 assert.match(normalized, /origin_agent_job_id uuid/);
 assert.match(normalized, /author_kind text not null default 'human'/);

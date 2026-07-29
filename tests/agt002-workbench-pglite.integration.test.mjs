@@ -91,6 +91,14 @@ await assert.rejects(
   /append-only/i,
 );
 await db.exec('reset role');
+const terminalPrivileges = (await db.query(`select
+  has_function_privilege('service_role','public.psi_complete_agt002_workbench_job(uuid,uuid,uuid,jsonb)','EXECUTE') as atomic_allowed,
+  has_function_privilege('service_role','public.psi_append_agt002_agent_result(uuid,uuid,uuid,jsonb)','EXECUTE') as legacy_result_allowed,
+  has_function_privilege('service_role','public.psi_append_agt002_agent_artifact_version(uuid,uuid,uuid,uuid,uuid,text,text,jsonb)','EXECUTE') as legacy_version_allowed
+`)).rows[0];
+assert.equal(terminalPrivileges.atomic_allowed, true);
+assert.equal(terminalPrivileges.legacy_result_allowed, false);
+assert.equal(terminalPrivileges.legacy_version_allowed, false);
 
 const replyQueued = (await db.query(
   `select public.psi_append_agt002_workbench_message($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) as r`,
@@ -191,6 +199,139 @@ assert.equal((await db.query(
   `select count(*)::int as n from public.psi_tender_dossier_artifact_versions where artifact_id=$1`,
   [artifact.id],
 )).rows[0].n, 2);
+
+// --- Task 7: RPC terminal transaccional psi_complete_agt002_workbench_job ---
+// Mensaje agente + acciones requeridas + versión documental + evento completed en
+// una única transacción PL/pgSQL: todo-o-nada, idempotente, revalidando base vigente.
+const t = Object.freeze({
+  draftMessage: '66666666-6666-4666-8666-666666666671',
+  staleMessage: '66666666-6666-4666-8666-666666666672',
+  rollbackMessage: '66666666-6666-4666-8666-666666666673',
+  crossedSourceMessage: '66666666-6666-4666-8666-666666666674',
+  crossedSource: '77777777-7777-4777-8777-777777777777',
+});
+
+const artB = (await db.query(
+  `select public.psi_create_tender_dossier_artifact($1,$2,'tecnico_b','Documento B',true) as r`,
+  [ids.opportunity, ids.operator],
+)).rows[0].r.artifact;
+const bv1 = (await db.query(
+  `select public.psi_add_tender_dossier_artifact_version($1,$2,$3,'markdown','# B v1',null) as r`,
+  [ids.opportunity, artB.id, ids.operator],
+)).rows[0].r;
+
+const draftJob = (await db.query(
+  `select public.psi_append_agt002_workbench_message($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) as r`,
+  [ids.opportunity, ids.operator, thread.id, t.draftMessage, 'Redacte el documento B.', [], key('d'),
+    'agt002.dossier-workbench.v1', 'agt002.dossier-workbench.policy.v1',
+    'agt002.dossier-workbench.draft.v1', ids.snapshot, bv1.version_id],
+)).rows[0].r;
+const draftJobClaim = (await db.query(
+  `select public.psi_claim_agt002_workbench_job('worker-test',20,2,300) as r`,
+)).rows[0].r;
+const draftResult = {
+  kind: 'draft', visible_agent_name: 'Vig-IA', human_review_required: true,
+  snapshot_id: ids.snapshot, base_version_id: bv1.version_id,
+  artifact_id: artB.id, content_kind: 'markdown', content_text: '# B v2 agente', content_metadata: {},
+  source_links: [], missing_information: [],
+  required_actions: ['La encargada debe revisar el borrador de Vig-IA.'],
+};
+const completed = (await db.query(
+  `select public.psi_complete_agt002_workbench_job($1,$2,$3,$4) as r`,
+  [draftJob.job_id, draftJobClaim.claim_id, ids.agent, draftResult],
+)).rows[0].r;
+assert.equal(completed.status, 'completed');
+// Un solo mensaje agente, una acción requerida y una versión v2 con procedencia al job.
+assert.equal((await db.query(`select count(*)::int as n from public.psi_agt002_workbench_messages where origin_job_id=$1`, [draftJob.job_id])).rows[0].n, 1);
+assert.equal((await db.query(`select count(*)::int as n from public.psi_agt002_workbench_required_actions where job_id=$1`, [draftJob.job_id])).rows[0].n, 1);
+const v2 = (await db.query(`select version,author_kind,origin_agent_job_id,supersedes_version_id from public.psi_tender_dossier_artifact_versions where artifact_id=$1 order by version desc,id desc limit 1`, [artB.id])).rows[0];
+assert.equal(v2.version, 2);
+assert.equal(v2.author_kind, 'agent');
+assert.equal(v2.origin_agent_job_id, draftJob.job_id);
+assert.equal(v2.supersedes_version_id, bv1.version_id);
+// El evento completed es el último y se emite al cierre de la transacción.
+assert.equal((await db.query(`select event_type from public.psi_agt002_workbench_job_events where job_id=$1 order by created_at desc,id desc limit 1`, [draftJob.job_id])).rows[0].event_type, 'completed');
+
+// Idempotencia: reintentar el mismo trabajo terminal retorna existing sin duplicar nada.
+const replay = (await db.query(
+  `select public.psi_complete_agt002_workbench_job($1,$2,$3,$4) as r`,
+  [draftJob.job_id, draftJobClaim.claim_id, ids.agent, draftResult],
+)).rows[0].r;
+assert.equal(replay.status, 'existing');
+assert.equal((await db.query(`select count(*)::int as n from public.psi_agt002_workbench_messages where origin_job_id=$1`, [draftJob.job_id])).rows[0].n, 1);
+assert.equal((await db.query(`select count(*)::int as n from public.psi_tender_dossier_artifact_versions where artifact_id=$1`, [artB.id])).rows[0].n, 2);
+assert.equal((await db.query(`select count(*)::int as n from public.psi_agt002_workbench_job_events where job_id=$1 and event_type='completed'`, [draftJob.job_id])).rows[0].n, 1);
+
+// Un nuevo trabajo con base v1 obsoleta queda stale: no crea versión 3 ni mensaje agente.
+const staleJob = (await db.query(
+  `select public.psi_append_agt002_workbench_message($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) as r`,
+  [ids.opportunity, ids.operator, thread.id, t.staleMessage, 'Redacte el documento B otra vez.', [], key('e'),
+    'agt002.dossier-workbench.v1', 'agt002.dossier-workbench.policy.v1',
+    'agt002.dossier-workbench.draft.v1', ids.snapshot, bv1.version_id],
+)).rows[0].r;
+const staleJobClaim = (await db.query(`select public.psi_claim_agt002_workbench_job('worker-test',20,2,300) as r`)).rows[0].r;
+const staleOut = (await db.query(
+  `select public.psi_complete_agt002_workbench_job($1,$2,$3,$4) as r`,
+  [staleJob.job_id, staleJobClaim.claim_id, ids.agent, { ...draftResult, content_text: '# B v3 agente' }],
+)).rows[0].r;
+assert.equal(staleOut.status, 'stale');
+assert.equal((await db.query(`select count(*)::int as n from public.psi_tender_dossier_artifact_versions where artifact_id=$1`, [artB.id])).rows[0].n, 2);
+assert.equal((await db.query(`select count(*)::int as n from public.psi_agt002_workbench_messages where origin_job_id=$1`, [staleJob.job_id])).rows[0].n, 0);
+assert.equal((await db.query(`select event_type from public.psi_agt002_workbench_job_events where job_id=$1 order by created_at desc,id desc limit 1`, [staleJob.job_id])).rows[0].event_type, 'stale');
+
+// Atomicidad ante error tardío: contenido inválido rompe el insert de versión y hace
+// rollback total; no queda mensaje, acción, versión ni evento terminal parcial.
+const artC = (await db.query(
+  `select public.psi_create_tender_dossier_artifact($1,$2,'tecnico_c','Documento C',true) as r`,
+  [ids.opportunity, ids.operator],
+)).rows[0].r.artifact;
+const cv1 = (await db.query(
+  `select public.psi_add_tender_dossier_artifact_version($1,$2,$3,'markdown','# C v1',null) as r`,
+  [ids.opportunity, artC.id, ids.operator],
+)).rows[0].r;
+const rollbackJob = (await db.query(
+  `select public.psi_append_agt002_workbench_message($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) as r`,
+  [ids.opportunity, ids.operator, thread.id, t.rollbackMessage, 'Redacte el documento C.', [], key('f'),
+    'agt002.dossier-workbench.v1', 'agt002.dossier-workbench.policy.v1',
+    'agt002.dossier-workbench.draft.v1', ids.snapshot, cv1.version_id],
+)).rows[0].r;
+const rollbackJobClaim = (await db.query(`select public.psi_claim_agt002_workbench_job('worker-test',20,2,300) as r`)).rows[0].r;
+await assert.rejects(
+  () => db.query(
+    `select public.psi_complete_agt002_workbench_job($1,$2,$3,$4)`,
+    [rollbackJob.job_id, rollbackJobClaim.claim_id, ids.agent,
+      { ...draftResult, artifact_id: artC.id, base_version_id: cv1.version_id, content_text: '   ' }],
+  ),
+);
+assert.equal((await db.query(`select count(*)::int as n from public.psi_agt002_workbench_messages where origin_job_id=$1`, [rollbackJob.job_id])).rows[0].n, 0);
+assert.equal((await db.query(`select count(*)::int as n from public.psi_agt002_workbench_required_actions where job_id=$1`, [rollbackJob.job_id])).rows[0].n, 0);
+assert.equal((await db.query(`select count(*)::int as n from public.psi_tender_dossier_artifact_versions where artifact_id=$1`, [artC.id])).rows[0].n, 1);
+assert.equal((await db.query(`select count(*)::int as n from public.psi_agt002_workbench_job_events where job_id=$1 and event_type in ('completed','stale')`, [rollbackJob.job_id])).rows[0].n, 0);
+
+// Defensa en profundidad: el RPC service-role también rechaza una fuente que no está
+// en context_links congelado, aunque el llamador eluda el validador JavaScript.
+const crossedJob = (await db.query(
+  `select public.psi_append_agt002_workbench_message($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) as r`,
+  [ids.opportunity, ids.operator, thread.id, t.crossedSourceMessage, 'Responda sólo con el contexto autorizado.', [], key('9'),
+    'agt002.dossier-workbench.v1', 'agt002.dossier-workbench.policy.v1',
+    'agt002.dossier-workbench.reply.v1', ids.snapshot, null],
+)).rows[0].r;
+const crossedClaim = (await db.query(`select public.psi_claim_agt002_workbench_job('worker-test',20,2,300) as r`)).rows[0].r;
+const crossedResult = {
+  kind: 'reply', visible_agent_name: 'Vig-IA', human_review_required: true,
+  snapshot_id: ids.snapshot, base_version_id: null,
+  content_text: 'Respuesta con fuente ajena.', source_links: [t.crossedSource],
+  missing_information: [], required_actions: ['La encargada debe verificar la fuente.'],
+};
+await assert.rejects(
+  () => db.query(
+    `select public.psi_complete_agt002_workbench_job($1,$2,$3,$4)`,
+    [crossedJob.job_id, crossedClaim.claim_id, ids.agent, crossedResult],
+  ),
+  error => error.code === '23514' && /fuente|contexto/i.test(error.message),
+);
+assert.equal((await db.query(`select count(*)::int as n from public.psi_agt002_workbench_messages where origin_job_id=$1`, [crossedJob.job_id])).rows[0].n, 0);
+assert.equal((await db.query(`select count(*)::int as n from public.psi_agt002_workbench_job_events where job_id=$1 and event_type='completed'`, [crossedJob.job_id])).rows[0].n, 0);
 
 await db.close();
 console.log('PGlite AGT-002 workbench domain passed');
