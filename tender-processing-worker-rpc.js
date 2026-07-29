@@ -61,8 +61,15 @@ export async function claimTenderProcessingJob(database, { leaseSeconds = 90 } =
   };
 }
 
-export async function updateTenderProcessingJob(database, jobId, leaseId, patch) {
-  return rpc(database, 'psi_update_tender_processing_job', { p_job_id: jobId, p_lease_id: leaseId, p_patch: patch });
+export async function updateTenderProcessingJob(database, jobId, leaseId, patch, { releaseLease = false } = {}) {
+  // Migration 049 consumes release_lease as a control key. The default is
+  // deliberately false so deploying the migration and application with the
+  // phase flag off preserves migration-034 behavior exactly.
+  return rpc(database, 'psi_update_tender_processing_job', {
+    p_job_id: jobId,
+    p_lease_id: leaseId,
+    p_patch: releaseLease ? { ...patch, release_lease: true } : patch,
+  });
 }
 
 export async function recordTenderImportItem(database, { jobId, source, sourceDocumentId, sourceUrl, name, status, critical, documentVersionId, lastErrorCode, lastErrorMessage, nextAttemptAt }) {

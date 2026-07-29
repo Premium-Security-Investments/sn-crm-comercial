@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { createTenderProcessingWorker } from '../tender-processing-worker.js';
+import { createTenderProcessingWorker, isWorkerYieldStatus, WORKER_YIELD_STATUSES } from '../tender-processing-worker.js';
 import { MAX_ATTEMPTS } from '../tender-pipeline-backoff.js';
 
 function makeDeps(overrides = {}) {
@@ -304,6 +304,20 @@ async function run() {
     assert.equal(result.status, 'batch_processed');
     assert.equal(calls.recordImportItem.length, 1, 'debe importar como máximo un documento por invocación por defecto');
     assert.equal(result.remaining, 2);
+  }
+
+  // 11) Clasificación de estados de rendimiento para el drain acotado: los
+  //     estados terminales/sin-trabajo/backoff hacen ceder; los estados de
+  //     continuación (una fase intermedia con siguiente fase reclamable)
+  //     permiten seguir drenando en la misma invocación.
+  {
+    for (const yieldStatus of ['empty', 'noop', 'completed', 'cancelled', 'needs_attention', 'waiting_agent_capacity']) {
+      assert.equal(isWorkerYieldStatus(yieldStatus), true, `${yieldStatus} debe ceder el drain`);
+      assert.ok(WORKER_YIELD_STATUSES.includes(yieldStatus));
+    }
+    for (const continueStatus of ['discovered', 'batch_processed', 'ready_for_snapshot', 'snapshot_published']) {
+      assert.equal(isWorkerYieldStatus(continueStatus), false, `${continueStatus} debe permitir continuar el drain`);
+    }
   }
 
   console.log('tender-processing-worker contract passed');

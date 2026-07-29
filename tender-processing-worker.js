@@ -4,6 +4,28 @@ function safeMessage(error) {
   return typeof error?.message === 'string' ? error.message : 'error desconocido';
 }
 
+// runOnce() result statuses after which the same job has no immediately
+// claimable next phase, so the bounded drain loop (tender-processing-drain.js)
+// must yield instead of calling runOnce() again:
+//   - empty / noop        -> no work was available to advance.
+//   - completed/cancelled -> terminal; the job left the claimable set.
+//   - needs_attention     -> parked for a human; not claimable.
+//   - waiting_agent_capacity -> analysis backoff. Its next attempt is gated by
+//     next_attempt_at, and a shown rules preview keeps the job in this state
+//     with no backoff, so re-claiming in a tight loop must be avoided.
+// Continue statuses (discovered, batch_processed, ready_for_snapshot,
+// snapshot_published) all leave the job in a claimable state (or naturally
+// yield to 'empty' on the next claim), so the drain advances into them.
+export const WORKER_YIELD_STATUSES = Object.freeze([
+  'empty', 'noop', 'completed', 'cancelled', 'needs_attention', 'waiting_agent_capacity',
+]);
+
+const WORKER_YIELD_SET = new Set(WORKER_YIELD_STATUSES);
+
+export function isWorkerYieldStatus(status) {
+  return WORKER_YIELD_SET.has(status);
+}
+
 // Batched, resumable durable pipeline worker. All dependencies are injected
 // (no direct network/DB access) so a single runOnce() call advances exactly
 // one phase of one claimed job, keeping each invocation within timeBudgetMs.

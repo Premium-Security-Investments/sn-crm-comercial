@@ -9,6 +9,8 @@ import AdmZip from 'adm-zip';
 import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
 import { createTenderProcessingWorker } from '../tender-processing-worker.js';
+import { createTenderProcessingDrain } from '../tender-processing-drain.js';
+import { dispatchTenderProcessingAfterConversion } from '../tender-processing-dispatch.js';
 import { appendTenderProcessingEvent, claimTenderProcessingJob, getTenderProcessingJobActor, recordTenderImportItem, updateTenderProcessingJob } from '../tender-processing-worker-rpc.js';
 import { runInConcurrentChunks } from '../tender-concurrency.js';
 import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
@@ -2707,6 +2709,16 @@ async function convertTenderToOpportunity(database, tender, currentProfile) {
       pipelineVersion: TENDER_PIPELINE_VERSION,
       requestedBy: currentProfile.id,
     });
+    const dispatch = await dispatchTenderProcessingAfterConversion({
+      enabled: agt002AnalysisConfig.TENDER_IMMEDIATE_DISPATCH,
+      job,
+      runOnce: () => createTenderProcessingWorker(buildTenderProcessingWorkerDeps(database)).runOnce({ timeBudgetMs: 45_000 }),
+      onError: event => console.warn('tender_immediate_dispatch_failed', {
+        event: event.event,
+        job_id: event.job_id,
+        error_code: event.error_code,
+      }),
+    });
     return {
       id: opportunityId,
       tender_id: tenderRecord.id,
@@ -2716,6 +2728,7 @@ async function convertTenderToOpportunity(database, tender, currentProfile) {
         status: job.status,
         current_step: job.current_step,
         automatic_analysis: isTenderAutoAnalysisEnabled(process.env),
+        dispatch_status: dispatch.status,
       },
     };
   }
@@ -2772,7 +2785,9 @@ function buildTenderProcessingWorkerDeps(database) {
     analysisConfig: agt002AnalysisConfig,
     now: () => Date.now(),
     claimJob: () => claimTenderProcessingJob(database, { leaseSeconds: 90 }),
-    updateJob: (jobId, leaseId, patch) => updateTenderProcessingJob(database, jobId, leaseId, patch),
+    updateJob: (jobId, leaseId, patch) => updateTenderProcessingJob(database, jobId, leaseId, patch, {
+      releaseLease: agt002AnalysisConfig.TENDER_CONTINUOUS_DRAIN,
+    }),
     recordImportItem: item => recordTenderImportItem(database, item),
     appendEvent: event => appendTenderProcessingEvent(database, event),
 
@@ -3536,8 +3551,9 @@ async function runTenderProcessingWorker(req, res) {
     if (!isTenderWorkerSchedulerAuthorized(req)) { const error = new Error('No autorizado.'); error.status = 403; throw error; }
     const database = requireDb();
     const worker = createTenderProcessingWorker(buildTenderProcessingWorkerDeps(database));
-    const result = await worker.runOnce({ timeBudgetMs: 45_000 });
-    res.json({ processed: result?.status && result.status !== 'empty' ? 1 : 0 });
+    const drain = createTenderProcessingDrain({ worker, analysisConfig: agt002AnalysisConfig, timeBudgetMs: 45_000 });
+    const result = await drain.run();
+    res.json({ processed: result.processed, iterations: result.iterations, status: result.last_status, stop_reason: result.stop_reason });
   } catch (error) { sendError(res, error, error?.status || 400); }
 }
 

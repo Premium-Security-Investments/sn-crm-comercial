@@ -86,10 +86,18 @@ async function claimComposesFullShapeWhenClaimed() {
   assert.equal(claim.any_critical_terminal_failure, true);
 }
 
-async function updateForwardsPatchVerbatim() {
-  const db = fakeDb({ rpcResults: { psi_update_tender_processing_job: { data: { status: 'ok' }, error: null } } });
+async function updatePreservesLeaseByDefaultAndReleasesExplicitly() {
+  const db = fakeDb({ rpcResults: { psi_update_tender_processing_job: { data: { status: 'ok', lease_released: true }, error: null } } });
   await updateTenderProcessingJob(db, 'job-1', 'lease-1', { status: 'needs_attention' });
-  assert.deepEqual(db.rpcCalls[0], { name: 'psi_update_tender_processing_job', args: { p_job_id: 'job-1', p_lease_id: 'lease-1', p_patch: { status: 'needs_attention' } } });
+  assert.deepEqual(db.rpcCalls[0], {
+    name: 'psi_update_tender_processing_job',
+    args: { p_job_id: 'job-1', p_lease_id: 'lease-1', p_patch: { status: 'needs_attention' } },
+  });
+  await updateTenderProcessingJob(db, 'job-1', 'lease-2', { status: 'importing_documents' }, { releaseLease: true });
+  assert.deepEqual(db.rpcCalls[1], {
+    name: 'psi_update_tender_processing_job',
+    args: { p_job_id: 'job-1', p_lease_id: 'lease-2', p_patch: { status: 'importing_documents', release_lease: true } },
+  });
 }
 
 async function recordImportItemMapsCamelCaseToRpcParams() {
@@ -122,7 +130,7 @@ async function getActorReadsJobRow() {
 async function run() {
   await claimReturnsNullWhenNotClaimed();
   await claimComposesFullShapeWhenClaimed();
-  await updateForwardsPatchVerbatim();
+  await updatePreservesLeaseByDefaultAndReleasesExplicitly();
   await recordImportItemMapsCamelCaseToRpcParams();
   await appendEventMapsCamelCaseToRpcParams();
   await getActorReadsJobRow();
