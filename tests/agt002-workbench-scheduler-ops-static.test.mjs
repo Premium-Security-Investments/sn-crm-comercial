@@ -36,7 +36,7 @@ assert.ok(!service.includes('/opt/agt002-bridge'), 'scheduler must not touch the
 assert.ok(!service.includes('/opt/tender-worker-scheduler'), 'scheduler must be isolated from the tender worker scheduler');
 
 // --- timer: bounded cadence, no burst-on-recovery, targets the right unit, never enabled by this repo ---
-assert.match(timer, /OnUnitInactiveSec=\d+s/, 'timer must schedule the next run only after the previous one finished (no overlap)');
+assert.match(timer, /OnUnitInactiveSec=15min/, 'timer must wait 15 minutes after the previous run finished (no overlap)');
 assert.ok(timer.includes('Persistent=false'), 'missed runs must not burst after downtime');
 assert.ok(timer.includes('Unit=agt002-workbench-scheduler.service'), 'timer must target the AGT-002 workbench scheduler service');
 
