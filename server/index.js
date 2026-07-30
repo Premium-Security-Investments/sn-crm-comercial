@@ -49,6 +49,7 @@ import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt00
 import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
 import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../tender-actuation-types.js';
 import { buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
+import { createAgt002AnalysisObservability } from '../agt002-analysis-observability.js';
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
 
@@ -68,6 +69,7 @@ if (!supabaseUrl || !serviceKey) {
 
 const db = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 const agt002AnalysisConfig = buildAgt002AnalysisConfig(process.env);
+const agt002AnalysisObservability = createAgt002AnalysisObservability();
 
 function sendError(res, error, status = 500) {
   if (isTenderAnalysisFoundationUnavailable(error)) {
@@ -2539,18 +2541,37 @@ async function reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analys
     const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
     if (claim.status === 'existing') {
       const existingRun = await findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly });
+      agt002AnalysisObservability.record('reanalysis_triggered', {
+        opportunity_id: opportunityId, tender_id: tenderId, analysis_run_id: existingRun?.run_id,
+        context_version_id: contextVersion.id, status: 'completed',
+      });
       return { status: 'completed', context_version_id: contextVersion.id, analysis: presentCurrentTenderAnalysis(existingRun), reused: true };
     }
-    if (claim.status !== 'claimed') return { status: claim.status, context_version_id: contextVersion.id };
+    if (claim.status !== 'claimed') {
+      agt002AnalysisObservability.record('reanalysis_triggered', {
+        opportunity_id: opportunityId, tender_id: tenderId, context_version_id: contextVersion.id, status: claim.status,
+      });
+      return { status: claim.status, context_version_id: contextVersion.id };
+    }
     claimId = claim.claim_id;
     const engine = createAgt002PreviewRuntime({ environment: process.env, countDailyRuns: () => countAgt002PreviewRunsToday(database) });
     const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: humanEvidence } }, { idempotencyKey });
     const registeredRun = await registerAgt002PreviewAnalysis(database, {
       opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly, context_version_id: contextVersion.id,
     });
+    agt002AnalysisObservability.record('canonical_run_recorded', {
+      opportunity_id: opportunityId, tender_id: tenderId, analysis_run_id: registeredRun?.run_id, reused: false,
+    });
+    agt002AnalysisObservability.record('reanalysis_triggered', {
+      opportunity_id: opportunityId, tender_id: tenderId, analysis_run_id: registeredRun?.run_id,
+      context_version_id: contextVersion.id, status: 'completed',
+    });
     return { status: 'completed', context_version_id: contextVersion.id, analysis: presentCurrentTenderAnalysis(registeredRun), reused: false };
   } catch (error) {
     console.warn('agt002_reanalysis_after_human_answer_failed', { event: 'agt002_reanalysis_after_human_answer_failed' });
+    agt002AnalysisObservability.record('reanalysis_triggered', {
+      opportunity_id: opportunityId, tender_id: tenderId, context_version_id: contextVersion.id, status: 'unavailable',
+    });
     return { status: 'unavailable', context_version_id: contextVersion.id };
   } finally {
     if (claimId) {
@@ -2796,11 +2817,15 @@ async function convertTenderToOpportunity(database, tender, currentProfile) {
   const conversion = await callTenderOpportunityConversion(database, tenderRecord.id, payload, tenderRecord.tracking_updated_at, currentProfile);
   const opportunityId = conversion.opportunity_id;
   if (isTenderDurablePipelineEnabled(process.env)) {
+    const jobCreatedAt = Date.now();
     const job = await callCreateTenderProcessingJob(database, {
       tenderId: tenderRecord.id,
       opportunityId,
       pipelineVersion: TENDER_PIPELINE_VERSION,
       requestedBy: currentProfile.id,
+    });
+    agt002AnalysisObservability.record('job_created', {
+      job_id: job.job_id, tender_id: tenderRecord.id, opportunity_id: opportunityId, status: job.status,
     });
     const dispatch = await dispatchTenderProcessingAfterConversion({
       enabled: agt002AnalysisConfig.TENDER_IMMEDIATE_DISPATCH,
@@ -2812,6 +2837,19 @@ async function convertTenderToOpportunity(database, tender, currentProfile) {
         error_code: event.error_code,
       }),
     });
+    agt002AnalysisObservability.record('conversion_dispatched', {
+      job_id: job.job_id, tender_id: tenderRecord.id, opportunity_id: opportunityId,
+      dispatch_status: dispatch.status, worker_status: dispatch.worker_status || null, error_code: dispatch.error_code || null,
+      duration_ms: Date.now() - jobCreatedAt,
+    });
+    if (job.status === 'created' && dispatch.status === 'dispatched') {
+      // Only measurable on the immediate-dispatch path: creation and this claim happen
+      // within the same request. Jobs picked up later by the scheduler have no JS-visible
+      // creation timestamp to diff against (would require a schema change, out of scope here).
+      agt002AnalysisObservability.record('first_claim_latency', {
+        job_id: job.job_id, tender_id: tenderRecord.id, latency_ms: Date.now() - jobCreatedAt,
+      });
+    }
     return {
       id: opportunityId,
       tender_id: tenderRecord.id,
@@ -2876,6 +2914,7 @@ async function resolveTenderPipelineSourceContext(database, opportunityId) {
 function buildTenderProcessingWorkerDeps(database) {
   return {
     analysisConfig: agt002AnalysisConfig,
+    observability: agt002AnalysisObservability,
     now: () => Date.now(),
     claimJob: () => claimTenderProcessingJob(database, { leaseSeconds: 90 }),
     updateJob: (jobId, leaseId, patch) => updateTenderProcessingJob(database, jobId, leaseId, patch, {
