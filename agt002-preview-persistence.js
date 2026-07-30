@@ -39,9 +39,17 @@ function unwrapRpc(response) {
   return response.data;
 }
 
-/** Deterministic per (snapshot, policy, model): the DB enforces a single successful run per identity. */
-export function computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model }) {
-  return createHash('sha256').update(`agt002-preview\0${snapshotId}\0${policyVersion}\0${model}`).digest('hex');
+/**
+ * Deterministic per (snapshot, policy, model): the DB enforces a single successful
+ * run per identity. When contextVersionId is given (a new AGT-002 context version
+ * created from human evidence), the identity also binds to it, so a reanalysis never
+ * collides with the run it supersedes and callers can reserve/find it consistently.
+ */
+export function computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model, contextVersionId = null }) {
+  const base = createHash('sha256').update(`agt002-preview\0${snapshotId}\0${policyVersion}\0${model}`).digest('hex');
+  return contextVersionId
+    ? createHash('sha256').update(`${base}\0context_version\0${contextVersionId}`).digest('hex')
+    : base;
 }
 
 /** Atomically reserves one cross-request provider slot in PostgreSQL. */
@@ -121,15 +129,12 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     content.legal_findings = envelope.legal_findings;
   }
   const criticalOpenCount = countCriticalOpenQuestions(content);
-  const baseIdempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model: usage.model });
   // A new AGT-002 context version (new human evidence) must never collide with the run it
   // supersedes: without this, reanalysis after a human answer would silently no-op against
   // the original run's (snapshot, policy, model) idempotency key instead of creating a new,
   // append-only run. Omitting context_version_id keeps every existing caller byte-identical.
   const contextVersionId = context?.context_version_id ?? null;
-  const idempotencyKey = contextVersionId
-    ? createHash('sha256').update(`${baseIdempotencyKey}\0context_version\0${contextVersionId}`).digest('hex')
-    : baseIdempotencyKey;
+  const idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model: usage.model, contextVersionId });
 
   const canonicalOnly = context?.canonicalOnly === true;
   const commonParams = {

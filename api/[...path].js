@@ -27,6 +27,7 @@ import {
 } from '../tender-dossier-rpc.js';
 import { buildTenderOfferPreparation } from '../tender-offer-preparation.js';
 import { getCurrentTenderAnalysis, presentCurrentTenderAnalysis, registerSiioRulesAnalysis, registerTenderDocumentSnapshot } from '../tender-analysis-foundation.js';
+import { registerAgt002ContextVersion } from '../tender-analysis-foundation.js';
 import { isTenderAnalysisFoundationUnavailable, requireTenderAnalysisFoundation } from '../tender-analysis-foundation-availability.js';
 import { buildTenderDeepAnalysis } from '../tender-deep-analysis.js';
 import { can, requireAction } from '../access-control.js';
@@ -2484,6 +2485,80 @@ async function getTenderQuestionResponses(database, opportunityId, analysisRunId
   return (response.data || []).map(row => ({ ...row, responded_by_name: row.psi_sales_profiles?.full_name || null, psi_sales_profiles: undefined }));
 }
 
+function agt002HumanEvidenceFromResponses(responses) {
+  const effective = new Map();
+  for (const row of responses) {
+    const identity = JSON.stringify([
+      row.analysis_run_id, row.question_id, row.question_text, row.status,
+      row.response, row.evidence_notes ?? null, row.responded_by,
+    ]);
+    const order = `${row.responded_at}\0${row.id}`;
+    const previous = effective.get(identity);
+    if (!previous || order < previous.order) effective.set(identity, { order, row });
+  }
+  return [...effective.values()].map(({ row }) => ({
+    answer_id: row.id, question_id: row.question_id, question_text: row.question_text, status: row.status,
+    response: row.response, evidence_notes: row.evidence_notes, responded_by: row.responded_by_name,
+    responded_at: row.responded_at, analysis_run_id: row.analysis_run_id,
+    source: { type: 'human', reference: `psi_tender_question_responses:${row.id}`, observed_at: row.responded_at },
+  }));
+}
+
+/**
+ * Connects a newly recorded human answer to a new append-only, versioned AGT-002
+ * reanalysis: a new context version (carrying the human evidence) plus a new
+ * canonical run, reusing the same Preview engine/persistence as the manual button.
+ * Never creates or touches a GO/NO-GO decision; that stays exclusively human.
+ */
+async function reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analysisRunId, currentProfile }) {
+  if (currentProfile?.identity_type === 'agent') return null;
+  const canonicalOnly = agt002AnalysisConfig.AGT002_CANONICAL_ONLY === true;
+  if (!canonicalOnly || !isAgt002PreviewConfigured(process.env)) return null;
+  const priorRun = await must(database.from('psi_tender_analysis_runs').select('snapshot_id,tender_id').eq('id', analysisRunId).single());
+  const snapshotId = priorRun.snapshot_id;
+  const tenderId = priorRun.tender_id || await getTenderIdForOpportunity(database, opportunityId);
+
+  const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(AGT002_OPPORTUNITY_CONTEXT_SELECT).eq('id', opportunityId).single());
+  const contextV2Sections = await loadAgt002OpportunityContextV2(database, { opportunityId, tenderId, opportunity });
+  const companyDossierV2 = await loadAgt002CompanyDossier(database);
+  const records = await getTenderDocumentRecords(database, opportunityId);
+  const currentDocs = records.documents.filter(document => document.current !== false);
+  const companyProfile = await getTenderCompanyProfile(database);
+  const deepAnalysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
+  const humanEvidence = agt002HumanEvidenceFromResponses(await getTenderQuestionResponses(database, opportunityId, analysisRunId));
+
+  const contextVersion = await registerAgt002ContextVersion(database, {
+    opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, actor_id: currentProfile.id,
+    context: { snapshot_id: snapshotId, ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: humanEvidence },
+  });
+
+  const config = getAgt002PreviewRuntimeConfig(process.env);
+  const idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion: config.policyVersion, model: config.model, contextVersionId: contextVersion.id });
+  let claimId = null;
+  try {
+    const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
+    if (claim.status === 'existing') {
+      const existingRun = await findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly });
+      return { status: 'completed', context_version_id: contextVersion.id, analysis: presentCurrentTenderAnalysis(existingRun), reused: true };
+    }
+    if (claim.status !== 'claimed') return { status: claim.status, context_version_id: contextVersion.id };
+    claimId = claim.claim_id;
+    const engine = createAgt002PreviewRuntime({ environment: process.env, countDailyRuns: () => countAgt002PreviewRunsToday(database) });
+    const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: humanEvidence } }, { idempotencyKey });
+    const registeredRun = await registerAgt002PreviewAnalysis(database, {
+      opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly, context_version_id: contextVersion.id,
+    });
+    return { status: 'completed', context_version_id: contextVersion.id, analysis: presentCurrentTenderAnalysis(registeredRun), reused: false };
+  } catch (error) {
+    console.warn('agt002_reanalysis_after_human_answer_failed', { event: 'agt002_reanalysis_after_human_answer_failed' });
+    return { status: 'unavailable', context_version_id: contextVersion.id };
+  } finally {
+    if (claimId) {
+      try { await releaseAgt002PreviewClaim(database, { idempotencyKey, claimId }); }
+      catch { console.warn('agt002_preview_claim_release_failed', { event: 'agt002_preview_claim_release_failed' }); }
+    }
+  }
+}
 
 async function getTenderOfferPreparationRecords(database, opportunityId) {
   const interactions = await must(database.from('psi_sales_interactions').select('id,notes,occurred_at,created_at,created_by,psi_sales_profiles(full_name)').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true }));
@@ -3352,6 +3427,11 @@ app.get('/api/tender-question-responses', async (req, res) => {
 app.post('/api/tender-question-responses', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
+    if (currentProfile?.identity_type === 'agent') {
+      const error = new Error('Las respuestas humanas de licitaciones no están disponibles para identidades de agente.');
+      error.status = 403;
+      throw error;
+    }
     const database = requireDb();
     const opportunityId = String(req.body.opportunity_id || '');
     const analysisRunId = String(req.body.analysis_run_id || '');
@@ -3367,7 +3447,8 @@ app.post('/api/tender-question-responses', async (req, res) => {
       p_evidence_notes: req.body.evidence_notes == null ? null : String(req.body.evidence_notes),
       p_responded_by: currentProfile.id,
     }));
-    res.status(201).json({ question_response: recorded, question_responses: await getTenderQuestionResponses(database, opportunityId, analysisRunId) });
+    const reanalysis = await reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analysisRunId, currentProfile });
+    res.status(201).json({ question_response: recorded, question_responses: await getTenderQuestionResponses(database, opportunityId, analysisRunId), reanalysis });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
