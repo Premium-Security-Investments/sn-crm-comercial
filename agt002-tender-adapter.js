@@ -116,3 +116,60 @@ export function adaptAgt002TenderAnalysis(envelope) {
   const validated = validateAgt002TenderAnalysisEnvelope(envelope);
   return validateTenderAnalysisResult({ ...validated, producer: 'AGT-002' });
 }
+
+const CONTINUITY_KEYS = [
+  'opportunity_id', 'tender_id', 'snapshot_id', 'canonical_run_id',
+  'context_version_id', 'legal_corpus_version_id', 'evidence_coverage', 'open_questions',
+];
+const EVIDENCE_COVERAGE_REF_KEYS = ['material_omissions', 'omitted_count'];
+
+function isNullableUuid(value) {
+  return value === null || isUuid(value);
+}
+
+function validateEvidenceCoverageRef(value) {
+  if (!exactKeys(value, EVIDENCE_COVERAGE_REF_KEYS)
+    || typeof value.material_omissions !== 'boolean'
+    || !Number.isInteger(value.omitted_count) || value.omitted_count < 0) {
+    throw new Error('La cobertura de evidencia de continuidad debe ser un resumen cerrado por referencia.');
+  }
+}
+
+/**
+ * Validates the closed, allowlisted set of references a post-GO Mesa carries forward from the
+ * pre-GO case: opportunity, snapshot, canonical run, context version, evidence coverage, legal
+ * corpus version, and open questions. Every field is an id/summary, never raw document or chunk
+ * text, so this can never smuggle case content into a Mesa message.
+ */
+export function validateAgt002WorkbenchContinuityReference(value) {
+  if (!exactKeys(value, CONTINUITY_KEYS)) throw new Error('La referencia de continuidad AGT-002 debe ser cerrada.');
+  if (!isUuid(value.opportunity_id)) throw new Error('La referencia de continuidad AGT-002 requiere opportunity_id UUID.');
+  if (!isUuid(value.tender_id)) throw new Error('La referencia de continuidad AGT-002 requiere tender_id UUID.');
+  if (!isUuid(value.snapshot_id)) throw new Error('La referencia de continuidad AGT-002 requiere snapshot_id UUID.');
+  if (!isUuid(value.canonical_run_id)) throw new Error('La referencia de continuidad AGT-002 requiere canonical_run_id UUID.');
+  if (!isNullableUuid(value.context_version_id)) throw new Error('La versión de contexto de continuidad debe ser UUID o null.');
+  if (!isNullableUuid(value.legal_corpus_version_id)) throw new Error('La versión del corpus jurídico de continuidad debe ser UUID o null.');
+  validateEvidenceCoverageRef(value.evidence_coverage);
+  if (!Array.isArray(value.open_questions)) throw new Error('Las preguntas abiertas de continuidad deben ser un arreglo.');
+  value.open_questions.forEach((item) => validateFinding(item, 'open_questions'));
+  return value;
+}
+
+/**
+ * Builds the continuity reference from the already-validated AGT-002 envelope (snapshot_id,
+ * run_id, and its closed `questions` findings) plus the caller-supplied case/version refs.
+ * Never re-derives evidence from raw documents: it only carries ids the caller already has.
+ */
+export function buildAgt002WorkbenchContinuityReference(envelope, refs) {
+  const validatedEnvelope = validateAgt002TenderAnalysisEnvelope(envelope);
+  return validateAgt002WorkbenchContinuityReference({
+    opportunity_id: refs?.opportunity_id,
+    tender_id: refs?.tender_id,
+    snapshot_id: validatedEnvelope.snapshot_id,
+    canonical_run_id: validatedEnvelope.run_id,
+    context_version_id: refs?.context_version_id ?? null,
+    legal_corpus_version_id: refs?.legal_corpus_version_id ?? null,
+    evidence_coverage: refs?.evidence_coverage,
+    open_questions: validatedEnvelope.questions,
+  });
+}
