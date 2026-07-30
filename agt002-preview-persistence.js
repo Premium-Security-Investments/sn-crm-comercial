@@ -121,7 +121,15 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     content.legal_findings = envelope.legal_findings;
   }
   const criticalOpenCount = countCriticalOpenQuestions(content);
-  const idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model: usage.model });
+  const baseIdempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model: usage.model });
+  // A new AGT-002 context version (new human evidence) must never collide with the run it
+  // supersedes: without this, reanalysis after a human answer would silently no-op against
+  // the original run's (snapshot, policy, model) idempotency key instead of creating a new,
+  // append-only run. Omitting context_version_id keeps every existing caller byte-identical.
+  const contextVersionId = context?.context_version_id ?? null;
+  const idempotencyKey = contextVersionId
+    ? createHash('sha256').update(`${baseIdempotencyKey}\0context_version\0${contextVersionId}`).digest('hex')
+    : baseIdempotencyKey;
 
   const canonicalOnly = context?.canonicalOnly === true;
   const commonParams = {
@@ -135,6 +143,7 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     p_policy_version: policyVersion,
     p_model: usage.model,
     p_usage: usage,
+    ...(canonicalOnly && contextVersionId ? { p_context_version_id: contextVersionId } : {}),
   };
   const runRecord = unwrapRpc(await database.rpc(
     canonicalOnly ? 'psi_record_agt002_canonical_analysis_run' : 'psi_record_tender_analysis_run',
@@ -151,6 +160,7 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     current: true,
     result: content,
     critical_open_count: runRecord.critical_open_count ?? criticalOpenCount,
+    context_version_id: runRecord.context_version_id ?? contextVersionId,
   };
 }
 
