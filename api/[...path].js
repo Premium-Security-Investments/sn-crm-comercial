@@ -3116,7 +3116,11 @@ function buildTenderProcessingWorkerDeps(database) {
       let attemptStarted = false;
       try {
         const config = getAgt002PreviewRuntimeConfig(process.env);
-        idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion: config.policyVersion, model: config.model });
+        const contextVersion = canonicalOnly ? await registerAgt002ContextVersion(database, {
+          opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, actor_id: actor.requested_by,
+          context: { snapshot_id: snapshotId, ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: [] },
+        }) : null;
+        idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion: config.policyVersion, model: config.model, contextVersionId: contextVersion?.id });
         const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
         if (claim.status === 'existing') {
           const existingRun = await findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly });
@@ -3139,7 +3143,7 @@ function buildTenderProcessingWorkerDeps(database) {
         }
         const engine = createAgt002PreviewRuntime({ environment: process.env, countDailyRuns: () => countAgt002PreviewRunsToday(database) });
         const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
-        const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly });
+        const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly, context_version_id: contextVersion?.id });
         if (canonicalOnly) await appendAttempt(idempotencyKey, 'completed', { analysis_run_id: registeredRun.run_id });
         return { status: 'completed', analysisRunId: registeredRun.run_id };
       } catch (error) {
@@ -3630,7 +3634,11 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
     let attemptStarted = false;
     try {
       const config = getAgt002PreviewRuntimeConfig(process.env);
-      idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId: registeredSnapshot.id, policyVersion: config.policyVersion, model: config.model });
+      const contextVersion = canonicalOnly ? await registerAgt002ContextVersion(database, {
+        opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, actor_id: currentProfile.id,
+        context: { snapshot_id: registeredSnapshot.id, ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: [] },
+      }) : null;
+      idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId: registeredSnapshot.id, policyVersion: config.policyVersion, model: config.model, contextVersionId: contextVersion?.id });
       const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
       if (claim.status === 'existing') {
         const existingRun = await findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly });
@@ -3655,7 +3663,7 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
       }
       const engine = createAgt002PreviewRuntime({ environment: process.env, countDailyRuns: () => countAgt002PreviewRunsToday(database) });
       const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
-      const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope, canonicalOnly });
+      const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope, canonicalOnly, context_version_id: contextVersion?.id });
       if (canonicalOnly) await appendAttempt(idempotencyKey, 'completed', { analysis_run_id: registeredRun.run_id });
       const payload = await getTenderDocumentRecords(database, opportunityId);
       return res.json({ ...payload, analysis: presentCurrentTenderAnalysis(registeredRun), analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, state: 'completed', reused: false, human_review_required: true } });

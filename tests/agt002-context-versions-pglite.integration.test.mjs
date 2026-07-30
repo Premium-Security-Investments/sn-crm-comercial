@@ -69,11 +69,6 @@ await pg.exec(migration051);
 
 const database = pgliteDatabase(pg);
 
-// Seed run whose questions the two human answers below respond to.
-const seedRun = (await pg.query(`select public.psi_record_agt002_canonical_analysis_run(
-  '${S}','${O}','${T}','{"summary":"Vig-IA seed"}'::jsonb,0,'seed-run','schema-1','policy-1','model-1',null
-) r`)).rows[0].r;
-
 async function answerQuestion(questionId, questionText, response, analysisRunId) {
   return (await pg.query(`select public.psi_record_tender_question_response(
     '${O}','${analysisRunId}','${questionId}','${questionText}','resolved','${response}',null,'${P}'
@@ -92,6 +87,22 @@ function contextSections(legalName) {
     }),
   };
 }
+
+// Since 051, every new canonical run must reference the immutable context it consumed.
+await assert.rejects(pg.query(`select public.psi_record_agt002_canonical_analysis_run(
+  '${S}','${O}','${T}','{"summary":"sin contexto"}'::jsonb,0,'no-context','schema-1','policy-1','model-1',null
+)`), /requiere una versión de contexto/i);
+
+const initialContext = await registerAgt002ContextVersion(database, {
+  opportunity_id: O, tender_id: T, snapshot_id: S, actor_id: P,
+  context: { snapshot_id: S, ...contextSections('Seguridad Nacional Ltda.'), human_evidence: [] },
+});
+assert.equal(initialContext.context_version, 2);
+
+// Seed run whose questions the two human answers below respond to.
+const seedRun = (await pg.query(`select public.psi_record_agt002_canonical_analysis_run(
+  '${S}','${O}','${T}','{"summary":"Vig-IA seed"}'::jsonb,0,'seed-run','schema-1','policy-1','model-1',null,'${initialContext.id}'
+) r`)).rows[0].r;
 
 function humanEvidenceItem(answer) {
   return {
@@ -157,7 +168,7 @@ const version1Again = await registerAgt002ContextVersion(database, {
   context: { snapshot_id: S, ...contextSections('Seguridad Nacional Ltda.'), human_evidence: [humanEvidenceItem(answer1)] },
 });
 assert.equal(version1Again.id, version1.id);
-assert.equal((await pg.query('select count(*)::int count from public.psi_agt002_context_versions')).rows[0].count, 2);
+assert.equal((await pg.query('select count(*)::int count from public.psi_agt002_context_versions')).rows[0].count, 3);
 
 // A context version cannot be linked to a canonical run from a different snapshot/opportunity.
 const otherSnapshotId = '55555555-5555-4555-8555-555555555555';

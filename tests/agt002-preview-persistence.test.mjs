@@ -15,6 +15,7 @@ const ids = {
   tender: '33333333-3333-4333-8333-333333333333',
   snapshot: '55555555-5555-4555-8555-555555555555',
   run: '66666666-6666-4666-8666-666666666666',
+  contextVersion: '77777777-7777-4777-8777-777777777777',
 };
 
 // Cross-request idempotency, concurrency and daily quota are reserved atomically
@@ -206,14 +207,25 @@ function fakeDatabase({ onRpc } = {}) {
   assert.deepEqual(database.rpcCalls, []);
 }
 
-// Canonical-only registration uses the dedicated 050 RPC and cannot supply a competing producer/method/status.
+// Canonical-only registration is fail-closed without an immutable context version.
+{
+  const database = fakeDatabase();
+  await assert.rejects(() => registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: envelope(), canonicalOnly: true,
+  }), /context_version_id/i);
+  assert.deepEqual(database.rpcCalls, []);
+}
+
+// Canonical-only registration uses the dedicated RPC and cannot supply a competing producer/method/status.
 {
   const database = fakeDatabase();
   const registered = await registerAgt002PreviewAnalysis(database, {
     opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: envelope(), canonicalOnly: true,
+    context_version_id: ids.contextVersion,
   });
   const call = database.rpcCalls[0];
   assert.equal(call.name, 'psi_record_agt002_canonical_analysis_run');
+  assert.equal(call.params.p_context_version_id, ids.contextVersion);
   assert.equal(registered.canonical, true);
   assert.equal(Object.hasOwn(call.params, 'p_producer'), false);
   assert.equal(Object.hasOwn(call.params, 'p_method'), false);

@@ -117,7 +117,7 @@ $$;
 revoke all on function public.psi_record_agt002_context_version(uuid, uuid, uuid, integer, jsonb, text, integer, text, uuid) from public, authenticated, anon, service_role;
 grant execute on function public.psi_record_agt002_context_version(uuid, uuid, uuid, integer, jsonb, text, integer, text, uuid) to service_role;
 
--- Supersede 050's canonical-run RPC with one additional optional parameter so a
+-- Supersede 050's canonical-run RPC with one additional required context parameter so a
 -- canonical AGT-002 run can be linked to the exact context version it consumed.
 -- The original 10-parameter overload is dropped (not left dangling) so callers
 -- cannot silently keep recording canonical runs without an attributable context
@@ -159,6 +159,9 @@ begin
   end if;
   if p_usage is not null and jsonb_typeof(p_usage) <> 'object' then
     raise exception 'El uso del análisis debe ser un objeto estructurado.' using errcode = '22023';
+  end if;
+  if p_context_version_id is null then
+    raise exception 'Todo nuevo análisis canónico AGT-002 requiere una versión de contexto atribuible.' using errcode = '22023';
   end if;
 
   select * into v_snapshot from public.psi_tender_document_snapshots where id = p_snapshot_id for share;
