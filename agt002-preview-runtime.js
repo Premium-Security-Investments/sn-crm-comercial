@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.js';
 import { AGT002_PREVIEW_POLICY, createAgt002PreviewEngine } from './agt002-preview-engine.js';
 import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
+import { retrieveAgt002LegalEvidence } from './agt002-legal-retrieval.js';
 
 export const AGT002_PREVIEW_ENGINE_ID = 'agt002_codex_preview';
 const REQUIRED_ENV_KEYS = ['AGT002_PREVIEW_MODEL', 'AGT002_HETZNER_BRIDGE_URL', 'AGT002_HETZNER_BRIDGE_HMAC_SECRET'];
@@ -11,6 +13,22 @@ export const AGT002_PREVIEW_DEFAULT_POLICY_VERSION = 'agt002-preview-policy-v1';
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function legalAsOf(environment) {
+  const value = environment.AGT002_LEGAL_AS_OF || new Date().toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00.000Z`))) {
+    throw new Error('AGT002_LEGAL_AS_OF no es una fecha ISO válida.');
+  }
+  return value;
+}
+
+function createLegalEvidenceProvider(environment) {
+  const corpus = JSON.parse(readFileSync(new URL('./data/agt002/legal-corpus-v1.json', import.meta.url), 'utf8'));
+  const asOf = legalAsOf(environment);
+  const topics = [...new Set(corpus.sources.flatMap(source => source.topic))].sort();
+  const sector = [...new Set(corpus.sources.flatMap(source => source.sector))].sort();
+  return () => retrieveAgt002LegalEvidence({ corpus, corpus_version: corpus.corpus_version, as_of: asOf, topics, sector });
 }
 
 /** Checked before anything else: no client is ever constructed unless every required variable is present. */
@@ -53,6 +71,7 @@ function positiveIntFromEnv(environment, key, fallback) {
 export function createAgt002PreviewRuntime({ environment = process.env, countDailyRuns } = {}) {
   const config = getAgt002PreviewRuntimeConfig(environment);
   const analysisConfig = buildAgt002AnalysisConfig(environment);
+  const legalEvidenceProvider = analysisConfig.AGT002_LEGAL_CORPUS ? createLegalEvidenceProvider(environment) : undefined;
 
   const client = createAgt002HetznerBridgeClient({
     url: environment.AGT002_HETZNER_BRIDGE_URL,
@@ -69,6 +88,8 @@ export function createAgt002PreviewRuntime({ environment = process.env, countDai
     dailyMaxRuns: config.dailyMaxRuns,
     contextV2: analysisConfig.AGT002_CONTEXT_V2,
     documentRetrieval: analysisConfig.AGT002_DOCUMENT_RETRIEVAL,
+    legalCorpus: analysisConfig.AGT002_LEGAL_CORPUS,
+    legalEvidenceProvider,
     ...(countDailyRuns ? { countDailyRuns } : {}),
   });
 }

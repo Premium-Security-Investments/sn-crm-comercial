@@ -107,6 +107,19 @@ export async function registerAgt002PreviewAnalysis(database, context) {
   if (envelope.evidence_coverage !== undefined) {
     content.evidence_coverage = validateEvidenceCoverage(envelope.evidence_coverage, snapshotId);
   }
+  const hasLegalEvidence = envelope.legal_evidence !== undefined;
+  const hasLegalFindings = envelope.legal_findings !== undefined;
+  if (hasLegalEvidence !== hasLegalFindings) {
+    throw new Error('La evidencia jurídica y los hallazgos jurídicos deben persistirse como un par atómico.');
+  }
+  if (hasLegalEvidence) {
+    if (!envelope.legal_evidence || typeof envelope.legal_evidence !== 'object' || Array.isArray(envelope.legal_evidence)
+      || !Array.isArray(envelope.legal_findings)) {
+      throw new Error('La evidencia jurídica del envelope no tiene estructura válida.');
+    }
+    content.legal_evidence = envelope.legal_evidence;
+    content.legal_findings = envelope.legal_findings;
+  }
   const criticalOpenCount = countCriticalOpenQuestions(content);
   const idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model: usage.model });
 

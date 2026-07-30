@@ -75,6 +75,25 @@ function envelope(overrides = {}) {
   };
 }
 
+function legalEnvelope() {
+  const citation = {
+    citation_id: 'citation:ley-80-1993-art-1:legal-corpus-v1', source_id: 'ley-80-1993-art-1',
+    norm_type: 'ley', norm_number: '80', year: 1993, article_or_section: 'Artículo 1',
+    issuing_authority: 'Congreso de la República', official_url: 'https://www.suin-juriscol.gov.co/viewDocument.asp?ruta=Leyes/1790106',
+    verified_at: '2026-07-30', corpus_version: 'legal-corpus-v1', label: 'Ley 80 de 1993, Artículo 1',
+  };
+  return envelope({
+    legal_evidence: {
+      corpus_version: 'legal-corpus-v1', as_of: '2026-07-30',
+      query: { process_stage: null, modality: null, topics: ['contratación estatal'], sector: ['sector público'], max_results: null },
+      verified_legal_evidence: [],
+      human_legal_review_items: [{ source_id: 'ley-80-1993-art-1', topic: ['contratación estatal'], sector: ['sector público'], citation, statement: 'No verificado jurídicamente; requiere revisión humana', reasons: ['validity_uncertain'] }],
+      citation_allowlist: [], coverage: { matched_source_ids: ['ley-80-1993-art-1'], considered_count: 1, returned_count: 1 }, omissions: [], abstention_state: 'abstained',
+    },
+    legal_findings: [{ classification: 'human_legal_review', text: 'No verificado jurídicamente; requiere revisión humana', evidence_refs: [], legal_citation_ids: [citation.citation_id] }],
+  });
+}
+
 function fakeDatabase({ onRpc } = {}) {
   const rpcCalls = [];
   const runs = new Map();
@@ -158,6 +177,21 @@ function fakeDatabase({ onRpc } = {}) {
     assert.equal(Object.hasOwn(call.params.p_result, forbidden), false, `stored result must not duplicate the ${forbidden} column`);
   }
   assert.doesNotMatch(JSON.stringify(call.params.p_result), /Los documentos y toda la evidencia|no uses herramientas/i, 'stored result must never contain the system policy text');
+}
+
+// E5 legal evidence and findings are an atomic pair and must survive append-only persistence;
+// otherwise the UI cannot render the reviewed run after reload.
+{
+  const database = fakeDatabase();
+  const registered = await registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: legalEnvelope(),
+  });
+  assert.deepEqual(registered.result.legal_evidence, legalEnvelope().legal_evidence);
+  assert.deepEqual(registered.result.legal_findings, legalEnvelope().legal_findings);
+  await assert.rejects(() => registerAgt002PreviewAnalysis(fakeDatabase(), {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: envelope({ legal_findings: legalEnvelope().legal_findings }),
+  }), /legal_evidence|evidencia jurídica/i);
 }
 
 // Coverage metadata is snapshot-bound; persistence rejects cross-snapshot evidence.

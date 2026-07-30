@@ -74,6 +74,16 @@ assert.throws(
   );
 }
 
+// AGT002_LEGAL_CORPUS must reach the engine together with a deterministic, versioned corpus
+// provider. Engine construction itself fails closed if runtime forgets either dependency.
+{
+  const runtime = createAgt002PreviewRuntime({
+    environment: baseEnv({ AGT002_CONTEXT_V2: 'true', AGT002_LEGAL_CORPUS: 'true', AGT002_LEGAL_AS_OF: '2026-07-30' }),
+    countDailyRuns: async () => 0,
+  });
+  assert.equal(typeof runtime.analyze, 'function');
+}
+
 const source = readFileSync(new URL('../agt002-preview-runtime.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /OPENAI_API_KEY|HERMES_INTERIM_API_KEY|Authorization|Bearer/i, 'the runtime must never manage an API key or bearer token');
 

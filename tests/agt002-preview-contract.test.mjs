@@ -1,14 +1,19 @@
 import { strict as assert } from 'node:assert';
 import {
+  AGT002_LEGAL_FINDING_CLASSIFICATIONS,
+  AGT002_LEGAL_HUMAN_REVIEW_STATEMENT,
   AGT002_PREVIEW_OUTPUT_JSON_SCHEMA,
   AGT002_PREVIEW_RECOMMENDATIONS,
   AGT002_PREVIEW_SCHEMA_VERSION,
+  buildAgt002PreviewOutputJsonSchema,
   collectAgt002PreviewEvidenceIds,
+  collectAgt002PreviewLegalCitationIds,
   validateAgt002PreviewModelOutput,
 } from '../agt002-preview-contract.js';
 import { buildAgt002PreviewInput } from '../agt002-preview-input.js';
 import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
+import { retrieveAgt002LegalEvidence } from '../agt002-legal-retrieval.js';
 
 assert.equal(AGT002_PREVIEW_SCHEMA_VERSION, '2.0-preview.1');
 assert.deepEqual([...AGT002_PREVIEW_RECOMMENDATIONS].sort(), ['advance', 'advance_conditionally', 'do_not_advance', 'pause']);
@@ -230,6 +235,376 @@ for (const bad of [null, undefined, [], 'not-an-object', 42]) {
   // Retrieval mode carries no duplicate legacy documents array; the allowlist is the sole
   // document evidence universe.
   assert.equal(Object.hasOwn(retrievalInput, 'documents'), false);
+}
+
+// --- AGT002_LEGAL_CORPUS: legal evidence and abstention grounded in the versioned official
+// corpus (Task29-32), behind an explicit flag that requires AGT002_CONTEXT_V2. Flag off must
+// keep the exact contract above byte-identical (rollback). ---
+
+function makeLegalSource(overrides = {}) {
+  return {
+    source_id: 'decreto-356-1994-art-4',
+    norm_type: 'decreto_ley',
+    norm_number: '356',
+    year: 1994,
+    article_or_section: 'Artículo 4',
+    current_text: 'Texto vigente de prueba sobre campo de aplicación de vigilancia y seguridad privada.',
+    issuing_authority: 'Presidencia de la República',
+    issued_at: '1994-02-11',
+    effective_from: '1994-02-11',
+    effective_to: null,
+    modifications: [],
+    official_url: 'https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i=1341',
+    topic: ['vigilancia y seguridad privada'],
+    sector: ['vigilancia y seguridad privada'],
+    verified_at: '2026-01-01',
+    corpus_version: 'legal-corpus-test-v1',
+    verification_status: 'verified',
+    validity_status: 'confirmed',
+    applicability_status: 'applicable',
+    ...overrides,
+  };
+}
+
+const eligibleLegalSource = makeLegalSource();
+const uncertainLegalSource = makeLegalSource({
+  source_id: 'ley-1150-2007-art-2',
+  norm_number: '1150',
+  year: 2007,
+  article_or_section: 'Artículo 2',
+  issuing_authority: 'Congreso de la República',
+  issued_at: '2007-07-16',
+  effective_from: null,
+  official_url: 'https://www.suin-juriscol.gov.co/viewDocument.asp?id=7654321',
+  validity_status: 'uncertain',
+});
+
+const legalQueryBase = {
+  corpus_version: 'legal-corpus-test-v1',
+  as_of: '2026-01-01',
+  sector: ['vigilancia y seguridad privada'],
+  topics: ['vigilancia y seguridad privada'],
+};
+
+function makeLegalPackage(sources) {
+  return retrieveAgt002LegalEvidence({
+    corpus: { corpus_version: 'legal-corpus-test-v1', sources },
+    ...legalQueryBase,
+  });
+}
+
+function makeLegalContextV2Sections() {
+  return {
+    ...buildAgt002OpportunityContextV2({
+      opportunity: { id: 'opp-1', updated_at: '2026-07-29T10:00:00.000Z' },
+      tender: { id: 'tender-1', title: 'Vigilancia', entity: 'Entidad', updated_at: '2026-07-29T10:00:00.000Z' },
+    }),
+    company_dossier: buildAgt002CompanyDossier({
+      profile: { legal_name: 'Seguridad Nacional Ltda.', updated_at: '2026-07-29T10:00:00.000Z' },
+      documents: [],
+    }),
+  };
+}
+
+const legalDeepAnalysis = { matrix: { legal: [{ id: 'req-vigilancia', front: 'legal', label: 'Vigilancia armada' }], financial: [], technical: [] } };
+
+// buildAgt002PreviewOutputJsonSchema: legacy constant is preserved untouched; the closed
+// builder only extends the schema when legalCorpus is explicitly requested.
+{
+  assert.deepEqual(buildAgt002PreviewOutputJsonSchema({ legalCorpus: false }), AGT002_PREVIEW_OUTPUT_JSON_SCHEMA);
+  assert.deepEqual(buildAgt002PreviewOutputJsonSchema(), AGT002_PREVIEW_OUTPUT_JSON_SCHEMA);
+
+  const legalSchema = buildAgt002PreviewOutputJsonSchema({ legalCorpus: true });
+  assert.equal(legalSchema.type, 'object');
+  assert.equal(legalSchema.additionalProperties, false);
+  assert.ok(legalSchema.required.includes('legal_findings'));
+  assert.deepEqual(legalSchema.required.slice().sort(), [...AGT002_PREVIEW_OUTPUT_JSON_SCHEMA.required, 'legal_findings'].sort());
+  const legalFindingItemSchema = legalSchema.properties.legal_findings.items;
+  assert.equal(legalSchema.properties.legal_findings.type, 'array');
+  assert.equal(legalFindingItemSchema.type, 'object');
+  assert.equal(legalFindingItemSchema.additionalProperties, false);
+  assert.deepEqual(legalFindingItemSchema.required.slice().sort(), ['classification', 'evidence_refs', 'legal_citation_ids', 'text'].sort());
+  assert.deepEqual(legalFindingItemSchema.properties.classification.enum.slice().sort(), [...AGT002_LEGAL_FINDING_CLASSIFICATIONS].sort());
+
+  // AGT002_PREVIEW_OUTPUT_JSON_SCHEMA itself must remain byte-identical (no in-place mutation).
+  assert.equal(Object.hasOwn(AGT002_PREVIEW_OUTPUT_JSON_SCHEMA.properties, 'legal_findings'), false);
+}
+
+assert.deepEqual([...AGT002_LEGAL_FINDING_CLASSIFICATIONS].sort(), [
+  'company_evidence', 'human_legal_review', 'inference', 'legal_obligation', 'tender_requirement',
+].sort());
+assert.equal(AGT002_LEGAL_HUMAN_REVIEW_STATEMENT, 'No verificado jurídicamente; requiere revisión humana');
+
+// buildAgt002PreviewInput fail-closed guards for AGT002_LEGAL_CORPUS.
+{
+  const contextV2Sections = makeLegalContextV2Sections();
+  const legalPackage = makeLegalPackage([eligibleLegalSource, uncertainLegalSource]);
+
+  assert.throws(
+    () => buildAgt002PreviewInput({
+      documents: [], deepAnalysis: {}, snapshotId: 'snapshot-1', contextV2: false, legalCorpus: true, legalEvidencePackage: legalPackage,
+    }),
+    /AGT002_CONTEXT_V2|contexto v2/i,
+    'legalCorpus requires contextV2, mirroring documentRetrieval',
+  );
+
+  assert.throws(
+    () => buildAgt002PreviewInput({
+      documents: [], deepAnalysis: {}, snapshotId: 'snapshot-1', contextV2: true, contextV2Sections, legalCorpus: true,
+    }),
+    /paquete de recuperación jurídica|legal/i,
+    'legalCorpus without an explicit legalEvidencePackage must fail closed',
+  );
+
+  // Flag off (default): a caller that always builds a legal package must not leak it without the flag.
+  const flagOffInput = buildAgt002PreviewInput({
+    documents: [], deepAnalysis: {}, snapshotId: 'snapshot-1', contextV2: true, contextV2Sections, legalEvidencePackage: legalPackage,
+  });
+  assert.equal(Object.hasOwn(flagOffInput, 'legal_evidence'), false);
+}
+
+// Malformed/tampered legal evidence packages must fail closed: no invented field survives.
+{
+  const contextV2Sections = makeLegalContextV2Sections();
+  const legalPackage = makeLegalPackage([eligibleLegalSource, uncertainLegalSource]);
+
+  assert.throws(
+    () => buildAgt002PreviewInput({
+      documents: [], deepAnalysis: {}, snapshotId: 'snapshot-1', contextV2: true, contextV2Sections,
+      legalCorpus: true, legalEvidencePackage: { ...legalPackage, extra_field: 'invented' },
+    }),
+    /clave|cerrad|desconocid/i,
+  );
+
+  assert.throws(
+    () => buildAgt002PreviewInput({
+      documents: [], deepAnalysis: {}, snapshotId: 'snapshot-1', contextV2: true, contextV2Sections,
+      legalCorpus: true, legalEvidencePackage: { ...legalPackage, allowed_citation_ids: [...legalPackage.allowed_citation_ids, 'citation:invented:legal-corpus-test-v1'] },
+    }),
+    /allowed_citation_ids|allowlist/i,
+    'a tampered/widened allowlist must be rejected, never trusted verbatim',
+  );
+
+  const tamperedStatement = {
+    ...legalPackage,
+    human_legal_review_items: legalPackage.human_legal_review_items.map(item => ({ ...item, statement: 'Texto alterado.' })),
+  };
+  assert.throws(
+    () => buildAgt002PreviewInput({
+      documents: [], deepAnalysis: {}, snapshotId: 'snapshot-1', contextV2: true, contextV2Sections,
+      legalCorpus: true, legalEvidencePackage: tamperedStatement,
+    }),
+    /No verificado jurídicamente/,
+    'the exact abstention statement must be enforced when ingesting the package, not only when rendered',
+  );
+
+  const tamperedUrl = {
+    ...legalPackage,
+    verified_legal_evidence: legalPackage.verified_legal_evidence.map(item => ({
+      ...item,
+      citation: { ...item.citation, official_url: 'https://not-an-official-host.example/norma' },
+    })),
+  };
+  assert.throws(
+    () => buildAgt002PreviewInput({
+      documents: [], deepAnalysis: {}, snapshotId: 'snapshot-1', contextV2: true, contextV2Sections,
+      legalCorpus: true, legalEvidencePackage: tamperedUrl,
+    }),
+    /HTTPS|oficial/i,
+  );
+}
+
+// GREEN shape: a valid Task32 package produces a closed legal_evidence section with an
+// allowlist that never mixes with document evidence ids.
+let legalPreviewInput;
+let legalEvidenceIds;
+{
+  const contextV2Sections = makeLegalContextV2Sections();
+  const legalPackage = makeLegalPackage([eligibleLegalSource, uncertainLegalSource]);
+
+  legalPreviewInput = buildAgt002PreviewInput({
+    documents: [{ id: 'doc-01', name: 'Pliego', document_type: 'pliego', extracted_text: 'Vigilancia armada requerida.' }],
+    deepAnalysis: legalDeepAnalysis,
+    snapshotId: 'snapshot-1',
+    contextV2: true,
+    contextV2Sections,
+    legalCorpus: true,
+    legalEvidencePackage: legalPackage,
+  });
+
+  assert.ok(legalPreviewInput.legal_evidence, 'flag on must attach the closed legal evidence package');
+  assert.equal(legalPreviewInput.legal_evidence.corpus_version, 'legal-corpus-test-v1');
+  assert.equal(legalPreviewInput.legal_evidence.as_of, '2026-01-01');
+  assert.equal(legalPreviewInput.legal_evidence.verified_legal_evidence.length, 1);
+  assert.equal(legalPreviewInput.legal_evidence.verified_legal_evidence[0].source_id, 'decreto-356-1994-art-4');
+  assert.equal(legalPreviewInput.legal_evidence.human_legal_review_items.length, 1);
+  assert.equal(legalPreviewInput.legal_evidence.human_legal_review_items[0].source_id, 'ley-1150-2007-art-2');
+  assert.equal(legalPreviewInput.legal_evidence.human_legal_review_items[0].statement, AGT002_LEGAL_HUMAN_REVIEW_STATEMENT);
+  assert.equal(legalPreviewInput.legal_evidence.abstention_state, 'grounded');
+  assert.deepEqual(legalPreviewInput.legal_evidence.citation_allowlist, ['citation:decreto-356-1994-art-4:legal-corpus-test-v1']);
+
+  legalEvidenceIds = collectAgt002PreviewLegalCitationIds(legalPreviewInput);
+  assert.deepEqual(legalEvidenceIds.verified, ['citation:decreto-356-1994-art-4:legal-corpus-test-v1']);
+  assert.deepEqual(legalEvidenceIds.all, [
+    'citation:decreto-356-1994-art-4:legal-corpus-test-v1',
+    'citation:ley-1150-2007-art-2:legal-corpus-test-v1',
+  ]);
+
+  // Legal citation ids must never leak into (or be derivable from) the documentary evidence
+  // allowlist: the two universes never mix.
+  const documentEvidenceIds = collectAgt002PreviewEvidenceIds(legalPreviewInput);
+  for (const legalId of legalEvidenceIds.all) assert.ok(!documentEvidenceIds.includes(legalId));
+}
+
+// Abstention: no eligible source at all must never produce a verified legal_obligation and
+// must expose abstention_state = 'abstained'.
+{
+  const contextV2Sections = makeLegalContextV2Sections();
+  const abstainedPackage = makeLegalPackage([uncertainLegalSource]);
+  const abstainedInput = buildAgt002PreviewInput({
+    documents: [], deepAnalysis: legalDeepAnalysis, snapshotId: 'snapshot-1', contextV2: true, contextV2Sections,
+    legalCorpus: true, legalEvidencePackage: abstainedPackage,
+  });
+  assert.equal(abstainedInput.legal_evidence.abstention_state, 'abstained');
+  assert.deepEqual(abstainedInput.legal_evidence.citation_allowlist, []);
+
+  const legalCitationIds = collectAgt002PreviewLegalCitationIds(abstainedInput);
+  assert.deepEqual(legalCitationIds.verified, []);
+
+  const documentEvidenceIds = collectAgt002PreviewEvidenceIds(abstainedInput);
+  assert.throws(
+    () => validateAgt002PreviewModelOutput({
+      recommendation: 'pause', summary: 'Resumen.', strengths: [], weaknesses: [], blockers: [], questions: [], unverified: [],
+      next_action: 'Revisar.', human_review_required: true,
+      legal_findings: [{ classification: 'legal_obligation', text: 'Obligación inventada.', evidence_refs: [], legal_citation_ids: ['citation:ley-1150-2007-art-2:legal-corpus-test-v1'] }],
+    }, { allowedEvidenceIds: documentEvidenceIds, legalCorpus: true, legalCitationIds }),
+    /allowlist|verificad|elegible/i,
+    'without any eligible source, output must abstain rather than invent a verified obligation',
+  );
+}
+
+// validateAgt002PreviewModelOutput: five closed classes, citation discipline, and the exact
+// abstention statement — flag off keeps the legacy contract untouched.
+{
+  const legalCitationIds = collectAgt002PreviewLegalCitationIds(legalPreviewInput);
+  const allowedEvidenceIds = collectAgt002PreviewEvidenceIds(legalPreviewInput);
+
+  function legalOutput(overrides = {}) {
+    return {
+      recommendation: 'pause',
+      summary: 'Resumen.',
+      strengths: [],
+      weaknesses: [],
+      blockers: [],
+      questions: [],
+      unverified: [],
+      next_action: 'Revisar.',
+      human_review_required: true,
+      legal_findings: [
+        { classification: 'tender_requirement', text: 'El pliego exige vigilancia armada.', evidence_refs: ['document:doc-01'], legal_citation_ids: [] },
+        { classification: 'legal_obligation', text: 'La actividad de vigilancia armada requiere licencia de Supervigilancia.', evidence_refs: [], legal_citation_ids: ['citation:decreto-356-1994-art-4:legal-corpus-test-v1'] },
+        { classification: 'company_evidence', text: 'La empresa reporta licencia vigente.', evidence_refs: ['document:doc-01'], legal_citation_ids: [] },
+        { classification: 'inference', text: 'Es razonable esperar que la licencia cubra el objeto contractual.', evidence_refs: ['document:doc-01'], legal_citation_ids: [] },
+        { classification: 'human_legal_review', text: AGT002_LEGAL_HUMAN_REVIEW_STATEMENT, evidence_refs: [], legal_citation_ids: ['citation:ley-1150-2007-art-2:legal-corpus-test-v1'] },
+      ],
+      ...overrides,
+    };
+  }
+
+  // Flag off: legacy contract is untouched, and a legal_findings key is rejected as unexpected
+  // (defends against silently carrying legal content when the flag is off).
+  assert.throws(
+    () => validateAgt002PreviewModelOutput(legalOutput(), { allowedEvidenceIds }),
+    /cerrad|inesperad/i,
+  );
+
+  // Flag on: five well-formed classes validate together.
+  const validated = validateAgt002PreviewModelOutput(legalOutput(), { allowedEvidenceIds, legalCorpus: true, legalCitationIds });
+  assert.equal(validated.legal_findings.length, 5);
+
+  // Flag on but legal_findings missing entirely: fails closed like any other required key.
+  {
+    const { legal_findings: _drop, ...missing } = legalOutput();
+    assert.throws(
+      () => validateAgt002PreviewModelOutput(missing, { allowedEvidenceIds, legalCorpus: true, legalCitationIds }),
+      /legal_findings/i,
+    );
+  }
+
+  // Claim sin cita: legal_obligation with no legal_citation_ids must be rejected.
+  assert.throws(
+    () => validateAgt002PreviewModelOutput(legalOutput({
+      legal_findings: [{ classification: 'legal_obligation', text: 'Obligación sin cita.', evidence_refs: [], legal_citation_ids: [] }],
+    }), { allowedEvidenceIds, legalCorpus: true, legalCitationIds }),
+    /citation|cita/i,
+  );
+
+  // Unknown citation: an invented/unrecognized citation id must be rejected.
+  assert.throws(
+    () => validateAgt002PreviewModelOutput(legalOutput({
+      legal_findings: [{ classification: 'legal_obligation', text: 'Obligación con cita falsa.', evidence_refs: [], legal_citation_ids: ['citation:inventada:legal-corpus-test-v1'] }],
+    }), { allowedEvidenceIds, legalCorpus: true, legalCitationIds }),
+    /cita|citation/i,
+  );
+
+  // A legal_obligation may only cite the verified allowlist, never an uncertain/human-review-only citation.
+  assert.throws(
+    () => validateAgt002PreviewModelOutput(legalOutput({
+      legal_findings: [{ classification: 'legal_obligation', text: 'Obligación mal fundada.', evidence_refs: [], legal_citation_ids: ['citation:ley-1150-2007-art-2:legal-corpus-test-v1'] }],
+    }), { allowedEvidenceIds, legalCorpus: true, legalCitationIds }),
+    /verificad|elegible|allowlist/i,
+  );
+
+  // Uncertain exact warning: human_legal_review must render the exact fixed statement.
+  assert.throws(
+    () => validateAgt002PreviewModelOutput(legalOutput({
+      legal_findings: [{ classification: 'human_legal_review', text: 'Podría no estar vigente.', evidence_refs: [], legal_citation_ids: ['citation:ley-1150-2007-art-2:legal-corpus-test-v1'] }],
+    }), { allowedEvidenceIds, legalCorpus: true, legalCitationIds }),
+    /No verificado jurídicamente/,
+  );
+
+  // tender_requirement / company_evidence / inference must never carry legal_citation_ids
+  // (never renamed as law) and must cite documentary/contextual evidence when asserting facts.
+  for (const classification of ['tender_requirement', 'company_evidence', 'inference']) {
+    assert.throws(
+      () => validateAgt002PreviewModelOutput(legalOutput({
+        legal_findings: [{ classification, text: 'Hecho con cita jurídica indebida.', evidence_refs: ['document:doc-01'], legal_citation_ids: ['citation:decreto-356-1994-art-4:legal-corpus-test-v1'] }],
+      }), { allowedEvidenceIds, legalCorpus: true, legalCitationIds }),
+      /no puede citar identificadores jurídicos|derecho/i,
+      `${classification} must never be renamed as law`,
+    );
+    assert.throws(
+      () => validateAgt002PreviewModelOutput(legalOutput({
+        legal_findings: [{ classification, text: 'Hecho sin evidencia.', evidence_refs: [], legal_citation_ids: [] }],
+      }), { allowedEvidenceIds, legalCorpus: true, legalCitationIds }),
+      /evidence/i,
+      `${classification} must cite at least one evidence_ref`,
+    );
+  }
+
+  // A citation-shaped value must never validate as a documentary evidence_ref (no field mixing).
+  assert.throws(
+    () => validateAgt002PreviewModelOutput(legalOutput({
+      legal_findings: [{ classification: 'company_evidence', text: 'Evidencia con cita legal mezclada.', evidence_refs: ['citation:decreto-356-1994-art-4:legal-corpus-test-v1'], legal_citation_ids: [] }],
+    }), { allowedEvidenceIds, legalCorpus: true, legalCitationIds }),
+    /cita|evidence/i,
+  );
+
+  // legal_obligation must never carry documentary evidence_refs either.
+  assert.throws(
+    () => validateAgt002PreviewModelOutput(legalOutput({
+      legal_findings: [{ classification: 'legal_obligation', text: 'Obligación mezclada.', evidence_refs: ['document:doc-01'], legal_citation_ids: ['citation:decreto-356-1994-art-4:legal-corpus-test-v1'] }],
+    }), { allowedEvidenceIds, legalCorpus: true, legalCitationIds }),
+    /evidence_refs/i,
+  );
+
+  // Unknown classification is rejected (closed enum only; never a decision/approval-shaped label).
+  assert.throws(
+    () => validateAgt002PreviewModelOutput(legalOutput({
+      legal_findings: [{ classification: 'go_no_go', text: 'x', evidence_refs: [], legal_citation_ids: [] }],
+    }), { allowedEvidenceIds, legalCorpus: true, legalCitationIds }),
+    /hallazgo|clasificaci/i,
+  );
 }
 
 console.log('AGT-002 Preview strict output contract passed');
