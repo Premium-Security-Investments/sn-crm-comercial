@@ -1,7 +1,55 @@
 import { useState } from 'react';
 import { normalizeTenderEvidence, tenderAnalysisMethodLabel, tenderAnalysisProducerDisclosure, tenderDecisionStatusTone, tenderNextAction } from '../tenderDecisionBrief';
 import { tenderRecommendationLabel } from '../tenderDecisionGate';
-import type { TenderAnalysisFinding, TenderDocumentAnalysis, TenderDocumentRecord, TenderDocumentsPayload, TenderQuestionResponse, TenderQuestionResponseInput, TenderQuestionResponseStatus } from '../types';
+import type { TenderAnalysisFinding, TenderDocumentAnalysis, TenderDocumentRecord, TenderDocumentsPayload, TenderEvidenceCoverage, TenderEvidenceOmissionReason, TenderQuestionResponse, TenderQuestionResponseInput, TenderQuestionResponseStatus } from '../types';
+
+const EVIDENCE_OMISSION_REASON_LABELS: Record<TenderEvidenceOmissionReason, string> = {
+  budget_exhausted: 'Presupuesto de evidencia agotado',
+  lower_relevance: 'Relevancia menor frente a la evidencia usada',
+  superseded_for_current_requirement: 'Reemplazado por una adenda vigente',
+  gap_unavailable: 'Documento no disponible para extracción',
+};
+
+function isValidEvidenceCoverage(value: unknown): value is TenderEvidenceCoverage {
+  if (!value || typeof value !== 'object') return false;
+  const coverage = value as Partial<TenderEvidenceCoverage>;
+  return Array.isArray(coverage.selected_chunks)
+    && Array.isArray(coverage.omitted_chunks)
+    && typeof coverage.material_omissions === 'boolean'
+    && Boolean(coverage.coverage_manifest)
+    && Array.isArray(coverage.coverage_manifest?.by_requirement);
+}
+
+function EvidenceCoveragePanel({ coverage, documents }: { coverage: TenderEvidenceCoverage; documents: TenderDocumentRecord[] }) {
+  const requirements = coverage.coverage_manifest.by_requirement;
+  const totalRequirements = requirements.length;
+  const coveredRequirements = requirements.filter(requirement => requirement.status === 'covered').length;
+  const usedCount = coverage.selected_chunks.length;
+  const omittedCount = coverage.omitted_chunks.length;
+  return <section className="tender-evidence-coverage" aria-label="Cobertura de evidencia documental">
+    <header><h4>Cobertura de evidencia</h4></header>
+    <div className="tender-evidence-coverage-metrics">
+      <span><strong>{usedCount}</strong> Usados</span>
+      <span><strong>{coveredRequirements}/{totalRequirements}</strong> Requisitos cubiertos</span>
+      <span><strong>{omittedCount}</strong> Omitidos</span>
+    </div>
+    {coverage.material_omissions && <div className="error" role="alert"><strong>Este análisis no es integral.</strong> Hay omisiones materiales de evidencia; requiere revisión humana de las omisiones antes de considerarse completo.</div>}
+    {usedCount > 0 && <ul className="tender-evidence-coverage-list">
+      {coverage.selected_chunks.map(chunk => {
+        const document = documents.find(item => item.id === chunk.document_id);
+        const label = `${chunk.name} · pág. ${chunk.page}, sec. ${chunk.section} · v${chunk.version} · ${chunk.precedence === 'addendum' ? 'Adenda' : 'Base'}${chunk.superseded_by_addendum ? ' (superada por adenda)' : ''}`;
+        return <li key={chunk.evidence_ref}>{document?.signed_url ? <a href={document.signed_url} target="_blank" rel="noopener noreferrer">{label}</a> : <span>{label}</span>}</li>;
+      })}
+    </ul>}
+    {omittedCount > 0 && <details className="tender-evidence-coverage-omissions"><summary>Omisiones ({omittedCount})</summary><ul>
+      {coverage.omitted_chunks.map((omission, index) => {
+        const document = documents.find(item => item.id === omission.document_id);
+        const label = document?.name || omission.document_type || omission.document_id;
+        return <li key={`${omission.document_id}-${index}`}>{label}: {EVIDENCE_OMISSION_REASON_LABELS[omission.reason] || omission.reason}</li>;
+      })}
+    </ul></details>}
+  </section>;
+}
 
 type TenderAnalysisSectionProps = {
   analysis: TenderDocumentAnalysis | null;
@@ -110,6 +158,7 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
       <details className="tender-decision-brief-help"><summary>Cómo funciona</summary><p>Esta conclusión preliminar organiza únicamente la evidencia disponible. No autoriza GO / NO GO; una persona con permiso formal debe tomar esa decisión.</p></details>
       {citedEvidence.length > 0 && <details className="tender-decision-brief-help"><summary>Citas de evidencia ({citedEvidence.length})</summary><ul>{citedEvidence.map(reference => <li key={reference}><code>{reference}</code></li>)}</ul></details>}
     </article>}
+    {analysis && isValidEvidenceCoverage(analysis.evidence_coverage) && <EvidenceCoveragePanel coverage={analysis.evidence_coverage} documents={documents}/>}
     {analysisEngine?.fallback && <div className="notice" role="status"><strong>Fallback seguro aplicado.</strong> Vig-IA no estuvo disponible ({analysisEngine.reason === 'not_configured' ? 'no configurado' : 'servicio no disponible'}); se conservó el preanálisis determinístico por reglas.</div>}
     {analysisEngine?.used === 'AGT-002' && <div className="notice" role="status"><strong>Revisión humana obligatoria.</strong> Vig-IA produjo una recomendación preliminar{analysisEngine.reused ? ' reutilizada por idempotencia' : ''}; no autoriza GO / NO GO.</div>}
     <div className="tender-analysis-actions">
