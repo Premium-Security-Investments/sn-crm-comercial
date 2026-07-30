@@ -98,11 +98,16 @@ const snapshotForEnvelope = {
   company_profile: { profile_version: 'rup-2026-07', fields: [{ key: 'annual_revenue', label: 'Ingresos anuales', value: '500000000', source: 'RUP' }] },
 };
 
-// Initial canonical run, no context version yet — the "old run" that must remain readable.
+// Initial canonical run consumes an immutable context version with no human evidence.
+const initialContextVersion = await registerAgt002ContextVersion(database, {
+  opportunity_id: O, tender_id: T, snapshot_id: S, actor_id: P,
+  context: { snapshot_id: S, ...contextSections(), human_evidence: [] },
+});
 const initialEnvelope = buildSyntheticAgt002TenderAnalysis(snapshotForEnvelope);
 const initialRun = await registerAgt002PreviewAnalysis(database, {
   opportunity_id: O, tender_id: T, snapshot_id: S,
   envelope: { ...initialEnvelope, producer: 'AGT-002' }, canonicalOnly: true,
+  context_version_id: initialContextVersion.id,
 });
 assert.equal(initialRun.canonical, true);
 
@@ -126,9 +131,10 @@ const reanalysisRun = await registerAgt002PreviewAnalysis(database, {
 assert.notEqual(reanalysisRun.run_id, initialRun.run_id, 'una respuesta humana debe producir una ejecución nueva, no reescribir la anterior');
 assert.equal(reanalysisRun.context_version_id, contextVersion.id, 'la nueva ejecución debe referenciar la versión de contexto que incorpora la respuesta humana');
 
-// The prior run stays exactly as it was: still readable, no context version attached.
+// The prior run stays exactly as it was: still readable and still linked to the
+// initial immutable context that contained no human evidence.
 const rereadInitial = (await pg.query(`select id, result, context_version_id from public.psi_tender_analysis_runs where id = '${initialRun.run_id}'`)).rows[0];
-assert.equal(rereadInitial.context_version_id, null);
+assert.equal(rereadInitial.context_version_id, initialContextVersion.id);
 assert.equal(rereadInitial.result.summary, initialEnvelope.summary);
 
 // Idempotent retry: re-registering the exact same reanalysis envelope + context version

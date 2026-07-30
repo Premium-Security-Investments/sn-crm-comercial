@@ -129,14 +129,16 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     content.legal_findings = envelope.legal_findings;
   }
   const criticalOpenCount = countCriticalOpenQuestions(content);
-  // A new AGT-002 context version (new human evidence) must never collide with the run it
-  // supersedes: without this, reanalysis after a human answer would silently no-op against
-  // the original run's (snapshot, policy, model) idempotency key instead of creating a new,
-  // append-only run. Omitting context_version_id keeps every existing caller byte-identical.
+  // Canonical persistence is fail-closed: every new Vig-IA run must point to the
+  // immutable context version it consumed, including an initial version with no
+  // human evidence yet. This also makes reanalysis idempotency context-specific.
   const contextVersionId = context?.context_version_id ?? null;
+  const canonicalOnly = context?.canonicalOnly === true;
+  if (canonicalOnly && !contextVersionId) {
+    throw new Error('Un análisis canónico Vig-IA requiere context_version_id.');
+  }
   const idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model: usage.model, contextVersionId });
 
-  const canonicalOnly = context?.canonicalOnly === true;
   const commonParams = {
     p_snapshot_id: snapshotId,
     p_opportunity_id: opportunityId,

@@ -488,6 +488,9 @@ begin
   if p_usage is not null and jsonb_typeof(p_usage) <> 'object' then
     raise exception 'El uso del análisis debe ser un objeto estructurado.' using errcode = '22023';
   end if;
+  if p_context_version_id is null then
+    raise exception 'Todo nuevo análisis canónico AGT-002 requiere una versión de contexto atribuible.' using errcode = '22023';
+  end if;
 
   select * into v_snapshot from public.psi_tender_document_snapshots where id = p_snapshot_id for share;
   if not found then raise exception 'El snapshot documental no existe.' using errcode = 'P0002'; end if;

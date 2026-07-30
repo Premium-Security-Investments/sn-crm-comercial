@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
+import { buildAtomicApplySql, buildStateSql, classifyState, getSpec } from '../scripts/agt002-program-migrations.mjs';
 
 const strip = value => value.replace(/^\s*begin;\s*$/im, '').replace(/^\s*commit;\s*$/im, '');
 const migration050 = strip(readFileSync(new URL('../supabase/migrations/050_agt002_canonical_analysis.sql', import.meta.url), 'utf8'));
@@ -54,6 +55,8 @@ async function createDatabase() {
       idempotency_key text not null unique, schema_version text not null, policy_version text not null, model text, usage jsonb,
       created_at timestamptz not null default now(), completed_at timestamptz
     );
+    alter table public.psi_tender_analysis_runs enable row level security;
+    grant select on public.psi_tender_analysis_runs to service_role;
     -- Mirrors the real 025 append-only guard on psi_tender_analysis_runs: this test
     -- exercises a direct UPDATE against the new legal_corpus_version_id column, so the
     -- minimal foundation must reproduce the production trigger it would run against.
@@ -71,10 +74,24 @@ async function createDatabase() {
     insert into public.psi_public_tenders values ('${T}');
     insert into public.psi_tender_document_snapshots values ('${S}','${O}','${T}');
   `);
-  await pg.exec(migration050);
+  await pg.exec(buildAtomicApplySql('050', migration050));
   await pg.exec(migration038);
-  await pg.exec(migration051);
-  await pg.exec(migration053);
+  await pg.exec(buildAtomicApplySql('051', migration051));
+  await pg.exec(buildAtomicApplySql('053', migration053));
+  for (const id of ['050', '051', '053']) {
+    const state = (await pg.query(buildStateSql(id))).rows[0];
+    let markerEvidence = [];
+    if (classifyState(state) !== 'applied') {
+      markerEvidence = await Promise.all(getSpec(id).markers.map(async (expression, index) => ({
+        index, ok: (await pg.query(`select (${expression}) as ok`)).rows[0].ok,
+      })));
+    }
+    assert.equal(classifyState(state), 'applied', `runner state ${id} debe reconocer las definiciones reales post-migración: ${JSON.stringify({ state, markerEvidence })}`);
+  }
+  const context = await callRpc(pg, 'psi_record_agt002_context_version', [
+    O, T, S, 2, jsonbArg({ snapshot_id: S, human_evidence: [] }), 'context-hash-1', 0, 'context-key-1', P,
+  ]);
+  pg.contextVersionId = context.id;
   return pg;
 }
 
@@ -210,19 +227,19 @@ await (async function runReferencesExactCorpusVersionAndFkRejectsUnknown() {
   const published = await publish(pg, draft.id);
 
   const run = (await pg.query(`select public.psi_record_agt002_canonical_analysis_run(
-    '${S}','${O}','${T}','{"summary":"Vig-IA con corpus v1"}'::jsonb,0,'run-with-corpus','schema-1','policy-1','model-1',null,null,'${published.id}'
+    '${S}','${O}','${T}','{"summary":"Vig-IA con corpus v1"}'::jsonb,0,'run-with-corpus','schema-1','policy-1','model-1',null,'${pg.contextVersionId}','${published.id}'
   ) r`)).rows[0].r;
   assert.equal(run.legal_corpus_version_id, published.id);
 
   const bogus = '99999999-9999-4999-8999-999999999999';
   await assert.rejects(pg.query(`select public.psi_record_agt002_canonical_analysis_run(
-    '${S}','${O}','${T}','{"summary":"x"}'::jsonb,0,'run-bad-corpus','schema-1','policy-1',null,null,null,'${bogus}'
+    '${S}','${O}','${T}','{"summary":"x"}'::jsonb,0,'run-bad-corpus','schema-1','policy-1',null,null,'${pg.contextVersionId}','${bogus}'
   )`), /no existe/i);
 
   // Historical/legacy runs recorded before this migration (or without a corpus
   // reference) keep the column null; nothing about them changes.
   const legacyRun = (await pg.query(`select public.psi_record_agt002_canonical_analysis_run(
-    '${S}','${O}','${T}','{"summary":"sin corpus"}'::jsonb,0,'run-no-corpus','schema-1','policy-1',null,null,null,null
+    '${S}','${O}','${T}','{"summary":"sin corpus"}'::jsonb,0,'run-no-corpus','schema-1','policy-1',null,null,'${pg.contextVersionId}',null
   ) r`)).rows[0].r;
   assert.equal(legacyRun.legal_corpus_version_id, null);
 

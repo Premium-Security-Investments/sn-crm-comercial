@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
+import { buildAtomicApplySql, buildStateSql, classifyState } from '../scripts/agt002-program-migrations.mjs';
 
 const strip = (s) => s.replace(/^\s*begin;\s*$/im, '').replace(/^\s*commit;\s*$/im, '');
 const m017 = strip(readFileSync(new URL('../supabase/migrations/017_tender_tracking_workflow.sql', import.meta.url), 'utf8'));
@@ -40,7 +41,9 @@ async function db() {
   await pg.exec(m034);
   await pg.exec(m035);
   await pg.exec(m037);
-  await pg.exec(m049);
+  await pg.exec(buildAtomicApplySql('049', m049));
+  const state = (await pg.query(buildStateSql('049'))).rows[0];
+  assert.equal(classifyState(state), 'applied', `runner state 049 debe reconocer la definición real: ${JSON.stringify(state)}`);
   return pg;
 }
 

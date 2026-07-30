@@ -32,7 +32,7 @@ for (const route of [serverRoute, vercelRoute]) {
   assert.match(route, /if \(!canonicalOnly\) return useRulesFallback\(claim\.status\)/, 'quota fallback must be explicitly guarded by disabled canonical-only mode');
   assert.match(route, /appendAttempt\(idempotencyKey, 'running'\)/, 'canonical attempts must persist running state before provider invocation');
   assert.match(route, /appendAttempt\(idempotencyKey, 'completed', \{ analysis_run_id: registeredRun\.run_id \}\)/, 'canonical attempts must persist completion tied to the run');
-  assert.match(route, /registerAgt002PreviewAnalysis\([\s\S]*canonicalOnly \}\)/, 'run persistence must receive the canonical-only contract');
+  assert.match(route, /registerAgt002PreviewAnalysis\([\s\S]*canonicalOnly, context_version_id: contextVersion\?\.id \}\)/, 'run persistence must receive canonical-only plus the exact immutable context version');
   assert.match(route, /findAgt002PreviewRun\(database, idempotencyKey, \{ canonicalOnly \}\)/, 'idempotent reuse must filter canonical runs when enabled');
   assert.match(route, /used: null, fallback: false, state/, 'unavailable canonical responses must not present a substitute producer');
   assert.match(route, /human_review_required: true/g, 'every response path must require human review');

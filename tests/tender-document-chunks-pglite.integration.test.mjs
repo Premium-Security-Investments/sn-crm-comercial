@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
+import { buildAtomicApplySql, buildStateSql, classifyState } from '../scripts/agt002-program-migrations.mjs';
 
 const migration026 = readFileSync(new URL('../supabase/migrations/026_tender_document_versions.sql', import.meta.url), 'utf8');
 const migration052 = readFileSync(new URL('../supabase/migrations/052_tender_document_chunks.sql', import.meta.url), 'utf8');
@@ -55,7 +56,9 @@ async function createDatabase() {
       ('${ids.snapshot2}', '${ids.opportunity2}', '${ids.tender2}');
   `);
   await db.exec(migration026);
-  await db.exec(migration052);
+  await db.exec(buildAtomicApplySql('052', migration052));
+  const state = (await db.query(buildStateSql('052'))).rows[0];
+  assert.equal(classifyState(state), 'applied', `runner state 052 debe reconocer la definición real: ${JSON.stringify(state)}`);
   return db;
 }
 
