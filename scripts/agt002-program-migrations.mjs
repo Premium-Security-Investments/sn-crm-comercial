@@ -444,6 +444,7 @@ export function createExecSql({ fetchImpl = fetch, envPath, baseUrl, serviceKey 
       error.sqlstate = typeof payload?.sqlstate === 'string' ? payload.sqlstate : undefined;
       throw error;
     }
+    if (payload.rows === null) return [];
     if (!Array.isArray(payload.rows)) throw new Error('exec_sql devolvió una respuesta inválida; abortando fail-closed.');
     return payload.rows;
   };
