@@ -1,9 +1,9 @@
 # AGT-002 Vig-IA analysis improvement program — full local verification
 
-**Verification date (UTC):** 2026-07-30  
-**Branch:** `plan/agt002-vigia-analysis-improvements`  
-**Program baseline commit:** `5121149` (`docs(agt002): record analysis improvement baseline`)  
-**Implementation commit verified:** `97af199e1e41f52dc55f31883577a7a6c81789ea` (`feat(agt002): add safe analysis observability`)  
+**Verification date (UTC):** 2026-07-30<br>
+**Branch:** `plan/agt002-vigia-analysis-improvements`<br>
+**Program baseline commit:** `5121149` (`docs(agt002): record analysis improvement baseline`)<br>
+**Implementation commit verified:** `97af199e1e41f52dc55f31883577a7a6c81789ea` (`feat(agt002): add safe analysis observability`)<br>
 **Execution discipline:** all checks ran sequentially; every Node test command used `--test-concurrency=1`; no Vite server, Claude worker, TypeScript process, build, or test command overlapped.
 
 ## Mechanical gate summary
