@@ -7,6 +7,8 @@ import {
   validateAgt002PreviewModelOutput,
 } from '../agt002-preview-contract.js';
 import { buildAgt002PreviewInput } from '../agt002-preview-input.js';
+import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
 
 assert.equal(AGT002_PREVIEW_SCHEMA_VERSION, '2.0-preview.1');
 assert.deepEqual([...AGT002_PREVIEW_RECOMMENDATIONS].sort(), ['advance', 'advance_conditionally', 'do_not_advance', 'pause']);
@@ -103,6 +105,43 @@ assert.throws(
 
 for (const bad of [null, undefined, [], 'not-an-object', 42]) {
   assert.throws(() => validateAgt002PreviewModelOutput(bad, { allowedEvidenceIds }), /estructura|objeto/i);
+}
+
+// Context v2 (AGT002_CONTEXT_V2): structured opportunity/company evidence must enter the
+// same closed evidence-id universe the model output is validated against, so a finding can
+// cite company_dossier or opportunity evidence exactly like a document excerpt.
+{
+  const contextV2Sections = {
+    ...buildAgt002OpportunityContextV2({
+      opportunity: { id: 'opp-1', updated_at: '2026-07-29T10:00:00.000Z' },
+      tender: { id: 'tender-1', title: 'Vigilancia', entity: 'Entidad', updated_at: '2026-07-29T10:00:00.000Z' },
+    }),
+    company_dossier: buildAgt002CompanyDossier({
+      profile: { legal_name: 'Seguridad Nacional Ltda.', updated_at: '2026-07-29T10:00:00.000Z' },
+      documents: [],
+    }),
+  };
+  const contextV2Input = buildAgt002PreviewInput({
+    documents: [{ id: 'doc-01', name: 'Pliego', document_type: 'pliego', extracted_text: 'Requiere póliza vigente.' }],
+    deepAnalysis: {},
+    snapshotId: 'snapshot-1',
+    contextV2: true,
+    contextV2Sections,
+  });
+  assert.equal(contextV2Input.context_version, 2);
+  assert.equal(Object.hasOwn(contextV2Input, 'deep_analysis'), false);
+
+  const contextV2EvidenceIds = collectAgt002PreviewEvidenceIds(contextV2Input);
+  assert.ok(contextV2EvidenceIds.includes('document:doc-01'));
+  assert.ok(contextV2EvidenceIds.includes(contextV2Input.opportunity.tender_id.source.reference));
+  assert.ok(contextV2EvidenceIds.includes(contextV2Input.company_dossier.legal_name.source.reference));
+
+  const finding = { id: 'f-1', text: 'La razón social coincide con el expediente.', critical: false, evidence_refs: [contextV2Input.company_dossier.legal_name.source.reference] };
+  const output = validateAgt002PreviewModelOutput({
+    recommendation: 'pause', summary: 'Resumen.', strengths: [finding], weaknesses: [], blockers: [], questions: [], unverified: [],
+    next_action: 'Revisar.', human_review_required: true,
+  }, { allowedEvidenceIds: contextV2EvidenceIds });
+  assert.deepEqual(output.strengths, [finding]);
 }
 
 console.log('AGT-002 Preview strict output contract passed');

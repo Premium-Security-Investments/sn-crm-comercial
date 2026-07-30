@@ -1,4 +1,5 @@
 import { buildAgt002ObjectiveValidations } from './agt002-objective-validations.js';
+import { buildAgt002ContextV2 } from './agt002-context-v2.js';
 
 export const AGT002_MAX_DOCUMENTS = 12;
 export const AGT002_MAX_DOCUMENT_CHARS = 3000;
@@ -69,10 +70,44 @@ function prepareCompanyProfile(companyProfile) {
   return profile;
 }
 
-export function buildAgt002PreviewInput({ opportunity = {}, documents = [], companyProfile = {}, deepAnalysis = {}, snapshotId, canonicalOnly = false }) {
+function buildContextV2Input({ snapshotId, contextV2Sections, documents, deepAnalysis }) {
+  if (!contextV2Sections || typeof contextV2Sections !== 'object' || Array.isArray(contextV2Sections)) {
+    throw new Error('AGT-002 Preview con contexto v2 requiere contextV2Sections completo.');
+  }
+  let validated;
+  try {
+    validated = buildAgt002ContextV2({
+      snapshot_id: snapshotId,
+      opportunity: contextV2Sections.opportunity,
+      company_dossier: contextV2Sections.company_dossier,
+      commercial_context: contextV2Sections.commercial_context,
+      human_evidence: contextV2Sections.human_evidence ?? [],
+    });
+  } catch (error) {
+    throw new Error(`AGT-002 Preview con contexto v2 requiere contextV2Sections completo: ${error.message}`);
+  }
+  return {
+    schema_version: '1.0',
+    snapshot_id: validated.snapshot_id,
+    context_version: validated.context_version,
+    opportunity: validated.opportunity,
+    company_dossier: validated.company_dossier,
+    commercial_context: validated.commercial_context,
+    human_evidence: validated.human_evidence,
+    objective_validations: sanitizeValue(buildAgt002ObjectiveValidations(deepAnalysis)),
+    documents: prepareDocuments(documents),
+  };
+}
+
+export function buildAgt002PreviewInput({
+  opportunity = {}, documents = [], companyProfile = {}, deepAnalysis = {}, snapshotId, canonicalOnly = false,
+  contextV2 = false, contextV2Sections = null,
+}) {
   if (typeof snapshotId !== 'string' || !snapshotId.trim()) {
     throw new Error('AGT-002 Preview requiere un snapshot documental vigente.');
   }
+  if (contextV2) return buildContextV2Input({ snapshotId: snapshotId.trim(), contextV2Sections, documents, deepAnalysis });
+
   const input = {
     schema_version: '1.0',
     snapshot_id: snapshotId.trim(),

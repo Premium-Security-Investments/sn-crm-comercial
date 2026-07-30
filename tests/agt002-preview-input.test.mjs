@@ -5,6 +5,8 @@ import {
   AGT002_MAX_TOTAL_DOCUMENT_CHARS,
   buildAgt002PreviewInput,
 } from '../agt002-preview-input.js';
+import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
 
 const longText = 'A'.repeat(4000);
 const documents = Array.from({ length: 13 }, (_, index) => ({
@@ -99,6 +101,66 @@ assert.throws(
 assert.throws(
   () => buildAgt002PreviewInput({ opportunity: {}, documents: [], companyProfile: {}, deepAnalysis: {}, snapshotId: '' }),
   /snapshot/i,
+);
+
+// --- AGT002_CONTEXT_V2: structured opportunity/company context replaces the partial
+// opportunity object and misaligned company fields, behind an explicit flag; the v1 path
+// above stays byte-for-byte the same for rollback until production verification. ---
+
+const contextV2Sections = {
+  ...buildAgt002OpportunityContextV2({
+    opportunity: { id: 'opp-1', owner_id: 'owner-1', owner_name: 'Ana', updated_at: '2026-07-29T10:00:00.000Z' },
+    tender: { id: 'tender-1', title: 'Vigilancia', entity: 'Entidad', source: 'SECOP II', updated_at: '2026-07-29T10:00:00.000Z' },
+  }),
+  company_dossier: buildAgt002CompanyDossier({
+    profile: { legal_name: 'Seguridad Nacional Ltda.', updated_at: '2026-07-29T10:00:00.000Z' },
+    documents: [],
+  }),
+};
+
+const v2Input = buildAgt002PreviewInput({
+  documents,
+  deepAnalysis,
+  snapshotId: 'snapshot-1',
+  contextV2: true,
+  contextV2Sections,
+});
+
+assert.equal(v2Input.context_version, 2);
+assert.deepEqual(v2Input.opportunity, contextV2Sections.opportunity);
+assert.deepEqual(v2Input.company_dossier, contextV2Sections.company_dossier);
+assert.deepEqual(v2Input.commercial_context, contextV2Sections.commercial_context);
+assert.deepEqual(v2Input.human_evidence, []);
+assert.ok(Object.hasOwn(v2Input, 'objective_validations'), 'context v2 always carries deterministic objective validations');
+assert.equal(Object.hasOwn(v2Input, 'deep_analysis'), false, 'context v2 never carries the legacy deep_analysis/recommendation blob');
+assert.equal(Object.hasOwn(v2Input, 'company_profile'), false, 'context v2 replaces the legacy misaligned company_profile fields');
+assert.equal(v2Input.documents.length, documents.length > AGT002_MAX_DOCUMENTS ? AGT002_MAX_DOCUMENTS : documents.length);
+
+// Even when canonicalOnly is explicitly false, context v2 still forces objective_validations
+// over deep_analysis — the two flags are independent and v2 always wins on this choice.
+const v2WithCanonicalOnlyFalse = buildAgt002PreviewInput({
+  documents, deepAnalysis, snapshotId: 'snapshot-1', canonicalOnly: false, contextV2: true, contextV2Sections,
+});
+assert.equal(Object.hasOwn(v2WithCanonicalOnlyFalse, 'deep_analysis'), false);
+
+// Flag off (default false) must reproduce the exact v1 shape even when contextV2Sections is supplied,
+// so a caller that always loads context v2 sections cannot accidentally leak it without the flag.
+const v1WithSectionsIgnored = buildAgt002PreviewInput({
+  opportunity: { id: 'opp-1', company_name: 'Entidad de prueba', title: 'Vigilancia' },
+  documents, companyProfile: {}, deepAnalysis, snapshotId: 'snapshot-1', contextV2Sections,
+});
+assert.equal(Object.hasOwn(v1WithSectionsIgnored, 'context_version'), false);
+assert.equal(Object.hasOwn(v1WithSectionsIgnored, 'company_dossier'), false);
+
+// Fail-closed: requesting context v2 without valid sections must throw rather than silently
+// degrade to an incomplete or empty structured context.
+assert.throws(
+  () => buildAgt002PreviewInput({ documents, deepAnalysis, snapshotId: 'snapshot-1', contextV2: true }),
+  /context.*v2|contexto/i,
+);
+assert.throws(
+  () => buildAgt002PreviewInput({ documents, deepAnalysis, snapshotId: 'snapshot-1', contextV2: true, contextV2Sections: { opportunity: contextV2Sections.opportunity } }),
+  /context.*v2|contexto/i,
 );
 
 console.log('AGT-002 preview input minimization and redaction passed');

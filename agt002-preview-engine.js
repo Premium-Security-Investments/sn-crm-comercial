@@ -56,6 +56,7 @@ export function createAgt002PreviewEngine({
   dailyMaxRuns = 20,
   countDailyRuns = async () => 0,
   idGenerator = randomUUID,
+  contextV2 = false,
 } = {}) {
   if (!client || typeof client.run !== 'function'
     || !nonEmpty(model) || !nonEmpty(policyVersion) || !nonEmpty(policyText)
@@ -127,7 +128,10 @@ export function createAgt002PreviewEngine({
 
   return {
     analyze(context, { idempotencyKey, signal } = {}) {
-      const previewInput = buildAgt002PreviewInput(context || {});
+      // contextV2 is engine-level configuration, not caller-supplied: the flag always wins
+      // over anything a caller's context object might carry, so v1 stays the rollback path
+      // until this engine is explicitly constructed with contextV2 enabled.
+      const previewInput = buildAgt002PreviewInput({ ...(context || {}), contextV2 });
       const key = nonEmpty(idempotencyKey) ? idempotencyKey : `${previewInput.snapshot_id}:${policyVersion}:${model}`;
 
       // Registration into `inflight` must happen synchronously, before any
