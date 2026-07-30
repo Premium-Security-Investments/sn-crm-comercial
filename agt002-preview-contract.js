@@ -1,9 +1,14 @@
+import { AGT002_REQUIREMENT_EVIDENCE_STATUSES } from './agt002-requirement-evidence.js';
+
 export const AGT002_PREVIEW_SCHEMA_VERSION = '2.0-preview.1';
 export const AGT002_PREVIEW_RECOMMENDATIONS = new Set(['advance', 'advance_conditionally', 'pause', 'do_not_advance']);
 
 const MODEL_OUTPUT_KEYS = ['recommendation', 'summary', 'strengths', 'weaknesses', 'blockers', 'questions', 'unverified', 'next_action', 'human_review_required'];
 const FINDING_KEYS = ['id', 'text', 'critical', 'evidence_refs'];
 const FINDING_ARRAYS = ['strengths', 'weaknesses', 'blockers', 'questions', 'unverified'];
+const REQUIREMENT_EVIDENCE_KEYS = ['requirement_id', 'front', 'status', 'evidence_refs', 'rationale'];
+const REQUIREMENT_EVIDENCE_STATUS_SET = new Set(AGT002_REQUIREMENT_EVIDENCE_STATUSES);
+const REQUIREMENT_EVIDENCE_POSITIVE_STATUSES = new Set(['cumplido_con_evidencia', 'cumplimiento_parcial']);
 
 const findingSchema = {
   type: 'object',
@@ -49,12 +54,27 @@ function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function collectSourcedValueIds(section, ids) {
+  if (!isRecord(section)) return;
+  for (const value of Object.values(section)) {
+    if (isRecord(value) && nonEmptyString(value.source?.reference)) ids.add(value.source.reference.trim());
+  }
+}
+
 /** Derives the closed set of citable evidence ids from the exact input sent to the model. */
 export function collectAgt002PreviewEvidenceIds(previewInput) {
   const documents = Array.isArray(previewInput?.documents) ? previewInput.documents : [];
   const ids = new Set();
   for (const document of documents) {
     if (nonEmptyString(document?.evidence_id)) ids.add(document.evidence_id);
+  }
+  // Context v2 sourced fields (opportunity/company_dossier/commercial_context) are
+  // citable evidence too; v1 previewInput sections are flat strings, so this is a no-op then.
+  collectSourcedValueIds(previewInput?.opportunity, ids);
+  collectSourcedValueIds(previewInput?.company_dossier, ids);
+  collectSourcedValueIds(previewInput?.commercial_context, ids);
+  for (const item of Array.isArray(previewInput?.human_evidence) ? previewInput.human_evidence : []) {
+    if (isRecord(item) && nonEmptyString(item.source?.reference)) ids.add(item.source.reference.trim());
   }
   return [...ids].sort();
 }
@@ -101,4 +121,39 @@ export function validateAgt002PreviewModelOutput(value, { allowedEvidenceIds = [
     value[field].forEach(item => validateFinding(item, evidenceSet, field));
   }
   return value;
+}
+
+/**
+ * Closed output section for the requirement-to-company-evidence crosswalk: classifies
+ * compliance signal only, never a GO/NO-GO decision. Every positive classification
+ * (cumplido_con_evidencia, cumplimiento_parcial) must cite evidence present in the exact
+ * input sent to AGT-002 Preview; other statuses may cite nothing (absence is the finding).
+ */
+export function validateAgt002RequirementEvidenceCrosswalk(items, { allowedEvidenceIds = [] } = {}) {
+  if (!Array.isArray(items)) throw new Error('El cruce de requisitos y evidencia debe ser una lista.');
+  const evidenceSet = new Set(Array.isArray(allowedEvidenceIds) ? allowedEvidenceIds : []);
+  const seen = new Set();
+  for (const item of items) {
+    if (!exactKeys(item, REQUIREMENT_EVIDENCE_KEYS)
+      || !nonEmptyString(item.requirement_id)
+      || !nonEmptyString(item.rationale)
+      || !REQUIREMENT_EVIDENCE_STATUS_SET.has(item.status)
+      || !Array.isArray(item.evidence_refs)
+      || !item.evidence_refs.every(reference => nonEmptyString(reference))) {
+      throw new Error('El cruce de requisitos y evidencia debe tener estructura cerrada válida.');
+    }
+    if (seen.has(item.requirement_id)) {
+      throw new Error(`El cruce de requisitos y evidencia tiene requirement_id duplicado: ${item.requirement_id}.`);
+    }
+    seen.add(item.requirement_id);
+    if (REQUIREMENT_EVIDENCE_POSITIVE_STATUSES.has(item.status) && item.evidence_refs.length < 1) {
+      throw new Error(`${item.requirement_id}: una clasificación positiva del cruce requiere al menos una cita de evidencia.`);
+    }
+    for (const reference of item.evidence_refs) {
+      if (!evidenceSet.has(reference)) {
+        throw new Error(`${item.requirement_id} cita un evidence_id que no fue enviado a AGT-002 Preview: ${reference}.`);
+      }
+    }
+  }
+  return items;
 }
