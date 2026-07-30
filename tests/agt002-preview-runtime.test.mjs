@@ -54,6 +54,26 @@ assert.throws(
   );
 }
 
+// AGT002_CONTEXT_V2 must be propagated by the server-side runtime factory. With the
+// flag enabled, incomplete v1-only input fails closed before quota/provider work.
+{
+  const runtime = createAgt002PreviewRuntime({
+    environment: baseEnv({ AGT002_CONTEXT_V2: 'true', AGT002_PREVIEW_DAILY_MAX_RUNS: '1' }),
+    countDailyRuns: async () => 1,
+  });
+  assert.throws(
+    () => runtime.analyze({
+      opportunity: {},
+      documents: [{ id: 'd1', name: 'n', document_type: 't', extracted_text: 'x' }],
+      companyProfile: {},
+      deepAnalysis: {},
+      snapshotId: 'snapshot-1',
+    }),
+    /context.*v2|contexto.*v2/i,
+    'runtime must enable context v2 from AGT002_CONTEXT_V2 rather than silently using v1',
+  );
+}
+
 const source = readFileSync(new URL('../agt002-preview-runtime.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /OPENAI_API_KEY|HERMES_INTERIM_API_KEY|Authorization|Bearer/i, 'the runtime must never manage an API key or bearer token');
 

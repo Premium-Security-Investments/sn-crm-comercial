@@ -1,5 +1,6 @@
 import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.js';
 import { AGT002_PREVIEW_POLICY, createAgt002PreviewEngine } from './agt002-preview-engine.js';
+import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
 
 export const AGT002_PREVIEW_ENGINE_ID = 'agt002_codex_preview';
 const REQUIRED_ENV_KEYS = ['AGT002_PREVIEW_MODEL', 'AGT002_HETZNER_BRIDGE_URL', 'AGT002_HETZNER_BRIDGE_HMAC_SECRET'];
@@ -51,6 +52,7 @@ function positiveIntFromEnv(environment, key, fallback) {
  */
 export function createAgt002PreviewRuntime({ environment = process.env, countDailyRuns } = {}) {
   const config = getAgt002PreviewRuntimeConfig(environment);
+  const analysisConfig = buildAgt002AnalysisConfig(environment);
 
   const client = createAgt002HetznerBridgeClient({
     url: environment.AGT002_HETZNER_BRIDGE_URL,
@@ -65,6 +67,7 @@ export function createAgt002PreviewRuntime({ environment = process.env, countDai
     timeoutMs: config.timeoutMs,
     maxConcurrent: config.maxConcurrent,
     dailyMaxRuns: config.dailyMaxRuns,
+    contextV2: analysisConfig.AGT002_CONTEXT_V2,
     ...(countDailyRuns ? { countDailyRuns } : {}),
   });
 }
