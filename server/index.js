@@ -11,7 +11,8 @@ import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAn
 import { createTenderProcessingWorker } from '../tender-processing-worker.js';
 import { createTenderProcessingDrain } from '../tender-processing-drain.js';
 import { dispatchTenderProcessingAfterConversion } from '../tender-processing-dispatch.js';
-import { appendTenderProcessingEvent, claimTenderProcessingJob, getTenderProcessingJobActor, recordTenderImportItem, updateTenderProcessingJob } from '../tender-processing-worker-rpc.js';
+import { appendTenderProcessingEvent, claimTenderProcessingJob, getTenderProcessingJobActor, recordTenderDocumentChunk, recordTenderImportItem, updateTenderProcessingJob } from '../tender-processing-worker-rpc.js';
+import { buildAgt002DocumentChunks } from '../agt002-document-chunks.js';
 import { runInConcurrentChunks } from '../tender-concurrency.js';
 import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
 import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
@@ -662,6 +663,7 @@ const DATOS_GOV_FETCH_POLICY = { allowedHosts: ['www.datos.gov.co'], allowedPath
 const SECOP_DOCUMENT_FETCH_POLICY = { allowedHosts: ['community.secop.gov.co', 'secop.gov.co', '*.secop.gov.co', 'colombiacompra.gov.co', '*.colombiacompra.gov.co', 'www.datos.gov.co'] };
 const ESU_FETCH_POLICY = { allowedHosts: ['esucontratacion.com', 'www.esucontratacion.com'], allowedPath: /^\/procesos(?:\/|$)/i };
 const TENDER_DISCOVERY_RECORD_CONCURRENCY = 5;
+const TENDER_CHUNK_RECORD_CONCURRENCY = 5;
 const TVEC_EVENTS_URL = 'https://operaciones.colombiacompra.gov.co/eventos-cotizacion-tvec';
 const ESU_CONTRATACION_ORIGIN = 'https://esucontratacion.com';
 const ESU_CONTRATACION_URL = `${ESU_CONTRATACION_ORIGIN}/procesos/index`;
@@ -2883,6 +2885,68 @@ function buildTenderProcessingWorkerDeps(database) {
         status: result.status === 'unchanged' ? 'unchanged' : 'imported',
         hasText: true,
         documentVersionId: result.version?.id || currentVersion?.id || null,
+      };
+    },
+
+    // Runs once the snapshot exists (§3 above), so every persisted chunk/gap can be tied
+    // to a real snapshot_id. Covers every current document version for the opportunity —
+    // no 12-document/3,000-character ceiling (that ceiling belongs only to
+    // agt002-preview-input.js's historical evidence-preparation path, unrelated here) —
+    // plus any import item that never became a document version (failed_terminal), which
+    // the pure chunker (agt002-document-chunks.js) can never see. Persistence is via the
+    // narrow service_role RPC (psi_record_tender_document_chunk, migration 052), which
+    // itself dedupes by chunk_id so a retried phase never duplicates rows.
+    chunkDocuments: async ({ jobId, tenderId, opportunityId, snapshotId }) => {
+      const actor = await getTenderProcessingJobActor(database, jobId);
+      const versionsResponse = await database.from('psi_tender_document_versions')
+        .select('id,source_document_id,name,document_type,version,content_hash,extracted_text,current')
+        .eq('opportunity_id', opportunityId)
+        .eq('current', true);
+      if (versionsResponse.error) throw versionsResponse.error;
+      const currentVersions = versionsResponse.data || [];
+
+      const failedItemsResponse = await database.from('psi_tender_document_import_items')
+        .select('source_document_id')
+        .eq('job_id', jobId)
+        .eq('status', 'failed_terminal');
+      if (failedItemsResponse.error) throw failedItemsResponse.error;
+      const failedTerminalItems = failedItemsResponse.data || [];
+
+      const documents = currentVersions.map(version => ({
+        document_id: version.source_document_id,
+        document_version_id: version.id,
+        opportunity_id: opportunityId,
+        snapshot_id: snapshotId,
+        document_type: version.document_type,
+        name: version.name,
+        version: version.version,
+        content_hash: version.content_hash,
+        current: version.current,
+        extracted_text: version.extracted_text,
+      }));
+
+      const { chunks, gaps } = buildAgt002DocumentChunks(documents);
+
+      await runInConcurrentChunks(chunks, TENDER_CHUNK_RECORD_CONCURRENCY, chunk => recordTenderDocumentChunk(database, {
+        opportunityId, tenderId, documentVersionId: chunk.document_version_id, snapshotId,
+        chunkId: chunk.chunk_id, evidenceRef: chunk.evidence_ref, documentType: chunk.document_type,
+        name: chunk.name, version: chunk.version, contentHash: chunk.content_hash,
+        page: chunk.page, section: chunk.section, chunkIndex: chunk.chunk_index,
+        text: chunk.text, chunkHash: chunk.chunk_hash, current: chunk.current,
+        precedence: chunk.precedence, supersededByAddendum: chunk.superseded_by_addendum,
+        actorId: actor.requested_by,
+      }));
+
+      const gapDetails = [
+        ...gaps.map(gap => ({ document_id: gap.document_id, reason: gap.reason })),
+        ...failedTerminalItems.map(item => ({ document_id: item.source_document_id, reason: 'failed_terminal' })),
+      ];
+
+      return {
+        documents: documents.length + failedTerminalItems.length,
+        chunks: chunks.length,
+        gaps: gapDetails.length,
+        gapDetails,
       };
     },
 

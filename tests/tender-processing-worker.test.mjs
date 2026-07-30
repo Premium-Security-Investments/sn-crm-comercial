@@ -185,6 +185,74 @@ async function run() {
     assert.equal(calls.updateJob[0].patch.status, 'awaiting_analysis_authorization');
   }
 
+  // 4b) fase de chunking inyectada: si se provee chunkDocuments, se llama DESPUÉS de
+  //     publishSnapshot (el snapshot ya existe, así que chunkDocuments recibe su id
+  //     real) y ANTES de marcar el job/emitir snapshot_published, de modo que un fallo
+  //     de chunking deja el job reintentable en vez de publicar sin cobertura.
+  {
+    const order = [];
+    const { deps, calls } = makeDeps({
+      claimJob: async () => ({
+        job_id: 'job-4b', lease_id: 'lease-4b', tender_id: 'tender-4b', opportunity_id: 'opp-4b',
+        status: 'ready_for_snapshot', current_step: 'snapshot', analysis_authorized_by: null,
+      }),
+      publishSnapshot: async (args) => { order.push('publishSnapshot'); calls.publishSnapshot.push(args); return { id: 'snap-4b' }; },
+      chunkDocuments: async (args) => {
+        order.push('chunkDocuments');
+        assert.equal(args.jobId, 'job-4b');
+        assert.equal(args.tenderId, 'tender-4b');
+        assert.equal(args.opportunityId, 'opp-4b');
+        assert.equal(args.snapshotId, 'snap-4b', 'chunkDocuments debe recibir el snapshotId ya creado, no null/undefined');
+        return { documents: 14, chunks: 41, gaps: 1, gapDetails: [{ document_id: 'doc-14', reason: 'empty_document' }] };
+      },
+    });
+    const worker = createTenderProcessingWorker(deps);
+    const result = await worker.runOnce({});
+    assert.equal(result.status, 'snapshot_published');
+    assert.deepEqual(order, ['publishSnapshot', 'chunkDocuments'], 'el chunking debe ocurrir después de crear el snapshot y antes de completar el job');
+    assert.equal(calls.appendEvent.length, 2);
+    assert.equal(calls.appendEvent[0].eventType, 'documents_chunked');
+    assert.deepEqual(calls.appendEvent[0].metadata, {
+      documents: 14, chunks: 41, gaps: 1, gap_details: [{ document_id: 'doc-14', reason: 'empty_document' }],
+    });
+    assert.equal(calls.appendEvent[1].eventType, 'snapshot_published');
+  }
+
+  // 4d) si chunkDocuments falla (p.ej. pérdida de lease a mitad de la persistencia), el
+  //     job NO debe marcarse como snapshot_published: ni updateJob ni el evento final se
+  //     ejecutan, dejando el job reintentable en el próximo claim.
+  {
+    const { deps, calls } = makeDeps({
+      claimJob: async () => ({
+        job_id: 'job-4d', lease_id: 'lease-4d', tender_id: 'tender-4d', opportunity_id: 'opp-4d',
+        status: 'ready_for_snapshot', current_step: 'snapshot', analysis_authorized_by: null,
+      }),
+      publishSnapshot: async (args) => { calls.publishSnapshot.push(args); return { id: 'snap-4d' }; },
+      chunkDocuments: async () => { throw new Error('lease perdido a mitad de chunking'); },
+    });
+    const worker = createTenderProcessingWorker(deps);
+    await assert.rejects(() => worker.runOnce({}), /lease perdido/);
+    assert.equal(calls.updateJob.length, 0, 'sin chunking exitoso, el job no debe actualizarse');
+    assert.equal(calls.appendEvent.length, 0, 'sin chunking exitoso, no debe emitirse snapshot_published');
+  }
+
+  // 4c) sin chunkDocuments inyectado (compatibilidad con el despliegue actual, aún no
+  //     conectado), el comportamiento previo se preserva exactamente: sólo el evento
+  //     snapshot_published, sin fase de chunking.
+  {
+    const { deps, calls } = makeDeps({
+      claimJob: async () => ({
+        job_id: 'job-4c', lease_id: 'lease-4c', tender_id: 'tender-4c', opportunity_id: 'opp-4c',
+        status: 'ready_for_snapshot', current_step: 'snapshot', analysis_authorized_by: null,
+      }),
+    });
+    const worker = createTenderProcessingWorker(deps);
+    const result = await worker.runOnce({});
+    assert.equal(result.status, 'snapshot_published');
+    assert.equal(calls.appendEvent.length, 1);
+    assert.equal(calls.appendEvent[0].eventType, 'snapshot_published');
+  }
+
   // 5) capacidad 'quota' -> requestAgt002 retorna {status:'quota'} -> job waiting_agent_capacity;
   //    status nunca pasa a 'completed' por reglas (no fallback silencioso).
   {

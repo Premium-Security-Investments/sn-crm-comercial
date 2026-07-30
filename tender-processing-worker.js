@@ -33,7 +33,7 @@ export function createTenderProcessingWorker(deps) {
   const {
     claimJob, updateJob, recordImportItem, appendEvent,
     revalidateOfficialStatus, discoverDocuments, importOneDocument,
-    publishSnapshot, requestAgt002, now,
+    chunkDocuments, publishSnapshot, requestAgt002, now,
     analysisConfig = Object.freeze({}),
   } = deps;
 
@@ -180,7 +180,26 @@ export function createTenderProcessingWorker(deps) {
     }
 
     if (pipelineStatus === 'ready_for_snapshot') {
+      // publishSnapshot creates/registers the snapshot first, so chunkDocuments (when
+      // wired) can link every chunk to a real snapshot_id. Chunking runs after that and
+      // BEFORE the job is marked done or snapshot_published is emitted: if chunkDocuments
+      // throws (e.g. a lost lease mid-persistence), updateJob/appendEvent below never run,
+      // so the job stays claimable and a retry re-chunks safely (dedup is by chunk_id at
+      // the RPC layer). chunkDocuments is optional so deployments that have not wired it
+      // yet keep today's exact behavior (no direct DB/model access here either way: the
+      // injected dependency owns any storage).
       const snapshot = await publishSnapshot({ jobId, tenderId, opportunityId });
+      if (chunkDocuments) {
+        const chunking = await chunkDocuments({ jobId, tenderId, opportunityId, snapshotId: snapshot.id });
+        await appendEvent({
+          tenderId, eventType: 'documents_chunked', actorKind: 'system',
+          sourceRefType: 'job', sourceRefId: jobId,
+          metadata: {
+            documents: chunking.documents, chunks: chunking.chunks, gaps: chunking.gaps,
+            gap_details: chunking.gapDetails || [],
+          },
+        });
+      }
       const nextStatus = claim.analysis_authorized_by ? 'waiting_agent_capacity' : 'awaiting_analysis_authorization';
       await updateJob(jobId, leaseId, {
         status: nextStatus,

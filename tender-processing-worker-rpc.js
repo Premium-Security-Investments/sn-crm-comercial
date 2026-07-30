@@ -88,6 +88,34 @@ export async function recordTenderImportItem(database, { jobId, source, sourceDo
   });
 }
 
+export async function recordTenderDocumentChunk(database, {
+  opportunityId, tenderId, documentVersionId, snapshotId, chunkId, evidenceRef,
+  documentType, name, version, contentHash, page, section, chunkIndex,
+  text, chunkHash, current, precedence, supersededByAddendum, actorId,
+}) {
+  return rpc(database, 'psi_record_tender_document_chunk', {
+    p_opportunity_id: opportunityId,
+    p_tender_id: tenderId,
+    p_document_version_id: documentVersionId,
+    p_snapshot_id: snapshotId || null,
+    p_chunk_id: chunkId,
+    p_evidence_ref: evidenceRef,
+    p_document_type: documentType,
+    p_name: name,
+    p_version: version,
+    p_content_hash: contentHash,
+    p_page: page,
+    p_section: section,
+    p_chunk_index: chunkIndex,
+    p_text: text,
+    p_chunk_hash: chunkHash,
+    p_current: current,
+    p_precedence: precedence,
+    p_superseded_by_addendum: supersededByAddendum,
+    p_actor_id: actorId,
+  });
+}
+
 export async function appendTenderProcessingEvent(database, { tenderId, eventType, actorKind, createdBy = null, sourceRefType = null, sourceRefId = null, metadata = null, note = null, singular = false }) {
   return rpc(database, 'psi_append_tender_tracking_event', {
     p_tender_id: tenderId,
