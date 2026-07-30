@@ -144,4 +144,92 @@ for (const bad of [null, undefined, [], 'not-an-object', 42]) {
   assert.deepEqual(output.strengths, [finding]);
 }
 
+// AGT002_DOCUMENT_RETRIEVAL: when the previewInput carries a closed document_evidence
+// package (Task 26/27), collectAgt002PreviewEvidenceIds must derive the citable set
+// EXACTLY from document_evidence.citation_allowlist — never by re-walking `documents` —
+// so an omitted/non-allowlisted chunk can never become citable even if it still appears
+// somewhere else in the payload, and validation of the model output rejects it.
+{
+  const allowedRef = 'evidence:chunk:ver-a:p1:s1:c0';
+  const omittedRef = 'evidence:chunk:ver-b:p1:s1:c0';
+  const mockPreviewInput = {
+    schema_version: '1.0',
+    snapshot_id: 'snap-1',
+    context_version: 2,
+    documents: [
+      { document_id: 'doc-a', evidence_id: allowedRef, name: 'Doc A', document_type: 'pliego', trust: 'untrusted_document_excerpt', excerpt: 'Contenido A.' },
+      // Simulated corruption/stale reference: this evidence_id is not in citation_allowlist
+      // and must never leak into the citable set through the documents array.
+      { document_id: 'doc-b', evidence_id: omittedRef, name: 'Doc B', document_type: 'pliego', trust: 'untrusted_document_excerpt', excerpt: 'Contenido B.' },
+    ],
+    document_evidence: {
+      snapshot_id: 'snap-1',
+      budget: { max_chunks: 40, max_chars: 40000, max_tokens: 12000, chunks_used: 1, chars_used: 12, tokens_used: 3, chunks_remaining: 39, chars_remaining: 39988, tokens_remaining: 11997 },
+      selected_chunks: [{ evidence_ref: allowedRef, chunk_id: 'chunk:ver-a:p1:s1:c0', document_id: 'doc-a' }],
+      citation_allowlist: [allowedRef],
+      coverage_manifest: { by_document: [], by_document_type: [], by_requirement: [] },
+      omitted_chunks: [{ evidence_ref: omittedRef, chunk_id: 'chunk:ver-b:p1:s1:c0', document_id: 'doc-b', document_type: 'pliego', requirement_id: 'req-a', reason: 'lower_relevance' }],
+      material_omissions: true,
+    },
+  };
+
+  const ids = collectAgt002PreviewEvidenceIds(mockPreviewInput);
+  assert.deepEqual(ids, [allowedRef], 'evidence ids must come exactly from document_evidence.citation_allowlist, not from documents');
+  assert.ok(!ids.includes(omittedRef));
+
+  const allowedFinding = { id: 'f-1', text: 'Cumple.', critical: false, evidence_refs: [allowedRef] };
+  const validated = validateAgt002PreviewModelOutput({
+    recommendation: 'pause', summary: 'Resumen.', strengths: [allowedFinding], weaknesses: [], blockers: [], questions: [], unverified: [],
+    next_action: 'Revisar.', human_review_required: true,
+  }, { allowedEvidenceIds: ids });
+  assert.deepEqual(validated.strengths, [allowedFinding]);
+
+  const omittedFinding = { id: 'f-2', text: 'No debería citarse.', critical: false, evidence_refs: [omittedRef] };
+  assert.throws(
+    () => validateAgt002PreviewModelOutput({
+      recommendation: 'pause', summary: 'Resumen.', strengths: [omittedFinding], weaknesses: [], blockers: [], questions: [], unverified: [],
+      next_action: 'Revisar.', human_review_required: true,
+    }, { allowedEvidenceIds: ids }),
+    /cita|evidence/i,
+    'a chunk present in omitted_chunks but absent from citation_allowlist must never be citable',
+  );
+}
+
+// End-to-end through buildAgt002PreviewInput with documentRetrieval enabled: the closed
+// evidence-id universe still combines the document retrieval allowlist with context v2 /
+// human evidence references, exactly like the plain contextV2 case above.
+{
+  const contextV2Sections = {
+    ...buildAgt002OpportunityContextV2({
+      opportunity: { id: 'opp-1', updated_at: '2026-07-29T10:00:00.000Z' },
+      tender: { id: 'tender-1', title: 'Vigilancia', entity: 'Entidad', updated_at: '2026-07-29T10:00:00.000Z' },
+    }),
+    company_dossier: buildAgt002CompanyDossier({
+      profile: { legal_name: 'Seguridad Nacional Ltda.', updated_at: '2026-07-29T10:00:00.000Z' },
+      documents: [],
+    }),
+  };
+  const retrievalInput = buildAgt002PreviewInput({
+    documents: [
+      { document_id: 'doc-01', document_version_id: 'ver-01', opportunity_id: 'opp-1', snapshot_id: null, document_type: 'pliego', name: 'Pliego', version: 1, content_hash: 'a'.repeat(64), current: true, extracted_text: 'Requiere póliza vigente de cumplimiento.' },
+    ],
+    deepAnalysis: { matrix: { legal: [{ id: 'req-poliza', front: 'legal', label: 'Póliza vigente' }], financial: [], technical: [] } },
+    snapshotId: 'snapshot-1',
+    contextV2: true,
+    contextV2Sections,
+    documentRetrieval: true,
+  });
+
+  const retrievalEvidenceIds = collectAgt002PreviewEvidenceIds(retrievalInput);
+  assert.ok(retrievalInput.document_evidence.citation_allowlist.length > 0);
+  // Document evidence ids come from the closed retrieval package...
+  for (const ref of retrievalInput.document_evidence.citation_allowlist) assert.ok(retrievalEvidenceIds.includes(ref));
+  // ...combined with (not replaced by) context v2 opportunity/company_dossier references.
+  assert.ok(retrievalEvidenceIds.includes(retrievalInput.opportunity.tender_id.source.reference));
+  assert.ok(retrievalEvidenceIds.includes(retrievalInput.company_dossier.legal_name.source.reference));
+  // Retrieval mode carries no duplicate legacy documents array; the allowlist is the sole
+  // document evidence universe.
+  assert.equal(Object.hasOwn(retrievalInput, 'documents'), false);
+}
+
 console.log('AGT-002 Preview strict output contract passed');

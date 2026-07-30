@@ -2,6 +2,28 @@ import { createHash, randomUUID } from 'node:crypto';
 
 const CONTENT_KEYS = ['recommendation', 'summary', 'strengths', 'weaknesses', 'blockers', 'questions', 'unverified', 'next_action', 'human_review_required'];
 
+function validateEvidenceCoverage(value, snapshotId) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+    || value.snapshot_id !== snapshotId
+    || !value.budget || typeof value.budget !== 'object' || Array.isArray(value.budget)
+    || !value.coverage_manifest || typeof value.coverage_manifest !== 'object' || Array.isArray(value.coverage_manifest)
+    || !Array.isArray(value.selected_chunks)
+    || !Array.isArray(value.omitted_chunks)
+    || !Array.isArray(value.citation_allowlist)
+    || typeof value.material_omissions !== 'boolean') {
+    throw new Error('La cobertura de evidencia no corresponde al snapshot o tiene estructura inválida.');
+  }
+  if (value.selected_chunks.some(chunk => !chunk || typeof chunk !== 'object' || Object.hasOwn(chunk, 'text'))) {
+    throw new Error('La cobertura de evidencia no puede persistir texto de chunks.');
+  }
+  const selectedRefs = value.selected_chunks.map(chunk => chunk.evidence_ref).sort();
+  const allowlist = [...value.citation_allowlist].sort();
+  if (selectedRefs.length !== allowlist.length || selectedRefs.some((reference, index) => reference !== allowlist[index])) {
+    throw new Error('La cobertura de evidencia tiene una allowlist inconsistente.');
+  }
+  return value;
+}
+
 function requireId(value, label) {
   if (!value || typeof value !== 'string') throw new Error(`${label} es obligatorio para registrar AGT-002 Preview.`);
   return value;
@@ -82,6 +104,9 @@ export async function registerAgt002PreviewAnalysis(database, context) {
   }
 
   const content = Object.fromEntries(CONTENT_KEYS.map(key => [key, envelope[key]]));
+  if (envelope.evidence_coverage !== undefined) {
+    content.evidence_coverage = validateEvidenceCoverage(envelope.evidence_coverage, snapshotId);
+  }
   const criticalOpenCount = countCriticalOpenQuestions(content);
   const idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model: usage.model });
 

@@ -46,6 +46,20 @@ function classifyOutputValidationFailure(error) {
   return 'invalid_schema';
 }
 
+function buildEvidenceCoverage(previewInput) {
+  const evidence = previewInput?.document_evidence;
+  if (!evidence) return null;
+  return {
+    snapshot_id: evidence.snapshot_id,
+    budget: evidence.budget,
+    coverage_manifest: evidence.coverage_manifest,
+    selected_chunks: evidence.selected_chunks.map(({ text: _text, ...metadata }) => metadata),
+    omitted_chunks: evidence.omitted_chunks,
+    citation_allowlist: evidence.citation_allowlist,
+    material_omissions: evidence.material_omissions,
+  };
+}
+
 export function createAgt002PreviewEngine({
   client,
   model,
@@ -57,6 +71,7 @@ export function createAgt002PreviewEngine({
   countDailyRuns = async () => 0,
   idGenerator = randomUUID,
   contextV2 = false,
+  documentRetrieval = false,
 } = {}) {
   if (!client || typeof client.run !== 'function'
     || !nonEmpty(model) || !nonEmpty(policyVersion) || !nonEmpty(policyText)
@@ -110,6 +125,7 @@ export function createAgt002PreviewEngine({
       status: 'completed',
       method: 'agent_ai',
       ...validatedOutput,
+      ...(previewInput.document_evidence ? { evidence_coverage: buildEvidenceCoverage(previewInput) } : {}),
       usage: {
         provider: 'codex_app_server',
         model,
@@ -128,10 +144,11 @@ export function createAgt002PreviewEngine({
 
   return {
     analyze(context, { idempotencyKey, signal } = {}) {
-      // contextV2 is engine-level configuration, not caller-supplied: the flag always wins
-      // over anything a caller's context object might carry, so v1 stays the rollback path
-      // until this engine is explicitly constructed with contextV2 enabled.
-      const previewInput = buildAgt002PreviewInput({ ...(context || {}), contextV2 });
+      // contextV2/documentRetrieval are engine-level configuration, not caller-supplied: the
+      // flags always win over anything a caller's context object might carry, so v1 (and
+      // v2-without-retrieval) stays the rollback path until this engine is explicitly
+      // constructed with each flag enabled.
+      const previewInput = buildAgt002PreviewInput({ ...(context || {}), contextV2, documentRetrieval });
       const key = nonEmpty(idempotencyKey) ? idempotencyKey : `${previewInput.snapshot_id}:${policyVersion}:${model}`;
 
       // Registration into `inflight` must happen synchronously, before any

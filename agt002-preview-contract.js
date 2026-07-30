@@ -61,12 +61,28 @@ function collectSourcedValueIds(section, ids) {
   }
 }
 
-/** Derives the closed set of citable evidence ids from the exact input sent to the model. */
+/**
+ * Derives the closed set of citable evidence ids from the exact input sent to the model.
+ *
+ * When AGT002_DOCUMENT_RETRIEVAL attached a closed document_evidence packet
+ * (buildAgt002DocumentRetrieval, Task 26/27), document evidence ids come EXACTLY from its
+ * citation_allowlist — never by re-walking `documents` — so an omitted/non-allowlisted
+ * chunk can never become citable even if a stale/corrupted entry for it still exists
+ * elsewhere in the payload. Without document_evidence (flag off / v1), the legacy
+ * documents[].evidence_id derivation is unchanged.
+ */
 export function collectAgt002PreviewEvidenceIds(previewInput) {
-  const documents = Array.isArray(previewInput?.documents) ? previewInput.documents : [];
   const ids = new Set();
-  for (const document of documents) {
-    if (nonEmptyString(document?.evidence_id)) ids.add(document.evidence_id);
+  const citationAllowlist = previewInput?.document_evidence?.citation_allowlist;
+  if (Array.isArray(citationAllowlist)) {
+    for (const reference of citationAllowlist) {
+      if (nonEmptyString(reference)) ids.add(reference);
+    }
+  } else {
+    const documents = Array.isArray(previewInput?.documents) ? previewInput.documents : [];
+    for (const document of documents) {
+      if (nonEmptyString(document?.evidence_id)) ids.add(document.evidence_id);
+    }
   }
   // Context v2 sourced fields (opportunity/company_dossier/commercial_context) are
   // citable evidence too; v1 previewInput sections are flat strings, so this is a no-op then.

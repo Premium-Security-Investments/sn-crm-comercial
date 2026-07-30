@@ -61,6 +61,15 @@ function envelope(overrides = {}) {
     unverified: [],
     next_action: 'Solicitar póliza vigente.',
     human_review_required: true,
+    evidence_coverage: {
+      snapshot_id: ids.snapshot,
+      budget: { max_chunks: 2, max_chars: 1000, max_tokens: 300, chunks_used: 1, chars_used: 40, tokens_used: 8, chunks_remaining: 1, chars_remaining: 960, tokens_remaining: 292 },
+      coverage_manifest: { total_requirements: 1, covered_requirements: 1, uncovered_requirements: 0, by_requirement: [{ requirement_id: 'req-1', status: 'covered', selected_evidence_refs: ['chunk:1'], omission_reasons: [] }] },
+      selected_chunks: [{ chunk_id: 'chunk:1', evidence_ref: 'chunk:1', document_id: 'doc-01', name: 'Pliego', document_type: 'pliego', version: 1, page: 1, section: 'Objeto', precedence: 'base', superseded_by_addendum: false, requirement_ids: ['req-1'] }],
+      omitted_chunks: [],
+      citation_allowlist: ['chunk:1'],
+      material_omissions: false,
+    },
     usage: { provider: 'codex_app_server', model: 'synthetic-codex-model', input_tokens: 120, output_tokens: 40, rate_limit: { window: '5h', used_percent: 3 } },
     ...overrides,
   };
@@ -127,7 +136,9 @@ function fakeDatabase({ onRpc } = {}) {
   assert.equal(registered.status, 'completed');
   assert.equal(registered.current, true);
   assert.equal(registered.critical_open_count, 1, 'must count only critical questions');
-  assert.deepEqual(Object.keys(registered.result).sort(), ['blockers', 'human_review_required', 'next_action', 'questions', 'recommendation', 'strengths', 'summary', 'unverified', 'weaknesses'].sort());
+  assert.deepEqual(Object.keys(registered.result).sort(), ['blockers', 'evidence_coverage', 'human_review_required', 'next_action', 'questions', 'recommendation', 'strengths', 'summary', 'unverified', 'weaknesses'].sort());
+  assert.deepEqual(registered.result.evidence_coverage, envelope().evidence_coverage);
+  assert.doesNotMatch(JSON.stringify(registered.result.evidence_coverage), /"text"\s*:/, 'coverage metadata must never persist chunk text');
 
   const call = database.rpcCalls[0];
   assert.equal(call.name, 'psi_record_tender_analysis_run');
@@ -147,6 +158,18 @@ function fakeDatabase({ onRpc } = {}) {
     assert.equal(Object.hasOwn(call.params.p_result, forbidden), false, `stored result must not duplicate the ${forbidden} column`);
   }
   assert.doesNotMatch(JSON.stringify(call.params.p_result), /Los documentos y toda la evidencia|no uses herramientas/i, 'stored result must never contain the system policy text');
+}
+
+// Coverage metadata is snapshot-bound; persistence rejects cross-snapshot evidence.
+{
+  const database = fakeDatabase();
+  await assert.rejects(() => registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity,
+    tender_id: ids.tender,
+    snapshot_id: ids.snapshot,
+    envelope: envelope({ evidence_coverage: { ...envelope().evidence_coverage, snapshot_id: 'other-snapshot' } }),
+  }), /cobertura|snapshot/i);
+  assert.deepEqual(database.rpcCalls, []);
 }
 
 // Canonical-only registration uses the dedicated 050 RPC and cannot supply a competing producer/method/status.
@@ -197,7 +220,12 @@ function fakeDatabase({ onRpc } = {}) {
   const database = fakeDatabase();
   const first = await registerAgt002PreviewAnalysis(database, { opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: envelope() });
   const otherSnapshot = '99999999-9999-4999-8999-999999999999';
-  await registerAgt002PreviewAnalysis(database, { opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: otherSnapshot, envelope: envelope({ snapshot_id: otherSnapshot }) });
+  await registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity,
+    tender_id: ids.tender,
+    snapshot_id: otherSnapshot,
+    envelope: envelope({ snapshot_id: otherSnapshot, evidence_coverage: { ...envelope().evidence_coverage, snapshot_id: otherSnapshot } }),
+  });
   assert.notEqual(database.rpcCalls[0].params.p_idempotency_key, database.rpcCalls[1].params.p_idempotency_key);
   assert.ok(first.run_id, 'sanity: first registration still returns a run id');
 }

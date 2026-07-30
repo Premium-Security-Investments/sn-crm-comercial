@@ -68,6 +68,7 @@ export function createAgt002PreviewRuntime({ environment = process.env, countDai
     maxConcurrent: config.maxConcurrent,
     dailyMaxRuns: config.dailyMaxRuns,
     contextV2: analysisConfig.AGT002_CONTEXT_V2,
+    documentRetrieval: analysisConfig.AGT002_DOCUMENT_RETRIEVAL,
     ...(countDailyRuns ? { countDailyRuns } : {}),
   });
 }

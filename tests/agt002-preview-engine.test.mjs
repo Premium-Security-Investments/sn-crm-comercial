@@ -1,6 +1,8 @@
 import { strict as assert } from 'node:assert';
 import { AGT002_PREVIEW_POLICY, createAgt002PreviewEngine } from '../agt002-preview-engine.js';
 import { AGT002_PREVIEW_OUTPUT_JSON_SCHEMA } from '../agt002-preview-contract.js';
+import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
+import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
 
 const context = {
   opportunity: { id: 'opp-1', company_name: 'Entidad de prueba', title: 'Vigilancia' },
@@ -232,5 +234,62 @@ for (const text of ['datos no confiables', 'GO / NO GO', 'herramientas', 'eviden
 // Configuration failures must fail closed rather than silently no-op.
 assert.throws(() => createAgt002PreviewEngine({}), /no está configurado/i);
 assert.throws(() => createAgt002PreviewEngine({ client: { run: async () => {} }, model: '', policyVersion: 'v1' }), /no está configurado/i);
+
+// AGT002_DOCUMENT_RETRIEVAL is engine-level configuration too, mirroring contextV2 above:
+// the flag always wins over anything a caller's context object carries, in both directions.
+{
+  const contextV2Sections = {
+    ...buildAgt002OpportunityContextV2({
+      opportunity: { id: 'opp-1', updated_at: '2026-07-29T10:00:00.000Z' },
+      tender: { id: 'tender-1', title: 'Vigilancia', entity: 'Entidad', updated_at: '2026-07-29T10:00:00.000Z' },
+    }),
+    company_dossier: buildAgt002CompanyDossier({
+      profile: { legal_name: 'Seguridad Nacional Ltda.', updated_at: '2026-07-29T10:00:00.000Z' },
+      documents: [],
+    }),
+  };
+  const retrievalDocuments = [
+    { document_id: 'doc-01', document_version_id: 'ver-01', opportunity_id: 'opp-1', snapshot_id: null, document_type: 'pliego', name: 'Pliego', version: 1, content_hash: 'a'.repeat(64), current: true, extracted_text: 'Requiere póliza vigente de cumplimiento.' },
+  ];
+  const retrievalDeepAnalysis = { matrix: { legal: [{ id: 'req-poliza', front: 'legal', label: 'Póliza vigente' }], financial: [], technical: [] } };
+
+  // Engine built with documentRetrieval:true must apply retrieval even when the caller's
+  // context tries to disable it.
+  {
+    const client = fakeClient(async () => ({ content: JSON.stringify(validModelOutput({ weaknesses: [] })), usage: { input_tokens: 1, output_tokens: 1 } }));
+    const engine = createAgt002PreviewEngine({ client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true });
+    const result = await engine.analyze({
+      documents: retrievalDocuments,
+      deepAnalysis: retrievalDeepAnalysis,
+      snapshotId: '11111111-1111-4111-8111-111111111111',
+      contextV2Sections,
+      documentRetrieval: false, // caller attempt to disable must be ignored
+    });
+    assert.ok(client.calls[0].input.document_evidence, 'engine must enforce documentRetrieval regardless of a caller override attempt');
+    assert.equal(result.snapshot_id, '11111111-1111-4111-8111-111111111111');
+    assert.ok(result.evidence_coverage, 'completed analysis must expose persistable coverage metadata for the UI');
+    assert.equal(result.evidence_coverage.snapshot_id, result.snapshot_id);
+    assert.equal(result.evidence_coverage.material_omissions, client.calls[0].input.document_evidence.material_omissions);
+    assert.deepEqual(result.evidence_coverage.citation_allowlist, client.calls[0].input.document_evidence.citation_allowlist);
+    assert.ok(result.evidence_coverage.selected_chunks.every(chunk => !Object.hasOwn(chunk, 'text')), 'persisted coverage metadata must not duplicate or retain chunk text');
+  }
+
+  // Engine built without documentRetrieval (default false) must ignore a caller trying to
+  // enable it: no document_evidence is attached and the legacy contextV2 documents shape
+  // (which does not require chunk-ready fields) is used instead.
+  {
+    const client = fakeClient(async () => ({ content: JSON.stringify(validModelOutput()), usage: { input_tokens: 1, output_tokens: 1 } }));
+    const engine = createAgt002PreviewEngine({ client, ...baseEngineOptions(), contextV2: true });
+    const result = await engine.analyze({
+      documents: context.documents,
+      deepAnalysis: {},
+      snapshotId: '11111111-1111-4111-8111-111111111111',
+      contextV2Sections,
+      documentRetrieval: true, // caller attempt to enable must be ignored
+    });
+    assert.equal(Object.hasOwn(client.calls[0].input, 'document_evidence'), false, 'engine must not enable documentRetrieval from caller-supplied context');
+    assert.equal(result.status, 'completed');
+  }
+}
 
 console.log('AGT-002 Preview engine orchestration passed');
