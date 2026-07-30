@@ -3,6 +3,7 @@ import {
   claimTenderProcessingJob,
   updateTenderProcessingJob,
   recordTenderImportItem,
+  recordTenderDocumentChunk,
   appendTenderProcessingEvent,
   getTenderProcessingJobActor,
 } from '../tender-processing-worker-rpc.js';
@@ -86,10 +87,18 @@ async function claimComposesFullShapeWhenClaimed() {
   assert.equal(claim.any_critical_terminal_failure, true);
 }
 
-async function updateForwardsPatchVerbatim() {
-  const db = fakeDb({ rpcResults: { psi_update_tender_processing_job: { data: { status: 'ok' }, error: null } } });
+async function updatePreservesLeaseByDefaultAndReleasesExplicitly() {
+  const db = fakeDb({ rpcResults: { psi_update_tender_processing_job: { data: { status: 'ok', lease_released: true }, error: null } } });
   await updateTenderProcessingJob(db, 'job-1', 'lease-1', { status: 'needs_attention' });
-  assert.deepEqual(db.rpcCalls[0], { name: 'psi_update_tender_processing_job', args: { p_job_id: 'job-1', p_lease_id: 'lease-1', p_patch: { status: 'needs_attention' } } });
+  assert.deepEqual(db.rpcCalls[0], {
+    name: 'psi_update_tender_processing_job',
+    args: { p_job_id: 'job-1', p_lease_id: 'lease-1', p_patch: { status: 'needs_attention' } },
+  });
+  await updateTenderProcessingJob(db, 'job-1', 'lease-2', { status: 'importing_documents' }, { releaseLease: true });
+  assert.deepEqual(db.rpcCalls[1], {
+    name: 'psi_update_tender_processing_job',
+    args: { p_job_id: 'job-1', p_lease_id: 'lease-2', p_patch: { status: 'importing_documents', release_lease: true } },
+  });
 }
 
 async function recordImportItemMapsCamelCaseToRpcParams() {
@@ -101,6 +110,39 @@ async function recordImportItemMapsCamelCaseToRpcParams() {
     p_last_error_code: null, p_last_error_message: null,
  p_next_attempt_at: null,
   });
+}
+
+async function recordDocumentChunkMapsCamelCaseToRpcParams() {
+  const db = fakeDb({ rpcResults: { psi_record_tender_document_chunk: { data: { id: 'chunk-row-1', chunk_id: 'chunk:v1:p1:s1:c0' }, error: null } } });
+  await recordTenderDocumentChunk(db, {
+    opportunityId: 'opp-1', tenderId: 'tender-1', documentVersionId: 'v-1', snapshotId: 'snap-1',
+    chunkId: 'chunk:v1:p1:s1:c0', evidenceRef: 'evidence:chunk:v1:p1:s1:c0', documentType: 'pliego',
+    name: 'Pliego.pdf', version: 1, contentHash: 'a'.repeat(64), page: 1, section: 1, chunkIndex: 0,
+    text: 'Texto del chunk.', chunkHash: 'b'.repeat(64), current: true, precedence: 'base',
+    supersededByAddendum: false, actorId: 'actor-1',
+  });
+  assert.deepEqual(db.rpcCalls[0], {
+    name: 'psi_record_tender_document_chunk',
+    args: {
+      p_opportunity_id: 'opp-1', p_tender_id: 'tender-1', p_document_version_id: 'v-1', p_snapshot_id: 'snap-1',
+      p_chunk_id: 'chunk:v1:p1:s1:c0', p_evidence_ref: 'evidence:chunk:v1:p1:s1:c0', p_document_type: 'pliego',
+      p_name: 'Pliego.pdf', p_version: 1, p_content_hash: 'a'.repeat(64), p_page: 1, p_section: 1, p_chunk_index: 0,
+      p_text: 'Texto del chunk.', p_chunk_hash: 'b'.repeat(64), p_current: true, p_precedence: 'base',
+      p_superseded_by_addendum: false, p_actor_id: 'actor-1',
+    },
+  });
+}
+
+async function recordDocumentChunkDefaultsSnapshotIdToNull() {
+  const db = fakeDb({ rpcResults: { psi_record_tender_document_chunk: { data: { id: 'chunk-row-2' }, error: null } } });
+  await recordTenderDocumentChunk(db, {
+    opportunityId: 'opp-1', tenderId: 'tender-1', documentVersionId: 'v-1', snapshotId: null,
+    chunkId: 'chunk:v1:p1:s1:c1', evidenceRef: 'evidence:chunk:v1:p1:s1:c1', documentType: 'pliego',
+    name: 'Pliego.pdf', version: 1, contentHash: 'a'.repeat(64), page: 1, section: 1, chunkIndex: 1,
+    text: 'Otro chunk.', chunkHash: 'c'.repeat(64), current: true, precedence: 'base',
+    supersededByAddendum: false, actorId: 'actor-1',
+  });
+  assert.equal(db.rpcCalls[0].args.p_snapshot_id, null);
 }
 
 async function appendEventMapsCamelCaseToRpcParams() {
@@ -122,8 +164,10 @@ async function getActorReadsJobRow() {
 async function run() {
   await claimReturnsNullWhenNotClaimed();
   await claimComposesFullShapeWhenClaimed();
-  await updateForwardsPatchVerbatim();
+  await updatePreservesLeaseByDefaultAndReleasesExplicitly();
   await recordImportItemMapsCamelCaseToRpcParams();
+  await recordDocumentChunkMapsCamelCaseToRpcParams();
+  await recordDocumentChunkDefaultsSnapshotIdToNull();
   await appendEventMapsCamelCaseToRpcParams();
   await getActorReadsJobRow();
   console.log('tender-processing-worker-rpc passed');

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { AGT002_CONTEXT_VERSION, buildAgt002ContextV2 } from './agt002-context-v2.js';
 
 const RULES_PRODUCER = 'siio_rules_v1';
 const RULES_METHOD = 'rules';
@@ -158,7 +159,7 @@ export async function registerSiioRulesAnalysis(database, context) {
   };
 }
 
-export async function getCurrentTenderAnalysis(database, opportunityId, currentDocuments = null) {
+export async function getCurrentTenderAnalysis(database, opportunityId, currentDocuments = null, { canonicalOnly = false } = {}) {
   const normalizedOpportunityId = requireId(opportunityId, 'La oportunidad');
   const stateResponse = await database.from('psi_tender_document_state')
     .select('current_snapshot_id,refresh_in_progress')
@@ -177,15 +178,17 @@ export async function getCurrentTenderAnalysis(database, opportunityId, currentD
 
   const selectLatestRun = async (snapshotId = null) => {
     let query = database.from('psi_tender_analysis_runs')
-      .select('id,snapshot_id,producer,method,status,result,critical_open_count,created_at,completed_at')
+      .select(`id,snapshot_id,producer,method,status,result,critical_open_count,created_at,completed_at${canonicalOnly ? ',canonical' : ''}`)
       .eq('opportunity_id', normalizedOpportunityId);
+    if (canonicalOnly) query = query.eq('canonical', true);
     if (snapshotId) query = query.eq('snapshot_id', snapshotId);
     const response = await query.order('created_at', { ascending: false }).order('id', { ascending: false }).limit(1);
     if (response?.error) throw new Error(response.error.message || String(response.error));
     return Array.isArray(response?.data) ? response.data[0] : response?.data;
   };
 
-  const run = await selectLatestRun(latestSnapshot.id) || await selectLatestRun();
+  const currentSnapshotRun = await selectLatestRun(latestSnapshot.id);
+  const run = currentSnapshotRun || (canonicalOnly ? null : await selectLatestRun());
   if (!run) return null;
   const documentsMatchSnapshot = !Array.isArray(currentDocuments)
     || buildTenderSnapshotInput(currentDocuments, {}).document_hash === latestSnapshot.document_hash;
@@ -195,12 +198,43 @@ export async function getCurrentTenderAnalysis(database, opportunityId, currentD
     producer: run.producer,
     method: run.method,
     status: run.status,
+    ...(canonicalOnly ? { canonical: run.canonical === true } : {}),
     current: !state.refresh_in_progress && run.snapshot_id === latestSnapshot.id && documentsMatchSnapshot,
     result: run.result,
     critical_open_count: run.critical_open_count ?? 0,
     created_at: run.created_at || null,
     completed_at: run.completed_at || null,
   };
+}
+
+/**
+ * Persists an immutable, append-only AGT-002 context v2 version: the validated
+ * closed context (including the human answers effective at creation time) plus
+ * its content hash. Every canonical analysis run that consumes this context must
+ * reference the returned id so past runs stay reproducible even after new human
+ * answers or evidence arrive later.
+ */
+export async function registerAgt002ContextVersion(database, context) {
+  const opportunityId = requireId(context?.opportunity_id, 'La oportunidad');
+  const tenderId = requireId(context?.tender_id, 'La licitación');
+  const snapshotId = requireId(context?.snapshot_id, 'El snapshot documental');
+  const actorId = requireId(context?.actor_id, 'El actor');
+  const validatedContext = buildAgt002ContextV2(context?.context);
+  const contextHash = sha256(validatedContext);
+  const humanEvidenceCount = validatedContext.human_evidence.length;
+  const idempotencyKey = sha256({ opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, context_hash: contextHash });
+  const record = unwrapRpc(await database.rpc('psi_record_agt002_context_version', {
+    p_opportunity_id: opportunityId,
+    p_tender_id: tenderId,
+    p_snapshot_id: snapshotId,
+    p_context_version: AGT002_CONTEXT_VERSION,
+    p_context: validatedContext,
+    p_context_hash: contextHash,
+    p_human_evidence_count: humanEvidenceCount,
+    p_idempotency_key: idempotencyKey,
+    p_actor_id: actorId,
+  }));
+  return { ...record, id: requireId(record.id, 'La versión de contexto') };
 }
 
 /** Produces the document-API analysis payload without allowing result JSON to forge typed-run authority. */
@@ -216,6 +250,7 @@ export function presentCurrentTenderAnalysis(currentAnalysis) {
     producer: currentAnalysis.producer,
     method: currentAnalysis.method,
     status: currentAnalysis.status,
+    ...(typeof currentAnalysis.canonical === 'boolean' ? { canonical: currentAnalysis.canonical } : {}),
     current: currentAnalysis.current,
     critical_open_count: currentAnalysis.critical_open_count,
     created_at: currentAnalysis.created_at || null,

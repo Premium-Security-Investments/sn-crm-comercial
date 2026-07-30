@@ -49,7 +49,8 @@ assert.ok(radar.includes('TenderSavedSearches') && viewUtils.includes('view=rada
 
 for (const marker of ['TenderDocumentReviewPanel', 'TenderOfferPreparationPanel']) assert.ok(main.includes(marker), `El detalle protegido debe conservar: ${marker}`);
 assert.ok(documentSection.includes('Documentos vigentes del proceso'), 'El detalle debe conservar la revisión documental extraída.');
-assert.ok(analysisSection.includes('Generar análisis preliminar'), 'El detalle debe conservar la acción separada de análisis.');
+assert.ok(analysisSection.includes('Analizar con Vig-IA'), 'El detalle debe conservar la acción separada y canónica de Vig-IA.');
+assert.ok(!analysisSection.includes('Generar análisis preliminar'), 'El detalle no debe reintroducir la acción determinística alternativa.');
 for (const handler of [server, api]) {
   assert.ok(handler.includes("if (!process.env.VERCEL)") && handler.includes('app.listen(port'), 'El handler debe arrancar localmente sin abrir un puerto dentro de Vercel.');
   assert.ok(handler.includes("app.post('/api/tender-convert'"), 'Backend debe conservar conversión protegida.');

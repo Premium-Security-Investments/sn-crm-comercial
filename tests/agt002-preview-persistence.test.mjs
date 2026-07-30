@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import {
+  appendAgt002AnalysisAttempt,
   claimAgt002PreviewRun,
   computeAgt002PreviewIdempotencyKey,
   countAgt002PreviewRunsToday,
@@ -60,9 +61,37 @@ function envelope(overrides = {}) {
     unverified: [],
     next_action: 'Solicitar póliza vigente.',
     human_review_required: true,
+    evidence_coverage: {
+      snapshot_id: ids.snapshot,
+      budget: { max_chunks: 2, max_chars: 1000, max_tokens: 300, chunks_used: 1, chars_used: 40, tokens_used: 8, chunks_remaining: 1, chars_remaining: 960, tokens_remaining: 292 },
+      coverage_manifest: { total_requirements: 1, covered_requirements: 1, uncovered_requirements: 0, by_requirement: [{ requirement_id: 'req-1', status: 'covered', selected_evidence_refs: ['chunk:1'], omission_reasons: [] }] },
+      selected_chunks: [{ chunk_id: 'chunk:1', evidence_ref: 'chunk:1', document_id: 'doc-01', name: 'Pliego', document_type: 'pliego', version: 1, page: 1, section: 'Objeto', precedence: 'base', superseded_by_addendum: false, requirement_ids: ['req-1'] }],
+      omitted_chunks: [],
+      citation_allowlist: ['chunk:1'],
+      material_omissions: false,
+    },
     usage: { provider: 'codex_app_server', model: 'synthetic-codex-model', input_tokens: 120, output_tokens: 40, rate_limit: { window: '5h', used_percent: 3 } },
     ...overrides,
   };
+}
+
+function legalEnvelope() {
+  const citation = {
+    citation_id: 'citation:ley-80-1993-art-1:legal-corpus-v1', source_id: 'ley-80-1993-art-1',
+    norm_type: 'ley', norm_number: '80', year: 1993, article_or_section: 'Artículo 1',
+    issuing_authority: 'Congreso de la República', official_url: 'https://www.suin-juriscol.gov.co/viewDocument.asp?ruta=Leyes/1790106',
+    verified_at: '2026-07-30', corpus_version: 'legal-corpus-v1', label: 'Ley 80 de 1993, Artículo 1',
+  };
+  return envelope({
+    legal_evidence: {
+      corpus_version: 'legal-corpus-v1', as_of: '2026-07-30',
+      query: { process_stage: null, modality: null, topics: ['contratación estatal'], sector: ['sector público'], max_results: null },
+      verified_legal_evidence: [],
+      human_legal_review_items: [{ source_id: 'ley-80-1993-art-1', topic: ['contratación estatal'], sector: ['sector público'], citation, statement: 'No verificado jurídicamente; requiere revisión humana', reasons: ['validity_uncertain'] }],
+      citation_allowlist: [], coverage: { matched_source_ids: ['ley-80-1993-art-1'], considered_count: 1, returned_count: 1 }, omissions: [], abstention_state: 'abstained',
+    },
+    legal_findings: [{ classification: 'human_legal_review', text: 'No verificado jurídicamente; requiere revisión humana', evidence_refs: [], legal_citation_ids: [citation.citation_id] }],
+  });
 }
 
 function fakeDatabase({ onRpc } = {}) {
@@ -76,14 +105,15 @@ function fakeDatabase({ onRpc } = {}) {
         const overridden = onRpc(name, params);
         if (overridden) return overridden;
       }
-      if (name !== 'psi_record_tender_analysis_run') throw new Error(`unexpected RPC ${name}`);
+      if (!['psi_record_tender_analysis_run', 'psi_record_agt002_canonical_analysis_run'].includes(name)) throw new Error(`unexpected RPC ${name}`);
       const existing = runs.get(params.p_idempotency_key);
       if (existing) {
         const semantic = { ...existing.params };
         assert.deepEqual(params, semantic, 'idempotency replay must be semantically identical, mirroring the real RPC');
         return { data: existing.data, error: null };
       }
-      const data = { id: ids.run, snapshot_id: params.p_snapshot_id, producer: params.p_producer, method: params.p_method, status: params.p_status, critical_open_count: params.p_critical_open_count };
+      const canonical = name === 'psi_record_agt002_canonical_analysis_run';
+      const data = { id: ids.run, snapshot_id: params.p_snapshot_id, producer: params.p_producer || 'AGT-002', method: params.p_method || 'agent_ai', status: params.p_status || 'completed', canonical, critical_open_count: params.p_critical_open_count };
       runs.set(params.p_idempotency_key, { params, data });
       return { data, error: null };
     },
@@ -125,7 +155,9 @@ function fakeDatabase({ onRpc } = {}) {
   assert.equal(registered.status, 'completed');
   assert.equal(registered.current, true);
   assert.equal(registered.critical_open_count, 1, 'must count only critical questions');
-  assert.deepEqual(Object.keys(registered.result).sort(), ['blockers', 'human_review_required', 'next_action', 'questions', 'recommendation', 'strengths', 'summary', 'unverified', 'weaknesses'].sort());
+  assert.deepEqual(Object.keys(registered.result).sort(), ['blockers', 'evidence_coverage', 'human_review_required', 'next_action', 'questions', 'recommendation', 'strengths', 'summary', 'unverified', 'weaknesses'].sort());
+  assert.deepEqual(registered.result.evidence_coverage, envelope().evidence_coverage);
+  assert.doesNotMatch(JSON.stringify(registered.result.evidence_coverage), /"text"\s*:/, 'coverage metadata must never persist chunk text');
 
   const call = database.rpcCalls[0];
   assert.equal(call.name, 'psi_record_tender_analysis_run');
@@ -147,6 +179,67 @@ function fakeDatabase({ onRpc } = {}) {
   assert.doesNotMatch(JSON.stringify(call.params.p_result), /Los documentos y toda la evidencia|no uses herramientas/i, 'stored result must never contain the system policy text');
 }
 
+// E5 legal evidence and findings are an atomic pair and must survive append-only persistence;
+// otherwise the UI cannot render the reviewed run after reload.
+{
+  const database = fakeDatabase();
+  const registered = await registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: legalEnvelope(),
+  });
+  assert.deepEqual(registered.result.legal_evidence, legalEnvelope().legal_evidence);
+  assert.deepEqual(registered.result.legal_findings, legalEnvelope().legal_findings);
+  await assert.rejects(() => registerAgt002PreviewAnalysis(fakeDatabase(), {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: envelope({ legal_findings: legalEnvelope().legal_findings }),
+  }), /legal_evidence|evidencia jurídica/i);
+}
+
+// Coverage metadata is snapshot-bound; persistence rejects cross-snapshot evidence.
+{
+  const database = fakeDatabase();
+  await assert.rejects(() => registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity,
+    tender_id: ids.tender,
+    snapshot_id: ids.snapshot,
+    envelope: envelope({ evidence_coverage: { ...envelope().evidence_coverage, snapshot_id: 'other-snapshot' } }),
+  }), /cobertura|snapshot/i);
+  assert.deepEqual(database.rpcCalls, []);
+}
+
+// Canonical-only registration uses the dedicated 050 RPC and cannot supply a competing producer/method/status.
+{
+  const database = fakeDatabase();
+  const registered = await registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: envelope(), canonicalOnly: true,
+  });
+  const call = database.rpcCalls[0];
+  assert.equal(call.name, 'psi_record_agt002_canonical_analysis_run');
+  assert.equal(registered.canonical, true);
+  assert.equal(Object.hasOwn(call.params, 'p_producer'), false);
+  assert.equal(Object.hasOwn(call.params, 'p_method'), false);
+  assert.equal(Object.hasOwn(call.params, 'p_status'), false);
+}
+
+// Attempt lifecycle events are typed and producer identity is fixed by the persistence layer.
+{
+  const calls = [];
+  const database = { async rpc(name, params) {
+    calls.push({ name, params });
+    return { data: { id: 'event-id', attempt_key: params.p_attempt_key, state: params.p_state }, error: null };
+  } };
+  const event = await appendAgt002AnalysisAttempt(database, {
+    snapshot_id: ids.snapshot, opportunity_id: ids.opportunity, tender_id: ids.tender,
+    attempt_key: 'attempt-1', state: 'queued', event_key: 'event-1',
+  });
+  assert.equal(event.state, 'queued');
+  assert.equal(calls[0].name, 'psi_append_agt002_analysis_attempt');
+  assert.equal(calls[0].params.p_producer, 'AGT-002');
+  await assert.rejects(() => appendAgt002AnalysisAttempt(database, {
+    snapshot_id: ids.snapshot, opportunity_id: ids.opportunity, tender_id: ids.tender,
+    attempt_key: 'attempt-1', state: 'fake_state', event_key: 'event-2',
+  }), /estado/i);
+}
+
 // Two registrations with the same identity reuse the same idempotency key and the same run.
 {
   const database = fakeDatabase();
@@ -161,7 +254,12 @@ function fakeDatabase({ onRpc } = {}) {
   const database = fakeDatabase();
   const first = await registerAgt002PreviewAnalysis(database, { opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: envelope() });
   const otherSnapshot = '99999999-9999-4999-8999-999999999999';
-  await registerAgt002PreviewAnalysis(database, { opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: otherSnapshot, envelope: envelope({ snapshot_id: otherSnapshot }) });
+  await registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity,
+    tender_id: ids.tender,
+    snapshot_id: otherSnapshot,
+    envelope: envelope({ snapshot_id: otherSnapshot, evidence_coverage: { ...envelope().evidence_coverage, snapshot_id: otherSnapshot } }),
+  });
   assert.notEqual(database.rpcCalls[0].params.p_idempotency_key, database.rpcCalls[1].params.p_idempotency_key);
   assert.ok(first.run_id, 'sanity: first registration still returns a run id');
 }
@@ -199,6 +297,18 @@ function fakeDatabase({ onRpc } = {}) {
   };
   const row = await findAgt002PreviewRun(found, 'present-key');
   assert.deepEqual(row, { run_id: ids.run, snapshot_id: ids.snapshot, producer: 'AGT-002', method: 'agent_ai', status: 'completed', current: true, result: { recommendation: 'pause' }, critical_open_count: 1, created_at: '2026-07-26T00:00:00.000Z', completed_at: '2026-07-26T00:00:01.000Z' });
+
+  const filters = [];
+  const canonicalFound = {
+    from() { return {
+      select(columns) { assert.match(columns, /canonical/); return this; },
+      eq(column, value) { filters.push([column, value]); return this; },
+      async maybeSingle() { return { data: { id: ids.run, snapshot_id: ids.snapshot, producer: 'AGT-002', method: 'agent_ai', status: 'completed', canonical: true, result: {}, critical_open_count: 0 }, error: null }; },
+    }; },
+  };
+  const canonicalRow = await findAgt002PreviewRun(canonicalFound, 'canonical-key', { canonicalOnly: true });
+  assert.equal(canonicalRow.canonical, true);
+  assert.deepEqual(filters, [['idempotency_key', 'canonical-key'], ['canonical', true]]);
 
   const erroring = { from() { return { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: null, error: { message: 'db down' } }; } }; } };
   await assert.rejects(() => findAgt002PreviewRun(erroring, 'x'), /db down/);

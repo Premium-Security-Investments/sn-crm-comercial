@@ -19,6 +19,7 @@ import { tenderAnalysisMethodLabel } from './tenders/tenderDecisionBrief';
 import { loadTenderGoNoGoDecision, loadTenderOfferStatus, loadTrackingEvents, postActuation } from './tenders/api';
 import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
 import { tenderSharePointStatusLabel } from './tenders/statusLabels';
+import { isTenderProcessingActive, shouldReloadTenderArtifacts, tenderProcessingLabel } from './tenders/processingStatus';
 import type { TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
 import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
@@ -830,6 +831,8 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
   const [busy, setBusy] = useState(false);
   const requestVersionRef = useRef(0);
   const activeOpportunityRef = useRef(opportunity.id);
+  const processingStatusRef = useRef<TenderProcessingStatus | null>(null);
+  const terminalReloadedJobRef = useRef<string | null>(null);
   activeOpportunityRef.current = opportunity.id;
   const documents = payload.documents || [];
   const analysis = payload.analysis;
@@ -847,10 +850,20 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
   const loadProcessingStatus = async () => {
     const requestedId = opportunity.id;
     const state = await api<TenderProcessingStatus>(`/api/tender-processing-status?opportunity_id=${encodeURIComponent(requestedId)}`);
-    if (activeOpportunityRef.current === requestedId) setProcessingStatus(state);
+    if (activeOpportunityRef.current !== requestedId) return;
+    const previous = processingStatusRef.current;
+    processingStatusRef.current = state;
+    setProcessingStatus(state);
+    if (shouldReloadTenderArtifacts(previous, state, terminalReloadedJobRef.current)) {
+      terminalReloadedJobRef.current = state.job_id;
+      setStatusText('Procesamiento completado. Recargando documentos, snapshot y análisis persistidos…');
+      await Promise.all([loadDocuments(), onReload?.()]);
+      if (activeOpportunityRef.current === requestedId) setStatusText('Procesamiento completado y expediente actualizado.');
+    }
   };
   useEffect(() => {
     activeOpportunityRef.current = opportunity.id; requestVersionRef.current += 1;
+    processingStatusRef.current = null; terminalReloadedJobRef.current = null;
     setPayload({ documents: [], analysis: null, analyses: [] }); setProcessingStatus(null); setRefreshResult(null); setStatusText(''); setBusy(false); onAnalysisChanged?.(null); onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
     void loadDocuments().catch(err => { if (activeOpportunityRef.current === opportunity.id) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'error', message }); } });
     void loadProcessingStatus().catch(err => { if (activeOpportunityRef.current === opportunity.id) setStatusText(err instanceof Error ? err.message : String(err)); });
@@ -876,15 +889,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'ready', value: payload.analysis || null }); }
     finally { setBusy(false); }
   };
-  const analyzeDocuments = async () => {
-    setBusy(true); setStatusText('Generando análisis documental…');
-    onNavigationStateChanged?.({ phase: 'ready', value: { currentDocumentCount: documents.filter(document => document.current !== false).length, importError: Boolean(payload.import_error) } }, { phase: 'pending', label: 'Análisis en curso' });
-    try {
-      const data = await api<TenderDocumentsPayload>('/api/tender-documents-analyze', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
-      setPayload(data); onAnalysisChanged?.(data.analysis || null); emitNavigationPayload(data); setStatusText('Análisis persistente generado y compartido.');
-    } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'ready', value: { currentDocumentCount: documents.filter(document => document.current !== false).length, importError: Boolean(payload.import_error) } }, { phase: 'error', message }); }
-    finally { setBusy(false); }
-  };
+
   const analyzeDocumentsWithAgt002 = async () => {
     setBusy(true); setStatusText('Analizando con Vig-IA; la revisión humana sigue siendo obligatoria…');
     try {
@@ -936,13 +941,15 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }
   };
-  const processingActive = Boolean(processingStatus && !['no_job', 'completed', 'cancelled'].includes(processingStatus.status));
+  const processingActive = Boolean(processingStatus && isTenderProcessingActive(processingStatus.status));
+  const processingVisible = Boolean(processingStatus && processingStatus.status !== 'no_job');
+  const processingPending = processingStatus ? Math.max(0, processingStatus.counts.discovered - processingStatus.counts.processed) : 0;
   const processingRetryable = Boolean(processingStatus?.idempotency_key && ['retry_wait', 'needs_attention'].includes(processingStatus.status));
   const sourceUrl = resolveTenderSourceUrl(opportunity.source_url, opportunity.observaciones);
   return <div id="tender-document-review" className="tender-guided-review" tabIndex={-1} ref={focusTargetRef}>
-    {processingActive && processingStatus && <div className="notice" role="status"><strong>Procesando documentos en segundo plano</strong><p>Paso actual: {processingStatus.current_step || processingStatus.status}. Procesados {processingStatus.counts.processed} de {processingStatus.counts.discovered}; importados {processingStatus.counts.imported}; sin cambios {processingStatus.counts.unchanged}; fallidos {processingStatus.counts.failed}.</p>{processingStatus.last_error_message && <p>{processingStatus.last_error_message}</p>}{processingStatus.failed_items.length > 0 && <ul>{processingStatus.failed_items.map(item => <li key={item.id}><strong>{item.name}</strong>: {item.last_error_message || item.last_error_code || item.status}</li>)}</ul>}{processingRetryable && <button type="button" disabled={busy} onClick={() => void retryDurableProcessing()}>Reintentar</button>}</div>}
+    {processingVisible && processingStatus && <div className="notice" role="status"><strong>{processingActive ? 'Procesando documentos en segundo plano' : tenderProcessingLabel(processingStatus.status)}</strong><p>{tenderProcessingLabel(processingStatus.status)}{processingStatus.current_step ? ` · Paso técnico: ${processingStatus.current_step}` : ''}. Detectados {processingStatus.counts.discovered}; procesados {processingStatus.counts.processed}; pendientes {processingPending}; importados {processingStatus.counts.imported}; sin cambios {processingStatus.counts.unchanged}; fallidos {processingStatus.counts.failed}.</p>{processingStatus.snapshot_id && <p>Snapshot persistido: {processingStatus.snapshot_id}</p>}{processingStatus.analysis_run_id && <p>Análisis persistido: {processingStatus.analysis_run_id}</p>}{processingStatus.last_error_message && <p>{processingStatus.last_error_message}</p>}{processingStatus.failed_items.length > 0 && <ul>{processingStatus.failed_items.map(item => <li key={item.id}><strong>{item.name}</strong>: {item.last_error_message || item.last_error_code || item.status}</li>)}</ul>}{processingRetryable && <button type="button" disabled={busy} onClick={() => void retryDurableProcessing()}>Reintentar</button>}</div>}
     <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} sourceUrl={sourceUrl} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
-    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} onAnalyze={() => void analyzeDocuments()} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type !== 'agent'} onSaveQuestionResponse={saveQuestionResponse} />
+    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type !== 'agent'} onSaveQuestionResponse={saveQuestionResponse} />
   </div>;
 }
 function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, onNavigationStateChanged }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void>; onNavigationStateChanged?: (state: TenderPanelState<TenderPreparationNavigationValue>) => void }) {

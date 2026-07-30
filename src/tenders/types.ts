@@ -189,6 +189,90 @@ export type TenderDossierItemActionInput = {
   note?: string | null;
 };
 export type TenderCurrentProfile = { id: string; full_name: string; role: string; microsoft_email?: string | null; active?: boolean; permissions?: string[]; identity_type?: 'human' | 'agent' | null };
+export type TenderEvidenceCoverageChunk = {
+  evidence_ref: string;
+  chunk_id: string;
+  document_id: string;
+  document_version_id: string;
+  document_type: string;
+  name: string;
+  version: number;
+  content_hash: string;
+  current: boolean;
+  page: number;
+  section: number;
+  chunk_index: number;
+  char_count: number;
+  chunk_hash: string;
+  precedence: 'base' | 'addendum';
+  superseded_by_addendum: boolean;
+  requirement_ids: string[];
+};
+export type TenderEvidenceOmissionReason = 'budget_exhausted' | 'lower_relevance' | 'superseded_for_current_requirement' | 'gap_unavailable';
+export type TenderEvidenceOmission = {
+  evidence_ref: string | null;
+  chunk_id: string | null;
+  document_id: string;
+  document_type: string | null;
+  requirement_id: string | null;
+  reason: TenderEvidenceOmissionReason;
+};
+export type TenderEvidenceRequirementCoverage = {
+  requirement_id: string;
+  candidates_available: number;
+  chunks_selected: number;
+  status: 'covered' | 'not_covered' | 'no_evidence';
+};
+export type TenderEvidenceCoverage = {
+  snapshot_id: string;
+  budget: {
+    max_chunks: number; max_chars: number; max_tokens: number;
+    chunks_used: number; chars_used: number; tokens_used: number;
+    chunks_remaining: number; chars_remaining: number; tokens_remaining: number;
+  };
+  coverage_manifest: {
+    by_document: Array<{ document_id: string; document_type: string | null; chunks_available: number; chunks_selected: number; gap: boolean; covered: boolean }>;
+    by_document_type: Array<{ document_type: string; chunks_available: number; chunks_selected: number; covered: boolean }>;
+    by_requirement: TenderEvidenceRequirementCoverage[];
+  };
+  selected_chunks: TenderEvidenceCoverageChunk[];
+  omitted_chunks: TenderEvidenceOmission[];
+  citation_allowlist: string[];
+  material_omissions: boolean;
+};
+export type TenderLegalFindingClassification = 'tender_requirement' | 'legal_obligation' | 'company_evidence' | 'inference' | 'human_legal_review';
+export type TenderLegalFinding = {
+  classification: TenderLegalFindingClassification;
+  text: string;
+  evidence_refs: string[];
+  legal_citation_ids: string[];
+};
+export type TenderLegalCitation = {
+  citation_id: string;
+  source_id: string;
+  norm_type: string;
+  norm_number: string;
+  year: number;
+  article_or_section: string;
+  issuing_authority: string;
+  official_url: string;
+  verified_at: string;
+  corpus_version: string;
+  label: string;
+};
+export type TenderVerifiedLegalEvidenceItem = { source_id: string; topic: string[]; sector: string[]; citation: TenderLegalCitation; statement: string };
+export type TenderHumanLegalReviewItem = { source_id: string; topic: string[]; sector: string[]; citation: TenderLegalCitation; statement: string; reasons: string[] };
+export type TenderLegalEvidence = {
+  corpus_version: string;
+  as_of: string;
+  query: { process_stage: string | null; modality: string | null; topics: string[]; sector: string[]; max_results: number | null };
+  verified_legal_evidence: TenderVerifiedLegalEvidenceItem[];
+  human_legal_review_items: TenderHumanLegalReviewItem[];
+  citation_allowlist: string[];
+  coverage: { matched_source_ids: string[]; considered_count: number; returned_count: number };
+  omissions: Array<{ source_id: string; reason: string }>;
+  abstention_state: 'grounded' | 'abstained';
+};
 export type TenderDocumentAnalysis = {
   run_id: string;
   snapshot_id: string;
@@ -213,6 +297,9 @@ export type TenderDocumentAnalysis = {
   unverified?: TenderAnalysisFinding[];
   company_profile_crosscheck?: { status?: string; matches?: string[]; gaps?: TenderAnalysisFinding[]; profile_source?: string };
   next_action?: string;
+  evidence_coverage?: TenderEvidenceCoverage | null;
+  legal_findings?: TenderLegalFinding[];
+  legal_evidence?: TenderLegalEvidence | null;
   [key: string]: unknown;
 };
 export type TenderDocumentRecord = {
@@ -228,12 +315,24 @@ export type TenderDocumentRecord = {
   signed_url?: string | null;
   extracted_text?: string | null;
 };
+export type TenderAnalysisAttempt = {
+  event_id: string;
+  snapshot_id: string;
+  tender_id: string;
+  attempt_key: string;
+  producer: 'AGT-002';
+  state: 'queued' | 'running' | 'completed' | 'retry_wait' | 'needs_attention' | 'unavailable';
+  error_code: string | null;
+  analysis_run_id: string | null;
+  created_at: string | null;
+};
 export type TenderDocumentsPayload = Partial<TenderDocumentRefreshResult> & {
   import_error?: { kind?: string; source?: string | null; created_at?: string | null; failure_marker?: string | null } | null;
   documents: TenderDocumentRecord[];
   analysis: TenderDocumentAnalysis | null;
   analyses: TenderDocumentAnalysis[];
   question_responses?: TenderQuestionResponse[];
+  analysis_attempt?: TenderAnalysisAttempt | null;
   analysis_engine?: { requested: 'AGT-002'; used: 'AGT-002' | 'siio_rules_v1'; fallback: boolean; reason?: 'not_configured' | 'preview_unavailable'; reused?: boolean; human_review_required: true };
 };
 export type TenderAnalysisFinding = string | {

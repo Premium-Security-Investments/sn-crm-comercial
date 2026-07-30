@@ -61,8 +61,15 @@ export async function claimTenderProcessingJob(database, { leaseSeconds = 90 } =
   };
 }
 
-export async function updateTenderProcessingJob(database, jobId, leaseId, patch) {
-  return rpc(database, 'psi_update_tender_processing_job', { p_job_id: jobId, p_lease_id: leaseId, p_patch: patch });
+export async function updateTenderProcessingJob(database, jobId, leaseId, patch, { releaseLease = false } = {}) {
+  // Migration 049 consumes release_lease as a control key. The default is
+  // deliberately false so deploying the migration and application with the
+  // phase flag off preserves migration-034 behavior exactly.
+  return rpc(database, 'psi_update_tender_processing_job', {
+    p_job_id: jobId,
+    p_lease_id: leaseId,
+    p_patch: releaseLease ? { ...patch, release_lease: true } : patch,
+  });
 }
 
 export async function recordTenderImportItem(database, { jobId, source, sourceDocumentId, sourceUrl, name, status, critical, documentVersionId, lastErrorCode, lastErrorMessage, nextAttemptAt }) {
@@ -78,6 +85,34 @@ export async function recordTenderImportItem(database, { jobId, source, sourceDo
     p_last_error_code: lastErrorCode || null,
     p_last_error_message: lastErrorMessage || null,
     p_next_attempt_at: nextAttemptAt || null,
+  });
+}
+
+export async function recordTenderDocumentChunk(database, {
+  opportunityId, tenderId, documentVersionId, snapshotId, chunkId, evidenceRef,
+  documentType, name, version, contentHash, page, section, chunkIndex,
+  text, chunkHash, current, precedence, supersededByAddendum, actorId,
+}) {
+  return rpc(database, 'psi_record_tender_document_chunk', {
+    p_opportunity_id: opportunityId,
+    p_tender_id: tenderId,
+    p_document_version_id: documentVersionId,
+    p_snapshot_id: snapshotId || null,
+    p_chunk_id: chunkId,
+    p_evidence_ref: evidenceRef,
+    p_document_type: documentType,
+    p_name: name,
+    p_version: version,
+    p_content_hash: contentHash,
+    p_page: page,
+    p_section: section,
+    p_chunk_index: chunkIndex,
+    p_text: text,
+    p_chunk_hash: chunkHash,
+    p_current: current,
+    p_precedence: precedence,
+    p_superseded_by_addendum: supersededByAddendum,
+    p_actor_id: actorId,
   });
 }
 

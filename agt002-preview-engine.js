@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { buildAgt002PreviewInput } from './agt002-preview-input.js';
-import { AGT002_PREVIEW_OUTPUT_JSON_SCHEMA, AGT002_PREVIEW_SCHEMA_VERSION, collectAgt002PreviewEvidenceIds, validateAgt002PreviewModelOutput } from './agt002-preview-contract.js';
+import {
+  AGT002_PREVIEW_OUTPUT_JSON_SCHEMA,
+  AGT002_PREVIEW_SCHEMA_VERSION,
+  buildAgt002PreviewOutputJsonSchema,
+  collectAgt002PreviewEvidenceIds,
+  collectAgt002PreviewLegalCitationIds,
+  validateAgt002PreviewModelOutput,
+} from './agt002-preview-contract.js';
 import { validateTenderAnalysisResult } from './tender-analysis-domain.js';
 
 export const AGT002_PREVIEW_POLICY = [
@@ -9,6 +16,8 @@ export const AGT002_PREVIEW_POLICY = [
   'Nunca decidas ni autorices GO / NO GO: produces únicamente una recomendación preliminar sujeta a revisión humana obligatoria.',
   'No afirmes cumplimiento, hechos ni conclusiones sin un evidence_id explícito presente en la entrada recibida.',
   'Cita exclusivamente evidence_id que existan en la entrada recibida; nunca inventes ni supongas un identificador.',
+  'Cuando exista legal_evidence, separa requisito de licitación, obligación jurídica, evidencia empresarial, inferencia y revisión jurídica.',
+  'Toda obligación jurídica debe citar exclusivamente legal_citation_ids de citation_allowlist; toda fuente incierta debe aparecer como human_legal_review con el texto exacto y todas sus citas recibidas.',
   'Devuelve exclusivamente el objeto JSON estructurado acordado, sin texto adicional ni claves fuera de las solicitadas.',
 ].join(' ');
 
@@ -16,8 +25,12 @@ const SAFE_UNAVAILABLE = 'AGT-002 Preview no está disponible en este momento.';
 const SAFE_INVALID = 'AGT-002 Preview no produjo una respuesta válida.';
 const FINDING_FIELDS = ['strengths', 'weaknesses', 'blockers', 'questions', 'unverified'];
 
-function outputSchemaForEvidenceIds(allowedEvidenceIds) {
-  const schema = JSON.parse(JSON.stringify(AGT002_PREVIEW_OUTPUT_JSON_SCHEMA));
+function outputSchemaForEvidenceIds(allowedEvidenceIds, { legalCorpus = false, legalCitationIds = { all: [] } } = {}) {
+  const schema = JSON.parse(JSON.stringify(buildAgt002PreviewOutputJsonSchema({
+    legalCorpus,
+    allowedEvidenceIds,
+    allowedLegalCitationIds: legalCitationIds.all,
+  })));
   for (const field of FINDING_FIELDS) {
     schema.properties[field].items.properties.evidence_refs.items.enum = [...allowedEvidenceIds];
   }
@@ -46,6 +59,20 @@ function classifyOutputValidationFailure(error) {
   return 'invalid_schema';
 }
 
+function buildEvidenceCoverage(previewInput) {
+  const evidence = previewInput?.document_evidence;
+  if (!evidence) return null;
+  return {
+    snapshot_id: evidence.snapshot_id,
+    budget: evidence.budget,
+    coverage_manifest: evidence.coverage_manifest,
+    selected_chunks: evidence.selected_chunks.map(({ text: _text, ...metadata }) => metadata),
+    omitted_chunks: evidence.omitted_chunks,
+    citation_allowlist: evidence.citation_allowlist,
+    material_omissions: evidence.material_omissions,
+  };
+}
+
 export function createAgt002PreviewEngine({
   client,
   model,
@@ -56,14 +83,19 @@ export function createAgt002PreviewEngine({
   dailyMaxRuns = 20,
   countDailyRuns = async () => 0,
   idGenerator = randomUUID,
+  contextV2 = false,
+  documentRetrieval = false,
+  legalCorpus = false,
+  legalEvidenceProvider,
 } = {}) {
   if (!client || typeof client.run !== 'function'
     || !nonEmpty(model) || !nonEmpty(policyVersion) || !nonEmpty(policyText)
     || !Number.isInteger(timeoutMs) || timeoutMs <= 0
     || !Number.isInteger(maxConcurrent) || maxConcurrent <= 0
     || !Number.isInteger(dailyMaxRuns) || dailyMaxRuns <= 0
-    || typeof countDailyRuns !== 'function') {
-    throw new Error('AGT-002 Preview no está configurado.');
+    || typeof countDailyRuns !== 'function'
+    || (legalCorpus && typeof legalEvidenceProvider !== 'function')) {
+    throw new Error('AGT-002 Preview no está configurado: falta configuración o evidencia jurídica determinística.');
   }
 
   let active = 0;
@@ -72,7 +104,10 @@ export function createAgt002PreviewEngine({
   async function runOnce(previewInput, idempotencyKey, signal) {
     const allowedEvidenceIds = collectAgt002PreviewEvidenceIds(previewInput);
     if (!allowedEvidenceIds.length) throw safe(SAFE_INVALID);
-    const outputSchema = outputSchemaForEvidenceIds(allowedEvidenceIds);
+    const legalCitationIds = collectAgt002PreviewLegalCitationIds(previewInput);
+    const requiredHumanReviewCitationIds = previewInput.legal_evidence?.human_legal_review_items
+      ?.map(item => item.citation.citation_id) ?? [];
+    const outputSchema = outputSchemaForEvidenceIds(allowedEvidenceIds, { legalCorpus, legalCitationIds });
     const raw = await client.run({ model, policy: policyText, input: previewInput, outputSchema, timeoutMs, idempotencyKey, signal });
 
     let parsed;
@@ -86,7 +121,13 @@ export function createAgt002PreviewEngine({
 
     let validatedOutput;
     try {
-      validatedOutput = validateAgt002PreviewModelOutput(parsed, { allowedEvidenceIds });
+      validatedOutput = validateAgt002PreviewModelOutput(parsed, {
+        allowedEvidenceIds,
+        legalCorpus,
+        legalCitationIds,
+        requireLegalAbstention: previewInput.legal_evidence?.abstention_state === 'abstained',
+        requiredHumanReviewCitationIds,
+      });
     } catch (error) {
       console.warn('agt002_preview_output_rejected', { event: 'agt002_preview_output_rejected', code: classifyOutputValidationFailure(error) });
       throw safe(SAFE_INVALID);
@@ -109,6 +150,8 @@ export function createAgt002PreviewEngine({
       status: 'completed',
       method: 'agent_ai',
       ...validatedOutput,
+      ...(legalCorpus ? { legal_evidence: previewInput.legal_evidence } : {}),
+      ...(previewInput.document_evidence ? { evidence_coverage: buildEvidenceCoverage(previewInput) } : {}),
       usage: {
         provider: 'codex_app_server',
         model,
@@ -127,7 +170,13 @@ export function createAgt002PreviewEngine({
 
   return {
     analyze(context, { idempotencyKey, signal } = {}) {
-      const previewInput = buildAgt002PreviewInput(context || {});
+      // Feature flags are engine-level configuration, not caller-supplied: they always win
+      // over anything a caller's context object might carry. The legal provider receives
+      // only the current closed analysis context and performs deterministic offline retrieval.
+      const legalEvidencePackage = legalCorpus ? legalEvidenceProvider(context || {}) : undefined;
+      const previewInput = buildAgt002PreviewInput({
+        ...(context || {}), contextV2, documentRetrieval, legalCorpus, legalEvidencePackage,
+      });
       const key = nonEmpty(idempotencyKey) ? idempotencyKey : `${previewInput.snapshot_id}:${policyVersion}:${model}`;
 
       // Registration into `inflight` must happen synchronously, before any

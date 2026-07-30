@@ -9,6 +9,8 @@ const m033 = strip(readFileSync(new URL('../supabase/migrations/033_tender_track
 const m034 = strip(readFileSync(new URL('../supabase/migrations/034_tender_processing_rpc.sql', import.meta.url), 'utf8'));
 const m035 = strip(readFileSync(new URL('../supabase/migrations/035_tender_analysis_authorization.sql', import.meta.url), 'utf8'));
 const m037 = strip(readFileSync(new URL('../supabase/migrations/037_tender_retry_limits.sql', import.meta.url), 'utf8'));
+const m049 = strip(readFileSync(new URL('../supabase/migrations/049_tender_processing_lease_release.sql', import.meta.url), 'utf8'));
+const rollback049 = strip(readFileSync(new URL('../supabase/rollbacks/049_tender_processing_lease_release_rollback.sql', import.meta.url), 'utf8'));
 
 const T = '33333333-3333-4333-8333-333333333333';
 const O = '55555555-5555-4555-8555-555555555555';
@@ -38,6 +40,7 @@ async function db() {
   await pg.exec(m034);
   await pg.exec(m035);
   await pg.exec(m037);
+  await pg.exec(m049);
   return pg;
 }
 
@@ -68,7 +71,15 @@ async function run() {
 
   const upd = (await pg.query(`select public.psi_update_tender_processing_job('${a.job_id}', '${claim3.lease_id}', '{"status":"discovering_documents","current_step":"documents"}'::jsonb) as r`)).rows[0].r;
   assert.equal(upd.status, 'ok');
+  assert.equal(upd.lease_released, false);
   assert.equal((await pg.query(`select status from public.psi_tender_processing_jobs where id='${a.job_id}'`)).rows[0].status, 'discovering_documents');
+  assert.equal((await pg.query(`select public.psi_claim_tender_processing_job(60) as r`)).rows[0].r.status, 'empty', 'sin clave de control el lease se conserva');
+
+  const released = (await pg.query(`select public.psi_update_tender_processing_job('${a.job_id}', '${claim3.lease_id}', '{"status":"importing_documents","release_lease":true}'::jsonb) as r`)).rows[0].r;
+  assert.equal(released.lease_released, true);
+  const claim4 = (await pg.query(`select public.psi_claim_tender_processing_job(60) as r`)).rows[0].r;
+  assert.equal(claim4.status, 'claimed', 'la siguiente fase debe reclamarse inmediatamente');
+  assert.equal(claim4.job_id, a.job_id);
 
   await assert.rejects(pg.query(`select public.psi_update_tender_processing_job('${a.job_id}', gen_random_uuid(), '{"status":"needs_attention"}'::jsonb)`), /lease/i);
 
@@ -90,6 +101,12 @@ async function run() {
   item = (await pg.query(`select attempt_count, next_attempt_at from public.psi_tender_document_import_items where job_id='${a.job_id}' and source_document_id='doc-retry'`)).rows[0];
   assert.equal(item.attempt_count, 2, 'la recuperación conserva el historial de intentos');
   assert.equal(item.next_attempt_at, null, 'la recuperación limpia el backoff');
+
+  await pg.exec(rollback049);
+  const rolledBack = (await pg.query(`select public.psi_update_tender_processing_job('${a.job_id}', '${claim4.lease_id}', '{"status":"discovering_documents","release_lease":true}'::jsonb) as r`)).rows[0].r;
+  assert.equal(rolledBack.lease_released, undefined, 'rollback restaura la respuesta de 034');
+  const leaseAfterRollback = (await pg.query(`select lease_id from public.psi_tender_processing_jobs where id='${a.job_id}'`)).rows[0].lease_id;
+  assert.equal(leaseAfterRollback, claim4.lease_id, 'rollback conserva el lease aunque el patch incluya la antigua clave de control');
 
   console.log('tender-processing-rpc pglite integration passed');
 }
