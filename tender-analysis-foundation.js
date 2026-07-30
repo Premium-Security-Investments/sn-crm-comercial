@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { AGT002_CONTEXT_VERSION, buildAgt002ContextV2 } from './agt002-context-v2.js';
 
 const RULES_PRODUCER = 'siio_rules_v1';
 const RULES_METHOD = 'rules';
@@ -204,6 +205,36 @@ export async function getCurrentTenderAnalysis(database, opportunityId, currentD
     created_at: run.created_at || null,
     completed_at: run.completed_at || null,
   };
+}
+
+/**
+ * Persists an immutable, append-only AGT-002 context v2 version: the validated
+ * closed context (including the human answers effective at creation time) plus
+ * its content hash. Every canonical analysis run that consumes this context must
+ * reference the returned id so past runs stay reproducible even after new human
+ * answers or evidence arrive later.
+ */
+export async function registerAgt002ContextVersion(database, context) {
+  const opportunityId = requireId(context?.opportunity_id, 'La oportunidad');
+  const tenderId = requireId(context?.tender_id, 'La licitación');
+  const snapshotId = requireId(context?.snapshot_id, 'El snapshot documental');
+  const actorId = requireId(context?.actor_id, 'El actor');
+  const validatedContext = buildAgt002ContextV2(context?.context);
+  const contextHash = sha256(validatedContext);
+  const humanEvidenceCount = validatedContext.human_evidence.length;
+  const idempotencyKey = sha256({ opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, context_hash: contextHash });
+  const record = unwrapRpc(await database.rpc('psi_record_agt002_context_version', {
+    p_opportunity_id: opportunityId,
+    p_tender_id: tenderId,
+    p_snapshot_id: snapshotId,
+    p_context_version: AGT002_CONTEXT_VERSION,
+    p_context: validatedContext,
+    p_context_hash: contextHash,
+    p_human_evidence_count: humanEvidenceCount,
+    p_idempotency_key: idempotencyKey,
+    p_actor_id: actorId,
+  }));
+  return { ...record, id: requireId(record.id, 'La versión de contexto') };
 }
 
 /** Produces the document-API analysis payload without allowing result JSON to forge typed-run authority. */
