@@ -174,6 +174,14 @@ for (const id of MIGRATION_ORDER) assert.match(buildRollbackVerifySql(id), new R
 }
 
 {
+  const ddl = createExecSql({
+    baseUrl: 'https://example.supabase.co', serviceKey: 'secret',
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, rows: null }) }),
+  });
+  assert.deepEqual(await ddl('create table example(id bigint);'), [], 'exec_sql representa DDL exitoso sin filas como rows:null');
+}
+
+{
   const rejected = createExecSql({
     baseUrl: 'https://example.supabase.co', serviceKey: 'secret',
     fetchImpl: async () => ({ ok: false, status: 500, json: async () => ({ ok: false, error: 'password=TOPSECRET and raw SQL' }) }),
