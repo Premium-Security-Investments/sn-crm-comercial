@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { normalizeTenderEvidence, tenderAnalysisMethodLabel, tenderAnalysisProducerDisclosure, tenderDecisionStatusTone, tenderNextAction } from '../tenderDecisionBrief';
 import { tenderRecommendationLabel } from '../tenderDecisionGate';
-import type { TenderAnalysisFinding, TenderDocumentAnalysis, TenderDocumentRecord, TenderDocumentsPayload, TenderEvidenceCoverage, TenderEvidenceOmissionReason, TenderQuestionResponse, TenderQuestionResponseInput, TenderQuestionResponseStatus } from '../types';
+import type { TenderAnalysisFinding, TenderDocumentAnalysis, TenderDocumentRecord, TenderDocumentsPayload, TenderEvidenceCoverage, TenderEvidenceOmissionReason, TenderLegalCitation, TenderLegalEvidence, TenderLegalFinding, TenderLegalFindingClassification, TenderQuestionResponse, TenderQuestionResponseInput, TenderQuestionResponseStatus } from '../types';
 
 const EVIDENCE_OMISSION_REASON_LABELS: Record<TenderEvidenceOmissionReason, string> = {
   budget_exhausted: 'Presupuesto de evidencia agotado',
@@ -48,6 +48,125 @@ function EvidenceCoveragePanel({ coverage, documents }: { coverage: TenderEviden
         return <li key={`${omission.document_id}-${index}`}>{label}: {EVIDENCE_OMISSION_REASON_LABELS[omission.reason] || omission.reason}</li>;
       })}
     </ul></details>}
+  </section>;
+}
+
+// AGT002_LEGAL_CORPUS (Task34): the exact fixed statement rendered whenever a legal source's
+// vigencia/applicability could not be confirmed (design 7.6). Never derived from finding.text.
+const AGT002_LEGAL_HUMAN_REVIEW_STATEMENT = 'No verificado jurídicamente; requiere revisión humana';
+
+// Closed, client-side mirror of AGT002_LEGAL_OFFICIAL_HOSTS (agt002-legal-corpus.js): a link is
+// only ever rendered as an official legal source when it is HTTPS and on this exact allowlist.
+// A citation is never trusted from finding.text; it is only ever resolved through
+// legal_citation_ids against analysis.legal_evidence.
+const LEGAL_OFFICIAL_HOSTS = ['funcionpublica.gov.co', 'suin-juriscol.gov.co', 'colombiacompra.gov.co', 'supervigilancia.gov.co'];
+
+function isOfficialLegalUrl(value: unknown): value is string {
+  if (typeof value !== 'string' || !value) return false;
+  let url: URL;
+  try { url = new URL(value); } catch { return false; }
+  if (url.protocol !== 'https:') return false;
+  const host = url.hostname.toLowerCase();
+  return LEGAL_OFFICIAL_HOSTS.some(root => host === root || host.endsWith(`.${root}`));
+}
+
+function isValidLegalCitation(value: unknown): value is TenderLegalCitation {
+  if (!value || typeof value !== 'object') return false;
+  const citation = value as Partial<TenderLegalCitation>;
+  return typeof citation.citation_id === 'string' && citation.citation_id.length > 0
+    && typeof citation.source_id === 'string' && citation.source_id.length > 0
+    && typeof citation.norm_type === 'string' && citation.norm_type.length > 0
+    && typeof citation.norm_number === 'string' && citation.norm_number.length > 0
+    && typeof citation.article_or_section === 'string' && citation.article_or_section.length > 0
+    && typeof citation.issuing_authority === 'string' && citation.issuing_authority.length > 0
+    && typeof citation.verified_at === 'string' && citation.verified_at.length > 0
+    && typeof citation.corpus_version === 'string' && citation.corpus_version.length > 0
+    && isOfficialLegalUrl(citation.official_url);
+}
+
+function isValidLegalEvidence(value: unknown): value is TenderLegalEvidence {
+  if (!value || typeof value !== 'object') return false;
+  const evidence = value as Partial<TenderLegalEvidence>;
+  return typeof evidence.corpus_version === 'string' && evidence.corpus_version.length > 0
+    && typeof evidence.as_of === 'string' && evidence.as_of.length > 0
+    && Array.isArray(evidence.verified_legal_evidence)
+    && Array.isArray(evidence.human_legal_review_items)
+    && Array.isArray(evidence.citation_allowlist)
+    && (evidence.abstention_state === 'grounded' || evidence.abstention_state === 'abstained');
+}
+
+const LEGAL_FINDING_CLASSIFICATIONS: TenderLegalFindingClassification[] = ['tender_requirement', 'legal_obligation', 'company_evidence', 'inference', 'human_legal_review'];
+
+function isValidLegalFinding(value: unknown): value is TenderLegalFinding {
+  if (!value || typeof value !== 'object') return false;
+  const finding = value as Partial<TenderLegalFinding>;
+  return LEGAL_FINDING_CLASSIFICATIONS.includes(finding.classification as TenderLegalFindingClassification)
+    && typeof finding.text === 'string' && finding.text.length > 0
+    && Array.isArray(finding.evidence_refs)
+    && Array.isArray(finding.legal_citation_ids);
+}
+
+const LEGAL_CLASSIFICATION_LABELS: Record<TenderLegalFindingClassification, string> = {
+  tender_requirement: 'Requisito del pliego',
+  legal_obligation: 'Obligación normativa',
+  company_evidence: 'Evidencia empresarial',
+  inference: 'Interpretación de Vig-IA',
+  human_legal_review: 'Revisión jurídica humana',
+};
+
+type LegalCitationEntry = { citation: TenderLegalCitation; verified: boolean };
+
+/** Only citations that pass isValidLegalCitation (HTTPS + official allowlist) ever enter the index. */
+function buildLegalCitationIndex(evidence: TenderLegalEvidence): Map<string, LegalCitationEntry> {
+  const index = new Map<string, LegalCitationEntry>();
+  for (const item of evidence.verified_legal_evidence) {
+    if (isValidLegalCitation(item?.citation)) index.set(item.citation.citation_id, { citation: item.citation, verified: true });
+  }
+  for (const item of evidence.human_legal_review_items) {
+    if (isValidLegalCitation(item?.citation) && !index.has(item.citation.citation_id)) index.set(item.citation.citation_id, { citation: item.citation, verified: false });
+  }
+  return index;
+}
+
+function LegalCitationBadge({ entry }: { entry: LegalCitationEntry | undefined }) {
+  if (!entry) return null;
+  const { citation, verified } = entry;
+  return <div className="tender-legal-citation">
+    <span className={`badge badge-${verified ? 'green' : 'amber'}`}>{verified ? 'Fuente oficial verificada' : AGT002_LEGAL_HUMAN_REVIEW_STATEMENT}</span>
+    <a href={citation.official_url} target="_blank" rel="noopener noreferrer">{citation.norm_type} {citation.norm_number} de {citation.year}, {citation.article_or_section}</a>
+    <small>{citation.issuing_authority} · corpus {citation.corpus_version} · verificado {citation.verified_at}</small>
+  </div>;
+}
+
+function LegalFindingCard({ finding, citationIndex }: { finding: TenderLegalFinding; citationIndex: Map<string, LegalCitationEntry> }) {
+  const isHumanReview = finding.classification === 'human_legal_review';
+  return <li className={`tender-legal-finding tender-legal-finding-${finding.classification}`}>
+    <p>{isHumanReview ? AGT002_LEGAL_HUMAN_REVIEW_STATEMENT : finding.text}</p>
+    {finding.legal_citation_ids.length > 0 && <div className="tender-legal-finding-citations">
+      {finding.legal_citation_ids.map(id => <LegalCitationBadge key={id} entry={citationIndex.get(id)}/>)}
+    </div>}
+    {finding.evidence_refs.length > 0 && <small className="muted">Evidencia: {finding.evidence_refs.join(', ')}</small>}
+  </li>;
+}
+
+/**
+ * Panel separating legal findings into the five closed classes (design 7.6). Gated on a
+ * validated legal_evidence package: legacy/corrupt analysis runs (no legal_evidence, or a
+ * malformed one) never render this panel instead of showing partial/misleading content.
+ */
+function LegalFindingsPanel({ findings, evidence }: { findings: TenderLegalFinding[]; evidence: TenderLegalEvidence }) {
+  const citationIndex = buildLegalCitationIndex(evidence);
+  const grouped = LEGAL_FINDING_CLASSIFICATIONS
+    .map(classification => ({ classification, items: findings.filter(item => item.classification === classification) }))
+    .filter(group => group.items.length > 0);
+  if (!grouped.length) return null;
+  return <section className="tender-legal-findings" aria-label="Evidencia jurídica y revisión humana">
+    <header><h4>Evidencia jurídica</h4><p className="muted">Separa requisito del pliego, obligación normativa, evidencia empresarial, interpretación de Vig-IA y revisión jurídica humana. Organiza evidencia únicamente: no autoriza GO / NO GO ni sustituye asesoría jurídica definitiva.</p></header>
+    {evidence.abstention_state === 'abstained' && <div className="notice" role="status"><strong>Sin fuente jurídica elegible.</strong> No hay norma oficial vigente confirmada para este alcance; toda afirmación jurídica queda en revisión humana.</div>}
+    {grouped.map(group => <div key={group.classification} className={`tender-legal-findings-group tender-legal-findings-${group.classification}`}>
+      <h5>{LEGAL_CLASSIFICATION_LABELS[group.classification]}</h5>
+      <ul>{group.items.map((finding, index) => <LegalFindingCard key={`${group.classification}-${index}`} finding={finding} citationIndex={citationIndex}/>)}</ul>
+    </div>)}
   </section>;
 }
 
@@ -159,6 +278,7 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
       {citedEvidence.length > 0 && <details className="tender-decision-brief-help"><summary>Citas de evidencia ({citedEvidence.length})</summary><ul>{citedEvidence.map(reference => <li key={reference}><code>{reference}</code></li>)}</ul></details>}
     </article>}
     {analysis && isValidEvidenceCoverage(analysis.evidence_coverage) && <EvidenceCoveragePanel coverage={analysis.evidence_coverage} documents={documents}/>}
+    {analysis && isValidLegalEvidence(analysis.legal_evidence) && <LegalFindingsPanel findings={(analysis.legal_findings ?? []).filter(isValidLegalFinding)} evidence={analysis.legal_evidence}/>}
     {analysisEngine?.fallback && <div className="notice" role="status"><strong>Fallback seguro aplicado.</strong> Vig-IA no estuvo disponible ({analysisEngine.reason === 'not_configured' ? 'no configurado' : 'servicio no disponible'}); se conservó el preanálisis determinístico por reglas.</div>}
     {analysisEngine?.used === 'AGT-002' && <div className="notice" role="status"><strong>Revisión humana obligatoria.</strong> Vig-IA produjo una recomendación preliminar{analysisEngine.reused ? ' reutilizada por idempotencia' : ''}; no autoriza GO / NO GO.</div>}
     <div className="tender-analysis-actions">

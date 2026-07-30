@@ -240,6 +240,39 @@ export type TenderEvidenceCoverage = {
   citation_allowlist: string[];
   material_omissions: boolean;
 };
+export type TenderLegalFindingClassification = 'tender_requirement' | 'legal_obligation' | 'company_evidence' | 'inference' | 'human_legal_review';
+export type TenderLegalFinding = {
+  classification: TenderLegalFindingClassification;
+  text: string;
+  evidence_refs: string[];
+  legal_citation_ids: string[];
+};
+export type TenderLegalCitation = {
+  citation_id: string;
+  source_id: string;
+  norm_type: string;
+  norm_number: string;
+  year: number;
+  article_or_section: string;
+  issuing_authority: string;
+  official_url: string;
+  verified_at: string;
+  corpus_version: string;
+  label: string;
+};
+export type TenderVerifiedLegalEvidenceItem = { source_id: string; topic: string[]; sector: string[]; citation: TenderLegalCitation; statement: string };
+export type TenderHumanLegalReviewItem = { source_id: string; topic: string[]; sector: string[]; citation: TenderLegalCitation; statement: string; reasons: string[] };
+export type TenderLegalEvidence = {
+  corpus_version: string;
+  as_of: string;
+  query: { process_stage: string | null; modality: string | null; topics: string[]; sector: string[]; max_results: number | null };
+  verified_legal_evidence: TenderVerifiedLegalEvidenceItem[];
+  human_legal_review_items: TenderHumanLegalReviewItem[];
+  citation_allowlist: string[];
+  coverage: { matched_source_ids: string[]; considered_count: number; returned_count: number };
+  omissions: Array<{ source_id: string; reason: string }>;
+  abstention_state: 'grounded' | 'abstained';
+};
 export type TenderDocumentAnalysis = {
   run_id: string;
   snapshot_id: string;
@@ -265,6 +298,8 @@ export type TenderDocumentAnalysis = {
   company_profile_crosscheck?: { status?: string; matches?: string[]; gaps?: TenderAnalysisFinding[]; profile_source?: string };
   next_action?: string;
   evidence_coverage?: TenderEvidenceCoverage | null;
+  legal_findings?: TenderLegalFinding[];
+  legal_evidence?: TenderLegalEvidence | null;
   [key: string]: unknown;
 };
 export type TenderDocumentRecord = {
