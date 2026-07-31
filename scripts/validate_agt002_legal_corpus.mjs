@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -11,6 +12,30 @@ const MANIFEST_KEYS = ['corpus_version', 'sources'];
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function canonicalizeValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalizeValue);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value).sort().map(key => [key, canonicalizeValue(value[key])]),
+  );
+}
+
+/** Stable JSON used to bind an imported manifest to its published DB version. */
+export function canonicalizeAgt002LegalManifest(manifest) {
+  if (!isRecord(manifest)) throw new Error('El manifiesto jurídico debe ser un objeto.');
+  const normalized = {
+    ...manifest,
+    ...(Array.isArray(manifest.sources)
+      ? { sources: [...manifest.sources].sort((left, right) => String(left?.source_id ?? '').localeCompare(String(right?.source_id ?? ''))) }
+      : {}),
+  };
+  return JSON.stringify(canonicalizeValue(normalized));
+}
+
+export function computeAgt002LegalManifestContentHash(manifest) {
+  return createHash('sha256').update(canonicalizeAgt002LegalManifest(manifest)).digest('hex');
 }
 
 /**

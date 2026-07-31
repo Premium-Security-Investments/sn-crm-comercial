@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
-export const MIGRATION_ORDER = Object.freeze(['049', '050', '051', '052', '053', '054', '055']);
+export const MIGRATION_ORDER = Object.freeze(['049', '050', '051', '052', '053', '054', '055', '056']);
 
 const fn = signature => `to_regprocedure('public.${signature}') is not null`;
 const fnInvariant = (signature, fragments) => `exists (select 1 from pg_proc p where p.oid=to_regprocedure('public.${signature}') and ${fragments.map(fragment => `pg_get_functiondef(p.oid) ilike '%${fragment.replaceAll("'", "''")}%'`).join(' and ')})`;
@@ -132,7 +132,15 @@ const SPECS = Object.freeze({
       fnInvariant('psi_agt002_legal_topics_prevent_mutation()', ['append-only']),
       fnInvariant('psi_create_agt002_legal_corpus_draft(text,text,uuid,uuid)', ['insert into public.psi_agt002_legal_corpus_versions', "'draft'"]),
       fnInvariant('psi_add_agt002_legal_source(uuid,text,text,text,integer,text,text,text,timestamp with time zone,timestamp with time zone,timestamp with time zone,jsonb,text,text[],text[],timestamp with time zone,text,text,text,uuid)', ['insert into public.psi_agt002_legal_sources', 'select * into v_version']),
-      fnInvariant('psi_publish_agt002_legal_corpus(uuid,uuid)', ['update public.psi_agt002_legal_corpus_versions']),
+      // Tolerant to 056 dropping the (uuid,uuid) overload in favor of (uuid,uuid,text): exactly
+      // one of the two must exist, mirroring how 051's own markers stayed forward-compatible
+      // when 053 later replaced its canonical-run RPC signature.
+      `(((to_regprocedure('public.psi_publish_agt002_legal_corpus(uuid,uuid)') is not null)::int
+        + (to_regprocedure('public.psi_publish_agt002_legal_corpus(uuid,uuid,text)') is not null)::int) = 1)`,
+      anyFnInvariant([
+        'psi_publish_agt002_legal_corpus(uuid,uuid)',
+        'psi_publish_agt002_legal_corpus(uuid,uuid,text)',
+      ], ['update public.psi_agt002_legal_corpus_versions']),
       `(to_regprocedure('public.psi_record_agt002_canonical_analysis_run(uuid,uuid,uuid,jsonb,integer,text,text,text,text,jsonb,uuid,uuid)') is not null
         and to_regprocedure('public.psi_record_agt002_canonical_analysis_run(uuid,uuid,uuid,jsonb,integer,text,text,text,text,jsonb,uuid)') is null)`,
       fnInvariant('psi_record_agt002_canonical_analysis_run(uuid,uuid,uuid,jsonb,integer,text,text,text,text,jsonb,uuid,uuid)', ['p_context_version_id is null', 'insert into public.psi_tender_analysis_runs']),
@@ -147,7 +155,7 @@ const SPECS = Object.freeze({
     ],
     rlsTables: ['psi_agt002_legal_corpus_versions', 'psi_agt002_legal_sources', 'psi_agt002_legal_topics', 'psi_tender_analysis_runs'],
     rollbackPolicy: 'non-destructive-disable',
-    disabledMarkerCount: 5,
+    disabledMarkerCount: 6,
   }),
   '054': Object.freeze({
     migrationFile: '054_tender_documents_chunked_event.sql',
@@ -171,10 +179,37 @@ const SPECS = Object.freeze({
     rollbackPolicy: 'restore',
     allowInsecureAbsent: true,
   }),
+  '056': Object.freeze({
+    migrationFile: '056_agt002_legal_corpus_publication_gate.sql',
+    rollbackFile: '056_agt002_legal_corpus_publication_gate_rollback.sql',
+    prerequisites: [
+      table('psi_agt002_legal_corpus_versions'), table('psi_agt002_legal_sources'), table('psi_sales_profiles'),
+      fn('psi_publish_agt002_legal_corpus(uuid,uuid)'),
+    ],
+    markers: [
+      column('psi_agt002_legal_corpus_versions', 'content_sha256'),
+      column('psi_agt002_legal_corpus_versions', 'superseded_at'),
+      column('psi_agt002_legal_corpus_versions', 'superseded_by_version_id'),
+      constraintInvariant('psi_agt002_legal_corpus_versions', 'psi_agt002_legal_corpus_versions_content_sha256_check', '0-9a-f'),
+      constraintInvariant('psi_agt002_legal_corpus_versions', 'psi_agt002_legal_corpus_versions_status_check', 'superseded'),
+      constraint('psi_agt002_legal_corpus_versions', 'psi_agt002_legal_corpus_versions_lifecycle_check'),
+      index('psi_agt002_legal_corpus_versions', 'psi_agt002_legal_corpus_versions_one_published_idx'),
+      fnInvariant('psi_agt002_legal_corpus_versions_guard()', ['superseded', 'es inmutable, salvo la transición a superseded']),
+      fnInvariant('psi_record_agt002_canonical_analysis_run(uuid,uuid,uuid,jsonb,integer,text,text,text,text,jsonb,uuid,uuid)', [`v_legal_corpus_version.status <> 'published'`]),
+      `(to_regprocedure('public.psi_publish_agt002_legal_corpus(uuid,uuid,text)') is not null
+        and to_regprocedure('public.psi_publish_agt002_legal_corpus(uuid,uuid)') is null)`,
+      fnInvariant('psi_publish_agt002_legal_corpus(uuid,uuid,text)', ['coalesce(p.identity_type', "= 'human'", 'verification_status', "'superseded'"]),
+    ],
+    tables: [],
+    functions: ['psi_publish_agt002_legal_corpus(uuid,uuid,text)', 'psi_record_agt002_canonical_analysis_run(uuid,uuid,uuid,jsonb,integer,text,text,text,text,jsonb,uuid,uuid)'],
+    rlsTables: ['psi_agt002_legal_corpus_versions'],
+    rollbackPolicy: 'non-destructive-disable',
+    disabledMarkerCount: 2,
+  }),
 });
 
 export function getSpec(id) {
-  if (typeof id !== 'string' || !Object.hasOwn(SPECS, id)) throw new Error('Selector de migración inválido; use exactamente 049, 050, 051, 052, 053, 054 o 055.');
+  if (typeof id !== 'string' || !Object.hasOwn(SPECS, id)) throw new Error('Selector de migración inválido; use exactamente 049, 050, 051, 052, 053, 054, 055 o 056.');
   return SPECS[id];
 }
 
@@ -328,6 +363,14 @@ select (to_regclass('public.psi_agt002_legal_corpus_versions') is not null
 select exists (select 1 from pg_constraint where conname='psi_tender_tracking_events_event_type_check'
   and conrelid=to_regclass('public.psi_tender_tracking_events')
   and pg_get_constraintdef(oid) not ilike '%documents_chunked%') as ok;`;
+  if (id === '056') return `-- AGT002_RUNNER:ROLLBACK_VERIFY:056
+select (to_regprocedure('public.psi_publish_agt002_legal_corpus(uuid,uuid,text)') is null
+  and to_regprocedure('public.psi_publish_agt002_legal_corpus(uuid,uuid)') is not null
+  and not exists (select 1 from pg_proc where oid=to_regprocedure('public.psi_record_agt002_canonical_analysis_run(uuid,uuid,uuid,jsonb,integer,text,text,text,text,jsonb,uuid,uuid)')
+    and pg_get_functiondef(oid) ilike '%v_legal_corpus_version.status <> ''published''%')
+  and to_regclass('public.psi_agt002_legal_corpus_versions') is not null
+  and exists (select 1 from information_schema.columns where table_schema='public' and table_name='psi_agt002_legal_corpus_versions' and column_name='content_sha256')
+  and exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_index i on i.indexrelid=c.oid where n.nspname='public' and c.relname='psi_agt002_legal_corpus_versions_one_published_idx' and c.relkind='i' and i.indrelid=to_regclass('public.psi_agt002_legal_corpus_versions'))) as ok;`;
   return `-- AGT002_RUNNER:ROLLBACK_VERIFY:055
 select (to_regclass('public.psi_company_procurement_documents') is not null
   and ${noTablePrivs('psi_company_procurement_documents', 'service_role')}
