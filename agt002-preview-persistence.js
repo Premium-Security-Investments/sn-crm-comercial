@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { validateAgt002RequirementManifest } from './agt002-deep-analysis-matrix.js';
 
 const CONTENT_KEYS = ['recommendation', 'summary', 'strengths', 'weaknesses', 'blockers', 'questions', 'unverified', 'next_action', 'human_review_required'];
 
@@ -21,6 +22,16 @@ function validateEvidenceCoverage(value, snapshotId) {
   if (selectedRefs.length !== allowlist.length || selectedRefs.some((reference, index) => reference !== allowlist[index])) {
     throw new Error('La cobertura de evidencia tiene una allowlist inconsistente.');
   }
+  // The self-contained requirement provenance manifest is never trusted verbatim: it is always
+  // present alongside evidence_coverage (buildAgt002RequirementManifest fails closed if it
+  // can't be built) and is re-validated field-by-field here, independent of the builder.
+  if (value.requirement_manifest_version === undefined || value.requirement_manifest === undefined) {
+    throw new Error('La cobertura de evidencia requiere el manifiesto de requisitos (requirement_manifest).');
+  }
+  validateAgt002RequirementManifest({
+    requirement_manifest_version: value.requirement_manifest_version,
+    requirement_manifest: value.requirement_manifest,
+  });
   return value;
 }
 

@@ -70,6 +70,12 @@ function envelope(overrides = {}) {
       omitted_chunks: [],
       citation_allowlist: ['chunk:1'],
       material_omissions: false,
+      requirement_manifest_version: '1.0',
+      requirement_manifest: [{
+        requirement_id: 'req-1', front: 'legal', label: 'Póliza de cumplimiento',
+        sources: [{ document_id: 'doc-01', document_version_id: 'ver-01', content_hash: 'a'.repeat(64) }],
+        unresolved_sources: [],
+      }],
     },
     usage: { provider: 'codex_app_server', model: 'synthetic-codex-model', input_tokens: 120, output_tokens: 40, rate_limit: { window: '5h', used_percent: 3 } },
     ...overrides,
@@ -160,6 +166,12 @@ function fakeDatabase({ onRpc } = {}) {
   assert.deepEqual(registered.result.evidence_coverage, envelope().evidence_coverage);
   assert.doesNotMatch(JSON.stringify(registered.result.evidence_coverage), /"text"\s*:/, 'coverage metadata must never persist chunk text');
 
+  // The self-contained requirement provenance manifest must survive persistence exactly
+  // (id/front/label/sources), never carrying excerpt/chunk text.
+  assert.equal(registered.result.evidence_coverage.requirement_manifest_version, '1.0');
+  assert.deepEqual(registered.result.evidence_coverage.requirement_manifest, envelope().evidence_coverage.requirement_manifest);
+  assert.doesNotMatch(JSON.stringify(registered.result.evidence_coverage.requirement_manifest), /excerpt|"text"\s*:/i);
+
   const call = database.rpcCalls[0];
   assert.equal(call.name, 'psi_record_tender_analysis_run');
   assert.equal(call.params.p_snapshot_id, ids.snapshot);
@@ -204,6 +216,45 @@ function fakeDatabase({ onRpc } = {}) {
     snapshot_id: ids.snapshot,
     envelope: envelope({ evidence_coverage: { ...envelope().evidence_coverage, snapshot_id: 'other-snapshot' } }),
   }), /cobertura|snapshot/i);
+  assert.deepEqual(database.rpcCalls, []);
+}
+
+// Persistence never trusts a requirement_manifest verbatim: it re-validates the closed
+// id/front/label/sources shape and rejects a manifest missing entirely, with a leaking
+// text/excerpt field, or with zero resolved provenance.
+{
+  const database = fakeDatabase();
+  const { requirement_manifest_version: _v, requirement_manifest: _m, ...coverageWithoutManifest } = envelope().evidence_coverage;
+  await assert.rejects(() => registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: envelope({ evidence_coverage: coverageWithoutManifest }),
+  }), /cobertura|manifiesto|estructura/i);
+  assert.deepEqual(database.rpcCalls, []);
+}
+{
+  const database = fakeDatabase();
+  const leakingManifest = [{
+    requirement_id: 'req-1', front: 'legal', label: 'Póliza de cumplimiento',
+    sources: [{ document_id: 'doc-01', document_version_id: 'ver-01', content_hash: 'a'.repeat(64), text: 'texto filtrado' }],
+    unresolved_sources: [],
+  }];
+  await assert.rejects(() => registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: envelope({ evidence_coverage: { ...envelope().evidence_coverage, requirement_manifest: leakingManifest } }),
+  }), /texto/i);
+  assert.deepEqual(database.rpcCalls, []);
+}
+{
+  const database = fakeDatabase();
+  const zeroProvenanceManifest = [{
+    requirement_id: 'req-1', front: 'legal', label: 'Póliza de cumplimiento',
+    sources: [],
+    unresolved_sources: [{ document_id: 'ver-missing', reason: 'document_identity_not_resolved' }],
+  }];
+  await assert.rejects(() => registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: envelope({ evidence_coverage: { ...envelope().evidence_coverage, requirement_manifest: zeroProvenanceManifest } }),
+  }), /procedencia|resuelt/i);
   assert.deepEqual(database.rpcCalls, []);
 }
 

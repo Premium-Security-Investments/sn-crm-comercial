@@ -223,6 +223,15 @@ export type TenderEvidenceRequirementCoverage = {
   chunks_selected: number;
   status: 'covered' | 'not_covered' | 'no_evidence';
 };
+export type TenderRequirementManifestSource = { document_id: string; document_version_id: string; content_hash: string };
+export type TenderRequirementManifestUnresolvedSource = { document_id: string; reason: 'document_identity_not_resolved' };
+export type TenderRequirementManifestEntry = {
+  requirement_id: string;
+  front: 'legal' | 'financial' | 'technical';
+  label: string;
+  sources: TenderRequirementManifestSource[];
+  unresolved_sources: TenderRequirementManifestUnresolvedSource[];
+};
 export type TenderEvidenceCoverage = {
   snapshot_id: string;
   budget: {
@@ -239,6 +248,8 @@ export type TenderEvidenceCoverage = {
   omitted_chunks: TenderEvidenceOmission[];
   citation_allowlist: string[];
   material_omissions: boolean;
+  requirement_manifest_version: string;
+  requirement_manifest: TenderRequirementManifestEntry[];
 };
 export type TenderLegalFindingClassification = 'tender_requirement' | 'legal_obligation' | 'company_evidence' | 'inference' | 'human_legal_review';
 export type TenderLegalFinding = {

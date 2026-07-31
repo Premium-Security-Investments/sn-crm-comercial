@@ -3,6 +3,7 @@ import { buildAgt002ContextV2 } from './agt002-context-v2.js';
 import { buildAgt002DocumentChunks } from './agt002-document-chunks.js';
 import { buildAgt002DocumentRetrieval } from './agt002-document-retrieval.js';
 import { AGT002_LEGAL_REVIEW_REASONS, isAgt002OfficialLegalUrl } from './agt002-legal-corpus.js';
+import { buildAgt002RequirementManifest, resolveAgt002DeepAnalysisMatrix } from './agt002-deep-analysis-matrix.js';
 
 export const AGT002_MAX_DOCUMENTS = 12;
 export const AGT002_MAX_DOCUMENT_CHARS = 3000;
@@ -94,9 +95,7 @@ function normalizeRetrievalTerms(label) {
  * layer. Requirements without a derivable term set are dropped, never guessed.
  */
 function buildRetrievalRequirements(deepAnalysis) {
-  const matrix = deepAnalysis?.matrix && typeof deepAnalysis.matrix === 'object' && !Array.isArray(deepAnalysis.matrix)
-    ? deepAnalysis.matrix
-    : {};
+  const matrix = resolveAgt002DeepAnalysisMatrix(deepAnalysis);
   const requirements = [];
   const seen = new Set();
   for (const front of RETRIEVAL_FRONTS) {
@@ -131,7 +130,7 @@ function buildDocumentEvidencePackage({ snapshotId, documents, documentGaps, dee
     })),
   ];
 
-  return buildAgt002DocumentRetrieval({
+  const retrieval = buildAgt002DocumentRetrieval({
     snapshot_id: snapshotId,
     chunks: snapshotChunks,
     gaps,
@@ -140,6 +139,25 @@ function buildDocumentEvidencePackage({ snapshotId, documents, documentGaps, dee
     max_chars: AGT002_RETRIEVAL_MAX_CHARS,
     max_tokens: AGT002_RETRIEVAL_MAX_TOKENS,
   });
+
+  // Requirement provenance manifest (self-contained, no new table): resolved from the same
+  // deterministic v1.0 matrix and the same adapted retrieval `documents` list used above, never
+  // from the selected/omitted chunks — a requirement's provenance is independent of whether its
+  // evidence happened to win the retrieval budget.
+  const requirementManifest = buildAgt002RequirementManifest({
+    matrix: resolveAgt002DeepAnalysisMatrix(deepAnalysis),
+    documents,
+  });
+  const hasUnresolvedProvenance = requirementManifest.requirement_manifest
+    .some(entry => entry.unresolved_sources.length > 0);
+
+  return {
+    ...retrieval,
+    ...requirementManifest,
+    // An unresolved provenance source is itself a material omission, independent of chunk
+    // budget/relevance omissions already computed above.
+    material_omissions: retrieval.material_omissions || hasUnresolvedProvenance,
+  };
 }
 
 // AGT002_LEGAL_CORPUS (Task33): the exact fixed statement a human_legal_review item must
@@ -396,7 +414,12 @@ function buildContextV2Input({
     company_dossier: validated.company_dossier,
     commercial_context: validated.commercial_context,
     human_evidence: validated.human_evidence,
-    objective_validations: sanitizeValue(buildAgt002ObjectiveValidations(deepAnalysis)),
+    // Retrieval off keeps the exact legacy (top-level matrix) objective_validations lookup for
+    // rollback safety. Retrieval on resolves the correct nested deep_analysis.matrix, the same
+    // one document_evidence's requirement_manifest below resolves — never re-derived twice.
+    objective_validations: sanitizeValue(buildAgt002ObjectiveValidations(
+      documentRetrieval ? { ...deepAnalysis, matrix: resolveAgt002DeepAnalysisMatrix(deepAnalysis) } : deepAnalysis,
+    )),
   };
 
   if (documentRetrieval) {

@@ -218,15 +218,47 @@ const retrievalDeepAnalysis = {
   version: '1.0',
   matrix: {
     legal: [
-      { id: 'req-vigilancia', front: 'legal', label: 'Vigilancia armada' },
-      { id: 'req-plazo', front: 'legal', label: 'Plazo de ejecución' },
+      {
+        id: 'req-vigilancia', front: 'legal', label: 'Vigilancia armada',
+        evidence: [
+          { document_id: 'ver-01', document_name: 'Doc 1.pdf', document_type: 'pliego', excerpt: 'vigilancia física armada' },
+          { document_id: 'ver-07', document_name: 'Doc 7.pdf', document_type: 'pliego', excerpt: 'servicio de vigilancia armada' },
+        ],
+      },
+      {
+        id: 'req-plazo', front: 'legal', label: 'Plazo de ejecución',
+        evidence: [
+          { document_id: 'ver-02', document_name: 'Doc 2.pdf', document_type: 'pliego', excerpt: 'plazo de ejecución doce meses' },
+          { document_id: 'ver-12', document_name: 'Adenda 1.pdf', document_type: 'adenda', excerpt: 'modifica el plazo' },
+          { document_id: 'ver-13', document_name: 'Doc 13.pdf', document_type: 'pliego', excerpt: 'plazo podrá prorrogarse' },
+        ],
+      },
     ],
     financial: [
-      { id: 'req-presupuesto', front: 'financial', label: 'Presupuesto millones' },
+      {
+        id: 'req-presupuesto', front: 'financial', label: 'Presupuesto millones',
+        evidence: [
+          { document_id: 'ver-03', document_name: 'Doc 3.pdf', document_type: 'estudios_previos', excerpt: 'presupuesto oficial' },
+          { document_id: 'ver-09', document_name: 'Doc 9.pdf', document_type: 'estudios_previos', excerpt: 'presupuesto oficial calculado' },
+        ],
+      },
     ],
     technical: [
-      { id: 'req-equipos', front: 'technical', label: 'Equipos comunicación radio' },
-      { id: 'req-experiencia', front: 'technical', label: 'Formato experiencia' },
+      {
+        id: 'req-equipos', front: 'technical', label: 'Equipos comunicación radio',
+        evidence: [
+          { document_id: 'ver-04', document_name: 'Doc 4.pdf', document_type: 'anexo_tecnico', excerpt: 'equipos de comunicación radio' },
+          { document_id: 'ver-08', document_name: 'Doc 8.pdf', document_type: 'anexo_tecnico', excerpt: 'equipos de comunicación radio deben' },
+        ],
+      },
+      {
+        id: 'req-experiencia', front: 'technical', label: 'Formato experiencia',
+        evidence: [
+          { document_id: 'ver-05', document_name: 'Doc 5.pdf', document_type: 'formatos', excerpt: 'formato de experiencia' },
+          { document_id: 'ver-10', document_name: 'Doc 10.pdf', document_type: 'formatos', excerpt: 'formato de experiencia debe incluir' },
+          { document_id: 'ver-99', document_name: 'Doc perdido.pdf', document_type: 'formatos', excerpt: 'referencia a documento no resuelto' },
+        ],
+      },
     ],
   },
 };
@@ -296,6 +328,30 @@ assert.ok(evidence.selected_chunks.every(chunk => typeof chunk.text === 'string'
 assert.equal(Object.prototype.hasOwnProperty.call(evidence, 'decision'), false);
 assert.equal(Object.prototype.hasOwnProperty.call(evidence, 'recommendation'), false);
 
+// The self-contained requirement provenance manifest (Task E4): every requirement keeps its
+// id/front/label plus resolved document version+hash sources, deduped/sorted deterministically.
+// An evidence document_id absent from the retrieved documents (ver-99) never invents a source:
+// it surfaces as an explicit unresolved_sources entry instead.
+assert.equal(evidence.requirement_manifest_version, '1.0');
+assert.deepEqual(
+  evidence.requirement_manifest.map(r => r.requirement_id),
+  ['req-equipos', 'req-experiencia', 'req-plazo', 'req-presupuesto', 'req-vigilancia'],
+);
+const reqExperiencia = evidence.requirement_manifest.find(r => r.requirement_id === 'req-experiencia');
+assert.equal(reqExperiencia.front, 'technical');
+assert.equal(reqExperiencia.label, 'Formato experiencia');
+assert.deepEqual(reqExperiencia.sources.map(s => s.document_version_id), ['ver-05', 'ver-10']);
+assert.ok(reqExperiencia.sources.every(s => /^[0-9a-f]{64}$/.test(s.content_hash)));
+assert.deepEqual(reqExperiencia.unresolved_sources, [{ document_id: 'ver-99', reason: 'document_identity_not_resolved' }]);
+const reqPlazo = evidence.requirement_manifest.find(r => r.requirement_id === 'req-plazo');
+assert.deepEqual(reqPlazo.sources.map(s => s.document_version_id), ['ver-02', 'ver-12', 'ver-13']);
+assert.deepEqual(reqPlazo.unresolved_sources, []);
+assert.doesNotMatch(
+  JSON.stringify(evidence.requirement_manifest),
+  /formato de experiencia debe incluir|modifica el plazo/i,
+  'requirement_manifest must never carry evidence excerpt/chunk text',
+);
+
 // Deterministic regardless of document input order.
 const retrievalInputReversed = buildAgt002PreviewInput({
   documents: [...retrievalDocs].reverse(),
@@ -334,5 +390,116 @@ const rollbackInput = buildAgt002PreviewInput({
 });
 assert.equal(Object.hasOwn(rollbackInput, 'document_evidence'), false);
 assert.ok(rollbackInput.documents.every(document => document.evidence_id.startsWith('document:')));
+
+// --- Contexto confirmado: buildTenderDocumentAnalysis returns a legacy visual array at
+// .matrix (category/status/detail rows for the UI) and the real deterministic v1.0 matrix
+// nested at .deep_analysis.matrix. Retrieval off must reproduce the exact legacy behavior
+// against this production wrapper shape (byte-identical, no document_evidence, top-level
+// .matrix objective_validations lookup unchanged). Retrieval on must resolve the correct
+// nested matrix for both document_evidence.requirement_manifest and objective_validations. ---
+{
+  const productionDoc = [{
+    document_id: 'doc-prod', document_version_id: 'ver-prod', opportunity_id: 'opp-1', snapshot_id: null,
+    document_type: 'pliego', name: 'Prod.pdf', version: 1, content_hash: hash('doc-prod'), current: true,
+    extracted_text: 'El proponente debe aportar póliza de cumplimiento vigente equivalente al diez por ciento.',
+  }];
+  const productionDeepAnalysis = {
+    matrix: [{ category: 'Jurídico', status: 'Cumplimiento por validar', detail: 'x' }],
+    deep_analysis: {
+      version: '1.0',
+      matrix: {
+        legal: [{
+          id: 'legal-guarantee-policy', front: 'legal', label: 'Póliza de cumplimiento', status: 'confirmed', confidence: 'high',
+          values: [{ kind: 'percentage', raw: '10%', normalized: '10%' }],
+          evidence: [{ document_id: 'ver-prod', document_name: 'Prod.pdf', document_type: 'pliego', excerpt: 'diez por ciento' }],
+        }],
+        financial: [],
+        technical: [],
+      },
+      unverifiable_documents: [],
+    },
+  };
+
+  const legacyOutput = buildAgt002PreviewInput({
+    documents: productionDoc, deepAnalysis: productionDeepAnalysis, snapshotId: 'snap-prod',
+    contextV2: true, contextV2Sections,
+  });
+  assert.equal(Object.hasOwn(legacyOutput, 'document_evidence'), false, 'retrieval off must never attach document_evidence');
+  assert.deepEqual(
+    legacyOutput.objective_validations.extracted_values, [],
+    'retrieval off must preserve the legacy (top-level matrix) objective_validations lookup exactly, unchanged even against the production wrapper shape',
+  );
+
+  const retrievalOutput = buildAgt002PreviewInput({
+    documents: productionDoc, deepAnalysis: productionDeepAnalysis, snapshotId: 'snap-prod',
+    contextV2: true, contextV2Sections, documentRetrieval: true,
+  });
+  assert.ok(retrievalOutput.document_evidence, 'retrieval on must attach document_evidence');
+  assert.equal(retrievalOutput.document_evidence.requirement_manifest_version, '1.0');
+  assert.deepEqual(retrievalOutput.document_evidence.requirement_manifest, [{
+    requirement_id: 'legal-guarantee-policy', front: 'legal', label: 'Póliza de cumplimiento',
+    sources: [{ document_id: 'doc-prod', document_version_id: 'ver-prod', content_hash: hash('doc-prod') }],
+    unresolved_sources: [],
+  }]);
+  assert.equal(
+    retrievalOutput.objective_validations.extracted_values.length, 1,
+    'retrieval on must resolve the correct nested deep_analysis.matrix for objective_validations too',
+  );
+  assert.deepEqual(retrievalOutput.objective_validations.extracted_values[0], {
+    requirement_id: 'legal-guarantee-policy', front: 'legal', kind: 'percentage', raw: '10%', normalized: '10%',
+    evidence_refs: ['document:ver-prod'],
+  });
+}
+
+// --- An evidence document_id that never resolves to a retrieved document version+hash is a
+// material omission of provenance, never a silent drop: it must force material_omissions=true
+// (even when chunk-level retrieval coverage is otherwise unaffected) and its reason must stay
+// visible inside requirement_manifest[].unresolved_sources. ---
+{
+  const soloDoc = [{
+    document_id: 'doc-solo', document_version_id: 'ver-solo', opportunity_id: 'opp-1', snapshot_id: null,
+    document_type: 'pliego', name: 'Solo.pdf', version: 1, content_hash: hash('doc-solo'), current: true,
+    extracted_text: 'El proponente debe aportar garantía de seriedad de la oferta vigente.',
+  }];
+  const soloDeepAnalysis = {
+    matrix: {
+      legal: [{
+        id: 'req-garantia', front: 'legal', label: 'Garantía de seriedad',
+        evidence: [
+          { document_id: 'ver-solo', document_name: 'Solo.pdf', document_type: 'pliego', excerpt: 'garantía de seriedad' },
+          { document_id: 'ver-inexistente', document_name: 'Doc perdido.pdf', document_type: 'pliego', excerpt: 'referencia perdida' },
+        ],
+      }],
+      financial: [],
+      technical: [],
+    },
+  };
+  const soloInput = buildAgt002PreviewInput({
+    documents: soloDoc, deepAnalysis: soloDeepAnalysis, snapshotId: 'snap-solo',
+    contextV2: true, contextV2Sections, documentRetrieval: true,
+  });
+  const soloEvidence = soloInput.document_evidence;
+  const [reqGarantia] = soloEvidence.requirement_manifest;
+  assert.deepEqual(reqGarantia.unresolved_sources, [{ document_id: 'ver-inexistente', reason: 'document_identity_not_resolved' }]);
+  assert.equal(soloEvidence.material_omissions, true, 'an unresolved provenance source must force material_omissions=true');
+}
+
+// --- Fail-closed: every evidence document_id fails to resolve anywhere in the matrix -> the
+// whole call must throw rather than persist a manifest with zero real provenance. ---
+assert.throws(
+  () => buildAgt002PreviewInput({
+    documents: [{
+      document_id: 'doc-x', document_version_id: 'ver-x', opportunity_id: 'opp-1', snapshot_id: null,
+      document_type: 'pliego', name: 'X.pdf', version: 1, content_hash: hash('doc-x'), current: true,
+      extracted_text: 'Contenido sin relación con ningún requisito de este caso de prueba.',
+    }],
+    deepAnalysis: { matrix: { legal: [{ id: 'req-x', front: 'legal', label: 'contenido relacion', evidence: [{ document_id: 'ver-unresolvable' }] }], financial: [], technical: [] } },
+    snapshotId: 'snap-failclosed',
+    contextV2: true,
+    contextV2Sections,
+    documentRetrieval: true,
+  }),
+  /procedencia|resuelt/i,
+);
 
 console.log('AGT-002 preview input minimization and redaction passed');
