@@ -25,6 +25,7 @@ async function baseDatabase() {
   await pg.exec(`
     create role authenticated; create role service_role; create role anon;
     grant service_role to current_user;
+    alter default privileges in schema public grant all on tables to anon;
     create table public.psi_sales_profiles (id uuid primary key, active boolean not null default true);
     create table public.psi_sales_opportunities (id uuid primary key);
     create table public.psi_public_tenders (id uuid primary key);
