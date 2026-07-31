@@ -52,6 +52,10 @@ import { buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
 import { createAgt002AnalysisObservability } from '../agt002-analysis-observability.js';
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
+import {
+  runAgt002FixedSnapshotReanalysis,
+  sanitizeAgt002FixedSnapshotError,
+} from '../agt002-fixed-snapshot-reanalysis.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -3826,6 +3830,55 @@ function isTenderWorkerSchedulerAuthorized(req) {
     || secretMatches(process.env.CRON_SECRET, bearerSecret);
 }
 
+async function runAgt002FixedSnapshotOperator(req, res) {
+  try {
+    let database = null;
+    const getDatabase = () => {
+      if (!database) database = requireDb();
+      return database;
+    };
+    const result = await runAgt002FixedSnapshotReanalysis({
+      authorize: () => isTenderWorkerSchedulerAuthorized(req),
+      body: req.body,
+      analysisConfig: agt002AnalysisConfig,
+      autoAnalysisEnabled: isTenderAutoAnalysisEnabled(process.env),
+      loadPriorRun: async analysisRunId => {
+        const response = await getDatabase().from('psi_tender_analysis_runs')
+          .select('id,opportunity_id,snapshot_id,tender_id,producer,method,status,canonical')
+          .eq('id', analysisRunId)
+          .maybeSingle();
+        if (response.error) throw response.error;
+        return response.data;
+      },
+      loadSnapshot: async snapshotId => {
+        const response = await getDatabase().from('psi_tender_document_snapshots')
+          .select('id,opportunity_id,tender_id,actor_id,document_manifest')
+          .eq('id', snapshotId)
+          .maybeSingle();
+        if (response.error) throw response.error;
+        return response.data;
+      },
+      loadCurrentDocuments: async opportunityId => {
+        const records = await getTenderDocumentRecords(getDatabase(), opportunityId, { includeSignedUrls: false });
+        return records.documents.filter(document => document.current !== false);
+      },
+      loadActorProfile: async actorId => {
+        const response = await getDatabase().from('psi_sales_profiles')
+          .select('id,identity_type,active')
+          .eq('id', actorId)
+          .maybeSingle();
+        if (response.error) throw response.error;
+        return response.data;
+      },
+      reanalyze: input => reanalyzeAgt002AfterHumanAnswer(getDatabase(), input),
+    });
+    res.json(result);
+  } catch (error) {
+    const safeError = sanitizeAgt002FixedSnapshotError(error);
+    sendError(res, safeError, safeError.status);
+  }
+}
+
 async function runTenderProcessingWorker(req, res) {
   try {
     if (!isTenderDurablePipelineEnabled(process.env)) { const error = new Error('No disponible.'); error.status = 404; throw error; }
@@ -3840,6 +3893,7 @@ async function runTenderProcessingWorker(req, res) {
 
 app.post('/api/tender-processing-worker-run', runTenderProcessingWorker);
 app.get('/api/tender-processing-worker-run', runTenderProcessingWorker);
+app.post('/api/agt002-reanalyze-fixed-snapshot', runAgt002FixedSnapshotOperator);
 
 app.post('/api/tender-opportunity-discard', async (req, res) => {
   try {
