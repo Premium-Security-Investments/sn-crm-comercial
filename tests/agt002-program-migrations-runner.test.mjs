@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 
 const moduleUrl = new URL('../scripts/agt002-program-migrations.mjs', import.meta.url);
-assert.equal(existsSync(moduleUrl), true, 'debe existir el runner dedicado 049–054');
+assert.equal(existsSync(moduleUrl), true, 'debe existir el runner dedicado 049–055');
 const mod = await import(moduleUrl);
 const {
   MIGRATION_ORDER, getSpec, stripTopLevelTransactionWrapper, classifyState,
@@ -10,8 +10,8 @@ const {
   buildRollbackVerifySql, createExecSql, preflight, apply, rollback,
 } = mod;
 
-assert.deepEqual(MIGRATION_ORDER, ['049', '050', '051', '052', '053', '054']);
-assert.throws(() => getSpec('055'), /selector/i);
+assert.deepEqual(MIGRATION_ORDER, ['049', '050', '051', '052', '053', '054', '055']);
+assert.throws(() => getSpec('056'), /selector/i);
 assert.throws(() => getSpec('../050'), /selector/i);
 
 for (const id of MIGRATION_ORDER) {
@@ -31,9 +31,10 @@ for (const id of MIGRATION_ORDER) {
   assert.match(stateSql, new RegExp(`AGT002_RUNNER:STATE:${id}`));
   assert.match(stateSql, /unsafe_table_grants/);
   assert.match(stateSql, /unsafe_function_grants/);
+  assert.match(stateSql, /unsafe_service_table_grants/);
   assert.match(stateSql, /missing_service_exec/);
   assert.match(stateSql, /missing_service_select/);
-  assert.match(stateSql, /pg_get_(function|constraint)def/);
+  assert.match(stateSql, /pg_get_(function|constraint)def|has_table_privilege/);
   assert.match(buildPrerequisitesSql(id), new RegExp(`AGT002_RUNNER:PREREQUISITES:${id}`));
 
   const atomicApply = buildAtomicApplySql(id, migration).toLowerCase();
@@ -71,11 +72,12 @@ for (const id of ['050', '051']) {
   assert.match(atomic, /share row exclusive mode/);
 }
 
-const safe = { unsafe_table_grants: 0, unsafe_function_grants: 0, missing_service_exec: 0, missing_service_select: 0, rls_missing: 0 };
+const safe = { unsafe_table_grants: 0, unsafe_function_grants: 0, unsafe_service_table_grants: 0, missing_service_exec: 0, missing_service_select: 0, rls_missing: 0 };
 assert.equal(classifyState({ markers_present: 0, markers_expected: 5, ...safe }), 'absent');
 assert.equal(classifyState({ markers_present: 3, markers_expected: 5, ...safe }), 'partial');
 assert.equal(classifyState({ markers_present: 5, markers_expected: 5, ...safe }), 'applied');
 assert.equal(classifyState({ markers_present: 5, markers_expected: 5, ...safe, unsafe_table_grants: 1 }), 'drift');
+assert.equal(classifyState({ markers_present: 5, markers_expected: 5, ...safe, unsafe_service_table_grants: 1 }), 'drift');
 assert.equal(classifyState({ markers_present: 5, markers_expected: 5, ...safe, missing_service_select: 1 }), 'drift');
 assert.equal(classifyState({ markers_present: 6, markers_expected: 5, ...safe }), 'drift');
 
@@ -217,4 +219,4 @@ assert.match(source, /import\.meta\.url === /);
 assert.doesNotMatch(source, /console\.(log|error)\([^)]*(serviceKey|SUPABASE_SERVICE_ROLE_KEY)/i);
 assert.doesNotMatch(source, /process\.argv\[[^\]]+\].*readFileSync/i, 'no debe aceptar rutas arbitrarias desde CLI');
 
-console.log('AGT-002 program migrations 049–054 runner contract passed');
+console.log('AGT-002 program migrations 049–055 runner contract passed');
