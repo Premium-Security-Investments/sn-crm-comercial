@@ -57,6 +57,7 @@ import {
   sanitizeAgt002FixedSnapshotError,
 } from '../agt002-fixed-snapshot-reanalysis.js';
 import { adaptAgt002RetrievalDocuments } from '../agt002-retrieval-document-adapter.js';
+import { loadPublishedAgt002LegalCorpus } from '../agt002-legal-corpus-store.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -75,6 +76,12 @@ if (!supabaseUrl || !serviceKey) {
 const db = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 const agt002AnalysisConfig = buildAgt002AnalysisConfig(process.env);
 const agt002AnalysisObservability = createAgt002AnalysisObservability();
+
+async function loadAgt002LegalCorpusContextIfEnabled(database) {
+  return agt002AnalysisConfig.AGT002_LEGAL_CORPUS
+    ? loadPublishedAgt002LegalCorpus(database)
+    : null;
+}
 
 function sendError(res, error, status = 500) {
   if (isTenderAnalysisFoundationUnavailable(error)) {
@@ -2540,7 +2547,14 @@ async function reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analys
   });
 
   const config = getAgt002PreviewRuntimeConfig(process.env);
-  const idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion: config.policyVersion, model: config.model, contextVersionId: contextVersion.id });
+  const legalCorpusContext = await loadAgt002LegalCorpusContextIfEnabled(database);
+  const idempotencyKey = computeAgt002PreviewIdempotencyKey({
+    snapshotId,
+    policyVersion: config.policyVersion,
+    model: config.model,
+    contextVersionId: contextVersion.id,
+    legalCorpusVersionId: legalCorpusContext?.legal_corpus_version_id,
+  });
   let claimId = null;
   try {
     const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
@@ -2562,7 +2576,11 @@ async function reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analys
     const analysisDocuments = agt002AnalysisConfig.AGT002_DOCUMENT_RETRIEVAL
       ? adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId })
       : currentDocs;
-    const engine = createAgt002PreviewRuntime({ environment: process.env, countDailyRuns: () => countAgt002PreviewRunsToday(database) });
+    const engine = createAgt002PreviewRuntime({
+          environment: process.env,
+          countDailyRuns: () => countAgt002PreviewRunsToday(database),
+          legalCorpusContext,
+        });
     const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: humanEvidence } }, { idempotencyKey });
     const registeredRun = await registerAgt002PreviewAnalysis(database, {
       opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly, context_version_id: contextVersion.id,
@@ -3127,11 +3145,18 @@ function buildTenderProcessingWorkerDeps(database) {
       let attemptStarted = false;
       try {
         const config = getAgt002PreviewRuntimeConfig(process.env);
+        const legalCorpusContext = await loadAgt002LegalCorpusContextIfEnabled(database);
         const contextVersion = canonicalOnly ? await registerAgt002ContextVersion(database, {
           opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, actor_id: actor.requested_by,
           context: { snapshot_id: snapshotId, ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: [] },
         }) : null;
-        idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion: config.policyVersion, model: config.model, contextVersionId: contextVersion?.id });
+        idempotencyKey = computeAgt002PreviewIdempotencyKey({
+          snapshotId,
+          policyVersion: config.policyVersion,
+          model: config.model,
+          contextVersionId: contextVersion?.id,
+          legalCorpusVersionId: legalCorpusContext?.legal_corpus_version_id,
+        });
         const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
         if (claim.status === 'existing') {
           const existingRun = await findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly });
@@ -3152,7 +3177,11 @@ function buildTenderProcessingWorkerDeps(database) {
           attemptStarted = true;
           await appendAttempt(idempotencyKey, 'running');
         }
-        const engine = createAgt002PreviewRuntime({ environment: process.env, countDailyRuns: () => countAgt002PreviewRunsToday(database) });
+        const engine = createAgt002PreviewRuntime({
+          environment: process.env,
+          countDailyRuns: () => countAgt002PreviewRunsToday(database),
+          legalCorpusContext,
+        });
         const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
         const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly, context_version_id: contextVersion?.id });
         if (canonicalOnly) await appendAttempt(idempotencyKey, 'completed', { analysis_run_id: registeredRun.run_id });
@@ -3645,11 +3674,18 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
     let attemptStarted = false;
     try {
       const config = getAgt002PreviewRuntimeConfig(process.env);
+      const legalCorpusContext = await loadAgt002LegalCorpusContextIfEnabled(database);
       const contextVersion = canonicalOnly ? await registerAgt002ContextVersion(database, {
         opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, actor_id: currentProfile.id,
         context: { snapshot_id: registeredSnapshot.id, ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: [] },
       }) : null;
-      idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId: registeredSnapshot.id, policyVersion: config.policyVersion, model: config.model, contextVersionId: contextVersion?.id });
+      idempotencyKey = computeAgt002PreviewIdempotencyKey({
+        snapshotId: registeredSnapshot.id,
+        policyVersion: config.policyVersion,
+        model: config.model,
+        contextVersionId: contextVersion?.id,
+        legalCorpusVersionId: legalCorpusContext?.legal_corpus_version_id,
+      });
       const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
       if (claim.status === 'existing') {
         const existingRun = await findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly });
@@ -3672,7 +3708,11 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
         attemptStarted = true;
         await appendAttempt(idempotencyKey, 'running');
       }
-      const engine = createAgt002PreviewRuntime({ environment: process.env, countDailyRuns: () => countAgt002PreviewRunsToday(database) });
+      const engine = createAgt002PreviewRuntime({
+          environment: process.env,
+          countDailyRuns: () => countAgt002PreviewRunsToday(database),
+          legalCorpusContext,
+        });
       const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
       const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope, canonicalOnly, context_version_id: contextVersion?.id });
       if (canonicalOnly) await appendAttempt(idempotencyKey, 'completed', { analysis_run_id: registeredRun.run_id });

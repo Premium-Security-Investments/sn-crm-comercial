@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.js';
 import { AGT002_PREVIEW_POLICY, createAgt002PreviewEngine } from './agt002-preview-engine.js';
 import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
@@ -23,12 +22,29 @@ function legalAsOf(environment) {
   return value;
 }
 
-function createLegalEvidenceProvider(environment) {
-  const corpus = JSON.parse(readFileSync(new URL('./data/agt002/legal-corpus-v1.json', import.meta.url), 'utf8'));
+/**
+ * The runtime never loads the legal corpus itself: the server layer loads it once from
+ * the published DB rows (agt002-legal-corpus-store.js) and injects the immutable result
+ * here, so this validates the caller's context instead of touching the filesystem or a
+ * network client.
+ */
+function requireLegalCorpusContext(context) {
+  if (!context || typeof context !== 'object' || Array.isArray(context)
+    || typeof context.legal_corpus_version_id !== 'string' || !context.legal_corpus_version_id.trim()
+    || typeof context.corpus_version !== 'string' || !context.corpus_version.trim()
+    || typeof context.content_sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(context.content_sha256)
+    || !context.corpus || typeof context.corpus !== 'object' || Array.isArray(context.corpus)) {
+    throw new Error('AGT-002 Preview requiere un corpus jurídico publicado inyectado explícitamente y válido.');
+  }
+  return context;
+}
+
+function createLegalEvidenceProvider(legalCorpusContext, environment) {
+  const { corpus, corpus_version: corpusVersion } = legalCorpusContext;
   const asOf = legalAsOf(environment);
   const topics = [...new Set(corpus.sources.flatMap(source => source.topic))].sort();
   const sector = [...new Set(corpus.sources.flatMap(source => source.sector))].sort();
-  return () => retrieveAgt002LegalEvidence({ corpus, corpus_version: corpus.corpus_version, as_of: asOf, topics, sector });
+  return () => retrieveAgt002LegalEvidence({ corpus, corpus_version: corpusVersion, as_of: asOf, topics, sector });
 }
 
 /** Checked before anything else: no client is ever constructed unless every required variable is present. */
@@ -68,10 +84,11 @@ function positiveIntFromEnv(environment, key, fallback) {
  * Fails closed (throws) when unconfigured or malformed — callers must catch
  * and keep the deterministic rules-based analysis available.
  */
-export function createAgt002PreviewRuntime({ environment = process.env, countDailyRuns } = {}) {
+export function createAgt002PreviewRuntime({ environment = process.env, countDailyRuns, legalCorpusContext } = {}) {
   const config = getAgt002PreviewRuntimeConfig(environment);
   const analysisConfig = buildAgt002AnalysisConfig(environment);
-  const legalEvidenceProvider = analysisConfig.AGT002_LEGAL_CORPUS ? createLegalEvidenceProvider(environment) : undefined;
+  const loadedLegalCorpus = analysisConfig.AGT002_LEGAL_CORPUS ? requireLegalCorpusContext(legalCorpusContext) : null;
+  const legalEvidenceProvider = loadedLegalCorpus ? createLegalEvidenceProvider(loadedLegalCorpus, environment) : undefined;
 
   const client = createAgt002HetznerBridgeClient({
     url: environment.AGT002_HETZNER_BRIDGE_URL,
@@ -90,6 +107,10 @@ export function createAgt002PreviewRuntime({ environment = process.env, countDai
     documentRetrieval: analysisConfig.AGT002_DOCUMENT_RETRIEVAL,
     legalCorpus: analysisConfig.AGT002_LEGAL_CORPUS,
     legalEvidenceProvider,
+    ...(loadedLegalCorpus ? {
+      legalCorpusVersionId: loadedLegalCorpus.legal_corpus_version_id,
+      legalCorpusContentSha256: loadedLegalCorpus.content_sha256,
+    } : {}),
     ...(countDailyRuns ? { countDailyRuns } : {}),
   });
 }
