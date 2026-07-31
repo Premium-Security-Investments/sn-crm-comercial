@@ -61,7 +61,7 @@ create trigger psi_agt002_analysis_attempt_events_immutable
   for each row execute function public.psi_agt002_analysis_attempt_events_prevent_mutation();
 
 alter table public.psi_agt002_analysis_attempt_events enable row level security;
-revoke all on table public.psi_agt002_analysis_attempt_events from public, authenticated, service_role;
+revoke all on table public.psi_agt002_analysis_attempt_events from public, authenticated, anon, service_role;
 grant select on table public.psi_agt002_analysis_attempt_events to service_role;
 
 create or replace function public.psi_record_agt002_canonical_analysis_run(
