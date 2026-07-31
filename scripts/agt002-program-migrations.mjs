@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
-export const MIGRATION_ORDER = Object.freeze(['049', '050', '051', '052', '053', '054']);
+export const MIGRATION_ORDER = Object.freeze(['049', '050', '051', '052', '053', '054', '055']);
 
 const fn = signature => `to_regprocedure('public.${signature}') is not null`;
 const fnInvariant = (signature, fragments) => `exists (select 1 from pg_proc p where p.oid=to_regprocedure('public.${signature}') and ${fragments.map(fragment => `pg_get_functiondef(p.oid) ilike '%${fragment.replaceAll("'", "''")}%'`).join(' and ')})`;
@@ -13,6 +13,10 @@ const column = (tableName, columnName) => `exists (select 1 from information_sch
 const constraint = (tableName, name, type = 'c') => `exists (select 1 from pg_constraint where conname='${name}' and conrelid=to_regclass('public.${tableName}') and contype='${type}')`;
 const constraintInvariant = (tableName, name, fragment) => `exists (select 1 from pg_constraint where conname='${name}' and conrelid=to_regclass('public.${tableName}') and pg_get_constraintdef(oid) ilike '%${fragment.replaceAll("'", "''")}%')`;
 const trigger = (tableName, name) => `exists (select 1 from pg_trigger where tgrelid=to_regclass('public.${tableName}') and tgname='${name}' and not tgisinternal)`;
+const tablePriv = (tableName, role, priv) => `has_table_privilege('${role}', 'public.${tableName}', '${priv}')`;
+const TABLE_PRIVILEGES = Object.freeze(['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']);
+const exactTablePrivs = (tableName, role, allowed) => `(${TABLE_PRIVILEGES.map(priv => `${allowed.includes(priv) ? '' : 'not '}${tablePriv(tableName, role, priv)}`).join(' and ')})`;
+const noTablePrivs = (tableName, role) => exactTablePrivs(tableName, role, []);
 
 const SPECS = Object.freeze({
   '049': Object.freeze({
@@ -155,10 +159,22 @@ const SPECS = Object.freeze({
     rlsTables: [],
     rollbackPolicy: 'restore',
   }),
+  '055': Object.freeze({
+    migrationFile: '055_agt002_company_documents_service_read.sql',
+    rollbackFile: '055_agt002_company_documents_service_read_rollback.sql',
+    prerequisites: [table('psi_company_procurement_documents')],
+    markers: [exactTablePrivs('psi_company_procurement_documents', 'service_role', ['SELECT'])],
+    tables: ['psi_company_procurement_documents'],
+    allowedServiceTablePrivileges: Object.freeze({ psi_company_procurement_documents: Object.freeze(['SELECT']) }),
+    functions: [],
+    rlsTables: ['psi_company_procurement_documents'],
+    rollbackPolicy: 'restore',
+    allowInsecureAbsent: true,
+  }),
 });
 
 export function getSpec(id) {
-  if (typeof id !== 'string' || !Object.hasOwn(SPECS, id)) throw new Error('Selector de migración inválido; use exactamente 049, 050, 051, 052, 053 o 054.');
+  if (typeof id !== 'string' || !Object.hasOwn(SPECS, id)) throw new Error('Selector de migración inválido; use exactamente 049, 050, 051, 052, 053, 054 o 055.');
   return SPECS[id];
 }
 
@@ -183,6 +199,16 @@ const unsafeFunctionGrantsExpr = spec => {
     where p.oid = any(array[${oids}])
       and a.privilege_type='EXECUTE' and (a.grantee=0 or lower(r.rolname) in ('anon','authenticated')))`;
 };
+const unsafeServiceTableGrantsExpr = spec => {
+  const allowedByTable = spec.allowedServiceTablePrivileges;
+  if (!allowedByTable) return '0';
+  return `(${Object.entries(allowedByTable).map(([name, allowed]) => `(select count(*)::int from pg_class c
+    join pg_namespace n on n.oid=c.relnamespace
+    cross join lateral aclexplode(coalesce(c.relacl, acldefault('r',c.relowner))) a
+    join pg_roles r on r.oid=a.grantee
+    where n.nspname='public' and c.relname='${name}' and lower(r.rolname)='service_role'
+      and a.privilege_type not in (${sqlStringList(allowed)}))`).join(' + ')})`;
+};
 const missingServiceExecExpr = spec => spec.functions.length
   ? `(${spec.functions.map(signature => `(case when to_regprocedure('public.${signature}') is not null and not has_function_privilege('service_role','public.${signature}','EXECUTE') then 1 else 0 end)`).join(' + ')})`
   : '0';
@@ -195,6 +221,7 @@ const rlsMissingExpr = spec => {
     where n.nspname='public' and c.relname in (${names}) and not c.relrowsecurity)`;
 };
 const secureStateExpr = spec => `(${unsafeTableGrantsExpr(spec)} = 0 and ${unsafeFunctionGrantsExpr(spec)} = 0
+  and ${unsafeServiceTableGrantsExpr(spec)} = 0
   and ${missingServiceExecExpr(spec)} = 0 and ${missingServiceSelectExpr(spec)} = 0 and ${rlsMissingExpr(spec)} = 0)`;
 const advisoryLockSql = "perform pg_advisory_xact_lock(hashtextextended('agt002-program-migrations-049-053', 0));";
 const disabledStateExpr = spec => {
@@ -239,6 +266,7 @@ select
   ${spec.markers.length}::int as markers_expected,
   ${unsafeTableGrantsExpr(spec)} as unsafe_table_grants,
   ${unsafeFunctionGrantsExpr(spec)} as unsafe_function_grants,
+  ${unsafeServiceTableGrantsExpr(spec)}::int as unsafe_service_table_grants,
   ${missingServiceExecExpr(spec)}::int as missing_service_exec,
   ${missingServiceSelectExpr(spec)}::int as missing_service_select,
   ${rlsMissingExpr(spec)} as rls_missing;`;
@@ -251,6 +279,7 @@ export function classifyState(row) {
   if (present === 0) return 'absent';
   if (present < expected) return 'partial';
   const insecure = Number(row?.unsafe_table_grants) !== 0 || Number(row?.unsafe_function_grants) !== 0
+    || Number(row?.unsafe_service_table_grants || 0) !== 0
     || Number(row?.missing_service_exec) !== 0 || Number(row?.missing_service_select) !== 0 || Number(row?.rls_missing) !== 0;
   return insecure ? 'drift' : 'applied';
 }
@@ -295,10 +324,18 @@ select (to_regclass('public.psi_agt002_legal_corpus_versions') is not null
   and to_regprocedure('public.psi_publish_agt002_legal_corpus(uuid,uuid)') is null
   and to_regprocedure('public.psi_record_agt002_canonical_analysis_run(uuid,uuid,uuid,jsonb,integer,text,text,text,text,jsonb,uuid)') is not null
   and to_regprocedure('public.psi_record_agt002_canonical_analysis_run(uuid,uuid,uuid,jsonb,integer,text,text,text,text,jsonb,uuid,uuid)') is null) as ok;`;
-  return `-- AGT002_RUNNER:ROLLBACK_VERIFY:054
+  if (id === '054') return `-- AGT002_RUNNER:ROLLBACK_VERIFY:054
 select exists (select 1 from pg_constraint where conname='psi_tender_tracking_events_event_type_check'
   and conrelid=to_regclass('public.psi_tender_tracking_events')
   and pg_get_constraintdef(oid) not ilike '%documents_chunked%') as ok;`;
+  return `-- AGT002_RUNNER:ROLLBACK_VERIFY:055
+select (to_regclass('public.psi_company_procurement_documents') is not null
+  and ${noTablePrivs('psi_company_procurement_documents', 'service_role')}
+  and ${noTablePrivs('psi_company_procurement_documents', 'anon')}
+  and ${noTablePrivs('psi_company_procurement_documents', 'authenticated')}
+  and ${noTablePrivs('psi_company_procurement_documents', 'public')}
+  and exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace
+    where n.nspname='public' and c.relname='psi_company_procurement_documents' and c.relrowsecurity)) as ok;`;
 }
 
 export function buildAtomicRollbackSql(id, rollbackSql) {
@@ -358,6 +395,7 @@ export async function readState(execSql, id) {
     migration: id, status,
     markers_present: Number(row?.markers_present || 0), markers_expected: Number(row?.markers_expected || 0),
     unsafe_table_grants: Number(row?.unsafe_table_grants || 0), unsafe_function_grants: Number(row?.unsafe_function_grants || 0),
+    unsafe_service_table_grants: Number(row?.unsafe_service_table_grants || 0),
     missing_service_exec: Number(row?.missing_service_exec || 0), missing_service_select: Number(row?.missing_service_select || 0),
     rls_missing: Number(row?.rls_missing || 0),
   };
