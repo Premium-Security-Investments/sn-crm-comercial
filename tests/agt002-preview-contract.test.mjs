@@ -218,7 +218,16 @@ for (const bad of [null, undefined, [], 'not-an-object', 42]) {
     documents: [
       { document_id: 'doc-01', document_version_id: 'ver-01', opportunity_id: 'opp-1', snapshot_id: null, document_type: 'pliego', name: 'Pliego', version: 1, content_hash: 'a'.repeat(64), current: true, extracted_text: 'Requiere póliza vigente de cumplimiento.' },
     ],
-    deepAnalysis: { matrix: { legal: [{ id: 'req-poliza', front: 'legal', label: 'Póliza vigente' }], financial: [], technical: [] } },
+    deepAnalysis: {
+      matrix: {
+        legal: [{
+          id: 'req-poliza', front: 'legal', label: 'Póliza vigente',
+          evidence: [{ document_id: 'ver-01', document_name: 'Pliego', document_type: 'pliego', excerpt: 'póliza vigente' }],
+        }],
+        financial: [],
+        technical: [],
+      },
+    },
     snapshotId: 'snapshot-1',
     contextV2: true,
     contextV2Sections,

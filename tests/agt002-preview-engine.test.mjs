@@ -258,7 +258,16 @@ assert.throws(
   const retrievalDocuments = [
     { document_id: 'doc-01', document_version_id: 'ver-01', opportunity_id: 'opp-1', snapshot_id: null, document_type: 'pliego', name: 'Pliego', version: 1, content_hash: 'a'.repeat(64), current: true, extracted_text: 'Requiere póliza vigente de cumplimiento.' },
   ];
-  const retrievalDeepAnalysis = { matrix: { legal: [{ id: 'req-poliza', front: 'legal', label: 'Póliza vigente' }], financial: [], technical: [] } };
+  const retrievalDeepAnalysis = {
+    matrix: {
+      legal: [{
+        id: 'req-poliza', front: 'legal', label: 'Póliza vigente',
+        evidence: [{ document_id: 'ver-01', document_name: 'Pliego', document_type: 'pliego', excerpt: 'Requiere póliza vigente de cumplimiento.' }],
+      }],
+      financial: [],
+      technical: [],
+    },
+  };
 
   // Engine built with documentRetrieval:true must apply retrieval even when the caller's
   // context tries to disable it.
@@ -279,6 +288,19 @@ assert.throws(
     assert.equal(result.evidence_coverage.material_omissions, client.calls[0].input.document_evidence.material_omissions);
     assert.deepEqual(result.evidence_coverage.citation_allowlist, client.calls[0].input.document_evidence.citation_allowlist);
     assert.ok(result.evidence_coverage.selected_chunks.every(chunk => !Object.hasOwn(chunk, 'text')), 'persisted coverage metadata must not duplicate or retain chunk text');
+
+    // The self-contained requirement provenance manifest (id/front/label/sources) must be
+    // carried inline on both the model input's document_evidence and the persisted
+    // evidence_coverage, with no chunk/excerpt text ever leaking through.
+    assert.equal(client.calls[0].input.document_evidence.requirement_manifest_version, '1.0');
+    assert.deepEqual(client.calls[0].input.document_evidence.requirement_manifest, [{
+      requirement_id: 'req-poliza', front: 'legal', label: 'Póliza vigente',
+      sources: [{ document_id: 'doc-01', document_version_id: 'ver-01', content_hash: 'a'.repeat(64) }],
+      unresolved_sources: [],
+    }]);
+    assert.equal(result.evidence_coverage.requirement_manifest_version, '1.0');
+    assert.deepEqual(result.evidence_coverage.requirement_manifest, client.calls[0].input.document_evidence.requirement_manifest);
+    assert.doesNotMatch(JSON.stringify(result.evidence_coverage.requirement_manifest), /excerpt|Requiere póliza vigente/i);
   }
 
   // Engine built without documentRetrieval (default false) must ignore a caller trying to

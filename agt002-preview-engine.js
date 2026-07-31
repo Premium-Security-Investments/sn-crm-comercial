@@ -70,6 +70,8 @@ function buildEvidenceCoverage(previewInput) {
     omitted_chunks: evidence.omitted_chunks,
     citation_allowlist: evidence.citation_allowlist,
     material_omissions: evidence.material_omissions,
+    requirement_manifest_version: evidence.requirement_manifest_version,
+    requirement_manifest: evidence.requirement_manifest,
   };
 }
 
