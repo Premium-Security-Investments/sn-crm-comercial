@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dirname, '..');
-export const MIGRATION_ORDER = Object.freeze(['049', '050', '051', '052', '053']);
+export const MIGRATION_ORDER = Object.freeze(['049', '050', '051', '052', '053', '054']);
 
 const fn = signature => `to_regprocedure('public.${signature}') is not null`;
 const fnInvariant = (signature, fragments) => `exists (select 1 from pg_proc p where p.oid=to_regprocedure('public.${signature}') and ${fragments.map(fragment => `pg_get_functiondef(p.oid) ilike '%${fragment.replaceAll("'", "''")}%'`).join(' and ')})`;
@@ -11,6 +11,7 @@ const table = name => `exists (select 1 from pg_class c join pg_namespace n on n
 const index = (tableName, name) => `exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace join pg_index i on i.indexrelid=c.oid where n.nspname='public' and c.relname='${name}' and c.relkind='i' and i.indrelid=to_regclass('public.${tableName}'))`;
 const column = (tableName, columnName) => `exists (select 1 from information_schema.columns where table_schema='public' and table_name='${tableName}' and column_name='${columnName}')`;
 const constraint = (tableName, name, type = 'c') => `exists (select 1 from pg_constraint where conname='${name}' and conrelid=to_regclass('public.${tableName}') and contype='${type}')`;
+const constraintInvariant = (tableName, name, fragment) => `exists (select 1 from pg_constraint where conname='${name}' and conrelid=to_regclass('public.${tableName}') and pg_get_constraintdef(oid) ilike '%${fragment.replaceAll("'", "''")}%')`;
 const trigger = (tableName, name) => `exists (select 1 from pg_trigger where tgrelid=to_regclass('public.${tableName}') and tgname='${name}' and not tgisinternal)`;
 
 const SPECS = Object.freeze({
@@ -144,10 +145,20 @@ const SPECS = Object.freeze({
     rollbackPolicy: 'non-destructive-disable',
     disabledMarkerCount: 5,
   }),
+  '054': Object.freeze({
+    migrationFile: '054_tender_documents_chunked_event.sql',
+    rollbackFile: '054_tender_documents_chunked_event_rollback.sql',
+    prerequisites: [table('psi_tender_tracking_events'), table('psi_tender_document_chunks')],
+    markers: [constraintInvariant('psi_tender_tracking_events', 'psi_tender_tracking_events_event_type_check', 'documents_chunked')],
+    tables: [],
+    functions: [],
+    rlsTables: [],
+    rollbackPolicy: 'restore',
+  }),
 });
 
 export function getSpec(id) {
-  if (typeof id !== 'string' || !Object.hasOwn(SPECS, id)) throw new Error('Selector de migración inválido; use exactamente 049, 050, 051, 052 o 053.');
+  if (typeof id !== 'string' || !Object.hasOwn(SPECS, id)) throw new Error('Selector de migración inválido; use exactamente 049, 050, 051, 052, 053 o 054.');
   return SPECS[id];
 }
 
@@ -254,6 +265,8 @@ select (not exists (select 1 from public.psi_agt002_analysis_attempt_events)
 select (not exists (select 1 from public.psi_agt002_context_versions)
   and not exists (select 1 from public.psi_tender_analysis_runs where context_version_id is not null)
   and to_regclass('public.psi_agt002_legal_corpus_versions') is null) as safe;`;
+  if (id === '054') return `-- AGT002_RUNNER:ROLLBACK_GUARD:054
+select not exists (select 1 from public.psi_tender_tracking_events where event_type='documents_chunked') as safe;`;
   return `-- AGT002_RUNNER:ROLLBACK_GUARD:${id}\nselect true as safe;`;
 }
 
@@ -273,7 +286,7 @@ select (to_regclass('public.psi_agt002_context_versions') is null
   if (id === '052') return `-- AGT002_RUNNER:ROLLBACK_VERIFY:052
 select (to_regclass('public.psi_tender_document_chunks') is not null
   and to_regprocedure('public.psi_record_tender_document_chunk(uuid,uuid,uuid,uuid,text,text,text,text,integer,text,integer,integer,integer,text,text,boolean,text,boolean,uuid)') is null) as ok;`;
-  return `-- AGT002_RUNNER:ROLLBACK_VERIFY:053
+  if (id === '053') return `-- AGT002_RUNNER:ROLLBACK_VERIFY:053
 select (to_regclass('public.psi_agt002_legal_corpus_versions') is not null
   and to_regclass('public.psi_agt002_legal_sources') is not null
   and to_regclass('public.psi_agt002_legal_topics') is not null
@@ -282,6 +295,10 @@ select (to_regclass('public.psi_agt002_legal_corpus_versions') is not null
   and to_regprocedure('public.psi_publish_agt002_legal_corpus(uuid,uuid)') is null
   and to_regprocedure('public.psi_record_agt002_canonical_analysis_run(uuid,uuid,uuid,jsonb,integer,text,text,text,text,jsonb,uuid)') is not null
   and to_regprocedure('public.psi_record_agt002_canonical_analysis_run(uuid,uuid,uuid,jsonb,integer,text,text,text,text,jsonb,uuid,uuid)') is null) as ok;`;
+  return `-- AGT002_RUNNER:ROLLBACK_VERIFY:054
+select exists (select 1 from pg_constraint where conname='psi_tender_tracking_events_event_type_check'
+  and conrelid=to_regclass('public.psi_tender_tracking_events')
+  and pg_get_constraintdef(oid) not ilike '%documents_chunked%') as ok;`;
 }
 
 export function buildAtomicRollbackSql(id, rollbackSql) {
@@ -302,6 +319,11 @@ export function buildAtomicRollbackSql(id, rollbackSql) {
       or exists (select 1 from public.psi_tender_analysis_runs where context_version_id is not null)
       or to_regclass('public.psi_agt002_legal_corpus_versions') is not null then
       raise exception 'rollback 051 bloqueado: existe evidencia o una migración dependiente';
+    end if;`;
+  } else if (id === '054') {
+    locks = "execute 'lock table public.psi_tender_tracking_events in share row exclusive mode';";
+    guard = `if exists (select 1 from public.psi_tender_tracking_events where event_type='documents_chunked') then
+      raise exception 'rollback 054 bloqueado: existen eventos append-only documents_chunked';
     end if;`;
   }
   return `-- AGT002_RUNNER:ATOMIC_ROLLBACK:${id}
