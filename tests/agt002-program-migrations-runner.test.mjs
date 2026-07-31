@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 
 const moduleUrl = new URL('../scripts/agt002-program-migrations.mjs', import.meta.url);
-assert.equal(existsSync(moduleUrl), true, 'debe existir el runner dedicado 049–053');
+assert.equal(existsSync(moduleUrl), true, 'debe existir el runner dedicado 049–054');
 const mod = await import(moduleUrl);
 const {
   MIGRATION_ORDER, getSpec, stripTopLevelTransactionWrapper, classifyState,
@@ -10,8 +10,8 @@ const {
   buildRollbackVerifySql, createExecSql, preflight, apply, rollback,
 } = mod;
 
-assert.deepEqual(MIGRATION_ORDER, ['049', '050', '051', '052', '053']);
-assert.throws(() => getSpec('054'), /selector/i);
+assert.deepEqual(MIGRATION_ORDER, ['049', '050', '051', '052', '053', '054']);
+assert.throws(() => getSpec('055'), /selector/i);
 assert.throws(() => getSpec('../050'), /selector/i);
 
 for (const id of MIGRATION_ORDER) {
@@ -33,7 +33,7 @@ for (const id of MIGRATION_ORDER) {
   assert.match(stateSql, /unsafe_function_grants/);
   assert.match(stateSql, /missing_service_exec/);
   assert.match(stateSql, /missing_service_select/);
-  assert.match(stateSql, /pg_get_functiondef/);
+  assert.match(stateSql, /pg_get_(function|constraint)def/);
   assert.match(buildPrerequisitesSql(id), new RegExp(`AGT002_RUNNER:PREREQUISITES:${id}`));
 
   const atomicApply = buildAtomicApplySql(id, migration).toLowerCase();
@@ -60,6 +60,15 @@ for (const id of ['050', '051']) {
   assert.match(atomic, /share row exclusive mode/);
   assert.doesNotMatch(atomic.trim().split(/\r?\n/)[0], /^begin;$/i);
   assert.doesNotMatch(atomic.trim(), /\bcommit;\s*$/i);
+}
+
+{
+  const spec = getSpec('054');
+  const rollbackSql = readFileSync(new URL(`../supabase/rollbacks/${spec.rollbackFile}`, import.meta.url), 'utf8');
+  const atomic = buildAtomicRollbackSql('054', rollbackSql).toLowerCase();
+  assert.ok(atomic.indexOf('pg_advisory_xact_lock') < atomic.indexOf('lock table public.psi_tender_tracking_events'));
+  assert.ok(atomic.indexOf('lock table public.psi_tender_tracking_events') < atomic.indexOf("event_type='documents_chunked'"));
+  assert.match(atomic, /share row exclusive mode/);
 }
 
 const safe = { unsafe_table_grants: 0, unsafe_function_grants: 0, missing_service_exec: 0, missing_service_select: 0, rls_missing: 0 };
@@ -145,6 +154,18 @@ for (const id of ['052', '053']) {
   assert.equal(reapplied.status, 'applied');
 }
 
+{
+  const exec = fakeExec({ id: '054', initial: 'applied' });
+  const first = await rollback(exec, '054');
+  assert.equal(first.ok, true);
+  assert.equal(exec.status(), 'absent');
+  const second = await rollback(exec, '054');
+  assert.equal(second.skipped, true);
+  assert.equal(second.status, 'absent');
+  const reapplied = await apply(exec, '054');
+  assert.equal(reapplied.status, 'applied');
+}
+
 for (const id of MIGRATION_ORDER) assert.match(buildRollbackVerifySql(id), new RegExp(`ROLLBACK_VERIFY:${id}`));
 
 {
@@ -196,4 +217,4 @@ assert.match(source, /import\.meta\.url === /);
 assert.doesNotMatch(source, /console\.(log|error)\([^)]*(serviceKey|SUPABASE_SERVICE_ROLE_KEY)/i);
 assert.doesNotMatch(source, /process\.argv\[[^\]]+\].*readFileSync/i, 'no debe aceptar rutas arbitrarias desde CLI');
 
-console.log('AGT-002 program migrations 049–053 runner contract passed');
+console.log('AGT-002 program migrations 049–054 runner contract passed');
