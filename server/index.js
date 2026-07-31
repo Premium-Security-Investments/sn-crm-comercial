@@ -49,13 +49,14 @@ import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt00
 import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
 import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../tender-actuation-types.js';
 import { buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
-import { createAgt002AnalysisObservability } from '../agt002-analysis-observability.js';
+import { createAgt002AnalysisObservability, toBoundedAgt002Error } from '../agt002-analysis-observability.js';
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import {
   runAgt002FixedSnapshotReanalysis,
   sanitizeAgt002FixedSnapshotError,
 } from '../agt002-fixed-snapshot-reanalysis.js';
+import { adaptAgt002RetrievalDocuments } from '../agt002-retrieval-document-adapter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2430,7 +2431,7 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
   await requireTenderAnalysisFoundation(database);
   const interactions = await must(database.from('psi_sales_interactions').select('id,notes,occurred_at,created_at,created_by,psi_sales_profiles(full_name)').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true }));
   const typedVersionsResponse = await database.from('psi_tender_document_versions')
-    .select('id,name,document_type,content_hash,storage_path,mime_type,size_bytes,current,source,source_document_id,source_url,extracted_text,created_at')
+    .select('id,opportunity_id,name,document_type,content_hash,storage_path,mime_type,size_bytes,current,source,source_document_id,source_url,version,extracted_text,created_at')
     .eq('opportunity_id', opportunityId)
     .eq('current', true);
   if (typedVersionsResponse.error) throw typedVersionsResponse.error;
@@ -2439,7 +2440,7 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
     document_type: version.document_type, current: version.current, storage_path: version.storage_path,
     uploaded_at: version.created_at, extracted_text: version.extracted_text, auto_import: true,
     source: version.source, source_url: version.source_url, source_document_id: version.source_document_id,
-    content_hash: version.content_hash,
+    opportunity_id: version.opportunity_id, version: version.version, content_hash: version.content_hash,
   }));
   const documents = [];
   const analyses = [];
@@ -2558,8 +2559,11 @@ async function reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analys
       return { status: claim.status, context_version_id: contextVersion.id };
     }
     claimId = claim.claim_id;
+    const analysisDocuments = agt002AnalysisConfig.AGT002_DOCUMENT_RETRIEVAL
+      ? adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId })
+      : currentDocs;
     const engine = createAgt002PreviewRuntime({ environment: process.env, countDailyRuns: () => countAgt002PreviewRunsToday(database) });
-    const envelope = await engine.analyze({ opportunity, documents: currentDocs, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: humanEvidence } }, { idempotencyKey });
+    const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: humanEvidence } }, { idempotencyKey });
     const registeredRun = await registerAgt002PreviewAnalysis(database, {
       opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly, context_version_id: contextVersion.id,
     });
@@ -2572,7 +2576,10 @@ async function reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analys
     });
     return { status: 'completed', context_version_id: contextVersion.id, analysis: presentCurrentTenderAnalysis(registeredRun), reused: false };
   } catch (error) {
-    console.warn('agt002_reanalysis_after_human_answer_failed', { event: 'agt002_reanalysis_after_human_answer_failed' });
+    console.warn('agt002_reanalysis_after_human_answer_failed', {
+      event: 'agt002_reanalysis_after_human_answer_failed',
+      ...toBoundedAgt002Error(error),
+    });
     agt002AnalysisObservability.record('reanalysis_triggered', {
       opportunity_id: opportunityId, tender_id: tenderId, context_version_id: contextVersion.id, status: 'unavailable',
     });
