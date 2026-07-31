@@ -1,0 +1,207 @@
+{
+  "verification_date": "2026-07-31",
+  "manifest_path": "data/agt002/legal-corpus-v1.json",
+  "corpus_version": "legal-corpus-v1",
+  "manifest_content_sha256": "029069fcbf60c53ce7aa211239cc8dc7a302986e8d2ecbebdad289b9f3231b35",
+  "manifest_content_sha256_method": "computeAgt002LegalManifestContentHash(manifest) from scripts/validate_agt002_legal_corpus.mjs — sha256 hex digest of canonicalizeAgt002LegalManifest(manifest), which JSON.stringifies the manifest after (a) sorting sources by source_id and (b) recursively sorting all object keys. Recomputed against data/agt002/legal-corpus-v1.json after this pass's edits, via: node -e \"import('./scripts/validate_agt002_legal_corpus.mjs').then(async m => console.log(m.computeAgt002LegalManifestContentHash(JSON.parse((await import('node:fs')).readFileSync('data/agt002/legal-corpus-v1.json','utf8')))))\"",
+  "legal_review_disclaimer": "Esta verificación es exclusivamente mecánica (disponibilidad HTTP, tipo de contenido, integridad por hash y cotejo textual del artículo citado contra la fuente oficial). La aprobación operativa de la Base Maestra / gate de publicación del corpus AGT-002 (validador de esquema + pruebas automatizadas en verde) NO sustituye ni implica verificación jurídica de vigencia, aplicabilidad sectorial, o ausencia de modificaciones/derogatorias posteriores. Toda fuente con validity_status=uncertain, applicability_status=uncertain, o con modifications de resolution_status=unresolved permanece review-only y requiere revisión jurídica humana antes de sustentar una conclusión verified_law (ver requires_human_legal_review en agt002-legal-corpus.js).",
+  "artifacts": [
+    {
+      "artifact_id": "ley-80-de-1993",
+      "source_ids": [
+        "ley-80-1993-art-1"
+      ],
+      "requested_url": "https://relatoria.colombiacompra.gov.co/normativa/ley-80-de-1993/",
+      "effective_url": "https://relatoria.colombiacompra.gov.co/normativa/ley-80-de-1993/",
+      "article_or_sections": [
+        "Artículo 1",
+        "Artículo 81 (cláusula de vigencia)"
+      ],
+      "checked_at": "2026-07-31T20:07:18Z",
+      "http_status": 200,
+      "content_type": "text/html; charset=UTF-8",
+      "artifact_sha256": "e3f757f580184c5fa79105310ac1150bfc23db6b747456e2a790f4465f5dba46",
+      "text_match": {
+        "method": "HTML rendered-text comparison after tag removal and whitespace normalization",
+        "matched": true,
+        "quoted_text": "ARTÍCULO 1.- Del objeto. La presente Ley tiene por objeto disponer las reglas y principios que rigen los contratos de las entidades estatales."
+      },
+      "evidence_classification": "official_source_artifact_fetched_2026-07-31",
+      "notes": "Página oficial consultada de Relatoría de Colombia Compra Eficiente para la Ley 80 de 1993. El Artículo 1 fue cotejado textualmente. El Artículo 81 dispone que las demás disposiciones entran a regir el 1 de enero de 1994; por eso effective_from=1994-01-01. La fuente queda verified/confirmed/applicable para el gate mínimo, sin convertir la aprobación operativa de la Base Maestra en validación jurídica general.",
+      "review_only": false,
+      "reasons": []
+    },
+    {
+      "artifact_id": "ley-1150-de-2007",
+      "source_ids": [
+        "ley-1150-2007-art-2"
+      ],
+      "requested_url": "https://relatoria.colombiacompra.gov.co/normativa/ley-1150-de-2007/",
+      "effective_url": "https://relatoria.colombiacompra.gov.co/normativa/ley-1150-de-2007/",
+      "article_or_sections": [
+        "Artículo 2"
+      ],
+      "checked_at": "2026-07-31T20:07:18Z",
+      "http_status": 200,
+      "content_type": "text/html; charset=UTF-8",
+      "artifact_sha256": "71771be50d987fc6ad06b3c7d03aa18b051fc2745613ca37e4ce05eb7f342c86",
+      "text_match": {
+        "method": "HTML rendered-text comparison after tag removal and whitespace normalization",
+        "matched": true,
+        "quoted_text": "Artículo 2°. De las modalidades de selección. La escogencia del contratista se efectuará con arreglo a las modalidades de selección de licitación pública, selección abreviada, concurso de méritos y contratación directa, con base en las siguientes reglas: 1. Licitación pública. La escogencia del contratista se efectuará por regla general a través de licitación pública, con las excepciones que se señalan en los numerales 2, 3 y 4 del presente artículo. Cuando la entidad estatal así lo determine, la oferta en un proceso de la licitación pública podrá ser presentada total o parcialmente de manera dinámica mediante subasta inversa, en las condiciones que fije el reglamento."
+      },
+      "evidence_classification": "official_source_artifact_fetched_2026-07-31",
+      "notes": "Reemplaza la URL SUIN/Juriscol previa por la página oficial consultada de Relatoría CCE. Modificaciones por Ley 1955 de 2019 art. 41 y Ley 2160 de 2021 art. 2 se conservan como unresolved (no se localizó fecha de efecto ni URL oficial de la reforma en esta pasada). applicability_status=applicable porque el artículo fija la regla general de modalidades de selección aplicable a las entidades estatales del sector público (alcance general, no sectorial); validity_status permanece uncertain por las modificaciones no resueltas y por no haber confirmado ausencia de vigencia suspendida o derogatoria posterior.",
+      "review_only": true,
+      "reasons": [
+        "validity_uncertain",
+        "modification_unresolved"
+      ]
+    },
+    {
+      "artifact_id": "decreto-356-de-1994-supervigilancia-pdf",
+      "source_ids": [
+        "decreto-356-1994-art-1",
+        "decreto-356-1994-art-4",
+        "decreto-356-1994-art-7"
+      ],
+      "requested_url": "https://www.supervigilancia.gov.co/web/content/11944?download=true",
+      "effective_url": "https://www.supervigilancia.gov.co/web/content/11944?download=true",
+      "article_or_sections": [
+        "Artículo 1",
+        "Artículo 4",
+        "Artículo 7"
+      ],
+      "checked_at": "2026-07-31T20:07:18Z",
+      "http_status": 200,
+      "content_type": "application/pdf",
+      "artifact_sha256": "3950dfc515d479bc8ca4f64375a8f2ee55d5c371d3cec81f48c5ebdaf4574aa4",
+      "evidence_classification": "official_source_artifact_fetched_2026-07-31",
+      "notes": "Reemplaza las URLs de funcionpublica.gov.co previas (artículos 4 y 7) por el PDF oficial consultado de la Superintendencia de Vigilancia y Seguridad Privada, ya usado para el artículo 1. Artículo 1 corregido en el manifiesto de singular 'servicio de vigilancia' a plural 'servicios de vigilancia y seguridad privada', conforme al texto exacto del PDF oficial.",
+      "per_article": [
+        {
+          "source_id": "decreto-356-1994-art-1",
+          "article_or_section": "Artículo 1",
+          "text_match": {
+            "method": "PDF extracted-text comparison after whitespace, case, punctuation and Unicode-diacritic normalization",
+            "matched": true,
+            "quoted_text": "ARTICULO 1o. OBJETO. El presente decreto tiene por objeto establecer el estatuto para la prestación por particulares de servicios de vigilancia y seguridad privada."
+          },
+          "applicability_status_applied": "applicable",
+          "applicability_basis": "alcance sectorial explícito (vigilancia y seguridad privada)",
+          "review_only": true,
+          "reasons": [
+            "validity_uncertain"
+          ]
+        },
+        {
+          "source_id": "decreto-356-1994-art-4",
+          "article_or_section": "Artículo 4",
+          "text_match": {
+            "method": "PDF extracted-text comparison after whitespace, case, punctuation and Unicode-diacritic normalization",
+            "matched": true,
+            "quoted_text": "ARTÍCULO 4.- Campo de Aplicación. Se hallan sometidos al presente Decreto: ..."
+          },
+          "applicability_status_applied": "applicable",
+          "applicability_basis": "alcance sectorial explícito (vigilancia y seguridad privada)",
+          "review_only": true,
+          "reasons": [
+            "validity_uncertain"
+          ]
+        },
+        {
+          "source_id": "decreto-356-1994-art-7",
+          "article_or_section": "Artículo 7",
+          "text_match": {
+            "method": "PDF extracted-text comparison after whitespace, case, punctuation and Unicode-diacritic normalization",
+            "matched": true,
+            "quoted_text": "ARTÍCULO 7.- Control. La Superintendencia de Vigilancia y Seguridad Privada ejercerá control, inspección y vigilancia sobre todas las personas naturales o jurídicas que desarrollen actividades de vigilancia y seguridad privada y sus usuarios de conformidad con lo establecido en la ley."
+          },
+          "applicability_status_applied": "applicable",
+          "applicability_basis": "alcance sectorial explícito (vigilancia y seguridad privada)",
+          "review_only": true,
+          "reasons": [
+            "validity_uncertain",
+            "modification_unresolved"
+          ],
+          "unresolved_modification": {
+            "modification_id": "mod-decreto356-art7-ley2454-2025-art10",
+            "modifying_norm_id": "ley-2454-2025-art-10",
+            "resolution_status": "unresolved"
+          }
+        }
+      ],
+      "review_only": true,
+      "reasons": [
+        "validity_uncertain",
+        "modification_unresolved"
+      ]
+    },
+    {
+      "artifact_id": "decreto-1082-de-2015",
+      "source_ids": [
+        "decreto-1082-2015-art-2-2-1-1-1-1-1"
+      ],
+      "requested_url": "https://relatoria.colombiacompra.gov.co/normativa/decreto-1082-de-2015/",
+      "effective_url": "https://relatoria.colombiacompra.gov.co/normativa/decreto-1082-de-2015/",
+      "article_or_sections": [
+        "Artículo 2.2.1.1.1.1.1"
+      ],
+      "checked_at": "2026-07-31T20:07:18Z",
+      "http_status": 200,
+      "content_type": "text/html; charset=UTF-8",
+      "artifact_sha256": "d1ffc3df8ab4f21d4f55e51b53fad44ef44168709c4dbab170cf64f655d7d7ea",
+      "text_match": {
+        "method": "HTML rendered-text comparison after tag removal, whitespace normalization and Unicode NFKC normalization (official HTML uses typographic ligatures)",
+        "matched": true,
+        "quoted_text": "Artículo 2.2.1.1.1.1.1° Objetivos del Sistema de Compras y Contratación Pública. Las Entidades Estatales deben procurar el logro de los objetivos del sistema de compras y contratación pública definidos por Colombia Compra Eficiente."
+      },
+      "evidence_classification": "official_source_artifact_fetched_2026-07-31",
+      "notes": "URL ya era la página oficial consultada de Relatoría CCE; no requirió cambio de host, solo refresco de verified_at. applicability_status=applicable por corresponder al proceso estatal de compras públicas; validity_status permanece uncertain por vigencia reglamentaria no confirmada en esta pasada.",
+      "review_only": true,
+      "reasons": [
+        "validity_uncertain"
+      ]
+    }
+  ],
+  "no_invented_effective_dates": "No se asignó effective_from a ninguna fuente con validity_status=uncertain. Solo ley-80-1993-art-1 recibió effective_from=1994-01-01, respaldado por el Artículo 81 de la propia Ley 80: las demás disposiciones entraron a regir el 1 de enero de 1994.",
+  "url_replacements": [
+    {
+      "source_id": "ley-80-1993-art-1",
+      "old_official_url": "https://www.suin-juriscol.gov.co/viewDocument.asp?ruta=Leyes/1790106",
+      "new_official_url": "https://relatoria.colombiacompra.gov.co/normativa/ley-80-de-1993/"
+    },
+    {
+      "source_id": "ley-1150-2007-art-2",
+      "old_official_url": "https://www.suin-juriscol.gov.co/viewDocument.asp?ruta=Leyes/1674903",
+      "new_official_url": "https://relatoria.colombiacompra.gov.co/normativa/ley-1150-de-2007/"
+    },
+    {
+      "source_id": "decreto-356-1994-art-4",
+      "old_official_url": "https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i=1341",
+      "new_official_url": "https://www.supervigilancia.gov.co/web/content/11944?download=true"
+    },
+    {
+      "source_id": "decreto-356-1994-art-7",
+      "old_official_url": "https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i=1341",
+      "new_official_url": "https://www.supervigilancia.gov.co/web/content/11944?download=true"
+    }
+  ],
+  "content_corrections": [
+    {
+      "source_id": "ley-80-1993-art-1",
+      "field": "current_text",
+      "before": "ARTÍCULO 1o. DEL OBJETO. La presente ley tiene por objeto disponer las reglas y principios que rigen los contratos de las entidades estatales.",
+      "after": "ARTÍCULO 1.- Del objeto. La presente Ley tiene por objeto disponer las reglas y principios que rigen los contratos de las entidades estatales.",
+      "reason": "cotejo exacto contra el texto publicado en la página oficial de Relatoría CCE"
+    },
+    {
+      "source_id": "decreto-356-1994-art-1",
+      "field": "current_text",
+      "before": "ARTICULO 1o. OBJETO. El presente decreto tiene por objeto establecer el estatuto para la prestación por particulares de servicio de vigilancia y seguridad privada.",
+      "after": "ARTICULO 1o. OBJETO. El presente decreto tiene por objeto establecer el estatuto para la prestación por particulares de servicios de vigilancia y seguridad privada.",
+      "reason": "corrección de singular a plural ('servicios') conforme al PDF oficial de Supervigilancia"
+    }
+  ],
+  "verification_method_note": "HTTP metadata and artifact SHA-256 values were freshly reproduced on 2026-07-31T20:07:18Z. Text comparisons are normalized as stated per artifact; they are not falsely represented as byte-exact comparisons to raw HTML/PDF bytes."
+}
