@@ -23,7 +23,7 @@ function contentSha256(content) {
   return createHash('sha256').update(content).digest('hex');
 }
 
-function normalizeDocumentContent(value) {
+export function normalizeTenderDocumentContent(value) {
   return String(value ?? '').replace(/\r\n?/g, '\n');
 }
 
@@ -39,7 +39,7 @@ function stableDocumentId(document, content) {
 }
 
 function canonicalDocument(document) {
-  const content = normalizeDocumentContent(document?.content ?? document?.extracted_text);
+  const content = normalizeTenderDocumentContent(document?.content ?? document?.extracted_text);
   return {
     document_id: stableDocumentId(document, content),
     name: String(document?.name ?? ''),
