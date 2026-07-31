@@ -22,6 +22,10 @@ create index if not exists psi_tender_analysis_runs_canonical_current_idx
   on public.psi_tender_analysis_runs (opportunity_id, created_at desc, id desc)
   where canonical and status = 'completed';
 
+alter table public.psi_tender_analysis_runs enable row level security;
+revoke all on table public.psi_tender_analysis_runs from public, authenticated, anon, service_role;
+grant select on table public.psi_tender_analysis_runs to service_role;
+
 create table if not exists public.psi_agt002_analysis_attempt_events (
   id uuid primary key default gen_random_uuid(),
   snapshot_id uuid not null references public.psi_tender_document_snapshots(id) on delete restrict,

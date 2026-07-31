@@ -57,6 +57,7 @@ const SPECS = Object.freeze({
     ],
     rlsTables: ['psi_agt002_analysis_attempt_events', 'psi_tender_analysis_runs'],
     rollbackPolicy: 'destructive-zero-data',
+    allowInsecureAbsent: true,
   }),
   '051': Object.freeze({
     migrationFile: '051_agt002_context_versions.sql',
@@ -206,7 +207,7 @@ begin
   if ${markersCountExpr(spec)} = ${spec.markers.length} and ${secureStateExpr(spec)} then
     raise exception 'AGT002_ALREADY_APPLIED_${id}';
   end if;
-  if not ((${markersCountExpr(spec)} = 0 and ${secureStateExpr(spec)}) or ${disabledStateExpr(spec)}) then
+  if not ((${markersCountExpr(spec)} = 0 and ${spec.allowInsecureAbsent === true ? 'true' : secureStateExpr(spec)}) or ${disabledStateExpr(spec)}) then
     raise exception 'AGT002_STATE_DRIFT_${id}';
   end if;
 end

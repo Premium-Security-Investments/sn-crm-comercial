@@ -13,6 +13,7 @@ const migration050 = readFileSync(new URL('../supabase/migrations/050_agt002_can
 const rollback050 = readFileSync(new URL('../supabase/rollbacks/050_agt002_canonical_analysis_rollback.sql', import.meta.url), 'utf8');
 const migration051 = readFileSync(new URL('../supabase/migrations/051_agt002_context_versions.sql', import.meta.url), 'utf8');
 const rollback051 = readFileSync(new URL('../supabase/rollbacks/051_agt002_context_versions_rollback.sql', import.meta.url), 'utf8');
+const migration052 = readFileSync(new URL('../supabase/migrations/052_tender_document_chunks.sql', import.meta.url), 'utf8');
 
 const O = '11111111-1111-4111-8111-111111111111';
 const T = '22222222-2222-4222-8222-222222222222';
@@ -28,6 +29,11 @@ async function baseDatabase() {
     create table public.psi_sales_opportunities (id uuid primary key);
     create table public.psi_public_tenders (id uuid primary key);
     create table public.psi_tender_document_snapshots (
+      id uuid primary key,
+      opportunity_id uuid not null references public.psi_sales_opportunities(id),
+      tender_id uuid not null references public.psi_public_tenders(id)
+    );
+    create table public.psi_tender_document_versions (
       id uuid primary key,
       opportunity_id uuid not null references public.psi_sales_opportunities(id),
       tender_id uuid not null references public.psi_public_tenders(id)
@@ -61,6 +67,40 @@ async function verifyAppliedState(pg, id) {
 async function verifyRollback(pg, id) {
   const row = (await pg.query(buildRollbackVerifySql(id))).rows[0];
   assert.equal(row.ok, true, `rollback ${id} debe terminar exactamente en el estado esperado`);
+}
+
+// 050: an absent migration must be allowed to repair legacy grants that the
+// migration itself revokes. Partial markers and applied-definition drift remain blocked.
+{
+  const pg = await baseDatabase();
+  await pg.exec('grant all on table public.psi_tender_analysis_runs to anon');
+  const before = (await pg.query(buildStateSql('050'))).rows[0];
+  assert.equal(classifyState(before), 'absent');
+  assert.ok(Number(before.unsafe_table_grants) > 0, 'la reproducción debe contener grants legacy inseguros');
+  await pg.exec(buildAtomicApplySql('050', migration050));
+  await verifyAppliedState(pg, '050');
+}
+
+// A real partial marker remains fail-closed and the migration body never runs.
+{
+  const pg = await baseDatabase();
+  await pg.exec('alter table public.psi_tender_analysis_runs add column canonical boolean not null default false');
+  const before = (await pg.query(buildStateSql('050'))).rows[0];
+  assert.equal(classifyState(before), 'partial');
+  await assert.rejects(pg.exec(buildAtomicApplySql('050', migration050)), /AGT002_STATE_DRIFT_050/);
+  assert.equal((await pg.query("select to_regclass('public.psi_agt002_analysis_attempt_events') is null absent")).rows[0].absent, true);
+}
+
+// The insecure-absent exception is exclusive to 050. A later migration that
+// does not repair the audited legacy table must remain fail-closed.
+{
+  const pg = await baseDatabase();
+  await pg.exec('grant all on table public.psi_tender_analysis_runs to anon');
+  const before = (await pg.query(buildStateSql('052'))).rows[0];
+  assert.equal(classifyState(before), 'absent');
+  assert.ok(Number(before.unsafe_table_grants) > 0);
+  await assert.rejects(pg.exec(buildAtomicApplySql('052', migration052)), /AGT002_STATE_DRIFT_052/);
+  assert.equal((await pg.query("select to_regclass('public.psi_tender_document_chunks') is null absent")).rows[0].absent, true);
 }
 
 // 050: the guard and destructive DDL execute in one real PGlite request. Existing
