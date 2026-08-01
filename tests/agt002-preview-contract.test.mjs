@@ -8,6 +8,7 @@ import {
   buildAgt002PreviewOutputJsonSchema,
   collectAgt002PreviewEvidenceIds,
   collectAgt002PreviewLegalCitationIds,
+  completeAgt002PreviewLegalAbstention,
   validateAgt002PreviewModelOutput,
 } from '../agt002-preview-contract.js';
 import { buildAgt002PreviewInput } from '../agt002-preview-input.js';
@@ -339,6 +340,23 @@ const legalDeepAnalysis = { matrix: { legal: [{ id: 'req-vigilancia', front: 'le
   assert.equal(Object.hasOwn(AGT002_PREVIEW_OUTPUT_JSON_SCHEMA.properties, 'legal_findings'), false);
 }
 
+// The live Codex provider rejects oneOf/anyOf in this outputSchema path. Keep the model-side
+// schema closed and dynamically enum-constrained, with all per-classification semantics
+// enforced by validateAgt002PreviewModelOutput and deterministic abstention completion.
+{
+  const legalSchema = buildAgt002PreviewOutputJsonSchema({ legalCorpus: true });
+  const itemSchema = legalSchema.properties.legal_findings.items;
+  assert.equal(Object.hasOwn(itemSchema, 'oneOf'), false);
+  assert.equal(Object.hasOwn(itemSchema, 'anyOf'), false);
+  assert.deepEqual(itemSchema.properties.classification.enum, AGT002_LEGAL_FINDING_CLASSIFICATIONS);
+  const constrained = buildAgt002PreviewOutputJsonSchema({
+    legalCorpus: true, allowedEvidenceIds: ['document:doc-01'], allowedLegalCitationIds: ['citation:x:v1'],
+  });
+  const constrainedItemSchema = constrained.properties.legal_findings.items;
+  assert.deepEqual(constrainedItemSchema.properties.evidence_refs.items.enum, ['document:doc-01']);
+  assert.deepEqual(constrainedItemSchema.properties.legal_citation_ids.items.enum, ['citation:x:v1']);
+}
+
 assert.deepEqual([...AGT002_LEGAL_FINDING_CLASSIFICATIONS].sort(), [
   'company_evidence', 'human_legal_review', 'inference', 'legal_obligation', 'tender_requirement',
 ].sort());
@@ -614,6 +632,67 @@ let legalEvidenceIds;
     }), { allowedEvidenceIds, legalCorpus: true, legalCitationIds }),
     /hallazgo|clasificaci/i,
   );
+}
+
+// completeAgt002PreviewLegalAbstention (E5 follow-up): deterministically fills in whichever
+// required human-review citations the model omitted, without ever touching any other finding.
+{
+  const requiredHumanReviewCitationIds = ['citation:b:v1', 'citation:a:v1'];
+
+  // Empty legal_findings: a single canonical finding covering every required id is appended.
+  {
+    const value = { legal_findings: [] };
+    const completed = completeAgt002PreviewLegalAbstention(value, { requiredHumanReviewCitationIds });
+    assert.equal(completed.legal_findings.length, 1);
+    assert.deepEqual(completed.legal_findings[0], {
+      classification: 'human_legal_review', text: AGT002_LEGAL_HUMAN_REVIEW_STATEMENT, evidence_refs: [],
+      legal_citation_ids: ['citation:a:v1', 'citation:b:v1'],
+    });
+  }
+
+  // Partial coverage: the model's own finding is left byte-for-byte untouched; only the
+  // missing citation is appended as a second finding.
+  {
+    const modelFinding = { classification: 'human_legal_review', text: AGT002_LEGAL_HUMAN_REVIEW_STATEMENT, evidence_refs: [], legal_citation_ids: ['citation:a:v1'] };
+    const otherFinding = { classification: 'tender_requirement', text: 'x', evidence_refs: ['document:doc-01'], legal_citation_ids: [] };
+    const value = { legal_findings: [otherFinding, modelFinding] };
+    const completed = completeAgt002PreviewLegalAbstention(value, { requiredHumanReviewCitationIds });
+    assert.equal(completed.legal_findings.length, 3);
+    assert.equal(completed.legal_findings[0], otherFinding, 'non-human_legal_review findings must be untouched (same reference)');
+    assert.equal(completed.legal_findings[1], modelFinding, 'a partially-correct human_legal_review finding must be untouched (same reference)');
+    assert.deepEqual(completed.legal_findings[2], {
+      classification: 'human_legal_review', text: AGT002_LEGAL_HUMAN_REVIEW_STATEMENT, evidence_refs: [], legal_citation_ids: ['citation:b:v1'],
+    });
+  }
+
+  // Full coverage already: value is returned unchanged (no redundant finding appended).
+  {
+    const modelFinding = { classification: 'human_legal_review', text: AGT002_LEGAL_HUMAN_REVIEW_STATEMENT, evidence_refs: [], legal_citation_ids: [...requiredHumanReviewCitationIds] };
+    const value = { legal_findings: [modelFinding] };
+    const completed = completeAgt002PreviewLegalAbstention(value, { requiredHumanReviewCitationIds });
+    assert.equal(completed, value, 'nothing missing must return the exact same object, not a copy');
+  }
+
+  // No deterministic required ids at all: nothing to complete, value returned unchanged.
+  {
+    const value = { legal_findings: [] };
+    assert.equal(completeAgt002PreviewLegalAbstention(value, { requiredHumanReviewCitationIds: [] }), value);
+    assert.equal(completeAgt002PreviewLegalAbstention(value), value);
+  }
+
+  // Non-legal / malformed shapes pass through unchanged rather than throwing — this function
+  // only ever runs on a value that already passed a first structural validation pass.
+  assert.equal(completeAgt002PreviewLegalAbstention(null, { requiredHumanReviewCitationIds }), null);
+  assert.equal(completeAgt002PreviewLegalAbstention({ recommendation: 'pause' }, { requiredHumanReviewCitationIds }).legal_findings, undefined);
+
+  // Never touches claims/obligations/facts, only ever appends a human_legal_review finding.
+  {
+    const obligationFinding = { classification: 'legal_obligation', text: 'x', evidence_refs: [], legal_citation_ids: ['citation:verified:v1'] };
+    const value = { legal_findings: [obligationFinding] };
+    const completed = completeAgt002PreviewLegalAbstention(value, { requiredHumanReviewCitationIds });
+    assert.equal(completed.legal_findings[0], obligationFinding);
+    assert.equal(completed.legal_findings[1].classification, 'human_legal_review');
+  }
 }
 
 console.log('AGT-002 Preview strict output contract passed');

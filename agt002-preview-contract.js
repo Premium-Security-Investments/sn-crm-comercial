@@ -81,6 +81,7 @@ export function buildAgt002PreviewOutputJsonSchema({
   const legalCitationItems = allowedLegalCitationIds.length > 0
     ? { type: 'string', enum: [...new Set(allowedLegalCitationIds)].sort() }
     : legalFindingSchema.properties.legal_citation_ids.items;
+
   const constrainedLegalFindingSchema = {
     ...legalFindingSchema,
     properties: {
@@ -299,6 +300,47 @@ export function validateAgt002PreviewModelOutput(value, {
     }
   }
   return value;
+}
+
+/**
+ * Deterministically completes legal abstention coverage (E5 follow-up): the model is not
+ * required to individually enumerate every uncertain source correctly — it only has to not
+ * get it *wrong*. Given a `value` that has ALREADY passed a first
+ * `validateAgt002PreviewModelOutput` pass (so every present `legal_findings` item, including
+ * any human_legal_review one, is already known to be structurally well-formed: exact
+ * abstention text, no documentary evidence_refs, citations drawn only from the package sent
+ * to the model), this appends exactly one more well-formed `human_legal_review` finding
+ * covering whichever `requiredHumanReviewCitationIds` (the deterministic
+ * `legal_evidence.human_legal_review_items` from the input, never model-supplied) the model's
+ * own findings did not already cite — and does nothing else.
+ *
+ * This never touches, reorders, or drops any existing finding of ANY classification
+ * (tender_requirement / legal_obligation / company_evidence / inference / human_legal_review):
+ * a malformed human_legal_review the model DID produce already threw in the first validation
+ * pass and never reaches here; a well-formed one that only cites a subset is left exactly as
+ * the model wrote it, with only the still-missing citations appended as a second finding. When
+ * nothing is missing (or the input carries no deterministic uncertain sources at all), `value`
+ * is returned unchanged. The caller must always re-run `validateAgt002PreviewModelOutput` with
+ * the real `requireLegalAbstention` / `requiredHumanReviewCitationIds` on the result — this
+ * function only ever produces input that pass should accept, never a bypass of it.
+ */
+export function completeAgt002PreviewLegalAbstention(value, { requiredHumanReviewCitationIds = [] } = {}) {
+  if (!isRecord(value) || !Array.isArray(value.legal_findings)) return value;
+  const required = [...new Set(Array.isArray(requiredHumanReviewCitationIds) ? requiredHumanReviewCitationIds : [])].sort();
+  if (required.length === 0) return value;
+
+  const humanReviewFindings = value.legal_findings.filter(item => isRecord(item) && item.classification === 'human_legal_review');
+  const represented = new Set(humanReviewFindings.flatMap(item => Array.isArray(item.legal_citation_ids) ? item.legal_citation_ids : []));
+  const missing = required.filter(citationId => !represented.has(citationId));
+  if (missing.length === 0) return value;
+
+  return {
+    ...value,
+    legal_findings: [
+      ...value.legal_findings,
+      { classification: 'human_legal_review', text: AGT002_LEGAL_HUMAN_REVIEW_STATEMENT, evidence_refs: [], legal_citation_ids: missing },
+    ],
+  };
 }
 
 /**

@@ -1,5 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { AGT002_PREVIEW_POLICY, createAgt002PreviewEngine } from '../agt002-preview-engine.js';
 import { AGT002_LEGAL_HUMAN_REVIEW_STATEMENT, AGT002_PREVIEW_OUTPUT_JSON_SCHEMA } from '../agt002-preview-contract.js';
 import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
@@ -390,7 +391,13 @@ assert.throws(
     client: omittingClient, ...baseEngineOptions(), contextV2: true, legalCorpus: true, legalEvidenceProvider: () => legalEvidencePackage,
     legalCorpusVersionId, legalCorpusContentSha256,
   });
-  await assert.rejects(() => omittingEngine.analyze(legalContext), /no produjo una respuesta válida/i);
+  const omittingResult = await omittingEngine.analyze(legalContext);
+  assert.deepEqual(omittingResult.legal_findings, [{
+    classification: 'human_legal_review',
+    text: AGT002_LEGAL_HUMAN_REVIEW_STATEMENT,
+    evidence_refs: [],
+    legal_citation_ids: reviewCitationIds,
+  }], 'a missing abstention is completed only from the deterministic legal-evidence package');
 }
 
 // legal_corpus_version_id / legal_corpus_content_sha256 must never appear on the envelope
@@ -401,6 +408,223 @@ assert.throws(
   const result = await engine.analyze(context);
   assert.equal(Object.hasOwn(result, 'legal_corpus_version_id'), false);
   assert.equal(Object.hasOwn(result, 'legal_corpus_content_sha256'), false);
+}
+
+// --- output_rejected observability (E5): every rejection point emits exactly one structured,
+// diagnosable event, raw content/prompt/validator text never appears anywhere (event or public
+// error), and SAFE_INVALID stays the sole public error message. ---
+
+function spyObservability() {
+  const records = [];
+  return { records, record: (eventType, fields) => { records.push({ eventType, fields }); return { event: eventType, ...fields }; } };
+}
+
+async function rejectsWith(promiseFn) {
+  try {
+    await promiseFn();
+  } catch (error) {
+    return error;
+  }
+  throw new Error('expected promise to reject');
+}
+
+function assertNoRawContentLeak(records, rawContent) {
+  const serialized = JSON.stringify(records);
+  if (rawContent) assert.ok(!serialized.includes(rawContent), 'raw model content must never appear in an emitted observability record');
+}
+
+// Stage: json_parse — malformed/non-JSON content.
+{
+  const observability = spyObservability();
+  const rawContent = '```json\n{not valid json\n```';
+  const client = fakeClient(async () => ({ content: rawContent, usage: { input_tokens: 7, output_tokens: 3 } }));
+  const engine = createAgt002PreviewEngine({ client, ...baseEngineOptions(), observability });
+  const error = await rejectsWith(() => engine.analyze(context));
+  assert.equal(error.message, 'AGT-002 Preview no produjo una respuesta válida.', 'the public error must stay exactly SAFE_INVALID');
+  assert.equal(observability.records.length, 1);
+  const [{ eventType, fields }] = observability.records;
+  assert.equal(eventType, 'output_rejected');
+  assert.equal(fields.stage, 'json_parse');
+  assert.equal(fields.validation_code, 'invalid_json');
+  assert.equal(fields.snapshot_id, context.snapshotId);
+  assert.equal(fields.content_bytes, Buffer.byteLength(rawContent, 'utf8'));
+  assert.equal(fields.content_sha256, createHash('sha256').update(rawContent, 'utf8').digest('hex'));
+  assert.equal(fields.input_tokens, 7);
+  assert.equal(fields.output_tokens, 3);
+  assertNoRawContentLeak(observability.records, rawContent);
+  assert.ok(!error.message.includes(rawContent));
+}
+
+// Stage: semantic_validation — a hallucinated evidence_id (non-legal path).
+{
+  const observability = spyObservability();
+  const rawOutput = validModelOutput({ weaknesses: [{ id: 'f-1', text: 'x', critical: true, evidence_refs: ['document:doc-99'] }] });
+  const rawContent = JSON.stringify(rawOutput);
+  const client = fakeClient(async () => ({ content: rawContent, usage: { input_tokens: 11, output_tokens: 4 } }));
+  const engine = createAgt002PreviewEngine({ client, ...baseEngineOptions(), observability });
+  const error = await rejectsWith(() => engine.analyze(context));
+  assert.equal(error.message, 'AGT-002 Preview no produjo una respuesta válida.');
+  assert.equal(observability.records.length, 1);
+  const [{ fields }] = observability.records;
+  assert.equal(fields.stage, 'semantic_validation');
+  assert.equal(fields.validation_code, 'unknown_evidence_id');
+  assert.equal(fields.content_bytes, Buffer.byteLength(rawContent, 'utf8'));
+  assert.equal(fields.content_sha256, createHash('sha256').update(rawContent, 'utf8').digest('hex'));
+  assert.equal(fields.input_tokens, 11);
+  assert.equal(fields.output_tokens, 4);
+  assertNoRawContentLeak(observability.records, 'document:doc-99');
+  assert.ok(!error.message.includes('document:doc-99'));
+}
+
+// Stage: usage — non-integer token counts.
+{
+  const observability = spyObservability();
+  const rawContent = JSON.stringify(validModelOutput());
+  const client = fakeClient(async () => ({ content: rawContent, usage: { input_tokens: 'many', output_tokens: 5 } }));
+  const engine = createAgt002PreviewEngine({ client, ...baseEngineOptions(), observability });
+  const error = await rejectsWith(() => engine.analyze(context));
+  assert.equal(error.message, 'AGT-002 Preview no produjo una respuesta válida.');
+  assert.equal(observability.records.length, 1);
+  const [{ fields }] = observability.records;
+  assert.equal(fields.stage, 'usage');
+  assert.equal(fields.validation_code, 'invalid_usage');
+  assert.equal(fields.content_sha256, createHash('sha256').update(rawContent, 'utf8').digest('hex'));
+  // input_tokens was the malformed 'many' string: the sanitizer must drop it rather than
+  // forward a non-integer value, even though the underlying rejection reason IS usage-shaped.
+  assert.equal(fields.input_tokens, undefined);
+  assert.equal(fields.output_tokens, 5);
+  assertNoRawContentLeak(observability.records, rawContent);
+}
+
+// Stage: envelope — everything upstream validates, but the envelope itself is structurally
+// invalid (non-UUID snapshot_id fails validateTenderAnalysisResult's identity check).
+{
+  const observability = spyObservability();
+  const rawContent = JSON.stringify(validModelOutput());
+  const client = fakeClient(async () => ({ content: rawContent, usage: { input_tokens: 2, output_tokens: 6 } }));
+  const engine = createAgt002PreviewEngine({ client, ...baseEngineOptions(), observability });
+  const badContext = { ...context, snapshotId: 'not-a-uuid-snapshot' };
+  const error = await rejectsWith(() => engine.analyze(badContext));
+  assert.match(error.message, /no produjo una respuesta válida/i);
+  assert.equal(error.message, 'AGT-002 Preview no produjo una respuesta válida.');
+  assert.equal(observability.records.length, 1);
+  const [{ fields }] = observability.records;
+  assert.equal(fields.stage, 'envelope');
+  assert.equal(fields.validation_code, 'invalid_envelope');
+  assert.equal(fields.snapshot_id, 'not-a-uuid-snapshot');
+  assert.equal(fields.content_sha256, createHash('sha256').update(rawContent, 'utf8').digest('hex'));
+  assert.equal(fields.input_tokens, 2);
+  assert.equal(fields.output_tokens, 6);
+  assertNoRawContentLeak(observability.records, rawContent);
+}
+
+// Default engine (no injected observability) must still wire a safe recorder: build one with
+// the default and confirm it never throws while constructing/using it on a rejection path.
+{
+  const client = fakeClient(async () => ({ content: 'not json', usage: { input_tokens: 1, output_tokens: 1 } }));
+  const engine = createAgt002PreviewEngine({ client, ...baseEngineOptions() });
+  await assert.rejects(() => engine.analyze(context), /no produjo una respuesta válida/i);
+}
+
+// A malformed custom observability object must fail closed at construction time, exactly like
+// any other missing/invalid engine configuration.
+assert.throws(
+  () => createAgt002PreviewEngine({ client: { run: async () => {} }, ...baseEngineOptions(), observability: { record: 'not-a-function' } }),
+  /no está configurado/i,
+);
+
+// --- Legal classify() coverage (E5): abstention / uncertain sources / classification misuse,
+// each producing a distinct, id-free validation_code. Reuses the real (always-abstaining)
+// legal-corpus-v1.1 fixture so every scenario is a single mutated legal_findings array. ---
+{
+  const corpus = JSON.parse(readFileSync(new URL('../data/agt002/legal-corpus-v1.1.json', import.meta.url), 'utf8'));
+  const legalEvidencePackage = retrieveAgt002LegalEvidence({
+    corpus,
+    corpus_version: corpus.corpus_version,
+    as_of: '2026-07-30',
+    topics: [...new Set(corpus.sources.flatMap(source => source.topic))],
+    sector: [...new Set(corpus.sources.flatMap(source => source.sector))],
+  });
+  const reviewCitationIds = legalEvidencePackage.human_legal_review_items.map(item => item.citation.citation_id).sort();
+  assert.ok(reviewCitationIds.length >= 2, 'fixture must carry more than one human-review-only citation for the omission scenario');
+  const contextV2Sections = {
+    ...buildAgt002OpportunityContextV2({
+      opportunity: { id: 'opp-1', updated_at: '2026-07-30T10:00:00.000Z' },
+      tender: { id: 'tender-1', title: 'Vigilancia', entity: 'Entidad', updated_at: '2026-07-30T10:00:00.000Z' },
+    }),
+    company_dossier: buildAgt002CompanyDossier({
+      profile: { legal_name: 'Seguridad Nacional Ltda.', updated_at: '2026-07-30T10:00:00.000Z' },
+      documents: [],
+    }),
+  };
+  const legalContext = { documents: context.documents, deepAnalysis: {}, snapshotId: '11111111-1111-4111-8111-111111111111', contextV2Sections };
+  const legalCorpusVersionId = '10101010-1010-4010-8010-101010101010';
+  const legalCorpusContentSha256 = 'b'.repeat(64);
+
+  async function runLegalScenario(legalFindings) {
+    const observability = spyObservability();
+    const rawOutput = validModelOutput({ weaknesses: [], legal_findings: legalFindings });
+    const client = fakeClient(async () => ({ content: JSON.stringify(rawOutput), usage: { input_tokens: 1, output_tokens: 1 } }));
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, legalCorpus: true, legalEvidenceProvider: () => legalEvidencePackage,
+      legalCorpusVersionId, legalCorpusContentSha256, observability,
+    });
+    await assert.rejects(() => engine.analyze(legalContext), /no produjo una respuesta válida/i);
+    assert.equal(observability.records.length, 1);
+    return observability.records[0].fields;
+  }
+
+  // Missing or partial deterministic abstention coverage is completed before the final
+  // validation and is exercised in the production-path scenario above; it no longer emits
+  // output_rejected. The scenarios below remain genuine model errors and must fail closed.
+
+  // A fact classification citing a legal citation id (never renamed as law).
+  {
+    const fields = await runLegalScenario([
+      { classification: 'tender_requirement', text: 'x', evidence_refs: ['document:doc-01'], legal_citation_ids: [reviewCitationIds[0]] },
+    ]);
+    assert.equal(fields.validation_code, 'legal_classification_misuse');
+  }
+
+  // A fact classification asserted without any evidence_ref.
+  {
+    const fields = await runLegalScenario([
+      { classification: 'tender_requirement', text: 'x', evidence_refs: [], legal_citation_ids: [] },
+    ]);
+    assert.equal(fields.validation_code, 'legal_evidence_missing');
+  }
+
+  // legal_obligation with no legal_citation_ids at all.
+  {
+    const fields = await runLegalScenario([
+      { classification: 'legal_obligation', text: 'x', evidence_refs: [], legal_citation_ids: [] },
+    ]);
+    assert.equal(fields.validation_code, 'legal_citation_missing');
+  }
+
+  // legal_obligation citing a real-but-unverified (human-review-only) citation id.
+  {
+    const fields = await runLegalScenario([
+      { classification: 'legal_obligation', text: 'x', evidence_refs: [], legal_citation_ids: [reviewCitationIds[0]] },
+    ]);
+    assert.equal(fields.validation_code, 'legal_citation_not_verified');
+  }
+
+  // human_legal_review citing a totally unknown/invented citation id.
+  {
+    const fields = await runLegalScenario([
+      { classification: 'human_legal_review', text: AGT002_LEGAL_HUMAN_REVIEW_STATEMENT, evidence_refs: [], legal_citation_ids: ['citation:invented:legal-corpus-v1.1'] },
+    ]);
+    assert.equal(fields.validation_code, 'legal_citation_unknown');
+  }
+
+  // human_legal_review with the wrong (non-exact) abstention text.
+  {
+    const fields = await runLegalScenario([
+      { classification: 'human_legal_review', text: 'Podría no estar vigente.', evidence_refs: [], legal_citation_ids: reviewCitationIds },
+    ]);
+    assert.equal(fields.validation_code, 'legal_abstention_text_mismatch');
+  }
 }
 
 console.log('AGT-002 Preview engine orchestration passed');

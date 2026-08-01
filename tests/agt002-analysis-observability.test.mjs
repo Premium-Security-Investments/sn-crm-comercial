@@ -3,8 +3,10 @@ import test from 'node:test';
 import {
   AGT002_OBSERVABILITY_EVENT_FIELDS,
   AGT002_OBSERVABILITY_EVENT_TYPES,
+  AGT002_OUTPUT_REJECTION_STAGES,
   boundAgt002ErrorCode,
   boundAgt002ErrorMessage,
+  boundAgt002ValidationCode,
   createAgt002AnalysisObservability,
   startAgt002StageTimer,
   toBoundedAgt002Error,
@@ -29,6 +31,7 @@ const REQUIRED_EVENT_TYPES = [
   'retry_scheduled',
   'outcome_recorded',
   'stage_duration',
+  'output_rejected',
 ];
 
 test('every structured event category required by the observability program is defined', () => {
@@ -161,4 +164,85 @@ test('record() stamps every event with its own emission time from the injected c
   const observability = createAgt002AnalysisObservability({ emit: record => emitted.push(record), now: () => 555 });
   observability.record('lease_released', { job_id: 'job-1', tender_id: 'tender-1' });
   assert.equal(emitted[0].at, 555);
+});
+
+// output_rejected (E5): the AGT-002 Preview engine's single diagnostic event for a rejected
+// model output. Closed field allowlist — no error_code/error_message/raw-content-shaped field
+// is ever part of it, so the classification stays purely structural/diagnostic.
+test('output_rejected declares its closed field allowlist and stage enum', () => {
+  assert.deepEqual(
+    [...AGT002_OBSERVABILITY_EVENT_FIELDS.output_rejected].sort(),
+    ['content_bytes', 'content_sha256', 'input_tokens', 'output_tokens', 'snapshot_id', 'stage', 'validation_code'].sort(),
+  );
+  assert.deepEqual(Object.values(AGT002_OUTPUT_REJECTION_STAGES).sort(), ['envelope', 'json_parse', 'semantic_validation', 'usage'].sort());
+});
+
+test('output_rejected only forwards the allowlisted fields and drops anything raw-content-shaped', () => {
+  const emitted = [];
+  const observability = createAgt002AnalysisObservability({ emit: record => emitted.push(record), now: () => 10 });
+  observability.record('output_rejected', {
+    stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION,
+    validation_code: 'unknown_evidence_id',
+    content_sha256: 'a'.repeat(64),
+    content_bytes: 512,
+    snapshot_id: 'snap-1',
+    input_tokens: 120,
+    output_tokens: 40,
+    // Forbidden: raw content / prompt / validator message must never survive, even if a
+    // future call site accidentally tries to attach one of these.
+    content: 'contenido crudo del modelo',
+    raw_content: 'contenido crudo del modelo',
+    prompt: 'system prompt completo',
+    error_message: 'mensaje del validador con detalle sensible',
+  });
+  assert.equal(emitted.length, 1);
+  const [record] = emitted;
+  assert.equal(record.event, 'output_rejected');
+  assert.equal(record.stage, 'semantic_validation');
+  assert.equal(record.validation_code, 'unknown_evidence_id');
+  assert.equal(record.content_sha256, 'a'.repeat(64));
+  assert.equal(record.content_bytes, 512);
+  assert.equal(record.snapshot_id, 'snap-1');
+  assert.equal(record.input_tokens, 120);
+  assert.equal(record.output_tokens, 40);
+  for (const forbiddenKey of ['content', 'raw_content', 'prompt', 'error_message']) {
+    assert.equal(record[forbiddenKey], undefined, `forbidden field leaked: ${forbiddenKey}`);
+  }
+});
+
+test('output_rejected content_sha256 must be a 64-hex digest or it is dropped, never forwarded as free text', () => {
+  const emitted = [];
+  const observability = createAgt002AnalysisObservability({ emit: record => emitted.push(record), now: () => 1 });
+  observability.record('output_rejected', {
+    stage: AGT002_OUTPUT_REJECTION_STAGES.JSON_PARSE,
+    validation_code: 'invalid_json',
+    content_sha256: 'not-a-real-hash-this-looks-like-leaked-content',
+    content_bytes: 10,
+    snapshot_id: 'snap-1',
+  });
+  assert.equal(emitted[0].content_sha256, undefined);
+});
+
+test('output_rejected input_tokens/output_tokens/content_bytes only accept non-negative integers', () => {
+  const emitted = [];
+  const observability = createAgt002AnalysisObservability({ emit: record => emitted.push(record), now: () => 1 });
+  observability.record('output_rejected', {
+    stage: AGT002_OUTPUT_REJECTION_STAGES.USAGE,
+    validation_code: 'invalid_usage',
+    content_sha256: 'b'.repeat(64),
+    content_bytes: -1,
+    snapshot_id: 'snap-1',
+    input_tokens: 'many',
+    output_tokens: 3.5,
+  });
+  const [record] = emitted;
+  assert.equal(record.content_bytes, undefined);
+  assert.equal(record.input_tokens, undefined);
+  assert.equal(record.output_tokens, undefined);
+});
+
+test('boundAgt002ValidationCode only allows short lowercase/underscore codes', () => {
+  assert.equal(boundAgt002ValidationCode('unknown_evidence_id'), 'unknown_evidence_id');
+  assert.equal(boundAgt002ValidationCode('Some Free Form Message'), 'unknown_validation_code');
+  assert.equal(boundAgt002ValidationCode(undefined), 'unknown_validation_code');
 });

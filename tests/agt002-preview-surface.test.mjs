@@ -43,7 +43,7 @@ assert.match(claimsMigration, /pg_advisory_xact_lock/, 'capacity decisions must 
 assert.match(claimsMigration, /psi_agt002_preview_claims/, 'cross-request reservations require a durable lease table');
 assert.match(claimsMigration, /not exists[\s\S]*psi_tender_analysis_runs/, 'daily quota must include in-flight claims without double-counting completed runs');
 
-assert.match(engine, /const outputSchema = outputSchemaForEvidenceIds\(allowedEvidenceIds, \{ legalCorpus, legalCitationIds \}\)/, 'engine must derive a closed schema from documentary and legal ids present in the snapshot');
+assert.match(engine, /const outputSchema = outputSchemaForEvidenceIds\(allowedEvidenceIds, \{[\s\S]*?legalCorpus,[\s\S]*?legalCitationIds,[\s\S]*?\}\);/, 'engine must derive a closed schema from documentary and legal ids present in the snapshot');
 assert.match(engine, /allowedLegalCitationIds: legalCitationIds\.all/, 'derived legal schema must close legal citations to the exact versioned packet allowlist');
 assert.match(engine, /evidence_refs\.items\.enum = \[\.\.\.allowedEvidenceIds\]/, 'derived schema must close evidence references to the allowed ids');
 assert.match(engine, /client\.run\(\{ model, policy: policyText, input: previewInput, outputSchema,/, 'engine must hand the evidence-closed schema to Codex turn/start');
