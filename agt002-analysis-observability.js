@@ -9,10 +9,24 @@
 const MAX_STRING_LENGTH = 200;
 const MAX_ERROR_MESSAGE_LENGTH = 160;
 const MAX_ERROR_CODE_LENGTH = 64;
+const MAX_VALIDATION_CODE_LENGTH = 64;
 
 // Matches long opaque-looking tokens (API keys, bearer tokens, hashes) so a
 // raw error message that happens to embed one never reaches a log sink.
 const OPAQUE_TOKEN_PATTERN = /[A-Za-z0-9_\-]{24,}/g;
+
+// AGT-002 Preview (E5): the four points in agt002-preview-engine.js where a model output is
+// rejected before it can ever reach a caller. Exported so the engine is the only place that
+// picks a stage literal, never a free-form string from elsewhere.
+export const AGT002_OUTPUT_REJECTION_STAGES = Object.freeze({
+  JSON_PARSE: 'json_parse',
+  SEMANTIC_VALIDATION: 'semantic_validation',
+  USAGE: 'usage',
+  ENVELOPE: 'envelope',
+});
+
+const CONTENT_SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const VALIDATION_CODE_PATTERN = /^[a-z0-9_]+$/;
 
 export const AGT002_OBSERVABILITY_EVENT_FIELDS = Object.freeze({
   conversion_dispatched: Object.freeze([
@@ -37,6 +51,14 @@ export const AGT002_OBSERVABILITY_EVENT_FIELDS = Object.freeze({
   retry_scheduled: Object.freeze(['job_id', 'tender_id', 'stage', 'attempt_count', 'count', 'reason']),
   outcome_recorded: Object.freeze(['job_id', 'tender_id', 'stage', 'outcome', 'error_code', 'error_message']),
   stage_duration: Object.freeze(['job_id', 'tender_id', 'stage', 'outcome', 'duration_ms']),
+  // AGT-002 Preview (E5): a model output was rejected. Deliberately excludes error_code /
+  // error_message (or any content/prompt-shaped field) — the point of this event is to make a
+  // rejection diagnosable from *structure* (stage, a closed validation_code, a content hash/size,
+  // token counts) without ever needing, and therefore never risking, the raw content or the
+  // validator's own message text.
+  output_rejected: Object.freeze([
+    'stage', 'validation_code', 'content_sha256', 'content_bytes', 'snapshot_id', 'input_tokens', 'output_tokens',
+  ]),
 });
 
 export const AGT002_OBSERVABILITY_EVENT_TYPES = Object.freeze(Object.keys(AGT002_OBSERVABILITY_EVENT_FIELDS));
@@ -64,10 +86,26 @@ export function toBoundedAgt002Error(error) {
   };
 }
 
+/** Only a short lowercase/underscore classification code survives; anything else collapses to a fixed fallback. */
+export function boundAgt002ValidationCode(code) {
+  const text = typeof code === 'string' ? code.trim() : '';
+  const safe = VALIDATION_CODE_PATTERN.test(text) ? text : 'unknown_validation_code';
+  return safe.slice(0, MAX_VALIDATION_CODE_LENGTH);
+}
+
 function sanitizeAgt002FieldValue(key, value) {
   if (value === null || value === undefined) return undefined;
   if (key === 'error_message') return boundAgt002ErrorMessage(value);
   if (key === 'error_code') return boundAgt002ErrorCode(value);
+  if (key === 'validation_code') return boundAgt002ValidationCode(value);
+  // content_sha256 is only ever a digest this codebase computed itself (never a raw string
+  // handed through as-is): anything that is not already a well-formed 64-hex digest is dropped
+  // rather than forwarded, so a coding mistake elsewhere can never smuggle raw content through
+  // this field.
+  if (key === 'content_sha256') return typeof value === 'string' && CONTENT_SHA256_PATTERN.test(value) ? value : undefined;
+  if (key === 'input_tokens' || key === 'output_tokens' || key === 'content_bytes') {
+    return Number.isInteger(value) && value >= 0 ? value : undefined;
+  }
   if (typeof value === 'string') return value.slice(0, MAX_STRING_LENGTH);
   if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
   if (typeof value === 'boolean') return value;
