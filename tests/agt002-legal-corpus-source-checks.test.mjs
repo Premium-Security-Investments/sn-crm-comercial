@@ -1,19 +1,42 @@
 import { strict as assert } from 'node:assert';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { evaluateAgt002LegalSourceStatus } from '../agt002-legal-corpus.js';
+import { buildAgt002LegalSource, evaluateAgt002LegalSourceStatus } from '../agt002-legal-corpus.js';
 import {
   computeAgt002LegalManifestContentHash,
   validateAgt002LegalManifest,
 } from '../scripts/validate_agt002_legal_corpus.mjs';
 
-const manifest = JSON.parse(readFileSync(new URL('../data/agt002/legal-corpus-v1.json', import.meta.url), 'utf8'));
-const checks = JSON.parse(readFileSync(new URL('../docs/verification/2026-07-31-agt002-e5-source-checks.json', import.meta.url), 'utf8'));
+const manifest = JSON.parse(readFileSync(new URL('../data/agt002/legal-corpus-v1.1.json', import.meta.url), 'utf8'));
+const legacyManifest = JSON.parse(readFileSync(new URL('../data/agt002/legal-corpus-v1.json', import.meta.url), 'utf8'));
+const releaseChecks = JSON.parse(readFileSync(new URL('../docs/verification/2026-08-01-agt002-e5-source-checks-v1.1.json', import.meta.url), 'utf8'));
+const inheritedEvidenceBytes = readFileSync(new URL('../docs/verification/2026-07-31-agt002-e5-source-checks.json', import.meta.url));
+const checks = JSON.parse(inheritedEvidenceBytes.toString('utf8'));
 
 validateAgt002LegalManifest(manifest);
-assert.equal(checks.corpus_version, manifest.corpus_version);
-assert.equal(checks.manifest_content_sha256, computeAgt002LegalManifestContentHash(manifest));
+assert.equal(releaseChecks.corpus_version, manifest.corpus_version);
+assert.equal(releaseChecks.manifest_content_sha256, computeAgt002LegalManifestContentHash(manifest));
+assert.equal(releaseChecks.supersedes_corpus_version, checks.corpus_version);
+assert.equal(releaseChecks.semantic_change, false);
+assert.equal(releaseChecks.legal_content_change, false);
+assert.equal(
+  releaseChecks.inherited_source_evidence_sha256,
+  createHash('sha256').update(inheritedEvidenceBytes).digest('hex'),
+  'la evidencia oficial heredada debe permanecer byte-identical',
+);
+assert.match(releaseChecks.legal_review_disclaimer, /NO sustituye ni implica verificación jurídica/i);
 assert.match(checks.legal_review_disclaimer, /NO sustituye ni implica verificación jurídica/i);
 assert.match(checks.verification_method_note, /no.*byte-exact/i);
+
+const withoutVersion = source => {
+  const { corpus_version: ignored, ...rest } = buildAgt002LegalSource(source);
+  return rest;
+};
+assert.deepEqual(
+  manifest.sources.map(withoutVersion).sort((left, right) => left.source_id.localeCompare(right.source_id)),
+  legacyManifest.sources.map(withoutVersion).sort((left, right) => left.source_id.localeCompare(right.source_id)),
+  'v1.1 sólo puede cambiar versión/canonicalización; el contenido jurídico debe ser idéntico a v1',
+);
 
 const artifactsBySource = new Map();
 for (const artifact of checks.artifacts) {

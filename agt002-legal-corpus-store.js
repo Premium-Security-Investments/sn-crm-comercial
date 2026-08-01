@@ -25,6 +25,35 @@ function databaseError(response, fallback) {
   return response.data;
 }
 
+// PostgreSQL/Supabase `timestamptz` columns are read back with a `+00:00` offset and an
+// explicit (usually midnight) time component instead of the canonical, date-only string that
+// was originally published — e.g. `1993-10-28` round-trips as `1993-10-28T00:00:00+00:00`.
+// This normalizes that DB representation back to the canonical ISO form (date-only when the
+// UTC time is exactly midnight, otherwise `Z`-suffixed) so the reconstructed manifest hashes
+// identically to what was published, without broadening the canonical date contract itself.
+const PG_UTC_TIMESTAMPTZ_RE = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(\.\d+)?\+00:00$/;
+const DATE_FIELDS = ['issued_at', 'effective_from', 'effective_to', 'verified_at'];
+
+function normalizePgTimestamptz(value) {
+  if (typeof value !== 'string') return value;
+  const match = PG_UTC_TIMESTAMPTZ_RE.exec(value);
+  if (!match) return value;
+  const [, datePart, timePart, fraction] = match;
+  if (timePart === '00:00:00' && (!fraction || /^\.0+$/.test(fraction))) {
+    return datePart;
+  }
+  const millis = fraction ? fraction.slice(0, 4) : '';
+  return `${datePart}T${timePart}${millis}Z`;
+}
+
+function normalizeSourceRowDates(row) {
+  const normalized = { ...row };
+  for (const field of DATE_FIELDS) {
+    if (field in normalized) normalized[field] = normalizePgTimestamptz(normalized[field]);
+  }
+  return normalized;
+}
+
 /**
  * Loads the only active, human-published legal corpus through an injected
  * service-role Supabase client. It never reads a local fixture or the network.
@@ -66,7 +95,7 @@ export async function loadPublishedAgt002LegalCorpus(database) {
   }
 
   const sources = sourceRows.map((row) => {
-    const { corpus_version_id: ignored, ...source } = row;
+    const { corpus_version_id: ignored, ...source } = normalizeSourceRowDates(row);
     return buildAgt002LegalSource({ ...source, corpus_version: version.corpus_version });
   }).sort((left, right) => left.source_id.localeCompare(right.source_id));
   const corpus = { corpus_version: version.corpus_version, sources };

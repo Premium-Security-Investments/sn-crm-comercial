@@ -343,7 +343,7 @@ assert.throws(
 
 // E5 production path: flag -> deterministic retrieval -> legal input/schema -> validation -> envelope.
 {
-  const corpus = JSON.parse(readFileSync(new URL('../data/agt002/legal-corpus-v1.json', import.meta.url), 'utf8'));
+  const corpus = JSON.parse(readFileSync(new URL('../data/agt002/legal-corpus-v1.1.json', import.meta.url), 'utf8'));
   const legalEvidencePackage = retrieveAgt002LegalEvidence({
     corpus,
     corpus_version: corpus.corpus_version,
@@ -377,7 +377,7 @@ assert.throws(
     legalCorpusVersionId, legalCorpusContentSha256,
   });
   const result = await engine.analyze(legalContext);
-  assert.equal(client.calls[0].input.legal_evidence.corpus_version, 'legal-corpus-v1');
+  assert.equal(client.calls[0].input.legal_evidence.corpus_version, 'legal-corpus-v1.1');
   assert.ok(client.calls[0].outputSchema.required.includes('legal_findings'));
   assert.deepEqual(client.calls[0].outputSchema.properties.legal_findings.items.properties.legal_citation_ids.items.enum, reviewCitationIds);
   assert.deepEqual(result.legal_evidence, client.calls[0].input.legal_evidence);

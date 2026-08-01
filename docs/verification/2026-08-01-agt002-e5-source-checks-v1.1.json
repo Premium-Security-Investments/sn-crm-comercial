@@ -1,0 +1,17 @@
+{
+  "verification_date": "2026-08-01",
+  "manifest_path": "data/agt002/legal-corpus-v1.1.json",
+  "corpus_version": "legal-corpus-v1.1",
+  "manifest_content_sha256": "28ffcd55e3a8769f960883acd8adfa3aacbf24ae1e48b06add12cec9f54ff0b2",
+  "manifest_content_sha256_method": "computeAgt002LegalManifestContentHash(manifest): SHA-256 del contrato validado y normalizado; fuentes ordenadas por source_id; cada fuente normalizada por buildAgt002LegalSource, incluidos topic/sector como conjuntos únicos ordenados y modifications ordenadas; claves de objetos ordenadas recursivamente antes de serializar.",
+  "inherits_source_evidence_from": "docs/verification/2026-07-31-agt002-e5-source-checks.json",
+  "inherited_source_evidence_sha256": "842b48a1b8aa198889c47a40d4b05d51bb787cf4daf7aa8ed39eeb34dc98dc82",
+  "supersedes_corpus_version": "legal-corpus-v1",
+  "supersession_reason": "La verificación productiva detectó que PostgreSQL devuelve timestamptz con offset +00:00 y que el contrato normaliza topic/sector como conjuntos ordenados, mientras el hash v1 se calculó sobre JSON crudo. v1.1 enlaza la misma evidencia jurídica al contrato normalizado y reconstruible.",
+  "semantic_change": false,
+  "legal_content_change": false,
+  "source_count": 6,
+  "eligible_verified_law_source_count": 1,
+  "human_publication_required": true,
+  "legal_review_disclaimer": "Esta supersesión es mecánica y NO sustituye ni implica verificación jurídica de vigencia, aplicabilidad sectorial o ausencia de modificaciones posteriores. Mantiene sin elevar ni debilitar todos los estados jurídicos y obligaciones de revisión humana de v1."
+}
