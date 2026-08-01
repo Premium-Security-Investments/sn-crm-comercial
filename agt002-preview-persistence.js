@@ -56,11 +56,14 @@ function unwrapRpc(response) {
  * created from human evidence), the identity also binds to it, so a reanalysis never
  * collides with the run it supersedes and callers can reserve/find it consistently.
  */
-export function computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model, contextVersionId = null }) {
+export function computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model, contextVersionId = null, legalCorpusVersionId = null }) {
   const base = createHash('sha256').update(`agt002-preview\0${snapshotId}\0${policyVersion}\0${model}`).digest('hex');
-  return contextVersionId
+  const withContext = contextVersionId
     ? createHash('sha256').update(`${base}\0context_version\0${contextVersionId}`).digest('hex')
     : base;
+  return legalCorpusVersionId
+    ? createHash('sha256').update(`${withContext}\0legal_corpus_version\0${legalCorpusVersionId}`).digest('hex')
+    : withContext;
 }
 
 /** Atomically reserves one cross-request provider slot in PostgreSQL. */
@@ -139,6 +142,14 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     content.legal_evidence = envelope.legal_evidence;
     content.legal_findings = envelope.legal_findings;
   }
+  // The exact published corpus UUID the legal evidence was retrieved from is part of the
+  // same atomic pair: a legal run without it (or a stray UUID without legal evidence) can
+  // never persist, since it would leave the attribution unauditable or misleading.
+  const legalCorpusVersionId = envelope.legal_corpus_version_id;
+  const hasLegalCorpusVersionId = typeof legalCorpusVersionId === 'string' && legalCorpusVersionId.trim().length > 0;
+  if (hasLegalEvidence !== hasLegalCorpusVersionId) {
+    throw new Error('La evidencia jurídica requiere su legal_corpus_version_id exacto como par atómico.');
+  }
   const criticalOpenCount = countCriticalOpenQuestions(content);
   // Canonical persistence is fail-closed: every new Vig-IA run must point to the
   // immutable context version it consumed, including an initial version with no
@@ -148,7 +159,10 @@ export async function registerAgt002PreviewAnalysis(database, context) {
   if (canonicalOnly && !contextVersionId) {
     throw new Error('Un análisis canónico Vig-IA requiere context_version_id.');
   }
-  const idempotencyKey = computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model: usage.model, contextVersionId });
+  const idempotencyKey = computeAgt002PreviewIdempotencyKey({
+    snapshotId, policyVersion, model: usage.model, contextVersionId,
+    legalCorpusVersionId: hasLegalCorpusVersionId ? legalCorpusVersionId : null,
+  });
 
   const commonParams = {
     p_snapshot_id: snapshotId,
@@ -162,6 +176,7 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     p_model: usage.model,
     p_usage: usage,
     ...(canonicalOnly && contextVersionId ? { p_context_version_id: contextVersionId } : {}),
+    ...(canonicalOnly && hasLegalCorpusVersionId ? { p_legal_corpus_version_id: legalCorpusVersionId } : {}),
   };
   const runRecord = unwrapRpc(await database.rpc(
     canonicalOnly ? 'psi_record_agt002_canonical_analysis_run' : 'psi_record_tender_analysis_run',
@@ -179,6 +194,7 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     result: content,
     critical_open_count: runRecord.critical_open_count ?? criticalOpenCount,
     context_version_id: runRecord.context_version_id ?? contextVersionId,
+    ...(hasLegalCorpusVersionId ? { legal_corpus_version_id: runRecord.legal_corpus_version_id ?? legalCorpusVersionId } : {}),
   };
 }
 

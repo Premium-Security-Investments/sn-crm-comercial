@@ -89,6 +89,8 @@ export function createAgt002PreviewEngine({
   documentRetrieval = false,
   legalCorpus = false,
   legalEvidenceProvider,
+  legalCorpusVersionId,
+  legalCorpusContentSha256,
 } = {}) {
   if (!client || typeof client.run !== 'function'
     || !nonEmpty(model) || !nonEmpty(policyVersion) || !nonEmpty(policyText)
@@ -96,7 +98,7 @@ export function createAgt002PreviewEngine({
     || !Number.isInteger(maxConcurrent) || maxConcurrent <= 0
     || !Number.isInteger(dailyMaxRuns) || dailyMaxRuns <= 0
     || typeof countDailyRuns !== 'function'
-    || (legalCorpus && typeof legalEvidenceProvider !== 'function')) {
+    || (legalCorpus && (typeof legalEvidenceProvider !== 'function' || !nonEmpty(legalCorpusVersionId) || !nonEmpty(legalCorpusContentSha256)))) {
     throw new Error('AGT-002 Preview no está configurado: falta configuración o evidencia jurídica determinística.');
   }
 
@@ -152,7 +154,11 @@ export function createAgt002PreviewEngine({
       status: 'completed',
       method: 'agent_ai',
       ...validatedOutput,
-      ...(legalCorpus ? { legal_evidence: previewInput.legal_evidence } : {}),
+      ...(legalCorpus ? {
+        legal_evidence: previewInput.legal_evidence,
+        legal_corpus_version_id: legalCorpusVersionId,
+        legal_corpus_content_sha256: legalCorpusContentSha256,
+      } : {}),
       ...(previewInput.document_evidence ? { evidence_coverage: buildEvidenceCoverage(previewInput) } : {}),
       usage: {
         provider: 'codex_app_server',

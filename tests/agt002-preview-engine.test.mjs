@@ -242,6 +242,26 @@ assert.throws(
   'legalCorpus must fail closed unless a deterministic evidence provider is wired',
 );
 
+// legalCorpus must also fail closed without the exact corpus UUID and content hash that the
+// evidence was retrieved from: the engine is the single place that binds every legal citation
+// to the DB-published corpus version it came from, so it must never silently omit that binding.
+assert.throws(
+  () => createAgt002PreviewEngine({
+    client: { run: async () => {} }, ...baseEngineOptions(), contextV2: true, legalCorpus: true,
+    legalEvidenceProvider: () => ({}),
+  }),
+  /evidencia jurídica|legal/i,
+  'legalCorpus must fail closed without a legalCorpusVersionId and legalCorpusContentSha256',
+);
+assert.throws(
+  () => createAgt002PreviewEngine({
+    client: { run: async () => {} }, ...baseEngineOptions(), contextV2: true, legalCorpus: true,
+    legalEvidenceProvider: () => ({}), legalCorpusVersionId: '10101010-1010-4010-8010-101010101010',
+  }),
+  /evidencia jurídica|legal/i,
+  'legalCorpus must fail closed without legalCorpusContentSha256 even when legalCorpusVersionId is present',
+);
+
 // AGT002_DOCUMENT_RETRIEVAL is engine-level configuration too, mirroring contextV2 above:
 // the flag always wins over anything a caller's context object carries, in both directions.
 {
@@ -349,18 +369,38 @@ assert.throws(
     weaknesses: [],
     legal_findings: [{ classification: 'human_legal_review', text: AGT002_LEGAL_HUMAN_REVIEW_STATEMENT, evidence_refs: [], legal_citation_ids: reviewCitationIds }],
   });
+  const legalCorpusVersionId = '10101010-1010-4010-8010-101010101010';
+  const legalCorpusContentSha256 = 'b'.repeat(64);
   const client = fakeClient(async () => ({ content: JSON.stringify(legalOutput), usage: { input_tokens: 1, output_tokens: 1 } }));
-  const engine = createAgt002PreviewEngine({ client, ...baseEngineOptions(), contextV2: true, legalCorpus: true, legalEvidenceProvider: () => legalEvidencePackage });
+  const engine = createAgt002PreviewEngine({
+    client, ...baseEngineOptions(), contextV2: true, legalCorpus: true, legalEvidenceProvider: () => legalEvidencePackage,
+    legalCorpusVersionId, legalCorpusContentSha256,
+  });
   const result = await engine.analyze(legalContext);
   assert.equal(client.calls[0].input.legal_evidence.corpus_version, 'legal-corpus-v1');
   assert.ok(client.calls[0].outputSchema.required.includes('legal_findings'));
   assert.deepEqual(client.calls[0].outputSchema.properties.legal_findings.items.properties.legal_citation_ids.items.enum, reviewCitationIds);
   assert.deepEqual(result.legal_evidence, client.calls[0].input.legal_evidence);
   assert.deepEqual(result.legal_findings, legalOutput.legal_findings);
+  assert.equal(result.legal_corpus_version_id, legalCorpusVersionId, 'the envelope must bind the exact published corpus UUID the legal evidence was retrieved from');
+  assert.equal(result.legal_corpus_content_sha256, legalCorpusContentSha256, 'the envelope must carry the exact corpus content hash for audit');
 
   const omittingClient = fakeClient(async () => ({ content: JSON.stringify(validModelOutput({ weaknesses: [], legal_findings: [] })), usage: { input_tokens: 1, output_tokens: 1 } }));
-  const omittingEngine = createAgt002PreviewEngine({ client: omittingClient, ...baseEngineOptions(), contextV2: true, legalCorpus: true, legalEvidenceProvider: () => legalEvidencePackage });
+  const omittingEngine = createAgt002PreviewEngine({
+    client: omittingClient, ...baseEngineOptions(), contextV2: true, legalCorpus: true, legalEvidenceProvider: () => legalEvidencePackage,
+    legalCorpusVersionId, legalCorpusContentSha256,
+  });
   await assert.rejects(() => omittingEngine.analyze(legalContext), /no produjo una respuesta válida/i);
+}
+
+// legal_corpus_version_id / legal_corpus_content_sha256 must never appear on the envelope
+// when legalCorpus is off: E4 output must remain byte-for-byte unchanged.
+{
+  const client = fakeClient(async () => ({ content: JSON.stringify(validModelOutput()), usage: { input_tokens: 1, output_tokens: 1 } }));
+  const engine = createAgt002PreviewEngine({ client, ...baseEngineOptions() });
+  const result = await engine.analyze(context);
+  assert.equal(Object.hasOwn(result, 'legal_corpus_version_id'), false);
+  assert.equal(Object.hasOwn(result, 'legal_corpus_content_sha256'), false);
 }
 
 console.log('AGT-002 Preview engine orchestration passed');

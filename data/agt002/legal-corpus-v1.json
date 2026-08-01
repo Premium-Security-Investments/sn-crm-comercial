@@ -7,20 +7,25 @@
       "norm_number": "80",
       "year": 1993,
       "article_or_section": "Artículo 1",
-      "current_text": "ARTÍCULO 1o. DEL OBJETO. La presente ley tiene por objeto disponer las reglas y principios que rigen los contratos de las entidades estatales.",
+      "current_text": "ARTÍCULO 1.- Del objeto. La presente Ley tiene por objeto disponer las reglas y principios que rigen los contratos de las entidades estatales.",
       "issuing_authority": "Congreso de la República",
       "issued_at": "1993-10-28",
-      "effective_from": null,
+      "effective_from": "1994-01-01",
       "effective_to": null,
       "modifications": [],
-      "official_url": "https://www.suin-juriscol.gov.co/viewDocument.asp?ruta=Leyes/1790106",
-      "topic": ["contratación estatal", "objeto de la ley"],
-      "sector": ["sector público"],
-      "verified_at": "2026-07-30",
+      "official_url": "https://relatoria.colombiacompra.gov.co/normativa/ley-80-de-1993/",
+      "topic": [
+        "contratación estatal",
+        "objeto de la ley"
+      ],
+      "sector": [
+        "sector público"
+      ],
+      "verified_at": "2026-07-31",
       "corpus_version": "legal-corpus-v1",
       "verification_status": "verified",
-      "validity_status": "uncertain",
-      "applicability_status": "uncertain"
+      "validity_status": "confirmed",
+      "applicability_status": "applicable"
     },
     {
       "source_id": "ley-1150-2007-art-2",
@@ -53,10 +58,15 @@
           "resolution_status": "unresolved"
         }
       ],
-      "official_url": "https://www.suin-juriscol.gov.co/viewDocument.asp?ruta=Leyes/1674903",
-      "topic": ["contratación estatal", "modalidades de selección"],
-      "sector": ["sector público"],
-      "verified_at": "2026-07-30",
+      "official_url": "https://relatoria.colombiacompra.gov.co/normativa/ley-1150-de-2007/",
+      "topic": [
+        "contratación estatal",
+        "modalidades de selección"
+      ],
+      "sector": [
+        "sector público"
+      ],
+      "verified_at": "2026-07-31",
       "corpus_version": "legal-corpus-v1",
       "verification_status": "verified",
       "validity_status": "uncertain",
@@ -68,16 +78,21 @@
       "norm_number": "356",
       "year": 1994,
       "article_or_section": "Artículo 1",
-      "current_text": "ARTICULO 1o. OBJETO. El presente decreto tiene por objeto establecer el estatuto para la prestación por particulares de servicio de vigilancia y seguridad privada.",
+      "current_text": "ARTICULO 1o. OBJETO. El presente decreto tiene por objeto establecer el estatuto para la prestación por particulares de servicios de vigilancia y seguridad privada.",
       "issuing_authority": "Presidencia de la República",
       "issued_at": "1994-02-11",
       "effective_from": null,
       "effective_to": null,
       "modifications": [],
       "official_url": "https://www.supervigilancia.gov.co/web/content/11944?download=true",
-      "topic": ["vigilancia y seguridad privada", "objeto del estatuto"],
-      "sector": ["vigilancia y seguridad privada"],
-      "verified_at": "2026-07-30",
+      "topic": [
+        "vigilancia y seguridad privada",
+        "objeto del estatuto"
+      ],
+      "sector": [
+        "vigilancia y seguridad privada"
+      ],
+      "verified_at": "2026-07-31",
       "corpus_version": "legal-corpus-v1",
       "verification_status": "verified",
       "validity_status": "uncertain",
@@ -95,10 +110,15 @@
       "effective_from": null,
       "effective_to": null,
       "modifications": [],
-      "official_url": "https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i=1341",
-      "topic": ["vigilancia y seguridad privada", "campo de aplicación"],
-      "sector": ["vigilancia y seguridad privada"],
-      "verified_at": "2026-07-30",
+      "official_url": "https://www.supervigilancia.gov.co/web/content/11944?download=true",
+      "topic": [
+        "vigilancia y seguridad privada",
+        "campo de aplicación"
+      ],
+      "sector": [
+        "vigilancia y seguridad privada"
+      ],
+      "verified_at": "2026-07-31",
       "corpus_version": "legal-corpus-v1",
       "verification_status": "verified",
       "validity_status": "uncertain",
@@ -126,10 +146,15 @@
           "resolution_status": "unresolved"
         }
       ],
-      "official_url": "https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i=1341",
-      "topic": ["vigilancia y seguridad privada", "control y vigilancia estatal"],
-      "sector": ["vigilancia y seguridad privada"],
-      "verified_at": "2026-07-30",
+      "official_url": "https://www.supervigilancia.gov.co/web/content/11944?download=true",
+      "topic": [
+        "vigilancia y seguridad privada",
+        "control y vigilancia estatal"
+      ],
+      "sector": [
+        "vigilancia y seguridad privada"
+      ],
+      "verified_at": "2026-07-31",
       "corpus_version": "legal-corpus-v1",
       "verification_status": "verified",
       "validity_status": "uncertain",
@@ -148,9 +173,14 @@
       "effective_to": null,
       "modifications": [],
       "official_url": "https://relatoria.colombiacompra.gov.co/normativa/decreto-1082-de-2015/",
-      "topic": ["contratación estatal", "sistema de compras públicas"],
-      "sector": ["sector público"],
-      "verified_at": "2026-07-30",
+      "topic": [
+        "contratación estatal",
+        "sistema de compras públicas"
+      ],
+      "sector": [
+        "sector público"
+      ],
+      "verified_at": "2026-07-31",
       "corpus_version": "legal-corpus-v1",
       "verification_status": "verified",
       "validity_status": "uncertain",

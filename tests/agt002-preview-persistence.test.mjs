@@ -82,7 +82,9 @@ function envelope(overrides = {}) {
   };
 }
 
-function legalEnvelope() {
+const LEGAL_CORPUS_VERSION_ID = '10101010-1010-4010-8010-101010101010';
+
+function legalEnvelope(overrides = {}) {
   const citation = {
     citation_id: 'citation:ley-80-1993-art-1:legal-corpus-v1', source_id: 'ley-80-1993-art-1',
     norm_type: 'ley', norm_number: '80', year: 1993, article_or_section: 'Artículo 1',
@@ -98,6 +100,8 @@ function legalEnvelope() {
       citation_allowlist: [], coverage: { matched_source_ids: ['ley-80-1993-art-1'], considered_count: 1, returned_count: 1 }, omissions: [], abstention_state: 'abstained',
     },
     legal_findings: [{ classification: 'human_legal_review', text: 'No verificado jurídicamente; requiere revisión humana', evidence_refs: [], legal_citation_ids: [citation.citation_id] }],
+    legal_corpus_version_id: LEGAL_CORPUS_VERSION_ID,
+    ...overrides,
   });
 }
 
@@ -205,6 +209,58 @@ function fakeDatabase({ onRpc } = {}) {
     opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
     envelope: envelope({ legal_findings: legalEnvelope().legal_findings }),
   }), /legal_evidence|evidencia jurídica/i);
+}
+
+// E5's exact published corpus UUID is a non-negotiable part of the atomic legal pair: a run
+// with legal evidence/findings but no legal_corpus_version_id must never persist, and a run
+// without legal evidence must never carry a stray corpus UUID either.
+{
+  await assert.rejects(() => registerAgt002PreviewAnalysis(fakeDatabase(), {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: legalEnvelope({ legal_corpus_version_id: undefined }),
+  }), /legal_corpus_version_id|corpus jurídico/i);
+  await assert.rejects(() => registerAgt002PreviewAnalysis(fakeDatabase(), {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: legalEnvelope({ legal_corpus_version_id: '' }),
+  }), /legal_corpus_version_id|corpus jurídico/i);
+  await assert.rejects(() => registerAgt002PreviewAnalysis(fakeDatabase(), {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: envelope({ legal_corpus_version_id: LEGAL_CORPUS_VERSION_ID }),
+  }), /legal_corpus_version_id|corpus jurídico|evidencia jurídica/i);
+}
+
+// The corpus UUID must reach the DB only through the dedicated canonical RPC parameter,
+// never folded into the stored content JSON, and never sent to the non-canonical RPC
+// (whose signature has no such column).
+{
+  const database = fakeDatabase();
+  const registered = await registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: legalEnvelope(), canonicalOnly: true, context_version_id: ids.contextVersion,
+  });
+  const call = database.rpcCalls[0];
+  assert.equal(call.name, 'psi_record_agt002_canonical_analysis_run');
+  assert.equal(call.params.p_legal_corpus_version_id, LEGAL_CORPUS_VERSION_ID);
+  assert.equal(Object.hasOwn(call.params.p_result, 'legal_corpus_version_id'), false, 'the corpus UUID must not be duplicated inside the stored content JSON');
+  assert.equal(registered.legal_corpus_version_id, LEGAL_CORPUS_VERSION_ID);
+}
+{
+  const database = fakeDatabase();
+  await registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: legalEnvelope(),
+  });
+  assert.equal(Object.hasOwn(database.rpcCalls[0].params, 'p_legal_corpus_version_id'), false, 'the non-canonical RPC has no legal_corpus_version_id column');
+}
+
+// Idempotency must differ when only the corpus UUID changes: the same snapshot/policy/model
+// re-run against a superseded-then-republished corpus is a materially different attribution.
+{
+  const withoutLegal = computeAgt002PreviewIdempotencyKey({ snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1' });
+  const withLegal = computeAgt002PreviewIdempotencyKey({ snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1', legalCorpusVersionId: LEGAL_CORPUS_VERSION_ID });
+  const withOtherLegal = computeAgt002PreviewIdempotencyKey({ snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1', legalCorpusVersionId: '20202020-2020-4020-8020-202020202020' });
+  assert.notEqual(withLegal, withoutLegal);
+  assert.notEqual(withLegal, withOtherLegal);
+  assert.match(withLegal, /^[0-9a-f]{64}$/);
 }
 
 // Coverage metadata is snapshot-bound; persistence rejects cross-snapshot evidence.

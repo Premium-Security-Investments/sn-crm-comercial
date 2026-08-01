@@ -74,18 +74,72 @@ assert.throws(
   );
 }
 
+function validLegalCorpusContext(overrides = {}) {
+  return Object.freeze({
+    legal_corpus_version_id: '10101010-1010-4010-8010-101010101010',
+    corpus_version: 'legal-corpus-v1',
+    content_sha256: 'a'.repeat(64),
+    corpus: {
+      corpus_version: 'legal-corpus-v1',
+      sources: [{
+        source_id: 'ley-80-1993-art-1', norm_type: 'Ley', norm_number: '80', year: 1993,
+        article_or_section: 'Artículo 1', current_text: 'Texto vigente.',
+        issuing_authority: 'Congreso de la República', issued_at: '1993-10-28T00:00:00.000Z',
+        effective_from: '1993-10-28T00:00:00.000Z', effective_to: null, modifications: [],
+        official_url: 'https://www.suin-juriscol.gov.co/viewDocument.asp?ruta=Leyes/1790106',
+        topic: ['contratacion_estatal'], sector: ['vigilancia_privada'],
+        verified_at: '2026-07-29T00:00:00.000Z', verification_status: 'verified',
+        validity_status: 'confirmed', applicability_status: 'applicable',
+        corpus_version: 'legal-corpus-v1',
+      }],
+    },
+    ...overrides,
+  });
+}
+
 // AGT002_LEGAL_CORPUS must reach the engine together with a deterministic, versioned corpus
-// provider. Engine construction itself fails closed if runtime forgets either dependency.
+// provider bound to the exact DB-loaded corpus context. Engine construction itself fails
+// closed if runtime forgets either dependency, and the runtime never falls back to reading
+// the local fixture file: the loaded context must be injected explicitly by the caller
+// (the server layer, after loading it from the DB via agt002-legal-corpus-store.js).
 {
+  assert.throws(
+    () => createAgt002PreviewRuntime({
+      environment: baseEnv({ AGT002_CONTEXT_V2: 'true', AGT002_LEGAL_CORPUS: 'true', AGT002_LEGAL_AS_OF: '2026-07-30' }),
+      countDailyRuns: async () => 0,
+    }),
+    /corpus jurídico/i,
+    'without an explicitly injected legalCorpusContext, the runtime must fail closed rather than silently reading a local fixture',
+  );
+
   const runtime = createAgt002PreviewRuntime({
     environment: baseEnv({ AGT002_CONTEXT_V2: 'true', AGT002_LEGAL_CORPUS: 'true', AGT002_LEGAL_AS_OF: '2026-07-30' }),
     countDailyRuns: async () => 0,
+    legalCorpusContext: validLegalCorpusContext(),
   });
   assert.equal(typeof runtime.analyze, 'function');
 }
 
+// A malformed injected legal corpus context must also fail closed.
+for (const overrides of [
+  { legal_corpus_version_id: '' },
+  { corpus_version: '' },
+  { content_sha256: 'not-a-hash' },
+  { corpus: null },
+]) {
+  assert.throws(
+    () => createAgt002PreviewRuntime({
+      environment: baseEnv({ AGT002_CONTEXT_V2: 'true', AGT002_LEGAL_CORPUS: 'true', AGT002_LEGAL_AS_OF: '2026-07-30' }),
+      countDailyRuns: async () => 0,
+      legalCorpusContext: validLegalCorpusContext(overrides),
+    }),
+    /corpus jurídico/i,
+  );
+}
+
 const source = readFileSync(new URL('../agt002-preview-runtime.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /OPENAI_API_KEY|HERMES_INTERIM_API_KEY|Authorization|Bearer/i, 'the runtime must never manage an API key or bearer token');
+assert.doesNotMatch(source, /readFileSync/, 'the runtime must never read the local legal corpus fixture as production evidence; it must consume an injected, DB-loaded context');
 
 function testConfiguredRequiresHetznerBridgeUrlAndSecret() {
   const baseEnv = { TENDER_ANALYSIS_ENGINE: 'agt002_codex_preview', AGT002_PREVIEW_MODEL: 'gpt-x' };
