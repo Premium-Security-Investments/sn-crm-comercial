@@ -10,7 +10,7 @@ import {
 import { validateAgt002LegalManifest } from '../scripts/validate_agt002_legal_corpus.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const MANIFEST_PATH = path.join(__dirname, '..', 'data', 'agt002', 'legal-corpus-v1.json');
+const MANIFEST_PATH = path.join(__dirname, '..', 'data', 'agt002', 'legal-corpus-v1.1.json');
 
 function loadManifest() {
   return JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'));
@@ -45,7 +45,7 @@ function makeValidSource(overrides = {}) {
 {
   const manifest = loadManifest();
   assert.doesNotThrow(() => validateAgt002LegalManifest(manifest), 'el manifiesto real debe ser válido');
-  assert.equal(manifest.corpus_version, 'legal-corpus-v1');
+  assert.equal(manifest.corpus_version, 'legal-corpus-v1.1');
   assert.ok(Array.isArray(manifest.sources) && manifest.sources.length > 0, 'debe tener al menos una fuente');
 
   for (const source of manifest.sources) {

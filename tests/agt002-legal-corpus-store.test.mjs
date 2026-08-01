@@ -80,8 +80,10 @@ function fakeDatabase({ versions = [], sources = [], versionsError = null, sourc
 
 // 1) Canonical hash is stable under object-key reordering but sensitive to content.
 {
-  const manifestA = { corpus_version: 'legal-corpus-v1', sources: [validSourceRow()] };
-  const reordered = { sources: [{ ...validSourceRow() }], corpus_version: 'legal-corpus-v1' };
+  const { corpus_version_id: ignored, ...rawSource } = validSourceRow();
+  const sourceInput = { ...rawSource, corpus_version: 'legal-corpus-v1' };
+  const manifestA = { corpus_version: 'legal-corpus-v1', sources: [sourceInput] };
+  const reordered = { sources: [{ ...sourceInput }], corpus_version: 'legal-corpus-v1' };
   // Also reorder keys within the nested source object itself.
   const [source] = reordered.sources;
   reordered.sources[0] = Object.fromEntries(Object.keys(source).reverse().map(key => [key, source[key]]));
@@ -90,7 +92,24 @@ function fakeDatabase({ versions = [], sources = [], versionsError = null, sourc
   assert.equal(computeAgt002LegalManifestContentHash(manifestA), computeAgt002LegalManifestContentHash(reordered));
   assert.match(computeAgt002LegalManifestContentHash(manifestA), /^[0-9a-f]{64}$/);
 
-  const manifestB = { corpus_version: 'legal-corpus-v1', sources: [validSourceRow({ current_text: 'Texto distinto.' })] };
+  const equivalentTags = {
+    corpus_version: 'legal-corpus-v1',
+    sources: [{
+      ...source,
+      topic: ['  CONTRATACION_ESTATAL  ', 'contratacion_estatal'],
+      sector: ['vigilancia_privada', ' VIGILANCIA_PRIVADA '],
+    }],
+  };
+  assert.equal(
+    computeAgt002LegalManifestContentHash(manifestA),
+    computeAgt002LegalManifestContentHash(equivalentTags),
+    'el hash debe representar el contrato normalizado, no el orden/forma cruda de tags semánticamente equivalentes',
+  );
+
+  const manifestB = {
+    corpus_version: 'legal-corpus-v1',
+    sources: [{ ...sourceInput, current_text: 'Texto distinto.' }],
+  };
   assert.notEqual(computeAgt002LegalManifestContentHash(manifestA), computeAgt002LegalManifestContentHash(manifestB));
 }
 
@@ -203,6 +222,43 @@ function fakeDatabase({ versions = [], sources = [], versionsError = null, sourc
   const hash = expectedHashFor('legal-corpus-v1', rows);
   const database = fakeDatabase({ versions: [versionRow({ content_sha256: hash })], sourcesError: { message: 'sources db down' } });
   await assert.rejects(loadPublishedAgt002LegalCorpus(database), /sources db down/i);
+}
+
+// 13b) Real PostgreSQL/Supabase timestamptz columns are returned with a `+00:00` offset
+// instead of `Z` (e.g. `1993-10-28T00:00:00+00:00`), not the date-only string that was
+// originally published. The loader must still reconstruct a manifest that hashes identically
+// to the one published from the canonical date-only source rows, and must not throw the
+// "issued_at debe ser una fecha ISO 8601 válida" error on legitimate published data.
+{
+  // Mirrors how the corpus is actually curated/published (see data/agt002/legal-corpus-v1.json):
+  // issued_at/effective_from/verified_at are authored as date-only ISO strings, hashed as such,
+  // then stored in `timestamptz` columns — which is exactly what round-trips with a `+00:00`
+  // offset on read.
+  const canonicalRows = [validSourceRow({
+    issued_at: '1993-10-28',
+    effective_from: '1993-10-28',
+    verified_at: '2026-07-29',
+    topic: ['vigilancia y seguridad privada', 'objeto del estatuto'],
+  })];
+  const { corpus_version_id: ignored, ...canonicalSource } = canonicalRows[0];
+  const hash = computeAgt002LegalManifestContentHash({
+    corpus_version: 'legal-corpus-v1',
+    sources: [{ ...canonicalSource, corpus_version: 'legal-corpus-v1' }],
+  });
+
+  const timestamptzRows = [validSourceRow({
+    issued_at: '1993-10-28T00:00:00+00:00',
+    effective_from: '1993-10-28T00:00:00+00:00',
+    verified_at: '2026-07-29T00:00:00+00:00',
+    topic: ['objeto del estatuto', 'vigilancia y seguridad privada'],
+  })];
+  const database = fakeDatabase({ versions: [versionRow({ content_sha256: hash })], sources: timestamptzRows });
+
+  const loaded = await loadPublishedAgt002LegalCorpus(database);
+  assert.equal(loaded.content_sha256, hash);
+  assert.equal(loaded.corpus.sources[0].issued_at, '1993-10-28');
+  assert.equal(loaded.corpus.sources[0].effective_from, '1993-10-28');
+  assert.equal(loaded.corpus.sources[0].verified_at, '2026-07-29');
 }
 
 // 13) The store never reads the filesystem or performs network I/O: it only talks to

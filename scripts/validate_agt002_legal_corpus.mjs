@@ -6,7 +6,7 @@ import path from 'node:path';
 import { buildAgt002LegalSource, AGT002_LEGAL_RESOLUTION_STATUSES } from '../agt002-legal-corpus.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const DEFAULT_MANIFEST_PATH = path.join(__dirname, '..', 'data', 'agt002', 'legal-corpus-v1.json');
+export const DEFAULT_MANIFEST_PATH = path.join(__dirname, '..', 'data', 'agt002', 'legal-corpus-v1.1.json');
 
 const MANIFEST_KEYS = ['corpus_version', 'sources'];
 
@@ -35,7 +35,12 @@ export function canonicalizeAgt002LegalManifest(manifest) {
 }
 
 export function computeAgt002LegalManifestContentHash(manifest) {
-  return createHash('sha256').update(canonicalizeAgt002LegalManifest(manifest)).digest('hex');
+  const normalizedSources = validateAgt002LegalManifest(manifest);
+  const normalizedManifest = {
+    corpus_version: manifest.corpus_version,
+    sources: normalizedSources,
+  };
+  return createHash('sha256').update(canonicalizeAgt002LegalManifest(normalizedManifest)).digest('hex');
 }
 
 /**
