@@ -26,34 +26,36 @@ function EvidenceCoveragePanel({ coverage, documents }: { coverage: TenderEviden
   const coveredRequirements = requirements.filter(requirement => requirement.status === 'covered').length;
   const usedCount = coverage.selected_chunks.length;
   const omittedCount = coverage.omitted_chunks.length;
-  return <section className="tender-evidence-coverage" aria-label="Cobertura de evidencia documental">
-    <header><h4>Cobertura de evidencia</h4></header>
-    <div className="tender-evidence-coverage-metrics">
-      <span><strong>{usedCount}</strong> Usados</span>
-      <span><strong>{coveredRequirements}/{totalRequirements}</strong> Requisitos cubiertos</span>
-      <span><strong>{omittedCount}</strong> Omitidos</span>
-    </div>
+  return <section className="tender-evidence-coverage-wrapper" aria-label="Cobertura de evidencia documental">
     {coverage.material_omissions && <div className="error" role="alert"><strong>Este análisis no es integral.</strong> Hay omisiones materiales de evidencia; requiere revisión humana de las omisiones antes de considerarse completo.</div>}
-    {usedCount > 0 && <ul className="tender-evidence-coverage-list">
-      {coverage.selected_chunks.map(chunk => {
-        const document = documents.find(item => item.id === chunk.document_id);
-        const label = `${chunk.name} · pág. ${chunk.page}, sec. ${chunk.section} · v${chunk.version} · ${chunk.precedence === 'addendum' ? 'Adenda' : 'Base'}${chunk.superseded_by_addendum ? ' (superada por adenda)' : ''}`;
-        return <li key={chunk.evidence_ref}>{document?.signed_url ? <a href={document.signed_url} target="_blank" rel="noopener noreferrer">{label}</a> : <span>{label}</span>}</li>;
-      })}
-    </ul>}
-    {omittedCount > 0 && <details className="tender-evidence-coverage-omissions"><summary>Omisiones ({omittedCount})</summary><ul>
-      {coverage.omitted_chunks.map((omission, index) => {
-        const document = documents.find(item => item.id === omission.document_id);
-        const label = document?.name || omission.document_type || omission.document_id;
-        return <li key={`${omission.document_id}-${index}`}>{label}: {EVIDENCE_OMISSION_REASON_LABELS[omission.reason] || omission.reason}</li>;
-      })}
-    </ul></details>}
+    <details className="tender-evidence-coverage">
+      <summary>
+        <h4>Cobertura de evidencia</h4>
+        <span className="tender-evidence-coverage-metrics">
+          <span><strong>{usedCount}</strong> Usados</span>
+          <span><strong>{coveredRequirements}/{totalRequirements}</strong> Requisitos cubiertos</span>
+          <span><strong>{omittedCount}</strong> Omitidos</span>
+        </span>
+      </summary>
+      <div className="tender-evidence-coverage-content">
+      {usedCount > 0 && <ul className="tender-evidence-coverage-list">
+        {coverage.selected_chunks.map(chunk => {
+          const document = documents.find(item => item.id === chunk.document_id);
+          const label = `${chunk.name} · pág. ${chunk.page}, sec. ${chunk.section} · v${chunk.version} · ${chunk.precedence === 'addendum' ? 'Adenda' : 'Base'}${chunk.superseded_by_addendum ? ' (superada por adenda)' : ''}`;
+          return <li key={chunk.evidence_ref}>{document?.signed_url ? <a href={document.signed_url} target="_blank" rel="noopener noreferrer">{label}</a> : <span>{label}</span>}</li>;
+        })}
+      </ul>}
+      {omittedCount > 0 && <details className="tender-evidence-coverage-omissions"><summary>Omisiones ({omittedCount})</summary><ul>
+        {coverage.omitted_chunks.map((omission, index) => {
+          const document = documents.find(item => item.id === omission.document_id);
+          const label = document?.name || omission.document_type || omission.document_id;
+          return <li key={`${omission.document_id}-${index}`}>{label}: {EVIDENCE_OMISSION_REASON_LABELS[omission.reason] || omission.reason}</li>;
+        })}
+      </ul></details>}
+      </div>
+    </details>
   </section>;
 }
-
-// AGT002_LEGAL_CORPUS (Task34): the exact fixed statement rendered whenever a legal source's
-// vigencia/applicability could not be confirmed (design 7.6). Never derived from finding.text.
-const AGT002_LEGAL_HUMAN_REVIEW_STATEMENT = 'No verificado jurídicamente; requiere revisión humana';
 
 // Closed, client-side mirror of AGT002_LEGAL_OFFICIAL_HOSTS (agt002-legal-corpus.js): a link is
 // only ever rendered as an official legal source when it is HTTPS and on this exact allowlist.
@@ -128,22 +130,26 @@ function buildLegalCitationIndex(evidence: TenderLegalEvidence): Map<string, Leg
   return index;
 }
 
-function LegalCitationBadge({ entry }: { entry: LegalCitationEntry | undefined }) {
+function LegalCitationBadge({ entry, interpretationRequiresReview }: { entry: LegalCitationEntry | undefined; interpretationRequiresReview: boolean }) {
   if (!entry) return null;
   const { citation, verified } = entry;
   return <div className="tender-legal-citation">
-    <span className={`badge badge-${verified ? 'green' : 'amber'}`}>{verified ? 'Fuente oficial verificada' : AGT002_LEGAL_HUMAN_REVIEW_STATEMENT}</span>
+    <div className="tender-legal-citation-status">
+      <span className={`badge badge-${verified ? 'green' : 'amber'}`}>{verified ? 'Fuente oficial comprobada' : 'Fuente pendiente de comprobación'}</span>
+      {interpretationRequiresReview && <span className="badge badge-amber">Interpretación pendiente de revisión humana</span>}
+    </div>
     <a href={citation.official_url} target="_blank" rel="noopener noreferrer">{citation.norm_type} {citation.norm_number} de {citation.year}, {citation.article_or_section}</a>
-    <small>{citation.issuing_authority} · corpus {citation.corpus_version} · verificado {citation.verified_at}</small>
+    <small>{citation.issuing_authority} · corpus {citation.corpus_version} · {verified ? 'Fuente comprobada el' : 'Fuente consultada el'} {citation.verified_at}</small>
   </div>;
 }
 
 function LegalFindingCard({ finding, citationIndex }: { finding: TenderLegalFinding; citationIndex: Map<string, LegalCitationEntry> }) {
   const isHumanReview = finding.classification === 'human_legal_review';
   return <li className={`tender-legal-finding tender-legal-finding-${finding.classification}`}>
-    <p>{isHumanReview ? AGT002_LEGAL_HUMAN_REVIEW_STATEMENT : finding.text}</p>
+    <p>{isHumanReview ? 'Hallazgo pendiente de validación jurídica' : finding.text}</p>
+    {isHumanReview && <small className="muted">La vigencia, aplicabilidad e interpretación requieren revisión humana.</small>}
     {finding.legal_citation_ids.length > 0 && <div className="tender-legal-finding-citations">
-      {finding.legal_citation_ids.map(id => <LegalCitationBadge key={id} entry={citationIndex.get(id)}/>)}
+      {finding.legal_citation_ids.map(id => <LegalCitationBadge key={id} entry={citationIndex.get(id)} interpretationRequiresReview={isHumanReview}/>)}
     </div>}
     {finding.evidence_refs.length > 0 && <small className="muted">Evidencia: {finding.evidence_refs.join(', ')}</small>}
   </li>;

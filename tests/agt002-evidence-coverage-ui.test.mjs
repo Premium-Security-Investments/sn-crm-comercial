@@ -25,6 +25,11 @@ assert.match(analysis, /evidence_coverage/, 'El componente debe leer analysis.ev
 for (const label of ['Usados', 'Requisitos cubiertos', 'Omitidos']) {
   assert.match(analysis, new RegExp(label), `El panel debe mostrar la métrica "${label}".`);
 }
+assert.match(analysis, /<details\s+className="tender-evidence-coverage"/, 'Cobertura de evidencia debe ser un acordeón nativo.');
+assert.match(analysis, /<summary[^>]*>[\s\S]*Cobertura de evidencia[\s\S]*tender-evidence-coverage-metrics[\s\S]*<\/summary>/, 'El encabezado cerrado debe conservar título y métricas.');
+assert.doesNotMatch(analysis, /<details\s+className="tender-evidence-coverage"[^>]*\bopen\b/, 'Cobertura debe iniciar cerrada.');
+const coverageRender = analysis.slice(analysis.indexOf('function EvidenceCoveragePanel'), analysis.indexOf('// Closed, client-side mirror'));
+assert.ok(coverageRender.indexOf('role="alert"') < coverageRender.indexOf('<details className="tender-evidence-coverage"'), 'La alerta de omisiones materiales debe quedar visible antes del acordeón cerrado.');
 
 // Material omissions warning: alert semantics + explicit "not comprehensive" + human review language.
 assert.match(analysis, /material_omissions/, 'El panel debe condicionar la alerta a material_omissions.');
