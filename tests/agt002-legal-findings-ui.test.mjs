@@ -33,8 +33,11 @@ for (const classification of ['tender_requirement', 'legal_obligation', 'company
 // Distinct semantic grouping, not a single flat undifferentiated list.
 assert.match(analysis, /tender-legal-findings-\$\{|tender-legal-findings-group/, 'Cada clase debe tener un contenedor/estilo distinto, no una lista plana indiferenciada.');
 
-// Verified official obligation: link + norm/article + corpus_version + verified_at + unambiguous label.
-assert.match(analysis, /Fuente oficial verificada/, 'Una obligación verificada debe mostrar la etiqueta inequívoca "Fuente oficial verificada".');
+// Source verification and legal interpretation must be presented as two independent states.
+assert.match(analysis, /Fuente oficial comprobada/, 'Una fuente verificada debe mostrar la etiqueta clara "Fuente oficial comprobada".');
+assert.match(analysis, /Fuente pendiente de comprobación/, 'Una fuente incierta debe mostrar su estado técnico sin confundirlo con revisión jurídica.');
+assert.match(analysis, /Interpretación pendiente de revisión humana/, 'La aplicabilidad e interpretación deben indicar revisión humana por separado.');
+assert.match(analysis, /Hallazgo pendiente de validación jurídica/, 'Los hallazgos human_legal_review deben tener un título comprensible y no duplicar el mensaje técnico.');
 assert.match(analysis, /citation\.official_url|\.official_url/, 'El panel debe enlazar official_url de la cita.');
 assert.match(analysis, /article_or_section/, 'El panel debe mostrar el artículo/sección de la norma.');
 assert.match(analysis, /corpus_version/, 'El panel debe mostrar la versión del corpus.');
@@ -42,11 +45,11 @@ assert.match(analysis, /verified_at/, 'El panel debe mostrar la fecha de verific
 assert.match(analysis, /target=["']_blank["']/, 'El enlace oficial debe abrir en pestaña nueva segura.');
 assert.match(analysis, /rel=["']noopener noreferrer["']/, 'El enlace oficial debe incluir rel=noopener noreferrer.');
 
-// Uncertain / human review: exact visible text, never a verified badge, no authority language.
-assert.match(analysis, /No verificado jur[ií]dicamente; requiere revisi[oó]n humana/, 'Debe mostrarse el texto exacto de no verificado.');
+assert.match(analysis, /Fuente comprobada el/, 'La fecha de una fuente verificada debe explicar qué se comprobó.');
+assert.match(analysis, /Fuente consultada el/, 'La fecha de una fuente pendiente debe presentarse como consulta, no aprobación jurídica.');
 assert.doesNotMatch(
   analysis,
-  /human_legal_review[^;]*Fuente oficial verificada|Fuente oficial verificada[^;]*human_legal_review/s,
+  /human_legal_review[^;]*Fuente oficial comprobada|Fuente oficial comprobada[^;]*human_legal_review/s,
   'human_legal_review nunca debe llevar la etiqueta de fuente verificada.',
 );
 

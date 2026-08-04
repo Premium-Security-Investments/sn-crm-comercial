@@ -37,7 +37,7 @@ function run() {
   // ops/tender-worker-scheduler/), no desde vercel.json. El endpoint conserva
   // el header GET/POST y el autorizador por secreto para ese caller externo.
   assert.ok(!('crons' in vercelConfig), 'vercel.json no debe declarar crons: son incompatibles con el plan Hobby');
-  assert.equal(vercelConfig.functions?.['api/[...path].js']?.maxDuration, 60, 'la función del worker debe permitir hasta 60 segundos');
+  assert.equal(vercelConfig.functions?.['api/[...path].js']?.maxDuration, 180, 'la función compartida debe permitir el análisis Vig-IA de 120 segundos; el worker conserva su presupuesto interno de 45 segundos');
   console.log('tender-processing-worker-endpoint-static passed');
 }
 run();
