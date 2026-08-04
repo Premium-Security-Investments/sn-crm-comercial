@@ -1406,6 +1406,10 @@ async function enrichLiveTendersWithConversions(database, tenders) {
     return { ...t, converted_opportunity_id: opportunityId, internal_status: opportunityId ? 'convertida_oportunidad' : (t.internal_status || 'nueva') };
   });
 }
+const TENDER_PERSISTENCE_SECTIONS = new Set(['hacer', 'revisar', 'prioridad_baja']);
+export function normalizeTenderPersistenceSection(section) {
+  return TENDER_PERSISTENCE_SECTIONS.has(section) ? section : 'prioridad_baja';
+}
 async function persistTenderRadar(database, actorProfile, mode = 'manual') {
   const fetchedPayload = await fetchPublicTenderRadar();
   const fetched = fetchedPayload.tenders;
@@ -1417,7 +1421,7 @@ async function persistTenderRadar(database, actorProfile, mode = 'manual') {
   }
   const now = new Date().toISOString();
   const rows = persistenceTenders.map(t => ({
-    stable_key: stableTenderKey(t), source: t.source, section: t.section, entity: t.entity, dept: t.dept || null, city: t.city || null,
+    stable_key: stableTenderKey(t), source: t.source, section: normalizeTenderPersistenceSection(t.section), entity: t.entity, dept: t.dept || null, city: t.city || null,
     ref: t.ref || null, process_id: t.process_id || null, title: t.title, description: t.desc || null, value: Number(t.value || 0),
     status: t.status || null, category: t.category || null, published_at: t.published || null, deadline_at: t.deadline || null,
     score: Number(t.score || 0), reasons: t.reasons || [], risks: t.risks || [], url: t.url || null, raw: t.raw || null, last_seen_at: now
