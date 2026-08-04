@@ -28,13 +28,15 @@ function EvidenceCoveragePanel({ coverage, documents }: { coverage: TenderEviden
   const omittedCount = coverage.omitted_chunks.length;
   return <section className="tender-evidence-coverage-wrapper" aria-label="Cobertura de evidencia documental">
     {coverage.material_omissions && <div className="error" role="alert"><strong>Este análisis no es integral.</strong> Hay omisiones materiales de evidencia; requiere revisión humana de las omisiones antes de considerarse completo.</div>}
-    <details className="tender-evidence-coverage">
+    <details className="tender-decision-brief-help tender-evidence-coverage">
       <summary>
-        <h4>Cobertura de evidencia</h4>
-        <span className="tender-evidence-coverage-metrics">
-          <span><strong>{usedCount}</strong> Usados</span>
-          <span><strong>{coveredRequirements}/{totalRequirements}</strong> Requisitos cubiertos</span>
-          <span><strong>{omittedCount}</strong> Omitidos</span>
+        <span className="tender-evidence-coverage-summary-content">
+          <span>Cobertura de evidencia</span>
+          <span className="tender-evidence-coverage-metrics">
+            <span><strong>{usedCount}</strong> Usados</span>
+            <span><strong>{coveredRequirements}/{totalRequirements}</strong> Requisitos cubiertos</span>
+            <span><strong>{omittedCount}</strong> Omitidos</span>
+          </span>
         </span>
       </summary>
       <div className="tender-evidence-coverage-content">
