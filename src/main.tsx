@@ -20,7 +20,7 @@ import { tenderAnalysisMethodLabel } from './tenders/tenderDecisionBrief';
 import { loadTenderGoNoGoDecision, loadTenderOfferStatus, loadTrackingEvents, postActuation } from './tenders/api';
 import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
 import { tenderSharePointStatusLabel } from './tenders/statusLabels';
-import { isTenderProcessingActive, shouldReloadTenderArtifacts, tenderProcessingLabel } from './tenders/processingStatus';
+import { isTenderProcessingActive, isTenderProcessingSuperseded, shouldReloadTenderArtifacts, tenderProcessingLabel } from './tenders/processingStatus';
 import type { TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
 import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
@@ -951,14 +951,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     finally { setBusy(false); }
   };
   const processingActive = Boolean(processingStatus && isTenderProcessingActive(processingStatus.status));
-  const processingSupersededByAnalysis = Boolean(
-    processingStatus
-    && analysis?.status === 'completed'
-    && analysis.current === true
-    && processingStatus.snapshot_id
-    && processingStatus.snapshot_id === analysis.snapshot_id
-    && !processingActive
-  );
+  const processingSupersededByAnalysis = isTenderProcessingSuperseded(processingStatus, analysis);
   const processingVisible = Boolean(processingStatus && processingStatus.status !== 'no_job' && !processingSupersededByAnalysis);
   const processingPending = processingStatus ? Math.max(0, processingStatus.counts.discovered - processingStatus.counts.processed) : 0;
   const processingRetryable = Boolean(processingStatus?.idempotency_key && ['retry_wait', 'needs_attention'].includes(processingStatus.status));
