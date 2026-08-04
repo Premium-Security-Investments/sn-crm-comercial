@@ -1,6 +1,29 @@
 type ProcessingStatusSnapshot = { job_id: string | null; status: string };
 
+type ProcessingPresentationStatus = {
+  job_id: string | null;
+  status: string;
+  analysis_run_id?: string | null;
+  updated_at?: string | null;
+};
+
+type AnalysisPresentationStatus = {
+  run_id?: string | null;
+  status?: string | null;
+  current?: boolean | null;
+  completed_at?: string | null;
+  created_at?: string | null;
+  generated_at?: string | null;
+};
+
 const TERMINAL_STATUSES = new Set(['no_job', 'completed', 'cancelled', 'needs_attention']);
+const SUPERSEDEABLE_PRESENTATION_STATUSES = new Set([
+  'completed',
+  'cancelled',
+  'needs_attention',
+  'waiting_agent_capacity',
+  'retry_wait',
+]);
 
 const STATUS_LABELS: Record<string, string> = {
   no_job: 'Sin procesamiento pendiente',
@@ -23,6 +46,22 @@ export function tenderProcessingLabel(status: string | null | undefined) {
 
 export function isTenderProcessingActive(status: string | null | undefined) {
   return !TERMINAL_STATUSES.has(String(status || 'no_job'));
+}
+
+export function isTenderProcessingSuperseded(
+  processingStatus: ProcessingPresentationStatus | null | undefined,
+  analysis: AnalysisPresentationStatus | null | undefined,
+) {
+  if (!processingStatus || !analysis || analysis.status !== 'completed' || analysis.current !== true) return false;
+  if (!SUPERSEDEABLE_PRESENTATION_STATUSES.has(processingStatus.status)) return false;
+  if (processingStatus.analysis_run_id && analysis.run_id && processingStatus.analysis_run_id === analysis.run_id) return true;
+
+  const analysisCompletedAt = analysis.completed_at || analysis.created_at || analysis.generated_at;
+  const analysisCompletedAtMs = analysisCompletedAt ? Date.parse(analysisCompletedAt) : Number.NaN;
+  const processingUpdatedAtMs = processingStatus.updated_at ? Date.parse(processingStatus.updated_at) : Number.NaN;
+  return Number.isFinite(analysisCompletedAtMs)
+    && Number.isFinite(processingUpdatedAtMs)
+    && analysisCompletedAtMs >= processingUpdatedAtMs;
 }
 
 export function shouldReloadTenderArtifacts(

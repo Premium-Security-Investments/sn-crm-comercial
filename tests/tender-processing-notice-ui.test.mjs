@@ -2,13 +2,15 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+const processingStatus = readFileSync(new URL('../src/tenders/processingStatus.ts', import.meta.url), 'utf8');
 
-assert.match(main, /processingSupersededByAnalysis/, 'La UI debe reconocer un job terminal superado por un análisis vigente.');
-assert.match(main, /analysis\?\.status\s*===\s*['"]completed['"]/, 'Sólo un análisis completado puede ocultar el aviso anterior.');
-assert.match(main, /analysis\.current\s*===\s*true/, 'El análisis debe estar marcado explícitamente como vigente.');
-assert.match(main, /processingStatus\.snapshot_id\s*===\s*analysis\.snapshot_id/, 'El análisis debe corresponder al mismo snapshot del job.');
-assert.match(main, /!processingActive/, 'Un procesamiento realmente activo nunca debe ocultarse.');
-assert.match(main, /processingVisible[\s\S]{0,240}!processingSupersededByAnalysis/, 'La visibilidad debe excluir jobs terminales ya superados.');
+assert.match(main, /isTenderProcessingSuperseded/, 'La UI debe importar la regla comprobable de supersesión.');
+assert.match(main, /const processingSupersededByAnalysis\s*=\s*isTenderProcessingSuperseded\(processingStatus, analysis\)/, 'La UI debe evaluar juntos el job y el análisis vigente.');
+assert.match(processingStatus, /waiting_agent_capacity/, 'Una espera de capacidad antigua debe poder quedar superada.');
+assert.match(processingStatus, /retry_wait/, 'Un reintento antiguo debe poder quedar superado.');
+assert.match(processingStatus, /analysis\.status\s*!==\s*['"]completed['"]/, 'Sólo un análisis completado puede ocultar el aviso anterior.');
+assert.match(processingStatus, /analysis\.current\s*!==\s*true/, 'El análisis debe estar marcado explícitamente como vigente.');
+assert.match(main, /processingVisible[\s\S]{0,240}!processingSupersededByAnalysis/, 'La visibilidad debe excluir jobs ya superados.');
 
 const noticeStart = main.indexOf('{processingVisible && processingStatus');
 const noticeEnd = main.indexOf('<TenderDocumentSection', noticeStart);
