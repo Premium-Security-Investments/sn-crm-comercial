@@ -87,14 +87,17 @@ Ambas transiciones serán idempotentes por estado, vínculo y destino. Un fallo 
 
 ### 5. Corrección de «Seguimiento desactualizado»
 
-La causa raíz observada es la pérdida de precisión del token `tracking_updated_at`: PostgreSQL puede entregar microsegundos y el servidor lo convierte mediante `Date`, reduciéndolo a milisegundos antes de llamar el RPC. Una comparación exacta puede rechazar entonces un token vigente.
+La auditoría de disco descartó la hipótesis de pérdida de microsegundos: `tender-tracking-rpc.js` valida el timestamp pero devuelve la cadena original sin convertirla mediante `Date`.
+
+La brecha demostrable está en el esquema histórico: la migración 017 añadió `tracking_updated_at`, pero no hizo backfill de las licitaciones que ya estaban en `convertida_oportunidad`. Una fila heredada puede conservar `tracking_updated_at = NULL`; el handler transmite ese valor y el RPC actual lo rechaza obligatoriamente como «Seguimiento desactualizado». Esto es consistente con un fallo específico como AEROCIVIL sin debilitar la protección general.
 
 La corrección debe:
 
-- preservar sin transformación el timestamp entregado por PostgreSQL cuando se usa como token opaco de concurrencia;
-- mantener validación estricta para fechas ordinarias introducidas por clientes;
-- mantener la comparación exacta en PostgreSQL;
-- incluir una prueba con microsegundos;
+- hacer backfill determinista de `tracking_updated_at` para licitaciones `convertida_oportunidad` o `en_revision` que todavía tengan `NULL`, usando la mejor marca persistida disponible y `now()` solo como último recurso;
+- mantener el timestamp como token opaco, sin transformación;
+- mantener la comparación exacta en PostgreSQL para registros ya versionados;
+- incluir una prueba de migración para una licitación convertida heredada con token nulo;
+- incluir una prueba con microsegundos para confirmar que la precisión ya se conserva;
 - incluir una prueba que confirme el rechazo de un token realmente obsoleto.
 
 La corrección aplicará a las dos transiciones. Aunque su nombre histórico sea `tracking_updated_at`, ese campo pertenece al registro de la licitación y será el token opaco de versión tanto para Oportunidad → Radar como para Oportunidad → Seguimiento.
