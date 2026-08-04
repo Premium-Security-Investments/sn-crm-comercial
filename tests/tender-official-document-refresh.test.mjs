@@ -193,6 +193,22 @@ assert.deepEqual(
   'la versión tipada vigente gana y las cargas manuales/históricas no duplicadas permanecen'
 );
 
+// Regression: 31 -> 45 current UI rows after refresh. Two typed "current" documents
+// can share identical content (same content_hash) under different source_document_id
+// values (e.g. after a fallback id rotated) -- merge must collapse them into one, not
+// present both as distinct current rows.
+assert.deepEqual(
+  mergeTenderDocumentRecords(
+    [
+      { id: 'typed-old', name: 'Anexo tecnico.pdf', version: 1, content_hash: 'a'.repeat(64), current: true, source_document_id: 'id-rotated-1' },
+      { id: 'typed-new', name: 'Anexo tecnico.pdf', version: 2, content_hash: 'a'.repeat(64), current: true, source_document_id: 'id-rotated-2', created_at: '2026-02-01T00:00:00Z' },
+    ],
+    [],
+  ).map(document => document.id),
+  ['typed-new'],
+  'two typed current documents with identical content under rotated source_document_id values must collapse to the newest version'
+);
+
 for (const path of ['../server/index.js', '../api/[...path].js']) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
   assert.match(source, /async function refreshTenderDocumentsFromOfficialSource\(database, opportunityId, currentProfile, \{ analyze = true \} = \{\}\)/);

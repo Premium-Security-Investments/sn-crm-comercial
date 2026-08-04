@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../apiClient';
+import { formatDateOnly } from '../dateOnly';
 import { filtersFromAlertsHash, filterCommercialPriorities, priorityContextSummary, priorityHashFiltersAreValid, summarizeCommercialPriorities } from './priority-filters.js';
 
 type VigiaLevel = 'alto' | 'medio' | 'bajo' | 'sin_prioridad';
@@ -45,6 +46,8 @@ function displayDate(value: string | null) {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? 'Sin datos' : date.format(parsed);
 }
+
+function displayDateOnly(value: string | null) { return formatDateOnly(value, 'Sin datos'); }
 
 function dashboardLink(priority: VigiaPriority) {
   const params = new URLSearchParams();
@@ -195,7 +198,7 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
         <div className="vigia-card-value"><small>Valor registrado</small><strong>{Number(priority.offer_value) > 0 ? money.format(priority.offer_value) : 'Valor no registrado'}</strong></div>
         <ul className="vigia-signal-list">{priority.signals.map(signal => <li key={signal.code}><div><strong>{signal.label}</strong><span>{signal.evidence}</span></div><b>{signal.points > 0 ? `+${signal.points}` : 'Dato'}</b></li>)}</ul>
         <div className="vigia-recommendation"><small>Acción sugerida</small><strong>{priority.recommendation}</strong><p>{priority.explanation}</p></div>
-        <div className="vigia-evidence"><span>Actividad: {displayDate(priority.evidence.activity_at)} ({priority.evidence.activity_basis})</span><span>Próxima acción: {displayDate(priority.evidence.next_action_at)}</span><span>Cierre esperado: {displayDate(priority.evidence.expected_close_date)}</span></div>
+        <div className="vigia-evidence"><span>Actividad: {displayDate(priority.evidence.activity_at)} ({priority.evidence.activity_basis})</span><span>Próxima acción: {displayDate(priority.evidence.next_action_at)}</span><span>Cierre esperado: {displayDateOnly(priority.evidence.expected_close_date)}</span></div>
         <footer>{(canOpenDashboard || canOpenOpportunity) && <div className="vigia-card-actions">{canOpenDashboard && <a className="button" href={dashboardLink(priority)}>Ver en Dashboard</a>}{canOpenOpportunity && <a className="button secondary" href={`#/detail/${priority.id}`}>Ver oportunidad</a>}{canOpenOpportunity && <a className="button secondary" href={`#/detail/${priority.id}?focus=interaction`}>Registrar seguimiento</a>}</div>}<div className="vigia-feedback" aria-label="Feedback local"><button className={feedback[priority.id] === 'revisada' ? 'active' : 'secondary'} onClick={() => setFeedback(current => ({ ...current, [priority.id]: 'revisada' }))}>Marcar revisada</button><button className={feedback[priority.id] === 'util' ? 'active' : 'secondary'} onClick={() => setFeedback(current => ({ ...current, [priority.id]: 'util' }))}>Útil</button><button className={feedback[priority.id] === 'no_util' ? 'active' : 'secondary'} onClick={() => setFeedback(current => ({ ...current, [priority.id]: 'no_util' }))}>No útil</button></div></footer>
       </article>)}
     </section>

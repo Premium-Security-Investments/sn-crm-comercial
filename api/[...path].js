@@ -39,7 +39,8 @@ import { createAgt003CopilotRuntime, getAgt003CopilotRuntimeConfig, isAgt003Copi
 import { claimAgt003CopilotRun, computeAgt003CopilotHash, findAgt003CopilotRunById, findAgt003CopilotRunByKey, recordAgt003CopilotFeedback, recordAgt003CopilotFailure, recordAgt003CopilotRun, releaseAgt003CopilotClaim } from '../agt003-copilot-persistence.js';
 import { loadVigiaApprovedAssets } from '../vigia-approved-assets.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
-import { mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
+import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
+import { canonicalizeTenderDocuments } from '../tender-document-canonicalizer.js';
 import { isCriticalTenderDocument } from '../tender-critical-documents.js';
 import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
 import { createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
@@ -2701,7 +2702,7 @@ async function downloadEsuDocument(doc, referer) {
 }
 function esuDocumentId(doc) {
   const match = String(doc?.url || '').match(/\/procesos\/descargar\/(\d+)/i);
-  return match ? `esu-${match[1]}` : createHash('sha256').update(String(doc?.url || doc?.name || Date.now())).digest('hex').slice(0, 16);
+  return match ? `esu-${match[1]}` : deterministicDocumentFallbackId({ name: doc?.name, url: doc?.url }).slice(0, 16);
 }
 async function saveTenderDocumentBuffer(database, opportunityId, file, currentProfile, sourceMeta = {}) {
   const name = cleanFileName(file.name);
@@ -2748,7 +2749,7 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
       mime_type: doc.extensi_n === 'pdf' ? 'application/pdf' : 'application/octet-stream',
       document_type: normalizeDocumentType('', doc.nombre_archivo),
       source_url: doc.url_descarga_documento.url,
-      source_document_id: String(doc.id_documento || createHash('sha256').update(String(doc.url_descarga_documento.url)).digest('hex').slice(0, 24)),
+      source_document_id: String(doc.id_documento || deterministicDocumentFallbackId({ name: doc.nombre_archivo, url: doc.url_descarga_documento.url }).slice(0, 24)),
       download: () => downloadSecopDocument(doc, officialUrl),
       errorPrefix: 'SECOP'
     }));
@@ -2973,7 +2974,7 @@ function buildTenderProcessingWorkerDeps(database) {
         const name = nameGetter(doc);
         const url = sourceLabel === 'SECOP II' ? doc.url_descarga_documento.url : doc.url;
         const sourceDocumentId = normalizeTenderSourceDocumentId(sourceLabel === 'SECOP II'
-          ? String(doc.id_documento || createHash('sha256').update(String(url)).digest('hex').slice(0, 24))
+          ? String(doc.id_documento || deterministicDocumentFallbackId({ name: doc.nombre_archivo, url }).slice(0, 24))
           : esuDocumentId(doc));
         return { source: sourceLabel, sourceDocumentId, sourceUrl: url, name, critical: isCriticalTenderDocument(name) };
       });
@@ -3042,11 +3043,11 @@ function buildTenderProcessingWorkerDeps(database) {
     chunkDocuments: async ({ jobId, tenderId, opportunityId, snapshotId }) => {
       const actor = await getTenderProcessingJobActor(database, jobId);
       const versionsResponse = await database.from('psi_tender_document_versions')
-        .select('id,source_document_id,name,document_type,version,content_hash,extracted_text,current')
+        .select('id,source_document_id,name,document_type,version,content_hash,extracted_text,current,created_at')
         .eq('opportunity_id', opportunityId)
         .eq('current', true);
       if (versionsResponse.error) throw versionsResponse.error;
-      const currentVersions = versionsResponse.data || [];
+      const currentVersions = canonicalizeTenderDocuments(versionsResponse.data || []);
 
       const failedItemsResponse = await database.from('psi_tender_document_import_items')
         .select('source_document_id')

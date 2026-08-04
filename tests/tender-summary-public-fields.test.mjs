@@ -46,7 +46,9 @@ assert.match(publicBlock, /tenderAnalysisMethodLabel\(tenderAnalysis\.producer\)
 assert.match(main, /import\s*\{[^}]*tenderAnalysisMethodLabel[^}]*\}\s*from\s*'\.\/tenders\/tenderDecisionBrief'/, 'main.tsx debe importar el humanizador de productor existente.');
 
 // Días restantes must be computed from the same date shown as "Cierre oficial" (expected_close_date).
-assert.match(publicBlock, /label="Cierre oficial" value=\{fmtDate\(o\.expected_close_date\)\}/);
+// Postgres date-only values must use the timezone-safe formatter; the generic timestamp
+// formatter shifts 2026-08-06 to 05/08 in America/Bogota.
+assert.match(publicBlock, /label="Cierre oficial" value=\{fmtDateOnly\(o\.expected_close_date\)\}/);
 assert.match(publicBlock, /label="Días restantes" value=\{tenderDaysRemainingLabel\(o\.expected_close_date\)\}/);
 assert.match(main, /function tenderDaysRemainingLabel\(/, 'Debe existir el helper de días restantes.');
 

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { canonicalizeTenderDocuments } from './tender-document-canonicalizer.js';
 
 const MAX_DOCUMENT_BYTES = 50 * 1024 * 1024;
 const MAX_EXTRACTED_TEXT_BYTES = 10 * 1024 * 1024;
@@ -113,10 +114,25 @@ export async function runOptionalTenderAnalysis({ analyze, loadCurrentDocuments,
 
 export function mergeTenderDocumentRecords(typedDocuments = [], legacyDocuments = []) {
   const typedSourceIds = new Set(typedDocuments.map(document => String(document.source_document_id || '').trim()).filter(Boolean));
-  return [...typedDocuments, ...legacyDocuments.filter(document => {
+  const merged = [...typedDocuments, ...legacyDocuments.filter(document => {
     const sourceDocumentId = String(document.source_document_id || '').trim();
     return !sourceDocumentId || !typedSourceIds.has(sourceDocumentId);
   })];
+  return canonicalizeTenderDocuments(merged);
+}
+
+// Deterministic, immutable-field-only fallback identifier for official documents that
+// have no stable id from their source (e.g. SECOP's id_documento, or ESU's
+// /procesos/descargar/<id> URL segment). Prefers the document's filename -- stable
+// across refreshes -- over its download URL, which may carry a rotating/expiring
+// token; hashing the URL alone would mint a new id (and a new "current" duplicate)
+// every time that token rotated even though the file itself never changed. Never
+// falls back to a clock or randomness: with no stable field available, callers must
+// treat the document as unidentifiable rather than mint a non-deterministic id.
+export function deterministicDocumentFallbackId({ name, url } = {}) {
+  const seed = String(name ?? '').trim() || String(url ?? '').trim();
+  if (!seed) throw new Error('El documento no tiene identidad estable (sin nombre ni URL) para derivar un identificador.');
+  return createHash('sha256').update(seed).digest('hex');
 }
 
 export function summarizeTenderDocumentRefresh(results = []) {
