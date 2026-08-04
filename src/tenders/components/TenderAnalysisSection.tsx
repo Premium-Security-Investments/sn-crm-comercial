@@ -176,6 +176,8 @@ type TenderAnalysisSectionProps = {
   busy: boolean;
   canRunPreview: boolean;
   onAnalyzePreview: () => void;
+  statusText?: string;
+  statusTone?: 'status' | 'error';
   analysisEngine?: TenderDocumentsPayload['analysis_engine'];
   questionResponses?: TenderQuestionResponse[];
   canAnswerQuestions?: boolean;
@@ -251,7 +253,7 @@ function QuestionResponseCard({ question, analysisRunId, responses, canAnswer, d
   </article>;
 }
 
-export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview, onAnalyzePreview, analysisEngine, questionResponses = [], canAnswerQuestions = false, onSaveQuestionResponse }: TenderAnalysisSectionProps) {
+export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview, onAnalyzePreview, statusText = '', statusTone = 'status', analysisEngine, questionResponses = [], canAnswerQuestions = false, onSaveQuestionResponse }: TenderAnalysisSectionProps) {
   const strengths = analysis?.strengths ?? analysis?.commercial_fit?.positives ?? [];
   const weaknesses = analysis?.weaknesses ?? analysis?.blockers ?? analysis?.commercial_fit?.concerns ?? [];
   const questions = (analysis?.questions ?? []).map(normalizeQuestion);
@@ -281,6 +283,7 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
     {analysis && isValidLegalEvidence(analysis.legal_evidence) && <LegalFindingsPanel findings={(analysis.legal_findings ?? []).filter(isValidLegalFinding)} evidence={analysis.legal_evidence}/>}
     {analysisEngine?.fallback && <div className="notice" role="status"><strong>Fallback seguro aplicado.</strong> Vig-IA no estuvo disponible ({analysisEngine.reason === 'not_configured' ? 'no configurado' : 'servicio no disponible'}); se conservó el preanálisis determinístico por reglas.</div>}
     {analysisEngine?.used === 'AGT-002' && <div className="notice" role="status"><strong>Revisión humana obligatoria.</strong> Vig-IA produjo una recomendación preliminar{analysisEngine.reused ? ' reutilizada por idempotencia' : ''}; no autoriza GO / NO GO.</div>}
+    {statusText && <div className={statusTone === 'error' ? 'error' : 'notice'} role={statusTone === 'error' ? 'alert' : 'status'}>{statusText}</div>}
     <div className="tender-analysis-actions">
       {canRunPreview && <button type="button" className="tender-analysis-primary-cta" onClick={onAnalyzePreview} disabled={busy || !hasDocuments}>{busy ? 'Procesando…' : actionLabel}</button>}
       {analysis && <small>Productor real: {tenderAnalysisMethodLabel(analysis.producer)} · {tenderAnalysisProducerDisclosure(analysis.producer)}</small>}

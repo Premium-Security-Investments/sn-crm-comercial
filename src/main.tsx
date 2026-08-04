@@ -829,6 +829,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
   const [payload, setPayload] = useState<TenderDocumentsPayload>({ documents: [], analysis: null, analyses: [] });
   const [processingStatus, setProcessingStatus] = useState<TenderProcessingStatus | null>(null);
   const [statusText, setStatusText] = useState('');
+  const [analysisStatus, setAnalysisStatus] = useState<{ message: string; tone: 'status' | 'error' }>({ message: '', tone: 'status' });
   const [refreshResult, setRefreshResult] = useState<TenderDocumentRefreshResult | null>(null);
   const [busy, setBusy] = useState(false);
   const requestVersionRef = useRef(0);
@@ -866,7 +867,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
   useEffect(() => {
     activeOpportunityRef.current = opportunity.id; requestVersionRef.current += 1;
     processingStatusRef.current = null; terminalReloadedJobRef.current = null;
-    setPayload({ documents: [], analysis: null, analyses: [] }); setProcessingStatus(null); setRefreshResult(null); setStatusText(''); setBusy(false); onAnalysisChanged?.(null); onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
+    setPayload({ documents: [], analysis: null, analyses: [] }); setProcessingStatus(null); setRefreshResult(null); setStatusText(''); setAnalysisStatus({ message: '', tone: 'status' }); setBusy(false); onAnalysisChanged?.(null); onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
     void loadDocuments().catch(err => { if (activeOpportunityRef.current === opportunity.id) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'error', message }); } });
     void loadProcessingStatus().catch(err => { if (activeOpportunityRef.current === opportunity.id) setStatusText(err instanceof Error ? err.message : String(err)); });
     const processingTimer = window.setInterval(() => void loadProcessingStatus().catch(() => undefined), 10_000);
@@ -893,12 +894,18 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
   };
 
   const analyzeDocumentsWithAgt002 = async () => {
-    setBusy(true); setStatusText('Analizando con Vig-IA; la revisión humana sigue siendo obligatoria…');
+    setBusy(true);
+    setAnalysisStatus({ message: 'Analizando con Vig-IA; la revisión humana sigue siendo obligatoria…', tone: 'status' });
     try {
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-analyze-agent-preview', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
       setPayload(data); onAnalysisChanged?.(data.analysis || null);
-      setStatusText(data.analysis_engine?.fallback ? 'Vig-IA no estuvo disponible; se aplicó fallback seguro por reglas.' : 'Vig-IA completó el análisis. La recomendación requiere revisión humana.');
-    } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
+      setAnalysisStatus({
+        message: data.analysis_engine?.fallback ? 'Vig-IA no estuvo disponible; se aplicó fallback seguro por reglas.' : 'Vig-IA completó el análisis. La recomendación requiere revisión humana.',
+        tone: 'status',
+      });
+    } catch (err) {
+      setAnalysisStatus({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
+    }
     finally { setBusy(false); }
   };
   const saveQuestionResponse = async (input: TenderQuestionResponseInput) => {
@@ -951,7 +958,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
   return <div id="tender-document-review" className="tender-guided-review" tabIndex={-1} ref={focusTargetRef}>
     {processingVisible && processingStatus && <div className="notice" role="status"><strong>{processingActive ? 'Procesando documentos en segundo plano' : tenderProcessingLabel(processingStatus.status)}</strong><p>{tenderProcessingLabel(processingStatus.status)}{processingStatus.current_step ? ` · Paso técnico: ${processingStatus.current_step}` : ''}. Detectados {processingStatus.counts.discovered}; procesados {processingStatus.counts.processed}; pendientes {processingPending}; importados {processingStatus.counts.imported}; sin cambios {processingStatus.counts.unchanged}; fallidos {processingStatus.counts.failed}.</p>{processingStatus.snapshot_id && <p>Snapshot persistido: {processingStatus.snapshot_id}</p>}{processingStatus.analysis_run_id && <p>Análisis persistido: {processingStatus.analysis_run_id}</p>}{processingStatus.last_error_message && <p>{processingStatus.last_error_message}</p>}{processingStatus.failed_items.length > 0 && <ul>{processingStatus.failed_items.map(item => <li key={item.id}><strong>{item.name}</strong>: {item.last_error_message || item.last_error_code || item.status}</li>)}</ul>}{processingRetryable && <button type="button" disabled={busy} onClick={() => void retryDurableProcessing()}>Reintentar</button>}</div>}
     <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} sourceUrl={sourceUrl} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
-    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type !== 'agent'} onSaveQuestionResponse={saveQuestionResponse} />
+    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type !== 'agent'} onSaveQuestionResponse={saveQuestionResponse} />
   </div>;
 }
 function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, onNavigationStateChanged }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void>; onNavigationStateChanged?: (state: TenderPanelState<TenderPreparationNavigationValue>) => void }) {
