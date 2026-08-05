@@ -38,28 +38,47 @@ export async function ensureKatherineCompanyPermission({ env = process.env, fetc
   if (matches.length !== 1) throw new Error(`Expected exactly one active human Katherine Valencia Buitrago profile; found ${matches.length}.`);
   const targetId = matches[0].id;
 
-  const catalogUrl = `${baseUrl}/rest/v1/psi_access_permissions?select=code,active&code=eq.${BASE_PERMISSION}&active=eq.true`;
+  const baseCatalogUrl = `${baseUrl}/rest/v1/psi_access_permissions?select=code,active&code=eq.${BASE_PERMISSION}&active=eq.true`;
+  const companyCatalogUrl = `${baseUrl}/rest/v1/psi_access_permissions?select=code,active&code=eq.${COMPANY_PERMISSION}`;
   const assignmentsUrl = `${baseUrl}/rest/v1/psi_profile_permissions?select=permission_code&profile_id=eq.${encodeURIComponent(targetId)}`;
-  const [baseCatalog, assignments] = await Promise.all([
-    requestJson(fetchImpl, catalogUrl, { headers: headers(serviceKey) }, 'Base permission lookup'),
+  const [baseCatalog, companyCatalog, assignments] = await Promise.all([
+    requestJson(fetchImpl, baseCatalogUrl, { headers: headers(serviceKey) }, 'Base permission lookup'),
+    requestJson(fetchImpl, companyCatalogUrl, { headers: headers(serviceKey) }, 'Company permission lookup'),
     requestJson(fetchImpl, assignmentsUrl, { headers: headers(serviceKey) }, 'Assignment lookup'),
   ]);
   const currentPermissions = new Set((Array.isArray(assignments) ? assignments : []).map(row => row.permission_code));
   if (!Array.isArray(baseCatalog) || baseCatalog.length !== 1 || !currentPermissions.has(BASE_PERMISSION)) {
     throw new Error('Katherine Valencia Buitrago lacks active base permission licitaciones; no changes applied.');
   }
+  if (!Array.isArray(companyCatalog) || companyCatalog.length > 1) {
+    throw new Error('Company permission catalog lookup returned an invalid response; no changes applied.');
+  }
+  if (companyCatalog.length === 1 && companyCatalog[0].active !== true) {
+    throw new Error('Permission licitaciones_empresa is inactive; refusing to reactivate it.');
+  }
 
-  const permissionUrl = `${baseUrl}/rest/v1/psi_access_permissions?on_conflict=code`;
-  await requestJson(fetchImpl, permissionUrl, {
-    method: 'POST',
-    headers: headers(serviceKey, 'resolution=merge-duplicates,return=minimal'),
-    body: JSON.stringify({
-      code: COMPANY_PERMISSION,
-      name: 'Mantenimiento de información empresarial',
-      description: 'Permite actualizar la ficha textual de la empresa para Licitaciones. No habilita documentos, custodia, conversión ni GO/NO GO.',
-      active: true,
-    }),
-  }, 'Permission catalog upsert');
+  let catalogCreated = false;
+  if (companyCatalog.length === 0) {
+    const permissionUrl = `${baseUrl}/rest/v1/psi_access_permissions?on_conflict=code`;
+    const insertedCatalog = await requestJson(fetchImpl, permissionUrl, {
+      method: 'POST',
+      headers: headers(serviceKey, 'resolution=ignore-duplicates,return=representation'),
+      body: JSON.stringify({
+        code: COMPANY_PERMISSION,
+        name: 'Mantenimiento de información empresarial',
+        description: 'Permite actualizar la ficha textual de la empresa para Licitaciones. No habilita documentos, custodia, conversión ni GO/NO GO.',
+        active: true,
+      }),
+    }, 'Permission catalog create');
+    if (!Array.isArray(insertedCatalog) || insertedCatalog.length > 1) throw new Error('Permission catalog create returned an invalid response.');
+    catalogCreated = insertedCatalog.length === 1;
+    if (!catalogCreated) {
+      const racedCatalog = await requestJson(fetchImpl, companyCatalogUrl, { headers: headers(serviceKey) }, 'Company permission race lookup');
+      if (!Array.isArray(racedCatalog) || racedCatalog.length !== 1 || racedCatalog[0].active !== true) {
+        throw new Error('Permission licitaciones_empresa was created concurrently but is not active; refusing to continue.');
+      }
+    }
+  }
 
   if (currentPermissions.has(COMPANY_PERMISSION)) return { status: 'already_present' };
 
@@ -83,10 +102,17 @@ export async function ensureKatherineCompanyPermission({ env = process.env, fetc
         target_profile_id: targetId,
         action: 'profile.permission.grant.deployment',
         before_state: { permissions: [...currentPermissions].sort() },
-        after_state: { permissions: [...currentPermissions, COMPANY_PERMISSION].sort(), permission_code: COMPANY_PERMISSION, source: 'deployment_060' },
+        after_state: {
+          permissions: [...currentPermissions, COMPANY_PERMISSION].sort(),
+          permission_code: COMPANY_PERMISSION,
+          source: 'deployment_060',
+          assignment_created: true,
+          catalog_created: catalogCreated,
+        },
       }),
     }, 'Access audit insert');
   } catch (auditError) {
+    const compensationErrors = [];
     const rollbackUrl = `${baseUrl}/rest/v1/psi_profile_permissions?profile_id=eq.${encodeURIComponent(targetId)}&permission_code=eq.${COMPANY_PERMISSION}`;
     try {
       await requestJson(fetchImpl, rollbackUrl, {
@@ -94,7 +120,20 @@ export async function ensureKatherineCompanyPermission({ env = process.env, fetc
         headers: headers(serviceKey, 'return=minimal'),
       }, 'Permission assignment compensation');
     } catch (rollbackError) {
-      throw new AggregateError([auditError, rollbackError], 'Audit failed and permission compensation also failed.');
+      compensationErrors.push(rollbackError);
+    }
+    if (catalogCreated) {
+      try {
+        await requestJson(fetchImpl, `${baseUrl}/rest/v1/psi_access_permissions?code=eq.${COMPANY_PERMISSION}`, {
+          method: 'DELETE',
+          headers: headers(serviceKey, 'return=minimal'),
+        }, 'Permission catalog compensation');
+      } catch (catalogRollbackError) {
+        compensationErrors.push(catalogRollbackError);
+      }
+    }
+    if (compensationErrors.length) {
+      throw new AggregateError([auditError, ...compensationErrors], 'Audit failed and permission compensation also failed.');
     }
     throw auditError;
   }
