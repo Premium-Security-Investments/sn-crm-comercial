@@ -32,7 +32,9 @@ for (const source of [server, api]) {
   assert.match(source, /app\.post\('\/api\/tender-question-response-attachment-upload-url'/, 'Backend debe emitir URLs firmadas de subida directa para adjuntos.');
   assert.match(source, /ensureTenderOpportunity/, 'El endpoint debe comprobar acceso a la oportunidad.');
   assert.match(source, /currentProfile\.id/, 'El actor debe derivarse de sesión, no del body.');
-  assert.match(source, /currentProfile\?\.identity_type === 'agent'/, 'Identidades de agente deben seguir bloqueadas con 403.');
+  const humanGuard = source.match(/function requireHumanTenderIdentity\(profile\) \{[\s\S]*?\n\}/)?.[0] || '';
+  assert.match(humanGuard, /profile\?\.identity_type != null/, 'El guard debe aceptar perfiles humanos legacy sin identity_type explícito.');
+  assert.match(humanGuard, /profile\?\.identity_type !== 'human'/, 'El guard debe bloquear cualquier identidad explícita no humana.');
   assert.match(source, /psi_record_tender_question_response_with_attachments/, 'El registro debe pasar por el RPC 059 con adjuntos.');
   assert.match(source, /randomUUID\(\)/, 'El servidor debe generar el response_id.');
   assert.match(source, /p_evidence_notes:\s*null/, 'El servidor ya no debe persistir evidencia/notas.');
@@ -81,7 +83,8 @@ assert.match(uploadAttachmentsBody[0], /response_ticket:\s*responseTicket/, 'upl
 assert.match(uploadAttachmentsBody[0], /return\s*\{[^}]*response_ticket[^}]*\}/, 'uploadAttachments debe devolver el response_ticket final junto con el response_id.');
 
 assert.match(main, /response_ticket/, 'El contenedor debe reenviar el response_ticket en el POST final de respuestas.');
-assert.match(main, /canAnswerQuestions=\{currentProfile\.identity_type === 'human'\}/, 'La UI debe mostrar el formulario únicamente a identidades humanas, igual que el backend.');
+assert.match(main, /canAnswerQuestions=\{currentProfile\.identity_type == null \|\| currentProfile\.identity_type === 'human'\}/, 'La UI debe mostrar el formulario a humanos explícitos y perfiles humanos legacy, igual que el backend.');
+assert.doesNotMatch(main, /canAnswerQuestions=\{currentProfile\.identity_type === 'human'\}/, 'La comparación estricta no debe ocultar el formulario a perfiles humanos legacy.');
 const saveQuestionResponseBody = main.match(/const saveQuestionResponse = async[\s\S]*?\n {2}\};/);
 assert.ok(saveQuestionResponseBody, 'Debe existir saveQuestionResponse en el contenedor.');
 assert.match(saveQuestionResponseBody[0], /response_ticket/, 'saveQuestionResponse debe incluir response_ticket en el cuerpo del POST final.');

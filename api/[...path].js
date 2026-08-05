@@ -2306,7 +2306,7 @@ function requireTenderQuestionResponseTicket(ticket, context) {
   }
 }
 function requireHumanTenderIdentity(profile) {
-  if (profile?.identity_type !== 'human') {
+  if (profile?.identity_type != null && profile?.identity_type !== 'human') {
     const error = new Error('Las respuestas humanas de licitaciones no están disponibles para esta identidad.');
     error.status = 403;
     throw error;

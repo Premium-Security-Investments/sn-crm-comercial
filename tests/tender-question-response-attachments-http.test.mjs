@@ -9,6 +9,7 @@ const HUMAN_ID = '33333333-3333-4333-8333-333333333333';
 const AGENT_ID = '44444444-4444-4444-8444-444444444444';
 const HUMAN_ID_2 = '55555555-5555-4555-8555-555555555555';
 const NO_IDENTITY_ID = '66666666-6666-4666-8666-666666666666';
+const NULL_IDENTITY_ID = '77777777-7777-4777-8777-777777777777';
 const TEST_SERVICE_KEY = 'test-service-key';
 
 function json(res, status, value) {
@@ -72,6 +73,12 @@ const actors = {
   'no-identity-token': {
     user: { id: 'no-identity-auth', email: 'sistema@example.test' },
     profile: { id: NO_IDENTITY_ID, full_name: 'Sistema', microsoft_email: 'sistema@example.test', auth_user_id: 'no-identity-auth', role: 'admin', active: true },
+    areas: [{ area_code: 'licitaciones', subarea_code: null }],
+    permissions: [{ permission_code: 'licitaciones' }],
+  },
+  'null-identity-token': {
+    user: { id: 'null-identity-auth', email: 'legacy@example.test' },
+    profile: { id: NULL_IDENTITY_ID, full_name: 'Legacy', microsoft_email: 'legacy@example.test', auth_user_id: 'null-identity-auth', role: 'admin', active: true, identity_type: null },
     areas: [{ area_code: 'licitaciones', subarea_code: null }],
     permissions: [{ permission_code: 'licitaciones' }],
   },
@@ -232,15 +239,25 @@ try {
       });
       assert.equal(agentBlockedPost.status, 403, `backend ${index} blocks agent identities from recording responses`);
 
-      const noIdentityBlocked = await requestJson(port, '/api/tender-question-response-attachment-upload-url', 'no-identity-token', 'POST', {
+      const noIdentityUpload = await requestJson(port, '/api/tender-question-response-attachment-upload-url', 'no-identity-token', 'POST', {
         opportunity_id: OPPORTUNITY_ID, attachment_index: 0, name: 'x.pdf', mime_type: 'application/pdf', size: 10,
       });
-      assert.equal(noIdentityBlocked.status, 403, `backend ${index} requires identity_type === 'human' exactly (missing identity_type is rejected, not just 'agent')`);
+      assert.equal(noIdentityUpload.status, 200, `backend ${index} accepts a legacy human profile without identity_type`);
 
-      const noIdentityBlockedPost = await requestJson(port, '/api/tender-question-responses', 'no-identity-token', 'POST', {
+      const noIdentityPost = await requestJson(port, '/api/tender-question-responses', 'no-identity-token', 'POST', {
         opportunity_id: OPPORTUNITY_ID, analysis_run_id: RUN_ID, question_id: 'q-1', question_text: '¿Existe RUP?', status: 'resolved', response: 'Sí.',
       });
-      assert.equal(noIdentityBlockedPost.status, 403, `backend ${index} requires identity_type === 'human' exactly on the final POST too`);
+      assert.equal(noIdentityPost.status, 201, `backend ${index} accepts the final response from a legacy human profile without identity_type`);
+
+      const nullIdentityUpload = await requestJson(port, '/api/tender-question-response-attachment-upload-url', 'null-identity-token', 'POST', {
+        opportunity_id: OPPORTUNITY_ID, attachment_index: 0, name: 'x.pdf', mime_type: 'application/pdf', size: 10,
+      });
+      assert.equal(nullIdentityUpload.status, 200, `backend ${index} accepts a legacy human profile with identity_type null`);
+
+      const nullIdentityPost = await requestJson(port, '/api/tender-question-responses', 'null-identity-token', 'POST', {
+        opportunity_id: OPPORTUNITY_ID, analysis_run_id: RUN_ID, question_id: 'q-1', question_text: '¿Existe RUP?', status: 'resolved', response: 'Sí.',
+      });
+      assert.equal(nullIdentityPost.status, 201, `backend ${index} accepts the final response from a legacy human profile with identity_type null`);
 
       const badMime = await requestJson(port, '/api/tender-question-response-attachment-upload-url', 'human-token', 'POST', {
         opportunity_id: OPPORTUNITY_ID, attachment_index: 0, name: 'x.zip', mime_type: 'application/zip', size: 10,
