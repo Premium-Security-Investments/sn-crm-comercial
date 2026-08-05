@@ -1,14 +1,7 @@
 import { useState } from 'react';
 import { normalizeTenderEvidence, tenderAnalysisMethodLabel, tenderAnalysisProducerDisclosure, tenderDecisionStatusTone, tenderNextAction } from '../tenderDecisionBrief';
 import { tenderRecommendationLabel } from '../tenderDecisionGate';
-import type { TenderAnalysisFinding, TenderDocumentAnalysis, TenderDocumentRecord, TenderDocumentsPayload, TenderEvidenceCoverage, TenderEvidenceOmissionReason, TenderLegalCitation, TenderLegalEvidence, TenderLegalFinding, TenderLegalFindingClassification, TenderQuestionResponse, TenderQuestionResponseInput, TenderQuestionResponseStatus } from '../types';
-
-const EVIDENCE_OMISSION_REASON_LABELS: Record<TenderEvidenceOmissionReason, string> = {
-  budget_exhausted: 'Presupuesto de evidencia agotado',
-  lower_relevance: 'Relevancia menor frente a la evidencia usada',
-  superseded_for_current_requirement: 'Reemplazado por una adenda vigente',
-  gap_unavailable: 'Documento no disponible para extracción',
-};
+import type { TenderAnalysisFinding, TenderDocumentAnalysis, TenderDocumentRecord, TenderDocumentsPayload, TenderEvidenceCoverage, TenderLegalCitation, TenderLegalEvidence, TenderLegalFinding, TenderLegalFindingClassification, TenderQuestionResponse, TenderQuestionResponseInput, TenderQuestionResponseStatus } from '../types';
 
 function isValidEvidenceCoverage(value: unknown): value is TenderEvidenceCoverage {
   if (!value || typeof value !== 'object') return false;
@@ -20,42 +13,17 @@ function isValidEvidenceCoverage(value: unknown): value is TenderEvidenceCoverag
     && Array.isArray(coverage.coverage_manifest?.by_requirement);
 }
 
-function EvidenceCoveragePanel({ coverage, documents }: { coverage: TenderEvidenceCoverage; documents: TenderDocumentRecord[] }) {
-  const requirements = coverage.coverage_manifest.by_requirement;
-  const totalRequirements = requirements.length;
-  const coveredRequirements = requirements.filter(requirement => requirement.status === 'covered').length;
-  const usedCount = coverage.selected_chunks.length;
-  const omittedCount = coverage.omitted_chunks.length;
-  return <section className="tender-evidence-coverage-wrapper" aria-label="Cobertura de evidencia documental">
-    {coverage.material_omissions && <div className="error" role="alert"><strong>Este análisis no es integral.</strong> Hay omisiones materiales de evidencia; requiere revisión humana de las omisiones antes de considerarse completo.</div>}
-    <details className="tender-decision-brief-help tender-evidence-coverage">
-      <summary>
-        <span className="tender-evidence-coverage-summary-content">
-          <span>Cobertura de evidencia</span>
-          <span className="tender-evidence-coverage-metrics">
-            <span><strong>{usedCount}</strong> Usados</span>
-            <span><strong>{coveredRequirements}/{totalRequirements}</strong> Requisitos cubiertos</span>
-            <span><strong>{omittedCount}</strong> Omitidos</span>
-          </span>
-        </span>
-      </summary>
-      <div className="tender-evidence-coverage-content">
-      {usedCount > 0 && <ul className="tender-evidence-coverage-list">
-        {coverage.selected_chunks.map(chunk => {
-          const document = documents.find(item => item.id === chunk.document_id);
-          const label = `${chunk.name} · pág. ${chunk.page}, sec. ${chunk.section} · v${chunk.version} · ${chunk.precedence === 'addendum' ? 'Adenda' : 'Base'}${chunk.superseded_by_addendum ? ' (superada por adenda)' : ''}`;
-          return <li key={chunk.evidence_ref}>{document?.signed_url ? <a href={document.signed_url} target="_blank" rel="noopener noreferrer">{label}</a> : <span>{label}</span>}</li>;
-        })}
-      </ul>}
-      {omittedCount > 0 && <details className="tender-evidence-coverage-omissions"><summary>Omisiones ({omittedCount})</summary><ul>
-        {coverage.omitted_chunks.map((omission, index) => {
-          const document = documents.find(item => item.id === omission.document_id);
-          const label = document?.name || omission.document_type || omission.document_id;
-          return <li key={`${omission.document_id}-${index}`}>{label}: {EVIDENCE_OMISSION_REASON_LABELS[omission.reason] || omission.reason}</li>;
-        })}
-      </ul></details>}
-      </div>
-    </details>
+function EvidenceCoverageStrip({ coverage }: { coverage: TenderEvidenceCoverage }) {
+  const used = coverage.selected_chunks?.length || 0;
+  const requirements = coverage.coverage_manifest?.by_requirement || [];
+  const covered = requirements.filter(item => item.status === 'covered').length;
+  const total = requirements.length;
+  return <section aria-label="Cobertura de evidencia documental">
+    {coverage.material_omissions && <div className="error" role="alert"><strong>Este análisis no es integral.</strong> Hay omisiones materiales de evidencia; requiere revisión humana antes de considerarse completo.</div>}
+    <div className="tender-evidence-coverage-strip" aria-label="Cobertura de evidencia">
+      <span><strong>{used}</strong> referencias utilizadas</span>
+      <span><strong>{covered} de {total}</strong> requisitos con evidencia</span>
+    </div>
   </section>;
 }
 
@@ -271,12 +239,9 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
   const stale = Boolean(analysis && !analysis.current);
   const state = !hasDocuments ? 'Sin documentos' : failed ? 'Análisis fallido' : stale ? 'Análisis desactualizado' : !analysis ? 'Análisis pendiente' : 'Análisis vigente';
   const actionLabel = failed || stale ? 'Volver a analizar con Vig-IA' : analysis ? 'Actualizar con Vig-IA' : 'Analizar con Vig-IA';
-  const citedEvidence = [...new Set([analysis?.strengths, analysis?.weaknesses, analysis?.blockers, analysis?.questions, analysis?.unverified]
-    .flatMap(items => Array.isArray(items) ? items : [])
-    .flatMap(item => typeof item === 'object' && item && Array.isArray(item.evidence_refs) ? item.evidence_refs : []))];
 
   return <section id="tender-analysis" className="tender-analysis-section tender-detail-anchor" aria-labelledby="tender-analysis-title">
-    <header className="tender-analysis-header"><div><span className="eyebrow">Paso previo a la decisión humana</span><h3 id="tender-analysis-title">Análisis con Vig-IA</h3><p>Organiza la evidencia disponible y señala pendientes. No registra ni autoriza GO / NO GO.</p></div><div className={`tender-analysis-state state-${failed ? 'failed' : stale ? 'stale' : analysis ? 'ready' : 'pending'}`}><strong>{state}</strong>{analysis && <span>{tenderAnalysisMethodLabel(analysis.producer)}</span>}</div></header>
+    <header className="tender-analysis-header"><div><span className="eyebrow">Paso previo a la decisión humana</span><h3 id="tender-analysis-title">Análisis con Vig-IA</h3><p>Organiza la evidencia disponible y señala pendientes. No registra ni autoriza GO / NO GO.</p></div><div className={`tender-analysis-state state-${failed ? 'failed' : stale ? 'stale' : analysis ? 'ready' : 'pending'}`}><strong>{state}</strong></div></header>
     {!hasDocuments && <div className="document-empty-state"><strong>Sin documentos</strong><span>Actualice o cargue documentos antes de analizar con Vig-IA.</span></div>}
     {hasDocuments && !analysis && <div className="document-empty-state"><strong>Análisis pendiente</strong><span>Hay documentos vigentes, pero todavía no existe una conclusión preliminar para revisar.</span></div>}
     {failed && <div className="error" role="alert"><strong>Análisis fallido.</strong> El último intento no produjo una conclusión utilizable. Puede intentarlo nuevamente sin afectar la decisión humana.</div>}
@@ -284,18 +249,14 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
     {analysis && analysis.status !== 'failed' && <article className="tender-decision-brief" aria-label="Conclusión preliminar de licitación">
       <header className="tender-decision-brief-head"><div><small>Recomendación preliminar</small><strong>{tenderRecommendationLabel(analysis.recommendation)}</strong><p>{analysis.summary || 'Sin resumen documental disponible.'}</p></div><div className="tender-decision-brief-status"><span className={`badge badge-${tenderDecisionStatusTone(analysis.recommendation)}`}>{analysis.current ? 'Vigente' : 'Obsoleto'}</span><span>{tenderAnalysisMethodLabel(analysis.producer)}</span><small>{analysis.completed_at ? `Actualizado: ${new Date(analysis.completed_at).toLocaleString('es-CO')}` : analysis.generated_at ? `Generado: ${new Date(analysis.generated_at).toLocaleString('es-CO')}` : 'Fecha no informada'}</small></div></header>
       <div className="tender-decision-brief-grid"><section><h4>Fortalezas</h4><EvidenceList items={strengths} empty="Sin fortalezas documentales registradas."/></section><section><h4>Debilidades y bloqueadores</h4><EvidenceList items={weaknesses} empty="Sin debilidades o bloqueadores documentales registrados."/></section><section className="tender-question-responses"><h4>Dudas abiertas</h4>{questions.length ? <div className="tender-question-list">{questions.map(question => <QuestionResponseCard key={question.id} question={question} analysisRunId={analysis.run_id} responses={questionResponses.filter(item => item.question_id === question.id)} canAnswer={canAnswerQuestions} disabled={busy} onSave={onSaveQuestionResponse}/>)}</div> : <p className="muted">Sin dudas abiertas registradas.</p>}</section><section><h4>Información no verificada</h4><EvidenceList items={unverified} empty="Sin información no verificada registrada."/></section><section className="tender-decision-next-action"><h4>Siguiente acción</h4><p>{tenderNextAction(analysis.next_action) || 'Sin siguiente acción documentada; revisar el expediente con Licitaciones.'}</p></section></div>
-      <details className="tender-decision-brief-help"><summary>Cómo funciona</summary><p>Esta conclusión preliminar organiza únicamente la evidencia disponible. No autoriza GO / NO GO; una persona con permiso formal debe tomar esa decisión.</p></details>
-      {citedEvidence.length > 0 && <details className="tender-decision-brief-help"><summary>Citas de evidencia ({citedEvidence.length})</summary><ul>{citedEvidence.map(reference => <li key={reference}><code>{reference}</code></li>)}</ul></details>}
     </article>}
-    {analysis && isValidEvidenceCoverage(analysis.evidence_coverage) && <EvidenceCoveragePanel coverage={analysis.evidence_coverage} documents={documents}/>}
+    {analysis && isValidEvidenceCoverage(analysis.evidence_coverage) && <EvidenceCoverageStrip coverage={analysis.evidence_coverage}/>}
     {analysis && isValidLegalEvidence(analysis.legal_evidence) && <LegalFindingsPanel findings={(analysis.legal_findings ?? []).filter(isValidLegalFinding)} evidence={analysis.legal_evidence}/>}
     {analysisEngine?.fallback && <div className="notice" role="status"><strong>Fallback seguro aplicado.</strong> Vig-IA no estuvo disponible ({analysisEngine.reason === 'not_configured' ? 'no configurado' : 'servicio no disponible'}); se conservó el preanálisis determinístico por reglas.</div>}
-    {analysisEngine?.used === 'AGT-002' && <div className="notice" role="status"><strong>Revisión humana obligatoria.</strong> Vig-IA produjo una recomendación preliminar{analysisEngine.reused ? ' reutilizada por idempotencia' : ''}; no autoriza GO / NO GO.</div>}
     {statusText && <div className={statusTone === 'error' ? 'error' : 'notice'} role={statusTone === 'error' ? 'alert' : 'status'}>{statusText}</div>}
     <div className="tender-analysis-actions">
       {canRunPreview && <button type="button" className="tender-analysis-primary-cta" onClick={onAnalyzePreview} disabled={busy || !hasDocuments}>{busy ? 'Procesando…' : actionLabel}</button>}
-      {analysis && <small>Productor real: {tenderAnalysisMethodLabel(analysis.producer)} · {tenderAnalysisProducerDisclosure(analysis.producer)}</small>}
+      {analysis && <small>{tenderAnalysisProducerDisclosure(analysis.producer)}</small>}
     </div>
-    {canRunPreview && <details className="tender-analysis-technical"><summary>Detalles técnicos y auditoría (Vig-IA)</summary><p>Vig-IA se ejecuta mediante el motor AGT-002 con revisión humana obligatoria. Nombre técnico de esta acción para auditoría: «Ejecutar AGT-002 Preview».</p></details>}
   </section>;
 }
