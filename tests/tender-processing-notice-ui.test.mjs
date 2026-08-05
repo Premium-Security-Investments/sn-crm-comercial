@@ -2,25 +2,57 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
-const processingStatus = readFileSync(new URL('../src/tenders/processingStatus.ts', import.meta.url), 'utf8');
+const analysisSection = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8');
 
-assert.match(main, /isTenderProcessingSuperseded/, 'La UI debe importar la regla comprobable de supersesión.');
-assert.match(main, /const processingSupersededByAnalysis\s*=\s*isTenderProcessingSuperseded\(processingStatus, analysis\)/, 'La UI debe evaluar juntos el job y el análisis vigente.');
-assert.match(processingStatus, /waiting_agent_capacity/, 'Una espera de capacidad antigua debe poder quedar superada.');
-assert.match(processingStatus, /retry_wait/, 'Un reintento antiguo debe poder quedar superado.');
-assert.match(processingStatus, /analysis\.status\s*!==\s*['"]completed['"]/, 'Sólo un análisis completado puede ocultar el aviso anterior.');
-assert.match(processingStatus, /analysis\.current\s*!==\s*true/, 'El análisis debe estar marcado explícitamente como vigente.');
-assert.match(main, /processingVisible[\s\S]{0,240}!processingSupersededByAnalysis/, 'La visibilidad debe excluir jobs ya superados.');
+const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const noticeStart = main.indexOf('{processingVisible && processingStatus');
-const noticeEnd = main.indexOf('<TenderDocumentSection', noticeStart);
-assert.ok(noticeStart >= 0 && noticeEnd > noticeStart, 'Debe existir el aviso de procesamiento.');
-const notice = main.slice(noticeStart, noticeEnd);
-assert.match(notice, /<details[^>]*tender-processing-technical/, 'Paso e identificadores deben quedar en un detalle técnico cerrado.');
-assert.match(notice, /<summary>Detalles técnicos del procesamiento<\/summary>/, 'El detalle debe tener un rótulo comprensible.');
-assert.doesNotMatch(notice, /<details[^>]*tender-processing-technical[^>]*\bopen\b/, 'Los detalles técnicos deben iniciar cerrados.');
-assert.match(notice, /processingStatus\.current_step/, 'El paso técnico se conserva para auditoría.');
-assert.match(notice, /processingStatus\.snapshot_id/, 'El snapshot se conserva para auditoría.');
-assert.match(notice, /processingStatus\.analysis_run_id/, 'El run de análisis se conserva para auditoría.');
+// Regression: a technical banner with raw counts/step/ids used to render above
+// TenderAnalysisSection's own "Análisis pendiente" placeholder, duplicating the same
+// durable-status information. main.tsx must no longer render that banner at all — the
+// durable signal is consolidated inside TenderAnalysisSection as a single body message.
+for (const forbidden of [
+  'tender-processing-technical',
+  'Detalles técnicos del procesamiento',
+  'Detectados {',
+  'procesados {',
+  'pendientes {',
+  'importados {',
+  'sin cambios {',
+  'fallidos {',
+  'Paso técnico:',
+  'Snapshot persistido:',
+  'Análisis persistido:',
+  'Procesando documentos en segundo plano',
+]) {
+  assert.doesNotMatch(main, new RegExp(escapeRegExp(forbidden)), `main.tsx no debe volver a mostrar: ${forbidden}`);
+}
+for (const forbidden of ['tender-processing-technical', 'Detalles técnicos del procesamiento']) {
+  assert.doesNotMatch(analysisSection, new RegExp(escapeRegExp(forbidden)), `TenderAnalysisSection no debe reintroducir el detalle técnico: ${forbidden}`);
+}
+
+const start = main.indexOf('function TenderDocumentReviewPanel(');
+const end = main.indexOf('\nfunction TenderOfferPreparationPanel(', start);
+assert.ok(start >= 0 && end > start, 'Debe existir TenderDocumentReviewPanel');
+const coordinator = main.slice(start, end);
+
+assert.doesNotMatch(coordinator, /processingVisible/, 'La visibilidad ya no debe calcularse por separado en el coordinador; la decide la señal única de TenderAnalysisSection.');
+assert.doesNotMatch(coordinator, /isTenderProcessingSuperseded/, 'La supersesión debe consolidarse dentro de la señal derivada, no evaluarse por separado en el coordinador.');
+assert.match(coordinator, /<TenderAnalysisSection[\s\S]*?processingStatus=\{processingStatus\}/, 'El estado durable debe llegar a TenderAnalysisSection aunque analysis sea null.');
+assert.match(coordinator, /<TenderAnalysisSection[\s\S]*?onRetryProcessing=\{/, 'El reintento debe delegarse a la señal única de TenderAnalysisSection.');
+
+// TenderAnalysisSection now owns the single derived signal.
+assert.match(analysisSection, /deriveTenderProcessingPresentation\(processingStatus/, 'La sección de análisis debe consolidar el estado durable con la función pura derivada.');
+assert.match(analysisSection, /processingPresentation\.visible/, 'La sección debe decidir la visibilidad a partir de la señal única.');
+assert.match(analysisSection, /processingPresentation\.showRetry/, 'La sección debe controlar el botón Reintentar desde la señal única.');
+assert.match(analysisSection, /processingPresentation\.primaryAction/, 'La sección debe deshabilitar/ocultar la acción de Vig-IA a partir de la señal única.');
+assert.doesNotMatch(analysisSection, /processingStatus(\?)?\.counts/, 'La sección de análisis no debe leer conteos internos del job.');
+assert.doesNotMatch(analysisSection, /processingStatus(\?)?\.failed_items/, 'La sección de análisis no debe listar ítems fallidos técnicos.');
+assert.doesNotMatch(analysisSection, /processingStatus(\?)?\.current_step/, 'La sección de análisis no debe exponer el paso técnico.');
+assert.doesNotMatch(analysisSection, /processingStatus(\?)?\.snapshot_id/, 'La sección de análisis no debe exponer el snapshot técnico.');
+assert.match(
+  analysisSection,
+  /const state = !hasDocuments \? 'Pendiente' : failed \? 'Análisis fallido' : stale \? 'Análisis desactualizado' : !analysis \? 'Pendiente' : 'Análisis vigente'/,
+  'El encabezado debe usar una etiqueta corta y no duplicar literalmente Sin documentos/Análisis pendiente del bloque corporal.',
+);
 
 console.log('tender processing notice UI checks passed');

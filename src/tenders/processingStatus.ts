@@ -3,8 +3,19 @@ type ProcessingStatusSnapshot = { job_id: string | null; status: string };
 type ProcessingPresentationStatus = {
   job_id: string | null;
   status: string;
+  idempotency_key?: string | null;
   analysis_run_id?: string | null;
   updated_at?: string | null;
+};
+
+export type TenderProcessingPrimaryAction = 'normal' | 'disabled' | 'hidden';
+
+export type TenderProcessingPresentation = {
+  visible: boolean;
+  tone: 'status' | 'error';
+  message: string;
+  primaryAction: TenderProcessingPrimaryAction;
+  showRetry: boolean;
 };
 
 type AnalysisPresentationStatus = {
@@ -62,6 +73,54 @@ export function isTenderProcessingSuperseded(
   return Number.isFinite(analysisCompletedAtMs)
     && Number.isFinite(processingUpdatedAtMs)
     && analysisCompletedAtMs >= processingUpdatedAtMs;
+}
+
+const NO_DURABLE_SIGNAL_STATUSES = new Set(['no_job', 'completed', 'cancelled']);
+const HIDDEN_PRESENTATION: TenderProcessingPresentation = { visible: false, tone: 'status', message: '', primaryAction: 'normal', showRetry: false };
+
+/**
+ * Collapses the durable job status plus the current analysis into the single body signal
+ * TenderAnalysisSection may show — never raw counts/step/ids, and never alongside a
+ * duplicate "Sin documentos"/"Análisis pendiente" placeholder for the same condition.
+ */
+export function deriveTenderProcessingPresentation(
+  processingStatus: ProcessingPresentationStatus | null | undefined,
+  analysis: AnalysisPresentationStatus | null | undefined,
+): TenderProcessingPresentation {
+  if (!processingStatus) return HIDDEN_PRESENTATION;
+  const status = String(processingStatus.status || 'no_job');
+  if (NO_DURABLE_SIGNAL_STATUSES.has(status)) return HIDDEN_PRESENTATION;
+  if (isTenderProcessingSuperseded(processingStatus, analysis)) return HIDDEN_PRESENTATION;
+
+  if (status === 'waiting_agent_capacity') {
+    return {
+      visible: true,
+      tone: 'status',
+      message: 'Vig-IA está esperando capacidad disponible; el análisis continuará automáticamente en cuanto haya cupo, sin necesidad de una nueva acción.',
+      primaryAction: 'disabled',
+      showRetry: false,
+    };
+  }
+
+  if (status === 'retry_wait' || status === 'needs_attention') {
+    return {
+      visible: true,
+      tone: status === 'needs_attention' ? 'error' : 'status',
+      message: status === 'needs_attention'
+        ? 'El procesamiento automático no pudo continuar y requiere intervención humana antes de reintentarlo.'
+        : 'El procesamiento quedó en espera de un reintento automático.',
+      primaryAction: 'hidden',
+      showRetry: Boolean(processingStatus.idempotency_key),
+    };
+  }
+
+  return {
+    visible: true,
+    tone: 'status',
+    message: 'Vig-IA está procesando los documentos de este expediente; el resultado aparecerá aquí automáticamente al finalizar.',
+    primaryAction: 'disabled',
+    showRetry: false,
+  };
 }
 
 export function shouldReloadTenderArtifacts(

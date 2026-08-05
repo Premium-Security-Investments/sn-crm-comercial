@@ -353,6 +353,16 @@ export type TenderAnalysisFinding = string | {
   evidence_refs?: string[];
 };
 export type TenderQuestionResponseStatus = 'pending' | 'resolved' | 'not_applicable';
+export type TenderQuestionResponseAttachment = {
+  id: string;
+  name: string;
+  mime_type: string;
+  size_bytes: number;
+  uploaded_by: string;
+  uploaded_by_name?: string | null;
+  uploaded_at: string;
+  signed_url: string | null;
+};
 export type TenderQuestionResponse = {
   id: string;
   opportunity_id: string;
@@ -365,8 +375,9 @@ export type TenderQuestionResponse = {
   responded_by: string;
   responded_by_name?: string | null;
   responded_at: string;
+  attachments: TenderQuestionResponseAttachment[];
 };
-export type TenderQuestionResponseInput = Pick<TenderQuestionResponse, 'analysis_run_id' | 'question_id' | 'question_text' | 'status' | 'response'> & { evidence_notes?: string | null };
+export type TenderQuestionResponseInput = Pick<TenderQuestionResponse, 'analysis_run_id' | 'question_id' | 'question_text' | 'status' | 'response'>;
 export type TenderGoNoGoDecision = {
   id: string;
   opportunity_id: string;
