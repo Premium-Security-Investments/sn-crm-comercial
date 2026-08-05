@@ -6,7 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import mammoth from 'mammoth';
 import AdmZip from 'adm-zip';
-import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
+import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
 import { createTenderProcessingWorker } from '../tender-processing-worker.js';
 import { createTenderProcessingDrain } from '../tender-processing-drain.js';
@@ -1346,14 +1346,14 @@ function dbTenderToPublic(row) {
   };
 }
 function isConvertedTenderRecord(row) {
-  return row?.internal_status === 'convertida_oportunidad' || Boolean(row?.converted_opportunity_id);
+  return row?.internal_status === 'convertida_oportunidad';
 }
 async function readAllConvertedTenderRows(database) {
   const pageSize = 1000;
   const rows = [];
   for (let from = 0; ; from += pageSize) {
     const result = await database.from('psi_public_tenders').select('*')
-      .or('internal_status.eq.convertida_oportunidad,converted_opportunity_id.not.is.null')
+      .eq('internal_status', 'convertida_oportunidad')
       .order('last_seen_at', { ascending: false })
       .range(from, from + pageSize - 1);
     if (result.error) throw result.error;
@@ -2929,6 +2929,21 @@ async function markTenderOpportunityDiscarded(database, opportunityId, currentPr
   }, currentProfile);
 }
 
+async function exitTenderOpportunity(database, opportunityId, currentProfile, input) {
+  await ensureTenderOpportunity(database, opportunityId, currentProfile);
+  const { data: tender, error } = await database.from('psi_public_tenders')
+    .select('id,internal_status,tracking_updated_at')
+    .eq('converted_opportunity_id', opportunityId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!tender) { const missing = new Error('La licitación vinculada no existe.'); missing.status = 404; throw missing; }
+  return await callTenderOpportunityExit(database, opportunityId, {
+    destination: input?.destination,
+    note: input?.reason,
+    expected_tracking_updated_at: tender.tracking_updated_at,
+  }, currentProfile);
+}
+
 async function resolveTenderPipelineSourceContext(database, opportunityId) {
   const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(opportunitySelect).eq('id', opportunityId).single());
   const sourceUrl = getTenderSourceUrlFromOpportunity(opportunity);
@@ -3959,6 +3974,18 @@ app.post('/api/tender-opportunity-discard', async (req, res) => {
     if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
     res.json(await markTenderOpportunityDiscarded(database, opportunityId, currentProfile, req.body.reason));
   } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-opportunity-exit', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    const opportunityId = String(req.body?.opportunity_id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    res.json(await exitTenderOpportunity(database, opportunityId, currentProfile, req.body || {}));
+  } catch (error) {
+    sendError(res, error, /desactualizado/i.test(error?.message || '') ? 409 : error?.status || 400);
+  }
 });
 
 function cleanOpportunity(body) {

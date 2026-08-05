@@ -17,3 +17,10 @@ export async function api<T>(url: string, options?: RequestInit): Promise<T> {
   }
   return res.json() as Promise<T>;
 }
+
+export async function exitTenderOpportunity(opportunityId: string, destination: 'radar' | 'seguimiento', reason = '') {
+  return api('/api/tender-opportunity-exit', {
+    method: 'POST',
+    body: JSON.stringify({ opportunity_id: opportunityId, destination, reason }),
+  });
+}

@@ -11,11 +11,11 @@ for (const duplicatedTitle of ['Proceso oficial', 'Cronograma y cuantía', 'Expe
   assert.doesNotMatch(tenderBranch, new RegExp(`Panel title="${duplicatedTitle}"`), `${duplicatedTitle} no debe conservar una tarjeta independiente.`);
 }
 assert.match(tenderBranch, /tender-opportunity-summary-grid/, 'El resumen debe usar una cuadrícula compacta específica.');
-assert.match(tenderBranch, /tender-opportunity-technical/, 'Snapshot, productor y estado técnico deben quedar colapsados.');
+assert.doesNotMatch(tenderBranch, /tender-opportunity-technical|label="Snapshot"|label="Productor"|label="Estado técnico"/, 'Snapshot, productor y estado técnico deben eliminarse de la vista operativa.');
 assert.match(tenderBranch, /Sector/, 'Sector debe integrarse al resumen principal.');
 assert.match(tenderBranch, /Ciudad/, 'Ciudad debe integrarse al resumen principal.');
 assert.doesNotMatch(followUp, /Panel title="Datos del proceso"/, 'Seguimiento no debe repetir Datos del proceso.');
 assert.match(styles, /\.tender-opportunity-summary-grid\{[^}]*grid-template-columns:repeat\(auto-fit,minmax\(/, 'El resumen debe ser compacto y responsive.');
-assert.match(styles, /\.tender-opportunity-technical/, 'Los detalles técnicos deben tener estilo secundario dedicado.');
+assert.doesNotMatch(styles, /\.tender-opportunity-technical/, 'No deben quedar estilos huérfanos del bloque técnico eliminado.');
 
 console.log('tender compact opportunity summary checks passed');

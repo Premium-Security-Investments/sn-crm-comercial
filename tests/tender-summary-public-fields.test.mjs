@@ -19,10 +19,10 @@ assert.match(publicBlock, /<Panel title="Resumen de la oportunidad">/, 'Debe exi
 for (const duplicatedGroup of ['Proceso oficial', 'Cronograma y cuantía', 'Gestión interna', 'Expediente y análisis']) {
   assert.doesNotMatch(publicBlock, new RegExp(`<Panel title="${duplicatedGroup}"`), `No debe reaparecer el grupo redundante "${duplicatedGroup}".`);
 }
-assert.match(publicBlock, /<details className="tender-opportunity-technical">/, 'Los datos de auditoría deben conservarse en un detalle secundario.');
+assert.doesNotMatch(publicBlock, /tender-opportunity-technical/, 'Los datos técnicos internos no deben aparecer en la vista operativa.');
 
 // The required labels must exist in the public branch.
-for (const label of ['Entidad', 'Cierre oficial', 'Días restantes', 'Snapshot', 'Productor']) {
+for (const label of ['Entidad', 'Cierre oficial', 'Días restantes']) {
   assert.match(publicBlock, new RegExp(`label="${label}"`), `El resumen público debe incluir el campo "${label}".`);
 }
 
@@ -40,10 +40,9 @@ for (const label of [
 }
 assert.doesNotMatch(privateBlock, /<Panel title="Proceso oficial"/, 'El grid privado no debe reorganizarse en los grupos públicos.');
 
-// Snapshot / Productor must be sourced from the current tender analysis (already used for "Productor real").
-assert.match(publicBlock, /tenderAnalysis\?\.snapshot_id/, 'Snapshot debe venir del análisis vigente.');
-assert.match(publicBlock, /tenderAnalysisMethodLabel\(tenderAnalysis\.producer\)/, 'Productor debe reutilizar el humanizador existente del productor.');
-assert.match(main, /import\s*\{[^}]*tenderAnalysisMethodLabel[^}]*\}\s*from\s*'\.\/tenders\/tenderDecisionBrief'/, 'main.tsx debe importar el humanizador de productor existente.');
+for (const hidden of ['Snapshot', 'Productor', 'Estado técnico']) {
+  assert.doesNotMatch(publicBlock, new RegExp(`label="${hidden}"`), `El resumen público no debe mostrar "${hidden}".`);
+}
 
 // Días restantes must be computed from the same date shown as "Cierre oficial" (expected_close_date).
 // Postgres date-only values must use the timezone-safe formatter; the generic timestamp

@@ -9,14 +9,7 @@ const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 // internal/audit IDs inside collapsible technical details, never as the primary
 // CTA or the headline of a status message.
 assert.match(analysisSection, /Analizar con Vig-IA/, 'El CTA principal visible debe llamarse Vig-IA.');
-assert.match(analysisSection, /<details className="tender-analysis-technical">/, 'El nombre técnico AGT-002 debe vivir en un detalle colapsable.');
-const technicalStart = analysisSection.indexOf('<details className="tender-analysis-technical">');
-const technicalEnd = analysisSection.indexOf('</details>', technicalStart);
-const technicalBlock = analysisSection.slice(technicalStart, technicalEnd);
-assert.match(technicalBlock, /Ejecutar AGT-002 Preview/, 'El identificador técnico interno debe seguir siendo auditable dentro del detalle colapsable.');
-// The literal preview action name must still exist for the existing AGT-002 surface
-// contract, but only inside the technical/collapsible zone above, not as visible CTA text.
-assert.match(analysisSection, /Ejecutar AGT-002 Preview/, 'El identificador técnico debe seguir presente en el archivo (contrato AGT-002 preview).');
+assert.doesNotMatch(analysisSection, /tender-analysis-technical|Ejecutar AGT-002 Preview/, 'El identificador técnico interno no debe renderizarse en la vista operativa.');
 assert.match(analysisSection, /const actionLabel = failed \|\| stale \? 'Volver a analizar con Vig-IA' : analysis \? 'Actualizar con Vig-IA' : 'Analizar con Vig-IA'/, 'El CTA debe cubrir análisis, actualización y reintento usando solo Vig-IA.');
 assert.match(analysisSection, /\{busy \? 'Procesando…' : actionLabel\}/, 'El botón primario debe renderizar la etiqueta canónica calculada.');
 
@@ -28,8 +21,9 @@ assert.doesNotMatch(analysisSection, /\{analysis\.recommendation \|\| 'Requiere 
 // Status/help messages must speak of Vig-IA, not surface "AGT-002" as the visible actor.
 assert.doesNotMatch(analysisSection, /AGT-002 produjo/, 'El mensaje de revisión humana no debe nombrar AGT-002 como actor visible.');
 assert.doesNotMatch(analysisSection, /AGT-002 no estuvo disponible/, 'El mensaje de fallback no debe nombrar AGT-002 como actor visible.');
-assert.match(analysisSection, /Vig-IA produjo una recomendación preliminar/, 'El mensaje de revisión humana debe nombrar a Vig-IA.');
-assert.match(analysisSection, /Vig-IA no estuvo disponible/, 'El mensaje de fallback debe nombrar a Vig-IA.');
+assert.match(analysisSection, /No registra ni autoriza GO \/ NO GO/, 'Debe conservarse una única frase clara sobre autoridad humana.');
+assert.doesNotMatch(analysisSection, /Vig-IA produjo una recomendación preliminar/, 'No debe reaparecer la explicación duplicada de productor en la vista operativa.');
+assert.match(analysisSection, /Vig-IA no estuvo disponible/, 'La limitación material por fallback debe conservar una única señal visible.');
 
 // GO/NO GO panel: the recommendation disclaimer must speak of Vig-IA, not AGT-002.
 assert.doesNotMatch(goNoGoPanel, /AGT-002 recomienda/, 'El panel de decisión no debe mostrar "AGT-002 recomienda" como mensaje principal.');

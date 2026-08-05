@@ -76,6 +76,24 @@ export async function callTenderOpportunityDiscard(database, opportunityId, inpu
   });
 }
 
+const OPPORTUNITY_EXIT_DESTINATIONS = new Set(['radar', 'seguimiento']);
+
+export async function callTenderOpportunityExit(database, opportunityId, input, currentProfile) {
+  const id = requireUuid(opportunityId, 'una oportunidad válida');
+  const actorId = requireUuid(currentProfile?.id, 'un actor válido');
+  rejectClientEventType(input);
+  const destination = String(input?.destination || '').trim();
+  if (!OPPORTUNITY_EXIT_DESTINATIONS.has(destination)) throw trackingError('Destino de salida inválido.');
+
+  return rpc(database, 'psi_exit_tender_opportunity', {
+    p_opportunity_id: id,
+    p_actor_id: actorId,
+    p_destination: destination,
+    p_note: nullableText(input?.note),
+    p_expected_tracking_updated_at: nullableTimestamp(input?.expected_tracking_updated_at, true),
+  });
+}
+
 export async function callTenderOpportunityConversion(database, tenderId, payload, expectedTrackingUpdatedAt, currentProfile) {
   const id = requireUuid(tenderId, 'una licitación válida');
   const actorId = requireUuid(currentProfile?.id, 'un actor válido');
