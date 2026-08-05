@@ -88,7 +88,7 @@ function isAgent(profile) {
 
 function isHuman(profile) {
   return isActiveIdentity(profile)
-    && (!hasOwn(profile, 'identity_type') || profile.identity_type === 'human')
+    && (!hasOwn(profile, 'identity_type') || profile.identity_type == null || profile.identity_type === 'human')
     && hasOwn(profile, 'role')
     && typeof profile.role === 'string'
     && HUMAN_ROLES.has(profile.role);

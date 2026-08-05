@@ -355,6 +355,8 @@ assert.equal(can(agent(), ACTIONS.AI_ANALYSIS_RUN, inheritedTechnicalAuthorizati
 
 assert.equal(can(human('admin', { identity_type: 'unknown' }), ACTIONS.USERS_MANAGE, {}), false, 'identity_type desconocido niega admin');
 assert.equal(can(profile('admin'), ACTIONS.USERS_MANAGE, {}), true, 'identity_type ausente mantiene compatibilidad legacy');
+assert.equal(can(human('admin', { identity_type: null }), ACTIONS.USERS_MANAGE, {}), true, 'identity_type null mantiene compatibilidad humana legacy');
+assert.equal(can(human('admin', { identity_type: 'agent' }), ACTIONS.USERS_MANAGE, {}), false, 'identity_type agent permanece bloqueado para acciones humanas');
 assert.equal(can(human('admin', { active: false }), ACTIONS.USERS_MANAGE, {}), false, 'identidad inactiva niega admin');
 assert.equal(can(human('admin', { id: '   ' }), ACTIONS.USERS_MANAGE, {}), false, 'id con espacios niega admin');
 
