@@ -17,10 +17,11 @@ import { TenderDossierWorkspacePanel } from './tenders/components/TenderDossierW
 import { TenderModuleNavigation } from './tenders/components/TenderModuleNavigation';
 import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
 import { tenderAnalysisMethodLabel } from './tenders/tenderDecisionBrief';
+import { createTenderQuestionResponseActions } from './tenders/tenderQuestionResponseActions';
 import { loadTenderGoNoGoDecision, loadTenderOfferStatus, loadTrackingEvents, postActuation } from './tenders/api';
 import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
 import { tenderSharePointStatusLabel } from './tenders/statusLabels';
-import { isTenderProcessingActive, isTenderProcessingSuperseded, shouldReloadTenderArtifacts, tenderProcessingLabel } from './tenders/processingStatus';
+import { shouldReloadTenderArtifacts } from './tenders/processingStatus';
 import type { TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
 import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
@@ -922,12 +923,17 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     }
     finally { setBusy(false); }
   };
-  const saveQuestionResponse = async (input: TenderQuestionResponseInput) => {
+  const questionResponseActions = createTenderQuestionResponseActions({
+    request: api,
+    uploadToSignedUrl: (path, token, file) => supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(path, token, file),
+  });
+  const saveQuestionResponse = async (input: TenderQuestionResponseInput, files: File[] = []) => {
     setBusy(true); setStatusText('Guardando respuesta humana…');
     try {
+      const { response_id, response_ticket, attachments } = await questionResponseActions.uploadAttachments(opportunity.id, files);
       const data = await api<{ question_responses: NonNullable<TenderDocumentsPayload['question_responses']> }>('/api/tender-question-responses', {
         method: 'POST',
-        body: JSON.stringify({ opportunity_id: opportunity.id, ...input }),
+        body: JSON.stringify({ opportunity_id: opportunity.id, response_id, response_ticket, attachments, ...input }),
       });
       setPayload(current => ({ ...current, question_responses: data.question_responses }));
       setStatusText('Respuesta registrada con autor, fecha y trazabilidad. La decisión GO / NO GO no cambió.');
@@ -964,16 +970,10 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }
   };
-  const processingActive = Boolean(processingStatus && isTenderProcessingActive(processingStatus.status));
-  const processingSupersededByAnalysis = isTenderProcessingSuperseded(processingStatus, analysis);
-  const processingVisible = Boolean(processingStatus && processingStatus.status !== 'no_job' && !processingSupersededByAnalysis);
-  const processingPending = processingStatus ? Math.max(0, processingStatus.counts.discovered - processingStatus.counts.processed) : 0;
-  const processingRetryable = Boolean(processingStatus?.idempotency_key && ['retry_wait', 'needs_attention'].includes(processingStatus.status));
   const sourceUrl = resolveTenderSourceUrl(opportunity.source_url, opportunity.observaciones);
   return <div id="tender-document-review" className="tender-guided-review" tabIndex={-1} ref={focusTargetRef}>
-    {processingVisible && processingStatus && <div className="notice" role="status"><strong>{processingActive ? 'Procesando documentos en segundo plano' : tenderProcessingLabel(processingStatus.status)}</strong><p>{tenderProcessingLabel(processingStatus.status)}. Detectados {processingStatus.counts.discovered}; procesados {processingStatus.counts.processed}; pendientes {processingPending}; importados {processingStatus.counts.imported}; sin cambios {processingStatus.counts.unchanged}; fallidos {processingStatus.counts.failed}.</p>{processingStatus.last_error_message && <p>{processingStatus.last_error_message}</p>}{processingStatus.failed_items.length > 0 && <ul>{processingStatus.failed_items.map(item => <li key={item.id}><strong>{item.name}</strong>: {item.last_error_message || item.last_error_code || item.status}</li>)}</ul>}<details className="tender-processing-technical"><summary>Detalles técnicos del procesamiento</summary>{processingStatus.current_step && <p>Paso técnico: {processingStatus.current_step}</p>}{processingStatus.snapshot_id && <p>Snapshot persistido: {processingStatus.snapshot_id}</p>}{processingStatus.analysis_run_id && <p>Análisis persistido: {processingStatus.analysis_run_id}</p>}</details>{processingRetryable && <button type="button" disabled={busy} onClick={() => void retryDurableProcessing()}>Reintentar</button>}</div>}
     <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} sourceUrl={sourceUrl} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
-    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type !== 'agent'} onSaveQuestionResponse={saveQuestionResponse} />
+    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} />
   </div>;
 }
 function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, onNavigationStateChanged }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void>; onNavigationStateChanged?: (state: TenderPanelState<TenderPreparationNavigationValue>) => void }) {

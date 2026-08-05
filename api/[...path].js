@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import mammoth from 'mammoth';
@@ -2253,6 +2253,77 @@ const TENDER_PIPELINE_VERSION = 'v1';
 const tenderDocumentBucket = 'tender-documents';
 const RUP_MAX_BYTES = 50 * 1024 * 1024;
 const tenderDocumentTypes = ['pliego','estudios_previos','anexo_tecnico','adenda','formatos','otro'];
+const TENDER_QUESTION_RESPONSE_ATTACHMENT_ALLOWED_MIME_TYPES = [
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain',
+];
+const TENDER_QUESTION_RESPONSE_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+const TENDER_QUESTION_RESPONSE_ATTACHMENT_MAX_COUNT = 8;
+const TENDER_QUESTION_RESPONSE_ATTACHMENT_DOWNLOAD_TTL_SECONDS = 300;
+const TENDER_QUESTION_RESPONSE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TENDER_QUESTION_RESPONSE_SHA256_PATTERN = /^[0-9a-f]{64}$/;
+function isValidUuid(value) { return TENDER_QUESTION_RESPONSE_UUID_PATTERN.test(String(value || '')); }
+function tenderQuestionResponseAttachmentPhysicalPath(opportunityId, responseId, uniqueName) {
+  return `${opportunityId}/question-responses/${responseId}/${uniqueName}`;
+}
+function tenderQuestionResponseAttachmentStoragePath(opportunityId, responseId, uniqueName) {
+  return `${tenderDocumentBucket}/${tenderQuestionResponseAttachmentPhysicalPath(opportunityId, responseId, uniqueName)}`;
+}
+function tenderQuestionResponseAttachmentBucketRelativePath(storagePath) {
+  const prefix = `${tenderDocumentBucket}/`;
+  return storagePath.startsWith(prefix) ? storagePath.slice(prefix.length) : storagePath;
+}
+const TENDER_QUESTION_RESPONSE_TICKET_TTL_MS = 30 * 60 * 1000;
+function signTenderQuestionResponseTicket({ opportunityId, responseId, profileId, expiresAt }) {
+  return createHmac('sha256', serviceKey).update(`${opportunityId}:${responseId}:${profileId}:${expiresAt}`).digest('hex');
+}
+function mintTenderQuestionResponseTicket({ opportunityId, responseId, profileId }) {
+  const expiresAt = Date.now() + TENDER_QUESTION_RESPONSE_TICKET_TTL_MS;
+  return `${expiresAt}.${signTenderQuestionResponseTicket({ opportunityId, responseId, profileId, expiresAt })}`;
+}
+function verifyTenderQuestionResponseTicket(ticket, { opportunityId, responseId, profileId }) {
+  const raw = String(ticket || '');
+  const separatorIndex = raw.indexOf('.');
+  if (separatorIndex <= 0) return false;
+  const expiresAt = Number(raw.slice(0, separatorIndex));
+  const signature = raw.slice(separatorIndex + 1);
+  if (!Number.isFinite(expiresAt) || !signature) return false;
+  if (Date.now() > expiresAt) return false;
+  const expected = Buffer.from(signTenderQuestionResponseTicket({ opportunityId, responseId, profileId, expiresAt }), 'hex');
+  const provided = Buffer.from(signature, 'hex');
+  if (!expected.length || expected.length !== provided.length) return false;
+  return timingSafeEqual(expected, provided);
+}
+function requireTenderQuestionResponseTicket(ticket, context) {
+  if (!verifyTenderQuestionResponseTicket(ticket, context)) {
+    const error = new Error('El ticket de la respuesta no es válido o expiró.');
+    error.status = 403;
+    throw error;
+  }
+}
+function requireHumanTenderIdentity(profile) {
+  if (profile?.identity_type !== 'human') {
+    const error = new Error('Las respuestas humanas de licitaciones no están disponibles para esta identidad.');
+    error.status = 403;
+    throw error;
+  }
+}
+async function verifyTenderQuestionResponseAttachmentContent(database, attachment) {
+  const bucketRelativePath = tenderQuestionResponseAttachmentBucketRelativePath(attachment.storage_path);
+  const { data, error } = await database.storage.from(tenderDocumentBucket).download(bucketRelativePath);
+  if (error) throw clientInputError(`No se pudo verificar el adjunto ${attachment.name}.`);
+  const buffer = Buffer.from(await data.arrayBuffer());
+  if (buffer.length !== attachment.size_bytes) throw clientInputError(`El tamaño del adjunto ${attachment.name} no coincide con el archivo cargado.`);
+  const actualHash = createHash('sha256').update(buffer).digest('hex');
+  if (actualHash !== attachment.content_hash) throw clientInputError(`El contenido del adjunto ${attachment.name} no coincide con el archivo cargado.`);
+  const actualMimeType = String(data.type || '').split(';')[0].trim().toLowerCase();
+  if (actualMimeType && actualMimeType !== attachment.mime_type) throw clientInputError(`El tipo de archivo del adjunto ${attachment.name} no coincide con el archivo cargado.`);
+  return { ...attachment, content_hash: actualHash };
+}
 function parseInteractionJson(notes) {
   try { return JSON.parse(notes || '{}'); } catch { return null; }
 }
@@ -2488,6 +2559,57 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
   };
 }
 
+function normalizeTenderQuestionResponseAttachment(item, opportunityId, responseId) {
+  const name = cleanFileName(item?.name);
+  if (!name.trim()) throw clientInputError('El nombre del adjunto no es válido.');
+  const mimeType = String(item?.mime_type || '');
+  if (!TENDER_QUESTION_RESPONSE_ATTACHMENT_ALLOWED_MIME_TYPES.includes(mimeType)) throw clientInputError('El tipo de archivo del adjunto no está permitido.');
+  const sizeBytes = Number(item?.size_bytes);
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > TENDER_QUESTION_RESPONSE_ATTACHMENT_MAX_BYTES) throw clientInputError('El tamaño del adjunto no es válido.');
+  const contentHash = String(item?.content_hash || '').trim().toLowerCase();
+  if (!TENDER_QUESTION_RESPONSE_SHA256_PATTERN.test(contentHash)) throw clientInputError('El hash SHA-256 del adjunto no es válido.');
+  const storagePath = String(item?.storage_path || '').trim();
+  const expectedPrefix = tenderQuestionResponseAttachmentStoragePath(opportunityId, responseId, '');
+  if (!storagePath.startsWith(expectedPrefix) || storagePath.includes('..') || storagePath.includes('\\')) {
+    throw clientInputError('La ruta de almacenamiento del adjunto no es válida.');
+  }
+  return { name, mime_type: mimeType, size_bytes: sizeBytes, content_hash: contentHash, storage_path: storagePath };
+}
+async function cleanupTenderQuestionResponseAttachments(database, attachments) {
+  if (!attachments.length) return;
+  try {
+    await database.storage.from(tenderDocumentBucket).remove(attachments.map(item => tenderQuestionResponseAttachmentBucketRelativePath(item.storage_path)));
+  } catch (cleanupError) {
+    console.warn('tender_question_response_attachment_cleanup_failed', { event: 'tender_question_response_attachment_cleanup_failed', message: cleanupError?.message });
+  }
+}
+async function getTenderQuestionResponseAttachments(database, opportunityId, responseIds) {
+  if (!responseIds.length) return new Map();
+  const response = await database.from('psi_tender_question_response_attachments')
+    .select('id,response_id,name,mime_type,size_bytes,storage_path,uploaded_by,uploaded_at,psi_sales_profiles(full_name)')
+    .eq('opportunity_id', opportunityId)
+    .in('response_id', responseIds)
+    .order('uploaded_at', { ascending: false });
+  if (response.error) {
+    const code = String(response.error.code || '');
+    const message = String(response.error.message || '');
+    const missingRelation = Number(response.status) === 404 || ['42P01', 'PGRST205'].includes(code) || (/psi_tender_question_response_attachments/i.test(message) && /does not exist|could not find|unhandled/i.test(message));
+    if (missingRelation) return new Map();
+    throw response.error;
+  }
+  const grouped = new Map();
+  for (const row of response.data || []) {
+    const { data } = await database.storage.from(tenderDocumentBucket).createSignedUrl(tenderQuestionResponseAttachmentBucketRelativePath(row.storage_path), TENDER_QUESTION_RESPONSE_ATTACHMENT_DOWNLOAD_TTL_SECONDS, { download: row.name });
+    const list = grouped.get(row.response_id) || [];
+    list.push({
+      id: row.id, name: row.name, mime_type: row.mime_type, size_bytes: row.size_bytes,
+      uploaded_by: row.uploaded_by, uploaded_by_name: row.psi_sales_profiles?.full_name || null,
+      uploaded_at: row.uploaded_at, signed_url: data?.signedUrl || null,
+    });
+    grouped.set(row.response_id, list);
+  }
+  return grouped;
+}
 async function getTenderQuestionResponses(database, opportunityId, analysisRunId) {
   let query = database.from('psi_tender_question_responses')
     .select('id,opportunity_id,analysis_run_id,question_id,question_text,status,response,evidence_notes,responded_by,responded_at,psi_sales_profiles(full_name)')
@@ -2501,7 +2623,9 @@ async function getTenderQuestionResponses(database, opportunityId, analysisRunId
     if (missingRelation) return [];
     throw response.error;
   }
-  return (response.data || []).map(row => ({ ...row, responded_by_name: row.psi_sales_profiles?.full_name || null, psi_sales_profiles: undefined }));
+  const rows = (response.data || []).map(row => ({ ...row, responded_by_name: row.psi_sales_profiles?.full_name || null, psi_sales_profiles: undefined }));
+  const attachmentsByResponse = await getTenderQuestionResponseAttachments(database, opportunityId, rows.map(row => row.id));
+  return rows.map(row => ({ ...row, attachments: attachmentsByResponse.get(row.id) || [] }));
 }
 
 function agt002HumanEvidenceFromResponses(responses) {
@@ -3528,31 +3652,100 @@ app.get('/api/tender-question-responses', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
+app.post('/api/tender-question-response-attachment-upload-url', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireHumanTenderIdentity(currentProfile);
+    const database = requireDb();
+    const opportunityId = String(req.body.opportunity_id || '');
+    if (!opportunityId) throw clientInputError('Debe indicar la oportunidad.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const attachmentIndex = Number(req.body.attachment_index);
+    if (!Number.isInteger(attachmentIndex) || attachmentIndex < 0 || attachmentIndex >= TENDER_QUESTION_RESPONSE_ATTACHMENT_MAX_COUNT) {
+      throw clientInputError(`Cada respuesta admite máximo ${TENDER_QUESTION_RESPONSE_ATTACHMENT_MAX_COUNT} archivos de soporte.`);
+    }
+    const mimeType = String(req.body.mime_type || '');
+    if (!TENDER_QUESTION_RESPONSE_ATTACHMENT_ALLOWED_MIME_TYPES.includes(mimeType)) throw clientInputError('El tipo de archivo del adjunto no está permitido.');
+    const size = Number(req.body.size);
+    if (!Number.isFinite(size) || size <= 0) throw clientInputError('Debe seleccionar un archivo de soporte válido.');
+    if (size > TENDER_QUESTION_RESPONSE_ATTACHMENT_MAX_BYTES) throw clientInputError('El archivo de soporte supera 25 MiB.');
+    const name = cleanFileName(req.body.name);
+    if (!name.trim()) throw clientInputError('El nombre del archivo de soporte no es válido.');
+    const requestedResponseId = req.body.response_id;
+    let responseId;
+    if (requestedResponseId === undefined || requestedResponseId === null || requestedResponseId === '') {
+      responseId = randomUUID();
+    } else {
+      if (!isValidUuid(requestedResponseId)) throw clientInputError('El identificador de la respuesta no es válido.');
+      responseId = String(requestedResponseId);
+      requireTenderQuestionResponseTicket(req.body.response_ticket, { opportunityId, responseId, profileId: currentProfile.id });
+    }
+    const responseTicket = mintTenderQuestionResponseTicket({ opportunityId, responseId, profileId: currentProfile.id });
+    const uniqueName = `${createHash('sha256').update(`question-response-attachment:${opportunityId}:${responseId}:${attachmentIndex}:${Date.now()}:${name}:${size}`).digest('hex').slice(0, 24)}-${name}`;
+    await ensureTenderBucket(database);
+    const path = tenderQuestionResponseAttachmentPhysicalPath(opportunityId, responseId, uniqueName);
+    const { data, error } = await database.storage.from(tenderDocumentBucket).createSignedUploadUrl(path);
+    if (error) throw error;
+    res.json({ response_id: responseId, response_ticket: responseTicket, path, token: data.token, storage_path: tenderQuestionResponseAttachmentStoragePath(opportunityId, responseId, uniqueName) });
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 app.post('/api/tender-question-responses', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    if (currentProfile?.identity_type === 'agent') {
-      const error = new Error('Las respuestas humanas de licitaciones no están disponibles para identidades de agente.');
-      error.status = 403;
-      throw error;
-    }
+    requireHumanTenderIdentity(currentProfile);
     const database = requireDb();
     const opportunityId = String(req.body.opportunity_id || '');
     const analysisRunId = String(req.body.analysis_run_id || '');
     if (!opportunityId || !analysisRunId) throw new Error('Debe indicar la oportunidad y la corrida de análisis.');
     await ensureTenderOpportunity(database, opportunityId, currentProfile);
-    const recorded = await must(database.rpc('psi_record_tender_question_response', {
-      p_opportunity_id: opportunityId,
-      p_analysis_run_id: analysisRunId,
-      p_question_id: String(req.body.question_id || ''),
-      p_question_text: String(req.body.question_text || ''),
-      p_status: String(req.body.status || ''),
-      p_response: String(req.body.response || ''),
-      p_evidence_notes: req.body.evidence_notes == null ? null : String(req.body.evidence_notes),
-      p_responded_by: currentProfile.id,
-    }));
+    const rawAttachments = Array.isArray(req.body.attachments) ? req.body.attachments : [];
+    if (rawAttachments.length > TENDER_QUESTION_RESPONSE_ATTACHMENT_MAX_COUNT) throw clientInputError(`Cada respuesta admite máximo ${TENDER_QUESTION_RESPONSE_ATTACHMENT_MAX_COUNT} archivos de soporte.`);
+    let responseId;
+    if (rawAttachments.length > 0) {
+      if (!isValidUuid(req.body.response_id)) throw clientInputError('Debe indicar la respuesta asociada a los adjuntos.');
+      responseId = String(req.body.response_id);
+      requireTenderQuestionResponseTicket(req.body.response_ticket, { opportunityId, responseId, profileId: currentProfile.id });
+    } else {
+      responseId = randomUUID();
+    }
+    const attachments = rawAttachments.map(item => normalizeTenderQuestionResponseAttachment(item, opportunityId, responseId));
+    let verifiedAttachments = [];
+    if (attachments.length) {
+      try {
+        verifiedAttachments = await Promise.all(attachments.map(attachment => verifyTenderQuestionResponseAttachmentContent(database, attachment)));
+      } catch (verificationError) {
+        await cleanupTenderQuestionResponseAttachments(database, attachments);
+        if (!verificationError?.status) verificationError.status = 400;
+        throw verificationError;
+      }
+    }
+    try {
+      await must(database.rpc('psi_record_tender_question_response_with_attachments', {
+        p_response_id: responseId,
+        p_opportunity_id: opportunityId,
+        p_analysis_run_id: analysisRunId,
+        p_question_id: String(req.body.question_id || ''),
+        p_question_text: String(req.body.question_text || ''),
+        p_status: String(req.body.status || ''),
+        p_response: String(req.body.response || ''),
+        p_evidence_notes: null,
+        p_responded_by: currentProfile.id,
+        p_attachments: verifiedAttachments,
+      }));
+    } catch (rpcError) {
+      const uniqueConflict = String(rpcError?.code || '') === '23505';
+      if (!uniqueConflict) await cleanupTenderQuestionResponseAttachments(database, attachments);
+      if (!rpcError?.status) rpcError.status = uniqueConflict ? 409 : 500;
+      throw rpcError;
+    }
     const reanalysis = await reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analysisRunId, currentProfile });
-    res.status(201).json({ question_response: recorded, question_responses: await getTenderQuestionResponses(database, opportunityId, analysisRunId), reanalysis });
+    const questionResponses = await getTenderQuestionResponses(database, opportunityId, analysisRunId);
+    res.status(201).json({
+      question_response: questionResponses.find(item => item.id === responseId) || null,
+      question_responses: questionResponses,
+      reanalysis,
+    });
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

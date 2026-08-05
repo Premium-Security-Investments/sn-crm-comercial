@@ -41,14 +41,19 @@ for (const [label, source] of [['server/index.js', server], ['api/[...path].js',
   assert.match(helperBody, /createAgt002PreviewRuntime/, `${label}: debe reutilizar el motor Vig-IA existente, no crear uno nuevo`);
   assert.match(helperBody, /registerAgt002PreviewAnalysis/, `${label}: debe persistir el reanálisis con la función existente`);
 
-  // Only human identities may reach either the write RPC or the reanalysis. The
-  // guard belongs in the real route and must run before the first database write.
-  const humanGuardIndex = routeBody.search(/identity_type\s*===\s*'agent'/);
-  const responseWriteIndex = routeBody.indexOf("database.rpc('psi_record_tender_question_response'");
-  assert.ok(humanGuardIndex >= 0, `${label}: la ruta real debe rechazar identidades de agente`);
+  // Only exact human identities may reach either the write RPC or the reanalysis. The
+  // centralized guard must run in the real route before the first database write.
+  const guardHelperStart = source.indexOf('function requireHumanTenderIdentity');
+  assert.notEqual(guardHelperStart, -1, `${label}: debe existir el guard central de identidad humana`);
+  const guardHelperEnd = source.indexOf('\n}', guardHelperStart);
+  const guardHelperBody = source.slice(guardHelperStart, guardHelperEnd);
+  assert.match(guardHelperBody, /identity_type\s*!==\s*'human'/, `${label}: el guard debe rechazar toda identidad distinta de human`);
+  const humanGuardIndex = routeBody.indexOf('requireHumanTenderIdentity(currentProfile)');
+  const responseWriteIndex = routeBody.indexOf("database.rpc('psi_record_tender_question_response");
+  assert.ok(humanGuardIndex >= 0, `${label}: la ruta real debe invocar el guard de identidad humana`);
   assert.ok(
     humanGuardIndex < responseWriteIndex,
-    `${label}: la identidad de agente debe rechazarse antes de registrar la respuesta humana`,
+    `${label}: el guard de identidad humana debe ejecutarse antes de registrar la respuesta`,
   );
   assert.match(helperBody, /identity_type\s*===\s*'agent'/, `${label}: el helper de reanálisis debe conservar defensa en profundidad`);
 
