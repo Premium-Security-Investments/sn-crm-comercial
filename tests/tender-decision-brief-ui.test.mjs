@@ -41,6 +41,17 @@ assert.doesNotMatch(analysisSection, /Cómo funciona/, 'La ayuda técnica redund
 assert.match(analysisSection, /Responder duda|Actualizar respuesta/, 'El brief debe permitir responder cada duda de forma trazable.');
 assert.match(analysisSection, /No autoriza GO \/ NO GO/, 'La respuesta humana no debe confundirse con una decisión GO/NO GO.');
 
+// QuestionResponseCard must not render evidenceRefs / "Referencias:".
+const questionCardMatch = analysisSection.match(/function QuestionResponseCard[\s\S]*?\n}\n/);
+assert.ok(questionCardMatch, 'QuestionResponseCard debe existir en TenderAnalysisSection.tsx para validar su render.');
+const questionCard = questionCardMatch[0];
+assert.doesNotMatch(questionCard, /evidenceRefs/, 'QuestionResponseCard no debe renderizar question.evidenceRefs.');
+assert.doesNotMatch(questionCard, /Referencias:/, 'QuestionResponseCard no debe renderizar el texto "Referencias:".');
+
+// LegalFindingsPanel must not render in TenderAnalysisSection's operative view.
+assert.doesNotMatch(analysisSection, /<LegalFindingsPanel/, 'LegalFindingsPanel no debe renderizarse en TenderAnalysisSection.');
+assert.doesNotMatch(analysisSection, /Evidencia jurídica/, 'El título "Evidencia jurídica" no debe mostrarse en TenderAnalysisSection.');
+
 for (const emptyState of ['Sin fortalezas', 'Sin debilidades', 'Sin dudas abiertas', 'Sin información no verificada']) {
   assert.match(analysisSection, new RegExp(emptyState), `Una sección vacía debe comunicar ${emptyState}.`);
 }
