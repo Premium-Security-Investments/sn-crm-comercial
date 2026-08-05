@@ -7,6 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "server": "node --env-file=.env.local server/index.js",
     "build": "tsc && vite build",
+    "postbuild": "node scripts/ensure_katherine_company_permission.mjs",
     "check:siio-integration": "node tests/siio-main-integration-static.test.mjs",
     "check:siio-executive": "node scripts/check_siio_executive_snapshot.mjs",
     "check:siio-agents": "node scripts/check_siio_agent_catalog.mjs",

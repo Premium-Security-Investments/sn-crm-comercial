@@ -23,7 +23,7 @@ assert.match(configuration, /issuedAt[\s\S]*required/, 'La expedición debe exig
 assert.match(configuration, /Promise\.allSettled\([\s\S]*loadCompanyProfile[\s\S]*loadCompanyProcurementDocuments/, 'Perfil e inventario deben cargarse de forma independiente.');
 assert.match(configuration, /uploadRup\(uploadFile\)[\s\S]*setUploadDialog\(null\)[\s\S]*loadCompanyProcurementDocuments[\s\S]*catch/, 'Una carga RUP persistida debe cerrar el diálogo antes del refresh no bloqueante.');
 assert.match(configuration, /RUP cargado[\s\S]*inventario/, 'El fallo de refresh debe comunicarse como advertencia posterior, no como fallo de carga.');
-assert.match(configuration, /openUploadDialog[\s\S]*!canConfigure \|\| editing/, 'No se debe abrir una carga mientras existe un borrador empresarial activo.');
+assert.match(configuration, /openUploadDialog[\s\S]*!canManageDocuments \|\| editing/, 'No se debe abrir una carga sin custodia documental ni mientras existe un borrador empresarial activo.');
 assert.equal((configuration.match(/disabled=\{editing\}/g) || []).length, 2, 'Actualizar RUP y Añadir documento deben bloquearse durante la edición.');
 
 for (const marker of [

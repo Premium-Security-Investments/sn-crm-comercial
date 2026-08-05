@@ -24,6 +24,7 @@ export const ACTIONS = Object.freeze({
   LICITACIONES_WORKBENCH_CUSTODY: 'licitaciones.workbench.custody',
   LICITACIONES_CONVERT: 'licitaciones.convert',
   LICITACIONES_CONFIGURE: 'licitaciones.configure',
+  LICITACIONES_COMPANY_PROFILE_UPDATE: 'licitaciones.company_profile.update',
   LICITACIONES_SYNC: 'licitaciones.sync',
   LICITACIONES_DISCARD_PROPOSE: 'licitaciones.discard.propose',
   LICITACIONES_DISCARD_APPROVE: 'licitaciones.discard.approve',
@@ -54,6 +55,7 @@ export const ACTIONS = Object.freeze({
 const KNOWN_ACTIONS = new Set(Object.values(ACTIONS));
 const TENDER_PERMISSION = 'licitaciones';
 const TENDER_CUSTODY_PERMISSION = 'licitaciones_custodia';
+const TENDER_COMPANY_PERMISSION = 'licitaciones_empresa';
 const HUMAN_TENDER_ROLES = new Set(['admin', 'gerencia', 'director', 'comercial']);
 const PRIVILEGED_ROLES = new Set(['admin', 'gerencia']);
 const EXPLICIT_SCOPE_ROLES = new Set(['director', 'comercial', 'colaborador']);
@@ -201,6 +203,12 @@ function canTenderCustodyAction(profile) {
     && hasPermission(profile, TENDER_CUSTODY_PERMISSION);
 }
 
+function canTenderCompanyProfileAction(profile) {
+  return isHuman(profile)
+    && hasPermission(profile, TENDER_PERMISSION)
+    && (hasPermission(profile, TENDER_COMPANY_PERMISSION) || hasPermission(profile, TENDER_CUSTODY_PERMISSION));
+}
+
 function canSiioAssignedAction(profile, resource) {
   if (hasHumanRole(profile, PRIVILEGED_ROLES)) return true;
   if (hasHumanRole(profile, DIRECTOR_ROLE)) return canScopeResource(profile, resource);
@@ -310,6 +318,8 @@ export function can(profile, action, resource = {}) {
     case ACTIONS.LICITACIONES_CONFIGURE:
     case ACTIONS.LICITACIONES_WORKBENCH_CUSTODY:
       return canTenderCustodyAction(profile);
+    case ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE:
+      return canTenderCompanyProfileAction(profile);
 
     case ACTIONS.SIIO_AREA_VIEW:
     case ACTIONS.SIIO_SUBJECT_CREATE:

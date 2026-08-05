@@ -14,7 +14,7 @@ const fields: Array<{ key: keyof TenderCompanyProfile; label: string; rows?: num
 ];
 const acceptedFiles = '.pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain';
 type UploadDialog = 'rup' | 'document' | null;
-type TenderConfigurationViewProps = TendersModuleProps & { moduleNavigation: ReactNode; canConfigure: boolean };
+type TenderConfigurationViewProps = TendersModuleProps & { moduleNavigation: ReactNode; canConfigure: boolean; canManageDocuments: boolean };
 
 function rupSummary(company: TenderCompanyProfile, documents: TenderCompanyDocument[]) {
   const rup = documents.find(document => document.document_type === 'rup' && document.current);
@@ -22,7 +22,7 @@ function rupSummary(company: TenderCompanyProfile, documents: TenderCompanyDocum
 }
 
 /** Consulta empresarial por defecto; los cambios se aíslan en un borrador hasta guardar. */
-export function TenderConfigurationView({ request, moduleNavigation, canConfigure }: TenderConfigurationViewProps) {
+export function TenderConfigurationView({ request, moduleNavigation, canConfigure, canManageDocuments }: TenderConfigurationViewProps) {
   const [persistedCompany, setPersistedCompany] = useState<TenderCompanyProfile>(emptyCompany);
   const [draftCompany, setDraftCompany] = useState<TenderCompanyProfile>(emptyCompany);
   const [documents, setDocuments] = useState<TenderCompanyDocument[]>([]);
@@ -111,7 +111,7 @@ export function TenderConfigurationView({ request, moduleNavigation, canConfigur
     restoreFocus();
   };
   const openUploadDialog = (dialog: Exclude<UploadDialog, null>, trigger: HTMLButtonElement) => {
-    if (!canConfigure || editing) return;
+    if (!canManageDocuments || editing) return;
     restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : trigger;
     setMessage(null);
     resetUploadForm();
@@ -135,7 +135,7 @@ export function TenderConfigurationView({ request, moduleNavigation, canConfigur
   }, [uploadDialog, uploading]);
 
   const submitUpload = async () => {
-    if (!canConfigure || !uploadDialog || !uploadFile || uploading) return;
+    if (!canManageDocuments || !uploadDialog || !uploadFile || uploading) return;
     if (uploadDialog === 'document' && (!displayName.trim() || !documentType || !issuedAt)) {
       setMessage('Nombre, tipo y fecha de expedición son obligatorios para el inventario empresarial.');
       return;
@@ -193,7 +193,7 @@ export function TenderConfigurationView({ request, moduleNavigation, canConfigur
 
     <section className="panel company-documents-panel" aria-labelledby="company-documents-heading">
       <header className="company-base-section-head"><div><span className="eyebrow">Soportes empresariales</span><h3 id="company-documents-heading">RUP e inventario documental</h3><p>RUP actual: {rupSummary(persistedCompany, documents)}</p></div></header>
-      {canConfigure && <div className="row-actions company-base-actions">{editing && <span className="muted">Guarde o cancele la edición antes de cargar documentos.</span>}<button type="button" className="secondary" aria-haspopup="dialog" aria-expanded={uploadDialog === 'rup'} aria-controls="company-document-upload-dialog" disabled={editing} title={editing ? 'Guarde o cancele la edición primero' : undefined} onClick={event => openUploadDialog('rup', event.currentTarget)}>Actualizar RUP</button><button type="button" aria-haspopup="dialog" aria-expanded={uploadDialog === 'document'} aria-controls="company-document-upload-dialog" disabled={editing} title={editing ? 'Guarde o cancele la edición primero' : undefined} onClick={event => openUploadDialog('document', event.currentTarget)}>Añadir documento empresarial</button></div>}
+      {canManageDocuments && <div className="row-actions company-base-actions">{editing && <span className="muted">Guarde o cancele la edición antes de cargar documentos.</span>}<button type="button" className="secondary" aria-haspopup="dialog" aria-expanded={uploadDialog === 'rup'} aria-controls="company-document-upload-dialog" disabled={editing} title={editing ? 'Guarde o cancele la edición primero' : undefined} onClick={event => openUploadDialog('rup', event.currentTarget)}>Actualizar RUP</button><button type="button" aria-haspopup="dialog" aria-expanded={uploadDialog === 'document'} aria-controls="company-document-upload-dialog" disabled={editing} title={editing ? 'Guarde o cancele la edición primero' : undefined} onClick={event => openUploadDialog('document', event.currentTarget)}>Añadir documento empresarial</button></div>}
       <TenderCompanyDocuments documents={documents} />
     </section>
 

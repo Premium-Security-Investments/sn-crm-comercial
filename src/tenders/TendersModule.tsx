@@ -2,13 +2,14 @@ import { TenderRadarView } from './TenderRadarView';
 import { TenderTrackingView } from './TenderTrackingView';
 import { TenderOpportunitiesView } from './TenderOpportunitiesView';
 import { TenderConfigurationView } from './TenderConfigurationView';
-import { canConfigureTenders } from './permissions';
+import { canConfigureTenders, canManageTenderCompanyDocuments } from './permissions';
 import { TenderModuleNavigation } from './components/TenderModuleNavigation';
 import type { TendersModuleProps } from './types';
 
 /** Route-level composition; every view owns its data contract. */
 export function TendersModule(props: TendersModuleProps) {
   const canConfigure = canConfigureTenders(props.data.currentProfile);
+  const canManageDocuments = canManageTenderCompanyDocuments(props.data.currentProfile);
   const moduleNavigation = <TenderModuleNavigation
     active={props.view}
     navigate={props.navigate}
@@ -18,6 +19,6 @@ export function TendersModule(props: TendersModuleProps) {
     {props.view === 'radar' && <TenderRadarView {...props} moduleNavigation={moduleNavigation} />}
     {props.view === 'seguimiento' && <TenderTrackingView {...props} moduleNavigation={moduleNavigation} />}
     {props.view === 'oportunidades' && <TenderOpportunitiesView {...props} moduleNavigation={moduleNavigation} />}
-    {props.view === 'configuracion' && <TenderConfigurationView {...props} moduleNavigation={moduleNavigation} canConfigure={canConfigure} />}
+    {props.view === 'configuracion' && <TenderConfigurationView {...props} moduleNavigation={moduleNavigation} canConfigure={canConfigure} canManageDocuments={canManageDocuments} />}
   </section>;
 }
