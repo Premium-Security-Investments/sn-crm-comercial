@@ -52,6 +52,7 @@ assert.deepEqual(ACTIONS, {
   LICITACIONES_WORKBENCH_CUSTODY: 'licitaciones.workbench.custody',
   LICITACIONES_CONVERT: 'licitaciones.convert',
   LICITACIONES_CONFIGURE: 'licitaciones.configure',
+  LICITACIONES_COMPANY_PROFILE_UPDATE: 'licitaciones.company_profile.update',
   LICITACIONES_SYNC: 'licitaciones.sync',
   LICITACIONES_DISCARD_PROPOSE: 'licitaciones.discard.propose',
   LICITACIONES_DISCARD_APPROVE: 'licitaciones.discard.approve',
@@ -77,8 +78,8 @@ assert.deepEqual(ACTIONS, {
   MODULE_OPPORTUNITIES_VIEW: 'module.opportunities.view',
   MODULE_GOALS_VIEW: 'module.goals.view',
   MODULE_USERS_VIEW: 'module.users.view',
-}, 'ACTIONS debe coincidir exactamente con el contrato estable de 39 acciones');
-assert.equal(actionValues.length, 39, 'ACTIONS debe exponer exactamente 39 códigos estables');
+}, 'ACTIONS debe coincidir exactamente con el contrato estable de 40 acciones');
+assert.equal(actionValues.length, 40, 'ACTIONS debe exponer exactamente 40 códigos estables');
 assert.equal(new Set(actionValues).size, actionValues.length, 'todos los códigos de acción deben ser únicos');
 assert.ok(actionValues.every((value) => typeof value === 'string' && value.length > 0), 'todos los códigos de acción deben ser strings no vacíos');
 const originalUsersManageAction = ACTIONS.USERS_MANAGE;
@@ -198,6 +199,11 @@ runCases('licitaciones', [
   { name: 'gerencia sin custodia no configura', profile: tenderUser('gerencia'), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: false },
   { name: 'director con custodia configura', profile: tenderUser('director', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: true },
   { name: 'comercial con permiso no configura', profile: tenderUser('comercial'), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: false },
+  { name: 'Katherine mantiene ficha empresarial con permiso dedicado', profile: tenderUser('comercial', { permissions: ['licitaciones', 'licitaciones_empresa'] }), action: ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE, resource: {}, expected: true },
+  { name: 'custodia conserva mantenimiento de ficha empresarial', profile: tenderUser('director', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE, resource: {}, expected: true },
+  { name: 'permiso empresarial sin licitaciones falla cerrado', profile: human('comercial', { permissions: ['licitaciones_empresa'] }), action: ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE, resource: {}, expected: false },
+  { name: 'permiso empresarial no concede custodia', profile: tenderUser('comercial', { permissions: ['licitaciones', 'licitaciones_empresa'] }), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: false },
+  { name: 'agente con permiso empresarial no edita ficha', profile: agent({ permissions: ['licitaciones', 'licitaciones_empresa'] }), action: ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE, resource: {}, expected: false },
   { name: 'director sin permiso no configura', profile: human('director'), action: ACTIONS.LICITACIONES_CONFIGURE, resource: {}, expected: false },
   { name: 'admin sin custodia no convierte', profile: tenderUser('admin'), action: ACTIONS.LICITACIONES_CONVERT, resource: {}, expected: false },
   { name: 'encargada con custodia convierte', profile: tenderUser('director', { permissions: ['licitaciones', 'licitaciones_custodia'] }), action: ACTIONS.LICITACIONES_CONVERT, resource: {}, expected: true },

@@ -872,6 +872,11 @@ async function saveTenderCompanyProfile(database, payload) {
     p_payload: payload,
   }));
 }
+async function saveTenderCompanyProfileDirect(database, payload) {
+  await must(database
+    .from('psi_company_procurement_profile')
+    .upsert(payload, { onConflict: 'singleton_key' }));
+}
 function cleanCompanyDocumentMetadata(body) {
   const documentType = String(body?.documentType || body?.document_type || '').trim().toLowerCase();
   const displayName = String(body?.displayName || body?.display_name || '').trim();
@@ -1750,9 +1755,11 @@ app.post('/api/tender-company-document-process-upload', async (req, res) => {
 app.put('/api/tender-company-profile', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
-    requireAction(currentProfile, ACTIONS.LICITACIONES_CONFIGURE);
+    requireAction(currentProfile, ACTIONS.LICITACIONES_COMPANY_PROFILE_UPDATE);
     const database = requireDb();
-    await saveTenderCompanyProfile(database, cleanTenderCompanyProfile(req.body, currentProfile));
+    const payload = cleanTenderCompanyProfile(req.body, currentProfile);
+    if (can(currentProfile, ACTIONS.LICITACIONES_CONFIGURE)) await saveTenderCompanyProfile(database, payload);
+    else await saveTenderCompanyProfileDirect(database, payload);
     res.json(await getTenderCompanyProfile(database));
   } catch (error) { sendAuthError(res, error); }
 });
