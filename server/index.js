@@ -1346,14 +1346,14 @@ function dbTenderToPublic(row) {
   };
 }
 function isConvertedTenderRecord(row) {
-  return row?.internal_status === 'convertida_oportunidad' || Boolean(row?.converted_opportunity_id);
+  return row?.internal_status === 'convertida_oportunidad';
 }
 async function readAllConvertedTenderRows(database) {
   const pageSize = 1000;
   const rows = [];
   for (let from = 0; ; from += pageSize) {
     const result = await database.from('psi_public_tenders').select('*')
-      .or('internal_status.eq.convertida_oportunidad,converted_opportunity_id.not.is.null')
+      .eq('internal_status', 'convertida_oportunidad')
       .order('last_seen_at', { ascending: false })
       .range(from, from + pageSize - 1);
     if (result.error) throw result.error;

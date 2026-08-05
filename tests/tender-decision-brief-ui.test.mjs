@@ -23,7 +23,6 @@ for (const text of [
   'Dudas abiertas',
   'Información no verificada',
   'Siguiente acción',
-  'Cómo funciona',
 ]) {
   assert.match(decisionSource, new RegExp(text), `El brief debe incluir ${text}.`);
 }
@@ -38,7 +37,7 @@ assert.match(analysisSection, /const strengths = analysis\?\.strengths \?\? anal
 assert.match(analysisSection, /const weaknesses = analysis\?\.weaknesses \?\? analysis\?\.blockers \?\? analysis\?\.commercial_fit\?\.concerns \?\? \[\]/, 'Debilidades debe mapear bloqueadores y alertas legadas sin inventar evidencia.');
 assert.match(analysisSection, /const questions = \(analysis\?\.questions \?\? \[\]\)\.map\(normalizeQuestion\)/, 'Dudas abiertas debe consumir y normalizar las preguntas tipadas.');
 assert.match(analysisSection, /const unverified = analysis\?\.unverified \?\? analysis\?\.company_profile_crosscheck\?\.gaps \?\? \[\]/, 'Información no verificada debe degradar a brechas del perfil.');
-assert.match(analysisSection, /<details[\s\S]*?<summary>Cómo funciona<\/summary>/, 'La ayuda debe quedar colapsada por defecto.');
+assert.doesNotMatch(analysisSection, /Cómo funciona/, 'La ayuda técnica redundante debe permanecer fuera de la vista operativa.');
 assert.match(analysisSection, /Responder duda|Actualizar respuesta/, 'El brief debe permitir responder cada duda de forma trazable.');
 assert.match(analysisSection, /No autoriza GO \/ NO GO/, 'La respuesta humana no debe confundirse con una decisión GO/NO GO.');
 

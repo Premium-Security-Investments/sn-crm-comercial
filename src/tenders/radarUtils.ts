@@ -31,7 +31,7 @@ export function canonicalTenderKey(tender: PublicTender): string {
 }
 
 function tenderStatusRank(tender: PublicTender): number {
-  return tender.converted_opportunity_id || tender.internal_status === 'convertida_oportunidad' ? 4 : tender.internal_status === 'en_revision' ? 3 : tender.internal_status === 'nueva' ? 2 : tender.internal_status === 'descartada' ? 1 : 0;
+  return tender.internal_status === 'convertida_oportunidad' ? 4 : tender.internal_status === 'en_revision' ? 3 : tender.internal_status === 'nueva' ? 2 : tender.internal_status === 'descartada' ? 1 : 0;
 }
 
 export function deduplicateTenders(tenders: PublicTender[]): PublicTender[] {
@@ -115,7 +115,7 @@ export type RadarFilters = {
 
 export function filterRadarTenders(tenders: PublicTender[], filters: RadarFilters): PublicTender[] {
   return tenders.filter(tender => {
-    const internal = tender.converted_opportunity_id ? 'convertida_oportunidad' : tender.internal_status || 'nueva';
+    const internal = tender.internal_status || 'nueva';
     const amount = Number(tender.value || 0);
     const fit = Number(tender.score || 0);
     return (filters.section === 'todas' || tender.section === filters.section) &&

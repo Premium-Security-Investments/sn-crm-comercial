@@ -23,9 +23,10 @@ for (const file of [server, api]) {
 }
 
 assert(!src.includes('Dictamen GO / NO GO SN'), 'UI no debe confundir una recomendación asistida con un dictamen humano.');
-for (const label of ['Recomendación preliminar', 'Fortalezas', 'Debilidades y bloqueadores', 'Dudas abiertas', 'Información no verificada', 'Siguiente acción', 'Cómo funciona']) {
+for (const label of ['Recomendación preliminar', 'Fortalezas', 'Debilidades y bloqueadores', 'Dudas abiertas', 'Información no verificada', 'Siguiente acción']) {
   assert(analysisSection.includes(label), `UI debe presentar ${label}.`);
 }
-assert(analysisSection.includes('No autoriza GO / NO GO'), 'UI debe explicar que el brief no reemplaza la decisión humana.');
+assert(analysisSection.includes('No registra ni autoriza GO / NO GO'), 'UI debe explicar que el brief no reemplaza la decisión humana.');
+assert(!analysisSection.includes('Cómo funciona'), 'UI no debe reexponer ayuda técnica redundante.');
 
 console.log('tender GO/NO GO report static checks passed');

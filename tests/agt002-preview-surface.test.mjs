@@ -57,9 +57,8 @@ assert.match(section, /Volver a analizar con Vig-IA/, 'UI must label stale or fa
 assert.doesNotMatch(section, /Generar análisis preliminar|>Actualizar análisis</, 'deterministic analysis labels may not remain postconversion');
 assert.doesNotMatch(section, /onAnalyze:\s*\(\)\s*=>\s*void|onClick=\{onAnalyze\}/, 'deterministic analysis callback may not remain');
 assert.doesNotMatch(ui, /const analyzeDocuments = async/, 'opportunity UI may not retain a deterministic analysis handler');
-assert.match(section, /Revisión humana obligatoria/, 'UI must display the human-review requirement');
-assert.match(section, /Fallback seguro aplicado/, 'UI must disclose deterministic fallback while rollback mode remains available');
-assert.match(section, /Citas de evidencia/, 'UI must expose evidence references');
+assert.match(section, /No registra ni autoriza GO \/ NO GO/, 'UI must preserve one concise human-authority statement');
+assert.doesNotMatch(section, /Revisión humana obligatoria|Cómo funciona|Citas de evidencia/, 'UI must not repeat technical or explanatory noise removed by the approved cleanup');
 
 for (const source of [serverRoute, vercelRoute, engine]) {
   assert.doesNotMatch(source, /OPENAI_API_KEY|HERMES_INTERIM_API_KEY|Authorization\s*:|Bearer\s+/i, 'preview path must not manage API keys or bearer tokens');
