@@ -17,7 +17,7 @@ for (const text of [
   'Recomendación preliminar',
   'Preanálisis por reglas SIIO',
   'Análisis asistido por Hermes — transitorio',
-  'Análisis Vig-IA',
+  'VIGIA_VISIBLE_NAMES.tenders',
   'Fortalezas',
   'Debilidades y bloqueadores',
   'Dudas abiertas',
@@ -87,5 +87,6 @@ assert.equal(tenderDecisionStatusTone('NO GO'), 'red');
 assert.equal(tenderDecisionStatusTone('GO condicionado'), 'amber');
 assert.equal(tenderDecisionStatusTone('GO'), 'green');
 assert.equal(tenderAnalysisMethodLabel('HERMES-INTERIM'), 'Análisis asistido por Hermes — transitorio');
+assert.equal(tenderAnalysisMethodLabel('AGT-002'), 'Análisis Vig-IA Licitaciones');
 
 console.log('tender decision brief UI checks passed');

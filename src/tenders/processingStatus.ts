@@ -1,3 +1,5 @@
+import { VIGIA_VISIBLE_NAMES } from '../vigia/agentIdentity';
+
 type ProcessingStatusSnapshot = { job_id: string | null; status: string };
 
 type ProcessingPresentationStatus = {
@@ -42,8 +44,8 @@ const STATUS_LABELS: Record<string, string> = {
   discovering_documents: 'Descubriendo documentos oficiales',
   importing_documents: 'Importando y verificando documentos',
   building_snapshot: 'Construyendo el snapshot documental',
-  waiting_agent_capacity: 'Vig-IA no está disponible todavía; el análisis permanece en cola',
-  analyzing: 'Vig-IA está analizando el expediente',
+  waiting_agent_capacity: `${VIGIA_VISIBLE_NAMES.tenders} no está disponible todavía; el análisis permanece en cola`,
+  analyzing: `${VIGIA_VISIBLE_NAMES.tenders} está analizando el expediente`,
   retry_wait: 'En espera de reintento automático',
   needs_attention: 'Requiere intervención humana',
   completed: 'Procesamiento completado',
@@ -96,7 +98,7 @@ export function deriveTenderProcessingPresentation(
     return {
       visible: true,
       tone: 'status',
-      message: 'Vig-IA está esperando capacidad disponible; el análisis continuará automáticamente en cuanto haya cupo, sin necesidad de una nueva acción.',
+      message: `${VIGIA_VISIBLE_NAMES.tenders} está esperando capacidad disponible; el análisis continuará automáticamente en cuanto haya cupo, sin necesidad de una nueva acción.`,
       primaryAction: 'disabled',
       showRetry: false,
     };
@@ -117,7 +119,7 @@ export function deriveTenderProcessingPresentation(
   return {
     visible: true,
     tone: 'status',
-    message: 'Vig-IA está procesando los documentos de este expediente; el resultado aparecerá aquí automáticamente al finalizar.',
+    message: `${VIGIA_VISIBLE_NAMES.tenders} está procesando los documentos de este expediente; el resultado aparecerá aquí automáticamente al finalizar.`,
     primaryAction: 'disabled',
     showRetry: false,
   };
