@@ -1,9 +1,9 @@
 # CURRENT — SIIO Comercial / Licitaciones / Vig‑IA
 
-**Corte autoritativo:** 2026-08-06 12:07 COT · 2026-08-06 17:07 UTC
+**Corte autoritativo:** 2026-08-06 13:09 COT · 2026-08-06 18:09 UTC
 **Producción:** https://seguridad-nacional-crm.vercel.app
-**Commit productivo:** `c66be89b3dcba2846ff00e7bddcbe828cafd3558`
-**Deployment Vercel:** `dpl_8ZtzYYez2EQGCW4hGEeNadPmuHSu` · `READY`
+**Commit productivo:** `bc24ffefc70298573c5c5a76a2018c445b23343b`
+**Deployment Vercel:** `dpl_8bHMNWtxeztmhjdf6kULwf1tGMdF` · `READY`
 
 ## 1. Regla funcional y de autoridad vigente
 
@@ -63,18 +63,20 @@ El rollout visual de identidad está cerrado. No se declara rollout visual compl
 - `AGT-001/002/003` permanecen como IDs internos; **Agente Comercial PSI** permanece como router y Agente IT no entra al catálogo SIIO.
 - No hubo migraciones, cambios de DB, productores, permisos ni automatización de decisiones.
 
-### Preview productivo AGT-002 v3
+### Análisis real de Rama Judicial en producción
 
-- Vista sintética de sólo lectura desplegada en producción para revisión visual autenticada.
-- Ruta directa: `#/tenders?preview=agt002-v3`.
-- Expediente sintético visible: `LIC-SYN-2026-017`; no representa una oportunidad real.
-- El preview no ejecuta `fetch`, no persiste, no aplica la migración 063 y no cambia GO/NO-GO.
-- Rama trazable: `release/agt002-v3-preview-prod-20260806`; commit desplegado `c66be89`.
-- Gate siguiente: Juan revisa la vista dentro del shell autenticado; después se adecua e integra en la sección **Análisis** del expediente real.
+- La vista sintética y la ruta `#/tenders?preview=agt002-v3` fueron retiradas de `src`.
+- Expediente real: **Rama Judicial – Dirección Seccional de Administración Judicial de Manizales** (`54190e51-15fb-46af-b0aa-8f13461a3110`).
+- Deep link autenticado: `#/detail/54190e51-15fb-46af-b0aa-8f13461a3110?focus=analysis`.
+- La sección **Análisis** consume exclusivamente el run canónico persistido y los documentos actuales del endpoint autenticado; no contiene fixtures ni campos hardcodeados de Rama Judicial.
+- Run visible al corte: `df57f945-79ea-49dd-8300-9005f3da9c60`, snapshot `c33159a5-defe-4a6f-8fa4-68c5ceb60e59`, productor `AGT-002`, estado `completed`, 17 documentos actuales y 4 bloqueadores críticos registrados.
+- No se ejecutó un run nuevo: se reutilizó el canónico del 2026-08-06 para evitar duplicidad y costo. El run más reciente no trae `legal_corpus_version`; la UI no lo presenta como verificación jurídica ni infiere cumplimiento.
+- No hubo migraciones, cambios de DB, GO/NO-GO, firma, envío ni presentación autónoma.
+- Rama trazable: `release/agt002-v3-preview-prod-20260806`; commit desplegado `bc24ffe`; deployment `dpl_8bHMNWtxeztmhjdf6kULwf1tGMdF` · `READY`.
 
 ### Gate abierto
 
-Falta QA visual autenticado. Juan opera la UI; Hermes da **un solo paso** y espera captura. No se declara cierre visual sin esa evidencia.
+Falta QA visual autenticado del expediente real. Juan opera la UI; Hermes da **un solo paso** y espera captura. No se declara cierre visual sin esa evidencia.
 
 ## 4. E5 — corpus jurídico y run canónico vigente
 
