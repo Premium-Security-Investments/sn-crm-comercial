@@ -1,9 +1,9 @@
 # CURRENT — SIIO Comercial / Licitaciones / Vig‑IA
 
-**Corte autoritativo:** 2026-08-06 11:52 COT · 2026-08-06 16:52 UTC
+**Corte autoritativo:** 2026-08-06 12:07 COT · 2026-08-06 17:07 UTC
 **Producción:** https://seguridad-nacional-crm.vercel.app
-**Commit productivo:** `19987140def78d140cbca197b84f32467b6721e2`
-**Deployment Vercel:** `dpl_5jV5B4PGR9ZGHHZkM2gmJYr6kRz5` · `READY`
+**Commit productivo:** `c66be89b3dcba2846ff00e7bddcbe828cafd3558`
+**Deployment Vercel:** `dpl_8ZtzYYez2EQGCW4hGEeNadPmuHSu` · `READY`
 
 ## 1. Regla funcional y de autoridad vigente
 
@@ -62,6 +62,15 @@ El rollout visual de identidad está cerrado. No se declara rollout visual compl
 - Identidades visibles: **Vig‑IA Gerencial**, **Vig‑IA Licitaciones** y **Vig‑IA Comercial**.
 - `AGT-001/002/003` permanecen como IDs internos; **Agente Comercial PSI** permanece como router y Agente IT no entra al catálogo SIIO.
 - No hubo migraciones, cambios de DB, productores, permisos ni automatización de decisiones.
+
+### Preview productivo AGT-002 v3
+
+- Vista sintética de sólo lectura desplegada en producción para revisión visual autenticada.
+- Ruta directa: `#/tenders?preview=agt002-v3`.
+- Expediente sintético visible: `LIC-SYN-2026-017`; no representa una oportunidad real.
+- El preview no ejecuta `fetch`, no persiste, no aplica la migración 063 y no cambia GO/NO-GO.
+- Rama trazable: `release/agt002-v3-preview-prod-20260806`; commit desplegado `c66be89`.
+- Gate siguiente: Juan revisa la vista dentro del shell autenticado; después se adecua e integra en la sección **Análisis** del expediente real.
 
 ### Gate abierto
 
