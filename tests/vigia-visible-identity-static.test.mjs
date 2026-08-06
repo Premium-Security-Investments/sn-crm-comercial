@@ -34,4 +34,13 @@ for (const legacyTenderLabel of [
   assert.doesNotMatch(main, new RegExp(legacyTenderLabel));
 }
 
+for (const path of [
+  '../src/vigia/VigiaCommercial.tsx',
+  '../src/vigia/VigiaOpportunityCopilot.tsx',
+]) {
+  const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+  assert.match(source, /VIGIA_VISIBLE_NAMES\.commercial/);
+  assert.doesNotMatch(source, /Vig-IA(?! Comercial)/);
+}
+
 console.log('Vig-IA visible identity contract OK');
