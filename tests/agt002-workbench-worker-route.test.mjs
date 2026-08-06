@@ -169,6 +169,22 @@ try {
     assert.equal(bridgeCalls.length, 0);
   }
 
+  // --- 403 when the server-side worker secret is absent, even if a header is supplied; zero DB/bridge calls ---
+  {
+    const baseline = observedRpc.length;
+    const bridgeBaseline = bridgeCalls.length;
+    const savedWorkerSecret = process.env.AGT002_WORKBENCH_WORKER_SECRET;
+    delete process.env.AGT002_WORKBENCH_WORKER_SECRET;
+    try {
+      const res = await request(port, ROUTE, { method: 'POST', headers: { 'x-agt002-workbench-secret': WORKER_SECRET } });
+      assert.equal(res.status, 403);
+      assert.equal(rpcCountsAfter(baseline), 0, 'sin secreto esperado en servidor, nunca debe llamarse a la base de datos');
+      assert.equal(bridgeCalls.length, bridgeBaseline, 'sin secreto esperado en servidor, nunca debe llamarse al puente');
+    } finally {
+      process.env.AGT002_WORKBENCH_WORKER_SECRET = savedWorkerSecret;
+    }
+  }
+
   // --- 403 with a wrong secret; zero DB/bridge calls ---
   {
     const baseline = observedRpc.length;
