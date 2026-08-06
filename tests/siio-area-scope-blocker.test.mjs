@@ -42,10 +42,13 @@ async function requestJson(port, path, token, method = 'GET', body) {
 const profiles = {
   'director-auth': { id: 'director-profile', full_name: 'Directora', microsoft_email: 'director@example.test', auth_user_id: 'director-auth', role: 'director', active: true, commercial_area: null, can_edit_customer_segment: false },
   'board-auth': { id: 'board-profile', full_name: 'Junta', microsoft_email: 'board@example.test', auth_user_id: 'board-auth', role: 'junta', active: true, commercial_area: null, can_edit_customer_segment: false },
+  'admin-auth': { id: 'admin-profile', full_name: 'Admin', microsoft_email: 'admin@example.test', auth_user_id: 'admin-auth', role: 'admin', active: true, commercial_area: null, can_edit_customer_segment: false },
+  'gerencia-auth': { id: 'gerencia-profile', full_name: 'Gerencia', microsoft_email: 'gerencia@example.test', auth_user_id: 'gerencia-auth', role: 'gerencia', active: true, commercial_area: null, can_edit_customer_segment: false },
 };
-const tokens = { 'director-token': 'director-auth', 'board-token': 'board-auth' };
+const tokens = { 'director-token': 'director-auth', 'board-token': 'board-auth', 'admin-token': 'admin-auth', 'gerencia-token': 'gerencia-auth' };
 let siioReads = 0;
 const siioPaths = [];
+let siioFailureMode = null;
 const fakeSupabase = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   if (url.pathname === '/auth/v1/user') {
@@ -61,13 +64,29 @@ const fakeSupabase = http.createServer((req, res) => {
   if (url.pathname.startsWith('/rest/v1/siio_')) {
     siioReads += 1;
     siioPaths.push(url.pathname);
+    if (url.pathname === '/rest/v1/siio_fronts' && siioFailureMode === 'missing') {
+      return json(res, 404, { message: 'relation "public.siio_fronts" does not exist', code: '42P01' });
+    }
+    if (url.pathname === '/rest/v1/siio_fronts' && siioFailureMode === 'empty') {
+      return json(res, 200, []);
+    }
     if (url.pathname === '/rest/v1/siio_monthly_board_reports') {
       return json(res, 200, [
-        { id: 'published-report', publication_status: 'published', title: 'Publicado' },
-        { id: 'draft-report', status: 'draft', title: 'Borrador' },
+        { id: 'draft-report', status: 'borrador', title: 'Borrador' },
+        { id: 'review-report', status: 'en_revision', title: 'En revisión' },
+        { id: 'approved-report', status: 'aprobado', title: 'Aprobado' },
+        { id: 'presented-report', status: 'presentado', title: 'Presentado' },
+        { id: 'legacy-english-report', publication_status: 'published', title: 'No canónico' },
       ]);
     }
-    return json(res, 500, { message: `unexpected SIIO database access: ${url.pathname}` });
+    if (url.pathname === '/rest/v1/siio_payroll_aggregates') {
+      return json(res, 200, [
+        { id: 'payroll-management', visibility_level: 'gerencia', total_people: 2 },
+        { id: 'payroll-board', visibility_level: 'junta_agregado', total_people: 3 },
+        { id: 'payroll-restricted', visibility_level: 'restringido', total_people: 1 },
+      ]);
+    }
+    return json(res, 200, []);
   }
   return json(res, 500, { message: `unexpected database access: ${url.pathname}` });
 });
@@ -113,13 +132,13 @@ try {
 
   response = await requestJson(appPort, '/api/siio/board-reports', 'board-token');
   assert.equal(response.status, 200, 'junta puede leer reportes de junta');
-  assert.deepEqual(response.body.map(row => row.id), ['published-report'], 'junta sólo recibe reportes publicados');
+  assert.deepEqual(response.body.map(row => row.id), ['presented-report'], 'junta sólo recibe reportes con status presentado');
 
   siioReads = 0;
   siioPaths.length = 0;
   response = await requestJson(appPort, '/api/siio/bootstrap', 'board-token');
   assert.equal(response.status, 200, 'junta puede cargar bootstrap ejecutivo reducido');
-  assert.deepEqual(response.body.boardReports.map(row => row.id), ['published-report'], 'bootstrap junta filtra reportes publicados');
+  assert.deepEqual(response.body.boardReports.map(row => row.id), ['presented-report'], 'bootstrap junta filtra reportes con status presentado');
   for (const key of ['fronts', 'records', 'sources', 'decisions', 'boardSections', 'financialMetrics', 'commercialSignals', 'payrollAggregates', 'strategicOpportunities']) assert.deepEqual(response.body[key], [], `bootstrap junta no expone ${key}`);
   assert.deepEqual(siioPaths, ['/rest/v1/siio_monthly_board_reports'], 'bootstrap junta consulta únicamente board reports');
 
@@ -129,6 +148,37 @@ try {
   response = await requestJson(appPort, '/api/siio/records', 'board-token', 'POST', { id: 'ignored', title: 'ignored' });
   assert.equal(response.status, 403, 'junta no puede mutar SIIO');
   assert.equal(siioReads, 0, 'junta denegada no consulta tablas SIIO');
+
+  response = await requestJson(appPort, '/api/siio/bootstrap', 'admin-token');
+  assert.equal(response.status, 200, 'admin puede cargar bootstrap SIIO');
+  assert.deepEqual(
+    response.body.payrollAggregates.map(row => row.id),
+    ['payroll-management', 'payroll-board'],
+    'admin recibe únicamente nómina visible para gerencia y junta_agregado',
+  );
+  assert.equal(JSON.stringify(response.body).includes('payroll-restricted'), false, 'admin nunca recibe fila de nómina restringida');
+
+  response = await requestJson(appPort, '/api/siio/bootstrap', 'gerencia-token');
+  assert.equal(response.status, 200, 'gerencia puede cargar bootstrap SIIO');
+  assert.deepEqual(
+    response.body.payrollAggregates.map(row => row.id),
+    ['payroll-management', 'payroll-board'],
+    'gerencia recibe únicamente nómina visible para gerencia y junta_agregado',
+  );
+  assert.equal(JSON.stringify(response.body).includes('payroll-restricted'), false, 'gerencia nunca recibe fila de nómina restringida');
+
+  siioFailureMode = 'missing';
+  response = await requestJson(appPort, '/api/siio/bootstrap', 'admin-token');
+  assert.equal(response.status, 503, 'bootstrap falla explícito cuando falta una tabla fundacional SIIO');
+  assert.equal(response.body.error, 'La fundación de datos SIIO no está disponible.', 'mensaje público genérico de fundación SIIO ausente');
+  assert.equal(JSON.stringify(response.body).includes('relation'), false, 'la respuesta pública no filtra detalles de relación');
+  assert.equal(JSON.stringify(response.body).includes('schema cache'), false, 'la respuesta pública no filtra detalles de schema cache');
+
+  siioFailureMode = 'empty';
+  response = await requestJson(appPort, '/api/siio/bootstrap', 'admin-token');
+  assert.equal(response.status, 200, 'bootstrap regresa 200 cuando la tabla fundacional está vacía');
+  assert.deepEqual(response.body.fronts, [], 'bootstrap conserva [] para una consulta exitosa vacía');
+  siioFailureMode = null;
 } finally {
   console.error = originalConsoleError;
   if (appServer?.listening) await new Promise(resolve => appServer.close(resolve));

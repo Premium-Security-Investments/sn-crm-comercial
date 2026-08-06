@@ -337,8 +337,8 @@ export function can(profile, action, resource = {}) {
     case ACTIONS.BOARD_PUBLICATION_VIEW:
       return hasHumanRole(profile, PRIVILEGED_ROLES)
         || (hasHumanRole(profile, BOARD_ROLE)
-          && hasOwn(resource, 'publication_status')
-          && resource.publication_status === 'published');
+          && hasOwn(resource, 'status')
+          && resource.status === 'presentado');
     case ACTIONS.BOARD_DRAFT_EDIT:
     case ACTIONS.BOARD_APPROVE:
     case ACTIONS.BOARD_PUBLISH:
