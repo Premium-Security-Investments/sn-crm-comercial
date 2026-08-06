@@ -76,7 +76,7 @@ Este lote corrige primero las fundaciones de confiabilidad aprobadas para el an�
 - `source_reference` está seleccionado pero el contrato emite una referencia sintética equivalente.
 - El borde `expiry == asOf` se considera vigente.
 
-### Contrato integral v3 — diseño revisado, no implementado
+### Contrato integral v3 — diseño cerrado; runtime no implementado
 
 - Auditoría: `docs/superpowers/specs/2026-08-06-agt002-integral-analysis-v3-audit.md`.
 - Diseño cerrado: `docs/superpowers/specs/2026-08-06-agt002-integral-analysis-v3-design.md`.
@@ -88,9 +88,18 @@ Este lote corrige primero las fundaciones de confiabilidad aprobadas para el an�
 - Revisión independiente GPT read-only: 10 suites relevantes, `10/10` verdes; P0/P1 incorporados al diseño y plan.
 - El intento Opus de este bloque no produjo contenido por límite de sesión `429` y no se contabiliza como review.
 
+### Preview sintético de experiencia v3
+
+- Vista read-only implementada en `TenderAnalysisV3Preview.tsx`, accesible únicamente mediante `#/tenders?preview=agt002-v3` dentro del control de acceso existente de Licitaciones.
+- Expediente y referencias completamente sintéticos; no usa API, Supabase, SharePoint, datos reales ni la migración 063.
+- Muestra las cinco fases, seis unidades revisables, cinco ejes independientes, lectura comercial y jurídica, evidencia o abstención, y acción trazable por `unit_id`.
+- No incluye controles de GO/NO-GO, aprobación, firma, envío ni presentación.
+- Prueba contractual UI: `4/4` verde. Regresión focal AGT-002/Licitaciones: `267/267` verde. Build, paridad backend, auditoría de dependencias y `git diff --check`: `OK`.
+- QA visual: escritorio y viewport móvil real de 390 px; sin errores JavaScript ni desbordamiento horizontal (`scrollWidth = clientWidth = 390`).
+
 ### Gate siguiente
 
-Implementar localmente el contrato v3 con TDD y flag fail-closed, empezando por validadores puros y proyección v2. La UI, activación del flag, SharePoint completo, caso E5 controlado, datos reales y cualquier despliegue permanecen fuera de este lote y requieren gates posteriores.
+Desplegar la vista sintética en un Vercel Preview aislado, verificar su URL pública y recibir comentarios visuales. Esto no activa runtime v3 ni autoriza datos reales, migración 063, SharePoint, GO/NO-GO o despliegue a producción.
 
 ## 3. F2 — coherencia y seguridad transversal de SIIO
 
