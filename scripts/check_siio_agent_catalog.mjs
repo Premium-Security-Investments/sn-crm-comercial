@@ -1,21 +1,36 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { transformSync } from 'esbuild';
+import { buildSync } from 'esbuild';
 
 const sourcePath = new URL('../src/siioAgents.ts', import.meta.url);
 assert.ok(existsSync(sourcePath), 'src/siioAgents.ts must exist');
-const compiled = transformSync(readFileSync(sourcePath, 'utf8'), { loader: 'ts', format: 'esm', target: 'es2020' });
 const tempDir = mkdtempSync(join(tmpdir(), 'siio-agents-'));
 const outPath = join(tempDir, 'siioAgents.mjs');
-writeFileSync(outPath, compiled.code);
+buildSync({
+  entryPoints: [sourcePath.pathname],
+  bundle: true,
+  format: 'esm',
+  outfile: outPath,
+  platform: 'node',
+  target: 'es2020',
+});
 const { SIIO_AGENT_CATALOG, validateSiioAgentCatalog } = await import(`file://${outPath}`);
 
 assert.equal(SIIO_AGENT_CATALOG.length, 3);
 assert.deepEqual(SIIO_AGENT_CATALOG.map(agent => agent.id), ['AGT-001', 'AGT-002', 'AGT-003']);
 assert.equal(SIIO_AGENT_CATALOG.some(agent => agent.id === 'AGT-004'), false);
 assert.equal(new Set(SIIO_AGENT_CATALOG.map(agent => agent.id)).size, SIIO_AGENT_CATALOG.length);
+assert.deepEqual(
+  SIIO_AGENT_CATALOG.map(agent => agent.name),
+  ['Vig-IA Gerencial', 'Vig-IA Licitaciones', 'Vig-IA Comercial'],
+);
+assert.equal(SIIO_AGENT_CATALOG.some(agent => /Agente IT/i.test(agent.name)), false);
+const tenders = SIIO_AGENT_CATALOG.find(agent => agent.id === 'AGT-002');
+assert.match(tenders.purpose, /convertida manualmente desde el Radar/);
+assert.ok(tenders.permitted_actions.some(action => /decisión humana GO\/NO GO/.test(action)));
+assert.ok(tenders.forbidden_actions.some(action => /Convertir procesos del Radar/.test(action)));
 assert.deepEqual(validateSiioAgentCatalog(SIIO_AGENT_CATALOG), []);
 assert.ok(SIIO_AGENT_CATALOG.every(agent => agent.owner_role && agent.purpose && agent.authorized_sources.length));
 assert.ok(SIIO_AGENT_CATALOG.every(agent => agent.permitted_actions.length && agent.forbidden_actions.length));
