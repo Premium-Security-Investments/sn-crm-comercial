@@ -183,14 +183,15 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     canonicalOnly ? commonParams : { ...commonParams, p_producer: 'AGT-002', p_method: 'agent_ai', p_status: 'completed' },
   ));
   const runId = requireId(runRecord.id, 'La ejecución de AGT-002 Preview');
+  const canonical = canonicalOnly ? runRecord.canonical === true : false;
   return {
     run_id: runId,
     snapshot_id: runRecord.snapshot_id || snapshotId,
     producer: runRecord.producer || 'AGT-002',
     method: runRecord.method || 'agent_ai',
     status: runRecord.status || 'completed',
-    canonical: runRecord.canonical === true || canonicalOnly,
-    current: true,
+    canonical,
+    current: canonicalOnly ? canonical : true,
     result: content,
     critical_open_count: runRecord.critical_open_count ?? criticalOpenCount,
     context_version_id: runRecord.context_version_id ?? contextVersionId,
@@ -270,7 +271,6 @@ export async function findAgt002PreviewRun(database, idempotencyKey, { canonical
   let query = database.from('psi_tender_analysis_runs')
     .select(`id,snapshot_id,producer,method,status,result,critical_open_count,created_at,completed_at${canonicalOnly ? ',canonical' : ''}`)
     .eq('idempotency_key', key);
-  if (canonicalOnly) query = query.eq('canonical', true);
   const response = await query.maybeSingle();
   if (response?.error) throw new Error(response.error.message || String(response.error));
   const row = response?.data;
@@ -282,7 +282,7 @@ export async function findAgt002PreviewRun(database, idempotencyKey, { canonical
     method: row.method,
     status: row.status,
     ...(canonicalOnly ? { canonical: row.canonical === true } : {}),
-    current: true,
+    current: canonicalOnly ? row.canonical === true : true,
     result: row.result,
     critical_open_count: row.critical_open_count ?? 0,
     created_at: row.created_at || null,

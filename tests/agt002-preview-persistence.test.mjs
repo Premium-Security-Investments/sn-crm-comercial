@@ -339,6 +339,24 @@ function fakeDatabase({ onRpc } = {}) {
   assert.equal(Object.hasOwn(call.params, 'p_status'), false);
 }
 
+// An exact idempotency replay may refer to a run that has since been superseded.
+// Persistence must preserve the RPC's real canonical state instead of forcing it true.
+{
+  const database = fakeDatabase({ onRpc(name, params) {
+    if (name !== 'psi_record_agt002_canonical_analysis_run') return null;
+    return { data: {
+      id: ids.run, snapshot_id: params.p_snapshot_id, producer: 'AGT-002', method: 'agent_ai',
+      status: 'completed', canonical: false, critical_open_count: params.p_critical_open_count,
+    }, error: null };
+  } });
+  const replayed = await registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: envelope(), canonicalOnly: true, context_version_id: ids.contextVersion,
+  });
+  assert.equal(replayed.canonical, false, 'a superseded replay must not be mislabeled canonical');
+  assert.equal(replayed.current, false, 'a superseded replay must not be mislabeled current');
+}
+
 // Attempt lifecycle events are typed and producer identity is fixed by the persistence layer.
 {
   const calls = [];
@@ -422,12 +440,13 @@ function fakeDatabase({ onRpc } = {}) {
     from() { return {
       select(columns) { assert.match(columns, /canonical/); return this; },
       eq(column, value) { filters.push([column, value]); return this; },
-      async maybeSingle() { return { data: { id: ids.run, snapshot_id: ids.snapshot, producer: 'AGT-002', method: 'agent_ai', status: 'completed', canonical: true, result: {}, critical_open_count: 0 }, error: null }; },
+      async maybeSingle() { return { data: { id: ids.run, snapshot_id: ids.snapshot, producer: 'AGT-002', method: 'agent_ai', status: 'completed', canonical: false, result: {}, critical_open_count: 0 }, error: null }; },
     }; },
   };
   const canonicalRow = await findAgt002PreviewRun(canonicalFound, 'canonical-key', { canonicalOnly: true });
-  assert.equal(canonicalRow.canonical, true);
-  assert.deepEqual(filters, [['idempotency_key', 'canonical-key'], ['canonical', true]]);
+  assert.equal(canonicalRow.canonical, false, 'idempotency lookup must return the exact superseded run state');
+  assert.equal(canonicalRow.current, false);
+  assert.deepEqual(filters, [['idempotency_key', 'canonical-key']], 'idempotency lookup must not hide a superseded exact-key replay');
 
   const erroring = { from() { return { select() { return this; }, eq() { return this; }, async maybeSingle() { return { data: null, error: { message: 'db down' } }; } }; } };
   await assert.rejects(() => findAgt002PreviewRun(erroring, 'x'), /db down/);

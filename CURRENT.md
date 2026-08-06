@@ -32,6 +32,54 @@ Toda decisión humana debe ser trazable y asociarse al análisis vigente. El ord
 
 El rollout visual de identidad está cerrado. No se declara rollout visual completo de F2 ni activación continua de E6 mientras esos gates permanezcan abiertos.
 
+## 2.1 Fundaciones del análisis integral — F1/F2 en rama, no desplegadas
+
+**Corte de desarrollo:** 2026-08-06 10:43 COT · 2026-08-06 15:43 UTC
+
+**Rama:** `feat/agt002-v3-foundations`
+
+**Base:** `origin/main` en `f85907d12d92d8ab956efd2ee9d6bfd264022c12`
+
+Este lote corrige primero las fundaciones de confiabilidad aprobadas para el análisis integral. Permanece sólo en rama: **no se aplicó la migración 063, no se hizo push/PR/merge/deploy y producción no cambió**.
+
+### F1 — canonicidad transaccional
+
+- Migración aditiva `063_agt002_canonical_promotion.sql` y rollback correspondiente.
+- Índice único parcial: máximo un run `canonical=true,status='completed'` por oportunidad.
+- Promoción serializada por oportunidad; el canónico anterior se desmarca sin reescribir su payload.
+- Idempotencia exacta preservada incluso después de supersesión; una misma key con payload distinto falla.
+- Backend distingue un replay histórico (`canonical=false,current=false`) del análisis vigente.
+- Los runs v2 permanecen consultables; no se borraron ni reinterpretaron.
+
+### F2 — 17 clases tipadas y cobertura explícita
+
+- Módulo `agt002-company-evidence-classes.js` con catálogo cerrado de las 17 clases de la migración 061.
+- Dimensiones separadas: presencia, revisión, vigencia, aplicabilidad y cumplimiento.
+- Cobertura explícita: disponible, seleccionada, omitida, vencida, inaccesible y pendiente de revisión.
+- Una clase ausente no desaparece: se representa como `inaccessible` y `pending_review`.
+- Sólo se transportan referencias y metadatos; no payload documental, PII, armas, banca ni anexos nominales.
+
+### Evidencia mecánica del lote
+
+- Pruebas focales F1/F2/paridad: `4/4` verdes.
+- Regresión AGT‑002: `121/121` verdes.
+- Suite completa: `360` verdes + `1` fallo baseline, reproducido en un worktree puro de `origin/main` (`module-permissions-migration-pglite.test.mjs`, `modulo_siio_gerencial` extra para Director).
+- Paridad Express/Vercel: `OK`.
+- `npm audit --omit=dev`: `0` vulnerabilidades.
+- Build y `git diff --check`: `OK`.
+- Revisión independiente Claude Opus 4.8: `APPROVE`, sin P0/P1.
+
+### Observaciones no bloqueantes
+
+- Dos llamadas simultáneas con la misma key nueva pueden devolver un `23505` genérico a la segunda; no duplican ni corrompen y el reintento es idempotente.
+- `coverage` son flags independientes, no una partición mutuamente excluyente.
+- `source_reference` está seleccionado pero el contrato emite una referencia sintética equivalente.
+- El borde `expiry == asOf` se considera vigente.
+
+### Gate siguiente
+
+Diseñar el contrato integral v3 compatible con v2 a partir de estas fundaciones. La UI, SharePoint completo, el caso E5 controlado y cualquier despliegue permanecen fuera de este lote y requieren gates posteriores.
+
 ## 3. F2 — coherencia y seguridad transversal de SIIO
 
 ### Entregado

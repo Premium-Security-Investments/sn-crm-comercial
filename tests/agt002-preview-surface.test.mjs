@@ -35,7 +35,7 @@ for (const route of [serverRoute, vercelRoute]) {
   assert.match(route, /engine\.analyze\(\{ opportunity, documents: analysisDocuments,/, 'manual preview must send only adapted documents when retrieval is enabled');
   assert.match(route, /appendAttempt\(idempotencyKey, 'completed', \{ analysis_run_id: registeredRun\.run_id \}\)/, 'canonical attempts must persist completion tied to the run');
   assert.match(route, /registerAgt002PreviewAnalysis\([\s\S]*canonicalOnly, context_version_id: contextVersion\?\.id \}\)/, 'run persistence must receive canonical-only plus the exact immutable context version');
-  assert.match(route, /findAgt002PreviewRun\(database, idempotencyKey, \{ canonicalOnly \}\)/, 'idempotent reuse must filter canonical runs when enabled');
+  assert.match(route, /findAgt002PreviewRun\(database, idempotencyKey, \{ canonicalOnly \}\)/, 'idempotent reuse must request canonical state while looking up the exact run key');
   assert.match(route, /used: null, fallback: false, state/, 'unavailable canonical responses must not present a substitute producer');
   assert.match(route, /human_review_required: true/g, 'every response path must require human review');
   assert.doesNotMatch(route, /decision\s*:|go_no_go\s*:/i, 'preview endpoint must not create an authoritative GO/NO GO field');
