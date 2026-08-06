@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { VIGIA_VISIBLE_NAMES } from './agentIdentity';
 import {
   beginCopilotGeneration,
   changeCopilotOpportunity,
@@ -62,12 +63,12 @@ export function VigiaOpportunityCopilot({ opportunityId, request }: Props) {
   const ready = state.phase === 'ready' ? state : null;
   const brief = ready?.result.output.brief;
   return <section className="vigia-opportunity-copilot" aria-labelledby="vigia-copilot-title">
-    <header><div><span className="eyebrow">Vig-IA · copiloto comercial</span><h3 id="vigia-copilot-title">Próxima conversación y borrador</h3><p>Usa únicamente el contexto autorizado de esta oportunidad. No envía mensajes ni modifica el CRM.</p></div>{state.phase !== 'loading' && <button type="button" onClick={generate}>Generar borrador</button>}</header>
+    <header><div><span className="eyebrow">{VIGIA_VISIBLE_NAMES.commercial} · copiloto comercial</span><h3 id="vigia-copilot-title">Próxima conversación y borrador</h3><p>Usa únicamente el contexto autorizado de esta oportunidad. No envía mensajes ni modifica el CRM.</p></div>{state.phase !== 'loading' && <button type="button" onClick={generate}>Generar borrador</button>}</header>
     {state.phase === 'idle' && <p className="muted">Genera una propuesta editable y separada del registro original.</p>}
-    {state.phase === 'loading' && <div className="notice" role="status">Vig-IA está preparando un borrador acotado…</div>}
+    {state.phase === 'loading' && <div className="notice" role="status">{VIGIA_VISIBLE_NAMES.commercial} está preparando un borrador acotado…</div>}
     {state.phase === 'error' && <div className="error" role="alert"><strong>No fue posible generar el borrador.</strong><p>{state.message}</p></div>}
     {ready && brief && <div className="vigia-copilot-result">
-      <details><summary><strong>Resumen de Vig-IA</strong><span>{brief.summary}</span></summary>
+      <details><summary><strong>Resumen de {VIGIA_VISIBLE_NAMES.commercial}</strong><span>{brief.summary}</span></summary>
         <div className="vigia-copilot-evidence"><section><h4>Hechos observados</h4>{brief.facts.length ? <ul>{brief.facts.map((fact, index) => <li key={`${fact.text}-${index}`}>{fact.text}</li>)}</ul> : <p className="muted">Sin hechos adicionales.</p>}</section><section><h4>Inferencias</h4>{brief.inferences.length ? <ul>{brief.inferences.map((item, index) => <li key={`${item.text}-${index}`}>{item.text} <small>Confianza {item.confidence}</small></li>)}</ul> : <p className="muted">Sin inferencias.</p>}</section></div>
       </details>
       {brief.missing_information.length > 0 && <section><h4>Información faltante</h4><ul>{brief.missing_information.map(item => <li key={item}>{item}</li>)}</ul></section>}

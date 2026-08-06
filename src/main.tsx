@@ -1856,7 +1856,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   const focusClass = (targetId: string) => focusedDashboardTarget === targetId ? 'dashboard-focus-hit' : '';
 
   return <section className="stack manager-dashboard dashboard-v2 dashboard-v2-six-components">
-    {initialVigiaFilters.invalid && <div className="error">Enlace de Vig-IA inválido o manipulado. Se aplicó un alcance vacío.</div>}
+    {initialVigiaFilters.invalid && <div className="error">{`Enlace de ${VIGIA_VISIBLE_NAMES.commercial} inválido o manipulado. Se aplicó un alcance vacío.`}</div>}
     <section className="v2-filter-strip panel" aria-label="Filtros gerenciales">
       <div className="v2-filter-strip-title">Filtros gerenciales</div>
       <div className="filters manager-dashboard-filters v2-dashboard-filters">
