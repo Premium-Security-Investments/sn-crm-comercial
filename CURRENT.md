@@ -96,10 +96,12 @@ Este lote corrige primero las fundaciones de confiabilidad aprobadas para el an�
 - No incluye controles de GO/NO-GO, aprobación, firma, envío ni presentación.
 - Prueba contractual UI: `4/4` verde. Regresión focal AGT-002/Licitaciones: `267/267` verde. Build, paridad backend, auditoría de dependencias y `git diff --check`: `OK`.
 - QA visual: escritorio y viewport móvil real de 390 px; sin errores JavaScript ni desbordamiento horizontal (`scrollWidth = clientWidth = 390`).
+- Deployment público aislado: `https://seguridad-nacional-agt002-v3-previe.vercel.app` · `dpl_Hx4dQ4eTmifmzSKJQmhtW8EQFdsQ` · `READY`.
+- El proyecto principal `seguridad-nacional-crm` y su URL productiva no fueron reemplazados ni modificados; el micrositio separado contiene sólo el artefacto estático sintético.
 
 ### Gate siguiente
 
-Desplegar la vista sintética en un Vercel Preview aislado, verificar su URL pública y recibir comentarios visuales. Esto no activa runtime v3 ni autoriza datos reales, migración 063, SharePoint, GO/NO-GO o despliegue a producción.
+Recibir y consolidar comentarios visuales de Juan antes de implementar el runtime v3. Siguen fuera de alcance los datos reales, migración 063, SharePoint, GO/NO-GO y cualquier cambio a producción del CRM.
 
 ## 3. F2 — coherencia y seguridad transversal de SIIO
 
