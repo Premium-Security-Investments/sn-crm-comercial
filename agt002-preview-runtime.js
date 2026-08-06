@@ -8,7 +8,7 @@ const REQUIRED_ENV_KEYS = ['AGT002_PREVIEW_MODEL', 'AGT002_HETZNER_BRIDGE_URL', 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_CONCURRENT = 2;
 const DEFAULT_DAILY_MAX_RUNS = 20;
-export const AGT002_PREVIEW_DEFAULT_POLICY_VERSION = 'agt002-preview-policy-v1';
+export const AGT002_PREVIEW_DEFAULT_POLICY_VERSION = 'agt002-preview-policy-v2';
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;

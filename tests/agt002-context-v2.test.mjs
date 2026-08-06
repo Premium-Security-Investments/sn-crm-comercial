@@ -90,4 +90,73 @@ assert.throws(() => buildAgt002ContextV2({ ...input, opportunity: { ...input.opp
 assert.throws(() => buildAgt002ContextV2({ ...input, human_evidence: Array.from({ length: 101 }, (_, index) => ({ ...input.human_evidence[0], answer_id: `a-${index}` })) }), /límite|máximo/i);
 assert.throws(() => buildAgt002ContextV2({ ...input, company_dossier: { ...input.company_dossier, restrictions: { ...input.company_dossier.restrictions, value: 'invented' } } }), /not_verified/i);
 
+// --- applicability_status: an OPTIONAL sibling of status/value/source on any sourced
+// value (not just company_dossier.licenses) — never required elsewhere.
+{
+  const withApplicability = buildAgt002ContextV2({
+    ...input,
+    company_dossier: {
+      ...input.company_dossier,
+      licenses: { ...input.company_dossier.licenses, applicability_status: 'pending_case_validation' },
+    },
+  });
+  assert.equal(withApplicability.company_dossier.licenses.applicability_status, 'pending_case_validation');
+  assert.deepEqual(
+    Object.keys(withApplicability.company_dossier.rup_status),
+    ['status', 'value', 'source'],
+    'fields that do not set applicability_status must not gain it implicitly',
+  );
+
+  for (const status of ['applicable', 'not_applicable']) {
+    const built = buildAgt002ContextV2({
+      ...input,
+      company_dossier: { ...input.company_dossier, licenses: { ...input.company_dossier.licenses, applicability_status: status } },
+    });
+    assert.equal(built.company_dossier.licenses.applicability_status, status);
+  }
+
+  assert.throws(
+    () => buildAgt002ContextV2({
+      ...input,
+      company_dossier: { ...input.company_dossier, licenses: { ...input.company_dossier.licenses, applicability_status: 'bogus' } },
+    }),
+    /applicability_status/i,
+    'an unknown applicability_status value must still be rejected',
+  );
+
+  // Also allowed on a root-level opportunity/commercial_context field, since the option
+  // is generic to every sourced value, not special-cased to company_dossier.licenses.
+  const onOpportunity = buildAgt002ContextV2({
+    ...input,
+    opportunity: { ...input.opportunity, modality: { ...input.opportunity.modality, applicability_status: 'applicable' } },
+  });
+  assert.equal(onOpportunity.opportunity.modality.applicability_status, 'applicable');
+}
+
+// --- Redaction: a Resolución-associated number (6-20 digits) must survive verbatim,
+// while a comparable phone number without that prefix, an ID, an email and a bearer
+// secret in the same text must still be redacted.
+{
+  const withMixedSensitiveText = buildAgt002ContextV2({
+    ...input,
+    opportunity: {
+      ...input.opportunity,
+      authorized_notes: value(
+        'Resolución 20214100005697 vigente; Resolución No. 998877; contacto 3102147896; cedula 123456789; correo juan@example.com; Bearer abcdefghijklmnop',
+        'psi_sales_opportunities:notes',
+      ),
+    },
+  });
+  const redactedText = withMixedSensitiveText.opportunity.authorized_notes.value;
+  assert.match(redactedText, /Resolución 20214100005697/, 'a resolution number directly after "Resolución" must survive redaction');
+  assert.match(redactedText, /Resolución No\. 998877/, 'a resolution number after "Resolución No." must also survive redaction');
+  assert.doesNotMatch(redactedText, /3102147896/, 'a comparable phone number without the Resolución prefix must still be redacted');
+  assert.match(redactedText, /\[REDACTED_PHONE\]/);
+  assert.match(redactedText, /\[REDACTED_ID\]/, 'cedula must still be redacted');
+  assert.doesNotMatch(redactedText, /123456789/);
+  assert.match(redactedText, /\[REDACTED_EMAIL\]/);
+  assert.doesNotMatch(redactedText, /juan@example\.com/);
+  assert.match(redactedText, /Bearer \[REDACTED_SECRET\]/);
+}
+
 console.log('AGT-002 context v2 closed contract passed');

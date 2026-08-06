@@ -18,6 +18,12 @@ const COMMERCIAL_CONTEXT_KEYS = [
   'opportunity_status', 'commercial_owner', 'account_relationship', 'next_action', 'due_at', 'authorized_notes',
 ];
 const SOURCED_VALUE_KEYS = ['status', 'value', 'source'];
+// Optional sibling of status/value/source: whether a piece of evidence applies to the
+// specific case/tender being analyzed. Kept strictly optional and generic to every
+// sourced value (not special-cased to company_dossier.licenses) — most fields never set
+// it, so its absence must never be treated as a missing required key.
+const SOURCED_VALUE_OPTIONAL_KEYS = ['applicability_status'];
+const APPLICABILITY_STATUSES = new Set(['pending_case_validation', 'applicable', 'not_applicable']);
 const SOURCE_KEYS = ['type', 'reference', 'observed_at', 'label', 'expires_at'];
 const HUMAN_EVIDENCE_KEYS = [
   'answer_id', 'question_id', 'question_text', 'status', 'response', 'evidence_notes',
@@ -39,14 +45,40 @@ function requireCompleteKeys(value, required, label) {
   if (missing.length) throw new Error(`${label} requiere campos explícitos, incluso como not_verified: ${missing.join(', ')}.`);
 }
 
+// Narrow exception: a 6-20 digit number immediately after "Resolución" (optionally via
+// "No.", "No", "Núm.", "N°"/"Nº") is an administrative act number, not a phone number —
+// e.g. "Resolución 20214100005697" — so it must survive the phone redaction below intact.
+// Everything else (phones without that prefix, cedulas/NIT, emails, bearer/API secrets)
+// keeps redacting exactly as before. Digits are swapped for a printable placeholder
+// before the other patterns run, then restored verbatim, so this can never widen what
+// the phone/ID patterns themselves match elsewhere in the text. Printable sentinels
+// avoid embedding NUL bytes in this JavaScript source file.
+const RESOLUTION_NUMBER_RE = /(\bResoluci[oó]n\s*(?:No\.?|N[uú]m\.?|N[°º])?\s*)(\d{6,20})\b/gi;
+
+function protectResolutionNumbers(text) {
+  const numbers = [];
+  const protectedText = text.replace(RESOLUTION_NUMBER_RE, (_match, prefix, digits) => {
+    const token = `__AGT002_RESOLUTION_NUMBER_${numbers.length}__`;
+    numbers.push(digits);
+    return `${prefix}${token}`;
+  });
+  return { protectedText, numbers };
+}
+
+function restoreResolutionNumbers(text, numbers) {
+  return numbers.reduce((acc, digits, index) => acc.replaceAll(`__AGT002_RESOLUTION_NUMBER_${index}__`, digits), text);
+}
+
 function redactText(value) {
-  return String(value ?? '')
+  const { protectedText, numbers } = protectResolutionNumbers(String(value ?? ''));
+  const redacted = protectedText
     .replace(/\b(?:c[eé]dula|cc|nit)\s*[:#-]?\s*[0-9][0-9.\s-]{5,}[0-9]\b/gi, '[REDACTED_ID]')
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[REDACTED_EMAIL]')
     .replace(/(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?){2}\d{4}\b/g, '[REDACTED_PHONE]')
     .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/gi, 'Bearer [REDACTED_SECRET]')
     .replace(/\b(?:sk|pk|api)[-_][A-Za-z0-9._~-]{8,}\b/gi, '[REDACTED_SECRET]')
     .replace(/([?&](?:token|key|signature|sig|secret|authorization)=)[^&#\s]+/gi, '$1[REDACTED_SECRET]');
+  return restoreResolutionNumbers(redacted, numbers);
 }
 
 function normalizeText(value, label, { nullable = false, max = AGT002_CONTEXT_V2_MAX_TEXT_CHARS, redact = true } = {}) {
@@ -96,16 +128,21 @@ function normalizeEvidenceValue(value, label, { redact = true } = {}) {
 }
 
 function normalizeSourcedValue(raw, label, { redact = true } = {}) {
-  rejectUnknownKeys(raw, SOURCED_VALUE_KEYS, label);
+  rejectUnknownKeys(raw, [...SOURCED_VALUE_KEYS, ...SOURCED_VALUE_OPTIONAL_KEYS], label);
   requireCompleteKeys(raw, SOURCED_VALUE_KEYS, label);
   if (!VALUE_STATUSES.has(raw.status)) throw new Error(`${label}.status no es permitido.`);
   if (raw.status === 'not_verified' && raw.value !== null) throw new Error(`${label} con estado not_verified debe tener value null.`);
   if (raw.status !== 'not_verified' && raw.value == null) throw new Error(`${label} requiere value cuando está verificado o reportado.`);
-  return {
+  const normalized = {
     status: raw.status,
     value: raw.status === 'not_verified' ? null : normalizeEvidenceValue(raw.value, `${label}.value`, { redact }),
     source: normalizeSource(raw.source, `${label}.source`),
   };
+  if (raw.applicability_status !== undefined) {
+    if (!APPLICABILITY_STATUSES.has(raw.applicability_status)) throw new Error(`${label}.applicability_status no es permitido.`);
+    normalized.applicability_status = raw.applicability_status;
+  }
+  return normalized;
 }
 
 function normalizeSection(raw, keys, label) {

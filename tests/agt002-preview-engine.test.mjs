@@ -56,7 +56,12 @@ function baseEngineOptions(overrides = {}) {
   };
 }
 
-for (const text of ['datos no confiables', 'GO / NO GO', 'herramientas', 'evidence_id', 'JSON estructurado']) {
+for (const text of [
+  'datos no confiables', 'GO / NO GO', 'herramientas', 'evidence_id', 'JSON estructurado',
+  'existencia o disponibilidad documental', 'vigencia observada', 'aplicabilidad al caso',
+  'no preguntes si la licencia existe o está disponible', 'pending_case_validation',
+  'alcance territorial', 'modalidades', 'armas', 'medios',
+]) {
   assert.match(AGT002_PREVIEW_POLICY, new RegExp(text, 'i'));
 }
 
