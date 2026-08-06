@@ -1,9 +1,9 @@
 # CURRENT — SIIO Comercial / Licitaciones / Vig‑IA
 
-**Corte autoritativo:** 2026-08-06 08:32 COT · 2026-08-06 13:32 UTC
+**Corte autoritativo:** 2026-08-06 11:52 COT · 2026-08-06 16:52 UTC
 **Producción:** https://seguridad-nacional-crm.vercel.app
-**Commit productivo:** `2904efba2be9db9fc4622bd1f45d77b609398c4d`
-**Deployment Vercel:** `dpl_KZ1K8wJE3LF7roo2CH3ShxjHdUQu` · `READY`
+**Commit productivo:** `19987140def78d140cbca197b84f32467b6721e2`
+**Deployment Vercel:** `dpl_5jV5B4PGR9ZGHHZkM2gmJYr6kRz5` · `READY`
 
 ## 1. Regla funcional y de autoridad vigente
 
@@ -28,8 +28,9 @@ Toda decisión humana debe ser trazable y asociarse al análisis vigente. El ord
 | **E5** | **Canary canónico completado y verificado** con corpus jurídico `legal-corpus-v1.1` | La revisión jurídica y el GO/NO‑GO siguen siendo humanos |
 | **E6** | Scheduler, endpoint, bridge, persistencia y autoridad probados técnicamente; secreto reparado y límites explícitos | Primer mensaje humano real en Mesa Vig‑IA y un único canary productivo |
 | **F2 SIIO** | Código, migración de seguridad y deployment productivo completados | QA visual autenticado operado por Juan |
+| **Identidad Vig‑IA** | **Desplegada y aprobada visualmente**: Vig‑IA Gerencial, Vig‑IA Licitaciones y Vig‑IA Comercial | Ninguno para identidad; no reemplaza el QA F2 restante |
 
-No se declara rollout visual completo de F2 ni activación continua de E6 mientras esos gates permanezcan abiertos.
+El rollout visual de identidad está cerrado. No se declara rollout visual completo de F2 ni activación continua de E6 mientras esos gates permanezcan abiertos.
 
 ## 3. F2 — coherencia y seguridad transversal de SIIO
 
@@ -51,6 +52,16 @@ No se declara rollout visual completo de F2 ni activación continua de E6 mientr
 - Escrituras prohibidas post‑migración: `0`.
 - Conteos de filas antes/después: idénticos; `data_preserved=true`.
 - `service_role` conserva únicamente los accesos mínimos requeridos.
+
+### Identidad visible desplegada
+
+- PR **#81** fusionado en `main`: `19987140def78d140cbca197b84f32467b6721e2`.
+- Deployment productivo: `dpl_5jV5B4PGR9ZGHHZkM2gmJYr6kRz5` · `READY`.
+- Alias canónico verificado con HTTP 200 y asset `index-FSatnFHf.js`.
+- QA visual autenticado aprobado por Juan sobre el catálogo institucional gobernado.
+- Identidades visibles: **Vig‑IA Gerencial**, **Vig‑IA Licitaciones** y **Vig‑IA Comercial**.
+- `AGT-001/002/003` permanecen como IDs internos; **Agente Comercial PSI** permanece como router y Agente IT no entra al catálogo SIIO.
+- No hubo migraciones, cambios de DB, productores, permisos ni automatización de decisiones.
 
 ### Gate abierto
 
