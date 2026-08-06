@@ -76,9 +76,21 @@ Este lote corrige primero las fundaciones de confiabilidad aprobadas para el an�
 - `source_reference` está seleccionado pero el contrato emite una referencia sintética equivalente.
 - El borde `expiry == asOf` se considera vigente.
 
+### Contrato integral v3 — diseño revisado, no implementado
+
+- Auditoría: `docs/superpowers/specs/2026-08-06-agt002-integral-analysis-v3-audit.md`.
+- Diseño cerrado: `docs/superpowers/specs/2026-08-06-agt002-integral-analysis-v3-design.md`.
+- Plan TDD: `docs/superpowers/plans/2026-08-06-agt002-integral-analysis-v3-implementation-plan.md`.
+- Fuente v3: una unidad por requisito en orden descarte → habilitantes → técnico → financiero/ejecución → estratégico.
+- Comercial + jurídico son obligatorios por unidad; evidencia o abstención; cinco ejes independientes.
+- La IA no declara cumplimiento definitivo: toda lectura permanece pendiente de validación humana.
+- V2 histórico queda inmutable; backend proyectará compatibilidad v2 determinísticamente desde v3.
+- Revisión independiente GPT read-only: 10 suites relevantes, `10/10` verdes; P0/P1 incorporados al diseño y plan.
+- El intento Opus de este bloque no produjo contenido por límite de sesión `429` y no se contabiliza como review.
+
 ### Gate siguiente
 
-Diseñar el contrato integral v3 compatible con v2 a partir de estas fundaciones. La UI, SharePoint completo, el caso E5 controlado y cualquier despliegue permanecen fuera de este lote y requieren gates posteriores.
+Implementar localmente el contrato v3 con TDD y flag fail-closed, empezando por validadores puros y proyección v2. La UI, activación del flag, SharePoint completo, caso E5 controlado, datos reales y cualquier despliegue permanecen fuera de este lote y requieren gates posteriores.
 
 ## 3. F2 — coherencia y seguridad transversal de SIIO
 
