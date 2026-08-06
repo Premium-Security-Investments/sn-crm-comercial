@@ -28,6 +28,7 @@ import { setAreaScopeSelection, type AccessAssignment } from './profileAccessSta
 import { supabaseBrowser } from './supabaseBrowser';
 import { VigiaCommercial } from './vigia/VigiaCommercial';
 import { VigiaOpportunityCopilot } from './vigia/VigiaOpportunityCopilot';
+import { PSI_AGENT_ROUTER_NAME, VIGIA_VISIBLE_NAMES } from './vigia/agentIdentity';
 import { canRenderOpportunityCopilot } from './vigia/opportunity-copilot-state';
 import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
@@ -910,12 +911,12 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
 
   const analyzeDocumentsWithAgt002 = async () => {
     setBusy(true);
-    setAnalysisStatus({ message: 'Analizando con Vig-IA; la revisión humana sigue siendo obligatoria…', tone: 'status' });
+    setAnalysisStatus({ message: `Analizando con ${VIGIA_VISIBLE_NAMES.tenders}; la revisión humana sigue siendo obligatoria…`, tone: 'status' });
     try {
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-analyze-agent-preview', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
       setPayload(data); onAnalysisChanged?.(data.analysis || null);
       setAnalysisStatus({
-        message: data.analysis_engine?.fallback ? 'Vig-IA no estuvo disponible; se aplicó fallback seguro por reglas.' : 'Vig-IA completó el análisis. La recomendación requiere revisión humana.',
+        message: data.analysis_engine?.fallback ? `${VIGIA_VISIBLE_NAMES.tenders} no estuvo disponible; se aplicó fallback seguro por reglas.` : `${VIGIA_VISIBLE_NAMES.tenders} completó el análisis. La recomendación requiere revisión humana.`,
         tone: 'status',
       });
     } catch (err) {
@@ -1026,7 +1027,7 @@ function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, o
         <section className="document-analysis-card"><small>Requiere intervención humana</small><ul>{(authorizedPreparation.human_required_items || []).map(item => <li key={item.key}><strong>{item.title || item.name}</strong> · {item.owner}<br/><span className="muted">{item.reason}</span></li>)}</ul></section>
         <section className="document-analysis-card"><small>Carpeta SharePoint / OneDrive</small><strong>{authorizedPreparation.sharepoint_folder?.root_name}</strong><div className="document-matrix">{(authorizedPreparation.sharepoint_folder?.folders || []).slice(0, 8).map(folder => <div key={folder}><Badge tone="blue">carpeta</Badge><span>{folder}</span></div>)}</div></section>
         <section className="document-analysis-card"><small>Notas del sistema sobre el plan</small><ul>{(authorizedPreparation.assistant_notes || []).map(item => <li key={item}>{item}</li>)}</ul></section>
-        <section className="document-analysis-card"><small>Nota interna de preparación</small><p className="muted">Esta nota queda en el historial del expediente para el equipo. No es procesada ni respondida automáticamente por Vig-IA.</p>{payload.notes?.length ? <div className="timeline">{payload.notes.slice(-4).map((n, idx) => <div className="event" key={`${n.created_at}-${idx}`}><strong>{n.status || 'nota'}</strong><span>{fmtDate(n.created_at)} · {n.created_by_name || n.created_by || 'Usuario'}</span><p>{n.note}</p></div>)}</div> : null}<form onSubmit={saveAssistantNote} className="form"><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Ej: necesitamos que contabilidad confirme capital de trabajo y cargue estados financieros 2025…"/><button disabled={busy || !note.trim()}>Guardar nota interna</button></form></section>
+        <section className="document-analysis-card"><small>Nota interna de preparación</small><p className="muted">Esta nota queda en el historial del expediente para el equipo. No es procesada ni respondida automáticamente por {VIGIA_VISIBLE_NAMES.tenders}.</p>{payload.notes?.length ? <div className="timeline">{payload.notes.slice(-4).map((n, idx) => <div className="event" key={`${n.created_at}-${idx}`}><strong>{n.status || 'nota'}</strong><span>{fmtDate(n.created_at)} · {n.created_by_name || n.created_by || 'Usuario'}</span><p>{n.note}</p></div>)}</div> : null}<form onSubmit={saveAssistantNote} className="form"><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Ej: necesitamos que contabilidad confirme capital de trabajo y cargue estados financieros 2025…"/><button disabled={busy || !note.trim()}>Guardar nota interna</button></form></section>
       </div>
     </div> : <div className="document-empty-state"><strong>Preparación pendiente de registrar GO</strong><span>Registrar GO en la decisión formal para crear el expediente, documentos genéricos automáticos y pendientes humanos. Hasta entonces este panel es de solo lectura.</span>{statusText && <div className="notice">{statusText}</div>}</div>}
   </Panel>;
@@ -1111,7 +1112,7 @@ function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { oppor
       await loadPage(null);
     } catch (error) { setStatus(error instanceof Error ? error.message : String(error)); }
   };
-  const actorLabel = (event: TenderTrackingEvent) => event.actor_kind === 'system' ? 'Sistema' : profiles.find(profile => profile.id === event.created_by)?.full_name || (event.actor_kind === 'agent' ? 'Vig-IA' : 'Usuario registrado');
+  const actorLabel = (event: TenderTrackingEvent) => event.actor_kind === 'system' ? 'Sistema' : profiles.find(profile => profile.id === event.created_by)?.full_name || (event.actor_kind === 'agent' ? VIGIA_VISIBLE_NAMES.tenders : 'Usuario registrado');
   const eventLink = (event: TenderTrackingEvent) => typeof event.metadata?.source_url === 'string' ? event.metadata.source_url : null;
   const processHistory = useMemo<TenderProcessHistoryItem[]>(() => [
     ...events.filter(event => {
@@ -1125,7 +1126,7 @@ function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { oppor
   return <div className="stack">
     <Panel title="Registrar actuación o novedad"><form onSubmit={save} className="form"><Select value={type} onChange={setType} options={publicActuationOptions} empty="Tipo de actuación"/><textarea required placeholder="Describe la actuación o novedad del proceso" value={note} onChange={event => setNote(event.target.value)}/><small>Registrado por: {currentProfile.full_name}</small><button disabled={!note.trim()}>Guardar actuación</button>{status && <small>{status}</small>}</form></Panel>
     <Panel title="Historial del proceso"><p className="muted">Decisiones, cambios de estado y actuaciones que explican la evolución comercial de la oportunidad.</p><div className="timeline">{processHistory.length ? processHistory.map(item => <div className="event" key={item.id}><strong>{item.title}</strong><span>{fmtDate(item.createdAt)} · {item.actor}</span>{item.note && <p>{item.note}</p>}{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Ver fuente asociada</a>}</div>) : <p className="muted">{loading ? 'Cargando historial…' : 'Sin hitos comerciales registrados.'}</p>}</div>{nextCursor && <button className="secondary" disabled={loading} onClick={() => void loadPage(nextCursor).catch(error => setStatus(error instanceof Error ? error.message : String(error)))}>{loading ? 'Cargando…' : 'Cargar más'}</button>}</Panel>
-    <details className="tender-technical-audit"><summary>Auditoría técnica de Vig-IA</summary><p className="muted">Procesamiento documental, análisis y fallas técnicas. No representa el avance comercial.</p><div className="timeline">{technicalEvents.length ? technicalEvents.map(event => <div className="event" key={event.id}><strong>{technicalActuationLabel(event.event_type)}</strong><span>{fmtDate(event.created_at)} · {actorLabel(event)}</span>{event.note && <p>{event.note}</p>}</div>) : <p className="muted">Sin eventos técnicos registrados.</p>}</div></details>
+    <details className="tender-technical-audit"><summary>Auditoría técnica de {VIGIA_VISIBLE_NAMES.tenders}</summary><p className="muted">Procesamiento documental, análisis y fallas técnicas. No representa el avance comercial.</p><div className="timeline">{technicalEvents.length ? technicalEvents.map(event => <div className="event" key={event.id}><strong>{technicalActuationLabel(event.event_type)}</strong><span>{fmtDate(event.created_at)} · {actorLabel(event)}</span>{event.note && <p>{event.note}</p>}</div>) : <p className="muted">Sin eventos técnicos registrados.</p>}</div></details>
   </div>;
 }
 function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; refresh: () => Promise<void> }) {
@@ -1855,7 +1856,7 @@ function ManagerDashboardV2({ data }: { data: Bootstrap }) {
   const focusClass = (targetId: string) => focusedDashboardTarget === targetId ? 'dashboard-focus-hit' : '';
 
   return <section className="stack manager-dashboard dashboard-v2 dashboard-v2-six-components">
-    {initialVigiaFilters.invalid && <div className="error">Enlace de Vig-IA inválido o manipulado. Se aplicó un alcance vacío.</div>}
+    {initialVigiaFilters.invalid && <div className="error">{`Enlace de ${VIGIA_VISIBLE_NAMES.commercial} inválido o manipulado. Se aplicó un alcance vacío.`}</div>}
     <section className="v2-filter-strip panel" aria-label="Filtros gerenciales">
       <div className="v2-filter-strip-title">Filtros gerenciales</div>
       <div className="filters manager-dashboard-filters v2-dashboard-filters">
@@ -2279,7 +2280,7 @@ function tenderDecisionPriority(tender: PublicTender) {
 function interpretTenderCentinelQuery(query: string, centinelTenderPayload: TenderRadarPayload | null): CentinelResult {
   const q = query.toLowerCase();
   if (!centinelTenderPayload) {
-    return { mode: 'tenders', title: 'Radar de licitaciones no disponible', summary: 'Vig-IA no tiene el radar de licitaciones cargado todavía. La consulta comercial sigue disponible; para licitaciones intenta reintentar la carga o abre el radar.', rows: [], tenderRows: [], cards: [
+    return { mode: 'tenders', title: 'Radar de licitaciones no disponible', summary: `${VIGIA_VISIBLE_NAMES.tenders} no tiene el radar de licitaciones cargado todavía. La consulta comercial sigue disponible; para licitaciones intenta reintentar la carga o abre el radar.`, rows: [], tenderRows: [], cards: [
       { label: 'Radar', value: 'Sin cargar', detail: 'Datos SECOP/Supabase no disponibles todavía' },
       { label: 'Modo', value: 'Solo lectura', detail: 'No modifica estados ni oportunidades' },
       { label: 'Siguiente paso', value: 'Licitaciones', detail: 'Abrir radar de licitaciones' },
@@ -2437,7 +2438,7 @@ function interpretCentinelQuery(query: string, data: Bootstrap, centinelTenderPa
     const haystack = `${o.company_name} ${o.owner_name || ''} ${o.stage_name} ${o.regional_nombre || ''} ${o.sede || ''} ${o.tipo_producto_original || ''}`.toLowerCase();
     return terms.length ? terms.some(t => haystack.includes(t)) : true;
   }).sort((a,b) => Number(b.offer_value || 0) - Number(a.offer_value || 0));
-  return { mode: 'search', title: 'Búsqueda comercial segura', summary: 'Vig-IA encontró coincidencias en clientes, comerciales, etapas, regionales y tipo de producto.', rows, cards: [
+  return { mode: 'search', title: 'Búsqueda comercial segura', summary: `${VIGIA_VISIBLE_NAMES.commercial} encontró coincidencias en clientes, comerciales, etapas, regionales y tipo de producto.`, rows, cards: [
     { label: 'Coincidencias', value: String(rows.length), detail: 'Oportunidades activas encontradas' },
     { label: 'Valor asociado', value: fmtMoneyCompact(rows.reduce((s,o)=>s+Number(o.offer_value||0),0)), detail: 'Pipeline filtrado' },
     { label: 'Modo', value: 'Solo lectura', detail: 'No modifica datos ni agenda' },
@@ -2453,10 +2454,10 @@ function CentinelAssistant({ data }: { data: Bootstrap }) {
   const [centinelTenderSortConfig, setCentinelTenderSortConfig] = useState<SortConfig<'entity'|'section'|'status'|'value'|'deadline'|'score'>>({ key: 'score', direction: 'desc' });
   const loadCentinelTenders = async () => {
     if (!canViewTenders(data.currentProfile)) return;
-    setCentinelTenderStatus('Cargando licitaciones para Vig-IA…');
+    setCentinelTenderStatus(`Cargando licitaciones para ${VIGIA_VISIBLE_NAMES.tenders}…`);
     try {
       setCentinelTenderPayload(await api<TenderRadarPayload>('/api/tenders'));
-      setCentinelTenderStatus('Licitaciones cargadas para Vig-IA.');
+      setCentinelTenderStatus(`Licitaciones cargadas para ${VIGIA_VISIBLE_NAMES.tenders}.`);
     } catch (err) {
       setCentinelTenderStatus(err instanceof Error ? err.message : String(err));
     }
@@ -2479,10 +2480,10 @@ function CentinelAssistant({ data }: { data: Bootstrap }) {
   const tenderLoadFailed = canViewTenders(data.currentProfile) && !!centinelTenderStatus && !centinelTenderPayload && !centinelTenderStatus.includes('Cargando');
   const tenderStatusText = !canViewTenders(data.currentProfile) ? 'Licitaciones sin permiso' : centinelTenderPayload ? 'Licitaciones cargadas' : centinelTenderStatus || 'Cargando licitaciones…';
   return <section className="stack centinel-dashboard">
-    <section className="centinel-topline"><h2>Vig-IA — Reportes gerenciales asistidos</h2><p>Módulo en evolución: hoy organiza reportes seguros del CRM; no es un chat de IA abierto.</p></section>
+    <section className="centinel-topline"><h2>{PSI_AGENT_ROUTER_NAME} — Reportes gerenciales asistidos</h2><p>Módulo en evolución: hoy organiza reportes seguros del CRM; no es un chat de IA abierto.</p></section>
     <section className="centinel-hero">
       <div className="centinel-orb"><span></span><span></span></div>
-      <div><span className="eyebrow">VIG-IA</span><h2>Selecciona un reporte gerencial</h2><p>Usa los accesos rápidos para revisar pipeline, alertas, metas y licitaciones con una lectura ejecutiva. Vig-IA trabaja en modo solo lectura sobre datos del CRM.</p></div>
+      <div><span className="eyebrow">{PSI_AGENT_ROUTER_NAME}</span><h2>Selecciona un reporte gerencial</h2><p>Usa los accesos rápidos para revisar pipeline, alertas, metas y licitaciones con una lectura ejecutiva. {PSI_AGENT_ROUTER_NAME} enruta cada consulta al dominio autorizado y opera en modo solo lectura.</p></div>
       <div className="centinel-safe"><strong>Solo lectura</strong><small>Reportes asistidos, sin inteligencia generativa conectada todavía</small></div>
     </section>
     <section className="centinel-query-panel">
@@ -2499,7 +2500,7 @@ function CentinelAssistant({ data }: { data: Bootstrap }) {
       <div className="centinel-data-status"><span>Estado de datos</span><strong>CRM actualizado</strong><span>·</span><strong>{tenderStatusText}</strong>{tenderLoadFailed && <button className="secondary" onClick={loadCentinelTenders}>Reintentar carga</button>}</div>
     </section>
     <section className="centinel-result">
-      <div className="centinel-result-head"><div><span className="eyebrow">Resultado Vig-IA</span><h2>{result.title}</h2><p>{result.summary}</p></div><button className="secondary" onClick={() => go(isTenderResult ? '#/tenders' : '#/alerts')}>{isTenderResult ? 'Abrir radar de licitaciones' : 'Abrir alertas comerciales'}</button></div>
+      <div className="centinel-result-head"><div><span className="eyebrow">Resultado de {PSI_AGENT_ROUTER_NAME}</span><h2>{result.title}</h2><p>{result.summary}</p></div><button className="secondary" onClick={() => go(isTenderResult ? '#/tenders' : '#/alerts')}>{isTenderResult ? 'Abrir radar de licitaciones' : 'Abrir alertas comerciales'}</button></div>
       <div className="centinel-result-grid">{result.cards.map(card => <div className="centinel-result-card" key={card.label}><small>{card.label}</small><strong>{card.value}</strong><span>{card.detail}</span></div>)}</div>
       {result.mode === 'pipeline' && <StageBars summary={data.summary} />}
       {!!result.ownerSummaryRows?.length && <div className="tablewrap centinel-summary-table"><table><thead><tr><th>Comercial</th><th>Oportunidades</th><th>Valor asociado</th><th>Acción sugerida</th></tr></thead><tbody>{result.ownerSummaryRows.map(row => <tr key={row.owner}><td><strong>{row.owner}</strong></td><td>{row.count}</td><td>{fmtMoney(row.value)}</td><td>{row.nextStep}</td></tr>)}</tbody></table></div>}

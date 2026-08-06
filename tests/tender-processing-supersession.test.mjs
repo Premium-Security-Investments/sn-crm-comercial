@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import { buildSync } from 'esbuild';
 
-const processing = await import('../src/tenders/processingStatus.ts');
+const processingStatusPath = new URL('../src/tenders/processingStatus.ts', import.meta.url);
+const bundle = buildSync({ entryPoints: [processingStatusPath.pathname], bundle: true, platform: 'node', format: 'esm', write: false });
+const processingStatusUrl = `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].contents).toString('base64')}`;
+const processing = await import(processingStatusUrl);
 assert.equal(typeof processing.isTenderProcessingSuperseded, 'function', 'Debe existir una regla de presentación comprobable por comportamiento.');
 
 const analysis = (overrides = {}) => ({

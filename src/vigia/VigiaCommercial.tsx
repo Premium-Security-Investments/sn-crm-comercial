@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../apiClient';
 import { formatDateOnly } from '../dateOnly';
+import { VIGIA_VISIBLE_NAMES } from './agentIdentity';
 import { filtersFromAlertsHash, filterCommercialPriorities, priorityContextSummary, priorityHashFiltersAreValid, summarizeCommercialPriorities } from './priority-filters.js';
 
 type VigiaLevel = 'alto' | 'medio' | 'bajo' | 'sin_prioridad';
@@ -158,8 +159,8 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
   return <section className="stack vigia-commercial priorities-commercial">
     <section className="centinel-topline"><h2>Prioridades Comerciales</h2><p>Una sola bandeja para decidir dónde intervenir en el pipeline comercial.</p></section>
     <section className="vigia-command-hero">
-      <div><span className="eyebrow">Impulsado por Vig-IA</span><h2>Prioridades explicables del CRM</h2><p>Consolida agenda, vencimientos, estancamiento, etapa, cierre y calidad de datos con reglas determinísticas.</p><strong>Requiere validación humana; no ejecuta acciones.</strong></div>
-      <div className="vigia-source-status"><small>Motor de priorización</small><strong>Vig-IA</strong><span>Fuente de datos: {payload?.source.id || 'CRM-F1'}</span><span>Corte: {displayDate(payload?.source.as_of || null)}</span><span>Política: {payload?.policy.version || 'gate0-v1.0'} · Solo lectura</span></div>
+      <div><span className="eyebrow">Impulsado por {VIGIA_VISIBLE_NAMES.commercial}</span><h2>Prioridades explicables del CRM</h2><p>Consolida agenda, vencimientos, estancamiento, etapa, cierre y calidad de datos con reglas determinísticas.</p><strong>Requiere validación humana; no ejecuta acciones.</strong></div>
+      <div className="vigia-source-status"><small>Motor de priorización</small><strong>{VIGIA_VISIBLE_NAMES.commercial}</strong><span>Fuente de datos: {payload?.source.id || 'CRM-F1'}</span><span>Corte: {displayDate(payload?.source.as_of || null)}</span><span>Política: {payload?.policy.version || 'gate0-v1.0'} · Solo lectura</span></div>
     </section>
 
     {summary && <section className="priority-filter-tabs" aria-label="Categorías operativas">
@@ -169,7 +170,7 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
       <button className={`priority-filter-tab ${category === 'managed' ? 'active blue' : 'blue'}`} onClick={() => toggleCategory('managed')}><small>Prioridades con gestión vigente</small><strong>{summary.managed}</strong><span>Con próxima acción</span></button>
       <button className={`priority-filter-tab ${category === 'closing' ? 'active amber' : 'amber'}`} onClick={() => toggleCategory('closing')}><small>Cierres próximos</small><strong>{summary.closing}</strong><span>Cercanos o vencidos</span></button>
       <button className={`priority-filter-tab ${category === 'high_value_stalled' ? 'active danger' : 'danger'}`} onClick={() => toggleCategory('high_value_stalled')}><small>Alto valor estancado</small><strong>{summary.highValueStalled}</strong><span>Valor alto sin movimiento</span></button>
-      <button className={`priority-filter-tab ${category === 'stalled_sustentacion' ? 'active danger' : 'danger'}`} onClick={() => toggleCategory('stalled_sustentacion')}><small>Sustentación estancada</small><strong>{summary.stalledSustentacion}</strong><span>Sin movimiento según Vig-IA</span></button>
+      <button className={`priority-filter-tab ${category === 'stalled_sustentacion' ? 'active danger' : 'danger'}`} onClick={() => toggleCategory('stalled_sustentacion')}><small>Sustentación estancada</small><strong>{summary.stalledSustentacion}</strong><span>Sin movimiento según {VIGIA_VISIBLE_NAMES.commercial}</span></button>
     </section>}
 
     {invalidLink && <section className="state error" role="alert"><strong>El enlace contiene filtros inválidos o no disponibles para su alcance.</strong><span>Restablezca los filtros para volver a la bandeja autorizada.</span></section>}
@@ -177,7 +178,7 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
     {payload && linkedContext && !invalidLink && <section className="priority-context-summary" aria-label="Contexto recibido del Dashboard"><div><strong>Contexto recibido del Dashboard</strong><span>{linkedContextSummary}</span></div><button className="secondary" onClick={resetFilters}>Limpiar contexto</button></section>}
 
     <section className="priority-filter-panel">
-      <div className="priority-filter-heading"><div><strong>Filtros de gestión</strong><span>Los filtros se combinan sobre la misma lectura de Vig-IA.</span></div>{hasFilters && !linkedContext && <button className="secondary" onClick={resetFilters}>Limpiar</button>}</div>
+      <div className="priority-filter-heading"><div><strong>Filtros de gestión</strong><span>Los filtros se combinan sobre la misma lectura de {VIGIA_VISIBLE_NAMES.commercial}.</span></div>{hasFilters && !linkedContext && <button className="secondary" onClick={resetFilters}>Limpiar</button>}</div>
       <div className="priority-filter-grid">
         <label className="priority-search"><span>Buscar</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Empresa o comercial" /></label>
         <label><span>Comercial</span><select value={owner} onChange={event => setOwner(event.target.value)}><option value="">Todos</option>{ownerOptions.map(([value, optionLabel]) => <option key={value} value={value}>{optionLabel}</option>)}</select></label>

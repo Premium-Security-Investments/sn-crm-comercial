@@ -63,8 +63,11 @@ assert.match(
 
 // --- adapter: exact VIGIA config from the plan, no AGT-002 visible copy ---
 assert.doesNotMatch(adapter, /AGT-002/i, 'el adapter no debe exponer AGT-002 en copy visible');
-assert.match(adapter, /visibleAgentName:\s*'Vig-IA',/);
-assert.match(adapter, /subtitle:\s*'Copiloto de Licitaciones',/);
+assert.match(adapter, /visibleAgentName:\s*VIGIA_VISIBLE_NAMES\.tenders,/);
+assert.match(adapter, /subtitle:\s*'Copiloto para análisis de licitaciones',/);
+assert.match(adapter, /visibleAuthorName:\s*message\.author_kind\s*===\s*'agent'[\s\S]*?VIGIA_DOSSIER_CONFIG\.visibleAgentName/);
+assert.doesNotMatch(adapter, /visibleAuthorName:\s*message\.visible_agent_name,/);
+assert.doesNotMatch(adapter, /visibleAgentName:\s*['"]Vig-IA['"],/);
 assert.match(adapter, /contextLabel:\s*'Expediente activo',/);
 assert.match(adapter, /capabilities:\s*\['message',\s*'attach',\s*'draft',\s*'review',\s*'learning'\],/);
 assert.match(adapter, /humanReviewRequired:\s*true,/);

@@ -42,6 +42,17 @@ for (const marker of ['Propósito', 'Responsable institucional', 'Estado', 'Fuen
   assert.match(agents, new RegExp(marker));
 }
 assert.match(agents, /SIIO_AGENT_CATALOG/);
+assert.match(agents, /const STATUS_LABELS/);
+assert.match(agents, /piloto: 'Piloto controlado'/);
+assert.match(agents, /operativo_parcial: 'Operación parcial'/);
+assert.match(agents, /const FRONT_LABELS/);
+assert.match(agents, /F1: 'Comercial'/);
+assert.match(agents, /F2: 'Finanzas'/);
+assert.doesNotMatch(agents, />\{agent\.id\}</);
+assert.match(agents, /Agente funcional de SIIO/);
+assert.match(agents, /STATUS_LABELS\[agent\.status\]/);
+assert.match(agents, /agentStatusLabel\(status\)/);
+assert.match(agents, /agent\.authorized_fronts\.map\(front => FRONT_LABELS\[front\]/);
 assert.equal((agents.match(/<select/g) || []).length, 2, 'agents must expose only status and institutional-owner filters');
 assert.match(agents, /routeState\.filters\.status/);
 assert.match(agents, /routeState\.filters\.owner/);

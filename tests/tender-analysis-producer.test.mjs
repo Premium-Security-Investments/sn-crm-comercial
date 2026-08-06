@@ -6,7 +6,7 @@ const section = readFileSync(new URL('../src/tenders/components/TenderAnalysisSe
 
 assert.match(helper, /export function tenderAnalysisProducerDisclosure/, 'Debe existir una divulgación explícita del productor');
 assert.match(helper, /Determinístico por reglas SIIO/, 'Debe identificar sin ambigüedad el análisis determinístico');
-assert.match(helper, /Vig-IA con revisión humana obligatoria/, 'Debe identificar públicamente a Vig-IA sin atribuirle decisión');
+assert.match(helper, /\$\{VIGIA_VISIBLE_NAMES\.tenders\} con revisión humana obligatoria/, 'Debe identificar públicamente a Vig-IA Licitaciones sin atribuirle decisión');
 assert.doesNotMatch(helper, /Análisis AGT-002|Agente AGT-002/, 'El identificador técnico no debe aparecer en el humanizador público.');
 assert.match(section, /tenderAnalysisProducerDisclosure\(analysis\.producer\)/, 'La sección debe mostrar la divulgación real del productor');
 assert.match(section, /Fallback seguro aplicado/, 'Debe advertir el fallback');

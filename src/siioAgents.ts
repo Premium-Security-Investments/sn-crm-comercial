@@ -1,3 +1,5 @@
+import { VIGIA_VISIBLE_NAMES } from './vigia/agentIdentity';
+
 export type SiioAgentStatus = 'piloto' | 'operativo_parcial' | 'diseño';
 
 export type SiioInstitutionalAgent = {
@@ -21,7 +23,7 @@ export type SiioInstitutionalAgent = {
 export const SIIO_AGENT_CATALOG: SiioInstitutionalAgent[] = [
   {
     id: 'AGT-001',
-    name: 'Agente Gerencial SIIO',
+    name: VIGIA_VISIBLE_NAMES.manager,
     status: 'piloto',
     owner_role: 'Gerencia General',
     purpose: 'Convertir información F2/F4 en lecturas ejecutivas trazables y acciones recomendadas.',
@@ -38,24 +40,24 @@ export const SIIO_AGENT_CATALOG: SiioInstitutionalAgent[] = [
   },
   {
     id: 'AGT-002',
-    name: 'Copiloto de Licitaciones',
+    name: VIGIA_VISIBLE_NAMES.tenders,
     status: 'operativo_parcial',
     owner_role: 'Dirección de Licitaciones',
-    purpose: 'Priorizar procesos públicos, analizar documentos y preparar un expediente de oferta controlado.',
+    purpose: 'Analizar documentos, organizar evidencia, identificar brechas y preparar insumos de una oportunidad pública convertida manualmente desde el Radar.',
     authorized_fronts: ['F1', 'F4', 'F5'],
     authorized_sources: ['SECOP-I', 'SECOP-II', 'TVEC', 'ESU', 'Perfil corporativo PSI'],
-    permitted_actions: ['Priorizar procesos', 'Analizar documentos', 'Preparar matriz GO/NO GO', 'Generar borradores y checklist'],
-    forbidden_actions: ['Presentar ofertas', 'Descartar procesos sin confirmación', 'Convertir oportunidades sin confirmación', 'Firmar documentos'],
+    permitted_actions: ['Analizar documentos', 'Organizar requisitos y brechas', 'Preparar insumos y matriz para decisión humana GO/NO GO', 'Generar borradores y checklist sujetos a revisión humana'],
+    forbidden_actions: ['Convertir procesos del Radar en oportunidades', 'Analizar indiscriminadamente el Radar', 'Decidir, aprobar o registrar GO/NO GO', 'Presentar ofertas', 'Descartar procesos sin confirmación humana', 'Firmar documentos'],
     human_review_required: true,
     can_write_production: false,
-    channel: 'CRM / Radar de Licitaciones',
+    channel: 'Oportunidades / Mesa Vig-IA Licitaciones',
     audit_rule: 'Las acciones sensibles exigen confirmación y deben conservar fuente, usuario y fecha.',
     current_capability: 'Radar, análisis documental, perfil corporativo y expediente de oferta con gates.',
     next_gate: 'Cerrar prueba RUP heredada y completar QA con Dirección de Licitaciones.',
   },
   {
     id: 'AGT-003',
-    name: 'Vig-IA Comercial',
+    name: VIGIA_VISIBLE_NAMES.commercial,
     status: 'operativo_parcial',
     owner_role: 'Dirección Comercial',
     purpose: 'Detectar oportunidades estancadas, riesgos de seguimiento y prioridades del pipeline comercial.',
@@ -65,7 +67,7 @@ export const SIIO_AGENT_CATALOG: SiioInstitutionalAgent[] = [
     forbidden_actions: ['Modificar oportunidades', 'Cambiar responsables', 'Aprobar ventas', 'Enviar comunicaciones externas'],
     human_review_required: true,
     can_write_production: false,
-    channel: 'CRM / Vig-IA y alertas comerciales',
+    channel: 'CRM / Vig-IA Comercial y alertas comerciales',
     audit_rule: 'Cada alerta debe vincular oportunidad, responsable, fecha y criterio de activación.',
     current_capability: 'Consulta y priorización de señales comerciales en modo de solo lectura.',
     next_gate: 'Validar umbrales y utilidad con Dirección Comercial.',
