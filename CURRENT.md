@@ -1,195 +1,199 @@
 # CURRENT — SIIO Comercial / Licitaciones / Vig‑IA
 
-**Corte autoritativo:** 2026-07-30 22:31 COT · 2026-07-31 03:31 UTC
+**Corte autoritativo:** 2026-08-06 08:32 COT · 2026-08-06 13:32 UTC
 **Producción:** https://seguridad-nacional-crm.vercel.app
-**Commit productivo:** `5bb33047d43550e1753bcfafd78fd35f1ed68d56`
-**Deployment Vercel:** `dpl_ZiGjr5aSqLnM8ZvZrzaqGGMwyKFg` · `READY`
+**Commit productivo:** `2904efba2be9db9fc4622bd1f45d77b609398c4d`
+**Deployment Vercel:** `dpl_KZ1K8wJE3LF7roo2CH3ShxjHdUQu` · `READY`
 
-## 1. Regla funcional vigente
+## 1. Regla funcional y de autoridad vigente
 
-El encargado de Licitaciones selecciona manualmente un caso del Radar y lo convierte en **Oportunidad**. Esa conversión humana es el gate funcional para entrar al pipeline durable y ejecutar Vig‑IA cuando se cumplan las precondiciones documentales.
+El encargado de Licitaciones selecciona manualmente un caso del Radar y lo convierte en **Oportunidad**. La existencia de una oportunidad, un análisis completado o una recomendación condicionada no equivale a GO ni autoriza preparar o presentar una oferta.
 
-Vig‑IA no debe:
+Vig‑IA/AGT‑002 puede analizar, organizar evidencia, señalar brechas y proponer acciones. Nunca puede:
 
-- analizar indiscriminadamente todo el Radar;
-- convertir procesos en oportunidades;
-- procesar casos no convertidos o terminales;
-- decidir GO/NO GO;
-- enviar, firmar o presentar ofertas.
+- convertir procesos del Radar en oportunidades;
+- decidir GO/NO‑GO;
+- aprobar requisitos, evidencias o propuestas de aprendizaje;
+- asignar silenciosamente compromisos humanos;
+- firmar, enviar o presentar ofertas.
 
-Las recomendaciones y runs son insumos para revisión humana. No constituyen decisión comercial o jurídica.
+Toda decisión humana debe ser trazable y asociarse al análisis vigente. El orden operativo es: **alertas de descarte → habilitantes → técnico → financiero/ejecución → estratégico**. Sin evidencia permitida, Vig‑IA debe abstenerse.
 
-## 2. Estado actual del programa por fases
+## 2. Estado confirmado por frente
 
-| Fase | Estado productivo | Límite |
+| Frente | Estado confirmado | Gate pendiente |
 |---|---|---|
-| **E1** | Ruta durable verificada; drain continuo activado después del canary unitario | Dispatch inmediato permanece apagado; drain libera leases en cada checkpoint |
-| **E2** | **Activa y verificada en producción** | Solo Vig‑IA canónico; cero fallback silencioso |
-| **E3** | **Activa y verificada en producción** | Contexto v2 trazable; gaps empresariales explícitos |
-| **E4** | **Apagada — gate pendiente** | No existe hoy un snapshot nuevo de 14 documentos elegible para canary E2E |
-| **E5** | **Apagada — dependencia E4** | Corpus productivo todavía vacío; manifest local validado, no publicado |
+| **E1–E3** | Pipeline durable, canonicidad y contexto v2 previamente verificados en producción | Mantener idempotencia, leases y cero fallback silencioso |
+| **E4** | La recuperación/evidence packet fue utilizada por la ruta que produjo el canary E5 vigente | No inferir cobertura completa de SharePoint ni aplicabilidad empresarial por presencia documental |
+| **E5** | **Canary canónico completado y verificado** con corpus jurídico `legal-corpus-v1.1` | La revisión jurídica y el GO/NO‑GO siguen siendo humanos |
+| **E6** | Scheduler, endpoint, bridge, persistencia y autoridad probados técnicamente; secreto reparado y límites explícitos | Primer mensaje humano real en Mesa Vig‑IA y un único canary productivo |
+| **F2 SIIO** | Código, migración de seguridad y deployment productivo completados | QA visual autenticado operado por Juan |
 
-Configuración desplegada:
+No se declara rollout visual completo de F2 ni activación continua de E6 mientras esos gates permanezcan abiertos.
 
-- `TENDER_IMMEDIATE_DISPATCH=false`
-- `TENDER_CONTINUOUS_DRAIN=true`
-- `AGT002_CANONICAL_ONLY=true`
-- `AGT002_CONTEXT_V2=true`
-- `AGT002_DOCUMENT_RETRIEVAL=false`
-- `AGT002_LEGAL_CORPUS=false`
+## 3. F2 — coherencia y seguridad transversal de SIIO
 
-El dispatch inmediato continúa apagado, por lo que una conversión futura no dispara por sí sola el worker. El scheduler durable y las invocaciones operativas conservan exclusión por lease. E4/E5 no deben activarse hasta satisfacer sus gates independientes.
+### Entregado
 
-## 3. Migración 055 — lectura backend mínima
+- PR **#77**: implementación F2.
+- PR **#78**: corrección de colisión de migración.
+- Migración definitiva: `062_siio_f2_security_coherence.sql`.
+- Commit posterior del lote E6/documentación: `2904efba2be9db9fc4622bd1f45d77b609398c4d`.
+- Deployment productivo: `READY`; alias canónico responde HTTP 200.
 
-PR técnica única: **#53**
-Commit focal: `edd9d93fb4818523b3ebdd60c453f691b480f0cb`
-Merge commit: `5bb33047d43550e1753bcfafd78fd35f1ed68d56`
+### Controles verificados
 
-La migración `055_agt002_company_documents_service_read.sql` corrige el mismatch `42501` del loader empresarial sobre `public.psi_company_procurement_documents`.
+- Director permanece fuera del acceso operativo de SIIO.
+- Junta consume informes en estado `presentado`; no opera el expediente.
+- Nómina `restringido` no se expone por defecto.
+- SIIO falla explícitamente si falta su fundación/configuración requerida.
+- Privilegios directos inseguros post‑migración: `0`.
+- Escrituras prohibidas post‑migración: `0`.
+- Conteos de filas antes/después: idénticos; `data_preserved=true`.
+- `service_role` conserva únicamente los accesos mínimos requeridos.
 
-Estado productivo verificado:
+### Gate abierto
 
-```text
-service_select=true
-service_insert=false
-service_update=false
-service_delete=false
-service_truncate=false
-service_references=false
-service_trigger=false
-public_select=false
-anon_select=false
-authenticated_select=false
-RLS=true
-marker 055=1/1
-```
+Falta QA visual autenticado. Juan opera la UI; Hermes da **un solo paso** y espera captura. No se declara cierre visual sin esa evidencia.
 
-El permiso no llega al frontend y no se expone ninguna clave `service_role` al navegador. El rollback transaccional específico revoca `SELECT` de `service_role`; la verificación terminal exige cero privilegios para `service_role`, `public`, `anon` y `authenticated`, con RLS activa.
+## 4. E5 — corpus jurídico y run canónico vigente
 
-## 4. Reentrada controlada E1
-
-Se preservó y reanudó el mismo job durable:
-
-- job: `dda4a2d6-bf58-4023-9f7a-5574bdfb703d`;
-- snapshot: `be9d136f-fa26-49fc-acce-23ad0a7d6a32`;
-- documentos: **14/14**;
-- chunks: **1.466**;
-- documentos fallidos: **0**;
-- `attempt_count=0`;
-- estado terminal: `completed/done`;
-- `analysis_run_id=898d7f9e-5eac-4d4d-a26b-8c8387f8f554`.
-
-El run enlazado ya existía antes del job controlado y fue reutilizado idempotentemente:
-
-- run total para el snapshot: **1**;
-- producer: `AGT-002`;
-- status: `completed`;
-- no se creó run sustituto ni duplicado.
-
-Evidencia del scheduler post‑055:
+Run productivo verificado:
 
 ```text
-processed=0 · status=empty · stop_reason=empty
-processed=1 · status=completed · stop_reason=yield
+analysis_run_id=50f798f0-a526-421f-bd26-7b0e5dd0d5da
+corpus_version=legal-corpus-v1.1
+corpus_id=fc392e00-0363-4307-b2c4-80835ac474ca
+recommendation=advance_conditionally
+critical_open_count=3
+human_review_required=true
 ```
 
-Verificaciones finales:
+Gates aprobados:
 
-- otros jobs reclamables: **0**;
-- job con ese ID: **1**;
-- snapshot con ese ID: **1**;
-- run para el snapshot: **1**;
-- decisiones GO/NO‑GO para el caso: **0**;
-- `last_error_code=null`;
-- no se crearon jobs, snapshots, runs ni decisiones duplicadas.
+- metadata canónica correcta;
+- snapshot del run era el más reciente para la oportunidad;
+- binding exacto al corpus publicado;
+- evento terminal `completed` presente;
+- cero claims activos;
+- obligaciones jurídicas sólo citan la allowlist verificada;
+- hechos documentales no se renombraron como derecho;
+- cinco fuentes inciertas quedaron en revisión humana y cubiertas por abstención;
+- texto de abstención canónico: `No verificado jurídicamente; requiere revisión humana`;
+- no existe campo decisorio, firma, aprobación, envío o presentación autónoma.
 
-## 5. Canary productivo E2 — canonicidad
+E5 está técnicamente cerrado. Su recomendación condicionada no reemplaza la decisión humana.
 
-Caso controlado sobre la misma oportunidad de E1:
+## 5. E6 — continuidad hacia la Mesa Vig‑IA
 
-- job: `fb54938d-012b-47af-9fdb-7e86f39e4381`;
-- snapshot reutilizado: `be9d136f-fa26-49fc-acce-23ad0a7d6a32`;
-- documentos: **14/14**;
-- fallidos: **0**;
-- run nuevo: `7acb0ed3-d57a-401b-acb0-10eaf77fb62e`;
-- `producer=AGT-002`, `method=agent_ai`, `canonical=true`, `status=completed`;
-- eventos append-only: `queued → running → completed` con una misma `attempt_key`;
-- cero decisiones GO/NO-GO;
-- lease final liberado;
-- idempotencia de job: **1**.
+E6 lleva el expediente, snapshot, análisis, evidencia, preguntas y versiones a una conversación durable después del gate humano. El worker procesa como máximo un job por invocación y persiste mensajes/eventos de forma append‑only.
 
-El primer reintento E3 sobre ese mismo snapshot reutilizó correctamente el run E2. Esa reutilización demostró idempotencia, pero no se contó como canary E3 porque no hubo una invocación nueva del agente.
+### Root cause y reparación
 
-## 6. Canary productivo E3 — contexto v2
+El scheduler recibía `403 No autorizado` cuando el drain estaba activo. Se confirmó desajuste del secreto dedicado entre el host y Vercel. Con el drain apagado, la misma ruta devuelve `404 No disponible`, que es el comportamiento fail‑closed esperado.
 
-Se usó un segundo caso ya convertido por Juan Botero, sin run canónico ni job activo. El objeto contractual era vigilancia y seguridad privada; no se creó ni convirtió una oportunidad nueva.
+Se completó:
 
-- job: `15f9bf06-75b1-4266-a680-effea966f60b`;
-- snapshot nuevo: `29e801d0-3d8d-4fc3-aa32-3e82b7eeedad`;
-- documentos: **9/9**;
-- fallidos: **0**;
-- run canónico: `8c122c04-c613-4bcb-8d58-b8f04b746bbe`;
-- contexto: `35ae6f3c-e221-468c-92b4-533bf6293e3d`, `context_version=2`;
-- secciones: `commercial_context`, `company_dossier`, `context_version`, `human_evidence`, `opportunity`, `snapshot_id`;
-- `human_evidence_count=0`;
-- gaps del dossier expresados explícitamente;
-- sin campos prohibidos de contacto, OAuth, claves, GO/NO-GO o análisis profundo;
-- eventos append-only: `queued → running → completed`;
-- cero decisiones GO/NO-GO.
+- timer detenido y deshabilitado durante la reparación;
+- secreto dedicado rotado coordinadamente, sin exponer su valor;
+- artefactos systemd instalados byte‑idénticos a Git;
+- archivo de entorno del host con modo `0640`;
+- límites productivos explícitos:
+  - `MAX_CONCURRENT=1`;
+  - `DAILY_MAX_JOBS=1`;
+  - `TIMEOUT_MS=45000`;
+  - `SWEEP_MAX=5`;
+- `AGT002_WORKBENCH_DRAIN_ENABLED=false`;
+- deployment productivo posterior a la rotación: `READY`;
+- probe autenticado con drain apagado: HTTP 404, sin fuga del secreto.
 
-## 7. Gate real E4
+PR **#79** añadió la prueba `secreto esperado ausente → 403, cero DB/RPC y cero bridge`. Revisión independiente: cero Critical/Important.
 
-E4 permanece apagada. El contrato aprobado exige un canary end-to-end sobre un snapshot representativo de **14 documentos**. El único snapshot de 14 documentos ya está ligado idempotentemente al run E2; activar retrieval y reencolar el mismo snapshot reutiliza ese run y no prueba el nuevo evidence packet. El único snapshot nuevo disponible tiene 9 documentos.
-
-No se clonaron snapshots, no se inventó evidencia humana y no se activó retrieval sobre casos futuros. E4 podrá continuar cuando exista uno de estos insumos gobernados:
-
-1. un nuevo snapshot real de 14 documentos sobre una oportunidad ya convertida; o
-2. una nueva versión de contexto originada por respuesta humana auténtica que habilite reanálisis idempotente distinto.
-
-E5 también permanece apagada por dependencia. El manifest local `legal-corpus-v1` pasó validación con 6 fuentes; las tablas productivas siguen en cero y no se publicó corpus sin el gate E4.
-
-## 8. QA y revisión
-
-TDD y gates ejecutados secuencialmente:
-
-- RED real: fallo por ausencia del artefacto 055;
-- GREEN DB real: apply, rollback y privilegios exactos;
-- runner real PGlite: preflight, estado absent/applied, marker, apply/apply y rollback/rollback;
-- detección de grant backend inesperado: `unsafe_service_table_grants=1`, normalizado atómicamente;
-- migraciones relacionadas y seguridad/RLS: PASS;
-- paridad Express/Vercel: PASS;
-- TypeScript: PASS;
-- build Vite: PASS;
-- `git diff --check`: PASS;
-- Gitleaks oficial: 54,34 KB, cero filtraciones;
-- suite completa: **298 tests · 297 pass · 1 fallo histórico**;
-- gate fresco E2: **13/13** + backend parity + build;
-- gates frescos E3–E5: **20/20**;
-- ACL/RLS productivas 051–053: solo `service_role:SELECT`, RLS activa;
-- estado final de jobs activos: **0**.
-
-El único fallo es:
+### Estado de cola al corte
 
 ```text
-tests/tender-radar-relevance.test.mjs
-ReferenceError: tenderContextualPhysicalSecurityReason is not defined
+total_jobs=0
+queued=0
+active_claims=0
+claimed_today=0
 ```
 
-Fue reproducido de forma idéntica en un worktree limpio de `origin/main`; no es regresión del lote 055.
+No se fabricó una decisión humana, un GO ni un mensaje productivo para aparentar éxito.
 
-Revisión independiente única con Claude Code Opus (`claude-opus-4-8`): **APPROVE · cero Critical/Important**. No se hizo re‑revisión.
+### Evidencia mecánica
 
-## 9. Release y límites
+Pasaron secuencialmente:
 
-- Deployment productivo: `dpl_ZiGjr5aSqLnM8ZvZrzaqGGMwyKFg` · `READY`.
-- Alias canónico: https://seguridad-nacional-crm.vercel.app · HTTP 200.
-- Migraciones 049–055: `applied`; 055 marker `1/1`.
-- E1: validada; drain continuo activo, dispatch inmediato apagado.
-- E2: activa y validada en producción.
-- E3: activa y validada en producción.
-- E4/E5: apagadas por gate explícito; no son rollback de E2/E3.
-- No se autoriza procesamiento indiscriminado del Radar.
-- No se automatizó GO/NO GO ni firma, envío o presentación.
+- worker route;
+- endpoint estático;
+- scheduler ops;
+- runtime;
+- worker, persistence y responder;
+- paridad Express/Vercel;
+- build;
+- lifecycle E6 en PGlite;
+- autoridad humana estática y dinámica.
 
-El cierre previo de Aerocivil, INDER Medellín y Bucaramanga LPR permanece como historial operativo anterior; este corte documenta el avance productivo E1–E3 y el gate real que protege E4/E5.
+El bridge está activo, pero su salud no sustituye la prueba del Workbench: son componentes y secretos separados.
+
+## 6. Próximos pasos autorizables
+
+### Paso 1 — QA visual F2
+
+**Responsable:** Juan opera; Hermes guía y verifica.
+**Acción:** abrir producción, iniciar sesión normalmente y enviar una captura de la pantalla inicial.
+**Criterio de cierre:** recorrido autenticado confirma acceso por rol, Junta `presentado`, ausencia de nómina restringida y errores explícitos esperados.
+**Límite:** un paso por captura; no declarar rollout por HTTP 200 o deployment `READY`.
+
+### Paso 2 — preparar un único canary humano E6
+
+**Precondición:** F2 visual sin bloqueantes críticos y una oportunidad real ya convertida, con gate humano válido.
+**Responsable:** Juan escribe un único mensaje real en la Mesa Vig‑IA; Hermes no lo suplanta.
+**Estado previo obligatorio:** timer deshabilitado, drain apagado, cola sin claims y límites `1/1`.
+
+### Paso 3 — ejecutar el canary técnico E6
+
+**Responsable:** Hermes, después del mensaje humano.
+**Secuencia:**
+
+1. inventario read‑only de cola y snapshot;
+2. habilitar el drain sólo para la ventana controlada;
+3. ejecutar una única invocación manual del servicio, sin timer;
+4. verificar `queued → claimed → completed` o fallo terminal explícito;
+5. comprobar mensaje, eventos, acciones requeridas, versiones y linaje;
+6. comprobar que no existe decisión, aprobación, firma, envío o presentación de IA;
+7. volver a `drain=false` al terminar el canary.
+
+**Criterio de cierre:** exactamente un job procesado, una persistencia terminal válida, cero duplicados, cero claims activos y autoridad humana intacta.
+
+### Paso 4 — decisión humana sobre operación continua
+
+Sólo después del canary, Juan decide si se habilita el timer. Si se autoriza:
+
+- conservar concurrencia `1` y cuota diaria inicial `1`;
+- activar el timer;
+- verificar un ciclo vacío posterior;
+- mantener kill switch y rollback operativo por flags;
+- no ejecutar rollback SQL 045/046/048 con datos dependientes.
+
+### Paso 5 — siguiente evolución de producto, separada del cierre operativo
+
+Después de cerrar F2 visual y E6 humano, diseñar la siguiente versión del análisis integral:
+
+- matriz por requisito del pliego;
+- evidencia empresarial tipada y aplicabilidad por caso;
+- bloqueadores con acción, responsable sugerido, hito y condición de cierre;
+- cobertura/omisiones explícitas de SharePoint;
+- compatibilidad con runs históricos;
+- UI compacta sin KPI duplicado ni panel jurídico desconectado.
+
+Ese trabajo requiere diseño y aprobación humana antes de código. No debe mezclarse con el canary E6.
+
+## 7. Estado operativo seguro al corte
+
+- Producción desplegada y disponible.
+- F2 técnicamente aplicado; QA visual pendiente.
+- E5 canónico completado; decisión humana pendiente según cada caso.
+- E6 desplegado pero **drain apagado y timer deshabilitado**.
+- Cero jobs, cero claims y cero procesamiento masivo.
+- No existe autorización para que Vig‑IA convierta, decida, firme, envíe o presente.
