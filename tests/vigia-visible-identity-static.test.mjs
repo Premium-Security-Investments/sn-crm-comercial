@@ -43,4 +43,17 @@ for (const path of [
   assert.doesNotMatch(source, /Vig-IA(?! Comercial)/);
 }
 
+assert.match(main, /PSI_AGENT_ROUTER_NAME/);
+for (const [label, source] of [
+  ['main', main],
+  ['catalog', catalog],
+  ['tender workbench', tenderWorkbench],
+  ['agent catalog view', readFileSync(new URL('../src/siio/SiioAgentsView.tsx', import.meta.url), 'utf8')],
+  ['commercial priorities', readFileSync(new URL('../src/vigia/VigiaCommercial.tsx', import.meta.url), 'utf8')],
+  ['commercial copilot', readFileSync(new URL('../src/vigia/VigiaOpportunityCopilot.tsx', import.meta.url), 'utf8')],
+]) {
+  assert.doesNotMatch(source, /Vig-IA(?! (?:Gerencial|Licitaciones|Comercial))/, `${label} contains a bare Vig-IA label`);
+  assert.doesNotMatch(source, /VIG-IA/, `${label} contains the obsolete uppercase label`);
+}
+
 console.log('Vig-IA visible identity contract OK');

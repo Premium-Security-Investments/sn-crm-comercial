@@ -67,7 +67,7 @@ export const SIIO_AGENT_CATALOG: SiioInstitutionalAgent[] = [
     forbidden_actions: ['Modificar oportunidades', 'Cambiar responsables', 'Aprobar ventas', 'Enviar comunicaciones externas'],
     human_review_required: true,
     can_write_production: false,
-    channel: 'CRM / Vig-IA y alertas comerciales',
+    channel: 'CRM / Vig-IA Comercial y alertas comerciales',
     audit_rule: 'Cada alerta debe vincular oportunidad, responsable, fecha y criterio de activación.',
     current_capability: 'Consulta y priorización de señales comerciales en modo de solo lectura.',
     next_gate: 'Validar umbrales y utilidad con Dirección Comercial.',
