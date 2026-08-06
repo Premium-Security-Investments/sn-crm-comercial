@@ -1971,6 +1971,12 @@ function filterBoardReportsForProfile(profile, rows) {
   }));
 }
 
+const SIIO_MANAGEMENT_PAYROLL_VISIBILITY = new Set(['gerencia', 'junta_agregado']);
+
+function filterPayrollAggregatesForManagement(rows) {
+  return rows.filter(row => SIIO_MANAGEMENT_PAYROLL_VISIBILITY.has(row?.visibility_level));
+}
+
 app.get('/api/siio/bootstrap', async (req, res) => {
   try {
     const { profile } = await getAuthContext(req);
@@ -1992,7 +1998,8 @@ app.get('/api/siio/bootstrap', async (req, res) => {
       optionalSiioList(database, siioTables.payrollAggregates, 'id,period_month,area,total_people,total_accrued,total_deductions,net_total,variation_abs,alert,source_id,visibility_level', 'period_month'),
       optionalSiioList(database, siioTables.strategicOpportunities, '*', 'id')
     ]);
-    res.json({ fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates, strategicOpportunities, currentProfile: profile });
+    const visiblePayrollAggregates = filterPayrollAggregatesForManagement(payrollAggregates);
+    res.json({ fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates: visiblePayrollAggregates, strategicOpportunities, currentProfile: profile });
   } catch (error) { sendAuthError(res, error); }
 });
 app.get('/api/siio/fronts', async (req, res) => {

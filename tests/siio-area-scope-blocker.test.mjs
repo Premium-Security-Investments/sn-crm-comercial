@@ -42,8 +42,10 @@ async function requestJson(port, path, token, method = 'GET', body) {
 const profiles = {
   'director-auth': { id: 'director-profile', full_name: 'Directora', microsoft_email: 'director@example.test', auth_user_id: 'director-auth', role: 'director', active: true, commercial_area: null, can_edit_customer_segment: false },
   'board-auth': { id: 'board-profile', full_name: 'Junta', microsoft_email: 'board@example.test', auth_user_id: 'board-auth', role: 'junta', active: true, commercial_area: null, can_edit_customer_segment: false },
+  'admin-auth': { id: 'admin-profile', full_name: 'Admin', microsoft_email: 'admin@example.test', auth_user_id: 'admin-auth', role: 'admin', active: true, commercial_area: null, can_edit_customer_segment: false },
+  'gerencia-auth': { id: 'gerencia-profile', full_name: 'Gerencia', microsoft_email: 'gerencia@example.test', auth_user_id: 'gerencia-auth', role: 'gerencia', active: true, commercial_area: null, can_edit_customer_segment: false },
 };
-const tokens = { 'director-token': 'director-auth', 'board-token': 'board-auth' };
+const tokens = { 'director-token': 'director-auth', 'board-token': 'board-auth', 'admin-token': 'admin-auth', 'gerencia-token': 'gerencia-auth' };
 let siioReads = 0;
 const siioPaths = [];
 const fakeSupabase = http.createServer((req, res) => {
@@ -70,7 +72,14 @@ const fakeSupabase = http.createServer((req, res) => {
         { id: 'legacy-english-report', publication_status: 'published', title: 'No canónico' },
       ]);
     }
-    return json(res, 500, { message: `unexpected SIIO database access: ${url.pathname}` });
+    if (url.pathname === '/rest/v1/siio_payroll_aggregates') {
+      return json(res, 200, [
+        { id: 'payroll-management', visibility_level: 'gerencia', total_people: 2 },
+        { id: 'payroll-board', visibility_level: 'junta_agregado', total_people: 3 },
+        { id: 'payroll-restricted', visibility_level: 'restringido', total_people: 1 },
+      ]);
+    }
+    return json(res, 200, []);
   }
   return json(res, 500, { message: `unexpected database access: ${url.pathname}` });
 });
@@ -132,6 +141,24 @@ try {
   response = await requestJson(appPort, '/api/siio/records', 'board-token', 'POST', { id: 'ignored', title: 'ignored' });
   assert.equal(response.status, 403, 'junta no puede mutar SIIO');
   assert.equal(siioReads, 0, 'junta denegada no consulta tablas SIIO');
+
+  response = await requestJson(appPort, '/api/siio/bootstrap', 'admin-token');
+  assert.equal(response.status, 200, 'admin puede cargar bootstrap SIIO');
+  assert.deepEqual(
+    response.body.payrollAggregates.map(row => row.id),
+    ['payroll-management', 'payroll-board'],
+    'admin recibe únicamente nómina visible para gerencia y junta_agregado',
+  );
+  assert.equal(JSON.stringify(response.body).includes('payroll-restricted'), false, 'admin nunca recibe fila de nómina restringida');
+
+  response = await requestJson(appPort, '/api/siio/bootstrap', 'gerencia-token');
+  assert.equal(response.status, 200, 'gerencia puede cargar bootstrap SIIO');
+  assert.deepEqual(
+    response.body.payrollAggregates.map(row => row.id),
+    ['payroll-management', 'payroll-board'],
+    'gerencia recibe únicamente nómina visible para gerencia y junta_agregado',
+  );
+  assert.equal(JSON.stringify(response.body).includes('payroll-restricted'), false, 'gerencia nunca recibe fila de nómina restringida');
 } finally {
   console.error = originalConsoleError;
   if (appServer?.listening) await new Promise(resolve => appServer.close(resolve));
