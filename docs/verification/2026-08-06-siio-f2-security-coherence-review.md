@@ -2,6 +2,10 @@
 
 Fecha UTC: 2026-08-06
 
+> Corrección post-merge: el SQL revisado no cambió, pero el archivo F2 fue
+> renumerado de `058` a `062` al detectarse que `main` ya contenía migraciones
+> numeradas `058`, `059`, `060` y `061`.
+
 ## Alcance revisado
 
 - Rama: `design/siio-f2-operational-closure`
@@ -22,7 +26,7 @@ Fecha UTC: 2026-08-06
 
 ## Confirmaciones independientes
 
-1. **Migración 058:** transaccional, fail-closed ante tablas faltantes, sin DML ni pérdida de datos; revoca privilegios directos a `public`, `anon` y `authenticated`; `service_role` conserva `SELECT` en las 10 tablas y escritura mínima sin `DELETE` únicamente en las tres tablas usadas por endpoints mutables.
+1. **Migración 062:** transaccional, fail-closed ante tablas faltantes, sin DML ni pérdida de datos; revoca privilegios directos a `public`, `anon` y `authenticated`; `service_role` conserva `SELECT` en las 10 tablas y escritura mínima sin `DELETE` únicamente en las tres tablas usadas por endpoints mutables.
 2. **Director:** deja de ser elegible para `modulo_siio_gerencial` sin perder módulos no-SIIO; backend conserva bloqueo `403` antes de leer tablas.
 3. **Junta:** sólo consume filas con `status = 'presentado'`; rechaza `borrador`, `en_revision`, `aprobado` y el alias legado `publication_status = 'published'`.
 4. **Nómina agregada:** Admin y Gerencia sólo reciben `gerencia` y `junta_agregado`; `restringido` no se serializa; Junta recibe cero filas crudas.
