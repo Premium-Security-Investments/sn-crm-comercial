@@ -240,8 +240,11 @@ runCases('SIIO', [
 ], ({ profile: candidate, action, resource }) => can(candidate, action, resource));
 
 runCases('junta, agentes y fallos cerrados', [
-  { name: 'junta ve publicación aprobada', profile: human('junta'), action: ACTIONS.BOARD_PUBLICATION_VIEW, resource: { publication_status: 'published' }, expected: true },
-  { name: 'junta no ve borrador', profile: human('junta'), action: ACTIONS.BOARD_PUBLICATION_VIEW, resource: { publication_status: 'draft' }, expected: false },
+  { name: 'junta ve reporte presentado', profile: human('junta'), action: ACTIONS.BOARD_PUBLICATION_VIEW, resource: { status: 'presentado' }, expected: true },
+  { name: 'junta no ve borrador', profile: human('junta'), action: ACTIONS.BOARD_PUBLICATION_VIEW, resource: { status: 'borrador' }, expected: false },
+  { name: 'junta no ve en revisión', profile: human('junta'), action: ACTIONS.BOARD_PUBLICATION_VIEW, resource: { status: 'en_revision' }, expected: false },
+  { name: 'junta no ve aprobado', profile: human('junta'), action: ACTIONS.BOARD_PUBLICATION_VIEW, resource: { status: 'aprobado' }, expected: false },
+  { name: 'junta no ve alias legacy publication_status', profile: human('junta'), action: ACTIONS.BOARD_PUBLICATION_VIEW, resource: { publication_status: 'published' }, expected: false },
   { name: 'junta falla cerrado sin estado', profile: human('junta'), action: ACTIONS.BOARD_PUBLICATION_VIEW, resource: {}, expected: false },
   { name: 'junta no edita borrador', profile: human('junta'), action: ACTIONS.BOARD_DRAFT_EDIT, resource: {}, expected: false },
   { name: 'gerencia publica', profile: human('gerencia'), action: ACTIONS.BOARD_PUBLISH, resource: {}, expected: true },

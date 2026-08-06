@@ -153,7 +153,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/siio/board-reports': ['siio', ACTIONS.BOARD_PUBLICATION_VIEW],
 });
 const SIIO_MANAGEMENT_RESOURCE = Object.freeze({ area_code: 'gerencia' });
-const SIIO_PUBLISHED_BOARD_RESOURCE = Object.freeze({ publication_status: 'published' });
+const SIIO_PUBLISHED_BOARD_RESOURCE = Object.freeze({ status: 'presentado' });
 export const SIIO_ENDPOINT_ACTIONS = Object.freeze({
   'GET /api/siio/bootstrap': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'board-published' }),
   'GET /api/siio/fronts': Object.freeze({ action: ACTIONS.SIIO_AREA_VIEW, resource: SIIO_MANAGEMENT_RESOURCE, policy: 'management' }),
@@ -1967,7 +1967,7 @@ function cleanSiioDecision(body = {}, profile) {
 function filterBoardReportsForProfile(profile, rows) {
   if (profile?.role !== 'junta') return rows;
   return rows.filter(row => can(profile, ACTIONS.BOARD_PUBLICATION_VIEW, {
-    publication_status: row?.publication_status ?? row?.status,
+    status: row?.status,
   }));
 }
 

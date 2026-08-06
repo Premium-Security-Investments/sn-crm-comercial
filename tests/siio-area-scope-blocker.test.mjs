@@ -63,8 +63,11 @@ const fakeSupabase = http.createServer((req, res) => {
     siioPaths.push(url.pathname);
     if (url.pathname === '/rest/v1/siio_monthly_board_reports') {
       return json(res, 200, [
-        { id: 'published-report', publication_status: 'published', title: 'Publicado' },
-        { id: 'draft-report', status: 'draft', title: 'Borrador' },
+        { id: 'draft-report', status: 'borrador', title: 'Borrador' },
+        { id: 'review-report', status: 'en_revision', title: 'En revisión' },
+        { id: 'approved-report', status: 'aprobado', title: 'Aprobado' },
+        { id: 'presented-report', status: 'presentado', title: 'Presentado' },
+        { id: 'legacy-english-report', publication_status: 'published', title: 'No canónico' },
       ]);
     }
     return json(res, 500, { message: `unexpected SIIO database access: ${url.pathname}` });
@@ -113,13 +116,13 @@ try {
 
   response = await requestJson(appPort, '/api/siio/board-reports', 'board-token');
   assert.equal(response.status, 200, 'junta puede leer reportes de junta');
-  assert.deepEqual(response.body.map(row => row.id), ['published-report'], 'junta sólo recibe reportes publicados');
+  assert.deepEqual(response.body.map(row => row.id), ['presented-report'], 'junta sólo recibe reportes con status presentado');
 
   siioReads = 0;
   siioPaths.length = 0;
   response = await requestJson(appPort, '/api/siio/bootstrap', 'board-token');
   assert.equal(response.status, 200, 'junta puede cargar bootstrap ejecutivo reducido');
-  assert.deepEqual(response.body.boardReports.map(row => row.id), ['published-report'], 'bootstrap junta filtra reportes publicados');
+  assert.deepEqual(response.body.boardReports.map(row => row.id), ['presented-report'], 'bootstrap junta filtra reportes con status presentado');
   for (const key of ['fronts', 'records', 'sources', 'decisions', 'boardSections', 'financialMetrics', 'commercialSignals', 'payrollAggregates', 'strategicOpportunities']) assert.deepEqual(response.body[key], [], `bootstrap junta no expone ${key}`);
   assert.deepEqual(siioPaths, ['/rest/v1/siio_monthly_board_reports'], 'bootstrap junta consulta únicamente board reports');
 

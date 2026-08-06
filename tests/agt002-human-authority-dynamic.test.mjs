@@ -31,7 +31,7 @@ const genericResource = Object.freeze({
   subarea_code: null,
   owner_id: impersonatingAgentProfile.id,
   assignee_id: impersonatingAgentProfile.id,
-  publication_status: 'published',
+  status: 'presentado',
 });
 
 // 1) Matriz completa: ninguna acción reservada humana cede ante identidad de
