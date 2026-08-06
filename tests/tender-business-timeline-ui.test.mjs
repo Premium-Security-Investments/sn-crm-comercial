@@ -28,7 +28,7 @@ const followUp = main.slice(followUpStart, followUpEnd);
 assert.match(followUp, /loadTrackingEvents\(api,\s*opportunity\.id,\s*cursor,\s*'business'\)/, 'Historial del proceso debe cargar sólo negocio.');
 assert.match(followUp, /loadTrackingEvents\(api,\s*opportunity\.id,\s*null,\s*'technical'\)/, 'La auditoría debe cargar telemetría por separado.');
 assert.match(followUp, /<Panel title="Historial del proceso">/, 'Debe conservar el historial comercial.');
-assert.match(followUp, /<summary>Auditoría técnica de Vig-IA<\/summary>/, 'La telemetría debe vivir en un detalle técnico plegable.');
+assert.match(followUp, /<summary>Auditoría técnica de \{VIGIA_VISIBLE_NAMES\.tenders\}<\/summary>/, 'La telemetría debe vivir en un detalle técnico plegable y atribuirse a Vig-IA Licitaciones.');
 assert.match(followUp, /decisions\.length\s*&&\s*\['go_decided',\s*'no_go_decided'\]\.includes\(event\.event_type\)/, 'La decisión canónica debe evitar GO/NO GO duplicados desde tracking.');
 assert.match(followUp, /offerHistory\.length\s*&&\s*event\.event_type\s*===\s*'offer_preparation_started'/, 'El cambio de estado canónico debe evitar duplicar el inicio de preparación.');
 for (const label of ['Procesamiento en cola', 'Importación documental fallida', 'Análisis completado']) {

@@ -51,9 +51,9 @@ assert.match(engine, /evidence_refs\.items\.enum = \[\.\.\.allowedEvidenceIds\]/
 assert.match(engine, /client\.run\(\{ model, policy: policyText, input: previewInput, outputSchema,/, 'engine must hand the evidence-closed schema to Codex turn/start');
 assert.match(ui, /can\(currentProfile, ACTIONS\.AI_ANALYSIS_RUN\)/, 'UI button must be capability-gated');
 assert.match(ui, /tender-documents-analyze-agent-preview/, 'UI must call the dedicated preview endpoint');
-assert.match(section, /Analizar con Vig-IA/, 'UI must expose the canonical Vig-IA action');
-assert.match(section, /Actualizar con Vig-IA/, 'UI must label refreshes as Vig-IA updates');
-assert.match(section, /Volver a analizar con Vig-IA/, 'UI must label stale or failed retries explicitly');
+assert.match(section, /Analizar con \$\{VIGIA_VISIBLE_NAMES\.tenders\}/, 'UI must expose the canonical Vig-IA Licitaciones action');
+assert.match(section, /Actualizar con \$\{VIGIA_VISIBLE_NAMES\.tenders\}/, 'UI must label refreshes as Vig-IA Licitaciones updates');
+assert.match(section, /Volver a analizar con \$\{VIGIA_VISIBLE_NAMES\.tenders\}/, 'UI must label stale or failed retries explicitly');
 assert.doesNotMatch(section, /Generar análisis preliminar|>Actualizar análisis</, 'deterministic analysis labels may not remain postconversion');
 assert.doesNotMatch(section, /onAnalyze:\s*\(\)\s*=>\s*void|onClick=\{onAnalyze\}/, 'deterministic analysis callback may not remain');
 assert.doesNotMatch(ui, /const analyzeDocuments = async/, 'opportunity UI may not retain a deterministic analysis handler');

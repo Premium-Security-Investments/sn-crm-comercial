@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { VIGIA_VISIBLE_NAMES } from '../../vigia/agentIdentity';
 import { loadTenderGoNoGoDecision, recordTenderGoNoGoDecision } from '../api';
 import { canApproveTenderGoNoGo } from '../permissions';
 import { tenderDecisionGate, tenderRecommendationLabel } from '../tenderDecisionGate';
@@ -216,7 +217,7 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
 
   const current = payload.decision;
   return <section className="tender-go-no-go-panel" aria-labelledby="tender-go-no-go-heading">
-    <header className="tender-go-no-go-head"><div><span className="eyebrow">Control formal de licitación</span><h3 id="tender-go-no-go-heading">Decisión GO / NO GO</h3><p>Vig-IA recomienda; la decisión y el avance operativo pertenecen a la persona autorizada.</p></div></header>
+    <header className="tender-go-no-go-head"><div><span className="eyebrow">Control formal de licitación</span><h3 id="tender-go-no-go-heading">Decisión GO / NO GO</h3><p>{VIGIA_VISIBLE_NAMES.tenders} recomienda; la decisión y el avance operativo pertenecen a la persona autorizada.</p></div></header>
     <div className="tender-go-no-go-grid tender-go-no-go-summary">
       <article><small>Recomendación del sistema</small><strong>{recommendation}</strong><span>Referencia de apoyo; no autoriza la oferta.</span></article>
       <article className="tender-go-no-go-current"><small>Decisión humana vigente</small><strong>{loading ? 'Cargando…' : decisionLabel(current?.decision)}</strong>{current ? <><p>{current.justification || 'Sin comentario humano.'}</p><span>{current.psi_sales_profiles?.full_name || current.decided_by} · {date(current.decided_at)}</span></> : <span>Sin decisión humana registrada</span>}</article>
@@ -230,7 +231,7 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
     {allowed ? <div className="tender-go-no-go-actions">
       <button type="button" onClick={event => open('go', event.currentTarget)} disabled={!decisionGate.canGo || busy || loading || syncPending}>Registrar GO</button>
       <button type="button" className="danger" onClick={event => open('no_go', event.currentTarget)} disabled={!decisionGate.canNoGo || busy || loading || syncPending}>Registrar NO GO</button>
-      <p className="muted">Vig-IA recomienda; la persona autorizada conserva la autoridad absoluta para GO o NO GO.</p>
+      <p className="muted">{VIGIA_VISIBLE_NAMES.tenders} recomienda; la persona autorizada conserva la autoridad absoluta para GO o NO GO.</p>
     </div> : <p className="muted">Solo Admin, Gerencia o Dirección de Licitaciones con permiso pueden registrar una decisión. La decisión vigente permanece disponible en solo lectura.</p>}
     <details className="tender-go-no-go-history"><summary>Historial de decisiones</summary>{loading ? <p>Cargando historial…</p> : payload.history.length ? <ol>{payload.history.map(entry => <li key={entry.id}><strong>{decisionLabel(entry.decision)}</strong><span>{entry.psi_sales_profiles?.full_name || entry.decided_by} · {date(entry.decided_at)}</span>{entry.justification && <p>{entry.justification}</p>}</li>)}</ol> : <p>Sin entradas previas.</p>}</details>
     {selectedDecision && <div className="tender-go-no-go-backdrop" role="presentation" onMouseDown={close}>

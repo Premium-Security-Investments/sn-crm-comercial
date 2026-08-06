@@ -51,6 +51,10 @@ for (const [label, source] of [
   ['agent catalog view', readFileSync(new URL('../src/siio/SiioAgentsView.tsx', import.meta.url), 'utf8')],
   ['commercial priorities', readFileSync(new URL('../src/vigia/VigiaCommercial.tsx', import.meta.url), 'utf8')],
   ['commercial copilot', readFileSync(new URL('../src/vigia/VigiaOpportunityCopilot.tsx', import.meta.url), 'utf8')],
+  ['tender decision brief', readFileSync(new URL('../src/tenders/tenderDecisionBrief.ts', import.meta.url), 'utf8')],
+  ['tender processing status', readFileSync(new URL('../src/tenders/processingStatus.ts', import.meta.url), 'utf8')],
+  ['tender decision panel', readFileSync(new URL('../src/tenders/components/TenderGoNoGoDecisionPanel.tsx', import.meta.url), 'utf8')],
+  ['tender analysis section', readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8')],
 ]) {
   assert.doesNotMatch(source, /Vig-IA(?! (?:Gerencial|Licitaciones|Comercial))/, `${label} contains a bare Vig-IA label`);
   assert.doesNotMatch(source, /VIG-IA/, `${label} contains the obsolete uppercase label`);

@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
-import { deriveTenderProcessingPresentation, isTenderProcessingActive, shouldReloadTenderArtifacts, tenderProcessingLabel } from '../src/tenders/processingStatus.ts';
+import { buildSync } from 'esbuild';
+
+const processingStatusPath = new URL('../src/tenders/processingStatus.ts', import.meta.url);
+const bundle = buildSync({ entryPoints: [processingStatusPath.pathname], bundle: true, platform: 'node', format: 'esm', write: false });
+const processingStatusUrl = `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].contents).toString('base64')}`;
+const { deriveTenderProcessingPresentation, isTenderProcessingActive, shouldReloadTenderArtifacts, tenderProcessingLabel } = await import(processingStatusUrl);
 
 const status = (value, jobId = 'job-1') => ({ job_id: jobId, status: value });
 
@@ -18,7 +23,7 @@ assert.equal(shouldReloadTenderArtifacts(status('analyzing'), status('completed'
 assert.equal(shouldReloadTenderArtifacts(status('completed'), status('completed'), null), false);
 
 assert.match(tenderProcessingLabel('queued'), /En cola/);
-assert.match(tenderProcessingLabel('waiting_agent_capacity'), /Vig-IA/);
+assert.match(tenderProcessingLabel('waiting_agent_capacity'), /Vig-IA Licitaciones/);
 assert.match(tenderProcessingLabel('needs_attention'), /intervención humana/);
 assert.match(tenderProcessingLabel('completed'), /completado/);
 assert.match(tenderProcessingLabel('unknown_state'), /unknown_state/);
@@ -47,7 +52,7 @@ assert.equal(deriveTenderProcessingPresentation(null, null).visible, false, 'Sin
   const waiting = deriveTenderProcessingPresentation(job({ status: 'waiting_agent_capacity' }), null);
   assert.equal(waiting.visible, true);
   assert.equal(waiting.tone, 'status');
-  assert.match(waiting.message, /Vig-IA está esperando capacidad/, 'Debe usar el mensaje humano estable de espera de capacidad.');
+  assert.match(waiting.message, /Vig-IA Licitaciones está esperando capacidad/, 'Debe usar el mensaje humano estable de espera de capacidad.');
   assert.match(waiting.message, /continuará automáticamente/, 'Debe aclarar que continuará automáticamente.');
   assert.equal(waiting.primaryAction, 'disabled', 'No debe permitir una corrida duplicada mientras está en cola.');
   assert.equal(waiting.showRetry, false, 'No debe ofrecer un botón de reintento mientras espera capacidad.');
