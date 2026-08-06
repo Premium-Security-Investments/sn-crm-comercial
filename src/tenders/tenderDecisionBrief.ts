@@ -1,5 +1,5 @@
 import { VIGIA_VISIBLE_NAMES } from '../vigia/agentIdentity';
-import type { TenderDocumentAnalysis } from './types';
+import type { TenderDocumentAnalysis, TenderDocumentRecord, TenderEvidenceCoverage } from './types';
 
 export function tenderAnalysisMethodLabel(producer: TenderDocumentAnalysis['producer']) {
   return producer === 'AGT-002'
@@ -51,6 +51,69 @@ export function normalizeTenderEvidence(items: unknown): string[] {
   });
 }
 
+/** Combines persisted finding lists without hiding blockers or duplicating identical conclusions. */
+export function mergeTenderEvidence(...groups: unknown[]): string[] {
+  return [...new Set(groups.flatMap(normalizeTenderEvidence))];
+}
+
 export function tenderNextAction(nextAction: string | null | undefined): string {
   return String(nextAction || '').trim().replace(/regenerar dictamen/gi, 'actualizar la conclusión preliminar');
+}
+
+/** Documents currently in force; superseded/historical versions do not count toward the visible total. */
+export function tenderCurrentDocumentCount(documents: Pick<TenderDocumentRecord, 'current'>[]): number {
+  return documents.filter(document => document.current !== false).length;
+}
+
+export type TenderEvidenceCoverageSummary = {
+  available: boolean;
+  chunksUsed: number | null;
+  chunksMax: number | null;
+  tokensUsed: number | null;
+  tokensMax: number | null;
+  requirementsCovered: number | null;
+  requirementsNotCovered: number | null;
+  requirementsNoEvidence: number | null;
+  requirementsTotal: number | null;
+  citationCount: number | null;
+};
+
+/** Presence of a persisted evidence_coverage run never implies compliance; absence is reported explicitly rather than inferred. */
+export function tenderEvidenceCoverageSummary(coverage: TenderEvidenceCoverage | null | undefined): TenderEvidenceCoverageSummary {
+  if (!coverage) return { available: false, chunksUsed: null, chunksMax: null, tokensUsed: null, tokensMax: null, requirementsCovered: null, requirementsNotCovered: null, requirementsNoEvidence: null, requirementsTotal: null, citationCount: null };
+  const byRequirement = coverage.coverage_manifest?.by_requirement || [];
+  return {
+    available: true,
+    chunksUsed: coverage.budget?.chunks_used ?? null,
+    chunksMax: coverage.budget?.max_chunks ?? null,
+    tokensUsed: coverage.budget?.tokens_used ?? null,
+    tokensMax: coverage.budget?.max_tokens ?? null,
+    requirementsCovered: byRequirement.filter(item => item.status === 'covered').length,
+    requirementsNotCovered: byRequirement.filter(item => item.status === 'not_covered').length,
+    requirementsNoEvidence: byRequirement.filter(item => item.status === 'no_evidence').length,
+    requirementsTotal: byRequirement.length,
+    citationCount: coverage.citation_allowlist?.length ?? 0,
+  };
+}
+
+export type TenderAnalysisOpportunityMetadata = {
+  entity: string | null;
+  processReference: string | null;
+  expectedCloseDate: string | null;
+  offerValue: number | null;
+};
+
+/**
+ * Entity and commercial facts come exclusively from the real opportunity record; the tender/process reference is not
+ * persisted on the opportunity today, so it is reported as unavailable instead of being fabricated.
+ */
+export function tenderAnalysisOpportunityMetadata(opportunity: { company_name?: string | null; expected_close_date?: string | null; offer_value?: number | null } | null | undefined): TenderAnalysisOpportunityMetadata {
+  const entity = String(opportunity?.company_name || '').trim();
+  const offerValue = typeof opportunity?.offer_value === 'number' && Number.isFinite(opportunity.offer_value) ? opportunity.offer_value : null;
+  return {
+    entity: entity || null,
+    processReference: null,
+    expectedCloseDate: opportunity?.expected_close_date || null,
+    offerValue,
+  };
 }

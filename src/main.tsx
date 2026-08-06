@@ -16,7 +16,7 @@ import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDeci
 import { TenderDossierWorkspacePanel } from './tenders/components/TenderDossierWorkspacePanel';
 import { TenderModuleNavigation } from './tenders/components/TenderModuleNavigation';
 import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
-import { tenderAnalysisMethodLabel } from './tenders/tenderDecisionBrief';
+import { tenderAnalysisMethodLabel, tenderAnalysisOpportunityMetadata } from './tenders/tenderDecisionBrief';
 import { createTenderQuestionResponseActions } from './tenders/tenderQuestionResponseActions';
 import { loadTenderGoNoGoDecision, loadTenderOfferStatus, loadTrackingEvents, postActuation } from './tenders/api';
 import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
@@ -753,6 +753,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   const focusTarget = new URLSearchParams(window.location.hash.split('?')[1] || '').get('focus');
   const documentFocusRequested = focusTarget === 'documents';
   const interactionFocusRequested = focusTarget === 'interaction';
+  const analysisFocusRequested = focusTarget === 'analysis';
   const load = async () => {
     const requestedId = id; const version = ++detailRequestRef.current;
     try {
@@ -774,6 +775,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   }, [id]);
   useEffect(() => { if (documentFocusRequested && detail?.opportunity.service_type_code === 'licitacion_publica') focusDocumentReviewArea(documentReviewRef.current); }, [documentFocusRequested, detail?.opportunity.id]);
   useEffect(() => { if (interactionFocusRequested && detail?.opportunity.id) focusDocumentReviewArea(followUpRef.current); }, [interactionFocusRequested, detail?.opportunity.id]);
+  useEffect(() => { if (analysisFocusRequested && detail?.opportunity.service_type_code === 'licitacion_publica') focusDocumentReviewArea(document.getElementById('tender-analysis')); }, [analysisFocusRequested, detail?.opportunity.id]);
   if (error) return <div className="error">{error}</div>; if (!detail) return <div className="notice">Cargando detalle…</div>;
   const o = detail.opportunity;
   const visibleInteractions = detail.interactions.filter(i => i.interaction_type !== 'documento');
@@ -974,7 +976,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
   const sourceUrl = resolveTenderSourceUrl(opportunity.source_url, opportunity.observaciones);
   return <div id="tender-document-review" className="tender-guided-review" tabIndex={-1} ref={focusTargetRef}>
     <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} sourceUrl={sourceUrl} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
-    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} />
+    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} metadata={tenderAnalysisOpportunityMetadata(opportunity)} />
   </div>;
 }
 function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, onNavigationStateChanged }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void>; onNavigationStateChanged?: (state: TenderPanelState<TenderPreparationNavigationValue>) => void }) {

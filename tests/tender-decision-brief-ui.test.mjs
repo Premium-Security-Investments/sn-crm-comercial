@@ -34,7 +34,7 @@ for (const backend of [server, api]) {
 }
 assert.doesNotMatch(main, /const favorable = .*\/GO\//, 'La UI no debe inferir una decisión con una regex favorable.');
 assert.match(analysisSection, /const strengths = analysis\?\.strengths \?\? analysis\?\.commercial_fit\?\.positives \?\? \[\]/, 'Fortalezas debe preferir la carga tipada y degradar al legado.');
-assert.match(analysisSection, /const weaknesses = analysis\?\.weaknesses \?\? analysis\?\.blockers \?\? analysis\?\.commercial_fit\?\.concerns \?\? \[\]/, 'Debilidades debe mapear bloqueadores y alertas legadas sin inventar evidencia.');
+assert.match(analysisSection, /const weaknesses = mergeTenderEvidence\(analysis\?\.weaknesses, analysis\?\.blockers, analysis\?\.commercial_fit\?\.concerns\)/, 'Debilidades debe combinar la carga tipada, bloqueadores y alertas legadas sin ocultar evidencia.');
 assert.match(analysisSection, /const questions = \(analysis\?\.questions \?\? \[\]\)\.map\(normalizeQuestion\)/, 'Dudas abiertas debe consumir y normalizar las preguntas tipadas.');
 assert.match(analysisSection, /const unverified = analysis\?\.unverified \?\? analysis\?\.company_profile_crosscheck\?\.gaps \?\? \[\]/, 'Información no verificada debe degradar a brechas del perfil.');
 assert.doesNotMatch(analysisSection, /Cómo funciona/, 'La ayuda técnica redundante debe permanecer fuera de la vista operativa.');

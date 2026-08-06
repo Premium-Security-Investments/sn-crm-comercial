@@ -4,13 +4,10 @@ import { TenderOpportunitiesView } from './TenderOpportunitiesView';
 import { TenderConfigurationView } from './TenderConfigurationView';
 import { canConfigureTenders, canManageTenderCompanyDocuments } from './permissions';
 import { TenderModuleNavigation } from './components/TenderModuleNavigation';
-import { TenderAnalysisV3Preview } from './components/TenderAnalysisV3Preview';
 import type { TendersModuleProps } from './types';
 
 /** Route-level composition; every view owns its data contract. */
 export function TendersModule(props: TendersModuleProps) {
-  const isV3Preview = new URLSearchParams(window.location.hash.split('?')[1] || '').get('preview') === 'agt002-v3';
-  if (isV3Preview) return <TenderAnalysisV3Preview />;
   const canConfigure = canConfigureTenders(props.data.currentProfile);
   const canManageDocuments = canManageTenderCompanyDocuments(props.data.currentProfile);
   const moduleNavigation = <TenderModuleNavigation
