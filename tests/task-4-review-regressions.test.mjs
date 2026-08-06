@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { isModulePermissionEligible } from '../module-access.js';
+import { eligibleModulePermissions, isModulePermissionEligible } from '../module-access.js';
 import { ACTIONS, can } from '../access-control.js';
 
 const savedEnv = Object.fromEntries(['NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'VERCEL'].map(key => [key, process.env[key]]));
@@ -12,10 +12,11 @@ const { filterBootstrapForProfile } = await import('../server/index.js');
 const source = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const director = { id: 'director', role: 'director', active: true, areas: [{ area_code: 'comercial', subarea_code: 'norte' }], permissions: ['modulo_dashboard_comercial', 'modulo_siio_gerencial'] };
 
-assert.equal(isModulePermissionEligible('director', 'modulo_siio_gerencial'), true, 'director conserva elegibilidad explícita para SIIO; el scope se compone en Task 4B');
+assert.equal(isModulePermissionEligible('director', 'modulo_siio_gerencial'), false, 'director ya no es elegible para SIIO; el módulo gerencial queda fuera de su ceiling');
+assert.equal(eligibleModulePermissions('director').includes('modulo_siio_gerencial'), false, 'el catálogo elegible de director no debe listar modulo_siio_gerencial');
 assert.equal(isModulePermissionEligible('junta', 'modulo_siio_gerencial'), true, 'junta sólo es elegible para el módulo ejecutivo SIIO');
 assert.deepEqual(isModulePermissionEligible('junta', 'modulo_dashboard_comercial'), false, 'junta no recibe otros módulos automáticos');
-assert.equal(can(director, ACTIONS.MODULE_SIIO_VIEW), true, 'el módulo explícito habilita la puerta de entrada del director sin sustituir el scope posterior');
+assert.equal(can(director, ACTIONS.MODULE_SIIO_VIEW), false, 'sin elegibilidad de módulo la puerta de entrada del director permanece cerrada');
 
 const payload = {
   summary: [{ stage_code: 'prospecto' }],
