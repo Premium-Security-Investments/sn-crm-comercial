@@ -8,7 +8,7 @@ import { PGlite } from '@electric-sql/pglite';
 // so today's only protection against exposure is "nobody added a policy
 // yet". This migration closes that gap with explicit, minimal privileges
 // instead of relying on RLS policies (deliberately none are added here).
-const migrationPath = new URL('../supabase/migrations/058_siio_f2_security_coherence.sql', import.meta.url);
+const migrationPath = new URL('../supabase/migrations/062_siio_f2_security_coherence.sql', import.meta.url);
 const migration = readFileSync(migrationPath, 'utf8');
 
 const ALL_TABLES = [
@@ -172,4 +172,4 @@ async function assertExactPrivileges(pg, label) {
   await pg.exec('reset role');
 }
 
-console.log('SIIO F2 Task 1 (058) security coherence PGlite integration passed');
+console.log('SIIO F2 Task 1 (062) security coherence PGlite integration passed');

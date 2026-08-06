@@ -10,7 +10,7 @@
 
 **Approved design:** `docs/superpowers/specs/2026-08-04-siio-f2-security-coherence-design.md`
 
-**Current migration allocation:** `057_tender_document_logical_identity.sql` is highest on the approved base; `058` is free. Task 1 must re-check this immediately before creating the migration. If `058` has appeared on the branch, use the newly discovered next free number and update every plan reference in the same commit. Never edit or renumber an applied migration.
+**Release migration allocation:** `main` already contains migrations `058` through `061`; F2 therefore uses `062_siio_f2_security_coherence.sql`. The collision was detected after PR #77 merged but before any remote migration or deploy. The F2 SQL had not been applied, so renumbering is safe. Never edit or renumber an applied migration.
 
 ---
 
@@ -20,7 +20,7 @@
 
 **Files:**
 - Create: `tests/siio-f2-security-coherence-pglite.integration.test.mjs`
-- Create after collision check: `supabase/migrations/058_siio_f2_security_coherence.sql`
+- Create after collision check: `supabase/migrations/062_siio_f2_security_coherence.sql`
 
 ### Step 1: Reconfirm the migration number
 
@@ -34,9 +34,9 @@ print(numbers[-1], str(numbers[-1] + 1).zfill(3))
 PY
 ```
 
-Expected on the approved base: `57 058`.
+Expected on the original approved base: `57 058`. At release preflight, `main` already contained migrations `058` through `061`, so the next free number became `062`.
 
-If the next free number is no longer `058`, change the migration filename in this task before writing tests. Do not overwrite the colliding file.
+If the next free number changes again, update the F2 migration filename and every current reference before applying it. Do not overwrite a colliding file or renumber an applied migration.
 
 ### Step 2: Write the failing PGlite privilege test
 
@@ -147,7 +147,7 @@ Expected: both tests pass.
 ### Step 5: Commit
 
 ```bash
-git add supabase/migrations/058_siio_f2_security_coherence.sql tests/siio-f2-security-coherence-pglite.integration.test.mjs
+git add supabase/migrations/062_siio_f2_security_coherence.sql tests/siio-f2-security-coherence-pglite.integration.test.mjs
 git commit -m "security: restrict direct SIIO table access"
 ```
 

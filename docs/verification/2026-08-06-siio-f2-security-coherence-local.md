@@ -2,6 +2,12 @@
 
 Timestamp UTC: 2026-08-06T01:25:42Z
 
+> Corrección post-merge: esta evidencia conserva abajo el nombre histórico
+> `058_siio_f2_security_coherence.sql` tal como fue verificado originalmente.
+> Antes del release, el mismo SQL —sin cambios de contenido— fue renumerado a
+> `062_siio_f2_security_coherence.sql` porque `main` ya contenía las migraciones
+> `058`–`061`. La prueba `migration-number-uniqueness.test.mjs` evita reincidencias.
+
 Branch: `design/siio-f2-operational-closure`
 HEAD verificado: `2926969e64be7a53a91ed93eb7e5fab368af67f2`
 
