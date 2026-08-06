@@ -28,6 +28,7 @@ import { setAreaScopeSelection, type AccessAssignment } from './profileAccessSta
 import { supabaseBrowser } from './supabaseBrowser';
 import { VigiaCommercial } from './vigia/VigiaCommercial';
 import { VigiaOpportunityCopilot } from './vigia/VigiaOpportunityCopilot';
+import { PSI_AGENT_ROUTER_NAME, VIGIA_VISIBLE_NAMES } from './vigia/agentIdentity';
 import { canRenderOpportunityCopilot } from './vigia/opportunity-copilot-state';
 import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
@@ -910,12 +911,12 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
 
   const analyzeDocumentsWithAgt002 = async () => {
     setBusy(true);
-    setAnalysisStatus({ message: 'Analizando con Vig-IA; la revisión humana sigue siendo obligatoria…', tone: 'status' });
+    setAnalysisStatus({ message: `Analizando con ${VIGIA_VISIBLE_NAMES.tenders}; la revisión humana sigue siendo obligatoria…`, tone: 'status' });
     try {
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-analyze-agent-preview', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
       setPayload(data); onAnalysisChanged?.(data.analysis || null);
       setAnalysisStatus({
-        message: data.analysis_engine?.fallback ? 'Vig-IA no estuvo disponible; se aplicó fallback seguro por reglas.' : 'Vig-IA completó el análisis. La recomendación requiere revisión humana.',
+        message: data.analysis_engine?.fallback ? `${VIGIA_VISIBLE_NAMES.tenders} no estuvo disponible; se aplicó fallback seguro por reglas.` : `${VIGIA_VISIBLE_NAMES.tenders} completó el análisis. La recomendación requiere revisión humana.`,
         tone: 'status',
       });
     } catch (err) {
@@ -1026,7 +1027,7 @@ function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, o
         <section className="document-analysis-card"><small>Requiere intervención humana</small><ul>{(authorizedPreparation.human_required_items || []).map(item => <li key={item.key}><strong>{item.title || item.name}</strong> · {item.owner}<br/><span className="muted">{item.reason}</span></li>)}</ul></section>
         <section className="document-analysis-card"><small>Carpeta SharePoint / OneDrive</small><strong>{authorizedPreparation.sharepoint_folder?.root_name}</strong><div className="document-matrix">{(authorizedPreparation.sharepoint_folder?.folders || []).slice(0, 8).map(folder => <div key={folder}><Badge tone="blue">carpeta</Badge><span>{folder}</span></div>)}</div></section>
         <section className="document-analysis-card"><small>Notas del sistema sobre el plan</small><ul>{(authorizedPreparation.assistant_notes || []).map(item => <li key={item}>{item}</li>)}</ul></section>
-        <section className="document-analysis-card"><small>Nota interna de preparación</small><p className="muted">Esta nota queda en el historial del expediente para el equipo. No es procesada ni respondida automáticamente por Vig-IA.</p>{payload.notes?.length ? <div className="timeline">{payload.notes.slice(-4).map((n, idx) => <div className="event" key={`${n.created_at}-${idx}`}><strong>{n.status || 'nota'}</strong><span>{fmtDate(n.created_at)} · {n.created_by_name || n.created_by || 'Usuario'}</span><p>{n.note}</p></div>)}</div> : null}<form onSubmit={saveAssistantNote} className="form"><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Ej: necesitamos que contabilidad confirme capital de trabajo y cargue estados financieros 2025…"/><button disabled={busy || !note.trim()}>Guardar nota interna</button></form></section>
+        <section className="document-analysis-card"><small>Nota interna de preparación</small><p className="muted">Esta nota queda en el historial del expediente para el equipo. No es procesada ni respondida automáticamente por {VIGIA_VISIBLE_NAMES.tenders}.</p>{payload.notes?.length ? <div className="timeline">{payload.notes.slice(-4).map((n, idx) => <div className="event" key={`${n.created_at}-${idx}`}><strong>{n.status || 'nota'}</strong><span>{fmtDate(n.created_at)} · {n.created_by_name || n.created_by || 'Usuario'}</span><p>{n.note}</p></div>)}</div> : null}<form onSubmit={saveAssistantNote} className="form"><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Ej: necesitamos que contabilidad confirme capital de trabajo y cargue estados financieros 2025…"/><button disabled={busy || !note.trim()}>Guardar nota interna</button></form></section>
       </div>
     </div> : <div className="document-empty-state"><strong>Preparación pendiente de registrar GO</strong><span>Registrar GO en la decisión formal para crear el expediente, documentos genéricos automáticos y pendientes humanos. Hasta entonces este panel es de solo lectura.</span>{statusText && <div className="notice">{statusText}</div>}</div>}
   </Panel>;
@@ -1111,7 +1112,7 @@ function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { oppor
       await loadPage(null);
     } catch (error) { setStatus(error instanceof Error ? error.message : String(error)); }
   };
-  const actorLabel = (event: TenderTrackingEvent) => event.actor_kind === 'system' ? 'Sistema' : profiles.find(profile => profile.id === event.created_by)?.full_name || (event.actor_kind === 'agent' ? 'Vig-IA' : 'Usuario registrado');
+  const actorLabel = (event: TenderTrackingEvent) => event.actor_kind === 'system' ? 'Sistema' : profiles.find(profile => profile.id === event.created_by)?.full_name || (event.actor_kind === 'agent' ? VIGIA_VISIBLE_NAMES.tenders : 'Usuario registrado');
   const eventLink = (event: TenderTrackingEvent) => typeof event.metadata?.source_url === 'string' ? event.metadata.source_url : null;
   const processHistory = useMemo<TenderProcessHistoryItem[]>(() => [
     ...events.filter(event => {
@@ -1125,7 +1126,7 @@ function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { oppor
   return <div className="stack">
     <Panel title="Registrar actuación o novedad"><form onSubmit={save} className="form"><Select value={type} onChange={setType} options={publicActuationOptions} empty="Tipo de actuación"/><textarea required placeholder="Describe la actuación o novedad del proceso" value={note} onChange={event => setNote(event.target.value)}/><small>Registrado por: {currentProfile.full_name}</small><button disabled={!note.trim()}>Guardar actuación</button>{status && <small>{status}</small>}</form></Panel>
     <Panel title="Historial del proceso"><p className="muted">Decisiones, cambios de estado y actuaciones que explican la evolución comercial de la oportunidad.</p><div className="timeline">{processHistory.length ? processHistory.map(item => <div className="event" key={item.id}><strong>{item.title}</strong><span>{fmtDate(item.createdAt)} · {item.actor}</span>{item.note && <p>{item.note}</p>}{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Ver fuente asociada</a>}</div>) : <p className="muted">{loading ? 'Cargando historial…' : 'Sin hitos comerciales registrados.'}</p>}</div>{nextCursor && <button className="secondary" disabled={loading} onClick={() => void loadPage(nextCursor).catch(error => setStatus(error instanceof Error ? error.message : String(error)))}>{loading ? 'Cargando…' : 'Cargar más'}</button>}</Panel>
-    <details className="tender-technical-audit"><summary>Auditoría técnica de Vig-IA</summary><p className="muted">Procesamiento documental, análisis y fallas técnicas. No representa el avance comercial.</p><div className="timeline">{technicalEvents.length ? technicalEvents.map(event => <div className="event" key={event.id}><strong>{technicalActuationLabel(event.event_type)}</strong><span>{fmtDate(event.created_at)} · {actorLabel(event)}</span>{event.note && <p>{event.note}</p>}</div>) : <p className="muted">Sin eventos técnicos registrados.</p>}</div></details>
+    <details className="tender-technical-audit"><summary>Auditoría técnica de {VIGIA_VISIBLE_NAMES.tenders}</summary><p className="muted">Procesamiento documental, análisis y fallas técnicas. No representa el avance comercial.</p><div className="timeline">{technicalEvents.length ? technicalEvents.map(event => <div className="event" key={event.id}><strong>{technicalActuationLabel(event.event_type)}</strong><span>{fmtDate(event.created_at)} · {actorLabel(event)}</span>{event.note && <p>{event.note}</p>}</div>) : <p className="muted">Sin eventos técnicos registrados.</p>}</div></details>
   </div>;
 }
 function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; refresh: () => Promise<void> }) {

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AgentWorkbenchShell } from '../../agents/workbench/AgentWorkbenchShell';
 import type { AgentWorkbenchHandlers, AgentWorkbenchWorkspace } from '../../agents/workbench/types';
+import { VIGIA_VISIBLE_NAMES } from '../../vigia/agentIdentity';
 import { loadTenderDossierWorkbench, postTenderDossierWorkbenchMessage, retryTenderDossierWorkbenchJob, reviewTenderDossierWorkbenchLearning } from '../api';
 import type { TenderDossierWorkbench, TenderRequest } from '../types';
 
 const VIGIA_DOSSIER_CONFIG = Object.freeze({
-  visibleAgentName: 'Vig-IA',
-  subtitle: 'Copiloto de Licitaciones',
+  visibleAgentName: VIGIA_VISIBLE_NAMES.tenders,
+  subtitle: 'Copiloto para análisis de licitaciones',
   contextLabel: 'Expediente activo',
   capabilities: ['message', 'attach', 'draft', 'review', 'learning'],
   humanReviewRequired: true,
@@ -22,7 +23,9 @@ function toShellWorkspace(data: TenderDossierWorkbench | null): AgentWorkbenchWo
     messages: data.messages.map(message => ({
       id: message.id,
       authorKind: message.author_kind,
-      visibleAuthorName: message.visible_agent_name,
+      visibleAuthorName: message.author_kind === 'agent'
+        ? VIGIA_DOSSIER_CONFIG.visibleAgentName
+        : message.visible_agent_name,
       content: message.content,
       createdAt: message.created_at,
     })),
