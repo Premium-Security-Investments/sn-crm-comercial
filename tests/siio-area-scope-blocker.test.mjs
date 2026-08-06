@@ -48,6 +48,7 @@ const profiles = {
 const tokens = { 'director-token': 'director-auth', 'board-token': 'board-auth', 'admin-token': 'admin-auth', 'gerencia-token': 'gerencia-auth' };
 let siioReads = 0;
 const siioPaths = [];
+let siioFailureMode = null;
 const fakeSupabase = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
   if (url.pathname === '/auth/v1/user') {
@@ -63,6 +64,12 @@ const fakeSupabase = http.createServer((req, res) => {
   if (url.pathname.startsWith('/rest/v1/siio_')) {
     siioReads += 1;
     siioPaths.push(url.pathname);
+    if (url.pathname === '/rest/v1/siio_fronts' && siioFailureMode === 'missing') {
+      return json(res, 404, { message: 'relation "public.siio_fronts" does not exist', code: '42P01' });
+    }
+    if (url.pathname === '/rest/v1/siio_fronts' && siioFailureMode === 'empty') {
+      return json(res, 200, []);
+    }
     if (url.pathname === '/rest/v1/siio_monthly_board_reports') {
       return json(res, 200, [
         { id: 'draft-report', status: 'borrador', title: 'Borrador' },
@@ -159,6 +166,19 @@ try {
     'gerencia recibe únicamente nómina visible para gerencia y junta_agregado',
   );
   assert.equal(JSON.stringify(response.body).includes('payroll-restricted'), false, 'gerencia nunca recibe fila de nómina restringida');
+
+  siioFailureMode = 'missing';
+  response = await requestJson(appPort, '/api/siio/bootstrap', 'admin-token');
+  assert.equal(response.status, 503, 'bootstrap falla explícito cuando falta una tabla fundacional SIIO');
+  assert.equal(response.body.error, 'La fundación de datos SIIO no está disponible.', 'mensaje público genérico de fundación SIIO ausente');
+  assert.equal(JSON.stringify(response.body).includes('relation'), false, 'la respuesta pública no filtra detalles de relación');
+  assert.equal(JSON.stringify(response.body).includes('schema cache'), false, 'la respuesta pública no filtra detalles de schema cache');
+
+  siioFailureMode = 'empty';
+  response = await requestJson(appPort, '/api/siio/bootstrap', 'admin-token');
+  assert.equal(response.status, 200, 'bootstrap regresa 200 cuando la tabla fundacional está vacía');
+  assert.deepEqual(response.body.fronts, [], 'bootstrap conserva [] para una consulta exitosa vacía');
+  siioFailureMode = null;
 } finally {
   console.error = originalConsoleError;
   if (appServer?.listening) await new Promise(resolve => appServer.close(resolve));

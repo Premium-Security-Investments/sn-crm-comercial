@@ -1887,13 +1887,24 @@ const siioTables = {
   payrollAggregates: 'siio_payroll_aggregates',
   strategicOpportunities: 'siio_strategic_opportunities'
 };
-async function optionalSiioList(database, table, select = '*', order = 'created_at') {
+function siioFoundationUnavailable(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return error?.code === '42P01'
+    || error?.code === 'PGRST205'
+    || message.includes('does not exist')
+    || message.includes('schema cache');
+}
+async function requiredSiioList(database, table, select = '*', order = 'created_at') {
   const query = database.from(table).select(select).limit(1000);
   if (order) query.order(order, { ascending: table === 'siio_board_sections' });
   const { data, error } = await query;
   if (error) {
-    const message = String(error.message || '').toLowerCase();
-    if (message.includes('does not exist') || message.includes('schema cache')) return [];
+    if (siioFoundationUnavailable(error)) {
+      const unavailable = new Error('La fundación de datos SIIO no está disponible.');
+      unavailable.status = 503;
+      unavailable.code = 'SIIO_FOUNDATION_UNAVAILABLE';
+      throw unavailable;
+    }
     throw error;
   }
   return data || [];
@@ -1983,31 +1994,31 @@ app.get('/api/siio/bootstrap', async (req, res) => {
     requireSiioEndpointAccess(profile, 'GET /api/siio/bootstrap');
     const database = requireDb();
     if (profile.role === 'junta') {
-      const boardReports = filterBoardReportsForProfile(profile, await optionalSiioList(database, siioTables.boardReports, '*', 'period_month'));
+      const boardReports = filterBoardReportsForProfile(profile, await requiredSiioList(database, siioTables.boardReports, '*', 'period_month'));
       return res.json({ fronts: [], records: [], sources: [], decisions: [], boardReports, boardSections: [], financialMetrics: [], commercialSignals: [], payrollAggregates: [], strategicOpportunities: [], currentProfile: profile });
     }
     const [fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates, strategicOpportunities] = await Promise.all([
-      optionalSiioList(database, siioTables.fronts, '*', 'id'),
-      optionalSiioList(database, siioTables.records, '*', 'updated_at'),
-      optionalSiioList(database, siioTables.sources, '*', 'id'),
-      optionalSiioList(database, siioTables.decisions, '*', 'created_at'),
-      optionalSiioList(database, siioTables.boardReports, '*', 'period_month'),
-      optionalSiioList(database, siioTables.boardSections, '*', 'section_order'),
-      optionalSiioList(database, siioTables.financialMetrics, '*', 'period_month'),
-      optionalSiioList(database, siioTables.commercialSignals, '*', 'period_month'),
-      optionalSiioList(database, siioTables.payrollAggregates, 'id,period_month,area,total_people,total_accrued,total_deductions,net_total,variation_abs,alert,source_id,visibility_level', 'period_month'),
-      optionalSiioList(database, siioTables.strategicOpportunities, '*', 'id')
+      requiredSiioList(database, siioTables.fronts, '*', 'id'),
+      requiredSiioList(database, siioTables.records, '*', 'updated_at'),
+      requiredSiioList(database, siioTables.sources, '*', 'id'),
+      requiredSiioList(database, siioTables.decisions, '*', 'created_at'),
+      requiredSiioList(database, siioTables.boardReports, '*', 'period_month'),
+      requiredSiioList(database, siioTables.boardSections, '*', 'section_order'),
+      requiredSiioList(database, siioTables.financialMetrics, '*', 'period_month'),
+      requiredSiioList(database, siioTables.commercialSignals, '*', 'period_month'),
+      requiredSiioList(database, siioTables.payrollAggregates, 'id,period_month,area,total_people,total_accrued,total_deductions,net_total,variation_abs,alert,source_id,visibility_level', 'period_month'),
+      requiredSiioList(database, siioTables.strategicOpportunities, '*', 'id')
     ]);
     const visiblePayrollAggregates = filterPayrollAggregatesForManagement(payrollAggregates);
     res.json({ fronts, records, sources, decisions, boardReports, boardSections, financialMetrics, commercialSignals, payrollAggregates: visiblePayrollAggregates, strategicOpportunities, currentProfile: profile });
   } catch (error) { sendAuthError(res, error); }
 });
 app.get('/api/siio/fronts', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'GET /api/siio/fronts'); res.json(await optionalSiioList(requireDb(), siioTables.fronts, '*', 'id')); }
+  try { const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'GET /api/siio/fronts'); res.json(await requiredSiioList(requireDb(), siioTables.fronts, '*', 'id')); }
   catch (error) { sendAuthError(res, error); }
 });
 app.get('/api/siio/records', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'GET /api/siio/records'); res.json(await optionalSiioList(requireDb(), siioTables.records, '*', 'updated_at')); }
+  try { const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'GET /api/siio/records'); res.json(await requiredSiioList(requireDb(), siioTables.records, '*', 'updated_at')); }
   catch (error) { sendAuthError(res, error); }
 });
 app.post('/api/siio/records', async (req, res) => {
@@ -2026,7 +2037,7 @@ app.patch('/api/siio/records/:id', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.get('/api/siio/sources', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'GET /api/siio/sources'); res.json(await optionalSiioList(requireDb(), siioTables.sources, '*', 'id')); }
+  try { const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'GET /api/siio/sources'); res.json(await requiredSiioList(requireDb(), siioTables.sources, '*', 'id')); }
   catch (error) { sendAuthError(res, error); }
 });
 app.post('/api/siio/sources', async (req, res) => {
@@ -2038,7 +2049,7 @@ app.post('/api/siio/sources', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 app.get('/api/siio/decisions', async (req, res) => {
-  try { const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'GET /api/siio/decisions'); res.json(await optionalSiioList(requireDb(), siioTables.decisions, '*', 'created_at')); }
+  try { const { profile } = await getAuthContext(req); requireSiioEndpointAccess(profile, 'GET /api/siio/decisions'); res.json(await requiredSiioList(requireDb(), siioTables.decisions, '*', 'created_at')); }
   catch (error) { sendAuthError(res, error); }
 });
 app.post('/api/siio/decisions', async (req, res) => {
@@ -2059,7 +2070,7 @@ app.get('/api/siio/board-reports', async (req, res) => {
   try {
     const { profile } = await getAuthContext(req);
     requireSiioEndpointAccess(profile, 'GET /api/siio/board-reports');
-    res.json(filterBoardReportsForProfile(profile, await optionalSiioList(requireDb(), siioTables.boardReports, '*', 'period_month')));
+    res.json(filterBoardReportsForProfile(profile, await requiredSiioList(requireDb(), siioTables.boardReports, '*', 'period_month')));
   } catch (error) { sendAuthError(res, error); }
 });
 
