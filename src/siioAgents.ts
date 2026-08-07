@@ -18,6 +18,10 @@ export type SiioInstitutionalAgent = {
   audit_rule: string;
   current_capability: string;
   next_gate: string;
+  state_as_of: string;
+  state_source: string;
+  production_capability: string;
+  development_status: string;
 };
 
 export const SIIO_AGENT_CATALOG: SiioInstitutionalAgent[] = [
@@ -37,6 +41,10 @@ export const SIIO_AGENT_CATALOG: SiioInstitutionalAgent[] = [
     audit_rule: 'Toda recomendación debe mostrar regla, evidencia, periodo y fuente.',
     current_capability: 'Cuatro reglas determinísticas activas sobre finanzas y nómina agregada.',
     next_gate: 'Validación financiera y QA autenticado por roles.',
+    state_as_of: '2026-08-08',
+    state_source: 'QA F2.0 + CURRENT.md@39bef1d',
+    production_capability: 'Lectura F2 gerencial en producción, sólo lectura, con revisión humana obligatoria.',
+    development_status: 'Correcciones Important de F2 en curso en esta rama local; no desplegadas a producción.',
   },
   {
     id: 'AGT-002',
@@ -54,6 +62,10 @@ export const SIIO_AGENT_CATALOG: SiioInstitutionalAgent[] = [
     audit_rule: 'Las acciones sensibles exigen confirmación y deben conservar fuente, usuario y fecha.',
     current_capability: 'Radar, análisis documental, perfil corporativo y expediente de oferta con gates.',
     next_gate: 'Cerrar prueba RUP heredada y completar QA con Dirección de Licitaciones.',
+    state_as_of: '2026-08-07',
+    state_source: 'CURRENT.md feat/agt002-v3-foundations',
+    production_capability: 'E5/E6 en producción con gate humano obligatorio; drain apagado y timer deshabilitado.',
+    development_status: 'Contrato integral v3 vive en rama, no desplegado y NOT READY para canary real; gates pendientes.',
   },
   {
     id: 'AGT-003',
@@ -71,6 +83,10 @@ export const SIIO_AGENT_CATALOG: SiioInstitutionalAgent[] = [
     audit_rule: 'Cada alerta debe vincular oportunidad, responsable, fecha y criterio de activación.',
     current_capability: 'Consulta y priorización de señales comerciales en modo de solo lectura.',
     next_gate: 'Validar umbrales y utilidad con Dirección Comercial.',
+    state_as_of: '2026-08-06',
+    state_source: 'CURRENT.md@39bef1d',
+    production_capability: 'Identidad productiva aprobada; funciones declaradas actuales en modo de solo lectura.',
+    development_status: 'Sin capacidades futuras promovidas; cualquier ampliación requiere un nuevo gate aprobado.',
   },
 ];
 

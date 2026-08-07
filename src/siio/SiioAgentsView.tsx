@@ -66,6 +66,10 @@ export function SiioAgentsView({ routeState, onNavigate }: { payload: SiioBootst
             <div><strong>Capacidad actual</strong><span>{agent.current_capability}</span></div>
             <div><strong>Canal autorizado</strong><span>{agent.channel}</span></div>
             <div><strong>Sin escritura automática en producción</strong><span>{agent.can_write_production ? 'No aplica' : 'Confirmado'}</span></div>
+            <div><strong>Capacidad productiva</strong><span>{agent.production_capability}</span></div>
+            <div><strong>Desarrollo / no desplegado</strong><span>{agent.development_status}</span></div>
+            <div><strong>Corte</strong><span>{agent.state_as_of}</span></div>
+            <div><strong>Fuente</strong><span>{agent.state_source}</span></div>
           </div>
         </article>)}
       </div>}
