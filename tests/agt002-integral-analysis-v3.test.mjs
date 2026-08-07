@@ -716,6 +716,25 @@ function run() {
   // external_side_effect must always be false.
   expectRejects((ia) => { ia.analysis_units[2].actions[0].external_side_effect = true; }, /external_side_effect/i);
 
+  // The AI action catalog has no autonomous decision or execution verbs. GO/NO-GO,
+  // approval, signature, sending and submission remain outside this closed contract;
+  // even a human_decision entry is only a pending, side-effect-free handoff.
+  for (const prohibitedActionType of ['go', 'no_go', 'approve', 'sign', 'send', 'submit']) {
+    expectRejects((ia) => {
+      ia.analysis_units[2].actions[0].action_type = prohibitedActionType;
+    }, /action_type|valor permitido/i);
+  }
+  {
+    const { integralAnalysis, validationContext } = buildFixture();
+    integralAnalysis.analysis_units[2].actions[0] = {
+      ...integralAnalysis.analysis_units[2].actions[0],
+      action_type: 'human_decision', suggested_role: 'authorized_human', external_side_effect: false,
+    };
+    const result = validateAgt002IntegralAnalysisV3(integralAnalysis, validationContext);
+    assert.equal(result.analysis_units[2].actions[0].external_side_effect, false);
+    assert.equal(result.analysis_units[2].human_validation.status, 'pending');
+  }
+
   // Raw evidence/excerpt content and prohibited sensitive keys are rejected.
   expectRejects((ia) => { ia.analysis_units[0].evidence_refs[0].excerpt = 'texto crudo del documento'; }, /clave|sensible|key/i);
   expectRejects((ia) => { ia.analysis_units[0].conclusion.person_name = 'Jane Doe'; }, /clave|sensible|key/i);

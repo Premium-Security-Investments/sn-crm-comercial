@@ -751,12 +751,44 @@ assert.throws(
     assert.equal(result.integral_analysis.analysis_units[0].category, 'habilitating');
     assert.ok(result.evidence_coverage);
     assert.equal(result.legal_corpus_version_id, null, 'legalCorpus is off for this engine so the corpus binding stays null');
+    assert.ok(
+      result.integral_analysis.analysis_units.every(unit => ['not_applicable', 'not_verified'].includes(unit.legal_assessment.status)),
+      'without a published legal corpus every legal assessment must abstain from a substantive legal conclusion',
+    );
+    assert.ok(
+      result.integral_analysis.analysis_units.every(unit => unit.legal_assessment.basis_refs.length === 0
+        && unit.evidence_refs.every(ref => ref.source_type !== 'legal_corpus')),
+      'without a published legal corpus no legal basis reference may be emitted',
+    );
+    assert.ok(
+      result.integral_analysis.analysis_units.flatMap(unit => unit.actions)
+        .every(action => action.external_side_effect === false && !['go', 'no_go', 'approve', 'sign', 'send', 'submit'].includes(action.action_type)),
+      'the envelope contains no autonomous GO/NO-GO, approval, signature, send or submission action',
+    );
     assert.equal(result.v2_projection.human_review_required, true);
     // No governed evidence-class link is curated for 'req-poliza' here, so evidence_state
     // is the safe-unknown abstention state, and the deterministic v2 projection correctly
     // downgrades to advance_conditionally rather than a plain (unearned) advance.
     assert.equal(result.v2_projection.recommendation, 'advance_conditionally');
     assert.ok(Array.isArray(result.v2_projection.strengths));
+  }
+
+  // With no legal_corpus_version_id, the provider cannot smuggle a substantive legal
+  // conclusion into an otherwise valid unit: the whole run fails closed.
+  {
+    const client = fakeClient(async (options) => {
+      const output = buildV3ModelOutput(options);
+      output.integral_analysis.analysis_units[0].legal_assessment = {
+        status: 'supported', basis_refs: [], summary: 'Afirmación jurídica sin corpus.', human_legal_review_required: true,
+      };
+      return { content: JSON.stringify(output), usage: { input_tokens: 1, output_tokens: 1 } };
+    });
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      companyEvidenceClassesProvider: () => [],
+    });
+    await assert.rejects(() => engine.analyze(v3Context), /no produjo una respuesta válida/i);
   }
 
   // Design test 27 / audit P1-1: the REAL envelope emitted by runOnceV3 — not a

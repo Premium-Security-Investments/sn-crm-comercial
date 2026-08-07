@@ -103,3 +103,13 @@ Self-review findings, applied inline during implementation (not deferred):
 - No remote/Supabase migration was applied; migration 063 was already present on this branch and only exercised locally via PGlite.
 - No push, no PR, no deploy, no UI activation for real users.
 - No production data, no real expediente, no real model calls (all engine tests use fake/synthetic clients).
+
+## 7. Autonomous technical closure — 2026-08-07 07:14 COT
+
+A final disk/VCS audit found no inherited uncommitted changes. `origin/main` is now `39bef1d`, two commits ahead of this branch's merge-base `f85907d`; no integration, push, PR, merge or deployment was performed.
+
+Fresh sequential evidence for the closure is recorded in `CURRENT.md`. The complete suite remained `376/377`, with the sole failure at `tests/module-permissions-migration-pglite.test.mjs:98`; the same focused test failed identically (`0/1`) from a clean archive of current `origin/main` (`39bef1d`), so it remains baseline rather than an AGT-002 regression.
+
+Additional closure assertions now make the authority boundary explicit: absent `legal_corpus_version_id`, only `not_applicable`/`not_verified` legal assessments and zero legal-corpus references are accepted; autonomous `go`, `no_go`, `approve`, `sign`, `send` and `submit` action types are rejected by the closed enum; every accepted action remains side-effect-free and human validation stays pending. The real five-phase view continues to consume only `analysis.integral_analysis` and contains no fixture `UNITS` or Rama Judicial hardcode.
+
+Release classification is **NOT READY for a real canary** until the governed DB-backed evidence source, human-curated category/evidence links, and authenticated visual QA all exist. The canary runbook is documentation only and was not executed.

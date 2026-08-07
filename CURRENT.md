@@ -111,6 +111,25 @@ Este lote corrige primero las fundaciones de confiabilidad aprobadas para el an�
 3. QA visual autenticado de la UI real (Juan) antes de activar el flag para cualquier usuario.
 4. Sólo entonces, decisión humana sobre activar `AGT002_INTEGRAL_CONTRACT_V3` en un ambiente real, con canary único y sin timer.
 
+### Cierre técnico autónomo — 2026-08-07 07:14 COT
+
+Se verificó de nuevo la verdad de disco sobre `feat/agt002-v3-foundations`: worktree limpio al inicio del cierre, 17 commits locales sobre el merge-base `f85907d`, sin push/PR/merge/deploy y sin migraciones remotas. `origin/main` avanzó dos commits (`1998714`, `39bef1d`); la rama permanece deliberadamente sin integrar esos cambios.
+
+Gates secuenciales frescos del cierre:
+
+- v3 focal: `22/22`;
+- regresión `tests/agt002-*.test.mjs`: `137/137`;
+- PGlite migración 063/canonicidad y coexistencia v2/v3: `2/2`;
+- paridad backend: `OK`;
+- build: `OK` (sólo warning preexistente de chunk >500 kB);
+- `npm audit --omit=dev`: `0` vulnerabilidades;
+- `git diff --check`: limpio;
+- suite completa: `376/377`; único fallo baseline `module-permissions-migration-pglite.test.mjs:98`, reproducido idéntico sobre el `origin/main` actual `39bef1d` (`0/1`). La aserción siguiente del mismo test exige precisamente el permiso extra que rompe la igualdad anterior.
+
+Se añadió cobertura explícita de cierre que prueba: UI alimentada sólo por `analysis.integral_analysis`, sin `UNITS`/fixtures ni “Rama Judicial”; sin corpus publicado no se admite conclusión jurídica sustantiva ni referencia jurídica; el catálogo cerrado rechaza acciones `go`, `no_go`, `approve`, `sign`, `send` y `submit`; cualquier handoff `human_decision` continúa pendiente, reservado a `authorized_human` y con `external_side_effect=false`.
+
+**Estado de release:** **NOT READY para canary real**. No es un defecto mecánico local que pueda rellenarse honestamente: falta el gate gobernado de habilitación compuesto por (a) fuente DB real para las 17 clases, (b) mapas humanos curados `categoryOverrides` y `evidenceClassLinkByRequirementId` con cobertura del caso objetivo, y (c) QA visual autenticado con etiquetas reales. Hasta recibir esas tres evidencias no se autoriza ejecutar el runbook ni consumir un caso real/costos. El runbook queda preparado en `docs/runbooks/agt002-integral-v3-canary.md`, pero no fue ejecutado.
+
 ## 3. F2 — coherencia y seguridad transversal de SIIO
 
 ### Entregado
