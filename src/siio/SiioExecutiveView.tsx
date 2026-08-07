@@ -58,6 +58,8 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
       <Badge tone={snapshot.financialValidationStatus === 'validado' ? 'green' : 'amber'}>{validationLabel}</Badge>
     </div>
 
+    {snapshot.financialValidationStatus !== 'validado' ? <div className="notice siio-preliminary-notice" role="status">Lectura preliminar — requiere validación financiera antes de usarse como conclusión ejecutiva.</div> : null}
+
     <div className="siio-period-line"><span>Periodo financiero</span><strong>{formatPeriod(selectedPeriod)}</strong></div>
     <div className="siio-executive-grid">
       {financialRows.map(metric => <div className="card kpi blue" key={metric.concept}>

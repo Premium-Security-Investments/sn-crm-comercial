@@ -30,6 +30,9 @@ assert.match(dashboard, /SiioExecutiveView/, 'SIIO dashboard must compose the ex
 assert.match(dashboard, /SiioManagementTrackingView/, 'SIIO dashboard must compose the extracted tracking view');
 assert.doesNotMatch(executive, /payroll.*cedula|nomina.*cedula/i, 'Dashboard must never render payroll IDs');
 assert.doesNotMatch(executive, /salary|salario individual/i, 'Dashboard must never render individual salaries');
+assert.match(executive, /siio-preliminary-notice/, 'Dashboard must expose a distinct preliminary notice element');
+assert.match(executive, /Lectura preliminar/, 'Dashboard must disclose unvalidated readings in plain language');
+assert.match(executive, /snapshot\.financialValidationStatus !== 'validado'/, 'The preliminary notice must be conditioned on the real validation status, not always shown');
 assert.match(styles, /\.siio-executive-grid/, 'Executive dashboard layout styles must exist');
 assert.match(styles, /\.siio-source-freshness/, 'Source freshness styles must exist');
 assert.match(styles, /\.siio-insight-list/, 'F5 management insight styles must exist');
