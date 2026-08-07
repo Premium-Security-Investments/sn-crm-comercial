@@ -485,4 +485,133 @@ function fakeDatabase({ onRpc } = {}) {
 const source = readFileSync(new URL('../agt002-preview-persistence.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /OPENAI_API_KEY|HERMES_INTERIM_API_KEY|console\.log/i, 'persistence must never log or reference provider secrets');
 
+// ---------------------------------------------------------------------------
+// Task 7: v3 persists integral_analysis + its deterministic v2 projection atomically,
+// while v2's own CONTENT_KEYS behavior stays byte-for-byte unchanged (already proven
+// above). v3 is canonical-only by construction (the flag requires AGT002_CANONICAL_ONLY).
+// ---------------------------------------------------------------------------
+
+function v3IntegralAnalysis() {
+  return {
+    contract_version: 'agt002-integral-analysis-v3',
+    coverage: {
+      manifest_version: 'agt002-deep-analysis-v1', expected_requirement_ids: ['req-1'], analyzed_requirement_ids: ['req-1'],
+      material_omissions: false, omission_reasons: [], company_evidence_manifest_version: 'agt002-company-evidence-classes-v1',
+      company_evidence_class_ids: [], legal_corpus_version_id: null,
+    },
+    analysis_units: [{
+      unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: 'req-1', category: 'habilitating', sequence: 1,
+      title: 'Póliza vigente', assessment_mode: 'assessed',
+      conclusion: { status: 'supported_with_evidence', summary: 'Evidencia sustenta la póliza.', confidence: 'high' },
+      blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
+      evidence_state: { presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable', compliance: 'supported_pending_human_review' },
+      evidence_refs: [{ ref: 'chunk:1', source_type: 'tender_document', purpose: 'requirement_basis' }],
+      missing_evidence: [], commercial_impact: { level: 'low', summary: 'Sin impacto.', dimension: 'eligibility' },
+      legal_assessment: { status: 'not_applicable', basis_refs: [], summary: 'No aplica.', human_legal_review_required: false },
+      actions: [], milestone: { status: 'not_identified', type: 'none', at: null, source_ref: null, summary: 'Sin hito.' },
+      escalation: { required: false, level: 'none', reason: 'Sin condición crítica.' },
+      closure: { status: 'human_confirmation_required', condition: 'Persona confirma.', evidence_required: ['tender_document'] },
+      human_validation: { required: true, status: 'pending', reason: 'Confirmar.' },
+    }],
+  };
+}
+
+function v3Envelope(overrides = {}) {
+  const integral_analysis = v3IntegralAnalysis();
+  return {
+    schema_version: '3.0.0',
+    agent_id: 'AGT-002',
+    run_id: '77777777-7777-4777-8777-777777777777',
+    policy_version: 'agt002-integral-v3-policy-1',
+    snapshot_id: ids.snapshot,
+    context_version_id: ids.contextVersion,
+    status: 'completed',
+    method: 'agent_ai',
+    integral_analysis,
+    evidence_coverage: envelope().evidence_coverage,
+    legal_corpus_version_id: null,
+    human_review_required: true,
+    v2_projection: {
+      recommendation: 'advance', summary: 'Resumen determinístico.', strengths: [{ id: 'UNIT-1::strength', text: 'Evidencia sustenta la póliza.', critical: false, evidence_refs: ['chunk:1'] }],
+      weaknesses: [], blockers: [], questions: [], unverified: [], next_action: 'Revisión humana final requerida antes de continuar con la oportunidad.',
+      human_review_required: true,
+    },
+    usage: { provider: 'codex_app_server', model: 'synthetic-codex-model', input_tokens: 5, output_tokens: 5, rate_limit: null },
+    ...overrides,
+  };
+}
+
+// v3 registration persists the deterministic v2 projection (v2 readers keep working) plus
+// the full validated integral_analysis, atomically, with critical_open_count derived from it.
+{
+  const database = fakeDatabase();
+  const registered = await registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: v3Envelope(), canonicalOnly: true,
+    context_version_id: ids.contextVersion,
+  });
+  assert.equal(registered.run_id, ids.run);
+  assert.equal(registered.status, 'completed');
+  assert.deepEqual(registered.result.integral_analysis, v3Envelope().integral_analysis);
+  assert.equal(registered.result.recommendation, 'advance');
+  assert.deepEqual(registered.result.strengths, v3Envelope().v2_projection.strengths);
+  assert.equal(registered.result.human_review_required, true);
+  assert.deepEqual(registered.result.evidence_coverage, v3Envelope().evidence_coverage);
+  assert.equal(registered.critical_open_count, 0);
+
+  const call = database.rpcCalls[0];
+  assert.equal(call.name, 'psi_record_agt002_canonical_analysis_run');
+  assert.equal(call.params.p_schema_version, '3.0.0');
+  assert.equal(call.params.p_policy_version, 'agt002-integral-v3-policy-1');
+  for (const forbidden of ['schema_version', 'agent_id', 'run_id', 'snapshot_id', 'policy_version', 'status', 'method', 'usage', 'v2_projection']) {
+    assert.equal(Object.hasOwn(call.params.p_result, forbidden), false, `stored v3 result must not duplicate the ${forbidden} column or carry the raw wrapper key`);
+  }
+}
+
+// v3 with a critical question in its projection: critical_open_count must equal the
+// projected critical question count exactly (not re-derived independently).
+{
+  const database = fakeDatabase();
+  const withCritical = v3Envelope({
+    v2_projection: {
+      ...v3Envelope().v2_projection,
+      questions: [{ id: 'UNIT-1::question', text: 'x', critical: true, evidence_refs: [] }],
+    },
+  });
+  const registered = await registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: withCritical, canonicalOnly: true,
+    context_version_id: ids.contextVersion,
+  });
+  assert.equal(registered.critical_open_count, 1);
+}
+
+// v3 requires canonical registration: the flag can only ever be enabled alongside
+// AGT002_CANONICAL_ONLY, so a non-canonical v3 registration attempt must fail closed.
+await assert.rejects(() => registerAgt002PreviewAnalysis(fakeDatabase(), {
+  opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: v3Envelope(), canonicalOnly: false,
+  context_version_id: ids.contextVersion,
+}), /canóni/i);
+
+// v3 validation failure (malformed/missing integral_analysis, or a missing v2 projection)
+// must make zero RPC calls — never a partial persist.
+for (const bad of [v3Envelope({ integral_analysis: { contract_version: 'wrong' } }), v3Envelope({ v2_projection: null })]) {
+  const database = fakeDatabase();
+  await assert.rejects(() => registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: bad, canonicalOnly: true,
+    context_version_id: ids.contextVersion,
+  }));
+  assert.equal(database.rpcCalls.length, 0, 'a validation failure must never call the RPC');
+}
+
+// legal_corpus_version_id is stored directly for v3 (no legal_findings atomic-pair
+// requirement — that pairing is a v2-only concept; v3 grounds legal findings per-unit).
+{
+  const database = fakeDatabase();
+  const withCorpus = v3Envelope({ legal_corpus_version_id: LEGAL_CORPUS_VERSION_ID });
+  const registered = await registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: withCorpus, canonicalOnly: true,
+    context_version_id: ids.contextVersion,
+  });
+  assert.equal(registered.result.legal_corpus_version_id, LEGAL_CORPUS_VERSION_ID);
+}
+
 console.log('AGT-002 Preview persistence (audit, idempotency, no secrets) passed');

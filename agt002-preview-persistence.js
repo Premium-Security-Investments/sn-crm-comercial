@@ -2,6 +2,12 @@ import { createHash, randomUUID } from 'node:crypto';
 import { validateAgt002RequirementManifest } from './agt002-deep-analysis-matrix.js';
 
 const CONTENT_KEYS = ['recommendation', 'summary', 'strengths', 'weaknesses', 'blockers', 'questions', 'unverified', 'next_action', 'human_review_required'];
+const AGT002_INTEGRAL_V3_SCHEMA_VERSION = '3.0.0';
+const AGT002_INTEGRAL_V3_CONTRACT_VERSION = 'agt002-integral-analysis-v3';
+
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
 
 function validateEvidenceCoverage(value, snapshotId) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -113,9 +119,19 @@ export async function registerAgt002PreviewAnalysis(database, context) {
   if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
     throw new Error('AGT-002 Preview requiere su envelope estructurado real.');
   }
-  if (envelope.producer !== 'AGT-002' || envelope.agent_id !== 'AGT-002' || envelope.method !== 'agent_ai') {
+  const isIntegralV3 = envelope.schema_version === AGT002_INTEGRAL_V3_SCHEMA_VERSION;
+
+  if (isIntegralV3) {
+    if (envelope.agent_id !== 'AGT-002' || envelope.method !== 'agent_ai') {
+      throw new Error('Sólo se puede registrar un envelope con identidad AGT-002.');
+    }
+    if (context?.canonicalOnly !== true) {
+      throw new Error('AGT-002 Preview v3 requiere registro canónico (canonicalOnly): el contrato v3 sólo existe detrás de AGT002_CANONICAL_ONLY.');
+    }
+  } else if (envelope.producer !== 'AGT-002' || envelope.agent_id !== 'AGT-002' || envelope.method !== 'agent_ai') {
     throw new Error('Sólo se puede registrar un envelope con identidad AGT-002.');
   }
+
   const usage = envelope.usage;
   if (!usage || typeof usage !== 'object' || Array.isArray(usage) || typeof usage.model !== 'string' || !usage.model.trim()) {
     throw new Error('AGT-002 Preview requiere un uso (usage) con modelo real.');
@@ -125,30 +141,62 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     throw new Error('AGT-002 Preview requiere una versión de política real.');
   }
 
-  const content = Object.fromEntries(CONTENT_KEYS.map(key => [key, envelope[key]]));
-  if (envelope.evidence_coverage !== undefined) {
-    content.evidence_coverage = validateEvidenceCoverage(envelope.evidence_coverage, snapshotId);
-  }
-  const hasLegalEvidence = envelope.legal_evidence !== undefined;
-  const hasLegalFindings = envelope.legal_findings !== undefined;
-  if (hasLegalEvidence !== hasLegalFindings) {
-    throw new Error('La evidencia jurídica y los hallazgos jurídicos deben persistirse como un par atómico.');
-  }
-  if (hasLegalEvidence) {
-    if (!envelope.legal_evidence || typeof envelope.legal_evidence !== 'object' || Array.isArray(envelope.legal_evidence)
-      || !Array.isArray(envelope.legal_findings)) {
-      throw new Error('La evidencia jurídica del envelope no tiene estructura válida.');
+  let content;
+  let legalCorpusVersionId;
+  let hasLegalCorpusVersionId;
+
+  if (isIntegralV3) {
+    // Task 7 (design section 4.3/9): v3 persists BOTH the validated integral_analysis and
+    // its deterministic v2 projection atomically, in the same append-only JSONB blob —
+    // existing v2 readers keep working against the flattened projection fields, and
+    // v3-aware readers additionally see `integral_analysis`. Never re-derived here: both
+    // pieces are trusted only because the engine already validated them before returning.
+    const integralAnalysis = envelope.integral_analysis;
+    if (!isRecord(integralAnalysis) || integralAnalysis.contract_version !== AGT002_INTEGRAL_V3_CONTRACT_VERSION
+      || !isRecord(integralAnalysis.coverage) || !Array.isArray(integralAnalysis.analysis_units)) {
+      throw new Error('AGT-002 Preview v3 requiere un integral_analysis validado.');
     }
-    content.legal_evidence = envelope.legal_evidence;
-    content.legal_findings = envelope.legal_findings;
-  }
-  // The exact published corpus UUID the legal evidence was retrieved from is part of the
-  // same atomic pair: a legal run without it (or a stray UUID without legal evidence) can
-  // never persist, since it would leave the attribution unauditable or misleading.
-  const legalCorpusVersionId = envelope.legal_corpus_version_id;
-  const hasLegalCorpusVersionId = typeof legalCorpusVersionId === 'string' && legalCorpusVersionId.trim().length > 0;
-  if (hasLegalEvidence !== hasLegalCorpusVersionId) {
-    throw new Error('La evidencia jurídica requiere su legal_corpus_version_id exacto como par atómico.');
+    const v2Projection = envelope.v2_projection;
+    if (!isRecord(v2Projection) || CONTENT_KEYS.some(key => !Object.hasOwn(v2Projection, key))) {
+      throw new Error('AGT-002 Preview v3 requiere su proyección v2 determinística completa.');
+    }
+    content = Object.fromEntries(CONTENT_KEYS.map(key => [key, v2Projection[key]]));
+    content.integral_analysis = integralAnalysis;
+    if (envelope.evidence_coverage !== undefined) {
+      content.evidence_coverage = validateEvidenceCoverage(envelope.evidence_coverage, snapshotId);
+    }
+    // design section 5, invariant 7: legal_corpus_version_id is nullable and stands alone
+    // for v3 — legal grounding is validated per-unit inside integral_analysis itself, so
+    // there is no separate legal_findings array to pair it with (that pairing is v2-only).
+    legalCorpusVersionId = envelope.legal_corpus_version_id ?? null;
+    hasLegalCorpusVersionId = typeof legalCorpusVersionId === 'string' && legalCorpusVersionId.trim().length > 0;
+    if (hasLegalCorpusVersionId) content.legal_corpus_version_id = legalCorpusVersionId;
+  } else {
+    content = Object.fromEntries(CONTENT_KEYS.map(key => [key, envelope[key]]));
+    if (envelope.evidence_coverage !== undefined) {
+      content.evidence_coverage = validateEvidenceCoverage(envelope.evidence_coverage, snapshotId);
+    }
+    const hasLegalEvidence = envelope.legal_evidence !== undefined;
+    const hasLegalFindings = envelope.legal_findings !== undefined;
+    if (hasLegalEvidence !== hasLegalFindings) {
+      throw new Error('La evidencia jurídica y los hallazgos jurídicos deben persistirse como un par atómico.');
+    }
+    if (hasLegalEvidence) {
+      if (!envelope.legal_evidence || typeof envelope.legal_evidence !== 'object' || Array.isArray(envelope.legal_evidence)
+        || !Array.isArray(envelope.legal_findings)) {
+        throw new Error('La evidencia jurídica del envelope no tiene estructura válida.');
+      }
+      content.legal_evidence = envelope.legal_evidence;
+      content.legal_findings = envelope.legal_findings;
+    }
+    // The exact published corpus UUID the legal evidence was retrieved from is part of the
+    // same atomic pair: a legal run without it (or a stray UUID without legal evidence) can
+    // never persist, since it would leave the attribution unauditable or misleading.
+    legalCorpusVersionId = envelope.legal_corpus_version_id;
+    hasLegalCorpusVersionId = typeof legalCorpusVersionId === 'string' && legalCorpusVersionId.trim().length > 0;
+    if (hasLegalEvidence !== hasLegalCorpusVersionId) {
+      throw new Error('La evidencia jurídica requiere su legal_corpus_version_id exacto como par atómico.');
+    }
   }
   const criticalOpenCount = countCriticalOpenQuestions(content);
   // Canonical persistence is fail-closed: every new Vig-IA run must point to the
