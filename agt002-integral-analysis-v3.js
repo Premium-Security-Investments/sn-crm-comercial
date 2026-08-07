@@ -214,6 +214,7 @@ function normalizeValidationContext(rawContext) {
   const {
     requirementManifestVersion, requirementManifest, companyEvidenceManifestVersion,
     companyEvidenceClassIds, legalCorpusVersionId, allowlist, materialOmissionsObserved,
+    evidenceStateManifest,
   } = rawContext;
 
   if (typeof requirementManifestVersion !== 'string' || !requirementManifestVersion.trim()) {
@@ -254,6 +255,38 @@ function normalizeValidationContext(rawContext) {
     fail('validationContext.materialOmissionsObserved debe ser booleano.');
   }
 
+  // Governed evidence-state map (audit P0 "cumplimiento inferido por presencia"): the
+  // ONLY source of truth for a tender_requirement unit's evidence_state, one entry per
+  // requirement_id, 1:1 with requirementManifest — never partial, never supplied by the
+  // model. See buildAgt002EvidenceStateManifest (agt002-evidence-state-manifest.js) for
+  // how a real caller assembles this fail-closed.
+  if (!Array.isArray(evidenceStateManifest)) {
+    fail('validationContext.evidenceStateManifest debe ser un arreglo (mapa gobernado de evidence_state por requirement_id).');
+  }
+  const evidenceStateByRequirementId = new Map();
+  evidenceStateManifest.forEach((entry, index) => {
+    const label = `validationContext.evidenceStateManifest[${index}]`;
+    exactKeys(entry, ['requirement_id', 'evidence_state', 'rule_id', 'provenance'], label);
+    if (typeof entry.requirement_id !== 'string' || !entry.requirement_id.trim()) {
+      fail(`${label}.requirement_id debe ser texto no vacío.`);
+    }
+    if (!requirementManifest.some(manifestEntry => manifestEntry.requirement_id === entry.requirement_id)) {
+      fail(`${label}.requirement_id no está en el manifiesto gobernado: ${entry.requirement_id}.`);
+    }
+    if (evidenceStateByRequirementId.has(entry.requirement_id)) {
+      fail(`${label}.requirement_id duplicado en evidenceStateManifest: ${entry.requirement_id}.`);
+    }
+    validateEvidenceStateShape(entry.evidence_state, `${label}.evidence_state`);
+    if (typeof entry.rule_id !== 'string' || !entry.rule_id.trim()) fail(`${label}.rule_id debe ser texto no vacío.`);
+    if (entry.provenance !== null && !isRecord(entry.provenance)) fail(`${label}.provenance debe ser null o un objeto.`);
+    evidenceStateByRequirementId.set(entry.requirement_id, entry.evidence_state);
+  });
+  for (const manifestEntry of requirementManifest) {
+    if (!evidenceStateByRequirementId.has(manifestEntry.requirement_id)) {
+      fail(`validationContext.evidenceStateManifest no cubre el requisito gobernado ${manifestEntry.requirement_id} (cobertura 1:1 obligatoria).`);
+    }
+  }
+
   return {
     requirementManifestVersion,
     requirementManifest,
@@ -263,6 +296,7 @@ function normalizeValidationContext(rawContext) {
     legalCorpusVersionId,
     allowlist: normalizedAllowlist,
     materialOmissionsObserved,
+    evidenceStateByRequirementId,
   };
 }
 
@@ -332,13 +366,21 @@ function validateBlocking(blocking, unitId) {
   boundedString(blocking.reason, TEXT_MAX_LENGTH, `analysis_units[${unitId}].blocking.reason`);
 }
 
+// Shared shape/enum check for an evidence_state object, reused both for a unit's own
+// evidence_state (label rooted at analysis_units[...]) and for each governed entry in
+// validationContext.evidenceStateManifest (label rooted at validationContext...) — same
+// closed contract either way.
+function validateEvidenceStateShape(evidenceState, label) {
+  exactKeys(evidenceState, EVIDENCE_STATE_KEYS, label);
+  requireEnum(evidenceState.presence, AGT002_INTEGRAL_PRESENCE_STATES, `${label}.presence`);
+  requireEnum(evidenceState.review, AGT002_INTEGRAL_REVIEW_STATES, `${label}.review`);
+  requireEnum(evidenceState.validity, AGT002_INTEGRAL_VALIDITY_STATES, `${label}.validity`);
+  requireEnum(evidenceState.applicability, AGT002_INTEGRAL_APPLICABILITY_STATES, `${label}.applicability`);
+  requireEnum(evidenceState.compliance, AGT002_INTEGRAL_COMPLIANCE_STATES, `${label}.compliance`);
+}
+
 function validateEvidenceState(evidenceState, unitId) {
-  exactKeys(evidenceState, EVIDENCE_STATE_KEYS, `analysis_units[${unitId}].evidence_state`);
-  requireEnum(evidenceState.presence, AGT002_INTEGRAL_PRESENCE_STATES, `analysis_units[${unitId}].evidence_state.presence`);
-  requireEnum(evidenceState.review, AGT002_INTEGRAL_REVIEW_STATES, `analysis_units[${unitId}].evidence_state.review`);
-  requireEnum(evidenceState.validity, AGT002_INTEGRAL_VALIDITY_STATES, `analysis_units[${unitId}].evidence_state.validity`);
-  requireEnum(evidenceState.applicability, AGT002_INTEGRAL_APPLICABILITY_STATES, `analysis_units[${unitId}].evidence_state.applicability`);
-  requireEnum(evidenceState.compliance, AGT002_INTEGRAL_COMPLIANCE_STATES, `analysis_units[${unitId}].evidence_state.compliance`);
+  validateEvidenceStateShape(evidenceState, `analysis_units[${unitId}].evidence_state`);
 }
 
 // Task 3 (design 7.5): a reference's purpose constrains which source types may satisfy
@@ -669,6 +711,34 @@ function validateUnitShape(unit, ctx) {
   validateHumanValidation(unit.human_validation, unitId);
 
   validateUnitInvariants(unit, ctx);
+  validateGovernedEvidenceStateMatch(unit, ctx);
+}
+
+// ---------------------------------------------------------------------------
+// Governed origin of the five axes (audit P0 "cumplimiento inferido por presencia"):
+// evidence_state is checked LAST, after every closed-enum and cross-axis-invariant check
+// above already ran, so those keep failing with their own specific message when a
+// mutation violates them. Only a well-formed, invariant-consistent evidence_state that
+// still does not match the governed per-requirement_id map reaches this check — it is
+// the final backstop proving the axes are never free model output: they must equal
+// exactly what validationContext.evidenceStateManifest (built by
+// buildAgt002EvidenceStateManifest, agt002-evidence-state-manifest.js) says, or the
+// model's claim is rejected outright. strategic_consideration units have no
+// requirement_id and therefore no governed entry to match — they are out of scope for
+// this layer and keep only the pre-existing enum/invariant checks.
+// ---------------------------------------------------------------------------
+
+function validateGovernedEvidenceStateMatch(unit, ctx) {
+  if (unit.unit_kind !== 'tender_requirement') return;
+  const governedEvidenceState = ctx.evidenceStateByRequirementId.get(unit.requirement_id);
+  const mismatch = EVIDENCE_STATE_KEYS.some(key => unit.evidence_state[key] !== governedEvidenceState[key]);
+  if (mismatch) {
+    fail(
+      `analysis_units[${unit.unit_id}]: evidence_state no coincide con el mapa gobernado por requirement_id `
+      + '(governed evidence-state map) — los cinco ejes deben provenir de estado gobernado explícito o de abstención '
+      + '("unknown"/"not_reviewed"), nunca de salida libre del modelo.',
+    );
+  }
 }
 
 function validateUnitsOrdering(units, ctx) {

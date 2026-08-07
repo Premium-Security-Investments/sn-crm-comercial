@@ -14,6 +14,7 @@ import {
 } from './agt002-preview-contract.js';
 import { projectAgt002IntegralV3ToV2 } from './agt002-v3-compatibility.js';
 import { deriveAgt002IntegralCategoryManifest } from './agt002-integral-category-manifest.js';
+import { buildAgt002EvidenceStateManifest } from './agt002-evidence-state-manifest.js';
 import { buildAgt002CompanyEvidenceClasses, AGT002_COMPANY_EVIDENCE_CLASS_IDS } from './agt002-company-evidence-classes.js';
 import { validateTenderAnalysisResult } from './tender-analysis-domain.js';
 import { AGT002_OUTPUT_REJECTION_STAGES, createAgt002AnalysisObservability } from './agt002-analysis-observability.js';
@@ -35,6 +36,7 @@ export const AGT002_PREVIEW_POLICY = [
   'Una entrada canonical_metadata o un archivo almacenado prueba como máximo su presencia técnica y procedencia; no lo declares aplicable, habilitante ni cumplido mientras applicability_status siga pending_case_validation o falte validación humana.',
   'Cuando exista legal_evidence, separa requisito de licitación, obligación jurídica, evidencia empresarial, inferencia y revisión jurídica.',
   'Toda obligación jurídica debe citar exclusivamente legal_citation_ids de citation_allowlist; toda fuente incierta debe aparecer como human_legal_review con el texto exacto y todas sus citas recibidas.',
+  'Cuando la entrada incluya un requirement_manifest con evidence_state_governed por requisito, tu evidence_state para la unidad de ese requisito debe reproducir exactamente esos cinco ejes (presence, review, validity, applicability, compliance); nunca los infieras, completes ni mejores por tu cuenta.',
   'Devuelve exclusivamente el objeto JSON estructurado acordado, sin texto adicional ni claves fuera de las solicitadas.',
 ].join(' ');
 
@@ -148,6 +150,7 @@ export function createAgt002PreviewEngine({
   legalCorpusContentSha256,
   integralContractV3 = false,
   categoryOverrides = {},
+  evidenceClassLinkByRequirementId = {},
   companyEvidenceClassesProvider,
   contextVersionId = null,
   observability = createAgt002AnalysisObservability(),
@@ -323,6 +326,17 @@ export function createAgt002PreviewEngine({
 
     const requirementManifest = deriveAgt002IntegralCategoryManifest(documentEvidence.requirement_manifest, categoryOverrides);
 
+    // Governed evidence-state map (audit P0 "cumplimiento inferido por presencia"): built
+    // fail-closed from the real 17-class catalog and a curated, explicit requirement_id ->
+    // evidence_class_id link — never from the model's own claims. With no link curated for
+    // a requirement (the default, until a governed linkage source is wired), every axis
+    // abstains to the safe-unknown state; the model's evidence_state for that unit must
+    // match exactly or the whole run is rejected by validateAgt002IntegralAnalysisV3.
+    const evidenceStateManifest = buildAgt002EvidenceStateManifest(documentEvidence.requirement_manifest, {
+      evidenceClasses: companyEvidenceClasses.classes,
+      evidenceClassLinkByRequirementId,
+    });
+
     const companyEvidenceIds = new Set();
     collectSourcedRefs(previewInput.company_dossier, companyEvidenceIds);
     for (const cls of companyEvidenceClasses.classes) {
@@ -355,17 +369,25 @@ export function createAgt002PreviewEngine({
         objective_validation: [...objectiveValidationIds],
       },
       materialOmissionsObserved: documentEvidence.material_omissions === true,
+      evidenceStateManifest,
     };
   }
 
-  function withRequirementCategories(previewInput, requirementManifestWithCategory) {
+  // Provider-input integration (fail-closed guidance, not trust): every requirement entry
+  // the model sees also carries the SAME governed category and evidence_state_governed the
+  // validator will enforce afterward, so the model has a real chance to reproduce it
+  // exactly. This never weakens validation — validateAgt002IntegralAnalysisV3 still
+  // rejects any unit whose evidence_state does not match the governed map byte for byte,
+  // regardless of what was offered here.
+  function withRequirementGovernedFields(previewInput, requirementManifestWithCategory, evidenceStateManifestForInput) {
     const categoryById = new Map(requirementManifestWithCategory.map(entry => [entry.requirement_id, entry.category]));
+    const evidenceStateById = new Map(evidenceStateManifestForInput.map(entry => [entry.requirement_id, entry.evidence_state]));
     return {
       ...previewInput,
       document_evidence: {
         ...previewInput.document_evidence,
         requirement_manifest: previewInput.document_evidence.requirement_manifest.map(entry => (
-          { ...entry, category: categoryById.get(entry.requirement_id) }
+          { ...entry, category: categoryById.get(entry.requirement_id), evidence_state_governed: evidenceStateById.get(entry.requirement_id) }
         )),
       },
     };
@@ -373,7 +395,7 @@ export function createAgt002PreviewEngine({
 
   async function runOnceV3(previewInput, idempotencyKey, signal, validationContext) {
     const outputSchema = buildAgt002IntegralAnalysisV3OutputJsonSchema();
-    const modelInput = withRequirementCategories(previewInput, validationContext.requirementManifest);
+    const modelInput = withRequirementGovernedFields(previewInput, validationContext.requirementManifest, validationContext.evidenceStateManifest);
     const raw = await client.run({
       model, policy: policyText, input: modelInput, outputSchema, timeoutMs, idempotencyKey, signal,
     });

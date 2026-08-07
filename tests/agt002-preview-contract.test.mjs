@@ -21,6 +21,7 @@ import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { retrieveAgt002LegalEvidence } from '../agt002-legal-retrieval.js';
 import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../agt002-integral-analysis-v3.js';
 import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
 
 assert.equal(AGT002_PREVIEW_SCHEMA_VERSION, '2.0-preview.1');
 assert.deepEqual([...AGT002_PREVIEW_RECOMMENDATIONS].sort(), ['advance', 'advance_conditionally', 'do_not_advance', 'pause']);
@@ -716,6 +717,12 @@ function buildV3ValidationContext() {
       tender_document: ['TD-1'], company_evidence: [], legal_corpus: [], human_evidence: [], objective_validation: [],
     },
     materialOmissionsObserved: false,
+    // No governed evidence-class link is curated for REQ-1 in this fixture, so the
+    // governed map (agt002-evidence-state-manifest.js's default) is the safe-unknown
+    // state — matched below in buildMinimalV3IntegralAnalysis's evidence_state.
+    evidenceStateManifest: [
+      { requirement_id: 'REQ-1', evidence_state: AGT002_EVIDENCE_STATE_SAFE_UNKNOWN, rule_id: 'no_governed_evidence_class_link', provenance: null },
+    ],
   };
 }
 
@@ -737,7 +744,7 @@ function buildMinimalV3IntegralAnalysis() {
       title: 'Requisito sintético', assessment_mode: 'assessed',
       conclusion: { status: 'supported_with_evidence', summary: 'Sin causal evidenciada.', confidence: 'high' },
       blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
-      evidence_state: { presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable', compliance: 'supported_pending_human_review' },
+      evidence_state: AGT002_EVIDENCE_STATE_SAFE_UNKNOWN,
       evidence_refs: [{ ref: 'TD-1', source_type: 'tender_document', purpose: 'requirement_basis' }],
       missing_evidence: [],
       commercial_impact: { level: 'low', summary: 'Sin impacto.', dimension: 'eligibility' },

@@ -6,7 +6,8 @@ import { AGT002_LEGAL_HUMAN_REVIEW_STATEMENT, AGT002_PREVIEW_OUTPUT_JSON_SCHEMA 
 import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { retrieveAgt002LegalEvidence } from '../agt002-legal-retrieval.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS, buildAgt002CompanyEvidenceClasses } from '../agt002-company-evidence-classes.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
 
 const context = {
   opportunity: { id: 'opp-1', company_name: 'Entidad de prueba', title: 'Vigilancia' },
@@ -666,7 +667,7 @@ assert.throws(
     snapshotId: '55555555-5555-4555-8555-555555555555', contextV2Sections: v3ContextV2Sections,
   };
 
-  function buildV3ModelOutput(options) {
+  function buildV3ModelOutput(options, evidenceState = AGT002_EVIDENCE_STATE_SAFE_UNKNOWN) {
     const requirementEntry = options.input.document_evidence.requirement_manifest[0];
     const allowedRef = options.input.document_evidence.citation_allowlist[0];
     return {
@@ -687,7 +688,13 @@ assert.throws(
           category: 'habilitating', sequence: 1, title: 'Póliza vigente', assessment_mode: 'assessed',
           conclusion: { status: 'supported_with_evidence', summary: 'Evidencia sustenta la póliza.', confidence: 'high' },
           blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
-          evidence_state: { presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable', compliance: 'supported_pending_human_review' },
+          // Default: no evidenceClassLinkByRequirementId is curated for 'req-poliza' in
+          // these tests (companyEvidenceClassesProvider returns an empty registry too),
+          // so the governed map defaults to the safe-unknown state; the mocked model
+          // output must reproduce it exactly or the engine's own governed-match check
+          // rejects it. Callers demonstrating a real governed link pass their own
+          // evidenceState (see the dedicated governed-evidence-state tests below).
+          evidence_state: evidenceState,
           evidence_refs: [{ ref: allowedRef, source_type: 'tender_document', purpose: 'requirement_basis' }],
           missing_evidence: [],
           commercial_impact: { level: 'low', summary: 'Sin impacto.', dimension: 'eligibility' },
@@ -737,7 +744,10 @@ assert.throws(
     assert.ok(result.evidence_coverage);
     assert.equal(result.legal_corpus_version_id, null, 'legalCorpus is off for this engine so the corpus binding stays null');
     assert.equal(result.v2_projection.human_review_required, true);
-    assert.equal(result.v2_projection.recommendation, 'advance');
+    // No governed evidence-class link is curated for 'req-poliza' here, so evidence_state
+    // is the safe-unknown abstention state, and the deterministic v2 projection correctly
+    // downgrades to advance_conditionally rather than a plain (unearned) advance.
+    assert.equal(result.v2_projection.recommendation, 'advance_conditionally');
     assert.ok(Array.isArray(result.v2_projection.strengths));
   }
 
@@ -766,6 +776,73 @@ assert.throws(
       // no categoryOverrides supplied
     });
     await assert.rejects(() => engine.analyze(v3Context), /no está disponible|no produjo una respuesta válida/i);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Governed origin of the five axes (audit P0 "cumplimiento inferido por presencia"):
+  // the engine builds evidence_state fail-closed from a real, curated
+  // evidenceClassLinkByRequirementId + the real 17-class catalog — never trusting the
+  // model's own claim — and rejects any model output whose evidence_state does not match.
+  // ---------------------------------------------------------------------------
+
+  const verifiedRupRegistryRow = {
+    entry_id: 'rup', document_class: 'RUP', existence_status: 'verified', human_review_status: 'approved',
+    applicability_status: 'applicable', integration_active: true, expiry: '2099-01-01', updated_at: '2026-01-01T00:00:00.000Z',
+  };
+  const derivedRupEvidenceState = { presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable', compliance: 'unknown' };
+
+  // A real governed link (requirement -> 'rup') plus an observed, verified class: the
+  // model output that reproduces exactly the derived evidence_state is accepted.
+  {
+    const client = fakeClient(async (options) => ({
+      content: JSON.stringify(buildV3ModelOutput(options, derivedRupEvidenceState)), usage: { input_tokens: 3, output_tokens: 3 },
+    }));
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      evidenceClassLinkByRequirementId: { 'req-poliza': 'rup' },
+      companyEvidenceClassesProvider: () => [verifiedRupRegistryRow],
+    });
+
+    // Provider-input integration: the model receives the governed axes up front, so it
+    // has a real chance to reproduce them (not just a post-hoc rejection surface).
+    const result = await engine.analyze(v3Context);
+    assert.deepEqual(
+      client.calls[0].input.document_evidence.requirement_manifest[0].evidence_state_governed,
+      derivedRupEvidenceState,
+    );
+    assert.deepEqual(result.integral_analysis.analysis_units[0].evidence_state, derivedRupEvidenceState);
+  }
+
+  // The same governed link and observed class, but the model asserts a DIFFERENT
+  // (individually well-formed) evidence_state — never trusted, rejected outright even
+  // though nothing else about the payload is malformed.
+  {
+    const mismatchedEvidenceState = { ...derivedRupEvidenceState, review: 'partially_reviewed' };
+    const client = fakeClient(async (options) => ({
+      content: JSON.stringify(buildV3ModelOutput(options, mismatchedEvidenceState)), usage: { input_tokens: 3, output_tokens: 3 },
+    }));
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      evidenceClassLinkByRequirementId: { 'req-poliza': 'rup' },
+      companyEvidenceClassesProvider: () => [verifiedRupRegistryRow],
+    });
+    await assert.rejects(() => engine.analyze(v3Context), /no produjo una respuesta válida/i);
+  }
+
+  // A governed link pointing at a class outside the real 17-class catalog is a
+  // configuration/governance error, not absence of signal: the engine fails closed at
+  // construction-adjacent validationContext assembly time, never fabricating a state.
+  {
+    const client = fakeClient(async (options) => ({ content: JSON.stringify(buildV3ModelOutput(options)), usage: { input_tokens: 1, output_tokens: 1 } }));
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      evidenceClassLinkByRequirementId: { 'req-poliza': 'not-a-real-class' },
+      companyEvidenceClassesProvider: () => [],
+    });
+    await assert.rejects(() => engine.analyze(v3Context), /no está disponible/i);
   }
 
   // integralContractV3 requires contextV2 + documentRetrieval + a company evidence

@@ -29,6 +29,34 @@ export function buildAgt002V3SyntheticValidationContext() {
       objective_validation: [],
     },
     materialOmissionsObserved: false,
+    // Governed evidence-state map (agt002-evidence-state-manifest.js's contract): the
+    // ONLY source of truth for each tender_requirement unit's evidence_state below, one
+    // entry per requirement_id, hand-authored here exactly like requirementManifest and
+    // allowlist already are (no company-evidence-class linkage is curated in this purely
+    // synthetic fixture — a real run would assemble this via
+    // buildAgt002EvidenceStateManifest against the real 17-class catalog).
+    evidenceStateManifest: [
+      {
+        requirement_id: 'REQ-DISCARD',
+        evidence_state: { presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable', compliance: 'supported_pending_human_review' },
+        rule_id: 'synthetic_fixture', provenance: null,
+      },
+      {
+        requirement_id: 'REQ-HAB',
+        evidence_state: { presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'unknown', compliance: 'unknown' },
+        rule_id: 'synthetic_fixture', provenance: null,
+      },
+      {
+        requirement_id: 'REQ-TECH',
+        evidence_state: { presence: 'present', review: 'reviewed', validity: 'unknown', applicability: 'applicable', compliance: 'partially_supported_pending_human_review' },
+        rule_id: 'synthetic_fixture', provenance: null,
+      },
+      {
+        requirement_id: 'REQ-FIN',
+        evidence_state: { presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable', compliance: 'gap_evidenced_pending_human_review' },
+        rule_id: 'synthetic_fixture', provenance: null,
+      },
+    ],
   };
 }
 

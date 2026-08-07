@@ -4,6 +4,7 @@ import {
   validateAgt002IntegralAnalysisV3,
 } from '../agt002-integral-analysis-v3.js';
 import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
 
 // ---------------------------------------------------------------------------
 // Synthetic fixture: one requirement per formal category (discard, habilitating,
@@ -31,6 +32,51 @@ function buildValidationContext() {
       objective_validation: ['OV-1'],
     },
     materialOmissionsObserved: false,
+    // Governed evidence-state map: the ONLY source of truth for evidence_state per
+    // requirement_id. In real runs this is assembled by
+    // buildAgt002EvidenceStateManifest() (agt002-evidence-state-manifest.js) from
+    // governed company-evidence-class data; here it is hand-authored to match the
+    // fixture units below, exactly like requirementManifest/allowlist already are —
+    // this is still the governed side of the contract, never something the model
+    // supplies or that this validator derives from the payload itself.
+    evidenceStateManifest: [
+      {
+        requirement_id: 'REQ-DISCARD-1',
+        evidence_state: {
+          presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable',
+          compliance: 'supported_pending_human_review',
+        },
+        rule_id: 'synthetic_test_fixture',
+        provenance: null,
+      },
+      {
+        requirement_id: 'REQ-HAB-1',
+        evidence_state: {
+          presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable',
+          compliance: 'supported_pending_human_review',
+        },
+        rule_id: 'synthetic_test_fixture',
+        provenance: null,
+      },
+      {
+        requirement_id: 'REQ-TECH-1',
+        evidence_state: {
+          presence: 'present', review: 'reviewed', validity: 'unknown', applicability: 'applicable',
+          compliance: 'partially_supported_pending_human_review',
+        },
+        rule_id: 'synthetic_test_fixture',
+        provenance: null,
+      },
+      {
+        requirement_id: 'REQ-FIN-1',
+        evidence_state: {
+          presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable',
+          compliance: 'gap_evidenced_pending_human_review',
+        },
+        rule_id: 'synthetic_test_fixture',
+        provenance: null,
+      },
+    ],
   };
 }
 
@@ -420,6 +466,99 @@ function run() {
     const before = JSON.parse(JSON.stringify(integralAnalysis));
     validateAgt002IntegralAnalysisV3(integralAnalysis, validationContext);
     assert.deepEqual(integralAnalysis, before, 'la validación no debe mutar el payload');
+  }
+
+  // ---------------------------------------------------------------------
+  // Governed origin of the five axes (audit P0 "cumplimiento inferido por presencia"):
+  // evidence_state is never free model output. It must equal, per requirement_id, the
+  // governed map supplied via validationContext.evidenceStateManifest — never something
+  // the payload asserts on its own, even when the asserted value is itself individually
+  // well-formed (closed enum, cross-axis-invariant-consistent).
+  // ---------------------------------------------------------------------
+
+  // validationContext without a governed evidence-state map is rejected outright — the
+  // engine must fail closed rather than let evidence_state through unchecked.
+  {
+    const { integralAnalysis, validationContext } = buildFixture();
+    delete validationContext.evidenceStateManifest;
+    assert.throws(
+      () => validateAgt002IntegralAnalysisV3(integralAnalysis, validationContext),
+      /evidenceStateManifest/,
+    );
+  }
+
+  // A governed map that does not cover every requirement_id in the manifest 1:1 (missing
+  // an entry, or carrying one outside the manifest) is rejected — partial governance is
+  // not governance.
+  {
+    const { integralAnalysis, validationContext } = buildFixture();
+    validationContext.evidenceStateManifest = validationContext.evidenceStateManifest.slice(1);
+    assert.throws(
+      () => validateAgt002IntegralAnalysisV3(integralAnalysis, validationContext),
+      /evidenceStateManifest/,
+    );
+  }
+  {
+    const { integralAnalysis, validationContext } = buildFixture();
+    validationContext.evidenceStateManifest.push({
+      requirement_id: 'REQ-NOT-IN-MANIFEST', evidence_state: AGT002_EVIDENCE_STATE_SAFE_UNKNOWN, rule_id: 'x', provenance: null,
+    });
+    assert.throws(
+      () => validateAgt002IntegralAnalysisV3(integralAnalysis, validationContext),
+      /evidenceStateManifest/,
+    );
+  }
+
+  // A model-asserted evidence_state that is individually well-formed (passes every enum
+  // and cross-axis-invariant check on its own) but does NOT match the governed map for
+  // its requirement_id must still be rejected: review "partially_reviewed" instead of the
+  // governed "reviewed" violates no existing invariant, yet must be rejected because it
+  // does not come from governed state.
+  expectRejects((ia) => {
+    ia.analysis_units[0].evidence_state.review = 'partially_reviewed';
+  }, /mapa gobernado|governed/i);
+
+  // Same for a mismatched presence that is still internally consistent (e.g. claiming
+  // "unknown" instead of the governed "present").
+  expectRejects((ia) => {
+    ia.analysis_units[0].evidence_state.presence = 'unknown';
+    ia.analysis_units[0].evidence_state.review = 'not_reviewed';
+    ia.analysis_units[0].evidence_state.validity = 'unknown';
+    ia.analysis_units[0].evidence_state.applicability = 'unknown';
+    ia.analysis_units[0].evidence_state.compliance = 'unknown';
+  }, /mapa gobernado|governed/i);
+
+  // Absence of governed signal produces exactly the safe-unknown state — never partially
+  // mutated, and no other axis is inferred from presence. A requirement with no governed
+  // entry override (the builder's default) must have its unit emit precisely
+  // AGT002_EVIDENCE_STATE_SAFE_UNKNOWN to validate; anything else is rejected.
+  {
+    const { integralAnalysis, validationContext } = buildFixture();
+    validationContext.evidenceStateManifest = validationContext.evidenceStateManifest.map(entry => (
+      entry.requirement_id === 'REQ-DISCARD-1'
+        ? { requirement_id: entry.requirement_id, evidence_state: AGT002_EVIDENCE_STATE_SAFE_UNKNOWN, rule_id: 'no_governed_evidence_class_link', provenance: null }
+        : entry
+    ));
+    integralAnalysis.analysis_units[0].evidence_state = { ...AGT002_EVIDENCE_STATE_SAFE_UNKNOWN };
+    // Every other axis on every other unit is untouched by this change (proving presence
+    // on unit 0 never leaks into unit 1's own governed evidence_state).
+    const result = validateAgt002IntegralAnalysisV3(integralAnalysis, validationContext);
+    assert.deepEqual(result.analysis_units[0].evidence_state, AGT002_EVIDENCE_STATE_SAFE_UNKNOWN);
+    assert.deepEqual(result.analysis_units[1].evidence_state, {
+      presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable', compliance: 'supported_pending_human_review',
+    });
+  }
+
+  // A strategic_consideration unit (requirement_id null) has no governed per-requirement
+  // entry to match against — it is not covered by this governance layer and keeps only
+  // the pre-existing closed-enum/cross-axis-invariant checks, so a well-formed but
+  // ungoverned evidence_state there still passes.
+  {
+    const { integralAnalysis, validationContext } = buildFixture();
+    const strategicUnit = integralAnalysis.analysis_units.find(unit => unit.unit_kind === 'strategic_consideration');
+    strategicUnit.evidence_state = { presence: 'absent', review: 'not_reviewed', validity: 'unknown', applicability: 'unknown', compliance: 'unknown' };
+    const result = validateAgt002IntegralAnalysisV3(integralAnalysis, validationContext);
+    assert.equal(result.analysis_units.find(unit => unit.unit_kind === 'strategic_consideration').evidence_state.presence, 'absent');
   }
 
   // ---------------------------------------------------------------------

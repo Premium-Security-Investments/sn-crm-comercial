@@ -10,6 +10,7 @@ import {
 import { buildSyntheticAgt002TenderAnalysis } from './fixtures/agt002-synthetic-responder.mjs';
 import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../agt002-integral-analysis-v3.js';
 import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
 
 const v1Files = ['manifest.json', 'analysis.request.schema.json', 'analysis.response.schema.json'];
 const v1Hash = createHash('sha256').update(v1Files.map(name => readFileSync(new URL(`../contracts/agents/AGT-002/v1/${name}`, import.meta.url))).join('\n')).digest('hex');
@@ -148,6 +149,12 @@ function buildV3IntegralAnalysisValidationContext() {
     legalCorpusVersionId: null,
     allowlist: { tender_document: ['TD-1'], company_evidence: [], legal_corpus: [], human_evidence: [], objective_validation: [] },
     materialOmissionsObserved: false,
+    // No governed evidence-class link is curated for REQ-1 in this fixture, so the
+    // governed map (agt002-evidence-state-manifest.js's default) is the safe-unknown
+    // state — matched below in buildV3Envelope's evidence_state.
+    evidenceStateManifest: [
+      { requirement_id: 'REQ-1', evidence_state: AGT002_EVIDENCE_STATE_SAFE_UNKNOWN, rule_id: 'no_governed_evidence_class_link', provenance: null },
+    ],
   };
 }
 
@@ -178,7 +185,7 @@ function buildV3Envelope() {
         title: 'Requisito sintético', assessment_mode: 'assessed',
         conclusion: { status: 'supported_with_evidence', summary: 'Sin causal evidenciada.', confidence: 'high' },
         blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
-        evidence_state: { presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable', compliance: 'supported_pending_human_review' },
+        evidence_state: AGT002_EVIDENCE_STATE_SAFE_UNKNOWN,
         evidence_refs: [{ ref: 'TD-1', source_type: 'tender_document', purpose: 'requirement_basis' }],
         missing_evidence: [],
         commercial_impact: { level: 'low', summary: 'Sin impacto.', dimension: 'eligibility' },
@@ -214,7 +221,10 @@ function buildV3Envelope() {
   assert.equal(adapted.run_id, v3Envelope.run_id);
   assert.equal(adapted.human_review_required, true);
   assert.ok(Array.isArray(adapted.strengths));
-  assert.equal(adapted.recommendation, 'advance');
+  // With no governed evidence-class link curated for REQ-1, evidence_state is the safe-
+  // unknown abstention state, so the unit counts as unverified and the deterministic v2
+  // projection downgrades to advance_conditionally rather than a plain advance.
+  assert.equal(adapted.recommendation, 'advance_conditionally');
 }
 
 console.log('AGT-002 tender analysis consumer contract passed');
