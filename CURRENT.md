@@ -106,7 +106,7 @@ Este lote corrige primero las fundaciones de confiabilidad aprobadas para el an�
 
 ### Gate siguiente
 
-1. Diseñar y construir el wiring real de evidencia empresarial (17 clases) y anulaciones de categoría gobernadas antes de cualquier caso con datos reales.
+1. Curar, con revisión humana y fuente trazable del pliego real, las filas `category_override` y `evidence_class_link` de la oportunidad objetivo en la superficie gobernada de la migración `064`; el wiring read-only de las 17 clases y de ambos mapas ya está construido y probado.
 2. Ejecutar un caso E5 controlado sobre el snapshot real de Rama Judicial con el flag activado sólo para esa prueba, verificando cobertura 1:1 y abstención donde falte señal.
 3. QA visual autenticado de la UI real (Juan) antes de activar el flag para cualquier usuario.
 4. Sólo entonces, decisión humana sobre activar `AGT002_INTEGRAL_CONTRACT_V3` en un ambiente real, con canary único y sin timer.
@@ -128,7 +128,15 @@ Gates secuenciales frescos del cierre:
 
 Se añadió cobertura explícita de cierre que prueba: UI alimentada sólo por `analysis.integral_analysis`, sin `UNITS`/fixtures ni “Rama Judicial”; sin corpus publicado no se admite conclusión jurídica sustantiva ni referencia jurídica; el catálogo cerrado rechaza acciones `go`, `no_go`, `approve`, `sign`, `send` y `submit`; cualquier handoff `human_decision` continúa pendiente, reservado a `authorized_human` y con `external_side_effect=false`.
 
-**Estado de release:** **NOT READY para canary real**. No es un defecto mecánico local que pueda rellenarse honestamente: falta el gate gobernado de habilitación compuesto por (a) fuente DB real para las 17 clases, (b) mapas humanos curados `categoryOverrides` y `evidenceClassLinkByRequirementId` con cobertura del caso objetivo, y (c) QA visual autenticado con etiquetas reales. Hasta recibir esas tres evidencias no se autoriza ejecutar el runbook ni consumir un caso real/costos. El runbook queda preparado en `docs/runbooks/agt002-integral-v3-canary.md`, pero no fue ejecutado.
+**Estado de release:** **NOT READY para canary real**. El wiring read-only de la fuente DB de 17 clases y de la nueva superficie gobernada de mapas ya existe; no puede rellenarse honestamente el gate restante sin (a) mapas humanos curados `categoryOverrides` y `evidenceClassLinkByRequirementId` con cobertura del caso objetivo y trazabilidad al pliego real, y (b) QA visual autenticado con etiquetas reales. Hasta recibir esas dos evidencias no se autoriza ejecutar el runbook ni consumir un caso real/costos. El runbook queda preparado en `docs/runbooks/agt002-integral-v3-canary.md`, pero no fue ejecutado.
+
+### Continuación autónoma — cierre de wiring gobernado, 2026-08-07
+
+- Commits del bloque: `efad172` (loader crudo de las 17 filas), `9ce504b` (forward del enlace requisito→clase), `154519d` (fuente gobernada + migración/rollback `064` + PGlite) y `b3b8794` (wiring read-only común en los tres flujos Express/Vercel + documentación del expediente).
+- TDD: RED observados antes de cada implementación; GREEN focal confirmado para loader/runtime, builder de overrides, migración `064` PGlite y wiring de servidor.
+- Gates secuenciales frescos: `tests/agt002-*.test.mjs` **140/140**; PGlite relevante **3/3**; backend parity **OK**; build **OK** (único warning preexistente de chunk >500 kB); `npm audit --omit=dev` **0 vulnerabilidades**; `git diff --check` limpio; suite completa **379/380**.
+- El único fallo completo sigue siendo el baseline conocido `tests/module-permissions-migration-pglite.test.mjs:98`: el esperado omite `modulo_siio_gerencial` mientras la migración y la aserción siguiente lo exigen. No hay fallos AGT-002.
+- Para Rama Judicial `54190e51-15fb-46af-b0aa-8f13461a3110` no se inventó ningún mapa: sin pliego/manifest real accesible y sin fuente trazable, la migración `064` conserva cero seeds y el caso sigue fail-closed. Evidencia: `docs/verification/2026-08-07-agt002-rama-judicial-governance-gap.md`.
 
 ## 3. F2 — coherencia y seguridad transversal de SIIO
 
