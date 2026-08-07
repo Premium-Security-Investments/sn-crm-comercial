@@ -84,11 +84,23 @@ function positiveIntFromEnv(environment, key, fallback) {
  * Fails closed (throws) when unconfigured or malformed — callers must catch
  * and keep the deterministic rules-based analysis available.
  */
-export function createAgt002PreviewRuntime({ environment = process.env, countDailyRuns, legalCorpusContext } = {}) {
+export function createAgt002PreviewRuntime({
+  environment = process.env, countDailyRuns, legalCorpusContext,
+  companyEvidenceRegistryEntries, categoryOverrides, contextVersionId,
+} = {}) {
   const config = getAgt002PreviewRuntimeConfig(environment);
   const analysisConfig = buildAgt002AnalysisConfig(environment);
   const loadedLegalCorpus = analysisConfig.AGT002_LEGAL_CORPUS ? requireLegalCorpusContext(legalCorpusContext) : null;
   const legalEvidenceProvider = loadedLegalCorpus ? createLegalEvidenceProvider(loadedLegalCorpus, environment) : undefined;
+
+  // AGT002_INTEGRAL_CONTRACT_V3: mirrors the legalCorpusContext pattern above — the
+  // server layer loads the 17-class company-evidence registry once (from DB, migration
+  // 061) and injects the raw rows here; this runtime never queries a database itself.
+  // Without an explicit injection the flag fails closed at engine construction, exactly
+  // like legalCorpus does without a legalCorpusContext.
+  if (analysisConfig.AGT002_INTEGRAL_CONTRACT_V3 && !Array.isArray(companyEvidenceRegistryEntries)) {
+    throw new Error('AGT-002 Preview no está configurado: AGT002_INTEGRAL_CONTRACT_V3 requiere un registro de evidencia empresarial inyectado explícitamente.');
+  }
 
   const client = createAgt002HetznerBridgeClient({
     url: environment.AGT002_HETZNER_BRIDGE_URL,
@@ -110,6 +122,12 @@ export function createAgt002PreviewRuntime({ environment = process.env, countDai
     ...(loadedLegalCorpus ? {
       legalCorpusVersionId: loadedLegalCorpus.legal_corpus_version_id,
       legalCorpusContentSha256: loadedLegalCorpus.content_sha256,
+    } : {}),
+    integralContractV3: analysisConfig.AGT002_INTEGRAL_CONTRACT_V3,
+    ...(analysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? {
+      companyEvidenceClassesProvider: () => companyEvidenceRegistryEntries,
+      categoryOverrides: categoryOverrides ?? {},
+      contextVersionId: contextVersionId ?? null,
     } : {}),
     ...(countDailyRuns ? { countDailyRuns } : {}),
   });

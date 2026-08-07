@@ -137,6 +137,44 @@ for (const overrides of [
   );
 }
 
+// ---------------------------------------------------------------------------
+// Task 8: AGT002_INTEGRAL_CONTRACT_V3 wiring. server/index.js and api/[...path].js both
+// call createAgt002PreviewRuntime — parity is structural (one shared module), so all v3
+// wiring behavior is tested once here.
+// ---------------------------------------------------------------------------
+
+const V3_BASE_ENV = {
+  AGT002_CANONICAL_ONLY: 'true', AGT002_CONTEXT_V2: 'true', AGT002_DOCUMENT_RETRIEVAL: 'true', AGT002_INTEGRAL_CONTRACT_V3: 'true',
+};
+
+// Flag off (default): construction and behavior are exactly as before — no v3 option
+// is ever consulted, and no request/environment parameter besides the flag itself can
+// turn v3 on.
+{
+  const runtime = createAgt002PreviewRuntime({ environment: baseEnv(), countDailyRuns: async () => 0 });
+  assert.equal(typeof runtime.analyze, 'function');
+}
+
+// Flag on requires a company-evidence registry source, mirroring the legalCorpusContext
+// fail-closed pattern: without it, construction must fail closed rather than silently
+// running v3 with no company-evidence signal.
+assert.throws(
+  () => createAgt002PreviewRuntime({ environment: baseEnv(V3_BASE_ENV), countDailyRuns: async () => 0 }),
+  /no está configurado|evidencia empresarial|companyEvidence/i,
+  'AGT002_INTEGRAL_CONTRACT_V3 must fail closed without an injected company-evidence registry source',
+);
+
+// Flag on with an (empty, synthetic) registry supplied: construction succeeds. Category
+// overrides and contextVersionId are constructor-only configuration — never read from
+// the per-request analyze() context, matching every other engine-level flag.
+{
+  const runtime = createAgt002PreviewRuntime({
+    environment: baseEnv(V3_BASE_ENV), countDailyRuns: async () => 0,
+    companyEvidenceRegistryEntries: [], categoryOverrides: { 'req-1': 'habilitating' }, contextVersionId: '10101010-1010-4010-8010-101010101010',
+  });
+  assert.equal(typeof runtime.analyze, 'function');
+}
+
 const source = readFileSync(new URL('../agt002-preview-runtime.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /OPENAI_API_KEY|HERMES_INTERIM_API_KEY|Authorization|Bearer/i, 'the runtime must never manage an API key or bearer token');
 assert.doesNotMatch(source, /readFileSync/, 'the runtime must never read the local legal corpus fixture as production evidence; it must consume an injected, DB-loaded context');
