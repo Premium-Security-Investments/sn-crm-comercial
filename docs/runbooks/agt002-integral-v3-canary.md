@@ -16,12 +16,12 @@ See `agt002-analysis-config.js` for the exact dependency checks and `docs/verifi
 
 ## Preconditions before enabling the flag anywhere
 
-1. **Category governance exists.** `agt002-integral-category-manifest.js` fails closed for any requirement whose `front` is `legal` (no honest 1:1 mapping exists) unless an explicit `categoryOverrides` entry is supplied. Before a real run, either:
+1. **Category governance exists and is curated for the target opportunity.** `agt002-integral-category-manifest.js` fails closed for any requirement whose `front` is `legal` (no honest 1:1 mapping exists) unless an explicit `categoryOverrides` entry is supplied. The mechanism exists (migration `064`, `psi_agt002_integral_governance_overrides`, loaded read-only by `loadAgt002IntegralV3GovernanceIfEnabled` in `server/index.js`/`api/[...path].js`), but the table ships with **zero seed rows by design** — populating it for a real opportunity is a separate, human-curated act, scoped per `opportunity_id`, done outside runtime (no `INSERT`/`UPDATE`/`DELETE` grant exists on this table for any role). Before a real run, either:
    - the target opportunity's requirement manifest contains only `technical`/`financial` fronts, or
-   - a governed, human-curated override map exists and is wired into the server-side call (`categoryOverrides` param of `createAgt002PreviewRuntime`).
-   Do not invent overrides ad hoc to make a run pass — that is exactly the fabrication this module exists to prevent.
-2. **Company-evidence registry source is wired.** `createAgt002PreviewRuntime({ companyEvidenceRegistryEntries, ... })` requires an explicit array (even if empty) when the flag is on. Load it from `psi_agt002_company_evidence_registry` (migration 061) via `loadAgt002CompanyEvidenceClasses`/equivalent before constructing the runtime — this branch does not wire that DB read into `server/index.js` yet; that is a prerequisite, not an assumption.
-3. **`contextVersionId` is a real governed context version row**, not `null`, for any canonical registration (existing invariant, unchanged by v3).
+   - real, human-curated `category_override` rows exist for that opportunity's actual `requirement_id`s, each with a traceable `rationale`/`source_reference` to the real pliego clause.
+   Do not invent overrides ad hoc to make a run pass — that is exactly the fabrication this module exists to prevent. See `docs/verification/2026-08-07-agt002-rama-judicial-governance-gap.md` for why this remains uncurated for the Rama Judicial opportunity today.
+2. **Company-evidence registry source is wired (done) — but its `evidenceClassLinkByRequirementId` companion is not curated for the target opportunity by default.** `createAgt002PreviewRuntime({ companyEvidenceRegistryEntries, categoryOverrides, evidenceClassLinkByRequirementId, ... })` now receives real, read-only DB data from `psi_agt002_company_evidence_registry` (migration 061) and `psi_agt002_integral_governance_overrides` (migration 064) on all three canonical flows (`tests/agt002-integral-v3-server-wiring.test.mjs`). With the default empty `evidenceClassLinkByRequirementId` (no curated rows for the opportunity), every `tender_requirement` unit still abstains its five axes to the safe-unknown state — that is fail-closed by design, not a bug.
+3. **`contextVersionId` is a real governed context version row**, not `null`, for any canonical registration (existing invariant, unchanged by v3; now forwarded from the server layer on all three flows).
 4. **Local gates are green**: `node --test --test-concurrency=1 tests/agt002-*.test.mjs`, `npm run check:backend-parity`, `npm run build`, `npm audit --omit=dev`, `git diff --check`.
 5. **QA visual with real labels** of `TenderIntegralAnalysisV3View` has been performed by a human against the target environment before any user is exposed to it — the design (`docs/superpowers/specs/2026-08-06-agt002-integral-analysis-v3-design.md` §12) makes this a hard release gate, not a nice-to-have.
 
@@ -42,6 +42,6 @@ See `agt002-analysis-config.js` for the exact dependency checks and `docs/verifi
 ## What this runbook deliberately does not authorize
 
 - Enabling the flag for any user-facing environment continuously.
-- Skipping the company-evidence registry or category-override wiring "just this once."
+- Skipping the company-evidence registry or category-override **curation** "just this once" — the DB wiring exists, but an empty/uncurated override table for the target opportunity is not a substitute for real curated rows.
 - Treating a successful contract validation as a substitute for human review — `human_validation.required: true` / `status: pending` on every unit is the contract's own statement that no AI output here is a final answer.
 - Any GO/NO-GO decision, approval, signature, send, or submission — those remain exclusively human actions in their own existing components, unrelated to this contract.

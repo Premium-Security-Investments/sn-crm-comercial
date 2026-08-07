@@ -53,6 +53,8 @@ import { buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
 import { createAgt002AnalysisObservability, toBoundedAgt002Error } from '../agt002-analysis-observability.js';
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
+import { loadAgt002CompanyEvidenceRegistryEntries } from '../agt002-company-evidence-classes.js';
+import { loadAgt002IntegralGovernanceOverrides } from '../agt002-integral-governance-overrides.js';
 import {
   runAgt002FixedSnapshotReanalysis,
   sanitizeAgt002FixedSnapshotError,
@@ -82,6 +84,27 @@ async function loadAgt002LegalCorpusContextIfEnabled(database) {
   return agt002AnalysisConfig.AGT002_LEGAL_CORPUS
     ? loadPublishedAgt002LegalCorpus(database)
     : null;
+}
+
+// AGT002_INTEGRAL_CONTRACT_V3: real, read-only DB source for the two governed maps
+// createAgt002PreviewRuntime requires as explicit constructor configuration
+// (companyEvidenceClassesProvider's raw rows, categoryOverrides,
+// evidenceClassLinkByRequirementId) instead of the fail-closed empty defaults it used
+// before this wiring existed. Mirrors loadAgt002LegalCorpusContextIfEnabled above: no DB
+// round-trip at all when the flag is off, and every field the runtime needs when it is on
+// — never a partial map, since buildAgt002IntegralGovernanceOverrides itself fails closed
+// on any malformed curated row.
+async function loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId) {
+  if (!agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3) return null;
+  const [companyEvidenceRegistryEntries, governanceOverrides] = await Promise.all([
+    loadAgt002CompanyEvidenceRegistryEntries(database),
+    loadAgt002IntegralGovernanceOverrides(database, opportunityId),
+  ]);
+  return {
+    companyEvidenceRegistryEntries,
+    categoryOverrides: governanceOverrides.categoryOverrides,
+    evidenceClassLinkByRequirementId: governanceOverrides.evidenceClassLinkByRequirementId,
+  };
 }
 
 function sendError(res, error, status = 500) {
@@ -2730,10 +2753,17 @@ async function reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analys
     const analysisDocuments = agt002AnalysisConfig.AGT002_DOCUMENT_RETRIEVAL
       ? adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId })
       : currentDocs;
+    const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
     const engine = createAgt002PreviewRuntime({
           environment: process.env,
           countDailyRuns: () => countAgt002PreviewRunsToday(database),
           legalCorpusContext,
+          ...(integralV3Governance ? {
+            companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
+            categoryOverrides: integralV3Governance.categoryOverrides,
+            evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,
+            contextVersionId: contextVersion?.id ?? null,
+          } : {}),
         });
     const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: humanEvidence } }, { idempotencyKey });
     const registeredRun = await registerAgt002PreviewAnalysis(database, {
@@ -3346,10 +3376,17 @@ function buildTenderProcessingWorkerDeps(database) {
           attemptStarted = true;
           await appendAttempt(idempotencyKey, 'running');
         }
+        const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
         const engine = createAgt002PreviewRuntime({
           environment: process.env,
           countDailyRuns: () => countAgt002PreviewRunsToday(database),
           legalCorpusContext,
+          ...(integralV3Governance ? {
+            companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
+            categoryOverrides: integralV3Governance.categoryOverrides,
+            evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,
+            contextVersionId: contextVersion?.id ?? null,
+          } : {}),
         });
         const analysisDocuments = adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId });
         const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
@@ -3947,10 +3984,17 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
         attemptStarted = true;
         await appendAttempt(idempotencyKey, 'running');
       }
+      const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
       const engine = createAgt002PreviewRuntime({
           environment: process.env,
           countDailyRuns: () => countAgt002PreviewRunsToday(database),
           legalCorpusContext,
+          ...(integralV3Governance ? {
+            companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
+            categoryOverrides: integralV3Governance.categoryOverrides,
+            evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,
+            contextVersionId: contextVersion?.id ?? null,
+          } : {}),
         });
       const analysisDocuments = agt002AnalysisConfig.AGT002_DOCUMENT_RETRIEVAL
         ? adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId: registeredSnapshot.id })

@@ -99,7 +99,7 @@ Este lote corrige primero las fundaciones de confiabilidad aprobadas para el an�
 
 **Qué NO se hizo en este bloque (gates siguientes, explícitos):**
 
-- No hay wiring real de `companyEvidenceClassesProvider`/`categoryOverrides`/`evidenceClassLinkByRequirementId` a una fuente de datos gobernada en `server/index.js`/`api/[...path].js` — el runtime falla cerrado sin esa inyección explícita. Con el mapa por defecto (`{}`), hoy todo requisito real abstiene sus cinco ejes al estado seguro hasta que se cure ese enlace requisito→clase de evidencia.
+- ~~No hay wiring real de `companyEvidenceClassesProvider`/`categoryOverrides`/`evidenceClassLinkByRequirementId` a una fuente de datos gobernada~~ — cerrado en la sesión de continuación del 2026-08-07 (§2.1.1 abajo): el wiring real de lectura existe hoy en `server/index.js`/`api/[...path].js`. Lo que sigue abierto es la **curación humana** de esos mapas para una oportunidad real: con el mapa por defecto (sin filas curadas en la migración `064`), todo requisito real sigue abstenido en sus cinco ejes al estado seguro hasta que un humano cure ese enlace requisito→clase de evidencia para el caso objetivo.
 - No se ejecutó un caso E5 controlado con datos reales de Rama Judicial ni QA visual con etiquetas reales.
 - No se activó el flag en ningún ambiente; no se aplicó ninguna migración remota; no hubo push/PR/deploy.
 - Ningún revisor independiente fuera de esta sesión evaluó el trabajo (ver `docs/verification/2026-08-07-agt002-integral-v3-local.md` §4).
