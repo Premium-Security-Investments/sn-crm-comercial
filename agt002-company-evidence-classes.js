@@ -183,15 +183,28 @@ const TABLE_ABSENT_ERROR_CODES = ['PGRST205', '42P01'];
 // Deliberately filters only on current=true (the live version of each class), not
 // integration_active — a deactivated-but-current entry must still surface so the
 // coverage manifest can honestly report it as omitted instead of hiding it.
-export async function loadAgt002CompanyEvidenceClasses(database, { asOf = new Date() } = {}) {
+//
+// Raw-row loader: the real, direct DB source for the v3 engine's
+// companyEvidenceClassesProvider(context) contract (agt002-preview-engine.js), which
+// hands its return value straight to buildAgt002CompanyEvidenceClasses({ registryEntries })
+// itself — so this must return the untouched rows, never the built {classes, coverage}
+// shape. loadAgt002CompanyEvidenceClasses below is a thin convenience wrapper over the
+// same rows for callers (tests, the legacy dossier's own comparisons) that want the
+// already-built typed shape instead.
+export async function loadAgt002CompanyEvidenceRegistryEntries(database) {
   const { data, error } = await database
     .from('psi_agt002_company_evidence_registry')
     .select(AGT002_COMPANY_EVIDENCE_CLASS_SELECT)
     .eq('current', true)
     .order('entry_id');
   if (error) {
-    if (TABLE_ABSENT_ERROR_CODES.includes(error.code)) return buildAgt002CompanyEvidenceClasses({ registryEntries: [], asOf });
+    if (TABLE_ABSENT_ERROR_CODES.includes(error.code)) return [];
     throw error;
   }
-  return buildAgt002CompanyEvidenceClasses({ registryEntries: data || [], asOf });
+  return data || [];
+}
+
+export async function loadAgt002CompanyEvidenceClasses(database, { asOf = new Date() } = {}) {
+  const registryEntries = await loadAgt002CompanyEvidenceRegistryEntries(database);
+  return buildAgt002CompanyEvidenceClasses({ registryEntries, asOf });
 }

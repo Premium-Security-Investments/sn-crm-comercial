@@ -41,6 +41,7 @@ if (!existsSync(modulePath)) {
     AGT002_COMPANY_EVIDENCE_CLASS_SELECT,
     buildAgt002CompanyEvidenceClasses,
     loadAgt002CompanyEvidenceClasses,
+    loadAgt002CompanyEvidenceRegistryEntries,
   } = await import(modulePath.href);
 
   const ASOF = new Date('2026-08-06T00:00:00.000Z');
@@ -202,6 +203,46 @@ if (!existsSync(modulePath)) {
   const loaded = await loadAgt002CompanyEvidenceClasses(fakeDatabase([licenseEntry, deactivatedEntry]), { asOf: ASOF });
   assert.equal(loaded.classes.length, 17, 'loader output must retain the complete closed catalog even when rows are missing');
   assert.ok(loaded.coverage.omitted.includes('communications_license'), 'the loader must query current=true only, not integration_active=true, so omitted entries stay visible in coverage');
+
+  // --- Raw-row loader (companyEvidenceClassesProvider's real DB source): unlike
+  // loadAgt002CompanyEvidenceClasses, this must return the raw registry rows
+  // themselves — not the built {classes, coverage} shape — because the v3 engine's
+  // companyEvidenceClassesProvider(context) contract expects to hand its result
+  // straight to buildAgt002CompanyEvidenceClasses({ registryEntries }) itself. ---
+  assert.equal(typeof loadAgt002CompanyEvidenceRegistryEntries, 'function', 'a raw-row loader must exist as the real DB source for companyEvidenceClassesProvider');
+
+  const rawRows = await loadAgt002CompanyEvidenceRegistryEntries(fakeDatabase([licenseEntry, deactivatedEntry]));
+  assert.ok(Array.isArray(rawRows), 'the raw loader must return an array of rows, not a built classes/coverage object');
+  assert.deepEqual(rawRows.map(row => row.entry_id).sort(), ['communications_license', 'supervigilancia_operating_license']);
+  assert.equal(rawRows.find(row => row.entry_id === 'supervigilancia_operating_license').source_reference, licenseEntry.source_reference, 'the raw loader must not strip or transform any real column');
+
+  // Table-absent (a database that has not run migration 061 yet) must fail soft to
+  // an empty array — never throw — mirroring loadAgt002CompanyEvidenceClasses's own
+  // handling of the same optional table.
+  function tableAbsentDatabase(code) {
+    return {
+      from(table) {
+        assert.equal(table, 'psi_agt002_company_evidence_registry');
+        const chain = {
+          select() { return chain; },
+          eq() { return chain; },
+          order() { return chain; },
+          then(resolve) { resolve({ data: null, error: { code } }); },
+        };
+        return chain;
+      },
+    };
+  }
+  assert.deepEqual(await loadAgt002CompanyEvidenceRegistryEntries(tableAbsentDatabase('PGRST205')), []);
+  assert.deepEqual(await loadAgt002CompanyEvidenceRegistryEntries(tableAbsentDatabase('42P01')), []);
+
+  // Any other database error (permissions, connectivity) must propagate — never be
+  // silently swallowed as "no evidence".
+  await assert.rejects(
+    loadAgt002CompanyEvidenceRegistryEntries(tableAbsentDatabase('53300')),
+    error => error.code === '53300',
+    'a non-table-absent error must propagate, never be treated as an empty registry',
+  );
 
   console.log('AGT-002 typed company evidence classes (F2) contract passed');
 }
