@@ -202,6 +202,54 @@ export function filterSources(sources: SiioSource[], filters: SiioRouteFiltersBy
   ));
 }
 
+const AVAILABILITY_LABELS: Record<string, string> = {
+  activa: 'Disponible',
+  activo: 'Disponible',
+  inactiva: 'No disponible',
+  inactivo: 'No disponible',
+};
+
+const VALIDATION_LABELS: Record<string, string> = {
+  confiable: 'Validada',
+  oficial_requiere_validacion: 'Requiere validación',
+  restringida: 'Restringida',
+};
+
+const FRESHNESS_ASSESSMENT_LABELS: Record<ReturnType<typeof sourceFreshness>, string> = {
+  vigente: 'Vigente',
+  próxima_a_vencer: 'Próxima a vencer',
+  vencida: 'Revisión vencida',
+  sin_fecha: 'Sin fecha de revisión',
+};
+
+function formatSiioAssessmentDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
+}
+
+export type SourceAssessment = {
+  availability: string;
+  review: string;
+  freshness: string;
+  validation: string;
+  applicability: string;
+  compliance: string;
+};
+
+export function deriveSourceAssessment(source: SiioSource, asOf: Date = new Date()): SourceAssessment {
+  const availabilityKey = normalizedSubject(source.status);
+  const validationKey = normalizedSubject(source.trust_level);
+  return {
+    availability: AVAILABILITY_LABELS[availabilityKey] || (source.status ? 'Estado no reconocido' : 'Sin estado registrado'),
+    review: source.last_reviewed_at ? `Revisada el ${formatSiioAssessmentDate(source.last_reviewed_at)}` : 'Sin revisión registrada',
+    freshness: FRESHNESS_ASSESSMENT_LABELS[sourceFreshness(source, asOf)],
+    validation: VALIDATION_LABELS[validationKey] || (source.trust_level ? 'Nivel de confianza no reconocido' : 'Sin nivel de confianza registrado'),
+    applicability: 'No registrada',
+    compliance: 'No evaluado',
+  };
+}
+
 export function uniqueOptions(values: Array<string | null | undefined>): string[] {
   const options = new Map<string, string>();
   for (const value of values) {

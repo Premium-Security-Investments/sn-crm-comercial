@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { deriveSiioExecutiveSnapshot } from '../siioExecutive';
-import { deriveRecommendations, filterSources, navigateSiioView, sourceFreshness, uniqueOptions } from './selectors';
+import { deriveRecommendations, deriveSourceAssessment, filterSources, navigateSiioView, sourceFreshness, uniqueOptions } from './selectors';
 import { Badge, EmptyState, Panel, fmtSiioDate } from './SiioUi';
 import type { SiioBootstrapPayload, SiioRouteState } from './types';
 
@@ -54,20 +54,29 @@ export function SiioSourcesIntelligenceView({ payload, routeState, onNavigate }:
 
     <Panel title="Fuentes de evidencia de los periodos mostrados">
       {!visibleSources.length ? <EmptyState title="Sin fuentes de evidencia para los filtros seleccionados" text="No hay fuentes vinculadas al periodo financiero seleccionado ni al periodo de nómina mostrado que coincidan con la vigencia, confianza y tipo seleccionados." /> : <div className="siio-insight-list">
-        {visibleSources.map(source => <article className="siio-insight" key={source.id}>
-          <header><div><span className="eyebrow">{source.id}</span><h3>{source.name}</h3></div><Badge tone={sourceFreshness(source) === 'vencida' ? 'danger' : sourceFreshness(source) === 'próxima_a_vencer' ? 'amber' : 'green'}>{freshnessLabels[sourceFreshness(source)]}</Badge></header>
-          <div className="siio-insight-detail">
-            <div><strong>Tipo</strong><span>{source.source_type || 'Pendiente'}</span></div>
-            <div><strong>Confianza</strong><span>{source.trust_level || 'Pendiente'}</span></div>
-            <div><strong>Última revisión</strong><span>{fmtSiioDate(source.last_reviewed_at)}</span></div>
-            <div><strong>Próxima revisión</strong><span>{fmtSiioDate(source.next_review_at)}</span></div>
-            <div><strong>Frecuencia de actualización</strong><span>{source.update_frequency || 'Pendiente'}</span></div>
-            <div><strong>Restricciones</strong><span>{source.restrictions || 'Sin restricciones registradas'}</span></div>
-            <div><strong>Frentes relacionados</strong><span>{source.related_fronts?.length ? source.related_fronts.join(', ') : 'Sin frente relacionado'}</span></div>
-            <div><strong>Estado de la fuente</strong><span>{source.status || 'Pendiente'}</span></div>
-          </div>
-          {source.url ? <a href={source.url} target="_blank" rel="noreferrer">Consultar fuente externa</a> : null}
-        </article>)}
+        {visibleSources.map(source => {
+          const assessment = deriveSourceAssessment(source);
+          return <article className="siio-insight" key={source.id}>
+            <header><div><span className="eyebrow">{source.id}</span><h3>{source.name}</h3></div><Badge tone={sourceFreshness(source) === 'vencida' ? 'danger' : sourceFreshness(source) === 'próxima_a_vencer' ? 'amber' : 'green'}>{freshnessLabels[sourceFreshness(source)]}</Badge></header>
+            <div className="siio-insight-detail">
+              <div><strong>Disponibilidad</strong><span>{assessment.availability}</span></div>
+              <div><strong>Revisión</strong><span>{assessment.review}</span></div>
+              <div><strong>Vigencia</strong><span>{assessment.freshness}</span></div>
+              <div><strong>Validación / confianza</strong><span>{assessment.validation}</span></div>
+              <div><strong>Aplicabilidad</strong><span>{assessment.applicability}</span></div>
+              <div><strong>Cumplimiento</strong><span>{assessment.compliance}</span></div>
+            </div>
+            <div className="siio-insight-detail">
+              <div><strong>Tipo</strong><span>{source.source_type || 'Pendiente'}</span></div>
+              <div><strong>Última revisión</strong><span>{fmtSiioDate(source.last_reviewed_at)}</span></div>
+              <div><strong>Próxima revisión</strong><span>{fmtSiioDate(source.next_review_at)}</span></div>
+              <div><strong>Frecuencia de actualización</strong><span>{source.update_frequency || 'Pendiente'}</span></div>
+              <div><strong>Restricciones</strong><span>{source.restrictions || 'Sin restricciones registradas'}</span></div>
+              <div><strong>Frentes relacionados</strong><span>{source.related_fronts?.length ? source.related_fronts.join(', ') : 'Sin frente relacionado'}</span></div>
+            </div>
+            {source.url ? <a href={source.url} target="_blank" rel="noreferrer">Consultar fuente externa</a> : null}
+          </article>;
+        })}
       </div>}
     </Panel>
 

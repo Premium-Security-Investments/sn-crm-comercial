@@ -110,4 +110,17 @@ assert.deepEqual(defaultVisibleActivity.map(item => item.id).sort(), ['DEC-NO-DA
 const explicitClosedFilter = mod.filterTrackingItems(activityItems, { kind: 'todos', status: 'cerrado', semaphore: '', owner: '' });
 assert.deepEqual(explicitClosedFilter.map(item => item.id), ['REC-CLOSED:decision'], 'an explicit terminal status filter must retrieve history items');
 
+const assessment = mod.deriveSourceAssessment({
+  status: 'activa', trust_level: 'oficial_requiere_validacion',
+  last_reviewed_at: null, next_review_at: '2026-08-01',
+}, new Date('2026-08-08T00:00:00Z'));
+assert.deepEqual(assessment, {
+  availability: 'Disponible', review: 'Sin revisión registrada',
+  freshness: 'Revisión vencida', validation: 'Requiere validación',
+  applicability: 'No registrada', compliance: 'No evaluado',
+});
+const undatedAssessment = mod.deriveSourceAssessment({ status: 'activa' }, new Date('2026-08-08T00:00:00Z'));
+assert.doesNotMatch(JSON.stringify(undatedAssessment), /Vigente/, 'a source without dates must never be described as vigente');
+assert.equal(undatedAssessment.availability, 'Disponible');
+
 console.log('SIIO managerial navigation selector contracts OK');
