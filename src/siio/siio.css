@@ -78,6 +78,18 @@
   overflow-wrap:anywhere;
 }
 
+.siio-dashboard .siio-agent-card,
+.siio-dashboard .siio-agent-field{
+  min-width:0;
+  max-width:100%;
+}
+
+.siio-dashboard .siio-agent-field,
+.siio-dashboard .siio-agent-field span{
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+
 .siio-dashboard .siio-table-wrap{
   overflow-x:auto;
   overscroll-behavior-x:contain;
@@ -152,6 +164,19 @@
   .siio-dashboard .siio-insight-list,
   .siio-dashboard .siio-insight-detail{
     grid-template-columns:1fr;
+  }
+
+  .siio-dashboard .siio-agent-heading{
+    flex-wrap:wrap;
+  }
+
+  .siio-dashboard .siio-agent-heading > div{
+    min-width:0;
+  }
+
+  .siio-dashboard .siio-agent-heading .badge{
+    white-space:normal;
+    max-width:100%;
   }
 
   .siio-board-backdrop{

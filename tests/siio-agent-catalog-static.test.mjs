@@ -75,4 +75,22 @@ assert.match(agentsView, /development_status/, 'agents view must render the deve
 assert.match(agentsView, /className="siio-eyebrow"/, 'agents view must use the locally-contrasted siio-eyebrow token');
 assert.doesNotMatch(agentsView, /className="eyebrow"/, 'agents view must not render the low-contrast global eyebrow on a light SIIO surface');
 
+const siioCss = readFileSync(new URL('../src/siio/siio.css', import.meta.url), 'utf8');
+
+assert.match(agentsView, /className="siio-insight siio-agent-card"/, 'each agent card must carry the siio-agent-card scoping class for mobile overflow fixes');
+assert.match(agentsView, /className="siio-agent-heading"/, 'the agent card header must carry the siio-agent-heading scoping class');
+assert.equal((agentsView.match(/className="siio-agent-field"/g) || []).length, 17, 'every rendered agent field row must carry the siio-agent-field scoping class');
+
+assert.match(siioCss, /\.siio-dashboard \.siio-agent-card,\s*\n\.siio-dashboard \.siio-agent-field\{\s*min-width:0;\s*max-width:100%;\s*\}/, 'agent card and field containers must be constrained to min-width:0/max-width:100% so they can shrink below their content width at narrow viewports');
+assert.match(siioCss, /\.siio-dashboard \.siio-agent-field,\s*\n\.siio-dashboard \.siio-agent-field span\{\s*overflow-wrap:anywhere;\s*word-break:break-word;\s*\}/, 'agent field text must break/wrap safely instead of forcing horizontal overflow');
+
+const mobileBlock = siioCss.match(/@media\(max-width:760px\)\{[\s\S]*?\n\}/)?.[0] || '';
+assert.ok(mobileBlock, 'the <=760px media query must exist');
+assert.equal((siioCss.match(/grid-template-columns:1fr;/g) || []).length, 2, 'the mobile overflow fix must not add a second grid-template-columns:1fr rule for .siio-agent-grid — the existing single-column rule already covers it');
+assert.match(mobileBlock, /\.siio-dashboard \.siio-agent-heading\{\s*flex-wrap:wrap;\s*\}/, 'the agent heading must wrap safely at <=760px instead of overflowing so the status badge is never clipped');
+assert.match(mobileBlock, /\.siio-dashboard \.siio-agent-heading > div\{\s*min-width:0;\s*\}/, 'the agent heading title block must be allowed to shrink at <=760px so it does not push the status badge off-card');
+assert.match(mobileBlock, /\.siio-dashboard \.siio-agent-heading \.badge\{\s*white-space:normal;\s*max-width:100%;\s*\}/, 'the status badge must wrap instead of clipping at <=760px');
+
+assert.doesNotMatch(mobileBlock, /font-size/, 'the mobile overflow fix must not shrink agent catalog typography to solve overflow');
+
 console.log('SIIO governed agent catalog contract OK');
