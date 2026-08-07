@@ -25,7 +25,7 @@ const kinds: Array<{ kind: SiioTrackingKind; label: string }> = [
 
 export function SiioManagementTrackingView({ payload, routeState, onNavigate }: { payload: SiioBootstrapPayload; routeState: Extract<SiioRouteState, { view: 'seguimiento' }>; onNavigate: (state: SiioRouteState) => void }) {
   const items = useMemo(() => deriveTrackingItems(payload.records, payload.decisions), [payload.records, payload.decisions]);
-  const visible = useMemo(() => filterTrackingItems(items, routeState.filters), [items, routeState.filters]);
+  const visibleItems = useMemo(() => filterTrackingItems(items, routeState.filters), [items, routeState.filters]);
   const statuses = useMemo(() => uniqueOptions(items.map(item => item.status)), [items]);
   const semaphores = useMemo(() => uniqueOptions(items.map(item => item.semaphore)), [items]);
   const owners = useMemo(() => uniqueOptions(items.map(item => item.owner)), [items]);
@@ -48,7 +48,20 @@ export function SiioManagementTrackingView({ payload, routeState, onNavigate }: 
     </section>
     <p className="notice siio-secondary" role="status">Estado operativo sujeto al corte y confirmación del responsable.</p>
     <Panel title="Seguimiento gerencial">
-      {!visible.length ? <EmptyState title="Sin asuntos para los filtros seleccionados" text="No hay decisiones, bloqueos, riesgos o compromisos que coincidan." /> : <div className="siio-table-wrap"><table><thead><tr><th>Tipo</th><th>Asunto</th><th>Frente</th><th>Responsable</th><th>Estado</th><th>Vigencia</th><th>Semáforo</th><th>Próxima acción</th><th>Fecha disponible</th></tr></thead><tbody>{visible.map(item => <tr key={item.id}><td><Badge tone="blue">{item.kind}</Badge></td><td><strong>{item.title}</strong></td><td>{item.frontId || 'Sin frente'} </td><td>{item.owner || 'Pendiente'}</td><td>{item.status}</td><td><Badge tone={ACTIVITY_TONES[item.activityState]}>{ACTIVITY_LABELS[item.activityState]}</Badge></td><td>{item.semaphore ? <Badge tone={item.semaphore === 'rojo' ? 'danger' : item.semaphore === 'amarillo' ? 'amber' : 'green'}>{item.semaphore}</Badge> : 'Pendiente'}</td><td>{item.nextAction || 'Pendiente'}</td><td>{fmtSiioDate(item.dueDate)}</td></tr>)}</tbody></table></div>}
+      {!visibleItems.length ? <EmptyState title="Sin asuntos para los filtros seleccionados" text="No hay decisiones, bloqueos, riesgos o compromisos que coincidan." /> : <>
+        <div className="siio-table-wrap siio-management-table"><table><thead><tr><th>Tipo</th><th>Asunto</th><th>Frente</th><th>Responsable</th><th>Estado</th><th>Vigencia</th><th>Semáforo</th><th>Próxima acción</th><th>Fecha disponible</th></tr></thead><tbody>{visibleItems.map(item => <tr key={item.id}><td><Badge tone="blue">{item.kind}</Badge></td><td><strong>{item.title}</strong></td><td>{item.frontId || 'Sin frente'} </td><td>{item.owner || 'Pendiente'}</td><td>{item.status}</td><td><Badge tone={ACTIVITY_TONES[item.activityState]}>{ACTIVITY_LABELS[item.activityState]}</Badge></td><td>{item.semaphore ? <Badge tone={item.semaphore === 'rojo' ? 'danger' : item.semaphore === 'amarillo' ? 'amber' : 'green'}>{item.semaphore}</Badge> : 'Pendiente'}</td><td>{item.nextAction || 'Pendiente'}</td><td>{fmtSiioDate(item.dueDate)}</td></tr>)}</tbody></table></div>
+        <div className="siio-management-cards">{visibleItems.map(item => <article className="siio-management-card" key={`${item.id}:card`}>
+          <div><span className="siio-secondary">Tipo</span><Badge tone="blue">{item.kind}</Badge></div>
+          <div><span className="siio-secondary">Asunto</span><strong>{item.title}</strong></div>
+          <div><span className="siio-secondary">Frente</span><span>{item.frontId || 'Sin frente'}</span></div>
+          <div><span className="siio-secondary">Responsable</span><span>{item.owner || 'Pendiente'}</span></div>
+          <div><span className="siio-secondary">Estado</span><span>{item.status}</span></div>
+          <div><span className="siio-secondary">Vigencia</span><Badge tone={ACTIVITY_TONES[item.activityState]}>{ACTIVITY_LABELS[item.activityState]}</Badge></div>
+          <div><span className="siio-secondary">Semáforo</span>{item.semaphore ? <Badge tone={item.semaphore === 'rojo' ? 'danger' : item.semaphore === 'amarillo' ? 'amber' : 'green'}>{item.semaphore}</Badge> : <span>Pendiente</span>}</div>
+          <div><span className="siio-secondary">Próxima acción</span><span>{item.nextAction || 'Pendiente'}</span></div>
+          <div><span className="siio-secondary">Fecha disponible</span><span>{fmtSiioDate(item.dueDate)}</span></div>
+        </article>)}</div>
+      </>}
     </Panel>
   </div>;
 }

@@ -107,6 +107,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
           <div><span className="siio-secondary">Control</span>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</div>
         </article>)}
         <article className="siio-payroll-card siio-payroll-total-card">
+          <div><span className="siio-secondary">Área</span><strong>Total</strong></div>
           <div><span className="siio-secondary">Personas</span><strong>{payrollTotals.people}</strong></div>
           <div><span className="siio-secondary">Devengado</span><strong>{fmtSiioMoney(payrollTotals.accrued)}</strong></div>
           <div><span className="siio-secondary">Deducciones</span><strong>{fmtSiioMoney(payrollTotals.deductions)}</strong></div>

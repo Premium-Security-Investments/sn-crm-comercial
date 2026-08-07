@@ -40,4 +40,14 @@ for (const [name, source] of [['SiioExecutiveView', executive], ['SiioSourcesInt
 }
 assert.match(tracking, /siio-secondary/, 'SiioManagementTrackingView must use the locally-contrasted siio-secondary token for secondary text');
 
+assert.ok(contrast('#ffffff', '#1b64f2') >= 4.5, 'white text must meet WCAG AA against the management-signal button gradient start');
+assert.ok(contrast('#ffffff', '#174ea6') >= 4.5, 'white text must meet WCAG AA against the management-signal button gradient end');
+
+const managementSignalsWhiteRules = [...styles.matchAll(/\.siio-management-signals[^{}]*\{[^}]*\}/g)]
+  .map(match => match[0])
+  .filter(rule => /:not\(\.siio-management-signal-static\)/.test(rule) && /color:#fff\b/.test(rule));
+assert.ok(managementSignalsWhiteRules.length >= 1, 'a CSS rule must force white text on the blue management-signal buttons while excluding the non-clickable payroll alert card');
+const managementSignalsWhiteRuleText = managementSignalsWhiteRules.join(' ');
+assert.doesNotMatch(managementSignalsWhiteRuleText, /opacity/, 'the white contrast fix must not be undermined by an opacity rule');
+
 console.log('SIIO accessibility contrast contract OK');

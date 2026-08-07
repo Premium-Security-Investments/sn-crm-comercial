@@ -48,6 +48,8 @@ assert.match(executive, /const count = \(kind: SiioTrackingKind\) => trackingIte
 
 assert.match(executive, /siio-payroll-total-card/, 'Mobile payroll cards must retain the hidden desktop total via a dedicated total card');
 const totalCard = executive.match(/<article className="siio-payroll-card siio-payroll-total-card">[\s\S]*?<\/article>/)?.[0] || '';
+assert.match(totalCard, /<span className="siio-secondary">Área<\/span><strong>Total<\/strong>/, 'The mobile payroll total card must keep the same Área row schema as the other payroll cards, labeled Total');
+assert.ok(totalCard.indexOf('Área') < totalCard.indexOf('Personas'), 'The Área row must come before Personas to match the other payroll cards field order');
 assert.match(totalCard, /payrollTotals\.people/, 'The mobile payroll total card must show aggregated people');
 assert.match(totalCard, /payrollTotals\.accrued/, 'The mobile payroll total card must show aggregated accrued pay');
 assert.match(totalCard, /payrollTotals\.deductions/, 'The mobile payroll total card must show aggregated deductions');
