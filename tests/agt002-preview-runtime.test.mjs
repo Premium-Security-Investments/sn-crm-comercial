@@ -175,6 +175,43 @@ assert.throws(
   assert.equal(typeof runtime.analyze, 'function');
 }
 
+// evidenceClassLinkByRequirementId must reach the engine exactly like categoryOverrides
+// does — both are governed, curated, constructor-only maps (agt002-evidence-state-manifest.js /
+// agt002-integral-category-manifest.js). createEngine is an injectable seam (defaulting to
+// the real createAgt002PreviewEngine) purely so this test can assert on the exact options
+// object the runtime builds, without ever constructing a real network client.
+{
+  let capturedOptions = null;
+  const spyEngine = (options) => {
+    capturedOptions = options;
+    return { analyze: async () => { throw new Error('not called'); } };
+  };
+  const evidenceClassLinkByRequirementId = { 'req-1': 'rup' };
+  const categoryOverrides = { 'req-2': 'technical' };
+  createAgt002PreviewRuntime({
+    environment: baseEnv(V3_BASE_ENV), countDailyRuns: async () => 0,
+    companyEvidenceRegistryEntries: [], categoryOverrides, evidenceClassLinkByRequirementId,
+    contextVersionId: '10101010-1010-4010-8010-101010101010',
+    createEngine: spyEngine,
+  });
+  assert.deepEqual(capturedOptions.evidenceClassLinkByRequirementId, evidenceClassLinkByRequirementId, 'the runtime must forward evidenceClassLinkByRequirementId to the engine, exactly like categoryOverrides');
+  assert.deepEqual(capturedOptions.categoryOverrides, categoryOverrides);
+}
+
+// Without an explicit evidenceClassLinkByRequirementId, the engine must receive the same
+// safe empty-map default as categoryOverrides — never undefined (which would fall back to
+// the engine's own default, silently decoupling runtime behavior from what was requested).
+{
+  let capturedOptions = null;
+  const spyEngine = (options) => { capturedOptions = options; return { analyze: async () => {} }; };
+  createAgt002PreviewRuntime({
+    environment: baseEnv(V3_BASE_ENV), countDailyRuns: async () => 0,
+    companyEvidenceRegistryEntries: [], createEngine: spyEngine,
+  });
+  assert.deepEqual(capturedOptions.evidenceClassLinkByRequirementId, {});
+  assert.deepEqual(capturedOptions.categoryOverrides, {});
+}
+
 const source = readFileSync(new URL('../agt002-preview-runtime.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /OPENAI_API_KEY|HERMES_INTERIM_API_KEY|Authorization|Bearer/i, 'the runtime must never manage an API key or bearer token');
 assert.doesNotMatch(source, /readFileSync/, 'the runtime must never read the local legal corpus fixture as production evidence; it must consume an injected, DB-loaded context');

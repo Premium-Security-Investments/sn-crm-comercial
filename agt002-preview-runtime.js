@@ -86,7 +86,8 @@ function positiveIntFromEnv(environment, key, fallback) {
  */
 export function createAgt002PreviewRuntime({
   environment = process.env, countDailyRuns, legalCorpusContext,
-  companyEvidenceRegistryEntries, categoryOverrides, contextVersionId,
+  companyEvidenceRegistryEntries, categoryOverrides, evidenceClassLinkByRequirementId, contextVersionId,
+  createEngine = createAgt002PreviewEngine,
 } = {}) {
   const config = getAgt002PreviewRuntimeConfig(environment);
   const analysisConfig = buildAgt002AnalysisConfig(environment);
@@ -107,7 +108,7 @@ export function createAgt002PreviewRuntime({
     hmacSecret: environment.AGT002_HETZNER_BRIDGE_HMAC_SECRET,
   });
 
-  return createAgt002PreviewEngine({
+  return createEngine({
     client,
     model: config.model,
     policyVersion: config.policyVersion,
@@ -127,6 +128,7 @@ export function createAgt002PreviewRuntime({
     ...(analysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? {
       companyEvidenceClassesProvider: () => companyEvidenceRegistryEntries,
       categoryOverrides: categoryOverrides ?? {},
+      evidenceClassLinkByRequirementId: evidenceClassLinkByRequirementId ?? {},
       contextVersionId: contextVersionId ?? null,
     } : {}),
     ...(countDailyRuns ? { countDailyRuns } : {}),
