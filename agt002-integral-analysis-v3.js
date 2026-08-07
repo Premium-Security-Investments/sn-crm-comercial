@@ -540,6 +540,15 @@ function validateHumanValidation(humanValidation, unitId) {
 
 const MATERIAL_CONCLUSION_STATUSES = new Set(['supported_with_evidence', 'partially_supported', 'gap_evidenced']);
 
+// Exact conclusion.status -> evidence_state.compliance correspondence (independent
+// review P0: a material conclusion can never coexist with compliance "unknown" nor
+// with a mismatched pending_human_review value).
+const CONCLUSION_STATUS_TO_COMPLIANCE = new Map([
+  ['supported_with_evidence', 'supported_pending_human_review'],
+  ['partially_supported', 'partially_supported_pending_human_review'],
+  ['gap_evidenced', 'gap_evidenced_pending_human_review'],
+]);
+
 function validateUnitInvariants(unit, ctx) {
   const unitId = unit.unit_id;
   const {
@@ -572,6 +581,18 @@ function validateUnitInvariants(unit, ctx) {
     fail(`analysis_units[${unitId}]: conclusion.status "gap_evidenced" exige una referencia con purpose "gap_basis".`);
   }
 
+  // human_validation_required (P1 - independent review): never "high" confidence, and
+  // outside explicit abstention it must carry at least one evidence reference — sustento
+  // or abstention, never neither.
+  if (conclusion.status === 'human_validation_required') {
+    if (conclusion.confidence === 'high') {
+      fail(`analysis_units[${unitId}]: conclusion.status "human_validation_required" no admite conclusion.confidence "high".`);
+    }
+    if (unit.assessment_mode !== 'abstained' && evidenceRefs.length === 0) {
+      fail(`analysis_units[${unitId}]: conclusion.status "human_validation_required" con assessment_mode distinto de "abstained" exige al menos una referencia de evidencia.`);
+    }
+  }
+
   // Five independent axes (7.4).
   if (evidenceState.presence === 'absent') {
     if (evidenceState.review === 'reviewed') {
@@ -595,6 +616,20 @@ function validateUnitInvariants(unit, ctx) {
     }
     if (evidenceState.applicability === 'unknown') {
       fail(`analysis_units[${unitId}]: compliance "supported_pending_human_review" no admite evidence_state.applicability "unknown".`);
+    }
+  }
+
+  // Material conclusion <-> compliance exact correspondence (P0 - independent review):
+  // a material conclusion.status (supported_with_evidence / partially_supported /
+  // gap_evidenced) can never coexist with evidence_state.compliance "unknown" nor with
+  // any pending_human_review value other than its own exact counterpart.
+  if (MATERIAL_CONCLUSION_STATUSES.has(conclusion.status)) {
+    const expectedCompliance = CONCLUSION_STATUS_TO_COMPLIANCE.get(conclusion.status);
+    if (evidenceState.compliance !== expectedCompliance) {
+      fail(
+        `analysis_units[${unitId}]: conclusion.status "${conclusion.status}" exige evidence_state.compliance `
+        + `"${expectedCompliance}" (recibido "${evidenceState.compliance}").`,
+      );
     }
   }
 

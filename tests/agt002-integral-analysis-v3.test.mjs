@@ -519,8 +519,14 @@ function run() {
   }, /mapa gobernado|governed/i);
 
   // Same for a mismatched presence that is still internally consistent (e.g. claiming
-  // "unknown" instead of the governed "present").
+  // "unknown" instead of the governed "present"). conclusion.status is switched to
+  // "human_validation_required" (confidence "medium", evidence_refs kept non-empty) so
+  // the fully-"unknown" evidence_state stays individually well-formed under the P0
+  // material<->compliance correspondence invariant too — isolating the governed-map
+  // mismatch this test targets, rather than that unrelated invariant.
   expectRejects((ia) => {
+    ia.analysis_units[0].conclusion.status = 'human_validation_required';
+    ia.analysis_units[0].conclusion.confidence = 'medium';
     ia.analysis_units[0].evidence_state.presence = 'unknown';
     ia.analysis_units[0].evidence_state.review = 'not_reviewed';
     ia.analysis_units[0].evidence_state.validity = 'unknown';
@@ -531,7 +537,11 @@ function run() {
   // Absence of governed signal produces exactly the safe-unknown state — never partially
   // mutated, and no other axis is inferred from presence. A requirement with no governed
   // entry override (the builder's default) must have its unit emit precisely
-  // AGT002_EVIDENCE_STATE_SAFE_UNKNOWN to validate; anything else is rejected.
+  // AGT002_EVIDENCE_STATE_SAFE_UNKNOWN to validate; anything else is rejected. Since
+  // compliance is "unknown" in the safe-unknown state, conclusion.status must be
+  // downgraded from "supported_with_evidence" to "human_validation_required" (P0: a
+  // material conclusion can never coexist with compliance "unknown") — evidence_refs and
+  // confidence stay coherent with that (P1: at least one reference, no "high" confidence).
   {
     const { integralAnalysis, validationContext } = buildFixture();
     validationContext.evidenceStateManifest = validationContext.evidenceStateManifest.map(entry => (
@@ -540,6 +550,8 @@ function run() {
         : entry
     ));
     integralAnalysis.analysis_units[0].evidence_state = { ...AGT002_EVIDENCE_STATE_SAFE_UNKNOWN };
+    integralAnalysis.analysis_units[0].conclusion.status = 'human_validation_required';
+    integralAnalysis.analysis_units[0].conclusion.confidence = 'medium';
     // Every other axis on every other unit is untouched by this change (proving presence
     // on unit 0 never leaks into unit 1's own governed evidence_state).
     const result = validateAgt002IntegralAnalysisV3(integralAnalysis, validationContext);
@@ -598,6 +610,97 @@ function run() {
   expectRejects((ia) => { ia.analysis_units[0].conclusion.status = 'compliant'; }, /status|estado/i);
   expectRejects((ia) => { ia.analysis_units[0].evidence_state.compliance = 'approved'; }, /compliance|cumplim/i);
 
+  // ---------------------------------------------------------------------
+  // P0 (independent review): a material conclusion (supported_with_evidence /
+  // partially_supported / gap_evidenced) must correspond EXACTLY to a non-"unknown"
+  // evidence_state.compliance — never "unknown", and never a mismatched
+  // pending_human_review value. Both the governed context and the payload are mutated
+  // together so the governed-map-match check (already covered above) is not what
+  // trips these — only the new material<->compliance correspondence invariant is.
+  // ---------------------------------------------------------------------
+
+  // Material conclusion.status "supported_with_evidence" cannot coexist with
+  // evidence_state.compliance "unknown".
+  {
+    const { integralAnalysis, validationContext } = buildFixture();
+    const governed = validationContext.evidenceStateManifest.find(e => e.requirement_id === 'REQ-DISCARD-1');
+    governed.evidence_state = { ...governed.evidence_state, compliance: 'unknown' };
+    integralAnalysis.analysis_units[0].evidence_state = { ...integralAnalysis.analysis_units[0].evidence_state, compliance: 'unknown' };
+    assert.throws(
+      () => validateAgt002IntegralAnalysisV3(integralAnalysis, validationContext),
+      /compliance/i,
+    );
+  }
+
+  // Material conclusion.status "supported_with_evidence" cannot pair with the WRONG
+  // pending_human_review compliance value (must be exactly "supported_pending_human_review",
+  // not e.g. "gap_evidenced_pending_human_review").
+  {
+    const { integralAnalysis, validationContext } = buildFixture();
+    const governed = validationContext.evidenceStateManifest.find(e => e.requirement_id === 'REQ-DISCARD-1');
+    governed.evidence_state = { ...governed.evidence_state, compliance: 'gap_evidenced_pending_human_review' };
+    integralAnalysis.analysis_units[0].evidence_state = { ...integralAnalysis.analysis_units[0].evidence_state, compliance: 'gap_evidenced_pending_human_review' };
+    assert.throws(
+      () => validateAgt002IntegralAnalysisV3(integralAnalysis, validationContext),
+      /compliance/i,
+    );
+  }
+
+  // Same correspondence for "partially_supported" -> "partially_supported_pending_human_review".
+  {
+    const { integralAnalysis, validationContext } = buildFixture();
+    const governed = validationContext.evidenceStateManifest.find(e => e.requirement_id === 'REQ-TECH-1');
+    governed.evidence_state = { ...governed.evidence_state, compliance: 'unknown' };
+    integralAnalysis.analysis_units[2].evidence_state = { ...integralAnalysis.analysis_units[2].evidence_state, compliance: 'unknown' };
+    assert.throws(
+      () => validateAgt002IntegralAnalysisV3(integralAnalysis, validationContext),
+      /compliance/i,
+    );
+  }
+
+  // Same correspondence for "gap_evidenced" -> "gap_evidenced_pending_human_review".
+  {
+    const { integralAnalysis, validationContext } = buildFixture();
+    const governed = validationContext.evidenceStateManifest.find(e => e.requirement_id === 'REQ-FIN-1');
+    governed.evidence_state = { ...governed.evidence_state, compliance: 'supported_pending_human_review' };
+    integralAnalysis.analysis_units[3].evidence_state = { ...integralAnalysis.analysis_units[3].evidence_state, compliance: 'supported_pending_human_review' };
+    assert.throws(
+      () => validateAgt002IntegralAnalysisV3(integralAnalysis, validationContext),
+      /compliance/i,
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // P1 (independent review): conclusion.status "human_validation_required" can never
+  // use confidence "high", and outside abstention it must carry at least one evidence
+  // reference — it cannot float free of both evidence and abstention.
+  // ---------------------------------------------------------------------
+
+  // human_validation_required with confidence "high" is rejected regardless of
+  // assessment_mode.
+  expectRejects((ia) => {
+    ia.analysis_units[4].conclusion.confidence = 'high';
+  }, /human_validation_required|confidence/i);
+
+  // human_validation_required in assessment_mode "assessed" without any evidence_refs
+  // is rejected — sustento or explicit abstention, never neither.
+  expectRejects((ia) => {
+    ia.analysis_units[4].evidence_refs = [];
+  }, /human_validation_required|evidenc|referencia/i);
+
+  // Coherent counterpart: human_validation_required WITH abstention (no evidence,
+  // confidence "unavailable") remains accepted — abstention is the honest escape hatch
+  // when there is no evidence at all.
+  {
+    const { integralAnalysis, validationContext } = buildFixture();
+    const unit = integralAnalysis.analysis_units[4];
+    unit.assessment_mode = 'abstained';
+    unit.conclusion.confidence = 'unavailable';
+    unit.evidence_refs = [];
+    const result = validateAgt002IntegralAnalysisV3(integralAnalysis, validationContext);
+    assert.equal(result.analysis_units[4].conclusion.status, 'human_validation_required');
+  }
+
   // Action basis_unit_id must match its containing unit.
   expectRejects((ia) => { ia.analysis_units[2].actions[0].basis_unit_id = 'UNIT-REQ-FIN-1'; }, /basis_unit_id/i);
 
@@ -610,7 +713,12 @@ function run() {
 
   // closure.status: evidence_satisfied requires allowlisted evidence. Uses the strategic
   // unit (non-material conclusion.status) so only the closure invariant is exercised.
+  // assessment_mode is switched to "abstained" (confidence "unavailable") so the empty
+  // evidence_refs stays coherent with the P1 human_validation_required rule (abstention
+  // is the honest escape hatch for no evidence) and only the closure invariant fires.
   expectRejects((ia) => {
+    ia.analysis_units[4].assessment_mode = 'abstained';
+    ia.analysis_units[4].conclusion.confidence = 'unavailable';
     ia.analysis_units[4].closure.status = 'evidence_satisfied';
     ia.analysis_units[4].evidence_refs = [];
   }, /evidence_satisfied|closure|cierre/i);

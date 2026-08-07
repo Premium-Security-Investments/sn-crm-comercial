@@ -686,7 +686,12 @@ assert.throws(
         analysis_units: [{
           unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: requirementEntry.requirement_id,
           category: 'habilitating', sequence: 1, title: 'Póliza vigente', assessment_mode: 'assessed',
-          conclusion: { status: 'supported_with_evidence', summary: 'Evidencia sustenta la póliza.', confidence: 'high' },
+          // Every evidenceState this helper is called with here carries compliance
+          // "unknown" (the real evidence-state-manifest never writes a governed compliance
+          // determination yet), so the only honest conclusion is "human_validation_required"
+          // (P0: a material conclusion can never coexist with compliance "unknown") with
+          // confidence "medium" (P1: human_validation_required never uses "high").
+          conclusion: { status: 'human_validation_required', summary: 'Evidencia disponible; sin determinación de cumplimiento gobernada.', confidence: 'medium' },
           blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
           // Default: no evidenceClassLinkByRequirementId is curated for 'req-poliza' in
           // these tests (companyEvidenceClassesProvider returns an empty registry too),

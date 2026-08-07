@@ -742,7 +742,11 @@ function buildMinimalV3IntegralAnalysis() {
     analysis_units: [{
       unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: 'REQ-1', category: 'discard', sequence: 1,
       title: 'Requisito sintético', assessment_mode: 'assessed',
-      conclusion: { status: 'supported_with_evidence', summary: 'Sin causal evidenciada.', confidence: 'high' },
+      // REQ-1 has no governed evidence-class link (safe-unknown evidence_state, compliance
+      // "unknown"), so conclusion.status must honestly be "human_validation_required"
+      // (P0: a material conclusion can never coexist with compliance "unknown") with
+      // confidence "medium" (P1: human_validation_required never uses "high").
+      conclusion: { status: 'human_validation_required', summary: 'Sin evidencia gobernada disponible; requiere validación humana.', confidence: 'medium' },
       blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
       evidence_state: AGT002_EVIDENCE_STATE_SAFE_UNKNOWN,
       evidence_refs: [{ ref: 'TD-1', source_type: 'tender_document', purpose: 'requirement_basis' }],
