@@ -439,7 +439,7 @@ node --test tests/siio-accessibility-contrast.test.mjs tests/siio-executive-dash
 node --test tests/siio-*.test.mjs
 ```
 
-Expected: 3/3 PASS y 13/13 PASS (11 baseline + 2 nuevas).
+Expected: 3/3 PASS y 14/14 PASS (11 baseline + 3 nuevas).
 
 - [ ] **Step 6: Commit locally**
 
@@ -479,7 +479,7 @@ git diff --check origin/main...HEAD
 
 Expected:
 
-- focal SIIO: 13/13 PASS;
+- focal SIIO: 14/14 PASS;
 - full suite: todos PASS salvo un único baseline conocido sólo si se reproduce sobre `origin/main@39bef1d` (`module-permissions-migration-pglite.test.mjs`);
 - build exit 0; warning preexistente de chunk permitido;
 - audit: 0 vulnerabilities;
