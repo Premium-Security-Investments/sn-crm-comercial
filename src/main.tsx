@@ -4,7 +4,7 @@ import type { Session } from '@supabase/supabase-js';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 import { formatDateOnly } from './dateOnly';
-import { canAccessRoute, canManageUsers as navCanManageUsers, canViewTenders as navCanViewTenders, getVisibleNavGroups, isManagementRole as navIsManagementRole } from './navPermissions';
+import { canAccessRoute, canManageUsers as navCanManageUsers, canViewTenders as navCanViewTenders, getVisibleNavGroups, isInitialAppHash, isManagementRole as navIsManagementRole, preferredLandingRoute } from './navPermissions';
 import { api, exitTenderOpportunity, setApiAccessToken } from './apiClient';
 import { CAPABILITY_PERMISSION_CODES, CAPABILITY_PERMISSIONS, MODULE_PERMISSION_CODES, MODULE_PERMISSIONS, eligibleModulePermissions, isModulePermissionEligible } from '../module-access.js';
 import { SiioDashboard } from './siio/SiioDashboard';
@@ -336,6 +336,12 @@ function App() {
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
+  useEffect(() => {
+    const profile = data?.currentProfile;
+    if (!profile || !isInitialAppHash(window.location.hash)) return;
+    const target = preferredLandingRoute(profile);
+    window.location.replace(`${window.location.pathname}${window.location.search}#/${target}`);
+  }, [data?.currentProfile]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   useEffect(() => { setSidebarOpen(false); }, [route.page, route.id]);
   useEffect(() => {
