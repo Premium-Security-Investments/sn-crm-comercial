@@ -38,7 +38,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
     alerts: total.alerts + (row.alert ? 1 : 0),
   }), { people: 0, accrued: 0, deductions: 0, net: 0, alerts: 0 }), [payrollRows]);
   const recommendations = useMemo(() => deriveRecommendations(snapshot), [snapshot]);
-  const count = (kind: SiioTrackingKind) => trackingItems.filter(item => item.kind === kind).length;
+  const count = (kind: SiioTrackingKind) => trackingItems.filter(item => item.kind === kind && item.activityState === 'active').length;
   const trackingLink = (kind: SiioTrackingKind) => onNavigate(navigateSiioView('seguimiento', { kind }));
   const intelligenceLink = () => onNavigate(navigateSiioView('inteligencia', { period: selectedPeriod }));
   const validationLabel = snapshot.financialValidationStatus === 'validado' ? 'Validado por Finanzas' : snapshot.financialValidationStatus === 'sin_datos' ? 'Sin datos publicados' : 'Pendiente de validación financiera';
@@ -105,7 +105,15 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
           <div><span className="siio-secondary">Deducciones</span><strong>{fmtSiioMoney(row.total_deductions)}</strong></div>
           <div><span className="siio-secondary">Neto</span><strong>{fmtSiioMoney(row.net_total)}</strong></div>
           <div><span className="siio-secondary">Control</span>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</div>
-        </article>)}</div>
+        </article>)}
+        <article className="siio-payroll-card siio-payroll-total-card">
+          <div><span className="siio-secondary">Personas</span><strong>{payrollTotals.people}</strong></div>
+          <div><span className="siio-secondary">Devengado</span><strong>{fmtSiioMoney(payrollTotals.accrued)}</strong></div>
+          <div><span className="siio-secondary">Deducciones</span><strong>{fmtSiioMoney(payrollTotals.deductions)}</strong></div>
+          <div><span className="siio-secondary">Neto</span><strong>{fmtSiioMoney(payrollTotals.net)}</strong></div>
+          <div><span className="siio-secondary">Control</span><strong>Control agregado</strong></div>
+        </article>
+        </div>
       </>}
     </Panel>
 

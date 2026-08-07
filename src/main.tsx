@@ -205,6 +205,7 @@ function parseRoute(): Route {
   const [path] = hash.split('?');
   const [page, id] = path.split('/');
   if (!page) return { page: 'dashboard' };
+  if (page === 'home') return { page: 'home' };
   if (page === 'opportunities') return { page: 'opportunities' };
   if (page === 'tenders') return { page: 'tenders' };
   if (page === 'detail') return id ? { page: 'detail', id: decodeURIComponent(id) } : { page: 'invalid' };

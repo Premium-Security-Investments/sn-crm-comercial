@@ -45,12 +45,25 @@ for (const agent of SIIO_AGENT_CATALOG) {
   assert.ok(agent.development_status, `${agent.id}: missing development_status`);
 }
 
+const agt001 = SIIO_AGENT_CATALOG.find(agent => agent.id === 'AGT-001');
+assert.match(agt001.next_gate, /important/i, 'AGT-001 next gate must name closing the Important findings, not a stale generic gate');
+assert.match(agt001.next_gate, /QA/, 'AGT-001 next gate must require repeating QA');
+assert.match(agt001.next_gate, /roles/i, 'AGT-001 next gate must require QA authenticated by roles');
+
 const agt002 = SIIO_AGENT_CATALOG.find(agent => agent.id === 'AGT-002');
 assert.match(agt002.production_capability, /drain|timer/i, 'AGT-002 productive capability must disclose that drain/timer remain off');
 assert.match(agt002.development_status, /v3/i, 'AGT-002 development status must name the v3 contract still outside production');
 assert.doesNotMatch(agt002.production_capability, /v3/i, 'AGT-002 productive capability must never claim v3 as productive');
 assert.match(agt002.development_status, /no desplegado|fuera de producci[oó]n/i, 'AGT-002 development status must explicitly disclose v3 is not in production');
 assert.match(agt002.development_status, /not ready/i, 'AGT-002 development status must explicitly disclose v3 is not ready for a real canary');
+
+assert.match(agt002.current_capability, /E5\/E6/, 'AGT-002 current capability must name the productive E5/E6 capacity, not a generic feature list');
+assert.match(agt002.current_capability, /drain|timer/i, 'AGT-002 current capability must disclose that drain/timer remain off for the productive branch');
+assert.doesNotMatch(agt002.current_capability, /v3/i, 'AGT-002 current capability must never claim the v3 branch as productive');
+assert.match(agt002.next_gate, /v3/i, 'AGT-002 next gate must name the v3 branch gate, not just a legacy RUP closure');
+assert.match(agt002.next_gate, /not ready/i, 'AGT-002 next gate must disclose the v3 canary is NOT READY');
+assert.match(agt002.next_gate, /gate humano|canary/i, 'AGT-002 next gate must name the pending human gate/canary for v3');
+assert.doesNotMatch(agt002.next_gate, /^Cerrar prueba RUP heredada/, 'AGT-002 next gate must not reduce to only closing the legacy RUP test');
 
 for (const marker of ['Capacidad productiva', 'Desarrollo / no desplegado', 'Corte', 'Fuente']) {
   assert.match(agentsView, new RegExp(marker), `agents view must render ${marker}`);
@@ -59,5 +72,7 @@ assert.match(agentsView, /state_as_of/, 'agents view must render the cutoff fiel
 assert.match(agentsView, /state_source/, 'agents view must render the source field');
 assert.match(agentsView, /production_capability/, 'agents view must render the productive capability field');
 assert.match(agentsView, /development_status/, 'agents view must render the development status field');
+assert.match(agentsView, /className="siio-eyebrow"/, 'agents view must use the locally-contrasted siio-eyebrow token');
+assert.doesNotMatch(agentsView, /className="eyebrow"/, 'agents view must not render the low-contrast global eyebrow on a light SIIO surface');
 
 console.log('SIIO governed agent catalog contract OK');

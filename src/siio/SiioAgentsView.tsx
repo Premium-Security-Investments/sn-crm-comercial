@@ -51,7 +51,7 @@ export function SiioAgentsView({ routeState, onNavigate }: { payload: SiioBootst
     <Panel title="Catálogo institucional gobernado">
       {!visibleAgents.length ? <EmptyState title="Sin agentes para los filtros seleccionados" text="No hay agentes institucionales que coincidan con el estado y responsable seleccionados." /> : <div className="siio-insight-list">
         {visibleAgents.map(agent => <article className="siio-insight" key={agent.id}>
-          <header><div><span className="eyebrow">Agente funcional de SIIO</span><h3>{agent.name}</h3></div><Badge tone={agent.status === 'piloto' ? 'amber' : agent.status === 'operativo_parcial' ? 'green' : 'purple'}>{STATUS_LABELS[agent.status]}</Badge></header>
+          <header><div><span className="siio-eyebrow">Agente funcional de SIIO</span><h3>{agent.name}</h3></div><Badge tone={agent.status === 'piloto' ? 'amber' : agent.status === 'operativo_parcial' ? 'green' : 'purple'}>{STATUS_LABELS[agent.status]}</Badge></header>
           <div className="siio-insight-detail">
             <div><strong>Propósito</strong><span>{agent.purpose}</span></div>
             <div><strong>Responsable institucional</strong><span>{agent.owner_role}</span></div>

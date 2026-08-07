@@ -19,14 +19,22 @@ assert.ok(contrast('#1e40af', '#dbeafe') >= 4.5, 'the SIIO eyebrow token must me
 assert.ok(contrast('#475569', '#ffffff') >= 4.5, 'the SIIO secondary text token must meet WCAG AA for normal text');
 
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
-assert.match(styles, /\.siio-eyebrow\{color:#1e40af;background:#dbeafe\}/, 'the SIIO eyebrow token must be defined locally with an AA-compliant color pair');
+const eyebrowRule = styles.match(/\.siio-eyebrow\{[^}]*\}/)?.[0] || '';
+assert.match(eyebrowRule, /color:#1e40af/, 'the SIIO eyebrow token must keep its AA-compliant text color');
+assert.match(eyebrowRule, /background:#dbeafe/, 'the SIIO eyebrow token must keep its AA-compliant background');
+assert.match(eyebrowRule, /display:inline-flex/, 'the SIIO eyebrow token must be a self-contained visual token, not just a color pair');
+assert.match(eyebrowRule, /padding:/, 'the SIIO eyebrow token must define its own padding');
+assert.match(eyebrowRule, /border-radius:/, 'the SIIO eyebrow token must define its own shape');
+assert.match(eyebrowRule, /font-size:/, 'the SIIO eyebrow token must define its own type scale');
+assert.match(eyebrowRule, /font-weight:/, 'the SIIO eyebrow token must define its own weight');
 assert.match(styles, /\.siio-secondary\{color:#475569\}/, 'the SIIO secondary text token must be defined locally with an AA-compliant color');
 
 const executive = readFileSync(new URL('../src/siio/SiioExecutiveView.tsx', import.meta.url), 'utf8');
 const tracking = readFileSync(new URL('../src/siio/SiioManagementTrackingView.tsx', import.meta.url), 'utf8');
 const intelligence = readFileSync(new URL('../src/siio/SiioSourcesIntelligenceView.tsx', import.meta.url), 'utf8');
+const agentsView = readFileSync(new URL('../src/siio/SiioAgentsView.tsx', import.meta.url), 'utf8');
 
-for (const [name, source] of [['SiioExecutiveView', executive], ['SiioSourcesIntelligenceView', intelligence]]) {
+for (const [name, source] of [['SiioExecutiveView', executive], ['SiioSourcesIntelligenceView', intelligence], ['SiioAgentsView', agentsView]]) {
   assert.match(source, /siio-eyebrow/, `${name} must use the locally-contrasted siio-eyebrow token`);
   assert.doesNotMatch(source, /className="eyebrow"/, `${name} must not render the low-contrast global eyebrow on a light SIIO surface`);
 }

@@ -67,9 +67,24 @@ export function isNegatedBlocker(text?: string | null): boolean {
   return normalized.length > 0 && NEGATED_BLOCKER_PREFIXES.some(prefix => normalized.startsWith(prefix));
 }
 
-function activityStateFor(status: string | null | undefined, hasTimestamp: boolean): SiioTrackingItem['activityState'] {
+type ActivityTimestamps = { dueDate?: string | null; updatedAt?: string | null; createdAt?: string | null };
+
+function isMaterialTimestampChange(updatedAt: string, createdAt: string): boolean {
+  const updated = new Date(updatedAt);
+  const created = new Date(createdAt);
+  if (Number.isNaN(updated.getTime()) || Number.isNaN(created.getTime())) return updatedAt !== createdAt;
+  return updated.getTime() !== created.getTime();
+}
+
+function activityStateFor(status: string | null | undefined, timestamps: ActivityTimestamps): SiioTrackingItem['activityState'] {
   if (isTerminalSiioStatus(status)) return 'history';
-  return hasTimestamp ? 'active' : 'unconfirmed';
+  if (timestamps.dueDate) return 'active';
+  if (timestamps.updatedAt) {
+    if (!timestamps.createdAt) return 'active';
+    if (isMaterialTimestampChange(timestamps.updatedAt, timestamps.createdAt)) return 'active';
+    return 'unconfirmed';
+  }
+  return 'unconfirmed';
 }
 
 function trackingKind(value: string | null | undefined): Exclude<SiioTrackingItem['kind'], 'todos'> {
@@ -111,7 +126,6 @@ export function deriveTrackingItems(records: SiioRecord[], decisions: SiioDecisi
             : trackingKind(record.record_type);
       if (kind === 'bloqueos' && isNegatedBlocker(record.blockers)) return null;
       const status = record.status || 'Pendiente';
-      const hasTimestamp = Boolean(record.due_date || record.updated_at || record.created_at);
       return {
         source: 'record',
         item: {
@@ -125,14 +139,13 @@ export function deriveTrackingItems(records: SiioRecord[], decisions: SiioDecisi
           frontId: record.front_id || null,
           sourceIds: record.source_ids || [],
           dueDate: record.due_date || null,
-          activityState: activityStateFor(status, hasTimestamp),
+          activityState: activityStateFor(status, { dueDate: record.due_date, updatedAt: record.updated_at, createdAt: record.created_at }),
         },
       };
     })
     .filter((candidate): candidate is TrackingCandidate => candidate !== null);
   const decisionCandidates = decisions.map((decision): TrackingCandidate => {
     const status = decision.status || 'Pendiente';
-    const hasTimestamp = Boolean(decision.due_date || decision.updated_at || decision.created_at);
     return {
       source: 'decision',
       item: {
@@ -146,7 +159,7 @@ export function deriveTrackingItems(records: SiioRecord[], decisions: SiioDecisi
         frontId: null,
         sourceIds: [],
         dueDate: decision.due_date || null,
-        activityState: activityStateFor(status, hasTimestamp),
+        activityState: activityStateFor(status, { dueDate: decision.due_date, updatedAt: decision.updated_at, createdAt: decision.created_at }),
       },
     };
   });
@@ -161,7 +174,7 @@ export function deriveTrackingItems(records: SiioRecord[], decisions: SiioDecisi
 export function filterTrackingItems(items: SiioTrackingItem[], filters: SiioRouteFiltersByView['seguimiento']): SiioTrackingItem[] {
   return items.filter(item => (
     (filters.kind === 'todos' || item.kind === filters.kind)
-    && (filters.status ? normalizedSubject(item.status) === normalizedSubject(filters.status) : item.activityState !== 'history')
+    && (filters.status ? normalizedSubject(item.status) === normalizedSubject(filters.status) : item.activityState === 'active')
     && (!filters.semaphore || normalizedSubject(item.semaphore) === normalizedSubject(filters.semaphore))
     && (!filters.owner || normalizedSubject(item.owner) === normalizedSubject(filters.owner))
   ));
@@ -185,6 +198,7 @@ export function sourceFreshness(source: SiioSource, today = new Date()): 'vigent
   if (!source.next_review_at) return 'sin_fecha';
   const reviewDate = new Date(source.next_review_at);
   if (Number.isNaN(reviewDate.getTime())) return 'sin_fecha';
+  reviewDate.setHours(0, 0, 0, 0);
   const startOfToday = new Date(today);
   startOfToday.setHours(0, 0, 0, 0);
   if (reviewDate < startOfToday) return 'vencida';

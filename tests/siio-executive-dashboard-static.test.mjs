@@ -44,6 +44,17 @@ assert.match(styles, /@media\(max-width:760px\)[\s\S]*\.siio-payroll-table\{disp
 assert.match(styles, /\.siio-payroll-cards\{display:none\}/, 'Payroll cards must be hidden by default on desktop');
 assert.match(styles, /@media\(max-width:760px\)[\s\S]*\.siio-payroll-cards\{display:grid[^}]*\}/, 'Mobile must show the payroll cards');
 
+assert.match(executive, /const count = \(kind: SiioTrackingKind\) => trackingItems\.filter\(item => item\.kind === kind && item\.activityState === 'active'\)\.length;/, 'Management-attention counters must count only active items, never unconfirmed or historical ones');
+
+assert.match(executive, /siio-payroll-total-card/, 'Mobile payroll cards must retain the hidden desktop total via a dedicated total card');
+const totalCard = executive.match(/<article className="siio-payroll-card siio-payroll-total-card">[\s\S]*?<\/article>/)?.[0] || '';
+assert.match(totalCard, /payrollTotals\.people/, 'The mobile payroll total card must show aggregated people');
+assert.match(totalCard, /payrollTotals\.accrued/, 'The mobile payroll total card must show aggregated accrued pay');
+assert.match(totalCard, /payrollTotals\.deductions/, 'The mobile payroll total card must show aggregated deductions');
+assert.match(totalCard, /payrollTotals\.net/, 'The mobile payroll total card must show aggregated net pay');
+assert.match(totalCard, />Control</, 'The mobile payroll total card must show an aggregated control indicator');
+assert.ok(executive.indexOf('siio-payroll-total-card') > executive.indexOf('siio-payroll-cards'), 'The total card must live inside the mobile payroll cards container');
+
 assert.match(dashboard, /Preparar informe de Junta/, 'SIIO header must expose the governed Board action');
 assert.match(dashboard, /useState\(false\)/, 'The Board action must have local open state');
 assert.match(dashboard, /setBoardDraftOpen\(true\)/, 'The Board action trigger must open the local draft');
