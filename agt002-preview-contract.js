@@ -1,6 +1,10 @@
 import { AGT002_REQUIREMENT_EVIDENCE_STATUSES } from './agt002-requirement-evidence.js';
+import { validateAgt002IntegralAnalysisV3 } from './agt002-integral-analysis-v3.js';
 
 export const AGT002_PREVIEW_SCHEMA_VERSION = '2.0-preview.1';
+// design section 4.2: the governed v3 envelope's schema_version (distinct from, and never
+// interchangeable with, the v2 preview schema version above).
+export const AGT002_INTEGRAL_ENVELOPE_SCHEMA_VERSION = '3.0.0';
 export const AGT002_PREVIEW_RECOMMENDATIONS = new Set(['advance', 'advance_conditionally', 'pause', 'do_not_advance']);
 
 const MODEL_OUTPUT_KEYS = ['recommendation', 'summary', 'strengths', 'weaknesses', 'blockers', 'questions', 'unverified', 'next_action', 'human_review_required'];
@@ -300,6 +304,55 @@ export function validateAgt002PreviewModelOutput(value, {
     }
   }
   return value;
+}
+
+// ---------------------------------------------------------------------------
+// Task 5 (v3): the model's v3 turn returns ONLY `{ integral_analysis }` — no run
+// identity, snapshot/context/corpus versions, coverage, usage, or any v2 legacy key is
+// ever offered as a slot the model could fill in. The JSON Schema below is the model-
+// facing structural constraint (mirrors the v2 pattern above); the deep semantic
+// invariants (evidence-or-abstention, five axes, ordering, allowlists) are enforced
+// server-side by `validateAgt002IntegralAnalysisV3`, never by JSON Schema alone.
+// ---------------------------------------------------------------------------
+
+const INTEGRAL_MODEL_OUTPUT_KEYS = ['integral_analysis'];
+
+/** Closed JSON Schema handed to the model's turn/start for the v3 contract (Task 5). */
+export function buildAgt002IntegralAnalysisV3OutputJsonSchema() {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: [...INTEGRAL_MODEL_OUTPUT_KEYS],
+    properties: {
+      // Deep shape/enum/invariant enforcement happens server-side in
+      // validateAgt002IntegralAnalysisV3, not in this wire-level schema.
+      integral_analysis: { type: 'object' },
+    },
+  };
+}
+
+/**
+ * Validates a v3 model turn: rejects anything other than the single `integral_analysis`
+ * key, then delegates the payload itself to the pure v3 validator with the caller-
+ * supplied governed `validationContext` (manifest/allowlists/corpus). This function owns
+ * only the "nothing besides integral_analysis was smuggled onto the turn" boundary.
+ */
+export function validateAgt002PreviewModelOutputV3(value, validationContext) {
+  if (!isRecord(value) || !exactKeys(value, INTEGRAL_MODEL_OUTPUT_KEYS)) {
+    throw new Error('La salida de AGT-002 Preview v3 debe exponer únicamente la clave integral_analysis.');
+  }
+  return validateAgt002IntegralAnalysisV3(value.integral_analysis, validationContext);
+}
+
+/**
+ * Explicit version-keyed dispatch — never duck typing. `version` MUST be the
+ * server-configured contract version (from `AGT002_INTEGRAL_CONTRACT_V3`), never
+ * inferred from the shape of `value` itself; an unrecognized version fails closed.
+ */
+export function validateAgt002PreviewModelOutputByVersion(version, value, options = {}) {
+  if (version === 'v2') return validateAgt002PreviewModelOutput(value, options);
+  if (version === 'v3') return validateAgt002PreviewModelOutputV3(value, options.v3ValidationContext);
+  throw new Error(`Versión de contrato AGT-002 Preview desconocida o no soportada: ${String(version)}.`);
 }
 
 /**

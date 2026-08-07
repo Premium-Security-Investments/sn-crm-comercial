@@ -4,8 +4,12 @@ import { readFileSync } from 'node:fs';
 import {
   validateAgt002TenderAnalysisEnvelope,
   validateAgt002TenderAnalysisRequest,
+  validateAgt002TenderAnalysisEnvelopeV3,
+  adaptAgt002TenderAnalysisV3,
 } from '../agt002-tender-adapter.js';
 import { buildSyntheticAgt002TenderAnalysis } from './fixtures/agt002-synthetic-responder.mjs';
+import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../agt002-integral-analysis-v3.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
 
 const v1Files = ['manifest.json', 'analysis.request.schema.json', 'analysis.response.schema.json'];
 const v1Hash = createHash('sha256').update(v1Files.map(name => readFileSync(new URL(`../contracts/agents/AGT-002/v1/${name}`, import.meta.url))).join('\n')).digest('hex');
@@ -130,5 +134,87 @@ function testStillRejectsUnknownSchemaVersion() {
 
 testAcceptsPreviewSchemaVersion();
 testStillRejectsUnknownSchemaVersion();
+
+// ---------------------------------------------------------------------------
+// Task 5: v3 envelope validation + adapter, rejecting v2/v3 hybrids in either direction.
+// ---------------------------------------------------------------------------
+
+function buildV3IntegralAnalysisValidationContext() {
+  return {
+    requirementManifestVersion: 'agt002-deep-analysis-v1',
+    requirementManifest: [{ requirement_id: 'REQ-1', category: 'discard' }],
+    companyEvidenceManifestVersion: 'agt002-company-evidence-classes-v1',
+    companyEvidenceClassIds: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
+    legalCorpusVersionId: null,
+    allowlist: { tender_document: ['TD-1'], company_evidence: [], legal_corpus: [], human_evidence: [], objective_validation: [] },
+    materialOmissionsObserved: false,
+  };
+}
+
+function buildV3Envelope() {
+  return {
+    schema_version: '3.0.0',
+    agent_id: 'AGT-002',
+    run_id: '44444444-4444-4444-8444-444444444444',
+    policy_version: 'agt002-integral-v3-policy-1',
+    snapshot_id: snapshot.snapshot_id,
+    context_version_id: null,
+    status: 'completed',
+    method: 'agent_ai',
+    integral_analysis: {
+      contract_version: AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION,
+      coverage: {
+        manifest_version: 'agt002-deep-analysis-v1',
+        expected_requirement_ids: ['REQ-1'],
+        analyzed_requirement_ids: ['REQ-1'],
+        material_omissions: false,
+        omission_reasons: [],
+        company_evidence_manifest_version: 'agt002-company-evidence-classes-v1',
+        company_evidence_class_ids: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
+        legal_corpus_version_id: null,
+      },
+      analysis_units: [{
+        unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: 'REQ-1', category: 'discard', sequence: 1,
+        title: 'Requisito sintético', assessment_mode: 'assessed',
+        conclusion: { status: 'supported_with_evidence', summary: 'Sin causal evidenciada.', confidence: 'high' },
+        blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
+        evidence_state: { presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable', compliance: 'supported_pending_human_review' },
+        evidence_refs: [{ ref: 'TD-1', source_type: 'tender_document', purpose: 'requirement_basis' }],
+        missing_evidence: [],
+        commercial_impact: { level: 'low', summary: 'Sin impacto.', dimension: 'eligibility' },
+        legal_assessment: { status: 'not_applicable', basis_refs: [], summary: 'No aplica.', human_legal_review_required: false },
+        actions: [],
+        milestone: { status: 'not_identified', type: 'none', at: null, source_ref: null, summary: 'Sin hito.' },
+        escalation: { required: false, level: 'none', reason: 'Sin condición crítica.' },
+        closure: { status: 'human_confirmation_required', condition: 'Persona confirma.', evidence_required: ['tender_document'] },
+        human_validation: { required: true, status: 'pending', reason: 'Confirmar.' },
+      }],
+    },
+    evidence_coverage: { material_omissions: false, omitted_count: 0 },
+    legal_corpus_version_id: null,
+    human_review_required: true,
+    usage: { provider: 'synthetic', model: 'synthetic-v3', input_tokens: 1, output_tokens: 1, cost_usd: 0 },
+  };
+}
+
+{
+  const ctx = buildV3IntegralAnalysisValidationContext();
+  const v3Envelope = buildV3Envelope();
+  const validated = validateAgt002TenderAnalysisEnvelopeV3(v3Envelope, ctx);
+  assert.equal(validated.schema_version, '3.0.0');
+
+  // v2/v3 reject each other's shape (no hybrid accepted by either validator).
+  assert.throws(() => validateAgt002TenderAnalysisEnvelope(v3Envelope), /cerrado|esquema/i);
+  assert.throws(() => validateAgt002TenderAnalysisEnvelopeV3(envelope, ctx), /cerrado|esquema/i);
+  assert.throws(() => validateAgt002TenderAnalysisEnvelopeV3({ ...v3Envelope, schema_version: '2.0-preview.1' }, ctx), /esquema/i);
+
+  // The v3 adapter derives the v2-compatible tender-domain result from the governed envelope.
+  const adapted = adaptAgt002TenderAnalysisV3(v3Envelope, ctx);
+  assert.equal(adapted.producer, 'AGT-002');
+  assert.equal(adapted.run_id, v3Envelope.run_id);
+  assert.equal(adapted.human_review_required, true);
+  assert.ok(Array.isArray(adapted.strengths));
+  assert.equal(adapted.recommendation, 'advance');
+}
 
 console.log('AGT-002 tender analysis consumer contract passed');

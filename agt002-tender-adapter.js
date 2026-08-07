@@ -1,4 +1,6 @@
 import { validateTenderAnalysisResult } from './tender-analysis-domain.js';
+import { validateAgt002IntegralAnalysisV3 } from './agt002-integral-analysis-v3.js';
+import { projectAgt002IntegralV3ToV2 } from './agt002-v3-compatibility.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
@@ -115,6 +117,74 @@ export function validateAgt002TenderAnalysisEnvelope(value) {
 export function adaptAgt002TenderAnalysis(envelope) {
   const validated = validateAgt002TenderAnalysisEnvelope(envelope);
   return validateTenderAnalysisResult({ ...validated, producer: 'AGT-002' });
+}
+
+// ---------------------------------------------------------------------------
+// Task 5 (v3): a distinct, closed envelope shape (design section 4.2) — schema_version
+// "3.0.0", carrying only `integral_analysis` plus governed run/context/coverage/corpus
+// metadata. It intentionally does NOT accept the v2 envelope's keys (recommendation,
+// strengths, ...) and the v2 validator above does not accept these v3 keys either: the
+// two shapes reject each other's payload by construction, never a hybrid.
+// ---------------------------------------------------------------------------
+
+const ENVELOPE_KEYS_V3 = [
+  'schema_version', 'agent_id', 'run_id', 'policy_version', 'snapshot_id', 'context_version_id',
+  'status', 'method', 'integral_analysis', 'evidence_coverage', 'legal_corpus_version_id',
+  'human_review_required', 'usage',
+];
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Validates the closed AGT-002 v3 envelope. `integralValidationContext` is the governed
+ * ground truth (ordered requirement manifest, company-evidence catalog, allowlists,
+ * corpus version) the engine already assembled — never read from the payload.
+ */
+export function validateAgt002TenderAnalysisEnvelopeV3(value, integralValidationContext) {
+  if (!exactKeys(value, ENVELOPE_KEYS_V3)) throw new Error('El envelope AGT-002 v3 debe ser cerrado.');
+  if (value.schema_version !== '3.0.0') throw new Error('La versión de esquema AGT-002 v3 no es compatible.');
+  if (value.agent_id !== 'AGT-002') throw new Error('El productor debe ser AGT-002.');
+  if (!isUuid(value.run_id) || !isUuid(value.snapshot_id)) throw new Error('Run y snapshot deben ser UUID.');
+  if (value.context_version_id !== null && !isUuid(value.context_version_id)) {
+    throw new Error('La versión de contexto AGT-002 v3 debe ser UUID o null.');
+  }
+  if (!nonEmptyString(value.policy_version)) throw new Error('La política debe ser texto.');
+  if (value.status !== 'completed' || value.method !== 'agent_ai') throw new Error('El envelope AGT-002 v3 no está completado.');
+  validateAgt002IntegralAnalysisV3(value.integral_analysis, integralValidationContext);
+  if (!isPlainObject(value.evidence_coverage)) throw new Error('evidence_coverage AGT-002 v3 debe ser un objeto.');
+  if (value.legal_corpus_version_id !== null && !isUuid(value.legal_corpus_version_id)) {
+    throw new Error('legal_corpus_version_id AGT-002 v3 debe ser UUID o null.');
+  }
+  if (value.human_review_required !== true) throw new Error('La revisión humana es obligatoria.');
+  if (!exactKeys(value.usage, USAGE_KEYS)
+    || !nonEmptyString(value.usage.provider)
+    || !nonEmptyString(value.usage.model)
+    || !Number.isInteger(value.usage.input_tokens) || value.usage.input_tokens < 0
+    || !Number.isInteger(value.usage.output_tokens) || value.usage.output_tokens < 0
+    || typeof value.usage.cost_usd !== 'number' || !Number.isFinite(value.usage.cost_usd) || value.usage.cost_usd < 0) {
+    throw new Error('El uso AGT-002 v3 no es válido.');
+  }
+  return value;
+}
+
+/**
+ * Maps the closed v3 envelope into the shared tender domain result: validates the
+ * envelope, derives the deterministic v2 projection from its `integral_analysis`, and
+ * attaches only the governed identity fields the projection itself never owns.
+ */
+export function adaptAgt002TenderAnalysisV3(envelope, integralValidationContext) {
+  const validated = validateAgt002TenderAnalysisEnvelopeV3(envelope, integralValidationContext);
+  const projection = projectAgt002IntegralV3ToV2(validated.integral_analysis);
+  return validateTenderAnalysisResult({
+    ...projection,
+    run_id: validated.run_id,
+    snapshot_id: validated.snapshot_id,
+    agent_id: validated.agent_id,
+    method: validated.method,
+    producer: 'AGT-002',
+  });
 }
 
 const CONTINUITY_KEYS = [

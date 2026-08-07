@@ -5,16 +5,22 @@ import {
   AGT002_PREVIEW_OUTPUT_JSON_SCHEMA,
   AGT002_PREVIEW_RECOMMENDATIONS,
   AGT002_PREVIEW_SCHEMA_VERSION,
+  AGT002_INTEGRAL_ENVELOPE_SCHEMA_VERSION,
   buildAgt002PreviewOutputJsonSchema,
+  buildAgt002IntegralAnalysisV3OutputJsonSchema,
   collectAgt002PreviewEvidenceIds,
   collectAgt002PreviewLegalCitationIds,
   completeAgt002PreviewLegalAbstention,
   validateAgt002PreviewModelOutput,
+  validateAgt002PreviewModelOutputV3,
+  validateAgt002PreviewModelOutputByVersion,
 } from '../agt002-preview-contract.js';
 import { buildAgt002PreviewInput } from '../agt002-preview-input.js';
 import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { retrieveAgt002LegalEvidence } from '../agt002-legal-retrieval.js';
+import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../agt002-integral-analysis-v3.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
 
 assert.equal(AGT002_PREVIEW_SCHEMA_VERSION, '2.0-preview.1');
 assert.deepEqual([...AGT002_PREVIEW_RECOMMENDATIONS].sort(), ['advance', 'advance_conditionally', 'do_not_advance', 'pause']);
@@ -693,6 +699,109 @@ let legalEvidenceIds;
     assert.equal(completed.legal_findings[0], obligationFinding);
     assert.equal(completed.legal_findings[1].classification, 'human_legal_review');
   }
+}
+
+// ---------------------------------------------------------------------------
+// Task 5: v3 provider output schema + explicit version-dispatched validation.
+// ---------------------------------------------------------------------------
+
+function buildV3ValidationContext() {
+  return {
+    requirementManifestVersion: 'agt002-deep-analysis-v1',
+    requirementManifest: [{ requirement_id: 'REQ-1', category: 'discard' }],
+    companyEvidenceManifestVersion: 'agt002-company-evidence-classes-v1',
+    companyEvidenceClassIds: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
+    legalCorpusVersionId: null,
+    allowlist: {
+      tender_document: ['TD-1'], company_evidence: [], legal_corpus: [], human_evidence: [], objective_validation: [],
+    },
+    materialOmissionsObserved: false,
+  };
+}
+
+function buildMinimalV3IntegralAnalysis() {
+  return {
+    contract_version: AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION,
+    coverage: {
+      manifest_version: 'agt002-deep-analysis-v1',
+      expected_requirement_ids: ['REQ-1'],
+      analyzed_requirement_ids: ['REQ-1'],
+      material_omissions: false,
+      omission_reasons: [],
+      company_evidence_manifest_version: 'agt002-company-evidence-classes-v1',
+      company_evidence_class_ids: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
+      legal_corpus_version_id: null,
+    },
+    analysis_units: [{
+      unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: 'REQ-1', category: 'discard', sequence: 1,
+      title: 'Requisito sintético', assessment_mode: 'assessed',
+      conclusion: { status: 'supported_with_evidence', summary: 'Sin causal evidenciada.', confidence: 'high' },
+      blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
+      evidence_state: { presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable', compliance: 'supported_pending_human_review' },
+      evidence_refs: [{ ref: 'TD-1', source_type: 'tender_document', purpose: 'requirement_basis' }],
+      missing_evidence: [],
+      commercial_impact: { level: 'low', summary: 'Sin impacto.', dimension: 'eligibility' },
+      legal_assessment: { status: 'not_applicable', basis_refs: [], summary: 'No aplica.', human_legal_review_required: false },
+      actions: [],
+      milestone: { status: 'not_identified', type: 'none', at: null, source_ref: null, summary: 'Sin hito.' },
+      escalation: { required: false, level: 'none', reason: 'Sin condición crítica.' },
+      closure: { status: 'human_confirmation_required', condition: 'Persona confirma.', evidence_required: ['tender_document'] },
+      human_validation: { required: true, status: 'pending', reason: 'Confirmar.' },
+    }],
+  };
+}
+
+// The v3 output schema handed to the model exposes ONLY `integral_analysis` — no
+// run/snapshot/coverage/usage/legacy v2 keys are ever offered as a slot the model could
+// fill in.
+{
+  assert.equal(AGT002_INTEGRAL_ENVELOPE_SCHEMA_VERSION, '3.0.0');
+  const schema = buildAgt002IntegralAnalysisV3OutputJsonSchema();
+  assert.equal(schema.type, 'object');
+  assert.equal(schema.additionalProperties, false);
+  assert.deepEqual(schema.required, ['integral_analysis']);
+  assert.deepEqual(Object.keys(schema.properties), ['integral_analysis']);
+}
+
+// The runtime v3 validator accepts a well-formed turn and rejects any attempt to smuggle
+// governed fields (run identity, coverage, usage, legacy v2 keys) onto the model turn.
+{
+  const ctx = buildV3ValidationContext();
+  const value = { integral_analysis: buildMinimalV3IntegralAnalysis() };
+  const result = validateAgt002PreviewModelOutputV3(value, ctx);
+  assert.equal(result.contract_version, AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION);
+
+  for (const forged of [
+    { integral_analysis: buildMinimalV3IntegralAnalysis(), run_id: '11111111-1111-4111-8111-111111111111' },
+    { integral_analysis: buildMinimalV3IntegralAnalysis(), usage: { provider: 'x' } },
+    { integral_analysis: buildMinimalV3IntegralAnalysis(), evidence_coverage: {} },
+    { integral_analysis: buildMinimalV3IntegralAnalysis(), recommendation: 'advance' },
+    { recommendation: 'advance', summary: 'x', strengths: [], weaknesses: [], blockers: [], questions: [], unverified: [], next_action: 'x', human_review_required: true },
+  ]) {
+    assert.throws(() => validateAgt002PreviewModelOutputV3(forged, ctx), /integral_analysis/i);
+  }
+}
+
+// Explicit version dispatch, never duck typing: the SERVER-configured version selects the
+// validator; the payload's own shape never decides which path runs.
+{
+  const ctx = buildV3ValidationContext();
+  const v3Value = { integral_analysis: buildMinimalV3IntegralAnalysis() };
+  const dispatched = validateAgt002PreviewModelOutputByVersion('v3', v3Value, { v3ValidationContext: ctx });
+  assert.equal(dispatched.contract_version, AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION);
+
+  // v2 dispatch remains byte-for-byte behavior compatible with calling the v2 validator directly.
+  const legacyValue = {
+    recommendation: 'advance', summary: 'Resumen', strengths: [], weaknesses: [], blockers: [], questions: [], unverified: [],
+    next_action: 'Siguiente acción', human_review_required: true,
+  };
+  const directResult = validateAgt002PreviewModelOutput(legacyValue, {});
+  const dispatchedV2Result = validateAgt002PreviewModelOutputByVersion('v2', legacyValue, {});
+  assert.deepEqual(dispatchedV2Result, directResult);
+
+  // Unknown/unsupported version fails closed rather than defaulting to either validator.
+  assert.throws(() => validateAgt002PreviewModelOutputByVersion('v1', legacyValue, {}), /versión|version/i);
+  assert.throws(() => validateAgt002PreviewModelOutputByVersion(undefined, legacyValue, {}), /versión|version/i);
 }
 
 console.log('AGT-002 Preview strict output contract passed');
