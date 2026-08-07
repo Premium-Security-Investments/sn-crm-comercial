@@ -502,4 +502,25 @@ assert.throws(
   /procedencia|resuelt/i,
 );
 
+// ---------------------------------------------------------------------------
+// Task 6: the exact 17-class company-evidence manifest is carried verbatim into the
+// contextV2 input when supplied, and is simply absent (never fabricated) when it is not
+// — this is additive-only and must never affect the v1/legacy-dossier path.
+// ---------------------------------------------------------------------------
+{
+  const companyEvidenceClasses = {
+    classes: [{ entry_id: 'rup', evidence_type: 'RUP', presence_status: 'verified', review_status: 'approved', validity_status: 'current', applicability_status: 'applicable', compliance_status: 'pending_review', source: { type: 'database', reference: 'psi_agt002_company_evidence_registry:rup', observed_at: null }, last_reconciled_at: null }],
+    coverage: { available: ['rup'], selected: [], omitted: [], expired: [], inaccessible: [], pending_review: [] },
+  };
+  const withClasses = buildAgt002PreviewInput({
+    documents: [], deepAnalysis: {}, snapshotId: 'snap-cec-1', contextV2: true, contextV2Sections, companyEvidenceClasses,
+  });
+  assert.deepEqual(withClasses.company_evidence_classes, companyEvidenceClasses);
+
+  const withoutClasses = buildAgt002PreviewInput({
+    documents: [], deepAnalysis: {}, snapshotId: 'snap-cec-2', contextV2: true, contextV2Sections,
+  });
+  assert.equal(Object.hasOwn(withoutClasses, 'company_evidence_classes'), false);
+}
+
 console.log('AGT-002 preview input minimization and redaction passed');

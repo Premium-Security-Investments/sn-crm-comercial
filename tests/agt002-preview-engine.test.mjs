@@ -6,6 +6,7 @@ import { AGT002_LEGAL_HUMAN_REVIEW_STATEMENT, AGT002_PREVIEW_OUTPUT_JSON_SCHEMA 
 import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { retrieveAgt002LegalEvidence } from '../agt002-legal-retrieval.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
 
 const context = {
   opportunity: { id: 'opp-1', company_name: 'Entidad de prueba', title: 'Vigilancia' },
@@ -630,6 +631,157 @@ assert.throws(
     ]);
     assert.equal(fields.validation_code, 'legal_abstention_text_mismatch');
   }
+}
+
+// ---------------------------------------------------------------------------
+// Task 6: engine assembles the governed v3 envelope behind AGT002_INTEGRAL_CONTRACT_V3.
+// ---------------------------------------------------------------------------
+{
+  const v3ContextV2Sections = {
+    ...buildAgt002OpportunityContextV2({
+      opportunity: { id: 'opp-1', updated_at: '2026-08-01T10:00:00.000Z' },
+      tender: { id: 'tender-1', title: 'Vigilancia', entity: 'Entidad', updated_at: '2026-08-01T10:00:00.000Z' },
+    }),
+    company_dossier: buildAgt002CompanyDossier({
+      profile: { legal_name: 'Seguridad Nacional Ltda.', updated_at: '2026-08-01T10:00:00.000Z' },
+      documents: [],
+    }),
+  };
+  const v3RetrievalDocuments = [{
+    document_id: 'doc-01', document_version_id: 'ver-01', opportunity_id: 'opp-1', snapshot_id: null,
+    document_type: 'pliego', name: 'Pliego', version: 1, content_hash: 'a'.repeat(64), current: true,
+    extracted_text: 'Requiere póliza vigente de cumplimiento.',
+  }];
+  const v3RetrievalDeepAnalysis = {
+    matrix: {
+      legal: [{
+        id: 'req-poliza', front: 'legal', label: 'Póliza vigente',
+        evidence: [{ document_id: 'ver-01', document_name: 'Pliego', document_type: 'pliego', excerpt: 'Requiere póliza vigente de cumplimiento.' }],
+      }],
+      financial: [], technical: [],
+    },
+  };
+  const v3Context = {
+    documents: v3RetrievalDocuments, deepAnalysis: v3RetrievalDeepAnalysis,
+    snapshotId: '55555555-5555-4555-8555-555555555555', contextV2Sections: v3ContextV2Sections,
+  };
+
+  function buildV3ModelOutput(options) {
+    const requirementEntry = options.input.document_evidence.requirement_manifest[0];
+    const allowedRef = options.input.document_evidence.citation_allowlist[0];
+    return {
+      integral_analysis: {
+        contract_version: 'agt002-integral-analysis-v3',
+        coverage: {
+          manifest_version: options.input.document_evidence.requirement_manifest_version,
+          expected_requirement_ids: [requirementEntry.requirement_id],
+          analyzed_requirement_ids: [requirementEntry.requirement_id],
+          material_omissions: options.input.document_evidence.material_omissions,
+          omission_reasons: [],
+          company_evidence_manifest_version: 'agt002-company-evidence-classes-v1',
+          company_evidence_class_ids: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
+          legal_corpus_version_id: null,
+        },
+        analysis_units: [{
+          unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: requirementEntry.requirement_id,
+          category: 'habilitating', sequence: 1, title: 'Póliza vigente', assessment_mode: 'assessed',
+          conclusion: { status: 'supported_with_evidence', summary: 'Evidencia sustenta la póliza.', confidence: 'high' },
+          blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
+          evidence_state: { presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable', compliance: 'supported_pending_human_review' },
+          evidence_refs: [{ ref: allowedRef, source_type: 'tender_document', purpose: 'requirement_basis' }],
+          missing_evidence: [],
+          commercial_impact: { level: 'low', summary: 'Sin impacto.', dimension: 'eligibility' },
+          legal_assessment: { status: 'not_applicable', basis_refs: [], summary: 'No aplica.', human_legal_review_required: false },
+          actions: [],
+          milestone: { status: 'not_identified', type: 'none', at: null, source_ref: null, summary: 'Sin hito.' },
+          escalation: { required: false, level: 'none', reason: 'Sin condición crítica.' },
+          closure: { status: 'human_confirmation_required', condition: 'Persona confirma.', evidence_required: ['tender_document'] },
+          human_validation: { required: true, status: 'pending', reason: 'Confirmar.' },
+        }],
+      },
+    };
+  }
+
+  // Flag off: the v2 provider-facing schema/prompt/envelope is exactly unchanged (no v3
+  // option ever touches the v2 path).
+  {
+    const client = fakeClient(async () => ({ content: JSON.stringify(validModelOutput()), usage: { input_tokens: 1, output_tokens: 1 } }));
+    const engine = createAgt002PreviewEngine({ client, ...baseEngineOptions() });
+    const result = await engine.analyze(context);
+    assert.equal(result.schema_version, '2.0-preview.1');
+    assert.equal(Object.hasOwn(client.calls[0], 'v3'), false);
+  }
+
+  // Flag on, well-formed model output: the engine assembles the governed v3 envelope,
+  // never trusting run identity/coverage/usage from the model, and derives the v2
+  // projection after validation.
+  {
+    const client = fakeClient(async (options) => ({ content: JSON.stringify(buildV3ModelOutput(options)), usage: { input_tokens: 3, output_tokens: 3 } }));
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      companyEvidenceClassesProvider: () => [],
+    });
+    const result = await engine.analyze(v3Context);
+
+    assert.equal(client.calls[0].outputSchema.required.length, 1);
+    assert.deepEqual(client.calls[0].outputSchema.required, ['integral_analysis']);
+
+    assert.equal(result.schema_version, '3.0.0');
+    assert.equal(result.agent_id, 'AGT-002');
+    assert.equal(result.snapshot_id, v3Context.snapshotId);
+    assert.equal(result.status, 'completed');
+    assert.equal(result.method, 'agent_ai');
+    assert.equal(result.human_review_required, true);
+    assert.equal(result.integral_analysis.analysis_units[0].category, 'habilitating');
+    assert.ok(result.evidence_coverage);
+    assert.equal(result.legal_corpus_version_id, null, 'legalCorpus is off for this engine so the corpus binding stays null');
+    assert.equal(result.v2_projection.human_review_required, true);
+    assert.equal(result.v2_projection.recommendation, 'advance');
+    assert.ok(Array.isArray(result.v2_projection.strengths));
+  }
+
+  // The model attempting to forge governed fields (run identity, usage, legacy v2 keys)
+  // on its turn must be rejected — the engine, not the provider, owns those.
+  {
+    const client = fakeClient(async (options) => ({
+      content: JSON.stringify({ ...buildV3ModelOutput(options), run_id: '11111111-1111-4111-8111-111111111111' }),
+      usage: { input_tokens: 1, output_tokens: 1 },
+    }));
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      companyEvidenceClassesProvider: () => [],
+    });
+    await assert.rejects(() => engine.analyze(v3Context), /no produjo una respuesta válida/i);
+  }
+
+  // Fail-closed category derivation: a real 'legal' front requirement with NO governed
+  // override must reject the whole v3 run rather than fabricate a category.
+  {
+    const client = fakeClient(async (options) => ({ content: JSON.stringify(buildV3ModelOutput(options)), usage: { input_tokens: 1, output_tokens: 1 } }));
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      companyEvidenceClassesProvider: () => [],
+      // no categoryOverrides supplied
+    });
+    await assert.rejects(() => engine.analyze(v3Context), /no está disponible|no produjo una respuesta válida/i);
+  }
+
+  // integralContractV3 requires contextV2 + documentRetrieval + a company evidence
+  // classes provider at construction time; it must fail closed like the other
+  // configuration checks, never silently no-op.
+  assert.throws(
+    () => createAgt002PreviewEngine({ client: { run: async () => {} }, ...baseEngineOptions(), integralContractV3: true }),
+    /no está configurado/i,
+  );
+  assert.throws(
+    () => createAgt002PreviewEngine({
+      client: { run: async () => {} }, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+    }),
+    /no está configurado/i,
+    'integralContractV3 must fail closed without companyEvidenceClassesProvider',
+  );
 }
 
 console.log('AGT-002 Preview engine orchestration passed');
