@@ -54,6 +54,24 @@ function normalizedSubject(value: string | null | undefined): string {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+const TERMINAL_STATUSES = new Set(['cerrado', 'cerrada', 'completado', 'completada', 'resuelto', 'resuelta', 'cancelado', 'cancelada', 'done', 'closed']);
+
+export function isTerminalSiioStatus(status?: string | null): boolean {
+  return TERMINAL_STATUSES.has(normalizedSubject(status));
+}
+
+const NEGATED_BLOCKER_PREFIXES = ['sin bloqueo', 'sin bloqueos', 'no hay bloqueo', 'no hay bloqueos', 'ningun bloqueo', 'ninguna obstruccion'];
+
+export function isNegatedBlocker(text?: string | null): boolean {
+  const normalized = normalizedSubject(text);
+  return normalized.length > 0 && NEGATED_BLOCKER_PREFIXES.some(prefix => normalized.startsWith(prefix));
+}
+
+function activityStateFor(status: string | null | undefined, hasTimestamp: boolean): SiioTrackingItem['activityState'] {
+  if (isTerminalSiioStatus(status)) return 'history';
+  return hasTimestamp ? 'active' : 'unconfirmed';
+}
+
 function trackingKind(value: string | null | undefined): Exclude<SiioTrackingItem['kind'], 'todos'> {
   const normalized = normalizedSubject(value);
   if (normalized === 'compromiso') return 'compromisos';
@@ -81,46 +99,57 @@ export function deriveTrackingItems(records: SiioRecord[], decisions: SiioDecisi
     if (!title) return `${candidate.item.kind}\u0000unidentified\u0000${candidate.source}\u0000${candidate.item.id}`;
     return `${candidate.item.kind}\u0000${title}\u0000${normalizedSubject(candidate.item.owner)}`;
   };
-  const recordCandidates = records.map((record): TrackingCandidate => {
-    const title = record.blockers || record.risks || record.decision_required || record.title;
-    const kind = record.blockers
-      ? 'bloqueos'
-      : record.risks
-        ? 'riesgos'
-        : record.decision_required
-          ? 'decisiones'
-          : trackingKind(record.record_type);
+  const recordCandidates = records
+    .map((record): TrackingCandidate | null => {
+      const title = record.blockers || record.risks || record.decision_required || record.title;
+      const kind = record.blockers
+        ? 'bloqueos'
+        : record.risks
+          ? 'riesgos'
+          : record.decision_required
+            ? 'decisiones'
+            : trackingKind(record.record_type);
+      if (kind === 'bloqueos' && isNegatedBlocker(record.blockers)) return null;
+      const status = record.status || 'Pendiente';
+      const hasTimestamp = Boolean(record.due_date || record.updated_at || record.created_at);
+      return {
+        source: 'record',
+        item: {
+          id: `${record.id}:${kind === 'decisiones' ? 'decision' : kind}`,
+          kind,
+          title,
+          owner: record.decision_owner || record.owner || null,
+          status,
+          semaphore: record.semaforo || '',
+          nextAction: record.next_action || null,
+          frontId: record.front_id || null,
+          sourceIds: record.source_ids || [],
+          dueDate: record.due_date || null,
+          activityState: activityStateFor(status, hasTimestamp),
+        },
+      };
+    })
+    .filter((candidate): candidate is TrackingCandidate => candidate !== null);
+  const decisionCandidates = decisions.map((decision): TrackingCandidate => {
+    const status = decision.status || 'Pendiente';
+    const hasTimestamp = Boolean(decision.due_date || decision.updated_at || decision.created_at);
     return {
-      source: 'record',
+      source: 'decision',
       item: {
-        id: `${record.id}:${kind === 'decisiones' ? 'decision' : kind}`,
-        kind,
-        title,
-        owner: record.decision_owner || record.owner || null,
-        status: record.status || 'Pendiente',
-        semaphore: record.semaforo || '',
-        nextAction: record.next_action || null,
-        frontId: record.front_id || null,
-        sourceIds: record.source_ids || [],
-        dueDate: null,
+        id: decision.id,
+        kind: trackingKind(decision.item_type),
+        title: decision.description,
+        owner: decision.owner || null,
+        status,
+        semaphore: '',
+        nextAction: null,
+        frontId: null,
+        sourceIds: [],
+        dueDate: decision.due_date || null,
+        activityState: activityStateFor(status, hasTimestamp),
       },
     };
   });
-  const decisionCandidates = decisions.map((decision): TrackingCandidate => ({
-    source: 'decision',
-    item: {
-      id: decision.id,
-      kind: trackingKind(decision.item_type),
-      title: decision.description,
-      owner: decision.owner || null,
-      status: decision.status || 'Pendiente',
-      semaphore: '',
-      nextAction: null,
-      frontId: null,
-      sourceIds: [],
-      dueDate: decision.due_date || null,
-    },
-  }));
   const canonical = new Map<string, TrackingCandidate>();
   for (const candidate of [...recordCandidates, ...decisionCandidates].sort(compareCandidates)) {
     const identity = identityFor(candidate);
@@ -132,7 +161,7 @@ export function deriveTrackingItems(records: SiioRecord[], decisions: SiioDecisi
 export function filterTrackingItems(items: SiioTrackingItem[], filters: SiioRouteFiltersByView['seguimiento']): SiioTrackingItem[] {
   return items.filter(item => (
     (filters.kind === 'todos' || item.kind === filters.kind)
-    && (!filters.status || normalizedSubject(item.status) === normalizedSubject(filters.status))
+    && (filters.status ? normalizedSubject(item.status) === normalizedSubject(filters.status) : item.activityState !== 'history')
     && (!filters.semaphore || normalizedSubject(item.semaphore) === normalizedSubject(filters.semaphore))
     && (!filters.owner || normalizedSubject(item.owner) === normalizedSubject(filters.owner))
   ));

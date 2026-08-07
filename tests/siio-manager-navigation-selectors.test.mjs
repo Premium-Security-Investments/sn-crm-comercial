@@ -85,4 +85,29 @@ assert.deepEqual(
   ['old'],
 );
 assert.deepEqual(mod.uniqueOptions([' Operaciones ', 'Finanzas', 'Operaciones', '', 'Finanzas']), ['Finanzas', 'Operaciones']);
+
+assert.equal(mod.isTerminalSiioStatus('Completado'), true);
+assert.equal(mod.isTerminalSiioStatus('en curso'), false);
+assert.equal(mod.isNegatedBlocker('No hay bloqueo crítico; continuar monitoreo'), true);
+assert.equal(mod.isNegatedBlocker('Sin bloqueos pendientes'), true);
+assert.equal(mod.isNegatedBlocker('Bloqueo por vacantes'), false);
+
+const activityRecords = [
+  { id: 'REC-CLOSED', front_id: 'F2', title: 'Plataforma decidida', decision_owner: 'Compras', status: 'Cerrado', decision_required: 'Confirmar plataforma', updated_at: '2026-08-01' },
+  { id: 'REC-NEG-BLOCK', front_id: 'F2', title: 'Seguimiento proveedor', decision_owner: 'Compras', status: 'Abierto', blockers: 'Sin bloqueos pendientes', updated_at: '2026-08-01' },
+  { id: 'REC-REAL-BLOCK', front_id: 'F3', title: 'Cobertura turnos', decision_owner: 'Operaciones', status: 'Abierto', blockers: 'Bloqueo por vacantes', updated_at: '2026-08-01' },
+];
+const activityDecisions = [
+  { id: 'DEC-NO-DATE', item_type: 'decision', description: 'Aprobar presupuesto', owner: 'Finanzas', status: 'Pendiente' },
+];
+const activityItems = mod.deriveTrackingItems(activityRecords, activityDecisions);
+assert.deepEqual(activityItems.map(item => item.id).sort(), ['DEC-NO-DATE', 'REC-CLOSED:decision', 'REC-REAL-BLOCK:bloqueos'].sort(), 'a negated blocker must never produce a tracking item');
+assert.equal(activityItems.find(item => item.id === 'REC-CLOSED:decision').activityState, 'history', 'a terminal status must be classified as history');
+assert.equal(activityItems.find(item => item.id === 'REC-REAL-BLOCK:bloqueos').activityState, 'active', 'a real blocker with a timestamp must be classified as active');
+assert.equal(activityItems.find(item => item.id === 'DEC-NO-DATE').activityState, 'unconfirmed', 'a non-terminal item without any timestamp must be classified as unconfirmed');
+const defaultVisibleActivity = mod.filterTrackingItems(activityItems, { kind: 'todos', status: '', semaphore: '', owner: '' });
+assert.deepEqual(defaultVisibleActivity.map(item => item.id).sort(), ['DEC-NO-DATE', 'REC-REAL-BLOCK:bloqueos'].sort(), 'the default filter must omit history items');
+const explicitClosedFilter = mod.filterTrackingItems(activityItems, { kind: 'todos', status: 'cerrado', semaphore: '', owner: '' });
+assert.deepEqual(explicitClosedFilter.map(item => item.id), ['REC-CLOSED:decision'], 'an explicit terminal status filter must retrieve history items');
+
 console.log('SIIO managerial navigation selector contracts OK');

@@ -22,6 +22,10 @@ assert.equal((executive.match(/payrollTotals\.alerts/g) || []).length, 1, 'The a
 assert.match(tracking, /deriveTrackingItems/, 'Tracking must derive deduplicated records and decisions');
 assert.match(tracking, /filterTrackingItems/, 'Tracking must apply contextual route filters');
 assert.match(tracking, /Todos.*Decisiones.*Bloqueos.*Riesgos.*Compromisos/s, 'Tracking must expose its five internal kinds');
+assert.match(tracking, /Estado operativo sujeto al corte y confirmación del responsable/, 'Tracking must disclose that unconfirmed status requires owner review');
+assert.match(tracking, /Histórico/, 'Tracking must label terminal items as history');
+assert.match(tracking, /Vigencia no confirmada/, 'Tracking must label undated non-terminal items as unconfirmed');
+assert.match(tracking, /activityState/, 'Tracking badges must be driven by the derived activity state');
 assert.match(dashboard, /SiioExecutiveView/, 'SIIO dashboard must compose the extracted executive view');
 assert.match(dashboard, /SiioManagementTrackingView/, 'SIIO dashboard must compose the extracted tracking view');
 assert.doesNotMatch(executive, /payroll.*cedula|nomina.*cedula/i, 'Dashboard must never render payroll IDs');
