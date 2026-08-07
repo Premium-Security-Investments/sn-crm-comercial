@@ -132,6 +132,35 @@ function buildEvidenceCoverage(previewInput) {
   };
 }
 
+// P2-1: categoryOverrides/evidenceClassLinkByRequirementId are applied to derive the
+// governed category/evidence-state maps, but the run itself never carried WHY — the
+// curated rationale, source_reference, curator and version behind each binding. This
+// selects, from the full curated provenance, exactly the entries whose value matches what
+// was actually bound for this run (never a stale/mismatched record attached by a caller
+// whose provenance and override maps drifted out of sync), sorted deterministically so the
+// persisted representation is stable/auditable.
+function selectBoundGovernanceProvenance(provenance, categoryOverridesMap, evidenceClassLinkMap) {
+  const bound = {};
+  for (const [requirementId, categoryValue] of Object.entries(categoryOverridesMap || {})) {
+    const key = `category_override:${requirementId}`;
+    const record = provenance?.[key];
+    if (!record || record.category_value !== categoryValue) {
+      throw new Error(`AGT-002 integral v3: provenance gobernada faltante o inconsistente para ${key}.`);
+    }
+    bound[key] = record;
+  }
+  for (const [requirementId, evidenceClassId] of Object.entries(evidenceClassLinkMap || {})) {
+    const key = `evidence_class_link:${requirementId}`;
+    const record = provenance?.[key];
+    if (!record || record.evidence_class_id !== evidenceClassId) {
+      throw new Error(`AGT-002 integral v3: provenance gobernada faltante o inconsistente para ${key}.`);
+    }
+    bound[key] = record;
+  }
+  const sortedKeys = Object.keys(bound).sort();
+  return Object.fromEntries(sortedKeys.map(key => [key, bound[key]]));
+}
+
 export function createAgt002PreviewEngine({
   client,
   model,
@@ -151,6 +180,7 @@ export function createAgt002PreviewEngine({
   integralContractV3 = false,
   categoryOverrides = {},
   evidenceClassLinkByRequirementId = {},
+  governanceProvenance = {},
   companyEvidenceClassesProvider,
   contextVersionId = null,
   observability = createAgt002AnalysisObservability(),
@@ -166,6 +196,13 @@ export function createAgt002PreviewEngine({
     || !observability || typeof observability.record !== 'function') {
     throw new Error('AGT-002 Preview no está configurado: falta configuración o evidencia jurídica determinística.');
   }
+
+  // Validate the binding before any provider/model call. A non-empty governed map without
+  // the exact curated record that authorized it is a configuration defect and must never
+  // execute, even if a later persistence layer would reject the incomplete envelope.
+  const boundGovernanceProvenance = integralContractV3
+    ? selectBoundGovernanceProvenance(governanceProvenance, categoryOverrides, evidenceClassLinkByRequirementId)
+    : {};
 
   /**
    * Single choke point for the output_rejected diagnostic event (E5): every field is derived
@@ -449,6 +486,7 @@ export function createAgt002PreviewEngine({
       legal_corpus_version_id: legalCorpus ? legalCorpusVersionId : null,
       human_review_required: true,
       v2_projection: projectAgt002IntegralV3ToV2(validatedIntegralAnalysis),
+      ...(Object.keys(boundGovernanceProvenance).length ? { governance_provenance: boundGovernanceProvenance } : {}),
       usage: {
         provider: 'codex_app_server', model, input_tokens: inputTokens, output_tokens: outputTokens, rate_limit: raw.rate_limit ?? null,
       },

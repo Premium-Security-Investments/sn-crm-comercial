@@ -45,7 +45,42 @@ const CLASS_CATALOG = Object.freeze([
 export const AGT002_COMPANY_EVIDENCE_CLASS_IDS = Object.freeze(CLASS_CATALOG.map(item => item.entryId));
 const CLASS_CATALOG_BY_ID = new Map(CLASS_CATALOG.map(item => [item.entryId, item]));
 
-export const AGT002_COMPANY_EVIDENCE_CLASS_SELECT = 'entry_id,document_class,existence_status,human_review_status,applicability_status,source_reference,human_gate,hash,expiry,current,integration_active,updated_at,created_at';
+// P2-2: minimum-exposure defense for psi_agt002_company_evidence_registry. This is the
+// explicit, closed allowlist of columns any read of this table may ever fetch — never
+// select('*') and never a column outside it (e.g. notes, decision_humana, classification,
+// sensibilidad, control_de_uso). assertAgt002CompanyEvidenceRegistryMinimalExposureSelect
+// enforces this at module-load time below, so a future edit that widens the select (by
+// mistake or otherwise) fails loudly instead of silently shipping broader exposure.
+export const AGT002_COMPANY_EVIDENCE_CLASS_ALLOWED_COLUMNS = Object.freeze([
+  'entry_id', 'document_class', 'existence_status', 'human_review_status', 'applicability_status',
+  'source_reference', 'human_gate', 'hash', 'expiry', 'current', 'integration_active', 'updated_at', 'created_at',
+]);
+
+export function assertAgt002CompanyEvidenceRegistryMinimalExposureSelect(select, allowedColumns) {
+  if (typeof select !== 'string' || !select.trim()) {
+    throw new Error('AGT-002 company evidence registry: el select debe ser una lista de columnas.');
+  }
+  if (select.includes('*')) {
+    throw new Error('AGT-002 company evidence registry: select(*) está prohibido; usa la allowlist explícita de columnas.');
+  }
+  const columns = select.split(',').map(column => column.trim());
+  if (columns.some(column => !column)) {
+    throw new Error('AGT-002 company evidence registry: el select no puede tener columnas vacías.');
+  }
+  if (new Set(columns).size !== columns.length) {
+    throw new Error('AGT-002 company evidence registry: el select no puede repetir columnas.');
+  }
+  const disallowed = columns.filter(column => !allowedColumns.includes(column));
+  if (disallowed.length) {
+    throw new Error(`AGT-002 company evidence registry: columnas fuera de la allowlist de mínima exposición: ${disallowed.join(', ')}.`);
+  }
+  return select;
+}
+
+export const AGT002_COMPANY_EVIDENCE_CLASS_SELECT = assertAgt002CompanyEvidenceRegistryMinimalExposureSelect(
+  'entry_id,document_class,existence_status,human_review_status,applicability_status,source_reference,human_gate,hash,expiry,current,integration_active,updated_at,created_at',
+  AGT002_COMPANY_EVIDENCE_CLASS_ALLOWED_COLUMNS,
+);
 
 function requireNonEmptyString(value, label) {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} debe ser texto no vacío.`);

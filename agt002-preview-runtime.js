@@ -86,7 +86,7 @@ function positiveIntFromEnv(environment, key, fallback) {
  */
 export function createAgt002PreviewRuntime({
   environment = process.env, countDailyRuns, legalCorpusContext,
-  companyEvidenceRegistryEntries, categoryOverrides, evidenceClassLinkByRequirementId, contextVersionId,
+  companyEvidenceRegistryEntries, categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance, contextVersionId,
   createEngine = createAgt002PreviewEngine,
 } = {}) {
   const config = getAgt002PreviewRuntimeConfig(environment);
@@ -129,6 +129,7 @@ export function createAgt002PreviewRuntime({
       companyEvidenceClassesProvider: () => companyEvidenceRegistryEntries,
       categoryOverrides: categoryOverrides ?? {},
       evidenceClassLinkByRequirementId: evidenceClassLinkByRequirementId ?? {},
+      governanceProvenance: governanceProvenance ?? {},
       contextVersionId: contextVersionId ?? null,
     } : {}),
     ...(countDailyRuns ? { countDailyRuns } : {}),

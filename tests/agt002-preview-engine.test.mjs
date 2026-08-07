@@ -735,6 +735,7 @@ assert.throws(
     const engine = createAgt002PreviewEngine({
       client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
       categoryOverrides: { 'req-poliza': 'habilitating' },
+      governanceProvenance: governanceProvenanceFixture(),
       companyEvidenceClassesProvider: () => [],
     });
     const result = await engine.analyze(v3Context);
@@ -786,6 +787,7 @@ assert.throws(
     const engine = createAgt002PreviewEngine({
       client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
       categoryOverrides: { 'req-poliza': 'habilitating' },
+      governanceProvenance: governanceProvenanceFixture(),
       companyEvidenceClassesProvider: () => [],
     });
     await assert.rejects(() => engine.analyze(v3Context), /no produjo una respuesta válida/i);
@@ -804,6 +806,7 @@ assert.throws(
     const engine = createAgt002PreviewEngine({
       client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
       categoryOverrides: { 'req-poliza': 'habilitating' },
+      governanceProvenance: governanceProvenanceFixture(),
       companyEvidenceClassesProvider: () => [],
     });
     const result = await engine.analyze(v3Context);
@@ -877,6 +880,7 @@ assert.throws(
     const engine = createAgt002PreviewEngine({
       client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
       categoryOverrides: { 'req-poliza': 'habilitating' },
+      governanceProvenance: governanceProvenanceFixture(),
       companyEvidenceClassesProvider: () => [],
     });
     await assert.rejects(() => engine.analyze(v3Context), /no produjo una respuesta válida/i);
@@ -917,6 +921,7 @@ assert.throws(
       client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
       categoryOverrides: { 'req-poliza': 'habilitating' },
       evidenceClassLinkByRequirementId: { 'req-poliza': 'rup' },
+      governanceProvenance: governanceProvenanceFixture(),
       companyEvidenceClassesProvider: () => [verifiedRupRegistryRow],
     });
 
@@ -928,6 +933,85 @@ assert.throws(
       derivedRupEvidenceState,
     );
     assert.deepEqual(result.integral_analysis.analysis_units[0].evidence_state, derivedRupEvidenceState);
+  }
+
+  // ---------------------------------------------------------------------------
+  // P2-1: the persisted run must preserve the binding/versioning/provenance behind
+  // categoryOverrides and evidenceClassLinkByRequirementId — a curated link's class,
+  // rationale and version must survive to the envelope, not just its derived effect.
+  // ---------------------------------------------------------------------------
+  function governanceProvenanceFixture() {
+    return {
+      'category_override:req-poliza': {
+        requirement_id: 'req-poliza', override_kind: 'category_override', category_value: 'habilitating',
+        rationale: 'El pliego exige tratar la póliza como habilitante, no como técnico.', source_reference: 'pliego:seccion-2:habilitantes',
+        curated_by: '10101010-1010-4010-8010-101010101010', curated_at: '2026-08-07T00:00:00.000Z', version: 1,
+      },
+      'evidence_class_link:req-poliza': {
+        requirement_id: 'req-poliza', override_kind: 'evidence_class_link', evidence_class_id: 'rup',
+        rationale: 'El RUP acredita la póliza exigida por el requisito.', source_reference: 'pliego:anexo-1:requisitos-habilitantes',
+        curated_by: '10101010-1010-4010-8010-101010101010', curated_at: '2026-08-07T00:00:00.000Z', version: 2,
+      },
+    };
+  }
+
+  // A governed binding backed by real curated provenance: the persisted envelope must
+  // carry exactly that provenance, citing evidence class, rationale and version.
+  {
+    const client = fakeClient(async (options) => ({
+      content: JSON.stringify(buildV3ModelOutput(options, derivedRupEvidenceState)), usage: { input_tokens: 3, output_tokens: 3 },
+    }));
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      evidenceClassLinkByRequirementId: { 'req-poliza': 'rup' },
+      governanceProvenance: governanceProvenanceFixture(),
+      companyEvidenceClassesProvider: () => [verifiedRupRegistryRow],
+    });
+    const result = await engine.analyze(v3Context);
+    assert.deepEqual(Object.keys(result.governance_provenance).sort(), ['category_override:req-poliza', 'evidence_class_link:req-poliza']);
+    assert.equal(result.governance_provenance['evidence_class_link:req-poliza'].evidence_class_id, 'rup');
+    assert.equal(
+      result.governance_provenance['evidence_class_link:req-poliza'].rationale,
+      governanceProvenanceFixture()['evidence_class_link:req-poliza'].rationale,
+    );
+    assert.equal(result.governance_provenance['evidence_class_link:req-poliza'].version, 2);
+    assert.equal(result.governance_provenance['category_override:req-poliza'].category_value, 'habilitating');
+    assert.equal(result.governance_provenance['category_override:req-poliza'].version, 1);
+  }
+
+  // A governed map without the exact provenance that authorizes its binding must fail
+  // closed. Applying the override and merely omitting governance_provenance would make
+  // the persisted run impossible to reconstruct and audit.
+  {
+    const client = fakeClient(async (options) => ({
+      content: JSON.stringify(buildV3ModelOutput(options, derivedRupEvidenceState)), usage: { input_tokens: 3, output_tokens: 3 },
+    }));
+    assert.throws(() => createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      evidenceClassLinkByRequirementId: { 'req-poliza': 'rup' },
+      companyEvidenceClassesProvider: () => [verifiedRupRegistryRow],
+    }), /provenance gobernada faltante o inconsistente/i);
+  }
+
+  // A provenance record whose bound value does not match what was actually applied (e.g.
+  // stale/mismatched curation data) must fail closed, not merely be omitted from the run.
+  {
+    const client = fakeClient(async (options) => ({
+      content: JSON.stringify(buildV3ModelOutput(options, derivedRupEvidenceState)), usage: { input_tokens: 3, output_tokens: 3 },
+    }));
+    const mismatchedProvenance = governanceProvenanceFixture();
+    mismatchedProvenance['evidence_class_link:req-poliza'] = {
+      ...mismatchedProvenance['evidence_class_link:req-poliza'], evidence_class_id: 'rut',
+    };
+    assert.throws(() => createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      evidenceClassLinkByRequirementId: { 'req-poliza': 'rup' },
+      governanceProvenance: mismatchedProvenance,
+      companyEvidenceClassesProvider: () => [verifiedRupRegistryRow],
+    }), /provenance gobernada faltante o inconsistente/i);
   }
 
   // The same governed link and observed class, but the model asserts a DIFFERENT
@@ -942,6 +1026,7 @@ assert.throws(
       client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
       categoryOverrides: { 'req-poliza': 'habilitating' },
       evidenceClassLinkByRequirementId: { 'req-poliza': 'rup' },
+      governanceProvenance: governanceProvenanceFixture(),
       companyEvidenceClassesProvider: () => [verifiedRupRegistryRow],
     });
     await assert.rejects(() => engine.analyze(v3Context), /no produjo una respuesta válida/i);
@@ -952,10 +1037,15 @@ assert.throws(
   // construction-adjacent validationContext assembly time, never fabricating a state.
   {
     const client = fakeClient(async (options) => ({ content: JSON.stringify(buildV3ModelOutput(options)), usage: { input_tokens: 1, output_tokens: 1 } }));
+    const invalidClassProvenance = governanceProvenanceFixture();
+    invalidClassProvenance['evidence_class_link:req-poliza'] = {
+      ...invalidClassProvenance['evidence_class_link:req-poliza'], evidence_class_id: 'not-a-real-class',
+    };
     const engine = createAgt002PreviewEngine({
       client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
       categoryOverrides: { 'req-poliza': 'habilitating' },
       evidenceClassLinkByRequirementId: { 'req-poliza': 'not-a-real-class' },
+      governanceProvenance: invalidClassProvenance,
       companyEvidenceClassesProvider: () => [],
     });
     await assert.rejects(() => engine.analyze(v3Context), /no está disponible/i);

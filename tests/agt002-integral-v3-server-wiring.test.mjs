@@ -40,6 +40,11 @@ assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(databa
 assert.equal(count(server, 'companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,'), 3, 'los tres runtimes deben recibir el registro real de evidencia empresarial');
 assert.equal(count(server, 'categoryOverrides: integralV3Governance.categoryOverrides,'), 3, 'los tres runtimes deben recibir las anulaciones de categoría curadas');
 assert.equal(count(server, 'evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,'), 3, 'los tres runtimes deben recibir el enlace requisito -> clase de evidencia curado');
+// P2-1: la procedencia gobernada (clase, rationale, versión) detrás de esas dos anulaciones
+// debe llegar al runtime exactamente igual — sin ella el run persistido no puede citar
+// binding/versionado/procedencia de lo que aplicó.
+assert.match(server, /governanceProvenance: governanceOverrides\.provenance,/, 'el loader compartido debe exponer la procedencia gobernada junto a los dos mapas');
+assert.equal(count(server, 'governanceProvenance: integralV3Governance.governanceProvenance,'), 3, 'los tres runtimes deben recibir la procedencia gobernada de las anulaciones curadas');
 assert.equal(count(server, 'contextVersionId: contextVersion?.id ?? null,'), 3, 'los tres runtimes deben poder trazar la versión de contexto que consumieron');
 
 // The runtime itself must remain DB-free: only the server layer may query Supabase,

@@ -138,6 +138,32 @@ Se añadió cobertura explícita de cierre que prueba: UI alimentada sólo por `
 - El único fallo completo sigue siendo el baseline conocido `tests/module-permissions-migration-pglite.test.mjs:98`: el esperado omite `modulo_siio_gerencial` mientras la migración y la aserción siguiente lo exigen. No hay fallos AGT-002.
 - Para Rama Judicial `54190e51-15fb-46af-b0aa-8f13461a3110` no se inventó ningún mapa: sin pliego/manifest real accesible y sin fuente trazable, la migración `064` conserva cero seeds y el caso sigue fail-closed. Evidencia: `docs/verification/2026-08-07-agt002-rama-judicial-governance-gap.md`.
 
+### Auditoría autónoma de procedencia y mínima exposición — 2026-08-07
+
+- Revisión inicial read-only con Claude Code Opus contra `b99a805`, diseño v3 y gates del
+  canary: sin P0/P1; detectó P2 de auditabilidad del binding gobernado y hardening de la
+  lectura de las 17 clases.
+- Se cerró el binding end-to-end: cada override/enlace aplicado conserva en el envelope y
+  en persistencia su `rationale`, `source_reference`, curator, `curated_at` y `version`.
+  Mapas no vacíos con procedencia ausente o inconsistente fallan antes del proveedor;
+  persistencia y adapter cerrado revalidan el mapa. `curated_at`/`version` inválidos fallan
+  cerrado y los registros quedan congelados.
+- Las dos lecturas runtime de `psi_agt002_company_evidence_registry` tienen allowlists
+  explícitas; `select(*)`, duplicados y columnas no permitidas son rechazados. No se amplió
+  RLS/ACL ni se añadió ninguna escritura.
+- Evidencia final: focales **8/8**; AGT-002 **140/140**; PGlite relevante **3/3**; paridad
+  backend **OK**; build **OK**; diff check/paridad byte Express-Vercel **OK**; suite completa
+  **379/380**. El único fallo fue reproducido **0/1** en archivo limpio `b99a805`
+  (`module-permissions-migration-pglite.test.mjs`) y permanece baseline.
+- `npm audit --omit=dev` reporta ahora 1 high transitivo (`nanoid@3.3.16` vía
+  Vite/PostCSS); `package.json`/`package-lock.json` no cambiaron frente a `b99a805`, por lo
+  que no fue introducido por este lote. Revisión final independiente Opus: **passed**, sin
+  hallazgos de seguridad ni errores lógicos.
+
+**Estado:** **NOT READY para canary real**. Rama Judicial sigue sin mapas porque no hubo
+señal read-only trazable suficiente; se mantiene abstención/missing governance. Siguen
+pendientes curación humana sobre pliego real, caso E5 controlado y QA visual autenticado.
+
 ## 3. F2 — coherencia y seguridad transversal de SIIO
 
 ### Entregado

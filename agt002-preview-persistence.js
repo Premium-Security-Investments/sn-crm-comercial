@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { deepStrictEqual } from 'node:assert';
 import { validateAgt002RequirementManifest } from './agt002-deep-analysis-matrix.js';
 import { projectAgt002IntegralV3ToV2, computeAgt002IntegralV3CriticalOpenCount } from './agt002-v3-compatibility.js';
+import { validateAgt002IntegralGovernanceProvenance } from './agt002-integral-governance-overrides.js';
 
 const CONTENT_KEYS = ['recommendation', 'summary', 'strengths', 'weaknesses', 'blockers', 'questions', 'unverified', 'next_action', 'human_review_required'];
 const AGT002_INTEGRAL_V3_SCHEMA_VERSION = '3.0.0';
@@ -177,6 +178,14 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     content.integral_analysis = integralAnalysis;
     if (envelope.evidence_coverage !== undefined) {
       content.evidence_coverage = validateEvidenceCoverage(envelope.evidence_coverage, snapshotId);
+    }
+    // P2-1: the engine already scoped this to exactly what it bound (agt002-preview-engine.js's
+    // selectBoundGovernanceProvenance), but it is never trusted verbatim — re-validated here
+    // the same way evidence_coverage above is, so a curated link's class/rationale/version
+    // survive to the persisted run only after passing the same fail-closed checks a real
+    // curated row must pass.
+    if (envelope.governance_provenance !== undefined) {
+      content.governance_provenance = validateAgt002IntegralGovernanceProvenance(envelope.governance_provenance);
     }
     // design section 5, invariant 7: legal_corpus_version_id is nullable and stands alone
     // for v3 — legal grounding is validated per-unit inside integral_analysis itself, so

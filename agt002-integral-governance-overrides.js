@@ -11,16 +11,36 @@
 // this module never derives a category or an evidence-class link from keyword matching,
 // document presence or intuition; a row missing any of those is rejected, not guessed.
 
+import { deepStrictEqual } from 'node:assert';
 import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from './agt002-company-evidence-classes.js';
 
 export const AGT002_INTEGRAL_GOVERNANCE_CATEGORIES = Object.freeze(['discard', 'habilitating', 'technical', 'financial_execution']);
 export const AGT002_INTEGRAL_GOVERNANCE_OVERRIDE_KINDS = Object.freeze(['category_override', 'evidence_class_link']);
 
-const AGT002_INTEGRAL_GOVERNANCE_OVERRIDES_SELECT = 'requirement_id,override_kind,category_value,evidence_class_id,rationale,source_reference,curated_by,curated_at';
+const AGT002_INTEGRAL_GOVERNANCE_OVERRIDES_SELECT = 'requirement_id,override_kind,category_value,evidence_class_id,rationale,source_reference,curated_by,curated_at,version';
 
 function requireNonEmptyString(value, label) {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`AGT-002 integral governance overrides: ${label} debe ser texto no vacío.`);
   return value.trim();
+}
+
+// P2-3: curated_at must never silently default to null — a curated row without a real,
+// parseable curation timestamp is a governance defect, not an absence of signal, so it
+// must fail closed exactly like a missing rationale/source_reference does.
+function requireTimestamp(value, label) {
+  if (typeof value !== 'string' || !value.trim() || Number.isNaN(new Date(value).getTime())) {
+    throw new Error(`AGT-002 integral governance overrides: ${label} debe ser una marca de tiempo ISO válida.`);
+  }
+  return value;
+}
+
+// P2-1: version must be loaded and preserved — without it, a superseded override row and
+// its replacement are indistinguishable in the persisted provenance.
+function requirePositiveInteger(value, label) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`AGT-002 integral governance overrides: ${label} debe ser un entero positivo.`);
+  }
+  return value;
 }
 
 /**
@@ -55,6 +75,8 @@ export function buildAgt002IntegralGovernanceOverrides({ overrideEntries = [] } 
     const rationale = requireNonEmptyString(raw.rationale, `${requirementId}.rationale`);
     const sourceReference = requireNonEmptyString(raw.source_reference, `${requirementId}.source_reference`);
     const curatedBy = requireNonEmptyString(raw.curated_by, `${requirementId}.curated_by`);
+    const curatedAt = requireTimestamp(raw.curated_at, `${requirementId}.curated_at`);
+    const version = requirePositiveInteger(raw.version, `${requirementId}.version`);
 
     if (kind === 'category_override') {
       if (raw.evidence_class_id != null) {
@@ -64,10 +86,10 @@ export function buildAgt002IntegralGovernanceOverrides({ overrideEntries = [] } 
         throw new Error(`AGT-002 integral governance overrides: category_value inválido para ${requirementId}: ${String(raw.category_value)}.`);
       }
       categoryOverrides[requirementId] = raw.category_value;
-      provenance[dedupeKey] = {
+      provenance[dedupeKey] = Object.freeze({
         requirement_id: requirementId, override_kind: kind, category_value: raw.category_value,
-        rationale, source_reference: sourceReference, curated_by: curatedBy, curated_at: raw.curated_at ?? null,
-      };
+        rationale, source_reference: sourceReference, curated_by: curatedBy, curated_at: curatedAt, version,
+      });
     } else {
       if (raw.category_value != null) {
         throw new Error(`AGT-002 integral governance overrides: ${requirementId} es evidence_class_link y no puede llevar category_value.`);
@@ -79,10 +101,10 @@ export function buildAgt002IntegralGovernanceOverrides({ overrideEntries = [] } 
         );
       }
       evidenceClassLinkByRequirementId[requirementId] = raw.evidence_class_id;
-      provenance[dedupeKey] = {
+      provenance[dedupeKey] = Object.freeze({
         requirement_id: requirementId, override_kind: kind, evidence_class_id: raw.evidence_class_id,
-        rationale, source_reference: sourceReference, curated_by: curatedBy, curated_at: raw.curated_at ?? null,
-      };
+        rationale, source_reference: sourceReference, curated_by: curatedBy, curated_at: curatedAt, version,
+      });
     }
   }
 
@@ -91,6 +113,32 @@ export function buildAgt002IntegralGovernanceOverrides({ overrideEntries = [] } 
     evidenceClassLinkByRequirementId: Object.freeze(evidenceClassLinkByRequirementId),
     provenance: Object.freeze(provenance),
   });
+}
+
+/**
+ * P2-1: re-validates a persisted/serialized governance_provenance map fail-closed, the
+ * same way agt002-preview-persistence.js never trusts an envelope's own copy of
+ * evidence_coverage verbatim. Rebuilds the two governed maps from the provenance records
+ * themselves (reusing the exact same fail-closed checks buildAgt002IntegralGovernanceOverrides
+ * enforces on real curated rows) and requires the result to match byte-for-byte — this
+ * rejects a tampered/malformed provenance map rather than silently trusting it.
+ */
+export function validateAgt002IntegralGovernanceProvenance(provenance) {
+  if (!provenance || typeof provenance !== 'object' || Array.isArray(provenance)) {
+    throw new Error('AGT-002 integral governance provenance: debe ser un objeto.');
+  }
+  const overrideEntries = Object.entries(provenance).map(([key, record]) => {
+    if (!record || typeof record !== 'object' || Array.isArray(record)) {
+      throw new Error(`AGT-002 integral governance provenance: entrada inválida para ${key}.`);
+    }
+    if (key !== `${record.override_kind}:${record.requirement_id}`) {
+      throw new Error(`AGT-002 integral governance provenance: la clave ${key} no coincide con su contenido.`);
+    }
+    return record;
+  });
+  const rebuilt = buildAgt002IntegralGovernanceOverrides({ overrideEntries });
+  deepStrictEqual(rebuilt.provenance, provenance);
+  return provenance;
 }
 
 // PostgREST/Postgres codes meaning "the table itself does not exist" — mirrors

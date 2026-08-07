@@ -4,6 +4,7 @@ import {
   AGT002_INTEGRAL_GOVERNANCE_OVERRIDE_KINDS,
   buildAgt002IntegralGovernanceOverrides,
   loadAgt002IntegralGovernanceOverrides,
+  validateAgt002IntegralGovernanceProvenance,
 } from '../agt002-integral-governance-overrides.js';
 
 // ---------------------------------------------------------------------------
@@ -29,6 +30,7 @@ function categoryRow(overrides = {}) {
     source_reference: 'pliego:seccion-3.2:causales-de-rechazo',
     curated_by: '10101010-1010-4010-8010-101010101010',
     curated_at: '2026-08-07T00:00:00.000Z',
+    version: 1,
     ...overrides,
   };
 }
@@ -43,6 +45,7 @@ function linkRow(overrides = {}) {
     source_reference: 'pliego:anexo-1:requisitos-habilitantes-juridicos',
     curated_by: '10101010-1010-4010-8010-101010101010',
     curated_at: '2026-08-07T00:00:00.000Z',
+    version: 1,
     ...overrides,
   };
 }
@@ -55,6 +58,14 @@ function linkRow(overrides = {}) {
   assert.equal(result.provenance['category_override:req-legal-1'].rationale, categoryRow().rationale);
   assert.equal(result.provenance['category_override:req-legal-1'].source_reference, categoryRow().source_reference);
   assert.equal(result.provenance['evidence_class_link:req-license-1'].evidence_class_id, 'supervigilancia_operating_license');
+  // P2-1: binding/versioning/provenance must be preserved, not dropped — a curated link's
+  // class, rationale and version must all be traceable from the built provenance record.
+  assert.equal(result.provenance['category_override:req-legal-1'].version, 1);
+  assert.equal(result.provenance['category_override:req-legal-1'].curated_at, categoryRow().curated_at);
+  assert.equal(result.provenance['evidence_class_link:req-license-1'].version, 1);
+  assert.equal(result.provenance['evidence_class_link:req-license-1'].rationale, linkRow().rationale);
+  assert.equal(Object.isFrozen(result.provenance['category_override:req-legal-1']), true);
+  assert.equal(Object.isFrozen(result.provenance['evidence_class_link:req-license-1']), true);
 }
 
 // --- Empty input is safe: both maps default empty, matching the engine's own defaults. ---
@@ -73,6 +84,19 @@ assert.throws(() => buildAgt002IntegralGovernanceOverrides({ overrideEntries: [c
 assert.throws(() => buildAgt002IntegralGovernanceOverrides({ overrideEntries: [categoryRow({ rationale: '' })] }), /rationale/i, 'a row without a real rationale must never be accepted — this is exactly the fabrication this table exists to prevent');
 assert.throws(() => buildAgt002IntegralGovernanceOverrides({ overrideEntries: [categoryRow({ source_reference: '   ' })] }), /source_reference/i);
 assert.throws(() => buildAgt002IntegralGovernanceOverrides({ overrideEntries: [categoryRow({ curated_by: null })] }), /curated_by/i);
+
+// P2-3: curated_at null (or otherwise missing/invalid) must fail closed — it must never
+// silently default to null and be persisted as an ungoverned/untraceable curation date.
+assert.throws(() => buildAgt002IntegralGovernanceOverrides({ overrideEntries: [categoryRow({ curated_at: null })] }), /curated_at/i, 'a null curated_at must fail closed, never silently default');
+assert.throws(() => buildAgt002IntegralGovernanceOverrides({ overrideEntries: [categoryRow({ curated_at: undefined })] }), /curated_at/i);
+assert.throws(() => buildAgt002IntegralGovernanceOverrides({ overrideEntries: [categoryRow({ curated_at: '' })] }), /curated_at/i);
+assert.throws(() => buildAgt002IntegralGovernanceOverrides({ overrideEntries: [categoryRow({ curated_at: 'not-a-real-timestamp' })] }), /curated_at/i);
+
+// P2-1: version must be loaded/required and preserved, never silently omitted.
+assert.throws(() => buildAgt002IntegralGovernanceOverrides({ overrideEntries: [categoryRow({ version: null })] }), /version/i);
+assert.throws(() => buildAgt002IntegralGovernanceOverrides({ overrideEntries: [categoryRow({ version: 0 })] }), /version/i);
+assert.throws(() => buildAgt002IntegralGovernanceOverrides({ overrideEntries: [categoryRow({ version: 1.5 })] }), /version/i);
+assert.throws(() => buildAgt002IntegralGovernanceOverrides({ overrideEntries: [categoryRow({ version: '1' })] }), /version/i);
 
 // A category_override row must never carry an evidence_class_id, and vice versa — the
 // same discipline the DB check constraint enforces, mirrored in the pure builder so
@@ -109,13 +133,16 @@ assert.throws(
 // other error.
 // ---------------------------------------------------------------------------
 
-function fakeDatabase(rows) {
+function fakeDatabase(rows, { capturedSelect } = {}) {
   return {
     from(table) {
       assert.equal(table, 'psi_agt002_integral_governance_overrides');
       const filters = [];
       const chain = {
-        select() { return chain; },
+        select(columns) {
+          if (capturedSelect) capturedSelect.value = columns;
+          return chain;
+        },
         eq(key, value) { filters.push([key, value]); return chain; },
         order() { return chain; },
         then(resolve) {
@@ -135,9 +162,48 @@ function fakeDatabase(rows) {
     { ...categoryRow({ requirement_id: 'req-other-opp' }), opportunity_id: 'opp-2', current: true },
     { ...categoryRow({ requirement_id: 'req-stale' }), opportunity_id: 'opp-1', current: false },
   ];
-  const result = await loadAgt002IntegralGovernanceOverrides(fakeDatabase(rows), 'opp-1');
+  const capturedSelect = {};
+  const result = await loadAgt002IntegralGovernanceOverrides(fakeDatabase(rows, { capturedSelect }), 'opp-1');
   assert.deepEqual(result.categoryOverrides, { 'req-legal-1': 'habilitating' });
   assert.deepEqual(result.evidenceClassLinkByRequirementId, { 'req-license-1': 'supervigilancia_operating_license' });
+  // P2-1: the loader must actually fetch version — without it, binding/versioning can
+  // never be reconstructed downstream regardless of what the builder does with it.
+  assert.match(capturedSelect.value, /(^|,)version(,|$)/, 'the DB select must fetch version so binding/versioning survives to the built provenance');
+  assert.equal(result.provenance['category_override:req-legal-1'].version, 1);
+}
+
+// ---------------------------------------------------------------------------
+// P2-1: validateAgt002IntegralGovernanceProvenance re-validates a persisted/serialized
+// provenance map fail-closed, mirroring how agt002-preview-persistence.js never trusts an
+// envelope's own copy of evidence_coverage verbatim. This is the seam persistence uses
+// before storing governance_provenance on the run.
+// ---------------------------------------------------------------------------
+{
+  const built = buildAgt002IntegralGovernanceOverrides({ overrideEntries: [categoryRow(), linkRow()] });
+  assert.equal(validateAgt002IntegralGovernanceProvenance(built.provenance), built.provenance);
+
+  assert.throws(() => validateAgt002IntegralGovernanceProvenance(null), /objeto/i);
+  assert.throws(() => validateAgt002IntegralGovernanceProvenance([]), /objeto/i);
+  assert.throws(
+    () => validateAgt002IntegralGovernanceProvenance({
+      ...built.provenance,
+      'category_override:req-legal-1': { ...built.provenance['category_override:req-legal-1'], rationale: '' },
+    }),
+    /rationale/i,
+    'a provenance record without a real rationale must never be accepted as valid',
+  );
+  assert.throws(
+    () => validateAgt002IntegralGovernanceProvenance({ 'category_override:mismatched-key': built.provenance['category_override:req-legal-1'] }),
+    /no coincide/i,
+    'a key that does not match its own record content must be rejected, not silently trusted',
+  );
+  assert.throws(
+    () => validateAgt002IntegralGovernanceProvenance({
+      ...built.provenance,
+      'category_override:req-legal-1': { ...built.provenance['category_override:req-legal-1'], version: undefined },
+    }),
+    /version/i,
+  );
 }
 
 await assert.rejects(loadAgt002IntegralGovernanceOverrides(fakeDatabase([]), ''), /opportunityId/i);

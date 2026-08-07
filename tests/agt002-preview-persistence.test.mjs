@@ -646,4 +646,51 @@ for (const bad of [v3Envelope({ integral_analysis: { contract_version: 'wrong' }
   assert.equal(registered.result.legal_corpus_version_id, LEGAL_CORPUS_VERSION_ID);
 }
 
+// ---------------------------------------------------------------------------
+// P2-1: governance_provenance (the engine's already-bound category/evidence-class
+// override provenance) must survive to the persisted run — re-validated, never trusted
+// verbatim, exactly like evidence_coverage above — so a curated link's class, rationale
+// and version are auditable from the persisted run.
+// ---------------------------------------------------------------------------
+function governanceProvenanceFixture() {
+  return {
+    'evidence_class_link:req-1': {
+      requirement_id: 'req-1', override_kind: 'evidence_class_link', evidence_class_id: 'rup',
+      rationale: 'El RUP acredita la habilitación exigida por el pliego.', source_reference: 'pliego:anexo-1',
+      curated_by: '10101010-1010-4010-8010-101010101010', curated_at: '2026-08-07T00:00:00.000Z', version: 2,
+    },
+  };
+}
+
+{
+  const database = fakeDatabase();
+  const withProvenance = v3Envelope({ governance_provenance: governanceProvenanceFixture() });
+  const registered = await registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: withProvenance, canonicalOnly: true,
+    context_version_id: ids.contextVersion,
+  });
+  assert.deepEqual(registered.result.governance_provenance, governanceProvenanceFixture());
+  assert.equal(registered.result.governance_provenance['evidence_class_link:req-1'].evidence_class_id, 'rup');
+  assert.equal(
+    registered.result.governance_provenance['evidence_class_link:req-1'].rationale,
+    governanceProvenanceFixture()['evidence_class_link:req-1'].rationale,
+  );
+  assert.equal(registered.result.governance_provenance['evidence_class_link:req-1'].version, 2);
+}
+
+// A malformed governance_provenance (key/content mismatch, or a missing required field)
+// must be rejected before any RPC — never a partial/tampered persist.
+for (const bad of [
+  { 'evidence_class_link:req-1': { ...governanceProvenanceFixture()['evidence_class_link:req-1'], requirement_id: 'req-2' } },
+  { 'evidence_class_link:req-1': { ...governanceProvenanceFixture()['evidence_class_link:req-1'], rationale: '' } },
+]) {
+  const database = fakeDatabase();
+  const tampered = v3Envelope({ governance_provenance: bad });
+  await assert.rejects(() => registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: tampered, canonicalOnly: true,
+    context_version_id: ids.contextVersion,
+  }));
+  assert.equal(database.rpcCalls.length, 0, 'a governance_provenance validation failure must never call the RPC');
+}
+
 console.log('AGT-002 Preview persistence (audit, idempotency, no secrets) passed');

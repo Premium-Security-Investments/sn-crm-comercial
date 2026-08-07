@@ -2,6 +2,7 @@ import { deepStrictEqual } from 'node:assert';
 import { validateTenderAnalysisResult } from './tender-analysis-domain.js';
 import { validateAgt002IntegralAnalysisV3 } from './agt002-integral-analysis-v3.js';
 import { projectAgt002IntegralV3ToV2 } from './agt002-v3-compatibility.js';
+import { validateAgt002IntegralGovernanceProvenance } from './agt002-integral-governance-overrides.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
@@ -140,6 +141,7 @@ const ENVELOPE_KEYS_V3 = [
   'status', 'method', 'integral_analysis', 'evidence_coverage', 'legal_corpus_version_id',
   'human_review_required', 'v2_projection', 'usage',
 ];
+const ENVELOPE_KEYS_V3_WITH_GOVERNANCE = [...ENVELOPE_KEYS_V3, 'governance_provenance'];
 const USAGE_KEYS_V3 = ['provider', 'model', 'input_tokens', 'output_tokens', 'rate_limit'];
 
 function isPlainObject(value) {
@@ -152,7 +154,10 @@ function isPlainObject(value) {
  * corpus version) the engine already assembled — never read from the payload.
  */
 export function validateAgt002TenderAnalysisEnvelopeV3(value, integralValidationContext) {
-  if (!exactKeys(value, ENVELOPE_KEYS_V3)) throw new Error('El envelope AGT-002 v3 debe ser cerrado.');
+  if (!exactKeys(value, ENVELOPE_KEYS_V3)
+    && !exactKeys(value, ENVELOPE_KEYS_V3_WITH_GOVERNANCE)) {
+    throw new Error('El envelope AGT-002 v3 debe ser cerrado.');
+  }
   if (value.schema_version !== '3.0.0') throw new Error('La versión de esquema AGT-002 v3 no es compatible.');
   if (value.agent_id !== 'AGT-002') throw new Error('El productor debe ser AGT-002.');
   if (!isUuid(value.run_id) || !isUuid(value.snapshot_id)) throw new Error('Run y snapshot deben ser UUID.');
@@ -167,6 +172,9 @@ export function validateAgt002TenderAnalysisEnvelopeV3(value, integralValidation
     throw new Error('legal_corpus_version_id AGT-002 v3 debe ser UUID o null.');
   }
   if (value.human_review_required !== true) throw new Error('La revisión humana es obligatoria.');
+  if (value.governance_provenance !== undefined) {
+    validateAgt002IntegralGovernanceProvenance(value.governance_provenance);
+  }
   // Defense in depth (design section 9.9/11.9): the carried v2_projection is never trusted
   // as-is — it must equal, field for field, the deterministic projection this same module
   // derives from the already-validated integral_analysis. A hand-typed or stale projection

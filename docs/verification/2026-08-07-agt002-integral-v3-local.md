@@ -126,3 +126,36 @@ Closed, test-first, in this continuation:
 Sequential gates re-run after this block: focal loader/runtime/governance/wiring tests all GREEN; `tests/agt002-*.test.mjs` **140/140**; relevant PGlite **3/3** (`064`, v3/v2 coexistence `063`, workbench hardening); backend parity **OK**; build **OK** with only the pre-existing >500 kB chunk warning; `npm audit --omit=dev` **0 vulnerabilities**; `git diff --check` clean; full suite **379/380**. The sole failure remains the known unrelated baseline at `tests/module-permissions-migration-pglite.test.mjs:98` (the expected list omits `modulo_siio_gerencial`, while the migration and immediately following assertion require it); there are zero AGT-002 failures.
 
 **Release classification unchanged: NOT READY for a real canary.** The DB wiring gate from §5 is now closed, but the human-curation gate (real `category_override`/`evidence_class_link` rows for a real target opportunity, with real QA visual) is not — and, per the above, could not be honestly closed for Rama Judicial from this session.
+
+## 9. Follow-up audit: persisted governance binding + minimum-exposure guard
+
+An independent Claude Code Opus review against `b99a805`, this verification record,
+the v3 design and the canary gates found no P0/P1, and identified three P2 hardening
+gaps. They were closed test-first without any remote write, migration, model/canary run,
+push, PR, merge or deploy:
+
+- `categoryOverrides` and `evidenceClassLinkByRequirementId` now travel with their exact
+  curated `governance_provenance` (`rationale`, `source_reference`, `curated_by`,
+  `curated_at`, `version`) through server/runtime/engine and into the persisted v3 run.
+  A non-empty map without matching provenance fails before any provider call; persistence
+  and the closed tender adapter rebuild and validate the provenance before accepting it.
+- `curated_at` must be a parseable timestamp and `version` a positive integer; malformed
+  or missing values fail closed. Individual provenance records and the map are frozen.
+- Both runtime reads of `psi_agt002_company_evidence_registry` are protected by explicit
+  per-reader column allowlists that reject `select(*)`, duplicates, empty columns and any
+  column outside the metadata-only set. RLS/ACL remain unchanged and read-only.
+
+Fresh final gates: focal files **8/8**; `tests/agt002-*.test.mjs` **140/140**;
+relevant PGlite files **3/3**; backend parity **OK**; build **OK** (only the existing
+chunk-size warning); `git diff --check` and byte parity Express/Vercel **OK**; full suite
+**379/380**. The sole full-suite failure is still
+`tests/module-permissions-migration-pglite.test.mjs`, reproduced **0/1** from a clean
+`b99a805` archive. `npm audit --omit=dev` now reports one high transitive advisory for
+`nanoid@3.3.16` via Vite/PostCSS; `package.json` and `package-lock.json` are unchanged
+from `b99a805`, so it is classified as baseline dependency exposure, not introduced by
+this block. Final independent Opus review: passed, no security concerns or logic errors.
+
+**Release classification remains NOT READY for a real canary.** Rama Judicial remains
+deliberately uncurated: no read-only traceable pliego/requirement signal was available,
+so no map was inferred. Human-curated real mappings, the controlled E5 case and
+authenticated visual QA remain mandatory.

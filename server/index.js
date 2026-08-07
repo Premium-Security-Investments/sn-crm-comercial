@@ -104,6 +104,7 @@ async function loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId) 
     companyEvidenceRegistryEntries,
     categoryOverrides: governanceOverrides.categoryOverrides,
     evidenceClassLinkByRequirementId: governanceOverrides.evidenceClassLinkByRequirementId,
+    governanceProvenance: governanceOverrides.provenance,
   };
 }
 
@@ -2762,6 +2763,7 @@ async function reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analys
             companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
             categoryOverrides: integralV3Governance.categoryOverrides,
             evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,
+            governanceProvenance: integralV3Governance.governanceProvenance,
             contextVersionId: contextVersion?.id ?? null,
           } : {}),
         });
@@ -3385,6 +3387,7 @@ function buildTenderProcessingWorkerDeps(database) {
             companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
             categoryOverrides: integralV3Governance.categoryOverrides,
             evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,
+            governanceProvenance: integralV3Governance.governanceProvenance,
             contextVersionId: contextVersion?.id ?? null,
           } : {}),
         });
@@ -3993,6 +3996,7 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
             companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
             categoryOverrides: integralV3Governance.categoryOverrides,
             evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,
+            governanceProvenance: integralV3Governance.governanceProvenance,
             contextVersionId: contextVersion?.id ?? null,
           } : {}),
         });

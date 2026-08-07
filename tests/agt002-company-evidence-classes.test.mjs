@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { AGT002_COMPANY_EVIDENCE_REGISTRY_SELECT } from '../agt002-company-dossier.js';
 
 // F2: the 061 registry already carries 17 typed classes with independent
@@ -39,6 +39,8 @@ if (!existsSync(modulePath)) {
     AGT002_COMPANY_EVIDENCE_COVERAGE_CATEGORIES,
     AGT002_COMPANY_EVIDENCE_CLASS_IDS,
     AGT002_COMPANY_EVIDENCE_CLASS_SELECT,
+    AGT002_COMPANY_EVIDENCE_CLASS_ALLOWED_COLUMNS,
+    assertAgt002CompanyEvidenceRegistryMinimalExposureSelect,
     buildAgt002CompanyEvidenceClasses,
     loadAgt002CompanyEvidenceClasses,
     loadAgt002CompanyEvidenceRegistryEntries,
@@ -242,6 +244,62 @@ if (!existsSync(modulePath)) {
     loadAgt002CompanyEvidenceRegistryEntries(tableAbsentDatabase('53300')),
     error => error.code === '53300',
     'a non-table-absent error must propagate, never be treated as an empty registry',
+  );
+
+  // ---------------------------------------------------------------------------
+  // P2-2: minimum-exposure defense for psi_agt002_company_evidence_registry. The real
+  // select must be exactly the closed allowlist (no more, no less), and the guard itself
+  // must reject select(*) and any column outside the allowlist — verifiable independent
+  // of the actual real select string ever drifting.
+  // ---------------------------------------------------------------------------
+  assert.ok(Array.isArray(AGT002_COMPANY_EVIDENCE_CLASS_ALLOWED_COLUMNS) && AGT002_COMPANY_EVIDENCE_CLASS_ALLOWED_COLUMNS.length > 0);
+  assert.deepEqual(
+    [...AGT002_COMPANY_EVIDENCE_CLASS_SELECT.split(',')].sort(),
+    [...AGT002_COMPANY_EVIDENCE_CLASS_ALLOWED_COLUMNS].sort(),
+    'the real select must be exactly the allowlist, no more, no less',
+  );
+  assert.equal(
+    assertAgt002CompanyEvidenceRegistryMinimalExposureSelect(AGT002_COMPANY_EVIDENCE_CLASS_SELECT, AGT002_COMPANY_EVIDENCE_CLASS_ALLOWED_COLUMNS),
+    AGT002_COMPANY_EVIDENCE_CLASS_SELECT,
+  );
+  assert.throws(
+    () => assertAgt002CompanyEvidenceRegistryMinimalExposureSelect('*', AGT002_COMPANY_EVIDENCE_CLASS_ALLOWED_COLUMNS),
+    /select\(\*\)/i,
+    'select(*) must be prohibited outright',
+  );
+  assert.throws(
+    () => assertAgt002CompanyEvidenceRegistryMinimalExposureSelect('entry_id,*', AGT002_COMPANY_EVIDENCE_CLASS_ALLOWED_COLUMNS),
+    /select\(\*\)/i,
+    'a partial wildcard mixed with real columns must also be prohibited',
+  );
+  for (const sensitiveColumn of ['notes', 'decision_humana', 'classification', 'sensibilidad', 'control_de_uso', 'zona_almacenamiento']) {
+    assert.throws(
+      () => assertAgt002CompanyEvidenceRegistryMinimalExposureSelect(`entry_id,${sensitiveColumn}`, AGT002_COMPANY_EVIDENCE_CLASS_ALLOWED_COLUMNS),
+      /allowlist|fuera/i,
+      `${sensitiveColumn} must be rejected as outside the minimum-exposure allowlist`,
+    );
+  }
+  assert.throws(
+    () => assertAgt002CompanyEvidenceRegistryMinimalExposureSelect('entry_id,entry_id', AGT002_COMPANY_EVIDENCE_CLASS_ALLOWED_COLUMNS),
+    /repetir/i,
+    'a repeated column must be rejected',
+  );
+  assert.throws(
+    () => assertAgt002CompanyEvidenceRegistryMinimalExposureSelect('', AGT002_COMPANY_EVIDENCE_CLASS_ALLOWED_COLUMNS),
+    /lista de columnas/i,
+  );
+  assert.throws(
+    () => assertAgt002CompanyEvidenceRegistryMinimalExposureSelect(null, AGT002_COMPANY_EVIDENCE_CLASS_ALLOWED_COLUMNS),
+    /lista de columnas/i,
+  );
+
+  // Source-level regression: even if the guard were ever bypassed, the module's own source
+  // must never literally call .select with a wildcard against this table.
+  const evidenceClassesSource = readFileSync(new URL('../agt002-company-evidence-classes.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(
+    evidenceClassesSource,
+    /\.select\(\s*['"`]\*/,
+    'the module source must never call .select("*") against psi_agt002_company_evidence_registry',
   );
 
   console.log('AGT-002 typed company evidence classes (F2) contract passed');
