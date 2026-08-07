@@ -37,6 +37,13 @@ assert.match(styles, /\.siio-executive-grid/, 'Executive dashboard layout styles
 assert.match(styles, /\.siio-source-freshness/, 'Source freshness styles must exist');
 assert.match(styles, /\.siio-insight-list/, 'F5 management insight styles must exist');
 
+assert.match(executive, /siio-payroll-table/, 'Executive view must mark the desktop payroll table for responsive hiding');
+assert.match(executive, /siio-payroll-cards/, 'Executive view must render mobile payroll cards');
+assert.equal((executive.match(/payrollRows\.map/g) || []).length, 2, 'Payroll must render exactly one desktop and one mobile presentation of the same rows, no duplicated business logic');
+assert.match(styles, /@media\(max-width:760px\)[\s\S]*\.siio-payroll-table\{display:none\}/, 'Mobile must hide the desktop payroll table');
+assert.match(styles, /\.siio-payroll-cards\{display:none\}/, 'Payroll cards must be hidden by default on desktop');
+assert.match(styles, /@media\(max-width:760px\)[\s\S]*\.siio-payroll-cards\{display:grid[^}]*\}/, 'Mobile must show the payroll cards');
+
 assert.match(dashboard, /Preparar informe de Junta/, 'SIIO header must expose the governed Board action');
 assert.match(dashboard, /useState\(false\)/, 'The Board action must have local open state');
 assert.match(dashboard, /setBoardDraftOpen\(true\)/, 'The Board action trigger must open the local draft');

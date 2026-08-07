@@ -54,7 +54,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
     </section>
 
     <div className="siio-executive-status">
-      <div><span className="eyebrow">Resumen ejecutivo</span><strong>Información disponible para gestión</strong></div>
+      <div><span className="siio-eyebrow">Resumen ejecutivo</span><strong>Información disponible para gestión</strong></div>
       <Badge tone={snapshot.financialValidationStatus === 'validado' ? 'green' : 'amber'}>{validationLabel}</Badge>
     </div>
 
@@ -96,7 +96,17 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
           </select>
         </label>
       </section>
-      {!payrollRows.length ? <EmptyState title="Sin agregados de nómina publicados" text="No se muestran datos individuales." /> : <div className="siio-table-wrap"><table><thead><tr><th>Área</th><th>Personas</th><th>Devengado agregado</th><th>Deducciones agregadas</th><th>Neto total</th><th>Control</th></tr></thead><tbody>{payrollRows.map(row => <tr key={`${row.period_month}:${row.area || 'sin-area'}`}><td><strong>{row.area || 'Área pendiente'}</strong></td><td>{row.total_people || 0}</td><td>{fmtSiioMoney(row.total_accrued)}</td><td>{fmtSiioMoney(row.total_deductions)}</td><td>{fmtSiioMoney(row.net_total)}</td><td>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</td></tr>)}</tbody><tfoot><tr><th>Total</th><th>{payrollTotals.people}</th><th>{fmtSiioMoney(payrollTotals.accrued)}</th><th>{fmtSiioMoney(payrollTotals.deductions)}</th><th>{fmtSiioMoney(payrollTotals.net)}</th><th>Control agregado</th></tr></tfoot></table></div>}
+      {!payrollRows.length ? <EmptyState title="Sin agregados de nómina publicados" text="No se muestran datos individuales." /> : <>
+        <div className="siio-table-wrap siio-payroll-table"><table><thead><tr><th>Área</th><th>Personas</th><th>Devengado agregado</th><th>Deducciones agregadas</th><th>Neto total</th><th>Control</th></tr></thead><tbody>{payrollRows.map(row => <tr key={`${row.period_month}:${row.area || 'sin-area'}`}><td><strong>{row.area || 'Área pendiente'}</strong></td><td>{row.total_people || 0}</td><td>{fmtSiioMoney(row.total_accrued)}</td><td>{fmtSiioMoney(row.total_deductions)}</td><td>{fmtSiioMoney(row.net_total)}</td><td>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</td></tr>)}</tbody><tfoot><tr><th>Total</th><th>{payrollTotals.people}</th><th>{fmtSiioMoney(payrollTotals.accrued)}</th><th>{fmtSiioMoney(payrollTotals.deductions)}</th><th>{fmtSiioMoney(payrollTotals.net)}</th><th>Control agregado</th></tr></tfoot></table></div>
+        <div className="siio-payroll-cards">{payrollRows.map(row => <article className="siio-payroll-card" key={`${row.period_month}:${row.area || 'sin-area'}:card`}>
+          <div><span className="siio-secondary">Área</span><strong>{row.area || 'Área pendiente'}</strong></div>
+          <div><span className="siio-secondary">Personas</span><strong>{row.total_people || 0}</strong></div>
+          <div><span className="siio-secondary">Devengado</span><strong>{fmtSiioMoney(row.total_accrued)}</strong></div>
+          <div><span className="siio-secondary">Deducciones</span><strong>{fmtSiioMoney(row.total_deductions)}</strong></div>
+          <div><span className="siio-secondary">Neto</span><strong>{fmtSiioMoney(row.net_total)}</strong></div>
+          <div><span className="siio-secondary">Control</span>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</div>
+        </article>)}</div>
+      </>}
     </Panel>
 
     <Panel title="Vigencia de fuentes">

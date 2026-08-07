@@ -57,7 +57,7 @@ export function SiioSourcesIntelligenceView({ payload, routeState, onNavigate }:
         {visibleSources.map(source => {
           const assessment = deriveSourceAssessment(source);
           return <article className="siio-insight" key={source.id}>
-            <header><div><span className="eyebrow">{source.id}</span><h3>{source.name}</h3></div><Badge tone={sourceFreshness(source) === 'vencida' ? 'danger' : sourceFreshness(source) === 'próxima_a_vencer' ? 'amber' : 'green'}>{freshnessLabels[sourceFreshness(source)]}</Badge></header>
+            <header><div><span className="siio-eyebrow">{source.id}</span><h3>{source.name}</h3></div><Badge tone={sourceFreshness(source) === 'vencida' ? 'danger' : sourceFreshness(source) === 'próxima_a_vencer' ? 'amber' : 'green'}>{freshnessLabels[sourceFreshness(source)]}</Badge></header>
             <div className="siio-insight-detail">
               <div><strong>Disponibilidad</strong><span>{assessment.availability}</span></div>
               <div><strong>Revisión</strong><span>{assessment.review}</span></div>
@@ -85,7 +85,7 @@ export function SiioSourcesIntelligenceView({ payload, routeState, onNavigate }:
         {recommendations.map(recommendation => {
           const sourceNames = recommendation.sourceIds.map(sourceId => sourceId === 'Pendiente de evidencia' ? 'Pendiente de evidencia' : `${sourceNameById(payload.sources, sourceId)} (${sourceId})`);
           return <article className={`siio-insight siio-insight-${recommendation.tone}`} key={recommendation.id}>
-            <header><div><span className="eyebrow">{recommendation.front} · {recommendation.priority}</span><h3>{recommendation.title}</h3></div></header>
+            <header><div><span className="siio-eyebrow">{recommendation.front} · {recommendation.priority}</span><h3>{recommendation.title}</h3></div></header>
             <p>{recommendation.finding}</p>
             <div className="siio-insight-detail">
               <div><strong>Evidencia</strong><span>{recommendation.evidence || 'Pendiente de evidencia'}</span></div>
