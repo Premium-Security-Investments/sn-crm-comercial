@@ -312,6 +312,15 @@ function run() {
   // Unknown key inside coverage.
   expectRejects((ia) => { ia.coverage.extra = 'x'; }, /clave|key/i);
 
+  // coverage.analyzed_requirement_ids must equal expected_requirement_ids exactly, in
+  // order — not merely be a duplicate-free subset of the governed manifest (a partial or
+  // reordered list must never pass as full coverage).
+  expectRejects((ia) => { ia.coverage.analyzed_requirement_ids = ia.coverage.analyzed_requirement_ids.slice(0, -1); }, /analyzed_requirement_ids/i);
+  expectRejects((ia) => {
+    const [first, second, ...rest] = ia.coverage.analyzed_requirement_ids;
+    ia.coverage.analyzed_requirement_ids = [second, first, ...rest];
+  }, /analyzed_requirement_ids/i);
+
   // Unknown key inside a nested unit object (evidence_state).
   expectRejects((ia) => { ia.analysis_units[0].evidence_state.extra = 'x'; }, /clave|key/i);
 

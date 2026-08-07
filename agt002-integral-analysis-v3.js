@@ -318,12 +318,13 @@ function validateCoverage(coverage, ctx) {
     fail('coverage.expected_requirement_ids debe coincidir exactamente, en orden, con el manifiesto gobernado.');
   }
 
-  if (!Array.isArray(coverage.analyzed_requirement_ids)) fail('coverage.analyzed_requirement_ids debe ser un arreglo.');
-  const analyzedSeen = new Set();
-  for (const id of coverage.analyzed_requirement_ids) {
-    if (!ctx.requirementManifestById.has(id)) fail(`coverage.analyzed_requirement_ids contiene un id fuera del manifiesto: ${id}.`);
-    if (analyzedSeen.has(id)) fail(`coverage.analyzed_requirement_ids contiene un id duplicado: ${id}.`);
-    analyzedSeen.add(id);
+  // Design section 5, invariant 3: analyzed_requirement_ids must coincide EXACTLY, in the
+  // same order, with expected_requirement_ids — never a mere duplicate-free subset of the
+  // governed manifest. A partial or reordered list would silently understate coverage.
+  if (!Array.isArray(coverage.analyzed_requirement_ids)
+    || coverage.analyzed_requirement_ids.length !== expectedIds.length
+    || coverage.analyzed_requirement_ids.some((id, index) => id !== expectedIds[index])) {
+    fail('coverage.analyzed_requirement_ids debe coincidir exactamente, en el mismo orden, con expected_requirement_ids/el manifiesto gobernado.');
   }
 
   requireBoolean(coverage.material_omissions, 'coverage.material_omissions');

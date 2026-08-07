@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { registerAgt002PreviewAnalysis, findAgt002PreviewRun, computeAgt002PreviewIdempotencyKey } from '../agt002-preview-persistence.js';
+import { projectAgt002IntegralV3ToV2 } from '../agt002-v3-compatibility.js';
 
 // Task 7, Step 2: v2/v3 coexistence on the real append-only + canonical-promotion (063)
 // schema, driven through the actual JS persistence module (not raw RPC calls) — a
@@ -121,41 +122,39 @@ function v2Envelope() {
 }
 
 function v3Envelope() {
+  const integral_analysis = {
+    contract_version: 'agt002-integral-analysis-v3',
+    coverage: {
+      manifest_version: 'agt002-deep-analysis-v1', expected_requirement_ids: ['req-1'], analyzed_requirement_ids: ['req-1'],
+      material_omissions: false, omission_reasons: [], company_evidence_manifest_version: 'agt002-company-evidence-classes-v1',
+      company_evidence_class_ids: [], legal_corpus_version_id: null,
+    },
+    analysis_units: [{
+      unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: 'req-1', category: 'habilitating', sequence: 1,
+      title: 'Póliza vigente', assessment_mode: 'assessed',
+      conclusion: { status: 'supported_with_evidence', summary: 'Evidencia sustenta la póliza.', confidence: 'high' },
+      blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
+      evidence_state: { presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable', compliance: 'supported_pending_human_review' },
+      evidence_refs: [{ ref: 'chunk:1', source_type: 'tender_document', purpose: 'requirement_basis' }],
+      missing_evidence: [], commercial_impact: { level: 'low', summary: 'Sin impacto.', dimension: 'eligibility' },
+      legal_assessment: { status: 'not_applicable', basis_refs: [], summary: 'No aplica.', human_legal_review_required: false },
+      actions: [], milestone: { status: 'not_identified', type: 'none', at: null, source_ref: null, summary: 'Sin hito.' },
+      escalation: { required: false, level: 'none', reason: 'Sin condición crítica.' },
+      closure: { status: 'human_confirmation_required', condition: 'Persona confirma.', evidence_required: ['tender_document'] },
+      human_validation: { required: true, status: 'pending', reason: 'Confirmar.' },
+    }],
+  };
   return {
     schema_version: '3.0.0', agent_id: 'AGT-002', run_id: '55555555-5555-4555-8555-555555555552',
     policy_version: 'agt002-integral-v3-policy-1', snapshot_id: S, context_version_id: null,
     status: 'completed', method: 'agent_ai',
-    integral_analysis: {
-      contract_version: 'agt002-integral-analysis-v3',
-      coverage: {
-        manifest_version: 'agt002-deep-analysis-v1', expected_requirement_ids: ['req-1'], analyzed_requirement_ids: ['req-1'],
-        material_omissions: false, omission_reasons: [], company_evidence_manifest_version: 'agt002-company-evidence-classes-v1',
-        company_evidence_class_ids: [], legal_corpus_version_id: null,
-      },
-      analysis_units: [{
-        unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: 'req-1', category: 'habilitating', sequence: 1,
-        title: 'Póliza vigente', assessment_mode: 'assessed',
-        conclusion: { status: 'supported_with_evidence', summary: 'Evidencia sustenta la póliza.', confidence: 'high' },
-        blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
-        evidence_state: { presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable', compliance: 'supported_pending_human_review' },
-        evidence_refs: [{ ref: 'chunk:1', source_type: 'tender_document', purpose: 'requirement_basis' }],
-        missing_evidence: [], commercial_impact: { level: 'low', summary: 'Sin impacto.', dimension: 'eligibility' },
-        legal_assessment: { status: 'not_applicable', basis_refs: [], summary: 'No aplica.', human_legal_review_required: false },
-        actions: [], milestone: { status: 'not_identified', type: 'none', at: null, source_ref: null, summary: 'Sin hito.' },
-        escalation: { required: false, level: 'none', reason: 'Sin condición crítica.' },
-        closure: { status: 'human_confirmation_required', condition: 'Persona confirma.', evidence_required: ['tender_document'] },
-        human_validation: { required: true, status: 'pending', reason: 'Confirmar.' },
-      }],
-    },
+    integral_analysis,
     evidence_coverage: undefined,
     legal_corpus_version_id: null,
     human_review_required: true,
-    v2_projection: {
-      recommendation: 'advance', summary: 'V3 run summary.',
-      strengths: [{ id: 'UNIT-1::strength', text: 'Evidencia sustenta la póliza.', critical: false, evidence_refs: ['chunk:1'] }],
-      weaknesses: [], blockers: [], questions: [], unverified: [], next_action: 'Revisión humana final requerida antes de continuar con la oportunidad.',
-      human_review_required: true,
-    },
+    // Persistence recomputes and rejects a mismatch, so this must be the real
+    // deterministic projection, not hand-typed placeholder text.
+    v2_projection: projectAgt002IntegralV3ToV2(integral_analysis),
     usage: { provider: 'codex_app_server', model: 'v3-model', input_tokens: 3, output_tokens: 3, rate_limit: null },
   };
 }

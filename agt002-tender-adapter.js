@@ -1,3 +1,4 @@
+import { deepStrictEqual } from 'node:assert';
 import { validateTenderAnalysisResult } from './tender-analysis-domain.js';
 import { validateAgt002IntegralAnalysisV3 } from './agt002-integral-analysis-v3.js';
 import { projectAgt002IntegralV3ToV2 } from './agt002-v3-compatibility.js';
@@ -127,11 +128,19 @@ export function adaptAgt002TenderAnalysis(envelope) {
 // two shapes reject each other's payload by construction, never a hybrid.
 // ---------------------------------------------------------------------------
 
+// v3's envelope carries the engine's own real output shape (design section 4.2/4.3): the
+// `v2_projection` field the engine attaches for existing v2 readers, and a `usage` object
+// with `rate_limit` (the codex_app_server provider never returns a cost figure) instead of
+// v2's `cost_usd`. This is a DISTINCT closed shape from the v2 envelope/USAGE_KEYS above —
+// v2 is untouched — reconciled here so the real producer (agt002-preview-engine.js
+// runOnceV3) and this same-version consumer accept exactly the same object, never a
+// hand-approximated fixture.
 const ENVELOPE_KEYS_V3 = [
   'schema_version', 'agent_id', 'run_id', 'policy_version', 'snapshot_id', 'context_version_id',
   'status', 'method', 'integral_analysis', 'evidence_coverage', 'legal_corpus_version_id',
-  'human_review_required', 'usage',
+  'human_review_required', 'v2_projection', 'usage',
 ];
+const USAGE_KEYS_V3 = ['provider', 'model', 'input_tokens', 'output_tokens', 'rate_limit'];
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -158,12 +167,22 @@ export function validateAgt002TenderAnalysisEnvelopeV3(value, integralValidation
     throw new Error('legal_corpus_version_id AGT-002 v3 debe ser UUID o null.');
   }
   if (value.human_review_required !== true) throw new Error('La revisión humana es obligatoria.');
-  if (!exactKeys(value.usage, USAGE_KEYS)
+  // Defense in depth (design section 9.9/11.9): the carried v2_projection is never trusted
+  // as-is — it must equal, field for field, the deterministic projection this same module
+  // derives from the already-validated integral_analysis. A hand-typed or stale projection
+  // is rejected outright rather than silently persisted or adapted.
+  const recomputedProjection = projectAgt002IntegralV3ToV2(value.integral_analysis);
+  try {
+    deepStrictEqual(value.v2_projection, recomputedProjection);
+  } catch {
+    throw new Error('v2_projection AGT-002 v3 no coincide con la proyección determinística recomputada desde integral_analysis.');
+  }
+  if (!exactKeys(value.usage, USAGE_KEYS_V3)
     || !nonEmptyString(value.usage.provider)
     || !nonEmptyString(value.usage.model)
     || !Number.isInteger(value.usage.input_tokens) || value.usage.input_tokens < 0
     || !Number.isInteger(value.usage.output_tokens) || value.usage.output_tokens < 0
-    || typeof value.usage.cost_usd !== 'number' || !Number.isFinite(value.usage.cost_usd) || value.usage.cost_usd < 0) {
+    || (value.usage.rate_limit !== null && !isPlainObject(value.usage.rate_limit))) {
     throw new Error('El uso AGT-002 v3 no es válido.');
   }
   return value;

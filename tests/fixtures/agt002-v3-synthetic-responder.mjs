@@ -32,9 +32,17 @@ export function buildAgt002V3SyntheticValidationContext() {
     // Governed evidence-state map (agt002-evidence-state-manifest.js's contract): the
     // ONLY source of truth for each tender_requirement unit's evidence_state below, one
     // entry per requirement_id, hand-authored here exactly like requirementManifest and
-    // allowlist already are (no company-evidence-class linkage is curated in this purely
-    // synthetic fixture — a real run would assemble this via
-    // buildAgt002EvidenceStateManifest against the real 17-class catalog).
+    // allowlist already are. This is NOT what a real run assembles: the real
+    // buildAgt002EvidenceStateManifest() always writes evidence_state.compliance as
+    // "unknown" — there is no write path yet for a governed compliance determination
+    // (see that module's header comment) — so a real run can only ever abstain
+    // (conclusion "human_validation_required"/"insufficient_evidence", never a material
+    // status). The material compliance values below (e.g.
+    // "supported_pending_human_review") are purely hypothetical, chosen only to exercise
+    // this validator's structural and cross-axis invariants end to end; they are
+    // unreachable through the actually wired engine today (see the real
+    // engine→same-version-adapter→persistence regression in
+    // tests/agt002-preview-engine.test.mjs for the abstention-only path).
     evidenceStateManifest: [
       {
         requirement_id: 'REQ-DISCARD',

@@ -317,7 +317,9 @@ export type TenderIntegralAnalysisV3 = {
   contract_version: string;
   coverage: {
     manifest_version: string; expected_requirement_ids: string[]; analyzed_requirement_ids: string[];
-    material_omissions: boolean; omission_reasons: string[]; legal_corpus_version_id: string | null;
+    material_omissions: boolean; omission_reasons: string[];
+    company_evidence_manifest_version: string; company_evidence_class_ids: string[];
+    legal_corpus_version_id: string | null;
   };
   analysis_units: TenderIntegralAnalysisUnit[];
 };

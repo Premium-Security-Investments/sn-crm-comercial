@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { deepStrictEqual } from 'node:assert';
 import { validateAgt002RequirementManifest } from './agt002-deep-analysis-matrix.js';
+import { projectAgt002IntegralV3ToV2, computeAgt002IntegralV3CriticalOpenCount } from './agt002-v3-compatibility.js';
 
 const CONTENT_KEYS = ['recommendation', 'summary', 'strengths', 'weaknesses', 'blockers', 'questions', 'unverified', 'next_action', 'human_review_required'];
 const AGT002_INTEGRAL_V3_SCHEMA_VERSION = '3.0.0';
@@ -160,7 +162,18 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     if (!isRecord(v2Projection) || CONTENT_KEYS.some(key => !Object.hasOwn(v2Projection, key))) {
       throw new Error('AGT-002 Preview v3 requiere su proyección v2 determinística completa.');
     }
-    content = Object.fromEntries(CONTENT_KEYS.map(key => [key, v2Projection[key]]));
+    // Design section 9.9/11.9: never trust the envelope's own copy of the v2 projection —
+    // recompute it from integral_analysis (the only validated source of truth) and reject
+    // the whole run before any RPC if the carried projection disagrees. This closes the
+    // gap where a future non-engine caller (API route, backfill, reader) could otherwise
+    // persist an arbitrary/contradictory projection alongside a valid integral_analysis.
+    const recomputedProjection = projectAgt002IntegralV3ToV2(integralAnalysis);
+    try {
+      deepStrictEqual(v2Projection, recomputedProjection);
+    } catch {
+      throw new Error('AGT-002 Preview v3: v2_projection no coincide con la proyección determinística recomputada desde integral_analysis.');
+    }
+    content = recomputedProjection;
     content.integral_analysis = integralAnalysis;
     if (envelope.evidence_coverage !== undefined) {
       content.evidence_coverage = validateEvidenceCoverage(envelope.evidence_coverage, snapshotId);
@@ -198,7 +211,13 @@ export async function registerAgt002PreviewAnalysis(database, context) {
       throw new Error('La evidencia jurídica requiere su legal_corpus_version_id exacto como par atómico.');
     }
   }
-  const criticalOpenCount = countCriticalOpenQuestions(content);
+  // v3's critical_open_count is derived directly from integral_analysis (design section
+  // 10), independent of the projected `questions` array, rather than re-counting the
+  // projection's own critical markers — a second, independent derivation from the
+  // validated source of truth, not a re-read of a value already trusted once.
+  const criticalOpenCount = isIntegralV3
+    ? computeAgt002IntegralV3CriticalOpenCount(envelope.integral_analysis)
+    : countCriticalOpenQuestions(content);
   // Canonical persistence is fail-closed: every new Vig-IA run must point to the
   // immutable context version it consumed, including an initial version with no
   // human evidence yet. This also makes reanalysis idempotency context-specific.

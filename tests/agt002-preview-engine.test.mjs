@@ -7,7 +7,10 @@ import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v
 import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { retrieveAgt002LegalEvidence } from '../agt002-legal-retrieval.js';
 import { AGT002_COMPANY_EVIDENCE_CLASS_IDS, buildAgt002CompanyEvidenceClasses } from '../agt002-company-evidence-classes.js';
-import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN, buildAgt002EvidenceStateManifest } from '../agt002-evidence-state-manifest.js';
+import { deriveAgt002IntegralCategoryManifest } from '../agt002-integral-category-manifest.js';
+import { validateAgt002TenderAnalysisEnvelopeV3, adaptAgt002TenderAnalysisV3 } from '../agt002-tender-adapter.js';
+import { registerAgt002PreviewAnalysis } from '../agt002-preview-persistence.js';
 
 const context = {
   opportunity: { id: 'opp-1', company_name: 'Entidad de prueba', title: 'Vigilancia' },
@@ -754,6 +757,82 @@ assert.throws(
     // downgrades to advance_conditionally rather than a plain (unearned) advance.
     assert.equal(result.v2_projection.recommendation, 'advance_conditionally');
     assert.ok(Array.isArray(result.v2_projection.strengths));
+  }
+
+  // Design test 27 / audit P1-1: the REAL envelope emitted by runOnceV3 — not a
+  // hand-approximated fixture — must be accepted by the same-version consumer
+  // (validateAgt002TenderAnalysisEnvelopeV3 / adaptAgt002TenderAnalysisV3). The
+  // validationContext below is independently reconstructed from the same governed
+  // building blocks the engine itself uses (deriveAgt002IntegralCategoryManifest,
+  // buildAgt002EvidenceStateManifest, buildAgt002CompanyEvidenceClasses), exactly as a
+  // real second caller of the same version would have to — never read off the engine's
+  // internals.
+  {
+    const client = fakeClient(async (options) => ({ content: JSON.stringify(buildV3ModelOutput(options)), usage: { input_tokens: 3, output_tokens: 3 } }));
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      companyEvidenceClassesProvider: () => [],
+    });
+    const result = await engine.analyze(v3Context);
+
+    const rawRequirementManifest = result.evidence_coverage.requirement_manifest;
+    const requirementManifest = deriveAgt002IntegralCategoryManifest(rawRequirementManifest, { 'req-poliza': 'habilitating' });
+    const companyEvidenceClasses = buildAgt002CompanyEvidenceClasses({ registryEntries: [] });
+    const evidenceStateManifest = buildAgt002EvidenceStateManifest(rawRequirementManifest, {
+      evidenceClasses: companyEvidenceClasses.classes, evidenceClassLinkByRequirementId: {},
+    });
+    const validationContext = {
+      requirementManifestVersion: result.evidence_coverage.requirement_manifest_version,
+      requirementManifest,
+      companyEvidenceManifestVersion: 'agt002-company-evidence-classes-v1',
+      companyEvidenceClassIds: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
+      legalCorpusVersionId: null,
+      allowlist: {
+        tender_document: [...result.evidence_coverage.citation_allowlist],
+        company_evidence: [],
+        legal_corpus: [],
+        human_evidence: [],
+        objective_validation: [],
+      },
+      materialOmissionsObserved: result.evidence_coverage.material_omissions === true,
+      evidenceStateManifest,
+    };
+
+    const validated = validateAgt002TenderAnalysisEnvelopeV3(result, validationContext);
+    assert.equal(validated, result, 'the real producer envelope must pass its own-version consumer unmodified');
+
+    const adapted = adaptAgt002TenderAnalysisV3(result, validationContext);
+    assert.equal(adapted.producer, 'AGT-002');
+    assert.equal(adapted.run_id, result.run_id);
+    assert.equal(adapted.recommendation, result.v2_projection.recommendation);
+    assert.equal(adapted.human_review_required, true);
+
+    // P2-1 regression: drive the same real engine envelope through the real persistence
+    // boundary in one run. The DB is the only fake; contract assembly, governed safe-unknown
+    // evidence state, projection validation/recomputation, and registration are production code.
+    const rpcCalls = [];
+    const database = { async rpc(name, params) {
+      rpcCalls.push({ name, params });
+      assert.equal(name, 'psi_record_agt002_canonical_analysis_run');
+      return { data: {
+        id: '99999999-9999-4999-8999-999999999999', snapshot_id: params.p_snapshot_id,
+        producer: 'AGT-002', method: 'agent_ai', status: 'completed', canonical: true,
+        critical_open_count: params.p_critical_open_count, context_version_id: params.p_context_version_id,
+      }, error: null };
+    } };
+    const registered = await registerAgt002PreviewAnalysis(database, {
+      opportunity_id: '11111111-1111-4111-8111-111111111111',
+      tender_id: '22222222-2222-4222-8222-222222222222',
+      snapshot_id: v3Context.snapshotId,
+      envelope: result,
+      canonicalOnly: true,
+      context_version_id: '33333333-3333-4333-8333-333333333333',
+    });
+    assert.equal(rpcCalls.length, 1);
+    assert.equal(registered.result.integral_analysis.analysis_units[0].evidence_state.compliance, 'unknown');
+    assert.equal(registered.result.integral_analysis.analysis_units[0].conclusion.status, 'human_validation_required');
+    assert.equal(registered.result.recommendation, result.v2_projection.recommendation);
   }
 
   // The model attempting to forge governed fields (run identity, usage, legacy v2 keys)

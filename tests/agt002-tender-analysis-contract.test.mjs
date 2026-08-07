@@ -11,6 +11,7 @@ import { buildSyntheticAgt002TenderAnalysis } from './fixtures/agt002-synthetic-
 import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../agt002-integral-analysis-v3.js';
 import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
 import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
+import { projectAgt002IntegralV3ToV2 } from '../agt002-v3-compatibility.js';
 
 const v1Files = ['manifest.json', 'analysis.request.schema.json', 'analysis.response.schema.json'];
 const v1Hash = createHash('sha256').update(v1Files.map(name => readFileSync(new URL(`../contracts/agents/AGT-002/v1/${name}`, import.meta.url))).join('\n')).digest('hex');
@@ -159,6 +160,39 @@ function buildV3IntegralAnalysisValidationContext() {
 }
 
 function buildV3Envelope() {
+  const integral_analysis = {
+    contract_version: AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION,
+    coverage: {
+      manifest_version: 'agt002-deep-analysis-v1',
+      expected_requirement_ids: ['REQ-1'],
+      analyzed_requirement_ids: ['REQ-1'],
+      material_omissions: false,
+      omission_reasons: [],
+      company_evidence_manifest_version: 'agt002-company-evidence-classes-v1',
+      company_evidence_class_ids: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
+      legal_corpus_version_id: null,
+    },
+    analysis_units: [{
+      unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: 'REQ-1', category: 'discard', sequence: 1,
+      title: 'Requisito sintético', assessment_mode: 'assessed',
+      // REQ-1 has no governed evidence-class link (safe-unknown evidence_state,
+      // compliance "unknown"), so conclusion.status must honestly be
+      // "human_validation_required" (P0: a material conclusion can never coexist with
+      // compliance "unknown") with confidence "medium" (P1: never "high").
+      conclusion: { status: 'human_validation_required', summary: 'Sin evidencia gobernada disponible; requiere validación humana.', confidence: 'medium' },
+      blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
+      evidence_state: AGT002_EVIDENCE_STATE_SAFE_UNKNOWN,
+      evidence_refs: [{ ref: 'TD-1', source_type: 'tender_document', purpose: 'requirement_basis' }],
+      missing_evidence: [],
+      commercial_impact: { level: 'low', summary: 'Sin impacto.', dimension: 'eligibility' },
+      legal_assessment: { status: 'not_applicable', basis_refs: [], summary: 'No aplica.', human_legal_review_required: false },
+      actions: [],
+      milestone: { status: 'not_identified', type: 'none', at: null, source_ref: null, summary: 'Sin hito.' },
+      escalation: { required: false, level: 'none', reason: 'Sin condición crítica.' },
+      closure: { status: 'human_confirmation_required', condition: 'Persona confirma.', evidence_required: ['tender_document'] },
+      human_validation: { required: true, status: 'pending', reason: 'Confirmar.' },
+    }],
+  };
   return {
     schema_version: '3.0.0',
     agent_id: 'AGT-002',
@@ -168,43 +202,18 @@ function buildV3Envelope() {
     context_version_id: null,
     status: 'completed',
     method: 'agent_ai',
-    integral_analysis: {
-      contract_version: AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION,
-      coverage: {
-        manifest_version: 'agt002-deep-analysis-v1',
-        expected_requirement_ids: ['REQ-1'],
-        analyzed_requirement_ids: ['REQ-1'],
-        material_omissions: false,
-        omission_reasons: [],
-        company_evidence_manifest_version: 'agt002-company-evidence-classes-v1',
-        company_evidence_class_ids: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
-        legal_corpus_version_id: null,
-      },
-      analysis_units: [{
-        unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: 'REQ-1', category: 'discard', sequence: 1,
-        title: 'Requisito sintético', assessment_mode: 'assessed',
-        // REQ-1 has no governed evidence-class link (safe-unknown evidence_state,
-        // compliance "unknown"), so conclusion.status must honestly be
-        // "human_validation_required" (P0: a material conclusion can never coexist with
-        // compliance "unknown") with confidence "medium" (P1: never "high").
-        conclusion: { status: 'human_validation_required', summary: 'Sin evidencia gobernada disponible; requiere validación humana.', confidence: 'medium' },
-        blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
-        evidence_state: AGT002_EVIDENCE_STATE_SAFE_UNKNOWN,
-        evidence_refs: [{ ref: 'TD-1', source_type: 'tender_document', purpose: 'requirement_basis' }],
-        missing_evidence: [],
-        commercial_impact: { level: 'low', summary: 'Sin impacto.', dimension: 'eligibility' },
-        legal_assessment: { status: 'not_applicable', basis_refs: [], summary: 'No aplica.', human_legal_review_required: false },
-        actions: [],
-        milestone: { status: 'not_identified', type: 'none', at: null, source_ref: null, summary: 'Sin hito.' },
-        escalation: { required: false, level: 'none', reason: 'Sin condición crítica.' },
-        closure: { status: 'human_confirmation_required', condition: 'Persona confirma.', evidence_required: ['tender_document'] },
-        human_validation: { required: true, status: 'pending', reason: 'Confirmar.' },
-      }],
-    },
+    integral_analysis,
     evidence_coverage: { material_omissions: false, omitted_count: 0 },
     legal_corpus_version_id: null,
     human_review_required: true,
-    usage: { provider: 'synthetic', model: 'synthetic-v3', input_tokens: 1, output_tokens: 1, cost_usd: 0 },
+    // v2_projection is never hand-typed: it must be exactly the deterministic projection
+    // the real engine/adapter would derive from integral_analysis, or the same-version
+    // consumer's recompute-and-reject-mismatch defense (agt002-tender-adapter.js) rejects
+    // it outright — matching design section 4.2's engine-assembled envelope shape.
+    v2_projection: projectAgt002IntegralV3ToV2(integral_analysis),
+    // Real engine usage shape (agt002-preview-engine.js runOnceV3): the codex_app_server
+    // provider returns a rate_limit snapshot, never a cost figure.
+    usage: { provider: 'synthetic', model: 'synthetic-v3', input_tokens: 1, output_tokens: 1, rate_limit: null },
   };
 }
 

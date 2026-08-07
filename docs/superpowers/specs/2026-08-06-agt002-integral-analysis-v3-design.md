@@ -1,7 +1,7 @@
 # Diseño — contrato integral AGT‑002 v3
 
 **Fecha:** 2026-08-06
-**Estado:** propuesta cerrada para revisión técnica; no implementada
+**Estado:** implementado localmente en `feat/agt002-v3-foundations`; flag apagado, sin despliegue ni canary real
 **Producto:** SIIO — Licitaciones / Oportunidades
 **Agente visible:** Vig‑IA · Copiloto de Licitaciones
 **Identificador:** `AGT-002`
@@ -22,9 +22,11 @@ Vig‑IA analiza y recomienda. No decide GO/NO-GO, no aprueba, no asigna persona
 5. Mantener intactos runs v2 y consumidores actuales mediante una proyección determinística.
 6. Transportar sólo referencias y metadatos permitidos; nunca contenido documental bruto ni datos sensibles.
 
+> **Actualización 2026-08-07:** el objetivo fue ampliado después de la auditoría. El runtime y la superficie real opcional de cinco fases sí se implementaron localmente. Siguen fuera de alcance de este bloque los datos reales, la activación, el deploy y el GO/NO-GO automático. La categoría formal se obtiene sólo de mapeo de frente inequívoco o override gobernado; los cinco ejes se validan contra un manifiesto gobernado por requisito y, sin enlace real, quedan en estado seguro `unknown/not_reviewed`.
+
 ## 3. Fuera de alcance
 
-- UI o rollout visual;
+- rollout visual o activación para usuarios (la UI real opcional sí existe localmente);
 - procesamiento de expedientes reales;
 - backfill de runs v2;
 - migración o despliegue remoto;

@@ -9,6 +9,7 @@ import {
   registerAgt002PreviewAnalysis,
   releaseAgt002PreviewClaim,
 } from '../agt002-preview-persistence.js';
+import { projectAgt002IntegralV3ToV2 } from '../agt002-v3-compatibility.js';
 
 const ids = {
   opportunity: '22222222-2222-4222-8222-222222222222',
@@ -531,14 +532,27 @@ function v3Envelope(overrides = {}) {
     evidence_coverage: envelope().evidence_coverage,
     legal_corpus_version_id: null,
     human_review_required: true,
-    v2_projection: {
-      recommendation: 'advance', summary: 'Resumen determinístico.', strengths: [{ id: 'UNIT-1::strength', text: 'Evidencia sustenta la póliza.', critical: false, evidence_refs: ['chunk:1'] }],
-      weaknesses: [], blockers: [], questions: [], unverified: [], next_action: 'Revisión humana final requerida antes de continuar con la oportunidad.',
-      human_review_required: true,
-    },
+    // Never hand-typed: persistence now recomputes this from integral_analysis and
+    // rejects the run if it disagrees, so the fixture must carry the real deterministic
+    // projection, exactly like the actual engine output would.
+    v2_projection: projectAgt002IntegralV3ToV2(integral_analysis),
     usage: { provider: 'codex_app_server', model: 'synthetic-codex-model', input_tokens: 5, output_tokens: 5, rate_limit: null },
     ...overrides,
   };
+}
+
+// A variant whose single unit is an unresolved, curable blocker: exercises
+// critical_open_count derivation (isCriticalOpenUnit via isUnresolvedBlocker) independent
+// of the happy-path fixture above.
+function v3IntegralAnalysisWithCriticalUnit() {
+  const analysis = v3IntegralAnalysis();
+  const unit = analysis.analysis_units[0];
+  unit.blocking = { effect: 'blocker', curability: 'curable', reason: 'Pendiente de confirmación crítica.' };
+  unit.actions = [{
+    action_id: 'ACT-1', action_type: 'remediate_gap', summary: 'Subsanar antes del cierre.',
+    basis_unit_id: 'UNIT-1', suggested_role: 'financial', priority: 'high', external_side_effect: false,
+  }];
+  return analysis;
 }
 
 // v3 registration persists the deterministic v2 projection (v2 readers keep working) plus
@@ -567,21 +581,39 @@ function v3Envelope(overrides = {}) {
   }
 }
 
-// v3 with a critical question in its projection: critical_open_count must equal the
-// projected critical question count exactly (not re-derived independently).
+// v3 with a genuinely critical unit (unresolved curable blocker): critical_open_count
+// must equal the count independently derived from integral_analysis itself (design
+// section 10) — not a value merely copied from the caller-supplied projection.
 {
   const database = fakeDatabase();
+  const criticalAnalysis = v3IntegralAnalysisWithCriticalUnit();
   const withCritical = v3Envelope({
-    v2_projection: {
-      ...v3Envelope().v2_projection,
-      questions: [{ id: 'UNIT-1::question', text: 'x', critical: true, evidence_refs: [] }],
-    },
+    integral_analysis: criticalAnalysis,
+    v2_projection: projectAgt002IntegralV3ToV2(criticalAnalysis),
   });
   const registered = await registerAgt002PreviewAnalysis(database, {
     opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: withCritical, canonicalOnly: true,
     context_version_id: ids.contextVersion,
   });
   assert.equal(registered.critical_open_count, 1);
+}
+
+// Defense in depth (design section 9.9/11.9): a caller-supplied v2_projection that
+// disagrees with the deterministic projection recomputed from integral_analysis must be
+// rejected before any RPC — never silently persisted as given.
+{
+  const database = fakeDatabase();
+  const tampered = v3Envelope({
+    v2_projection: { ...v3Envelope().v2_projection, recommendation: 'do_not_advance' },
+  });
+  await assert.rejects(
+    () => registerAgt002PreviewAnalysis(database, {
+      opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: tampered, canonicalOnly: true,
+      context_version_id: ids.contextVersion,
+    }),
+    /no coincide con la proyección determinística/i,
+  );
+  assert.equal(database.rpcCalls.length, 0, 'a v2_projection mismatch must never call the RPC');
 }
 
 // v3 requires canonical registration: the flag can only ever be enabled alongside

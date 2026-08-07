@@ -2,6 +2,8 @@
 
 > **For Hermes:** Execute task-by-task with strict RED → GREEN → regression. Use direct Claude Code CLI Sonnet for implementation when available; use GPT fallback if Claude is unavailable. Preserve one independent review at the end of the block.
 
+**Execution status (2026-08-07):** implemented locally through Tasks 1–10 plus the audited category/five-axis provenance gaps and the subsequently approved real five-phase UI. Flag remains off; no real case, remote migration, push, PR or deploy was performed. Exact evidence is in `docs/verification/2026-08-07-agt002-integral-v3-local.md`.
+
 **Goal:** Introduce a closed, evidence-or-abstention AGT‑002 v3 contract whose canonical source is one ordered analysis unit per governed requirement, while preserving immutable v2 history and generating a deterministic v2 compatibility projection.
 
 **Architecture:** Add pure v3 validators and projection first. Extend the existing Preview contract/engine behind a fail-closed flag. The model returns only `integral_analysis`; the engine attaches governed run/context/coverage/corpus metadata, derives the v2 projection, and persists both atomically in the existing append-only run JSON. Existing v2 readers remain unchanged; v3-aware readers receive an optional extension. No UI or production activation in this block.
