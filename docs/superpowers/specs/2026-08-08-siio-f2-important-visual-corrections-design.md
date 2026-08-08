@@ -1,8 +1,8 @@
 # SIIO F2 — correcciones Important del QA visual
 
-**Fecha:** 2026-08-08  
-**Base:** `origin/main@39bef1d4d0755c916ee3a44aa7ee4bc222aaf8a1`  
-**Rama aislada:** `fix/siio-f2-important-fixes`  
+**Fecha:** 2026-08-08
+**Base:** `origin/main@39bef1d4d0755c916ee3a44aa7ee4bc222aaf8a1`
+**Rama aislada:** `fix/siio-f2-important-fixes`
 **Estado:** aprobado por Juan con autonomía de ejecución; detenerse antes de push/deploy.
 
 ## 1. Objetivo
