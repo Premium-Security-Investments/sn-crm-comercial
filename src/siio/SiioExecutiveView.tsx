@@ -38,7 +38,7 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
     alerts: total.alerts + (row.alert ? 1 : 0),
   }), { people: 0, accrued: 0, deductions: 0, net: 0, alerts: 0 }), [payrollRows]);
   const recommendations = useMemo(() => deriveRecommendations(snapshot), [snapshot]);
-  const count = (kind: SiioTrackingKind) => trackingItems.filter(item => item.kind === kind).length;
+  const count = (kind: SiioTrackingKind) => trackingItems.filter(item => item.kind === kind && item.activityState === 'active').length;
   const trackingLink = (kind: SiioTrackingKind) => onNavigate(navigateSiioView('seguimiento', { kind }));
   const intelligenceLink = () => onNavigate(navigateSiioView('inteligencia', { period: selectedPeriod }));
   const validationLabel = snapshot.financialValidationStatus === 'validado' ? 'Validado por Finanzas' : snapshot.financialValidationStatus === 'sin_datos' ? 'Sin datos publicados' : 'Pendiente de validación financiera';
@@ -54,9 +54,11 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
     </section>
 
     <div className="siio-executive-status">
-      <div><span className="eyebrow">Resumen ejecutivo</span><strong>Información disponible para gestión</strong></div>
+      <div><span className="siio-eyebrow">Resumen ejecutivo</span><strong>Información disponible para gestión</strong></div>
       <Badge tone={snapshot.financialValidationStatus === 'validado' ? 'green' : 'amber'}>{validationLabel}</Badge>
     </div>
+
+    {snapshot.financialValidationStatus !== 'validado' ? <div className="notice siio-preliminary-notice" role="status">Lectura preliminar — requiere validación financiera antes de usarse como conclusión ejecutiva.</div> : null}
 
     <div className="siio-period-line"><span>Periodo financiero</span><strong>{formatPeriod(selectedPeriod)}</strong></div>
     <div className="siio-executive-grid">
@@ -94,7 +96,26 @@ export function SiioExecutiveView({ payload, routeState, onNavigate }: { payload
           </select>
         </label>
       </section>
-      {!payrollRows.length ? <EmptyState title="Sin agregados de nómina publicados" text="No se muestran datos individuales." /> : <div className="siio-table-wrap"><table><thead><tr><th>Área</th><th>Personas</th><th>Devengado agregado</th><th>Deducciones agregadas</th><th>Neto total</th><th>Control</th></tr></thead><tbody>{payrollRows.map(row => <tr key={`${row.period_month}:${row.area || 'sin-area'}`}><td><strong>{row.area || 'Área pendiente'}</strong></td><td>{row.total_people || 0}</td><td>{fmtSiioMoney(row.total_accrued)}</td><td>{fmtSiioMoney(row.total_deductions)}</td><td>{fmtSiioMoney(row.net_total)}</td><td>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</td></tr>)}</tbody><tfoot><tr><th>Total</th><th>{payrollTotals.people}</th><th>{fmtSiioMoney(payrollTotals.accrued)}</th><th>{fmtSiioMoney(payrollTotals.deductions)}</th><th>{fmtSiioMoney(payrollTotals.net)}</th><th>Control agregado</th></tr></tfoot></table></div>}
+      {!payrollRows.length ? <EmptyState title="Sin agregados de nómina publicados" text="No se muestran datos individuales." /> : <>
+        <div className="siio-table-wrap siio-payroll-table"><table><thead><tr><th>Área</th><th>Personas</th><th>Devengado agregado</th><th>Deducciones agregadas</th><th>Neto total</th><th>Control</th></tr></thead><tbody>{payrollRows.map(row => <tr key={`${row.period_month}:${row.area || 'sin-area'}`}><td><strong>{row.area || 'Área pendiente'}</strong></td><td>{row.total_people || 0}</td><td>{fmtSiioMoney(row.total_accrued)}</td><td>{fmtSiioMoney(row.total_deductions)}</td><td>{fmtSiioMoney(row.net_total)}</td><td>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</td></tr>)}</tbody><tfoot><tr><th>Total</th><th>{payrollTotals.people}</th><th>{fmtSiioMoney(payrollTotals.accrued)}</th><th>{fmtSiioMoney(payrollTotals.deductions)}</th><th>{fmtSiioMoney(payrollTotals.net)}</th><th>Control agregado</th></tr></tfoot></table></div>
+        <div className="siio-payroll-cards">{payrollRows.map(row => <article className="siio-payroll-card" key={`${row.period_month}:${row.area || 'sin-area'}:card`}>
+          <div><span className="siio-secondary">Área</span><strong>{row.area || 'Área pendiente'}</strong></div>
+          <div><span className="siio-secondary">Personas</span><strong>{row.total_people || 0}</strong></div>
+          <div><span className="siio-secondary">Devengado</span><strong>{fmtSiioMoney(row.total_accrued)}</strong></div>
+          <div><span className="siio-secondary">Deducciones</span><strong>{fmtSiioMoney(row.total_deductions)}</strong></div>
+          <div><span className="siio-secondary">Neto</span><strong>{fmtSiioMoney(row.net_total)}</strong></div>
+          <div><span className="siio-secondary">Control</span>{row.alert ? <Badge tone="amber">Validar fuente</Badge> : <Badge tone="green">Consistente</Badge>}</div>
+        </article>)}
+        <article className="siio-payroll-card siio-payroll-total-card">
+          <div><span className="siio-secondary">Área</span><strong>Total</strong></div>
+          <div><span className="siio-secondary">Personas</span><strong>{payrollTotals.people}</strong></div>
+          <div><span className="siio-secondary">Devengado</span><strong>{fmtSiioMoney(payrollTotals.accrued)}</strong></div>
+          <div><span className="siio-secondary">Deducciones</span><strong>{fmtSiioMoney(payrollTotals.deductions)}</strong></div>
+          <div><span className="siio-secondary">Neto</span><strong>{fmtSiioMoney(payrollTotals.net)}</strong></div>
+          <div><span className="siio-secondary">Control</span><strong>Control agregado</strong></div>
+        </article>
+        </div>
+      </>}
     </Panel>
 
     <Panel title="Vigencia de fuentes">

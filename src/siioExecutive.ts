@@ -69,6 +69,15 @@ function percent(value: number | null | undefined): string {
   return `${(numeric(value) * 100).toFixed(1)}%`;
 }
 
+function qualifiedTitle(title: string, validated: boolean): string {
+  return validated ? title : `Lectura preliminar: ${title}`;
+}
+
+function qualifiedFinding(finding: string, validated: boolean): string {
+  if (validated) return finding;
+  return `La fuente preliminar indica que ${finding.charAt(0).toLowerCase()}${finding.slice(1)}`;
+}
+
 function deriveManagementInsights(
   financialByConcept: Record<string, SiioFinancialMetric>,
   payrollTotals: { alerts: number },
@@ -84,6 +93,7 @@ function deriveManagementInsights(
   const income = financialByConcept.INGRESOS;
   const costs = financialByConcept.COSTOS;
   const nonOperating = financialByConcept['NO OPERACIONAL'];
+  const financialValidated = financialValidationStatus === 'validado';
 
   if (financialValidationStatus === 'pendiente_validacion') {
     insights.push({
@@ -98,8 +108,8 @@ function deriveManagementInsights(
   if (income && costs && numeric(costs.variation_pct) > numeric(income.variation_pct)) {
     insights.push({
       id: 'cost-growth-pressure', front: 'F5', tone: 'amber', priority: 'alta',
-      title: 'Los costos crecen más rápido que los ingresos',
-      finding: 'El crecimiento comercial no se está convirtiendo íntegramente en expansión del margen.',
+      title: qualifiedTitle('Los costos crecen más rápido que los ingresos', financialValidated),
+      finding: qualifiedFinding('El crecimiento comercial no se está convirtiendo íntegramente en expansión del margen.', financialValidated),
       evidence: `Costos ${percent(costs.variation_pct)} vs. ingresos ${percent(income.variation_pct)} frente al comparativo.`,
       action: 'Abrir el detalle de costos y asignar responsables a los rubros con mayor variación absoluta.',
       sourceIds: lineage.financialSourceIds, period: lineage.financialPeriod,
@@ -108,8 +118,8 @@ function deriveManagementInsights(
   if (nonOperating && numeric(nonOperating.value_current) < 0 && numeric(nonOperating.variation_abs) < 0) {
     insights.push({
       id: 'non-operating-drag', front: 'F5', tone: 'red', priority: 'alta',
-      title: 'El resultado no operacional deteriora la utilidad',
-      finding: 'El componente no operacional es negativo y empeoró frente al periodo comparativo.',
+      title: qualifiedTitle('El resultado no operacional deteriora la utilidad', financialValidated),
+      finding: qualifiedFinding('El componente no operacional es negativo y empeoró frente al periodo comparativo.', financialValidated),
       evidence: `Variación no operacional ${percent(nonOperating.variation_pct)}; cambio absoluto negativo registrado en la fuente.`,
       action: 'Desagregar gastos e ingresos no operacionales y definir una explicación ejecutiva del deterioro.',
       sourceIds: lineage.financialSourceIds, period: lineage.financialPeriod,

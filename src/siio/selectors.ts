@@ -54,6 +54,39 @@ function normalizedSubject(value: string | null | undefined): string {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+const TERMINAL_STATUSES = new Set(['cerrado', 'cerrada', 'completado', 'completada', 'resuelto', 'resuelta', 'cancelado', 'cancelada', 'done', 'closed']);
+
+export function isTerminalSiioStatus(status?: string | null): boolean {
+  return TERMINAL_STATUSES.has(normalizedSubject(status));
+}
+
+const NEGATED_BLOCKER_PREFIXES = ['sin bloqueo', 'sin bloqueos', 'no hay bloqueo', 'no hay bloqueos', 'ningun bloqueo', 'ninguna obstruccion'];
+
+export function isNegatedBlocker(text?: string | null): boolean {
+  const normalized = normalizedSubject(text);
+  return normalized.length > 0 && NEGATED_BLOCKER_PREFIXES.some(prefix => normalized.startsWith(prefix));
+}
+
+type ActivityTimestamps = { dueDate?: string | null; updatedAt?: string | null; createdAt?: string | null };
+
+function isMaterialTimestampChange(updatedAt: string, createdAt: string): boolean {
+  const updated = new Date(updatedAt);
+  const created = new Date(createdAt);
+  if (Number.isNaN(updated.getTime()) || Number.isNaN(created.getTime())) return updatedAt !== createdAt;
+  return updated.getTime() !== created.getTime();
+}
+
+function activityStateFor(status: string | null | undefined, timestamps: ActivityTimestamps): SiioTrackingItem['activityState'] {
+  if (isTerminalSiioStatus(status)) return 'history';
+  if (timestamps.dueDate) return 'active';
+  if (timestamps.updatedAt) {
+    if (!timestamps.createdAt) return 'active';
+    if (isMaterialTimestampChange(timestamps.updatedAt, timestamps.createdAt)) return 'active';
+    return 'unconfirmed';
+  }
+  return 'unconfirmed';
+}
+
 function trackingKind(value: string | null | undefined): Exclude<SiioTrackingItem['kind'], 'todos'> {
   const normalized = normalizedSubject(value);
   if (normalized === 'compromiso') return 'compromisos';
@@ -81,46 +114,55 @@ export function deriveTrackingItems(records: SiioRecord[], decisions: SiioDecisi
     if (!title) return `${candidate.item.kind}\u0000unidentified\u0000${candidate.source}\u0000${candidate.item.id}`;
     return `${candidate.item.kind}\u0000${title}\u0000${normalizedSubject(candidate.item.owner)}`;
   };
-  const recordCandidates = records.map((record): TrackingCandidate => {
-    const title = record.blockers || record.risks || record.decision_required || record.title;
-    const kind = record.blockers
-      ? 'bloqueos'
-      : record.risks
-        ? 'riesgos'
-        : record.decision_required
-          ? 'decisiones'
-          : trackingKind(record.record_type);
+  const recordCandidates = records
+    .map((record): TrackingCandidate | null => {
+      const title = record.blockers || record.risks || record.decision_required || record.title;
+      const kind = record.blockers
+        ? 'bloqueos'
+        : record.risks
+          ? 'riesgos'
+          : record.decision_required
+            ? 'decisiones'
+            : trackingKind(record.record_type);
+      if (kind === 'bloqueos' && isNegatedBlocker(record.blockers)) return null;
+      const status = record.status || 'Pendiente';
+      return {
+        source: 'record',
+        item: {
+          id: `${record.id}:${kind === 'decisiones' ? 'decision' : kind}`,
+          kind,
+          title,
+          owner: record.decision_owner || record.owner || null,
+          status,
+          semaphore: record.semaforo || '',
+          nextAction: record.next_action || null,
+          frontId: record.front_id || null,
+          sourceIds: record.source_ids || [],
+          dueDate: record.due_date || null,
+          activityState: activityStateFor(status, { dueDate: record.due_date, updatedAt: record.updated_at, createdAt: record.created_at }),
+        },
+      };
+    })
+    .filter((candidate): candidate is TrackingCandidate => candidate !== null);
+  const decisionCandidates = decisions.map((decision): TrackingCandidate => {
+    const status = decision.status || 'Pendiente';
     return {
-      source: 'record',
+      source: 'decision',
       item: {
-        id: `${record.id}:${kind === 'decisiones' ? 'decision' : kind}`,
-        kind,
-        title,
-        owner: record.decision_owner || record.owner || null,
-        status: record.status || 'Pendiente',
-        semaphore: record.semaforo || '',
-        nextAction: record.next_action || null,
-        frontId: record.front_id || null,
-        sourceIds: record.source_ids || [],
-        dueDate: null,
+        id: decision.id,
+        kind: trackingKind(decision.item_type),
+        title: decision.description,
+        owner: decision.owner || null,
+        status,
+        semaphore: '',
+        nextAction: null,
+        frontId: null,
+        sourceIds: [],
+        dueDate: decision.due_date || null,
+        activityState: activityStateFor(status, { dueDate: decision.due_date, updatedAt: decision.updated_at, createdAt: decision.created_at }),
       },
     };
   });
-  const decisionCandidates = decisions.map((decision): TrackingCandidate => ({
-    source: 'decision',
-    item: {
-      id: decision.id,
-      kind: trackingKind(decision.item_type),
-      title: decision.description,
-      owner: decision.owner || null,
-      status: decision.status || 'Pendiente',
-      semaphore: '',
-      nextAction: null,
-      frontId: null,
-      sourceIds: [],
-      dueDate: decision.due_date || null,
-    },
-  }));
   const canonical = new Map<string, TrackingCandidate>();
   for (const candidate of [...recordCandidates, ...decisionCandidates].sort(compareCandidates)) {
     const identity = identityFor(candidate);
@@ -132,7 +174,7 @@ export function deriveTrackingItems(records: SiioRecord[], decisions: SiioDecisi
 export function filterTrackingItems(items: SiioTrackingItem[], filters: SiioRouteFiltersByView['seguimiento']): SiioTrackingItem[] {
   return items.filter(item => (
     (filters.kind === 'todos' || item.kind === filters.kind)
-    && (!filters.status || normalizedSubject(item.status) === normalizedSubject(filters.status))
+    && (filters.status ? normalizedSubject(item.status) === normalizedSubject(filters.status) : item.activityState === 'active')
     && (!filters.semaphore || normalizedSubject(item.semaphore) === normalizedSubject(filters.semaphore))
     && (!filters.owner || normalizedSubject(item.owner) === normalizedSubject(filters.owner))
   ));
@@ -156,6 +198,7 @@ export function sourceFreshness(source: SiioSource, today = new Date()): 'vigent
   if (!source.next_review_at) return 'sin_fecha';
   const reviewDate = new Date(source.next_review_at);
   if (Number.isNaN(reviewDate.getTime())) return 'sin_fecha';
+  reviewDate.setHours(0, 0, 0, 0);
   const startOfToday = new Date(today);
   startOfToday.setHours(0, 0, 0, 0);
   if (reviewDate < startOfToday) return 'vencida';
@@ -171,6 +214,54 @@ export function filterSources(sources: SiioSource[], filters: SiioRouteFiltersBy
     && (!filters.trust || normalizedSubject(source.trust_level) === normalizedSubject(filters.trust))
     && (!filters.sourceType || normalizedSubject(source.source_type) === normalizedSubject(filters.sourceType))
   ));
+}
+
+const AVAILABILITY_LABELS: Record<string, string> = {
+  activa: 'Disponible',
+  activo: 'Disponible',
+  inactiva: 'No disponible',
+  inactivo: 'No disponible',
+};
+
+const VALIDATION_LABELS: Record<string, string> = {
+  confiable: 'Validada',
+  oficial_requiere_validacion: 'Requiere validación',
+  restringida: 'Restringida',
+};
+
+const FRESHNESS_ASSESSMENT_LABELS: Record<ReturnType<typeof sourceFreshness>, string> = {
+  vigente: 'Vigente',
+  próxima_a_vencer: 'Próxima a vencer',
+  vencida: 'Revisión vencida',
+  sin_fecha: 'Sin fecha de revisión',
+};
+
+function formatSiioAssessmentDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeZone: 'UTC' }).format(date);
+}
+
+export type SourceAssessment = {
+  availability: string;
+  review: string;
+  freshness: string;
+  validation: string;
+  applicability: string;
+  compliance: string;
+};
+
+export function deriveSourceAssessment(source: SiioSource, asOf: Date = new Date()): SourceAssessment {
+  const availabilityKey = normalizedSubject(source.status);
+  const validationKey = normalizedSubject(source.trust_level);
+  return {
+    availability: AVAILABILITY_LABELS[availabilityKey] || (source.status ? 'Estado no reconocido' : 'Sin estado registrado'),
+    review: source.last_reviewed_at ? `Revisada el ${formatSiioAssessmentDate(source.last_reviewed_at)}` : 'Sin revisión registrada',
+    freshness: FRESHNESS_ASSESSMENT_LABELS[sourceFreshness(source, asOf)],
+    validation: VALIDATION_LABELS[validationKey] || (source.trust_level ? 'Nivel de confianza no reconocido' : 'Sin nivel de confianza registrado'),
+    applicability: 'No registrada',
+    compliance: 'No evaluado',
+  };
 }
 
 export function uniqueOptions(values: Array<string | null | undefined>): string[] {

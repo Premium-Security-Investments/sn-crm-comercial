@@ -117,6 +117,16 @@ export function canAccessRoute(profile: NavProfile, page: NavRoutePage) {
   return moduleCode ? hasModuleAccess(profile, moduleCode) : profile?.active === true;
 }
 
+const LANDING_PRIORITY: NavRoutePage[] = ['siio', 'dashboard2', 'dashboard', 'opportunities', 'tenders', 'alerts', 'consultant', 'goals', 'users'];
+
+export function isInitialAppHash(hash: string) {
+  return hash === '' || hash === '#' || hash === '#/';
+}
+
+export function preferredLandingRoute(profile: NavProfile): NavRoutePage {
+  return LANDING_PRIORITY.find(route => canAccessRoute(profile, route)) || 'home';
+}
+
 export function getVisibleNavGroups(profile?: NavProfile): NavGroup[] {
   return navGroups
     .map(group => ({
