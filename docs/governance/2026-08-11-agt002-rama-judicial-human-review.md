@@ -1,0 +1,43 @@
+# Revisión humana — mapas gobernados AGT-002 — Rama Judicial SA-24-2026
+
+## Control
+
+- Oportunidad: `54190e51-15fb-46af-b0aa-8f13461a3110`
+- Snapshot: `c33159a5-defe-4a6f-8fa4-68c5ceb60e59`
+- Borrador revisado: `docs/governance/drafts/agt002-rama-judicial-54190e51-15fb-46af-b0aa-8f13461a3110.v1.json` (`version: 2`)
+- Estado de la revisión: `IN_PROGRESS`
+- Revisor humano: Juan Botero
+- Inicio registrado: `2026-08-11T17:54:14Z` (`2026-08-11 12:54:14 COT`)
+
+## Alcance y límites
+
+Esta revisión aprueba o corrige exclusivamente la clasificación documental de requisitos y su vínculo con las clases cerradas de evidencia empresarial. No constituye una declaración de cumplimiento, suficiencia, vigencia o aplicabilidad; tampoco autoriza GO/NO-GO, canary, migración, despliegue, firma, envío o presentación de una oferta.
+
+## Decisiones
+
+### HR-001 — Capital de trabajo
+
+- `requirement_id`: `financial-working-capital`
+- Eje `category_override`: **APROBADO** → `habilitating`
+- Eje `evidence_class_link`: **APROBADO** → `rup`
+- Declaración humana recibida: “Apruebo capital de trabajo como habilitante y su validación mediante RUP”.
+- Fundamento presentado al revisor: Capítulo II “Requisitos habilitantes”, §2.2 “Capacidad financiera”, secciones extraídas 408–410; evaluación financiera expresamente basada en el Registro Único de Proponentes.
+- Fuentes: Estudios previos, Estudios del sector, Proyecto de pliego y Pliego definitivo SA-24-2026; ancladas por `document_version_id`, `content_hash`, `chunk_id` y `chunk_hash` en el borrador v2.
+- Registrado: `2026-08-11T17:54:14Z`.
+- Restricción: esta aprobación **no** determina si Seguridad Nacional alcanza el umbral de capital de trabajo ni si el RUP está vigente, revisado o es suficiente.
+
+### HR-002 — Clasificación de pólizas
+
+- Estado: `PENDING_HUMAN_DECISION`
+
+### HR-003 — Desagregación RCE / vida colectiva y enlaces de evidencia
+
+- Estado: `PENDING_HUMAN_DECISION`
+
+### HR-004 — Abstenciones de videovigilancia/CCTV
+
+- Estado: `PENDING_HUMAN_DECISION`
+
+## Gate
+
+El borrador continúa en estado `DRAFT / HUMAN_APPROVAL_REQUIRED`. No se crearán filas curadas ni se habilitará el canary hasta cerrar HR-002, HR-003 y HR-004, verificar el acta completa y recibir autorización separada para la curación técnica.
