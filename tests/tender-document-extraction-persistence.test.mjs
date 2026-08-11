@@ -61,6 +61,10 @@ await (async function rejectsMissingIdentityOrMalformedExtraction() {
   assert.throws(() => buildTenderDocumentExtractionRpcParams({ status: 'ok', text: '' }, { opportunityId: ids.opportunity, tenderId: ids.tender, documentVersionId: ids.version, actorId: ids.actor }));
   assert.throws(() => buildTenderDocumentExtractionRpcParams({ status: 'weird', text: 'x' }, { opportunityId: ids.opportunity, tenderId: ids.tender, documentVersionId: ids.version, actorId: ids.actor }));
   assert.throws(() => buildTenderDocumentExtractionRpcParams(gapExtraction(''), { opportunityId: ids.opportunity, tenderId: ids.tender, documentVersionId: ids.version, actorId: ids.actor }), /gap_reason/i);
+  assert.throws(
+    () => buildTenderDocumentExtractionRpcParams({ ...okExtraction('texto real'), text_hash: hash('otro texto') }, { opportunityId: ids.opportunity, tenderId: ids.tender, documentVersionId: ids.version, actorId: ids.actor }),
+    /no coincide/i,
+  );
 })();
 
 // --- selectCanonicalExtractionsByDocumentVersion ----------------------------
@@ -103,7 +107,7 @@ await (async function failsClosedOnMalformedOkRows() {
   // An 'ok' row missing its hash (or with a mismatched char_count) cannot be trusted;
   // it must be skipped entirely rather than surfacing possibly-corrupt text.
   const rows = [
-    { id: 'malformed', document_version_id: ids.version, status: 'ok', extracted_text: 'x', text_hash: null, char_count: 1, created_at: '2026-01-01T00:00:00Z' },
+    { id: 'malformed', document_version_id: ids.version, status: 'ok', extracted_text: 'x', text_hash: hash('otro texto'), char_count: 1, created_at: '2026-01-01T00:00:00Z' },
     { id: 'good', document_version_id: ids.version, status: 'ok', extracted_text: 'y', text_hash: hash('y'), char_count: 1, created_at: '2025-01-01T00:00:00Z' },
   ];
   const byVersion = selectCanonicalExtractionsByDocumentVersion(rows);

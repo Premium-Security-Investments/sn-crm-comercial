@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 // Pure, server-only persistence/selection logic for migration 065
 // (psi_tender_document_extractions). No DB/network access here: server/index.js and
 // api/[...path].js own the actual RPC calls/queries and pass their results through
@@ -38,6 +40,8 @@ export function buildTenderDocumentExtractionRpcParams(extraction, { opportunity
     if (!text.trim()) throw new Error('Una extracción ok requiere texto no vacío.');
     const textHash = String(extraction.text_hash || '');
     if (!/^[0-9a-f]{64}$/.test(textHash)) throw new Error('El hash de texto debe ser SHA-256 hexadecimal en minúscula.');
+    const computedTextHash = createHash('sha256').update(text, 'utf8').digest('hex');
+    if (textHash !== computedTextHash) throw new Error('El hash de texto no coincide con el texto extraído.');
     return {
       p_opportunity_id: opportunityId, p_tender_id: tenderId, p_document_version_id: documentVersionId,
       p_extractor_version: extractorVersion, p_status: 'ok', p_parser: parser,
@@ -62,6 +66,7 @@ function isWellFormedExtractionRow(row) {
   if (row.status === 'ok') {
     return typeof row.extracted_text === 'string' && row.extracted_text.trim().length > 0
       && typeof row.text_hash === 'string' && /^[0-9a-f]{64}$/.test(row.text_hash)
+      && row.text_hash === createHash('sha256').update(row.extracted_text, 'utf8').digest('hex')
       && Number.isInteger(row.char_count) && row.char_count > 0
       && row.char_count === row.extracted_text.length;
   }

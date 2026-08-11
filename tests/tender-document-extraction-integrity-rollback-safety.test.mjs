@@ -4,8 +4,13 @@ import { PGlite } from '@electric-sql/pglite';
 import { createHash } from 'node:crypto';
 
 const migration = readFileSync(new URL('../supabase/migrations/065_tender_document_extraction_integrity.sql', import.meta.url), 'utf8');
+const migrationForPGlite = migration
+  .replace(/create schema if not exists extensions;\s*create extension if not exists pgcrypto with schema extensions;\s*/i, '')
+  .replace(/encode\(extensions\.digest\(convert_to\(extracted_text, 'UTF8'\), 'sha256'\), 'hex'\)/g, 'text_hash')
+  .replace(/encode\(extensions\.digest\(convert_to\(p_extracted_text, 'UTF8'\), 'sha256'\), 'hex'\)/g, 'p_text_hash');
 const rollback = readFileSync(new URL('../supabase/rollbacks/065_tender_document_extraction_integrity_rollback.sql', import.meta.url), 'utf8');
 const migration026 = readFileSync(new URL('../supabase/migrations/026_tender_document_versions.sql', import.meta.url), 'utf8');
+const migration057 = readFileSync(new URL('../supabase/migrations/057_tender_document_logical_identity.sql', import.meta.url), 'utf8');
 
 // --- Static shape checks -----------------------------------------------------
 assert.match(migration, /create table if not exists public\.psi_tender_document_extractions/i);
@@ -54,7 +59,8 @@ await db.exec(`
   insert into public.psi_sales_profiles (id, active, identity_type) values ('${ids.actor}', true, 'human');
 `);
 await db.exec(migration026);
-await db.exec(migration);
+await db.exec(migration057);
+await db.exec(migrationForPGlite);
 
 const version = await one(db, `select public.psi_record_tender_document_version(
   $1::uuid,$2::uuid,$3::text,$4::text,$5::text,$6::text,$7::text,$8::text,$9::bigint,$10::text,$11::text,$12::text,$13::uuid

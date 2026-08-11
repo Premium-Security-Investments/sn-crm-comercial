@@ -1,4 +1,156 @@
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
+
 begin;
+
+-- The legacy version register originally required non-blank extracted_text. That made it
+-- impossible to attach an honest typed `gap` to a real immutable document version without
+-- fabricating placeholder text. Migration 065 permits NULL (not blank text) so the binary,
+-- content hash and storage identity can still be versioned before the gap evidence is
+-- appended below.
+do $$
+declare
+  v_constraint record;
+begin
+  for v_constraint in
+    select conname
+    from pg_constraint
+    where conrelid = 'public.psi_tender_document_versions'::regclass
+      and contype = 'c'
+      and pg_get_constraintdef(oid) ilike '%extracted_text%'
+  loop
+    execute format('alter table public.psi_tender_document_versions drop constraint %I', v_constraint.conname);
+  end loop;
+end;
+$$;
+
+alter table public.psi_tender_document_versions alter column extracted_text drop not null;
+alter table public.psi_tender_document_versions
+  add constraint psi_tender_document_versions_extracted_text_shape
+  check (
+    extracted_text is null
+    or (nullif(btrim(extracted_text), '') is not null and octet_length(extracted_text) <= 10 * 1024 * 1024)
+  );
+
+create or replace function public.psi_record_tender_document_version(
+  p_opportunity_id uuid,
+  p_tender_id uuid,
+  p_source text,
+  p_source_document_id text,
+  p_name text,
+  p_content_hash text,
+  p_storage_path text,
+  p_mime_type text,
+  p_size_bytes bigint,
+  p_document_type text,
+  p_extracted_text text,
+  p_source_url text,
+  p_actor_id uuid
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_source text := lower(btrim(p_source));
+  v_source_document_id text := btrim(p_source_document_id);
+  v_normalized_name text;
+  v_document public.psi_tender_document_versions%rowtype;
+  v_current public.psi_tender_document_versions%rowtype;
+  v_version integer;
+begin
+  if p_opportunity_id is null or p_tender_id is null
+     or nullif(v_source, '') is null or nullif(v_source_document_id, '') is null
+     or nullif(btrim(p_name), '') is null or nullif(btrim(p_mime_type), '') is null
+     or nullif(btrim(p_document_type), '') is null then
+    raise exception 'La oportunidad, licitación, identidad, nombre, MIME y tipo son obligatorios.' using errcode = '22023';
+  end if;
+  if p_extracted_text is not null and nullif(btrim(p_extracted_text), '') is null then
+    raise exception 'El texto extraído debe ser NULL (gap) o no vacío (ok).' using errcode = '22023';
+  end if;
+  if p_content_hash is null or p_content_hash !~ '^[0-9a-f]{64}$' then
+    raise exception 'El hash del documento debe ser SHA-256 hexadecimal en minúscula.' using errcode = '22023';
+  end if;
+  if p_storage_path is null or btrim(p_storage_path) <> p_storage_path
+     or p_storage_path not like 'tender-documents/%'
+     or p_storage_path not like ('tender-documents/' || p_opportunity_id::text || '/%')
+     or p_storage_path like '%..%' or position('\\' in p_storage_path) > 0 then
+    raise exception 'La ruta del documento debe ser privada, pertenecer a la oportunidad y no contener traversal.' using errcode = '22023';
+  end if;
+  if p_size_bytes is null or p_size_bytes <= 0 or p_size_bytes > 50 * 1024 * 1024 then
+    raise exception 'El tamaño del documento debe estar entre 1 byte y 50 MB.' using errcode = '22023';
+  end if;
+  if p_extracted_text is not null and octet_length(p_extracted_text) > 10 * 1024 * 1024 then
+    raise exception 'El texto extraído no puede superar 10 MB.' using errcode = '22023';
+  end if;
+  if p_source_url is not null and (btrim(p_source_url) <> p_source_url or not public.psi_is_public_https_url(p_source_url)) then
+    raise exception 'La URL de origen debe ser HTTPS pública, sin credenciales ni puerto explícito.' using errcode = '22023';
+  end if;
+  if not exists (
+    select 1 from public.psi_public_tenders t
+    where t.id = p_tender_id and t.converted_opportunity_id = p_opportunity_id
+  ) then
+    raise exception 'La licitación no corresponde a la oportunidad.' using errcode = '22023';
+  end if;
+  if not exists (
+    select 1 from public.psi_sales_profiles p
+    where p.id = p_actor_id
+      and p.active = true
+      and coalesce(p.identity_type, 'human') in ('human', 'agent')
+  ) then
+    raise exception 'El actor debe ser un perfil humano o agente activo.' using errcode = '42501';
+  end if;
+
+  v_normalized_name := public.psi_normalize_tender_document_name(p_name);
+  perform pg_advisory_xact_lock(hashtextextended(jsonb_build_array(p_opportunity_id, v_source, v_normalized_name)::text, 0));
+
+  select * into v_current
+  from public.psi_tender_document_versions
+  where opportunity_id = p_opportunity_id
+    and source = v_source
+    and public.psi_normalize_tender_document_name(name) = v_normalized_name
+    and current
+  for update;
+
+  if v_current.id is not null and v_current.content_hash = p_content_hash then
+    return jsonb_build_object(
+      'status', 'unchanged', 'id', v_current.id, 'version', v_current.version,
+      'current', v_current.current, 'content_hash', v_current.content_hash,
+      'created_at', v_current.created_at
+    );
+  end if;
+
+  select coalesce(max(version), 0) + 1 into v_version
+  from public.psi_tender_document_versions
+  where opportunity_id = p_opportunity_id
+    and source = v_source
+    and public.psi_normalize_tender_document_name(name) = v_normalized_name;
+
+  if v_current.id is not null then
+    update public.psi_tender_document_versions set current = false where id = v_current.id;
+  end if;
+
+  insert into public.psi_tender_document_versions (
+    opportunity_id, tender_id, source, source_document_id, version, supersedes_version_id,
+    name, content_hash, storage_path, mime_type, size_bytes, document_type, extracted_text,
+    source_url, current, actor_id
+  ) values (
+    p_opportunity_id, p_tender_id, v_source, v_source_document_id, v_version, v_current.id,
+    btrim(p_name), p_content_hash, p_storage_path, btrim(p_mime_type), p_size_bytes,
+    btrim(p_document_type), p_extracted_text, p_source_url, true, p_actor_id
+  ) returning * into v_document;
+
+  return jsonb_build_object(
+    'status', 'created', 'id', v_document.id, 'version', v_document.version,
+    'current', v_document.current, 'content_hash', v_document.content_hash,
+    'supersedes_version_id', v_document.supersedes_version_id,
+    'created_at', v_document.created_at
+  );
+end;
+$$;
+
+revoke all on function public.psi_record_tender_document_version(uuid, uuid, text, text, text, text, text, text, bigint, text, text, text, uuid) from public, authenticated, anon, service_role;
+grant execute on function public.psi_record_tender_document_version(uuid, uuid, text, text, text, text, text, text, bigint, text, text, text, uuid) to service_role;
 
 -- AGT-002 F1.2: append-only, immutable-linked extraction integrity register. Each row
 -- ties one deterministic parse attempt (tender-document-text-extraction.js, identified by
@@ -35,6 +187,7 @@ create table if not exists public.psi_tender_document_extractions (
       status = 'ok'
       and extracted_text is not null and nullif(btrim(extracted_text), '') is not null
       and text_hash is not null and text_hash ~ '^[0-9a-f]{64}$'
+      and text_hash = encode(extensions.digest(convert_to(extracted_text, 'UTF8'), 'sha256'), 'hex')
       and char_count > 0 and char_count = char_length(extracted_text)
       and text_byte_count > 0 and text_byte_count = octet_length(extracted_text)
       and gap_reason is null
@@ -119,6 +272,9 @@ begin
     end if;
     if p_text_hash is null or p_text_hash !~ '^[0-9a-f]{64}$' then
       raise exception 'El hash de texto debe ser SHA-256 hexadecimal en minúscula.' using errcode = '22023';
+    end if;
+    if p_text_hash <> encode(extensions.digest(convert_to(p_extracted_text, 'UTF8'), 'sha256'), 'hex') then
+      raise exception 'El hash de texto no coincide con el texto extraído.' using errcode = '22023';
     end if;
     if p_char_count is null or p_char_count <= 0 or p_char_count <> char_length(p_extracted_text) then
       raise exception 'El conteo de caracteres no coincide con el texto extraído.' using errcode = '22023';

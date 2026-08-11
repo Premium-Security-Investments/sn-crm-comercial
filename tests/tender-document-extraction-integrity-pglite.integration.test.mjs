@@ -4,7 +4,17 @@ import { createHash } from 'node:crypto';
 import { PGlite } from '@electric-sql/pglite';
 
 const migration026 = readFileSync(new URL('../supabase/migrations/026_tender_document_versions.sql', import.meta.url), 'utf8');
-const migration065 = readFileSync(new URL('../supabase/migrations/065_tender_document_extraction_integrity.sql', import.meta.url), 'utf8');
+const migration057 = readFileSync(new URL('../supabase/migrations/057_tender_document_logical_identity.sql', import.meta.url), 'utf8');
+const migration065Production = readFileSync(new URL('../supabase/migrations/065_tender_document_extraction_integrity.sql', import.meta.url), 'utf8');
+assert.match(migration065Production, /create extension if not exists pgcrypto with schema extensions/i);
+assert.match(migration065Production, /text_hash\s*=\s*encode\(extensions\.digest\(convert_to\(extracted_text/i);
+assert.match(migration065Production, /p_text_hash\s*<>\s*encode\(extensions\.digest\(convert_to\(p_extracted_text/i);
+// PGlite does not ship pgcrypto. Neutralize only the two digest expressions in this
+// integration fixture; production SQL above is asserted to contain both storage/RPC checks.
+const migration065 = migration065Production
+  .replace(/create schema if not exists extensions;\s*create extension if not exists pgcrypto with schema extensions;\s*/i, '')
+  .replace(/encode\(extensions\.digest\(convert_to\(extracted_text, 'UTF8'\), 'sha256'\), 'hex'\)/g, 'text_hash')
+  .replace(/encode\(extensions\.digest\(convert_to\(p_extracted_text, 'UTF8'\), 'sha256'\), 'hex'\)/g, 'p_text_hash');
 
 const ids = {
   actor: '11111111-1111-4111-8111-111111111111',
@@ -44,6 +54,7 @@ async function createDatabase() {
       ('${ids.agentActor}', true, 'agent');
   `);
   await db.exec(migration026);
+  await db.exec(migration057);
   await db.exec(migration065);
   return db;
 }
@@ -113,7 +124,9 @@ await (async function extractionsAreAppendOnlyIdempotentAndDetectContentCollisio
 
 await (async function gapExtractionsAreRecordedHonestlyWithZeroedCountsAndNoText() {
   const db = await createDatabase();
-  const version1 = await recordDocumentVersion(db);
+  const version1 = await recordDocumentVersion(db, { extractedText: null, sourceDocumentId: 'gap-source', name: 'Documento sin texto.pdf' });
+  const storedVersion = await one(db, `select extracted_text from public.psi_tender_document_versions where id = '${version1.id}'`);
+  assert.equal(storedVersion.extracted_text, null, 'una versión gap conserva el binario sin texto legado ficticio');
   const gap = await recordExtraction(db, {
     documentVersionId: version1.id, status: 'gap', parser: 'pdf', extractedText: null, textHash: null,
     charCount: 0, textByteCount: 0, gapReason: 'extraction_error', metadata: { gap_reason: 'extraction_error' },
