@@ -27,14 +27,23 @@
 // overrides grants no write path to any role — see migration 064).
 //
 // IMPORTANT — extractor scope, not semantic coverage: tender-requirement-extraction.js is
-// a closed classifier that only ever recognizes exactly three fixed requirement_id
-// patterns (legal-guarantee-policy, financial-working-capital,
-// technical-video-surveillance-scope), regardless of how many documents feed it. Running
-// this script against 17/17 documents instead of 3/17 expands the *evidence* available to
-// those three requirements (more citations, better-grounded proposals/abstentions); it
-// does NOT and cannot discover new requirement_ids — that would require a different,
-// human-authored extraction pass over the full pliego, out of scope for this script. See
-// the `extractor_scope_is_not_full_pliego_coverage` data gap emitted below.
+// a closed classifier. For this governed opportunity's legal front, it now recognizes two
+// closed, context-distinguished requirement_id (legal-rce-policy, legal-collective-life-
+// policy — HR-003, docs/governance/2026-08-11-agt002-rama-judicial-human-review.md),
+// replacing the generic legal-guarantee-policy this script used through draft version 2.
+// The legacy generic legal-guarantee-policy path (extractLegalRequirements/
+// buildRequirementAnalysis) is untouched and still used by the v2 product-wide rule-based
+// preanalysis (tender-deep-analysis.js, server/index.js) — this script never called that
+// v2 path for its legal front from version 3 onward; it now calls the dedicated governed
+// entry point (buildGovernedRequirementAnalysis) instead. Together with
+// financial-working-capital and technical-video-surveillance-scope (unchanged), this
+// script recognizes exactly four fixed requirement_id, regardless of how many documents
+// feed it. Running this script against 17/17 documents instead of 3/17 expands the
+// *evidence* available to those four requirements (more citations, better-grounded
+// proposals/abstentions); it does NOT and cannot discover new requirement_ids — that would
+// require a different, human-authored extraction pass over the full pliego, out of scope
+// for this script. See the `extractor_scope_is_not_full_pliego_coverage` data gap emitted
+// below.
 //
 // Usage (manual, requires real Supabase read credentials — never committed):
 //   ENV_FILE=/path/to/.env.local node scripts/agt002-rama-judicial-governance-draft-generate.mjs
@@ -43,7 +52,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
-import { buildRequirementAnalysis } from '../tender-requirement-extraction.js';
+import { buildGovernedRequirementAnalysis, AGT002_GOVERNED_REQUIREMENT_CITATION_PATTERNS } from '../tender-requirement-extraction.js';
 import { buildAgt002RequirementManifest } from '../agt002-deep-analysis-matrix.js';
 import { buildAgt002GovernanceDraftProposal } from '../agt002-governance-draft-proposal.js';
 import { buildAgt002DocumentChunks } from '../agt002-document-chunks.js';
@@ -52,18 +61,14 @@ import { loadAgt002CompanyEvidenceRegistryEntries, AGT002_COMPANY_EVIDENCE_CLASS
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 const OPPORTUNITY_ID = '54190e51-15fb-46af-b0aa-8f13461a3110';
 const SNAPSHOT_ID = 'c33159a5-defe-4a6f-8fa4-68c5ceb60e59';
-const DRAFT_VERSION = 2;
+const DRAFT_VERSION = 3;
 const OUTPUT_PATH = resolve(ROOT, 'docs/governance/drafts/agt002-rama-judicial-54190e51-15fb-46af-b0aa-8f13461a3110.v1.json');
 
-// Mirrors tender-requirement-extraction.js's private, unexported keyword patterns —
-// used here only to locate which real chunks a requirement's evidence could plausibly
-// come from (a citation aid), never to redecide the requirement's own status/values.
-// Keep in sync with that module if its patterns change.
-const REQUIREMENT_CITATION_PATTERNS = {
-  'legal-guarantee-policy': [/polizas?/],
-  'financial-working-capital': [/capital de trabajo/],
-  'technical-video-surveillance-scope': [/cctv/, /videovigilancia/, /camaras?/, /control de acceso/, /monitoreo/],
-};
+// Imported directly from tender-requirement-extraction.js (never a private, driftable
+// duplicate) — used here only to locate which real chunks a requirement's evidence could
+// plausibly come from (a citation aid), never to redecide the requirement's own
+// status/values.
+const REQUIREMENT_CITATION_PATTERNS = AGT002_GOVERNED_REQUIREMENT_CITATION_PATTERNS;
 const DIACRITIC_MARKS = /[̀-ͯ]/g;
 function searchNormalize(value) { return value.toLowerCase().normalize('NFD').replace(DIACRITIC_MARKS, ''); }
 
@@ -144,11 +149,18 @@ const CATEGORY_OVERRIDE_PROPOSALS = [
     caveat: null,
   },
   {
-    requirement_id: 'legal-guarantee-policy',
+    requirement_id: 'legal-rce-policy',
     category_value: 'habilitating',
-    rationale: 'Las pólizas citadas por el requisito (RCE, ítem 17; vida colectiva, ítem 18) están numeradas dentro del Capítulo II "REQUISITOS HABILITANTES" del pliego.',
-    source_reference: 'Pliego de Condiciones Definitivo SA-24-2026 (db9752a1-e9ee-49af-b321-883d0c23cf0a), Capítulo II, secciones 227, 289, 350-360.',
-    caveat: 'Una cita de este requisito (sección 110, cronograma) menciona "garantías de ejecución del contrato" (posterior a la adjudicación) — fuera de la categoría "habilitating"; si el requisito se subdivide en una extracción futura, esa porción debería revisarse aparte.',
+    rationale: 'HR-003 (docs/governance/2026-08-11-agt002-rama-judicial-human-review.md): la póliza de responsabilidad civil extracontractual (ítem 17) está numerada dentro del Capítulo II "REQUISITOS HABILITANTES" del pliego. Extraída ahora por contexto real (frase "responsabilidad civil extracontractual"), no por el patrón genérico "polizas?" usado hasta la versión 2 de este borrador.',
+    source_reference: 'Pliego de Condiciones Definitivo SA-24-2026 (db9752a1-e9ee-49af-b321-883d0c23cf0a), Capítulo II, secciones 350-355.',
+    caveat: 'Las garantías posteriores de ejecución del contrato (sección 110, cronograma, posteriores a la adjudicación) quedan expresamente excluidas de esta clasificación (HR-002/HR-003) y se excluyen estructuralmente en la extracción (tender-requirement-extraction.js, exclusión por contexto de ejecución/adjudicación posterior), no solo documentadas como advertencia.',
+  },
+  {
+    requirement_id: 'legal-collective-life-policy',
+    category_value: 'habilitating',
+    rationale: 'HR-003: la póliza de seguro de vida colectivo (ítem 18) está numerada dentro del Capítulo II "REQUISITOS HABILITANTES" del pliego. Extraída ahora por contexto real (frase "vida colectiv[oa]"), no por el patrón genérico "polizas?" usado hasta la versión 2 de este borrador.',
+    source_reference: 'Pliego de Condiciones Definitivo SA-24-2026 (db9752a1-e9ee-49af-b321-883d0c23cf0a), Capítulo II, secciones 356-360.',
+    caveat: 'Las garantías posteriores de ejecución del contrato (sección 110, cronograma, posteriores a la adjudicación) quedan expresamente excluidas de esta clasificación (HR-002/HR-003) y se excluyen estructuralmente en la extracción, no solo documentadas como advertencia.',
   },
 ];
 
@@ -159,15 +171,21 @@ const EVIDENCE_CLASS_LINK_PROPOSALS = [
     rationale: 'El pliego basa expresamente la evaluación de los requisitos financieros en el Registro Único de Proponentes.',
     source_reference: 'Pliego de Condiciones Definitivo SA-24-2026 (db9752a1-e9ee-49af-b321-883d0c23cf0a), sección 409.',
   },
+  {
+    requirement_id: 'legal-rce-policy',
+    evidence_class_id: 'rce_policy',
+    rationale: 'HR-003: enlace directo, sin ambigüedad, entre el requisito ya subdividido por contexto real y la clase cerrada de póliza de responsabilidad civil extracontractual del catálogo de 17 clases empresariales.',
+    source_reference: 'Pliego de Condiciones Definitivo SA-24-2026 (db9752a1-e9ee-49af-b321-883d0c23cf0a), Capítulo II, secciones 350-355.',
+  },
+  {
+    requirement_id: 'legal-collective-life-policy',
+    evidence_class_id: 'collective_life_policy',
+    rationale: 'HR-003: enlace directo, sin ambigüedad, entre el requisito ya subdividido por contexto real y la clase cerrada de póliza de seguro de vida colectivo del catálogo de 17 clases empresariales.',
+    source_reference: 'Pliego de Condiciones Definitivo SA-24-2026 (db9752a1-e9ee-49af-b321-883d0c23cf0a), Capítulo II, secciones 356-360.',
+  },
 ];
 
 const ABSTENTIONS = [
-  {
-    requirement_id: 'legal-guarantee-policy',
-    axis: 'evidence_class_link',
-    reason: 'multiple_distinct_classes_matched_single_requirement',
-    detail: 'El requisito, tal como está definido (patrón genérico "polizas?"), agrupa al menos dos pólizas distintas del pliego (RCE, sección 350-355; vida colectiva, sección 356-360), que corresponden a dos clases distintas del catálogo (rce_policy, collective_life_policy). Un único evidence_class_link no representaría honestamente ambas; se requiere que un humano decida si subdivide el requisito o elige una de las dos con justificación adicional. La ampliación de la extracción a 17/17 documentos no aportó una tercera clase de póliza ni deshizo esta ambigüedad.',
-  },
   {
     requirement_id: 'technical-video-surveillance-scope',
     axis: 'category_override',
@@ -275,7 +293,7 @@ async function main() {
   // `content` field tender-requirement-extraction.js's canonicalDocuments reads via
   // `document.content ?? document.extracted_text`) — not a chunk-join reconstruction — for
   // every one of the 17 current documents with non-blank text; unverifiable_documents
-  // (buildRequirementAnalysis's own gap tracking) honestly records any that are blank. ---
+  // (buildGovernedRequirementAnalysis's own gap tracking) honestly records any that are blank. ---
   const documents = currentVersions.map(version => ({
     document_id: version.id,
     name: version.name,
@@ -288,7 +306,7 @@ async function main() {
     content_hash: version.content_hash,
   }));
 
-  const analysis = buildRequirementAnalysis(documents, {});
+  const analysis = buildGovernedRequirementAnalysis(documents, {});
   const matrix = { legal: analysis.legal, financial: analysis.financial, technical: analysis.technical };
   const requirementManifest = buildAgt002RequirementManifest({ matrix, documents: provenanceDocuments });
 
@@ -344,7 +362,7 @@ async function main() {
   });
   dataGaps.push({
     gap_id: 'extractor_scope_is_not_full_pliego_coverage',
-    description: 'tender-requirement-extraction.js es un clasificador cerrado que solo reconoce exactamente tres requirement_id fijos (legal-guarantee-policy, financial-working-capital, technical-video-surveillance-scope) sin importar cuántos documentos se le entreguen — no es un extractor semántico exhaustivo del pliego. Ejecutar esta extracción sobre 17/17 documentos vigentes (en vez de 3/17) amplía la evidencia disponible para esos tres requisitos (más citas, propuestas/abstenciones mejor fundamentadas) pero NO descubre nuevos requirement_id ni constituye cobertura semántica total del pliego real, que puede contener requisitos habilitantes, técnicos o financieros adicionales que este extractor cerrado simplemente no está diseñado para reconocer. Una extracción exhaustiva del pliego requeriría una revisión humana adicional, fuera del alcance de este script.',
+    description: 'tender-requirement-extraction.js (a través de buildGovernedRequirementAnalysis, HR-003) es un clasificador cerrado que solo reconoce exactamente cuatro requirement_id fijos para esta oportunidad (legal-rce-policy, legal-collective-life-policy, financial-working-capital, technical-video-surveillance-scope) sin importar cuántos documentos se le entreguen — no es un extractor semántico exhaustivo del pliego. legal-rce-policy y legal-collective-life-policy reemplazan, solo para este flujo gobernado, al requisito genérico legal-guarantee-policy que usaban las versiones 1 y 2 de este borrador; el extractor genérico (extractLegalRequirements/legal-guarantee-policy) sigue existiendo sin cambios para el flujo v2 de preanálisis por reglas (fuera del alcance de este script). Ejecutar esta extracción sobre 17/17 documentos vigentes (en vez de 3/17) amplía la evidencia disponible para esos cuatro requisitos (más citas, propuestas/abstenciones mejor fundamentadas) pero NO descubre nuevos requirement_id ni constituye cobertura semántica total del pliego real, que puede contener requisitos habilitantes, técnicos o financieros adicionales que este extractor cerrado simplemente no está diseñado para reconocer. Una extracción exhaustiva del pliego requeriría una revisión humana adicional, fuera del alcance de este script.',
     affected_document_ids: [],
   });
 

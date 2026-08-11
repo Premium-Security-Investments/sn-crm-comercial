@@ -11,6 +11,21 @@ const VALUE_PATTERNS = [
 const FINANCIAL_OPERATOR_PATTERN = /no inferior a|no menor a|minimo|maximo|superior a|igual o mayor a/;
 const TECHNICAL_SIGNAL_PATTERNS = [/cctv/, /videovigilancia/, /camaras?/, /control de acceso/, /monitoreo/];
 
+// HR-003 (2026-08-11 AGT-002 Rama Judicial human review, governance decision log): the
+// governed integral flow classifies RCE and vida colectiva by real textual context —
+// never by the old generic /polizas?/ pattern (kept below, unmodified, only for the
+// legacy v2 extractLegalGuaranteePolicy/extractLegalRequirements path). No LLM, no
+// keyword-presence-implies-compliance: same closed regex/context discipline as every
+// other extractor in this module.
+const RCE_POLICY_KEYWORD_PATTERN = /responsabilidad civil extracontractual/g;
+const COLLECTIVE_LIFE_POLICY_KEYWORD_PATTERN = /vida colectiv[oa]/g;
+const EXCLUSION_CONTEXT_WINDOW = 100;
+// Post-award execution guarantees (pliego "cronograma" clauses in the style of section
+// 110 of SA-24-2026's Pliego de Condiciones Definitivo) are expressly excluded from
+// both split requirements per HR-003: a policy required only as a post-adjudication
+// contract-execution guarantee is not the pre-award habilitating requirement.
+const POST_AWARD_EXECUTION_GUARANTEE_CONTEXT_PATTERN = /ejecucion (?:del )?contrato|posterior(?:es)? a la adjudicacion|ejecucion contractual/;
+
 function normalizeContent(value) {
   return String(value ?? '').replace(/\r\n?/g, '\n');
 }
@@ -80,6 +95,18 @@ function hasOperatorNear(content, matchIndex, matchLength) {
   return FINANCIAL_OPERATOR_PATTERN.test(searchNormalize(content.slice(start, end)));
 }
 
+// HR-003: a match embedded in a post-award execution-guarantee clause (e.g. a
+// cronograma entry requiring the policy only from the adjudicatario, after award) is
+// excluded from habilitating evidence for both split legal policy requirements.
+// Window-based, same discipline as hasOperatorNear/findValuesNear above — local
+// context only, never a whole-document heuristic that could suppress an unrelated,
+// genuinely habilitating mention elsewhere in the same document.
+function isPostAwardExecutionGuaranteeContext(content, matchIndex, matchLength) {
+  const start = Math.max(0, matchIndex - EXCLUSION_CONTEXT_WINDOW);
+  const end = Math.min(content.length, matchIndex + matchLength + EXCLUSION_CONTEXT_WINDOW);
+  return POST_AWARD_EXECUTION_GUARANTEE_CONTEXT_PATTERN.test(searchNormalize(content.slice(start, end)));
+}
+
 function collectMatches(documents, keywordPattern) {
   const matches = [];
   for (const document of documents) {
@@ -136,6 +163,61 @@ function extractLegalGuaranteePolicy(documents) {
     rationale: 'Se menciona la póliza de cumplimiento, pero falta cuantía/porcentaje o vigencia explícita.',
     question: '¿Cuál es la cuantía o porcentaje y la vigencia exigida para la póliza de cumplimiento mencionada?',
   };
+}
+
+// Shared shape for the two HR-003 split legal policy requirements: same evidence/
+// values/status discipline as extractLegalGuaranteePolicy above, but with a
+// requirement-specific keyword pattern and the post-award execution-guarantee
+// exclusion applied before any evidence/value is collected.
+function extractContextualLegalPolicy({ documents, requirementId, label, keywordPattern }) {
+  const rawMatches = collectMatches(documents, keywordPattern);
+  const matches = rawMatches.filter(
+    ({ document, index, length }) => !isPostAwardExecutionGuaranteeContext(document.content, index, length),
+  );
+  const evidence = collectEvidence(matches);
+  if (matches.length === 0) {
+    return {
+      id: requirementId, front: 'legal', label,
+      status: 'pending', severity: 'critical', values: [], evidence: [], confidence: 'low',
+      rationale: `No se encontró mención habilitante a "${label}" en los documentos disponibles (excluyendo garantías posteriores de ejecución del contrato).`,
+      question: `¿El pliego exige "${label}"? Confirmar tipo, cuantía y vigencia con el documento oficial, excluyendo garantías de ejecución posteriores a la adjudicación.`,
+    };
+  }
+  const values = matches.flatMap(({ document, index, length }) => findValuesNear(document.content, index, length));
+  const hasQuantity = values.some(value => value.kind === 'percentage' || value.kind === 'money');
+  const hasDuration = values.some(value => value.kind === 'duration');
+  if (hasQuantity && hasDuration) {
+    return {
+      id: requirementId, front: 'legal', label,
+      status: 'confirmed', severity: 'critical', values, evidence, confidence: 'high',
+      rationale: `"${label}" incluye cuantía o porcentaje y vigencia explícitas en el documento, en contexto habilitante (no de ejecución posterior a la adjudicación).`,
+      question: null,
+    };
+  }
+  return {
+    id: requirementId, front: 'legal', label,
+    status: 'partial', severity: 'critical', values, evidence, confidence: 'medium',
+    rationale: `Se menciona "${label}" en contexto habilitante, pero falta cuantía/porcentaje o vigencia explícita.`,
+    question: `¿Cuál es la cuantía o porcentaje y la vigencia exigida para "${label}"?`,
+  };
+}
+
+function extractLegalRcePolicyRequirement(documents) {
+  return extractContextualLegalPolicy({
+    documents,
+    requirementId: 'legal-rce-policy',
+    label: 'Póliza de responsabilidad civil extracontractual (RCE)',
+    keywordPattern: RCE_POLICY_KEYWORD_PATTERN,
+  });
+}
+
+function extractLegalCollectiveLifePolicyRequirement(documents) {
+  return extractContextualLegalPolicy({
+    documents,
+    requirementId: 'legal-collective-life-policy',
+    label: 'Póliza de seguro de vida colectivo',
+    keywordPattern: COLLECTIVE_LIFE_POLICY_KEYWORD_PATTERN,
+  });
 }
 
 function extractFinancialWorkingCapital(documents) {
@@ -198,6 +280,44 @@ export function extractLegalRequirements(documents) {
     unverifiable_documents: unverifiableDocuments(canonical),
   };
 }
+
+// HR-003 split, for the governed integral flow only. extractLegalRequirements above
+// (and therefore extractLegalGuaranteePolicy/legal-guarantee-policy) is left completely
+// unmodified for v2 backward compatibility — see AGT002_GOVERNED_REQUIREMENT_CITATION_
+// PATTERNS below for the matching closed keyword patterns.
+export function extractLegalRcePolicy(documents) {
+  const canonical = canonicalDocuments(documents);
+  return {
+    requirements: [extractLegalRcePolicyRequirement(canonical)],
+    unverifiable_documents: unverifiableDocuments(canonical),
+  };
+}
+
+export function extractLegalCollectiveLifePolicy(documents) {
+  const canonical = canonicalDocuments(documents);
+  return {
+    requirements: [extractLegalCollectiveLifePolicyRequirement(canonical)],
+    unverifiable_documents: unverifiableDocuments(canonical),
+  };
+}
+
+export function extractGovernedLegalRequirements(documents) {
+  const canonical = canonicalDocuments(documents);
+  return {
+    requirements: [extractLegalRcePolicyRequirement(canonical), extractLegalCollectiveLifePolicyRequirement(canonical)],
+    unverifiable_documents: unverifiableDocuments(canonical),
+  };
+}
+
+// Exported so agt002-rama-judicial-governance-draft-generate.mjs (and any future
+// governed-flow caller) imports the exact same closed patterns this extractor uses,
+// instead of maintaining a private, driftable duplicate.
+export const AGT002_GOVERNED_REQUIREMENT_CITATION_PATTERNS = Object.freeze({
+  'financial-working-capital': [/capital de trabajo/],
+  'legal-rce-policy': [/responsabilidad civil extracontractual/],
+  'legal-collective-life-policy': [/vida colectiv[oa]/],
+  'technical-video-surveillance-scope': [/cctv/, /videovigilancia/, /camaras?/, /control de acceso/, /monitoreo/],
+});
 
 export function extractFinancialRequirements(documents) {
   const canonical = canonicalDocuments(documents);
@@ -293,11 +413,7 @@ function dedupeUnverifiableDocuments(entries) {
   return result;
 }
 
-export function buildRequirementAnalysis(documents, companyProfile) {
-  const legal = extractLegalRequirements(documents);
-  const financial = extractFinancialRequirements(documents);
-  const technical = extractTechnicalRequirements(documents);
-
+function assembleRequirementAnalysis(legal, financial, technical, companyProfile) {
   const legalWithCrosscheck = crosscheckCompanyProfile(legal.requirements, companyProfile);
   const financialWithCrosscheck = crosscheckCompanyProfile(financial.requirements, companyProfile);
   const technicalWithCrosscheck = crosscheckCompanyProfile(technical.requirements, companyProfile);
@@ -365,4 +481,25 @@ export function buildRequirementAnalysis(documents, companyProfile) {
     next_action,
     unverifiable_documents: unverifiableDocumentsFound,
   };
+}
+
+export function buildRequirementAnalysis(documents, companyProfile) {
+  const legal = extractLegalRequirements(documents);
+  const financial = extractFinancialRequirements(documents);
+  const technical = extractTechnicalRequirements(documents);
+  return assembleRequirementAnalysis(legal, financial, technical, companyProfile);
+}
+
+// HR-003, governed integral flow only: same assembly discipline as
+// buildRequirementAnalysis above (coverage/strengths/weaknesses/blockers/questions/
+// next_action), but sourcing the legal front from the two split, closed requirements
+// instead of the generic legal-guarantee-policy. financial/technical fronts are
+// unchanged. Never used by the v2 legacy path (tender-deep-analysis.js/server
+// preanalysis) — see scripts/agt002-rama-judicial-governance-draft-generate.mjs for
+// the one real caller today.
+export function buildGovernedRequirementAnalysis(documents, companyProfile) {
+  const legal = extractGovernedLegalRequirements(documents);
+  const financial = extractFinancialRequirements(documents);
+  const technical = extractTechnicalRequirements(documents);
+  return assembleRequirementAnalysis(legal, financial, technical, companyProfile);
 }
