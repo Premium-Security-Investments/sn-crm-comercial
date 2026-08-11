@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
-import { extractTenderDocumentText } from '../tender-document-text-extraction.js';
+import { extractTenderDocumentText, resolveLegacyExtractedText } from '../tender-document-text-extraction.js';
 import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
 import { createTenderProcessingWorker } from '../tender-processing-worker.js';
@@ -2419,15 +2419,14 @@ async function ensureTenderBucket(database) {
 }
 // Adapter over tender-document-text-extraction.js: legacy call sites persist
 // extracted_text as a plain string (psi_tender_document_versions.extracted_text),
-// so gaps are surfaced as a descriptive string rather than the typed result.
-// Phase 1.2 will persist the typed result directly; this keeps behavior/byte
-// output stable for existing callers until then.
+// so ok/unsupported_type/empty_input keep returning that legacy string. Every
+// other gap throws instead (resolveLegacyExtractedText), so a real extraction
+// failure fails the request/refresh instead of persisting parser-error prose
+// as if it were document content. Phase 1.2 will persist the typed result
+// directly.
 async function extractTextFromTenderFile(buffer, filename, mime = '') {
   const result = await extractTenderDocumentText(buffer, filename, mime);
-  if (result.status === 'ok') return result.text;
-  if (result.metadata.gap_reason === 'unsupported_type') return `Archivo ${filename} cargado. Tipo no soportado para extracción profunda automática.`;
-  if (result.metadata.gap_reason === 'empty_input') return `Archivo ${filename} está vacío; no hay texto para extraer.`;
-  return `No fue posible extraer texto automáticamente de ${filename}: ${result.metadata.error || result.metadata.gap_reason}`;
+  return resolveLegacyExtractedText(result, filename);
 }
 function tenderProfileSearchText(companyProfile = {}) {
   return normTenderText(Object.entries(companyProfile || {}).filter(([key]) => !['id','updated_by','updated_at','singleton_key'].includes(key)).map(([, value]) => Array.isArray(value) ? value.join(' ') : String(value || '')).join(' '));
