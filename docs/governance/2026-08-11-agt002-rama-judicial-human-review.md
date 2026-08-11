@@ -5,7 +5,7 @@
 - Oportunidad: `54190e51-15fb-46af-b0aa-8f13461a3110`
 - Snapshot: `c33159a5-defe-4a6f-8fa4-68c5ceb60e59`
 - Borrador revisado: `docs/governance/drafts/agt002-rama-judicial-54190e51-15fb-46af-b0aa-8f13461a3110.v1.json` (`version: 2`)
-- Estado de la revisión: `IN_PROGRESS`
+- Estado de la revisión: `HUMAN_REVIEW_COMPLETE_PENDING_TECHNICAL_IMPLEMENTATION`
 - Revisor humano: Juan Botero
 - Inicio registrado: `2026-08-11T17:54:14Z` (`2026-08-11 12:54:14 COT`)
 
@@ -49,8 +49,14 @@ Esta revisión aprueba o corrige exclusivamente la clasificación documental de 
 
 ### HR-004 — Abstenciones de videovigilancia/CCTV
 
-- Estado: `PENDING_HUMAN_DECISION`
+- `requirement_id`: `technical-video-surveillance-scope`
+- Eje `category_override`: **APROBADA ABSTENCIÓN** hasta contar con un requisito contractual específico y verificable.
+- Eje `evidence_class_link`: **APROBADA ABSTENCIÓN**; ninguna de las 17 clases cerradas de evidencia empresarial representa el alcance técnico de CCTV.
+- Declaración humana recibida: “Apruebo mantener abstención para la categoría y la clase documental de videovigilancia/CCTV hasta contar con un requisito contractual específico y verificable”.
+- Fundamento presentado al revisor: 33 citas automáticas; 27 falsos positivos verificados y 6 señales relacionadas pero no cuantificables, sin cantidad, cobertura, ubicación ni especificaciones técnicas exigidas para este contrato.
+- Registrado: `2026-08-11T18:14:33Z` (`2026-08-11 13:14:33 COT`).
+- Restricción: la abstención no declara que CCTV no aplique; declara que la evidencia disponible no permite modelarlo honestamente como requisito cerrado ni vincularlo con una clase documental empresarial.
 
 ## Gate
 
-El borrador continúa en estado `DRAFT / HUMAN_APPROVAL_REQUIRED`. No se crearán filas curadas ni se habilitará el canary hasta cerrar HR-002, HR-003 y HR-004, verificar el acta completa y recibir autorización separada para la curación técnica.
+Las cuatro decisiones humanas del borrador quedaron cerradas. El borrador continúa en estado `DRAFT / HUMAN_APPROVAL_REQUIRED` hasta implementar y verificar técnicamente la separación aprobada en HR-003, regenerar los mapas y someter el resultado a una validación humana final de correspondencia. No se crearán filas curadas ni se habilitará el canary sin esa validación y una autorización separada para la curación técnica.
