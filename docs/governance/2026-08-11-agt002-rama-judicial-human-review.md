@@ -28,7 +28,13 @@ Esta revisión aprueba o corrige exclusivamente la clasificación documental de 
 
 ### HR-002 — Clasificación de pólizas
 
-- Estado: `PENDING_HUMAN_DECISION`
+- `requirement_id`: `legal-guarantee-policy`
+- Eje `category_override`: **APROBADO** → `habilitating` para las pólizas RCE y vida colectiva exigidas al proponente.
+- Exclusión aprobada: las garantías posteriores de ejecución del contrato, mencionadas en la sección extraída 110, quedan fuera de esta clasificación y deberán analizarse separadamente si se modelan.
+- Declaración humana recibida: “Apruebo las pólizas RCE y vida colectiva como habilitantes, excluyendo las garantías posteriores de ejecución del contrato”.
+- Fundamento presentado al revisor: RCE en las secciones extraídas 350–355 y vida colectiva en las secciones 356–360 del pliego definitivo, ambas dentro del Capítulo II “Requisitos habilitantes”, corroboradas en estudios previos y proyecto de pliego.
+- Registrado: `2026-08-11T17:58:46Z` (`2026-08-11 12:58:46 COT`).
+- Restricción: esta aprobación no enlaza todavía una clase documental ni determina presencia, revisión, vigencia, aplicabilidad, suficiencia o cumplimiento de ninguna póliza.
 
 ### HR-003 — Desagregación RCE / vida colectiva y enlaces de evidencia
 
