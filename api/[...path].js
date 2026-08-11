@@ -3,9 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
-import pdfParse from 'pdf-parse/lib/pdf-parse.js';
-import mammoth from 'mammoth';
-import AdmZip from 'adm-zip';
+import { extractTenderDocumentText } from '../tender-document-text-extraction.js';
 import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
 import { createTenderProcessingWorker } from '../tender-processing-worker.js';
@@ -2419,33 +2417,17 @@ async function ensureTenderBucket(database) {
   const { error } = await database.storage.createBucket(tenderDocumentBucket, { public: false, fileSizeLimit: RUP_MAX_BYTES });
   if (error && !String(error.message || '').toLowerCase().includes('already')) throw error;
 }
+// Adapter over tender-document-text-extraction.js: legacy call sites persist
+// extracted_text as a plain string (psi_tender_document_versions.extracted_text),
+// so gaps are surfaced as a descriptive string rather than the typed result.
+// Phase 1.2 will persist the typed result directly; this keeps behavior/byte
+// output stable for existing callers until then.
 async function extractTextFromTenderFile(buffer, filename, mime = '') {
-  const lower = filename.toLowerCase();
-  try {
-    if (lower.endsWith('.pdf') || mime.includes('pdf')) {
-      const result = await pdfParse(buffer);
-      return (result?.text || '').slice(0, 90000);
-    }
-    if (lower.endsWith('.docx') || mime.includes('wordprocessingml')) {
-      const result = await mammoth.extractRawText({ buffer });
-      return (result?.value || '').slice(0, 90000);
-    }
-    if (lower.endsWith('.txt') || mime.startsWith('text/')) return buffer.toString('utf8').slice(0, 90000);
-    if (lower.endsWith('.zip')) {
-      const zip = new AdmZip(buffer);
-      const parts = [];
-      for (const entry of zip.getEntries().filter(e => !e.isDirectory).slice(0, 30)) {
-        const entryName = entry.entryName;
-        const data = entry.getData();
-        if (/\.(txt|csv|xml|html?)$/i.test(entryName)) parts.push(`--- ${entryName} ---\n${data.toString('utf8').slice(0, 12000)}`);
-        else parts.push(`--- ${entryName} ---\nArchivo incluido en ZIP para checklist de formatos.`);
-      }
-      return parts.join('\n\n').slice(0, 90000);
-    }
-  } catch (error) {
-    return `No fue posible extraer texto automáticamente de ${filename}: ${error?.message || error}`;
-  }
-  return `Archivo ${filename} cargado. Tipo no soportado para extracción profunda automática.`;
+  const result = await extractTenderDocumentText(buffer, filename, mime);
+  if (result.status === 'ok') return result.text;
+  if (result.metadata.gap_reason === 'unsupported_type') return `Archivo ${filename} cargado. Tipo no soportado para extracción profunda automática.`;
+  if (result.metadata.gap_reason === 'empty_input') return `Archivo ${filename} está vacío; no hay texto para extraer.`;
+  return `No fue posible extraer texto automáticamente de ${filename}: ${result.metadata.error || result.metadata.gap_reason}`;
 }
 function tenderProfileSearchText(companyProfile = {}) {
   return normTenderText(Object.entries(companyProfile || {}).filter(([key]) => !['id','updated_by','updated_at','singleton_key'].includes(key)).map(([, value]) => Array.isArray(value) ? value.join(' ') : String(value || '')).join(' '));
