@@ -38,7 +38,14 @@ Esta revisión aprueba o corrige exclusivamente la clasificación documental de 
 
 ### HR-003 — Desagregación RCE / vida colectiva y enlaces de evidencia
 
-- Estado: `PENDING_HUMAN_DECISION`
+- Decisión: **APROBADO DIVIDIR** el requisito genérico `legal-guarantee-policy` antes de producir la curación real.
+- Nuevo requisito propuesto: `legal-rce-policy` → `category_override: habilitating` → `evidence_class_link: rce_policy`.
+- Nuevo requisito propuesto: `legal-collective-life-policy` → `category_override: habilitating` → `evidence_class_link: collective_life_policy`.
+- Declaración humana recibida: “Apruebo separar RCE y vida colectiva en dos requisitos, vinculados respectivamente a rce_policy y collective_life_policy”.
+- Registrado: `2026-08-11T18:12:49Z` (`2026-08-11 13:12:49 COT`).
+- Efecto de gobernanza: queda **rechazado para curación** el enlace único del requisito genérico; la abstención original permanece vigente hasta que extractor, manifiesto, borrador y pruebas implementen y validen la separación.
+- Trabajo técnico obligatorio antes del canary: introducir los dos `requirement_id` cerrados, preservar la exclusión de garantías posteriores a la adjudicación, regenerar citas y cobertura, ejecutar TDD y someter el resultado a verificación independiente.
+- Restricción: esta aprobación del modelo no afirma presencia, revisión, vigencia, aplicabilidad, suficiencia ni cumplimiento de ninguna de las dos pólizas.
 
 ### HR-004 — Abstenciones de videovigilancia/CCTV
 
