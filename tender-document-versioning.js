@@ -44,6 +44,7 @@ export async function refreshOfficialTenderDocument({
   ensureStorage,
   upload,
   recordVersion,
+  recordExtraction,
 }) {
   const sourceDocumentId = normalizeTenderSourceDocumentId(document.source_document_id);
   const buffer = await download(document);
@@ -61,10 +62,15 @@ export async function refreshOfficialTenderDocument({
     throw error;
   }
   const contentHash = tenderDocumentContentHash(buffer);
-  if (currentVersion?.content_hash === contentHash) {
+  if (currentVersion?.content_hash === contentHash && !currentVersion?.needs_extraction) {
     return { status: 'unchanged', source_document_id: sourceDocumentId };
   }
-  const extractedText = await extractText(buffer, name, document.mime_type || '');
+  const extractionResult = await extractText(buffer, name, document.mime_type || '');
+  const extractedText = typeof extractionResult === 'string'
+    ? extractionResult
+    : extractionResult?.status === 'ok'
+      ? extractionResult.text
+      : '';
   if (!String(extractedText || '').trim()) {
     const error = new Error(`No fue posible extraer texto verificable: ${name}`);
     error.code = 'TENDER_DOC_EMPTY_TEXT';
@@ -84,6 +90,9 @@ export async function refreshOfficialTenderDocument({
     size_bytes: buffer.length,
     extracted_text: extractedText,
   });
+  if (recordExtraction && extractionResult && typeof extractionResult === 'object') {
+    await recordExtraction({ extraction: extractionResult, version: recorded });
+  }
   const status = recorded?.status === 'unchanged' ? 'unchanged' : (currentVersion ? 'updated' : 'new');
   return { status, source_document_id: sourceDocumentId, version: recorded };
 }

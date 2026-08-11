@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { extractTenderDocumentText, resolveLegacyExtractedText } from '../tender-document-text-extraction.js';
+import { buildTenderDocumentExtractionRpcParams, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../tender-document-extraction-persistence.js';
 import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
 import { createTenderProcessingWorker } from '../tender-processing-worker.js';
@@ -2417,16 +2418,41 @@ async function ensureTenderBucket(database) {
   const { error } = await database.storage.createBucket(tenderDocumentBucket, { public: false, fileSizeLimit: RUP_MAX_BYTES });
   if (error && !String(error.message || '').toLowerCase().includes('already')) throw error;
 }
-// Adapter over tender-document-text-extraction.js: legacy call sites persist
-// extracted_text as a plain string (psi_tender_document_versions.extracted_text),
-// so ok/unsupported_type/empty_input keep returning that legacy string. Every
-// other gap throws instead (resolveLegacyExtractedText), so a real extraction
-// failure fails the request/refresh instead of persisting parser-error prose
-// as if it were document content. Phase 1.2 will persist the typed result
-// directly.
+async function extractTypedTextFromTenderFile(buffer, filename, mime = '') {
+  return extractTenderDocumentText(buffer, filename, mime);
+}
+// Legacy interaction uploads still carry a plain string until they receive a
+// governed document-version identity. Official/versioned documents retain the
+// typed result and persist it through migration 065 below.
 async function extractTextFromTenderFile(buffer, filename, mime = '') {
-  const result = await extractTenderDocumentText(buffer, filename, mime);
+  const result = await extractTypedTextFromTenderFile(buffer, filename, mime);
   return resolveLegacyExtractedText(result, filename);
+}
+function tenderDocumentExtractionRelationMissing(response) {
+  const code = String(response?.error?.code || '');
+  const message = String(response?.error?.message || '');
+  return Number(response?.status) === 404
+    || ['42P01', 'PGRST205'].includes(code)
+    || (/psi_tender_document_extractions/i.test(message) && /does not exist|could not find|schema cache/i.test(message));
+}
+async function loadTenderDocumentExtractionRows(database, documentVersionIds) {
+  if (!documentVersionIds.length) return { available: true, rows: [] };
+  const response = await database.from('psi_tender_document_extractions')
+    .select('id,document_version_id,extractor_version,status,parser,extracted_text,text_hash,char_count,text_byte_count,gap_reason,created_at')
+    .in('document_version_id', documentVersionIds)
+    .order('created_at', { ascending: false });
+  if (response.error) {
+    if (tenderDocumentExtractionRelationMissing(response)) return { available: false, rows: [] };
+    throw response.error;
+  }
+  return { available: true, rows: response.data || [] };
+}
+async function recordTenderDocumentExtraction(database, extraction, { opportunityId, tenderId, documentVersionId, actorId }) {
+  const response = await database.rpc('psi_record_tender_document_extraction', buildTenderDocumentExtractionRpcParams(extraction, {
+    opportunityId, tenderId, documentVersionId, actorId,
+  }));
+  if (response.error) throw response.error;
+  return response.data;
 }
 function tenderProfileSearchText(companyProfile = {}) {
   return normTenderText(Object.entries(companyProfile || {}).filter(([key]) => !['id','updated_by','updated_at','singleton_key'].includes(key)).map(([, value]) => Array.isArray(value) ? value.join(' ') : String(value || '')).join(' '));
@@ -2540,7 +2566,7 @@ function buildTenderDocumentAnalysis(opportunity, documents, companyProfile = {}
     documents: documents.map(d => ({ id: d.id, name: d.name, type: d.document_type, current: d.current }))
   };
 }
-async function getTenderDocumentRecords(database, opportunityId, { includeSignedUrls = true } = {}) {
+async function getTenderDocumentRecords(database, opportunityId, { includeSignedUrls = true, includeExtractedText = false } = {}) {
   await requireTenderAnalysisFoundation(database);
   const interactions = await must(database.from('psi_sales_interactions').select('id,notes,occurred_at,created_at,created_by,psi_sales_profiles(full_name)').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true }));
   const typedVersionsResponse = await database.from('psi_tender_document_versions')
@@ -2548,13 +2574,16 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
     .eq('opportunity_id', opportunityId)
     .eq('current', true);
   if (typedVersionsResponse.error) throw typedVersionsResponse.error;
-  const typedDocuments = (typedVersionsResponse.data || []).map(version => ({
+  const typedVersions = typedVersionsResponse.data || [];
+  const extractionRows = await loadTenderDocumentExtractionRows(database, typedVersions.map(version => version.id));
+  const canonicalExtractions = selectCanonicalExtractionsByDocumentVersion(extractionRows.rows);
+  const typedDocuments = typedVersions.map(version => mergeCanonicalExtractionIntoDocument({
     id: version.id, name: version.name, size: version.size_bytes, mime_type: version.mime_type,
     document_type: version.document_type, current: version.current, storage_path: version.storage_path,
-    uploaded_at: version.created_at, extracted_text: version.extracted_text, auto_import: true,
+    uploaded_at: version.created_at, auto_import: true,
     source: version.source, source_url: version.source_url, source_document_id: version.source_document_id,
     opportunity_id: version.opportunity_id, version: version.version, content_hash: version.content_hash,
-  }));
+  }, canonicalExtractions.get(version.id), version.extracted_text));
   const documents = [];
   const analyses = [];
   const importErrors = [];
@@ -2580,7 +2609,7 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
   const presentedAnalysis = presentCurrentTenderAnalysis(currentAnalysis);
   const questionResponses = presentedAnalysis?.run_id ? await getTenderQuestionResponses(database, opportunityId, presentedAnalysis.run_id) : [];
   return {
-    documents: signed,
+    documents: includeExtractedText ? signed : signed.map(publicTenderDocumentProjection),
     analysis: presentedAnalysis,
     analyses,
     question_responses: questionResponses,
@@ -2694,7 +2723,7 @@ async function reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analys
   const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(AGT002_OPPORTUNITY_CONTEXT_SELECT).eq('id', opportunityId).single());
   const contextV2Sections = await loadAgt002OpportunityContextV2(database, { opportunityId, tenderId, opportunity });
   const companyDossierV2 = await loadAgt002CompanyDossier(database);
-  const records = await getTenderDocumentRecords(database, opportunityId);
+  const records = await getTenderDocumentRecords(database, opportunityId, { includeExtractedText: true });
   const currentDocs = records.documents.filter(document => document.current !== false);
   const companyProfile = await getTenderCompanyProfile(database);
   const deepAnalysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
@@ -2894,7 +2923,12 @@ async function getCurrentTenderDocumentVersion(database, opportunityId, source, 
     .eq('current', true)
     .maybeSingle();
   if (error) throw error;
-  return data;
+  if (!data) return data;
+  const extractionRows = await loadTenderDocumentExtractionRows(database, [data.id]);
+  return {
+    ...data,
+    needs_extraction: extractionRows.available && extractionRows.rows.length === 0,
+  };
 }
 async function refreshTenderDocumentsFromOfficialSource(database, opportunityId, currentProfile, { analyze = true } = {}) {
   await requireTenderAnalysisFoundation(database);
@@ -2947,7 +2981,7 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
       currentVersion,
       download: item => item.download(),
       cleanName: cleanFileName,
-      extractText: extractTextFromTenderFile,
+      extractText: extractTypedTextFromTenderFile,
       ensureStorage: () => ensureTenderBucket(database),
       upload: async (storagePath, buffer, mimeType) => {
         const { error } = await database.storage.from(tenderDocumentBucket).upload(storagePath, buffer, { contentType: mimeType, upsert: true });
@@ -2964,6 +2998,9 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
         if (response.error) throw response.error;
         return response.data;
       },
+      recordExtraction: ({ extraction, version }) => recordTenderDocumentExtraction(database, extraction, {
+        opportunityId, tenderId, documentVersionId: version.id, actorId: currentProfile.id,
+      }),
     });
   });
   const refreshSummary = summarizeTenderDocumentRefresh(refreshResults);
@@ -2972,7 +3009,7 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
   if (beginRefresh.error) throw beginRefresh.error;
   const refreshToken = String(beginRefresh.data || '').trim();
   if (!refreshToken) throw new Error('No fue posible iniciar la actualización documental gobernada.');
-  const refreshedRecords = await getTenderDocumentRecords(database, opportunityId);
+  const refreshedRecords = await getTenderDocumentRecords(database, opportunityId, { includeExtractedText: true });
   const currentDocs = refreshedRecords.documents.filter(document => document.current !== false);
   const companyProfile = await getTenderCompanyProfile(database);
   const registeredSnapshot = await registerTenderDocumentSnapshot(database, {
@@ -3188,7 +3225,7 @@ function buildTenderProcessingWorkerDeps(database) {
           ? downloadSecopDocument({ url_descarga_documento: { url: doc.source_url }, nombre_archivo: doc.name }, referer)
           : downloadEsuDocument({ url: doc.source_url, name: doc.name }, referer)),
         cleanName: cleanFileName,
-        extractText: extractTextFromTenderFile,
+        extractText: extractTypedTextFromTenderFile,
         ensureStorage: () => ensureTenderBucket(database),
         upload: async (storagePath, buffer, mimeType) => {
           const { error } = await database.storage.from(tenderDocumentBucket).upload(storagePath, buffer, { contentType: mimeType, upsert: true });
@@ -3205,6 +3242,9 @@ function buildTenderProcessingWorkerDeps(database) {
           if (response.error) throw response.error;
           return response.data;
         },
+        recordExtraction: ({ extraction, version }) => recordTenderDocumentExtraction(database, extraction, {
+          opportunityId, tenderId, documentVersionId: version.id, actorId: actor.requested_by,
+        }),
       });
       return {
         status: result.status === 'unchanged' ? 'unchanged' : 'imported',
@@ -3228,7 +3268,11 @@ function buildTenderProcessingWorkerDeps(database) {
         .eq('opportunity_id', opportunityId)
         .eq('current', true);
       if (versionsResponse.error) throw versionsResponse.error;
-      const currentVersions = canonicalizeTenderDocuments(versionsResponse.data || []);
+      const versionRows = versionsResponse.data || [];
+      const extractionRows = await loadTenderDocumentExtractionRows(database, versionRows.map(version => version.id));
+      const canonicalExtractions = selectCanonicalExtractionsByDocumentVersion(extractionRows.rows);
+      const currentVersions = canonicalizeTenderDocuments(versionRows).map(version =>
+        mergeCanonicalExtractionIntoDocument(version, canonicalExtractions.get(version.id), version.extracted_text));
 
       const failedItemsResponse = await database.from('psi_tender_document_import_items')
         .select('source_document_id')
@@ -3281,7 +3325,7 @@ function buildTenderProcessingWorkerDeps(database) {
       if (beginRefresh.error) throw beginRefresh.error;
       const refreshToken = String(beginRefresh.data || '').trim();
       if (!refreshToken) throw new Error('No fue posible iniciar la publicación gobernada del snapshot.');
-      const records = await getTenderDocumentRecords(database, opportunityId);
+      const records = await getTenderDocumentRecords(database, opportunityId, { includeExtractedText: true });
       const currentDocs = records.documents.filter(document => document.current !== false);
       const companyProfile = await getTenderCompanyProfile(database);
       const registered = await registerTenderDocumentSnapshot(database, {
@@ -3317,7 +3361,7 @@ function buildTenderProcessingWorkerDeps(database) {
       const opportunity = await must(database.from('v_psi_sales_opportunity_enriched').select(AGT002_OPPORTUNITY_CONTEXT_SELECT).eq('id', opportunityId).single());
       const contextV2Sections = await loadAgt002OpportunityContextV2(database, { opportunityId, tenderId, opportunity });
       const companyDossierV2 = await loadAgt002CompanyDossier(database);
-      const records = await getTenderDocumentRecords(database, opportunityId);
+      const records = await getTenderDocumentRecords(database, opportunityId, { includeExtractedText: true });
       const currentDocs = records.documents.filter(document => document.current !== false);
       const companyProfile = await getTenderCompanyProfile(database);
       const deepAnalysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
@@ -3834,7 +3878,7 @@ app.post('/api/tender-documents-upload', async (req, res) => {
     if (beginRefresh.error) throw beginRefresh.error;
     const refreshToken = String(beginRefresh.data || '').trim();
     if (!refreshToken) throw new Error('No fue posible abrir la actualización documental manual.');
-    const records = await getTenderDocumentRecords(database, opportunityId, { includeSignedUrls: false });
+    const records = await getTenderDocumentRecords(database, opportunityId, { includeSignedUrls: false, includeExtractedText: true });
     await registerTenderDocumentSnapshot(database, {
       opportunity_id: opportunityId,
       tender_id: tenderId,
@@ -3859,7 +3903,7 @@ app.post('/api/tender-documents-analyze', async (req, res) => {
     if (beginRefresh.error) throw beginRefresh.error;
     const refreshToken = String(beginRefresh.data || '').trim();
     if (!refreshToken) throw new Error('No fue posible abrir el análisis documental gobernado.');
-    const records = await getTenderDocumentRecords(database, opportunityId);
+    const records = await getTenderDocumentRecords(database, opportunityId, { includeExtractedText: true });
     const currentDocs = records.documents.filter(d => d.current !== false);
     if (!currentDocs.length) throw new Error('Debe cargar documentos antes de analizar.');
     const companyProfile = await getTenderCompanyProfile(database);
@@ -3888,7 +3932,7 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
     if (beginRefresh.error) throw beginRefresh.error;
     const refreshToken = String(beginRefresh.data || '').trim();
     if (!refreshToken) throw new Error('No fue posible abrir el análisis documental gobernado.');
-    const records = await getTenderDocumentRecords(database, opportunityId);
+    const records = await getTenderDocumentRecords(database, opportunityId, { includeExtractedText: true });
     const currentDocs = records.documents.filter(document => document.current !== false);
     if (!currentDocs.length) throw new Error('Debe cargar documentos antes de analizar.');
     const companyProfile = await getTenderCompanyProfile(database);
@@ -4177,7 +4221,7 @@ async function runAgt002FixedSnapshotOperator(req, res) {
         return response.data;
       },
       loadCurrentDocuments: async opportunityId => {
-        const records = await getTenderDocumentRecords(getDatabase(), opportunityId, { includeSignedUrls: false });
+        const records = await getTenderDocumentRecords(getDatabase(), opportunityId, { includeSignedUrls: false, includeExtractedText: true });
         return records.documents.filter(document => document.current !== false);
       },
       loadActorProfile: async actorId => {

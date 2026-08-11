@@ -193,6 +193,52 @@ assert.deepEqual(
   'la versión tipada vigente gana y las cargas manuales/históricas no duplicadas permanecen'
 );
 
+await (async function typedExtractionIsRecordedOnlyAfterTheVersionHasAnIdentity() {
+  const extraction = {
+    status: 'ok', text: 'Texto completo y verificable', parser: 'pdf-parse',
+    extractor_version: 'tender-document-text-extraction@2',
+    char_count: 28, text_hash: createHash('sha256').update('Texto completo y verificable').digest('hex'), metadata: {},
+  };
+  const observed = [];
+  await refreshOfficialTenderDocument({
+    opportunityId: 'opp-1', source: 'SECOP II', document: { ...officialDocument, source_document_id: 'typed-doc' },
+    currentVersion: null,
+    download: async () => content,
+    cleanName: value => value.replace(/^\.\.\//, ''),
+    extractText: async () => extraction,
+    ensureStorage: async () => {},
+    upload: async () => {},
+    recordVersion: async payload => { observed.push(['version', payload.extracted_text]); return { id: 'version-1', status: 'created' }; },
+    recordExtraction: async payload => { observed.push(['extraction', payload]); },
+  });
+  assert.deepEqual(observed.map(item => item[0]), ['version', 'extraction']);
+  assert.equal(observed[0][1], extraction.text);
+  assert.equal(observed[1][1].version.id, 'version-1');
+  assert.equal(observed[1][1].extraction, extraction);
+})();
+
+await (async function missingVersionedExtractionForcesRepairEvenWhenContentHashMatches() {
+  const extraction = {
+    status: 'ok', text: 'Texto reparado', parser: 'pdf-parse',
+    extractor_version: 'tender-document-text-extraction@2',
+    char_count: 14, text_hash: createHash('sha256').update('Texto reparado').digest('hex'), metadata: {},
+  };
+  let recordedExtraction = null;
+  const result = await refreshOfficialTenderDocument({
+    opportunityId: 'opp-1', source: 'SECOP II', document: { ...officialDocument, source_document_id: 'repair-doc' },
+    currentVersion: { id: 'version-existing', content_hash: hash, needs_extraction: true },
+    download: async () => content,
+    cleanName: value => value.replace(/^\.\.\//, ''),
+    extractText: async () => extraction,
+    ensureStorage: async () => {},
+    upload: async () => {},
+    recordVersion: async () => ({ id: 'version-existing', status: 'unchanged' }),
+    recordExtraction: async payload => { recordedExtraction = payload; },
+  });
+  assert.equal(result.status, 'unchanged', 'no debe crear una versión duplicada');
+  assert.equal(recordedExtraction.version.id, 'version-existing', 'debe reparar la extracción faltante sobre la versión existente');
+})();
+
 // Regression: 31 -> 45 current UI rows after refresh. Two typed "current" documents
 // can share identical content (same content_hash) under different source_document_id
 // values (e.g. after a fallback id rotated) -- merge must collapse them into one, not
