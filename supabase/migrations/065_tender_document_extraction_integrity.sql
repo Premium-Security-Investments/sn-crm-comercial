@@ -1,7 +1,7 @@
+begin;
+
 create schema if not exists extensions;
 create extension if not exists pgcrypto with schema extensions;
-
-begin;
 
 -- The legacy version register originally required non-blank extracted_text. That made it
 -- impossible to attach an honest typed `gap` to a real immutable document version without
