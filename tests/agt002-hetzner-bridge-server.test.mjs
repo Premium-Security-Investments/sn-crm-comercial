@@ -59,9 +59,29 @@ async function testWrongContentTypeRejected() {
 
 async function testOversizedBodyRejected() {
   await withServer(fakeSuccessClient, async (base) => {
-    const oversized = JSON.stringify({ padding: 'x'.repeat(300_000) });
+    const oversized = JSON.stringify({ padding: 'x'.repeat(1_100_000) });
     const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(oversized), body: oversized });
     assert.equal(response.status, 413);
+  });
+}
+
+async function testIntegralV3SizedBodyAccepted() {
+  let calls = 0;
+  const client = {
+    run: async () => {
+      calls += 1;
+      return { content: '{"ok":true}', usage: { input_tokens: 1, output_tokens: 2 }, rate_limit: null };
+    },
+  };
+  await withServer(client, async (base) => {
+    const payload = {
+      model: 'gpt-x', policy: 'policy text', input: { evidence: 'x'.repeat(300_000) },
+      outputSchema: { type: 'object' }, timeoutMs: 5000, idempotencyKey: 'idem-v3-sized',
+    };
+    const body = JSON.stringify(payload);
+    const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+    assert.equal(response.status, 200, 'un payload V3 acotado por debajo de 1 MiB debe llegar al proveedor');
+    assert.equal(calls, 1);
   });
 }
 
@@ -224,6 +244,7 @@ await testWrongMethodRejected();
 await testUnknownPathRejected();
 await testWrongContentTypeRejected();
 await testOversizedBodyRejected();
+await testIntegralV3SizedBodyAccepted();
 console.log('agt002-hetzner-bridge-server.test.mjs Step 1 OK');
 
 await testSuccessResponseShape();
