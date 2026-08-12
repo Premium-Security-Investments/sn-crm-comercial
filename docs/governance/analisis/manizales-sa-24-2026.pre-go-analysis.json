@@ -91,6 +91,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -116,6 +118,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -143,6 +147,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -168,6 +174,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -195,6 +203,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "unverifiable",
       "reason": "clase_de_evidencia_no_observada_localmente",
       "applicability_is_human_decision": true,
@@ -217,7 +227,11 @@
             "compliance": "unknown"
           },
           "cross_state": "unverifiable",
-          "reason": "clase_de_evidencia_no_observada_localmente"
+          "reason": "clase_de_evidencia_no_observada_localmente",
+          "material_policy": {
+            "materiality": "ordinary",
+            "category": "garantias_polizas_emitir_modificar"
+          }
         }
       ]
     },
@@ -236,6 +250,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -261,6 +277,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -286,6 +304,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -311,6 +331,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -336,6 +358,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -363,6 +387,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "unverifiable",
       "reason": "clase_de_evidencia_no_observada_localmente",
       "applicability_is_human_decision": true,
@@ -385,7 +411,11 @@
             "compliance": "unknown"
           },
           "cross_state": "unverifiable",
-          "reason": "clase_de_evidencia_no_observada_localmente"
+          "reason": "clase_de_evidencia_no_observada_localmente",
+          "material_policy": {
+            "materiality": "ordinary",
+            "category": "garantias_polizas_emitir_modificar"
+          }
         }
       ]
     },
@@ -404,6 +434,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -429,6 +461,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -454,6 +488,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -479,6 +515,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -504,6 +542,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -529,6 +569,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -554,6 +596,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -579,6 +623,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -604,6 +650,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -629,6 +677,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -654,6 +704,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -679,6 +731,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -704,6 +758,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -729,6 +785,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -754,6 +812,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
       "dimensions": {
@@ -851,6 +911,8 @@
           }
         }
       ],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "unverifiable",
       "reason": "clase_de_evidencia_no_observada_localmente",
       "applicability_is_human_decision": true,
@@ -873,7 +935,11 @@
             "compliance": "unknown"
           },
           "cross_state": "unverifiable",
-          "reason": "clase_de_evidencia_no_observada_localmente"
+          "reason": "clase_de_evidencia_no_observada_localmente",
+          "material_policy": {
+            "materiality": "ordinary",
+            "category": "garantias_polizas_emitir_modificar"
+          }
         },
         {
           "requirement_id": "legal-collective-life-policy",
@@ -887,7 +953,11 @@
             "compliance": "unknown"
           },
           "cross_state": "unverifiable",
-          "reason": "clase_de_evidencia_no_observada_localmente"
+          "reason": "clase_de_evidencia_no_observada_localmente",
+          "material_policy": {
+            "materiality": "ordinary",
+            "category": "garantias_polizas_emitir_modificar"
+          }
         },
         {
           "requirement_id": "technical-video-surveillance-scope",
@@ -901,7 +971,11 @@
             "compliance": "unknown"
           },
           "cross_state": "unverifiable",
-          "reason": "sin_enlace_de_clase_de_evidencia_gobernado"
+          "reason": "sin_enlace_de_clase_de_evidencia_gobernado",
+          "material_policy": {
+            "materiality": "ordinary",
+            "category": "armas_medios"
+          }
         }
       ]
     },
@@ -934,6 +1008,8 @@
           }
         }
       ],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "unverifiable",
       "reason": "clase_de_evidencia_no_observada_localmente",
       "applicability_is_human_decision": true,
@@ -956,7 +1032,11 @@
             "compliance": "unknown"
           },
           "cross_state": "unverifiable",
-          "reason": "clase_de_evidencia_no_observada_localmente"
+          "reason": "clase_de_evidencia_no_observada_localmente",
+          "material_policy": {
+            "materiality": "material",
+            "category": "capacidad_financiera_insuficiente"
+          }
         }
       ]
     },
@@ -987,6 +1067,8 @@
           }
         }
       ],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "unverifiable",
       "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
@@ -1056,6 +1138,8 @@
           }
         }
       ],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "unverifiable",
       "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
@@ -1116,6 +1200,8 @@
           }
         }
       ],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "unverifiable",
       "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
@@ -1153,6 +1239,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "unverifiable",
       "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
@@ -1201,6 +1289,8 @@
           }
         }
       ],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "unverifiable",
       "reason": "clase_de_evidencia_no_observada_localmente",
       "applicability_is_human_decision": true,
@@ -1223,7 +1313,11 @@
             "compliance": "unknown"
           },
           "cross_state": "unverifiable",
-          "reason": "clase_de_evidencia_no_observada_localmente"
+          "reason": "clase_de_evidencia_no_observada_localmente",
+          "material_policy": {
+            "materiality": "ordinary",
+            "category": "garantias_polizas_emitir_modificar"
+          }
         }
       ]
     },
@@ -1254,6 +1348,8 @@
           }
         }
       ],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "unverifiable",
       "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
@@ -1289,6 +1385,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "unverifiable",
       "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
@@ -1323,6 +1421,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "unverifiable",
       "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
@@ -1357,6 +1457,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "unverifiable",
       "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
@@ -1391,6 +1493,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "unverifiable",
       "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
@@ -1425,6 +1529,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "unverifiable",
       "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
@@ -1461,6 +1567,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_evaluacion_es_regla_de_evaluacion_de_la_entidad",
       "dimensions": {
@@ -1486,6 +1594,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_evaluacion_es_regla_de_evaluacion_de_la_entidad",
       "dimensions": {
@@ -1511,6 +1621,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_evaluacion_es_regla_de_evaluacion_de_la_entidad",
       "dimensions": {
@@ -1536,6 +1648,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_evaluacion_es_regla_de_evaluacion_de_la_entidad",
       "dimensions": {
@@ -1561,6 +1675,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_evaluacion_es_regla_de_evaluacion_de_la_entidad",
       "dimensions": {
@@ -1586,6 +1702,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_ejecucion_tecnica_evidencia_es_postadjudicacion",
       "dimensions": {
@@ -1611,6 +1729,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_ejecucion_tecnica_evidencia_es_postadjudicacion",
       "dimensions": {
@@ -1636,6 +1756,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_ejecucion_tecnica_evidencia_es_postadjudicacion",
       "dimensions": {
@@ -1661,6 +1783,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_ejecucion_tecnica_evidencia_es_postadjudicacion",
       "dimensions": {
@@ -1686,6 +1810,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_ejecucion_tecnica_evidencia_es_postadjudicacion",
       "dimensions": {
@@ -1711,6 +1837,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_ejecucion_tecnica_evidencia_es_postadjudicacion",
       "dimensions": {
@@ -1736,6 +1864,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_ejecucion_tecnica_evidencia_es_postadjudicacion",
       "dimensions": {
@@ -1761,6 +1891,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_ejecucion_tecnica_evidencia_es_postadjudicacion",
       "dimensions": {
@@ -1786,6 +1918,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
       "dimensions": {
@@ -1811,6 +1945,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
       "dimensions": {
@@ -1836,6 +1972,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
       "dimensions": {
@@ -1898,6 +2036,8 @@
           }
         }
       ],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
       "dimensions": {
@@ -1923,6 +2063,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
       "dimensions": {
@@ -1948,6 +2090,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
       "dimensions": {
@@ -1973,6 +2117,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
       "dimensions": {
@@ -1998,6 +2144,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
       "dimensions": {
@@ -2023,6 +2171,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
       "dimensions": {
@@ -2048,6 +2198,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
       "dimensions": {
@@ -2073,6 +2225,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
       "dimensions": {
@@ -2098,6 +2252,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
       "dimensions": {
@@ -2123,6 +2279,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
       "dimensions": {
@@ -2148,6 +2306,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
       "dimensions": {
@@ -2173,6 +2333,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
       "dimensions": {
@@ -2198,6 +2360,8 @@
         "adjudicated": "not_determined"
       },
       "pereira_pattern": [],
+      "material_gaps": [],
+      "ordinary_gaps": [],
       "cross_state": "not_applicable_candidate",
       "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
       "dimensions": {
@@ -2263,33 +2427,7 @@
       "human_owner": "legal"
     }
   ],
-  "indispensable_questions": [
-    {
-      "id": "modalidad_del_proponente",
-      "question": "¿Cuál es la modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial)? Determina la aplicabilidad de la mayoría de secciones.",
-      "blocks_axis": "aplicabilidad"
-    },
-    {
-      "id": "version_del_pliego_al_cierre",
-      "question": "¿Qué versión del pliego (y adendas/respuestas a observaciones) gobierna al cierre? Lección Pereira: las reglas vigentes al cierre pueden diferir del pliego base.",
-      "blocks_axis": "vigencia"
-    },
-    {
-      "id": "boveda_de_evidencia_sincronizada",
-      "question": "¿Está sincronizada y gobernada la bóveda de evidencia empresarial para esta oportunidad? Sin ella el cruce es unverifiable, no missing.",
-      "blocks_axis": "presencia"
-    },
-    {
-      "id": "suficiencia_de_umbrales",
-      "question": "¿La suficiencia de umbrales (liquidez, capital de trabajo, experiencia ≥ % del POE, sumas de pólizas, territorialidad de licencias) satisface el pliego? Es cotejo humano.",
-      "blocks_axis": "suficiencia"
-    },
-    {
-      "id": "compromisos_de_ejecucion_en_oferta",
-      "question": "¿Requiere el pliego cartas de compromiso u obligaciones de ejecución declaradas EN la oferta? Su viabilidad es decisión humana (no se cruza como evidencia post-adjudicación).",
-      "blocks_axis": "aplicabilidad"
-    }
-  ],
+  "indispensable_questions": [],
   "abstentions": {
     "structural_coverage_only": true,
     "not_human_exhaustive": "La cobertura es estructural (68 secciones); no afirma exhaustividad humana ni revisión jurídica completa.",
@@ -2357,10 +2495,16 @@
       "El registro cataloga estructuralmente las 68 secciones del pliego vigente, lo que da trazabilidad para la decisión humana."
     ],
     "arguments_against": [
-      "15 sección(es) relevante(s) unverifiable: no hay evidencia observable localmente ni mapeo suficiente.",
+      "15 sección(es) relevante(s) unverifiable: requieren verificación mecánica, no respuesta humana por defecto.",
       "No hay verificación jurídica (corpus legal ausente)."
     ],
     "note": "recommendation_candidate NO es una recomendación jurídica ni una decisión: el GO/NO-GO es una compuerta humana obligatoria."
+  },
+  "post_go_preparation": {
+    "applies_on_go": true,
+    "note": "GO implica el COMPROMISO de disponer estos recursos antes de firma/ejecución; su ausencia hoy no impide el pre-GO ni genera pregunta humana pre-GO ni, por sí sola, NO_GO_candidate.",
+    "count": 0,
+    "actions": []
   },
   "pereira_pattern": {
     "case": {

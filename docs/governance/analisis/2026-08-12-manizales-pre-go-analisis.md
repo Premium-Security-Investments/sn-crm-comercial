@@ -8,6 +8,12 @@ Este bloque **cruza** cada sección relevante del registro contractual con la ev
 empresarial gobernada. **No decide cumplimiento, habilitación, puntaje ni GO/NO-GO**: esas son
 compuertas humanas. Pereira SA-MC-02-2026 se incorpora **sólo como patrón**, nunca como prueba.
 
+## Regla de materialidad pre-GO
+
+- Sólo bloquean o llegan al humano impedimentos materiales: inhabilidad/incompatibilidad, licencia esencial imposible, experiencia o capacidad financiera insuficiente, plazo objetivamente imposible, imposibilidad técnica grave o inviabilidad económica crítica.
+- Personal, armas/medios, estructura consorcio/UT, garantías/pólizas, formatos, firmas, certificados y asignaciones son preparación ordinaria: no generan pregunta humana ni NO-GO por sí solos.
+- Un GO humano implica el compromiso empresarial de disponer esos recursos; no afirma que ya existan ni autoriza firma, envío o presentación automática.
+
 ## Entorno local y sus límites
 
 - Bóveda de evidencia empresarial (17 clases): **no observable localmente** (vive en Supabase; no se accede).
@@ -64,24 +70,29 @@ compuertas humanas. Pereira SA-MC-02-2026 se incorpora **sólo como patrón**, n
 | 3.5 | puntuable | unverifiable | seccion_con_propuesta_curada_proposed_para_revision_humana | no_determinado |
 | 3.6 | puntuable | unverifiable | seccion_con_propuesta_curada_proposed_para_revision_humana | no_determinado |
 
-## Bloqueadores
+## Impedimentos materiales observados
 
-- **[subsanable] evidencia_empresarial_no_observable_localmente**: La bóveda de evidencia empresarial (17 clases) no es observable en el entorno local; las secciones relevantes con enlace gobernado quedan unverifiable. — secciones: 1.3, 1.9, 2.1, 2.2, 2.6
-  - Remediación: Sincronizar/gobernar el registro de evidencia empresarial (psi_agt002_company_evidence_registry) y adjuntar por identificador; verificación humana. (responsable sugerido: tender_lead).
-- **[subsanable] secciones_con_propuesta_de_requisitos_para_revision_humana**: Secciones de oferta con PROPUESTA CURADA de requisitos atomizados (overlay local, no aprobado): requieren revisión y aprobación humana antes de convertirse en requisitos gobernados; no afirman cumplimiento ni suficiencia. — secciones: 2.3, 2.4, 2.4.1, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6
-  - Remediación: Revisar y aprobar (o ajustar) las propuestas de requisitos por sección (artefacto agt002_pre_go_section_proposals); sólo tras GO humano se convierten en requirement_manifest gobernado. (responsable sugerido: legal).
-- **[subsanable] requisito_gobernado_sin_enlace_de_clase**: Requisitos gobernados sin clase de evidencia enlazada (p.ej. alcance de videovigilancia/CCTV): permanecen en abstención hasta curar el enlace y revisar el documento. — secciones: 2.1
-  - Remediación: Proponer evidence_class_link gobernado y revisión documental humana; mantener CCTV en abstención mientras no haya evidencia concluyente nueva. (responsable sugerido: technical).
-- **[subsanable] verificacion_juridica_no_disponible_sin_corpus**: No hay versión publicada de corpus legal; la verificación jurídica no se muestra.
-  - Remediación: Publicar y verificar una versión de corpus legal (psi_agt002_legal_corpus_versions) por decisión humana. (responsable sugerido: legal).
+- No se observó un impedimento material concluyente con la evidencia local disponible. Esto no equivale a afirmar cumplimiento.
 
-## Preguntas indispensables (para el humano)
+## Verificaciones automáticas pendientes (no son impedimentos por sí solas)
 
-- **modalidad_del_proponente** (eje: aplicabilidad): ¿Cuál es la modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial)? Determina la aplicabilidad de la mayoría de secciones.
-- **version_del_pliego_al_cierre** (eje: vigencia): ¿Qué versión del pliego (y adendas/respuestas a observaciones) gobierna al cierre? Lección Pereira: las reglas vigentes al cierre pueden diferir del pliego base.
-- **boveda_de_evidencia_sincronizada** (eje: presencia): ¿Está sincronizada y gobernada la bóveda de evidencia empresarial para esta oportunidad? Sin ella el cruce es unverifiable, no missing.
-- **suficiencia_de_umbrales** (eje: suficiencia): ¿La suficiencia de umbrales (liquidez, capital de trabajo, experiencia ≥ % del POE, sumas de pólizas, territorialidad de licencias) satisface el pliego? Es cotejo humano.
-- **compromisos_de_ejecucion_en_oferta** (eje: aplicabilidad): ¿Requiere el pliego cartas de compromiso u obligaciones de ejecución declaradas EN la oferta? Su viabilidad es decisión humana (no se cruza como evidencia post-adjudicación).
+- **evidencia_empresarial_no_observable_localmente**: La bóveda de evidencia empresarial (17 clases) no es observable en el entorno local; las secciones relevantes con enlace gobernado quedan unverifiable. — secciones: 1.3, 1.9, 2.1, 2.2, 2.6
+  - Acción mecánica/gobernada: Sincronizar/gobernar el registro de evidencia empresarial (psi_agt002_company_evidence_registry) y adjuntar por identificador; verificación humana. (rol sugerido: tender_lead).
+- **secciones_con_propuesta_de_requisitos_para_revision_humana**: Secciones de oferta con PROPUESTA CURADA de requisitos atomizados (overlay local, no aprobado): requieren revisión y aprobación humana antes de convertirse en requisitos gobernados; no afirman cumplimiento ni suficiencia. — secciones: 2.3, 2.4, 2.4.1, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6
+  - Acción mecánica/gobernada: Revisar y aprobar (o ajustar) las propuestas de requisitos por sección (artefacto agt002_pre_go_section_proposals); sólo tras GO humano se convierten en requirement_manifest gobernado. (rol sugerido: legal).
+- **requisito_gobernado_sin_enlace_de_clase**: Requisitos gobernados sin clase de evidencia enlazada (p.ej. alcance de videovigilancia/CCTV): permanecen en abstención hasta curar el enlace y revisar el documento. — secciones: 2.1
+  - Acción mecánica/gobernada: Proponer evidence_class_link gobernado y revisión documental humana; mantener CCTV en abstención mientras no haya evidencia concluyente nueva. (rol sugerido: technical).
+- **verificacion_juridica_no_disponible_sin_corpus**: No hay versión publicada de corpus legal; la verificación jurídica no se muestra.
+  - Acción mecánica/gobernada: Publicar y verificar una versión de corpus legal (psi_agt002_legal_corpus_versions) por decisión humana. (rol sugerido: legal).
+
+## Preguntas humanas por excepción material
+
+- No se observó una excepción material que deba preguntarse al humano con la evidencia local disponible. Los pendientes de extracción, mapeo o preparación se resuelven por el agente o pasan a post-GO.
+
+## Preparación ordinaria post-GO
+
+- GO implica el COMPROMISO de disponer estos recursos antes de firma/ejecución; su ausencia hoy no impide el pre-GO ni genera pregunta humana pre-GO ni, por sí sola, NO_GO_candidate.
+- En este artefacto local no se observaron faltantes ordinarios concretos; esto no prueba que estén completos.
 
 ## Abstenciones
 
@@ -112,7 +123,7 @@ compuertas humanas. Pereira SA-MC-02-2026 se incorpora **sólo como patrón**, n
 - A favor:
   - El registro cataloga estructuralmente las 68 secciones del pliego vigente, lo que da trazabilidad para la decisión humana.
 - En contra:
-  - 15 sección(es) relevante(s) unverifiable: no hay evidencia observable localmente ni mapeo suficiente.
+  - 15 sección(es) relevante(s) unverifiable: requieren verificación mecánica, no respuesta humana por defecto.
   - No hay verificación jurídica (corpus legal ausente).
 
 ## Patrón Pereira (taxonomía y escalera probatoria — no prueba de Manizales)
