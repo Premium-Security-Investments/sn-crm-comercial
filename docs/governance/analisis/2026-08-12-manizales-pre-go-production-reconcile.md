@@ -2,7 +2,7 @@
 
 > Artefacto sanitario: `docs/governance/analisis/manizales-sa-24-2026.pre-go-production-reconcile.json`.
 > Estado: **draft_for_human_review**, `human_approval_required: true`. Point-in-time contra producción
-> (solo lectura). Generado: 2026-08-12T00:00:00.000Z. Enlace gobernado local v3.
+> (solo lectura). Generado: 2026-08-12T05:00:00.000Z. Enlace gobernado local v3.
 
 Este bloque **no reemplaza** al generador offline (que sigue reproducible). Consulta las 17 clases de
 evidencia empresarial reales y la versión de corpus jurídico publicada, y las cruza con el mismo módulo puro.
@@ -37,18 +37,25 @@ evidencia empresarial reales y la versión de corpus jurídico publicada, y las 
 
 - Relevantes pre-GO: **15**; no aplicables pre-GO: **53**.
 
+## Overlay local de propuestas curadas (no aprobado)
+
+- Aplicado: **true** · estado: `proposed_for_human_review` · aprobado: **false**.
+- Secciones: **10** · requisitos propuestos: **20**.
+- Con clase empresarial candidata: **9**; sin clase: **11**.
+- Overlay LOCAL de propuestas curadas. Las clases son candidatas, no enlaces aprobados; ninguna propuesta afirma cumplimiento, suficiencia o puntaje.
+
 ## Reemplazo honesto (clases reales vs. bóveda no observable)
 
 - Blocker "bóveda no observable localmente" presente: **false** (desaparece con clases reales).
 - Secciones human_review_required: **5**; unverifiable: **10**.
 - satisfied_candidate: **0**; missing: **0**; stale: **0** (nada promovido).
-- Secciones de oferta sin mapeo gobernado: 2.3, 2.4, 2.4.1, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6.
+- Secciones de oferta sin mapeo gobernado: (ninguna).
 - CCTV/videovigilancia en abstención: 2.1.
 - Las 17 clases están reported (no verified) con revisión humana y aplicabilidad de caso pendientes: por diseño quedan human_review_required, nunca satisfied/missing/cumplido. Las clases sin hash figuran como inaccessible/pending y las vigencias sin fecha como unknown, sin promoverse.
 
 ## Bloqueadores (metadata)
 
-- **[subsanable] secciones_relevantes_sin_requisito_gobernado** — secciones afectadas: 10.
+- **[subsanable] secciones_con_propuesta_de_requisitos_para_revision_humana** — secciones afectadas: 10.
 - **[subsanable] requisito_gobernado_sin_enlace_de_clase** — secciones afectadas: 1.
 
 ## Recomendación (SÓLO candidata — GO/NO-GO humano obligatorio)

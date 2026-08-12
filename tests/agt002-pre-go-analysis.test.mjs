@@ -13,6 +13,10 @@ import {
 } from '../agt002-pre-go-analysis.js';
 import { buildAgt002CompanyEvidenceClasses } from '../agt002-company-evidence-classes.js';
 import { assertNoOpenPii } from '../agt002-contractual-registry-taxonomy.js';
+import {
+  buildAgt002PreGoSectionProposals,
+  buildAgt002SectionProposalOverlayIndex,
+} from '../agt002-pre-go-section-proposals.js';
 
 const GENERATED_AT = '2026-08-12T00:00:00.000Z';
 const HABILITATING = ['financial-working-capital', 'legal-rce-policy', 'legal-collective-life-policy'];
@@ -269,6 +273,82 @@ test('cross states are all within the controlled vocabulary and the artifact val
   for (const c of artifact.crossings) assert.ok(AGT002_PRE_GO_CROSS_STATES.includes(c.cross_state));
   assert.equal(artifact.artifact_type, AGT002_PRE_GO_ANALYSIS_ARTIFACT_TYPE);
   assert.equal(artifact.status, AGT002_PRE_GO_ANALYSIS_STATUS);
+  validateAgt002PreGoAnalysis(artifact);
+  assertNoOpenPii(artifact);
+});
+
+// --- Overlay OPCIONAL de propuestas curadas -------------------------------------------
+test('overlay is off by default: a relevant section with no governed requirement stays in the generic blocker', () => {
+  const items = [item({ ref: '2.3', fase: 'habilitante' })];
+  const artifact = buildAgt002PreGoAnalysis({
+    registry: baseRegistry(items, applicabilityAbstentions(items)), generatedAt: GENERATED_AT,
+    evidenceClassLinkByRequirementId: LINK, habilitatingGovernedRequirementIds: HABILITATING,
+  });
+  const c = artifact.crossings[0];
+  assert.equal(c.reason, 'seccion_relevante_sin_requisito_gobernado_mapeado');
+  assert.equal(c.proposal_overlay, undefined);
+  assert.ok(artifact.blockers.some(b => b.id === 'secciones_relevantes_sin_requisito_gobernado'));
+  assert.ok(!artifact.blockers.some(b => b.id === 'secciones_con_propuesta_de_requisitos_para_revision_humana'));
+  assert.equal(artifact.section_proposal_overlay.applied, false);
+});
+
+test('overlay applied via a plain ref->ids index moves the section out of the generic blocker into a proposed blocker', () => {
+  const items = [item({ ref: '2.3', fase: 'habilitante' })];
+  const overlay = { '2.3': { requirement_ids: ['proposal:2.3:x', 'proposal:2.3:y'], requirement_count: 2, status: 'proposed_for_human_review' } };
+  const artifact = buildAgt002PreGoAnalysis({
+    registry: baseRegistry(items, applicabilityAbstentions(items)), generatedAt: GENERATED_AT,
+    evidenceClassLinkByRequirementId: LINK, habilitatingGovernedRequirementIds: HABILITATING,
+    sectionProposalOverlay: overlay,
+  });
+  const c = artifact.crossings[0];
+  assert.equal(c.cross_state, 'unverifiable'); // una propuesta no es evidencia ni requisito aprobado
+  assert.equal(c.reason, 'seccion_con_propuesta_curada_proposed_para_revision_humana');
+  assert.equal(c.proposal_overlay.status, 'proposed_for_human_review');
+  assert.equal(c.proposal_overlay.requirement_count, 2);
+  assert.equal(c.proposal_overlay.human_approval_required, true);
+  assert.ok(!artifact.blockers.some(b => b.id === 'secciones_relevantes_sin_requisito_gobernado'));
+  const proposed = artifact.blockers.find(b => b.id === 'secciones_con_propuesta_de_requisitos_para_revision_humana');
+  assert.ok(proposed, 'existe el bloqueador de propuesta');
+  assert.equal(proposed.status, 'proposed_for_human_review');
+  assert.deepEqual(proposed.affected_item_refs, ['2.3']);
+  assert.equal(artifact.section_proposal_overlay.applied, true);
+  assert.equal(artifact.section_proposal_overlay.is_approved, false);
+  assert.equal(artifact.recommendation.human_go_no_go_required, true);
+  validateAgt002PreGoAnalysis(artifact);
+  assertNoOpenPii(artifact);
+});
+
+test('(real) overlay from the curated proposals clears the generic blocker for all 10 target sections, still human-gated', () => {
+  const path = resolve(process.cwd(), 'docs/governance/registro/manizales-sa-24-2026.registry.json');
+  if (!existsSync(path)) return;
+  const registry = JSON.parse(readFileSync(path, 'utf8'));
+  const proposals = buildAgt002PreGoSectionProposals({ registry, generatedAt: GENERATED_AT });
+  const overlay = buildAgt002SectionProposalOverlayIndex(proposals);
+  const TARGET = ['2.3', '2.4', '2.4.1', '2.5', '3.1', '3.2', '3.3', '3.4', '3.5', '3.6'];
+
+  const artifact = buildAgt002PreGoAnalysis({
+    registry, generatedAt: GENERATED_AT, evidenceClasses: [],
+    evidenceClassLinkByRequirementId: LINK, habilitatingGovernedRequirementIds: HABILITATING,
+    sectionProposalOverlay: overlay,
+  });
+  const proposed = artifact.blockers.find(b => b.id === 'secciones_con_propuesta_de_requisitos_para_revision_humana');
+  assert.ok(proposed, 'bloqueador de propuesta presente');
+  assert.deepEqual(proposed.affected_item_refs, [...TARGET].sort());
+  // El bloqueador genérico ya no debe listar ninguna de las 10 secciones cubiertas.
+  const generic = artifact.blockers.find(b => b.id === 'secciones_relevantes_sin_requisito_gobernado');
+  if (generic) {
+    for (const ref of TARGET) assert.ok(!generic.affected_item_refs.includes(ref), `${ref} salió del bloqueador genérico`);
+  }
+  // Ninguna sección afirma cumplimiento: siguen unverifiable y el GO/NO-GO humano es obligatorio.
+  for (const ref of TARGET) {
+    const c = artifact.crossings.find(x => x.item_ref === ref);
+    assert.equal(c.cross_state, 'unverifiable');
+    assert.equal(c.proposal_overlay.status, 'proposed_for_human_review');
+  }
+  assert.equal(artifact.coverage.por_estado.satisfied_candidate, 0);
+  assert.equal(artifact.section_proposal_overlay.applied, true);
+  assert.equal(artifact.section_proposal_overlay.affected_item_refs.length, 10);
+  assert.equal(artifact.recommendation.human_go_no_go_required, true);
   validateAgt002PreGoAnalysis(artifact);
   assertNoOpenPii(artifact);
 });

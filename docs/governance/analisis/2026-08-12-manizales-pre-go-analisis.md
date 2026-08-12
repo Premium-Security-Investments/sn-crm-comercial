@@ -2,7 +2,7 @@
 
 > Artefacto: `docs/governance/analisis/manizales-sa-24-2026.pre-go-analysis.json` (regenerable con
 > `node scripts/agt002-manizales-pre-go-analysis-generate.mjs`). Estado: **draft_for_human_review**,
-> `human_approval_required: true`. Generado: 2026-08-12T04:30:00.000Z.
+> `human_approval_required: true`. Generado: 2026-08-12T05:00:00.000Z.
 
 Este bloque **cruza** cada sección relevante del registro contractual con la evidencia
 empresarial gobernada. **No decide cumplimiento, habilitación, puntaje ni GO/NO-GO**: esas son
@@ -52,24 +52,24 @@ compuertas humanas. Pereira SA-MC-02-2026 se incorpora **sólo como patrón**, n
 | 1.9 | generalidad | unverifiable | clase_de_evidencia_no_observada_localmente | no_determinado |
 | 2.1 | habilitante | unverifiable | clase_de_evidencia_no_observada_localmente | no_subsanable |
 | 2.2 | habilitante | unverifiable | clase_de_evidencia_no_observada_localmente | no_determinado |
-| 2.3 | habilitante | unverifiable | seccion_relevante_sin_requisito_gobernado_mapeado | no_determinado |
-| 2.4 | habilitante | unverifiable | seccion_relevante_sin_requisito_gobernado_mapeado | no_determinado |
-| 2.4.1 | habilitante | unverifiable | seccion_relevante_sin_requisito_gobernado_mapeado | no_determinado |
-| 2.5 | habilitante | unverifiable | seccion_relevante_sin_requisito_gobernado_mapeado | no_determinado |
+| 2.3 | habilitante | unverifiable | seccion_con_propuesta_curada_proposed_para_revision_humana | no_determinado |
+| 2.4 | habilitante | unverifiable | seccion_con_propuesta_curada_proposed_para_revision_humana | no_determinado |
+| 2.4.1 | habilitante | unverifiable | seccion_con_propuesta_curada_proposed_para_revision_humana | no_determinado |
+| 2.5 | habilitante | unverifiable | seccion_con_propuesta_curada_proposed_para_revision_humana | no_determinado |
 | 2.6 | habilitante | unverifiable | clase_de_evidencia_no_observada_localmente | no_determinado |
-| 3.1 | puntuable | unverifiable | seccion_relevante_sin_requisito_gobernado_mapeado | no_determinado |
-| 3.2 | puntuable | unverifiable | seccion_relevante_sin_requisito_gobernado_mapeado | no_determinado |
-| 3.3 | puntuable | unverifiable | seccion_relevante_sin_requisito_gobernado_mapeado | no_determinado |
-| 3.4 | puntuable | unverifiable | seccion_relevante_sin_requisito_gobernado_mapeado | no_determinado |
-| 3.5 | puntuable | unverifiable | seccion_relevante_sin_requisito_gobernado_mapeado | no_determinado |
-| 3.6 | puntuable | unverifiable | seccion_relevante_sin_requisito_gobernado_mapeado | no_determinado |
+| 3.1 | puntuable | unverifiable | seccion_con_propuesta_curada_proposed_para_revision_humana | no_determinado |
+| 3.2 | puntuable | unverifiable | seccion_con_propuesta_curada_proposed_para_revision_humana | no_determinado |
+| 3.3 | puntuable | unverifiable | seccion_con_propuesta_curada_proposed_para_revision_humana | no_determinado |
+| 3.4 | puntuable | unverifiable | seccion_con_propuesta_curada_proposed_para_revision_humana | no_determinado |
+| 3.5 | puntuable | unverifiable | seccion_con_propuesta_curada_proposed_para_revision_humana | no_determinado |
+| 3.6 | puntuable | unverifiable | seccion_con_propuesta_curada_proposed_para_revision_humana | no_determinado |
 
 ## Bloqueadores
 
 - **[subsanable] evidencia_empresarial_no_observable_localmente**: La bóveda de evidencia empresarial (17 clases) no es observable en el entorno local; las secciones relevantes con enlace gobernado quedan unverifiable. — secciones: 1.3, 1.9, 2.1, 2.2, 2.6
   - Remediación: Sincronizar/gobernar el registro de evidencia empresarial (psi_agt002_company_evidence_registry) y adjuntar por identificador; verificación humana. (responsable sugerido: tender_lead).
-- **[subsanable] secciones_relevantes_sin_requisito_gobernado**: Secciones de oferta (habilitantes/puntuables) sin requisito gobernado ni enlace de clase de evidencia: no hay camino de verificación sin mapeo curado. — secciones: 2.3, 2.4, 2.4.1, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6
-  - Remediación: Curar requirement_manifest + evidence_class_link para estas secciones (borrador de gobernanza), con rationale y source_reference; aprobación humana. (responsable sugerido: legal).
+- **[subsanable] secciones_con_propuesta_de_requisitos_para_revision_humana**: Secciones de oferta con PROPUESTA CURADA de requisitos atomizados (overlay local, no aprobado): requieren revisión y aprobación humana antes de convertirse en requisitos gobernados; no afirman cumplimiento ni suficiencia. — secciones: 2.3, 2.4, 2.4.1, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6
+  - Remediación: Revisar y aprobar (o ajustar) las propuestas de requisitos por sección (artefacto agt002_pre_go_section_proposals); sólo tras GO humano se convierten en requirement_manifest gobernado. (responsable sugerido: legal).
 - **[subsanable] requisito_gobernado_sin_enlace_de_clase**: Requisitos gobernados sin clase de evidencia enlazada (p.ej. alcance de videovigilancia/CCTV): permanecen en abstención hasta curar el enlace y revisar el documento. — secciones: 2.1
   - Remediación: Proponer evidence_class_link gobernado y revisión documental humana; mantener CCTV en abstención mientras no haya evidencia concluyente nueva. (responsable sugerido: technical).
 - **[subsanable] verificacion_juridica_no_disponible_sin_corpus**: No hay versión publicada de corpus legal; la verificación jurídica no se muestra.
@@ -82,7 +82,6 @@ compuertas humanas. Pereira SA-MC-02-2026 se incorpora **sólo como patrón**, n
 - **boveda_de_evidencia_sincronizada** (eje: presencia): ¿Está sincronizada y gobernada la bóveda de evidencia empresarial para esta oportunidad? Sin ella el cruce es unverifiable, no missing.
 - **suficiencia_de_umbrales** (eje: suficiencia): ¿La suficiencia de umbrales (liquidez, capital de trabajo, experiencia ≥ % del POE, sumas de pólizas, territorialidad de licencias) satisface el pliego? Es cotejo humano.
 - **compromisos_de_ejecucion_en_oferta** (eje: aplicabilidad): ¿Requiere el pliego cartas de compromiso u obligaciones de ejecución declaradas EN la oferta? Su viabilidad es decisión humana (no se cruza como evidencia post-adjudicación).
-- **mapeo_de_secciones_sin_requisito** (eje: presencia): ¿Con qué evidencia empresarial se prueban las secciones de oferta 2.3, 2.4, 2.4.1, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6? Falta requisito gobernado/enlace de clase.
 
 ## Abstenciones
 

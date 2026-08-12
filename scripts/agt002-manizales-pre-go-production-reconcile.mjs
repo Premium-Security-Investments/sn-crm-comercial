@@ -53,6 +53,11 @@ import {
   AGT002_COMPANY_EVIDENCE_COVERAGE_CATEGORIES,
 } from '../agt002-company-evidence-classes.js';
 import { loadPublishedAgt002LegalCorpus } from '../agt002-legal-corpus-store.js';
+import {
+  buildAgt002PreGoSectionProposals,
+  buildAgt002SectionProposalOverlayIndex,
+  validateAgt002PreGoSectionProposals,
+} from '../agt002-pre-go-section-proposals.js';
 import { assertNoOpenPii } from '../agt002-contractual-registry-taxonomy.js';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -172,12 +177,15 @@ function tally(values, domain) {
 
 // --- Resumen SANITARIO metadata-only -------------------------------------------------------
 export function buildSanitaryReconcileSummary({
-  artifact, classes, coverage, entryIds, legalCorpus, generatedAt, draftVersion,
+  artifact, classes, coverage, entryIds, legalCorpus, generatedAt, draftVersion, sectionProposals,
 }) {
   const cov = artifact.coverage;
   const relevantCrossings = artifact.crossings.filter(c => c.pre_go_relevant);
   const unmappedOfferSections = relevantCrossings
-    .filter(c => c.cross_state === 'unverifiable' && (c.governed_requirement_ids || []).length === 0)
+    .filter(c => c.cross_state === 'unverifiable' && (c.governed_requirement_ids || []).length === 0 && !c.proposal_overlay)
+    .map(c => c.item_ref).sort();
+  const proposedOfferSections = relevantCrossings
+    .filter(c => c.cross_state === 'unverifiable' && c.proposal_overlay)
     .map(c => c.item_ref).sort();
   const cctvAbstentionRefs = artifact.crossings
     .filter(c => (c.governed_evidence || []).some(g => g.rule_id === 'no_governed_evidence_class_link'))
@@ -223,6 +231,17 @@ export function buildSanitaryReconcileSummary({
       secciones_no_aplicables_pre_go: cov.secciones_no_aplicables_pre_go,
       por_estado: cov.por_estado,
     },
+    section_proposal_overlay: {
+      applied: artifact.section_proposal_overlay.applied === true,
+      status: sectionProposals.status,
+      human_approval_required: true,
+      is_approved: false,
+      affected_item_refs: proposedOfferSections,
+      requirement_count: sectionProposals.coverage.requirements,
+      with_candidate_evidence_class: sectionProposals.coverage.with_candidate_evidence_class,
+      without_candidate_evidence_class: sectionProposals.coverage.without_candidate_evidence_class,
+      note: 'Overlay LOCAL de propuestas curadas. Las clases son candidatas, no enlaces aprobados; ninguna propuesta afirma cumplimiento, suficiencia o puntaje.',
+    },
     blockers: artifact.blockers.map(b => ({ id: b.id, class: b.class, affected_count: b.affected_item_refs.length })),
     honest_replacement: {
       vault_not_observable_blocker_present: vaultBlockerPresent,
@@ -232,6 +251,7 @@ export function buildSanitaryReconcileSummary({
       sections_missing: cov.por_estado.missing,
       sections_stale: cov.por_estado.stale,
       unmapped_offer_sections: unmappedOfferSections,
+      proposed_offer_sections: proposedOfferSections,
       cctv_abstention_refs: cctvAbstentionRefs,
       note: 'Las 17 clases están reported (no verified) con revisión humana y aplicabilidad de caso pendientes: por diseño quedan human_review_required, nunca satisfied/missing/cumplido. Las clases sin hash figuran como inaccessible/pending y las vigencias sin fecha como unknown, sin promoverse.',
     },
@@ -302,6 +322,12 @@ export async function runProductionReconcile({
   // Corpus jurídico publicado: sólo la VERSIÓN validada (hash verificado); nunca su contenido.
   const legalCorpus = await loadPublishedAgt002LegalCorpus(guarded);
 
+  // Overlay LOCAL de propuestas curadas: se valida en memoria y sólo se proyectan conteos/refs
+  // sanitarios. No es un requirement_manifest aprobado ni cambia estados de cumplimiento.
+  const sectionProposals = buildAgt002PreGoSectionProposals({ registry, generatedAt });
+  validateAgt002PreGoSectionProposals(sectionProposals);
+  const sectionProposalOverlay = buildAgt002SectionProposalOverlayIndex(sectionProposals);
+
   const artifact = buildAgt002PreGoAnalysis({
     registry,
     evidenceClasses: classes,
@@ -309,6 +335,7 @@ export async function runProductionReconcile({
     habilitatingGovernedRequirementIds,
     legalCorpusVersion: legalCorpus.corpus_version,
     generatedAt,
+    sectionProposalOverlay,
   });
   validateAgt002PreGoAnalysis(artifact);
 
@@ -328,7 +355,7 @@ export async function runProductionReconcile({
   }
 
   const summary = buildSanitaryReconcileSummary({
-    artifact, classes, coverage, entryIds, legalCorpus, generatedAt, draftVersion,
+    artifact, classes, coverage, entryIds, legalCorpus, generatedAt, draftVersion, sectionProposals,
   });
   assertNoOpenPii(summary);
   assertSanitaryReconcileMetadataOnly(summary);
@@ -374,6 +401,13 @@ export function renderMarkdown(summary) {
   lines.push(`| **Total** | **${cm.total_secciones}** |`);
   lines.push('');
   lines.push(`- Relevantes pre-GO: **${cm.secciones_relevantes_pre_go}**; no aplicables pre-GO: **${cm.secciones_no_aplicables_pre_go}**.`);
+  lines.push('');
+  lines.push('## Overlay local de propuestas curadas (no aprobado)');
+  lines.push('');
+  lines.push(`- Aplicado: **${summary.section_proposal_overlay.applied}** · estado: \`${summary.section_proposal_overlay.status}\` · aprobado: **${summary.section_proposal_overlay.is_approved}**.`);
+  lines.push(`- Secciones: **${summary.section_proposal_overlay.affected_item_refs.length}** · requisitos propuestos: **${summary.section_proposal_overlay.requirement_count}**.`);
+  lines.push(`- Con clase empresarial candidata: **${summary.section_proposal_overlay.with_candidate_evidence_class}**; sin clase: **${summary.section_proposal_overlay.without_candidate_evidence_class}**.`);
+  lines.push(`- ${summary.section_proposal_overlay.note}`);
   lines.push('');
   lines.push('## Reemplazo honesto (clases reales vs. bóveda no observable)');
   lines.push('');

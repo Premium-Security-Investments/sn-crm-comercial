@@ -212,11 +212,19 @@ test('runProductionReconcile produces an honest, sanitary metadata-only summary'
   assert.equal(hr.sections_stale, 0);
   assert.equal(hr.sections_human_review_required, 5);
   assert.equal(hr.sections_unverifiable, 10);
-  assert.equal(hr.unmapped_offer_sections.length, 10);
+  assert.deepEqual(hr.unmapped_offer_sections, []);
+  assert.deepEqual(hr.proposed_offer_sections, ['2.3', '2.4', '2.4.1', '2.5', '3.1', '3.2', '3.3', '3.4', '3.5', '3.6'].sort());
+  assert.equal(summary.section_proposal_overlay.applied, true);
+  assert.equal(summary.section_proposal_overlay.status, 'proposed_for_human_review');
+  assert.equal(summary.section_proposal_overlay.is_approved, false);
+  assert.equal(summary.section_proposal_overlay.requirement_count, 20);
+  assert.equal(summary.section_proposal_overlay.with_candidate_evidence_class, 9);
+  assert.equal(summary.section_proposal_overlay.without_candidate_evidence_class, 11);
   assert.deepEqual(hr.cctv_abstention_refs, ['2.1']);
 
-  // Ten offer sections without governed mapping preserved; CCTV abstention preserved.
-  assert.ok(summary.blockers.some(b => b.id === 'secciones_relevantes_sin_requisito_gobernado'));
+  // Ten offer sections now carry LOCAL proposals pending human review; none is approved/satisfied.
+  assert.ok(!summary.blockers.some(b => b.id === 'secciones_relevantes_sin_requisito_gobernado'));
+  assert.ok(summary.blockers.some(b => b.id === 'secciones_con_propuesta_de_requisitos_para_revision_humana'));
   assert.ok(summary.blockers.some(b => b.id === 'requisito_gobernado_sin_enlace_de_clase'));
   assert.ok(!summary.blockers.some(b => b.id === 'evidencia_empresarial_no_observable_localmente'));
   assert.ok(!summary.blockers.some(b => b.id === 'verificacion_juridica_no_disponible_sin_corpus'));

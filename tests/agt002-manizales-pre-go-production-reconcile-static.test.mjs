@@ -36,6 +36,10 @@ test('reconciler uses the existing allowlisted loaders, not ad-hoc selects', () 
   assert.match(source, /loadAgt002CompanyEvidenceRegistryEntries/);
   assert.match(source, /loadPublishedAgt002LegalCorpus/);
   assert.match(source, /buildAgt002CompanyEvidenceClasses/);
+  assert.match(source, /buildAgt002PreGoSectionProposals/);
+  assert.match(source, /validateAgt002PreGoSectionProposals/);
+  assert.match(source, /buildAgt002SectionProposalOverlayIndex/);
+  assert.match(source, /sectionProposalOverlay/);
   assert.match(source, /buildAgt002PreGoAnalysis/);
   // No debe declarar sus propios .from(...).select(...) crudos: los selects viven en los loaders.
   assert.doesNotMatch(body, /\.from\s*\([^)]*\)\s*\.\s*select\s*\(/, 'no debe hacer selects crudos; usa los loaders allowlisted');

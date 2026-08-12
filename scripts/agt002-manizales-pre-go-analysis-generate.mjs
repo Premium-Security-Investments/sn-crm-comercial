@@ -25,6 +25,10 @@ import {
   validateAgt002PreGoAnalysis,
   AGT002_PRE_GO_CROSS_STATES,
 } from '../agt002-pre-go-analysis.js';
+import {
+  buildAgt002PreGoSectionProposals,
+  buildAgt002SectionProposalOverlayIndex,
+} from '../agt002-pre-go-section-proposals.js';
 import { assertNoOpenPii } from '../agt002-contractual-registry-taxonomy.js';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -172,6 +176,13 @@ function main() {
   const registry = JSON.parse(readFileSync(REGISTRY_JSON, 'utf8'));
   const { evidenceClassLinkByRequirementId, habilitatingGovernedRequirementIds, draftVersion } = loadGovernedLinks();
 
+  // Overlay LOCAL de propuestas curadas (proposed_for_human_review, is_approved: false): permite
+  // que las 10 secciones sin requisito gobernado dejen el bloqueador genérico y pasen a un
+  // bloqueador de propuesta pendiente de aprobación humana. NO aprueba requisitos ni afirma
+  // cumplimiento; el GO/NO-GO humano sigue siendo obligatorio.
+  const sectionProposals = buildAgt002PreGoSectionProposals({ registry, generatedAt });
+  const sectionProposalOverlay = buildAgt002SectionProposalOverlayIndex(sectionProposals);
+
   const artifact = buildAgt002PreGoAnalysis({
     registry,
     evidenceClasses: [], // la bóveda de evidencia empresarial no es observable localmente
@@ -179,6 +190,7 @@ function main() {
     habilitatingGovernedRequirementIds,
     legalCorpusVersion: LEGAL_CORPUS_VERSION_LOCAL,
     generatedAt,
+    sectionProposalOverlay,
   });
 
   validateAgt002PreGoAnalysis(artifact);

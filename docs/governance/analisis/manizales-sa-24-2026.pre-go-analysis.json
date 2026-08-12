@@ -4,7 +4,7 @@
   "status": "draft_for_human_review",
   "human_approval_required": true,
   "version": 1,
-  "generated_at": "2026-08-12T04:30:00.000Z",
+  "generated_at": "2026-08-12T05:00:00.000Z",
   "opportunity_id": "54190e51-15fb-46af-b0aa-8f13461a3110",
   "proceso": "SA-24-2026",
   "entidad": "Rama Judicial — Dirección Seccional de Administración Judicial de Manizales",
@@ -33,6 +33,26 @@
     "shown": false,
     "gated_reason": "legal_corpus_version_ausente",
     "note": "No se muestra verificación jurídica sin una versión de corpus legal publicada."
+  },
+  "section_proposal_overlay": {
+    "applied": true,
+    "status": "proposed_for_human_review",
+    "human_approval_required": true,
+    "is_approved": false,
+    "affected_item_refs": [
+      "2.3",
+      "2.4",
+      "2.4.1",
+      "2.5",
+      "3.1",
+      "3.2",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6"
+    ],
+    "requirement_count": 20,
+    "note": "Overlay LOCAL de propuestas curadas para las secciones sin requisito gobernado; no aprueba requisitos, no afirma cumplimiento ni suficiencia, y el GO/NO-GO humano sigue siendo obligatorio."
   },
   "coverage": {
     "total_secciones": 68,
@@ -968,14 +988,24 @@
         }
       ],
       "cross_state": "unverifiable",
-      "reason": "seccion_relevante_sin_requisito_gobernado_mapeado",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
         "presencia": "unknown",
         "vigencia": "unknown",
         "aplicabilidad": "unknown",
         "suficiencia": "no_evaluada_humano"
       },
-      "governed_evidence": []
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:2.3:indices-capacidad-organizacional",
+          "proposal:2.3:regla-plural-integrante-organizacional"
+        ],
+        "requirement_count": 2,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
     },
     {
       "item_ref": "2.4",
@@ -1027,14 +1057,26 @@
         }
       ],
       "cross_state": "unverifiable",
-      "reason": "seccion_relevante_sin_requisito_gobernado_mapeado",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
         "presencia": "unknown",
         "vigencia": "unknown",
         "aplicabilidad": "unknown",
         "suficiencia": "no_evaluada_humano"
       },
-      "governed_evidence": []
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:2.4:experiencia-rup-unspsc-sumatoria",
+          "proposal:2.4:anexo-8-formato-experiencia",
+          "proposal:2.4:regla-sumatoria-plural-experiencia",
+          "proposal:2.4:experiencia-extranjera-traduccion"
+        ],
+        "requirement_count": 4,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
     },
     {
       "item_ref": "2.4.1",
@@ -1075,14 +1117,26 @@
         }
       ],
       "cross_state": "unverifiable",
-      "reason": "seccion_relevante_sin_requisito_gobernado_mapeado",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
         "presencia": "unknown",
         "vigencia": "unknown",
         "aplicabilidad": "unknown",
         "suficiencia": "no_evaluada_humano"
       },
-      "governed_evidence": []
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:2.4.1:diferencial-mujeres-experiencia",
+          "proposal:2.4.1:diferencial-mipyme-experiencia",
+          "proposal:2.4.1:diferencial-discapacidad-experiencia",
+          "proposal:2.4.1:regla-sumatoria-contratos-adicionales"
+        ],
+        "requirement_count": 4,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
     },
     {
       "item_ref": "2.5",
@@ -1100,14 +1154,23 @@
       },
       "pereira_pattern": [],
       "cross_state": "unverifiable",
-      "reason": "seccion_relevante_sin_requisito_gobernado_mapeado",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
         "presencia": "unknown",
         "vigencia": "unknown",
         "aplicabilidad": "unknown",
         "suficiencia": "no_evaluada_humano"
       },
-      "governed_evidence": []
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:2.5:regla-subsanabilidad"
+        ],
+        "requirement_count": 1,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
     },
     {
       "item_ref": "2.6",
@@ -1192,14 +1255,24 @@
         }
       ],
       "cross_state": "unverifiable",
-      "reason": "seccion_relevante_sin_requisito_gobernado_mapeado",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
         "presencia": "unknown",
         "vigencia": "unknown",
         "aplicabilidad": "unknown",
         "suficiencia": "no_evaluada_humano"
       },
-      "governed_evidence": []
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:3.1:calidad-lenguaje-senas",
+          "proposal:3.1:calidad-capacitaciones"
+        ],
+        "requirement_count": 2,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
     },
     {
       "item_ref": "3.2",
@@ -1217,14 +1290,23 @@
       },
       "pereira_pattern": [],
       "cross_state": "unverifiable",
-      "reason": "seccion_relevante_sin_requisito_gobernado_mapeado",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
         "presencia": "unknown",
         "vigencia": "unknown",
         "aplicabilidad": "unknown",
         "suficiencia": "no_evaluada_humano"
       },
-      "governed_evidence": []
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:3.2:industria-nacional-servicios-colombianos"
+        ],
+        "requirement_count": 1,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
     },
     {
       "item_ref": "3.3",
@@ -1242,14 +1324,23 @@
       },
       "pereira_pattern": [],
       "cross_state": "unverifiable",
-      "reason": "seccion_relevante_sin_requisito_gobernado_mapeado",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
         "presencia": "unknown",
         "vigencia": "unknown",
         "aplicabilidad": "unknown",
         "suficiencia": "no_evaluada_humano"
       },
-      "governed_evidence": []
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:3.3:puntaje-discapacidad"
+        ],
+        "requirement_count": 1,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
     },
     {
       "item_ref": "3.4",
@@ -1267,14 +1358,23 @@
       },
       "pereira_pattern": [],
       "cross_state": "unverifiable",
-      "reason": "seccion_relevante_sin_requisito_gobernado_mapeado",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
         "presencia": "unknown",
         "vigencia": "unknown",
         "aplicabilidad": "unknown",
         "suficiencia": "no_evaluada_humano"
       },
-      "governed_evidence": []
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:3.4:puntaje-emprendimiento-empresa-mujeres"
+        ],
+        "requirement_count": 1,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
     },
     {
       "item_ref": "3.5",
@@ -1292,14 +1392,23 @@
       },
       "pereira_pattern": [],
       "cross_state": "unverifiable",
-      "reason": "seccion_relevante_sin_requisito_gobernado_mapeado",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
         "presencia": "unknown",
         "vigencia": "unknown",
         "aplicabilidad": "unknown",
         "suficiencia": "no_evaluada_humano"
       },
-      "governed_evidence": []
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:3.5:puntaje-mipyme"
+        ],
+        "requirement_count": 1,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
     },
     {
       "item_ref": "3.6",
@@ -1317,14 +1426,25 @@
       },
       "pereira_pattern": [],
       "cross_state": "unverifiable",
-      "reason": "seccion_relevante_sin_requisito_gobernado_mapeado",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
       "dimensions": {
         "presencia": "unknown",
         "vigencia": "unknown",
         "aplicabilidad": "unknown",
         "suficiencia": "no_evaluada_humano"
       },
-      "governed_evidence": []
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:3.6:oferta-economica-anexo-9",
+          "proposal:3.6:tarifa-minima-regulada",
+          "proposal:3.6:metodo-media-aritmetica"
+        ],
+        "requirement_count": 3,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
     },
     {
       "item_ref": "4.1",
@@ -2105,9 +2225,10 @@
       "human_owner": "tender_lead"
     },
     {
-      "id": "secciones_relevantes_sin_requisito_gobernado",
+      "id": "secciones_con_propuesta_de_requisitos_para_revision_humana",
       "class": "subsanable",
-      "summary": "Secciones de oferta (habilitantes/puntuables) sin requisito gobernado ni enlace de clase de evidencia: no hay camino de verificación sin mapeo curado.",
+      "status": "proposed_for_human_review",
+      "summary": "Secciones de oferta con PROPUESTA CURADA de requisitos atomizados (overlay local, no aprobado): requieren revisión y aprobación humana antes de convertirse en requisitos gobernados; no afirman cumplimiento ni suficiencia.",
       "affected_item_refs": [
         "2.3",
         "2.4",
@@ -2120,7 +2241,7 @@
         "3.5",
         "3.6"
       ],
-      "remediation": "Curar requirement_manifest + evidence_class_link para estas secciones (borrador de gobernanza), con rationale y source_reference; aprobación humana.",
+      "remediation": "Revisar y aprobar (o ajustar) las propuestas de requisitos por sección (artefacto agt002_pre_go_section_proposals); sólo tras GO humano se convierten en requirement_manifest gobernado.",
       "human_owner": "legal"
     },
     {
@@ -2167,11 +2288,6 @@
       "id": "compromisos_de_ejecucion_en_oferta",
       "question": "¿Requiere el pliego cartas de compromiso u obligaciones de ejecución declaradas EN la oferta? Su viabilidad es decisión humana (no se cruza como evidencia post-adjudicación).",
       "blocks_axis": "aplicabilidad"
-    },
-    {
-      "id": "mapeo_de_secciones_sin_requisito",
-      "question": "¿Con qué evidencia empresarial se prueban las secciones de oferta 2.3, 2.4, 2.4.1, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6? Falta requisito gobernado/enlace de clase.",
-      "blocks_axis": "presencia"
     }
   ],
   "abstentions": {

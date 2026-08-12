@@ -30,6 +30,10 @@ import {
 import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from './agt002-company-evidence-classes.js';
 import { buildAgt002EvidenceStateManifest } from './agt002-evidence-state-manifest.js';
 import { AGT002_PEREIRA_LESSONS, buildAgt002PereiraTouchpointIndex } from './agt002-pereira-lessons.js';
+import {
+  AGT002_SECTION_PROPOSALS_STATUS,
+  buildAgt002SectionProposalOverlayIndex,
+} from './agt002-pre-go-section-proposals.js';
 
 export const AGT002_PRE_GO_ANALYSIS_ARTIFACT_TYPE = 'agt002_pre_go_analysis';
 export const AGT002_PRE_GO_ANALYSIS_STATUS = 'draft_for_human_review';
@@ -147,8 +151,19 @@ function isPreGoRelevant(item, habilitatingGovernedRequirementIds) {
   return false;
 }
 
+// Normaliza el overlay opcional de propuestas curadas a un Map ref -> { requirement_ids,
+// requirement_count, status }. Acepta el artefacto de propuestas, su índice (Map/objeto) o null.
+// Es un overlay LOCAL de PROPUESTA (no aprobado): nunca convierte una sección en requisito
+// gobernado; sólo permite que deje el bloqueador genérico "sin requisito gobernado".
+function normalizeProposalOverlay(sectionProposalOverlay) {
+  if (!sectionProposalOverlay) return new Map();
+  if (sectionProposalOverlay instanceof Map) return sectionProposalOverlay;
+  if (Array.isArray(sectionProposalOverlay.sections)) return buildAgt002SectionProposalOverlayIndex(sectionProposalOverlay);
+  return new Map(Object.entries(sectionProposalOverlay));
+}
+
 function buildItemCrossing(item, {
-  link, classById, applicabilityAbstainedRefs, pereiraIndex, habilitatingGovernedRequirementIds,
+  link, classById, applicabilityAbstainedRefs, pereiraIndex, habilitatingGovernedRequirementIds, proposalOverlayByRef,
 }) {
   const policy = AGT002_PRE_GO_FASE_EVIDENCE_POLICY[item.fase] || 'context_no_offer_obligation';
   const govReqIds = Array.isArray(item.governed_requirement_ids) ? item.governed_requirement_ids : [];
@@ -182,6 +197,26 @@ function buildItemCrossing(item, {
   if (govReqIds.length === 0) {
     // Relevante pero sin requisito gobernado que le dé un camino de evidencia: no se puede
     // verificar sin un mapeo curado por humano (subsanable), NO es un documento ausente.
+    const overlay = proposalOverlayByRef?.get(item.ref);
+    if (overlay) {
+      // Existe una PROPUESTA CURADA para esta sección: deja el bloqueador genérico y pasa a un
+      // estado de propuesta pendiente de revisión humana. Sigue siendo unverifiable (una propuesta
+      // no es evidencia ni requisito aprobado); nunca afirma cumplimiento ni suficiencia.
+      return {
+        ...base,
+        cross_state: 'unverifiable',
+        reason: 'seccion_con_propuesta_curada_proposed_para_revision_humana',
+        dimensions: { presencia: 'unknown', vigencia: 'unknown', aplicabilidad: 'unknown', suficiencia: 'no_evaluada_humano' },
+        governed_evidence: [],
+        proposal_overlay: {
+          status: overlay.status || AGT002_SECTION_PROPOSALS_STATUS,
+          requirement_ids: Array.isArray(overlay.requirement_ids) ? [...overlay.requirement_ids] : [],
+          requirement_count: overlay.requirement_count ?? (overlay.requirement_ids?.length || 0),
+          human_approval_required: true,
+          note: 'Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia.',
+        },
+      };
+    }
     return {
       ...base,
       cross_state: 'unverifiable',
@@ -286,7 +321,8 @@ function buildBlockers(crossings, legalShown) {
     });
   }
 
-  const noMapping = refsWith(c => c.pre_go_relevant && c.cross_state === 'unverifiable' && c.governed_requirement_ids.length === 0);
+  // Secciones sin requisito gobernado Y sin propuesta curada: bloqueador genérico (sin cambios).
+  const noMapping = refsWith(c => c.pre_go_relevant && c.cross_state === 'unverifiable' && c.governed_requirement_ids.length === 0 && !c.proposal_overlay);
   if (noMapping.length) {
     blockers.push({
       id: 'secciones_relevantes_sin_requisito_gobernado',
@@ -294,6 +330,21 @@ function buildBlockers(crossings, legalShown) {
       summary: 'Secciones de oferta (habilitantes/puntuables) sin requisito gobernado ni enlace de clase de evidencia: no hay camino de verificación sin mapeo curado.',
       affected_item_refs: noMapping,
       remediation: 'Curar requirement_manifest + evidence_class_link para estas secciones (borrador de gobernanza), con rationale y source_reference; aprobación humana.',
+      human_owner: 'legal',
+    });
+  }
+
+  // Secciones sin requisito gobernado PERO con propuesta curada (overlay): dejan el bloqueador
+  // genérico y quedan en un bloqueador de PROPUESTA pendiente de aprobación humana (no aprobado).
+  const proposed = refsWith(c => c.pre_go_relevant && c.governed_requirement_ids.length === 0 && c.proposal_overlay);
+  if (proposed.length) {
+    blockers.push({
+      id: 'secciones_con_propuesta_de_requisitos_para_revision_humana',
+      class: 'subsanable',
+      status: 'proposed_for_human_review',
+      summary: 'Secciones de oferta con PROPUESTA CURADA de requisitos atomizados (overlay local, no aprobado): requieren revisión y aprobación humana antes de convertirse en requisitos gobernados; no afirman cumplimiento ni suficiencia.',
+      affected_item_refs: proposed,
+      remediation: 'Revisar y aprobar (o ajustar) las propuestas de requisitos por sección (artefacto agt002_pre_go_section_proposals); sólo tras GO humano se convierten en requirement_manifest gobernado.',
       human_owner: 'legal',
     });
   }
@@ -365,7 +416,7 @@ function buildIndispensableQuestions(crossings) {
     },
   ];
   // Preguntas derivadas por sección relevante sin camino de verificación.
-  const unmapped = crossings.filter(c => c.pre_go_relevant && c.cross_state === 'unverifiable' && c.governed_requirement_ids.length === 0).map(c => c.item_ref);
+  const unmapped = crossings.filter(c => c.pre_go_relevant && c.cross_state === 'unverifiable' && c.governed_requirement_ids.length === 0 && !c.proposal_overlay).map(c => c.item_ref);
   if (unmapped.length) {
     questions.push({
       id: 'mapeo_de_secciones_sin_requisito',
@@ -409,6 +460,22 @@ function buildRisks(matrix, legalShown) {
     ],
   };
   return risks;
+}
+
+// Resumen del overlay de propuestas aplicado (trazabilidad). Cuando no se pasa overlay, queda
+// `applied: false` y el análisis se comporta idéntico al de antes (sin propuestas).
+function buildSectionProposalOverlaySummary(crossings) {
+  const affected = crossings.filter(c => c.proposal_overlay);
+  const affectedRefs = affected.map(c => c.item_ref).sort();
+  return {
+    applied: affectedRefs.length > 0,
+    status: affectedRefs.length ? AGT002_SECTION_PROPOSALS_STATUS : null,
+    human_approval_required: true,
+    is_approved: false,
+    affected_item_refs: affectedRefs,
+    requirement_count: affected.reduce((acc, c) => acc + (c.proposal_overlay.requirement_count || 0), 0),
+    note: 'Overlay LOCAL de propuestas curadas para las secciones sin requisito gobernado; no aprueba requisitos, no afirma cumplimiento ni suficiencia, y el GO/NO-GO humano sigue siendo obligatorio.',
+  };
 }
 
 function buildRecommendationCandidate(matrix, blockers, legalShown) {
@@ -471,6 +538,7 @@ export function buildAgt002PreGoAnalysis({
   legalCorpusVersion = null,
   generatedAt,
   pereiraLessons = AGT002_PEREIRA_LESSONS,
+  sectionProposalOverlay = null,
 } = {}) {
   if (!registry || typeof registry !== 'object' || Array.isArray(registry)) {
     throw new Error('AGT-002 pre-GO: registry debe ser el artefacto de registro contractual.');
@@ -494,9 +562,10 @@ export function buildAgt002PreGoAnalysis({
       .map(a => a.item_ref),
   );
   const pereiraIndex = buildAgt002PereiraTouchpointIndex(pereiraLessons);
+  const proposalOverlayByRef = normalizeProposalOverlay(sectionProposalOverlay);
 
   const crossings = registry.items.map(item => buildItemCrossing(item, {
-    link, classById, applicabilityAbstainedRefs, pereiraIndex, habilitatingGovernedRequirementIds: habilitatingSet,
+    link, classById, applicabilityAbstainedRefs, pereiraIndex, habilitatingGovernedRequirementIds: habilitatingSet, proposalOverlayByRef,
   }));
 
   const matrix = summarizeMatrix(crossings);
@@ -537,6 +606,7 @@ export function buildAgt002PreGoAnalysis({
     pattern_reference: pereiraLessons.case,
     fase_evidence_policy: AGT002_PRE_GO_FASE_EVIDENCE_POLICY,
     legal_verification: legalVerification,
+    section_proposal_overlay: buildSectionProposalOverlaySummary(crossings),
     coverage: matrix,
     crossings,
     blockers,
