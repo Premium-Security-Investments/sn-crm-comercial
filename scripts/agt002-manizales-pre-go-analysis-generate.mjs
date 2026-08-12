@@ -74,6 +74,12 @@ function renderMarkdown(artifact, meta) {
   lines.push('empresarial gobernada. **No decide cumplimiento, habilitación, puntaje ni GO/NO-GO**: esas son');
   lines.push('compuertas humanas. Pereira SA-MC-02-2026 se incorpora **sólo como patrón**, nunca como prueba.');
   lines.push('');
+  lines.push('## Regla de materialidad pre-GO');
+  lines.push('');
+  lines.push('- Sólo bloquean o llegan al humano impedimentos materiales: inhabilidad/incompatibilidad, licencia esencial imposible, experiencia o capacidad financiera insuficiente, plazo objetivamente imposible, imposibilidad técnica grave o inviabilidad económica crítica.');
+  lines.push('- Personal, armas/medios, estructura consorcio/UT, garantías/pólizas, formatos, firmas, certificados y asignaciones son preparación ordinaria: no generan pregunta humana ni NO-GO por sí solos.');
+  lines.push('- Un GO humano implica el compromiso empresarial de disponer esos recursos; no afirma que ya existan ni autoriza firma, envío o presentación automática.');
+  lines.push('');
   lines.push('## Entorno local y sus límites');
   lines.push('');
   lines.push('- Bóveda de evidencia empresarial (17 clases): **no observable localmente** (vive en Supabase; no se accede).');
@@ -112,22 +118,51 @@ function renderMarkdown(artifact, meta) {
     lines.push(`| ${c.item_ref} | ${c.fase} | ${c.cross_state} | ${c.reason} | ${c.subsanabilidad} |`);
   }
   lines.push('');
-  lines.push('## Bloqueadores');
+  lines.push('## Impedimentos materiales observados');
   lines.push('');
-  if (artifact.blockers.length === 0) {
-    lines.push('- (sin bloqueadores)');
+  const materialBlockers = artifact.blockers.filter(b => b.class === 'no_subsanable');
+  if (materialBlockers.length === 0) {
+    lines.push('- No se observó un impedimento material concluyente con la evidencia local disponible. Esto no equivale a afirmar cumplimiento.');
   } else {
-    for (const b of artifact.blockers) {
+    for (const b of materialBlockers) {
       const refs = b.affected_item_refs.length ? ` — secciones: ${b.affected_item_refs.join(', ')}` : '';
-      lines.push(`- **[${b.class}] ${b.id}**: ${b.summary}${refs}`);
-      lines.push(`  - Remediación: ${b.remediation} (responsable sugerido: ${b.human_owner}).`);
+      lines.push(`- **${b.id}**: ${b.summary}${refs}`);
+      lines.push(`  - Acción: ${b.remediation} (responsable sugerido: ${b.human_owner}).`);
     }
   }
   lines.push('');
-  lines.push('## Preguntas indispensables (para el humano)');
+  lines.push('## Verificaciones automáticas pendientes (no son impedimentos por sí solas)');
   lines.push('');
-  for (const q of artifact.indispensable_questions) {
-    lines.push(`- **${q.id}** (eje: ${q.blocks_axis}): ${q.question}`);
+  const verificationPending = artifact.blockers.filter(b => b.class !== 'no_subsanable');
+  if (verificationPending.length === 0) {
+    lines.push('- (sin verificaciones pendientes)');
+  } else {
+    for (const b of verificationPending) {
+      const refs = b.affected_item_refs.length ? ` — secciones: ${b.affected_item_refs.join(', ')}` : '';
+      lines.push(`- **${b.id}**: ${b.summary}${refs}`);
+      lines.push(`  - Acción mecánica/gobernada: ${b.remediation} (rol sugerido: ${b.human_owner}).`);
+    }
+  }
+  lines.push('');
+  lines.push('## Preguntas humanas por excepción material');
+  lines.push('');
+  if (artifact.indispensable_questions.length === 0) {
+    lines.push('- No se observó una excepción material que deba preguntarse al humano con la evidencia local disponible. Los pendientes de extracción, mapeo o preparación se resuelven por el agente o pasan a post-GO.');
+  } else {
+    for (const q of artifact.indispensable_questions) {
+      lines.push(`- **${q.id}** (eje: ${q.blocks_axis}): ${q.question}`);
+    }
+  }
+  lines.push('');
+  lines.push('## Preparación ordinaria post-GO');
+  lines.push('');
+  lines.push(`- ${artifact.post_go_preparation.note}`);
+  if (artifact.post_go_preparation.actions.length === 0) {
+    lines.push('- En este artefacto local no se observaron faltantes ordinarios concretos; esto no prueba que estén completos.');
+  } else {
+    for (const action of artifact.post_go_preparation.actions) {
+      lines.push(`- **${action.item_ref} · ${action.category}**: ${action.action} (${action.requirement_id}; estado ${action.gap_state}).`);
+    }
   }
   lines.push('');
   lines.push('## Abstenciones');

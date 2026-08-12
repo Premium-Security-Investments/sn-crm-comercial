@@ -66,9 +66,21 @@ for (const text of [
   'existencia o disponibilidad documental', 'vigencia observada', 'aplicabilidad al caso',
   'no preguntes si la licencia existe o está disponible', 'pending_case_validation',
   'alcance territorial', 'modalidades', 'armas', 'medios',
+  'impedimentos materiales', 'inhabilidades', 'experiencia mínima', 'capacidad financiera',
+  'plazo objetivamente imposible', 'imposibilidad técnica grave', 'inviabilidad económica',
+  'preparación post-GO', 'compromiso empresarial de disponer', 'verifica automáticamente',
 ]) {
   assert.match(AGT002_PREVIEW_POLICY, new RegExp(text, 'i'));
 }
+assert.doesNotMatch(
+  AGT002_PREVIEW_POLICY,
+  /limita cualquier pregunta pendiente a vigencia al cierre o aplicabilidad concreta/i,
+  'vigencia y aplicabilidad deben verificarse automáticamente; sólo una imposibilidad material concreta puede escalarse',
+);
+assert.match(
+  AGT002_PREVIEW_POLICY,
+  /nunca preguntes por disponibilidad ordinaria de personal, armas, medios, recursos, modalidad individual\/consorcio\/UT ni emisión o modificación de garantías\/pólizas/i,
+);
 
 // E5 regression: legal corpus v1.1 carries ONLY human_legal_review_items (no verified
 // citation_allowlist), yet complete, otherwise-valid AGT-002 outputs were rejected wholesale

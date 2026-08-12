@@ -22,6 +22,18 @@
 //     humana en el registro (lo es para las 68 secciones). El estado nunca es «cumple».
 //   - Sin legal_corpus_version publicada NO se muestra verificación jurídica.
 //   - La recomendación es sólo recommendation_candidate; el GO/NO-GO humano es obligatorio.
+//
+// Política MATERIAL pre-GO (piloto Rama Judicial Manizales): sólo los impedimentos que
+// puedan impedir participación/habilitación o volver inviable la oferta (catálogo cerrado de
+// AGT002_PRE_GO_MATERIAL_IMPEDIMENT_CATEGORIES) generan bloqueador no_subsanable y cuentan
+// para NO_GO_candidate. Los faltantes ORDINARIOS conseguibles/subsanables (catálogo cerrado de
+// AGT002_PRE_GO_ORDINARY_PREPARATION_CATEGORIES: personal, armas/medios, estructura
+// consorcio/UT, garantías/pólizas a emitir/modificar, formatos, firmas, certificados,
+// asignaciones) NUNCA producen bloqueador no_subsanable ni pregunta humana pre-GO ni, por sí
+// solos, NO_GO_candidate: se convierten en `post_go_preparation` (tareas de preparación tras el
+// GO). El GO humano implica el COMPROMISO de disponer esos recursos; no afirma que ya existan.
+// Todo requisito gobernado debe tener una clasificación material/ordinaria explícita
+// (fail-closed): uno nuevo sin clasificar hace fallar la construcción del artefacto.
 
 import {
   REGISTRO_FASES,
@@ -67,6 +79,55 @@ const FASE_NOT_APPLICABLE_REASON = Object.freeze({
 export const AGT002_PRE_GO_RECOMMENDATION_CANDIDATES = Object.freeze(['GO_candidate', 'NO_GO_candidate', 'indeterminate']);
 export const AGT002_PRE_GO_BLOCKER_CLASSES = Object.freeze(['subsanable', 'no_subsanable', 'undetermined']);
 export const AGT002_PRE_GO_RISK_DOMAINS = Object.freeze(['juridico', 'financiero', 'tecnico', 'operativo']);
+
+// Catálogo cerrado de impedimentos MATERIALES: sólo éstos pueden impedir participación/
+// habilitación o volver inviable la oferta, y son los únicos que generan bloqueador
+// no_subsanable / cuentan para NO_GO_candidate pre-GO.
+export const AGT002_PRE_GO_MATERIAL_IMPEDIMENT_CATEGORIES = Object.freeze([
+  'inhabilidad_incompatibilidad',
+  'licencia_habilitante_esencial_imposible',
+  'experiencia_minima_insuficiente',
+  'capacidad_financiera_insuficiente',
+  'plazo_objetivamente_imposible',
+  'imposibilidad_tecnica_grave',
+  'inviabilidad_economica_critica',
+]);
+
+// Catálogo cerrado de faltantes ORDINARIOS conseguibles/subsanables: nunca bloquean el
+// pre-GO ni generan pregunta humana pre-GO; se convierten en `post_go_preparation`.
+export const AGT002_PRE_GO_ORDINARY_PREPARATION_CATEGORIES = Object.freeze([
+  'personal',
+  'armas_medios',
+  'estructura_consorcio_ut',
+  'garantias_polizas_emitir_modificar',
+  'formatos',
+  'firmas',
+  'certificados',
+  'asignaciones',
+]);
+
+// Clasificación material/ordinaria por requisito gobernado. Catálogo cerrado y explícito
+// (no heurístico, no derivado de texto libre): cada uno de los 4 requisitos gobernados hoy
+// existentes se clasifica una sola vez, aquí. Un requisito gobernado nuevo sin entrada aquí
+// falla cerrado en requirementMaterialPolicy en lugar de heredar una clasificación por defecto.
+const GOVERNED_REQUIREMENT_MATERIAL_POLICY = Object.freeze({
+  'financial-working-capital': Object.freeze({ materiality: 'material', category: 'capacidad_financiera_insuficiente' }),
+  'legal-rce-policy': Object.freeze({ materiality: 'ordinary', category: 'garantias_polizas_emitir_modificar' }),
+  'legal-collective-life-policy': Object.freeze({ materiality: 'ordinary', category: 'garantias_polizas_emitir_modificar' }),
+  'technical-video-surveillance-scope': Object.freeze({ materiality: 'ordinary', category: 'armas_medios' }),
+});
+
+function requirementMaterialPolicy(requirementId) {
+  const policy = GOVERNED_REQUIREMENT_MATERIAL_POLICY[requirementId];
+  if (!policy) {
+    throw new Error(
+      `AGT-002 pre-GO: el requisito gobernado "${requirementId}" no tiene política material clasificada; `
+      + 'se rechaza en lugar de asumirlo material u ordinario (fail-closed). Clasifícalo en '
+      + 'GOVERNED_REQUIREMENT_MATERIAL_POLICY antes de usarlo.',
+    );
+  }
+  return policy;
+}
 
 // Precedencia «más conservadora primero» para agregar el estado de una sección con varios
 // requisitos gobernados: un documento requerido AUSENTE domina sobre uno vencido, y así.
@@ -182,6 +243,10 @@ function buildItemCrossing(item, {
     // Presentado/aceptado nunca se infieren: el registro no observa el sobre del proponente.
     presented_vs_accepted: { presented: 'not_determined', accepted: 'not_determined', adjudicated: 'not_determined' },
     pereira_pattern: pereiraTouchpoints.map(t => ({ bucket: t.bucket, requirement: t.requirement, provenance: t.provenance })),
+    // Faltantes (missing/stale) de requisitos gobernados, separados por política material:
+    // sólo material_gaps puede alimentar un bloqueador no_subsanable / NO_GO_candidate.
+    material_gaps: [],
+    ordinary_gaps: [],
   };
 
   if (!relevant) {
@@ -243,8 +308,17 @@ function buildItemCrossing(item, {
       evidence_state: entry.evidence_state,
       cross_state: derived.state,
       reason: derived.reason,
+      material_policy: requirementMaterialPolicy(entry.requirement_id),
     };
   });
+
+  // Política material: sólo missing/stale de un requisito MATERIAL bloquea el pre-GO; los
+  // faltantes ORDINARIOS (garantías/pólizas, medios técnicos, personal, etc.) se separan aquí
+  // para nunca alimentar bloqueadores/preguntas humanas pre-GO, y en su lugar alimentar
+  // `post_go_preparation` (tarea de preparación comprometida tras el GO humano).
+  const gapStates = new Set(['missing', 'stale']);
+  const materialGaps = governedEvidence.filter(g => gapStates.has(g.cross_state) && g.material_policy.materiality === 'material');
+  const ordinaryGaps = governedEvidence.filter(g => gapStates.has(g.cross_state) && g.material_policy.materiality === 'ordinary');
 
   let aggregate = pickMostConservative(governedEvidence.map(g => g.cross_state));
   let reason = governedEvidence.find(g => g.cross_state === aggregate)?.reason || 'agregado';
@@ -266,6 +340,8 @@ function buildItemCrossing(item, {
     applicability_is_human_decision: applicabilityHuman,
     dimensions: dims,
     governed_evidence: governedEvidence,
+    material_gaps: materialGaps.map(g => ({ requirement_id: g.requirement_id, evidence_class_id: g.evidence_class_id, cross_state: g.cross_state, category: g.material_policy.category })),
+    ordinary_gaps: ordinaryGaps.map(g => ({ requirement_id: g.requirement_id, evidence_class_id: g.evidence_class_id, cross_state: g.cross_state, category: g.material_policy.category })),
   };
 }
 
@@ -361,14 +437,20 @@ function buildBlockers(crossings, legalShown) {
     });
   }
 
-  const missingNonSubsanable = refsWith(c => c.pre_go_relevant && c.cross_state === 'missing' && c.subsanabilidad === 'no_subsanable');
-  if (missingNonSubsanable.length) {
+  // Política material: sólo un impedimento MATERIAL ausente (inhabilidad/incompatibilidad,
+  // licencia/habilitante esencial imposible, experiencia mínima insuficiente, capacidad
+  // financiera insuficiente, plazo objetivamente imposible, imposibilidad técnica grave,
+  // inviabilidad económica crítica) bloquea el pre-GO. Los faltantes ORDINARIOS (garantías/
+  // pólizas, medios, personal, formatos, firmas, certificados, asignaciones) NUNCA generan
+  // este bloqueador: ver `post_go_preparation`.
+  const materialMissing = refsWith(c => c.pre_go_relevant && c.material_gaps.some(g => g.cross_state === 'missing'));
+  if (materialMissing.length) {
     blockers.push({
       id: 'documento_no_subsanable_ausente',
       class: 'no_subsanable',
-      summary: 'Documento de oferta marcado no subsanable por el pliego cuya clase de evidencia enlazada está ausente.',
-      affected_item_refs: missingNonSubsanable,
-      remediation: 'No subsanable: la ausencia al cierre es causal de rechazo; requiere aportar el documento antes de presentar o abstenerse.',
+      summary: 'Impedimento MATERIAL ausente (política pre-GO): puede impedir participación/habilitación o volver inviable la oferta; no es un faltante ordinario preparable.',
+      affected_item_refs: materialMissing,
+      remediation: 'Escalar a revisión humana inmediata: confirmar si es imposibilidad objetiva, contradicción material o excepción extraordinaria antes de continuar.',
       human_owner: 'legal',
     });
   }
@@ -388,43 +470,17 @@ function buildBlockers(crossings, legalShown) {
 }
 
 function buildIndispensableQuestions(crossings) {
-  const questions = [
-    {
-      id: 'modalidad_del_proponente',
-      question: '¿Cuál es la modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial)? Determina la aplicabilidad de la mayoría de secciones.',
-      blocks_axis: 'aplicabilidad',
-    },
-    {
-      id: 'version_del_pliego_al_cierre',
-      question: '¿Qué versión del pliego (y adendas/respuestas a observaciones) gobierna al cierre? Lección Pereira: las reglas vigentes al cierre pueden diferir del pliego base.',
-      blocks_axis: 'vigencia',
-    },
-    {
-      id: 'boveda_de_evidencia_sincronizada',
-      question: '¿Está sincronizada y gobernada la bóveda de evidencia empresarial para esta oportunidad? Sin ella el cruce es unverifiable, no missing.',
-      blocks_axis: 'presencia',
-    },
-    {
-      id: 'suficiencia_de_umbrales',
-      question: '¿La suficiencia de umbrales (liquidez, capital de trabajo, experiencia ≥ % del POE, sumas de pólizas, territorialidad de licencias) satisface el pliego? Es cotejo humano.',
-      blocks_axis: 'suficiencia',
-    },
-    {
-      id: 'compromisos_de_ejecucion_en_oferta',
-      question: '¿Requiere el pliego cartas de compromiso u obligaciones de ejecución declaradas EN la oferta? Su viabilidad es decisión humana (no se cruza como evidencia post-adjudicación).',
-      blocks_axis: 'aplicabilidad',
-    },
-  ];
-  // Preguntas derivadas por sección relevante sin camino de verificación.
-  const unmapped = crossings.filter(c => c.pre_go_relevant && c.cross_state === 'unverifiable' && c.governed_requirement_ids.length === 0 && !c.proposal_overlay).map(c => c.item_ref);
-  if (unmapped.length) {
-    questions.push({
-      id: 'mapeo_de_secciones_sin_requisito',
-      question: `¿Con qué evidencia empresarial se prueban las secciones de oferta ${unmapped.join(', ')}? Falta requisito gobernado/enlace de clase.`,
-      blocks_axis: 'presencia',
-    });
-  }
-  return questions;
+  // Mapeo, bóveda, formatos, modalidad asociativa y documentos preparables son trabajo del
+  // agente/post-GO, no una entrevista humana. Sólo una imposibilidad MATERIAL ya observada
+  // puede escalar una pregunta concreta. `unverifiable` sigue siendo pendiente mecánico.
+  return crossings
+    .filter(c => c.pre_go_relevant && c.material_gaps.length > 0)
+    .map(c => ({
+      id: `impedimento_material_${c.item_ref.replace(/[^a-zA-Z0-9]+/g, '_')}`,
+      question: `Se observó un posible impedimento material en la sección ${c.item_ref}. ¿Existe una excepción objetiva documentada que evite que impida participar o habilitar la oferta?`,
+      blocks_axis: 'viabilidad_material',
+      affected_item_refs: [c.item_ref],
+    }));
 }
 
 function buildAbstentions(crossings, registryAbstentions) {
@@ -478,18 +534,53 @@ function buildSectionProposalOverlaySummary(crossings) {
   };
 }
 
-function buildRecommendationCandidate(matrix, blockers, legalShown) {
+// Faltantes ORDINARIOS conseguibles/subsanables (personal, armas/medios, estructura
+// consorcio/UT, garantías/pólizas a emitir/modificar, formatos, firmas, certificados,
+// asignaciones): nunca bloquean el pre-GO ni generan pregunta humana pre-GO. Se listan aquí
+// como tareas de preparación POST-GO: el GO humano implica el COMPROMISO de disponerlas, no
+// su prueba ni su suficiencia.
+function buildPostGoPreparation(crossings) {
+  const actions = [];
+  for (const c of crossings) {
+    if (!c.pre_go_relevant) continue;
+    for (const gap of c.ordinary_gaps) {
+      actions.push({
+        item_ref: c.item_ref,
+        requirement_id: gap.requirement_id,
+        evidence_class_id: gap.evidence_class_id,
+        category: gap.category,
+        gap_state: gap.cross_state,
+        action: gap.cross_state === 'stale' ? 'renovar_o_actualizar' : 'emitir_o_disponer',
+        human_owner: 'tender_lead',
+        note: 'Faltante ordinario conseguible/subsanable (no bloquea el pre-GO ni genera pregunta humana pre-GO). El GO humano implica el COMPROMISO de disponer este recurso antes de firma/ejecución; no afirma que ya exista ni su suficiencia.',
+      });
+    }
+  }
+  actions.sort((a, b) => a.item_ref.localeCompare(b.item_ref) || a.requirement_id.localeCompare(b.requirement_id));
+  return {
+    applies_on_go: true,
+    note: 'GO implica el COMPROMISO de disponer estos recursos antes de firma/ejecución; su ausencia hoy no impide el pre-GO ni genera pregunta humana pre-GO ni, por sí sola, NO_GO_candidate.',
+    count: actions.length,
+    actions,
+  };
+}
+
+function buildRecommendationCandidate(matrix, blockers, legalShown, crossings) {
   const relevant = matrix.secciones_relevantes_pre_go;
-  const { satisfied_candidate: satisfied, missing, stale, human_review_required: humanReview, unverifiable } = matrix.por_estado;
+  const { satisfied_candidate: satisfied, human_review_required: humanReview, unverifiable } = matrix.por_estado;
   const noSubsanable = blockers.filter(b => b.class === 'no_subsanable');
+  // Política material: sólo missing/stale de un requisito MATERIAL cuenta contra GO; los
+  // faltantes ordinarios (ver `post_go_preparation`) no cuentan, ni siquiera agregados.
+  const materialMissingRefs = crossings.filter(c => c.pre_go_relevant && c.material_gaps.some(g => g.cross_state === 'missing')).map(c => c.item_ref);
+  const materialStaleRefs = crossings.filter(c => c.pre_go_relevant && c.material_gaps.some(g => g.cross_state === 'stale')).map(c => c.item_ref);
 
   const argumentsAgainst = [];
   const argumentsFor = [];
 
-  if (noSubsanable.length) argumentsAgainst.push(`Existen ${noSubsanable.length} bloqueador(es) no subsanable(s): documento(s) de oferta ausente(s).`);
-  if (missing) argumentsAgainst.push(`${missing} sección(es) relevante(s) con evidencia ausente (missing).`);
-  if (stale) argumentsAgainst.push(`${stale} sección(es) con evidencia vencida (stale).`);
-  if (unverifiable) argumentsAgainst.push(`${unverifiable} sección(es) relevante(s) unverifiable: no hay evidencia observable localmente ni mapeo suficiente.`);
+  if (noSubsanable.length) argumentsAgainst.push(`Existen ${noSubsanable.length} posible(s) impedimento(s) material(es) que requieren confirmar imposibilidad o excepción objetiva.`);
+  if (materialMissingRefs.length) argumentsAgainst.push(`${materialMissingRefs.length} sección(es) con impedimento material ausente: ${materialMissingRefs.join(', ')}.`);
+  if (materialStaleRefs.length) argumentsAgainst.push(`${materialStaleRefs.length} sección(es) con evidencia material vencida: ${materialStaleRefs.join(', ')}.`);
+  if (unverifiable) argumentsAgainst.push(`${unverifiable} sección(es) relevante(s) unverifiable: requieren verificación mecánica, no respuesta humana por defecto.`);
   if (!legalShown) argumentsAgainst.push('No hay verificación jurídica (corpus legal ausente).');
 
   if (satisfied) argumentsFor.push(`${satisfied} sección(es) con evidencia candidata satisfecha (presente/vigente/aplicable/revisada), sujeta a suficiencia humana.`);
@@ -498,7 +589,7 @@ function buildRecommendationCandidate(matrix, blockers, legalShown) {
 
   let candidate = 'indeterminate';
   let confidence = 'unavailable';
-  if (noSubsanable.length || (missing > 0)) {
+  if (noSubsanable.length || materialMissingRefs.length > 0) {
     candidate = 'NO_GO_candidate';
     confidence = 'low';
   } else if (relevant > 0 && satisfied === relevant && legalShown) {
@@ -573,7 +664,8 @@ export function buildAgt002PreGoAnalysis({
   const questions = buildIndispensableQuestions(crossings);
   const abstentions = buildAbstentions(crossings, registry.abstentions);
   const risks = buildRisks(matrix, legalShown);
-  const recommendation = buildRecommendationCandidate(matrix, blockers, legalShown);
+  const recommendation = buildRecommendationCandidate(matrix, blockers, legalShown, crossings);
+  const postGoPreparation = buildPostGoPreparation(crossings);
 
   const legalVerification = legalShown
     ? {
@@ -613,7 +705,8 @@ export function buildAgt002PreGoAnalysis({
     indispensable_questions: questions,
     abstentions,
     risks,
-    recommendation: recommendation,
+    recommendation,
+    post_go_preparation: postGoPreparation,
     pereira_pattern: {
       case: pereiraLessons.case,
       applies_to_manizales: 'patron_no_prueba',
@@ -650,6 +743,16 @@ export function validateAgt002PreGoAnalysis(artifact) {
   if (artifact.recommendation.human_go_no_go_required !== true) throw new Error('AGT-002 pre-GO: el GO/NO-GO humano es obligatorio.');
   if (!artifact.legal_verification || typeof artifact.legal_verification.shown !== 'boolean') {
     throw new Error('AGT-002 pre-GO: legal_verification.shown debe ser booleano.');
+  }
+  const preparation = artifact.post_go_preparation;
+  if (!preparation || preparation.applies_on_go !== true || !Array.isArray(preparation.actions)
+    || preparation.count !== preparation.actions.length || typeof preparation.note !== 'string') {
+    throw new Error('AGT-002 pre-GO: post_go_preparation inválido.');
+  }
+  for (const action of preparation.actions) {
+    if (!AGT002_PRE_GO_ORDINARY_PREPARATION_CATEGORIES.includes(action.category)) {
+      throw new Error(`AGT-002 pre-GO: categoría post_go_preparation inválida: ${String(action.category)}.`);
+    }
   }
   assertNoOpenPii(artifact);
   return artifact;
