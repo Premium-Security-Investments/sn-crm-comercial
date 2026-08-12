@@ -1,0 +1,2633 @@
+{
+  "artifact_type": "agt002_pre_go_analysis",
+  "contract_version": "agt002-pre-go-analysis@1",
+  "status": "draft_for_human_review",
+  "human_approval_required": true,
+  "version": 1,
+  "generated_at": "2026-08-12T05:00:00.000Z",
+  "opportunity_id": "54190e51-15fb-46af-b0aa-8f13461a3110",
+  "proceso": "SA-24-2026",
+  "entidad": "Rama Judicial — Dirección Seccional de Administración Judicial de Manizales",
+  "registry_reference": {
+    "artifact_type": "agt002_contractual_registry",
+    "taxonomy_version": "agt002-contractual-registry-taxonomy@1",
+    "vigente_pliego": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+    "total_secciones": 68
+  },
+  "pattern_reference": {
+    "case": "Rama Judicial Pereira SA-MC-02-2026",
+    "role": "patron_taxonomia_y_escalera_probatoria",
+    "applies_to_manizales": "patron_no_prueba",
+    "not_used_as": "prueba_de_cumplimiento_ni_traslado_de_aplicabilidad",
+    "source_root": "secure-reference/rama-judicial-pereira-2026-analysis"
+  },
+  "fase_evidence_policy": {
+    "habilitante": "offer_requirement",
+    "puntuable": "offer_requirement",
+    "evaluacion": "entity_evaluation_rule",
+    "generalidad": "context_no_offer_obligation",
+    "ejecucion_tecnica": "post_award_execution",
+    "postadjudicacion": "post_award"
+  },
+  "legal_verification": {
+    "shown": false,
+    "gated_reason": "legal_corpus_version_ausente",
+    "note": "No se muestra verificación jurídica sin una versión de corpus legal publicada."
+  },
+  "section_proposal_overlay": {
+    "applied": true,
+    "status": "proposed_for_human_review",
+    "human_approval_required": true,
+    "is_approved": false,
+    "affected_item_refs": [
+      "2.3",
+      "2.4",
+      "2.4.1",
+      "2.5",
+      "3.1",
+      "3.2",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6"
+    ],
+    "requirement_count": 20,
+    "note": "Overlay LOCAL de propuestas curadas para las secciones sin requisito gobernado; no aprueba requisitos, no afirma cumplimiento ni suficiencia, y el GO/NO-GO humano sigue siendo obligatorio."
+  },
+  "coverage": {
+    "total_secciones": 68,
+    "secciones_relevantes_pre_go": 15,
+    "secciones_no_aplicables_pre_go": 53,
+    "por_estado": {
+      "satisfied_candidate": 0,
+      "missing": 0,
+      "stale": 0,
+      "not_applicable_candidate": 53,
+      "unverifiable": 15,
+      "human_review_required": 0
+    },
+    "por_fase": {
+      "generalidad": 26,
+      "habilitante": 7,
+      "puntuable": 6,
+      "evaluacion": 5,
+      "ejecucion_tecnica": 8,
+      "postadjudicacion": 16
+    }
+  },
+  "crossings": [
+    {
+      "item_ref": "1.1",
+      "titulo": "IDENTIFICACIÓN EN EL CLASIFICADOR DE BIENES Y SERVICIOS",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.2",
+      "titulo": "OBJETO",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.2.1",
+      "titulo": "ALCANCE DEL OBJETO CONTRACTUAL",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [
+        "technical-video-surveillance-scope"
+      ],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.2.2",
+      "titulo": "VISITA A LOS SITIOS DE EJECUCIÓN",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.3",
+      "titulo": "VALOR DEL PRESUPUESTO OFICIAL ESTIMADO",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "subsanabilidad": "no_subsanable",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": true,
+      "governed_requirement_ids": [
+        "legal-collective-life-policy"
+      ],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "unverifiable",
+      "reason": "clase_de_evidencia_no_observada_localmente",
+      "applicability_is_human_decision": true,
+      "dimensions": {
+        "presencia": "unknown",
+        "vigencia": "unknown",
+        "aplicabilidad": "decision_humana",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": [
+        {
+          "requirement_id": "legal-collective-life-policy",
+          "evidence_class_id": "collective_life_policy",
+          "rule_id": "linked_evidence_class_not_observed",
+          "evidence_state": {
+            "presence": "unknown",
+            "review": "not_reviewed",
+            "validity": "unknown",
+            "applicability": "unknown",
+            "compliance": "unknown"
+          },
+          "cross_state": "unverifiable",
+          "reason": "clase_de_evidencia_no_observada_localmente"
+        }
+      ]
+    },
+    {
+      "item_ref": "1.4",
+      "titulo": "VIABILIDAD PRESUPUESTAL",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.5",
+      "titulo": "FORMA DE PAGO",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.6",
+      "titulo": "LUGAR DE EJECUCIÓN",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.7",
+      "titulo": "PLAZO DE EJECUCIÓN",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.8",
+      "titulo": "CRONOGRAMA",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.9",
+      "titulo": "RÉGIMEN JURÍDICO APLICABLE",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": true,
+      "governed_requirement_ids": [
+        "legal-collective-life-policy"
+      ],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "unverifiable",
+      "reason": "clase_de_evidencia_no_observada_localmente",
+      "applicability_is_human_decision": true,
+      "dimensions": {
+        "presencia": "unknown",
+        "vigencia": "unknown",
+        "aplicabilidad": "decision_humana",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": [
+        {
+          "requirement_id": "legal-collective-life-policy",
+          "evidence_class_id": "collective_life_policy",
+          "rule_id": "linked_evidence_class_not_observed",
+          "evidence_state": {
+            "presence": "unknown",
+            "review": "not_reviewed",
+            "validity": "unknown",
+            "applicability": "unknown",
+            "compliance": "unknown"
+          },
+          "cross_state": "unverifiable",
+          "reason": "clase_de_evidencia_no_observada_localmente"
+        }
+      ]
+    },
+    {
+      "item_ref": "1.10",
+      "titulo": "CONVOCATORIA NO LIMITADA A MIPYMES",
+      "fase": "generalidad",
+      "categoria": "industria_nacional_diferencial",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.11",
+      "titulo": "PUBLICACIÓN DEL ACTO QUE DISPONE LA APERTURA DEL PROCESO DE",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.12",
+      "titulo": "INFORMACIÓN Y CONSULTA DE LOS PLIEGOS DE CONDICIONES",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.13",
+      "titulo": "PUBLICACIÓN DE ADENDAS",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.14",
+      "titulo": "RECEPCIÓN DE OFERTAS Y ACTA DE CIERRE",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.15",
+      "titulo": "INDISPONIBILIDAD SECOP II",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.16",
+      "titulo": "CONDICIONES Y CALIDADES EXIGIDAS",
+      "fase": "generalidad",
+      "categoria": "juridico",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.17",
+      "titulo": "EN CUANTO A LA PROPUESTA",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.17.1",
+      "titulo": "IDIOMA",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.17.2",
+      "titulo": "COSTO DE PREPARACIÓN DE LA PROPUESTA",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.17.3",
+      "titulo": "ALCANCE Y VALIDEZ DE LA PROPUESTA",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.17.4",
+      "titulo": "PLAZO DE VIGENCIA DE LA PROPUESTA",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.18",
+      "titulo": "DECLARATORIA DE DESIERTA O TERMINACIÓN ANORMAL",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.19",
+      "titulo": "MANIFESTACIÓN DE INTERÉS Y SORTEO DE OFERENTES",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "1.20",
+      "titulo": "AUDIENCIA PÚBLICA DE SORTEO",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "subsanabilidad": "no_subsanable",
+      "offer_vs_post_award": "context_no_offer_obligation",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_generalidad_sin_obligacion_probatoria_del_proponente",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "2.1",
+      "titulo": "CAPACIDAD JURÍDICA",
+      "fase": "habilitante",
+      "categoria": "juridico",
+      "subsanabilidad": "no_subsanable",
+      "offer_vs_post_award": "offer_requirement",
+      "pre_go_relevant": true,
+      "governed_requirement_ids": [
+        "legal-rce-policy",
+        "legal-collective-life-policy",
+        "technical-video-surveillance-scope"
+      ],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [
+        {
+          "bucket": "universales",
+          "requirement": "Presentado no equivale a habilitado ni a puntuado",
+          "provenance": {
+            "doc": "opus-output/03-matriz-requisito-evidencia.md",
+            "section": "§8",
+            "evidence_ids": [
+              "821619524"
+            ]
+          }
+        },
+        {
+          "bucket": "universales",
+          "requirement": "Reconciliar las contradicciones internas del propio pliego por decisión humana",
+          "provenance": {
+            "doc": "opus-output/05-riesgos-brechas-y-no-automatizar.md",
+            "section": "§2",
+            "evidence_ids": [
+              "811135236"
+            ]
+          }
+        },
+        {
+          "bucket": "universales",
+          "requirement": "Operar el personal por estado de cobertura, no por atributos personales",
+          "provenance": {
+            "doc": "opus-output/05-riesgos-brechas-y-no-automatizar.md",
+            "section": "§5",
+            "evidence_ids": [
+              "summary.json"
+            ]
+          }
+        },
+        {
+          "bucket": "variables_por_proceso",
+          "requirement": "Territorialidad de la licencia de funcionamiento",
+          "provenance": {
+            "doc": "opus-output/03-matriz-requisito-evidencia.md",
+            "section": "§1",
+            "evidence_ids": [
+              "45d9857f2a128853"
+            ]
+          }
+        },
+        {
+          "bucket": "variables_por_proceso",
+          "requirement": "Vigencia, beneficiario y amparos de pólizas y garantía de seriedad",
+          "provenance": {
+            "doc": "opus-output/03-matriz-requisito-evidencia.md",
+            "section": "§7",
+            "evidence_ids": [
+              "a297f572ecc05a21",
+              "811135236"
+            ]
+          }
+        },
+        {
+          "bucket": "variables_por_proceso",
+          "requirement": "Suma habilitante de RCE y su distinción de la garantía de ejecución",
+          "provenance": {
+            "doc": "opus-output/05-riesgos-brechas-y-no-automatizar.md",
+            "section": "§2.B",
+            "evidence_ids": [
+              "811135236"
+            ]
+          }
+        }
+      ],
+      "cross_state": "unverifiable",
+      "reason": "clase_de_evidencia_no_observada_localmente",
+      "applicability_is_human_decision": true,
+      "dimensions": {
+        "presencia": "unknown",
+        "vigencia": "unknown",
+        "aplicabilidad": "decision_humana",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": [
+        {
+          "requirement_id": "legal-rce-policy",
+          "evidence_class_id": "rce_policy",
+          "rule_id": "linked_evidence_class_not_observed",
+          "evidence_state": {
+            "presence": "unknown",
+            "review": "not_reviewed",
+            "validity": "unknown",
+            "applicability": "unknown",
+            "compliance": "unknown"
+          },
+          "cross_state": "unverifiable",
+          "reason": "clase_de_evidencia_no_observada_localmente"
+        },
+        {
+          "requirement_id": "legal-collective-life-policy",
+          "evidence_class_id": "collective_life_policy",
+          "rule_id": "linked_evidence_class_not_observed",
+          "evidence_state": {
+            "presence": "unknown",
+            "review": "not_reviewed",
+            "validity": "unknown",
+            "applicability": "unknown",
+            "compliance": "unknown"
+          },
+          "cross_state": "unverifiable",
+          "reason": "clase_de_evidencia_no_observada_localmente"
+        },
+        {
+          "requirement_id": "technical-video-surveillance-scope",
+          "evidence_class_id": null,
+          "rule_id": "no_governed_evidence_class_link",
+          "evidence_state": {
+            "presence": "unknown",
+            "review": "not_reviewed",
+            "validity": "unknown",
+            "applicability": "unknown",
+            "compliance": "unknown"
+          },
+          "cross_state": "unverifiable",
+          "reason": "sin_enlace_de_clase_de_evidencia_gobernado"
+        }
+      ]
+    },
+    {
+      "item_ref": "2.2",
+      "titulo": "CAPACIDAD FINANCIERA",
+      "fase": "habilitante",
+      "categoria": "financiero",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "offer_requirement",
+      "pre_go_relevant": true,
+      "governed_requirement_ids": [
+        "financial-working-capital"
+      ],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [
+        {
+          "bucket": "universales",
+          "requirement": "La suficiencia de umbrales cuantitativos es cotejo humano, no aritmética automática",
+          "provenance": {
+            "doc": "opus-output/03-matriz-requisito-evidencia.md",
+            "section": "§2",
+            "evidence_ids": [
+              "811135236"
+            ]
+          }
+        }
+      ],
+      "cross_state": "unverifiable",
+      "reason": "clase_de_evidencia_no_observada_localmente",
+      "applicability_is_human_decision": true,
+      "dimensions": {
+        "presencia": "unknown",
+        "vigencia": "unknown",
+        "aplicabilidad": "decision_humana",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": [
+        {
+          "requirement_id": "financial-working-capital",
+          "evidence_class_id": "rup",
+          "rule_id": "linked_evidence_class_not_observed",
+          "evidence_state": {
+            "presence": "unknown",
+            "review": "not_reviewed",
+            "validity": "unknown",
+            "applicability": "unknown",
+            "compliance": "unknown"
+          },
+          "cross_state": "unverifiable",
+          "reason": "clase_de_evidencia_no_observada_localmente"
+        }
+      ]
+    },
+    {
+      "item_ref": "2.3",
+      "titulo": "CAPACIDAD ORGANIZACIONAL",
+      "fase": "habilitante",
+      "categoria": "organizacional",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "offer_requirement",
+      "pre_go_relevant": true,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [
+        {
+          "bucket": "universales",
+          "requirement": "La suficiencia de umbrales cuantitativos es cotejo humano, no aritmética automática",
+          "provenance": {
+            "doc": "opus-output/03-matriz-requisito-evidencia.md",
+            "section": "§2",
+            "evidence_ids": [
+              "811135236"
+            ]
+          }
+        }
+      ],
+      "cross_state": "unverifiable",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
+      "dimensions": {
+        "presencia": "unknown",
+        "vigencia": "unknown",
+        "aplicabilidad": "unknown",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:2.3:indices-capacidad-organizacional",
+          "proposal:2.3:regla-plural-integrante-organizacional"
+        ],
+        "requirement_count": 2,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
+    },
+    {
+      "item_ref": "2.4",
+      "titulo": "EXPERIENCIA",
+      "fase": "habilitante",
+      "categoria": "experiencia",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "offer_requirement",
+      "pre_go_relevant": true,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [
+        {
+          "bucket": "universales",
+          "requirement": "La suficiencia de umbrales cuantitativos es cotejo humano, no aritmética automática",
+          "provenance": {
+            "doc": "opus-output/03-matriz-requisito-evidencia.md",
+            "section": "§2",
+            "evidence_ids": [
+              "811135236"
+            ]
+          }
+        },
+        {
+          "bucket": "universales",
+          "requirement": "Prohibido inferir ausencia desde una imagen ilegible",
+          "provenance": {
+            "doc": "opus-output/05-riesgos-brechas-y-no-automatizar.md",
+            "section": "§7",
+            "evidence_ids": [
+              "summary.json"
+            ]
+          }
+        },
+        {
+          "bucket": "variables_por_proceso",
+          "requirement": "Experiencia acreditada: sumatoria, admisibilidad y no doble conteo",
+          "provenance": {
+            "doc": "opus-output/03-matriz-requisito-evidencia.md",
+            "section": "§3",
+            "evidence_ids": [
+              "811135236"
+            ]
+          }
+        }
+      ],
+      "cross_state": "unverifiable",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
+      "dimensions": {
+        "presencia": "unknown",
+        "vigencia": "unknown",
+        "aplicabilidad": "unknown",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:2.4:experiencia-rup-unspsc-sumatoria",
+          "proposal:2.4:anexo-8-formato-experiencia",
+          "proposal:2.4:regla-sumatoria-plural-experiencia",
+          "proposal:2.4:experiencia-extranjera-traduccion"
+        ],
+        "requirement_count": 4,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
+    },
+    {
+      "item_ref": "2.4.1",
+      "titulo": "CRITERIOS DIFERENCIALES PARA LA EXPERIENCIA",
+      "fase": "habilitante",
+      "categoria": "experiencia",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "offer_requirement",
+      "pre_go_relevant": true,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [
+        {
+          "bucket": "universales",
+          "requirement": "Prohibido inferir ausencia desde una imagen ilegible",
+          "provenance": {
+            "doc": "opus-output/05-riesgos-brechas-y-no-automatizar.md",
+            "section": "§7",
+            "evidence_ids": [
+              "summary.json"
+            ]
+          }
+        },
+        {
+          "bucket": "variables_por_proceso",
+          "requirement": "Experiencia acreditada: sumatoria, admisibilidad y no doble conteo",
+          "provenance": {
+            "doc": "opus-output/03-matriz-requisito-evidencia.md",
+            "section": "§3",
+            "evidence_ids": [
+              "811135236"
+            ]
+          }
+        }
+      ],
+      "cross_state": "unverifiable",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
+      "dimensions": {
+        "presencia": "unknown",
+        "vigencia": "unknown",
+        "aplicabilidad": "unknown",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:2.4.1:diferencial-mujeres-experiencia",
+          "proposal:2.4.1:diferencial-mipyme-experiencia",
+          "proposal:2.4.1:diferencial-discapacidad-experiencia",
+          "proposal:2.4.1:regla-sumatoria-contratos-adicionales"
+        ],
+        "requirement_count": 4,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
+    },
+    {
+      "item_ref": "2.5",
+      "titulo": "REGLAS DE SUBSANABILIDAD",
+      "fase": "habilitante",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "offer_requirement",
+      "pre_go_relevant": true,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "unverifiable",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
+      "dimensions": {
+        "presencia": "unknown",
+        "vigencia": "unknown",
+        "aplicabilidad": "unknown",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:2.5:regla-subsanabilidad"
+        ],
+        "requirement_count": 1,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
+    },
+    {
+      "item_ref": "2.6",
+      "titulo": "CAUSALES DE RECHAZO DE LAS PROPUESTAS",
+      "fase": "habilitante",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "offer_requirement",
+      "pre_go_relevant": true,
+      "governed_requirement_ids": [
+        "legal-collective-life-policy"
+      ],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [
+        {
+          "bucket": "universales",
+          "requirement": "Presentado no equivale a habilitado ni a puntuado",
+          "provenance": {
+            "doc": "opus-output/03-matriz-requisito-evidencia.md",
+            "section": "§8",
+            "evidence_ids": [
+              "821619524"
+            ]
+          }
+        }
+      ],
+      "cross_state": "unverifiable",
+      "reason": "clase_de_evidencia_no_observada_localmente",
+      "applicability_is_human_decision": true,
+      "dimensions": {
+        "presencia": "unknown",
+        "vigencia": "unknown",
+        "aplicabilidad": "decision_humana",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": [
+        {
+          "requirement_id": "legal-collective-life-policy",
+          "evidence_class_id": "collective_life_policy",
+          "rule_id": "linked_evidence_class_not_observed",
+          "evidence_state": {
+            "presence": "unknown",
+            "review": "not_reviewed",
+            "validity": "unknown",
+            "applicability": "unknown",
+            "compliance": "unknown"
+          },
+          "cross_state": "unverifiable",
+          "reason": "clase_de_evidencia_no_observada_localmente"
+        }
+      ]
+    },
+    {
+      "item_ref": "3.1",
+      "titulo": "FACTOR CALIDAD:",
+      "fase": "puntuable",
+      "categoria": "factor_evaluacion",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "offer_requirement",
+      "pre_go_relevant": true,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [
+        {
+          "bucket": "variables_por_proceso",
+          "requirement": "Umbrales y método del factor económico",
+          "provenance": {
+            "doc": "opus-output/03-matriz-requisito-evidencia.md",
+            "section": "§6.3/§7",
+            "evidence_ids": [
+              "5fb982ca99737450"
+            ]
+          }
+        }
+      ],
+      "cross_state": "unverifiable",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
+      "dimensions": {
+        "presencia": "unknown",
+        "vigencia": "unknown",
+        "aplicabilidad": "unknown",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:3.1:calidad-lenguaje-senas",
+          "proposal:3.1:calidad-capacitaciones"
+        ],
+        "requirement_count": 2,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
+    },
+    {
+      "item_ref": "3.2",
+      "titulo": "APOYO A LA INDUSTRIA NACIONAL:",
+      "fase": "puntuable",
+      "categoria": "industria_nacional_diferencial",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "offer_requirement",
+      "pre_go_relevant": true,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "unverifiable",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
+      "dimensions": {
+        "presencia": "unknown",
+        "vigencia": "unknown",
+        "aplicabilidad": "unknown",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:3.2:industria-nacional-servicios-colombianos"
+        ],
+        "requirement_count": 1,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
+    },
+    {
+      "item_ref": "3.3",
+      "titulo": "PROPONENTES EN CONDICIÓN DE DISCAPACIDAD:",
+      "fase": "puntuable",
+      "categoria": "industria_nacional_diferencial",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "offer_requirement",
+      "pre_go_relevant": true,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "unverifiable",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
+      "dimensions": {
+        "presencia": "unknown",
+        "vigencia": "unknown",
+        "aplicabilidad": "unknown",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:3.3:puntaje-discapacidad"
+        ],
+        "requirement_count": 1,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
+    },
+    {
+      "item_ref": "3.4",
+      "titulo": "CRITERIO DIFERENCIAL EMPRENDIMIENTO Y EMPRESA DE MUJERES:",
+      "fase": "puntuable",
+      "categoria": "industria_nacional_diferencial",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "offer_requirement",
+      "pre_go_relevant": true,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "unverifiable",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
+      "dimensions": {
+        "presencia": "unknown",
+        "vigencia": "unknown",
+        "aplicabilidad": "unknown",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:3.4:puntaje-emprendimiento-empresa-mujeres"
+        ],
+        "requirement_count": 1,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
+    },
+    {
+      "item_ref": "3.5",
+      "titulo": "CRITERIO DIFERENCIAL MIPYMES:",
+      "fase": "puntuable",
+      "categoria": "industria_nacional_diferencial",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "offer_requirement",
+      "pre_go_relevant": true,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "unverifiable",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
+      "dimensions": {
+        "presencia": "unknown",
+        "vigencia": "unknown",
+        "aplicabilidad": "unknown",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:3.5:puntaje-mipyme"
+        ],
+        "requirement_count": 1,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
+    },
+    {
+      "item_ref": "3.6",
+      "titulo": "FACTOR ECONÓMICO:",
+      "fase": "puntuable",
+      "categoria": "oferta_economica",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "offer_requirement",
+      "pre_go_relevant": true,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "unverifiable",
+      "reason": "seccion_con_propuesta_curada_proposed_para_revision_humana",
+      "dimensions": {
+        "presencia": "unknown",
+        "vigencia": "unknown",
+        "aplicabilidad": "unknown",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": [],
+      "proposal_overlay": {
+        "status": "proposed_for_human_review",
+        "requirement_ids": [
+          "proposal:3.6:oferta-economica-anexo-9",
+          "proposal:3.6:tarifa-minima-regulada",
+          "proposal:3.6:metodo-media-aritmetica"
+        ],
+        "requirement_count": 3,
+        "human_approval_required": true,
+        "note": "Propuesta curada de requisitos atomizados para revisión humana; NO es requisito gobernado ni afirma cumplimiento/suficiencia."
+      }
+    },
+    {
+      "item_ref": "4.1",
+      "titulo": "PLAZO DE EVALUACIÓN",
+      "fase": "evaluacion",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "entity_evaluation_rule",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_evaluacion_es_regla_de_evaluacion_de_la_entidad",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "4.2",
+      "titulo": "TÉRMINO PARA RESPONDER LAS OBSERVACIONES A LA EVALUACIÓN",
+      "fase": "evaluacion",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "entity_evaluation_rule",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_evaluacion_es_regla_de_evaluacion_de_la_entidad",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "4.3",
+      "titulo": "CRITERIOS PARA DIRIMIR EMPATES",
+      "fase": "evaluacion",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "entity_evaluation_rule",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_evaluacion_es_regla_de_evaluacion_de_la_entidad",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "4.4",
+      "titulo": "ADJUDICACIÓN DEL PROCESO DE SELECCIÓN",
+      "fase": "evaluacion",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "entity_evaluation_rule",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_evaluacion_es_regla_de_evaluacion_de_la_entidad",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "4.5",
+      "titulo": "PERFECCIONAMIENTO DEL CONTRATO",
+      "fase": "evaluacion",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "entity_evaluation_rule",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_evaluacion_es_regla_de_evaluacion_de_la_entidad",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "5.1",
+      "titulo": "UBICACIÓN DE LOS SERVICIOS A CONTRATAR",
+      "fase": "ejecucion_tecnica",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award_execution",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_ejecucion_tecnica_evidencia_es_postadjudicacion",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "5.2",
+      "titulo": "OBLIGACIONES DEL CONTRATISTA PARA LA PRESTACIÓN DEL SERVICIO",
+      "fase": "ejecucion_tecnica",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award_execution",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_ejecucion_tecnica_evidencia_es_postadjudicacion",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "5.3",
+      "titulo": "JEFE o COORDINADOR DE SEGURIDAD",
+      "fase": "ejecucion_tecnica",
+      "categoria": "personal",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award_execution",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_ejecucion_tecnica_evidencia_es_postadjudicacion",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "5.3.1",
+      "titulo": "Funciones",
+      "fase": "ejecucion_tecnica",
+      "categoria": "factor_evaluacion",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award_execution",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_ejecucion_tecnica_evidencia_es_postadjudicacion",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "5.3.2",
+      "titulo": "Requisitos Mínimos",
+      "fase": "ejecucion_tecnica",
+      "categoria": "licencias_sector",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award_execution",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_ejecucion_tecnica_evidencia_es_postadjudicacion",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "5.4",
+      "titulo": "PERSONAL QUE PRESTARÁ EL SERVICIO DE VIGILANCIA",
+      "fase": "ejecucion_tecnica",
+      "categoria": "personal",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award_execution",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_ejecucion_tecnica_evidencia_es_postadjudicacion",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "5.4.1",
+      "titulo": "Requisitos Mínimos",
+      "fase": "ejecucion_tecnica",
+      "categoria": "personal",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award_execution",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_ejecucion_tecnica_evidencia_es_postadjudicacion",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "5.4.2",
+      "titulo": "Funciones Mínimas",
+      "fase": "ejecucion_tecnica",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award_execution",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_ejecucion_tecnica_evidencia_es_postadjudicacion",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "6.1",
+      "titulo": "RÉGIMEN LEGAL",
+      "fase": "postadjudicacion",
+      "categoria": "juridico",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "6.2",
+      "titulo": "LIQUIDACIÓN DEL CONTRATO",
+      "fase": "postadjudicacion",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "6.3",
+      "titulo": "SUPERVISIÓN DEL CONTRATO",
+      "fase": "postadjudicacion",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "6.4",
+      "titulo": "ESTIMACIÓN Y TIPIFICACIÓN DE RIESGOS PREVISIBLES",
+      "fase": "postadjudicacion",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [
+        "legal-rce-policy",
+        "technical-video-surveillance-scope"
+      ],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [
+        {
+          "bucket": "universales",
+          "requirement": "Reconciliar las contradicciones internas del propio pliego por decisión humana",
+          "provenance": {
+            "doc": "opus-output/05-riesgos-brechas-y-no-automatizar.md",
+            "section": "§2",
+            "evidence_ids": [
+              "811135236"
+            ]
+          }
+        },
+        {
+          "bucket": "variables_por_proceso",
+          "requirement": "Suma habilitante de RCE y su distinción de la garantía de ejecución",
+          "provenance": {
+            "doc": "opus-output/05-riesgos-brechas-y-no-automatizar.md",
+            "section": "§2.B",
+            "evidence_ids": [
+              "811135236"
+            ]
+          }
+        },
+        {
+          "bucket": "postadjudicacion",
+          "requirement": "Garantías de cumplimiento, acta de inicio y transición",
+          "provenance": {
+            "doc": "opus-output/05-riesgos-brechas-y-no-automatizar.md",
+            "section": "§9.8",
+            "evidence_ids": [
+              "821619524"
+            ]
+          }
+        }
+      ],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "6.5",
+      "titulo": "GARANTÍAS CONTRACTUALES",
+      "fase": "postadjudicacion",
+      "categoria": "seguros_garantias",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "6.6",
+      "titulo": "CESIÓN DEL CONTRATO",
+      "fase": "postadjudicacion",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "6.7",
+      "titulo": "CLÁUSULAS EXCEPCIONALES",
+      "fase": "postadjudicacion",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "6.8",
+      "titulo": "OBLIGACIONES GENERALES DE LAS PARTES",
+      "fase": "postadjudicacion",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "6.9",
+      "titulo": "POLÍTICAS DEL SISTEMA DE GESTIÓN DE LA SEGURIDAD Y SALUD EN EL",
+      "fase": "postadjudicacion",
+      "categoria": "tecnico_sst_ambiental",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "6.10",
+      "titulo": "PLAN DE GESTIÓN AMBIENTAL DE LA RAMA JUDICIAL",
+      "fase": "postadjudicacion",
+      "categoria": "tecnico_sst_ambiental",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "6.11",
+      "titulo": "INDEMNIDAD",
+      "fase": "postadjudicacion",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "6.12",
+      "titulo": "MULTAS",
+      "fase": "postadjudicacion",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "6.13",
+      "titulo": "CLÁUSULA PENAL PECUNIARIA",
+      "fase": "postadjudicacion",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "6.14",
+      "titulo": "INHABILIDADES E INCOMPATIBILIDADES",
+      "fase": "postadjudicacion",
+      "categoria": "juridico",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "6.15",
+      "titulo": "RÉGIMEN LEGAL",
+      "fase": "postadjudicacion",
+      "categoria": "no_determinada",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    },
+    {
+      "item_ref": "6.16",
+      "titulo": "LIQUIDACIÓN",
+      "fase": "postadjudicacion",
+      "categoria": "proceso",
+      "subsanabilidad": "no_determinado",
+      "offer_vs_post_award": "post_award",
+      "pre_go_relevant": false,
+      "governed_requirement_ids": [],
+      "presented_vs_accepted": {
+        "presented": "not_determined",
+        "accepted": "not_determined",
+        "adjudicated": "not_determined"
+      },
+      "pereira_pattern": [],
+      "cross_state": "not_applicable_candidate",
+      "reason": "fase_postadjudicacion_no_requiere_evidencia_pre_go",
+      "dimensions": {
+        "presencia": "no_evaluada",
+        "vigencia": "no_evaluada",
+        "aplicabilidad": "no_evaluada",
+        "suficiencia": "no_evaluada_humano"
+      },
+      "governed_evidence": []
+    }
+  ],
+  "blockers": [
+    {
+      "id": "evidencia_empresarial_no_observable_localmente",
+      "class": "subsanable",
+      "summary": "La bóveda de evidencia empresarial (17 clases) no es observable en el entorno local; las secciones relevantes con enlace gobernado quedan unverifiable.",
+      "affected_item_refs": [
+        "1.3",
+        "1.9",
+        "2.1",
+        "2.2",
+        "2.6"
+      ],
+      "remediation": "Sincronizar/gobernar el registro de evidencia empresarial (psi_agt002_company_evidence_registry) y adjuntar por identificador; verificación humana.",
+      "human_owner": "tender_lead"
+    },
+    {
+      "id": "secciones_con_propuesta_de_requisitos_para_revision_humana",
+      "class": "subsanable",
+      "status": "proposed_for_human_review",
+      "summary": "Secciones de oferta con PROPUESTA CURADA de requisitos atomizados (overlay local, no aprobado): requieren revisión y aprobación humana antes de convertirse en requisitos gobernados; no afirman cumplimiento ni suficiencia.",
+      "affected_item_refs": [
+        "2.3",
+        "2.4",
+        "2.4.1",
+        "2.5",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4",
+        "3.5",
+        "3.6"
+      ],
+      "remediation": "Revisar y aprobar (o ajustar) las propuestas de requisitos por sección (artefacto agt002_pre_go_section_proposals); sólo tras GO humano se convierten en requirement_manifest gobernado.",
+      "human_owner": "legal"
+    },
+    {
+      "id": "requisito_gobernado_sin_enlace_de_clase",
+      "class": "subsanable",
+      "summary": "Requisitos gobernados sin clase de evidencia enlazada (p.ej. alcance de videovigilancia/CCTV): permanecen en abstención hasta curar el enlace y revisar el documento.",
+      "affected_item_refs": [
+        "2.1"
+      ],
+      "remediation": "Proponer evidence_class_link gobernado y revisión documental humana; mantener CCTV en abstención mientras no haya evidencia concluyente nueva.",
+      "human_owner": "technical"
+    },
+    {
+      "id": "verificacion_juridica_no_disponible_sin_corpus",
+      "class": "subsanable",
+      "summary": "No hay versión publicada de corpus legal; la verificación jurídica no se muestra.",
+      "affected_item_refs": [],
+      "remediation": "Publicar y verificar una versión de corpus legal (psi_agt002_legal_corpus_versions) por decisión humana.",
+      "human_owner": "legal"
+    }
+  ],
+  "indispensable_questions": [
+    {
+      "id": "modalidad_del_proponente",
+      "question": "¿Cuál es la modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial)? Determina la aplicabilidad de la mayoría de secciones.",
+      "blocks_axis": "aplicabilidad"
+    },
+    {
+      "id": "version_del_pliego_al_cierre",
+      "question": "¿Qué versión del pliego (y adendas/respuestas a observaciones) gobierna al cierre? Lección Pereira: las reglas vigentes al cierre pueden diferir del pliego base.",
+      "blocks_axis": "vigencia"
+    },
+    {
+      "id": "boveda_de_evidencia_sincronizada",
+      "question": "¿Está sincronizada y gobernada la bóveda de evidencia empresarial para esta oportunidad? Sin ella el cruce es unverifiable, no missing.",
+      "blocks_axis": "presencia"
+    },
+    {
+      "id": "suficiencia_de_umbrales",
+      "question": "¿La suficiencia de umbrales (liquidez, capital de trabajo, experiencia ≥ % del POE, sumas de pólizas, territorialidad de licencias) satisface el pliego? Es cotejo humano.",
+      "blocks_axis": "suficiencia"
+    },
+    {
+      "id": "compromisos_de_ejecucion_en_oferta",
+      "question": "¿Requiere el pliego cartas de compromiso u obligaciones de ejecución declaradas EN la oferta? Su viabilidad es decisión humana (no se cruza como evidencia post-adjudicación).",
+      "blocks_axis": "aplicabilidad"
+    }
+  ],
+  "abstentions": {
+    "structural_coverage_only": true,
+    "not_human_exhaustive": "La cobertura es estructural (68 secciones); no afirma exhaustividad humana ni revisión jurídica completa.",
+    "registro_abstentions_count": 93,
+    "module_abstentions": [
+      {
+        "axis": "aplicabilidad",
+        "scope": "todas_las_secciones",
+        "reason": "La aplicabilidad por modalidad del proponente es decisión humana en las 68 secciones."
+      },
+      {
+        "axis": "suficiencia",
+        "scope": "todas_las_secciones_relevantes",
+        "reason": "La suficiencia de licencias/pólizas/experiencia/umbrales es decisión humana; nunca se afirma aquí."
+      },
+      {
+        "axis": "videovigilancia_cctv",
+        "scope": [
+          "2.1"
+        ],
+        "reason": "El alcance de videovigilancia/CCTV permanece en abstención (sin clase de evidencia enlazada ni evidencia concluyente nueva)."
+      }
+    ]
+  },
+  "risks": {
+    "juridico": [
+      {
+        "risk": "Contradicciones internas del pliego (cláusula penal, RCE habilitante vs contractual, días de grabación, UNSPSC, numeración) deben reconciliarse por humano.",
+        "basis": "pereira:universales",
+        "confidence": "alto"
+      },
+      {
+        "risk": "Sin corpus legal publicado no hay verificación jurídica; la habilitación jurídica no puede evaluarse localmente.",
+        "basis": "corpus_ausente",
+        "confidence": "alto"
+      }
+    ],
+    "financiero": [
+      {
+        "risk": "Base de cálculo de la garantía de seriedad (10% del POE vigente, no del total de CDP) y suficiencia de indicadores financieros son cotejo humano.",
+        "basis": "pereira:variables_por_proceso",
+        "confidence": "alto"
+      }
+    ],
+    "tecnico": [
+      {
+        "risk": "La cobertura de medios tecnológicos/CCTV y la territorialidad de licencias no están probadas; permanecen en abstención.",
+        "basis": "pereira:variables_por_proceso",
+        "confidence": "medio"
+      }
+    ],
+    "operativo": [
+      {
+        "risk": "La evidencia empresarial no es observable localmente (15 secciones unverifiable); se requiere sincronización gobernada y minimización de PII de personal.",
+        "basis": "local_gap",
+        "confidence": "alto"
+      }
+    ]
+  },
+  "recommendation": {
+    "recommendation_candidate": "indeterminate",
+    "confidence": "low",
+    "human_go_no_go_required": true,
+    "arguments_for": [
+      "El registro cataloga estructuralmente las 68 secciones del pliego vigente, lo que da trazabilidad para la decisión humana."
+    ],
+    "arguments_against": [
+      "15 sección(es) relevante(s) unverifiable: no hay evidencia observable localmente ni mapeo suficiente.",
+      "No hay verificación jurídica (corpus legal ausente)."
+    ],
+    "note": "recommendation_candidate NO es una recomendación jurídica ni una decisión: el GO/NO-GO es una compuerta humana obligatoria."
+  },
+  "pereira_pattern": {
+    "case": {
+      "case": "Rama Judicial Pereira SA-MC-02-2026",
+      "role": "patron_taxonomia_y_escalera_probatoria",
+      "applies_to_manizales": "patron_no_prueba",
+      "not_used_as": "prueba_de_cumplimiento_ni_traslado_de_aplicabilidad",
+      "source_root": "secure-reference/rama-judicial-pereira-2026-analysis"
+    },
+    "applies_to_manizales": "patron_no_prueba",
+    "buckets": {
+      "universales": [
+        {
+          "requirement": "No indexar/clasificar un documento por su nombre de archivo",
+          "evidence_type": "numero_de_proceso_extraido_del_cuerpo",
+          "observed_result": "contradiccion_del_expediente",
+          "lesson": "Un archivo rotulado «…SA-MC-01-2025.pdf» tenía cuerpo 100% SA-MC-02-2026; avisos arrastraron una fecha de cierre obsoleta. Extraer el número de proceso del cuerpo y alertar discrepancias filename↔contenido.",
+          "manizales_touchpoints": [],
+          "provenance": {
+            "doc": "opus-output/05-riesgos-brechas-y-no-automatizar.md",
+            "section": "§4",
+            "evidence_ids": [
+              "803570240"
+            ]
+          },
+          "confidence": "alto"
+        },
+        {
+          "requirement": "Presentado no equivale a habilitado ni a puntuado",
+          "evidence_type": "informe_de_evaluacion_y_matriz_de_puntaje",
+          "observed_result": "cumplimiento_agregado_por_acto",
+          "lesson": "Sin informe de evaluación no hay prueba de cumplimiento por documento ni de puntos otorgados; el acto de adjudicación sólo afirma cumplimiento habilitante de forma agregada y conclusoria.",
+          "manizales_touchpoints": [
+            "2.1",
+            "2.6"
+          ],
+          "provenance": {
+            "doc": "opus-output/03-matriz-requisito-evidencia.md",
+            "section": "§8",
+            "evidence_ids": [
+              "821619524"
+            ]
+          },
+          "confidence": "alto"
+        },
+        {
+          "requirement": "La suficiencia de umbrales cuantitativos es cotejo humano, no aritmética automática",
+          "evidence_type": "indicadores_rup_vs_umbral_del_pliego",
+          "observed_result": "puntaje_potencial",
+          "lesson": "Los cinco indicadores financieros «aparentan cumplir» (liquidez 2,37≥1,5; endeudamiento 0,50≤0,55…) pero el cumplimiento probado sólo lo respalda el informe de evaluación; el corte del cuestionario SECOP estaba obsoleto frente al pliego.",
+          "manizales_touchpoints": [
+            "2.2",
+            "2.3",
+            "2.4"
+          ],
+          "provenance": {
+            "doc": "opus-output/03-matriz-requisito-evidencia.md",
+            "section": "§2",
+            "evidence_ids": [
+              "811135236"
+            ]
+          },
+          "confidence": "alto"
+        },
+        {
+          "requirement": "Reconciliar las contradicciones internas del propio pliego por decisión humana",
+          "evidence_type": "clausula_que_gobierna_+_observacion",
+          "observed_result": "contradiccion_del_expediente",
+          "lesson": "El pliego autoritativo era internamente inconsistente (cláusula penal 20% vs 10%; RCE 400 vs 200 SMMLV; días de grabación 60 vs 30; UNSPSC divergentes; numeración 27.x/28.x). Nunca automatizar una interpretación que resuelva la contradicción sin humano.",
+          "manizales_touchpoints": [
+            "2.1",
+            "6.4"
+          ],
+          "provenance": {
+            "doc": "opus-output/05-riesgos-brechas-y-no-automatizar.md",
+            "section": "§2",
+            "evidence_ids": [
+              "811135236"
+            ]
+          },
+          "confidence": "alto"
+        },
+        {
+          "requirement": "Operar el personal por estado de cobertura, no por atributos personales",
+          "evidence_type": "estado_de_cobertura_por_perfil",
+          "observed_result": "observado_por_volumen",
+          "lesson": "Superficie de PII desproporcionada (1.004 docs de personal para ~46-49 roles; nombres y direcciones filtrados en texto libre pese a redactar teléfono/correo/cédula). AGT-002 debe devolver estado de cobertura por requisito, minimizar y marcar revisión de protección de datos.",
+          "manizales_touchpoints": [
+            "2.1"
+          ],
+          "provenance": {
+            "doc": "opus-output/05-riesgos-brechas-y-no-automatizar.md",
+            "section": "§5",
+            "evidence_ids": [
+              "summary.json"
+            ]
+          },
+          "confidence": "alto"
+        },
+        {
+          "requirement": "Prohibido inferir ausencia desde una imagen ilegible",
+          "evidence_type": "ocr_con_confianza_por_pagina_y_campo",
+          "observed_result": "no_probado",
+          "lesson": "454 documentos requerían OCR; RUP/experiencia/licencia de baja extracción no deben marcarse como verificados por extracción. Contradicción de experiencia (Jerónimo Martins 089/43.454,45 vs 095/24.224,27): no sumar ni elegir el mayor sin cotejo del primario.",
+          "manizales_touchpoints": [
+            "2.4",
+            "2.4.1"
+          ],
+          "provenance": {
+            "doc": "opus-output/05-riesgos-brechas-y-no-automatizar.md",
+            "section": "§7",
+            "evidence_ids": [
+              "summary.json"
+            ]
+          },
+          "confidence": "alto"
+        }
+      ],
+      "variables_por_proceso": [
+        {
+          "requirement": "Territorialidad de la licencia de funcionamiento",
+          "evidence_type": "acto_supervigilancia_con_sede_sucursal_en_el_departamento",
+          "observed_result": "no_probado",
+          "lesson": "La cobertura territorial exacta por sede a la fecha de cierre era propia de Risaralda y quedó no probada. La territorialidad cambia por proceso; no reutilizar una licencia histórica como suficiente.",
+          "manizales_touchpoints": [
+            "2.1"
+          ],
+          "provenance": {
+            "doc": "opus-output/03-matriz-requisito-evidencia.md",
+            "section": "§1",
+            "evidence_ids": [
+              "45d9857f2a128853"
+            ]
+          },
+          "confidence": "medio"
+        },
+        {
+          "requirement": "Vigencia, beneficiario y amparos de pólizas y garantía de seriedad",
+          "evidence_type": "poliza_a_favor_de_la_entidad_con_vigencia_y_suma_vigentes",
+          "observed_result": "contradiccion_del_expediente",
+          "lesson": "La garantía de seriedad se calculó sobre el 10% del total de CDP, no del 10% del POE vigente (base mayor); reutilizar esa base sub/sobre-cubre. El listado de armas vence a 60 días. Validar siempre contra el POE vigente y las vigencias del proceso.",
+          "manizales_touchpoints": [
+            "2.1"
+          ],
+          "provenance": {
+            "doc": "opus-output/03-matriz-requisito-evidencia.md",
+            "section": "§7",
+            "evidence_ids": [
+              "a297f572ecc05a21",
+              "811135236"
+            ]
+          },
+          "confidence": "alto"
+        },
+        {
+          "requirement": "Suma habilitante de RCE y su distinción de la garantía de ejecución",
+          "evidence_type": "poliza_rce_sectorial_vigente_por_smmlv",
+          "observed_result": "observado",
+          "lesson": "RCE ≥400 SMMLV es requisito habilitante (con la oferta) y coexiste con una RCE contractual de 200 SMMLV (post-adjudicación): son etapas distintas y no deben confundirse ni la una probar la otra.",
+          "manizales_touchpoints": [
+            "2.1",
+            "6.4"
+          ],
+          "provenance": {
+            "doc": "opus-output/05-riesgos-brechas-y-no-automatizar.md",
+            "section": "§2.B",
+            "evidence_ids": [
+              "811135236"
+            ]
+          },
+          "confidence": "alto"
+        },
+        {
+          "requirement": "Umbrales y método del factor económico",
+          "evidence_type": "anexo_economico_diligenciado_y_tarifa_regulada",
+          "observed_result": "puntaje_potencial",
+          "lesson": "Sólo el servicio de medios tecnológicos puntúa (la vigilancia humana es tarifa regulada); coexistían el método por TRM (4 alternativas) y una regla de media aritmética sin reconciliar. El método aplicado y el redondeo son revisión humana por proceso.",
+          "manizales_touchpoints": [
+            "3.1"
+          ],
+          "provenance": {
+            "doc": "opus-output/03-matriz-requisito-evidencia.md",
+            "section": "§6.3/§7",
+            "evidence_ids": [
+              "5fb982ca99737450"
+            ]
+          },
+          "confidence": "medio"
+        },
+        {
+          "requirement": "Experiencia acreditada: sumatoria, admisibilidad y no doble conteo",
+          "evidence_type": "certificaciones_+_extractos_rup_por_unspsc",
+          "observed_result": "observado",
+          "lesson": "La sumatoria oficial, la admisibilidad y el no doble conteo de las certificaciones no quedaron probados; la elección de experiencia pertinente y la certificación de no doble conteo son decisión humana por proceso.",
+          "manizales_touchpoints": [
+            "2.4",
+            "2.4.1"
+          ],
+          "provenance": {
+            "doc": "opus-output/03-matriz-requisito-evidencia.md",
+            "section": "§3",
+            "evidence_ids": [
+              "811135236"
+            ]
+          },
+          "confidence": "medio"
+        }
+      ],
+      "postadjudicacion": [
+        {
+          "requirement": "Garantías de cumplimiento, acta de inicio y transición",
+          "evidence_type": "polizas_de_ejecucion_y_actas_post_adjudicacion",
+          "observed_result": "no_aislado_en_muestra",
+          "lesson": "La aprobación de garantías de cumplimiento, el acta de inicio, la transición con la empresa saliente y las obligaciones ejecutables son posteriores a la adjudicación; no son evidencia pre-GO y no deben exigirse ni cruzarse en la decisión de oferta.",
+          "manizales_touchpoints": [
+            "6.4"
+          ],
+          "provenance": {
+            "doc": "opus-output/05-riesgos-brechas-y-no-automatizar.md",
+            "section": "§9.8",
+            "evidence_ids": [
+              "821619524"
+            ]
+          },
+          "confidence": "alto"
+        },
+        {
+          "requirement": "Compromisos condicionales de ejecución declarados en la oferta",
+          "evidence_type": "cartas_de_compromiso_caso_especificas",
+          "observed_result": "no_probado",
+          "lesson": "Las 5 cartas de compromiso (transición, 100% de equipos el primer mes, +30 días tecnológicos, tarifa) eran caso-específicas; su viabilidad es decisión humana. No repetirlas como plantilla sin validar viabilidad para el proceso nuevo.",
+          "manizales_touchpoints": [],
+          "provenance": {
+            "doc": "opus-output/05-riesgos-brechas-y-no-automatizar.md",
+            "section": "§1.5",
+            "evidence_ids": [
+              "34598ac51b276017"
+            ]
+          },
+          "confidence": "alto"
+        },
+        {
+          "requirement": "Adendas y reglas vigentes al cierre",
+          "evidence_type": "adendas_y_respuestas_a_observaciones",
+          "observed_result": "no_probado",
+          "lesson": "Las adendas estaban citadas por el acto pero ausentes del corpus; la regla vigente al cierre puede diferir del pliego base. Confirmar cuál versión gobernó al cierre es indispensable antes de cualquier decisión.",
+          "manizales_touchpoints": [],
+          "provenance": {
+            "doc": "opus-output/05-riesgos-brechas-y-no-automatizar.md",
+            "section": "§8",
+            "evidence_ids": [
+              "821619524"
+            ]
+          },
+          "confidence": "alto"
+        }
+      ]
+    }
+  },
+  "probative_limits": [
+    "El análisis pre-GO cruza requisitos del pliego vigente con evidencia empresarial gobernada; no decide cumplimiento, habilitación, puntaje ni GO/NO-GO.",
+    "satisfied_candidate significa evidencia candidata (presente/vigente/aplicable/revisada); la SUFICIENCIA jurídica y la habilitación son decisión humana.",
+    "La aplicabilidad de cada sección (modalidad del proponente, régimen diferencial) es abstención humana; ninguna sección se afirma aplicable automáticamente.",
+    "Presentado no equivale a aceptado ni a adjudicado; el análisis nunca infiere resultados de evaluación.",
+    "Ausencia de SEÑAL de una clase de evidencia (unverifiable) no equivale a ausencia del documento (missing): son estados distintos y no intercambiables.",
+    "Sin una versión publicada de corpus legal no se muestra verificación jurídica.",
+    "La cobertura es estructural (68 secciones registradas); no constituye exhaustividad humana ni revisión jurídica.",
+    "Rama Judicial Pereira se incorpora como patrón de taxonomía/escalera probatoria; no prueba cumplimiento de Manizales ni traslada aplicabilidad."
+  ]
+}

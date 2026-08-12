@@ -389,6 +389,7 @@ function buildLegalEvidenceSection(legalEvidencePackage) {
 
 function buildContextV2Input({
   snapshotId, contextV2Sections, documents, documentGaps, deepAnalysis, documentRetrieval, legalCorpus, legalEvidencePackage,
+  companyEvidenceClasses,
 }) {
   if (!contextV2Sections || typeof contextV2Sections !== 'object' || Array.isArray(contextV2Sections)) {
     throw new Error('AGT-002 Preview con contexto v2 requiere contextV2Sections completo.');
@@ -439,12 +440,22 @@ function buildContextV2Input({
     result.legal_evidence = buildLegalEvidenceSection(legalEvidencePackage);
   }
 
+  // AGT002_INTEGRAL_CONTRACT_V3 (Task 6): the exact typed 17-class company-evidence
+  // manifest (agt002-company-evidence-classes.js), carried verbatim — never re-derived
+  // or compressed here — alongside the existing company_dossier signal. Purely additive:
+  // omitted entirely unless the caller explicitly supplies it, so v1/v2 callers are
+  // byte-identical to before.
+  if (companyEvidenceClasses !== null && companyEvidenceClasses !== undefined) {
+    result.company_evidence_classes = companyEvidenceClasses;
+  }
+
   return result;
 }
 
 export function buildAgt002PreviewInput({
   opportunity = {}, documents = [], documentGaps = [], companyProfile = {}, deepAnalysis = {}, snapshotId, canonicalOnly = false,
   contextV2 = false, contextV2Sections = null, documentRetrieval = false, legalCorpus = false, legalEvidencePackage = null,
+  companyEvidenceClasses = null,
 }) {
   if (typeof snapshotId !== 'string' || !snapshotId.trim()) {
     throw new Error('AGT-002 Preview requiere un snapshot documental vigente.');
@@ -458,6 +469,7 @@ export function buildAgt002PreviewInput({
   if (contextV2) {
     return buildContextV2Input({
       snapshotId: snapshotId.trim(), contextV2Sections, documents, documentGaps, deepAnalysis, documentRetrieval, legalCorpus, legalEvidencePackage,
+      companyEvidenceClasses,
     });
   }
 

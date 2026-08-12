@@ -32,6 +32,156 @@ Toda decisión humana debe ser trazable y asociarse al análisis vigente. El ord
 
 El rollout visual de identidad está cerrado. No se declara rollout visual completo de F2 ni activación continua de E6 mientras esos gates permanezcan abiertos.
 
+## 2.1 Fundaciones del análisis integral — F1/F2 en rama, no desplegadas
+
+**Corte de desarrollo:** 2026-08-06 10:43 COT · 2026-08-06 15:43 UTC
+
+**Rama:** `feat/agt002-v3-foundations`
+
+**Base:** `origin/main` en `f85907d12d92d8ab956efd2ee9d6bfd264022c12`
+
+Este lote corrige primero las fundaciones de confiabilidad aprobadas para el análisis integral. Permanece sólo en rama: **no se aplicó la migración 063, no se hizo push/PR/merge/deploy y producción no cambió**.
+
+### F1 — canonicidad transaccional
+
+- Migración aditiva `063_agt002_canonical_promotion.sql` y rollback correspondiente.
+- Índice único parcial: máximo un run `canonical=true,status='completed'` por oportunidad.
+- Promoción serializada por oportunidad; el canónico anterior se desmarca sin reescribir su payload.
+- Idempotencia exacta preservada incluso después de supersesión; una misma key con payload distinto falla.
+- Backend distingue un replay histórico (`canonical=false,current=false`) del análisis vigente.
+- Los runs v2 permanecen consultables; no se borraron ni reinterpretaron.
+
+### F2 — 17 clases tipadas y cobertura explícita
+
+- Módulo `agt002-company-evidence-classes.js` con catálogo cerrado de las 17 clases de la migración 061.
+- Dimensiones separadas: presencia, revisión, vigencia, aplicabilidad y cumplimiento.
+- Cobertura explícita: disponible, seleccionada, omitida, vencida, inaccesible y pendiente de revisión.
+- Una clase ausente no desaparece: se representa como `inaccessible` y `pending_review`.
+- Sólo se transportan referencias y metadatos; no payload documental, PII, armas, banca ni anexos nominales.
+
+### Evidencia mecánica del lote
+
+- Pruebas focales F1/F2/paridad: `4/4` verdes.
+- Regresión AGT‑002: `121/121` verdes.
+- Suite completa: `360` verdes + `1` fallo baseline, reproducido en un worktree puro de `origin/main` (`module-permissions-migration-pglite.test.mjs`, `modulo_siio_gerencial` extra para Director).
+- Paridad Express/Vercel: `OK`.
+- `npm audit --omit=dev`: `0` vulnerabilidades.
+- Build y `git diff --check`: `OK`.
+- Revisión independiente Claude Opus 4.8: `APPROVE`, sin P0/P1.
+
+### Observaciones no bloqueantes
+
+- Dos llamadas simultáneas con la misma key nueva pueden devolver un `23505` genérico a la segunda; no duplican ni corrompen y el reintento es idempotente.
+- `coverage` son flags independientes, no una partición mutuamente excluyente.
+- `source_reference` está seleccionado pero el contrato emite una referencia sintética equivalente.
+- El borde `expiry == asOf` se considera vigente.
+
+### Contrato integral v3 — runtime implementado en rama, flag apagado por defecto
+
+**Corte de este bloque:** 2026-08-07 · **Rama:** `feat/agt002-v3-foundations` (misma rama; no se hizo merge/push/PR/deploy)
+
+- Auditoría: `docs/superpowers/specs/2026-08-06-agt002-integral-analysis-v3-audit.md`.
+- Diseño cerrado: `docs/superpowers/specs/2026-08-06-agt002-integral-analysis-v3-design.md`.
+- Plan TDD ejecutado tarea por tarea (1–9), TDD estricto RED→GREEN→regresión, un commit por tarea: `docs/superpowers/plans/2026-08-06-agt002-integral-analysis-v3-implementation-plan.md`.
+- Verificación local detallada: `docs/verification/2026-08-07-agt002-integral-v3-local.md`.
+
+**Qué queda implementado y probado (todo detrás de `AGT002_INTEGRAL_CONTRACT_V3`, apagado por defecto):**
+
+- Validador puro cerrado (`agt002-integral-analysis-v3.js`): forma exacta, orden institucional descarte→habilitantes→técnico→financiero/ejecución→estratégico, evidencia‑o‑abstención, cinco ejes independientes (presencia/revisión/vigencia/aplicabilidad/cumplimiento) sin derivarse entre sí, controles jurídico/operativos (escalamiento, hitos, acciones sin PII, `external_side_effect` siempre falso, validación humana siempre pendiente).
+- Proyección v2 determinística (`agt002-v3-compatibility.js`): deriva `recommendation/summary/strengths/weaknesses/blockers/questions/unverified/next_action` sólo desde `integral_analysis` validado; `critical_open_count` comparte exactamente el mismo criterio que las preguntas críticas proyectadas.
+- Dispatch de versión explícito, nunca por forma del payload (`agt002-preview-contract.js`, `agt002-tender-adapter.js`): el modelo v3 sólo puede devolver `{ integral_analysis }`; v2 y v3 se rechazan mutuamente.
+- **Origen de la categoría (gap C-3 de la auditoría), cerrado sin fabricar:** `agt002-integral-category-manifest.js` mapea `front: technical→technical` y `front: financial→financial_execution` por identidad honesta; cualquier otro caso (`front: legal`, o una reclasificación) exige una anulación gobernada explícita o falla cerrado — nunca adivina.
+- **Origen de los cinco ejes (gap de esta sesión, cerrado):** `evidence_state` ya NO es salida libre del modelo. `agt002-evidence-state-manifest.js` es un builder puro que deriva, por `requirement_id`, un mapa gobernado desde un enlace curado explícito `evidenceClassLinkByRequirementId → evidence_class_id` (uno de los 17 reales, `agt002-company-evidence-classes.js`, migración 061); cada eje (`presence/review/validity/applicability`) se lee de su propia columna gobernada de esa clase, nunca de otro eje ni de la mera presencia documental; `compliance` nunca sale de `"unknown"` porque no existe todavía una vía de escritura real para esa determinación. Sin enlace curado (el caso por defecto hoy, `{}`), o si la clase enlazada no fue observada en el run, el requisito abstiene al estado seguro `{presence:"unknown",review:"not_reviewed",validity:"unknown",applicability:"unknown",compliance:"unknown"}` — nunca lanza excepción por ausencia de señal (sólo por gobernanza inválida, p. ej. un `evidence_class_id` fuera del catálogo). `validationContext.evidenceStateManifest` (cobertura 1:1 con el manifiesto) es ahora un campo obligatorio del validador (`agt002-integral-analysis-v3.js`): cualquier `evidence_state` que el modelo declare para una unidad `tender_requirement` que no coincida exactamente con ese mapa gobernado se rechaza — incluso si esa combinación es individualmente válida por enum e invariantes cruzados. El engine (`agt002-preview-engine.js`) construye este mapa de forma fail-closed dentro de `buildIntegralV3ValidationContext` y también lo entrega como `evidence_state_governed` en el `requirement_manifest` que ve el proveedor, para que el modelo tenga una oportunidad real de reproducirlo — la validación posterior nunca confía en que lo haya hecho. Las unidades `strategic_consideration` (sin `requirement_id`) quedan fuera de esta capa de gobernanza y conservan sólo los chequeos previos de enum/invariantes cruzados.
+- Engine (`agt002-preview-engine.js`, `agt002-preview-input.js`): ensambla el envelope gobernado (run/snapshot/contexto/cobertura/corpus/uso); el proveedor nunca puede forjar esos campos (probado).
+- Persistencia (`agt002-preview-persistence.js` + PGlite con la migración 063 local): v3 persiste `integral_analysis` + proyección v2 atómicamente; v2 histórico queda byte‑idéntico; coexistencia canónica probada (un run v2 histórico se desmarca sin reescribirse, el v3 lo supera, exactamente un canónico completado permanece, replay idempotente).
+- Wiring de servidor (`agt002-preview-runtime.js`): paridad Express/Vercel es estructural — ambas rutas comparten el mismo módulo; ningún parámetro de solicitud puede activar v3.
+- UI real de cinco fases (`TenderIntegralAnalysisV3View.tsx`): reemplaza el preview sintético de `UNITS` fijos; consume únicamente `analysis.integral_analysis` (opcional, no renderiza nada si está ausente); sin nombre de institución/expediente hardcodeado; preguntas humanas y GO/NO-GO permanecen en sus componentes existentes, sin duplicarse.
+
+**Qué NO se hizo en este bloque (gates siguientes, explícitos):**
+
+- ~~No hay wiring real de `companyEvidenceClassesProvider`/`categoryOverrides`/`evidenceClassLinkByRequirementId` a una fuente de datos gobernada~~ — cerrado en la sesión de continuación del 2026-08-07 (§2.1.1 abajo): el wiring real de lectura existe hoy en `server/index.js`/`api/[...path].js`. Lo que sigue abierto es la **curación humana** de esos mapas para una oportunidad real: con el mapa por defecto (sin filas curadas en la migración `064`), todo requisito real sigue abstenido en sus cinco ejes al estado seguro hasta que un humano cure ese enlace requisito→clase de evidencia para el caso objetivo.
+- No se ejecutó un caso E5 controlado con datos reales de Rama Judicial ni QA visual con etiquetas reales.
+- No se activó el flag en ningún ambiente; no se aplicó ninguna migración remota; no hubo push/PR/deploy.
+- Ningún revisor independiente fuera de esta sesión evaluó el trabajo (ver `docs/verification/2026-08-07-agt002-integral-v3-local.md` §4).
+
+### Gate siguiente
+
+1. Curar, con revisión humana y fuente trazable del pliego real, las filas `category_override` y `evidence_class_link` de la oportunidad objetivo en la superficie gobernada de la migración `064`; el wiring read-only de las 17 clases y de ambos mapas ya está construido y probado.
+2. Ejecutar un caso E5 controlado sobre el snapshot real de Rama Judicial con el flag activado sólo para esa prueba, verificando cobertura 1:1 y abstención donde falte señal.
+3. QA visual autenticado de la UI real (Juan) antes de activar el flag para cualquier usuario.
+4. Sólo entonces, decisión humana sobre activar `AGT002_INTEGRAL_CONTRACT_V3` en un ambiente real, con canary único y sin timer.
+
+### Cierre técnico autónomo — 2026-08-07 07:14 COT
+
+Se verificó de nuevo la verdad de disco sobre `feat/agt002-v3-foundations`: worktree limpio al inicio del cierre, 17 commits locales sobre el merge-base `f85907d`, sin push/PR/merge/deploy y sin migraciones remotas. `origin/main` avanzó dos commits (`1998714`, `39bef1d`); la rama permanece deliberadamente sin integrar esos cambios.
+
+Gates secuenciales frescos del cierre:
+
+- v3 focal: `22/22`;
+- regresión `tests/agt002-*.test.mjs`: `137/137`;
+- PGlite migración 063/canonicidad y coexistencia v2/v3: `2/2`;
+- paridad backend: `OK`;
+- build: `OK` (sólo warning preexistente de chunk >500 kB);
+- `npm audit --omit=dev`: `0` vulnerabilidades;
+- `git diff --check`: limpio;
+- suite completa: `376/377`; único fallo baseline `module-permissions-migration-pglite.test.mjs:98`, reproducido idéntico sobre el `origin/main` actual `39bef1d` (`0/1`). La aserción siguiente del mismo test exige precisamente el permiso extra que rompe la igualdad anterior.
+
+Se añadió cobertura explícita de cierre que prueba: UI alimentada sólo por `analysis.integral_analysis`, sin `UNITS`/fixtures ni “Rama Judicial”; sin corpus publicado no se admite conclusión jurídica sustantiva ni referencia jurídica; el catálogo cerrado rechaza acciones `go`, `no_go`, `approve`, `sign`, `send` y `submit`; cualquier handoff `human_decision` continúa pendiente, reservado a `authorized_human` y con `external_side_effect=false`.
+
+**Estado de release:** **NOT READY para canary real**. El wiring read-only de la fuente DB de 17 clases y de la nueva superficie gobernada de mapas ya existe; no puede rellenarse honestamente el gate restante sin (a) mapas humanos curados `categoryOverrides` y `evidenceClassLinkByRequirementId` con cobertura del caso objetivo y trazabilidad al pliego real, y (b) QA visual autenticado con etiquetas reales. Hasta recibir esas dos evidencias no se autoriza ejecutar el runbook ni consumir un caso real/costos. El runbook queda preparado en `docs/runbooks/agt002-integral-v3-canary.md`, pero no fue ejecutado.
+
+### Continuación autónoma — cierre de wiring gobernado, 2026-08-07
+
+- Commits del bloque: `efad172` (loader crudo de las 17 filas), `9ce504b` (forward del enlace requisito→clase), `154519d` (fuente gobernada + migración/rollback `064` + PGlite) y `b3b8794` (wiring read-only común en los tres flujos Express/Vercel + documentación del expediente).
+- TDD: RED observados antes de cada implementación; GREEN focal confirmado para loader/runtime, builder de overrides, migración `064` PGlite y wiring de servidor.
+- Gates secuenciales frescos: `tests/agt002-*.test.mjs` **140/140**; PGlite relevante **3/3**; backend parity **OK**; build **OK** (único warning preexistente de chunk >500 kB); `npm audit --omit=dev` **0 vulnerabilidades**; `git diff --check` limpio; suite completa **379/380**.
+- El único fallo completo sigue siendo el baseline conocido `tests/module-permissions-migration-pglite.test.mjs:98`: el esperado omite `modulo_siio_gerencial` mientras la migración y la aserción siguiente lo exigen. No hay fallos AGT-002.
+- Para Rama Judicial `54190e51-15fb-46af-b0aa-8f13461a3110` no se inventó ningún mapa: sin pliego/manifest real accesible y sin fuente trazable, la migración `064` conserva cero seeds y el caso sigue fail-closed. Evidencia: `docs/verification/2026-08-07-agt002-rama-judicial-governance-gap.md`.
+
+### Auditoría autónoma de procedencia y mínima exposición — 2026-08-07
+
+- Revisión inicial read-only con Claude Code Opus contra `b99a805`, diseño v3 y gates del
+  canary: sin P0/P1; detectó P2 de auditabilidad del binding gobernado y hardening de la
+  lectura de las 17 clases.
+- Se cerró el binding end-to-end: cada override/enlace aplicado conserva en el envelope y
+  en persistencia su `rationale`, `source_reference`, curator, `curated_at` y `version`.
+  Mapas no vacíos con procedencia ausente o inconsistente fallan antes del proveedor;
+  persistencia y adapter cerrado revalidan el mapa. `curated_at`/`version` inválidos fallan
+  cerrado y los registros quedan congelados.
+- Las dos lecturas runtime de `psi_agt002_company_evidence_registry` tienen allowlists
+  explícitas; `select(*)`, duplicados y columnas no permitidas son rechazados. No se amplió
+  RLS/ACL ni se añadió ninguna escritura.
+- Evidencia final: focales **8/8**; AGT-002 **140/140**; PGlite relevante **3/3**; paridad
+  backend **OK**; build **OK**; diff check/paridad byte Express-Vercel **OK**; suite completa
+  **379/380**. El único fallo fue reproducido **0/1** en archivo limpio `b99a805`
+  (`module-permissions-migration-pglite.test.mjs`) y permanece baseline.
+- `npm audit --omit=dev` reporta ahora 1 high transitivo (`nanoid@3.3.16` vía
+  Vite/PostCSS); `package.json`/`package-lock.json` no cambiaron frente a `b99a805`, por lo
+  que no fue introducido por este lote. Revisión final independiente Opus: **passed**, sin
+  hallazgos de seguridad ni errores lógicos.
+
+**Estado:** **NOT READY para canary real**. Rama Judicial sigue sin mapas porque no hubo
+señal read-only trazable suficiente; se mantiene abstención/missing governance. Siguen
+pendientes curación humana sobre pliego real, caso E5 controlado y QA visual autenticado.
+
+### Borrador de gobernanza Rama Judicial — versión 2, 17/17 documentos — 2026-08-08
+
+- Revisión independiente Claude Opus 4.8 sobre la versión 1 del borrador (`docs/governance/2026-08-07-agt002-rama-judicial-governance-draft.md`, `db257d9`): **APPROVE** para presentar el borrador a aprobación humana, sin P0/P1 bloqueantes de esa presentación. Un P1 real bloqueaba solo *canary*: la extracción cubría 3/17 documentos vigentes porque dependía de `psi_tender_document_chunks`, cuyo pipeline de *chunking* nunca se volvió a ejecutar tras las adendas que reemplazaron 14 de los 17 documentos. Tres P2: semántica ambigua de `snapshot_id`, test de aislamiento no recursivo/no enganchado a un runner, y defensa anti-fuga final imprecisa (regex asimétrica).
+- Esta sesión cerró el P1 y los tres P2 con TDD estricto RED→GREEN, usando las mismas credenciales de solo lectura ya localizadas fuera del worktree (nunca impresas): `scripts/agt002-rama-judicial-governance-draft-generate.mjs` ya no lee texto desde `psi_tender_document_chunks`; lee `extracted_text` de las 17 filas vigentes de `psi_tender_document_versions` y reconstruye chunks **localmente** con el mismo contrato puro de producción (`buildAgt002DocumentChunks`), reconciliado por igualdad exacta de `chunk_id`/`content_hash`/`chunk_hash` contra los 479 chunks reales que sí existen hoy en la base (0 discrepancias). Extracción de requisitos y citas corren ahora sobre **17/17** documentos vigentes.
+- El extractor cerrado (`tender-requirement-extraction.js`) sigue reconociendo exactamente los mismos 3 `requirement_id` de siempre — la ampliación de cobertura documental no inventó ningún `requirement_id` nuevo ni usó un modelo/LLM para clasificar; amplió la evidencia (48 citas legales, 33 técnicas, 4 financieras, frente a 16/9/1) para esos mismos 3 requisitos, releída íntegramente para confirmar honestamente las propuestas/abstenciones (ninguna cambió de conclusión). El borrador declara explícitamente, en un `data_gap` dedicado, que 3 `requirement_id` es el alcance actual del extractor, **no** cobertura semántica total del pliego real.
+- Se agregó el campo cerrado y obligatorio `evidence_chunk_snapshot_ids` al artefacto (`agt002-governance-draft-proposal.js`), se reemplazó la regex final anti-fuga por un escaneo recursivo por clave sobre todo el objeto (corrigiendo un falso positivo real demostrado con test), y se reescribió el test de aislamiento runtime para recorrer recursivamente todo el repositorio (163 archivos), enganchándolo a `npm run test:agt002-runtime` en `package.json`.
+- Gates frescos de cierre tras recuperar el timeout del cron: generador real read-only **17/17**, **1.973** chunks locales y reconciliación **479/479** sin discrepancias; focales de gobernanza **2/2**; runner runtime **11/11**; `tests/agt002-*.test.mjs` secuencial **142/142**; backend parity **OK**; build **OK**; suite completa **381/382**. El único fallo (`module-permissions-migration-pglite.test.mjs:98`) se reprodujo idéntico **0/1** en el worktree limpio de `main` y no fue introducido por este lote. `npm audit --omit=dev` mantiene una vulnerabilidad transitiva alta conocida en `nanoid <3.3.17`, corregible por dependencia y no introducida aquí. Revisión final independiente Claude Opus 4.8: **APPROVE** para presentar el borrador a aprobación humana, sin P0/P1; canary **NOT_READY** hasta curación humana. El gate 4 (filas curadas reales en `psi_agt002_integral_governance_overrides`) permanece abierto: cero escritura remota, cero migración, cero RPC con efecto, cero canary/modelo productivo, cero push/PR/merge/deploy en esta sesión. Detalle: `docs/governance/2026-08-07-agt002-rama-judicial-governance-draft.md`, `docs/verification/2026-08-07-agt002-rama-judicial-governance-gap.md` §7.
+
+### Rebase de integración sobre `origin/main` — 2026-08-11
+
+Se reintegró `feat/agt002-v3-foundations` (30 commits, foundations + gobernanza Rama Judicial) sobre `origin/main` en `bbef30aba84310d92a82fa40636855dc13d640e7`, que ya incluía la identidad visible Vig‑IA (§ "Identidad visible desplegada" arriba, PR #81) y el cierre de hallazgos visuales F2 Important (PR #83, no documentado antes en esta sección). Es **un único producto AGT‑002**, no dos: la ruta productiva de nombres visibles (`Vig‑IA Gerencial/Licitaciones/Comercial`, `Agente Comercial PSI`) y la ruta de `TenderIntegralAnalysisV3View` de esta rama coexisten en `src/main.tsx` sin pisarse — el rebase no tuvo conflictos porque tocan líneas distintas del mismo archivo.
+
+- Rama de respaldo previa al rebase: `backup/agt002-v3-pre-rebase-20260811` → `2a3e398`.
+- `server/index.js` y `api/[...path].js` verificados byte‑idénticos entre sí tras el rebase.
+- Migraciones `063_agt002_canonical_promotion.sql` y `064_agt002_integral_governance_overrides.sql` verificadas byte‑idénticas al contenido pre‑rebase; siguen siendo aditivas después de la `062` de `main` y **no se aplicaron** en ningún ambiente.
+- Gates frescos post‑rebase: `git diff --check origin/main...HEAD` limpio; `tests/agt002-*.test.mjs` **161/161**; `npm run check:backend-parity` **OK**; `npm run build` **OK** (mismo warning preexistente de chunk >500 kB).
+- Sigue sin push/PR/merge/deploy. `AGT002_INTEGRAL_CONTRACT_V3` sigue apagado por defecto. **Estado de release sin cambios: NOT READY para canary real** — los gates pendientes descritos arriba (curación humana de mapas, caso E5 controlado, QA visual autenticado de la vista integral) no se tocaron en este rebase.
+
 ## 3. F2 — coherencia y seguridad transversal de SIIO
 
 ### Entregado

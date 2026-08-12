@@ -137,6 +137,98 @@ for (const overrides of [
   );
 }
 
+// ---------------------------------------------------------------------------
+// Task 8: AGT002_INTEGRAL_CONTRACT_V3 wiring. server/index.js and api/[...path].js both
+// call createAgt002PreviewRuntime — parity is structural (one shared module), so all v3
+// wiring behavior is tested once here.
+// ---------------------------------------------------------------------------
+
+const V3_BASE_ENV = {
+  AGT002_CANONICAL_ONLY: 'true', AGT002_CONTEXT_V2: 'true', AGT002_DOCUMENT_RETRIEVAL: 'true', AGT002_INTEGRAL_CONTRACT_V3: 'true',
+};
+
+// Flag off (default): construction and behavior are exactly as before — no v3 option
+// is ever consulted, and no request/environment parameter besides the flag itself can
+// turn v3 on.
+{
+  const runtime = createAgt002PreviewRuntime({ environment: baseEnv(), countDailyRuns: async () => 0 });
+  assert.equal(typeof runtime.analyze, 'function');
+}
+
+// Flag on requires a company-evidence registry source, mirroring the legalCorpusContext
+// fail-closed pattern: without it, construction must fail closed rather than silently
+// running v3 with no company-evidence signal.
+assert.throws(
+  () => createAgt002PreviewRuntime({ environment: baseEnv(V3_BASE_ENV), countDailyRuns: async () => 0 }),
+  /no está configurado|evidencia empresarial|companyEvidence/i,
+  'AGT002_INTEGRAL_CONTRACT_V3 must fail closed without an injected company-evidence registry source',
+);
+
+// Flag on with an (empty, synthetic) registry supplied: construction succeeds. Category
+// overrides and contextVersionId are constructor-only configuration — never read from
+// the per-request analyze() context, matching every other engine-level flag.
+{
+  const runtime = createAgt002PreviewRuntime({
+    environment: baseEnv(V3_BASE_ENV), countDailyRuns: async () => 0,
+    companyEvidenceRegistryEntries: [], categoryOverrides: { 'req-1': 'habilitating' },
+    governanceProvenance: {
+      'category_override:req-1': {
+        requirement_id: 'req-1', override_kind: 'category_override', category_value: 'habilitating',
+        rationale: 'Clasificación curada.', source_reference: 'pliego:1', curated_by: 'curator',
+        curated_at: '2026-08-07T00:00:00.000Z', version: 1,
+      },
+    },
+    contextVersionId: '10101010-1010-4010-8010-101010101010',
+  });
+  assert.equal(typeof runtime.analyze, 'function');
+}
+
+// evidenceClassLinkByRequirementId must reach the engine exactly like categoryOverrides
+// does — both are governed, curated, constructor-only maps (agt002-evidence-state-manifest.js /
+// agt002-integral-category-manifest.js). createEngine is an injectable seam (defaulting to
+// the real createAgt002PreviewEngine) purely so this test can assert on the exact options
+// object the runtime builds, without ever constructing a real network client.
+{
+  let capturedOptions = null;
+  const spyEngine = (options) => {
+    capturedOptions = options;
+    return { analyze: async () => { throw new Error('not called'); } };
+  };
+  const evidenceClassLinkByRequirementId = { 'req-1': 'rup' };
+  const categoryOverrides = { 'req-2': 'technical' };
+  const governanceProvenance = {
+    'evidence_class_link:req-1': { requirement_id: 'req-1', override_kind: 'evidence_class_link', evidence_class_id: 'rup', rationale: 'x', source_reference: 'y', curated_by: 'z', curated_at: '2026-08-07T00:00:00.000Z', version: 1 },
+    'category_override:req-2': { requirement_id: 'req-2', override_kind: 'category_override', category_value: 'technical', rationale: 'x', source_reference: 'y', curated_by: 'z', curated_at: '2026-08-07T00:00:00.000Z', version: 1 },
+  };
+  createAgt002PreviewRuntime({
+    environment: baseEnv(V3_BASE_ENV), countDailyRuns: async () => 0,
+    companyEvidenceRegistryEntries: [], categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance,
+    contextVersionId: '10101010-1010-4010-8010-101010101010',
+    createEngine: spyEngine,
+  });
+  assert.deepEqual(capturedOptions.evidenceClassLinkByRequirementId, evidenceClassLinkByRequirementId, 'the runtime must forward evidenceClassLinkByRequirementId to the engine, exactly like categoryOverrides');
+  assert.deepEqual(capturedOptions.categoryOverrides, categoryOverrides);
+  // P2-1: governance_provenance must reach the engine exactly like categoryOverrides and
+  // evidenceClassLinkByRequirementId do — it is the traceability behind those bindings.
+  assert.deepEqual(capturedOptions.governanceProvenance, governanceProvenance, 'the runtime must forward governanceProvenance to the engine, exactly like categoryOverrides');
+}
+
+// Without an explicit evidenceClassLinkByRequirementId/governanceProvenance, the engine
+// must receive the same safe empty-map default as categoryOverrides — never undefined
+// (which would fall back to the engine's own default, silently decoupling runtime
+// behavior from what was requested).
+{
+  let capturedOptions = null;
+  const spyEngine = (options) => { capturedOptions = options; return { analyze: async () => {} }; };
+  createAgt002PreviewRuntime({
+    environment: baseEnv(V3_BASE_ENV), countDailyRuns: async () => 0,
+    companyEvidenceRegistryEntries: [], createEngine: spyEngine,
+  });
+  assert.deepEqual(capturedOptions.evidenceClassLinkByRequirementId, {});
+  assert.deepEqual(capturedOptions.categoryOverrides, {});
+  assert.deepEqual(capturedOptions.governanceProvenance, {});
+}
+
 const source = readFileSync(new URL('../agt002-preview-runtime.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /OPENAI_API_KEY|HERMES_INTERIM_API_KEY|Authorization|Bearer/i, 'the runtime must never manage an API key or bearer token');
 assert.doesNotMatch(source, /readFileSync/, 'the runtime must never read the local legal corpus fixture as production evidence; it must consume an injected, DB-loaded context');

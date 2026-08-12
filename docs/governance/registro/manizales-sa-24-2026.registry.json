@@ -1,0 +1,3696 @@
+{
+  "artifact_type": "agt002_contractual_registry",
+  "status": "draft_for_human_review",
+  "human_approval_required": true,
+  "version": 1,
+  "taxonomy_version": "agt002-contractual-registry-taxonomy@1",
+  "opportunity_id": "54190e51-15fb-46af-b0aa-8f13461a3110",
+  "proceso": "SA-24-2026",
+  "entidad": "Rama Judicial — Dirección Seccional de Administración Judicial de Manizales",
+  "generated_at": "2026-08-12T03:56:17.569Z",
+  "pattern_reference": {
+    "case": "Rama Judicial Pereira SA-MC-02-2026",
+    "use": "patron_taxonomia_y_flujo",
+    "not_used_as": "prueba_de_cumplimiento_ni_traslado_de_aplicabilidad_a_manizales"
+  },
+  "provenance": [
+    {
+      "document_id": "03950a0c-74e9-4d21-a308-7181daa4aa82",
+      "name": "Anexo No. 11 Acreditaci_n MiPyme.pdf",
+      "document_type": "anexo_tecnico",
+      "provenance_kind": "anexo_formato",
+      "vigencia": "soporte",
+      "is_vigente_pliego": false
+    },
+    {
+      "document_id": "03b5fff9-a9d4-407b-a7f3-25df1496f1e6",
+      "name": "Anexo No. 4  Conformacion integrantes UT.pdf",
+      "document_type": "anexo_tecnico",
+      "provenance_kind": "anexo_formato",
+      "vigencia": "soporte",
+      "is_vigente_pliego": false
+    },
+    {
+      "document_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+      "name": "2. Estudios previos SA-24-2026.pdf",
+      "document_type": "estudios_previos",
+      "provenance_kind": "estudios_previos",
+      "vigencia": "soporte",
+      "is_vigente_pliego": false
+    },
+    {
+      "document_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+      "name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+      "document_type": "pliego",
+      "provenance_kind": "pliego_proyecto",
+      "vigencia": "superseded",
+      "is_vigente_pliego": false
+    },
+    {
+      "document_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+      "name": "1. Estudios Sector SA-24-2026.pdf",
+      "document_type": "estudios_previos",
+      "provenance_kind": "estudios_sector",
+      "vigencia": "soporte",
+      "is_vigente_pliego": false
+    },
+    {
+      "document_id": "51169076-95a6-447c-a09a-6770e21809ce",
+      "name": "Anexo No. 5 Programa de gestion de contratistas y visitantes.pdf",
+      "document_type": "anexo_tecnico",
+      "provenance_kind": "anexo_requisito",
+      "vigencia": "soporte",
+      "is_vigente_pliego": false
+    },
+    {
+      "document_id": "5a2bc385-5452-4a0f-b662-33736f9bf0d7",
+      "name": "Anexo No. 7 Requisitos Ambientales.pdf",
+      "document_type": "anexo_tecnico",
+      "provenance_kind": "anexo_requisito",
+      "vigencia": "soporte",
+      "is_vigente_pliego": false
+    },
+    {
+      "document_id": "610606d2-32f0-4ccb-b43c-ae38416077bc",
+      "name": "Anexo No. 6 Requisitos SGSST.pdf",
+      "document_type": "anexo_tecnico",
+      "provenance_kind": "anexo_requisito",
+      "vigencia": "soporte",
+      "is_vigente_pliego": false
+    },
+    {
+      "document_id": "7a37e964-2081-4dc3-93fa-67b3e87edc5a",
+      "name": "Anexo No. 9 Oferta economica SA-24-2026 Ajustado.xlsx",
+      "document_type": "anexo_tecnico",
+      "provenance_kind": "anexo_oferta_economica",
+      "vigencia": "vigente",
+      "is_vigente_pliego": false
+    },
+    {
+      "document_id": "7cba4176-e34e-44c8-9b54-767f955a025b",
+      "name": "Anexo No. 10 Acreditaci_n Emprendim. Empresa Mujeres.pdf",
+      "document_type": "anexo_tecnico",
+      "provenance_kind": "anexo_formato",
+      "vigencia": "soporte",
+      "is_vigente_pliego": false
+    },
+    {
+      "document_id": "a75a1bc2-aab2-4af2-b561-692c20bc1c1d",
+      "name": "Anexo No. 3 Carta presentacion Consorcio o UT.pdf",
+      "document_type": "anexo_tecnico",
+      "provenance_kind": "anexo_formato",
+      "vigencia": "soporte",
+      "is_vigente_pliego": false
+    },
+    {
+      "document_id": "bc9964bf-9dbe-40ee-82f5-b391bb15c059",
+      "name": "Anexo No. 1 Carta Presentaci_n Persona Natural.pdf",
+      "document_type": "anexo_tecnico",
+      "provenance_kind": "anexo_formato",
+      "vigencia": "soporte",
+      "is_vigente_pliego": false
+    },
+    {
+      "document_id": "c21c7cbd-126d-4afc-8389-e6c117d5f833",
+      "name": "Anexo No. 2 Carta presentacion Persona Juridica.pdf",
+      "document_type": "anexo_tecnico",
+      "provenance_kind": "anexo_formato",
+      "vigencia": "soporte",
+      "is_vigente_pliego": false
+    },
+    {
+      "document_id": "cf887957-40da-4cdc-a1ba-700c1db08c5a",
+      "name": "Anexo No. 8 Formato Experiencia.xlsx",
+      "document_type": "anexo_tecnico",
+      "provenance_kind": "anexo_formato",
+      "vigencia": "soporte",
+      "is_vigente_pliego": false
+    },
+    {
+      "document_id": "d2612ab5-3239-42e2-b251-b1c7d4bd62e1",
+      "name": "7. Respuesta observaciones al proyecto del pliego de condiciones.pdf",
+      "document_type": "pliego",
+      "provenance_kind": "respuesta_observaciones",
+      "vigencia": "historico",
+      "is_vigente_pliego": false
+    },
+    {
+      "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+      "name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+      "document_type": "pliego",
+      "provenance_kind": "pliego_definitivo",
+      "vigencia": "vigente",
+      "is_vigente_pliego": true
+    },
+    {
+      "document_id": "fe33782b-f94b-470f-8500-213ee0dba25e",
+      "name": "Anexo No. 9 Oferta economica SA-24-2026.xlsx",
+      "document_type": "anexo_tecnico",
+      "provenance_kind": "anexo_oferta_economica",
+      "vigencia": "superseded",
+      "is_vigente_pliego": false
+    }
+  ],
+  "vigente_pliego": {
+    "resolved": true,
+    "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+    "name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf"
+  },
+  "items": [
+    {
+      "item_id": "SA-24-2026#1.1",
+      "ref": "1.1",
+      "numeral": "1.1",
+      "titulo": "IDENTIFICACIÓN EN EL CLASIFICADOR DE BIENES Y SERVICIOS",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 8145,
+        "char_end": 8396,
+        "excerpt": "1.1. IDENTIFICACIÓN EN EL CLASIFICADOR DE BIENES Y SERVICIOS: CLASE NOMBRE «id» Servicios de guardias «id» Servicios de sistemas de seguridad 1.2. OBJETO: Contratar en nombre de la NACIÓN – CONSEJO SUPERIOR DE LA JUDICATURA – DIRECCIÓN SECC"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.2",
+      "ref": "1.2",
+      "numeral": "1.2",
+      "titulo": "OBJETO",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 8396,
+        "char_end": 8700,
+        "excerpt": "1.2. OBJETO: Contratar en nombre de la NACIÓN – CONSEJO SUPERIOR DE LA JUDICATURA – DIRECCIÓN SECCIONAL DE ADMINISTRACIÓN JUDICIAL DE MANIZALES la prestación del servicio de vigilancia y seguridad privada armada para los Despachos Judiciale"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.2.1",
+      "ref": "1.2.1",
+      "numeral": "1.2.1",
+      "titulo": "ALCANCE DEL OBJETO CONTRACTUAL",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [
+        "technical-video-surveillance-scope"
+      ],
+      "cite": {
+        "char_start": 8700,
+        "char_end": 19413,
+        "excerpt": "1.2.1. ALCANCE DEL OBJETO CONTRACTUAL: La prestación del servicio de vigilancia y seguridad privada armada para los Despachos Judiciales y Sedes Administrativas del Distrito Judicial de Manizales, se ejecutará de conformidad con el cuadro q"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.2.2",
+      "ref": "1.2.2",
+      "numeral": "1.2.2",
+      "titulo": "VISITA A LOS SITIOS DE EJECUCIÓN",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 19413,
+        "char_end": 20619,
+        "excerpt": "1.2.2. VISITA A LOS SITIOS DE EJECUCIÓN (NO OBLIGATORIA): El proponente interesado en participar en este proceso, podrá realizar de manera voluntaria una visita técnica a las citadas sedes judiciales, con el fin de conocer las condiciones d"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.3",
+      "ref": "1.3",
+      "numeral": "1.3",
+      "titulo": "VALOR DEL PRESUPUESTO OFICIAL ESTIMADO",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_subsanable",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [
+        "legal-collective-life-policy"
+      ],
+      "cite": {
+        "char_start": 20619,
+        "char_end": 22465,
+        "excerpt": "1.3. VALOR DEL PRESUPUESTO OFICIAL ESTIMADO: De conformidad con el estudio de mercado realizado, se pudo determinar que el presupuesto oficial estimado corresponde a la suma de MIL ONCE MILLONES CUATROCIENTOS CINCUENTA Y SEIS MIL OCHOCIENTO"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.4",
+      "ref": "1.4",
+      "numeral": "1.4",
+      "titulo": "VIABILIDAD PRESUPUESTAL",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 22465,
+        "char_end": 23202,
+        "excerpt": "1.4. VIABILIDAD PRESUPUESTAL: El presente proceso de contratación cuenta con la siguiente disponibilidad presupuestal con cargo al rubro: A-02-02-«id» SERVICIOS SOPORTE, distribuida así: Fecha de Subunidad CDP Nro. Valor expedición 207 1672"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.5",
+      "ref": "1.5",
+      "numeral": "1.5",
+      "titulo": "FORMA DE PAGO",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 23202,
+        "char_end": 26384,
+        "excerpt": "1.5. FORMA DE PAGO: La Dirección Seccional de Administración Judicial de Manizales cancelará el valor respectivo por intermedio del Área Financiera, por mensualidades vencidas, dentro de los treinta (30) días calendario siguientes a la pres"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.6",
+      "ref": "1.6",
+      "numeral": "1.6",
+      "titulo": "LUGAR DE EJECUCIÓN",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 26384,
+        "char_end": 26566,
+        "excerpt": "1.6. LUGAR DE EJECUCIÓN: El contrato se ejecutará en las Sedes Judiciales y Dependencias Administrativas contempladas en la tabla del numeral 1.2.1. de este Pliego de Condiciones. 1.7. PLAZO DE EJECUCIÓN: El plazo de ejecución será por el t"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.7",
+      "ref": "1.7",
+      "numeral": "1.7",
+      "titulo": "PLAZO DE EJECUCIÓN",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 26566,
+        "char_end": 26729,
+        "excerpt": "1.7. PLAZO DE EJECUCIÓN: El plazo de ejecución será por el término de tres (3) meses, contados a partir del 1° de septiembre y hasta el 30 de noviembre de 2026. 1.8. CRONOGRAMA: El cronograma general del proceso de selección es el siguiente"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.8",
+      "ref": "1.8",
+      "numeral": "1.8",
+      "titulo": "CRONOGRAMA",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 26729,
+        "char_end": 30849,
+        "excerpt": "1.8. CRONOGRAMA: El cronograma general del proceso de selección es el siguiente, conforme los horarios establecidos en la plataforma del SECOP:, así: ACTIVIDAD FECHA Fecha de publicación del pliego de condiciones definitivo Hasta Julio 27 d"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.9",
+      "ref": "1.9",
+      "numeral": "1.9",
+      "titulo": "RÉGIMEN JURÍDICO APLICABLE",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [
+        "legal-collective-life-policy"
+      ],
+      "cite": {
+        "char_start": 30849,
+        "char_end": 38477,
+        "excerpt": "1.9. RÉGIMEN JURÍDICO APLICABLE: La presente contratación se regirá, esencialmente, por lo dispuesto en la Ley 80 de 1993, Ley 1150 de 2007, el Decreto 1082 de 2015 y demás normas concordantes, además de las que a continuación se indican: •"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.10",
+      "ref": "1.10",
+      "numeral": "1.10",
+      "titulo": "CONVOCATORIA NO LIMITADA A MIPYMES",
+      "fase": "generalidad",
+      "categoria": "industria_nacional_diferencial",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 38477,
+        "char_end": 38940,
+        "excerpt": "1.10. CONVOCATORIA NO LIMITADA A MIPYMES: El presente proceso de contratación NO es susceptible a ser limitado a MiPymes, toda vez que el presupuesto oficial estimado se encuentra por fuera del rango establecido en el artículo 2.2.1.2.4.2.2"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.11",
+      "ref": "1.11",
+      "numeral": "1.11",
+      "titulo": "PUBLICACIÓN DEL ACTO QUE DISPONE LA APERTURA DEL PROCESO DE",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 38940,
+        "char_end": 40093,
+        "excerpt": "1.11. PUBLICACIÓN DEL ACTO QUE DISPONE LA APERTURA DEL PROCESO DE SELECCIÓN Y PLIEGO DE CONDICIONES DEFINITIVO: En cumplimiento de lo establecido en el Acuerdo PCSJA24-12228 del 29 de noviembre de 2024 y la Resolución No. 8909 del 09 de dic"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.12",
+      "ref": "1.12",
+      "numeral": "1.12",
+      "titulo": "INFORMACIÓN Y CONSULTA DE LOS PLIEGOS DE CONDICIONES",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 40093,
+        "char_end": 41620,
+        "excerpt": "1.12. INFORMACIÓN Y CONSULTA DE LOS PLIEGOS DE CONDICIONES: Los proponentes podrán revisar el contenido de los Pliegos de Condiciones y documentos del proceso, y elevar las observaciones e inquietudes que consideren pertinentes a través del"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.13",
+      "ref": "1.13",
+      "numeral": "1.13",
+      "titulo": "PUBLICACIÓN DE ADENDAS",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 41620,
+        "char_end": 42264,
+        "excerpt": "1.13. PUBLICACIÓN DE ADENDAS: La Dirección Seccional de Administración Judicial de Manizales podrá modificar el Pliego de Condiciones a través de Adendas que se publicarán en el SECOP II, durante el término establecido para tal fin en el Cr"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.14",
+      "ref": "1.14",
+      "numeral": "1.14",
+      "titulo": "RECEPCIÓN DE OFERTAS Y ACTA DE CIERRE",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 42264,
+        "char_end": 42562,
+        "excerpt": "1.14. RECEPCIÓN DE OFERTAS Y ACTA DE CIERRE: Las propuestas se presentarán en la fecha y hora establecidas en el cronograma del proceso, a través de la página WEB del Sistema Electrónico para la Contratación Pública – SECOP II, en la cual t"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.15",
+      "ref": "1.15",
+      "numeral": "1.15",
+      "titulo": "INDISPONIBILIDAD SECOP II",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 42562,
+        "char_end": 43550,
+        "excerpt": "1.15. INDISPONIBILIDAD SECOP II: En caso de presentarse fallas Generales o Particulares que afecten la disponibilidad de la plataforma SECOP II, los interesados deben seguir las instrucciones señaladas en el documento Protocolo de Indisponi"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.16",
+      "ref": "1.16",
+      "numeral": "1.16",
+      "titulo": "CONDICIONES Y CALIDADES EXIGIDAS",
+      "fase": "generalidad",
+      "categoria": "juridico",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 43550,
+        "char_end": 44435,
+        "excerpt": "1.16. CONDICIONES Y CALIDADES EXIGIDAS: En el presente proceso de selección podrán participar en forma independiente, en Consorcio o en Unión Temporal, las personas naturales y/o jurídicas que no se encuentren incursas en causales de inhabi"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.17",
+      "ref": "1.17",
+      "numeral": "1.17",
+      "titulo": "EN CUANTO A LA PROPUESTA",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 44435,
+        "char_end": 46806,
+        "excerpt": "1.17. EN CUANTO A LA PROPUESTA: El proponente elaborará la propuesta según lo establecido en este Pliego de Condiciones y demás documentos que hacen parte de la convocatoria pública, debiendo anexar además la documentación exigida y diligen"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.17.1",
+      "ref": "1.17.1",
+      "numeral": "1.17.1",
+      "titulo": "IDIOMA",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 46806,
+        "char_end": 47639,
+        "excerpt": "1.17.1. IDIOMA: Los documentos y las comunicaciones entregadas, enviadas o expedidas por los proponentes o por terceros para efectos del proceso de contratación, o para ser tenidos en cuenta en el mismo, deben ser otorgados en castellano. L"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.17.2",
+      "ref": "1.17.2",
+      "numeral": "1.17.2",
+      "titulo": "COSTO DE PREPARACIÓN DE LA PROPUESTA",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 47639,
+        "char_end": 47917,
+        "excerpt": "1.17.2. COSTO DE PREPARACIÓN DE LA PROPUESTA: Estarán a cargo del proponente todos los costos e impuestos asociados a la preparación y presentación de su propuesta y en ningún caso la Dirección Seccional de Administración Judicial de Maniza"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.17.3",
+      "ref": "1.17.3",
+      "numeral": "1.17.3",
+      "titulo": "ALCANCE Y VALIDEZ DE LA PROPUESTA",
+      "fase": "generalidad",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 47917,
+        "char_end": 49637,
+        "excerpt": "1.17.3. ALCANCE Y VALIDEZ DE LA PROPUESTA: Con la presentación de la propuesta, el oferente acepta la totalidad del contenido, requisitos y exigencias contemplados en el Pliego de Condiciones y sus Anexos, en los estudios previos, análisis "
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.17.4",
+      "ref": "1.17.4",
+      "numeral": "1.17.4",
+      "titulo": "PLAZO DE VIGENCIA DE LA PROPUESTA",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 49637,
+        "char_end": 50385,
+        "excerpt": "1.17.4. PLAZO DE VIGENCIA DE LA PROPUESTA: La propuesta deberá tener una validez de tres (3) meses contados a partir de la hora y fecha del cierre del término para presentar propuestas, y así deben manifestarlo los proponentes en sus respec"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.18",
+      "ref": "1.18",
+      "numeral": "1.18",
+      "titulo": "DECLARATORIA DE DESIERTA O TERMINACIÓN ANORMAL",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 50385,
+        "char_end": 51537,
+        "excerpt": "1.18. DECLARATORIA DE DESIERTA O TERMINACIÓN ANORMAL: La Dirección Seccional de Administración Judicial de Manizales podrá declarar desierto el proceso de selección en los siguientes casos: • Cuando no se reciba ninguna oferta dentro del té"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.19",
+      "ref": "1.19",
+      "numeral": "1.19",
+      "titulo": "MANIFESTACIÓN DE INTERÉS Y SORTEO DE OFERENTES",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 51537,
+        "char_end": 53173,
+        "excerpt": "1.19. MANIFESTACIÓN DE INTERÉS Y SORTEO DE OFERENTES Los interesados en participar en el presente proceso de selección contarán con un término de tres (3) días hábiles contados a partir de la fecha de apertura del mismo para manifestar su i"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#1.20",
+      "ref": "1.20",
+      "numeral": "1.20",
+      "titulo": "AUDIENCIA PÚBLICA DE SORTEO",
+      "fase": "generalidad",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_subsanable",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 53173,
+        "char_end": 55690,
+        "excerpt": "1.20. AUDIENCIA PÚBLICA DE SORTEO Si la Entidad recibe más de diez (10) manifestaciones se procederá a la realización del respectivo sorteo. El Proceso de Selección para la consolidación de posibles proponentes se realizará el día hábil sig"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#2.1",
+      "ref": "2.1",
+      "numeral": "2.1",
+      "titulo": "CAPACIDAD JURÍDICA",
+      "fase": "habilitante",
+      "categoria": "juridico",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_subsanable",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [
+        {
+          "sub_item_id": "SA-24-2026#2.1#i1",
+          "ordinal": 1,
+          "titulo": "Carta de presentación de la propuesta",
+          "cite": {
+            "char_start": 55692,
+            "excerpt": "1. CAPACIDAD JURÍDICA: 1. Carta de presentación de la propuesta: El proponente deberá allegar el Anexo 1, 2 o 3, según corresponda, debidamente diligenciado y suscrito por la persona natural, Repres"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i2",
+          "ordinal": 2,
+          "titulo": "Documento de identificación",
+          "cite": {
+            "char_start": 56165,
+            "excerpt": "l contrato respectivo. 2. Documento de identificación: Copia de la cédula de ciudadanía de la persona natural, el Representante Legal de la persona jurídica, y en el evento de Consorcio o Unión Temp"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i3",
+          "ordinal": 3,
+          "titulo": "Documento de Constitución del Consorcio o Unión Temporal",
+          "cite": {
+            "char_start": 56810,
+            "excerpt": "resentar la propuesta. 3. Documento de Constitución del Consorcio o Unión Temporal: En caso de optar por presentar propuesta mediante la figura asociativa de Consorcio o Unión Temporal, el proponent"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i4",
+          "ordinal": 4,
+          "titulo": "Existencia y Representación Legal",
+          "cite": {
+            "char_start": 57442,
+            "excerpt": "de la Ley 80 de 1993. 4. Existencia y Representación Legal: ➢ PERSONA NATURAL: La persona natural que presente la propuesta debe acreditar y aportar los siguientes documentos: - Fotocopia d"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i5",
+          "ordinal": 5,
+          "titulo": "Registro Único Tributario",
+          "cite": {
+            "char_start": 62125,
+            "excerpt": "de la casa principal. 5. Registro Único Tributario: Adjuntar el Registro Único Tributario expedido por la Dirección de Impuestos y Aduanas Nacionales -DIAN- debidamente actualizado, en el que const"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i6",
+          "ordinal": 6,
+          "titulo": "Registro Único de Proponentes",
+          "cite": {
+            "char_start": 62581,
+            "excerpt": "rcio o Unión Temporal. 6. Registro Único de Proponentes: Cada oferente debe aportar el Registro Único de Proponentes que se encuentre vigente y en firme, cuya fecha de expedición no supere los trein"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i7",
+          "ordinal": 7,
+          "titulo": "Autorización por el Órgano Societario",
+          "cite": {
+            "char_start": 63943,
+            "excerpt": "780-4-6 Hoja No. 21 7. Autorización por el Órgano Societario: Cuando el Representante Legal de la persona jurídica tenga restricciones para contraer obligaciones en nombre de la misma, deberá adj"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i8",
+          "ordinal": 8,
+          "titulo": "Garantía de Seriedad de la oferta",
+          "cite": {
+            "char_start": 65453,
+            "excerpt": "erta no es subsanable. 8. Garantía de Seriedad de la oferta: El proponente tendrá que constituir a favor de la Nación – Consejo Superior de la Judicatura Dirección Seccional de Manizales - Caldas, c"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i9",
+          "ordinal": 9,
+          "titulo": "Cumplimiento de las Obligaciones del Sistema de Seguridad Social Integral y",
+          "cite": {
+            "char_start": 67356,
+            "excerpt": "780-4-6 Hoja No. 22 9. Cumplimiento de las Obligaciones del Sistema de Seguridad Social Integral y Aportes Parafiscales: De conformidad con lo establecido en el artículo 50 de la Ley 789 de 20"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i10",
+          "ordinal": 10,
+          "titulo": "Licencia de Funcionamiento para la prestación del servicio de vigilancia y",
+          "cite": {
+            "char_start": 68697,
+            "excerpt": "proceso de selección. 10. Licencia de Funcionamiento para la prestación del servicio de vigilancia y seguridad privada, otorgada por la Superintendencia de Vigilancia y Seguridad Privada: E"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i11",
+          "ordinal": 11,
+          "titulo": "Sede Principal, Sucursal o Agencia en Manizales",
+          "cite": {
+            "char_start": 72323,
+            "excerpt": "jecución del contrato. 11. Sede Principal, Sucursal o Agencia en Manizales: El proponente debe acreditar que cuenta con infraestructura física en la ciudad de Manizales-Caldas, bien sea como domicil"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i12",
+          "ordinal": 12,
+          "titulo": "Licencia de Comunicaciones y Medios Tecnológicos",
+          "cite": {
+            "char_start": 73328,
+            "excerpt": "al menos uno de ellos. 12. Licencia de Comunicaciones y Medios Tecnológicos: El proponente adjuntará la Licencia de Comunicaciones expedida por el Ministerio de Tecnologías de Ia información y"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i13",
+          "ordinal": 13,
+          "titulo": "Certificado respecto de multas y sanciones expedida por la Superintendencia",
+          "cite": {
+            "char_start": 76166,
+            "excerpt": "icado en este numeral. 13. Certificado respecto de multas y sanciones expedida por la Superintendencia de Vigilancia y Seguridad Privada: El proponente deberá adjuntar Certificación expedida por"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i14",
+          "ordinal": 14,
+          "titulo": "Certificación Paz y salvo por contribuciones y multas",
+          "cite": {
+            "char_start": 76789,
+            "excerpt": "tificación mencionada. 14. Certificación Paz y salvo por contribuciones y multas: El proponente deberá aportar Certificación de paz y salvo por concepto de contribuciones y multas, expedida por la S"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i15",
+          "ordinal": 15,
+          "titulo": "Certificado de vinculación a la red de apoyo de la Policía",
+          "cite": {
+            "char_start": 77674,
+            "excerpt": "r dicha certificación. 15. Certificado de vinculación a la red de apoyo de la Policía: El proponente deberá adjuntar Certificación debidamente suscrita por el Representante Legal, en la que manifies"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i16",
+          "ordinal": 16,
+          "titulo": "Certificado armas de fuego",
+          "cite": {
+            "char_start": 78239,
+            "excerpt": "sentar este documento. 16. Certificado armas de fuego: El proponente adjuntará Certificación suscrita por el Representante Legal, mediante la cual asegure contar con todos los permisos y salvoconduc"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i17",
+          "ordinal": 17,
+          "titulo": "Póliza Permanente de Responsabilidad Civil Extracontractual",
+          "cite": {
+            "char_start": 79393,
+            "excerpt": "rte de armas descrito. 17. Póliza Permanente de Responsabilidad Civil Extracontractual (Artículo 11 del Decreto Ley 356 de 1994): El proponente y cada uno de sus integrantes, tratándose de Conso"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i18",
+          "ordinal": 18,
+          "titulo": "Póliza de Seguro de Vida Colectivo",
+          "cite": {
+            "char_start": 80706,
+            "excerpt": "a CARTA compromisoria. 18. Póliza de Seguro de Vida Colectivo: El proponente aportará la Póliza de Seguro de Vida Colectivo vigente a la fecha de cierre de la respectiva convocatoria pública, en la"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i19",
+          "ordinal": 19,
+          "titulo": "Resolución de Autorización para el Uso de Uniformes, Colores y Distintivos",
+          "cite": {
+            "char_start": 82515,
+            "excerpt": "780-4-6 Hoja No. 26 19. Resolución de Autorización para el Uso de Uniformes, Colores y Distintivos: Adjuntar Copia de la Resolución mediante la cual la Superintendencia de Vigilancia y Segurida"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i20",
+          "ordinal": 20,
+          "titulo": "Carta de Compromiso de Personal",
+          "cite": {
+            "char_start": 83252,
+            "excerpt": "a y Seguridad Privada. 20. Carta de Compromiso de Personal: Aportar la Carta de Compromiso debidamente suscrita por el Representante Legal o quien corresponda, en la que se compromete a suministra"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i21",
+          "ordinal": 21,
+          "titulo": "Programa del Sistema de Gestión de la Seguridad y Salud en el Trabajo",
+          "cite": {
+            "char_start": 83678,
+            "excerpt": "jecución del contrato. 21. Programa del Sistema de Gestión de la Seguridad y Salud en el Trabajo (SG- SST): El proponente adjuntará debidamente diligenciado y firmado el Anexo No. 6 CUMPLIMI"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i22",
+          "ordinal": 22,
+          "titulo": "Profesional En Salud Ocupacional",
+          "cite": {
+            "char_start": 85257,
+            "excerpt": "e está registrado. 22. Profesional En Salud Ocupacional: El oferente deberá contar con un profesional con Licencia en Salud Ocupacional, bien sea que pertenezca a la planta de personal del pro"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i23",
+          "ordinal": 23,
+          "titulo": "Certificación de Autorización del Programa de Capacitación",
+          "cite": {
+            "char_start": 86162,
+            "excerpt": "780-4-6 Hoja No. 27 23. Certificación de Autorización del Programa de Capacitación: El proponente remitirá la respectiva Certificación expedida por la Superintendencia de Vigilancia y Seguridad"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i24",
+          "ordinal": 24,
+          "titulo": "Licencia de actividad conexa de asesoría, consultoría e investigación",
+          "cite": {
+            "char_start": 87773,
+            "excerpt": "judicatario del mismo. 24. Licencia de actividad conexa de asesoría, consultoría e investigación: El proponente deberá aportar la Resolución vigente mediante la cual la Superintendencia de Vigilan"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i25",
+          "ordinal": 25,
+          "titulo": "Compromiso de Cumplimiento de Requisitos Ambientales",
+          "cite": {
+            "char_start": 88649,
+            "excerpt": "ir con este requisito. 25. Compromiso de Cumplimiento de Requisitos Ambientales: El proponente adjuntará debidamente diligenciado el Anexo No. 7 CUMPLIMIENTO DE REQUISITOS AMBIENTALES, por medio d"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i26",
+          "ordinal": 26,
+          "titulo": "Certificado de Cuenta Bancaria",
+          "cite": {
+            "char_start": 89350,
+            "excerpt": "plimiento contractual. 26. Certificado de Cuenta Bancaria: El proponente deberá presentar el Certificado de Cuenta Bancaria, cuya expedición no supere los treinta (30) días anteriores a la fecha d"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i27",
+          "ordinal": 27,
+          "titulo": "Verificación de ausencia de antecedentes",
+          "cite": {
+            "char_start": 90364,
+            "excerpt": "certificado bancario. 27. Verificación de ausencia de antecedentes: El proponente adjuntará la verificación de ausencia de antecedentes expedidos por la Contraloría General de la República, Proc"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.1#i28",
+          "ordinal": 28,
+          "titulo": "Verificación ausencia de inscripción en el Registro de Deudores Alimentarios",
+          "cite": {
+            "char_start": 90975,
+            "excerpt": "proceso de selección. 28. Verificación ausencia de inscripción en el Registro de Deudores Alimentarios Morosos REDAM: El proponente (persona natural o Representante Legal de la persona ju"
+          }
+        }
+      ],
+      "governed_requirement_ids": [
+        "legal-rce-policy",
+        "legal-collective-life-policy",
+        "technical-video-surveillance-scope"
+      ],
+      "cite": {
+        "char_start": 55690,
+        "char_end": 91502,
+        "excerpt": "2.1. CAPACIDAD JURÍDICA: 1. Carta de presentación de la propuesta: El proponente deberá allegar el Anexo 1, 2 o 3, según corresponda, debidamente diligenciado y suscrito por la persona natural, Representante Legal o por la persona designada"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#2.2",
+      "ref": "2.2",
+      "numeral": "2.2",
+      "titulo": "CAPACIDAD FINANCIERA",
+      "fase": "habilitante",
+      "categoria": "financiero",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": true,
+        "senales": [
+          {
+            "etiqueta": "capital_de_trabajo",
+            "operador": null,
+            "valores": [
+              "50%"
+            ]
+          },
+          {
+            "etiqueta": "liquidez",
+            "operador": "mayor o igual",
+            "valores": [
+              "1.5"
+            ]
+          },
+          {
+            "etiqueta": "endeudamiento",
+            "operador": "menor o igual",
+            "valores": [
+              "100",
+              "60%"
+            ]
+          },
+          {
+            "etiqueta": "cobertura_de_intereses",
+            "operador": "mayor o igual",
+            "valores": [
+              "2"
+            ]
+          }
+        ],
+        "confianza": "medio"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [
+        "financial-working-capital"
+      ],
+      "cite": {
+        "char_start": 91502,
+        "char_end": 93444,
+        "excerpt": "2.2. CAPACIDAD FINANCIERA: La evaluación de los requisitos financieros se analizará con base en el Registro Único de Proponentes, de conformidad con lo dispuesto en el Decreto 1082 de 2015. Los oferentes deberán cumplir con los siguientes I"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#2.3",
+      "ref": "2.3",
+      "numeral": "2.3",
+      "titulo": "CAPACIDAD ORGANIZACIONAL",
+      "fase": "habilitante",
+      "categoria": "organizacional",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": true,
+        "senales": [
+          {
+            "etiqueta": "rentabilidad_patrimonio",
+            "operador": "mayor o igual",
+            "valores": [
+              "5%"
+            ]
+          },
+          {
+            "etiqueta": "rentabilidad_activo",
+            "operador": "mayor o igual",
+            "valores": [
+              "5%",
+              "5%"
+            ]
+          }
+        ],
+        "confianza": "medio"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 93444,
+        "char_end": 94272,
+        "excerpt": "2.3. CAPACIDAD ORGANIZACIONAL: De conformidad con el numeral 4 del artículo 2.2.1.1.1.5.3 del Decreto 1082 de 2015, se medirá el rendimiento de las inversiones y la eficiencia en el uso de los activos, así: ÍNDICE FÓRMULA NIVEL Rentabilidad"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#2.4",
+      "ref": "2.4",
+      "numeral": "2.4",
+      "titulo": "EXPERIENCIA",
+      "fase": "habilitante",
+      "categoria": "experiencia",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": true,
+        "senales": [
+          {
+            "etiqueta": "smmlv",
+            "operador": null,
+            "valores": [
+              "1000 SMLMV"
+            ]
+          }
+        ],
+        "confianza": "medio"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 94272,
+        "char_end": 97213,
+        "excerpt": "2.4. EXPERIENCIA: Los oferentes presentarán el Registro Único de Proponentes (RUP) de acuerdo con el Clasificador de Bienes y Servicios de la UNSPSC, dónde se verifique una experiencia mínima requerida hasta el tercer nivel, conforme lo est"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#2.4.1",
+      "ref": "2.4.1",
+      "numeral": "2.4.1",
+      "titulo": "CRITERIOS DIFERENCIALES PARA LA EXPERIENCIA",
+      "fase": "habilitante",
+      "categoria": "experiencia",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": true,
+        "senales": [
+          {
+            "etiqueta": "smmlv",
+            "operador": null,
+            "valores": [
+              "1.000 SMLMV"
+            ]
+          }
+        ],
+        "confianza": "medio"
+      },
+      "sub_items": [
+        {
+          "sub_item_id": "SA-24-2026#2.4.1#i1",
+          "ordinal": 1,
+          "titulo": "Cuando más del cincuenta por ciento",
+          "cite": {
+            "char_start": 98234,
+            "excerpt": "cumplan con alguna de las siguientes condiciones: 1. Cuando más del cincuenta por ciento (50%) de las acciones, partes de interés o cuotas de participación de la persona jurídica pertenezca"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.4.1#i2",
+          "ordinal": 2,
+          "titulo": "Cuando por lo menos el cincuenta por ciento",
+          "cite": {
+            "char_start": 98872,
+            "excerpt": "l que las mujeres han mantenido su participación. 2. Cuando por lo menos el cincuenta por ciento (50%) de los empleos del nivel directivo de la persona jurídica sean ejercidos por mujeres y"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.4.1#i3",
+          "ordinal": 3,
+          "titulo": "Cuando la persona natural sea una mujer y haya ejercido actividades comerciales a través",
+          "cite": {
+            "char_start": 100553,
+            "excerpt": "stren los pagos realizados por el empleador. 3. Cuando la persona natural sea una mujer y haya ejercido actividades comerciales a través de un establecimiento de comercio durante al me"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.4.1#i4",
+          "ordinal": 4,
+          "titulo": "Para las asociaciones y cooperativas, cuando más del cincuenta por ciento",
+          "cite": {
+            "char_start": 101151,
+            "excerpt": "e, así como la copia del registro mercantil. 4. Para las asociaciones y cooperativas, cuando más del cincuenta por ciento (50%) de los asociados sean mujeres y la participación haya co"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#2.4.1#i5",
+          "ordinal": 5,
+          "titulo": "Valor de la garantía de seriedad de la oferta.",
+          "cite": {
+            "char_start": 102771,
+            "excerpt": "iera. 4. Índices de capacidad organizacional. 5. Valor de la garantía de seriedad de la oferta. Los requisitos mencionados deberán fijarse respetando las condiciones habilitantes"
+          }
+        }
+      ],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 97213,
+        "char_end": 108973,
+        "excerpt": "2.4.1. CRITERIOS DIFERENCIALES PARA LA EXPERIENCIA: A. EMPRENDIMIENTOS Y EMPRESAS DE MUJERES: De acuerdo con el artículo 2.2.1.2.4.2.15 del Decreto 1082 de 2015, adicionado por el artículo 3 del Decreto 1860 de 2021, en los procesos de lici"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#2.5",
+      "ref": "2.5",
+      "numeral": "2.5",
+      "titulo": "REGLAS DE SUBSANABILIDAD",
+      "fase": "habilitante",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 108973,
+        "char_end": 109976,
+        "excerpt": "2.5. REGLAS DE SUBSANABILIDAD: No se rechazará una propuesta por la ausencia de requisitos o la falta de documentos que verifiquen las condiciones del proponente o soporten el contenido de la oferta, y que no constituyan los factores de esc"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#2.6",
+      "ref": "2.6",
+      "numeral": "2.6",
+      "titulo": "CAUSALES DE RECHAZO DE LAS PROPUESTAS",
+      "fase": "habilitante",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [
+        "legal-collective-life-policy"
+      ],
+      "cite": {
+        "char_start": 109976,
+        "char_end": 117171,
+        "excerpt": "2.6. CAUSALES DE RECHAZO DE LAS PROPUESTAS: La Dirección Seccional de Administración Judicial de Manizales rechazará las propuestas, en los siguientes casos: a. Cuando el proponente no adjunte a su propuesta la Garantía de Seriedad de la of"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#3.1",
+      "ref": "3.1",
+      "numeral": "3.1",
+      "titulo": "FACTOR CALIDAD:",
+      "fase": "puntuable",
+      "categoria": "factor_evaluacion",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 117171,
+        "char_end": 119243,
+        "excerpt": "3.1. FACTOR CALIDAD: (10 PUNTOS) Los proponentes deben presentar las condiciones ofrecidas en consonancia con las características técnicas definidas en las Actividades a Desarrollar, Alcance del objeto contractual y prestación del servicio,"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#3.2",
+      "ref": "3.2",
+      "numeral": "3.2",
+      "titulo": "APOYO A LA INDUSTRIA NACIONAL:",
+      "fase": "puntuable",
+      "categoria": "industria_nacional_diferencial",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 119243,
+        "char_end": 120212,
+        "excerpt": "3.2. APOYO A LA INDUSTRIA NACIONAL: (10 PUNTOS) De acuerdo con lo preceptuado e n e l a r t í c u l o 2 d e la ley 816 de 2003, se asignará un puntaje comprendido entre el diez por ciento (10%) y el veinte por ciento (20%), para estimular l"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#3.3",
+      "ref": "3.3",
+      "numeral": "3.3",
+      "titulo": "PROPONENTES EN CONDICIÓN DE DISCAPACIDAD:",
+      "fase": "puntuable",
+      "categoria": "industria_nacional_diferencial",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 120212,
+        "char_end": 121924,
+        "excerpt": "3.3. PROPONENTES EN CONDICIÓN DE DISCAPACIDAD: (1 PUNTO) La entidad otorgará UN (01) punto al oferente que acredite el cumplimiento de alguna de las condiciones establecidas en el artículo 2.2.1.2.4.2.6. del Decreto 1082 de 2015, modificado"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#3.4",
+      "ref": "3.4",
+      "numeral": "3.4",
+      "titulo": "CRITERIO DIFERENCIAL EMPRENDIMIENTO Y EMPRESA DE MUJERES:",
+      "fase": "puntuable",
+      "categoria": "industria_nacional_diferencial",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 121924,
+        "char_end": 123027,
+        "excerpt": "3.4. CRITERIO DIFERENCIAL EMPRENDIMIENTO Y EMPRESA DE MUJERES: (0.25 PUNTOS): La Dirección Seccional asignará un puntaje de cero puntos veinticinco (0,25) puntos al proponente que acredite la calidad de emprendimiento y empresa de mujeres c"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#3.5",
+      "ref": "3.5",
+      "numeral": "3.5",
+      "titulo": "CRITERIO DIFERENCIAL MIPYMES:",
+      "fase": "puntuable",
+      "categoria": "industria_nacional_diferencial",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 123027,
+        "char_end": 123852,
+        "excerpt": "3.5. CRITERIO DIFERENCIAL MIPYMES: (0.25 PUNTOS): La Dirección Seccional asignará un puntaje de cero puntos veinticinco (0,25) puntos al proponente que acredite la calidad de MIPYME domiciliada en Colombia de conformidad con el tamaño empre"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#3.6",
+      "ref": "3.6",
+      "numeral": "3.6",
+      "titulo": "FACTOR ECONÓMICO:",
+      "fase": "puntuable",
+      "categoria": "oferta_economica",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 123852,
+        "char_end": 129665,
+        "excerpt": "3.6. FACTOR ECONÓMICO: (78.5 PUNTOS) La oferta económica debe ser presentada en el formato que diseñó la entidad para facilitar su comparación (Diligenciar el Anexo No. 9 OFERTA ECONÓMICA DEFINITIVA) y deberá incluir los impuestos de ley y "
+      }
+    },
+    {
+      "item_id": "SA-24-2026#4.1",
+      "ref": "4.1",
+      "numeral": "4.1",
+      "titulo": "PLAZO DE EVALUACIÓN",
+      "fase": "evaluacion",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 129665,
+        "char_end": 130406,
+        "excerpt": "4.1. PLAZO DE EVALUACIÓN: El plazo para la evaluación de las propuestas será el establecido en el Cronograma del presente proceso de selección, y una vez culminado, la Dirección Seccional elaborará un Informe del que correrá el respectivo t"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#4.2",
+      "ref": "4.2",
+      "numeral": "4.2",
+      "titulo": "TÉRMINO PARA RESPONDER LAS OBSERVACIONES A LA EVALUACIÓN",
+      "fase": "evaluacion",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 130406,
+        "char_end": 130725,
+        "excerpt": "4.2. TÉRMINO PARA RESPONDER LAS OBSERVACIONES A LA EVALUACIÓN: La Dirección Seccional analizará el contenido de las observaciones elevadas por los interesados, procediendo a consolidar un Informe de Evaluación Definitivo, en el que también "
+      }
+    },
+    {
+      "item_id": "SA-24-2026#4.3",
+      "ref": "4.3",
+      "numeral": "4.3",
+      "titulo": "CRITERIOS PARA DIRIMIR EMPATES",
+      "fase": "evaluacion",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 130725,
+        "char_end": 130946,
+        "excerpt": "4.3. CRITERIOS PARA DIRIMIR EMPATES: En caso de empate, la Entidad Estatal aplicará los criterios de que trata el artículo 2.2.1.2.4.2.17 del Decreto 1082 de 2015, adicionado por el artículo 3 del Decreto 1860 de 2021. 4.4. ADJUDICACIÓN DEL"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#4.4",
+      "ref": "4.4",
+      "numeral": "4.4",
+      "titulo": "ADJUDICACIÓN DEL PROCESO DE SELECCIÓN",
+      "fase": "evaluacion",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 130946,
+        "char_end": 132659,
+        "excerpt": "4.4. ADJUDICACIÓN DEL PROCESO DE SELECCIÓN: La adjudicación se realizará a más tardar el día hábil siguiente a la publicación del Informe de Evaluación Definitiva. Este término podrá ser prorrogado por la Dirección Seccional de Administraci"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#4.5",
+      "ref": "4.5",
+      "numeral": "4.5",
+      "titulo": "PERFECCIONAMIENTO DEL CONTRATO",
+      "fase": "evaluacion",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 132659,
+        "char_end": 133862,
+        "excerpt": "4.5. PERFECCIONAMIENTO DEL CONTRATO: El adjudicatario debe seleccionar la opción APROBAR CONTRATO en SECOP II, y el USUARIO debe corresponder a quien ostente competencia para firmarlo (representante legal, apoderado o facultado). Si la Dire"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#5.1",
+      "ref": "5.1",
+      "numeral": "5.1",
+      "titulo": "UBICACIÓN DE LOS SERVICIOS A CONTRATAR",
+      "fase": "ejecucion_tecnica",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 133862,
+        "char_end": 134178,
+        "excerpt": "5.1. UBICACIÓN DE LOS SERVICIOS A CONTRATAR: La prestación del servicio de vigilancia y seguridad privada armada para los Despachos Judiciales y Sedes Administrativas del Distrito Judicial de Manizales, se ejecutará de conformidad con el cu"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#5.2",
+      "ref": "5.2",
+      "numeral": "5.2",
+      "titulo": "OBLIGACIONES DEL CONTRATISTA PARA LA PRESTACIÓN DEL SERVICIO",
+      "fase": "ejecucion_tecnica",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [
+        {
+          "sub_item_id": "SA-24-2026#5.2#i1",
+          "ordinal": 1,
+          "titulo": "Horario del Servicio: El contratista deberá prestar el servicio de vigilancia en los",
+          "cite": {
+            "char_start": 134180,
+            "excerpt": "2. OBLIGACIONES DEL CONTRATISTA PARA LA PRESTACIÓN DEL SERVICIO: 1. Horario del Servicio: El contratista deberá prestar el servicio de vigilancia en los turnos, días y condiciones descritas en e"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.2#i2",
+          "ordinal": 2,
+          "titulo": "El proponente favorecido recibirá el relevo del servicio de vigilancia del nuevo",
+          "cite": {
+            "char_start": 134766,
+            "excerpt": "esupuestal existente y conservando los precios de la cotización. 2. El proponente favorecido recibirá el relevo del servicio de vigilancia del nuevo contrato, a partir de las 00:00:01 horas del"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.2#i3",
+          "ordinal": 3,
+          "titulo": "Una vez adjudicado el contrato, esta Dirección Seccional se reserva el derecho de",
+          "cite": {
+            "char_start": 134972,
+            "excerpt": "l inicio del respectivo contrato (1° de septiembre de 2026). 3. Una vez adjudicado el contrato, esta Dirección Seccional se reserva el derecho de solicitar reasignación o cambio de personal"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.2#i4",
+          "ordinal": 4,
+          "titulo": "Se verificará la ausencia de antecedentes judiciales, penales y disciplinarios del",
+          "cite": {
+            "char_start": 135182,
+            "excerpt": "estime conveniente, mediante Oficio dirigido al contratista. 4. Se verificará la ausencia de antecedentes judiciales, penales y disciplinarios del personal que prestará el servicio de vigila"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.2#i5",
+          "ordinal": 5,
+          "titulo": "El servicio de vigilancia se prestará con guardas de seguridad que cumplan con la",
+          "cite": {
+            "char_start": 135430,
+            "excerpt": "cual el contratista deberá remitir la respectiva certificación. 5. El servicio de vigilancia se prestará con guardas de seguridad que cumplan con la mayoría de edad. 6. El personal que presta"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.2#i6",
+          "ordinal": 6,
+          "titulo": "El personal que prestará el servicio deberá mantener estricta reserva y",
+          "cite": {
+            "char_start": 135538,
+            "excerpt": "con guardas de seguridad que cumplan con la mayoría de edad. 6. El personal que prestará el servicio deberá mantener estricta reserva y confidencialidad sobre la información que conozca con"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.2#i7",
+          "ordinal": 7,
+          "titulo": "El contratista deberá destinar personal diferente para cada uno de los turnos",
+          "cite": {
+            "char_start": 135717,
+            "excerpt": "ción que conozca con ocasión al desarrollo de sus funciones. 7. El contratista deberá destinar personal diferente para cada uno de los turnos programados, de tal forma que quienes presten el"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.2#i8",
+          "ordinal": 8,
+          "titulo": "El personal que vincule el contratista para la prestación del servicio de vigilancia,",
+          "cite": {
+            "char_start": 136191,
+            "excerpt": ", y cuando las necesidades y circunstancias así lo ameriten. 8. El personal que vincule el contratista para la prestación del servicio de vigilancia, deberá estar afiliado al Sistema General"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.2#i9",
+          "ordinal": 9,
+          "titulo": "El personal que prestará el servicio de vigilancia será capacitado y uniformado por el",
+          "cite": {
+            "char_start": 136436,
+            "excerpt": "ensión, Riesgos Laborales, así como a las Cajas de Compensación. 9. El personal que prestará el servicio de vigilancia será capacitado y uniformado por el contratista. 10. Los cambios del pers"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.2#i10",
+          "ordinal": 10,
+          "titulo": "Los cambios del personal que se contrate de acuerdo con el objeto del presente",
+          "cite": {
+            "char_start": 136545,
+            "excerpt": "vigilancia será capacitado y uniformado por el contratista. 10. Los cambios del personal que se contrate de acuerdo con el objeto del presente proceso licitatorio se harán de común acuerdo"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.2#i11",
+          "ordinal": 11,
+          "titulo": "El CONTRATISTA pagará los salarios dentro de los cinco primeros días",
+          "cite": {
+            "char_start": 136931,
+            "excerpt": "SC5780-4-6 Hoja No. 42 11. El CONTRATISTA pagará los salarios dentro de los cinco primeros días calendario del mes subsiguiente al del servicio prestad"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.2#i12",
+          "ordinal": 12,
+          "titulo": "Garantizar la entrega de la dotación mínima con que debe contar el personal que",
+          "cite": {
+            "char_start": 137202,
+            "excerpt": "tiva la póliza de pago de salarios y prestaciones sociales. 12. Garantizar la entrega de la dotación mínima con que debe contar el personal que prestará el servicio, de acuerdo con el artí"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.2#i13",
+          "ordinal": 13,
+          "titulo": "En caso de sustracción de bienes de los inmuebles citados en el objeto de la",
+          "cite": {
+            "char_start": 137739,
+            "excerpt": "respectiva a cada guarda, adicionando una camisa y un pantalón. 13. En caso de sustracción de bienes de los inmuebles citados en el objeto de la presente contratación, que no obedezcan a situa"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.2#i14",
+          "ordinal": 14,
+          "titulo": "Cuando las situaciones así lo ameriten, el contratista deberá presentar planes de",
+          "cite": {
+            "char_start": 138185,
+            "excerpt": "ón, previo agotamiento de la investigación correspondiente. 14. Cuando las situaciones así lo ameriten, el contratista deberá presentar planes de contingencia en el plazo que le sea indica"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.2#i15",
+          "ordinal": 15,
+          "titulo": "El personal contratado prestará única y exclusivamente sus servicios a la entidad",
+          "cite": {
+            "char_start": 138381,
+            "excerpt": "dicado por la entidad a través del supervisor del contrato. 15. El personal contratado prestará única y exclusivamente sus servicios a la entidad contratante: en ningún caso los guardas se"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.2#i16",
+          "ordinal": 16,
+          "titulo": "El contratista adjuntará los salvoconductos y permisos correspondientes a las armas",
+          "cite": {
+            "char_start": 138566,
+            "excerpt": "los guardas serán rotados con personal de otras entidades. 16. El contratista adjuntará los salvoconductos y permisos correspondientes a las armas de fuego destinadas a la prestación del"
+          }
+        }
+      ],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 134178,
+        "char_end": 139361,
+        "excerpt": "5.2. OBLIGACIONES DEL CONTRATISTA PARA LA PRESTACIÓN DEL SERVICIO: 1. Horario del Servicio: El contratista deberá prestar el servicio de vigilancia en los turnos, días y condiciones descritas en el cuadro relacionado en el ALCANCE DEL OBJET"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#5.3",
+      "ref": "5.3",
+      "numeral": "5.3",
+      "titulo": "JEFE o COORDINADOR DE SEGURIDAD",
+      "fase": "ejecucion_tecnica",
+      "categoria": "personal",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 139361,
+        "char_end": 139431,
+        "excerpt": "5.3. JEFE o COORDINADOR DE SEGURIDAD (NO EXCLUSIVO PARA LA ENTIDAD): 5.3.1. Funciones: 1. Ejercer supervisión a los puntos de vigilancia. 2. Relevar en forma inmediata el personal que a juicio de la entidad o del contratista, no cumpla efic"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#5.3.1",
+      "ref": "5.3.1",
+      "numeral": "5.3.1",
+      "titulo": "Funciones",
+      "fase": "ejecucion_tecnica",
+      "categoria": "factor_evaluacion",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [
+        {
+          "sub_item_id": "SA-24-2026#5.3.1#i1",
+          "ordinal": 1,
+          "titulo": "Ejercer supervisión a los puntos de vigilancia.",
+          "cite": {
+            "char_start": 139433,
+            "excerpt": "3.1. Funciones: 1. Ejercer supervisión a los puntos de vigilancia. 2. Relevar en forma inmediata el personal que a juicio de la entidad o del contratista, no cumpla eficientemente alg"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.3.1#i2",
+          "ordinal": 2,
+          "titulo": "Relevar en forma inmediata el personal que a juicio de la entidad o del contratista,",
+          "cite": {
+            "char_start": 139489,
+            "excerpt": "de vigilancia. 2. Relevar en forma inmediata el personal que a juicio de la entidad o del contratista, no cumpla eficientemente alguna de las obligaciones pactadas o de las órdenes"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.3.1#i3",
+          "ordinal": 3,
+          "titulo": "Aceptar y cumplir las instrucciones tanto verbales como escritas que le sean",
+          "cite": {
+            "char_start": 139712,
+            "excerpt": "por la entidad. 3. Aceptar y cumplir las instrucciones tanto verbales como escritas que le sean impartidas por la entidad a través del supervisor del contrato. 4. Reportar oportunamen"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.3.1#i4",
+          "ordinal": 4,
+          "titulo": "Reportar oportunamente y en forma escrita, cualquier novedad presentada en los",
+          "cite": {
+            "char_start": 139868,
+            "excerpt": "r del contrato. 4. Reportar oportunamente y en forma escrita, cualquier novedad presentada en los puestos de vigilancia contratados por esta entidad. Calle 27 No 17 - 19 Tel (076) 8848"
+          }
+        }
+      ],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 139431,
+        "char_end": 140223,
+        "excerpt": "5.3.1. Funciones: 1. Ejercer supervisión a los puntos de vigilancia. 2. Relevar en forma inmediata el personal que a juicio de la entidad o del contratista, no cumpla eficientemente alguna de las obligaciones pactadas o de las órdenes perió"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#5.3.2",
+      "ref": "5.3.2",
+      "numeral": "5.3.2",
+      "titulo": "Requisitos Mínimos",
+      "fase": "ejecucion_tecnica",
+      "categoria": "licencias_sector",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [
+        {
+          "sub_item_id": "SA-24-2026#5.3.2#i1",
+          "ordinal": 1,
+          "titulo": "Ser Profesional, oficial o suboficial de las Fuerzas Militares.",
+          "cite": {
+            "char_start": 140352,
+            "excerpt": "s siguientes requisitos: 1. Ser Profesional, oficial o suboficial de las Fuerzas Militares. 2. Acreditar la calidad de Consultor, Asesor y/o Investigador en Seguridad Privada, e"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.3.2#i2",
+          "ordinal": 2,
+          "titulo": "Acreditar la calidad de Consultor, Asesor y/o Investigador en Seguridad Privada,",
+          "cite": {
+            "char_start": 140426,
+            "excerpt": "e las Fuerzas Militares. 2. Acreditar la calidad de Consultor, Asesor y/o Investigador en Seguridad Privada, expedida por la Superintendencia de Vigilancia y Seguridad Privada, de"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.3.2#i3",
+          "ordinal": 3,
+          "titulo": "Ausencia de antecedentes penales y disciplinarios, lo cual se debe acreditar con",
+          "cite": {
+            "char_start": 140647,
+            "excerpt": "el Decreto 2885 de 2009. 3. Ausencia de antecedentes penales y disciplinarios, lo cual se debe acreditar con los certificados vigentes expedidos por las autoridades competentes. 4."
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.3.2#i4",
+          "ordinal": 4,
+          "titulo": "Experiencia mínima de un",
+          "cite": {
+            "char_start": 140816,
+            "excerpt": "autoridades competentes. 4. Experiencia mínima de un (1) año en el desempeño de funciones similares a las del cargo a desempeñar. 5.4. PERSONAL QUE PRESTARÁ EL SERVICIO DE VIGILANCIA:"
+          }
+        }
+      ],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 140223,
+        "char_end": 140963,
+        "excerpt": "5.3.2. Requisitos Mínimos: El Jefe o Coordinador de Seguridad presentado por el proponente en su propuesta deberá cumplir con los siguientes requisitos: 1. Ser Profesional, oficial o suboficial de las Fuerzas Militares. 2. Acreditar la cali"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#5.4",
+      "ref": "5.4",
+      "numeral": "5.4",
+      "titulo": "PERSONAL QUE PRESTARÁ EL SERVICIO DE VIGILANCIA",
+      "fase": "ejecucion_tecnica",
+      "categoria": "personal",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 140963,
+        "char_end": 141018,
+        "excerpt": "5.4. PERSONAL QUE PRESTARÁ EL SERVICIO DE VIGILANCIA: 5.4.1. Requisitos Mínimos: El personal de vigilantes que el CONTRATISTA asigne para la prestación del servicio a esta Dirección Seccional, deberá tener como mínimo los siguientes requisi"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#5.4.1",
+      "ref": "5.4.1",
+      "numeral": "5.4.1",
+      "titulo": "Requisitos Mínimos",
+      "fase": "ejecucion_tecnica",
+      "categoria": "personal",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [
+        {
+          "sub_item_id": "SA-24-2026#5.4.1#i1",
+          "ordinal": 1,
+          "titulo": "Presentar la Libreta Militar.",
+          "cite": {
+            "char_start": 141185,
+            "excerpt": "s siguientes requisitos: 1. Presentar la Libreta Militar. 2. Verificación de ausencia de antecedentes disciplinarios, fiscales y penales. 3. Acreditar mínimo 120 horas correspondientes"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.1#i2",
+          "ordinal": 2,
+          "titulo": "Verificación de ausencia de antecedentes disciplinarios, fiscales y penales.",
+          "cite": {
+            "char_start": 141223,
+            "excerpt": "ntar la Libreta Militar. 2. Verificación de ausencia de antecedentes disciplinarios, fiscales y penales. 3. Acreditar mínimo 120 horas correspondientes al curso de fundamentación, y m"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.1#i3",
+          "ordinal": 3,
+          "titulo": "Acreditar mínimo 120 horas correspondientes al curso de fundamentación, y",
+          "cite": {
+            "char_start": 141308,
+            "excerpt": "ios, fiscales y penales. 3. Acreditar mínimo 120 horas correspondientes al curso de fundamentación, y mínimo 30 horas correspondientes al curso de reentrenamiento, según aplique, co"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.1#i4",
+          "ordinal": 4,
+          "titulo": "Los Guardas que prestarán el servicio en Circuitos Cerrados de Televisión,",
+          "cite": {
+            "char_start": 141559,
+            "excerpt": "el Decreto 1565 de 2022. 4. Los Guardas que prestarán el servicio en Circuitos Cerrados de Televisión, deberán acreditar que cumplieron el curso de fundamentación común y el módulo"
+          }
+        }
+      ],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 141018,
+        "char_end": 142334,
+        "excerpt": "5.4.1. Requisitos Mínimos: El personal de vigilantes que el CONTRATISTA asigne para la prestación del servicio a esta Dirección Seccional, deberá tener como mínimo los siguientes requisitos: 1. Presentar la Libreta Militar. 2. Verificación "
+      }
+    },
+    {
+      "item_id": "SA-24-2026#5.4.2",
+      "ref": "5.4.2",
+      "numeral": "5.4.2",
+      "titulo": "Funciones Mínimas",
+      "fase": "ejecucion_tecnica",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i1",
+          "ordinal": 1,
+          "titulo": "Controlar la entrada y salida de funcionarios y visitantes utilizando los medios de",
+          "cite": {
+            "char_start": 142336,
+            "excerpt": "4.2. Funciones Mínimas: 1. Controlar la entrada y salida de funcionarios y visitantes utilizando los medios de seguridad que tenga a su alcance, orientándolos para su correcto"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i2",
+          "ordinal": 2,
+          "titulo": "Controlar, registrar y responder por la entrada y salida de bienes, efectuando las",
+          "cite": {
+            "char_start": 142707,
+            "excerpt": "ción Seccional. 2. Controlar, registrar y responder por la entrada y salida de bienes, efectuando las revisiones correspondientes. 3. Controlar el ingreso del parqu"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i3",
+          "ordinal": 3,
+          "titulo": "Controlar el ingreso del parque automotor de las diferentes sedes judiciales,",
+          "cite": {
+            "char_start": 142840,
+            "excerpt": "isiones correspondientes. 3. Controlar el ingreso del parque automotor de las diferentes sedes judiciales, inspeccionándolo y revisándolo sin excepción. Calle 27 No 17 - 19 Tel ("
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i4",
+          "ordinal": 4,
+          "titulo": "Responder por el oportuno control y cierre de las puertas de los sitios y por el",
+          "cite": {
+            "char_start": 143178,
+            "excerpt": "SC5780-4-6 Hoja No. 44 4. Responder por el oportuno control y cierre de las puertas de los sitios y por el encendido y apagado de luces. 5. Mantener permanente comunicación i"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i5",
+          "ordinal": 5,
+          "titulo": "Mantener permanente comunicación interna entre los diversos puntos de",
+          "cite": {
+            "char_start": 143308,
+            "excerpt": "ndido y apagado de luces. 5. Mantener permanente comunicación interna entre los diversos puntos de vigilancia y la central de comunicaciones del contratista. 6. Cumplir a cabali"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i6",
+          "ordinal": 6,
+          "titulo": "Cumplir a cabalidad con los turnos señalados.",
+          "cite": {
+            "char_start": 143456,
+            "excerpt": "caciones del contratista. 6. Cumplir a cabalidad con los turnos señalados. 7. Impedir el acceso de personas armadas a las sedes, salvo en los casos de personas autorizadas."
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i7",
+          "ordinal": 7,
+          "titulo": "Impedir el acceso de personas armadas a las sedes, salvo en los casos de",
+          "cite": {
+            "char_start": 143512,
+            "excerpt": "con los turnos señalados. 7. Impedir el acceso de personas armadas a las sedes, salvo en los casos de personas autorizadas. 8. Responder por la seguridad de todas las instalacio"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i8",
+          "ordinal": 8,
+          "titulo": "Responder por la seguridad de todas las instalaciones y los bienes de la",
+          "cite": {
+            "char_start": 143626,
+            "excerpt": "personas autorizadas. 8. Responder por la seguridad de todas las instalaciones y los bienes de la Dirección Seccional de Administración Judicial de Manizales, así como por la de"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i9",
+          "ordinal": 9,
+          "titulo": "Velar por el oportuno control de activación de las alarmas electrónicas, cuando en",
+          "cite": {
+            "char_start": 143936,
+            "excerpt": "ara garantizar esa labor. 9. Velar por el oportuno control de activación de las alarmas electrónicas, cuando en la sede asignada las hubiere. 10. Informar cualquier hecho anómal"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i10",
+          "ordinal": 10,
+          "titulo": "Informar cualquier hecho anómalo al superior inmediato.",
+          "cite": {
+            "char_start": 144068,
+            "excerpt": "ede asignada las hubiere. 10. Informar cualquier hecho anómalo al superior inmediato. 11. Evitar la entrada de vendedores a las dependencias en las que se preste el servicio de"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i11",
+          "ordinal": 11,
+          "titulo": "Evitar la entrada de vendedores a las dependencias en las que se preste el",
+          "cite": {
+            "char_start": 144135,
+            "excerpt": "lo al superior inmediato. 11. Evitar la entrada de vendedores a las dependencias en las que se preste el servicio de vigilancia y seguridad privada. 12. Atender permanentemente"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i12",
+          "ordinal": 12,
+          "titulo": "Atender permanentemente con toda la consideración y cortesía a funcionarios y",
+          "cite": {
+            "char_start": 144275,
+            "excerpt": "ncia y seguridad privada. 12. Atender permanentemente con toda la consideración y cortesía a funcionarios y visitantes. 13. Obedecer las instrucciones del Supervisor del Contra"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i13",
+          "ordinal": 13,
+          "titulo": "Obedecer las instrucciones del Supervisor del Contrato.",
+          "cite": {
+            "char_start": 144386,
+            "excerpt": "s y visitantes. 13. Obedecer las instrucciones del Supervisor del Contrato. 14. En la prestación del servicio de vigilancia, se deberán usar los medios tecnológicos d"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i14",
+          "ordinal": 14,
+          "titulo": "En la prestación del servicio de vigilancia, se deberán usar los medios",
+          "cite": {
+            "char_start": 144453,
+            "excerpt": "Supervisor del Contrato. 14. En la prestación del servicio de vigilancia, se deberán usar los medios tecnológicos de seguridad que se dispongan en las respectivas sedes judiciales."
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i15",
+          "ordinal": 15,
+          "titulo": "Radicar y efectuar anotaciones en los libros asignados para el efecto.",
+          "cite": {
+            "char_start": 144626,
+            "excerpt": "ectivas sedes judiciales. 15. Radicar y efectuar anotaciones en los libros asignados para el efecto. 16. Verificar el porte de carné por parte de los funcionarios, cuando así corresponda"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i16",
+          "ordinal": 16,
+          "titulo": "Verificar el porte de carné por parte de los funcionarios, cuando así corresponda.",
+          "cite": {
+            "char_start": 144708,
+            "excerpt": "asignados para el efecto. 16. Verificar el porte de carné por parte de los funcionarios, cuando así corresponda. 17. Verificar y registrar la asistencia del personal autorizado para labo"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i17",
+          "ordinal": 17,
+          "titulo": "Verificar y registrar la asistencia del personal autorizado para laborar los fines de",
+          "cite": {
+            "char_start": 144802,
+            "excerpt": ", cuando así corresponda. 17. Verificar y registrar la asistencia del personal autorizado para laborar los fines de semana. 18. Verificar que los visitantes porten los distinti"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i18",
+          "ordinal": 18,
+          "titulo": "Verificar que los visitantes porten los distintivos que los acrediten como tales en",
+          "cite": {
+            "char_start": 144917,
+            "excerpt": "ines de semana. 18. Verificar que los visitantes porten los distintivos que los acrediten como tales en las dependencias de la entidad, cuando aplique. 19. Mantener e"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i19",
+          "ordinal": 19,
+          "titulo": "Mantener excelente presentación personal con los uniformes exigidos según las",
+          "cite": {
+            "char_start": 145070,
+            "excerpt": "entidad, cuando aplique. 19. Mantener excelente presentación personal con los uniformes exigidos según las normas vigentes. 20. Dar aviso al coordinador designado por el contr"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i20",
+          "ordinal": 20,
+          "titulo": "Dar aviso al coordinador designado por el contratista, de manera inmediata, a la",
+          "cite": {
+            "char_start": 145186,
+            "excerpt": "normas vigentes. 20. Dar aviso al coordinador designado por el contratista, de manera inmediata, a la ocurrencia de cualquier anomalía que se presente en los sitios o puestos"
+          }
+        },
+        {
+          "sub_item_id": "SA-24-2026#5.4.2#i21",
+          "ordinal": 21,
+          "titulo": "Las demás que le sean asignadas por el contratista y que por la naturaleza del",
+          "cite": {
+            "char_start": 145386,
+            "excerpt": "de vigilancia. 21. Las demás que le sean asignadas por el contratista y que por la naturaleza del servicio se requieran. Calle 27 No 17 - 19 Tel (076) «id» - fax 884"
+          }
+        }
+      ],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 142334,
+        "char_end": 145948,
+        "excerpt": "5.4.2. Funciones Mínimas: 1. Controlar la entrada y salida de funcionarios y visitantes utilizando los medios de seguridad que tenga a su alcance, orientándolos para su correcto desplazamiento dentro de las instalaciones, y responder por el"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#6.1",
+      "ref": "6.1",
+      "numeral": "6.1",
+      "titulo": "RÉGIMEN LEGAL",
+      "fase": "postadjudicacion",
+      "categoria": "juridico",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 145948,
+        "char_end": 146412,
+        "excerpt": "6.1. RÉGIMEN LEGAL: Tanto el proceso de selección como el futuro contrato que se suscriba, se regirá en lo pertinente por el ordenamiento Constitucional y legal colombiano, así como por el régimen jurídico determinado en la Ley 80 de 1993, "
+      }
+    },
+    {
+      "item_id": "SA-24-2026#6.2",
+      "ref": "6.2",
+      "numeral": "6.2",
+      "titulo": "LIQUIDACIÓN DEL CONTRATO",
+      "fase": "postadjudicacion",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 146412,
+        "char_end": 147005,
+        "excerpt": "6.2. LIQUIDACIÓN DEL CONTRATO: De conformidad con lo establecido en el artículo 60 de la Ley 80 de 1993, el contrato resultante de este proceso será objeto de liquidación por acuerdo entre las partes contratantes dentro de los seis (6) mese"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#6.3",
+      "ref": "6.3",
+      "numeral": "6.3",
+      "titulo": "SUPERVISIÓN DEL CONTRATO",
+      "fase": "postadjudicacion",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 147005,
+        "char_end": 147228,
+        "excerpt": "6.3. SUPERVISIÓN DEL CONTRATO: La supervisión del contrato estará a cargo de la Jefe del Área Administrativa y Financiera de la entidad, en coordinación con la Directora Seccional de Administración Judicial de Manizales. 6.4. ESTIMACIÓN Y T"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#6.4",
+      "ref": "6.4",
+      "numeral": "6.4",
+      "titulo": "ESTIMACIÓN Y TIPIFICACIÓN DE RIESGOS PREVISIBLES",
+      "fase": "postadjudicacion",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [
+        "legal-rce-policy",
+        "technical-video-surveillance-scope"
+      ],
+      "cite": {
+        "char_start": 147228,
+        "char_end": 169267,
+        "excerpt": "6.4. ESTIMACIÓN Y TIPIFICACIÓN DE RIESGOS PREVISIBLES: De conformidad con lo establecido en el artículo 4 de la ley 1150 de 2007 y Decreto 1082 de 2015, se procede en el presente estudio a tipificar, estimar y asignar los riesgos previsible"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#6.5",
+      "ref": "6.5",
+      "numeral": "6.5",
+      "titulo": "GARANTÍAS CONTRACTUALES",
+      "fase": "postadjudicacion",
+      "categoria": "seguros_garantias",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": true,
+        "senales": [
+          {
+            "etiqueta": "smmlv",
+            "operador": null,
+            "valores": [
+              "400 SMMLV"
+            ]
+          }
+        ],
+        "confianza": "medio"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 169267,
+        "char_end": 178115,
+        "excerpt": "6.5. GARANTÍAS CONTRACTUALES: El proponente seleccionado deberá constituir a favor de la NACIÓN – CONSEJO SUPERIOR DE LA JUDICATURA- DIRECCIÓN SECCIONAL DE ADMINISTRACIÓN JUDICIAL DE MANIZALES - CALDAS, con NIT. «id», la garantía en los tér"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#6.6",
+      "ref": "6.6",
+      "numeral": "6.6",
+      "titulo": "CESIÓN DEL CONTRATO",
+      "fase": "postadjudicacion",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 178115,
+        "char_end": 178339,
+        "excerpt": "6.6. CESIÓN DEL CONTRATO: El contratista no podrá ceder el contrato a personas jurídicas, nacionales o extranjeras, sin el consentimiento previo y escrito de la DIRECCIÓN SECCIONAL DE ADMINISTRACIÓN JUDICIAL DE MANIZALES. 6.7. CLÁUSULAS EXC"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#6.7",
+      "ref": "6.7",
+      "numeral": "6.7",
+      "titulo": "CLÁUSULAS EXCEPCIONALES",
+      "fase": "postadjudicacion",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 178339,
+        "char_end": 178815,
+        "excerpt": "6.7. CLÁUSULAS EXCEPCIONALES: En caso de configurarse las situaciones o causales previstas en la ley, se aplicarán las cláusulas excepcionales de modificación, interpretación, cesión y terminación unilaterales, así como la de caducidad en l"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#6.8",
+      "ref": "6.8",
+      "numeral": "6.8",
+      "titulo": "OBLIGACIONES GENERALES DE LAS PARTES",
+      "fase": "postadjudicacion",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 178815,
+        "char_end": 179240,
+        "excerpt": "6.8. OBLIGACIONES GENERALES DE LAS PARTES Además de los derechos y obligaciones que se derivan de la naturaleza del contrato, el contratista seleccionado, la Dirección Seccional de Administración Judicial de Manizales, y el supervisor desig"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#6.9",
+      "ref": "6.9",
+      "numeral": "6.9",
+      "titulo": "POLÍTICAS DEL SISTEMA DE GESTIÓN DE LA SEGURIDAD Y SALUD EN EL",
+      "fase": "postadjudicacion",
+      "categoria": "tecnico_sst_ambiental",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 179240,
+        "char_end": 180441,
+        "excerpt": "6.9. POLÍTICAS DEL SISTEMA DE GESTIÓN DE LA SEGURIDAD Y SALUD EN EL TRABAJO (SG-SST): En cumplimiento de lo dispuesto en el Decreto 1072 de 2015, Acuerdo No. 2333 del 17 de marzo de 2004 proferido por el Ministerio del Trabajo, y por medio "
+      }
+    },
+    {
+      "item_id": "SA-24-2026#6.10",
+      "ref": "6.10",
+      "numeral": "6.10",
+      "titulo": "PLAN DE GESTIÓN AMBIENTAL DE LA RAMA JUDICIAL",
+      "fase": "postadjudicacion",
+      "categoria": "tecnico_sst_ambiental",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 180441,
+        "char_end": 181281,
+        "excerpt": "6.10. PLAN DE GESTIÓN AMBIENTAL DE LA RAMA JUDICIAL: En cumplimento a los dispuesto en el Acuerdo No. PSAA14-10160 del 12 de junio de 2014 proferido por el Consejo Superior de la Judicatura, y por medio del cual se adopta el Calle 27 No 17 "
+      }
+    },
+    {
+      "item_id": "SA-24-2026#6.11",
+      "ref": "6.11",
+      "numeral": "6.11",
+      "titulo": "INDEMNIDAD",
+      "fase": "postadjudicacion",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 181281,
+        "char_end": 181610,
+        "excerpt": "6.11. INDEMNIDAD: Será obligación del CONTRATISTA mantener a la Nación – Consejo Superior de la Judicatura- Dirección Seccional de Administración Judicial de Manizales indemne de cualquier reclamación proveniente de terceros que tenga como "
+      }
+    },
+    {
+      "item_id": "SA-24-2026#6.12",
+      "ref": "6.12",
+      "numeral": "6.12",
+      "titulo": "MULTAS",
+      "fase": "postadjudicacion",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 181610,
+        "char_end": 182274,
+        "excerpt": "6.12. MULTAS: En caso de mora o incumplimiento parcial de las obligaciones surgidas en el presente contrato por parte del CONTRATISTA, la Dirección Seccional de Administración Judicial de Manizales le impondrá multas sucesivas del 1 % diari"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#6.13",
+      "ref": "6.13",
+      "numeral": "6.13",
+      "titulo": "CLÁUSULA PENAL PECUNIARIA",
+      "fase": "postadjudicacion",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 182274,
+        "char_end": 182970,
+        "excerpt": "6.13. CLÁUSULA PENAL PECUNIARIA: En caso de declaratoria de caducidad o de incumplimiento total de las obligaciones contraídas con ocasión del presente contrato, la Dirección Seccional de Administración Judicial de Manizales exigirá directa"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#6.14",
+      "ref": "6.14",
+      "numeral": "6.14",
+      "titulo": "INHABILIDADES E INCOMPATIBILIDADES",
+      "fase": "postadjudicacion",
+      "categoria": "juridico",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 182970,
+        "char_end": 183303,
+        "excerpt": "6.14. INHABILIDADES E INCOMPATIBILIDADES: El proponente adjudicatario declarará, bajo la gravedad de juramento que se entiende prestado con la suscripción del contrato, que no está incurso en ninguna de las causales de inhabilidad, incompat"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#6.15",
+      "ref": "6.15",
+      "numeral": "6.15",
+      "titulo": "RÉGIMEN LEGAL",
+      "fase": "postadjudicacion",
+      "categoria": "no_determinada",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 183303,
+        "char_end": 183617,
+        "excerpt": "6.15. RÉGIMEN LEGAL: El contrato a suscribir se regirá por lo dispuesto en la Ley 80 de 1993, Ley 1150 de 2007, Decreto 1082 de 2015 y demás normas reglamentarias, o las que las complementen, modifiquen o sustituyan, salvo aquellas materias"
+      }
+    },
+    {
+      "item_id": "SA-24-2026#6.16",
+      "ref": "6.16",
+      "numeral": "6.16",
+      "titulo": "LIQUIDACIÓN",
+      "fase": "postadjudicacion",
+      "categoria": "proceso",
+      "estado_probatorio": "requisito_pliego",
+      "dimensiones": {
+        "presencia": "observado",
+        "vigencia": "vigente",
+        "aplicabilidad": "no_determinada",
+        "cumplimiento": "no_evaluado"
+      },
+      "evidencia_empresarial": "not_assessed",
+      "subsanabilidad": "no_determinado",
+      "umbral": {
+        "detectado": false,
+        "senales": [],
+        "confianza": "bajo"
+      },
+      "sub_items": [],
+      "governed_requirement_ids": [],
+      "cite": {
+        "char_start": 183617,
+        "char_end": 185265,
+        "excerpt": "6.16. LIQUIDACIÓN: De conformidad con lo establecido en el literal A) del numeral 3.9. de la Resolución No. 6424 del 03 de junio de 2025 -Por la cual se adopta el Manual de Contratación de la Dirección Ejecutiva de Administración Judicial-,"
+      }
+    }
+  ],
+  "coverage": {
+    "secciones_registradas": 68,
+    "subitems_detectados": 82,
+    "secciones_con_subitems": 7,
+    "metrica_definiciones": {
+      "seccion_registrada": "Encabezado numerado (N.M[.K]) del cuerpo del pliego vigente; unidad primaria del registro.",
+      "subitem_detectado": "Ítem enumerado dentro de una sección; es un componente de la sección y NO, por sí solo, un requisito independiente.",
+      "atomizacion": "La unidad atomizada del registro es la SECCIÓN. Los subítems se detectan pero no se cuentan como requisitos; secciones y subítems no se suman."
+    },
+    "total_items": 68,
+    "con_umbral": 5,
+    "con_sub_items": 7,
+    "sub_items_totales": 82,
+    "categoria_no_determinada": 22,
+    "tocan_requisito_gobernado": 7,
+    "por_fase": {
+      "generalidad": 26,
+      "habilitante": 7,
+      "puntuable": 6,
+      "evaluacion": 5,
+      "ejecucion_tecnica": 8,
+      "postadjudicacion": 16
+    },
+    "por_categoria": {
+      "no_determinada": 22,
+      "proceso": 23,
+      "industria_nacional_diferencial": 5,
+      "juridico": 4,
+      "financiero": 1,
+      "organizacional": 1,
+      "experiencia": 2,
+      "factor_evaluacion": 2,
+      "oferta_economica": 1,
+      "personal": 3,
+      "licencias_sector": 1,
+      "seguros_garantias": 1,
+      "tecnico_sst_ambiental": 2
+    }
+  },
+  "abstentions": [
+    {
+      "item_ref": "1.1",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"IDENTIFICACIÓN EN EL CLASIFICADOR DE BIENES Y SERVICIOS\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "1.1",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.2",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.2.1",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.2.2",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"VISITA A LOS SITIOS DE EJECUCIÓN\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "1.2.2",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.3",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.4",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"VIABILIDAD PRESUPUESTAL\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "1.4",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.5",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"FORMA DE PAGO\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "1.5",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.6",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"LUGAR DE EJECUCIÓN\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "1.6",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.7",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"PLAZO DE EJECUCIÓN\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "1.7",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.8",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.9",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.10",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.11",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.12",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.13",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.14",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.15",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"INDISPONIBILIDAD SECOP II\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "1.15",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.16",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.17",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"EN CUANTO A LA PROPUESTA\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "1.17",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.17.1",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"IDIOMA\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "1.17.1",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.17.2",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"COSTO DE PREPARACIÓN DE LA PROPUESTA\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "1.17.2",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.17.3",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"ALCANCE Y VALIDEZ DE LA PROPUESTA\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "1.17.3",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.17.4",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.18",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.19",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "1.20",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "2.1",
+      "axis": "umbral",
+      "reason": "umbral_no_extraido_por_reglas_cerradas",
+      "detail": "No se extrajo un umbral cuantitativo para \"CAPACIDAD JURÍDICA\"; el umbral/condición debe verificarse en el pliego."
+    },
+    {
+      "item_ref": "2.1",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "2.2",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "2.3",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "2.4",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "2.4.1",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "2.5",
+      "axis": "umbral",
+      "reason": "umbral_no_extraido_por_reglas_cerradas",
+      "detail": "No se extrajo un umbral cuantitativo para \"REGLAS DE SUBSANABILIDAD\"; el umbral/condición debe verificarse en el pliego."
+    },
+    {
+      "item_ref": "2.5",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "2.6",
+      "axis": "umbral",
+      "reason": "umbral_no_extraido_por_reglas_cerradas",
+      "detail": "No se extrajo un umbral cuantitativo para \"CAUSALES DE RECHAZO DE LAS PROPUESTAS\"; el umbral/condición debe verificarse en el pliego."
+    },
+    {
+      "item_ref": "2.6",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "3.1",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "3.2",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "3.3",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "3.4",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "3.5",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "3.6",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "4.1",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "4.2",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"TÉRMINO PARA RESPONDER LAS OBSERVACIONES A LA EVALUACIÓN\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "4.2",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "4.3",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"CRITERIOS PARA DIRIMIR EMPATES\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "4.3",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "4.4",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "4.5",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"PERFECCIONAMIENTO DEL CONTRATO\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "4.5",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "5.1",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"UBICACIÓN DE LOS SERVICIOS A CONTRATAR\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "5.1",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "5.2",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "5.3",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "5.3.1",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "5.3.2",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "5.4",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "5.4.1",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "5.4.2",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"Funciones Mínimas\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "5.4.2",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "6.1",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "6.2",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "6.3",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "6.4",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"ESTIMACIÓN Y TIPIFICACIÓN DE RIESGOS PREVISIBLES\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "6.4",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "6.5",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "6.6",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"CESIÓN DEL CONTRATO\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "6.6",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "6.7",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"CLÁUSULAS EXCEPCIONALES\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "6.7",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "6.8",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"OBLIGACIONES GENERALES DE LAS PARTES\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "6.8",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "6.9",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "6.10",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "6.11",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"INDEMNIDAD\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "6.11",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "6.12",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "6.13",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "6.14",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "6.15",
+      "axis": "categoria",
+      "reason": "categoria_no_resuelta_por_reglas_cerradas",
+      "detail": "No se pudo mapear \"RÉGIMEN LEGAL\" a una categoría del vocabulario cerrado; requiere clasificación humana."
+    },
+    {
+      "item_ref": "6.15",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    },
+    {
+      "item_ref": "6.16",
+      "axis": "aplicabilidad",
+      "reason": "aplicabilidad_depende_de_modalidad_del_proponente",
+      "detail": "La aplicabilidad (persona natural/jurídica/consorcio/UT, régimen diferencial) es decisión humana."
+    }
+  ],
+  "data_gaps": [],
+  "ledger": [
+    {
+      "id": "R01",
+      "claim": "El registro cataloga 68 secciones del pliego vigente como requisitos del pliego.",
+      "evidence": [
+        "9. Pliego de Condiciones Definitivo SA-24-2026.pdf"
+      ],
+      "type": "conteo_estructural",
+      "confidence": "alto",
+      "limitation": "El conteo es estructural (secciones numeradas), no una lista jurídica exhaustiva validada por humano."
+    },
+    {
+      "id": "R02",
+      "claim": "Se registran 7 secciones habilitantes (Capítulo II).",
+      "evidence": [
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.4.1",
+        "2.5",
+        "2.6"
+      ],
+      "type": "requisito_pliego",
+      "confidence": "alto",
+      "limitation": "Habilitante = CUMPLE/NO CUMPLE; el registro no decide el cumplimiento."
+    },
+    {
+      "id": "R03",
+      "claim": "5 secciones tienen al menos una señal de umbral extraída por reglas cerradas.",
+      "evidence": [
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.4.1",
+        "6.5"
+      ],
+      "type": "observado",
+      "confidence": "medio",
+      "limitation": "Las señales de umbral son indicios cuantitativos; el mapeo indicador→umbral y su suficiencia son revisión humana."
+    },
+    {
+      "id": "R04",
+      "claim": "La póliza de RCE figura como requisito habilitante y como amparo de garantía postadjudicación; son exigencias distintas (presencia habilitante ≠ garantía de ejecución).",
+      "evidence": [
+        "Capítulo II",
+        "Capítulo VI 6.5"
+      ],
+      "type": "contradiccion",
+      "confidence": "medio",
+      "limitation": "No se resuelve la relación entre ambas exigencias: distinguir habilitante de garantía de ejecución es interpretación humana."
+    },
+    {
+      "id": "R05",
+      "claim": "El registro cataloga requisitos del pliego vigente; no decide cumplimiento, habilitación, puntaje ni GO/NO-GO.",
+      "evidence": [
+        "taxonomía del registro"
+      ],
+      "type": "limite_probatorio",
+      "confidence": "alto",
+      "limitation": "Guarda de no automatización."
+    },
+    {
+      "id": "R06",
+      "claim": "Presencia de un requisito o de un formato en el corpus no implica aceptación, vigencia, aplicabilidad ni cumplimiento.",
+      "evidence": [
+        "taxonomía del registro"
+      ],
+      "type": "limite_probatorio",
+      "confidence": "alto",
+      "limitation": "Guarda de no automatización."
+    },
+    {
+      "id": "R07",
+      "claim": "Requisito contractual y evidencia empresarial se mantienen separados: la evidencia empresarial no se evalúa aquí (not_assessed).",
+      "evidence": [
+        "taxonomía del registro"
+      ],
+      "type": "limite_probatorio",
+      "confidence": "alto",
+      "limitation": "Guarda de no automatización."
+    },
+    {
+      "id": "R08",
+      "claim": "Presentado no equivale a aceptado ni a adjudicado; el registro no infiere resultados de evaluación.",
+      "evidence": [
+        "taxonomía del registro"
+      ],
+      "type": "limite_probatorio",
+      "confidence": "alto",
+      "limitation": "Guarda de no automatización."
+    },
+    {
+      "id": "R09",
+      "claim": "Rama Judicial Pereira se usa sólo como patrón de taxonomía y flujo; no prueba cumplimiento de Manizales ni traslada aplicabilidad.",
+      "evidence": [
+        "taxonomía del registro"
+      ],
+      "type": "limite_probatorio",
+      "confidence": "alto",
+      "limitation": "Guarda de no automatización."
+    },
+    {
+      "id": "R10",
+      "claim": "La interpretación jurídica, la suficiencia de licencias/pólizas/experiencia, la resolución de contradicciones del pliego y la firma/presentación son decisiones humanas.",
+      "evidence": [
+        "taxonomía del registro"
+      ],
+      "type": "limite_probatorio",
+      "confidence": "alto",
+      "limitation": "Guarda de no automatización."
+    },
+    {
+      "id": "R11",
+      "claim": "Los excerpts del registro pasan por un depurador de PII antes de persistir.",
+      "evidence": [
+        "scrubOpenPii / assertNoOpenPii"
+      ],
+      "type": "privacidad",
+      "confidence": "alto",
+      "limitation": "Depuración defensiva y determinista, no anonimización garantizada."
+    }
+  ],
+  "probative_limits": [
+    "El registro cataloga requisitos del pliego vigente; no decide cumplimiento, habilitación, puntaje ni GO/NO-GO.",
+    "Presencia de un requisito o de un formato en el corpus no implica aceptación, vigencia, aplicabilidad ni cumplimiento.",
+    "Requisito contractual y evidencia empresarial se mantienen separados: la evidencia empresarial no se evalúa aquí (not_assessed).",
+    "Presentado no equivale a aceptado ni a adjudicado; el registro no infiere resultados de evaluación.",
+    "Rama Judicial Pereira se usa sólo como patrón de taxonomía y flujo; no prueba cumplimiento de Manizales ni traslada aplicabilidad.",
+    "La interpretación jurídica, la suficiencia de licencias/pólizas/experiencia, la resolución de contradicciones del pliego y la firma/presentación son decisiones humanas."
+  ]
+}

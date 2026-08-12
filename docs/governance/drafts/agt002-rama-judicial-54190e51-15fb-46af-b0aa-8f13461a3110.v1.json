@@ -1,0 +1,964 @@
+{
+  "artifact_type": "agt002_governance_draft_proposal",
+  "status": "DRAFT",
+  "human_approval_required": true,
+  "version": 3,
+  "opportunity_id": "54190e51-15fb-46af-b0aa-8f13461a3110",
+  "snapshot_id": "c33159a5-defe-4a6f-8fa4-68c5ceb60e59",
+  "evidence_chunk_snapshot_ids": [
+    "9a4f4df4-3947-450f-ba5a-32cc0c4b297a",
+    "c33159a5-defe-4a6f-8fa4-68c5ceb60e59"
+  ],
+  "generated_at": "2026-08-11T18:29:32.399Z",
+  "requirement_manifest": {
+    "requirement_manifest_version": "1.0",
+    "requirement_manifest": [
+      {
+        "requirement_id": "financial-working-capital",
+        "front": "financial",
+        "label": "Capital de trabajo",
+        "sources": [
+          {
+            "document_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+            "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+            "content_hash": "cb7b1fd1c496664ff818c261e9efddf99a770267bee89424a52b39ffbe295467"
+          },
+          {
+            "document_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+            "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+            "content_hash": "4af0d76c8d21101d480b1f8d22f04ae35f4f08d10281e384de57e882598b688a"
+          },
+          {
+            "document_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+            "document_version_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+            "content_hash": "27df9c8f1d92adee4d6d942a56f13ce9de28af8065a6c5554347a96174993bee"
+          },
+          {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "content_hash": "e3715f6dcbf0463808d57dc09af44e466f120ed1fc5ae740a1c349d7c4803cdf"
+          }
+        ],
+        "unresolved_sources": []
+      },
+      {
+        "requirement_id": "legal-collective-life-policy",
+        "front": "legal",
+        "label": "Póliza de seguro de vida colectivo",
+        "sources": [
+          {
+            "document_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+            "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+            "content_hash": "cb7b1fd1c496664ff818c261e9efddf99a770267bee89424a52b39ffbe295467"
+          },
+          {
+            "document_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+            "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+            "content_hash": "4af0d76c8d21101d480b1f8d22f04ae35f4f08d10281e384de57e882598b688a"
+          },
+          {
+            "document_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+            "document_version_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+            "content_hash": "27df9c8f1d92adee4d6d942a56f13ce9de28af8065a6c5554347a96174993bee"
+          },
+          {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "content_hash": "e3715f6dcbf0463808d57dc09af44e466f120ed1fc5ae740a1c349d7c4803cdf"
+          }
+        ],
+        "unresolved_sources": []
+      },
+      {
+        "requirement_id": "legal-rce-policy",
+        "front": "legal",
+        "label": "Póliza de responsabilidad civil extracontractual (RCE)",
+        "sources": [
+          {
+            "document_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+            "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+            "content_hash": "cb7b1fd1c496664ff818c261e9efddf99a770267bee89424a52b39ffbe295467"
+          },
+          {
+            "document_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+            "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+            "content_hash": "4af0d76c8d21101d480b1f8d22f04ae35f4f08d10281e384de57e882598b688a"
+          },
+          {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "content_hash": "e3715f6dcbf0463808d57dc09af44e466f120ed1fc5ae740a1c349d7c4803cdf"
+          }
+        ],
+        "unresolved_sources": []
+      },
+      {
+        "requirement_id": "technical-video-surveillance-scope",
+        "front": "technical",
+        "label": "Alcance de videovigilancia/CCTV",
+        "sources": [
+          {
+            "document_id": "03950a0c-74e9-4d21-a308-7181daa4aa82",
+            "document_version_id": "03950a0c-74e9-4d21-a308-7181daa4aa82",
+            "content_hash": "1357ae15f277b6f18ecc7c3e9713e089c295d2aada7f5bc86125fcc19a3cc8f9"
+          },
+          {
+            "document_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+            "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+            "content_hash": "cb7b1fd1c496664ff818c261e9efddf99a770267bee89424a52b39ffbe295467"
+          },
+          {
+            "document_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+            "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+            "content_hash": "4af0d76c8d21101d480b1f8d22f04ae35f4f08d10281e384de57e882598b688a"
+          },
+          {
+            "document_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+            "document_version_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+            "content_hash": "27df9c8f1d92adee4d6d942a56f13ce9de28af8065a6c5554347a96174993bee"
+          },
+          {
+            "document_id": "51169076-95a6-447c-a09a-6770e21809ce",
+            "document_version_id": "51169076-95a6-447c-a09a-6770e21809ce",
+            "content_hash": "68807e7d9f1377b558664dd2fbbd8a16f1369bbd9ea38d0ea6d01dcfca609ad6"
+          },
+          {
+            "document_id": "d2612ab5-3239-42e2-b251-b1c7d4bd62e1",
+            "document_version_id": "d2612ab5-3239-42e2-b251-b1c7d4bd62e1",
+            "content_hash": "f30c49728a8105f8d9fccf7d7f90dad3c535edd484236829a8aa724c9ae85db1"
+          },
+          {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "content_hash": "e3715f6dcbf0463808d57dc09af44e466f120ed1fc5ae740a1c349d7c4803cdf"
+          }
+        ],
+        "unresolved_sources": []
+      }
+    ]
+  },
+  "chunk_citations": {
+    "financial-working-capital": [
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 346,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s346:c0",
+        "chunk_hash": "10705097df3d75aceb53ca1c386ea83831154f9f68d4b9c14a01dd1801ecc2a1"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 420,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s420:c0",
+        "chunk_hash": "10705097df3d75aceb53ca1c386ea83831154f9f68d4b9c14a01dd1801ecc2a1"
+      },
+      {
+        "document_version_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+        "document_name": "1. Estudios Sector SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 248,
+        "chunk_index": 0,
+        "chunk_id": "chunk:47af9d7a-317e-48c6-9f83-fbb67fa808db:p1:s248:c0",
+        "chunk_hash": "9ccc3207aeb7c4f1ef4c1bb7d41af8c7ce142717b451d043b39c12a442ba4aa3"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 410,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s410:c0",
+        "chunk_hash": "10705097df3d75aceb53ca1c386ea83831154f9f68d4b9c14a01dd1801ecc2a1"
+      }
+    ],
+    "legal-collective-life-policy": [
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 293,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s293:c0",
+        "chunk_hash": "de0dfea0664f40cb13cdd9ff5120516e9b837b9d02e1ac2bbb2185858d69bc1d"
+      },
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 294,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s294:c0",
+        "chunk_hash": "da9a6b44f4d4c06184ff21cd8533e674c91f4121f992d125f82ceda1de0ae546"
+      },
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 295,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s295:c0",
+        "chunk_hash": "1964b7d090691769a02211ac1eeca730dac320d9032d803625fabf2a644a2877"
+      },
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 296,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s296:c0",
+        "chunk_hash": "fa54cf517794236078c427fbdd8b0f8adfff50b7342f4c75e1d370100f4c4e03"
+      },
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 298,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s298:c0",
+        "chunk_hash": "6e35c812e0db33eb0b4b5eab4fc7beb5c3483aa6b7571eaa483b23380cb3a4b9"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 82,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s82:c0",
+        "chunk_hash": "495aca9340a6d1f38e0ce993413defaa823df3d875f442c21b4601136c9f250f"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 145,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s145:c0",
+        "chunk_hash": "d146cd5a291f3045c6863133df21f5cca81081cb4b5fc8a004043c4d5402e05e"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 146,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s146:c0",
+        "chunk_hash": "c8c936145cd5c419780b650af9093b24ca795e824eb8f2f2dbc83f68c237bcca"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 365,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s365:c0",
+        "chunk_hash": "de0dfea0664f40cb13cdd9ff5120516e9b837b9d02e1ac2bbb2185858d69bc1d"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 366,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s366:c0",
+        "chunk_hash": "cb5ed469d17ecf2d0f099e4eec35a3e84b39746bf3abc5c2d3199e2237d4bf4c"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 367,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s367:c0",
+        "chunk_hash": "d5a6feabc4fcd08bfb07625b4548fa18ad983e1c5bfc865a073fc4277844ee43"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 368,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s368:c0",
+        "chunk_hash": "b0cb4ac3276fcb5edd3f35f2f76bc1c607ae55147cecce23cbd25da62a2ffaa1"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 372,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s372:c0",
+        "chunk_hash": "13f235b56ca774f21168342f65906592bb90949c8d398d3b55ee6694879925a1"
+      },
+      {
+        "document_version_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+        "document_name": "1. Estudios Sector SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 141,
+        "chunk_index": 0,
+        "chunk_id": "chunk:47af9d7a-317e-48c6-9f83-fbb67fa808db:p1:s141:c0",
+        "chunk_hash": "fb1832cd89215728bcdf07ff2905b73ad8760337a600922c5f01fc5e3cd98f61"
+      },
+      {
+        "document_version_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+        "document_name": "1. Estudios Sector SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 142,
+        "chunk_index": 0,
+        "chunk_id": "chunk:47af9d7a-317e-48c6-9f83-fbb67fa808db:p1:s142:c0",
+        "chunk_hash": "83348b3f9b16e8d189c78b002f3203e4bac6e8ce8920b559bb2cd584da622a3c"
+      },
+      {
+        "document_version_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+        "document_name": "1. Estudios Sector SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 144,
+        "chunk_index": 0,
+        "chunk_id": "chunk:47af9d7a-317e-48c6-9f83-fbb67fa808db:p1:s144:c0",
+        "chunk_hash": "717c130bd890acbabda24dba88ec8470e92e91091ebb55cf727eda7fbe43b1e3"
+      },
+      {
+        "document_version_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+        "document_name": "1. Estudios Sector SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 146,
+        "chunk_index": 0,
+        "chunk_id": "chunk:47af9d7a-317e-48c6-9f83-fbb67fa808db:p1:s146:c0",
+        "chunk_hash": "ae4591babf098753bc22b147ac81414ddff3d5beb7b9eece72b51b1f67ef58b2"
+      },
+      {
+        "document_version_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+        "document_name": "1. Estudios Sector SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 181,
+        "chunk_index": 0,
+        "chunk_id": "chunk:47af9d7a-317e-48c6-9f83-fbb67fa808db:p1:s181:c0",
+        "chunk_hash": "d146cd5a291f3045c6863133df21f5cca81081cb4b5fc8a004043c4d5402e05e"
+      },
+      {
+        "document_version_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+        "document_name": "1. Estudios Sector SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 182,
+        "chunk_index": 0,
+        "chunk_id": "chunk:47af9d7a-317e-48c6-9f83-fbb67fa808db:p1:s182:c0",
+        "chunk_hash": "c8c936145cd5c419780b650af9093b24ca795e824eb8f2f2dbc83f68c237bcca"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 79,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s79:c0",
+        "chunk_hash": "495aca9340a6d1f38e0ce993413defaa823df3d875f442c21b4601136c9f250f"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 138,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s138:c0",
+        "chunk_hash": "d146cd5a291f3045c6863133df21f5cca81081cb4b5fc8a004043c4d5402e05e"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 139,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s139:c0",
+        "chunk_hash": "c8c936145cd5c419780b650af9093b24ca795e824eb8f2f2dbc83f68c237bcca"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 356,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s356:c0",
+        "chunk_hash": "de0dfea0664f40cb13cdd9ff5120516e9b837b9d02e1ac2bbb2185858d69bc1d"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 357,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s357:c0",
+        "chunk_hash": "cb5ed469d17ecf2d0f099e4eec35a3e84b39746bf3abc5c2d3199e2237d4bf4c"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 358,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s358:c0",
+        "chunk_hash": "d5a6feabc4fcd08bfb07625b4548fa18ad983e1c5bfc865a073fc4277844ee43"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 359,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s359:c0",
+        "chunk_hash": "b0cb4ac3276fcb5edd3f35f2f76bc1c607ae55147cecce23cbd25da62a2ffaa1"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 361,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s361:c0",
+        "chunk_hash": "13f235b56ca774f21168342f65906592bb90949c8d398d3b55ee6694879925a1"
+      }
+    ],
+    "legal-rce-policy": [
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 284,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s284:c0",
+        "chunk_hash": "12da45f1ee9605ff239cc2b11e02270b4bda09fe2d3ce2cd6a26bce5da1513dc"
+      },
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 285,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s285:c0",
+        "chunk_hash": "e6c46ed524f1a669efe3001a10bdc62cbf7863bd480183aa68e304ac3d4bfa0b"
+      },
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 292,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s292:c0",
+        "chunk_hash": "5eb446641f1aa10751baea107b83d1adbe2102a9caa15d5f6efdc1cbc15405c2"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 359,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s359:c0",
+        "chunk_hash": "3e11ff107a2dedd9c2535d330ff8fd8d31d38a41090e9c1a3568c43f42413e5e"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 360,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s360:c0",
+        "chunk_hash": "18b1fec5a6fa39b19b3b41ee1363438f0962cf0d2533d69bf487dbdbc4066e4a"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 364,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s364:c0",
+        "chunk_hash": "25064dc2c1955b1e6024d4fac03dc1f85bfb226b3693e784588f73fca9b238c4"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 350,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s350:c0",
+        "chunk_hash": "3e11ff107a2dedd9c2535d330ff8fd8d31d38a41090e9c1a3568c43f42413e5e"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 351,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s351:c0",
+        "chunk_hash": "18b1fec5a6fa39b19b3b41ee1363438f0962cf0d2533d69bf487dbdbc4066e4a"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 355,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s355:c0",
+        "chunk_hash": "25064dc2c1955b1e6024d4fac03dc1f85bfb226b3693e784588f73fca9b238c4"
+      }
+    ],
+    "technical-video-surveillance-scope": [
+      {
+        "document_version_id": "03950a0c-74e9-4d21-a308-7181daa4aa82",
+        "document_name": "Anexo No. 11 Acreditaci_n MiPyme.pdf",
+        "document_type": "anexo_tecnico",
+        "page": 1,
+        "section": 24,
+        "chunk_index": 0,
+        "chunk_id": "chunk:03950a0c-74e9-4d21-a308-7181daa4aa82:p1:s24:c0",
+        "chunk_hash": "5caafe118206fb4d1c741df53918fcdce05a00e2ad414daf9884c7c278ade7be"
+      },
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 14,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s14:c0",
+        "chunk_hash": "35cc7a3b9fe8b1756aedb968f3cafd8987005a0a145fc5619e7170b3f3e470f8"
+      },
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 35,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s35:c0",
+        "chunk_hash": "473dc70cb951b7833b12758cdf539e50cbcb1301be765acef23f0ae7917c5d84"
+      },
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 189,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s189:c0",
+        "chunk_hash": "2cbefa626c44fb34a38ed40e5665cfd6302bdc124b32d0f827e7231840b72b7f"
+      },
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 194,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s194:c0",
+        "chunk_hash": "49c7510a835c4c66c30166331741b8586a88f50ff3fc5829acc7dae55c7ae037"
+      },
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 197,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s197:c0",
+        "chunk_hash": "f3916e9db29a031accb5c51ce305dcfc8dc29269bce6674a261dc8af19b288a5"
+      },
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 200,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s200:c0",
+        "chunk_hash": "dae2b13640328b1b4cc19d1a1127a32f5d26a1d3d0172c9d278c8dd44b2f14b6"
+      },
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 202,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s202:c0",
+        "chunk_hash": "1b5c1dfc0299e9f546f78697b9996f9fc1aa1f0bfc34b268e2789bd82d412f58"
+      },
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 256,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s256:c0",
+        "chunk_hash": "2539ac2ed15622bcab80598080442079c3bb252930f57c5748b53f343c84f1f1"
+      },
+      {
+        "document_version_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
+        "document_name": "2. Estudios previos SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 257,
+        "chunk_index": 0,
+        "chunk_id": "chunk:2100f041-f9b3-435d-a521-eb8e27c1c04b:p1:s257:c0",
+        "chunk_hash": "00823eea932889f27139e014f9445c0859f5f472e7419c5fae86a96725115e97"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 61,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s61:c0",
+        "chunk_hash": "595f219a91b71f7b5748ae2bf0600088c1b1f204b6bbafe98eb4c33b8e570ef0"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 263,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s263:c0",
+        "chunk_hash": "3ab407e173295ad56c49917ab8a01916dd906f4065883122a7c6b6a8f93f1a14"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 268,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s268:c0",
+        "chunk_hash": "b42b45b9f7ba0e6f1ae6fd4e5e25f304acb2894ee4a2d391af9a18e9d343578e"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 271,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s271:c0",
+        "chunk_hash": "eb173535ff3c91bd9cb65f56e6e9cd129fa590ea21237e842b84a12e3dfa3359"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 272,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s272:c0",
+        "chunk_hash": "daf34b13de8b1b20d9db983b5a5252aba4ca3d462db49789423872b406f9b70d"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 276,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s276:c0",
+        "chunk_hash": "d70dff0804b607daae24d62e3118c15f54f70bbf3e4ece2d748d4e6475dae058"
+      },
+      {
+        "document_version_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
+        "document_name": "3. Proyecto Pliego de Condiciones SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 330,
+        "chunk_index": 0,
+        "chunk_id": "chunk:43b7c438-0d50-481c-8e4a-b522b105bd42:p1:s330:c0",
+        "chunk_hash": "eabe5ed7fed9ded961d52e72354711ecbf6da40cd1b543964cd87ecbc3468b26"
+      },
+      {
+        "document_version_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+        "document_name": "1. Estudios Sector SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 96,
+        "chunk_index": 0,
+        "chunk_id": "chunk:47af9d7a-317e-48c6-9f83-fbb67fa808db:p1:s96:c0",
+        "chunk_hash": "7e4732f558adcccab48360f389fcaf2d55bb5faafd196a261bcdc1a71e5e23fc"
+      },
+      {
+        "document_version_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+        "document_name": "1. Estudios Sector SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 133,
+        "chunk_index": 0,
+        "chunk_id": "chunk:47af9d7a-317e-48c6-9f83-fbb67fa808db:p1:s133:c0",
+        "chunk_hash": "7a32e7b4445fb0be276c06fb9bb533cbc52efcd2e01c5b98cd9b921a80f461a4"
+      },
+      {
+        "document_version_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+        "document_name": "1. Estudios Sector SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 216,
+        "chunk_index": 0,
+        "chunk_id": "chunk:47af9d7a-317e-48c6-9f83-fbb67fa808db:p1:s216:c0",
+        "chunk_hash": "e712b9cb8ecb3383d4e9c8a695d7431a214399911d191ee6a1554a91f2a030fa"
+      },
+      {
+        "document_version_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+        "document_name": "1. Estudios Sector SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 301,
+        "chunk_index": 0,
+        "chunk_id": "chunk:47af9d7a-317e-48c6-9f83-fbb67fa808db:p1:s301:c0",
+        "chunk_hash": "bb08950ca51974a6a6d145c9b6f8ab8197bac48000c77ae8f5855ef6d9869eb4"
+      },
+      {
+        "document_version_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
+        "document_name": "1. Estudios Sector SA-24-2026.pdf",
+        "document_type": "estudios_previos",
+        "page": 1,
+        "section": 303,
+        "chunk_index": 0,
+        "chunk_id": "chunk:47af9d7a-317e-48c6-9f83-fbb67fa808db:p1:s303:c0",
+        "chunk_hash": "c4ef1e4b42fb2c2d45f04404c04bfb31efe8a609e6d4f0744e91616395ff4a6c"
+      },
+      {
+        "document_version_id": "51169076-95a6-447c-a09a-6770e21809ce",
+        "document_name": "Anexo No. 5 Programa de gestion de contratistas y visitantes.pdf",
+        "document_type": "anexo_tecnico",
+        "page": 1,
+        "section": 20,
+        "chunk_index": 0,
+        "chunk_id": "chunk:51169076-95a6-447c-a09a-6770e21809ce:p1:s20:c0",
+        "chunk_hash": "0a1d22ba99cd1b0d6293cdef485f1a580cdde95113548ea8303a18cf0ea51c90"
+      },
+      {
+        "document_version_id": "51169076-95a6-447c-a09a-6770e21809ce",
+        "document_name": "Anexo No. 5 Programa de gestion de contratistas y visitantes.pdf",
+        "document_type": "anexo_tecnico",
+        "page": 1,
+        "section": 117,
+        "chunk_index": 0,
+        "chunk_id": "chunk:51169076-95a6-447c-a09a-6770e21809ce:p1:s117:c0",
+        "chunk_hash": "7b95751074b874116bc77fc4f456b5b035e26b429fb0202342472b79a3ebeedf"
+      },
+      {
+        "document_version_id": "d2612ab5-3239-42e2-b251-b1c7d4bd62e1",
+        "document_name": "7. Respuesta observaciones al proyecto del pliego de condiciones.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 18,
+        "chunk_index": 0,
+        "chunk_id": "chunk:d2612ab5-3239-42e2-b251-b1c7d4bd62e1:p1:s18:c0",
+        "chunk_hash": "a585d303ad5c8249c1cffb661a9d86bc41b89b45985303ac03d4f0024050bc79"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 58,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s58:c0",
+        "chunk_hash": "595f219a91b71f7b5748ae2bf0600088c1b1f204b6bbafe98eb4c33b8e570ef0"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 251,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s251:c0",
+        "chunk_hash": "3ab407e173295ad56c49917ab8a01916dd906f4065883122a7c6b6a8f93f1a14"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 256,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s256:c0",
+        "chunk_hash": "b42b45b9f7ba0e6f1ae6fd4e5e25f304acb2894ee4a2d391af9a18e9d343578e"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 259,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s259:c0",
+        "chunk_hash": "eb173535ff3c91bd9cb65f56e6e9cd129fa590ea21237e842b84a12e3dfa3359"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 260,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s260:c0",
+        "chunk_hash": "daf34b13de8b1b20d9db983b5a5252aba4ca3d462db49789423872b406f9b70d"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 265,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s265:c0",
+        "chunk_hash": "c92d115864b1000c165caf76c52da37fc246f457e5ad2ad71bfd31f6d12a0bfe"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 318,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s318:c0",
+        "chunk_hash": "b9236bb11aabb4f732c128cc1306423e1a36c008f4bbe4f0bcbe6afd332850cf"
+      },
+      {
+        "document_version_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+        "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+        "document_type": "pliego",
+        "page": 1,
+        "section": 319,
+        "chunk_index": 0,
+        "chunk_id": "chunk:db9752a1-e9ee-49af-b321-883d0c23cf0a:p1:s319:c0",
+        "chunk_hash": "82c00af161352bd9de7ecfa9fc0645e45c5b9d55c7117fc07f83d8b04cb8982b"
+      }
+    ]
+  },
+  "category_override_proposals": [
+    {
+      "requirement_id": "financial-working-capital",
+      "category_value": "habilitating",
+      "rationale": "El pliego evalúa el índice de Capital de Trabajo dentro de \"2.2 CAPACIDAD FINANCIERA\", subsección explícita del Capítulo II \"REQUISITOS HABILITANTES\".",
+      "source_reference": "Pliego de Condiciones Definitivo SA-24-2026 (db9752a1-e9ee-49af-b321-883d0c23cf0a), Capítulo II §2.2, secciones 408-410.",
+      "caveat": null
+    },
+    {
+      "requirement_id": "legal-rce-policy",
+      "category_value": "habilitating",
+      "rationale": "HR-003 (docs/governance/2026-08-11-agt002-rama-judicial-human-review.md): la póliza de responsabilidad civil extracontractual (ítem 17) está numerada dentro del Capítulo II \"REQUISITOS HABILITANTES\" del pliego. Extraída ahora por contexto real (frase \"responsabilidad civil extracontractual\"), no por el patrón genérico \"polizas?\" usado hasta la versión 2 de este borrador.",
+      "source_reference": "Pliego de Condiciones Definitivo SA-24-2026 (db9752a1-e9ee-49af-b321-883d0c23cf0a), Capítulo II, secciones 350-355.",
+      "caveat": "Las garantías posteriores de ejecución del contrato (sección 110, cronograma, posteriores a la adjudicación) quedan expresamente excluidas de esta clasificación (HR-002/HR-003) y se excluyen estructuralmente en la extracción (tender-requirement-extraction.js, exclusión por contexto de ejecución/adjudicación posterior), no solo documentadas como advertencia."
+    },
+    {
+      "requirement_id": "legal-collective-life-policy",
+      "category_value": "habilitating",
+      "rationale": "HR-003: la póliza de seguro de vida colectivo (ítem 18) está numerada dentro del Capítulo II \"REQUISITOS HABILITANTES\" del pliego. Extraída ahora por contexto real (frase \"vida colectiv[oa]\"), no por el patrón genérico \"polizas?\" usado hasta la versión 2 de este borrador.",
+      "source_reference": "Pliego de Condiciones Definitivo SA-24-2026 (db9752a1-e9ee-49af-b321-883d0c23cf0a), Capítulo II, secciones 356-360.",
+      "caveat": "Las garantías posteriores de ejecución del contrato (sección 110, cronograma, posteriores a la adjudicación) quedan expresamente excluidas de esta clasificación (HR-002/HR-003) y se excluyen estructuralmente en la extracción, no solo documentadas como advertencia."
+    }
+  ],
+  "evidence_class_link_proposals": [
+    {
+      "requirement_id": "financial-working-capital",
+      "evidence_class_id": "rup",
+      "rationale": "El pliego basa expresamente la evaluación de los requisitos financieros en el Registro Único de Proponentes.",
+      "source_reference": "Pliego de Condiciones Definitivo SA-24-2026 (db9752a1-e9ee-49af-b321-883d0c23cf0a), sección 409."
+    },
+    {
+      "requirement_id": "legal-rce-policy",
+      "evidence_class_id": "rce_policy",
+      "rationale": "HR-003: enlace directo, sin ambigüedad, entre el requisito ya subdividido por contexto real y la clase cerrada de póliza de responsabilidad civil extracontractual del catálogo de 17 clases empresariales.",
+      "source_reference": "Pliego de Condiciones Definitivo SA-24-2026 (db9752a1-e9ee-49af-b321-883d0c23cf0a), Capítulo II, secciones 350-355."
+    },
+    {
+      "requirement_id": "legal-collective-life-policy",
+      "evidence_class_id": "collective_life_policy",
+      "rationale": "HR-003: enlace directo, sin ambigüedad, entre el requisito ya subdividido por contexto real y la clase cerrada de póliza de seguro de vida colectivo del catálogo de 17 clases empresariales.",
+      "source_reference": "Pliego de Condiciones Definitivo SA-24-2026 (db9752a1-e9ee-49af-b321-883d0c23cf0a), Capítulo II, secciones 356-360."
+    }
+  ],
+  "abstentions": [
+    {
+      "requirement_id": "technical-video-surveillance-scope",
+      "axis": "category_override",
+      "reason": "evidence_quality_insufficient_false_positive_dominated",
+      "detail": "Con la extracción ampliada a 17/17 documentos vigentes (33 citas automáticas frente a 9 en la extracción sobre 3/17), 27 de 33 citas siguen siendo falsos positivos (verificado leyendo cada una): 24 son \"Cámara(s) de Comercio\"/Confecámaras (registro mercantil, representación legal), 2 usan \"monitoreo\" en el sentido de seguimiento de indicadores de un programa de gestión de contratistas (Anexo 5), no de video, y 1 es una mención no relacionada a la Superintendencia de Vigilancia sobre infraestructura física en Manizales. Las 6 citas restantes son señales reales pero no cuantificables, ahora corroboradas de forma idéntica en tres documentos independientes (Estudios previos, Proyecto de pliego y Pliego definitivo): (a) dos turnos de personal llamados literalmente \"Monitoreo\" (24h, sin arma) dentro de la tabla de puestos de vigilancia; (b) una frase narrativa de justificación (\"Estudios previos\" §14) que menciona circuitos cerrados de televisión como herramienta de apoyo, sin cifra ni alcance; (c) una definición regulatoria genérica de \"medios tecnológicos\" en vigilancia privada (Estudios del Sector §133, no específica de este contrato); y (d) un listado de procesos de OTRAS entidades que sí incluyeron medios tecnológicos (Estudios del Sector §216, comparación de mercado, no un requisito de este pliego). Ninguna de las 6 especifica cantidad de cámaras, cobertura o especificación técnica exigida para este contrato; siguen siendo indicio contextual, no una condición cuantificable cerrada."
+    },
+    {
+      "requirement_id": "technical-video-surveillance-scope",
+      "axis": "evidence_class_link",
+      "reason": "no_catalog_class_conceptually_corresponds",
+      "detail": "El catálogo cerrado de 17 clases de evidencia empresarial (agt002-company-evidence-classes.js) describe documentos de calificación de la empresa (licencias, RUP, pólizas, financieros, personal); ninguna clase corresponde conceptualmente al alcance técnico de videovigilancia/CCTV exigido por el pliego para la ejecución del servicio."
+    }
+  ],
+  "data_gaps": [
+    {
+      "gap_id": "local_reconstruction_not_yet_persisted_in_db",
+      "description": "Esta ejecución reconstruyó chunks localmente (deterministas, contrato agt002-document-chunks.js) para 17/17 documentos vigentes directamente desde psi_tender_document_versions.extracted_text — no desde psi_tender_document_chunks. Se reconciliaron por igualdad exacta de chunk_id/content_hash/chunk_hash contra los 479 chunks que sí existen hoy en psi_tender_document_chunks (current=true) para esta oportunidad, sin ninguna discrepancia. De esos 17 documentos, 14 (834442625, 834442626, 834442627, 834442629, 834442630, 834442631, 834442632, 834442633, 834442634, 834442636, 834442637, 834442639, 834442642, 834442643) tienen chunk evidence que existe únicamente en esta reconstrucción local (nunca ejecutada por el pipeline real de producción contra el snapshot canónico c33159a5-defe-4a6f-8fa4-68c5ceb60e59); esos chunk_id no están hoy en psi_tender_document_chunks. Esta sesión no escribió ningún chunk a la base de datos: la reconstrucción es puramente local, en memoria, para este borrador.",
+      "affected_document_ids": [
+        "834442625",
+        "834442626",
+        "834442627",
+        "834442629",
+        "834442630",
+        "834442631",
+        "834442632",
+        "834442633",
+        "834442634",
+        "834442636",
+        "834442637",
+        "834442639",
+        "834442642",
+        "834442643"
+      ]
+    },
+    {
+      "gap_id": "extractor_scope_is_not_full_pliego_coverage",
+      "description": "tender-requirement-extraction.js (a través de buildGovernedRequirementAnalysis, HR-003) es un clasificador cerrado que solo reconoce exactamente cuatro requirement_id fijos para esta oportunidad (legal-rce-policy, legal-collective-life-policy, financial-working-capital, technical-video-surveillance-scope) sin importar cuántos documentos se le entreguen — no es un extractor semántico exhaustivo del pliego. legal-rce-policy y legal-collective-life-policy reemplazan, solo para este flujo gobernado, al requisito genérico legal-guarantee-policy que usaban las versiones 1 y 2 de este borrador; el extractor genérico (extractLegalRequirements/legal-guarantee-policy) sigue existiendo sin cambios para el flujo v2 de preanálisis por reglas (fuera del alcance de este script). Ejecutar esta extracción sobre 17/17 documentos vigentes (en vez de 3/17) amplía la evidencia disponible para esos cuatro requisitos (más citas, propuestas/abstenciones mejor fundamentadas) pero NO descubre nuevos requirement_id ni constituye cobertura semántica total del pliego real, que puede contener requisitos habilitantes, técnicos o financieros adicionales que este extractor cerrado simplemente no está diseñado para reconocer. Una extracción exhaustiva del pliego requeriría una revisión humana adicional, fuera del alcance de este script.",
+      "affected_document_ids": []
+    }
+  ]
+}

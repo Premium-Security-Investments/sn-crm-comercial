@@ -13,13 +13,14 @@
     "check:siio-agents": "node scripts/check_siio_agent_catalog.mjs",
     "check:nav-permissions": "node scripts/check_nav_permissions.mjs",
     "check:backend-parity": "node scripts/check_backend_parity.mjs",
-    "test:agt002-runtime": "node --test tests/agt002-workbench-contract.test.mjs tests/agt002-workbench-worker.test.mjs tests/agt002-workbench-persistence.test.mjs tests/agt002-workbench-end-to-end.integration.test.mjs tests/agt002-workbench-responder.test.mjs tests/agt002-workbench-runtime.test.mjs tests/agt002-workbench-worker-route.test.mjs tests/agt002-workbench-scheduler-ops-static.test.mjs tests/agt002-workbench-runtime-hardening-pglite.integration.test.mjs && npm run check:backend-parity && npm run build",
+    "test:agt002-runtime": "node --test tests/agt002-workbench-contract.test.mjs tests/agt002-workbench-worker.test.mjs tests/agt002-workbench-persistence.test.mjs tests/agt002-workbench-end-to-end.integration.test.mjs tests/agt002-workbench-responder.test.mjs tests/agt002-workbench-runtime.test.mjs tests/agt002-workbench-worker-route.test.mjs tests/agt002-workbench-scheduler-ops-static.test.mjs tests/agt002-workbench-runtime-hardening-pglite.integration.test.mjs tests/agt002-governance-draft-proposal.test.mjs tests/agt002-governance-draft-proposal-runtime-isolation-static.test.mjs && npm run check:backend-parity && npm run build",
     "preview": "vite preview --host 0.0.0.0",
     "start": "node --env-file=.env.local server/index.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "latest",
     "@vitejs/plugin-react": "latest",
+    "@xmldom/xmldom": "^0.8.13",
     "adm-zip": "^0.6.0",
     "express": "latest",
     "mammoth": "^1.12.0",

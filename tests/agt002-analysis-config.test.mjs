@@ -27,12 +27,22 @@ function run() {
   }
 
   // 3) solo los literales soportados ('true' y '1', sin distinción de mayúsculas) habilitan.
-  //    AGT002_DOCUMENT_RETRIEVAL y AGT002_LEGAL_CORPUS requieren AGT002_CONTEXT_V2 (ver caso 4),
-  //    así que se activan aquí junto a esa dependencia para aislar solo el parseo del literal.
+  //    AGT002_DOCUMENT_RETRIEVAL y AGT002_LEGAL_CORPUS requieren AGT002_CONTEXT_V2, y
+  //    AGT002_INTEGRAL_CONTRACT_V3 requiere AGT002_CANONICAL_ONLY + AGT002_CONTEXT_V2 +
+  //    AGT002_DOCUMENT_RETRIEVAL (ver caso 4), así que cada una se activa aquí junto a su
+  //    dependencia para aislar solo el parseo del literal.
   {
-    const dependsOnContextV2 = new Set(['AGT002_DOCUMENT_RETRIEVAL', 'AGT002_LEGAL_CORPUS']);
+    const requiredBaseByFlag = {
+      AGT002_DOCUMENT_RETRIEVAL: { AGT002_CONTEXT_V2: 'true' },
+      AGT002_LEGAL_CORPUS: { AGT002_CONTEXT_V2: 'true' },
+      AGT002_INTEGRAL_CONTRACT_V3: {
+        AGT002_CANONICAL_ONLY: 'true',
+        AGT002_CONTEXT_V2: 'true',
+        AGT002_DOCUMENT_RETRIEVAL: 'true',
+      },
+    };
     for (const name of ANALYSIS_FLAG_NAMES) {
-      const base = dependsOnContextV2.has(name) ? { AGT002_CONTEXT_V2: 'true' } : {};
+      const base = requiredBaseByFlag[name] || {};
 
       const literalTrue = buildAgt002AnalysisConfig({ ...base, [name]: 'true' });
       assert.equal(literalTrue[name], true, `${name}='true' debe habilitar`);
@@ -45,7 +55,8 @@ function run() {
     }
   }
 
-  // 4) estados contradictorios se rechazan: retrieval o legal corpus sin context v2.
+  // 4) estados contradictorios se rechazan: retrieval o legal corpus sin context v2;
+  //    integral v3 sin canonical-only, context v2 y document retrieval simultáneos.
   {
     assert.throws(
       () => buildAgt002AnalysisConfig({ AGT002_DOCUMENT_RETRIEVAL: 'true', AGT002_CONTEXT_V2: 'false' }),
@@ -57,27 +68,65 @@ function run() {
       /AGT002_CONTEXT_V2/,
       'AGT002_LEGAL_CORPUS sin AGT002_CONTEXT_V2 debe rechazarse',
     );
+    assert.throws(
+      () => buildAgt002AnalysisConfig({ AGT002_INTEGRAL_CONTRACT_V3: 'true' }),
+      /AGT002_CANONICAL_ONLY|AGT002_CONTEXT_V2|AGT002_DOCUMENT_RETRIEVAL/,
+      'AGT002_INTEGRAL_CONTRACT_V3 sin ninguna dependencia debe rechazarse',
+    );
+    assert.throws(
+      () => buildAgt002AnalysisConfig({
+        AGT002_INTEGRAL_CONTRACT_V3: 'true',
+        AGT002_CANONICAL_ONLY: 'true',
+      }),
+      /AGT002_CONTEXT_V2|AGT002_DOCUMENT_RETRIEVAL/,
+      'AGT002_INTEGRAL_CONTRACT_V3 sólo con AGT002_CANONICAL_ONLY debe rechazarse',
+    );
+    assert.throws(
+      () => buildAgt002AnalysisConfig({
+        AGT002_INTEGRAL_CONTRACT_V3: 'true',
+        AGT002_CANONICAL_ONLY: 'true',
+        AGT002_CONTEXT_V2: 'true',
+      }),
+      /AGT002_DOCUMENT_RETRIEVAL/,
+      'AGT002_INTEGRAL_CONTRACT_V3 sin AGT002_DOCUMENT_RETRIEVAL debe rechazarse',
+    );
   }
 
   // 5) combinaciones válidas no se rechazan.
   {
     const config = buildAgt002AnalysisConfig({
+      AGT002_CANONICAL_ONLY: 'true',
       AGT002_CONTEXT_V2: 'true',
       AGT002_DOCUMENT_RETRIEVAL: 'true',
       AGT002_LEGAL_CORPUS: 'true',
+      AGT002_INTEGRAL_CONTRACT_V3: 'true',
     });
     assert.equal(config.AGT002_CONTEXT_V2, true);
     assert.equal(config.AGT002_DOCUMENT_RETRIEVAL, true);
     assert.equal(config.AGT002_LEGAL_CORPUS, true);
+    assert.equal(config.AGT002_INTEGRAL_CONTRACT_V3, true);
   }
 
-  // 6) el objeto resultante es inmutable.
+  // 6) ausencia de legal corpus no bloquea v3: la abstención jurídica se fuerza en el engine
+  //    (fuera de alcance de este módulo), no en la configuración.
+  {
+    const config = buildAgt002AnalysisConfig({
+      AGT002_CANONICAL_ONLY: 'true',
+      AGT002_CONTEXT_V2: 'true',
+      AGT002_DOCUMENT_RETRIEVAL: 'true',
+      AGT002_INTEGRAL_CONTRACT_V3: 'true',
+    });
+    assert.equal(config.AGT002_LEGAL_CORPUS, false);
+    assert.equal(config.AGT002_INTEGRAL_CONTRACT_V3, true);
+  }
+
+  // 7) el objeto resultante es inmutable.
   {
     const config = buildAgt002AnalysisConfig({});
     assert.throws(() => { config.AGT002_CONTEXT_V2 = true; }, TypeError);
   }
 
-  // 7) sin argumento usa process.env por defecto y no explota.
+  // 8) sin argumento usa process.env por defecto y no explota.
   {
     assert.doesNotThrow(() => buildAgt002AnalysisConfig());
   }

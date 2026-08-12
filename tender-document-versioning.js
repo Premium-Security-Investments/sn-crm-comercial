@@ -44,6 +44,7 @@ export async function refreshOfficialTenderDocument({
   ensureStorage,
   upload,
   recordVersion,
+  recordExtraction,
 }) {
   const sourceDocumentId = normalizeTenderSourceDocumentId(document.source_document_id);
   const buffer = await download(document);
@@ -61,16 +62,28 @@ export async function refreshOfficialTenderDocument({
     throw error;
   }
   const contentHash = tenderDocumentContentHash(buffer);
-  if (currentVersion?.content_hash === contentHash) {
+  if (currentVersion?.content_hash === contentHash && !currentVersion?.needs_extraction) {
     return { status: 'unchanged', source_document_id: sourceDocumentId };
   }
-  const extractedText = await extractText(buffer, name, document.mime_type || '');
-  if (!String(extractedText || '').trim()) {
+  const extractionResult = await extractText(buffer, name, document.mime_type || '');
+  const typedExtraction = extractionResult && typeof extractionResult === 'object' ? extractionResult : null;
+  const isGap = typedExtraction?.status === 'gap';
+  const extractedText = typeof extractionResult === 'string'
+    ? extractionResult
+    : typedExtraction?.status === 'ok'
+      ? typedExtraction.text
+      : null;
+  if (!isGap && !String(extractedText || '').trim()) {
     const error = new Error(`No fue posible extraer texto verificable: ${name}`);
     error.code = 'TENDER_DOC_EMPTY_TEXT';
     throw error;
   }
-  if (Buffer.byteLength(extractedText, 'utf8') > MAX_EXTRACTED_TEXT_BYTES) throw new Error(`El texto extraído supera 10MB: ${name}`);
+  if (isGap && !recordExtraction) {
+    const error = new Error(`La extracción gap requiere persistencia tipada: ${name}`);
+    error.code = 'TENDER_DOC_GAP_PERSISTENCE_REQUIRED';
+    throw error;
+  }
+  if (extractedText !== null && Buffer.byteLength(extractedText, 'utf8') > MAX_EXTRACTED_TEXT_BYTES) throw new Error(`El texto extraído supera 10MB: ${name}`);
   const storagePath = tenderDocumentVersionPath({ opportunityId, sourceDocumentId, contentHash, name });
   await ensureStorage();
   await upload(storagePath, buffer, document.mime_type || 'application/octet-stream');
@@ -84,8 +97,11 @@ export async function refreshOfficialTenderDocument({
     size_bytes: buffer.length,
     extracted_text: extractedText,
   });
+  if (recordExtraction && typedExtraction) {
+    await recordExtraction({ extraction: typedExtraction, version: recorded });
+  }
   const status = recorded?.status === 'unchanged' ? 'unchanged' : (currentVersion ? 'updated' : 'new');
-  return { status, source_document_id: sourceDocumentId, version: recorded };
+  return { status, source_document_id: sourceDocumentId, version: recorded, extraction_status: typedExtraction?.status || 'legacy' };
 }
 
 export async function refreshTenderDocumentBatch(documents, refreshOne) {

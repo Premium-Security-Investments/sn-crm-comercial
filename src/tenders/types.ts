@@ -284,6 +284,46 @@ export type TenderLegalEvidence = {
   omissions: Array<{ source_id: string; reason: string }>;
   abstention_state: 'grounded' | 'abstained';
 };
+// AGT-002 integral analysis v3 (optional, read-only): mirrors the closed contract in
+// agt002-integral-analysis-v3.js. Only present when the server-side
+// AGT002_INTEGRAL_CONTRACT_V3 flag produced this run; UI code must always treat this as
+// optional and never require it.
+export type TenderIntegralCategory = 'discard' | 'habilitating' | 'technical' | 'financial_execution' | 'strategic';
+export type TenderIntegralEvidenceRef = { ref: string; source_type: 'tender_document' | 'company_evidence' | 'legal_corpus' | 'human_evidence' | 'objective_validation'; purpose: string };
+export type TenderIntegralMissingEvidence = { missing_id: string; evidence_class_id: string | null; needed_source_type: string; reason: string; critical: boolean };
+export type TenderIntegralAction = { action_id: string; action_type: string; summary: string; basis_unit_id: string; suggested_role: string; priority: 'critical' | 'high' | 'medium' | 'low'; external_side_effect: false };
+export type TenderIntegralAnalysisUnit = {
+  unit_id: string;
+  unit_kind: 'tender_requirement' | 'strategic_consideration';
+  requirement_id: string | null;
+  category: TenderIntegralCategory;
+  sequence: number;
+  title: string;
+  assessment_mode: 'assessed' | 'abstained';
+  conclusion: { status: string; summary: string; confidence: 'high' | 'medium' | 'low' | 'unavailable' };
+  blocking: { effect: 'blocker' | 'conditional' | 'non_blocking' | 'undetermined'; curability: string; reason: string };
+  evidence_state: { presence: string; review: string; validity: string; applicability: string; compliance: string };
+  evidence_refs: TenderIntegralEvidenceRef[];
+  missing_evidence: TenderIntegralMissingEvidence[];
+  commercial_impact: { level: 'critical' | 'high' | 'medium' | 'low' | 'unknown'; summary: string; dimension: string };
+  legal_assessment: { status: string; basis_refs: string[]; summary: string; human_legal_review_required: boolean };
+  actions: TenderIntegralAction[];
+  milestone: { status: string; type: string; at: string | null; source_ref: string | null; summary: string };
+  escalation: { required: boolean; level: string; reason: string };
+  closure: { status: string; condition: string; evidence_required: string[] };
+  human_validation: { required: true; status: 'pending'; reason: string };
+};
+export type TenderIntegralAnalysisV3 = {
+  contract_version: string;
+  coverage: {
+    manifest_version: string; expected_requirement_ids: string[]; analyzed_requirement_ids: string[];
+    material_omissions: boolean; omission_reasons: string[];
+    company_evidence_manifest_version: string; company_evidence_class_ids: string[];
+    legal_corpus_version_id: string | null;
+  };
+  analysis_units: TenderIntegralAnalysisUnit[];
+};
+
 export type TenderDocumentAnalysis = {
   run_id: string;
   snapshot_id: string;
@@ -311,6 +351,7 @@ export type TenderDocumentAnalysis = {
   evidence_coverage?: TenderEvidenceCoverage | null;
   legal_findings?: TenderLegalFinding[];
   legal_evidence?: TenderLegalEvidence | null;
+  integral_analysis?: TenderIntegralAnalysisV3 | null;
   [key: string]: unknown;
 };
 export type TenderDocumentRecord = {

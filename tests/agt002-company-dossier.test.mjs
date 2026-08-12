@@ -64,6 +64,12 @@ const documents = [
   assert.notEqual(AGT002_COMPANY_PROFILE_SELECT, '*');
   assert.notEqual(AGT002_COMPANY_DOCUMENT_SELECT, '*');
   assert.notEqual(AGT002_COMPANY_EVIDENCE_REGISTRY_SELECT, '*');
+  // P2-2: minimum-exposure defense — the legacy select must never carry sensitive columns
+  // (decision_humana, notes, classification, sensibilidad, control_de_uso) even though
+  // they exist on the same table.
+  for (const sensitiveColumn of ['notes', 'decision_humana', 'classification', 'sensibilidad', 'control_de_uso', 'zona_almacenamiento']) {
+    assert.doesNotMatch(AGT002_COMPANY_EVIDENCE_REGISTRY_SELECT, new RegExp(`(^|,)${sensitiveColumn}(,|$)`), `${sensitiveColumn} must never be selected from psi_agt002_company_evidence_registry`);
+  }
 
   const gaps = buildAgt002CompanyDossier({ profile: { updated_at: profile.updated_at }, documents: [] });
   for (const item of Object.values(gaps)) {

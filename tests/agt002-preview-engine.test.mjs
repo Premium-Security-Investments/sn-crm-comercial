@@ -6,6 +6,11 @@ import { AGT002_LEGAL_HUMAN_REVIEW_STATEMENT, AGT002_PREVIEW_OUTPUT_JSON_SCHEMA 
 import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { retrieveAgt002LegalEvidence } from '../agt002-legal-retrieval.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS, buildAgt002CompanyEvidenceClasses } from '../agt002-company-evidence-classes.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN, buildAgt002EvidenceStateManifest } from '../agt002-evidence-state-manifest.js';
+import { deriveAgt002IntegralCategoryManifest } from '../agt002-integral-category-manifest.js';
+import { validateAgt002TenderAnalysisEnvelopeV3, adaptAgt002TenderAnalysisV3 } from '../agt002-tender-adapter.js';
+import { registerAgt002PreviewAnalysis } from '../agt002-preview-persistence.js';
 
 const context = {
   opportunity: { id: 'opp-1', company_name: 'Entidad de prueba', title: 'Vigilancia' },
@@ -630,6 +635,436 @@ assert.throws(
     ]);
     assert.equal(fields.validation_code, 'legal_abstention_text_mismatch');
   }
+}
+
+// ---------------------------------------------------------------------------
+// Task 6: engine assembles the governed v3 envelope behind AGT002_INTEGRAL_CONTRACT_V3.
+// ---------------------------------------------------------------------------
+{
+  const v3ContextV2Sections = {
+    ...buildAgt002OpportunityContextV2({
+      opportunity: { id: 'opp-1', updated_at: '2026-08-01T10:00:00.000Z' },
+      tender: { id: 'tender-1', title: 'Vigilancia', entity: 'Entidad', updated_at: '2026-08-01T10:00:00.000Z' },
+    }),
+    company_dossier: buildAgt002CompanyDossier({
+      profile: { legal_name: 'Seguridad Nacional Ltda.', updated_at: '2026-08-01T10:00:00.000Z' },
+      documents: [],
+    }),
+  };
+  const v3RetrievalDocuments = [{
+    document_id: 'doc-01', document_version_id: 'ver-01', opportunity_id: 'opp-1', snapshot_id: null,
+    document_type: 'pliego', name: 'Pliego', version: 1, content_hash: 'a'.repeat(64), current: true,
+    extracted_text: 'Requiere póliza vigente de cumplimiento.',
+  }];
+  const v3RetrievalDeepAnalysis = {
+    matrix: {
+      legal: [{
+        id: 'req-poliza', front: 'legal', label: 'Póliza vigente',
+        evidence: [{ document_id: 'ver-01', document_name: 'Pliego', document_type: 'pliego', excerpt: 'Requiere póliza vigente de cumplimiento.' }],
+      }],
+      financial: [], technical: [],
+    },
+  };
+  const v3Context = {
+    documents: v3RetrievalDocuments, deepAnalysis: v3RetrievalDeepAnalysis,
+    snapshotId: '55555555-5555-4555-8555-555555555555', contextV2Sections: v3ContextV2Sections,
+  };
+
+  function buildV3ModelOutput(options, evidenceState = AGT002_EVIDENCE_STATE_SAFE_UNKNOWN) {
+    const requirementEntry = options.input.document_evidence.requirement_manifest[0];
+    const allowedRef = options.input.document_evidence.citation_allowlist[0];
+    return {
+      integral_analysis: {
+        contract_version: 'agt002-integral-analysis-v3',
+        coverage: {
+          manifest_version: options.input.document_evidence.requirement_manifest_version,
+          expected_requirement_ids: [requirementEntry.requirement_id],
+          analyzed_requirement_ids: [requirementEntry.requirement_id],
+          material_omissions: options.input.document_evidence.material_omissions,
+          omission_reasons: [],
+          company_evidence_manifest_version: 'agt002-company-evidence-classes-v1',
+          company_evidence_class_ids: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
+          legal_corpus_version_id: null,
+        },
+        analysis_units: [{
+          unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: requirementEntry.requirement_id,
+          category: 'habilitating', sequence: 1, title: 'Póliza vigente', assessment_mode: 'assessed',
+          // Every evidenceState this helper is called with here carries compliance
+          // "unknown" (the real evidence-state-manifest never writes a governed compliance
+          // determination yet), so the only honest conclusion is "human_validation_required"
+          // (P0: a material conclusion can never coexist with compliance "unknown") with
+          // confidence "medium" (P1: human_validation_required never uses "high").
+          conclusion: { status: 'human_validation_required', summary: 'Evidencia disponible; sin determinación de cumplimiento gobernada.', confidence: 'medium' },
+          blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
+          // Default: no evidenceClassLinkByRequirementId is curated for 'req-poliza' in
+          // these tests (companyEvidenceClassesProvider returns an empty registry too),
+          // so the governed map defaults to the safe-unknown state; the mocked model
+          // output must reproduce it exactly or the engine's own governed-match check
+          // rejects it. Callers demonstrating a real governed link pass their own
+          // evidenceState (see the dedicated governed-evidence-state tests below).
+          evidence_state: evidenceState,
+          evidence_refs: [{ ref: allowedRef, source_type: 'tender_document', purpose: 'requirement_basis' }],
+          missing_evidence: [],
+          commercial_impact: { level: 'low', summary: 'Sin impacto.', dimension: 'eligibility' },
+          legal_assessment: { status: 'not_applicable', basis_refs: [], summary: 'No aplica.', human_legal_review_required: false },
+          actions: [],
+          milestone: { status: 'not_identified', type: 'none', at: null, source_ref: null, summary: 'Sin hito.' },
+          escalation: { required: false, level: 'none', reason: 'Sin condición crítica.' },
+          closure: { status: 'human_confirmation_required', condition: 'Persona confirma.', evidence_required: ['tender_document'] },
+          human_validation: { required: true, status: 'pending', reason: 'Confirmar.' },
+        }],
+      },
+    };
+  }
+
+  // Flag off: the v2 provider-facing schema/prompt/envelope is exactly unchanged (no v3
+  // option ever touches the v2 path).
+  {
+    const client = fakeClient(async () => ({ content: JSON.stringify(validModelOutput()), usage: { input_tokens: 1, output_tokens: 1 } }));
+    const engine = createAgt002PreviewEngine({ client, ...baseEngineOptions() });
+    const result = await engine.analyze(context);
+    assert.equal(result.schema_version, '2.0-preview.1');
+    assert.equal(Object.hasOwn(client.calls[0], 'v3'), false);
+  }
+
+  // Flag on, well-formed model output: the engine assembles the governed v3 envelope,
+  // never trusting run identity/coverage/usage from the model, and derives the v2
+  // projection after validation.
+  {
+    const client = fakeClient(async (options) => ({ content: JSON.stringify(buildV3ModelOutput(options)), usage: { input_tokens: 3, output_tokens: 3 } }));
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      governanceProvenance: governanceProvenanceFixture(),
+      companyEvidenceClassesProvider: () => [],
+    });
+    const result = await engine.analyze(v3Context);
+
+    assert.equal(client.calls[0].outputSchema.required.length, 1);
+    assert.deepEqual(client.calls[0].outputSchema.required, ['integral_analysis']);
+
+    assert.equal(result.schema_version, '3.0.0');
+    assert.equal(result.agent_id, 'AGT-002');
+    assert.equal(result.snapshot_id, v3Context.snapshotId);
+    assert.equal(result.status, 'completed');
+    assert.equal(result.method, 'agent_ai');
+    assert.equal(result.human_review_required, true);
+    assert.equal(result.integral_analysis.analysis_units[0].category, 'habilitating');
+    assert.ok(result.evidence_coverage);
+    assert.equal(result.legal_corpus_version_id, null, 'legalCorpus is off for this engine so the corpus binding stays null');
+    assert.ok(
+      result.integral_analysis.analysis_units.every(unit => ['not_applicable', 'not_verified'].includes(unit.legal_assessment.status)),
+      'without a published legal corpus every legal assessment must abstain from a substantive legal conclusion',
+    );
+    assert.ok(
+      result.integral_analysis.analysis_units.every(unit => unit.legal_assessment.basis_refs.length === 0
+        && unit.evidence_refs.every(ref => ref.source_type !== 'legal_corpus')),
+      'without a published legal corpus no legal basis reference may be emitted',
+    );
+    assert.ok(
+      result.integral_analysis.analysis_units.flatMap(unit => unit.actions)
+        .every(action => action.external_side_effect === false && !['go', 'no_go', 'approve', 'sign', 'send', 'submit'].includes(action.action_type)),
+      'the envelope contains no autonomous GO/NO-GO, approval, signature, send or submission action',
+    );
+    assert.equal(result.v2_projection.human_review_required, true);
+    // No governed evidence-class link is curated for 'req-poliza' here, so evidence_state
+    // is the safe-unknown abstention state, and the deterministic v2 projection correctly
+    // downgrades to advance_conditionally rather than a plain (unearned) advance.
+    assert.equal(result.v2_projection.recommendation, 'advance_conditionally');
+    assert.ok(Array.isArray(result.v2_projection.strengths));
+  }
+
+  // With no legal_corpus_version_id, the provider cannot smuggle a substantive legal
+  // conclusion into an otherwise valid unit: the whole run fails closed.
+  {
+    const client = fakeClient(async (options) => {
+      const output = buildV3ModelOutput(options);
+      output.integral_analysis.analysis_units[0].legal_assessment = {
+        status: 'supported', basis_refs: [], summary: 'Afirmación jurídica sin corpus.', human_legal_review_required: true,
+      };
+      return { content: JSON.stringify(output), usage: { input_tokens: 1, output_tokens: 1 } };
+    });
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      governanceProvenance: governanceProvenanceFixture(),
+      companyEvidenceClassesProvider: () => [],
+    });
+    await assert.rejects(() => engine.analyze(v3Context), /no produjo una respuesta válida/i);
+  }
+
+  // Design test 27 / audit P1-1: the REAL envelope emitted by runOnceV3 — not a
+  // hand-approximated fixture — must be accepted by the same-version consumer
+  // (validateAgt002TenderAnalysisEnvelopeV3 / adaptAgt002TenderAnalysisV3). The
+  // validationContext below is independently reconstructed from the same governed
+  // building blocks the engine itself uses (deriveAgt002IntegralCategoryManifest,
+  // buildAgt002EvidenceStateManifest, buildAgt002CompanyEvidenceClasses), exactly as a
+  // real second caller of the same version would have to — never read off the engine's
+  // internals.
+  {
+    const client = fakeClient(async (options) => ({ content: JSON.stringify(buildV3ModelOutput(options)), usage: { input_tokens: 3, output_tokens: 3 } }));
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      governanceProvenance: governanceProvenanceFixture(),
+      companyEvidenceClassesProvider: () => [],
+    });
+    const result = await engine.analyze(v3Context);
+
+    const rawRequirementManifest = result.evidence_coverage.requirement_manifest;
+    const requirementManifest = deriveAgt002IntegralCategoryManifest(rawRequirementManifest, { 'req-poliza': 'habilitating' });
+    const companyEvidenceClasses = buildAgt002CompanyEvidenceClasses({ registryEntries: [] });
+    const evidenceStateManifest = buildAgt002EvidenceStateManifest(rawRequirementManifest, {
+      evidenceClasses: companyEvidenceClasses.classes, evidenceClassLinkByRequirementId: {},
+    });
+    const validationContext = {
+      requirementManifestVersion: result.evidence_coverage.requirement_manifest_version,
+      requirementManifest,
+      companyEvidenceManifestVersion: 'agt002-company-evidence-classes-v1',
+      companyEvidenceClassIds: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
+      legalCorpusVersionId: null,
+      allowlist: {
+        tender_document: [...result.evidence_coverage.citation_allowlist],
+        company_evidence: [],
+        legal_corpus: [],
+        human_evidence: [],
+        objective_validation: [],
+      },
+      materialOmissionsObserved: result.evidence_coverage.material_omissions === true,
+      evidenceStateManifest,
+    };
+
+    const validated = validateAgt002TenderAnalysisEnvelopeV3(result, validationContext);
+    assert.equal(validated, result, 'the real producer envelope must pass its own-version consumer unmodified');
+
+    const adapted = adaptAgt002TenderAnalysisV3(result, validationContext);
+    assert.equal(adapted.producer, 'AGT-002');
+    assert.equal(adapted.run_id, result.run_id);
+    assert.equal(adapted.recommendation, result.v2_projection.recommendation);
+    assert.equal(adapted.human_review_required, true);
+
+    // P2-1 regression: drive the same real engine envelope through the real persistence
+    // boundary in one run. The DB is the only fake; contract assembly, governed safe-unknown
+    // evidence state, projection validation/recomputation, and registration are production code.
+    const rpcCalls = [];
+    const database = { async rpc(name, params) {
+      rpcCalls.push({ name, params });
+      assert.equal(name, 'psi_record_agt002_canonical_analysis_run');
+      return { data: {
+        id: '99999999-9999-4999-8999-999999999999', snapshot_id: params.p_snapshot_id,
+        producer: 'AGT-002', method: 'agent_ai', status: 'completed', canonical: true,
+        critical_open_count: params.p_critical_open_count, context_version_id: params.p_context_version_id,
+      }, error: null };
+    } };
+    const registered = await registerAgt002PreviewAnalysis(database, {
+      opportunity_id: '11111111-1111-4111-8111-111111111111',
+      tender_id: '22222222-2222-4222-8222-222222222222',
+      snapshot_id: v3Context.snapshotId,
+      envelope: result,
+      canonicalOnly: true,
+      context_version_id: '33333333-3333-4333-8333-333333333333',
+    });
+    assert.equal(rpcCalls.length, 1);
+    assert.equal(registered.result.integral_analysis.analysis_units[0].evidence_state.compliance, 'unknown');
+    assert.equal(registered.result.integral_analysis.analysis_units[0].conclusion.status, 'human_validation_required');
+    assert.equal(registered.result.recommendation, result.v2_projection.recommendation);
+  }
+
+  // The model attempting to forge governed fields (run identity, usage, legacy v2 keys)
+  // on its turn must be rejected — the engine, not the provider, owns those.
+  {
+    const client = fakeClient(async (options) => ({
+      content: JSON.stringify({ ...buildV3ModelOutput(options), run_id: '11111111-1111-4111-8111-111111111111' }),
+      usage: { input_tokens: 1, output_tokens: 1 },
+    }));
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      governanceProvenance: governanceProvenanceFixture(),
+      companyEvidenceClassesProvider: () => [],
+    });
+    await assert.rejects(() => engine.analyze(v3Context), /no produjo una respuesta válida/i);
+  }
+
+  // Fail-closed category derivation: a real 'legal' front requirement with NO governed
+  // override must reject the whole v3 run rather than fabricate a category.
+  {
+    const client = fakeClient(async (options) => ({ content: JSON.stringify(buildV3ModelOutput(options)), usage: { input_tokens: 1, output_tokens: 1 } }));
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      companyEvidenceClassesProvider: () => [],
+      // no categoryOverrides supplied
+    });
+    await assert.rejects(() => engine.analyze(v3Context), /no está disponible|no produjo una respuesta válida/i);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Governed origin of the five axes (audit P0 "cumplimiento inferido por presencia"):
+  // the engine builds evidence_state fail-closed from a real, curated
+  // evidenceClassLinkByRequirementId + the real 17-class catalog — never trusting the
+  // model's own claim — and rejects any model output whose evidence_state does not match.
+  // ---------------------------------------------------------------------------
+
+  const verifiedRupRegistryRow = {
+    entry_id: 'rup', document_class: 'RUP', existence_status: 'verified', human_review_status: 'approved',
+    applicability_status: 'applicable', integration_active: true, expiry: '2099-01-01', updated_at: '2026-01-01T00:00:00.000Z',
+  };
+  const derivedRupEvidenceState = { presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable', compliance: 'unknown' };
+
+  // A real governed link (requirement -> 'rup') plus an observed, verified class: the
+  // model output that reproduces exactly the derived evidence_state is accepted.
+  {
+    const client = fakeClient(async (options) => ({
+      content: JSON.stringify(buildV3ModelOutput(options, derivedRupEvidenceState)), usage: { input_tokens: 3, output_tokens: 3 },
+    }));
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      evidenceClassLinkByRequirementId: { 'req-poliza': 'rup' },
+      governanceProvenance: governanceProvenanceFixture(),
+      companyEvidenceClassesProvider: () => [verifiedRupRegistryRow],
+    });
+
+    // Provider-input integration: the model receives the governed axes up front, so it
+    // has a real chance to reproduce them (not just a post-hoc rejection surface).
+    const result = await engine.analyze(v3Context);
+    assert.deepEqual(
+      client.calls[0].input.document_evidence.requirement_manifest[0].evidence_state_governed,
+      derivedRupEvidenceState,
+    );
+    assert.deepEqual(result.integral_analysis.analysis_units[0].evidence_state, derivedRupEvidenceState);
+  }
+
+  // ---------------------------------------------------------------------------
+  // P2-1: the persisted run must preserve the binding/versioning/provenance behind
+  // categoryOverrides and evidenceClassLinkByRequirementId — a curated link's class,
+  // rationale and version must survive to the envelope, not just its derived effect.
+  // ---------------------------------------------------------------------------
+  function governanceProvenanceFixture() {
+    return {
+      'category_override:req-poliza': {
+        requirement_id: 'req-poliza', override_kind: 'category_override', category_value: 'habilitating',
+        rationale: 'El pliego exige tratar la póliza como habilitante, no como técnico.', source_reference: 'pliego:seccion-2:habilitantes',
+        curated_by: '10101010-1010-4010-8010-101010101010', curated_at: '2026-08-07T00:00:00.000Z', version: 1,
+      },
+      'evidence_class_link:req-poliza': {
+        requirement_id: 'req-poliza', override_kind: 'evidence_class_link', evidence_class_id: 'rup',
+        rationale: 'El RUP acredita la póliza exigida por el requisito.', source_reference: 'pliego:anexo-1:requisitos-habilitantes',
+        curated_by: '10101010-1010-4010-8010-101010101010', curated_at: '2026-08-07T00:00:00.000Z', version: 2,
+      },
+    };
+  }
+
+  // A governed binding backed by real curated provenance: the persisted envelope must
+  // carry exactly that provenance, citing evidence class, rationale and version.
+  {
+    const client = fakeClient(async (options) => ({
+      content: JSON.stringify(buildV3ModelOutput(options, derivedRupEvidenceState)), usage: { input_tokens: 3, output_tokens: 3 },
+    }));
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      evidenceClassLinkByRequirementId: { 'req-poliza': 'rup' },
+      governanceProvenance: governanceProvenanceFixture(),
+      companyEvidenceClassesProvider: () => [verifiedRupRegistryRow],
+    });
+    const result = await engine.analyze(v3Context);
+    assert.deepEqual(Object.keys(result.governance_provenance).sort(), ['category_override:req-poliza', 'evidence_class_link:req-poliza']);
+    assert.equal(result.governance_provenance['evidence_class_link:req-poliza'].evidence_class_id, 'rup');
+    assert.equal(
+      result.governance_provenance['evidence_class_link:req-poliza'].rationale,
+      governanceProvenanceFixture()['evidence_class_link:req-poliza'].rationale,
+    );
+    assert.equal(result.governance_provenance['evidence_class_link:req-poliza'].version, 2);
+    assert.equal(result.governance_provenance['category_override:req-poliza'].category_value, 'habilitating');
+    assert.equal(result.governance_provenance['category_override:req-poliza'].version, 1);
+  }
+
+  // A governed map without the exact provenance that authorizes its binding must fail
+  // closed. Applying the override and merely omitting governance_provenance would make
+  // the persisted run impossible to reconstruct and audit.
+  {
+    const client = fakeClient(async (options) => ({
+      content: JSON.stringify(buildV3ModelOutput(options, derivedRupEvidenceState)), usage: { input_tokens: 3, output_tokens: 3 },
+    }));
+    assert.throws(() => createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      evidenceClassLinkByRequirementId: { 'req-poliza': 'rup' },
+      companyEvidenceClassesProvider: () => [verifiedRupRegistryRow],
+    }), /provenance gobernada faltante o inconsistente/i);
+  }
+
+  // A provenance record whose bound value does not match what was actually applied (e.g.
+  // stale/mismatched curation data) must fail closed, not merely be omitted from the run.
+  {
+    const client = fakeClient(async (options) => ({
+      content: JSON.stringify(buildV3ModelOutput(options, derivedRupEvidenceState)), usage: { input_tokens: 3, output_tokens: 3 },
+    }));
+    const mismatchedProvenance = governanceProvenanceFixture();
+    mismatchedProvenance['evidence_class_link:req-poliza'] = {
+      ...mismatchedProvenance['evidence_class_link:req-poliza'], evidence_class_id: 'rut',
+    };
+    assert.throws(() => createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      evidenceClassLinkByRequirementId: { 'req-poliza': 'rup' },
+      governanceProvenance: mismatchedProvenance,
+      companyEvidenceClassesProvider: () => [verifiedRupRegistryRow],
+    }), /provenance gobernada faltante o inconsistente/i);
+  }
+
+  // The same governed link and observed class, but the model asserts a DIFFERENT
+  // (individually well-formed) evidence_state — never trusted, rejected outright even
+  // though nothing else about the payload is malformed.
+  {
+    const mismatchedEvidenceState = { ...derivedRupEvidenceState, review: 'partially_reviewed' };
+    const client = fakeClient(async (options) => ({
+      content: JSON.stringify(buildV3ModelOutput(options, mismatchedEvidenceState)), usage: { input_tokens: 3, output_tokens: 3 },
+    }));
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      evidenceClassLinkByRequirementId: { 'req-poliza': 'rup' },
+      governanceProvenance: governanceProvenanceFixture(),
+      companyEvidenceClassesProvider: () => [verifiedRupRegistryRow],
+    });
+    await assert.rejects(() => engine.analyze(v3Context), /no produjo una respuesta válida/i);
+  }
+
+  // A governed link pointing at a class outside the real 17-class catalog is a
+  // configuration/governance error, not absence of signal: the engine fails closed at
+  // construction-adjacent validationContext assembly time, never fabricating a state.
+  {
+    const client = fakeClient(async (options) => ({ content: JSON.stringify(buildV3ModelOutput(options)), usage: { input_tokens: 1, output_tokens: 1 } }));
+    const invalidClassProvenance = governanceProvenanceFixture();
+    invalidClassProvenance['evidence_class_link:req-poliza'] = {
+      ...invalidClassProvenance['evidence_class_link:req-poliza'], evidence_class_id: 'not-a-real-class',
+    };
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      evidenceClassLinkByRequirementId: { 'req-poliza': 'not-a-real-class' },
+      governanceProvenance: invalidClassProvenance,
+      companyEvidenceClassesProvider: () => [],
+    });
+    await assert.rejects(() => engine.analyze(v3Context), /no está disponible/i);
+  }
+
+  // integralContractV3 requires contextV2 + documentRetrieval + a company evidence
+  // classes provider at construction time; it must fail closed like the other
+  // configuration checks, never silently no-op.
+  assert.throws(
+    () => createAgt002PreviewEngine({ client: { run: async () => {} }, ...baseEngineOptions(), integralContractV3: true }),
+    /no está configurado/i,
+  );
+  assert.throws(
+    () => createAgt002PreviewEngine({
+      client: { run: async () => {} }, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+    }),
+    /no está configurado/i,
+    'integralContractV3 must fail closed without companyEvidenceClassesProvider',
+  );
 }
 
 console.log('AGT-002 Preview engine orchestration passed');

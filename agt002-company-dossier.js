@@ -1,10 +1,22 @@
 import { AGT002_CONTEXT_V2_FIELDS, buildAgt002ContextV2 } from './agt002-context-v2.js';
+import { assertAgt002CompanyEvidenceRegistryMinimalExposureSelect } from './agt002-company-evidence-classes.js';
 
 export const AGT002_COMPANY_PROFILE_SELECT = 'id,legal_name,nit,rup_status,rup_updated_at,rup_unspsc_codes,authorized_services,supervigilancia_license,financial_capacity,organizational_capacity,experience_summary,certifications,recurring_documents,disqualifications_notes,source_document_name,updated_at,created_at';
 export const AGT002_COMPANY_DOCUMENT_SELECT = 'id,document_type,display_name,issued_at,expires_at,version,content_hash,current,updated_at,created_at';
-// Canonical, metadata-only company evidence registry (061). Read-only at runtime: no
-// storage_path/signed URL exists on this table, only metadata + provenance.
-export const AGT002_COMPANY_EVIDENCE_REGISTRY_SELECT = 'entry_id,document_class,estado_integracion,source_reference,hash,human_gate,metadata_only,vigencia_text,expiry,existence_status,applicability_status,current,integration_active,updated_at,created_at';
+// P2-2: this legacy select reads the same psi_agt002_company_evidence_registry (061) as
+// agt002-company-evidence-classes.js's own typed select, so it is guarded by the same
+// minimum-exposure allowlist check — never select(*), never a column beyond this exact,
+// unchanged list. Canonical, metadata-only: no storage_path/signed URL exists on this
+// table, only metadata + provenance.
+const AGT002_COMPANY_EVIDENCE_REGISTRY_LEGACY_ALLOWED_COLUMNS = Object.freeze([
+  'entry_id', 'document_class', 'estado_integracion', 'source_reference', 'hash', 'human_gate',
+  'metadata_only', 'vigencia_text', 'expiry', 'existence_status', 'applicability_status',
+  'current', 'integration_active', 'updated_at', 'created_at',
+]);
+export const AGT002_COMPANY_EVIDENCE_REGISTRY_SELECT = assertAgt002CompanyEvidenceRegistryMinimalExposureSelect(
+  'entry_id,document_class,estado_integracion,source_reference,hash,human_gate,metadata_only,vigencia_text,expiry,existence_status,applicability_status,current,integration_active,updated_at,created_at',
+  AGT002_COMPANY_EVIDENCE_REGISTRY_LEGACY_ALLOWED_COLUMNS,
+);
 
 // PostgREST/Postgres codes meaning "the table itself does not exist" — the only
 // condition under which a query against an optional table is allowed to fail soft.

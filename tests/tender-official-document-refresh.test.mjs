@@ -147,6 +147,49 @@ await (async function emptyExtractedTextThrowsClassifiableTerminalCode() {
   );
 })();
 
+await (async function typedGapPersistsBinaryVersionAndAbstentionWithoutFabricatedText() {
+  const extraction = {
+    status: 'gap', text: '', parser: 'pdf-parse', extractor_version: 'tender-document-text-extraction@2',
+    char_count: 0, text_hash: createHash('sha256').update('').digest('hex'),
+    metadata: { gap_reason: 'empty_extraction' },
+  };
+  let versionPayload = null;
+  let extractionPayload = null;
+  const result = await refreshOfficialTenderDocument({
+    opportunityId: 'opp-1', source: 'SECOP II', document: { ...officialDocument, source_document_id: 'doc-gap' },
+    currentVersion: null,
+    download: async () => content,
+    cleanName: value => value.replace(/^\.\.\//, ''),
+    extractText: async () => extraction,
+    ensureStorage: async () => {},
+    upload: async () => {},
+    recordVersion: async payload => { versionPayload = payload; return { id: 'gap-version', status: 'created' }; },
+    recordExtraction: async payload => { extractionPayload = payload; },
+  });
+  assert.equal(versionPayload.extracted_text, null, 'gap no debe fabricar texto legado');
+  assert.equal(extractionPayload.version.id, 'gap-version');
+  assert.equal(extractionPayload.extraction.status, 'gap');
+  assert.equal(result.extraction_status, 'gap');
+})();
+
+await (async function typedGapFailsClosedWhenPersistenceCallbackIsUnavailable() {
+  await assert.rejects(
+    () => refreshOfficialTenderDocument({
+      opportunityId: 'opp-1', source: 'SECOP II', document: { ...officialDocument, source_document_id: 'doc-gap-no-rpc' },
+      currentVersion: null,
+      download: async () => content,
+      extractText: async () => ({
+        status: 'gap', parser: 'pdf-parse', extractor_version: 'tender-document-text-extraction@2',
+        metadata: { gap_reason: 'empty_extraction' },
+      }),
+      ensureStorage: async () => { throw new Error('no debe almacenar un gap sin RPC'); },
+      upload: async () => { throw new Error('no debe subir un gap sin RPC'); },
+      recordVersion: async () => { throw new Error('no debe crear una versión gap sin RPC'); },
+    }),
+    error => error.code === 'TENDER_DOC_GAP_PERSISTENCE_REQUIRED',
+  );
+})();
+
 await (async function oversizedDownloadThrowsClassifiableTerminalCode() {
   const oversized = Buffer.alloc(50 * 1024 * 1024 + 1);
   await assert.rejects(
@@ -192,6 +235,88 @@ assert.deepEqual(
   ['typed', 'legacy-other', 'manual'],
   'la versión tipada vigente gana y las cargas manuales/históricas no duplicadas permanecen'
 );
+
+await (async function typedExtractionIsRecordedOnlyAfterTheVersionHasAnIdentity() {
+  const extraction = {
+    status: 'ok', text: 'Texto completo y verificable', parser: 'pdf-parse',
+    extractor_version: 'tender-document-text-extraction@2',
+    char_count: 28, text_hash: createHash('sha256').update('Texto completo y verificable').digest('hex'), metadata: {},
+  };
+  const observed = [];
+  await refreshOfficialTenderDocument({
+    opportunityId: 'opp-1', source: 'SECOP II', document: { ...officialDocument, source_document_id: 'typed-doc' },
+    currentVersion: null,
+    download: async () => content,
+    cleanName: value => value.replace(/^\.\.\//, ''),
+    extractText: async () => extraction,
+    ensureStorage: async () => {},
+    upload: async () => {},
+    recordVersion: async payload => { observed.push(['version', payload.extracted_text]); return { id: 'version-1', status: 'created' }; },
+    recordExtraction: async payload => { observed.push(['extraction', payload]); },
+  });
+  assert.deepEqual(observed.map(item => item[0]), ['version', 'extraction']);
+  assert.equal(observed[0][1], extraction.text);
+  assert.equal(observed[1][1].version.id, 'version-1');
+  assert.equal(observed[1][1].extraction, extraction);
+})();
+
+await (async function missingVersionedExtractionForcesRepairEvenWhenContentHashMatches() {
+  const extraction = {
+    status: 'ok', text: 'Texto reparado', parser: 'pdf-parse',
+    extractor_version: 'tender-document-text-extraction@2',
+    char_count: 14, text_hash: createHash('sha256').update('Texto reparado').digest('hex'), metadata: {},
+  };
+  let recordedExtraction = null;
+  const result = await refreshOfficialTenderDocument({
+    opportunityId: 'opp-1', source: 'SECOP II', document: { ...officialDocument, source_document_id: 'repair-doc' },
+    currentVersion: { id: 'version-existing', content_hash: hash, needs_extraction: true },
+    download: async () => content,
+    cleanName: value => value.replace(/^\.\.\//, ''),
+    extractText: async () => extraction,
+    ensureStorage: async () => {},
+    upload: async () => {},
+    recordVersion: async () => ({ id: 'version-existing', status: 'unchanged' }),
+    recordExtraction: async payload => { recordedExtraction = payload; },
+  });
+  assert.equal(result.status, 'unchanged', 'no debe crear una versión duplicada');
+  assert.equal(recordedExtraction.version.id, 'version-existing', 'debe reparar la extracción faltante sobre la versión existente');
+})();
+
+await (async function transientExtractionWriteFailureIsRecoverableOnRetry() {
+  const extraction = {
+    status: 'ok', text: 'Texto recuperable', parser: 'pdf-parse',
+    extractor_version: 'tender-document-text-extraction@2',
+    char_count: 16, text_hash: createHash('sha256').update('Texto recuperable').digest('hex'), metadata: {},
+  };
+  let versionWrites = 0;
+  let extractionWrites = 0;
+  const common = {
+    opportunityId: 'opp-1', source: 'SECOP II', document: { ...officialDocument, source_document_id: 'retry-doc' },
+    download: async () => content,
+    cleanName: value => value.replace(/^\.\.\//, ''),
+    extractText: async () => extraction,
+    ensureStorage: async () => {},
+    upload: async () => {},
+  };
+  await assert.rejects(
+    () => refreshOfficialTenderDocument({
+      ...common,
+      currentVersion: null,
+      recordVersion: async () => { versionWrites += 1; return { id: 'retry-version', status: 'created' }; },
+      recordExtraction: async () => { extractionWrites += 1; throw new Error('transient RPC failure'); },
+    }),
+    /transient RPC failure/,
+  );
+  const retry = await refreshOfficialTenderDocument({
+    ...common,
+    currentVersion: { id: 'retry-version', content_hash: hash, needs_extraction: true },
+    recordVersion: async () => { versionWrites += 1; return { id: 'retry-version', status: 'unchanged' }; },
+    recordExtraction: async () => { extractionWrites += 1; },
+  });
+  assert.equal(retry.status, 'unchanged');
+  assert.equal(versionWrites, 2, 'el retry consulta idempotentemente la versión existente');
+  assert.equal(extractionWrites, 2, 'el retry vuelve a intentar la persistencia tipada');
+})();
 
 // Regression: 31 -> 45 current UI rows after refresh. Two typed "current" documents
 // can share identical content (same content_hash) under different source_document_id

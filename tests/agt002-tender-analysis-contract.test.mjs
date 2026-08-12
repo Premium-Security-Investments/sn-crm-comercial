@@ -4,8 +4,14 @@ import { readFileSync } from 'node:fs';
 import {
   validateAgt002TenderAnalysisEnvelope,
   validateAgt002TenderAnalysisRequest,
+  validateAgt002TenderAnalysisEnvelopeV3,
+  adaptAgt002TenderAnalysisV3,
 } from '../agt002-tender-adapter.js';
 import { buildSyntheticAgt002TenderAnalysis } from './fixtures/agt002-synthetic-responder.mjs';
+import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from '../agt002-integral-analysis-v3.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
+import { projectAgt002IntegralV3ToV2 } from '../agt002-v3-compatibility.js';
 
 const v1Files = ['manifest.json', 'analysis.request.schema.json', 'analysis.response.schema.json'];
 const v1Hash = createHash('sha256').update(v1Files.map(name => readFileSync(new URL(`../contracts/agents/AGT-002/v1/${name}`, import.meta.url))).join('\n')).digest('hex');
@@ -130,5 +136,108 @@ function testStillRejectsUnknownSchemaVersion() {
 
 testAcceptsPreviewSchemaVersion();
 testStillRejectsUnknownSchemaVersion();
+
+// ---------------------------------------------------------------------------
+// Task 5: v3 envelope validation + adapter, rejecting v2/v3 hybrids in either direction.
+// ---------------------------------------------------------------------------
+
+function buildV3IntegralAnalysisValidationContext() {
+  return {
+    requirementManifestVersion: 'agt002-deep-analysis-v1',
+    requirementManifest: [{ requirement_id: 'REQ-1', category: 'discard' }],
+    companyEvidenceManifestVersion: 'agt002-company-evidence-classes-v1',
+    companyEvidenceClassIds: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
+    legalCorpusVersionId: null,
+    allowlist: { tender_document: ['TD-1'], company_evidence: [], legal_corpus: [], human_evidence: [], objective_validation: [] },
+    materialOmissionsObserved: false,
+    // No governed evidence-class link is curated for REQ-1 in this fixture, so the
+    // governed map (agt002-evidence-state-manifest.js's default) is the safe-unknown
+    // state — matched below in buildV3Envelope's evidence_state.
+    evidenceStateManifest: [
+      { requirement_id: 'REQ-1', evidence_state: AGT002_EVIDENCE_STATE_SAFE_UNKNOWN, rule_id: 'no_governed_evidence_class_link', provenance: null },
+    ],
+  };
+}
+
+function buildV3Envelope() {
+  const integral_analysis = {
+    contract_version: AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION,
+    coverage: {
+      manifest_version: 'agt002-deep-analysis-v1',
+      expected_requirement_ids: ['REQ-1'],
+      analyzed_requirement_ids: ['REQ-1'],
+      material_omissions: false,
+      omission_reasons: [],
+      company_evidence_manifest_version: 'agt002-company-evidence-classes-v1',
+      company_evidence_class_ids: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
+      legal_corpus_version_id: null,
+    },
+    analysis_units: [{
+      unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: 'REQ-1', category: 'discard', sequence: 1,
+      title: 'Requisito sintético', assessment_mode: 'assessed',
+      // REQ-1 has no governed evidence-class link (safe-unknown evidence_state,
+      // compliance "unknown"), so conclusion.status must honestly be
+      // "human_validation_required" (P0: a material conclusion can never coexist with
+      // compliance "unknown") with confidence "medium" (P1: never "high").
+      conclusion: { status: 'human_validation_required', summary: 'Sin evidencia gobernada disponible; requiere validación humana.', confidence: 'medium' },
+      blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
+      evidence_state: AGT002_EVIDENCE_STATE_SAFE_UNKNOWN,
+      evidence_refs: [{ ref: 'TD-1', source_type: 'tender_document', purpose: 'requirement_basis' }],
+      missing_evidence: [],
+      commercial_impact: { level: 'low', summary: 'Sin impacto.', dimension: 'eligibility' },
+      legal_assessment: { status: 'not_applicable', basis_refs: [], summary: 'No aplica.', human_legal_review_required: false },
+      actions: [],
+      milestone: { status: 'not_identified', type: 'none', at: null, source_ref: null, summary: 'Sin hito.' },
+      escalation: { required: false, level: 'none', reason: 'Sin condición crítica.' },
+      closure: { status: 'human_confirmation_required', condition: 'Persona confirma.', evidence_required: ['tender_document'] },
+      human_validation: { required: true, status: 'pending', reason: 'Confirmar.' },
+    }],
+  };
+  return {
+    schema_version: '3.0.0',
+    agent_id: 'AGT-002',
+    run_id: '44444444-4444-4444-8444-444444444444',
+    policy_version: 'agt002-integral-v3-policy-1',
+    snapshot_id: snapshot.snapshot_id,
+    context_version_id: null,
+    status: 'completed',
+    method: 'agent_ai',
+    integral_analysis,
+    evidence_coverage: { material_omissions: false, omitted_count: 0 },
+    legal_corpus_version_id: null,
+    human_review_required: true,
+    // v2_projection is never hand-typed: it must be exactly the deterministic projection
+    // the real engine/adapter would derive from integral_analysis, or the same-version
+    // consumer's recompute-and-reject-mismatch defense (agt002-tender-adapter.js) rejects
+    // it outright — matching design section 4.2's engine-assembled envelope shape.
+    v2_projection: projectAgt002IntegralV3ToV2(integral_analysis),
+    // Real engine usage shape (agt002-preview-engine.js runOnceV3): the codex_app_server
+    // provider returns a rate_limit snapshot, never a cost figure.
+    usage: { provider: 'synthetic', model: 'synthetic-v3', input_tokens: 1, output_tokens: 1, rate_limit: null },
+  };
+}
+
+{
+  const ctx = buildV3IntegralAnalysisValidationContext();
+  const v3Envelope = buildV3Envelope();
+  const validated = validateAgt002TenderAnalysisEnvelopeV3(v3Envelope, ctx);
+  assert.equal(validated.schema_version, '3.0.0');
+
+  // v2/v3 reject each other's shape (no hybrid accepted by either validator).
+  assert.throws(() => validateAgt002TenderAnalysisEnvelope(v3Envelope), /cerrado|esquema/i);
+  assert.throws(() => validateAgt002TenderAnalysisEnvelopeV3(envelope, ctx), /cerrado|esquema/i);
+  assert.throws(() => validateAgt002TenderAnalysisEnvelopeV3({ ...v3Envelope, schema_version: '2.0-preview.1' }, ctx), /esquema/i);
+
+  // The v3 adapter derives the v2-compatible tender-domain result from the governed envelope.
+  const adapted = adaptAgt002TenderAnalysisV3(v3Envelope, ctx);
+  assert.equal(adapted.producer, 'AGT-002');
+  assert.equal(adapted.run_id, v3Envelope.run_id);
+  assert.equal(adapted.human_review_required, true);
+  assert.ok(Array.isArray(adapted.strengths));
+  // With no governed evidence-class link curated for REQ-1, evidence_state is the safe-
+  // unknown abstention state, so the unit counts as unverified and the deterministic v2
+  // projection downgrades to advance_conditionally rather than a plain advance.
+  assert.equal(adapted.recommendation, 'advance_conditionally');
+}
 
 console.log('AGT-002 tender analysis consumer contract passed');

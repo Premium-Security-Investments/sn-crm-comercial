@@ -1,0 +1,826 @@
+{
+  "artifact_type": "agt002_pre_go_section_proposals",
+  "contract_version": "agt002-pre-go-section-proposals@1",
+  "status": "proposed_for_human_review",
+  "human_approval_required": true,
+  "is_approved": false,
+  "version": 1,
+  "generated_at": "2026-08-12T05:00:00.000Z",
+  "opportunity_id": "54190e51-15fb-46af-b0aa-8f13461a3110",
+  "proceso": "SA-24-2026",
+  "entidad": "Rama Judicial — Dirección Seccional de Administración Judicial de Manizales",
+  "source_document": {
+    "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+    "name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf"
+  },
+  "pattern_reference": {
+    "case": "Rama Judicial Pereira SA-MC-02-2026",
+    "use": "leccion_y_provenance_de_metodo",
+    "not_used_as": "prueba_de_cumplimiento_ni_traslado_de_aplicabilidad"
+  },
+  "covers_refs": [
+    "2.3",
+    "2.4",
+    "2.4.1",
+    "2.5",
+    "3.1",
+    "3.2",
+    "3.3",
+    "3.4",
+    "3.5",
+    "3.6"
+  ],
+  "coverage": {
+    "sections": 10,
+    "requirements": 20,
+    "by_requirement_kind": {
+      "habilitante": 3,
+      "condicional": 6,
+      "regla_entidad": 4,
+      "puntuable": 7
+    },
+    "by_evidence_need": {
+      "indicador_rup": 1,
+      "regla_sin_evidencia_empresarial": 6,
+      "experiencia_acreditada": 1,
+      "formato_anexo": 3,
+      "condicional_documental": 1,
+      "soporte_criterio_diferencial": 4,
+      "certificacion_representante_legal": 3,
+      "oferta_economica_anexo": 1
+    },
+    "with_candidate_evidence_class": 9,
+    "without_candidate_evidence_class": 11
+  },
+  "human_gates": {
+    "applicability": "decision_humana_por_seccion",
+    "sufficiency": "decision_humana_por_requisito",
+    "go_no_go": "compuerta_humana_obligatoria"
+  },
+  "sections": [
+    {
+      "item_ref": "2.3",
+      "titulo": "CAPACIDAD ORGANIZACIONAL",
+      "fase": "habilitante",
+      "requirement_count": 2,
+      "requirements": [
+        {
+          "requirement_id": "proposal:2.3:indices-capacidad-organizacional",
+          "item_ref": "2.3",
+          "label": "Índices de capacidad organizacional (rentabilidad del patrimonio y del activo)",
+          "requirement_kind": "habilitante",
+          "offer_stage": "con_la_oferta",
+          "evidence_need": "indicador_rup",
+          "candidate_evidence_class_id": "rup",
+          "rationale": "El pliego mide dos índices organizacionales verificados con el RUP: Rentabilidad del Patrimonio (Utilidad operacional/Patrimonio) mayor o igual a 5% y Rentabilidad del Activo (Utilidad Operacional/Activo Total) mayor o igual a 5%; no otorga puntaje y se evalúa CUMPLE/NO CUMPLE.",
+          "subsanability": {
+            "candidate": "subsanable_candidate",
+            "basis": "Requisito habilitante que no es factor de escogencia; el pliego 2.5 admite subsanar requisitos faltantes, pero la subsanabilidad concreta es decisión humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "financial",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "financial",
+            "note": "El cotejo indicador RUP vs umbral (mayor o igual a 5% en ambos índices) es suficiencia humana; una señal presente no prueba cumplimiento (lección Pereira: umbrales son cotejo humano)."
+          },
+          "pereira_lesson": {
+            "bucket": "universales",
+            "requirement": "La suficiencia de umbrales cuantitativos es cotejo humano, no aritmética automática",
+            "use": "leccion_no_prueba"
+          },
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 93564,
+            "char_end": 93645,
+            "quote": "medirá el rendimiento de las inversiones y la eficiencia en el uso de los activos"
+          },
+          "status": "proposed_for_human_review"
+        },
+        {
+          "requirement_id": "proposal:2.3:regla-plural-integrante-organizacional",
+          "item_ref": "2.3",
+          "label": "Regla plural: en Consorcio/UT mínimo uno de los integrantes cumple los índices",
+          "requirement_kind": "condicional",
+          "offer_stage": "con_la_oferta",
+          "evidence_need": "regla_sin_evidencia_empresarial",
+          "candidate_evidence_class_id": null,
+          "rationale": "Para Consorcios o Uniones Temporales, mínimo uno de los integrantes deberá cumplir los índices de capacidad organizacional. Es una regla de aplicabilidad plural, no una evidencia empresarial adicional.",
+          "subsanability": {
+            "candidate": "no_determinada_requiere_humano",
+            "basis": "Depende de la modalidad plural del proponente; decisión humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "Qué integrante acredita y con qué porcentaje de participación es verificación humana."
+          },
+          "pereira_lesson": null,
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 94135,
+            "char_end": 94217,
+            "quote": "Para el caso de los Consorcios o Uniones Temporales, mínimo uno de los integrantes"
+          },
+          "status": "proposed_for_human_review"
+        }
+      ]
+    },
+    {
+      "item_ref": "2.4",
+      "titulo": "EXPERIENCIA",
+      "fase": "habilitante",
+      "requirement_count": 4,
+      "requirements": [
+        {
+          "requirement_id": "proposal:2.4:experiencia-rup-unspsc-sumatoria",
+          "item_ref": "2.4",
+          "label": "Experiencia habilitante: 1 a 3 contratos RUP (UNSPSC 92121500/92121700) con sumatoria mayor o igual a 1000 SMMLV",
+          "requirement_kind": "habilitante",
+          "offer_stage": "con_la_oferta",
+          "evidence_need": "experiencia_acreditada",
+          "candidate_evidence_class_id": "accredited_experience",
+          "rationale": "Se verifican entre uno (1) y máximo tres (3) contratos inscritos en el RUP en al menos uno de los códigos UNSPSC (hasta tercer nivel) 92121500 Servicios de guardias / 92121700 Servicios de sistemas de seguridad, cuya sumatoria sea igual o mayor a 1000 SMMLV; CUMPLE/NO CUMPLE.",
+          "subsanability": {
+            "candidate": "subsanable_candidate",
+            "basis": "Requisito habilitante no factor de escogencia (pliego 2.5); subsanabilidad concreta es decisión humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "tender_lead",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "tender_lead",
+            "note": "La sumatoria oficial, la admisibilidad de cada contrato por UNSPSC y el no doble conteo son suficiencia humana (lección Pereira: no sumar ni elegir el mayor sin cotejo del primario)."
+          },
+          "pereira_lesson": {
+            "bucket": "variables_por_proceso",
+            "requirement": "Experiencia acreditada: sumatoria, admisibilidad y no doble conteo",
+            "use": "leccion_no_prueba"
+          },
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 94814,
+            "char_end": 94859,
+            "quote": "cuya sumatoria sea igual o mayor a 1000 SMLMV"
+          },
+          "status": "proposed_for_human_review"
+        },
+        {
+          "requirement_id": "proposal:2.4:anexo-8-formato-experiencia",
+          "item_ref": "2.4",
+          "label": "Anexo No. 8 Formato de Experiencia diligenciado (relación de contratos)",
+          "requirement_kind": "habilitante",
+          "offer_stage": "con_la_oferta",
+          "evidence_need": "formato_anexo",
+          "candidate_evidence_class_id": "accredited_experience",
+          "rationale": "El proponente adjunta el Anexo No. 8 FORMATO DE EXPERIENCIA diligenciado relacionando los contratos con los que acredita la experiencia exigida.",
+          "subsanability": {
+            "candidate": "subsanable_candidate",
+            "basis": "Formato de soporte de un requisito habilitante; subsanabilidad concreta es decisión humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "tender_lead",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "tender_lead",
+            "note": "La correspondencia entre el Anexo 8, los contratos del RUP y las certificaciones primarias es verificación humana."
+          },
+          "pereira_lesson": null,
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 95391,
+            "char_end": 95447,
+            "quote": "deberán adjuntar debidamente diligenciado el Anexo No. 8"
+          },
+          "status": "proposed_for_human_review"
+        },
+        {
+          "requirement_id": "proposal:2.4:regla-sumatoria-plural-experiencia",
+          "item_ref": "2.4",
+          "label": "Regla plural de experiencia: participación del integrante y umbral del 10% para no acreditar",
+          "requirement_kind": "condicional",
+          "offer_stage": "con_la_oferta",
+          "evidence_need": "regla_sin_evidencia_empresarial",
+          "candidate_evidence_class_id": null,
+          "rationale": "En Consorcios o Uniones Temporales, por lo menos uno de sus integrantes debe cumplir la experiencia, teniendo en cuenta el porcentaje de participación; sólo uno de los integrantes podría no acreditar experiencia si su participación no excede el 10%. Es una regla de sumatoria/no doble conteo plural, no una evidencia adicional.",
+          "subsanability": {
+            "candidate": "no_determinada_requiere_humano",
+            "basis": "Depende de la modalidad plural y del porcentaje de participación; decisión humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "La imputación de experiencia por participación y el no doble conteo entre integrantes es cotejo humano."
+          },
+          "pereira_lesson": null,
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 95853,
+            "char_end": 95935,
+            "quote": "Tratándose de Consorcios o Uniones Temporales, por lo menos uno de sus integrantes"
+          },
+          "status": "proposed_for_human_review"
+        },
+        {
+          "requirement_id": "proposal:2.4:experiencia-extranjera-traduccion",
+          "item_ref": "2.4",
+          "label": "Experiencia en el extranjero: documento equivalente y traducción oficial",
+          "requirement_kind": "condicional",
+          "offer_stage": "con_la_oferta",
+          "evidence_need": "condicional_documental",
+          "candidate_evidence_class_id": null,
+          "rationale": "La experiencia obtenida en el extranjero se comprueba con el documento equivalente del país respectivo y, si la certificación no está en castellano, con la traducción oficial (artículo 104 de la Ley 1564 de 2012). Condición documental, no una clase de evidencia empresarial del catálogo.",
+          "subsanability": {
+            "candidate": "no_determinada_requiere_humano",
+            "basis": "Aplica sólo a experiencia extranjera; subsanabilidad y equivalencia documental son decisión humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "La equivalencia del documento extranjero y la validez de la traducción oficial son verificación humana."
+          },
+          "pereira_lesson": null,
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 96862,
+            "char_end": 96941,
+            "quote": "Cualquier experiencia obtenida en el extranjero, se comprobará con el documento"
+          },
+          "status": "proposed_for_human_review"
+        }
+      ]
+    },
+    {
+      "item_ref": "2.4.1",
+      "titulo": "CRITERIOS DIFERENCIALES PARA LA EXPERIENCIA",
+      "fase": "habilitante",
+      "requirement_count": 4,
+      "requirements": [
+        {
+          "requirement_id": "proposal:2.4.1:diferencial-mujeres-experiencia",
+          "item_ref": "2.4.1",
+          "label": "Criterio diferencial de experiencia: emprendimientos y empresas de mujeres (contratos adicionales)",
+          "requirement_kind": "condicional",
+          "offer_stage": "con_la_oferta",
+          "evidence_need": "soporte_criterio_diferencial",
+          "candidate_evidence_class_id": "differential_scoring_support",
+          "rationale": "Quien acredite la calidad de emprendimiento y empresa de mujeres (art. 2.2.1.2.4.2.14 / 2.2.1.2.4.2.15 del Decreto 1082 de 2015) puede acreditar la experiencia con dos (2) contratos adicionales; se acredita con las certificaciones indicadas (representante legal/revisor fiscal/contador) bajo juramento con fecha máxima de treinta (30) días anteriores al cierre.",
+          "subsanability": {
+            "candidate": "subsanable_candidate",
+            "basis": "Soporte de un criterio diferencial habilitante; subsanabilidad concreta es decisión humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "La acreditación de la condición de mujeres (participación, nivel directivo, vigencia de un año, vigencia de la certificación) es verificación humana."
+          },
+          "pereira_lesson": null,
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 97266,
+            "char_end": 97307,
+            "quote": "A. EMPRENDIMIENTOS Y EMPRESAS DE MUJERES:"
+          },
+          "status": "proposed_for_human_review"
+        },
+        {
+          "requirement_id": "proposal:2.4.1:diferencial-mipyme-experiencia",
+          "item_ref": "2.4.1",
+          "label": "Criterio diferencial de experiencia: MIPYME domiciliada en Colombia (contrato adicional)",
+          "requirement_kind": "condicional",
+          "offer_stage": "con_la_oferta",
+          "evidence_need": "soporte_criterio_diferencial",
+          "candidate_evidence_class_id": "differential_scoring_support",
+          "rationale": "La empresa que cumple la condición de MIPYME domiciliada en Colombia (art. 2.2.1.2.4.2.18 del Decreto 1082 de 2015) puede acreditar la experiencia con un (1) contrato adicional a los tres inicialmente definidos.",
+          "subsanability": {
+            "candidate": "subsanable_candidate",
+            "basis": "Soporte de un criterio diferencial habilitante; subsanabilidad concreta es decisión humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "La acreditación del tamaño empresarial MIPYME y la participación plural (10%) es verificación humana."
+          },
+          "pereira_lesson": null,
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 105768,
+            "char_end": 105827,
+            "quote": "EMPRESAS QUE CUMPLEN LA CONDICIÓN DE MIPYME DOMICILIADAS EN"
+          },
+          "status": "proposed_for_human_review"
+        },
+        {
+          "requirement_id": "proposal:2.4.1:diferencial-discapacidad-experiencia",
+          "item_ref": "2.4.1",
+          "label": "Criterio diferencial de experiencia: emprendimientos y empresas de personas con discapacidad (contrato adicional)",
+          "requirement_kind": "condicional",
+          "offer_stage": "con_la_oferta",
+          "evidence_need": "soporte_criterio_diferencial",
+          "candidate_evidence_class_id": "differential_scoring_support",
+          "rationale": "Quien cumple la condición de emprendimiento y empresa de personas con discapacidad (art. 2.2.1.2.4.2.7.3 del Decreto 1082 de 2015, modificado por el Decreto 287 de 2026) puede acreditar la experiencia con un (1) contrato adicional a los tres inicialmente definidos.",
+          "subsanability": {
+            "candidate": "subsanable_candidate",
+            "basis": "Soporte de un criterio diferencial habilitante; subsanabilidad concreta es decisión humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "La acreditación de la condición de discapacidad y la participación plural (10%) es verificación humana."
+          },
+          "pereira_lesson": null,
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 107039,
+            "char_end": 107098,
+            "quote": "C. EMPRENDIMIENTOS Y EMPRESAS DE PERSONAS CON DISCAPACIDAD:"
+          },
+          "status": "proposed_for_human_review"
+        },
+        {
+          "requirement_id": "proposal:2.4.1:regla-sumatoria-contratos-adicionales",
+          "item_ref": "2.4.1",
+          "label": "Regla de sumatoria: los contratos adicionales (hasta 7) cuentan para los 1.000 SMLMV",
+          "requirement_kind": "regla_entidad",
+          "offer_stage": "evaluacion_entidad",
+          "evidence_need": "regla_sin_evidencia_empresarial",
+          "candidate_evidence_class_id": null,
+          "rationale": "Los contratos adicionales por MIPYME y/o empresa de mujeres y/o de personas con discapacidad (tres o siete según las calidades acreditadas) se tienen en cuenta para acreditar los 1.000 SMLMV. Es la regla de conteo/sumatoria de la entidad, no una evidencia empresarial.",
+          "subsanability": {
+            "candidate": "no_determinada_requiere_humano",
+            "basis": "Regla de conteo de la entidad; su aplicación depende de las calidades acreditadas y es decisión humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "tender_lead",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "tender_lead",
+            "note": "El límite de contratos por calidad y el no doble conteo al sumar hacia los 1.000 SMLMV es cotejo humano."
+          },
+          "pereira_lesson": null,
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 108919,
+            "char_end": 108964,
+            "quote": "se tendrán en cuenta para acreditar los 1.000"
+          },
+          "status": "proposed_for_human_review"
+        }
+      ]
+    },
+    {
+      "item_ref": "2.5",
+      "titulo": "REGLAS DE SUBSANABILIDAD",
+      "fase": "habilitante",
+      "requirement_count": 1,
+      "requirements": [
+        {
+          "requirement_id": "proposal:2.5:regla-subsanabilidad",
+          "item_ref": "2.5",
+          "label": "Regla de subsanabilidad de la entidad (Ley 1150 art. 5, num. 2, 3 y 4)",
+          "requirement_kind": "regla_entidad",
+          "offer_stage": "evaluacion_entidad",
+          "evidence_need": "regla_sin_evidencia_empresarial",
+          "candidate_evidence_class_id": null,
+          "rationale": "No se rechaza una propuesta por ausencia de requisitos que no constituyan factores de escogencia; los proponentes podrán subsanar dentro del término del cronograma vía SECOP II. Es una regla de evaluación de la entidad, sin evidencia empresarial del proponente.",
+          "subsanability": {
+            "candidate": "no_determinada_requiere_humano",
+            "basis": "La sección DEFINE la regla de subsanabilidad; qué requisito es subsanable en cada caso es decisión humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "El alcance de lo subsanable (frontera con los factores de escogencia) es interpretación jurídica humana."
+          },
+          "pereira_lesson": null,
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 109005,
+            "char_end": 109093,
+            "quote": "No se rechazará una propuesta por la ausencia de requisitos o la falta de documentos que"
+          },
+          "status": "proposed_for_human_review"
+        }
+      ]
+    },
+    {
+      "item_ref": "3.1",
+      "titulo": "FACTOR CALIDAD:",
+      "fase": "puntuable",
+      "requirement_count": 2,
+      "requirements": [
+        {
+          "requirement_id": "proposal:3.1:calidad-lenguaje-senas",
+          "item_ref": "3.1",
+          "label": "Factor calidad: certificación de formación en lenguaje de señas de al menos 10% de los guardas (5 puntos)",
+          "requirement_kind": "puntuable",
+          "offer_stage": "con_la_oferta",
+          "evidence_need": "certificacion_representante_legal",
+          "candidate_evidence_class_id": null,
+          "rationale": "El proponente adjunta certificación del representante legal comprometiéndose a presentar constancia de formación en lenguaje de señas de por lo menos el 10% de los guardas; 5 puntos si cumple, 0 si no. Certificación-compromiso, sin correspondencia 1:1 con una clase de evidencia empresarial.",
+          "subsanability": {
+            "candidate": "no_determinada_requiere_humano",
+            "basis": "Factor de puntaje; si es subsanable o no es decisión humana (Pereira: presentado no equivale a puntuado)."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "tender_lead",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "tender_lead",
+            "note": "La verificación del compromiso y del umbral del 10% es cotejo humano; no se otorga puntaje aquí."
+          },
+          "pereira_lesson": null,
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 117449,
+            "char_end": 117505,
+            "quote": "Certificación Formación en Lenguaje de Señas: (5 PUNTOS)"
+          },
+          "status": "proposed_for_human_review"
+        },
+        {
+          "requirement_id": "proposal:3.1:calidad-capacitaciones",
+          "item_ref": "3.1",
+          "label": "Factor calidad: certificación de capacitaciones adicionales, con tabla de puntaje (5 puntos)",
+          "requirement_kind": "puntuable",
+          "offer_stage": "con_la_oferta",
+          "evidence_need": "certificacion_representante_legal",
+          "candidate_evidence_class_id": null,
+          "rationale": "El proponente adjunta certificación del representante legal comprometiéndose a capacitaciones adicionales; el puntaje sigue una tabla (cinco o más = 5; tres a cuatro = 2; una a dos = 1; ninguna = 0). Certificación-compromiso, sin clase de evidencia empresarial 1:1.",
+          "subsanability": {
+            "candidate": "no_determinada_requiere_humano",
+            "basis": "Factor de puntaje; subsanabilidad es decisión humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "tender_lead",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "tender_lead",
+            "note": "El conteo de capacitaciones comprometidas y su encuadre en la tabla de puntaje es cotejo humano."
+          },
+          "pereira_lesson": null,
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 117918,
+            "char_end": 117944,
+            "quote": "Capacitaciones: (5 PUNTOS)"
+          },
+          "status": "proposed_for_human_review"
+        }
+      ]
+    },
+    {
+      "item_ref": "3.2",
+      "titulo": "APOYO A LA INDUSTRIA NACIONAL:",
+      "fase": "puntuable",
+      "requirement_count": 1,
+      "requirements": [
+        {
+          "requirement_id": "proposal:3.2:industria-nacional-servicios-colombianos",
+          "item_ref": "3.2",
+          "label": "Apoyo a la industria nacional: carta jurada de personal 100% nacional (Ley 816 de 2003)",
+          "requirement_kind": "puntuable",
+          "offer_stage": "con_la_oferta",
+          "evidence_need": "certificacion_representante_legal",
+          "candidate_evidence_class_id": null,
+          "rationale": "El proponente adjunta carta bajo la gravedad de juramento del representante legal certificando que el personal que presta los servicios es 100% nacional (10 puntos); por cada personal extranjero se descuentan 2 puntos hasta 10; en Consorcio/UT al menos uno de los integrantes cumple. Carta jurada, sin clase de evidencia empresarial 1:1.",
+          "subsanability": {
+            "candidate": "no_determinada_requiere_humano",
+            "basis": "Factor de puntaje; subsanabilidad es decisión humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "tender_lead",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "tender_lead",
+            "note": "La verificación de servicios/personal nacional colombiano y el descuento por personal extranjero es cotejo humano."
+          },
+          "pereira_lesson": null,
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 119744,
+            "char_end": 119781,
+            "quote": "presta los servicios es 100% nacional"
+          },
+          "status": "proposed_for_human_review"
+        }
+      ]
+    },
+    {
+      "item_ref": "3.3",
+      "titulo": "PROPONENTES EN CONDICIÓN DE DISCAPACIDAD:",
+      "fase": "puntuable",
+      "requirement_count": 1,
+      "requirements": [
+        {
+          "requirement_id": "proposal:3.3:puntaje-discapacidad",
+          "item_ref": "3.3",
+          "label": "Puntaje por vinculación/condición de discapacidad (1 punto, art. 2.2.1.2.4.2.6)",
+          "requirement_kind": "puntuable",
+          "offer_stage": "con_la_oferta",
+          "evidence_need": "soporte_criterio_diferencial",
+          "candidate_evidence_class_id": "differential_scoring_support",
+          "rationale": "La entidad otorga un (1) punto a quien acredite una de las cuatro condiciones del art. 2.2.1.2.4.2.6 del Decreto 1082 de 2015 (modificado por el Decreto 0287 de 2026), mediante certificación del representante legal y la documentación correspondiente; en proponente plural se considera la planta del integrante con mayor participación.",
+          "subsanability": {
+            "candidate": "no_determinada_requiere_humano",
+            "basis": "Factor de puntaje diferencial; subsanabilidad es decisión humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "Cuál de las cuatro condiciones se acredita y con qué soportes es verificación humana."
+          },
+          "pereira_lesson": null,
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 120281,
+            "char_end": 120357,
+            "quote": "otorgará UN (01) punto al oferente que acredite el cumplimiento de alguna de"
+          },
+          "status": "proposed_for_human_review"
+        }
+      ]
+    },
+    {
+      "item_ref": "3.4",
+      "titulo": "CRITERIO DIFERENCIAL EMPRENDIMIENTO Y EMPRESA DE MUJERES:",
+      "fase": "puntuable",
+      "requirement_count": 1,
+      "requirements": [
+        {
+          "requirement_id": "proposal:3.4:puntaje-emprendimiento-empresa-mujeres",
+          "item_ref": "3.4",
+          "label": "Puntaje diferencial por emprendimiento y empresa de mujeres (0.25 puntos, Anexo No. 10)",
+          "requirement_kind": "puntuable",
+          "offer_stage": "con_la_oferta",
+          "evidence_need": "formato_anexo",
+          "candidate_evidence_class_id": "differential_scoring_support",
+          "rationale": "La entidad asigna 0,25 puntos a quien acredite la calidad de emprendimiento y empresa de mujeres (art. 2.2.1.2.4.2.14 del Decreto 1082 de 2015) presentando el Anexo No. 10 ACREDITACIÓN DE EMPRENDIMIENTO Y EMPRESA DE MUJERES y la documentación requerida; en plural, participación igual o superior al 10%. No excluye el puntaje MiPymes.",
+          "subsanability": {
+            "candidate": "no_determinada_requiere_humano",
+            "basis": "Factor de puntaje diferencial; subsanabilidad es decisión humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "La acreditación de la calidad de empresa de mujeres y la participación plural es verificación humana."
+          },
+          "pereira_lesson": null,
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 122367,
+            "char_end": 122415,
+            "quote": "debe presentar el Anexo No. 10 - ACREDITACIÓN DE"
+          },
+          "status": "proposed_for_human_review"
+        }
+      ]
+    },
+    {
+      "item_ref": "3.5",
+      "titulo": "CRITERIO DIFERENCIAL MIPYMES:",
+      "fase": "puntuable",
+      "requirement_count": 1,
+      "requirements": [
+        {
+          "requirement_id": "proposal:3.5:puntaje-mipyme",
+          "item_ref": "3.5",
+          "label": "Puntaje diferencial MIPYME domiciliada en Colombia (0.25 puntos, Anexo No. 11)",
+          "requirement_kind": "puntuable",
+          "offer_stage": "con_la_oferta",
+          "evidence_need": "formato_anexo",
+          "candidate_evidence_class_id": "differential_scoring_support",
+          "rationale": "La entidad asigna 0,25 puntos a quien acredite la calidad de MIPYME domiciliada en Colombia (tamaño empresarial del art. 2.2.1.13.2.2 del Decreto 1074 de 2015) presentando el Anexo No. 11 ACREDITACIÓN DE MIPYME y la documentación requerida; en plural, participación igual o superior al 10%.",
+          "subsanability": {
+            "candidate": "no_determinada_requiere_humano",
+            "basis": "Factor de puntaje diferencial; subsanabilidad es decisión humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "legal",
+            "note": "La acreditación del tamaño empresarial MIPYME y la participación plural es verificación humana."
+          },
+          "pereira_lesson": null,
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 123180,
+            "char_end": 123248,
+            "quote": "acredite la calidad de MIPYME domiciliada en Colombia de conformidad"
+          },
+          "status": "proposed_for_human_review"
+        }
+      ]
+    },
+    {
+      "item_ref": "3.6",
+      "titulo": "FACTOR ECONÓMICO:",
+      "fase": "puntuable",
+      "requirement_count": 3,
+      "requirements": [
+        {
+          "requirement_id": "proposal:3.6:oferta-economica-anexo-9",
+          "item_ref": "3.6",
+          "label": "Oferta económica en el Anexo No. 9 (Excel formulado), en pesos, con AIU e impuestos",
+          "requirement_kind": "puntuable",
+          "offer_stage": "con_la_oferta",
+          "evidence_need": "oferta_economica_anexo",
+          "candidate_evidence_class_id": null,
+          "rationale": "La oferta económica se presenta en el Anexo No. 9 OFERTA ECONÓMICA DEFINITIVA (archivo Excel debidamente formulado), en pesos colombianos sin centavos, discriminando costos directos, indirectos y AIU e incluyendo los impuestos de ley. Es la oferta del proponente, no una clase de evidencia empresarial del catálogo.",
+          "subsanability": {
+            "candidate": "no_subsanable_candidate",
+            "basis": "La oferta económica es factor de escogencia; el pliego sólo admite corrección aritmética sin modificar el valor ofrecido; la no subsanabilidad del valor es decisión humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "financial",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "financial",
+            "note": "La composición de costos, AIU e impuestos y la correcta formulación del Excel son verificación humana."
+          },
+          "pereira_lesson": null,
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 123997,
+            "char_end": 124040,
+            "quote": "Diligenciar el Anexo No. 9 OFERTA ECONÓMICA"
+          },
+          "status": "proposed_for_human_review"
+        },
+        {
+          "requirement_id": "proposal:3.6:tarifa-minima-regulada",
+          "item_ref": "3.6",
+          "label": "Admisibilidad económica: tarifa mínima regulada (Decreto 4950 de 2007 y Circular SuperVigilancia 2026)",
+          "requirement_kind": "regla_entidad",
+          "offer_stage": "evaluacion_entidad",
+          "evidence_need": "regla_sin_evidencia_empresarial",
+          "candidate_evidence_class_id": null,
+          "rationale": "Se evalúa que las ofertas económicas cumplan la tarifa mínima reglamentada (Decreto 4950 de 2007 y Circular Externa de la Superintendencia de Vigilancia y Seguridad Privada de 2026); la oferta que no cumpla la normatividad no se tiene en cuenta para el puntaje. Regla de admisibilidad de la entidad, sin evidencia empresarial.",
+          "subsanability": {
+            "candidate": "no_determinada_requiere_humano",
+            "basis": "Regla de admisibilidad de la entidad; su aplicación es interpretación humana."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "financial",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "financial",
+            "note": "La verificación de la tarifa mínima vigente al cierre y los incrementos regulados es cotejo humano (lección Pereira: método y tarifa varían por proceso)."
+          },
+          "pereira_lesson": {
+            "bucket": "variables_por_proceso",
+            "requirement": "Umbrales y método del factor económico",
+            "use": "leccion_no_prueba"
+          },
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 124245,
+            "char_end": 124331,
+            "quote": "Se evaluará que las ofertas económicas de los proponentes cumplan con la tarifa mínima"
+          },
+          "status": "proposed_for_human_review"
+        },
+        {
+          "requirement_id": "proposal:3.6:metodo-media-aritmetica",
+          "item_ref": "3.6",
+          "label": "Método de puntaje económico: media aritmética y asignación proporcional decreciente",
+          "requirement_kind": "regla_entidad",
+          "offer_stage": "evaluacion_entidad",
+          "evidence_need": "regla_sin_evidencia_empresarial",
+          "candidate_evidence_class_id": null,
+          "rationale": "El puntaje económico (78.5 puntos) se aplica con la fórmula de la Media Aritmética MA=(Po+X1+..+Xn)/(n+1), otorgando el máximo al valor más cercano a la media y un puntaje proporcional decreciente al resto. Es el método de evaluación de la entidad, sin evidencia empresarial.",
+          "subsanability": {
+            "candidate": "no_determinada_requiere_humano",
+            "basis": "Método de evaluación de la entidad; no es subsanable por el proponente."
+          },
+          "applicability_gate": {
+            "decision": "human_required",
+            "owner": "financial",
+            "note": "La aplicabilidad por modalidad del proponente (persona natural/jurídica/consorcio/UT y régimen diferencial) es decisión humana; ninguna sección se afirma aplicable automáticamente."
+          },
+          "sufficiency_gate": {
+            "decision": "human_required",
+            "owner": "financial",
+            "note": "El método aplicado, el conjunto de ofertas hábiles y el redondeo son revisión humana por proceso (lección Pereira: el método aplicado y el redondeo son revisión humana)."
+          },
+          "pereira_lesson": {
+            "bucket": "variables_por_proceso",
+            "requirement": "Umbrales y método del factor económico",
+            "use": "leccion_no_prueba"
+          },
+          "source_citation": {
+            "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
+            "document_name": "9. Pliego de Condiciones Definitivo SA-24-2026.pdf",
+            "char_start": 125948,
+            "char_end": 125995,
+            "quote": "aplicación de la fórmula de la Media Aritmética"
+          },
+          "status": "proposed_for_human_review"
+        }
+      ]
+    }
+  ],
+  "probative_limits": [
+    "Estas son PROPUESTAS CURADAS para revisión humana, no requisitos gobernados aprobados: no habilitan, no puntúan y no afirman cumplimiento ni suficiencia.",
+    "La atomización se deriva del cuerpo del pliego vigente (por offsets), nunca del índice/TOC ni de contenido inventado.",
+    "La clase de evidencia empresarial es sólo CANDIDATA y sólo se propone cuando hay correspondencia conceptual 1:1 con una de las 17 clases gobernadas; en caso contrario es null.",
+    "Las reglas de evaluación de la entidad (subsanabilidad, tarifa mínima, media aritmética) se marcan sin clase de evidencia empresarial.",
+    "La aplicabilidad (modalidad del proponente) y la suficiencia (umbrales, sumatoria, no doble conteo, método) son compuertas humanas; nunca se afirman aquí.",
+    "Rama Judicial Pereira se usa sólo como lección/provenance de método; no prueba cumplimiento de Manizales ni traslada aplicabilidad. No se fuerza CCTV ni se reutiliza Pereira como evidencia."
+  ]
+}
