@@ -4,6 +4,7 @@ import {
   AGT002_PREVIEW_OUTPUT_JSON_SCHEMA,
   AGT002_PREVIEW_SCHEMA_VERSION,
   AGT002_INTEGRAL_ENVELOPE_SCHEMA_VERSION,
+  AGT002_LEGAL_HUMAN_REVIEW_STATEMENT,
   buildAgt002PreviewOutputJsonSchema,
   buildAgt002IntegralAnalysisV3OutputJsonSchema,
   collectAgt002PreviewEvidenceIds,
@@ -36,6 +37,7 @@ export const AGT002_PREVIEW_POLICY = [
   'Una entrada canonical_metadata o un archivo almacenado prueba como máximo su presencia técnica y procedencia; no lo declares aplicable, habilitante ni cumplido mientras applicability_status siga pending_case_validation o falte validación humana.',
   'Cuando exista legal_evidence, separa requisito de licitación, obligación jurídica, evidencia empresarial, inferencia y revisión jurídica.',
   'Toda obligación jurídica debe citar exclusivamente legal_citation_ids de citation_allowlist; toda fuente incierta debe aparecer como human_legal_review con el texto exacto y todas sus citas recibidas.',
+  `Cada legal_citation_id de legal_evidence.human_legal_review_items sólo puede aparecer en un legal_finding con classification human_legal_review: usa evidence_refs vacío, el texto exacto «${AGT002_LEGAL_HUMAN_REVIEW_STATEMENT}» y agrupa allí todas esas citation ids recibidas; nunca cites esos identificadores en tender_requirement, company_evidence, inference ni legal_obligation, ni los uses para afirmar cumplimiento o verificación.`,
   'Cuando la entrada incluya un requirement_manifest con evidence_state_governed por requisito, tu evidence_state para la unidad de ese requisito debe reproducir exactamente esos cinco ejes (presence, review, validity, applicability, compliance); nunca los infieras, completes ni mejores por tu cuenta.',
   'Devuelve exclusivamente el objeto JSON estructurado acordado, sin texto adicional ni claves fuera de las solicitadas.',
 ].join(' ');
