@@ -1,0 +1,130 @@
+{
+  "artifact_type": "agt002_pre_go_production_reconcile",
+  "contract_version": "agt002-pre-go-production-reconcile@1",
+  "status": "draft_for_human_review",
+  "human_approval_required": true,
+  "read_only": true,
+  "metadata_only": true,
+  "source": "production_read_only",
+  "generated_at": "2026-08-12T00:00:00.000Z",
+  "governed_draft_version": 3,
+  "opportunity_id": "54190e51-15fb-46af-b0aa-8f13461a3110",
+  "proceso": "SA-24-2026",
+  "entidad": "Rama Judicial — Dirección Seccional de Administración Judicial de Manizales",
+  "registry_evidence": {
+    "entries_observed": 17,
+    "expected": 17,
+    "unique_ids": true,
+    "all_within_closed_catalog": true,
+    "entry_ids": [
+      "accredited_experience",
+      "authorized_weapons_list",
+      "bank_certificate",
+      "collective_life_policy",
+      "communications_license",
+      "corporate_background_checks",
+      "differential_scoring_support",
+      "financial_and_tax_pack",
+      "legal_representative_vault",
+      "no_fines_sanctions_certificate",
+      "overtime_authorization",
+      "personnel_credentials_vault",
+      "rce_policy",
+      "rup",
+      "rut",
+      "supervigilancia_operating_license",
+      "uniforms_resolution"
+    ],
+    "presence_breakdown": {
+      "verified": 0,
+      "reported": 17,
+      "not_verified": 0
+    },
+    "review_breakdown": {
+      "pending_human_review": 17,
+      "approved": 0,
+      "rejected": 0
+    },
+    "validity_breakdown": {
+      "current": 2,
+      "expired": 0,
+      "unknown": 15
+    },
+    "applicability_breakdown": {
+      "pending_case_validation": 17,
+      "applicable": 0,
+      "not_applicable": 0
+    },
+    "coverage_counts": {
+      "available": 17,
+      "selected": 0,
+      "omitted": 0,
+      "expired": 0,
+      "inaccessible": 5,
+      "pending_review": 17
+    }
+  },
+  "legal_verification": {
+    "shown": true,
+    "corpus_version": "legal-corpus-v1.1",
+    "legal_corpus_version_id": "fc392e00-0363-4307-b2c4-80835ac474ca",
+    "content_sha256": "28ffcd55e3a8769f960883acd8adfa3aacbf24ae1e48b06add12cec9f54ff0b2",
+    "source_count": 6,
+    "note": "Versión publicada validada (hash verificado contra fuentes). No se afirma verificación jurídica sustantiva ni suficiencia: siguen siendo decisión humana."
+  },
+  "cross_matrix": {
+    "total_secciones": 68,
+    "secciones_relevantes_pre_go": 15,
+    "secciones_no_aplicables_pre_go": 53,
+    "por_estado": {
+      "satisfied_candidate": 0,
+      "missing": 0,
+      "stale": 0,
+      "not_applicable_candidate": 53,
+      "unverifiable": 10,
+      "human_review_required": 5
+    }
+  },
+  "blockers": [
+    {
+      "id": "secciones_relevantes_sin_requisito_gobernado",
+      "class": "subsanable",
+      "affected_count": 10
+    },
+    {
+      "id": "requisito_gobernado_sin_enlace_de_clase",
+      "class": "subsanable",
+      "affected_count": 1
+    }
+  ],
+  "honest_replacement": {
+    "vault_not_observable_blocker_present": false,
+    "sections_human_review_required": 5,
+    "sections_unverifiable": 10,
+    "sections_satisfied_candidate": 0,
+    "sections_missing": 0,
+    "sections_stale": 0,
+    "unmapped_offer_sections": [
+      "2.3",
+      "2.4",
+      "2.4.1",
+      "2.5",
+      "3.1",
+      "3.2",
+      "3.3",
+      "3.4",
+      "3.5",
+      "3.6"
+    ],
+    "cctv_abstention_refs": [
+      "2.1"
+    ],
+    "note": "Las 17 clases están reported (no verified) con revisión humana y aplicabilidad de caso pendientes: por diseño quedan human_review_required, nunca satisfied/missing/cumplido. Las clases sin hash figuran como inaccessible/pending y las vigencias sin fecha como unknown, sin promoverse."
+  },
+  "recommendation": {
+    "recommendation_candidate": "indeterminate",
+    "confidence": "low",
+    "human_go_no_go_required": true
+  },
+  "probative_note": "Reconciliación estructural point-in-time contra producción (solo lectura). No decide cumplimiento, habilitación, puntaje ni GO/NO-GO: son compuertas humanas."
+}
