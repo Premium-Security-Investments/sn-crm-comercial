@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
-import { registerAgt002PreviewAnalysis, findAgt002PreviewRun, computeAgt002PreviewIdempotencyKey } from '../agt002-preview-persistence.js';
+import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, registerAgt002PreviewAnalysis, findAgt002PreviewRun, computeAgt002PreviewIdempotencyKey } from '../agt002-preview-persistence.js';
 import { projectAgt002IntegralV3ToV2 } from '../agt002-v3-compatibility.js';
 
 // Task 7, Step 2: v2/v3 coexistence on the real append-only + canonical-promotion (063)
@@ -207,7 +207,13 @@ async function run() {
   // Current reader (idempotency-key lookup) returns v3; historical lookup by the v2
   // idempotency key still returns the original v2 run (demoted but readable).
   const v2Key = computeAgt002PreviewIdempotencyKey({ snapshotId: S, policyVersion: 'agt002-preview-policy-v1', model: 'v2-model', contextVersionId: pg.contextVersionId });
-  const v3Key = computeAgt002PreviewIdempotencyKey({ snapshotId: S, policyVersion: 'agt002-integral-v3-policy-1', model: 'v3-model', contextVersionId: pg.contextVersionId });
+  const v3Key = computeAgt002PreviewIdempotencyKey({
+    snapshotId: S,
+    policyVersion: 'agt002-integral-v3-policy-1',
+    model: 'v3-model',
+    contextVersionId: pg.contextVersionId,
+    contractVersion: AGT002_INTEGRAL_V3_CONTRACT_VERSION,
+  });
 
   const currentV3 = await findAgt002PreviewRun(database, v3Key, { canonicalOnly: true });
   assert.equal(currentV3.canonical, true);

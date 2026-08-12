@@ -142,16 +142,22 @@ function fakeDatabase({ onRpc } = {}) {
   };
 }
 
-// Deterministic idempotency key: stable for identical (snapshot, policy, model); differs otherwise.
+// Deterministic idempotency key: stable within one contract, while v3 cannot
+// collide with the legacy v2 identity for the same snapshot/policy/model.
 {
   const a = computeAgt002PreviewIdempotencyKey({ snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1' });
   const b = computeAgt002PreviewIdempotencyKey({ snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1' });
   const c = computeAgt002PreviewIdempotencyKey({ snapshotId: ids.snapshot, policyVersion: 'v2', model: 'm1' });
   const d = computeAgt002PreviewIdempotencyKey({ snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm2' });
+  const v3a = computeAgt002PreviewIdempotencyKey({ snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1', contractVersion: 'agt002-integral-analysis-v3' });
+  const v3b = computeAgt002PreviewIdempotencyKey({ snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1', contractVersion: 'agt002-integral-analysis-v3' });
   assert.equal(a, b);
+  assert.equal(v3a, v3b);
   assert.notEqual(a, c);
   assert.notEqual(a, d);
+  assert.notEqual(a, v3a, 'v3 must not reuse a v2 run with the same snapshot/policy/model identity');
   assert.match(a, /^[0-9a-f]{64}$/);
+  assert.match(v3a, /^[0-9a-f]{64}$/);
 }
 
 // Registration persists a closed content-only result: no identity/usage duplication, no prompt.
