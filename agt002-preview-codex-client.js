@@ -64,6 +64,20 @@ function codexErrorInfoType(value) {
   return 'other';
 }
 
+function codexCompatibleOutputSchema(value) {
+  if (Array.isArray(value)) return value.map(codexCompatibleOutputSchema);
+  if (!isPlainObject(value)) return value;
+  const copy = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (key === 'const') continue;
+    copy[key] = codexCompatibleOutputSchema(child);
+  }
+  if (Object.hasOwn(value, 'const')) {
+    copy.enum = [codexCompatibleOutputSchema(value.const)];
+  }
+  return copy;
+}
+
 function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -198,7 +212,7 @@ export function createCodexAppServerClient({
               params: {
                 threadId,
                 input: [{ type: 'text', text: JSON.stringify(input ?? {}) }],
-                outputSchema,
+                outputSchema: codexCompatibleOutputSchema(outputSchema),
               },
             });
             return;
