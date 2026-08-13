@@ -49,7 +49,7 @@ import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt00
 import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
 import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../tender-actuation-types.js';
 import { buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
-import { createAgt002AnalysisObservability, toBoundedAgt002Error } from '../agt002-analysis-observability.js';
+import { AGT002_CANONICAL_PREVIEW_STAGES, createAgt002AnalysisObservability, toBoundedAgt002Error } from '../agt002-analysis-observability.js';
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { loadAgt002CompanyEvidenceRegistryEntries } from '../agt002-company-evidence-classes.js';
@@ -3978,9 +3978,15 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
     let claimId = null;
     let idempotencyKey = null;
     let attemptStarted = false;
+    const canonicalCorrelationId = randomUUID();
+    const canonicalStartedAt = Date.now();
+    let canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.RUNTIME_CONFIG;
+    let bridgeInvocationStarted = false;
     try {
       const config = getAgt002PreviewRuntimeConfig(process.env);
+      canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.LEGAL_CORPUS;
       const legalCorpusContext = await loadAgt002LegalCorpusContextIfEnabled(database);
+      canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.CONTEXT_VERSION;
       const contextVersion = canonicalOnly ? await registerAgt002ContextVersion(database, {
         opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, actor_id: currentProfile.id,
         context: { snapshot_id: registeredSnapshot.id, ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: [] },
@@ -3993,6 +3999,7 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
         legalCorpusVersionId: legalCorpusContext?.legal_corpus_version_id,
         contractVersion: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? AGT002_INTEGRAL_V3_CONTRACT_VERSION : null,
       });
+      canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.CLAIM;
       const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
       if (claim.status === 'existing') {
         const existingRun = await findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly });
@@ -4015,10 +4022,13 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
         attemptStarted = true;
         await appendAttempt(idempotencyKey, 'running');
       }
+      canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.GOVERNANCE;
       const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
+      canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.RUNTIME_CREATION;
       const engine = createAgt002PreviewRuntime({
           environment: process.env,
           countDailyRuns: () => countAgt002PreviewRunsToday(database),
+          onBridgeInvocationStarted: () => { bridgeInvocationStarted = true; },
           legalCorpusContext,
           ...(integralV3Governance ? {
             companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
@@ -4031,7 +4041,9 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
       const analysisDocuments = agt002AnalysisConfig.AGT002_DOCUMENT_RETRIEVAL
         ? adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId: registeredSnapshot.id })
         : currentDocs;
+      canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.ENGINE_ANALYSIS;
       const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
+      canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.PERSISTENCE;
       const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope, canonicalOnly, context_version_id: contextVersion?.id });
       if (canonicalOnly) await appendAttempt(idempotencyKey, 'completed', { analysis_run_id: registeredRun.run_id });
       const payload = await getTenderDocumentRecords(database, opportunityId);
@@ -4045,7 +4057,16 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
         try { await appendAttempt(idempotencyKey, 'unavailable', { error_code: error?.code || 'AGT002_UNAVAILABLE', error_message: 'Vig-IA no completó el análisis; se reintentará.' }); }
         catch { console.warn('agt002_attempt_state_failed', { event: 'agt002_attempt_state_failed' }); }
       }
-      console.warn('agt002_canonical_unavailable', { event: 'agt002_canonical_unavailable' });
+      agt002AnalysisObservability.record('canonical_preview_unavailable', {
+        correlation_id: canonicalCorrelationId,
+        stage: canonicalStage,
+        error_code: error?.code,
+        bridge_invocation_started: bridgeInvocationStarted,
+        duration_ms: Date.now() - canonicalStartedAt,
+        opportunity_id: opportunityId,
+        tender_id: tenderId,
+        snapshot_id: registeredSnapshot.id,
+      });
       return sendCanonicalState(503, 'unavailable', 'preview_unavailable');
     } finally {
       if (claimId && idempotencyKey) {
