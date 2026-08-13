@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   AGT002_OBSERVABILITY_EVENT_FIELDS,
   AGT002_OBSERVABILITY_EVENT_TYPES,
+  AGT002_CANONICAL_PREVIEW_STAGES,
   AGT002_OUTPUT_REJECTION_STAGES,
   boundAgt002ErrorCode,
   boundAgt002ErrorMessage,
@@ -32,6 +33,7 @@ const REQUIRED_EVENT_TYPES = [
   'outcome_recorded',
   'stage_duration',
   'output_rejected',
+  'canonical_preview_unavailable',
 ];
 
 test('every structured event category required by the observability program is defined', () => {
@@ -245,4 +247,70 @@ test('boundAgt002ValidationCode only allows short lowercase/underscore codes', (
   assert.equal(boundAgt002ValidationCode('unknown_evidence_id'), 'unknown_evidence_id');
   assert.equal(boundAgt002ValidationCode('Some Free Form Message'), 'unknown_validation_code');
   assert.equal(boundAgt002ValidationCode(undefined), 'unknown_validation_code');
+});
+
+test('canonical_preview_unavailable has a closed stage enum and never emits sensitive fields', () => {
+  assert.deepEqual(Object.values(AGT002_CANONICAL_PREVIEW_STAGES), [
+    'runtime_config',
+    'legal_corpus',
+    'context_version',
+    'claim',
+    'governance',
+    'runtime_creation',
+    'engine_analysis',
+    'persistence',
+  ]);
+  assert.deepEqual(
+    [...AGT002_OBSERVABILITY_EVENT_FIELDS.canonical_preview_unavailable].sort(),
+    ['bridge_invocation_started', 'correlation_id', 'duration_ms', 'error_code', 'opportunity_id', 'snapshot_id', 'stage', 'tender_id'].sort(),
+  );
+
+  const emitted = [];
+  const observability = createAgt002AnalysisObservability({ emit: record => emitted.push(record), now: () => 99 });
+  observability.record('canonical_preview_unavailable', {
+    correlation_id: '2f9580cf-d2cf-49ea-b411-f6f86cf499cb',
+    stage: AGT002_CANONICAL_PREVIEW_STAGES.GOVERNANCE,
+    error_code: 'PGRST205',
+    bridge_invocation_started: false,
+    duration_ms: 379,
+    opportunity_id: 'opp-1',
+    tender_id: 'tender-1',
+    snapshot_id: 'snap-1',
+    error_message: 'document text and secret token abcdefghijklmnopqrstuvwxyz123456',
+    stack: 'sensitive stack',
+    payload: { document: 'full tender' },
+    prompt: 'system prompt',
+    policy: 'private policy',
+    authorization: 'Bearer secret',
+  });
+
+  assert.deepEqual(emitted, [{
+    event: 'canonical_preview_unavailable',
+    at: 99,
+    correlation_id: '2f9580cf-d2cf-49ea-b411-f6f86cf499cb',
+    stage: 'governance',
+    error_code: 'PGRST205',
+    bridge_invocation_started: false,
+    duration_ms: 379,
+    opportunity_id: 'opp-1',
+    tender_id: 'tender-1',
+    snapshot_id: 'snap-1',
+  }]);
+});
+
+test('canonical_preview_unavailable drops a stage outside its closed enum', () => {
+  const emitted = [];
+  const observability = createAgt002AnalysisObservability({ emit: record => emitted.push(record), now: () => 100 });
+  observability.record('canonical_preview_unavailable', {
+    correlation_id: '2f9580cf-d2cf-49ea-b411-f6f86cf499cb',
+    stage: 'document=texto-confidencial-prompt-secreto',
+    error_code: 'PGRST205',
+  });
+
+  assert.deepEqual(emitted, [{
+    event: 'canonical_preview_unavailable',
+    at: 100,
+    correlation_id: '2f9580cf-d2cf-49ea-b411-f6f86cf499cb',
+    error_code: 'PGRST205',
+  }]);
 });

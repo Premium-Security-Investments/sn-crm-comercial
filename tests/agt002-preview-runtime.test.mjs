@@ -30,6 +30,27 @@ assert.throws(() => createAgt002PreviewRuntime({ environment: baseEnv({ AGT002_P
   assert.equal(typeof runtime.analyze, 'function');
 }
 
+// The optional diagnostic hook stays false during construction and fires exactly
+// when the engine delegates to the bridge client. It never receives request data.
+{
+  let invocationStarted = false;
+  let capturedClient = null;
+  createAgt002PreviewRuntime({
+    environment: baseEnv(),
+    countDailyRuns: async () => 0,
+    onBridgeInvocationStarted: () => { invocationStarted = true; },
+    createEngine: ({ client }) => {
+      capturedClient = client;
+      return { analyze: async () => null };
+    },
+  });
+  assert.equal(invocationStarted, false);
+  assert.equal(typeof capturedClient.run, 'function');
+  const delegated = capturedClient.run({ marker: 'synthetic' });
+  assert.equal(invocationStarted, true);
+  await assert.rejects(() => delegated, /modelo configurado/u);
+}
+
 // Malformed numeric overrides must fail closed rather than silently coerce to an unsafe default.
 assert.throws(
   () => createAgt002PreviewRuntime({ environment: baseEnv({ AGT002_PREVIEW_TIMEOUT_MS: 'not-a-number' }), countDailyRuns: async () => 0 }),

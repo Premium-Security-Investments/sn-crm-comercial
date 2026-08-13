@@ -87,6 +87,7 @@ function positiveIntFromEnv(environment, key, fallback) {
 export function createAgt002PreviewRuntime({
   environment = process.env, countDailyRuns, legalCorpusContext,
   companyEvidenceRegistryEntries, categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance, contextVersionId,
+  onBridgeInvocationStarted,
   createEngine = createAgt002PreviewEngine,
 } = {}) {
   const config = getAgt002PreviewRuntimeConfig(environment);
@@ -103,10 +104,18 @@ export function createAgt002PreviewRuntime({
     throw new Error('AGT-002 Preview no está configurado: AGT002_INTEGRAL_CONTRACT_V3 requiere un registro de evidencia empresarial inyectado explícitamente.');
   }
 
-  const client = createAgt002HetznerBridgeClient({
+  const bridgeClient = createAgt002HetznerBridgeClient({
     url: environment.AGT002_HETZNER_BRIDGE_URL,
     hmacSecret: environment.AGT002_HETZNER_BRIDGE_HMAC_SECRET,
   });
+  const client = typeof onBridgeInvocationStarted === 'function'
+    ? Object.freeze({
+      run: request => {
+        onBridgeInvocationStarted();
+        return bridgeClient.run(request);
+      },
+    })
+    : bridgeClient;
 
   return createEngine({
     client,
