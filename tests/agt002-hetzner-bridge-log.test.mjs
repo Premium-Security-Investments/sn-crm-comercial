@@ -12,6 +12,8 @@ function testOnlySafeKeysAreEmitted() {
       latency_ms: 42,
       input_tokens: 10,
       output_tokens: 5,
+      provider_status: 'failed',
+      provider_error_code: 'rate_limited',
       input: { evidence_id: 'should-never-appear' },
       content: 'model output should never appear',
       secret: 'hmac-secret-should-never-appear',
@@ -21,7 +23,7 @@ function testOnlySafeKeysAreEmitted() {
   }
   assert.ok(emitted, 'logBridgeEvent debe emitir una línea');
   const parsed = JSON.parse(emitted);
-  assert.deepEqual(parsed, { event: 'agt002_bridge_success', correlation_id: 'corr-1', code: 'OK', latency_ms: 42, input_tokens: 10, output_tokens: 5 });
+  assert.deepEqual(parsed, { event: 'agt002_bridge_success', correlation_id: 'corr-1', code: 'OK', latency_ms: 42, input_tokens: 10, output_tokens: 5, provider_status: 'failed', provider_error_code: 'rate_limited' });
   assert.equal(emitted.includes('should-never-appear'), false);
 }
 
@@ -38,6 +40,26 @@ function testMissingOptionalFieldsAreOmittedNotNull() {
   assert.deepEqual(parsed, { event: 'agt002_bridge_error', correlation_id: 'corr-2', code: 'AGT002_BRIDGE_AUTH_INVALID', latency_ms: 3 });
 }
 
+function testUnsafeProviderAtomsAreDroppedAtTheLoggingBoundary() {
+  const originalLog = console.log;
+  let emitted = null;
+  console.log = line => { emitted = line; };
+  try {
+    logBridgeEvent('agt002_bridge_error', {
+      correlation_id: 'corr-3',
+      code: 'AGT002_CODEX_PROVIDER_ERROR',
+      provider_status: 'failed with raw provider secret detail',
+      provider_error_code: { message: 'nested secret detail' },
+    });
+  } finally {
+    console.log = originalLog;
+  }
+  const parsed = JSON.parse(emitted);
+  assert.deepEqual(parsed, { event: 'agt002_bridge_error', correlation_id: 'corr-3', code: 'AGT002_CODEX_PROVIDER_ERROR' });
+  assert.equal(emitted.includes('secret detail'), false);
+}
+
 testOnlySafeKeysAreEmitted();
 testMissingOptionalFieldsAreOmittedNotNull();
+testUnsafeProviderAtomsAreDroppedAtTheLoggingBoundary();
 console.log('agt002-hetzner-bridge-log.test.mjs OK');

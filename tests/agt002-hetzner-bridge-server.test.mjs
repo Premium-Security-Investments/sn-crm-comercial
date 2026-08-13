@@ -164,15 +164,26 @@ async function testConcurrentRequestsAreAccepted() {
 }
 
 async function testProviderErrorMappedTo502() {
-  const client = { run: async () => { const error = new Error('boom'); error.code = 'AGT002_CODEX_PROVIDER_ERROR'; throw error; } };
-  await withServer(client, async (base) => {
-    const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-5' };
-    const body = JSON.stringify(payload);
-    const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
-    assert.equal(response.status, 502);
-    const result = await response.json();
-    assert.equal(result.error.code, 'AGT002_CODEX_PROVIDER_ERROR');
-  });
+  const originalLog = console.log;
+  const lines = [];
+  console.log = line => { lines.push(line); };
+  const client = { run: async () => { const error = new Error('provider secret detail'); error.code = 'AGT002_CODEX_PROVIDER_ERROR'; error.providerStatus = 'failed'; error.providerErrorCode = 'rate_limited'; throw error; } };
+  try {
+    await withServer(client, async (base) => {
+      const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-5' };
+      const body = JSON.stringify(payload);
+      const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+      assert.equal(response.status, 502);
+      const result = await response.json();
+      assert.equal(result.error.code, 'AGT002_CODEX_PROVIDER_ERROR');
+    });
+  } finally {
+    console.log = originalLog;
+  }
+  const event = lines.map(line => JSON.parse(line)).find(item => item.code === 'AGT002_CODEX_PROVIDER_ERROR');
+  assert.equal(event.provider_status, 'failed');
+  assert.equal(event.provider_error_code, 'rate_limited');
+  assert.equal(JSON.stringify(event).includes('provider secret detail'), false);
 }
 
 async function testSynchronousThrowInCodexClientReleasesBusyAndFailsClosed() {

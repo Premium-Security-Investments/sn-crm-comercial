@@ -17,10 +17,23 @@ export const AGT002_CODEX_CLIENT_VERSION = '1.0.0';
 
 const KILL_GRACE_MS = 200;
 
-function transportError(message, code) {
+function transportError(message, code, safeDetails = {}) {
   const error = new Error(message);
   error.code = code;
+  if (safeDetails.providerStatus) error.providerStatus = safeDetails.providerStatus;
+  if (safeDetails.providerErrorCode) error.providerErrorCode = safeDetails.providerErrorCode;
   return error;
+}
+
+function safeProtocolAtom(value, fallback = undefined) {
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
+  if (typeof value !== 'string') return fallback;
+  const normalized = value.trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9_.-]{0,63}$/.test(normalized) ? normalized : fallback;
+}
+
+function turnStatusType(status) {
+  return safeProtocolAtom(typeof status === 'string' ? status : status?.type, 'unknown');
 }
 
 function nonEmptyString(value) {
@@ -187,8 +200,14 @@ export function createCodexAppServerClient({
           }
           if (message.method === 'turn/completed') {
             const turn = message.params?.turn;
-            if (turn?.status !== 'completed') {
-              settle(reject, transportError('El servicio de AGT-002 Preview devolvió un error.', 'AGT002_CODEX_PROVIDER_ERROR'));
+            const providerStatus = turnStatusType(turn?.status);
+            if (providerStatus !== 'completed') {
+              const providerErrorCode = safeProtocolAtom(turn?.error?.code);
+              settle(reject, transportError(
+                'El servicio de AGT-002 Preview devolvió un error.',
+                'AGT002_CODEX_PROVIDER_ERROR',
+                { providerStatus, providerErrorCode },
+              ));
               return;
             }
             const total = lastTokenUsage?.total;
