@@ -4060,7 +4060,7 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
       agt002AnalysisObservability.record('canonical_preview_unavailable', {
         correlation_id: canonicalCorrelationId,
         stage: canonicalStage,
-        error_code: error?.code,
+        error_code: error?.runtime_boundary_code || error?.code,
         bridge_invocation_started: bridgeInvocationStarted,
         duration_ms: Date.now() - canonicalStartedAt,
         opportunity_id: opportunityId,

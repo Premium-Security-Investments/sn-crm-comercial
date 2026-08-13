@@ -279,4 +279,89 @@ function testRuntimeBuildsHetznerBridgeClientNotLocalSpawn() {
 testConfiguredRequiresHetznerBridgeUrlAndSecret();
 testRuntimeBuildsHetznerBridgeClientNotLocalSpawn();
 
+// Safe constructor-boundary diagnostics: each failure before bridge invocation must carry
+// a stable non-secret code so production observability can distinguish the root cause
+// without logging exception messages, environment values, or tender content.
+{
+  const cases = [
+    {
+      label: 'runtime config',
+      code: 'AGT002_RUNTIME_CONFIG_INVALID',
+      run: () => createAgt002PreviewRuntime({
+        environment: baseEnv({ AGT002_PREVIEW_TIMEOUT_MS: 'invalid' }),
+        countDailyRuns: async () => 0,
+      }),
+    },
+    {
+      label: 'legal corpus',
+      code: 'AGT002_RUNTIME_LEGAL_CORPUS_INVALID',
+      run: () => createAgt002PreviewRuntime({
+        environment: baseEnv({ AGT002_CONTEXT_V2: 'true', AGT002_LEGAL_CORPUS: 'true' }),
+        countDailyRuns: async () => 0,
+      }),
+    },
+    {
+      label: 'integral governance',
+      code: 'AGT002_RUNTIME_GOVERNANCE_INVALID',
+      run: () => createAgt002PreviewRuntime({
+        environment: baseEnv(V3_BASE_ENV),
+        countDailyRuns: async () => 0,
+      }),
+    },
+    {
+      label: 'bridge client',
+      code: 'AGT002_RUNTIME_BRIDGE_CLIENT_INVALID',
+      run: () => createAgt002PreviewRuntime({
+        environment: baseEnv({ AGT002_HETZNER_BRIDGE_HMAC_SECRET: 'short-secret' }),
+        countDailyRuns: async () => 0,
+      }),
+    },
+    {
+      label: 'engine creation',
+      code: 'AGT002_RUNTIME_ENGINE_CREATION_FAILED',
+      run: () => createAgt002PreviewRuntime({
+        environment: baseEnv(),
+        countDailyRuns: async () => 0,
+        createEngine: () => { throw new Error('synthetic internal detail that must not become a diagnostic code'); },
+      }),
+    },
+  ];
+  for (const scenario of cases) {
+    assert.throws(scenario.run, error => {
+      assert.equal(error?.runtime_boundary_code, scenario.code, `${scenario.label} must expose only its stable boundary code`);
+      assert.equal(String(error?.runtime_boundary_code).includes('synthetic internal detail'), false);
+      assert.equal(String(error?.runtime_boundary_code).includes('short-secret'), false);
+      return true;
+    });
+  }
+
+  const codedCause = new Error('synthetic coded cause');
+  codedCause.code = 'UPSTREAM_STABLE_CODE';
+  assert.throws(
+    () => createAgt002PreviewRuntime({
+      environment: baseEnv(),
+      countDailyRuns: async () => 0,
+      createEngine: () => { throw codedCause; },
+    }),
+    error => error === codedCause
+      && error.code === 'UPSTREAM_STABLE_CODE'
+      && error.runtime_boundary_code === 'AGT002_RUNTIME_ENGINE_CREATION_FAILED',
+    'boundary diagnostics must preserve the original error object and code',
+  );
+
+  const frozenCause = Object.freeze(new Error('frozen synthetic detail'));
+  assert.throws(
+    () => createAgt002PreviewRuntime({
+      environment: baseEnv(),
+      countDailyRuns: async () => 0,
+      createEngine: () => { throw frozenCause; },
+    }),
+    error => error !== frozenCause
+      && error.message === 'AGT-002 Preview no está disponible.'
+      && error.runtime_boundary_code === 'AGT002_RUNTIME_ENGINE_CREATION_FAILED'
+      && error.cause === frozenCause,
+    'non-extensible failures must use a generic safe wrapper and preserve the cause',
+  );
+}
+
 console.log('AGT-002 Preview runtime factory (fail-closed environment wiring) passed');
