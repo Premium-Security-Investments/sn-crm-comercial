@@ -103,7 +103,33 @@ function nonEmpty(value) { return typeof value === 'string' && value.trim().leng
 // A turn that completes with status !== 'completed' is a provider error, not a silent success.
 {
   const client = realClient({ scenario: 'turn-failed' });
-  await assert.rejects(() => client.run(baseRunOptions()), error => error.code === 'AGT002_CODEX_PROVIDER_ERROR');
+  await assert.rejects(() => client.run(baseRunOptions()), error => {
+    assert.equal(error.code, 'AGT002_CODEX_PROVIDER_ERROR');
+    assert.equal(error.providerStatus, 'failed');
+    assert.equal(error.providerErrorCode, 'rate_limited');
+    assert.doesNotMatch(error.message, /secret detail|model failed/i);
+    return true;
+  });
+}
+
+// Free-form provider status/error text must never survive into diagnostic fields.
+{
+  const client = realClient({ scenario: 'turn-failed-unsafe-details' });
+  await assert.rejects(() => client.run(baseRunOptions()), error => {
+    assert.equal(error.code, 'AGT002_CODEX_PROVIDER_ERROR');
+    assert.equal(error.providerStatus, 'unknown');
+    assert.equal(error.providerErrorCode, undefined);
+    assert.equal(JSON.stringify(error).includes('secret detail'), false);
+    return true;
+  });
+}
+
+// Codex App Server 0.145 may encode status as a tagged object rather than a flat string.
+{
+  const client = realClient({ scenario: 'turn-completed-object-status' });
+  const result = await client.run(baseRunOptions());
+  assert.equal(JSON.parse(result.content).scenario, 'turn-completed-object-status');
+  assert.deepEqual(result.usage, { input_tokens: 8, output_tokens: 3 });
 }
 
 // A turn that completes without ever emitting an agentMessage item is an unsafe/invalid response.

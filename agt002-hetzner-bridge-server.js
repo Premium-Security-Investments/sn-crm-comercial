@@ -90,7 +90,13 @@ export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore =
       const handleError = error => {
         const code = error?.code || 'AGT002_BRIDGE_INTERNAL';
         const status = CODE_TO_STATUS[code] || 500;
-        logBridgeEvent('agt002_bridge_error', { correlation_id: correlationId, code, latency_ms: Date.now() - startedAt });
+        logBridgeEvent('agt002_bridge_error', {
+          correlation_id: correlationId,
+          code,
+          latency_ms: Date.now() - startedAt,
+          provider_status: error?.providerStatus,
+          provider_error_code: error?.providerErrorCode,
+        });
         sendError(res, status, code);
       };
 
