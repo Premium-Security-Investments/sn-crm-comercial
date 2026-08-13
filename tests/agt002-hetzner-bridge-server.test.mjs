@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { createAgt002BridgeServer } from '../agt002-hetzner-bridge-server.js';
+import { createAgt002BridgeServer, AGT002_BRIDGE_MAX_BODY_BYTES } from '../agt002-hetzner-bridge-server.js';
 import { sha256Hex, buildCanonicalString, signCanonicalString } from '../agt002-hetzner-bridge-signing.js';
 
 const SECRET = 'a'.repeat(32);
@@ -63,6 +63,32 @@ async function testOversizedBodyRejected() {
     const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(oversized), body: oversized });
     assert.equal(response.status, 413);
   });
+}
+
+async function testOversizedBodyEmitsSafeLogEvent() {
+  const originalLog = console.log;
+  const lines = [];
+  console.log = (line) => { lines.push(line); };
+  const oversized = JSON.stringify({ padding: 'x'.repeat(1_100_000) });
+  try {
+    await withServer(fakeSuccessClient, async (base) => {
+      const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(oversized), body: oversized });
+      assert.equal(response.status, 413);
+    });
+  } finally {
+    console.log = originalLog;
+  }
+
+  const events = lines.map(line => JSON.parse(line)).filter(event => event.code === 'AGT002_BRIDGE_PAYLOAD_TOO_LARGE');
+  assert.equal(events.length, 1, 'el rechazo 413 debe emitir exactamente un evento de log seguro');
+  const [event] = events;
+  assert.ok(Number.isInteger(event.received_bytes) && event.received_bytes > AGT002_BRIDGE_MAX_BODY_BYTES, 'el evento debe incluir received_bytes numérico por encima del límite');
+  assert.ok(typeof event.correlation_id === 'string' && event.correlation_id.length > 0, 'el evento debe incluir correlation_id');
+
+  const serialized = JSON.stringify(event);
+  assert.equal(serialized.includes('padding'), false, 'el evento nunca debe filtrar el cuerpo de la solicitud');
+  assert.equal(serialized.includes(SECRET), false, 'el evento nunca debe filtrar el secreto HMAC');
+  assert.equal(serialized.includes('policy'), false, 'el evento nunca debe filtrar campos de prompt/policy');
 }
 
 async function testIntegralV3SizedBodyAccepted() {
@@ -244,6 +270,7 @@ await testWrongMethodRejected();
 await testUnknownPathRejected();
 await testWrongContentTypeRejected();
 await testOversizedBodyRejected();
+await testOversizedBodyEmitsSafeLogEvent();
 await testIntegralV3SizedBodyAccepted();
 console.log('agt002-hetzner-bridge-server.test.mjs Step 1 OK');
 

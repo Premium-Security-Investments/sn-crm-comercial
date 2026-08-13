@@ -21,8 +21,8 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function sendError(res, status, code) {
-  sendJson(res, status, { error: { code, message: 'AGT-002 bridge rejected the request.' }, correlation_id: randomUUID() });
+function sendError(res, status, code, correlationId = randomUUID()) {
+  sendJson(res, status, { error: { code, message: 'AGT-002 bridge rejected the request.' }, correlation_id: correlationId });
 }
 
 export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore = createNonceStore(), now = () => Math.floor(Date.now() / 1000), maxBodyBytes = AGT002_BRIDGE_MAX_BODY_BYTES }) {
@@ -46,7 +46,9 @@ export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore =
       received += chunk.length;
       if (received > maxBodyBytes) {
         rejected = true;
-        sendError(res, 413, 'AGT002_BRIDGE_PAYLOAD_TOO_LARGE');
+        const correlationId = randomUUID();
+        logBridgeEvent('agt002_bridge_error', { correlation_id: correlationId, code: 'AGT002_BRIDGE_PAYLOAD_TOO_LARGE', received_bytes: received });
+        sendError(res, 413, 'AGT002_BRIDGE_PAYLOAD_TOO_LARGE', correlationId);
         req.destroy();
         return;
       }
