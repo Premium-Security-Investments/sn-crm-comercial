@@ -40,7 +40,7 @@ function sendTurnOutcome(params) {
     return;
   }
   if (scenario === 'turn-failed') {
-    send({ method: 'turn/completed', params: { threadId, turn: { id: turnId, status: { type: 'failed' }, items: [], error: { code: 'rate_limited', message: 'model failed secret detail' } } } });
+    send({ method: 'turn/completed', params: { threadId, turn: { id: turnId, status: { type: 'failed' }, items: [], error: { codexErrorInfo: 'usageLimitExceeded', message: 'model failed secret detail' } } } });
     return;
   }
   if (scenario === 'turn-failed-unsafe-details') {

@@ -36,6 +36,34 @@ function turnStatusType(status) {
   return safeProtocolAtom(typeof status === 'string' ? status : status?.type, 'unknown');
 }
 
+const CODEX_ERROR_INFO = Object.freeze({
+  contextWindowExceeded: 'context_window_exceeded',
+  sessionBudgetExceeded: 'session_budget_exceeded',
+  usageLimitExceeded: 'usage_limit_exceeded',
+  serverOverloaded: 'server_overloaded',
+  cyberPolicy: 'cyber_policy',
+  internalServerError: 'internal_server_error',
+  unauthorized: 'unauthorized',
+  badRequest: 'bad_request',
+  threadRollbackFailed: 'thread_rollback_failed',
+  sandboxError: 'sandbox_error',
+  other: 'other',
+  httpConnectionFailed: 'http_connection_failed',
+  responseStreamConnectionFailed: 'response_stream_connection_failed',
+  responseStreamDisconnected: 'response_stream_disconnected',
+  responseTooManyFailedAttempts: 'response_too_many_failed_attempts',
+  activeTurnNotSteerable: 'active_turn_not_steerable',
+});
+
+function codexErrorInfoType(value) {
+  if (typeof value === 'string') return CODEX_ERROR_INFO[value] || 'other';
+  if (!isPlainObject(value)) return undefined;
+  for (const key of Object.keys(CODEX_ERROR_INFO)) {
+    if (Object.hasOwn(value, key)) return CODEX_ERROR_INFO[key];
+  }
+  return 'other';
+}
+
 function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -202,7 +230,8 @@ export function createCodexAppServerClient({
             const turn = message.params?.turn;
             const providerStatus = turnStatusType(turn?.status);
             if (providerStatus !== 'completed') {
-              const providerErrorCode = safeProtocolAtom(turn?.error?.code);
+              const providerErrorCode = codexErrorInfoType(turn?.error?.codexErrorInfo)
+                || safeProtocolAtom(turn?.error?.code);
               settle(reject, transportError(
                 'El servicio de AGT-002 Preview devolvió un error.',
                 'AGT002_CODEX_PROVIDER_ERROR',

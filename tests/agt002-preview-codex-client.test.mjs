@@ -106,7 +106,7 @@ function nonEmpty(value) { return typeof value === 'string' && value.trim().leng
   await assert.rejects(() => client.run(baseRunOptions()), error => {
     assert.equal(error.code, 'AGT002_CODEX_PROVIDER_ERROR');
     assert.equal(error.providerStatus, 'failed');
-    assert.equal(error.providerErrorCode, 'rate_limited');
+    assert.equal(error.providerErrorCode, 'usage_limit_exceeded');
     assert.doesNotMatch(error.message, /secret detail|model failed/i);
     return true;
   });
