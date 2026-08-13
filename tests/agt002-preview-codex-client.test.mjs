@@ -259,7 +259,14 @@ function nonEmpty(value) { return typeof value === 'string' && value.trim().leng
   assert.ok(nonEmpty(capturedThreadStartParams.cwd));
   assert.equal(capturedTurnStartParams.threadId, 'thread-fake');
   assert.deepEqual(capturedTurnStartParams.input, [{ type: 'text', text: JSON.stringify({ snapshot_id: 'snap-1' }) }]);
-  assert.deepEqual(capturedTurnStartParams.outputSchema, CLOSED_OUTPUT_SCHEMA);
+  assert.deepEqual(capturedTurnStartParams.outputSchema, {
+    ...CLOSED_OUTPUT_SCHEMA,
+    properties: {
+      ...CLOSED_OUTPUT_SCHEMA.properties,
+      human_review_required: { enum: [true] },
+    },
+  });
+  assert.deepEqual(CLOSED_OUTPUT_SCHEMA.properties.human_review_required, { const: true }, 'the canonical schema must not be mutated');
 }
 
 // --- Separate, human-gated ChatGPT device-code login flow -----------------
