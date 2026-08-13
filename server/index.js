@@ -2520,7 +2520,7 @@ function buildTenderGoNoGoVerdict(opportunity, documents, context = {}) {
   return { decision: finalDecision, risk, executive_semaphore, commercial_fit, company_profile_crosscheck, habilitating_requirements, blockers, next_action, committee_summary };
 }
 function buildTenderDocumentAnalysis(opportunity, documents, companyProfile = {}) {
-  const deepAnalysis = buildTenderDeepAnalysis(documents, companyProfile);
+  const deepAnalysis = buildTenderDeepAnalysis(documents, companyProfile, { governedRequirements: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3 });
   const text = documents.map(d => `\n--- ${d.document_type}: ${d.name} ---\n${d.extracted_text || ''}`).join('\n').slice(0, 220000);
   const normalized = normTenderText(text);
   const hasPliego = documents.some(d => d.document_type === 'pliego' || normTenderText(d.name).includes('pliego'));
