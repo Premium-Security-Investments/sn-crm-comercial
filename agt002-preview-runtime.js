@@ -14,6 +14,20 @@ function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function withRuntimeBoundaryCode(code, operation) {
+  try {
+    return operation();
+  } catch (error) {
+    if (error && (typeof error === 'object' || typeof error === 'function')) {
+      try { error.runtime_boundary_code = code; } catch { /* use the safe wrapper below */ }
+      if (error.runtime_boundary_code === code) throw error;
+    }
+    const boundaryError = new Error('AGT-002 Preview no está disponible.', { cause: error });
+    boundaryError.runtime_boundary_code = code;
+    throw boundaryError;
+  }
+}
+
 function legalAsOf(environment) {
   const value = environment.AGT002_LEGAL_AS_OF || new Date().toISOString().slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(`${value}T00:00:00.000Z`))) {
@@ -90,24 +104,33 @@ export function createAgt002PreviewRuntime({
   onBridgeInvocationStarted,
   createEngine = createAgt002PreviewEngine,
 } = {}) {
-  const config = getAgt002PreviewRuntimeConfig(environment);
-  const analysisConfig = buildAgt002AnalysisConfig(environment);
-  const loadedLegalCorpus = analysisConfig.AGT002_LEGAL_CORPUS ? requireLegalCorpusContext(legalCorpusContext) : null;
-  const legalEvidenceProvider = loadedLegalCorpus ? createLegalEvidenceProvider(loadedLegalCorpus, environment) : undefined;
+  const { config, analysisConfig } = withRuntimeBoundaryCode('AGT002_RUNTIME_CONFIG_INVALID', () => ({
+    config: getAgt002PreviewRuntimeConfig(environment),
+    analysisConfig: buildAgt002AnalysisConfig(environment),
+  }));
+  const { loadedLegalCorpus, legalEvidenceProvider } = withRuntimeBoundaryCode('AGT002_RUNTIME_LEGAL_CORPUS_INVALID', () => {
+    const corpus = analysisConfig.AGT002_LEGAL_CORPUS ? requireLegalCorpusContext(legalCorpusContext) : null;
+    return {
+      loadedLegalCorpus: corpus,
+      legalEvidenceProvider: corpus ? createLegalEvidenceProvider(corpus, environment) : undefined,
+    };
+  });
 
   // AGT002_INTEGRAL_CONTRACT_V3: mirrors the legalCorpusContext pattern above — the
   // server layer loads the 17-class company-evidence registry once (from DB, migration
   // 061) and injects the raw rows here; this runtime never queries a database itself.
   // Without an explicit injection the flag fails closed at engine construction, exactly
   // like legalCorpus does without a legalCorpusContext.
-  if (analysisConfig.AGT002_INTEGRAL_CONTRACT_V3 && !Array.isArray(companyEvidenceRegistryEntries)) {
-    throw new Error('AGT-002 Preview no está configurado: AGT002_INTEGRAL_CONTRACT_V3 requiere un registro de evidencia empresarial inyectado explícitamente.');
-  }
+  withRuntimeBoundaryCode('AGT002_RUNTIME_GOVERNANCE_INVALID', () => {
+    if (analysisConfig.AGT002_INTEGRAL_CONTRACT_V3 && !Array.isArray(companyEvidenceRegistryEntries)) {
+      throw new Error('AGT-002 Preview no está configurado: AGT002_INTEGRAL_CONTRACT_V3 requiere un registro de evidencia empresarial inyectado explícitamente.');
+    }
+  });
 
-  const bridgeClient = createAgt002HetznerBridgeClient({
+  const bridgeClient = withRuntimeBoundaryCode('AGT002_RUNTIME_BRIDGE_CLIENT_INVALID', () => createAgt002HetznerBridgeClient({
     url: environment.AGT002_HETZNER_BRIDGE_URL,
     hmacSecret: environment.AGT002_HETZNER_BRIDGE_HMAC_SECRET,
-  });
+  }));
   const client = typeof onBridgeInvocationStarted === 'function'
     ? Object.freeze({
       run: request => {
@@ -117,7 +140,7 @@ export function createAgt002PreviewRuntime({
     })
     : bridgeClient;
 
-  return createEngine({
+  return withRuntimeBoundaryCode('AGT002_RUNTIME_ENGINE_CREATION_FAILED', () => createEngine({
     client,
     model: config.model,
     policyVersion: config.policyVersion,
@@ -142,5 +165,5 @@ export function createAgt002PreviewRuntime({
       contextVersionId: contextVersionId ?? null,
     } : {}),
     ...(countDailyRuns ? { countDailyRuns } : {}),
-  });
+  }));
 }
