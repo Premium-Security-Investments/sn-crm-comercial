@@ -30,10 +30,10 @@ for (const route of [serverRoute, vercelRoute]) {
   assert.match(route, /if \(!canonicalOnly\) return useRulesFallback\('not_configured'\)/, 'legacy rollback mode may fall back only when canonical-only is disabled');
   assert.match(route, /if \(!canonicalOnly\) \{[\s\S]*return useRulesFallback\('preview_unavailable'\)/, 'runtime fallback must be explicitly guarded by disabled canonical-only mode');
   assert.match(route, /if \(!canonicalOnly\) return useRulesFallback\(claim\.status\)/, 'quota fallback must be explicitly guarded by disabled canonical-only mode');
-  assert.match(route, /appendAttempt\(idempotencyKey, 'running'\)/, 'canonical attempts must persist running state before provider invocation');
+  assert.match(route, /runAgt002PostBridgeAnalysis\(database, \{/, 'canonical attempts must persist the queued->running->completed|unavailable lifecycle via the durable post-bridge orchestrator');
   assert.match(route, /const analysisDocuments = agt002AnalysisConfig\.AGT002_DOCUMENT_RETRIEVAL[\s\S]*?adaptAgt002RetrievalDocuments\(currentDocs, \{ opportunityId, snapshotId: registeredSnapshot\.id \}\)[\s\S]*?: currentDocs;/, 'manual preview must adapt current DB records to the closed retrieval document contract');
   assert.match(route, /engine\.analyze\(\{ opportunity, documents: analysisDocuments,/, 'manual preview must send only adapted documents when retrieval is enabled');
-  assert.match(route, /appendAttempt\(idempotencyKey, 'completed', \{ analysis_run_id: registeredRun\.run_id \}\)/, 'canonical attempts must persist completion tied to the run');
+  assert.match(route, /analysis: outcome\.presented/, 'canonical completion must forward exactly the presentation the post-bridge orchestrator produced');
   assert.match(route, /registerAgt002PreviewAnalysis\([\s\S]*canonicalOnly, context_version_id: contextVersion\?\.id \}\)/, 'run persistence must receive canonical-only plus the exact immutable context version');
   assert.match(route, /findAgt002PreviewRun\(database, idempotencyKey, \{ canonicalOnly \}\)/, 'idempotent reuse must request canonical state while looking up the exact run key');
   assert.match(route, /used: null, fallback: false, state/, 'unavailable canonical responses must not present a substitute producer');

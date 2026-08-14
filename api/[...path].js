@@ -4010,11 +4010,10 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
     }
     let claimId = null;
     let idempotencyKey = null;
-    let attemptStarted = false;
     const canonicalCorrelationId = randomUUID();
     const canonicalStartedAt = Date.now();
     let canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.RUNTIME_CONFIG;
-    let bridgeInvocationStarted = false;
+    const bridgeTelemetry = { invocationStarted: false, responseReceived: false };
     try {
       const config = getAgt002PreviewRuntimeConfig(process.env);
       canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.LEGAL_CORPUS;
@@ -4050,18 +4049,14 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
         return sendCanonicalState(429, 'retry_wait', claim.status);
       }
       claimId = claim.claim_id;
-      if (canonicalOnly) {
-        await appendAttempt(idempotencyKey, 'queued');
-        attemptStarted = true;
-        await appendAttempt(idempotencyKey, 'running');
-      }
       canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.GOVERNANCE;
       const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
       canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.RUNTIME_CREATION;
       const engine = createAgt002PreviewRuntime({
           environment: process.env,
           countDailyRuns: () => countAgt002PreviewRunsToday(database),
-          onBridgeInvocationStarted: () => { bridgeInvocationStarted = true; },
+          onBridgeInvocationStarted: () => { bridgeTelemetry.invocationStarted = true; },
+          onBridgeResponseReceived: () => { bridgeTelemetry.responseReceived = true; },
           legalCorpusContext,
           ...(integralV3Governance ? {
             companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
@@ -4075,10 +4070,30 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
         ? adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId: registeredSnapshot.id })
         : currentDocs;
       canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.ENGINE_ANALYSIS;
+      if (canonicalOnly) {
+        // runAgt002PostBridgeAnalysis owns the entire post-claim frontier from here: exactly one
+        // engine.analyze() call, exactly one persistence attempt, the durable
+        // psi_agt002_analysis_attempt_events lifecycle, the single closed-catalog observability
+        // event, and the claim release — so this call site must never release `claimId` itself.
+        const outcome = await runAgt002PostBridgeAnalysis(database, {
+          opportunityId, tenderId, snapshotId: registeredSnapshot.id, contextVersionId: contextVersion?.id,
+          attemptKey: idempotencyKey, correlationId: canonicalCorrelationId, claimId, idempotencyKey, canonicalOnly,
+        }, {
+          engine,
+          observability: agt002AnalysisObservability,
+          analysisContext: { opportunity, documents: analysisDocuments, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } },
+          bridgeTelemetry,
+          integralContractV3: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3 === true,
+          presentAnalysis: registeredRun => presentCurrentTenderAnalysis(registeredRun),
+        });
+        claimId = null; // Already released inside runAgt002PostBridgeAnalysis: never release twice.
+        if (outcome.status !== 'completed') return sendCanonicalState(503, 'unavailable', 'preview_unavailable');
+        const payload = await getTenderDocumentRecords(database, opportunityId);
+        return res.json({ ...payload, analysis: outcome.presented, analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, state: 'completed', reused: false, human_review_required: true } });
+      }
       const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
       canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.PERSISTENCE;
       const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope, canonicalOnly, context_version_id: contextVersion?.id });
-      if (canonicalOnly) await appendAttempt(idempotencyKey, 'completed', { analysis_run_id: registeredRun.run_id });
       const payload = await getTenderDocumentRecords(database, opportunityId);
       return res.json({ ...payload, analysis: presentCurrentTenderAnalysis(registeredRun), analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, state: 'completed', reused: false, human_review_required: true } });
     } catch (error) {
@@ -4086,15 +4101,11 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
         console.warn('agt002_preview_fallback', { event: 'agt002_preview_fallback', reason: 'preview_unavailable' });
         return useRulesFallback('preview_unavailable');
       }
-      if (attemptStarted && idempotencyKey) {
-        try { await appendAttempt(idempotencyKey, 'unavailable', { error_code: error?.code || 'AGT002_UNAVAILABLE', error_message: 'Vig-IA no completó el análisis; se reintentará.' }); }
-        catch { console.warn('agt002_attempt_state_failed', { event: 'agt002_attempt_state_failed' }); }
-      }
       agt002AnalysisObservability.record('canonical_preview_unavailable', {
         correlation_id: canonicalCorrelationId,
         stage: canonicalStage,
         error_code: error?.runtime_boundary_code || error?.code,
-        bridge_invocation_started: bridgeInvocationStarted,
+        bridge_invocation_started: bridgeTelemetry.invocationStarted,
         duration_ms: Date.now() - canonicalStartedAt,
         opportunity_id: opportunityId,
         tender_id: tenderId,
