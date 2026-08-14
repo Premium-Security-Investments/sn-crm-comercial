@@ -1,5 +1,103 @@
 # CURRENT — SIIO Comercial / Licitaciones / Vig‑IA
 
+## 0. Corte autoritativo vigente — resultado productivo AGT‑002/Manizales pre‑GO, 2026-08-13
+
+**Este bloque prevalece sobre cualquier afirmación posterior en las secciones §1 en adelante.** Se verificó directamente contra Git, Supabase productivo, Vercel y la evidencia visual autenticada del caso real. Las secciones siguientes son historial fechado y pueden estar desactualizadas frente a este corte. Ante cualquier conflicto, este bloque manda.
+
+### 0.1 Verdad de Git y cierre técnico
+
+**Snapshot del 2026-08-13:** rama `feat/agt002-v3-foundations` · HEAD `56a5883` · en ese corte el único cambio local era este archivo `CURRENT.md`. Para el estado local posterior y vigente del cierre del error, ver §0.5.
+
+**Base remota:** `origin/main` en `0e5f150`, merge de PR #84 que integró la punta de feature `18447c0`. Sobre esa punta hay 12 commits adicionales en esta rama.
+
+**Lote técnico estable de nueve commits** (el más reciente al final): `999bbbc`, `368f0d3`, `eb19a4c`, `09ba140`, `3fae8bf`, `26ab35a`, `f866877`, `473c3f0`, `56a5883`.
+
+Clasificación:
+
+- **Ejecución crítica** — `999bbbc` (aísla identidad de idempotencia v3), `368f0d3` (admite payloads v3 integrales acotados), `26ab35a` (conecta requisitos gobernados al runtime v3).
+- **Cierre diagnóstico/confiabilidad** — `eb19a4c` (observa solicitudes de bridge sobredimensionadas), `09ba140` (traza fallos canónicos de forma segura), `3fae8bf` (clasifica fallos de creación de runtime), `f866877` (maneja estado de turno Codex estructurado), `473c3f0` (clasifica fallos de turno Codex de forma segura), `56a5883` (adapta esquemas `const` para el app server de Codex).
+
+Los commits de funcionalidad/gobernanza pre‑GO de Manizales sobre esa misma punta son `641009c`, `29da6eb` y `041c17e` — anteriores y distintos del lote técnico de nueve; no se reclasifican aquí. Ninguno de los nueve automatiza GO/NO‑GO, firma, envío o presentación.
+
+Validación fresca del lote: pruebas AGT‑002 **266/266**, paridad backend **OK**, build **OK** y `git diff --check` limpio. Revisión independiente Claude Code Sonnet: **APPROVE**, sin bloqueos materiales del código revisado.
+
+### 0.2 Preflight productivo del caso real Manizales
+
+Caso: Rama Judicial, proceso `SA-24-2026`, oportunidad `54190e51-15fb-46af-b0aa-8f13461a3110`.
+
+Preflight read-only confirmado:
+
+- aplicación productiva `https://seguridad-nacional-crm.vercel.app` accesible; deployment observado `dpl_GJxnLPyZHURsg69oEp5VwkgbWFzF`, estado `READY` (Vercel no expuso metadata Git suficiente para atribuirle mecánicamente el HEAD local);
+- pliego definitivo resuelto y 68 secciones estructuradas, de las cuales 15 son relevantes al pre‑GO;
+- 17/17 clases empresariales presentes en el catálogo cerrado, pero 17/17 pendientes de revisión humana y aplicabilidad al caso; 15/17 con vigencia desconocida y ninguna promovida a cumplimiento;
+- corpus jurídico `legal-corpus-v1.1` publicado y hash validado;
+- gobernanza Manizales completa: 6/6 filas `current`, versión 3 (tres clasificaciones `habilitating` y tres enlaces a evidencia para capital de trabajo/RUP, póliza RCE y póliza de vida colectiva);
+- persistencia canónica, snapshots, contexto, claims y eventos append-only disponibles;
+- último run canónico previo: schema `2.0-preview.1`; **no existe run integral V3 reutilizable**.
+
+La evidencia empresarial permite presencia documental, no cumplimiento. Toda conclusión sustantiva sigue obligada a evidencia verificable o abstención explícita.
+
+### 0.3 Ejecución humana observada y resultado
+
+El 2026-08-13, desde una sesión humana autorizada en la pestaña **Análisis** del caso real, se accionó **Actualizar con Vig‑IA Licitaciones**. La UI devolvió: **“Vig‑IA no está disponible; no se generó un análisis alternativo.”**
+
+La validación final read-only encontró **dos ciclos humanos** con la misma clave idempotente `d5edd9…a055`, separados por aproximadamente 26 segundos:
+
+```text
+queued → running → unavailable
+queued → running → unavailable
+```
+
+Ambos ciclos:
+
+- conservaron la misma identidad idempotente y el snapshot `4770667d-1b47-4a52-af68-b199911b52d4`;
+- registraron `error_code=AGT002_UNAVAILABLE` y `analysis_run_id=null`;
+- alcanzaron `stage=engine_analysis` con `bridge_invocation_started=true`;
+- terminaron en aproximadamente 4.617 s y 3.645 s;
+- no produjeron fallback ni análisis alternativo.
+
+**Resultado canónico:** no se creó un run nuevo; no existe run V3 `3.0.0`; no se produjo brief pre‑GO real. El V2 histórico no se reutiliza ni se presenta como evidencia V3.
+
+**Bloqueo material único vigente:** el bridge fue invocado, pero el motor no produjo una respuesta canónica válida y la ruta cerró en `AGT002_UNAVAILABLE` durante `engine_analysis`. La telemetría segura actual no distingue todavía entre rechazo del proveedor, incompatibilidad del contrato desplegado, error del bridge o fallo de validación.
+
+**Límites preservados:** no se decidió GO/NO‑GO, no se comprometieron recursos ni garantías y no hubo firma, envío, presentación, scheduler, worker drain ni acción post‑GO. No debe hacerse un tercer intento sin resolver y verificar primero el bloqueo de `engine_analysis`.
+
+**Acciones de repositorio/infraestructura no realizadas en esta actualización:** no hubo commit, push, PR, merge, deploy ni migración remota.
+
+### 0.4 Hard debugging bridge → Codex — 2026-08-13, sin nuevo consumo
+
+Este diagnóstico refina el bloqueo descrito en §0.3 sin cambiar el resultado canónico del caso ni autorizar un nuevo intento.
+
+**Preflight preservado:** rama `feat/agt002-v3-foundations`, HEAD `56a5883`, único cambio local `CURRENT.md`; bridge `active/running` desde 14:51 UTC; Codex App Server `0.145.0`. Los ocho módulos JavaScript cargados por `agt002-bridge.service` en `/opt/agt002-bridge` coinciden byte a byte con `56a5883`. El `package.json` remoto es un manifiesto mínimo de runtime y difiere del manifiesto del repositorio, pero no altera la lógica ejecutada.
+
+**Etapa exacta demostrada:** ambos intentos superaron autenticación, lectura de cuota, `thread/start` y `turn/start`; Codex emitió `turn/started`. El segundo proceso alcanzó además `item/completed`. El cierre recibido por el bridge fue `turn/completed` con `status=failed` y `error.code=other`. El cliente convirtió exactamente ese estado en `AGT002_CODEX_PROVIDER_ERROR`; la extracción de una respuesta válida y la validación del contrato V3 nunca se ejecutaron. No fue un rechazo HTTP del bridge, un fallo al crear el turno ni una validación V3 local.
+
+**Reproducción aislada:** un child process falso, sin red, OAuth ni proveedor, recorrió el protocolo real `initialize → account/read → account/rateLimits/read → thread/start → turn/start` y emitió `turn/completed(failed, other)`. El resultado fue exactamente `AGT002_CODEX_PROVIDER_ERROR`, `provider_status=failed`, `provider_error_code=other` y mensaje seguro. Esto reproduce y demuestra el mapeo observado, no la causa interna por la que Codex marcó el turno como fallido.
+
+**Compatibilidad de schema:** auditoría recursiva local de las variantes legacy y legal del `outputSchema`: 40/48 nodos, 6/7 objetos y 10/13 arrays respectivamente, sin hallazgos; todos los objetos tienen `additionalProperties:false`, propiedades explícitas y `required` completo. Los logs técnicos sanitizados no mostraron indicadores cerrados de schema inválido, auth, cuota, modelo, HTTP 4xx/5xx o transporte. Por tanto, no quedó demostrada una incompatibilidad con Codex `0.145.0`.
+
+**Conclusión del bloque:** la causa interna de `error.code=other` **no quedó demostrada**. La hipótesis prioritaria es un fallo interno del proveedor durante la ejecución del turno, posterior a `turn/start` y anterior al estado final, cuyo detalle se pierde porque el cliente y la telemetría segura conservan sólo la categoría cerrada `other`. La observación mínima faltante es capturar, en una reproducción sintética autorizada y no productiva, el evento final estructurado completo o un diagnóstico técnico correlacionado del App Server, con redacción en origen y sin payloads, prompts ni documentos.
+
+No se implementó corrección ni se invocó Claude Code Sonnet: hacerlo habría sido basarse sólo en una hipótesis. No se ejecutó Manizales, no hubo tercer intento, nuevo consumo de Codex, reinicio, cambio de secretos, modificación remota, commit, push, PR, merge o deploy.
+
+### 0.5 Cierre local de `AGT002_CODEX_PROVIDER_ERROR` — 2026-08-14
+
+Este bloque continúa §0.4 con la única reproducción sintética externa autorizada. No modifica el resultado canónico de Manizales ni autoriza otro intento real.
+
+**Reproducción externa mínima:** se ejecutó exactamente un turno sintético, no productivo y sin documentos, contexto, oportunidad, snapshots, prompts o datos de Manizales. Usó Codex App Server `0.145.0`, modelo `gpt-5.6-sol`, input artificial y schema mínimo cerrado `{ok:boolean}`. El turno recorrió `initialize → account/read → account/rateLimits/read → thread/start → turn/start → item/completed → tokenUsage → turn/completed` y terminó `completed` en 4.526 s. Correlación segura: thread `019c7653-2a62-7b63-a64b-7f8ee75fce29`, turn `019c7653-2aa0-7d92-bd6d-fb611501b88b`; 9.687 tokens de entrada, 19 de salida y 9.706 totales. No se conservaron credenciales, headers, URLs, stderr, prompts, inputs completos ni mensajes libres. No hubo una segunda invocación.
+
+**Causa raíz demostrada:** el App Server, la cuenta, el modelo y la secuencia de protocolo sí completan un turno mínimo. La diferencia causal está en `buildAgt002IntegralAnalysisV3OutputJsonSchema()`: el envelope superior era cerrado, pero `$.properties.integral_analysis` se enviaba como `{type:"object"}`, sin `additionalProperties:false`, `properties` ni `required`. Codex Structured Outputs exige cierre recursivo; el cliente sólo adaptaba `const→enum` y no reparaba el objeto abierto. La prueba de regresión confirmó RED exactamente en `$.properties.integral_analysis must set additionalProperties=false`. Los fallos `failed/other` ocurrieron antes de extracción y validación V3, coherente con el rechazo del schema wire.
+
+**Corrección mínima local:** `agt002-preview-contract.js` materializa ahora el schema estructural V3 completo y recursivamente cerrado, reflejando claves, tipos, enums, nulabilidad y límites ya exigidos por el validador canónico. No mueve las invariantes cruzadas ni allowlists gobernadas fuera de `validateAgt002IntegralAnalysisV3`; no agrega fallback, no transforma error en éxito y no cambia autoridad humana, idempotencia, persistencia o límites pre-GO. El cliente conserva la adaptación wire `const→enum` sin mutar el schema canónico.
+
+**TDD y verificación fresca:** RED específico observado antes del cambio; GREEN específico después. Pruebas focales de contrato y frontera wire `2/2`; schema wire verificado con cierre recursivo, cero `const`, máximo cuatro niveles de objetos y 78 propiedades, dentro de los límites Codex de cinco niveles y 100 propiedades. Suite AGT‑002 serial `266/266`; `npm run check:backend-parity` OK; `npm run build` OK; `git diff --check` limpio. El warning Vite de chunk >500 kB es preexistente/no relacionado. Revisión independiente Claude Code Opus: `passed:true`, sin errores lógicos, de seguridad o documentación material. Commit local de código/pruebas tras rebase sobre `origin/main`: `3150a78` (`fix(agt002): close v3 Codex output schema recursively`).
+
+**Riesgo residual no bloqueante para integración:** no se consumió una segunda invocación para probar el schema V3 completo contra Codex `0.145.0`; por tanto, la aceptación real de todos sus keywords (`minLength`, `maxLength`, `minItems`, `maxItems`, `minimum`, `anyOf`) debe confirmarse únicamente en el canary posterior autorizado. El límite wire de 30 elementos coincide con los arrays internos acotados del contrato y cubre Manizales, pero es más estricto que el validador canónico para `analysis_units`; antes de generalizar a manifiestos o unidades por encima de 30 debe revisarse como límite operativo explícito.
+
+**Estado y límites:** no se ejecutó Manizales ni un tercer intento real; no se tocó `/opt/agt002-bridge`; no hubo reinicio, cambio de secretos, Supabase productivo, scheduler, worker drain, push, PR, merge o deploy. El cambio permanece únicamente local y requiere gate humano consolidado antes de integrar o desplegar. El canary posterior debe ser único, expresamente autorizado y ejecutarse sólo después de integrar y desplegar la corrección.
+
+---
+
 **Corte autoritativo:** 2026-08-06 11:52 COT · 2026-08-06 16:52 UTC
 **Producción:** https://seguridad-nacional-crm.vercel.app
 **Commit productivo:** `19987140def78d140cbca197b84f32467b6721e2`
