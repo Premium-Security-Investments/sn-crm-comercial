@@ -177,7 +177,7 @@ test('output_rejected declares its closed field allowlist and stage enum', () =>
     [...AGT002_OBSERVABILITY_EVENT_FIELDS.output_rejected].sort(),
     ['content_bytes', 'content_sha256', 'input_tokens', 'output_tokens', 'snapshot_id', 'stage', 'validation_code'].sort(),
   );
-  assert.deepEqual(Object.values(AGT002_OUTPUT_REJECTION_STAGES).sort(), ['envelope', 'json_parse', 'semantic_validation', 'usage'].sort());
+  assert.deepEqual(Object.values(AGT002_OUTPUT_REJECTION_STAGES).sort(), ['content_extraction', 'envelope', 'json_parse', 'semantic_validation', 'usage'].sort());
 });
 
 test('output_rejected only forwards the allowlisted fields and drops anything raw-content-shaped', () => {
