@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { createAgt002BridgeServer } from '../agt002-hetzner-bridge-server.js';
+import { createAgt002BridgeServer, AGT002_BRIDGE_MAX_BODY_BYTES } from '../agt002-hetzner-bridge-server.js';
 import { sha256Hex, buildCanonicalString, signCanonicalString } from '../agt002-hetzner-bridge-signing.js';
 
 const SECRET = 'a'.repeat(32);
@@ -59,9 +59,55 @@ async function testWrongContentTypeRejected() {
 
 async function testOversizedBodyRejected() {
   await withServer(fakeSuccessClient, async (base) => {
-    const oversized = JSON.stringify({ padding: 'x'.repeat(300_000) });
+    const oversized = JSON.stringify({ padding: 'x'.repeat(1_100_000) });
     const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(oversized), body: oversized });
     assert.equal(response.status, 413);
+  });
+}
+
+async function testOversizedBodyEmitsSafeLogEvent() {
+  const originalLog = console.log;
+  const lines = [];
+  console.log = (line) => { lines.push(line); };
+  const oversized = JSON.stringify({ padding: 'x'.repeat(1_100_000) });
+  try {
+    await withServer(fakeSuccessClient, async (base) => {
+      const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(oversized), body: oversized });
+      assert.equal(response.status, 413);
+    });
+  } finally {
+    console.log = originalLog;
+  }
+
+  const events = lines.map(line => JSON.parse(line)).filter(event => event.code === 'AGT002_BRIDGE_PAYLOAD_TOO_LARGE');
+  assert.equal(events.length, 1, 'el rechazo 413 debe emitir exactamente un evento de log seguro');
+  const [event] = events;
+  assert.ok(Number.isInteger(event.received_bytes) && event.received_bytes > AGT002_BRIDGE_MAX_BODY_BYTES, 'el evento debe incluir received_bytes numérico por encima del límite');
+  assert.ok(typeof event.correlation_id === 'string' && event.correlation_id.length > 0, 'el evento debe incluir correlation_id');
+
+  const serialized = JSON.stringify(event);
+  assert.equal(serialized.includes('padding'), false, 'el evento nunca debe filtrar el cuerpo de la solicitud');
+  assert.equal(serialized.includes(SECRET), false, 'el evento nunca debe filtrar el secreto HMAC');
+  assert.equal(serialized.includes('policy'), false, 'el evento nunca debe filtrar campos de prompt/policy');
+}
+
+async function testIntegralV3SizedBodyAccepted() {
+  let calls = 0;
+  const client = {
+    run: async () => {
+      calls += 1;
+      return { content: '{"ok":true}', usage: { input_tokens: 1, output_tokens: 2 }, rate_limit: null };
+    },
+  };
+  await withServer(client, async (base) => {
+    const payload = {
+      model: 'gpt-x', policy: 'policy text', input: { evidence: 'x'.repeat(300_000) },
+      outputSchema: { type: 'object' }, timeoutMs: 5000, idempotencyKey: 'idem-v3-sized',
+    };
+    const body = JSON.stringify(payload);
+    const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+    assert.equal(response.status, 200, 'un payload V3 acotado por debajo de 1 MiB debe llegar al proveedor');
+    assert.equal(calls, 1);
   });
 }
 
@@ -118,15 +164,26 @@ async function testConcurrentRequestsAreAccepted() {
 }
 
 async function testProviderErrorMappedTo502() {
-  const client = { run: async () => { const error = new Error('boom'); error.code = 'AGT002_CODEX_PROVIDER_ERROR'; throw error; } };
-  await withServer(client, async (base) => {
-    const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-5' };
-    const body = JSON.stringify(payload);
-    const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
-    assert.equal(response.status, 502);
-    const result = await response.json();
-    assert.equal(result.error.code, 'AGT002_CODEX_PROVIDER_ERROR');
-  });
+  const originalLog = console.log;
+  const lines = [];
+  console.log = line => { lines.push(line); };
+  const client = { run: async () => { const error = new Error('provider secret detail'); error.code = 'AGT002_CODEX_PROVIDER_ERROR'; error.providerStatus = 'failed'; error.providerErrorCode = 'rate_limited'; throw error; } };
+  try {
+    await withServer(client, async (base) => {
+      const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-5' };
+      const body = JSON.stringify(payload);
+      const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+      assert.equal(response.status, 502);
+      const result = await response.json();
+      assert.equal(result.error.code, 'AGT002_CODEX_PROVIDER_ERROR');
+    });
+  } finally {
+    console.log = originalLog;
+  }
+  const event = lines.map(line => JSON.parse(line)).find(item => item.code === 'AGT002_CODEX_PROVIDER_ERROR');
+  assert.equal(event.provider_status, 'failed');
+  assert.equal(event.provider_error_code, 'rate_limited');
+  assert.equal(JSON.stringify(event).includes('provider secret detail'), false);
 }
 
 async function testSynchronousThrowInCodexClientReleasesBusyAndFailsClosed() {
@@ -224,6 +281,8 @@ await testWrongMethodRejected();
 await testUnknownPathRejected();
 await testWrongContentTypeRejected();
 await testOversizedBodyRejected();
+await testOversizedBodyEmitsSafeLogEvent();
+await testIntegralV3SizedBodyAccepted();
 console.log('agt002-hetzner-bridge-server.test.mjs Step 1 OK');
 
 await testSuccessResponseShape();

@@ -43,11 +43,28 @@ assert.doesNotMatch(JSON.stringify(analysis), /cumple autom[aá]ticamente|GO aut
 const reversed = buildTenderDeepAnalysis([...documents].reverse(), { guarantee_capacity_pct: 20, working_capital: 600000000 });
 assert.deepEqual(reversed, analysis, 'deep analysis must be deterministic across document and profile key order');
 
+const governedDocuments = [
+  ...documents,
+  {
+    id: 'doc-polizas-habilitantes',
+    name: 'Requisitos habilitantes.pdf',
+    document_type: 'pliego',
+    extracted_text: 'Como requisito habilitante se exige póliza de responsabilidad civil extracontractual y póliza de vida colectiva para el personal.',
+  },
+];
+const legacyIds = buildTenderDeepAnalysis(governedDocuments, companyProfile).matrix.legal.map(item => item.id);
+assert.deepEqual(legacyIds, ['legal-guarantee-policy'], 'v2 must preserve the legacy generic legal requirement');
+const governed = buildTenderDeepAnalysis(governedDocuments, companyProfile, { governedRequirements: true });
+const governedIds = governed.matrix.legal.map(item => item.id);
+assert.deepEqual(governedIds, ['legal-rce-policy', 'legal-collective-life-policy'], 'v3 must use the two human-approved governed legal requirements');
+assert.equal(governed.coverage.total, 4, 'v3 governed analysis must expose the complete four-requirement manifest source');
+assert.ok(!governedIds.includes('legal-guarantee-policy'), 'v3 must never leak the legacy generic legal requirement');
+
 for (const backendPath of ['../server/index.js', '../api/[...path].js']) {
   const source = readFileSync(new URL(backendPath, import.meta.url), 'utf8');
   assert.match(source, /import\s+\{\s*buildTenderDeepAnalysis\s*\}\s+from\s+'\.\.\/tender-deep-analysis\.js';/);
   const builder = source.slice(source.indexOf('function buildTenderDocumentAnalysis'), source.indexOf('async function getTenderDocumentRecords'));
-  assert.match(builder, /const deepAnalysis = buildTenderDeepAnalysis\(documents, companyProfile\);/);
+  assert.match(builder, /const deepAnalysis = buildTenderDeepAnalysis\(documents, companyProfile,\s*\{ governedRequirements: agt002AnalysisConfig\.AGT002_INTEGRAL_CONTRACT_V3 \}\);/);
   assert.match(builder, /deep_analysis:\s*deepAnalysis/);
   assert.match(builder, /recommendation, risk/);
   assert.match(builder, /go_no_go:\s*goNoGo/);

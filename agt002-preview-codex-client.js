@@ -17,10 +17,65 @@ export const AGT002_CODEX_CLIENT_VERSION = '1.0.0';
 
 const KILL_GRACE_MS = 200;
 
-function transportError(message, code) {
+function transportError(message, code, safeDetails = {}) {
   const error = new Error(message);
   error.code = code;
+  if (safeDetails.providerStatus) error.providerStatus = safeDetails.providerStatus;
+  if (safeDetails.providerErrorCode) error.providerErrorCode = safeDetails.providerErrorCode;
   return error;
+}
+
+function safeProtocolAtom(value, fallback = undefined) {
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
+  if (typeof value !== 'string') return fallback;
+  const normalized = value.trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9_.-]{0,63}$/.test(normalized) ? normalized : fallback;
+}
+
+function turnStatusType(status) {
+  return safeProtocolAtom(typeof status === 'string' ? status : status?.type, 'unknown');
+}
+
+const CODEX_ERROR_INFO = Object.freeze({
+  contextWindowExceeded: 'context_window_exceeded',
+  sessionBudgetExceeded: 'session_budget_exceeded',
+  usageLimitExceeded: 'usage_limit_exceeded',
+  serverOverloaded: 'server_overloaded',
+  cyberPolicy: 'cyber_policy',
+  internalServerError: 'internal_server_error',
+  unauthorized: 'unauthorized',
+  badRequest: 'bad_request',
+  threadRollbackFailed: 'thread_rollback_failed',
+  sandboxError: 'sandbox_error',
+  other: 'other',
+  httpConnectionFailed: 'http_connection_failed',
+  responseStreamConnectionFailed: 'response_stream_connection_failed',
+  responseStreamDisconnected: 'response_stream_disconnected',
+  responseTooManyFailedAttempts: 'response_too_many_failed_attempts',
+  activeTurnNotSteerable: 'active_turn_not_steerable',
+});
+
+function codexErrorInfoType(value) {
+  if (typeof value === 'string') return CODEX_ERROR_INFO[value] || 'other';
+  if (!isPlainObject(value)) return undefined;
+  for (const key of Object.keys(CODEX_ERROR_INFO)) {
+    if (Object.hasOwn(value, key)) return CODEX_ERROR_INFO[key];
+  }
+  return 'other';
+}
+
+function codexCompatibleOutputSchema(value) {
+  if (Array.isArray(value)) return value.map(codexCompatibleOutputSchema);
+  if (!isPlainObject(value)) return value;
+  const copy = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (key === 'const') continue;
+    copy[key] = codexCompatibleOutputSchema(child);
+  }
+  if (Object.hasOwn(value, 'const')) {
+    copy.enum = [codexCompatibleOutputSchema(value.const)];
+  }
+  return copy;
 }
 
 function nonEmptyString(value) {
@@ -157,7 +212,7 @@ export function createCodexAppServerClient({
               params: {
                 threadId,
                 input: [{ type: 'text', text: JSON.stringify(input ?? {}) }],
-                outputSchema,
+                outputSchema: codexCompatibleOutputSchema(outputSchema),
               },
             });
             return;
@@ -187,8 +242,15 @@ export function createCodexAppServerClient({
           }
           if (message.method === 'turn/completed') {
             const turn = message.params?.turn;
-            if (turn?.status !== 'completed') {
-              settle(reject, transportError('El servicio de AGT-002 Preview devolvió un error.', 'AGT002_CODEX_PROVIDER_ERROR'));
+            const providerStatus = turnStatusType(turn?.status);
+            if (providerStatus !== 'completed') {
+              const providerErrorCode = codexErrorInfoType(turn?.error?.codexErrorInfo)
+                || safeProtocolAtom(turn?.error?.code);
+              settle(reject, transportError(
+                'El servicio de AGT-002 Preview devolvió un error.',
+                'AGT002_CODEX_PROVIDER_ERROR',
+                { providerStatus, providerErrorCode },
+              ));
               return;
             }
             const total = lastTokenUsage?.total;

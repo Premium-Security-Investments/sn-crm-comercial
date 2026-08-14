@@ -4,7 +4,7 @@ import { authenticateBridgeRequest } from './agt002-hetzner-bridge-auth.js';
 import { logBridgeEvent } from './agt002-hetzner-bridge-log.js';
 
 const BRIDGE_PATH = '/v1/agt002-preview/run';
-const DEFAULT_MAX_BODY_BYTES = 262_144;
+export const AGT002_BRIDGE_MAX_BODY_BYTES = 1_048_576;
 
 const CODE_TO_STATUS = {
   AGT002_CODEX_TIMEOUT: 504,
@@ -21,11 +21,11 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function sendError(res, status, code) {
-  sendJson(res, status, { error: { code, message: 'AGT-002 bridge rejected the request.' }, correlation_id: randomUUID() });
+function sendError(res, status, code, correlationId = randomUUID()) {
+  sendJson(res, status, { error: { code, message: 'AGT-002 bridge rejected the request.' }, correlation_id: correlationId });
 }
 
-export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore = createNonceStore(), now = () => Math.floor(Date.now() / 1000), maxBodyBytes = DEFAULT_MAX_BODY_BYTES }) {
+export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore = createNonceStore(), now = () => Math.floor(Date.now() / 1000), maxBodyBytes = AGT002_BRIDGE_MAX_BODY_BYTES }) {
   if (typeof hmacSecret !== 'string' || hmacSecret.length < 32) throw new Error('El puente AGT-002 requiere un secreto HMAC de al menos 32 bytes.');
   if (!codexClient || typeof codexClient.run !== 'function') throw new Error('El puente AGT-002 requiere un cliente Codex inyectado.');
 
@@ -46,7 +46,9 @@ export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore =
       received += chunk.length;
       if (received > maxBodyBytes) {
         rejected = true;
-        sendError(res, 413, 'AGT002_BRIDGE_PAYLOAD_TOO_LARGE');
+        const correlationId = randomUUID();
+        logBridgeEvent('agt002_bridge_error', { correlation_id: correlationId, code: 'AGT002_BRIDGE_PAYLOAD_TOO_LARGE', received_bytes: received });
+        sendError(res, 413, 'AGT002_BRIDGE_PAYLOAD_TOO_LARGE', correlationId);
         req.destroy();
         return;
       }
@@ -88,7 +90,13 @@ export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore =
       const handleError = error => {
         const code = error?.code || 'AGT002_BRIDGE_INTERNAL';
         const status = CODE_TO_STATUS[code] || 500;
-        logBridgeEvent('agt002_bridge_error', { correlation_id: correlationId, code, latency_ms: Date.now() - startedAt });
+        logBridgeEvent('agt002_bridge_error', {
+          correlation_id: correlationId,
+          code,
+          latency_ms: Date.now() - startedAt,
+          provider_status: error?.providerStatus,
+          provider_error_code: error?.providerErrorCode,
+        });
         sendError(res, status, code);
       };
 

@@ -25,6 +25,20 @@ export const AGT002_OUTPUT_REJECTION_STAGES = Object.freeze({
   ENVELOPE: 'envelope',
 });
 
+// Closed execution stages for the authenticated canonical preview route. These
+// labels describe control-flow boundaries only; they never contain document,
+// prompt, policy, provider-response, or free-form error content.
+export const AGT002_CANONICAL_PREVIEW_STAGES = Object.freeze({
+  RUNTIME_CONFIG: 'runtime_config',
+  LEGAL_CORPUS: 'legal_corpus',
+  CONTEXT_VERSION: 'context_version',
+  CLAIM: 'claim',
+  GOVERNANCE: 'governance',
+  RUNTIME_CREATION: 'runtime_creation',
+  ENGINE_ANALYSIS: 'engine_analysis',
+  PERSISTENCE: 'persistence',
+});
+
 const CONTENT_SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const VALIDATION_CODE_PATTERN = /^[a-z0-9_]+$/;
 
@@ -58,6 +72,10 @@ export const AGT002_OBSERVABILITY_EVENT_FIELDS = Object.freeze({
   // validator's own message text.
   output_rejected: Object.freeze([
     'stage', 'validation_code', 'content_sha256', 'content_bytes', 'snapshot_id', 'input_tokens', 'output_tokens',
+  ]),
+  canonical_preview_unavailable: Object.freeze([
+    'correlation_id', 'stage', 'error_code', 'bridge_invocation_started', 'duration_ms',
+    'opportunity_id', 'tender_id', 'snapshot_id',
   ]),
 });
 
@@ -93,8 +111,13 @@ export function boundAgt002ValidationCode(code) {
   return safe.slice(0, MAX_VALIDATION_CODE_LENGTH);
 }
 
-function sanitizeAgt002FieldValue(key, value) {
+const AGT002_CANONICAL_PREVIEW_STAGE_VALUES = new Set(Object.values(AGT002_CANONICAL_PREVIEW_STAGES));
+
+function sanitizeAgt002FieldValue(eventType, key, value) {
   if (value === null || value === undefined) return undefined;
+  if (eventType === 'canonical_preview_unavailable' && key === 'stage') {
+    return AGT002_CANONICAL_PREVIEW_STAGE_VALUES.has(value) ? value : undefined;
+  }
   if (key === 'error_message') return boundAgt002ErrorMessage(value);
   if (key === 'error_code') return boundAgt002ErrorCode(value);
   if (key === 'validation_code') return boundAgt002ValidationCode(value);
@@ -129,7 +152,7 @@ export function createAgt002AnalysisObservability({ emit = defaultAgt002Observab
     if (!allowlist) throw new Error(`agt002-analysis-observability: unknown event type "${eventType}"`);
     const safeRecord = { event: eventType, at: now() };
     for (const key of allowlist) {
-      const value = sanitizeAgt002FieldValue(key, fields[key]);
+      const value = sanitizeAgt002FieldValue(eventType, key, fields[key]);
       if (value !== undefined) safeRecord[key] = value;
     }
     emit(safeRecord);

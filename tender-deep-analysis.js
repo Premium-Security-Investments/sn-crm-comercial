@@ -1,7 +1,9 @@
-import { buildRequirementAnalysis } from './tender-requirement-extraction.js';
+import { buildGovernedRequirementAnalysis, buildRequirementAnalysis } from './tender-requirement-extraction.js';
 
-export function buildTenderDeepAnalysis(documents, companyProfile = {}) {
-  const analysis = buildRequirementAnalysis(documents, companyProfile);
+export function buildTenderDeepAnalysis(documents, companyProfile = {}, { governedRequirements = false } = {}) {
+  const analysis = governedRequirements
+    ? buildGovernedRequirementAnalysis(documents, companyProfile)
+    : buildRequirementAnalysis(documents, companyProfile);
   return {
     version: '1.0',
     matrix: {

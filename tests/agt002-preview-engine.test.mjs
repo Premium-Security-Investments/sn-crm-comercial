@@ -66,8 +66,47 @@ for (const text of [
   'existencia o disponibilidad documental', 'vigencia observada', 'aplicabilidad al caso',
   'no preguntes si la licencia existe o está disponible', 'pending_case_validation',
   'alcance territorial', 'modalidades', 'armas', 'medios',
+  'impedimentos materiales', 'inhabilidades', 'experiencia mínima', 'capacidad financiera',
+  'plazo objetivamente imposible', 'imposibilidad técnica grave', 'inviabilidad económica',
+  'preparación post-GO', 'compromiso empresarial de disponer', 'verifica automáticamente',
 ]) {
   assert.match(AGT002_PREVIEW_POLICY, new RegExp(text, 'i'));
+}
+assert.doesNotMatch(
+  AGT002_PREVIEW_POLICY,
+  /limita cualquier pregunta pendiente a vigencia al cierre o aplicabilidad concreta/i,
+  'vigencia y aplicabilidad deben verificarse automáticamente; sólo una imposibilidad material concreta puede escalarse',
+);
+assert.match(
+  AGT002_PREVIEW_POLICY,
+  /nunca preguntes por disponibilidad ordinaria de personal, armas, medios, recursos, modalidad individual\/consorcio\/UT ni emisión o modificación de garantías\/pólizas/i,
+);
+
+// E5 regression: legal corpus v1.1 carries ONLY human_legal_review_items (no verified
+// citation_allowlist), yet complete, otherwise-valid AGT-002 outputs were rejected wholesale
+// with validation_code legal_classification_misuse — the validator (unchanged, still strict)
+// throws that code whenever a fact classification (tender_requirement/company_evidence/
+// inference) or legal_obligation carries a legal_citation_id, which is exactly what an
+// under-instructed model does with an uncertain source it has no other sanctioned way to
+// reference. The fix belongs in the prompt, not the validator: the policy text actually sent
+// to the model on every run must unambiguously state that a human_legal_review_items citation
+// id may appear ONLY inside a legal_finding with classification human_legal_review — using the
+// exact abstention statement, an empty evidence_refs, and every required id — and must never be
+// cited by any other classification.
+{
+  assert.match(AGT002_PREVIEW_POLICY, /human_legal_review_items/,
+    'the prompt must name legal_evidence.human_legal_review_items explicitly, not just "revisión jurídica" in the abstract');
+  assert.ok(AGT002_PREVIEW_POLICY.includes(AGT002_LEGAL_HUMAN_REVIEW_STATEMENT),
+    'the prompt must show the exact abstention text verbatim so the model does not have to guess or paraphrase it');
+  assert.match(AGT002_PREVIEW_POLICY, /evidence_refs vac[ií]o/i,
+    'the prompt must state that a human_legal_review finding carries an empty evidence_refs');
+  assert.match(AGT002_PREVIEW_POLICY, /todas (esas|las) citation ids/i,
+    'the prompt must state every required human_legal_review_items citation id must be represented');
+  assert.match(
+    AGT002_PREVIEW_POLICY,
+    /nunca cites esos identificadores en tender_requirement, company_evidence, inference ni legal_obligation/i,
+    'the prompt must explicitly forbid citing a human_legal_review_items id from any classification other than human_legal_review',
+  );
 }
 
 // Happy path: closed envelope, correct identity, usage/rate-limit surfaced.

@@ -7,6 +7,7 @@ import {
   createCodexAppServerClient,
   requestAgt002CodexDeviceCodeLogin,
 } from '../agt002-preview-codex-client.js';
+import { buildAgt002IntegralAnalysisV3OutputJsonSchema } from '../agt002-preview-contract.js';
 
 const source = readFileSync(new URL('../agt002-preview-codex-client.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /OPENAI_API_KEY|HERMES_INTERIM_API_KEY|Authorization|Bearer/i, 'the Codex App Server client must never manage an API key or Bearer token; auth is the subprocess\'s own OAuth ChatGPT session');
@@ -103,7 +104,33 @@ function nonEmpty(value) { return typeof value === 'string' && value.trim().leng
 // A turn that completes with status !== 'completed' is a provider error, not a silent success.
 {
   const client = realClient({ scenario: 'turn-failed' });
-  await assert.rejects(() => client.run(baseRunOptions()), error => error.code === 'AGT002_CODEX_PROVIDER_ERROR');
+  await assert.rejects(() => client.run(baseRunOptions()), error => {
+    assert.equal(error.code, 'AGT002_CODEX_PROVIDER_ERROR');
+    assert.equal(error.providerStatus, 'failed');
+    assert.equal(error.providerErrorCode, 'usage_limit_exceeded');
+    assert.doesNotMatch(error.message, /secret detail|model failed/i);
+    return true;
+  });
+}
+
+// Free-form provider status/error text must never survive into diagnostic fields.
+{
+  const client = realClient({ scenario: 'turn-failed-unsafe-details' });
+  await assert.rejects(() => client.run(baseRunOptions()), error => {
+    assert.equal(error.code, 'AGT002_CODEX_PROVIDER_ERROR');
+    assert.equal(error.providerStatus, 'unknown');
+    assert.equal(error.providerErrorCode, undefined);
+    assert.equal(JSON.stringify(error).includes('secret detail'), false);
+    return true;
+  });
+}
+
+// Codex App Server 0.145 may encode status as a tagged object rather than a flat string.
+{
+  const client = realClient({ scenario: 'turn-completed-object-status' });
+  const result = await client.run(baseRunOptions());
+  assert.equal(JSON.parse(result.content).scenario, 'turn-completed-object-status');
+  assert.deepEqual(result.usage, { input_tokens: 8, output_tokens: 3 });
 }
 
 // A turn that completes without ever emitting an agentMessage item is an unsafe/invalid response.
@@ -233,7 +260,43 @@ function nonEmpty(value) { return typeof value === 'string' && value.trim().leng
   assert.ok(nonEmpty(capturedThreadStartParams.cwd));
   assert.equal(capturedTurnStartParams.threadId, 'thread-fake');
   assert.deepEqual(capturedTurnStartParams.input, [{ type: 'text', text: JSON.stringify({ snapshot_id: 'snap-1' }) }]);
-  assert.deepEqual(capturedTurnStartParams.outputSchema, CLOSED_OUTPUT_SCHEMA);
+  assert.deepEqual(capturedTurnStartParams.outputSchema, {
+    ...CLOSED_OUTPUT_SCHEMA,
+    properties: {
+      ...CLOSED_OUTPUT_SCHEMA.properties,
+      human_review_required: { enum: [true] },
+    },
+  });
+  assert.deepEqual(CLOSED_OUTPUT_SCHEMA.properties.human_review_required, { const: true }, 'the canonical schema must not be mutated');
+
+  capturedTurnStartParams = null;
+  const canonicalV3Schema = buildAgt002IntegralAnalysisV3OutputJsonSchema();
+  await client.run(baseRunOptions({ outputSchema: canonicalV3Schema }));
+  function assertCodexWireSchema(node, path = '$', objectDepth = 0, totals = { properties: 0, maxDepth: 0 }) {
+    if (!node || typeof node !== 'object') return totals;
+    assert.equal(Object.hasOwn(node, 'const'), false, `${path} must adapt const to enum on the wire`);
+    if (node.type === 'object') {
+      const nextDepth = objectDepth + 1;
+      totals.maxDepth = Math.max(totals.maxDepth, nextDepth);
+      assert.equal(node.additionalProperties, false, `${path} must remain closed on the wire`);
+      assert.ok(node.properties && typeof node.properties === 'object', `${path} must declare properties on the wire`);
+      totals.properties += Object.keys(node.properties).length;
+      for (const [key, child] of Object.entries(node.properties)) assertCodexWireSchema(child, `${path}.properties.${key}`, nextDepth, totals);
+    }
+    if (node.type === 'array') assertCodexWireSchema(node.items, `${path}.items`, objectDepth, totals);
+    for (const keyword of ['anyOf', 'oneOf', 'allOf']) {
+      node[keyword]?.forEach((child, index) => assertCodexWireSchema(child, `${path}.${keyword}[${index}]`, objectDepth, totals));
+    }
+    return totals;
+  }
+  const wireMetrics = assertCodexWireSchema(capturedTurnStartParams.outputSchema);
+  assert.ok(wireMetrics.maxDepth <= 5, `Codex Structured Outputs supports at most 5 object levels, got ${wireMetrics.maxDepth}`);
+  assert.ok(wireMetrics.properties <= 100, `Codex Structured Outputs supports at most 100 properties, got ${wireMetrics.properties}`);
+  assert.equal(
+    canonicalV3Schema.properties.integral_analysis.properties.analysis_units.items.properties.human_validation.properties.required.const,
+    true,
+    'the canonical v3 schema must not be mutated by the wire adaptation',
+  );
 }
 
 // --- Separate, human-gated ChatGPT device-code login flow -----------------

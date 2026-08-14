@@ -6,7 +6,7 @@ import { validateAgt002IntegralGovernanceProvenance } from './agt002-integral-go
 
 const CONTENT_KEYS = ['recommendation', 'summary', 'strengths', 'weaknesses', 'blockers', 'questions', 'unverified', 'next_action', 'human_review_required'];
 const AGT002_INTEGRAL_V3_SCHEMA_VERSION = '3.0.0';
-const AGT002_INTEGRAL_V3_CONTRACT_VERSION = 'agt002-integral-analysis-v3';
+export const AGT002_INTEGRAL_V3_CONTRACT_VERSION = 'agt002-integral-analysis-v3';
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -60,19 +60,22 @@ function unwrapRpc(response) {
 }
 
 /**
- * Deterministic per (snapshot, policy, model): the DB enforces a single successful
+ * Deterministic per (snapshot, policy, model, optional contract): the DB enforces a single successful
  * run per identity. When contextVersionId is given (a new AGT-002 context version
  * created from human evidence), the identity also binds to it, so a reanalysis never
  * collides with the run it supersedes and callers can reserve/find it consistently.
  */
-export function computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model, contextVersionId = null, legalCorpusVersionId = null }) {
+export function computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model, contextVersionId = null, legalCorpusVersionId = null, contractVersion = null }) {
   const base = createHash('sha256').update(`agt002-preview\0${snapshotId}\0${policyVersion}\0${model}`).digest('hex');
   const withContext = contextVersionId
     ? createHash('sha256').update(`${base}\0context_version\0${contextVersionId}`).digest('hex')
     : base;
-  return legalCorpusVersionId
+  const withLegalCorpus = legalCorpusVersionId
     ? createHash('sha256').update(`${withContext}\0legal_corpus_version\0${legalCorpusVersionId}`).digest('hex')
     : withContext;
+  return contractVersion
+    ? createHash('sha256').update(`${withLegalCorpus}\0contract_version\0${contractVersion}`).digest('hex')
+    : withLegalCorpus;
 }
 
 /** Atomically reserves one cross-request provider slot in PostgreSQL. */
@@ -238,6 +241,7 @@ export async function registerAgt002PreviewAnalysis(database, context) {
   const idempotencyKey = computeAgt002PreviewIdempotencyKey({
     snapshotId, policyVersion, model: usage.model, contextVersionId,
     legalCorpusVersionId: hasLegalCorpusVersionId ? legalCorpusVersionId : null,
+    contractVersion: isIntegralV3 ? AGT002_INTEGRAL_V3_CONTRACT_VERSION : null,
   });
 
   const commonParams = {

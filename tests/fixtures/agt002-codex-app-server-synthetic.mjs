@@ -21,6 +21,16 @@ const threadId = 'thread-synthetic-1';
 const turnId = 'turn-synthetic-1';
 
 function sendTurnOutcome(params) {
+  if (scenario === 'turn-completed-object-status') {
+    const content = JSON.stringify({ ok: true, scenario });
+    send({ method: 'item/completed', params: { threadId, turnId, completedAtMs: 0, item: { id: 'item-1', type: 'agentMessage', text: content } } });
+    send({ method: 'thread/tokenUsage/updated', params: { threadId, turnId, tokenUsage: {
+      total: { inputTokens: 8, outputTokens: 3, cachedInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 11 },
+      last: { inputTokens: 8, outputTokens: 3, cachedInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 11 },
+    } } });
+    send({ method: 'turn/completed', params: { threadId, turn: { id: turnId, status: { type: 'completed' }, items: [] } } });
+    return;
+  }
   if (scenario === 'no-agent-message') {
     send({ method: 'thread/tokenUsage/updated', params: { threadId, turnId, tokenUsage: {
       total: { inputTokens: 5, outputTokens: 0, cachedInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 5 },
@@ -30,7 +40,11 @@ function sendTurnOutcome(params) {
     return;
   }
   if (scenario === 'turn-failed') {
-    send({ method: 'turn/completed', params: { threadId, turn: { id: turnId, status: 'failed', items: [], error: { message: 'model failed' } } } });
+    send({ method: 'turn/completed', params: { threadId, turn: { id: turnId, status: { type: 'failed' }, items: [], error: { codexErrorInfo: 'usageLimitExceeded', message: 'model failed secret detail' } } } });
+    return;
+  }
+  if (scenario === 'turn-failed-unsafe-details') {
+    send({ method: 'turn/completed', params: { threadId, turn: { id: turnId, status: { type: 'failed with raw provider secret detail' }, items: [], error: { code: 'secret detail with spaces' } } } });
     return;
   }
   if (scenario === 'notify') {
