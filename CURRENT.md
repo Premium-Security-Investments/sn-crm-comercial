@@ -1,8 +1,189 @@
 # CURRENT — SIIO Comercial / Licitaciones / Vig‑IA
 
-## 0. Corte autoritativo vigente — resultado productivo AGT‑002/Manizales pre‑GO, 2026-08-13
+## 0. Corte autoritativo final — integración V3 y canary Manizales detenido, 2026-08-14 08:29 COT
 
-**Este bloque prevalece sobre cualquier afirmación posterior en las secciones §1 en adelante.** Se verificó directamente contra Git, Supabase productivo, Vercel y la evidencia visual autenticada del caso real. Las secciones siguientes son historial fechado y pueden estar desactualizadas frente a este corte. Ante cualquier conflicto, este bloque manda.
+**Este bloque reemplaza como autoridad a todos los cortes e historiales posteriores de este archivo.** Se verificó contra Git local/remoto, GitHub, pruebas frescas, Supabase productivo, Vercel y el bridge. Las secciones desde **“Historial anterior”** conservan trazabilidad, pero no deben usarse para inferir estado vigente cuando contradigan este bloque.
+
+### 0.1 Resumen ejecutivo
+
+El lote AGT‑002/V3 fue integrado mediante PR **#85** y está desplegado en la aplicación productiva. La migración lógica 066 tiene sus **seis efectos materiales exactos** en Supabase productivo, pero **no figura en el ledger** `supabase_migrations.schema_migrations`. La aplicación y el bridge están disponibles. Sin embargo, **no se ejecutó el canary V3 de Manizales**: el operador fijo conserva un guard exclusivo de E4 que rechaza el perfil E5/V3 antes de invocar el proveedor. No hubo consumo Codex asociado al canary, run V3, claim activo, GO/NO‑GO, firma, envío ni presentación. Sí hubo antes de la integración una única reproducción externa sintética y no productiva, sin datos de Manizales, descrita en §0.8.
+
+Estado de cierre: **integración y deployment completados; canary cancelado por bloqueo material fail‑closed; corrección del operador y reconciliación del ledger pendientes de gate humano.**
+
+### 0.2 Git — local, remoto y commits
+
+#### Local
+
+- Worktree de cierre: `/root/worktrees/siio-vigia-v3-foundations`.
+- Rama documental final: `docs/agt002-final-close-20260814`.
+- HEAD de código integrado antes del commit exclusivamente documental de este corte: `0536746283aa3ccdc078c1c979ca24556b41d1c8`.
+- El commit que contiene este bloque se reporta al finalizar el cierre; no se incluye su propio hash dentro del archivo para evitar una referencia autorrecursiva imposible.
+- Se descartó la prueba RED incompleta de la rama histórica `fix/agt002-fixed-canary-e5`. El mandato posterior de cierre productivo abrió `fix/agt002-fixed-canary-e5-v3`, donde la corrección mínima ya existe en el commit local `288c500`, todavía pendiente de merge y deploy en este corte intermedio.
+- Se retiraron del worktree temporal de deployment el export y los runners de canary creados sólo para diagnóstico. Ese worktree volvió a limpio.
+
+#### Remoto
+
+- `origin/main`: `0536746283aa3ccdc078c1c979ca24556b41d1c8` al corte.
+- PR **#85**, `fix/agt002-codex-schema-closure → main`: **MERGED** el `2026-08-14T12:56:56Z`.
+- URL: `https://github.com/Premium-Security-Investments/sn-crm-comercial/pull/85`.
+- Commit de merge: `0536746283aa3ccdc078c1c979ca24556b41d1c8` (`fix(agt002): close Codex V3 schema and stabilize pre-GO (#85)`).
+- Padres del merge: `701822d91de15ef7248961689b95d890da19ff0e` y `2f00c5f55222da6d7e3428139f94b92488effd12`.
+- Commits de la rama integrada: `26ae07a`, `71b2550`, `7345e60`, `5df620a`, `b462628`, `9d59c32`, `7819ede`, `b3cc060`, `4ceed28`, `33e96c8`, `48ccf11`, `4500478`, `3150a78`, `2f00c5f`.
+- GitHub no reportó checks ni workflow runs asociados al merge (`statusCheckRollup=[]`, `gh run list=[]`); por tanto, **no se declara CI GitHub verde**. La confianza proviene de los gates locales frescos descritos en §0.4.
+
+#### Limpieza y alcance
+
+Los dos worktrees usados por este proceso quedaron limpios antes del commit documental: el worktree de cierre y `/tmp/siio-deploy-0536746-TTvTxS`. El inventario global encontró cuatro worktrees con cambios preexistentes o ajenos —documentación de navegación, un `__pycache__`, dos imágenes AGT‑003 y otro `CURRENT.md` histórico— que no fueron tocados para no invadir trabajo activo. “Git limpio” en este cierre significa **los worktrees de este proceso**, no la destrucción de trabajo independiente en otros worktrees.
+
+### 0.3 Diff real integrado por PR #85
+
+Diff mecánico del merge `0536746`:
+
+```text
+33 files changed
+1,681 insertions(+)
+186 deletions(-)
+```
+
+El cambio comprende contrato/schema V3 recursivamente cerrado, validación y persistencia pre‑GO, observabilidad segura, cliente/bridge Codex, runtime Express/Vercel, análisis gobernado de Manizales, migración/rollback 066 y pruebas asociadas. Incluye, entre otros, `agt002-preview-contract.js`, `agt002-preview-codex-client.js`, `agt002-preview-runtime.js`, `agt002-pre-go-analysis.js`, `server/index.js`, `api/[...path].js`, `agt002-hetzner-bridge-server.js`, `supabase/migrations/066_agt002_manizales_integral_governance.sql` y 14 archivos de pruebas AGT‑002. No incorpora el parche posterior del operador E4/E5: ese intento quedó únicamente como RED local y fue descartado.
+
+### 0.4 Pruebas y revisión
+
+Verificación fresca sobre `0536746`, sin proveedor ni datos productivos escritos:
+
+- regresión integral serial `node --test --test-concurrency=1 tests/agt002-*.test.mjs`: **266/266**;
+- runner Workbench `npm run test:agt002-runtime`: **11/11**;
+- migración 066 PGlite: **1/1**;
+- `npm run check:backend-parity`: **OK**;
+- `npm run build`: **OK**;
+- `git diff --check`: **OK**.
+
+El build conserva el warning conocido de chunk JavaScript >500 kB; no bloquea compilación y no fue introducido por el cierre documental. La revisión independiente Claude Code Opus del lote de código previo a integración devolvió **`passed=true`**, sin errores lógicos, de seguridad o documentación material. GitHub no contiene review formal ni checks adjuntos al PR; no se debe reinterpretar la revisión local como aprobación registrada en GitHub. Dos intentos read-only de revisión documental Sonnet agotaron su límite de turnos sin emitir veredicto; no se cuentan como gate aprobado.
+
+El intento TDD histórico produjo RED **19/21** y fue descartado sin GREEN. El mandato posterior repitió el ciclo desde limpio con Claude Code Sonnet: RED mecánico **18/22** —cuatro fallos esperados— y GREEN **22/22**. La corrección actual conserva E4, admite exclusivamente E5/V3 cuando `legal=true` y `v3=true`, y rechaza combinaciones parciales o ambiguas antes de loaders/proveedor.
+
+### 0.5 Migración 066 — código, efecto material y ledger
+
+Artefactos integrados:
+
+- `supabase/migrations/066_agt002_manizales_integral_governance.sql`;
+- `supabase/rollbacks/066_agt002_manizales_integral_governance_rollback.sql`.
+
+Estado productivo read-only:
+
+- existen exactamente **6** filas de Manizales en `psi_agt002_integral_governance_overrides`;
+- las seis coinciden 1:1 con el conjunto aprobado: tres `category_override=habilitating` y tres enlaces `rup`, `rce_policy`, `collective_life_policy`;
+- todas están `current=true`, `version=3`, con el curador y timestamp aprobados;
+- el conjunto no presenta drift material;
+- `supabase_migrations.schema_migrations` devuelve **0** registros para versión/nombre 066.
+
+Conclusión autoritativa: **la 066 está aplicada materialmente, pero no está registrada en el ledger de migraciones**. No debe reaplicarse a ciegas: aunque el SQL es idempotente para el conjunto exacto, hacerlo no resolvería por sí solo la trazabilidad del ledger y podría ocultar el origen operativo. La reconciliación debe definirse y aprobarse como acción separada, sin modificar las seis filas.
+
+### 0.6 Aplicación, deployment y producción
+
+#### Aplicación integrada
+
+- Código remoto integrado en `origin/main`: `0536746`.
+- La paridad `server/index.js` / `api/[...path].js` pasó fresca.
+- El `origin/main` base `0536746` no contenía la corrección. La rama candidata `fix/agt002-fixed-canary-e5-v3` sí la contiene en `288c500`; sólo podrá considerarse remota/productiva después de merge y deploy verificados.
+
+#### Desplegado en Vercel
+
+- Deployment: `dpl_Ff3H6YP2P52JmS7H5bHbvacdqpb2`.
+- Target: `production`.
+- Estado: `Ready`.
+- Creado: `2026-08-14 12:58:47 UTC`.
+- URL de deployment: `https://seguridad-nacional-33bvwwhb1-psi-llc-projects.vercel.app`.
+- Alias: `https://seguridad-nacional-crm.vercel.app`.
+- El alias respondió HTTP **200**.
+- Vercel no mostró metadata Git en `inspect`; la atribución a `0536746` se sostiene por el worktree exacto usado para desplegar y el registro del proceso, no por metadata del deployment.
+
+#### Producción Supabase / Manizales
+
+- Oportunidad: `54190e51-15fb-46af-b0aa-8f13461a3110`.
+- Último run canónico: `4f5f8bcf-6de2-45d9-b74a-4588a514bdf3`.
+- Schema del último run: `2.0-preview.1`.
+- Snapshot de ese run: `4770667d-1b47-4a52-af68-b199911b52d4`.
+- Runs V3 encontrados: **0**.
+- Claims con lease activo: **0**.
+- El preflight fijo había validado 17 documentos y actor humano para el snapshot objetivo, pero el canary no avanzó hasta proveedor ni persistencia.
+
+### 0.7 Bridge
+
+- Servicio `agt002-bridge.service`: `active/running`.
+- Inicio del proceso vigente: `2026-08-13 14:51:42 UTC`.
+- Los módulos desplegados se habían verificado byte‑idénticos al lote integrado; al no existir diferencia material, **no se reinició** el servicio durante este cierre.
+- El bridge no implementa `GET /health`; ese método responde 405 por contrato.
+- Probe correcto, sin firma y sin payload real, contra local y público: ambos respondieron HTTP **401** con `AGT002_BRIDGE_AUTH_INVALID` en `POST /v1/agt002-preview/run`.
+- Esto verifica listener local, TLS/proxy público y rechazo fail‑closed. No prueba un turno Codex y no consumió proveedor.
+
+### 0.8 Acciones realizadas y no realizadas
+
+#### Realizadas
+
+1. integración de los 14 commits mediante PR #85;
+2. merge remoto en `0536746`;
+3. deployment productivo Vercel y verificación HTTP 200;
+4. verificación del bridge sin reinicio innecesario;
+5. preflight read-only de oportunidad, snapshot, documentos, actor, runs y claims;
+6. diagnóstico del bloqueo del operador fijo;
+7. una reproducción externa mínima, sintética y no productiva para demostrar la causa del schema abierto: 4.526 s, 9,687 tokens de entrada, 19 de salida y 9,706 totales; sin oportunidad, documentos, snapshot, contexto ni datos de Manizales; coste monetario exacto no observable;
+8. TDD RED histórico para E5/V3, descartado al no existir GREEN; posteriormente, nuevo ciclo RED **18/22** → GREEN **22/22** con corrección mínima en `288c500`;
+9. verificación productiva read-only del efecto material 066, ledger, runs y claims;
+10. limpieza de artefactos temporales propios;
+11. actualización autoritativa de este archivo.
+
+#### No realizadas
+
+- no se ejecutó el canary real de Manizales;
+- no hubo invocación Codex productiva ni consumo de proveedor asociado a Manizales después del deployment; la única invocación del proceso fue la reproducción sintética no productiva declarada arriba;
+- no se creó run V3, claim vigente, contexto nuevo ni análisis alternativo;
+- no se registró respuesta humana ficticia ni se suplantó sesión UI;
+- no se modificó el operador fijo en código integrado;
+- no se creó PR para la corrección E4/E5;
+- no se reaplicó, registró ni revirtió la migración 066 durante este cierre;
+- no se cambiaron secretos, permisos, RLS, scheduler, timer o drain;
+- no se creó ni modificó GO/NO‑GO;
+- no hubo firma, envío, presentación, compromiso de garantías ni acción post‑GO;
+- no se hizo push de la rama documental sin una autorización separada.
+
+### 0.9 Riesgos residuales y bloqueos materiales
+
+#### Bloqueo material para el canary
+
+El bloqueo E4-only fue corregido localmente en `agt002-fixed-snapshot-reanalysis.js` mediante `assertSupportedRuntimeProfile`: admite únicamente E4 (`legal=false`, `v3=false`) y E5/V3 (`legal=true`, `v3=true`), con canonical, retrieval y autoanálisis estrictamente activos. En este corte intermedio la corrección aún no está integrada ni desplegada; por tanto, **no debe ejecutarse el canary** hasta completar PR, merge, deploy y preflight exacto, y nunca por rutas alternativas.
+
+#### Riesgos residuales
+
+1. **Ledger 066 divergente:** efecto material exacto presente, registro formal ausente. Riesgo de auditoría/reaplicación futura.
+2. **Contrato V3 no probado con caso real:** 266/266 y schema sintético pasan, pero no existe aceptación productiva del payload integral de Manizales.
+3. **Operador acoplado a E4:** impide el canary seguro después de activar E5/V3.
+4. **CI remoto ausente:** GitHub no ejecutó/reportó checks para #85; las pruebas son locales y frescas, no checks remotos.
+5. **Metadata de deployment incompleta:** Vercel reporta deployment/estado, pero no el commit Git; conservar el vínculo operacional al worktree exacto.
+6. **Warning de bundle:** chunk >500 kB conocido; no bloqueante para este proceso, pero permanece como deuda técnica.
+7. **Otros worktrees sucios:** cuatro worktrees independientes conservan cambios preexistentes; no son parte de este cierre y deben tratarse por sus propios dueños/gates.
+
+### 0.10 Rollback seguro
+
+No hay run V3 ni claim del canary que revertir.
+
+- **Aplicación:** preferir un revert explícito del merge `0536746` sobre `main`, con pruebas y nuevo deployment; no reescribir historia ni forzar ramas. El padre de código previo es `701822d`.
+- **Vercel:** después del revert probado, desplegar y reasignar el alias productivo. No asumir que cambiar el alias revierte Supabase o bridge.
+- **Bridge:** sólo si el revert modifica su contrato, restaurar los módulos desde el commit previo aprobado y reiniciar una vez, verificando firma/rechazo fail‑closed. No reiniciar por rutina.
+- **Migración 066:** el rollback versionado elimina sólo las seis filas exactas, no runs, documentos ni GO/NO‑GO. Aunque hoy hay cero runs V3, ejecutarlo requiere autorización humana y reconciliación previa del ledger; no usarlo para “arreglar” la ausencia de registro.
+- **Kill switch operativo:** ante duda, mantener sin canary y sin automatización. No crear rutas de bypass, sesiones artificiales ni respuestas humanas ficticias.
+
+### 0.11 Siguiente gate humano consolidado
+
+El mandato autónomo posterior autoriza el paquete mínimo de corrección, PR, merge, deploy y **exactamente un** canary real sin retry ni fallback. La autorización no elimina los gates: antes del consumo deben estar verdes la integración, el deployment, el bridge sin diferencias inesperadas y el preflight productivo exacto. La deriva sistémica del ledger se inventaría read-only y su reparación permanece fuera de alcance.
+
+---
+
+## Historial anterior — no autoritativo frente al corte §0
+
+### Corte productivo AGT‑002/Manizales pre‑GO, 2026-08-13
+
+**Este bloque fue autoritativo en su fecha.** Se conserva como historial; el corte §0 anterior manda ante cualquier conflicto.
 
 ### 0.1 Verdad de Git y cierre técnico
 

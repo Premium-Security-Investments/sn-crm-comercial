@@ -10,7 +10,7 @@ function operatorError(message, status) {
 
 export function sanitizeAgt002FixedSnapshotError(error) {
   if (error?.[SAFE_OPERATOR_ERROR] === true) return error;
-  return operatorError('No fue posible completar la reanálisis E4.', 500);
+  return operatorError('No fue posible completar la reanálisis fija.', 500);
 }
 
 function requireUuid(value, label) {
@@ -32,12 +32,15 @@ function parseRequest(body) {
   };
 }
 
-function assertE4Runtime(analysisConfig, autoAnalysisEnabled) {
-  if (analysisConfig?.AGT002_CANONICAL_ONLY !== true
-    || analysisConfig?.AGT002_DOCUMENT_RETRIEVAL !== true
-    || analysisConfig?.AGT002_LEGAL_CORPUS === true
-    || autoAnalysisEnabled !== true) {
-    throw operatorError('La reanálisis fija sólo está disponible con E4 canónico activo, autoanálisis activo y E5 apagada.', 409);
+function assertSupportedRuntimeProfile(analysisConfig, autoAnalysisEnabled) {
+  const canonical = analysisConfig?.AGT002_CANONICAL_ONLY;
+  const retrieval = analysisConfig?.AGT002_DOCUMENT_RETRIEVAL;
+  const legal = analysisConfig?.AGT002_LEGAL_CORPUS;
+  const v3 = analysisConfig?.AGT002_INTEGRAL_CONTRACT_V3;
+  const isE4Profile = legal === false && v3 === false;
+  const isE5V3Profile = legal === true && v3 === true;
+  if (canonical !== true || retrieval !== true || autoAnalysisEnabled !== true || !(isE4Profile || isE5V3Profile)) {
+    throw operatorError('La reanálisis fija sólo está disponible con perfil canónico E4 (E5 y v3 apagadas) o perfil canónico E5/V3 (E5 y v3 activas), siempre con autoanálisis activo.', 409);
   }
 }
 
@@ -103,7 +106,8 @@ function assertHumanActor(profile, expectedActorId) {
 }
 
 /**
- * Operator-only orchestration for one AGT-002 E4 rerun against an immutable snapshot.
+ * Operator-only orchestration for one AGT-002 fixed-snapshot rerun against an immutable
+ * snapshot, supporting either the canonical E4 profile or the canonical E5/V3 profile.
  * Authentication and every invariant are checked before model delegation. This function
  * never imports documents and has no dependency on GO/NO-GO persistence.
  */
@@ -115,7 +119,7 @@ export async function runAgt002FixedSnapshotReanalysis({
     throw operatorError('No autorizado.', 403);
   }
   const request = parseRequest(body);
-  assertE4Runtime(analysisConfig, autoAnalysisEnabled);
+  assertSupportedRuntimeProfile(analysisConfig, autoAnalysisEnabled);
 
   const priorRun = await loadPriorRun(request.priorAnalysisRunId);
   assertPriorRun(priorRun, request);
@@ -134,7 +138,7 @@ export async function runAgt002FixedSnapshotReanalysis({
   const analysisRunId = result?.analysis?.run_id || result?.analysis?.analysis_run_id || result?.analysis?.id;
   if (!result || typeof result.status !== 'string' || !UUID_PATTERN.test(String(result.context_version_id || ''))
     || (result.status === 'completed' && !UUID_PATTERN.test(String(analysisRunId || '')))) {
-    throw operatorError('La reanálisis E4 no devolvió una identidad persistida válida.', 502);
+    throw operatorError('La reanálisis fija no devolvió una identidad persistida válida.', 502);
   }
   return {
     status: result.status,
