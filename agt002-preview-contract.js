@@ -1,5 +1,32 @@
 import { AGT002_REQUIREMENT_EVIDENCE_STATUSES } from './agt002-requirement-evidence.js';
-import { validateAgt002IntegralAnalysisV3 } from './agt002-integral-analysis-v3.js';
+import {
+  AGT002_INTEGRAL_ACTION_PRIORITIES,
+  AGT002_INTEGRAL_ACTION_TYPES,
+  AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION,
+  AGT002_INTEGRAL_APPLICABILITY_STATES,
+  AGT002_INTEGRAL_ASSESSMENT_MODES,
+  AGT002_INTEGRAL_BLOCKING_CURABILITY,
+  AGT002_INTEGRAL_BLOCKING_EFFECTS,
+  AGT002_INTEGRAL_CATEGORIES,
+  AGT002_INTEGRAL_CLOSURE_STATUSES,
+  AGT002_INTEGRAL_COMMERCIAL_IMPACT_DIMENSIONS,
+  AGT002_INTEGRAL_COMMERCIAL_IMPACT_LEVELS,
+  AGT002_INTEGRAL_COMPLIANCE_STATES,
+  AGT002_INTEGRAL_CONCLUSION_STATUSES,
+  AGT002_INTEGRAL_CONFIDENCE_LEVELS,
+  AGT002_INTEGRAL_ESCALATION_LEVELS,
+  AGT002_INTEGRAL_EVIDENCE_PURPOSES,
+  AGT002_INTEGRAL_LEGAL_STATUSES,
+  AGT002_INTEGRAL_MILESTONE_STATUSES,
+  AGT002_INTEGRAL_MILESTONE_TYPES,
+  AGT002_INTEGRAL_PRESENCE_STATES,
+  AGT002_INTEGRAL_REVIEW_STATES,
+  AGT002_INTEGRAL_SOURCE_TYPES,
+  AGT002_INTEGRAL_SUGGESTED_ROLES,
+  AGT002_INTEGRAL_UNIT_KINDS,
+  AGT002_INTEGRAL_VALIDITY_STATES,
+  validateAgt002IntegralAnalysisV3,
+} from './agt002-integral-analysis-v3.js';
 
 export const AGT002_PREVIEW_SCHEMA_VERSION = '2.0-preview.1';
 // design section 4.2: the governed v3 envelope's schema_version (distinct from, and never
@@ -317,18 +344,145 @@ export function validateAgt002PreviewModelOutput(value, {
 
 const INTEGRAL_MODEL_OUTPUT_KEYS = ['integral_analysis'];
 
-/** Closed JSON Schema handed to the model's turn/start for the v3 contract (Task 5). */
-export function buildAgt002IntegralAnalysisV3OutputJsonSchema() {
+const V3_WIRE_ID_MAX_LENGTH = 120;
+const V3_WIRE_TITLE_MAX_LENGTH = 200;
+const V3_WIRE_TEXT_MAX_LENGTH = 600;
+const V3_WIRE_ARRAY_MAX_ITEMS = 30;
+
+function v3ClosedObject(properties) {
   return {
     type: 'object',
     additionalProperties: false,
-    required: [...INTEGRAL_MODEL_OUTPUT_KEYS],
-    properties: {
-      // Deep shape/enum/invariant enforcement happens server-side in
-      // validateAgt002IntegralAnalysisV3, not in this wire-level schema.
-      integral_analysis: { type: 'object' },
-    },
+    required: Object.keys(properties),
+    properties,
   };
+}
+
+function v3String(maxLength = V3_WIRE_TEXT_MAX_LENGTH) {
+  return { type: 'string', minLength: 1, maxLength };
+}
+
+function v3StringArray(maxLength = V3_WIRE_ID_MAX_LENGTH) {
+  return { type: 'array', maxItems: V3_WIRE_ARRAY_MAX_ITEMS, items: v3String(maxLength) };
+}
+
+function v3NullableString(maxLength = V3_WIRE_ID_MAX_LENGTH) {
+  return { anyOf: [v3String(maxLength), { type: 'null' }] };
+}
+
+const v3EvidenceStateSchema = v3ClosedObject({
+  presence: { type: 'string', enum: [...AGT002_INTEGRAL_PRESENCE_STATES] },
+  review: { type: 'string', enum: [...AGT002_INTEGRAL_REVIEW_STATES] },
+  validity: { type: 'string', enum: [...AGT002_INTEGRAL_VALIDITY_STATES] },
+  applicability: { type: 'string', enum: [...AGT002_INTEGRAL_APPLICABILITY_STATES] },
+  compliance: { type: 'string', enum: [...AGT002_INTEGRAL_COMPLIANCE_STATES] },
+});
+
+const v3AnalysisUnitSchema = v3ClosedObject({
+  unit_id: v3String(V3_WIRE_ID_MAX_LENGTH),
+  unit_kind: { type: 'string', enum: [...AGT002_INTEGRAL_UNIT_KINDS] },
+  requirement_id: v3NullableString(V3_WIRE_ID_MAX_LENGTH),
+  category: { type: 'string', enum: [...AGT002_INTEGRAL_CATEGORIES] },
+  sequence: { type: 'integer', minimum: 1 },
+  title: v3String(V3_WIRE_TITLE_MAX_LENGTH),
+  assessment_mode: { type: 'string', enum: [...AGT002_INTEGRAL_ASSESSMENT_MODES] },
+  conclusion: v3ClosedObject({
+    status: { type: 'string', enum: [...AGT002_INTEGRAL_CONCLUSION_STATUSES] },
+    summary: v3String(),
+    confidence: { type: 'string', enum: [...AGT002_INTEGRAL_CONFIDENCE_LEVELS] },
+  }),
+  blocking: v3ClosedObject({
+    effect: { type: 'string', enum: [...AGT002_INTEGRAL_BLOCKING_EFFECTS] },
+    curability: { type: 'string', enum: [...AGT002_INTEGRAL_BLOCKING_CURABILITY] },
+    reason: v3String(),
+  }),
+  evidence_state: v3EvidenceStateSchema,
+  evidence_refs: {
+    type: 'array', maxItems: V3_WIRE_ARRAY_MAX_ITEMS,
+    items: v3ClosedObject({
+      ref: v3String(V3_WIRE_ID_MAX_LENGTH),
+      source_type: { type: 'string', enum: [...AGT002_INTEGRAL_SOURCE_TYPES] },
+      purpose: { type: 'string', enum: [...AGT002_INTEGRAL_EVIDENCE_PURPOSES] },
+    }),
+  },
+  missing_evidence: {
+    type: 'array', maxItems: V3_WIRE_ARRAY_MAX_ITEMS,
+    items: v3ClosedObject({
+      missing_id: v3String(V3_WIRE_ID_MAX_LENGTH),
+      evidence_class_id: v3NullableString(V3_WIRE_ID_MAX_LENGTH),
+      needed_source_type: { type: 'string', enum: [...AGT002_INTEGRAL_SOURCE_TYPES] },
+      reason: v3String(),
+      critical: { type: 'boolean' },
+    }),
+  },
+  commercial_impact: v3ClosedObject({
+    level: { type: 'string', enum: [...AGT002_INTEGRAL_COMMERCIAL_IMPACT_LEVELS] },
+    summary: v3String(),
+    dimension: { type: 'string', enum: [...AGT002_INTEGRAL_COMMERCIAL_IMPACT_DIMENSIONS] },
+  }),
+  legal_assessment: v3ClosedObject({
+    status: { type: 'string', enum: [...AGT002_INTEGRAL_LEGAL_STATUSES] },
+    basis_refs: v3StringArray(),
+    summary: v3String(),
+    human_legal_review_required: { type: 'boolean' },
+  }),
+  actions: {
+    type: 'array', maxItems: V3_WIRE_ARRAY_MAX_ITEMS,
+    items: v3ClosedObject({
+      action_id: v3String(V3_WIRE_ID_MAX_LENGTH),
+      action_type: { type: 'string', enum: [...AGT002_INTEGRAL_ACTION_TYPES] },
+      summary: v3String(),
+      basis_unit_id: v3String(V3_WIRE_ID_MAX_LENGTH),
+      suggested_role: { type: 'string', enum: [...AGT002_INTEGRAL_SUGGESTED_ROLES] },
+      priority: { type: 'string', enum: [...AGT002_INTEGRAL_ACTION_PRIORITIES] },
+      external_side_effect: { type: 'boolean', const: false },
+    }),
+  },
+  milestone: v3ClosedObject({
+    status: { type: 'string', enum: [...AGT002_INTEGRAL_MILESTONE_STATUSES] },
+    type: { type: 'string', enum: [...AGT002_INTEGRAL_MILESTONE_TYPES] },
+    at: v3NullableString(),
+    source_ref: v3NullableString(),
+    summary: v3String(),
+  }),
+  escalation: v3ClosedObject({
+    required: { type: 'boolean' },
+    level: { type: 'string', enum: [...AGT002_INTEGRAL_ESCALATION_LEVELS] },
+    reason: v3String(),
+  }),
+  closure: v3ClosedObject({
+    status: { type: 'string', enum: [...AGT002_INTEGRAL_CLOSURE_STATUSES] },
+    condition: v3String(),
+    evidence_required: v3StringArray(),
+  }),
+  human_validation: v3ClosedObject({
+    required: { type: 'boolean', const: true },
+    status: { type: 'string', const: 'pending' },
+    reason: v3String(),
+  }),
+});
+
+/** Closed JSON Schema handed to the model's turn/start for the v3 contract (Task 5). */
+export function buildAgt002IntegralAnalysisV3OutputJsonSchema() {
+  return v3ClosedObject({
+    // Cross-field invariants, governed allowlists and exact coverage/order remain enforced
+    // server-side by validateAgt002IntegralAnalysisV3. This wire schema mirrors only the
+    // complete closed structural shape required by Codex Structured Outputs.
+    integral_analysis: v3ClosedObject({
+      contract_version: { type: 'string', const: AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION },
+      coverage: v3ClosedObject({
+        manifest_version: v3String(V3_WIRE_ID_MAX_LENGTH),
+        expected_requirement_ids: v3StringArray(),
+        analyzed_requirement_ids: v3StringArray(),
+        material_omissions: { type: 'boolean' },
+        omission_reasons: v3StringArray(V3_WIRE_TEXT_MAX_LENGTH),
+        company_evidence_manifest_version: v3String(V3_WIRE_ID_MAX_LENGTH),
+        company_evidence_class_ids: v3StringArray(),
+        legal_corpus_version_id: v3NullableString(),
+      }),
+      analysis_units: { type: 'array', minItems: 1, maxItems: V3_WIRE_ARRAY_MAX_ITEMS, items: v3AnalysisUnitSchema },
+    }),
+  });
 }
 
 /**

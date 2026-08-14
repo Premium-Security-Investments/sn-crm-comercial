@@ -772,6 +772,25 @@ function buildMinimalV3IntegralAnalysis() {
   assert.equal(schema.additionalProperties, false);
   assert.deepEqual(schema.required, ['integral_analysis']);
   assert.deepEqual(Object.keys(schema.properties), ['integral_analysis']);
+
+  // Regression: Codex Structured Outputs rejects any nested object schema that is not
+  // recursively closed. The v3 wire contract must therefore declare every object level,
+  // not only the top-level envelope.
+  function assertRecursivelyClosed(node, path = '$') {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'object') {
+      assert.equal(node.additionalProperties, false, `${path} must set additionalProperties=false`);
+      assert.ok(node.properties && typeof node.properties === 'object', `${path} must declare properties`);
+      assert.deepEqual([...node.required].sort(), Object.keys(node.properties).sort(), `${path} must require every property`);
+      for (const [key, child] of Object.entries(node.properties)) assertRecursivelyClosed(child, `${path}.properties.${key}`);
+    }
+    if (node.type === 'array') assertRecursivelyClosed(node.items, `${path}.items`);
+  }
+  assertRecursivelyClosed(schema);
+  assert.deepEqual(
+    Object.keys(schema.properties.integral_analysis.properties).sort(),
+    ['analysis_units', 'contract_version', 'coverage'],
+  );
 }
 
 // The runtime v3 validator accepts a well-formed turn and rejects any attempt to smuggle
