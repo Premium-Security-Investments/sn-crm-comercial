@@ -4221,6 +4221,14 @@ function isTenderWorkerSchedulerAuthorized(req) {
     || secretMatches(process.env.CRON_SECRET, bearerSecret);
 }
 
+// Temporary credential for the AGT-002 fixed-canary window only: scoped exclusively to
+// the fixed-snapshot reanalysis operator below via an additional OR-branch, never
+// merged into isTenderWorkerSchedulerAuthorized or isAgt002WorkbenchWorkerAuthorized,
+// so it cannot authorize the durable worker, the Workbench worker, or any other route.
+function isAgt002FixedCanarySecretAuthorized(req) {
+  return secretMatches(process.env.AGT002_FIXED_CANARY_SECRET, req.headers['x-agt002-fixed-canary-secret']);
+}
+
 async function runAgt002FixedSnapshotOperator(req, res) {
   try {
     let database = null;
@@ -4229,7 +4237,7 @@ async function runAgt002FixedSnapshotOperator(req, res) {
       return database;
     };
     const result = await runAgt002FixedSnapshotReanalysis({
-      authorize: () => isTenderWorkerSchedulerAuthorized(req),
+      authorize: () => isTenderWorkerSchedulerAuthorized(req) || isAgt002FixedCanarySecretAuthorized(req),
       body: req.body,
       analysisConfig: agt002AnalysisConfig,
       autoAnalysisEnabled: isTenderAutoAnalysisEnabled(process.env),
