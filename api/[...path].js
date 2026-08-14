@@ -4221,15 +4221,13 @@ function isTenderWorkerSchedulerAuthorized(req) {
     || secretMatches(process.env.CRON_SECRET, bearerSecret);
 }
 
-// Temporary credential for the AGT-002 fixed-canary window only: scoped exclusively to
-// the fixed-snapshot reanalysis operator below via an additional OR-branch, never
-// merged into isTenderWorkerSchedulerAuthorized or isAgt002WorkbenchWorkerAuthorized,
-// so it cannot authorize the durable worker, the Workbench worker, or any other route.
+// Temporary credential for the AGT-002 fixed-canary window only. It is consumed only
+// by the exact ephemeral route wrapper below and is never added to another authorizer.
 function isAgt002FixedCanarySecretAuthorized(req) {
   return secretMatches(process.env.AGT002_FIXED_CANARY_SECRET, req.headers['x-agt002-fixed-canary-secret']);
 }
 
-async function runAgt002FixedSnapshotOperator(req, res) {
+async function runAgt002FixedSnapshotOperator(req, res, authorizeRequest) {
   try {
     let database = null;
     const getDatabase = () => {
@@ -4237,7 +4235,7 @@ async function runAgt002FixedSnapshotOperator(req, res) {
       return database;
     };
     const result = await runAgt002FixedSnapshotReanalysis({
-      authorize: () => isTenderWorkerSchedulerAuthorized(req) || isAgt002FixedCanarySecretAuthorized(req),
+      authorize: () => authorizeRequest(req),
       body: req.body,
       analysisConfig: agt002AnalysisConfig,
       autoAnalysisEnabled: isTenderAutoAnalysisEnabled(process.env),
@@ -4278,6 +4276,14 @@ async function runAgt002FixedSnapshotOperator(req, res) {
   }
 }
 
+function runAgt002ScheduledFixedSnapshotOperator(req, res) {
+  return runAgt002FixedSnapshotOperator(req, res, isTenderWorkerSchedulerAuthorized);
+}
+
+function runAgt002EphemeralFixedSnapshotOperator(req, res) {
+  return runAgt002FixedSnapshotOperator(req, res, isAgt002FixedCanarySecretAuthorized);
+}
+
 async function runTenderProcessingWorker(req, res) {
   try {
     if (!isTenderDurablePipelineEnabled(process.env)) { const error = new Error('No disponible.'); error.status = 404; throw error; }
@@ -4292,7 +4298,8 @@ async function runTenderProcessingWorker(req, res) {
 
 app.post('/api/tender-processing-worker-run', runTenderProcessingWorker);
 app.get('/api/tender-processing-worker-run', runTenderProcessingWorker);
-app.post('/api/agt002-reanalyze-fixed-snapshot', runAgt002FixedSnapshotOperator);
+app.post('/api/agt002-reanalyze-fixed-snapshot', runAgt002ScheduledFixedSnapshotOperator);
+app.post('/api/internal/agt002-fixed-snapshot-reanalysis', runAgt002EphemeralFixedSnapshotOperator);
 
 app.post('/api/tender-opportunity-discard', async (req, res) => {
   try {
