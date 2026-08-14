@@ -1,8 +1,117 @@
 # CURRENT — SIIO Comercial / Licitaciones / Vig‑IA
 
-## 0. Corte autoritativo final — integración V3 y canary Manizales detenido, 2026-08-14 08:29 COT
+## 0. Corte autoritativo final — activación V3 detenida y rollback estable, 2026-08-14
 
-**Este bloque reemplaza como autoridad a todos los cortes e historiales posteriores de este archivo.** Se verificó contra Git local/remoto, GitHub, pruebas frescas, Supabase productivo, Vercel y el bridge. Las secciones desde **“Historial anterior”** conservan trazabilidad, pero no deben usarse para inferir estado vigente cuando contradigan este bloque.
+**Este bloque reemplaza como autoridad a todos los cortes e historiales posteriores de este archivo.** Se verificó contra Git local/remoto, GitHub, Supabase productivo, Vercel y el bridge. Los bloques siguientes conservan trazabilidad histórica, pero no mandan cuando contradigan este corte.
+
+### 0.1 Resultado terminal
+
+Resultado **B — bloqueo material con rollback**. La autorización humana posterior permitió cambiar exclusivamente `AGT002_INTEGRAL_CONTRACT_V3`, redesplegar el SHA exacto de PR #86 y ejecutar un nuevo preflight. La activación y el deployment E5/V3 completaron correctamente, pero el preflight se detuvo antes del canary porque el runner no pudo obtener ninguna de las credenciales sensibles ya existentes que acepta la ruta fija (`TENDER_WORKER_SCHEDULER_SECRET` o `CRON_SECRET`). Vercel mantiene esos valores como sensibles y no los entrega a `vercel env pull` ni a `vercel env run`; no se rotaron ni modificaron secretos porque esa acción estaba expresamente fuera de alcance.
+
+No se llamó al operador con el caso real, no hubo invocación Codex, retry, fallback, segundo consumo, run V3 ni claim. Se restauró V3 a `false` y se redesplegó el mismo código. Producción quedó estable.
+
+### 0.2 Código, PR y deployments
+
+- PR funcional **#86**: `MERGED`, `https://github.com/Premium-Security-Investments/sn-crm-comercial/pull/86`.
+- Merge/SHA desplegado: `883651c488511009bddbe02879d5fbed62734598`.
+- Diff #86: 3 archivos, 217 inserciones y 16 eliminaciones; operador fijo, pruebas y `CURRENT.md`. No modificó bridge, migraciones, ledger ni scheduler.
+- Deployment sano anterior: `dpl_5SfR3cGLpEk5uUHvp1bmo6wxowa9`, V3=`false`.
+- Deployment temporal E5/V3: `dpl_8fQ9UNyGjhTdE5Xuy7q27aPjR5hf`, target `production`, estado `READY`, alias correcto y HTTP 200.
+- Deployment de rollback: `dpl_2uWfvqd3791TTVat8EzABxanbbXf`, target `production`, estado `READY`, alias `https://seguridad-nacional-crm.vercel.app`, HTTP 200.
+- Endpoint fijo sin autenticación después del rollback: HTTP 403 sanitario, sin stack, token ni secreto.
+- No se revirtió PR #86: no existe evidencia de regresión de código.
+
+### 0.3 Configuración sanitaria
+
+Antes del cambio:
+
+```text
+canonical=true
+context_v2=true
+retrieval=true
+legal=true
+v3=false
+autoAnalysis=true
+```
+
+Durante la ventana autorizada:
+
+```text
+canonical=true
+context_v2=true
+retrieval=true
+legal=true
+v3=true
+autoAnalysis=true
+```
+
+Vercel confirmó que el conjunto de 39 variables conservó las mismas claves y que sólo cambió el registro objetivo. Ningún otro flag, secreto, ambiente, proyecto o variable fue modificado. Tras el bloqueo se restauró:
+
+```text
+canonical=true
+context_v2=true
+retrieval=true
+legal=true
+v3=false
+autoAnalysis=true
+```
+
+El cambio y rollback afectaron exclusivamente Production. No se tocó Preview ni Development.
+
+### 0.4 Preflight nuevo
+
+Confirmado read-only después del deployment E5/V3 y antes del punto de autenticación:
+
+- oportunidad `54190e51-15fb-46af-b0aa-8f13461a3110`;
+- prior run `4f5f8bcf-6de2-45d9-b74a-4588a514bdf3`;
+- snapshot `4770667d-1b47-4a52-af68-b199911b52d4`;
+- productor `AGT-002`, método `agent_ai`, estado `completed`, `canonical=true`;
+- actor humano activo y autorizado;
+- exactamente 17 documentos, con identidades y hashes iguales al snapshot;
+- seis filas de gobernanza exactas;
+- corpus jurídico único publicado, validado y con hash correcto;
+- aplicación productiva construida desde `883651c…`;
+- bridge `active/running`, sin reinicio, y ocho módulos activos byte-idénticos al SHA;
+- perfil efectivo E5/V3 exacto durante la ventana;
+- cero claims activos y cero runs V3 previos;
+- marcador local de canary inexistente;
+- ninguna ejecución productiva inesperada desde el corte anterior.
+
+Bloqueo del preflight: la prueba autenticada de la ruta fija no pudo prepararse porque el runtime local de Vercel no entrega las variables sensibles existentes. Los intentos sanitarios sólo alcanzaron HTTP 403 antes de perfil, loaders o proveedor. El marcador no se creó porque el preflight no llegó a verde.
+
+### 0.5 Canary, consumo y estado final
+
+```text
+canary_real=NO_EJECUTADO
+provider_invocations=0
+retries=0
+fallbacks=0
+second_consumption=0
+v3_runs=0
+active_claims=0
+total_historical_runs=12
+marker_created=false
+```
+
+No existe brief pre‑GO nuevo porque no existe run V3 validado. No se decide GO/NO‑GO y no hubo firma, envío, presentación, compromiso de recursos o garantías.
+
+### 0.6 Deriva sistémica del ledger
+
+Inventario read-only: **62** migraciones locales, **22** entradas emparejadas en `supabase_migrations.schema_migrations` y **40** versiones locales ausentes. No se escribió el ledger y no se aisló artificialmente la 066.
+
+Versiones ausentes: `026`, `027`, `029`, `030`, `031`, `032`, `033`, `034`, `035`, `036`, `037`, `038`, `039`, `040`, `041`, `042`, `043`, `044`, `045`, `046`, `047`, `048`, `049`, `050`, `051`, `052`, `053`, `054`, `055`, `056`, `057`, `058`, `059`, `060`, `061`, `062`, `063`, `064`, `065` y `066`.
+
+Esta deriva permanece como deuda operativa independiente; ninguna reparación está autorizada.
+
+### 0.7 Rollback y siguiente gate humano
+
+Rollback completado: V3 volvió a `false`, el mismo SHA fue redesplegado y el alias quedó en HTTP 200 con rechazo 403 fail‑closed. Bridge, Supabase, código y ledger no requirieron rollback.
+
+**Única decisión humana necesaria:** habilitar al runner, por un canal seguro y efímero, una de las credenciales existentes aceptadas por la ruta fija —sin publicarla en chat ni rotarla implícitamente—, o emitir una autorización separada para rotarla. Sólo después deberá repetirse desde cero el preflight y, si queda totalmente verde, podrá autorizarse un nuevo canary único. La autorización de consumo de esta ventana no se reutiliza.
+
+---
+
+## Historial anterior — corte 2026-08-14 08:29 COT
 
 ### 0.1 Resumen ejecutivo
 
