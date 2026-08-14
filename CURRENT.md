@@ -18,7 +18,7 @@ Estado de cierre: **integración y deployment completados; canary cancelado por 
 - Rama documental final: `docs/agt002-final-close-20260814`.
 - HEAD de código integrado antes del commit exclusivamente documental de este corte: `0536746283aa3ccdc078c1c979ca24556b41d1c8`.
 - El commit que contiene este bloque se reporta al finalizar el cierre; no se incluye su propio hash dentro del archivo para evitar una referencia autorrecursiva imposible.
-- Se descartó la prueba RED incompleta de `fix/agt002-fixed-canary-e5`; no existe implementación, commit, push ni PR de esa corrección.
+- Se descartó la prueba RED incompleta de la rama histórica `fix/agt002-fixed-canary-e5`. El mandato posterior de cierre productivo abrió `fix/agt002-fixed-canary-e5-v3`, donde la corrección mínima ya existe en el commit local `288c500`, todavía pendiente de merge y deploy en este corte intermedio.
 - Se retiraron del worktree temporal de deployment el export y los runners de canary creados sólo para diagnóstico. Ese worktree volvió a limpio.
 
 #### Remoto
@@ -60,7 +60,7 @@ Verificación fresca sobre `0536746`, sin proveedor ni datos productivos escrito
 
 El build conserva el warning conocido de chunk JavaScript >500 kB; no bloquea compilación y no fue introducido por el cierre documental. La revisión independiente Claude Code Opus del lote de código previo a integración devolvió **`passed=true`**, sin errores lógicos, de seguridad o documentación material. GitHub no contiene review formal ni checks adjuntos al PR; no se debe reinterpretar la revisión local como aprobación registrada en GitHub. Dos intentos read-only de revisión documental Sonnet agotaron su límite de turnos sin emitir veredicto; no se cuentan como gate aprobado.
 
-El intento TDD de corregir el operador produjo RED honesto antes de ser detenido: **19/21** pruebas pasaron y fallaron exactamente (a) aceptación E5/V3 y (b) rechazo de `v3=true` con `legal=false`. Claude Code Sonnet agotó su límite antes de implementar GREEN. Esas pruebas no se conservaron ni se integraron.
+El intento TDD histórico produjo RED **19/21** y fue descartado sin GREEN. El mandato posterior repitió el ciclo desde limpio con Claude Code Sonnet: RED mecánico **18/22** —cuatro fallos esperados— y GREEN **22/22**. La corrección actual conserva E4, admite exclusivamente E5/V3 cuando `legal=true` y `v3=true`, y rechaza combinaciones parciales o ambiguas antes de loaders/proveedor.
 
 ### 0.5 Migración 066 — código, efecto material y ledger
 
@@ -85,7 +85,7 @@ Conclusión autoritativa: **la 066 está aplicada materialmente, pero no está r
 
 - Código remoto integrado en `origin/main`: `0536746`.
 - La paridad `server/index.js` / `api/[...path].js` pasó fresca.
-- No existe en `main` la corrección del operador fijo para E5/V3.
+- El `origin/main` base `0536746` no contenía la corrección. La rama candidata `fix/agt002-fixed-canary-e5-v3` sí la contiene en `288c500`; sólo podrá considerarse remota/productiva después de merge y deploy verificados.
 
 #### Desplegado en Vercel
 
@@ -128,7 +128,7 @@ Conclusión autoritativa: **la 066 está aplicada materialmente, pero no está r
 5. preflight read-only de oportunidad, snapshot, documentos, actor, runs y claims;
 6. diagnóstico del bloqueo del operador fijo;
 7. una reproducción externa mínima, sintética y no productiva para demostrar la causa del schema abierto: 4.526 s, 9,687 tokens de entrada, 19 de salida y 9,706 totales; sin oportunidad, documentos, snapshot, contexto ni datos de Manizales; coste monetario exacto no observable;
-8. TDD RED local para el perfil E5/V3, luego descarte al no existir GREEN;
+8. TDD RED histórico para E5/V3, descartado al no existir GREEN; posteriormente, nuevo ciclo RED **18/22** → GREEN **22/22** con corrección mínima en `288c500`;
 9. verificación productiva read-only del efecto material 066, ledger, runs y claims;
 10. limpieza de artefactos temporales propios;
 11. actualización autoritativa de este archivo.
@@ -151,7 +151,7 @@ Conclusión autoritativa: **la 066 está aplicada materialmente, pero no está r
 
 #### Bloqueo material para el canary
 
-`agt002-fixed-snapshot-reanalysis.js` mantiene `assertE4Runtime`: exige `AGT002_LEGAL_CORPUS=false` y no admite el perfil productivo E5/V3 (`AGT002_LEGAL_CORPUS=true`, `AGT002_INTEGRAL_CONTRACT_V3=true`). El operador falla antes del proveedor. Mientras no exista una corrección probada, integrada y desplegada, **no debe reintentarse el canary** por rutas alternativas.
+El bloqueo E4-only fue corregido localmente en `agt002-fixed-snapshot-reanalysis.js` mediante `assertSupportedRuntimeProfile`: admite únicamente E4 (`legal=false`, `v3=false`) y E5/V3 (`legal=true`, `v3=true`), con canonical, retrieval y autoanálisis estrictamente activos. En este corte intermedio la corrección aún no está integrada ni desplegada; por tanto, **no debe ejecutarse el canary** hasta completar PR, merge, deploy y preflight exacto, y nunca por rutas alternativas.
 
 #### Riesgos residuales
 
@@ -175,14 +175,7 @@ No hay run V3 ni claim del canary que revertir.
 
 ### 0.11 Siguiente gate humano consolidado
 
-**NO autorizar otro intento de proveedor todavía.** Juan debe decidir primero si autoriza un lote mínimo y separado para:
-
-1. corregir el operador fijo con TDD para aceptar exclusivamente los perfiles cerrados E4 (`legal=false`, `v3=false`) y E5/V3 (`legal=true`, `v3=true`), rechazando combinaciones parciales;
-2. abrir PR, exigir gates locales completos y revisión independiente, integrar y desplegar;
-3. definir cómo reconciliar la 066 en el ledger sin alterar las seis filas productivas;
-4. ejecutar un nuevo preflight read-only.
-
-Sólo después de esos cuatro pasos, con cero claims y snapshot/documentos aún exactos, se requiere una **nueva autorización humana explícita para un único canary real de Manizales**. Ese canary debe terminar en un run V3 verificable o fallo terminal explícito, sin fallback, sin segundo intento y sin tocar GO/NO‑GO.
+El mandato autónomo posterior autoriza el paquete mínimo de corrección, PR, merge, deploy y **exactamente un** canary real sin retry ni fallback. La autorización no elimina los gates: antes del consumo deben estar verdes la integración, el deployment, el bridge sin diferencias inesperadas y el preflight productivo exacto. La deriva sistémica del ledger se inventaría read-only y su reparación permanece fuera de alcance.
 
 ---
 

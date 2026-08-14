@@ -138,7 +138,7 @@ export async function runAgt002FixedSnapshotReanalysis({
   const analysisRunId = result?.analysis?.run_id || result?.analysis?.analysis_run_id || result?.analysis?.id;
   if (!result || typeof result.status !== 'string' || !UUID_PATTERN.test(String(result.context_version_id || ''))
     || (result.status === 'completed' && !UUID_PATTERN.test(String(analysisRunId || '')))) {
-    throw operatorError('La reanálisis E4 no devolvió una identidad persistida válida.', 502);
+    throw operatorError('La reanálisis fija no devolvió una identidad persistida válida.', 502);
   }
   return {
     status: result.status,
