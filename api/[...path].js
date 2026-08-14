@@ -761,6 +761,10 @@ const tenderNonSecurityContextTerms = [
   'sanidad aviar', 'influenza aviar', 'tifosis aviar', 'enfermedad de newcastle',
   'diagnostico veterinario', 'cadena avicola'
 ];
+const tenderNonCommercialActTerms = [
+  // Convenios de coordinación o financiación institucional: no seleccionan un proveedor ofertante.
+  'aunar esfuerzos'
+];
 const tenderFocusTerms = { 'bogotá': 22, 'bogota': 22, 'distrito capital': 20, 'medellín': 22, 'medellin': 22, 'antioquia': 14 };
 const tenderInternalStatuses = ['nueva','en_revision','descartada','convertida_oportunidad'];
 export function canViewTenders(profile) { return can(profile, ACTIONS.LICITACIONES_VIEW); }
@@ -939,7 +943,8 @@ function normTenderText(value) { return normalizeTenderStatusText(value); }
 export function isTenderTrackable(item) {
   const text = tenderText(item?.raw || item || {});
   const hasNonSecurityContext = tenderNonSecurityContextTerms.some(term => text.includes(normTenderText(term)));
-  return !hasNonSecurityContext && isTenderTrackableStatus(item) && !tenderDisqualifyingTerms.some(term => text.includes(normTenderText(term)));
+  const isNonCommercialAct = tenderNonCommercialActTerms.some(term => text.includes(normTenderText(term)));
+  return !hasNonSecurityContext && !isNonCommercialAct && isTenderTrackableStatus(item) && !tenderDisqualifyingTerms.some(term => text.includes(normTenderText(term)));
 }
 function tenderMoney(value) { const n = Number(String(value || '0').replace(/[^0-9.-]/g, '')); return Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0; }
 function tenderDate(value) { if (!value) return null; const d = new Date(value); return Number.isNaN(d.getTime()) ? null : d; }

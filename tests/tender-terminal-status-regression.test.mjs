@@ -6,7 +6,7 @@ const modulePath = new URL('../tender-source-status.js', import.meta.url);
 assert.ok(existsSync(modulePath), 'RED: falta el módulo compartido de estado terminal de licitaciones.');
 const lifecycle = await import(`${pathToFileURL(modulePath.pathname)}?terminal-status-regression=${Date.now()}`);
 
-for (const value of ['Cancelado', 'Cancelada', 'Revocado', 'Revocada', 'Declarado desierto', 'Desierta', 'Request Canceled', 'Request Cancelled']) {
+for (const value of ['Cancelado', 'Cancelada', 'Revocado', 'Revocada', 'Declarado desierto', 'Desierta', 'Request Canceled', 'Request Cancelled', 'Celebrado', 'Celebrada']) {
   assert.equal(lifecycle.isTenderTerminalStatus(value), true, `${value} debe ser terminal.`);
 }
 for (const value of ['Presentación de oferta', 'Presentación de observaciones', 'Publicado', 'Suspendido']) {

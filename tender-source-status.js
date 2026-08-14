@@ -7,6 +7,7 @@ const TENDER_TERMINAL_STATUS_TERMS = [
   'declarado desierto', 'declarada desierta', 'desierto', 'desierta',
   'cancelado', 'cancelada',
   'request canceled', 'request cancelled',
+  'celebrado', 'celebrada',
 ];
 
 export function isTenderTerminalStatus(value) {

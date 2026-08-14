@@ -49,6 +49,23 @@ for (const [index, backendPath] of ['../server/index.js', '../api/[...path].js']
   };
   assert.equal(backend.isTenderTrackable(healthSurveillanceTender), false, `${backendPath} debe excluir vigilancia sanitaria o de salud pública.`);
 
+  const nonCommercialSecurityAgreement = {
+    objeto_a_contratar: 'Servicios Políticos y de Asuntos Cívicos',
+    detalle_del_objeto_a_contratar: 'AUNAR ESFUERZOS ADMINISTRATIVOS Y FINANCIEROS entre la Secretaría Distrital de Seguridad y los Fondos de Desarrollo Local para el suministro e instalación de cámaras en puntos de videovigilancia existentes.',
+    nombre_entidad: 'BOGOTÁ D.C. - ALCALDÍA LOCAL DE SUBA',
+    municipio_entidad: 'Bogotá D.C.',
+    cuantia_proceso: '907233362',
+    estado_del_proceso: 'Convocado',
+  };
+  assert.equal(backend.isTenderTrackable(nonCommercialSecurityAgreement), false, `${backendPath} debe excluir convenios para aunar esfuerzos aunque mencionen cámaras o videovigilancia.`);
+
+  const alreadyExecutedSecurityProcess = {
+    objeto_a_contratar: 'Servicio de vigilancia y seguridad privada',
+    detalle_del_objeto_a_contratar: 'Protección de instalaciones mediante vigilancia armada.',
+    estado_del_proceso: 'Celebrado',
+  };
+  assert.equal(backend.isTenderTrackable(alreadyExecutedSecurityProcess), false, `${backendPath} debe excluir procesos ya celebrados del Radar activo.`);
+
   const securityTender = {
     nombre_del_procedimiento: 'Servicio de vigilancia y seguridad privada con armas y sin armas',
     descripci_n_del_procedimiento: 'Protección de instalaciones a nivel nacional.',
