@@ -1090,6 +1090,61 @@ assert.throws(
     await assert.rejects(() => engine.analyze(v3Context), /no está disponible/i);
   }
 
+  // output_rejected (v3 closed invariant subcodes): validateAgt002PreviewModelOutputV3's
+  // rejection is classified into a closed validation_code exactly like the v2 path already
+  // is (classifyOutputValidationFailure) — but never by pattern-matching message text, since
+  // most v3 fail() messages embed the model's own unit_id/requirement_id. Only the handful of
+  // coverage/top-level invariants whose message is always fully static (never carries a
+  // model-supplied id) get their own closed error.code, and only those may surface as a
+  // specific subcode; everything else keeps the generic v3_invariant_violation fallback.
+  {
+    // Fully static message (contract_version mismatch) -> must surface its own closed subcode.
+    const observability = spyObservability();
+    const client = fakeClient(async (options) => {
+      const output = buildV3ModelOutput(options);
+      output.integral_analysis.contract_version = 'not-the-real-contract-version';
+      return { content: JSON.stringify(output), usage: { input_tokens: 1, output_tokens: 1 } };
+    });
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      governanceProvenance: governanceProvenanceFixture(),
+      companyEvidenceClassesProvider: () => [],
+      observability,
+    });
+    await assert.rejects(() => engine.analyze(v3Context), /no produjo una respuesta válida/i);
+    assert.equal(observability.records.length, 1);
+    const [{ fields }] = observability.records;
+    assert.equal(fields.stage, 'semantic_validation');
+    assert.equal(
+      fields.validation_code, 'v3_contract_version_mismatch',
+      'a known-safe coverage/top-level invariant must surface its own closed subcode, not the generic fallback',
+    );
+  }
+
+  {
+    // Per-unit invariant (governed evidence_state mismatch) embeds unit_id/requirement_id in
+    // its message -> must keep falling back to the generic v3_invariant_violation.
+    const observability = spyObservability();
+    const mismatchedEvidenceState = { ...derivedRupEvidenceState, review: 'partially_reviewed' };
+    const client = fakeClient(async (options) => ({
+      content: JSON.stringify(buildV3ModelOutput(options, mismatchedEvidenceState)), usage: { input_tokens: 3, output_tokens: 3 },
+    }));
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      categoryOverrides: { 'req-poliza': 'habilitating' },
+      evidenceClassLinkByRequirementId: { 'req-poliza': 'rup' },
+      governanceProvenance: governanceProvenanceFixture(),
+      companyEvidenceClassesProvider: () => [verifiedRupRegistryRow],
+      observability,
+    });
+    await assert.rejects(() => engine.analyze(v3Context), /no produjo una respuesta válida/i);
+    assert.equal(observability.records.length, 1);
+    const [{ fields }] = observability.records;
+    assert.equal(fields.stage, 'semantic_validation');
+    assert.equal(fields.validation_code, 'v3_invariant_violation');
+  }
+
   // integralContractV3 requires contextV2 + documentRetrieval + a company evidence
   // classes provider at construction time; it must fail closed like the other
   // configuration checks, never silently no-op.

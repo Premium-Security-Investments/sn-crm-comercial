@@ -136,15 +136,20 @@ function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function fail(message) {
-  throw new Error(`AGT-002 integral-analysis-v3: ${message}`);
+// `code`, when given, is attached as `error.code` — but ONLY ever a fixed literal passed by
+// the caller at the (few) call sites below whose message never interpolates a model-supplied
+// id/path/value. It must never be derived from `message` itself.
+function fail(message, code) {
+  const error = new Error(`AGT-002 integral-analysis-v3: ${message}`);
+  if (code) error.code = code;
+  throw error;
 }
 
-function exactKeys(value, expected, label) {
-  if (!isRecord(value)) fail(`${label} debe ser un objeto.`);
+function exactKeys(value, expected, label, code) {
+  if (!isRecord(value)) fail(`${label} debe ser un objeto.`, code);
   const keys = Object.keys(value);
   if (keys.length !== expected.length || !expected.every(key => Object.hasOwn(value, key))) {
-    fail(`${label} tiene claves no permitidas o incompletas (contrato cerrado).`);
+    fail(`${label} tiene claves no permitidas o incompletas (contrato cerrado).`, code);
   }
   return value;
 }
@@ -305,17 +310,20 @@ function normalizeValidationContext(rawContext) {
 // ---------------------------------------------------------------------------
 
 function validateCoverage(coverage, ctx) {
-  exactKeys(coverage, COVERAGE_KEYS, 'integral_analysis.coverage');
+  exactKeys(coverage, COVERAGE_KEYS, 'integral_analysis.coverage', 'v3_invalid_coverage_shape');
 
   if (coverage.manifest_version !== ctx.requirementManifestVersion) {
-    fail('coverage.manifest_version no coincide con la versión gobernada del manifiesto.');
+    fail('coverage.manifest_version no coincide con la versión gobernada del manifiesto.', 'v3_coverage_manifest_version_mismatch');
   }
 
   const expectedIds = ctx.requirementManifest.map(entry => entry.requirement_id);
   if (!Array.isArray(coverage.expected_requirement_ids)
     || coverage.expected_requirement_ids.length !== expectedIds.length
     || coverage.expected_requirement_ids.some((id, index) => id !== expectedIds[index])) {
-    fail('coverage.expected_requirement_ids debe coincidir exactamente, en orden, con el manifiesto gobernado.');
+    fail(
+      'coverage.expected_requirement_ids debe coincidir exactamente, en orden, con el manifiesto gobernado.',
+      'v3_coverage_expected_requirement_ids_mismatch',
+    );
   }
 
   // Design section 5, invariant 3: analyzed_requirement_ids must coincide EXACTLY, in the
@@ -324,7 +332,10 @@ function validateCoverage(coverage, ctx) {
   if (!Array.isArray(coverage.analyzed_requirement_ids)
     || coverage.analyzed_requirement_ids.length !== expectedIds.length
     || coverage.analyzed_requirement_ids.some((id, index) => id !== expectedIds[index])) {
-    fail('coverage.analyzed_requirement_ids debe coincidir exactamente, en el mismo orden, con expected_requirement_ids/el manifiesto gobernado.');
+    fail(
+      'coverage.analyzed_requirement_ids debe coincidir exactamente, en el mismo orden, con expected_requirement_ids/el manifiesto gobernado.',
+      'v3_coverage_analyzed_requirement_ids_mismatch',
+    );
   }
 
   requireBoolean(coverage.material_omissions, 'coverage.material_omissions');
@@ -332,7 +343,10 @@ function validateCoverage(coverage, ctx) {
   coverage.omission_reasons.forEach((reason, index) => boundedString(reason, TEXT_MAX_LENGTH, `coverage.omission_reasons[${index}]`));
 
   if (coverage.company_evidence_manifest_version !== ctx.companyEvidenceManifestVersion) {
-    fail('coverage.company_evidence_manifest_version no coincide con la versión gobernada del catálogo de 17 clases.');
+    fail(
+      'coverage.company_evidence_manifest_version no coincide con la versión gobernada del catálogo de 17 clases.',
+      'v3_coverage_company_evidence_manifest_version_mismatch',
+    );
   }
   const expectedClassIds = [...ctx.companyEvidenceClassIds].sort();
   const actualClassIds = Array.isArray(coverage.company_evidence_class_ids) ? [...coverage.company_evidence_class_ids].sort() : null;
@@ -341,11 +355,14 @@ function validateCoverage(coverage, ctx) {
     || actualClassIds.length !== expectedClassIds.length
     || actualClassIds.some((id, index) => id !== expectedClassIds[index])
   ) {
-    fail('coverage.company_evidence_class_ids debe coincidir exactamente con las 17 clases empresariales gobernadas.');
+    fail(
+      'coverage.company_evidence_class_ids debe coincidir exactamente con las 17 clases empresariales gobernadas.',
+      'v3_coverage_company_evidence_class_ids_mismatch',
+    );
   }
 
   if (coverage.legal_corpus_version_id !== ctx.legalCorpusVersionId) {
-    fail('coverage.legal_corpus_version_id no coincide con la versión de corpus jurídico gobernada.');
+    fail('coverage.legal_corpus_version_id no coincide con la versión de corpus jurídico gobernada.', 'v3_coverage_legal_corpus_version_mismatch');
   }
 }
 
@@ -692,12 +709,18 @@ function validateUnitInvariants(unit, ctx) {
 
 function validateMaterialOmissionsInvariant(value, ctx) {
   if (ctx.materialOmissionsObserved && value.coverage.material_omissions !== true) {
-    fail('coverage.material_omissions debe ser true: el contexto gobernado observó omisiones materiales de retrieval.');
+    fail(
+      'coverage.material_omissions debe ser true: el contexto gobernado observó omisiones materiales de retrieval.',
+      'v3_material_omissions_flag_mismatch',
+    );
   }
   if (value.coverage.material_omissions === true) {
     const nonAbstained = value.analysis_units.filter(unit => unit.assessment_mode !== 'abstained');
     if (nonAbstained.length > 0) {
-      fail('coverage.material_omissions=true exige que todas las unidades usen assessment_mode "abstained".');
+      fail(
+        'coverage.material_omissions=true exige que todas las unidades usen assessment_mode "abstained".',
+        'v3_material_omissions_abstention_required',
+      );
     }
   }
 }
@@ -811,7 +834,10 @@ function validateUnitsOrdering(units, ctx) {
     formalRequirementIdsInOrder.length !== expectedOrder.length
     || formalRequirementIdsInOrder.some((id, index) => id !== expectedOrder[index])
   ) {
-    fail('El orden y la cobertura de tender_requirement no coinciden exactamente con el manifiesto gobernado (uno por requisito, en orden).');
+    fail(
+      'El orden y la cobertura de tender_requirement no coinciden exactamente con el manifiesto gobernado (uno por requisito, en orden).',
+      'v3_requirement_coverage_order_mismatch',
+    );
   }
 }
 
@@ -828,14 +854,14 @@ function validateUnitsOrdering(units, ctx) {
 export function validateAgt002IntegralAnalysisV3(value, validationContext) {
   const ctx = normalizeValidationContext(validationContext);
   assertNoProhibitedKeys(value);
-  exactKeys(value, TOP_LEVEL_KEYS, 'integral_analysis');
+  exactKeys(value, TOP_LEVEL_KEYS, 'integral_analysis', 'v3_invalid_top_level_shape');
   if (value.contract_version !== AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION) {
-    fail(`contract_version debe ser "${AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION}".`);
+    fail(`contract_version debe ser "${AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION}".`, 'v3_contract_version_mismatch');
   }
   validateCoverage(value.coverage, ctx);
 
   if (!Array.isArray(value.analysis_units) || value.analysis_units.length === 0) {
-    fail('analysis_units debe ser un arreglo no vacío.');
+    fail('analysis_units debe ser un arreglo no vacío.', 'v3_analysis_units_empty');
   }
   for (const unit of value.analysis_units) validateUnitShape(unit, ctx);
   validateUnitsOrdering(value.analysis_units, ctx);
