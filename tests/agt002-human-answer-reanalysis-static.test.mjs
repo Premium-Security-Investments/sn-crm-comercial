@@ -37,9 +37,14 @@ for (const [label, source] of [['server/index.js', server], ['api/[...path].js',
     `${label}: el reanálisis debe referenciar explícitamente la versión de contexto (context_version_id)`,
   );
 
-  // Reuse of the existing engine/persistence, never a second engine.
+  // Reuse of the existing engine and the observability-only orchestrator, which itself
+  // delegates persistence to registerAgt002PreviewAnalysis; never a second engine or a
+  // parallel persistence implementation.
   assert.match(helperBody, /createAgt002PreviewRuntime/, `${label}: debe reutilizar el motor Vig-IA existente, no crear uno nuevo`);
-  assert.match(helperBody, /registerAgt002PreviewAnalysis/, `${label}: debe persistir el reanálisis con la función existente`);
+  assert.match(helperBody, /runAgt002PostBridgeAnalysis/, `${label}: debe atravesar el orquestador post-bridge observable`);
+  assert.match(source, /import\s*\{[^}]*runAgt002PostBridgeAnalysis[^}]*\}\s*from\s*['"]\.\.\/agt002-post-bridge-observability\.js['"];/s, `${label}: debe importar el orquestador post-bridge canónico`);
+  const postBridgeModule = readFileSync(new URL('../agt002-post-bridge-observability.js', import.meta.url), 'utf8');
+  assert.match(postBridgeModule, /registerAgt002PreviewAnalysis/, `${label}: el orquestador debe persistir mediante la función existente`);
 
   // Only exact human identities may reach either the write RPC or the reanalysis. The
   // centralized guard must run in the real route before the first database write.

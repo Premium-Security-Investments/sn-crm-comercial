@@ -87,8 +87,17 @@ function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-function safe(message) {
-  return new Error(message);
+// `stage`/`code` are closed, structural metadata only (an AGT002_OUTPUT_REJECTION_STAGES value
+// and/or a sanitized upstream error code) — never raw text — attached so a caller sitting
+// outside this engine (e.g. the post-bridge observability wrapper) can attribute a rejection to
+// an unambiguous frontier without this engine's own public contract changing: `message` stays
+// exactly one of the four fixed SAFE_* strings, so no existing caller/test that only inspects
+// `.message` is affected.
+function safe(message, { stage, code } = {}) {
+  const error = new Error(message);
+  if (stage) error.stage = stage;
+  if (code) error.code = code;
+  return error;
 }
 
 /**
@@ -246,9 +255,24 @@ export function createAgt002PreviewEngine({
 
     const rawContent = typeof raw?.content === 'string' ? raw.content : '';
 
+    // Missing/non-string/empty content (nothing to parse at all) is kept a distinct rejection
+    // point from malformed-but-present JSON below: same net accept/reject decision (both still
+    // reject with SAFE_INVALID), only the closed metadata attached to the rejection differs, so
+    // a caller outside this engine (the post-bridge observability wrapper) can tell "the bridge
+    // gave us nothing usable" apart from "the bridge gave us something, but it wasn't JSON".
+    if (typeof raw?.content !== 'string' || !raw.content.trim()) {
+      recordOutputRejected({
+        stage: AGT002_OUTPUT_REJECTION_STAGES.CONTENT_EXTRACTION,
+        validationCode: 'missing_content',
+        content: rawContent,
+        snapshotId: previewInput.snapshot_id,
+        usage: raw?.usage,
+      });
+      throw safe(SAFE_INVALID, { stage: AGT002_OUTPUT_REJECTION_STAGES.CONTENT_EXTRACTION });
+    }
+
     let parsed;
     try {
-      if (typeof raw?.content !== 'string' || !raw.content.trim()) throw new Error('shape');
       parsed = JSON.parse(raw.content);
     } catch {
       recordOutputRejected({
@@ -258,7 +282,7 @@ export function createAgt002PreviewEngine({
         snapshotId: previewInput.snapshot_id,
         usage: raw?.usage,
       });
-      throw safe(SAFE_INVALID);
+      throw safe(SAFE_INVALID, { stage: AGT002_OUTPUT_REJECTION_STAGES.JSON_PARSE });
     }
 
     let validatedOutput;
@@ -288,7 +312,7 @@ export function createAgt002PreviewEngine({
         snapshotId: previewInput.snapshot_id,
         usage: raw?.usage,
       });
-      throw safe(SAFE_INVALID);
+      throw safe(SAFE_INVALID, { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION });
     }
 
     const usage = raw.usage || {};
@@ -302,7 +326,7 @@ export function createAgt002PreviewEngine({
         snapshotId: previewInput.snapshot_id,
         usage,
       });
-      throw safe(SAFE_INVALID);
+      throw safe(SAFE_INVALID, { stage: AGT002_OUTPUT_REJECTION_STAGES.USAGE });
     }
 
     const envelope = {
@@ -340,7 +364,7 @@ export function createAgt002PreviewEngine({
         snapshotId: previewInput.snapshot_id,
         usage: { input_tokens: inputTokens, output_tokens: outputTokens },
       });
-      throw safe(SAFE_INVALID);
+      throw safe(SAFE_INVALID, { stage: AGT002_OUTPUT_REJECTION_STAGES.ENVELOPE });
     }
   }
 
@@ -443,16 +467,23 @@ export function createAgt002PreviewEngine({
     });
 
     const rawContent = typeof raw?.content === 'string' ? raw.content : '';
+    // Same content_extraction/json_parse split as runOnce above — see its comment.
+    if (typeof raw?.content !== 'string' || !raw.content.trim()) {
+      recordOutputRejected({
+        stage: AGT002_OUTPUT_REJECTION_STAGES.CONTENT_EXTRACTION, validationCode: 'missing_content',
+        content: rawContent, snapshotId: previewInput.snapshot_id, usage: raw?.usage,
+      });
+      throw safe(SAFE_INVALID, { stage: AGT002_OUTPUT_REJECTION_STAGES.CONTENT_EXTRACTION });
+    }
     let parsed;
     try {
-      if (typeof raw?.content !== 'string' || !raw.content.trim()) throw new Error('shape');
       parsed = JSON.parse(raw.content);
     } catch {
       recordOutputRejected({
         stage: AGT002_OUTPUT_REJECTION_STAGES.JSON_PARSE, validationCode: 'invalid_json',
         content: rawContent, snapshotId: previewInput.snapshot_id, usage: raw?.usage,
       });
-      throw safe(SAFE_INVALID);
+      throw safe(SAFE_INVALID, { stage: AGT002_OUTPUT_REJECTION_STAGES.JSON_PARSE });
     }
 
     let validatedIntegralAnalysis;
@@ -463,7 +494,7 @@ export function createAgt002PreviewEngine({
         stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, validationCode: 'v3_invariant_violation',
         content: rawContent, snapshotId: previewInput.snapshot_id, usage: raw?.usage,
       });
-      throw safe(SAFE_INVALID);
+      throw safe(SAFE_INVALID, { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION });
     }
 
     const usage = raw.usage || {};
@@ -474,7 +505,7 @@ export function createAgt002PreviewEngine({
         stage: AGT002_OUTPUT_REJECTION_STAGES.USAGE, validationCode: 'invalid_usage',
         content: rawContent, snapshotId: previewInput.snapshot_id, usage,
       });
-      throw safe(SAFE_INVALID);
+      throw safe(SAFE_INVALID, { stage: AGT002_OUTPUT_REJECTION_STAGES.USAGE });
     }
 
     return {
@@ -533,7 +564,13 @@ export function createAgt002PreviewEngine({
           return await runOnce(previewInput, key, signal);
         } catch (error) {
           if ([SAFE_INVALID, SAFE_QUOTA, SAFE_CONCURRENCY, SAFE_UNAVAILABLE].includes(error?.message)) throw error;
-          throw safe(SAFE_UNAVAILABLE);
+          // The original error (e.g. a bridge client transport/provider failure) never reaches
+          // a caller verbatim — only its already-sanitized `.code` (never `.message`, which may
+          // embed provider internals) survives onto the safe wrapper, so a caller outside this
+          // engine can still tell a transport/provider failure apart from any other unavailable
+          // cause without this engine's public message contract changing.
+          const upstreamCode = typeof error?.code === 'string' && error.code ? error.code : undefined;
+          throw safe(SAFE_UNAVAILABLE, { code: upstreamCode });
         } finally {
           active -= 1;
         }

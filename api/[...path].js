@@ -50,6 +50,7 @@ import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatu
 import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../tender-actuation-types.js';
 import { buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
 import { AGT002_CANONICAL_PREVIEW_STAGES, createAgt002AnalysisObservability, toBoundedAgt002Error } from '../agt002-analysis-observability.js';
+import { AGT002_POST_BRIDGE_STAGES, runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability.js';
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { loadAgt002CompanyEvidenceRegistryEntries } from '../agt002-company-evidence-classes.js';
@@ -2771,10 +2772,19 @@ async function reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analys
       ? adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId })
       : currentDocs;
     const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
+    // App-side correlation id for the single closed-catalog `reanalysis_post_bridge_outcome`
+    // event runAgt002PostBridgeAnalysis emits below — never the real historical incident's id.
+    const correlationId = randomUUID();
+    // Mutable telemetry the runtime's bridge-client wrapper flips as the real bridge call
+    // resolves; runAgt002PostBridgeAnalysis reads it fresh after engine.analyze() settles so it
+    // can tell "the bridge itself never answered" apart from any later post-response failure.
+    const bridgeTelemetry = { invocationStarted: false, responseReceived: false };
     const engine = createAgt002PreviewRuntime({
           environment: process.env,
           countDailyRuns: () => countAgt002PreviewRunsToday(database),
           legalCorpusContext,
+          onBridgeInvocationStarted: () => { bridgeTelemetry.invocationStarted = true; },
+          onBridgeResponseReceived: () => { bridgeTelemetry.responseReceived = true; },
           ...(integralV3Governance ? {
             companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
             categoryOverrides: integralV3Governance.categoryOverrides,
@@ -2783,21 +2793,39 @@ async function reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analys
             contextVersionId: contextVersion?.id ?? null,
           } : {}),
         });
-    const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: humanEvidence } }, { idempotencyKey });
-    const registeredRun = await registerAgt002PreviewAnalysis(database, {
-      opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly, context_version_id: contextVersion.id,
+    // runAgt002PostBridgeAnalysis owns the entire post-claim frontier from here: exactly one
+    // engine.analyze() call, exactly one persistence attempt, the durable
+    // psi_agt002_analysis_attempt_events lifecycle, the single closed-catalog observability
+    // event, and the claim release — so this call site must never release `claimId` itself.
+    const outcome = await runAgt002PostBridgeAnalysis(database, {
+      opportunityId, tenderId, snapshotId, contextVersionId: contextVersion.id,
+      attemptKey: idempotencyKey, correlationId, claimId, idempotencyKey, canonicalOnly,
+    }, {
+      engine,
+      observability: agt002AnalysisObservability,
+      analysisContext: { opportunity, documents: analysisDocuments, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: humanEvidence } },
+      bridgeTelemetry,
+      integralContractV3: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3 === true,
+      presentAnalysis: registeredRun => presentCurrentTenderAnalysis(registeredRun),
     });
-    agt002AnalysisObservability.record('canonical_run_recorded', {
-      opportunity_id: opportunityId, tender_id: tenderId, analysis_run_id: registeredRun?.run_id, reused: false,
-    });
+    claimId = null; // Already released inside runAgt002PostBridgeAnalysis: never release twice.
+    if (outcome.status === 'completed') {
+      agt002AnalysisObservability.record('canonical_run_recorded', {
+        opportunity_id: opportunityId, tender_id: tenderId, analysis_run_id: outcome.analysis_run_id, reused: false,
+      });
+    }
     agt002AnalysisObservability.record('reanalysis_triggered', {
-      opportunity_id: opportunityId, tender_id: tenderId, analysis_run_id: registeredRun?.run_id,
-      context_version_id: contextVersion.id, status: 'completed',
+      opportunity_id: opportunityId, tender_id: tenderId, analysis_run_id: outcome.analysis_run_id,
+      context_version_id: contextVersion.id, status: outcome.status,
     });
-    return { status: 'completed', context_version_id: contextVersion.id, analysis: presentCurrentTenderAnalysis(registeredRun), reused: false };
+    if (outcome.status === 'completed') {
+      return { status: 'completed', context_version_id: contextVersion.id, analysis: outcome.presented, reused: false };
+    }
+    return { status: 'unavailable', context_version_id: contextVersion.id };
   } catch (error) {
     console.warn('agt002_reanalysis_after_human_answer_failed', {
       event: 'agt002_reanalysis_after_human_answer_failed',
+      stage: AGT002_POST_BRIDGE_STAGES.UNEXPECTED,
       ...toBoundedAgt002Error(error),
     });
     agt002AnalysisObservability.record('reanalysis_triggered', {

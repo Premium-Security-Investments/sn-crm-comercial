@@ -19,6 +19,7 @@ const OPAQUE_TOKEN_PATTERN = /[A-Za-z0-9_\-]{24,}/g;
 // rejected before it can ever reach a caller. Exported so the engine is the only place that
 // picks a stage literal, never a free-form string from elsewhere.
 export const AGT002_OUTPUT_REJECTION_STAGES = Object.freeze({
+  CONTENT_EXTRACTION: 'content_extraction',
   JSON_PARSE: 'json_parse',
   SEMANTIC_VALIDATION: 'semantic_validation',
   USAGE: 'usage',
@@ -37,6 +38,42 @@ export const AGT002_CANONICAL_PREVIEW_STAGES = Object.freeze({
   RUNTIME_CREATION: 'runtime_creation',
   ENGINE_ANALYSIS: 'engine_analysis',
   PERSISTENCE: 'persistence',
+});
+
+// Closed frontier catalog for AGT-002 post-bridge observability (reanalyzeAgt002AfterHumanAnswer
+// and any equivalent post-bridge caller): every point after a bridge call resolves where the
+// outcome can be attributed unambiguously. Owned here (not in agt002-post-bridge-observability.js)
+// so it sits alongside AGT002_OUTPUT_REJECTION_STAGES/AGT002_CANONICAL_PREVIEW_STAGES as one
+// single source of truth for closed stage literals; agt002-post-bridge-observability.js re-exports
+// it for callers that only need the post-bridge slice.
+export const AGT002_POST_BRIDGE_STAGES = Object.freeze({
+  TRANSPORT: 'transport',
+  RESPONSE_RECEIVED: 'response_received',
+  CONTENT_EXTRACTION: 'content_extraction',
+  JSON_PARSE: 'json_parse',
+  MODEL_OUTPUT_VALIDATION: 'model_output_validation',
+  ENVELOPE_BUILD: 'envelope_build',
+  INTEGRAL_V3_VALIDATION: 'integral_v3_validation',
+  PERSISTENCE: 'persistence',
+  ATTEMPT_UPDATE: 'attempt_update',
+  RESPONSE_SERIALIZATION: 'response_serialization',
+  UNEXPECTED: 'unexpected',
+});
+
+// Closed sanitary error codes for the same post-bridge frontier — never a raw upstream
+// message/code, always one of these. Each stage above has at least one dedicated code.
+export const AGT002_POST_BRIDGE_ERROR_CODES = Object.freeze({
+  TRANSPORT_ERROR: 'AGT002_TRANSPORT_ERROR',
+  PROVIDER_ERROR: 'AGT002_PROVIDER_ERROR',
+  CONTENT_EXTRACTION_FAILED: 'AGT002_CONTENT_EXTRACTION_FAILED',
+  JSON_PARSE_FAILED: 'AGT002_JSON_PARSE_FAILED',
+  MODEL_OUTPUT_INVALID: 'AGT002_MODEL_OUTPUT_INVALID',
+  ENVELOPE_INVALID: 'AGT002_ENVELOPE_INVALID',
+  INTEGRAL_V3_INVALID: 'AGT002_INTEGRAL_V3_INVALID',
+  PERSISTENCE_FAILED: 'AGT002_PERSISTENCE_FAILED',
+  ATTEMPT_UPDATE_FAILED: 'AGT002_ATTEMPT_UPDATE_FAILED',
+  RESPONSE_SERIALIZATION_FAILED: 'AGT002_RESPONSE_SERIALIZATION_FAILED',
+  UNEXPECTED_ERROR: 'AGT002_UNEXPECTED_ERROR',
 });
 
 const CONTENT_SHA256_PATTERN = /^[0-9a-f]{64}$/;
@@ -77,6 +114,15 @@ export const AGT002_OBSERVABILITY_EVENT_FIELDS = Object.freeze({
     'correlation_id', 'stage', 'error_code', 'bridge_invocation_started', 'duration_ms',
     'opportunity_id', 'tender_id', 'snapshot_id',
   ]),
+  // AGT-002 post-bridge observability (reanalyzeAgt002AfterHumanAnswer and any equivalent
+  // post-human-answer caller): the single outcome event runAgt002PostBridgeAnalysis emits per
+  // run, whether it completes or ends unavailable. `stage`/`error_code` are restricted below to
+  // AGT002_POST_BRIDGE_STAGES/AGT002_POST_BRIDGE_ERROR_CODES members only — never prompt, raw
+  // model output, documents/evidence, headers, secrets, a stack, or an arbitrary message.
+  reanalysis_post_bridge_outcome: Object.freeze([
+    'correlation_id', 'stage', 'error_code', 'bridge_invocation_started', 'bridge_response_received',
+    'context_version_id', 'opportunity_id', 'tender_id', 'snapshot_id', 'duration_ms',
+  ]),
 });
 
 export const AGT002_OBSERVABILITY_EVENT_TYPES = Object.freeze(Object.keys(AGT002_OBSERVABILITY_EVENT_FIELDS));
@@ -112,11 +158,22 @@ export function boundAgt002ValidationCode(code) {
 }
 
 const AGT002_CANONICAL_PREVIEW_STAGE_VALUES = new Set(Object.values(AGT002_CANONICAL_PREVIEW_STAGES));
+const AGT002_POST_BRIDGE_STAGE_VALUES = new Set(Object.values(AGT002_POST_BRIDGE_STAGES));
+const AGT002_POST_BRIDGE_ERROR_CODE_VALUES = new Set(Object.values(AGT002_POST_BRIDGE_ERROR_CODES));
 
 function sanitizeAgt002FieldValue(eventType, key, value) {
   if (value === null || value === undefined) return undefined;
   if (eventType === 'canonical_preview_unavailable' && key === 'stage') {
     return AGT002_CANONICAL_PREVIEW_STAGE_VALUES.has(value) ? value : undefined;
+  }
+  // Closed twice over for this event: only a real AGT002_POST_BRIDGE_STAGES/ERROR_CODES member
+  // ever survives — a mismatched or unrecognized value collapses to the safe unexpected members
+  // rather than being dropped, so a bug upstream can never silently produce a stage-less event.
+  if (eventType === 'reanalysis_post_bridge_outcome' && key === 'stage') {
+    return AGT002_POST_BRIDGE_STAGE_VALUES.has(value) ? value : AGT002_POST_BRIDGE_STAGES.UNEXPECTED;
+  }
+  if (eventType === 'reanalysis_post_bridge_outcome' && key === 'error_code') {
+    return AGT002_POST_BRIDGE_ERROR_CODE_VALUES.has(value) ? value : AGT002_POST_BRIDGE_ERROR_CODES.UNEXPECTED_ERROR;
   }
   if (key === 'error_message') return boundAgt002ErrorMessage(value);
   if (key === 'error_code') return boundAgt002ErrorCode(value);

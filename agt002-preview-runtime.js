@@ -101,7 +101,7 @@ function positiveIntFromEnv(environment, key, fallback) {
 export function createAgt002PreviewRuntime({
   environment = process.env, countDailyRuns, legalCorpusContext,
   companyEvidenceRegistryEntries, categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance, contextVersionId,
-  onBridgeInvocationStarted,
+  onBridgeInvocationStarted, onBridgeResponseReceived,
   createEngine = createAgt002PreviewEngine,
 } = {}) {
   const { config, analysisConfig } = withRuntimeBoundaryCode('AGT002_RUNTIME_CONFIG_INVALID', () => ({
@@ -131,11 +131,20 @@ export function createAgt002PreviewRuntime({
     url: environment.AGT002_HETZNER_BRIDGE_URL,
     hmacSecret: environment.AGT002_HETZNER_BRIDGE_HMAC_SECRET,
   }));
-  const client = typeof onBridgeInvocationStarted === 'function'
+  const hasBridgeInvocationHook = typeof onBridgeInvocationStarted === 'function';
+  // `onBridgeResponseReceived` mirrors `onBridgeInvocationStarted`: purely observational, never
+  // changes what is sent, what is returned, or how an error propagates. It fires ONLY after
+  // bridgeClient.run has actually resolved — never on rejection/throw — so a caller can tell
+  // "the bridge answered" apart from "the bridge call itself failed" without this runtime (or
+  // the bridge client it wraps) changing in any other way.
+  const hasBridgeResponseHook = typeof onBridgeResponseReceived === 'function';
+  const client = (hasBridgeInvocationHook || hasBridgeResponseHook)
     ? Object.freeze({
-      run: request => {
-        onBridgeInvocationStarted();
-        return bridgeClient.run(request);
+      run: async request => {
+        if (hasBridgeInvocationHook) onBridgeInvocationStarted();
+        const response = await bridgeClient.run(request);
+        if (hasBridgeResponseHook) onBridgeResponseReceived();
+        return response;
       },
     })
     : bridgeClient;
