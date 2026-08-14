@@ -66,6 +66,24 @@ const SAFE_UNAVAILABLE = 'AGT-002 Preview no está disponible en este momento.';
 const SAFE_INVALID = 'AGT-002 Preview no produjo una respuesta válida.';
 const FINDING_FIELDS = ['strengths', 'weaknesses', 'blockers', 'questions', 'unverified'];
 
+// Closed, privacy-safe codes emitted only by fixed V3 invariant call sites. Never forward an
+// arbitrary validator code: unknown/future values must remain the generic closed fallback.
+const AGT002_V3_SAFE_VALIDATION_CODES = new Set([
+  'v3_invalid_coverage_shape',
+  'v3_coverage_manifest_version_mismatch',
+  'v3_coverage_expected_requirement_ids_mismatch',
+  'v3_coverage_analyzed_requirement_ids_mismatch',
+  'v3_coverage_company_evidence_manifest_version_mismatch',
+  'v3_coverage_company_evidence_class_ids_mismatch',
+  'v3_coverage_legal_corpus_version_mismatch',
+  'v3_material_omissions_flag_mismatch',
+  'v3_material_omissions_abstention_required',
+  'v3_requirement_coverage_order_mismatch',
+  'v3_invalid_top_level_shape',
+  'v3_contract_version_mismatch',
+  'v3_analysis_units_empty',
+]);
+
 function outputSchemaForEvidenceIds(allowedEvidenceIds, {
   legalCorpus = false,
   legalCitationIds = { verified: [], all: [] },
@@ -489,9 +507,12 @@ export function createAgt002PreviewEngine({
     let validatedIntegralAnalysis;
     try {
       validatedIntegralAnalysis = validateAgt002PreviewModelOutputV3(parsed, validationContext);
-    } catch {
+    } catch (error) {
+      const validationCode = AGT002_V3_SAFE_VALIDATION_CODES.has(error?.code)
+        ? error.code
+        : 'v3_invariant_violation';
       recordOutputRejected({
-        stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, validationCode: 'v3_invariant_violation',
+        stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, validationCode,
         content: rawContent, snapshotId: previewInput.snapshot_id, usage: raw?.usage,
       });
       throw safe(SAFE_INVALID, { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION });
