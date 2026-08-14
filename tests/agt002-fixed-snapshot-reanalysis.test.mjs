@@ -35,6 +35,7 @@ function fixture(overrides = {}) {
       AGT002_CANONICAL_ONLY: true,
       AGT002_DOCUMENT_RETRIEVAL: true,
       AGT002_LEGAL_CORPUS: false,
+      AGT002_INTEGRAL_CONTRACT_V3: false,
     },
     autoAnalysisEnabled: true,
     loadPriorRun: async () => {
@@ -81,7 +82,7 @@ test('sanitizes unexpected dependency errors without exposing details', () => {
     { status: 400 },
   ));
   assert.equal(safe.status, 500);
-  assert.equal(safe.message, 'No fue posible completar la reanálisis E4.');
+  assert.equal(safe.message, 'No fue posible completar la reanálisis fija.');
   assert.equal(safe.message.includes('psi_secret'), false);
   assert.equal(safe.message.includes('super-secret'), false);
 });
@@ -108,9 +109,11 @@ test('rejects malformed input before database access', async () => {
 });
 
 for (const [label, patch] of [
-  ['canonical-only off', { AGT002_CANONICAL_ONLY: false, AGT002_DOCUMENT_RETRIEVAL: true, AGT002_LEGAL_CORPUS: false }],
-  ['retrieval off', { AGT002_CANONICAL_ONLY: true, AGT002_DOCUMENT_RETRIEVAL: false, AGT002_LEGAL_CORPUS: false }],
-  ['E5 legal corpus on', { AGT002_CANONICAL_ONLY: true, AGT002_DOCUMENT_RETRIEVAL: true, AGT002_LEGAL_CORPUS: true }],
+  ['canonical-only off', { AGT002_CANONICAL_ONLY: false, AGT002_DOCUMENT_RETRIEVAL: true, AGT002_LEGAL_CORPUS: false, AGT002_INTEGRAL_CONTRACT_V3: false }],
+  ['retrieval off', { AGT002_CANONICAL_ONLY: true, AGT002_DOCUMENT_RETRIEVAL: false, AGT002_LEGAL_CORPUS: false, AGT002_INTEGRAL_CONTRACT_V3: false }],
+  ['legal corpus on without integral contract v3', { AGT002_CANONICAL_ONLY: true, AGT002_DOCUMENT_RETRIEVAL: true, AGT002_LEGAL_CORPUS: true, AGT002_INTEGRAL_CONTRACT_V3: false }],
+  ['integral contract v3 on without legal corpus', { AGT002_CANONICAL_ONLY: true, AGT002_DOCUMENT_RETRIEVAL: true, AGT002_LEGAL_CORPUS: false, AGT002_INTEGRAL_CONTRACT_V3: true }],
+  ['non-boolean legal corpus and integral contract v3 values', { AGT002_CANONICAL_ONLY: true, AGT002_DOCUMENT_RETRIEVAL: true, AGT002_LEGAL_CORPUS: 'true', AGT002_INTEGRAL_CONTRACT_V3: 'true' }],
 ]) {
   test(`fails closed when ${label}`, async () => {
     const { value, calls } = fixture({ analysisConfig: patch });
@@ -118,6 +121,19 @@ for (const [label, patch] of [
     assert.deepEqual(calls, ['authorize']);
   });
 }
+
+test('accepts the E5/V3 canonical profile with legal corpus and integral contract v3 both active', async () => {
+  const { value } = fixture({
+    analysisConfig: {
+      AGT002_CANONICAL_ONLY: true,
+      AGT002_DOCUMENT_RETRIEVAL: true,
+      AGT002_LEGAL_CORPUS: true,
+      AGT002_INTEGRAL_CONTRACT_V3: true,
+    },
+  });
+  const result = await runAgt002FixedSnapshotReanalysis(value);
+  assert.equal(result.status, 'completed');
+});
 
 test('fails closed when automatic analysis is off', async () => {
   const { value, calls } = fixture({ autoAnalysisEnabled: false });
