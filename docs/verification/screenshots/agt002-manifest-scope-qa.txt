@@ -1,0 +1,13 @@
+AGT-002 Phase 4 — deterministic visual QA (honest manifest_scope coverage)
+
+HTML render : docs/verification/screenshots/agt002-manifest-scope.html
+PNG capture : docs/verification/screenshots/agt002-manifest-scope.png
+
+Honest figures verified in the rendered real component (real manifest labels):
+  Requisitos analizables : 20 / 25
+  Secciones pre-GO       : 15 (68 registradas)
+  Libros conciliados     : Secciones 15/15 · Propuestas 20/20
+  Disposiciones          : analyzed_candidate=30 excluded_with_reason=0 unresolved_visible=5
+
+Negative checks: no generic "Cobertura" label under manifest_scope; no bare misleading 4/4.
+All visual-QA assertions passed.

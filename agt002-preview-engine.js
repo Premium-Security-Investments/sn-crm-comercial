@@ -263,6 +263,11 @@ export function createAgt002PreviewEngine({
   const effectiveEvidenceClassLinkByRequirementId = manifestWiring
     ? manifestWiring.evidenceClassLinkByRequirementId
     : evidenceClassLinkByRequirementId;
+  // Phase 4: the governed, server-owned top-level manifest_scope this run carries beside
+  // integral_analysis. Derived once at construction from the validated manifest (never the model
+  // turn); null for a non-manifest run. Exposed on the returned engine so internal persistence
+  // call sites can deep-compare an envelope's scope against it — never sourced from a request body.
+  const manifestScope = manifestWiring ? manifestWiring.manifestScope : null;
 
   // Validate the binding before any provider/model call. A non-empty governed map without
   // the exact curated record that authorized it is a configuration defect and must never
@@ -595,6 +600,9 @@ export function createAgt002PreviewEngine({
       status: 'completed',
       method: 'agent_ai',
       integral_analysis: validatedIntegralAnalysis,
+      // Phase 4: server-derived, appended after model validation — never copied from the model
+      // turn (a model-supplied top-level manifest_scope is rejected as an unexpected key above).
+      ...(manifestScope ? { manifest_scope: manifestScope } : {}),
       evidence_coverage: buildEvidenceCoverage(previewInput),
       legal_corpus_version_id: legalCorpus ? legalCorpusVersionId : null,
       human_review_required: true,
@@ -607,6 +615,9 @@ export function createAgt002PreviewEngine({
   }
 
   return {
+    // Phase 4: the governed expected scope for this run (null for a non-manifest run), so an
+    // internal persistence call site can supply it as the server-owned comparison target.
+    manifestScope,
     analyze(context, { idempotencyKey, signal } = {}) {
       // Feature flags are engine-level configuration, not caller-supplied: they always win
       // over anything a caller's context object might carry. The legal provider receives

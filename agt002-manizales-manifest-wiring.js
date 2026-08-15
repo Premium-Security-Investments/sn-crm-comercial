@@ -28,6 +28,7 @@ import {
   AGT002_INTEGRAL_MANIFEST_PROCESO,
 } from './agt002-manizales-integral-manifest.js';
 import { validateAgt002RequirementManifest } from './agt002-deep-analysis-matrix.js';
+import { validateAgt002ManifestScope } from './agt002-tender-adapter.js';
 
 // The requirement_manifest unit shape only allows front in {legal, financial, technical}.
 // The governed category is always supplied as an explicit override, so the front here is
@@ -71,6 +72,82 @@ function citationSource(citation) {
     document_version_id: citation.version.trim(),
     content_hash: contentHash,
   };
+}
+
+const MANIFEST_DISPOSITIONS = ['analyzed_candidate', 'excluded_with_reason', 'unresolved_visible'];
+
+// Tally the closed disposition vocabulary across one ledger, failing closed on any entry whose
+// disposition is outside the vocabulary rather than silently dropping it.
+function tallyLedgerDispositions(ledger) {
+  const tally = { analyzed_candidate: 0, excluded_with_reason: 0, unresolved_visible: 0 };
+  for (const item of Array.isArray(ledger) ? ledger : []) {
+    if (!MANIFEST_DISPOSITIONS.includes(item?.disposition)) {
+      throw new Error(`AGT-002 Manizales alcance: disposición fuera de vocabulario en el libro (${String(item?.disposition)}).`);
+    }
+    tally[item.disposition] += 1;
+  }
+  return tally;
+}
+
+// Derives the governed manifest_scope from an ALREADY-VALIDATED manifest (coverage,
+// section_ledger, proposal_ledger, entries). Pure, deterministic, no I/O. The derived scope is
+// finally run through the same closed validator the adapter/persistence enforce, so a derived and
+// an envelope-carried scope pass the identical structural + arithmetic gate. Also cross-checks the
+// derived counts against the manifest's own coverage block and fails closed on any drift.
+function deriveScopeFromValidatedManifest(manifest) {
+  const coverage = manifest.coverage;
+  const sectionLedger = manifest.section_ledger;
+  const proposalLedger = manifest.proposal_ledger;
+  const entries = manifest.entries;
+
+  const analyzableRequirementIds = entries.filter(entry => entry.analyzable === true).map(entry => entry.requirement_id);
+  const sectionTally = tallyLedgerDispositions(sectionLedger);
+  const proposalTally = tallyLedgerDispositions(proposalLedger);
+
+  const scope = {
+    registry_sections: coverage.registry_sections,
+    pre_go_relevant: sectionLedger.length,
+    proposal_sections: coverage.proposal_sections,
+    analyzable_requirement_ids: analyzableRequirementIds,
+    atomized_entry_count: entries.length,
+    dispositions: {
+      analyzed_candidate: sectionTally.analyzed_candidate + proposalTally.analyzed_candidate,
+      excluded_with_reason: sectionTally.excluded_with_reason + proposalTally.excluded_with_reason,
+      unresolved_visible: sectionTally.unresolved_visible + proposalTally.unresolved_visible,
+    },
+    section_ledger_accounted: sectionLedger.length,
+    proposal_ledger_accounted: proposalLedger.length,
+  };
+
+  // Cross-check against the manifest's own coverage accounting: the scope must never disagree
+  // with the closed figures the Phase-1 validator already proved (68/20/10, 15/20, 25/20).
+  if (scope.atomized_entry_count !== coverage.entries.total
+    || analyzableRequirementIds.length !== coverage.entries.analyzable
+    || scope.section_ledger_accounted !== coverage.section_ledger.total
+    || scope.proposal_ledger_accounted !== coverage.proposal_ledger.total) {
+    throw new Error('AGT-002 Manizales alcance: los conteos derivados no concuerdan con la cobertura validada del manifiesto.');
+  }
+
+  // Final closed gate: identical to the adapter/persistence validator, so a server-derived and
+  // an envelope-carried scope are structurally indistinguishable to every downstream consumer.
+  return Object.freeze(validateAgt002ManifestScope(scope));
+}
+
+/**
+ * Validates the checked-in Manizales integral manifest and derives the governed, top-level
+ * `manifest_scope` from its coverage, ledgers and entries, in deterministic order. Fails closed
+ * on a malformed source or a non-pilot opportunity/proceso identity — never a generic fallback.
+ *
+ * @param {object} manizalesManifestSource The parsed checked-in integral manifest artifact.
+ * @returns {object} The frozen, closed manifest_scope.
+ */
+export function deriveAgt002ManizalesManifestScope(manizalesManifestSource) {
+  const manifest = validateAgt002ManizalesIntegralManifest(manizalesManifestSource);
+  if (manifest.opportunity_id !== AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID
+    || manifest.proceso !== AGT002_INTEGRAL_MANIFEST_PROCESO) {
+    throw new Error('AGT-002 Manizales alcance: la identidad de oportunidad/proceso no corresponde al piloto exacto.');
+  }
+  return deriveScopeFromValidatedManifest(manifest);
 }
 
 /**
@@ -173,5 +250,7 @@ export function deriveAgt002ManizalesManifestWiring(manizalesManifestSource) {
     requirementManifest,
     categoryOverrides,
     evidenceClassLinkByRequirementId,
+    // The governed, server-owned top-level scope this run must carry beside integral_analysis.
+    manifestScope: deriveScopeFromValidatedManifest(manifest),
   };
 }

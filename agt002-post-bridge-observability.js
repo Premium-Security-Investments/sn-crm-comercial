@@ -250,6 +250,11 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
       registeredRun = await registerAgt002PreviewAnalysis(trackedDatabase, {
         opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId,
         envelope, canonicalOnly, context_version_id: contextVersionId,
+        // Phase 4: the server-owned expected manifest scope comes from the engine that produced
+        // this envelope (deriveAgt002ManizalesManifestScope of the selected pilot manifest), never
+        // from a request body — so persistence can deep-compare it before the RPC. Null for a
+        // non-manifest run, leaving persistence's scope check inert.
+        expectedManifestScope: engine?.manifestScope ?? null,
       });
       runPersisted = true;
       analysisRunId = registeredRun?.run_id ?? null;

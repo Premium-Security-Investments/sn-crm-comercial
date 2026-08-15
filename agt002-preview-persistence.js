@@ -3,6 +3,7 @@ import { deepStrictEqual } from 'node:assert';
 import { validateAgt002RequirementManifest } from './agt002-deep-analysis-matrix.js';
 import { projectAgt002IntegralV3ToV2, computeAgt002IntegralV3CriticalOpenCount } from './agt002-v3-compatibility.js';
 import { validateAgt002IntegralGovernanceProvenance } from './agt002-integral-governance-overrides.js';
+import { validateAgt002ManifestScope } from './agt002-tender-adapter.js';
 
 const CONTENT_KEYS = ['recommendation', 'summary', 'strengths', 'weaknesses', 'blockers', 'questions', 'unverified', 'next_action', 'human_review_required'];
 const AGT002_INTEGRAL_V3_SCHEMA_VERSION = '3.0.0';
@@ -189,6 +190,30 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     // curated row must pass.
     if (envelope.governance_provenance !== undefined) {
       content.governance_provenance = validateAgt002IntegralGovernanceProvenance(envelope.governance_provenance);
+    }
+    // Phase 4: a manifest-driven run carries a server-owned, top-level manifest_scope beside
+    // integral_analysis. It is never trusted verbatim: it is re-validated here (closed shape +
+    // arithmetic) and deep-compared to a SEPARATELY supplied, server-owned expected scope
+    // (context.expectedManifestScope) — envelope self-validation alone is insufficient. A scope
+    // with no governing expected scope, a missing scope under one, or a malformed/forged scope
+    // is rejected BEFORE any RPC. The expected scope is never sourced from a request body.
+    const expectedManifestScope = context?.expectedManifestScope ?? null;
+    const envelopeHasManifestScope = Object.hasOwn(envelope, 'manifest_scope');
+    if (envelopeHasManifestScope || expectedManifestScope !== null) {
+      if (expectedManifestScope === null) {
+        throw new Error('AGT-002 Preview v3: se recibió manifest_scope sin un alcance gobernado esperado del servidor para verificarlo.');
+      }
+      if (!envelopeHasManifestScope) {
+        throw new Error('AGT-002 Preview v3: falta el manifest_scope requerido para una corrida gobernada por manifiesto.');
+      }
+      const persistedScope = validateAgt002ManifestScope(envelope.manifest_scope);
+      const expectedScope = validateAgt002ManifestScope(expectedManifestScope);
+      try {
+        deepStrictEqual(persistedScope, expectedScope);
+      } catch {
+        throw new Error('AGT-002 Preview v3: el manifest_scope no coincide con el alcance gobernado esperado del servidor.');
+      }
+      content.manifest_scope = persistedScope;
     }
     // design section 5, invariant 7: legal_corpus_version_id is nullable and stands alone
     // for v3 — legal grounding is validated per-unit inside integral_analysis itself, so

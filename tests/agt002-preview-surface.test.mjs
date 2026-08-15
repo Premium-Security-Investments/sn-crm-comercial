@@ -34,7 +34,7 @@ for (const route of [serverRoute, vercelRoute]) {
   assert.match(route, /const analysisDocuments = agt002AnalysisConfig\.AGT002_DOCUMENT_RETRIEVAL[\s\S]*?adaptAgt002RetrievalDocuments\(currentDocs, \{ opportunityId, snapshotId: registeredSnapshot\.id \}\)[\s\S]*?: currentDocs;/, 'manual preview must adapt current DB records to the closed retrieval document contract');
   assert.match(route, /engine\.analyze\(\{ opportunity, documents: analysisDocuments,/, 'manual preview must send only adapted documents when retrieval is enabled');
   assert.match(route, /analysis: outcome\.presented/, 'canonical completion must forward exactly the presentation the post-bridge orchestrator produced');
-  assert.match(route, /registerAgt002PreviewAnalysis\([\s\S]*canonicalOnly, context_version_id: contextVersion\?\.id \}\)/, 'run persistence must receive canonical-only plus the exact immutable context version');
+  assert.match(route, /registerAgt002PreviewAnalysis\([\s\S]*canonicalOnly, context_version_id: contextVersion\?\.id, expectedManifestScope: engine\.manifestScope \?\? null \}\)/, 'run persistence must receive canonical-only, the exact immutable context version, and the server-owned expected manifest scope');
   assert.match(route, /findAgt002PreviewRun\(database, idempotencyKey, \{ canonicalOnly \}\)/, 'idempotent reuse must request canonical state while looking up the exact run key');
   assert.match(route, /used: null, fallback: false, state/, 'unavailable canonical responses must not present a substitute producer');
   assert.match(route, /human_review_required: true/g, 'every response path must require human review');

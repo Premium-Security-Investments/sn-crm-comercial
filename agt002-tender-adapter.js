@@ -142,10 +142,90 @@ const ENVELOPE_KEYS_V3 = [
   'human_review_required', 'v2_projection', 'usage',
 ];
 const ENVELOPE_KEYS_V3_WITH_GOVERNANCE = [...ENVELOPE_KEYS_V3, 'governance_provenance'];
+// Phase 4: a manifest-driven v3 run additionally carries a server-owned, top-level
+// `manifest_scope` beside `integral_analysis`. It is only ever accepted when the caller supplies
+// a governed expected scope, so its acceptance is gated on that expected scope, never on the
+// payload alone. A manifest-driven run never carries the legacy governance_provenance block, so
+// scope and governance are mutually exclusive closed shapes.
+const ENVELOPE_KEYS_V3_WITH_SCOPE = [...ENVELOPE_KEYS_V3, 'manifest_scope'];
 const USAGE_KEYS_V3 = ['provider', 'model', 'input_tokens', 'output_tokens', 'rate_limit'];
+
+// Phase 4: the closed shape of the server-owned `manifest_scope`. Distinguishes the 20
+// analyzable requirements, the 25 atomized entries, the 15 pre-GO sections of 68 registered, and
+// the closed 15/15 + 20/20 ledger accounting with a flat disposition aggregate — so a reader can
+// tell honest coverage apart from analyzed/expected. Never sourced from the model turn.
+const MANIFEST_SCOPE_KEYS = [
+  'registry_sections', 'pre_go_relevant', 'proposal_sections', 'analyzable_requirement_ids',
+  'atomized_entry_count', 'dispositions', 'section_ledger_accounted', 'proposal_ledger_accounted',
+];
+const MANIFEST_SCOPE_COUNT_KEYS = [
+  'registry_sections', 'pre_go_relevant', 'proposal_sections', 'atomized_entry_count',
+  'section_ledger_accounted', 'proposal_ledger_accounted',
+];
+const MANIFEST_SCOPE_DISPOSITION_KEYS = ['analyzed_candidate', 'excluded_with_reason', 'unresolved_visible'];
 
 function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isNonNegativeInteger(value) {
+  return Number.isInteger(value) && value >= 0;
+}
+
+/**
+ * Validates the closed, self-consistent `manifest_scope`: exact keys, non-negative integer
+ * count fields, a unique-ordered analyzable id list, a closed disposition aggregate, and the
+ * arithmetic that ties it back to the two ledgers. Fails closed on any inconsistency and returns
+ * a normalized copy (never the caller's object) so a validated scope can never carry extra keys.
+ */
+export function validateAgt002ManifestScope(value) {
+  if (!exactKeys(value, MANIFEST_SCOPE_KEYS)) {
+    throw new Error('El alcance del manifiesto (manifest_scope) AGT-002 debe ser cerrado.');
+  }
+  for (const key of MANIFEST_SCOPE_COUNT_KEYS) {
+    if (!isNonNegativeInteger(value[key])) {
+      throw new Error(`El alcance del manifiesto AGT-002 requiere ${key} como entero no negativo.`);
+    }
+  }
+  if (!Array.isArray(value.analyzable_requirement_ids)
+    || !value.analyzable_requirement_ids.every(id => nonEmptyString(id))) {
+    throw new Error('El alcance del manifiesto AGT-002 requiere analyzable_requirement_ids de textos no vacíos.');
+  }
+  if (new Set(value.analyzable_requirement_ids).size !== value.analyzable_requirement_ids.length) {
+    throw new Error('El alcance del manifiesto AGT-002 no admite requisitos analizables duplicados.');
+  }
+  if (!exactKeys(value.dispositions, MANIFEST_SCOPE_DISPOSITION_KEYS)
+    || !MANIFEST_SCOPE_DISPOSITION_KEYS.every(key => isNonNegativeInteger(value.dispositions[key]))) {
+    throw new Error('El alcance del manifiesto AGT-002 requiere un conteo de disposiciones cerrado y no negativo.');
+  }
+  // The pre-GO sections are exactly the closed section ledger, so the two figures must agree.
+  if (value.pre_go_relevant !== value.section_ledger_accounted) {
+    throw new Error('El alcance del manifiesto AGT-002: pre_go_relevant debe igualar section_ledger_accounted (libro de secciones cerrado).');
+  }
+  // Analyzable requirements are a subset of the atomized entries.
+  if (value.analyzable_requirement_ids.length > value.atomized_entry_count) {
+    throw new Error('El alcance del manifiesto AGT-002: los requisitos analizables no pueden exceder las entradas atomizadas.');
+  }
+  // The flat disposition aggregate closes against the two ledgers (sección + propuesta).
+  const dispositionTotal = value.dispositions.analyzed_candidate
+    + value.dispositions.excluded_with_reason + value.dispositions.unresolved_visible;
+  if (dispositionTotal !== value.section_ledger_accounted + value.proposal_ledger_accounted) {
+    throw new Error('El alcance del manifiesto AGT-002: la aritmética de disposiciones no cuadra con los libros de sección y propuesta.');
+  }
+  return {
+    registry_sections: value.registry_sections,
+    pre_go_relevant: value.pre_go_relevant,
+    proposal_sections: value.proposal_sections,
+    analyzable_requirement_ids: [...value.analyzable_requirement_ids],
+    atomized_entry_count: value.atomized_entry_count,
+    dispositions: {
+      analyzed_candidate: value.dispositions.analyzed_candidate,
+      excluded_with_reason: value.dispositions.excluded_with_reason,
+      unresolved_visible: value.dispositions.unresolved_visible,
+    },
+    section_ledger_accounted: value.section_ledger_accounted,
+    proposal_ledger_accounted: value.proposal_ledger_accounted,
+  };
 }
 
 /**
@@ -153,8 +233,23 @@ function isPlainObject(value) {
  * ground truth (ordered requirement manifest, company-evidence catalog, allowlists,
  * corpus version) the engine already assembled — never read from the payload.
  */
-export function validateAgt002TenderAnalysisEnvelopeV3(value, integralValidationContext) {
-  if (!exactKeys(value, ENVELOPE_KEYS_V3)
+export function validateAgt002TenderAnalysisEnvelopeV3(value, integralValidationContext, expectedManifestScope = null) {
+  // Phase 4: the new top-level `manifest_scope` key is accepted ONLY when the caller supplies a
+  // governed expected scope; otherwise the closed key set rejects it. A manifest-driven run never
+  // carries governance_provenance, so scope and governance are mutually exclusive shapes here.
+  const scopeGoverned = expectedManifestScope !== null && expectedManifestScope !== undefined;
+  if (scopeGoverned) {
+    if (!exactKeys(value, ENVELOPE_KEYS_V3_WITH_SCOPE)) {
+      throw new Error('El envelope AGT-002 v3 gobernado por manifiesto debe ser cerrado e incluir manifest_scope.');
+    }
+    const observedScope = validateAgt002ManifestScope(value.manifest_scope);
+    const expectedScope = validateAgt002ManifestScope(expectedManifestScope);
+    try {
+      deepStrictEqual(observedScope, expectedScope);
+    } catch {
+      throw new Error('El alcance del manifiesto (manifest_scope) AGT-002 v3 no coincide con el alcance gobernado esperado del servidor.');
+    }
+  } else if (!exactKeys(value, ENVELOPE_KEYS_V3)
     && !exactKeys(value, ENVELOPE_KEYS_V3_WITH_GOVERNANCE)) {
     throw new Error('El envelope AGT-002 v3 debe ser cerrado.');
   }
@@ -201,8 +296,8 @@ export function validateAgt002TenderAnalysisEnvelopeV3(value, integralValidation
  * envelope, derives the deterministic v2 projection from its `integral_analysis`, and
  * attaches only the governed identity fields the projection itself never owns.
  */
-export function adaptAgt002TenderAnalysisV3(envelope, integralValidationContext) {
-  const validated = validateAgt002TenderAnalysisEnvelopeV3(envelope, integralValidationContext);
+export function adaptAgt002TenderAnalysisV3(envelope, integralValidationContext, expectedManifestScope = null) {
+  const validated = validateAgt002TenderAnalysisEnvelopeV3(envelope, integralValidationContext, expectedManifestScope);
   const projection = projectAgt002IntegralV3ToV2(validated.integral_analysis);
   return validateTenderAnalysisResult({
     ...projection,
