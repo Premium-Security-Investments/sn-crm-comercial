@@ -23,7 +23,6 @@ import { readFileSync } from 'node:fs';
 import { createAgt002PreviewEngine } from '../agt002-preview-engine.js';
 import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
-import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
 import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
 import { runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability.js';
 
@@ -117,17 +116,9 @@ function buildV3ModelOutput(options, evidenceState = AGT002_EVIDENCE_STATE_SAFE_
   const allowedRef = options.input.document_evidence.citation_allowlist[0];
   return {
     integral_analysis: {
-      contract_version: 'agt002-integral-analysis-v3',
-      coverage: {
-        manifest_version: options.input.document_evidence.requirement_manifest_version,
-        expected_requirement_ids: [requirementEntry.requirement_id],
-        analyzed_requirement_ids: [requirementEntry.requirement_id],
-        material_omissions: options.input.document_evidence.material_omissions,
-        omission_reasons: [],
-        company_evidence_manifest_version: 'agt002-company-evidence-classes-v1',
-        company_evidence_class_ids: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
-        legal_corpus_version_id: null,
-      },
+      // Model-facing shape only: contract_version/coverage are server-assembled by the
+      // engine from validationContext, never offered as a slot the model could fill in
+      // (mirrors buildV3ModelOutput in tests/agt002-preview-engine.test.mjs).
       analysis_units: [{
         unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: requirementEntry.requirement_id,
         category: 'habilitating', sequence: 1, title: 'Póliza vigente', assessment_mode: 'assessed',

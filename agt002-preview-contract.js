@@ -462,40 +462,82 @@ const v3AnalysisUnitSchema = v3ClosedObject({
   }),
 });
 
-/** Closed JSON Schema handed to the model's turn/start for the v3 contract (Task 5). */
+/**
+ * Closed JSON Schema handed to the model's turn/start for the v3 contract (Task 5,
+ * revised by the governed-metadata fix): the model turn carries ONLY analysis_units.
+ * `contract_version` and the entire `coverage` block are server-owned — assembled by
+ * the engine from validationContext (see `buildAgt002GovernedIntegralAnalysisV3Coverage`
+ * below), never offered as a slot the model could fill in. Making the model transcribe
+ * server-owned metadata (manifest versions, the sorted 17-class catalog, etc.) verbatim
+ * was exactly the failure mode behind the production
+ * `v3_coverage_company_evidence_manifest_version_mismatch` rejection.
+ */
 export function buildAgt002IntegralAnalysisV3OutputJsonSchema() {
   return v3ClosedObject({
     // Cross-field invariants, governed allowlists and exact coverage/order remain enforced
-    // server-side by validateAgt002IntegralAnalysisV3. This wire schema mirrors only the
-    // complete closed structural shape required by Codex Structured Outputs.
+    // server-side by validateAgt002IntegralAnalysisV3 against the assembled object. This
+    // wire schema mirrors only the closed structural shape the model itself may fill in.
     integral_analysis: v3ClosedObject({
-      contract_version: { type: 'string', const: AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION },
-      coverage: v3ClosedObject({
-        manifest_version: v3String(V3_WIRE_ID_MAX_LENGTH),
-        expected_requirement_ids: v3StringArray(),
-        analyzed_requirement_ids: v3StringArray(),
-        material_omissions: { type: 'boolean' },
-        omission_reasons: v3StringArray(V3_WIRE_TEXT_MAX_LENGTH),
-        company_evidence_manifest_version: v3String(V3_WIRE_ID_MAX_LENGTH),
-        company_evidence_class_ids: v3StringArray(),
-        legal_corpus_version_id: v3NullableString(),
-      }),
       analysis_units: { type: 'array', minItems: 1, maxItems: V3_WIRE_ARRAY_MAX_ITEMS, items: v3AnalysisUnitSchema },
     }),
   });
 }
 
+const INTEGRAL_ANALYSIS_MODEL_OUTPUT_KEYS = ['analysis_units'];
+
+/**
+ * Assembles the governed `coverage` block (design section 5) exactly from
+ * `validationContext` — the same governed ground truth
+ * `validateAgt002IntegralAnalysisV3` itself checks against — never from the model.
+ * `analyzed_requirement_ids` is set equal to the governed `expected_requirement_ids`
+ * (design invariant 3: they must coincide exactly, in order); whether the model's own
+ * `analysis_units` actually realize that coverage is a separate, still fully enforced
+ * question, decided by `validateUnitsOrdering` inside `validateAgt002IntegralAnalysisV3`.
+ */
+function buildAgt002GovernedIntegralAnalysisV3Coverage(validationContext) {
+  const ctx = isRecord(validationContext) ? validationContext : {};
+  const requirementManifest = Array.isArray(ctx.requirementManifest) ? ctx.requirementManifest : [];
+  const expectedRequirementIds = requirementManifest.map(entry => entry?.requirement_id);
+  return {
+    manifest_version: ctx.requirementManifestVersion,
+    expected_requirement_ids: expectedRequirementIds,
+    analyzed_requirement_ids: expectedRequirementIds,
+    material_omissions: ctx.materialOmissionsObserved === true,
+    omission_reasons: Array.isArray(ctx.omissionReasons) ? ctx.omissionReasons : [],
+    company_evidence_manifest_version: ctx.companyEvidenceManifestVersion,
+    company_evidence_class_ids: Array.isArray(ctx.companyEvidenceClassIds) ? [...ctx.companyEvidenceClassIds].sort() : [],
+    legal_corpus_version_id: ctx.legalCorpusVersionId ?? null,
+  };
+}
+
 /**
  * Validates a v3 model turn: rejects anything other than the single `integral_analysis`
- * key, then delegates the payload itself to the pure v3 validator with the caller-
- * supplied governed `validationContext` (manifest/allowlists/corpus). This function owns
- * only the "nothing besides integral_analysis was smuggled onto the turn" boundary.
+ * key, then rejects anything inside it other than the single model-owned
+ * `analysis_units` key — `contract_version`/`coverage` are never accepted from the
+ * model, however well-formed, so a forged/stale copy can never be smuggled in and never
+ * silently merged with the governed values. The engine then constructs the governed
+ * `contract_version` and `coverage` from `validationContext` and validates the fully
+ * assembled object with the SAME existing invariant authority
+ * (`validateAgt002IntegralAnalysisV3`), unchanged.
  */
 export function validateAgt002PreviewModelOutputV3(value, validationContext) {
   if (!isRecord(value) || !exactKeys(value, INTEGRAL_MODEL_OUTPUT_KEYS)) {
     throw new Error('La salida de AGT-002 Preview v3 debe exponer únicamente la clave integral_analysis.');
   }
-  return validateAgt002IntegralAnalysisV3(value.integral_analysis, validationContext);
+  if (!exactKeys(value.integral_analysis, INTEGRAL_ANALYSIS_MODEL_OUTPUT_KEYS)) {
+    const error = new Error(
+      'La salida de AGT-002 Preview v3 (integral_analysis) debe exponer únicamente la clave analysis_units; '
+      + 'contract_version y coverage son gobernados por el servidor y nunca se aceptan de la respuesta del modelo.',
+    );
+    error.code = 'v3_model_output_shape_mismatch';
+    throw error;
+  }
+  const governedIntegralAnalysis = {
+    contract_version: AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION,
+    coverage: buildAgt002GovernedIntegralAnalysisV3Coverage(validationContext),
+    analysis_units: value.integral_analysis.analysis_units,
+  };
+  return validateAgt002IntegralAnalysisV3(governedIntegralAnalysis, validationContext);
 }
 
 /**
