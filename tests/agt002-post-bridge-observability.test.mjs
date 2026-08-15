@@ -20,10 +20,11 @@
 import { strict as assert } from 'node:assert';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
-import { createAgt002PreviewEngine } from '../agt002-preview-engine.js';
+import { AGT002_V3_SAFE_VALIDATION_CODES, createAgt002PreviewEngine } from '../agt002-preview-engine.js';
 import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
+import { AGT002_OUTPUT_REJECTION_STAGES } from '../agt002-analysis-observability.js';
 import { runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability.js';
 
 const IDS = Object.freeze({
@@ -607,6 +608,134 @@ test('V3: output completamente válido se persiste vía el motor y la persistenc
 
   const completedAttempt = database.calls.find(call => call.name === 'psi_append_agt002_analysis_attempt' && call.params.p_state === 'completed');
   assert.equal(completedAttempt.params.p_analysis_run_id, persistedRunId);
+});
+
+// ===========================================================================================
+// V3 durable validation subcode propagation. The engine already classifies a v3 semantic
+// failure into a CLOSED, allowlisted AGT002_V3_SAFE_VALIDATION_CODES value for its own
+// output_rejected observability event — but that subcode is lost before the DURABLE
+// psi_agt002_analysis_attempt_events row is written, which today only carries the generic
+// AGT002_INTEGRAL_V3_INVALID code + a fixed generic message. These tests pin the missing
+// propagation: the allowlisted subcode must reach the durable attempt event's error_message so
+// the incident is diagnosable to the exact invariant, while (a) the generic public error_code is
+// preserved unchanged, (b) the fixed generic public message is preserved, and (c) any
+// unknown/hostile/non-allowlisted value collapses to the fixed safe message and NEVER leaks a
+// raw validator/model string into the durable row.
+// ===========================================================================================
+
+test('V3: the exported safe validation code catalog is an immutable value list, never a shared mutable Set', () => {
+  assert.ok(Array.isArray(AGT002_V3_SAFE_VALIDATION_CODES));
+  assert.ok(Object.isFrozen(AGT002_V3_SAFE_VALIDATION_CODES));
+  assert.throws(() => AGT002_V3_SAFE_VALIDATION_CODES.push('hostile_runtime_code'), TypeError);
+  assert.ok(!AGT002_V3_SAFE_VALIDATION_CODES.includes('hostile_runtime_code'));
+});
+
+function unavailableAttemptParams(database) {
+  const call = database.calls.find(c => c.name === 'psi_append_agt002_analysis_attempt' && c.params.p_state === 'unavailable');
+  return call ? call.params : null;
+}
+
+// Allowed value: a real, engine-classified, allowlisted invariant. Sending a server-governed key
+// ('coverage') the model must never emit drives the REAL validateAgt002PreviewModelOutputV3 shape
+// guard, whose closed error code 'v3_model_output_shape_mismatch' is an
+// AGT002_V3_SAFE_VALIDATION_CODES member — exactly the closed subcode that must survive to the
+// durable row.
+test('V3: an allowlisted invariant subcode reaches the durable unavailable attempt error_message; generic error_code and generic message preserved', async () => {
+  const { client, calls: clientCalls, telemetry } = trackedClient(async (options) => {
+    const output = buildV3ModelOutput(options);
+    output.integral_analysis.coverage = { forged: true };
+    return { content: JSON.stringify(output), usage: { input_tokens: 5, output_tokens: 5 } };
+  });
+  const engine = createAgt002PreviewEngine({ client, ...v3EngineOptions() });
+  const observability = spyObservability();
+  const database = fakeDatabase();
+
+  const result = await runAgt002PostBridgeAnalysis(database, requestContext(), {
+    engine, observability, analysisContext: v3Context, bridgeTelemetry: telemetry, integralContractV3: true,
+  });
+
+  assert.equal(result.status, 'unavailable');
+  assert.equal(clientCalls.length, 1, 'zero retry');
+  assert.equal(recordRunCallCount(database), 0, 'an invalid V3 output must never reach persistence');
+  assert.deepEqual(attemptStates(database), ['queued', 'running', 'unavailable']);
+
+  const params = unavailableAttemptParams(database);
+  assert.equal(params.p_error_code, 'AGT002_INTEGRAL_V3_INVALID', 'the generic public error_code must be preserved unchanged');
+  assert.match(params.p_error_message, /v3_model_output_shape_mismatch/, 'the closed, allowlisted validation subcode must reach the durable attempt event');
+  assert.match(params.p_error_message, /la salida integral v3 no superó la validación/, 'the fixed generic public message must be preserved alongside the subcode');
+
+  assert.equal(observability.records[0].fields.stage, 'integral_v3_validation');
+  assert.equal(observability.records[0].fields.error_code, 'AGT002_INTEGRAL_V3_INVALID');
+});
+
+// Hostile value at the runner boundary: a buggy/compromised engine hands back an error whose
+// `.code` is NOT an allowlisted closed subcode but a raw model/validator string (embedding an
+// evidence id + a SQL-shaped payload). The runner must independently re-gate against the
+// allowlist and collapse to the FIXED safe message — never persist or leak the raw string.
+test('V3: a non-allowlisted/hostile engine validation code never reaches the durable row; it collapses to the fixed safe message', async () => {
+  const hostile = 'omitió una fuente incierta: cite-99; DROP TABLE psi_agt002_analysis_attempt_events; 5ec3f-secret-token';
+  const engine = {
+    analyze: async () => {
+      const error = new Error('AGT-002 Preview no produjo una respuesta válida.');
+      // Same closed structural stage a real v3 semantic rejection carries (so the runner
+      // classifies it as integral_v3_validation), but a hostile, non-allowlisted `.code`.
+      error.stage = AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION;
+      error.code = hostile;
+      throw error;
+    },
+  };
+  const observability = spyObservability();
+  const database = fakeDatabase();
+
+  const result = await runAgt002PostBridgeAnalysis(database, requestContext(), {
+    engine, observability, analysisContext: v3Context,
+    bridgeTelemetry: { invocationStarted: true, responseReceived: true }, integralContractV3: true,
+  });
+
+  assert.equal(result.status, 'unavailable');
+  const params = unavailableAttemptParams(database);
+  assert.equal(params.p_error_code, 'AGT002_INTEGRAL_V3_INVALID');
+  assert.equal(
+    params.p_error_message,
+    'Vig-IA no completó el análisis: la salida integral v3 no superó la validación.',
+    'a non-allowlisted code must collapse to the fixed generic message with no subcode appended',
+  );
+
+  const serialized = JSON.stringify({ result, calls: database.calls, records: observability.records });
+  for (const forbidden of ['DROP TABLE', 'cite-99', '5ec3f-secret-token']) {
+    assert.ok(!serialized.includes(forbidden), `"${forbidden}" must never appear anywhere in the durable/observability payload`);
+  }
+});
+
+// Hostile value THROUGH the real engine: a genuine invariant violation whose validator code is
+// not one of the enumerated closed subcodes. The engine already collapses it to its own generic
+// 'v3_invariant_violation' fallback (never a raw string); the runner must then also refuse to
+// forward that non-allowlisted fallback and keep the fixed generic durable message.
+test('V3: a real invariant with a non-allowlisted code keeps the fixed durable message (engine + runner both fail closed)', async () => {
+  const { client, telemetry } = trackedClient(async (options) => {
+    const output = buildV3ModelOutput(options);
+    output.integral_analysis.analysis_units[0].legal_assessment = {
+      status: 'supported', basis_refs: [], summary: 'Afirmación jurídica sin corpus.', human_legal_review_required: true,
+    };
+    return { content: JSON.stringify(output), usage: { input_tokens: 5, output_tokens: 5 } };
+  });
+  const engine = createAgt002PreviewEngine({ client, ...v3EngineOptions() });
+  const observability = spyObservability();
+  const database = fakeDatabase();
+
+  const result = await runAgt002PostBridgeAnalysis(database, requestContext(), {
+    engine, observability, analysisContext: v3Context, bridgeTelemetry: telemetry, integralContractV3: true,
+  });
+
+  assert.equal(result.status, 'unavailable');
+  const params = unavailableAttemptParams(database);
+  assert.equal(params.p_error_code, 'AGT002_INTEGRAL_V3_INVALID');
+  assert.equal(
+    params.p_error_message,
+    'Vig-IA no completó el análisis: la salida integral v3 no superó la validación.',
+    'the engine generic fallback (v3_invariant_violation) is not allowlisted and must not be forwarded',
+  );
+  assert.ok(!params.p_error_message.includes('v3_invariant_violation'), 'the engine generic fallback code must never reach the durable row');
 });
 
 // --- Requirement 8: a genuinely unattributed post-response failure (the engine throws with no

@@ -69,7 +69,9 @@ const FINDING_FIELDS = ['strengths', 'weaknesses', 'blockers', 'questions', 'unv
 
 // Closed, privacy-safe codes emitted only by fixed V3 invariant call sites. Never forward an
 // arbitrary validator code: unknown/future values must remain the generic closed fallback.
-const AGT002_V3_SAFE_VALIDATION_CODES = new Set([
+// Exported as an immutable VALUE list so durable callers can build their own private membership
+// set from the same catalog without sharing a mutable authorization object.
+export const AGT002_V3_SAFE_VALIDATION_CODES = Object.freeze([
   'v3_invalid_coverage_shape',
   'v3_coverage_manifest_version_mismatch',
   'v3_coverage_expected_requirement_ids_mismatch',
@@ -85,6 +87,7 @@ const AGT002_V3_SAFE_VALIDATION_CODES = new Set([
   'v3_contract_version_mismatch',
   'v3_analysis_units_empty',
 ]);
+const AGT002_V3_SAFE_VALIDATION_CODE_SET = new Set(AGT002_V3_SAFE_VALIDATION_CODES);
 
 function outputSchemaForEvidenceIds(allowedEvidenceIds, {
   legalCorpus = false,
@@ -520,14 +523,22 @@ export function createAgt002PreviewEngine({
     try {
       validatedIntegralAnalysis = validateAgt002PreviewModelOutputV3(parsed, validationContext);
     } catch (error) {
-      const validationCode = AGT002_V3_SAFE_VALIDATION_CODES.has(error?.code)
-        ? error.code
-        : 'v3_invariant_violation';
+      const isAllowlistedValidationCode = AGT002_V3_SAFE_VALIDATION_CODE_SET.has(error?.code);
+      const validationCode = isAllowlistedValidationCode ? error.code : 'v3_invariant_violation';
       recordOutputRejected({
         stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, validationCode,
         content: rawContent, snapshotId: previewInput.snapshot_id, usage: raw?.usage,
       });
-      throw safe(SAFE_INVALID, { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION });
+      // Attach the closed validation subcode as structural metadata ONLY when it is an allowlisted
+      // AGT002_V3_SAFE_VALIDATION_CODES member, so a durable caller (the post-bridge runner) can
+      // attribute the failure to the exact invariant. A non-allowlisted/unknown code is never
+      // forwarded — the generic 'v3_invariant_violation' stays local to the (already sanitized)
+      // observability event above — and `.message` stays exactly SAFE_INVALID, so no existing
+      // caller/test that only inspects `.message` is affected.
+      throw safe(SAFE_INVALID, {
+        stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION,
+        ...(isAllowlistedValidationCode ? { code: error.code } : {}),
+      });
     }
 
     const usage = raw.usage || {};
