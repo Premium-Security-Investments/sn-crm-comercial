@@ -80,6 +80,7 @@ const AGT002_V3_SAFE_VALIDATION_CODES = new Set([
   'v3_material_omissions_abstention_required',
   'v3_requirement_coverage_order_mismatch',
   'v3_invalid_top_level_shape',
+  'v3_model_output_shape_mismatch',
   'v3_contract_version_mismatch',
   'v3_analysis_units_empty',
 ]);
@@ -439,6 +440,15 @@ export function createAgt002PreviewEngine({
       }
     }
 
+    // Governed metadata fix: coverage.omission_reasons is now assembled by the engine,
+    // never transcribed by the model, from the SAME deterministic omitted-chunk reasons
+    // (design section 5) already surfaced elsewhere in the envelope's evidence_coverage.
+    const omissionReasons = [...new Set(
+      (Array.isArray(documentEvidence.omitted_chunks) ? documentEvidence.omitted_chunks : [])
+        .map(entry => entry?.reason)
+        .filter(nonEmpty),
+    )].sort();
+
     return {
       requirementManifestVersion: documentEvidence.requirement_manifest_version,
       requirementManifest,
@@ -453,6 +463,7 @@ export function createAgt002PreviewEngine({
         objective_validation: [...objectiveValidationIds],
       },
       materialOmissionsObserved: documentEvidence.material_omissions === true,
+      omissionReasons,
       evidenceStateManifest,
     };
   }

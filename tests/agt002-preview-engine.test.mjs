@@ -709,22 +709,17 @@ assert.throws(
     snapshotId: '55555555-5555-4555-8555-555555555555', contextV2Sections: v3ContextV2Sections,
   };
 
+  // Task (governed metadata fix): the model turn now carries ONLY analysis_units.
+  // contract_version and the full coverage block are server-owned — assembled by the
+  // engine from validationContext, never transcribed by the model — because a model
+  // asked to copy coverage verbatim (manifest versions, sorted 17-class ids, etc.) is
+  // exactly the failure mode that produced the production
+  // v3_coverage_company_evidence_manifest_version_mismatch rejection.
   function buildV3ModelOutput(options, evidenceState = AGT002_EVIDENCE_STATE_SAFE_UNKNOWN) {
     const requirementEntry = options.input.document_evidence.requirement_manifest[0];
     const allowedRef = options.input.document_evidence.citation_allowlist[0];
     return {
       integral_analysis: {
-        contract_version: 'agt002-integral-analysis-v3',
-        coverage: {
-          manifest_version: options.input.document_evidence.requirement_manifest_version,
-          expected_requirement_ids: [requirementEntry.requirement_id],
-          analyzed_requirement_ids: [requirementEntry.requirement_id],
-          material_omissions: options.input.document_evidence.material_omissions,
-          omission_reasons: [],
-          company_evidence_manifest_version: 'agt002-company-evidence-classes-v1',
-          company_evidence_class_ids: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
-          legal_corpus_version_id: null,
-        },
         analysis_units: [{
           unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: requirementEntry.requirement_id,
           category: 'habilitating', sequence: 1, title: 'Póliza vigente', assessment_mode: 'assessed',
@@ -781,6 +776,10 @@ assert.throws(
 
     assert.equal(client.calls[0].outputSchema.required.length, 1);
     assert.deepEqual(client.calls[0].outputSchema.required, ['integral_analysis']);
+    // The model-facing wire schema exposes ONLY analysis_units under integral_analysis —
+    // contract_version and coverage are never offered as a slot the model could fill in.
+    assert.deepEqual(client.calls[0].outputSchema.properties.integral_analysis.required, ['analysis_units']);
+    assert.deepEqual(Object.keys(client.calls[0].outputSchema.properties.integral_analysis.properties), ['analysis_units']);
 
     assert.equal(result.schema_version, '3.0.0');
     assert.equal(result.agent_id, 'AGT-002');
@@ -791,6 +790,21 @@ assert.throws(
     assert.equal(result.integral_analysis.analysis_units[0].category, 'habilitating');
     assert.ok(result.evidence_coverage);
     assert.equal(result.legal_corpus_version_id, null, 'legalCorpus is off for this engine so the corpus binding stays null');
+
+    // The engine — never the model — constructs contract_version and the entire
+    // coverage block, exactly from validationContext (governed manifest/catalog/corpus
+    // facts), regardless of what (if anything) the model said about them.
+    assert.equal(result.integral_analysis.contract_version, 'agt002-integral-analysis-v3');
+    assert.deepEqual(result.integral_analysis.coverage, {
+      manifest_version: result.evidence_coverage.requirement_manifest_version,
+      expected_requirement_ids: ['req-poliza'],
+      analyzed_requirement_ids: ['req-poliza'],
+      material_omissions: result.evidence_coverage.material_omissions === true,
+      omission_reasons: [],
+      company_evidence_manifest_version: 'agt002-company-evidence-classes-v1',
+      company_evidence_class_ids: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
+      legal_corpus_version_id: null,
+    });
     assert.ok(
       result.integral_analysis.analysis_units.every(unit => ['not_applicable', 'not_verified'].includes(unit.legal_assessment.status)),
       'without a published legal corpus every legal assessment must abstain from a substantive legal conclusion',
@@ -1098,11 +1112,25 @@ assert.throws(
   // model-supplied id) get their own closed error.code, and only those may surface as a
   // specific subcode; everything else keeps the generic v3_invariant_violation fallback.
   {
-    // Fully static message (contract_version mismatch) -> must surface its own closed subcode.
+    // Governed metadata fix regression: contract_version and coverage are server-owned
+    // and are never offered as a slot the model could fill in (see buildV3ModelOutput
+    // above). A model turn that smuggles either key onto integral_analysis anyway must
+    // be rejected outright by the closed schema — never merged, never trusted — with its
+    // own fully-static closed subcode (the message never embeds a model-supplied id).
     const observability = spyObservability();
     const client = fakeClient(async (options) => {
       const output = buildV3ModelOutput(options);
-      output.integral_analysis.contract_version = 'not-the-real-contract-version';
+      output.integral_analysis.contract_version = 'agt002-integral-analysis-v3';
+      output.integral_analysis.coverage = {
+        manifest_version: options.input.document_evidence.requirement_manifest_version,
+        expected_requirement_ids: [options.input.document_evidence.requirement_manifest[0].requirement_id],
+        analyzed_requirement_ids: [options.input.document_evidence.requirement_manifest[0].requirement_id],
+        material_omissions: false,
+        omission_reasons: [],
+        company_evidence_manifest_version: 'agt002-company-evidence-classes-v1',
+        company_evidence_class_ids: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
+        legal_corpus_version_id: null,
+      };
       return { content: JSON.stringify(output), usage: { input_tokens: 1, output_tokens: 1 } };
     });
     const engine = createAgt002PreviewEngine({
@@ -1117,8 +1145,8 @@ assert.throws(
     const [{ fields }] = observability.records;
     assert.equal(fields.stage, 'semantic_validation');
     assert.equal(
-      fields.validation_code, 'v3_contract_version_mismatch',
-      'a known-safe coverage/top-level invariant must surface its own closed subcode, not the generic fallback',
+      fields.validation_code, 'v3_model_output_shape_mismatch',
+      'a model attempting to supply server-owned contract_version/coverage must surface its own closed subcode, not the generic fallback',
     );
   }
 

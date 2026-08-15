@@ -726,19 +726,11 @@ function buildV3ValidationContext() {
   };
 }
 
+// Model-facing shape only: the governed `contract_version`/`coverage` keys are never
+// offered here — the engine assembles them from validationContext (see
+// buildAgt002GovernedIntegralAnalysisV3Coverage in agt002-preview-contract.js).
 function buildMinimalV3IntegralAnalysis() {
   return {
-    contract_version: AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION,
-    coverage: {
-      manifest_version: 'agt002-deep-analysis-v1',
-      expected_requirement_ids: ['REQ-1'],
-      analyzed_requirement_ids: ['REQ-1'],
-      material_omissions: false,
-      omission_reasons: [],
-      company_evidence_manifest_version: 'agt002-company-evidence-classes-v1',
-      company_evidence_class_ids: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
-      legal_corpus_version_id: null,
-    },
     analysis_units: [{
       unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: 'REQ-1', category: 'discard', sequence: 1,
       title: 'Requisito sintético', assessment_mode: 'assessed',
@@ -787,9 +779,11 @@ function buildMinimalV3IntegralAnalysis() {
     if (node.type === 'array') assertRecursivelyClosed(node.items, `${path}.items`);
   }
   assertRecursivelyClosed(schema);
+  // The model turn exposes ONLY analysis_units — contract_version and coverage are
+  // server-assembled from validationContext and never offered as a model-fillable slot.
   assert.deepEqual(
     Object.keys(schema.properties.integral_analysis.properties).sort(),
-    ['analysis_units', 'contract_version', 'coverage'],
+    ['analysis_units'],
   );
 }
 
@@ -800,6 +794,18 @@ function buildMinimalV3IntegralAnalysis() {
   const value = { integral_analysis: buildMinimalV3IntegralAnalysis() };
   const result = validateAgt002PreviewModelOutputV3(value, ctx);
   assert.equal(result.contract_version, AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION);
+  // coverage is server-assembled from validationContext, never taken from the model turn
+  // (which never carried it in the first place — see buildMinimalV3IntegralAnalysis above).
+  assert.deepEqual(result.coverage, {
+    manifest_version: ctx.requirementManifestVersion,
+    expected_requirement_ids: ['REQ-1'],
+    analyzed_requirement_ids: ['REQ-1'],
+    material_omissions: false,
+    omission_reasons: [],
+    company_evidence_manifest_version: ctx.companyEvidenceManifestVersion,
+    company_evidence_class_ids: ctx.companyEvidenceClassIds,
+    legal_corpus_version_id: null,
+  });
 
   for (const forged of [
     { integral_analysis: buildMinimalV3IntegralAnalysis(), run_id: '11111111-1111-4111-8111-111111111111' },
