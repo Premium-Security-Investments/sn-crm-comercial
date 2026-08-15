@@ -135,6 +135,16 @@ function buildV3AbstainedUnits(input) {
   const sourceAbsent = buildAgt002PreviewInput({ ...v3InputArgs });
   const sourceNull = buildAgt002PreviewInput({ ...v3InputArgs, manizalesManifestSource: null });
   assert.deepEqual(sourceNull, sourceAbsent, 'manizalesManifestSource=null must be byte-identical to the current path');
+  const sourceSuppliedWhileFlagOff = buildAgt002PreviewInput({
+    ...v3InputArgs,
+    integralContractV3: false,
+    manizalesManifestSource: MANIZALES_MANIFEST_SOURCE,
+  });
+  assert.deepEqual(
+    sourceSuppliedWhileFlagOff,
+    sourceAbsent,
+    'a supplied source must remain inert in the exported contextV2+retrieval builder while V3 is off',
+  );
   assert.deepEqual(
     sourceAbsent.document_evidence.requirement_manifest.map(entry => entry.requirement_id),
     ['req-poliza'],
@@ -185,6 +195,7 @@ function buildV3AbstainedUnits(input) {
 
   const manifestOnlyInput = buildAgt002PreviewInput({
     ...v3Context(),
+    integralContractV3: true,
     deepAnalysis: { matrix: { legal: [], financial: [], technical: [] } },
     contextV2: true,
     documentRetrieval: true,
@@ -299,16 +310,21 @@ function buildV3AbstainedUnits(input) {
 
 // Server-owned source selection is inert with V3 off, exact for Manizales and fail-closed
 // for every non-pilot opportunity while the pilot flag is active.
-assert.equal(selectAgt002ManizalesManifestSource({ integralContractV3: false, opportunityId: 'other' }), null);
+assert.equal(selectAgt002ManizalesManifestSource({ integralContractV3: false, opportunityId: 'other', process: 'OTHER' }), null);
 assert.equal(
   selectAgt002ManizalesManifestSource({
     integralContractV3: true,
     opportunityId: AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID,
+    process: AGT002_INTEGRAL_MANIFEST_PROCESO,
   }),
   AGT002_MANIZALES_CHECKED_IN_MANIFEST,
 );
 assert.throws(
-  () => selectAgt002ManizalesManifestSource({ integralContractV3: true, opportunityId: '00000000-0000-4000-8000-000000000000' }),
+  () => selectAgt002ManizalesManifestSource({ integralContractV3: true, opportunityId: '00000000-0000-4000-8000-000000000000', process: AGT002_INTEGRAL_MANIFEST_PROCESO }),
+  error => error?.code === 'AGT002_MANIZALES_PILOT_SCOPE_MISMATCH',
+);
+assert.throws(
+  () => selectAgt002ManizalesManifestSource({ integralContractV3: true, opportunityId: AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID, process: 'SA-99-2099' }),
   error => error?.code === 'AGT002_MANIZALES_PILOT_SCOPE_MISMATCH',
 );
 

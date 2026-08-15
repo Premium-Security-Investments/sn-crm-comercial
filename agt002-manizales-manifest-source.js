@@ -22,9 +22,10 @@ if (checkedInManifest.opportunity_id !== AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID
   throw new Error('El manifiesto integral empacado no corresponde al piloto Manizales SA-24-2026.');
 }
 
-export function selectAgt002ManizalesManifestSource({ integralContractV3, opportunityId }) {
+export function selectAgt002ManizalesManifestSource({ integralContractV3, opportunityId, process }) {
   if (integralContractV3 !== true) return null;
-  if (opportunityId !== AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID) {
+  if (opportunityId !== AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID
+    || process !== AGT002_INTEGRAL_MANIFEST_PROCESO) {
     const error = new Error('AGT-002 V3 integral está habilitado únicamente para el piloto Manizales SA-24-2026.');
     error.code = 'AGT002_MANIZALES_PILOT_SCOPE_MISMATCH';
     throw error;

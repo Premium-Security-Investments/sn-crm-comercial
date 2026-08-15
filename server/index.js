@@ -2783,7 +2783,7 @@ async function reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analys
     const engine = createAgt002PreviewRuntime({
           environment: process.env,
           countDailyRuns: () => countAgt002PreviewRunsToday(database),
-          manizalesManifestSource: selectAgt002ManizalesManifestSource({ integralContractV3: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3, opportunityId }),
+          manizalesManifestSource: await selectAgt002ManizalesManifestForTender(database, { opportunityId, tenderId }),
           legalCorpusContext,
           onBridgeInvocationStarted: () => { bridgeTelemetry.invocationStarted = true; },
           onBridgeResponseReceived: () => { bridgeTelemetry.responseReceived = true; },
@@ -2868,6 +2868,20 @@ async function getTenderIdForOpportunity(database, opportunityId) {
     .maybeSingle());
   if (!tender?.id) throw new Error('La oportunidad no está vinculada a una licitación para registrar el preanálisis.');
   return tender.id;
+}
+
+async function selectAgt002ManizalesManifestForTender(database, { opportunityId, tenderId }) {
+  if (agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3 !== true) return null;
+  const tender = await must(database.from('psi_public_tenders')
+    .select('ref')
+    .eq('id', tenderId)
+    .eq('converted_opportunity_id', opportunityId)
+    .maybeSingle());
+  return selectAgt002ManizalesManifestSource({
+    integralContractV3: true,
+    opportunityId,
+    process: tender?.ref || null,
+  });
 }
 
 function getTenderSourceUrlFromOpportunity(opportunity) {
@@ -3444,7 +3458,7 @@ function buildTenderProcessingWorkerDeps(database) {
         const engine = createAgt002PreviewRuntime({
           environment: process.env,
           countDailyRuns: () => countAgt002PreviewRunsToday(database),
-          manizalesManifestSource: selectAgt002ManizalesManifestSource({ integralContractV3: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3, opportunityId }),
+          manizalesManifestSource: await selectAgt002ManizalesManifestForTender(database, { opportunityId, tenderId }),
           legalCorpusContext,
           ...(integralV3Governance ? {
             companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
@@ -4058,7 +4072,7 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
       const engine = createAgt002PreviewRuntime({
           environment: process.env,
           countDailyRuns: () => countAgt002PreviewRunsToday(database),
-          manizalesManifestSource: selectAgt002ManizalesManifestSource({ integralContractV3: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3, opportunityId }),
+          manizalesManifestSource: await selectAgt002ManizalesManifestForTender(database, { opportunityId, tenderId }),
           onBridgeInvocationStarted: () => { bridgeTelemetry.invocationStarted = true; },
           onBridgeResponseReceived: () => { bridgeTelemetry.responseReceived = true; },
           legalCorpusContext,

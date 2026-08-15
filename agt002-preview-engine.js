@@ -618,6 +618,7 @@ export function createAgt002PreviewEngine({
       const previewInput = buildAgt002PreviewInput({
         ...(context || {}), contextV2, documentRetrieval, legalCorpus, legalEvidencePackage,
         ...(integralContractV3 ? { companyEvidenceClasses } : {}),
+        integralContractV3,
         // Engine-owned governed configuration: the injected manifest source always wins over
         // (and is set explicitly to null in the absence of) anything a caller's context might
         // carry, so a provider/caller can never forge or suppress the manifest binding.

@@ -474,7 +474,7 @@ function buildContextV2Input({
 export function buildAgt002PreviewInput({
   opportunity = {}, documents = [], documentGaps = [], companyProfile = {}, deepAnalysis = {}, snapshotId, canonicalOnly = false,
   contextV2 = false, contextV2Sections = null, documentRetrieval = false, legalCorpus = false, legalEvidencePackage = null,
-  companyEvidenceClasses = null, manizalesManifestSource = null,
+  companyEvidenceClasses = null, integralContractV3 = false, manizalesManifestSource = null,
 }) {
   if (typeof snapshotId !== 'string' || !snapshotId.trim()) {
     throw new Error('AGT-002 Preview requiere un snapshot documental vigente.');
@@ -488,7 +488,8 @@ export function buildAgt002PreviewInput({
   if (contextV2) {
     return buildContextV2Input({
       snapshotId: snapshotId.trim(), contextV2Sections, documents, documentGaps, deepAnalysis, documentRetrieval, legalCorpus, legalEvidencePackage,
-      companyEvidenceClasses, manizalesManifestSource,
+      companyEvidenceClasses,
+      manizalesManifestSource: integralContractV3 === true ? manizalesManifestSource : null,
     });
   }
 
