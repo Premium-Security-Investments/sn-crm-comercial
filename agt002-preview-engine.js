@@ -86,6 +86,20 @@ export const AGT002_V3_SAFE_VALIDATION_CODES = Object.freeze([
   'v3_model_output_shape_mismatch',
   'v3_contract_version_mismatch',
   'v3_analysis_units_empty',
+  'v3_evidence_abstention_invariant',
+  'v3_evidence_state_invariant',
+  'v3_conclusion_compliance_invariant',
+  'v3_evidence_reference_invariant',
+  'v3_missing_evidence_invariant',
+  'v3_blocking_action_invariant',
+  'v3_legal_assessment_invariant',
+  'v3_action_invariant',
+  'v3_milestone_invariant',
+  'v3_escalation_invariant',
+  'v3_closure_invariant',
+  'v3_governed_evidence_state_mismatch',
+  'v3_unit_identity_invariant',
+  'v3_unit_ordering_invariant',
 ]);
 const AGT002_V3_SAFE_VALIDATION_CODE_SET = new Set(AGT002_V3_SAFE_VALIDATION_CODES);
 
