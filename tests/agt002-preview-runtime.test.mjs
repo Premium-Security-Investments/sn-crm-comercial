@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { createAgt002PreviewRuntime, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
+import { AGT002_PREVIEW_POLICY, AGT002_INTEGRAL_V3_POLICY } from '../agt002-preview-engine.js';
+import { AGT002_PREVIEW_DEFAULT_POLICY_VERSION, AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
 
 function baseEnv(overrides = {}) {
   return {
@@ -229,6 +230,10 @@ assert.throws(
   });
   assert.deepEqual(capturedOptions.evidenceClassLinkByRequirementId, evidenceClassLinkByRequirementId, 'the runtime must forward evidenceClassLinkByRequirementId to the engine, exactly like categoryOverrides');
   assert.deepEqual(capturedOptions.categoryOverrides, categoryOverrides);
+  assert.equal(capturedOptions.policyText, AGT002_INTEGRAL_V3_POLICY, 'V3 runtime must use the V3 wire policy, never the legacy preview policy');
+  assert.equal(capturedOptions.policyVersion, AGT002_INTEGRAL_V3_POLICY_VERSION, 'persisted policy version must identify the V3 policy actually used');
+  assert.notEqual(capturedOptions.policyText, AGT002_PREVIEW_POLICY);
+  assert.notEqual(capturedOptions.policyVersion, AGT002_PREVIEW_DEFAULT_POLICY_VERSION);
   // P2-1: governance_provenance must reach the engine exactly like categoryOverrides and
   // evidenceClassLinkByRequirementId do — it is the traceability behind those bindings.
   assert.deepEqual(capturedOptions.governanceProvenance, governanceProvenance, 'the runtime must forward governanceProvenance to the engine, exactly like categoryOverrides');

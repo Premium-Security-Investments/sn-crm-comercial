@@ -1,5 +1,5 @@
 import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.js';
-import { AGT002_PREVIEW_POLICY, createAgt002PreviewEngine } from './agt002-preview-engine.js';
+import { AGT002_PREVIEW_POLICY, AGT002_INTEGRAL_V3_POLICY, createAgt002PreviewEngine } from './agt002-preview-engine.js';
 import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
 import { retrieveAgt002LegalEvidence } from './agt002-legal-retrieval.js';
 
@@ -9,6 +9,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_CONCURRENT = 2;
 const DEFAULT_DAILY_MAX_RUNS = 20;
 export const AGT002_PREVIEW_DEFAULT_POLICY_VERSION = 'agt002-preview-policy-v2';
+export const AGT002_INTEGRAL_V3_POLICY_VERSION = 'agt002-integral-v3-policy-v1';
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -152,8 +153,12 @@ export function createAgt002PreviewRuntime({
   return withRuntimeBoundaryCode('AGT002_RUNTIME_ENGINE_CREATION_FAILED', () => createEngine({
     client,
     model: config.model,
-    policyVersion: config.policyVersion,
-    policyText: AGT002_PREVIEW_POLICY,
+    policyVersion: analysisConfig.AGT002_INTEGRAL_CONTRACT_V3
+      ? AGT002_INTEGRAL_V3_POLICY_VERSION
+      : config.policyVersion,
+    policyText: analysisConfig.AGT002_INTEGRAL_CONTRACT_V3
+      ? AGT002_INTEGRAL_V3_POLICY
+      : AGT002_PREVIEW_POLICY,
     timeoutMs: config.timeoutMs,
     maxConcurrent: config.maxConcurrent,
     dailyMaxRuns: config.dailyMaxRuns,
