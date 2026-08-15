@@ -72,11 +72,11 @@ test('the obsolete synthetic hidden-route preview is fully removed', () => {
   assert.doesNotMatch(tendersModuleSource, /TenderAnalysisV3Preview/);
 });
 
-test('the real view is wired into the actual tender dossier, next to the existing v2 analysis section (not a dangling/orphaned component)', () => {
+test('the real view is wired into the actual tender dossier before its V3 question and action surface', () => {
   const mainSource = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
   assert.match(mainSource, /TenderIntegralAnalysisV3View/);
-  const analysisSectionIndex = mainSource.indexOf('<TenderAnalysisSection');
   const integralViewIndex = mainSource.indexOf('<TenderIntegralAnalysisV3View');
-  assert.ok(analysisSectionIndex >= 0 && integralViewIndex > analysisSectionIndex, 'the integral v3 view must render after the existing v2 analysis section, never replacing it');
+  const analysisSectionIndex = mainSource.indexOf('<TenderAnalysisSection');
+  assert.ok(integralViewIndex >= 0 && analysisSectionIndex > integralViewIndex, 'the integral V3 view must render before the shared question and action surface');
   assert.match(mainSource, /<TenderIntegralAnalysisV3View analysis=\{analysis\}/);
 });

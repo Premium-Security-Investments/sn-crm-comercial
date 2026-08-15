@@ -95,19 +95,26 @@ export function TenderIntegralAnalysisV3View({ analysis }: TenderIntegralAnalysi
   const coverageRatio = `${integral.coverage.analyzed_requirement_ids.length} / ${integral.coverage.expected_requirement_ids.length}`;
 
   return <section className="agt002-v3-preview" aria-labelledby="agt002-v3-title">
-    <header className="agt002-v3-hero">
-      <div className="agt002-v3-hero-copy">
-        <div className="agt002-v3-kicker"><span>AGT-002 · Análisis integral</span><b>Datos reales del expediente</b></div>
+    <header className="agt002-v3-overview">
+      <div className="agt002-v3-overview-copy">
+        <span className="agt002-v3-eyebrow">AGT-002 · Análisis integral</span>
         <h2 id="agt002-v3-title">Análisis integral por requisito</h2>
-        <p>Una lectura trazable de descarte, habilitantes, técnica, ejecución y estrategia. Organiza evidencia y pendientes; no sustituye el criterio institucional.</p>
-        <div className="agt002-v3-guard"><strong>Validación humana pendiente</strong><span>No decide GO / NO GO · No firma · No envía · No presenta ofertas</span></div>
+        <p>Evidencia, brechas y acciones organizadas por requisito. La decisión institucional sigue siendo humana.</p>
       </div>
-      <dl className="agt002-v3-run-meta">
-        <div><dt>Ejecución</dt><dd>{analysis?.run_id ?? '—'}</dd></div>
-        <div><dt>Snapshot</dt><dd>{analysis?.snapshot_id ?? '—'}</dd></div>
-        <div><dt>Cobertura de requisitos</dt><dd>{coverageRatio}</dd></div>
-        <div><dt>Estado</dt><dd>{integral.coverage.material_omissions ? 'Cobertura con omisiones' : 'Revisión humana'}</dd></div>
-      </dl>
+      <div className="agt002-v3-overview-summary">
+        <span><small>Cobertura</small><strong>{coverageRatio}</strong></span>
+        <span><small>Estado</small><strong>{integral.coverage.material_omissions ? 'Con omisiones' : 'Revisión humana'}</strong></span>
+      </div>
+      <div className="agt002-v3-overview-footer">
+        <div className="agt002-v3-guard"><strong>Validación humana pendiente</strong><span>No decide GO / NO GO · No firma · No envía · No presenta ofertas</span></div>
+        <details className="agt002-v3-run-details">
+          <summary>Detalles de ejecución</summary>
+          <dl className="agt002-v3-run-meta">
+            <div><dt>Ejecución</dt><dd>{analysis?.run_id ?? '—'}</dd></div>
+            <div><dt>Snapshot</dt><dd>{analysis?.snapshot_id ?? '—'}</dd></div>
+          </dl>
+        </details>
+      </div>
     </header>
 
     <nav className="agt002-v3-phase-strip" aria-label="Orden institucional del análisis">
