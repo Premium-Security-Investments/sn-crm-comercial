@@ -137,6 +137,29 @@ test('rule 1 downgrades an entry whose quote no longer equals its source slice',
   assert.doesNotThrow(() => validateAgt002ManizalesIntegralManifest(manifest));
 });
 
+test('rule 1 always downgrades an entry when any citation is fabricated, even if an overlapping citation on the same entry still resolves', () => {
+  const m = clone(cleanManifest());
+  const target = entryOf(m, 'proposal:2.4:experiencia-rup-unspsc-sumatoria');
+  assert.equal(target.analyzable, true);
+  const valid = clone(target.citations[0]);
+  const fabricated = clone(target.citations[0]);
+  fabricated.quote = 'cita fabricada que no coincide con el fragmento fuente';
+  // Overlapping (identical document_id + range) so Rule 3 (atomization) does not separate them —
+  // this isolates Rule 1's own downgrade behaviour on a multi-citation entry.
+  target.citations = [valid, fabricated];
+  const { manifest, corrections } = applyManizalesManifestCorrections(m);
+  const fixed = entryOf(manifest, target.requirement_id);
+  assert.equal(fixed.analyzable, false);
+  assert.equal(fixed.status, 'unresolved_visible');
+  assert.equal(fixed.human_review_required, true);
+  const correction = corrections.find((c) => c.rule === 'citation-quote-equality' && c.requirement_id === target.requirement_id);
+  assert.ok(correction, 'expected a citation-quote-equality correction record');
+  assert.notDeepEqual(correction.before, correction.after);
+  assert.equal(correction.after.analyzable, false);
+  assert.equal(correction.after.status, 'unresolved_visible');
+  assert.doesNotThrow(() => validateAgt002ManizalesIntegralManifest(manifest));
+});
+
 // --- Rule 2: vigencia / precedence -----------------------------------------------------------
 
 test('rule 2 removes a superseded citation from grounding, keeping the vigente one', () => {

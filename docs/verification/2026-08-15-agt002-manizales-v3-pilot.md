@@ -131,7 +131,7 @@ Verified manually against the citation bounds and source excerpts **available in
 | proposal:2.3:indices-capacidad-organizacional | habilitating | true | PASS | quote == source slice [93564,93645) |
 | proposal:2.4:experiencia-rup-unspsc-sumatoria | habilitating | true | PASS | quote == source slice [94814,94859) |
 | proposal:3.1:calidad-lenguaje-senas | technical | true | PASS | quote == source slice [117449,117505) |
-| proposal:3.4:puntaje-emprendimiento-empresa-mujeres | technical | true | PASS | quote == source slice [97266,97307) |
+| proposal:3.4:puntaje-emprendimiento-empresa-mujeres | technical | true | PASS | quote == source slice [122367,122415) |
 | proposal:3.6:oferta-economica-anexo-9 | financial_execution | true | PASS | quote == source slice [123997,124040) |
 
 All 10 show consistent analyzability↔grounding and status↔analyzability; no promotion. Limitation: verification is bounded to the excerpt fragments stored in `source_text_by_document_id`; the underlying PDFs were not re-read.

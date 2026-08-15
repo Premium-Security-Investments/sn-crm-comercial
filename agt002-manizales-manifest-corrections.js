@@ -135,7 +135,10 @@ function ruleCitationQuoteEquality(working, corrections) {
     }
     if (!offending) continue;
     const before = { analyzable: entry.analyzable, status: entry.status };
-    if (entry.analyzable && !hasVigenteGrounding(entry)) demoteToUnresolved(entry);
+    // Any fabricated/mismatched citation taints the entry, regardless of whether another
+    // citation on the same entry still resolves — unlike Regla 2, this rule has no "if none
+    // remain" clause: a single invented quote is grounds to distrust the whole entry.
+    if (entry.analyzable) demoteToUnresolved(entry);
     pushCorrection(corrections, entry.requirement_id, 'citation-quote-equality', before,
       { analyzable: entry.analyzable, status: entry.status }, offending);
   }
