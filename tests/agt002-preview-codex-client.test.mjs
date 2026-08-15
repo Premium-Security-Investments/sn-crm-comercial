@@ -270,7 +270,17 @@ function nonEmpty(value) { return typeof value === 'string' && value.trim().leng
   assert.deepEqual(CLOSED_OUTPUT_SCHEMA.properties.human_review_required, { const: true }, 'the canonical schema must not be mutated');
 
   capturedTurnStartParams = null;
-  const canonicalV3Schema = buildAgt002IntegralAnalysisV3OutputJsonSchema();
+  const canonicalV3Schema = buildAgt002IntegralAnalysisV3OutputJsonSchema({
+    requirementManifest: [{ requirement_id: 'REQ-1', category: 'habilitating' }],
+    companyEvidenceClassIds: ['rup'],
+    allowlist: {
+      tender_document: ['document:doc-1'],
+      company_evidence: ['company:rup-1'],
+      legal_corpus: ['legal:rule-1'],
+      human_evidence: ['human:answer-1'],
+      objective_validation: ['objective:REQ-1:amount'],
+    },
+  });
   await client.run(baseRunOptions({ outputSchema: canonicalV3Schema }));
   function assertCodexWireSchema(node, path = '$', objectDepth = 0, totals = { properties: 0, maxDepth: 0 }) {
     if (!node || typeof node !== 'object') return totals;

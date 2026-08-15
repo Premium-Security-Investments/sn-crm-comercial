@@ -490,7 +490,7 @@ export function createAgt002PreviewEngine({
   }
 
   async function runOnceV3(previewInput, idempotencyKey, signal, validationContext) {
-    const outputSchema = buildAgt002IntegralAnalysisV3OutputJsonSchema();
+    const outputSchema = buildAgt002IntegralAnalysisV3OutputJsonSchema(validationContext);
     const modelInput = withRequirementGovernedFields(previewInput, validationContext.requirementManifest, validationContext.evidenceStateManifest);
     const raw = await client.run({
       model, policy: policyText, input: modelInput, outputSchema, timeoutMs, idempotencyKey, signal,

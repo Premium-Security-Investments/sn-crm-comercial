@@ -378,6 +378,54 @@ const v3EvidenceStateSchema = v3ClosedObject({
   compliance: { type: 'string', enum: [...AGT002_INTEGRAL_COMPLIANCE_STATES] },
 });
 
+const V3_PURPOSES_BY_SOURCE_TYPE = Object.freeze({
+  tender_document: ['requirement_basis', 'commercial_context', 'milestone_basis', 'gap_basis'],
+  company_evidence: ['company_capacity'],
+  legal_corpus: ['legal_basis', 'milestone_basis'],
+  human_evidence: ['commercial_context', 'milestone_basis', 'gap_basis'],
+  objective_validation: ['requirement_basis', 'commercial_context', 'milestone_basis', 'gap_basis'],
+});
+
+function governedStringValues(values) {
+  return [...new Set((Array.isArray(values) ? values : []).filter(value => typeof value === 'string' && value.trim()))].sort();
+}
+
+function v3GovernedNullableString(values, fallbackMaxLength = V3_WIRE_ID_MAX_LENGTH) {
+  const governed = governedStringValues(values);
+  return governed.length > 0
+    ? { anyOf: [{ type: 'string', enum: governed }, { type: 'null' }] }
+    : v3NullableString(fallbackMaxLength);
+}
+
+function v3GovernedStringArray(values) {
+  const governed = governedStringValues(values);
+  if (governed.length === 0) return { type: 'array', maxItems: 0, items: v3String(V3_WIRE_ID_MAX_LENGTH) };
+  return { type: 'array', maxItems: V3_WIRE_ARRAY_MAX_ITEMS, items: { type: 'string', enum: governed } };
+}
+
+function buildV3EvidenceRefsSchema(allowlist) {
+  const branches = Object.entries(V3_PURPOSES_BY_SOURCE_TYPE).flatMap(([sourceType, purposes]) => {
+    const refs = governedStringValues(allowlist?.[sourceType]);
+    if (refs.length === 0) return [];
+    return [v3ClosedObject({
+      ref: { type: 'string', enum: refs },
+      source_type: { type: 'string', const: sourceType },
+      purpose: { type: 'string', enum: purposes },
+    })];
+  });
+  if (branches.length > 0) {
+    return { type: 'array', maxItems: V3_WIRE_ARRAY_MAX_ITEMS, items: { anyOf: branches } };
+  }
+  return {
+    type: 'array', maxItems: 0,
+    items: v3ClosedObject({
+      ref: v3String(V3_WIRE_ID_MAX_LENGTH),
+      source_type: { type: 'string', enum: [...AGT002_INTEGRAL_SOURCE_TYPES] },
+      purpose: { type: 'string', enum: [...AGT002_INTEGRAL_EVIDENCE_PURPOSES] },
+    }),
+  };
+}
+
 // Governed units fix: `category` and `evidence_state` are server-owned for a
 // `tender_requirement` unit (assembled from validationContext, never model output — see
 // `assembleAgt002GovernedIntegralAnalysisV3Units` below), so the wire schema must let the
@@ -386,10 +434,26 @@ const v3EvidenceStateSchema = v3ClosedObject({
 // itself); no formal category (discard/habilitating/technical/financial_execution) is
 // ever offered as a model-fillable value. `evidence_state` stays a real, model-owned
 // object only for `strategic_consideration` (never governed there).
-const v3AnalysisUnitSchema = v3ClosedObject({
+function buildV3AnalysisUnitSchema(validationContext) {
+  const hasGovernedContext = isRecord(validationContext) && isRecord(validationContext.allowlist);
+  const requirementIds = hasGovernedContext && Array.isArray(validationContext.requirementManifest)
+    ? validationContext.requirementManifest.map(entry => entry?.requirement_id)
+    : [];
+  const companyEvidenceClassIds = hasGovernedContext ? validationContext.companyEvidenceClassIds : [];
+  const legalBasisRefs = hasGovernedContext ? validationContext.allowlist.legal_corpus : [];
+  const milestoneRefs = hasGovernedContext
+    ? ['tender_document', 'human_evidence', 'legal_corpus', 'objective_validation']
+      .flatMap(sourceType => validationContext.allowlist[sourceType] || [])
+    : [];
+
+  return v3ClosedObject({
   unit_id: v3String(V3_WIRE_ID_MAX_LENGTH),
   unit_kind: { type: 'string', enum: [...AGT002_INTEGRAL_UNIT_KINDS] },
-  requirement_id: v3NullableString(V3_WIRE_ID_MAX_LENGTH),
+  requirement_id: hasGovernedContext
+    ? (governedStringValues(requirementIds).length > 0
+      ? v3GovernedNullableString(requirementIds)
+      : { type: 'null' })
+    : v3NullableString(V3_WIRE_ID_MAX_LENGTH),
   category: { anyOf: [{ type: 'string', enum: ['strategic'] }, { type: 'null' }] },
   sequence: { type: 'integer', minimum: 1 },
   title: v3String(V3_WIRE_TITLE_MAX_LENGTH),
@@ -405,19 +469,25 @@ const v3AnalysisUnitSchema = v3ClosedObject({
     reason: v3String(),
   }),
   evidence_state: { anyOf: [v3EvidenceStateSchema, { type: 'null' }] },
-  evidence_refs: {
-    type: 'array', maxItems: V3_WIRE_ARRAY_MAX_ITEMS,
-    items: v3ClosedObject({
-      ref: v3String(V3_WIRE_ID_MAX_LENGTH),
-      source_type: { type: 'string', enum: [...AGT002_INTEGRAL_SOURCE_TYPES] },
-      purpose: { type: 'string', enum: [...AGT002_INTEGRAL_EVIDENCE_PURPOSES] },
-    }),
-  },
+  evidence_refs: hasGovernedContext
+    ? buildV3EvidenceRefsSchema(validationContext.allowlist)
+    : {
+      type: 'array', maxItems: V3_WIRE_ARRAY_MAX_ITEMS,
+      items: v3ClosedObject({
+        ref: v3String(V3_WIRE_ID_MAX_LENGTH),
+        source_type: { type: 'string', enum: [...AGT002_INTEGRAL_SOURCE_TYPES] },
+        purpose: { type: 'string', enum: [...AGT002_INTEGRAL_EVIDENCE_PURPOSES] },
+      }),
+    },
   missing_evidence: {
     type: 'array', maxItems: V3_WIRE_ARRAY_MAX_ITEMS,
     items: v3ClosedObject({
       missing_id: v3String(V3_WIRE_ID_MAX_LENGTH),
-      evidence_class_id: v3NullableString(V3_WIRE_ID_MAX_LENGTH),
+      evidence_class_id: hasGovernedContext
+        ? (governedStringValues(companyEvidenceClassIds).length > 0
+          ? v3GovernedNullableString(companyEvidenceClassIds)
+          : { type: 'null' })
+        : v3NullableString(V3_WIRE_ID_MAX_LENGTH),
       needed_source_type: { type: 'string', enum: [...AGT002_INTEGRAL_SOURCE_TYPES] },
       reason: v3String(),
       critical: { type: 'boolean' },
@@ -430,7 +500,7 @@ const v3AnalysisUnitSchema = v3ClosedObject({
   }),
   legal_assessment: v3ClosedObject({
     status: { type: 'string', enum: [...AGT002_INTEGRAL_LEGAL_STATUSES] },
-    basis_refs: v3StringArray(),
+    basis_refs: hasGovernedContext ? v3GovernedStringArray(legalBasisRefs) : v3StringArray(),
     summary: v3String(),
     human_legal_review_required: { type: 'boolean' },
   }),
@@ -450,7 +520,11 @@ const v3AnalysisUnitSchema = v3ClosedObject({
     status: { type: 'string', enum: [...AGT002_INTEGRAL_MILESTONE_STATUSES] },
     type: { type: 'string', enum: [...AGT002_INTEGRAL_MILESTONE_TYPES] },
     at: v3NullableString(),
-    source_ref: v3NullableString(),
+    source_ref: hasGovernedContext
+      ? (governedStringValues(milestoneRefs).length > 0
+        ? v3GovernedNullableString(milestoneRefs, V3_WIRE_TEXT_MAX_LENGTH)
+        : { type: 'null' })
+      : v3NullableString(),
     summary: v3String(),
   }),
   escalation: v3ClosedObject({
@@ -468,7 +542,8 @@ const v3AnalysisUnitSchema = v3ClosedObject({
     status: { type: 'string', const: 'pending' },
     reason: v3String(),
   }),
-});
+  });
+}
 
 /**
  * Closed JSON Schema handed to the model's turn/start for the v3 contract (Task 5,
@@ -480,13 +555,13 @@ const v3AnalysisUnitSchema = v3ClosedObject({
  * was exactly the failure mode behind the production
  * `v3_coverage_company_evidence_manifest_version_mismatch` rejection.
  */
-export function buildAgt002IntegralAnalysisV3OutputJsonSchema() {
+export function buildAgt002IntegralAnalysisV3OutputJsonSchema(validationContext) {
   return v3ClosedObject({
     // Cross-field invariants, governed allowlists and exact coverage/order remain enforced
     // server-side by validateAgt002IntegralAnalysisV3 against the assembled object. This
     // wire schema mirrors only the closed structural shape the model itself may fill in.
     integral_analysis: v3ClosedObject({
-      analysis_units: { type: 'array', minItems: 1, maxItems: V3_WIRE_ARRAY_MAX_ITEMS, items: v3AnalysisUnitSchema },
+      analysis_units: { type: 'array', minItems: 1, maxItems: V3_WIRE_ARRAY_MAX_ITEMS, items: buildV3AnalysisUnitSchema(validationContext) },
     }),
   });
 }
