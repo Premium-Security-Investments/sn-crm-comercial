@@ -610,6 +610,61 @@ function v3ShapeMismatch(message) {
  * fields themselves (no governed per-requirement entry exists for them) and are passed
  * through unchanged, other than fail-closed rejection of a `null` the model should never send.
  */
+function normalizeAgt002EvidenceAbstentionUnit(unit) {
+  if (!isRecord(unit) || !isRecord(unit.conclusion)) return unit;
+
+  const evidenceRefs = Array.isArray(unit.evidence_refs) ? unit.evidence_refs.map(ref => (isRecord(ref) ? { ...ref } : ref)) : unit.evidence_refs;
+  const missingEvidence = Array.isArray(unit.missing_evidence) ? unit.missing_evidence.map(item => (isRecord(item) ? { ...item } : item)) : unit.missing_evidence;
+  const conclusion = { ...unit.conclusion };
+  const hasEvidence = Array.isArray(evidenceRefs) && evidenceRefs.length > 0;
+
+  const gapHasBasis = conclusion.status !== 'gap_evidenced' || evidenceRefs?.some(ref => ref?.purpose === 'gap_basis');
+  const mustAbstain = !hasEvidence
+    || conclusion.status === 'insufficient_evidence'
+    || unit.assessment_mode === 'abstained'
+    || conclusion.confidence === 'unavailable'
+    || !gapHasBasis;
+
+  if (!mustAbstain) {
+    // human_validation_required is never high-confidence, even when evidence exists.
+    if (conclusion.status === 'human_validation_required' && conclusion.confidence === 'high') conclusion.confidence = 'medium';
+    return { ...unit, conclusion, evidence_refs: evidenceRefs, missing_evidence: missingEvidence };
+  }
+
+  if (!['insufficient_evidence', 'human_validation_required'].includes(conclusion.status)) {
+    conclusion.status = 'insufficient_evidence';
+  }
+  conclusion.confidence = 'unavailable';
+
+  const normalizedMissing = Array.isArray(missingEvidence) ? missingEvidence : [];
+  if (conclusion.status === 'insufficient_evidence' && normalizedMissing.length === 0) {
+    normalizedMissing.push({
+      missing_id: 'AUTO-MISSING-EVIDENCE',
+      evidence_class_id: null,
+      needed_source_type: 'objective_validation',
+      reason: 'No existe evidencia permitida suficiente para sostener una conclusión material; requiere validación humana.',
+      critical: false,
+    });
+  }
+
+  const blocking = isRecord(unit.blocking)
+    ? { ...unit.blocking, effect: 'undetermined', curability: 'undetermined' }
+    : unit.blocking;
+  const closure = isRecord(unit.closure) && unit.closure.status === 'evidence_satisfied'
+    ? { ...unit.closure, status: 'human_confirmation_required' }
+    : unit.closure;
+
+  return {
+    ...unit,
+    assessment_mode: 'abstained',
+    conclusion,
+    blocking,
+    evidence_refs: evidenceRefs,
+    missing_evidence: normalizedMissing,
+    closure,
+  };
+}
+
 function assembleAgt002GovernedIntegralAnalysisV3Units(analysisUnits, validationContext) {
   const ctx = isRecord(validationContext) ? validationContext : {};
   const requirementManifest = Array.isArray(ctx.requirementManifest) ? ctx.requirementManifest : [];
@@ -617,8 +672,9 @@ function assembleAgt002GovernedIntegralAnalysisV3Units(analysisUnits, validation
   const evidenceStateManifest = Array.isArray(ctx.evidenceStateManifest) ? ctx.evidenceStateManifest : [];
   const evidenceStateByRequirementId = new Map(evidenceStateManifest.map(entry => [entry?.requirement_id, entry?.evidence_state]));
 
-  return (Array.isArray(analysisUnits) ? analysisUnits : []).map(unit => {
-    if (!isRecord(unit)) return unit;
+  return (Array.isArray(analysisUnits) ? analysisUnits : []).map(modelUnit => {
+    if (!isRecord(modelUnit)) return modelUnit;
+    const unit = normalizeAgt002EvidenceAbstentionUnit(modelUnit);
     if (unit.unit_kind === 'tender_requirement') {
       if (unit.category !== null || unit.evidence_state !== null) {
         throw v3ShapeMismatch(

@@ -830,6 +830,63 @@ function buildMinimalV3IntegralAnalysis() {
   assert.equal(result.analysis_units[0].category, 'discard');
   assert.deepEqual(result.analysis_units[0].evidence_state, AGT002_EVIDENCE_STATE_SAFE_UNKNOWN);
 
+  // Production regression: a schema-valid model turn may still combine no/insufficient
+  // evidence with an assessed/high-confidence conclusion. The server must repair only toward
+  // the honest abstention state before semantic validation — never toward a favorable finding.
+  {
+    const noEvidence = structuredClone(buildMinimalV3IntegralAnalysis());
+    noEvidence.analysis_units[0].evidence_refs = [];
+    const beforeNormalization = structuredClone(noEvidence);
+    const normalized = validateAgt002PreviewModelOutputV3({ integral_analysis: noEvidence }, ctx);
+    assert.equal(normalized.analysis_units[0].assessment_mode, 'abstained');
+    assert.equal(normalized.analysis_units[0].conclusion.status, 'human_validation_required');
+    assert.equal(normalized.analysis_units[0].conclusion.confidence, 'unavailable');
+    assert.deepEqual(noEvidence, beforeNormalization, 'server normalization must not mutate the model payload');
+  }
+  {
+    const insufficient = structuredClone(buildMinimalV3IntegralAnalysis());
+    const unit = insufficient.analysis_units[0];
+    unit.conclusion = { status: 'insufficient_evidence', summary: 'No hay sustento suficiente.', confidence: 'medium' };
+    unit.assessment_mode = 'assessed';
+    unit.missing_evidence = [];
+    const normalized = validateAgt002PreviewModelOutputV3({ integral_analysis: insufficient }, ctx);
+    assert.equal(normalized.analysis_units[0].assessment_mode, 'abstained');
+    assert.equal(normalized.analysis_units[0].conclusion.confidence, 'unavailable');
+    assert.equal(normalized.analysis_units[0].missing_evidence.length, 1);
+    assert.equal(normalized.analysis_units[0].missing_evidence[0].evidence_class_id, null);
+    assert.equal(normalized.analysis_units[0].missing_evidence[0].critical, false);
+  }
+  {
+    const unsupportedMaterial = structuredClone(buildMinimalV3IntegralAnalysis());
+    const unit = unsupportedMaterial.analysis_units[0];
+    unit.evidence_refs = [];
+    unit.conclusion = { status: 'supported_with_evidence', summary: 'Afirmación sin sustento.', confidence: 'high' };
+    unit.blocking = { effect: 'blocker', curability: 'not_curable', reason: 'Afirmación sin sustento.' };
+    unit.closure.status = 'evidence_satisfied';
+    const normalized = validateAgt002PreviewModelOutputV3({ integral_analysis: unsupportedMaterial }, ctx);
+    assert.equal(normalized.analysis_units[0].assessment_mode, 'abstained');
+    assert.equal(normalized.analysis_units[0].conclusion.status, 'insufficient_evidence');
+    assert.equal(normalized.analysis_units[0].conclusion.confidence, 'unavailable');
+    assert.equal(normalized.analysis_units[0].missing_evidence.length, 1);
+    assert.equal(normalized.analysis_units[0].blocking.effect, 'undetermined');
+    assert.equal(normalized.analysis_units[0].blocking.curability, 'undetermined');
+    assert.equal(normalized.analysis_units[0].closure.status, 'human_confirmation_required');
+  }
+  {
+    const gap = structuredClone(buildMinimalV3IntegralAnalysis());
+    gap.analysis_units[0].conclusion = { status: 'gap_evidenced', summary: 'Brecha trazable.', confidence: 'medium' };
+    const gapCtx = structuredClone(ctx);
+    gapCtx.evidenceStateManifest[0].evidence_state = {
+      presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable',
+      compliance: 'gap_evidenced_pending_human_review',
+    };
+    const normalized = validateAgt002PreviewModelOutputV3({ integral_analysis: gap }, gapCtx);
+    assert.equal(normalized.analysis_units[0].evidence_refs[0].purpose, 'requirement_basis');
+    assert.equal(normalized.analysis_units[0].assessment_mode, 'abstained');
+    assert.equal(normalized.analysis_units[0].conclusion.status, 'insufficient_evidence');
+    assert.equal(normalized.analysis_units[0].conclusion.confidence, 'unavailable');
+  }
+
   // A model cannot smuggle either governed field: non-null values on a tender unit are
   // rejected rather than silently overwritten.
   for (const [field, value] of [
