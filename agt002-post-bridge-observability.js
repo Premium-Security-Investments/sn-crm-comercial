@@ -28,6 +28,9 @@ import {
   registerAgt002PreviewAnalysis,
   releaseAgt002PreviewClaim,
 } from './agt002-preview-persistence.js';
+import { AGT002_V3_SAFE_VALIDATION_CODES } from './agt002-preview-engine.js';
+
+const AGT002_V3_SAFE_VALIDATION_CODE_SET = new Set(AGT002_V3_SAFE_VALIDATION_CODES);
 
 export { AGT002_POST_BRIDGE_STAGES, AGT002_POST_BRIDGE_ERROR_CODES };
 
@@ -59,6 +62,34 @@ const AGT002_POST_BRIDGE_ATTEMPT_ERROR_MESSAGES = Object.freeze({
   [AGT002_POST_BRIDGE_ERROR_CODES.RESPONSE_SERIALIZATION_FAILED]: 'Vig-IA no completó el análisis: no fue posible preparar la respuesta.',
   [AGT002_POST_BRIDGE_ERROR_CODES.UNEXPECTED_ERROR]: 'Vig-IA no completó el análisis por un error inesperado.',
 });
+
+/**
+ * Re-gates an engine safe error's attached `.code` against the SAME closed engine allowlist
+ * (AGT002_V3_SAFE_VALIDATION_CODES) before it can ever influence a durable row. The engine already
+ * only attaches an allowlisted code, but this module refuses to trust that: anything that is not a
+ * current allowlist member — a raw validator/model string, a future/unknown code, a non-string —
+ * collapses to null here, so it can never be persisted or leaked. Defense in depth, not redundancy.
+ */
+function safeAgt002V3ValidationSubcode(error) {
+  const code = error?.code;
+  return typeof code === 'string' && AGT002_V3_SAFE_VALIDATION_CODE_SET.has(code) ? code : null;
+}
+
+/**
+ * Builds the durable psi_agt002_analysis_attempt_events error_message. Base is always the fixed,
+ * generic, identity-stable message for the closed errorCode (never raw text). The allowlisted
+ * closed V3 validation subcode is appended ONLY for an INTEGRAL_V3_INVALID failure and ONLY when
+ * present — so the exact governed invariant is diagnosable from the durable row while the fixed
+ * generic public message is preserved verbatim and unknown/hostile values never reach the column.
+ */
+function agt002PostBridgeAttemptErrorMessage(errorCode, validationSubcode) {
+  const base = AGT002_POST_BRIDGE_ATTEMPT_ERROR_MESSAGES[errorCode]
+    || AGT002_POST_BRIDGE_ATTEMPT_ERROR_MESSAGES[AGT002_POST_BRIDGE_ERROR_CODES.UNEXPECTED_ERROR];
+  if (errorCode === AGT002_POST_BRIDGE_ERROR_CODES.INTEGRAL_V3_INVALID && validationSubcode) {
+    return `${base} [${validationSubcode}]`;
+  }
+  return base;
+}
 
 /**
  * Pure closed-catalog classifier: every call site in this module (and any future caller, e.g.
@@ -188,6 +219,11 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
   let status = 'unavailable';
   let stage = AGT002_POST_BRIDGE_STAGES.UNEXPECTED;
   let errorCode = AGT002_POST_BRIDGE_ERROR_CODES.UNEXPECTED_ERROR;
+  // The closed, allowlisted V3 invariant subcode the engine attaches to a v3 semantic-validation
+  // safe error (null for every other failure). Captured here so the durable attempt event can
+  // attribute an INTEGRAL_V3_INVALID failure to the exact invariant; re-gated against the engine
+  // allowlist so a hostile/unknown value can never reach the durable row.
+  let validationSubcode = null;
 
   let envelope = null;
   let engineFailed = false;
@@ -203,6 +239,7 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
     });
     stage = classification.stage;
     errorCode = classification.error_code;
+    validationSubcode = safeAgt002V3ValidationSubcode(error);
   }
 
   let registeredRun = null;
@@ -258,7 +295,7 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
     state: attemptState,
     ...(attemptState === 'unavailable' ? {
       error_code: errorCode,
-      error_message: AGT002_POST_BRIDGE_ATTEMPT_ERROR_MESSAGES[errorCode] || AGT002_POST_BRIDGE_ATTEMPT_ERROR_MESSAGES[AGT002_POST_BRIDGE_ERROR_CODES.UNEXPECTED_ERROR],
+      error_message: agt002PostBridgeAttemptErrorMessage(errorCode, validationSubcode),
     } : {}),
     ...(attemptState === 'completed' ? { analysis_run_id: analysisRunId } : {}),
   });
