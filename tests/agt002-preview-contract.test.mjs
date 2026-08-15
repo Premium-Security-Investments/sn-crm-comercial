@@ -728,11 +728,14 @@ function buildV3ValidationContext() {
 
 // Model-facing shape only: the governed `contract_version`/`coverage` keys are never
 // offered here — the engine assembles them from validationContext (see
-// buildAgt002GovernedIntegralAnalysisV3Coverage in agt002-preview-contract.js).
+// buildAgt002GovernedIntegralAnalysisV3Coverage in agt002-preview-contract.js). Governed
+// units fix: `category` and `evidence_state` are ALSO server-owned for a
+// `tender_requirement` unit — the model turn must leave both `null`; the assembled,
+// governed values (from `buildV3ValidationContext()` above) are asserted separately below.
 function buildMinimalV3IntegralAnalysis() {
   return {
     analysis_units: [{
-      unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: 'REQ-1', category: 'discard', sequence: 1,
+      unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: 'REQ-1', category: null, sequence: 1,
       title: 'Requisito sintético', assessment_mode: 'assessed',
       // REQ-1 has no governed evidence-class link (safe-unknown evidence_state, compliance
       // "unknown"), so conclusion.status must honestly be "human_validation_required"
@@ -740,7 +743,7 @@ function buildMinimalV3IntegralAnalysis() {
       // confidence "medium" (P1: human_validation_required never uses "high").
       conclusion: { status: 'human_validation_required', summary: 'Sin evidencia gobernada disponible; requiere validación humana.', confidence: 'medium' },
       blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
-      evidence_state: AGT002_EVIDENCE_STATE_SAFE_UNKNOWN,
+      evidence_state: null,
       evidence_refs: [{ ref: 'TD-1', source_type: 'tender_document', purpose: 'requirement_basis' }],
       missing_evidence: [],
       commercial_impact: { level: 'low', summary: 'Sin impacto.', dimension: 'eligibility' },
@@ -777,6 +780,7 @@ function buildMinimalV3IntegralAnalysis() {
       for (const [key, child] of Object.entries(node.properties)) assertRecursivelyClosed(child, `${path}.properties.${key}`);
     }
     if (node.type === 'array') assertRecursivelyClosed(node.items, `${path}.items`);
+    if (Array.isArray(node.anyOf)) node.anyOf.forEach((branch, index) => assertRecursivelyClosed(branch, `${path}.anyOf[${index}]`));
   }
   assertRecursivelyClosed(schema);
   // The model turn exposes ONLY analysis_units — contract_version and coverage are
@@ -785,6 +789,19 @@ function buildMinimalV3IntegralAnalysis() {
     Object.keys(schema.properties.integral_analysis.properties).sort(),
     ['analysis_units'],
   );
+
+  // Governed units fix: for a `tender_requirement` unit, `category` and `evidence_state`
+  // are server-owned — the wire schema must let the model express ONLY `null` for both,
+  // never a real category or a real evidence_state object. The only non-null `category`
+  // the wire schema may ever offer is "strategic" (the one category a
+  // `strategic_consideration` unit legitimately declares itself); no formal category
+  // (discard/habilitating/technical/financial_execution) is ever offered as a model-fillable
+  // value again.
+  const unitSchema = schema.properties.integral_analysis.properties.analysis_units.items;
+  assert.deepEqual(unitSchema.properties.category, { anyOf: [{ type: 'string', enum: ['strategic'] }, { type: 'null' }] });
+  assert.deepEqual(unitSchema.properties.evidence_state.anyOf?.length, 2);
+  assert.equal(unitSchema.properties.evidence_state.anyOf[0].type, 'object');
+  assert.deepEqual(unitSchema.properties.evidence_state.anyOf[1], { type: 'null' });
 }
 
 // The runtime v3 validator accepts a well-formed turn and rejects any attempt to smuggle
@@ -806,6 +823,54 @@ function buildMinimalV3IntegralAnalysis() {
     company_evidence_class_ids: ctx.companyEvidenceClassIds,
     legal_corpus_version_id: null,
   });
+  // Governed units fix: the model turn left category/evidence_state null (see
+  // buildMinimalV3IntegralAnalysis above); the engine assembles both from
+  // validationContext (requirementManifest[].category, evidenceStateManifest[].evidence_state)
+  // BEFORE calling validateAgt002IntegralAnalysisV3 — never trusting a model-supplied value.
+  assert.equal(result.analysis_units[0].category, 'discard');
+  assert.deepEqual(result.analysis_units[0].evidence_state, AGT002_EVIDENCE_STATE_SAFE_UNKNOWN);
+
+  // A model cannot smuggle either governed field: non-null values on a tender unit are
+  // rejected rather than silently overwritten.
+  for (const [field, value] of [
+    ['category', 'discard'],
+    ['category', 'strategic'],
+    ['evidence_state', AGT002_EVIDENCE_STATE_SAFE_UNKNOWN],
+  ]) {
+    const forgedUnit = structuredClone(buildMinimalV3IntegralAnalysis());
+    forgedUnit.analysis_units[0][field] = value;
+    assert.throws(
+      () => validateAgt002PreviewModelOutputV3({ integral_analysis: forgedUnit }, ctx),
+      error => error?.code === 'v3_model_output_shape_mismatch',
+    );
+  }
+
+  // Strategic units have no governed requirement row; their strategic category and
+  // evidence_state remain model-owned and pass through unchanged.
+  const withStrategic = structuredClone(buildMinimalV3IntegralAnalysis());
+  const strategicUnit = structuredClone(withStrategic.analysis_units[0]);
+  Object.assign(strategicUnit, {
+    unit_id: 'UNIT-STRATEGIC-1',
+    unit_kind: 'strategic_consideration',
+    requirement_id: null,
+    category: 'strategic',
+    sequence: 2,
+    title: 'Consideración estratégica sintética',
+    evidence_state: AGT002_EVIDENCE_STATE_SAFE_UNKNOWN,
+  });
+  withStrategic.analysis_units.push(strategicUnit);
+  const strategicResult = validateAgt002PreviewModelOutputV3({ integral_analysis: withStrategic }, ctx);
+  assert.equal(strategicResult.analysis_units[1].category, 'strategic');
+  assert.deepEqual(strategicResult.analysis_units[1].evidence_state, AGT002_EVIDENCE_STATE_SAFE_UNKNOWN);
+
+  for (const field of ['category', 'evidence_state']) {
+    const invalidStrategic = structuredClone(withStrategic);
+    invalidStrategic.analysis_units[1][field] = null;
+    assert.throws(
+      () => validateAgt002PreviewModelOutputV3({ integral_analysis: invalidStrategic }, ctx),
+      error => error?.code === 'v3_model_output_shape_mismatch',
+    );
+  }
 
   for (const forged of [
     { integral_analysis: buildMinimalV3IntegralAnalysis(), run_id: '11111111-1111-4111-8111-111111111111' },

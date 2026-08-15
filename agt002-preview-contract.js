@@ -378,11 +378,19 @@ const v3EvidenceStateSchema = v3ClosedObject({
   compliance: { type: 'string', enum: [...AGT002_INTEGRAL_COMPLIANCE_STATES] },
 });
 
+// Governed units fix: `category` and `evidence_state` are server-owned for a
+// `tender_requirement` unit (assembled from validationContext, never model output — see
+// `assembleAgt002GovernedIntegralAnalysisV3Units` below), so the wire schema must let the
+// model express ONLY `null` for both there. The only non-null `category` the wire schema
+// may ever offer is "strategic" (a `strategic_consideration` unit legitimately declares
+// itself); no formal category (discard/habilitating/technical/financial_execution) is
+// ever offered as a model-fillable value. `evidence_state` stays a real, model-owned
+// object only for `strategic_consideration` (never governed there).
 const v3AnalysisUnitSchema = v3ClosedObject({
   unit_id: v3String(V3_WIRE_ID_MAX_LENGTH),
   unit_kind: { type: 'string', enum: [...AGT002_INTEGRAL_UNIT_KINDS] },
   requirement_id: v3NullableString(V3_WIRE_ID_MAX_LENGTH),
-  category: { type: 'string', enum: [...AGT002_INTEGRAL_CATEGORIES] },
+  category: { anyOf: [{ type: 'string', enum: ['strategic'] }, { type: 'null' }] },
   sequence: { type: 'integer', minimum: 1 },
   title: v3String(V3_WIRE_TITLE_MAX_LENGTH),
   assessment_mode: { type: 'string', enum: [...AGT002_INTEGRAL_ASSESSMENT_MODES] },
@@ -396,7 +404,7 @@ const v3AnalysisUnitSchema = v3ClosedObject({
     curability: { type: 'string', enum: [...AGT002_INTEGRAL_BLOCKING_CURABILITY] },
     reason: v3String(),
   }),
-  evidence_state: v3EvidenceStateSchema,
+  evidence_state: { anyOf: [v3EvidenceStateSchema, { type: 'null' }] },
   evidence_refs: {
     type: 'array', maxItems: V3_WIRE_ARRAY_MAX_ITEMS,
     items: v3ClosedObject({
@@ -510,13 +518,65 @@ function buildAgt002GovernedIntegralAnalysisV3Coverage(validationContext) {
   };
 }
 
+function v3ShapeMismatch(message) {
+  const error = new Error(message);
+  error.code = 'v3_model_output_shape_mismatch';
+  return error;
+}
+
+/**
+ * Governed units fix: `category` and `evidence_state` are server-owned for a
+ * `tender_requirement` unit, exactly like `contract_version`/`coverage` above — the model
+ * turn must leave both `null` (enforced by the wire schema and re-checked here fail-closed),
+ * and this assembles the real values from `validationContext.requirementManifest` /
+ * `validationContext.evidenceStateManifest` by `requirement_id` BEFORE
+ * `validateAgt002IntegralAnalysisV3` runs, so a model-supplied category or evidence_state
+ * can never reach that validator even transiently. `strategic_consideration` units own both
+ * fields themselves (no governed per-requirement entry exists for them) and are passed
+ * through unchanged, other than fail-closed rejection of a `null` the model should never send.
+ */
+function assembleAgt002GovernedIntegralAnalysisV3Units(analysisUnits, validationContext) {
+  const ctx = isRecord(validationContext) ? validationContext : {};
+  const requirementManifest = Array.isArray(ctx.requirementManifest) ? ctx.requirementManifest : [];
+  const categoryByRequirementId = new Map(requirementManifest.map(entry => [entry?.requirement_id, entry?.category]));
+  const evidenceStateManifest = Array.isArray(ctx.evidenceStateManifest) ? ctx.evidenceStateManifest : [];
+  const evidenceStateByRequirementId = new Map(evidenceStateManifest.map(entry => [entry?.requirement_id, entry?.evidence_state]));
+
+  return (Array.isArray(analysisUnits) ? analysisUnits : []).map(unit => {
+    if (!isRecord(unit)) return unit;
+    if (unit.unit_kind === 'tender_requirement') {
+      if (unit.category !== null || unit.evidence_state !== null) {
+        throw v3ShapeMismatch(
+          `La salida de AGT-002 Preview v3 (analysis_units[${String(unit.unit_id)}]) es tender_requirement y debe dejar `
+          + 'category y evidence_state en null; ambos son gobernados por el servidor y nunca se aceptan de la respuesta del modelo.',
+        );
+      }
+      const governedEvidenceState = evidenceStateByRequirementId.get(unit.requirement_id);
+      return {
+        ...unit,
+        category: categoryByRequirementId.get(unit.requirement_id),
+        evidence_state: isRecord(governedEvidenceState) ? { ...governedEvidenceState } : governedEvidenceState,
+      };
+    }
+    if (unit.unit_kind === 'strategic_consideration' && (unit.category === null || unit.evidence_state === null)) {
+      throw v3ShapeMismatch(
+        `La salida de AGT-002 Preview v3 (analysis_units[${String(unit.unit_id)}]) es strategic_consideration y debe declarar `
+        + 'su propia category ("strategic") y evidence_state; ninguno de los dos puede quedar en null.',
+      );
+    }
+    return unit;
+  });
+}
+
 /**
  * Validates a v3 model turn: rejects anything other than the single `integral_analysis`
  * key, then rejects anything inside it other than the single model-owned
  * `analysis_units` key — `contract_version`/`coverage` are never accepted from the
  * model, however well-formed, so a forged/stale copy can never be smuggled in and never
  * silently merged with the governed values. The engine then constructs the governed
- * `contract_version` and `coverage` from `validationContext` and validates the fully
+ * `contract_version` and `coverage` from `validationContext`, assembles the governed
+ * per-unit `category`/`evidence_state` (see
+ * `assembleAgt002GovernedIntegralAnalysisV3Units` above), and validates the fully
  * assembled object with the SAME existing invariant authority
  * (`validateAgt002IntegralAnalysisV3`), unchanged.
  */
@@ -535,7 +595,7 @@ export function validateAgt002PreviewModelOutputV3(value, validationContext) {
   const governedIntegralAnalysis = {
     contract_version: AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION,
     coverage: buildAgt002GovernedIntegralAnalysisV3Coverage(validationContext),
-    analysis_units: value.integral_analysis.analysis_units,
+    analysis_units: assembleAgt002GovernedIntegralAnalysisV3Units(value.integral_analysis.analysis_units, validationContext),
   };
   return validateAgt002IntegralAnalysisV3(governedIntegralAnalysis, validationContext);
 }

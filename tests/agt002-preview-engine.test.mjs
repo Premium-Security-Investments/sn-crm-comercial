@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { AGT002_PREVIEW_POLICY, createAgt002PreviewEngine } from '../agt002-preview-engine.js';
+import { AGT002_PREVIEW_POLICY, AGT002_INTEGRAL_V3_POLICY, createAgt002PreviewEngine } from '../agt002-preview-engine.js';
 import { AGT002_LEGAL_HUMAN_REVIEW_STATEMENT, AGT002_PREVIEW_OUTPUT_JSON_SCHEMA } from '../agt002-preview-contract.js';
 import { buildAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { buildAgt002CompanyDossier } from '../agt002-company-dossier.js';
@@ -679,6 +679,9 @@ assert.throws(
 // ---------------------------------------------------------------------------
 // Task 6: engine assembles the governed v3 envelope behind AGT002_INTEGRAL_CONTRACT_V3.
 // ---------------------------------------------------------------------------
+assert.match(AGT002_INTEGRAL_V3_POLICY, /tender_requirement[^.]*category[^.]*null[^.]*evidence_state[^.]*null/i);
+assert.match(AGT002_INTEGRAL_V3_POLICY, /evidence_state_governed[^.]*conclusi[oó]n/i);
+assert.match(AGT002_INTEGRAL_V3_POLICY, /strategic_consideration[^.]*strategic[^.]*evidence_state/i);
 {
   const v3ContextV2Sections = {
     ...buildAgt002OpportunityContextV2({
@@ -722,7 +725,7 @@ assert.throws(
       integral_analysis: {
         analysis_units: [{
           unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: requirementEntry.requirement_id,
-          category: 'habilitating', sequence: 1, title: 'Póliza vigente', assessment_mode: 'assessed',
+          category: null, sequence: 1, title: 'Póliza vigente', assessment_mode: 'assessed',
           // Every evidenceState this helper is called with here carries compliance
           // "unknown" (the real evidence-state-manifest never writes a governed compliance
           // determination yet), so the only honest conclusion is "human_validation_required"
@@ -730,13 +733,11 @@ assert.throws(
           // confidence "medium" (P1: human_validation_required never uses "high").
           conclusion: { status: 'human_validation_required', summary: 'Evidencia disponible; sin determinación de cumplimiento gobernada.', confidence: 'medium' },
           blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
-          // Default: no evidenceClassLinkByRequirementId is curated for 'req-poliza' in
-          // these tests (companyEvidenceClassesProvider returns an empty registry too),
-          // so the governed map defaults to the safe-unknown state; the mocked model
-          // output must reproduce it exactly or the engine's own governed-match check
-          // rejects it. Callers demonstrating a real governed link pass their own
-          // evidenceState (see the dedicated governed-evidence-state tests below).
-          evidence_state: evidenceState,
+          // Governed-unit contract: category and the five evidence-state axes are assembled
+          // by the server from the requirement/evidence-state manifests. The model wire
+          // must leave both slots null even when this fixture supplies a governed state to
+          // the engine context.
+          evidence_state: null,
           evidence_refs: [{ ref: allowedRef, source_type: 'tender_document', purpose: 'requirement_basis' }],
           missing_evidence: [],
           commercial_impact: { level: 'low', summary: 'Sin impacto.', dimension: 'eligibility' },
@@ -1067,13 +1068,13 @@ assert.throws(
     }), /provenance gobernada faltante o inconsistente/i);
   }
 
-  // The same governed link and observed class, but the model asserts a DIFFERENT
-  // (individually well-formed) evidence_state — never trusted, rejected outright even
-  // though nothing else about the payload is malformed.
+  // A model can no longer assert a different evidence_state at all: the wire carries
+  // null and the engine deterministically assembles the governed state. Verify that a
+  // caller-supplied stale state cannot influence the result.
   {
-    const mismatchedEvidenceState = { ...derivedRupEvidenceState, review: 'partially_reviewed' };
+    const staleCallerState = { ...derivedRupEvidenceState, review: 'partially_reviewed' };
     const client = fakeClient(async (options) => ({
-      content: JSON.stringify(buildV3ModelOutput(options, mismatchedEvidenceState)), usage: { input_tokens: 3, output_tokens: 3 },
+      content: JSON.stringify(buildV3ModelOutput(options, staleCallerState)), usage: { input_tokens: 3, output_tokens: 3 },
     }));
     const engine = createAgt002PreviewEngine({
       client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
@@ -1082,7 +1083,9 @@ assert.throws(
       governanceProvenance: governanceProvenanceFixture(),
       companyEvidenceClassesProvider: () => [verifiedRupRegistryRow],
     });
-    await assert.rejects(() => engine.analyze(v3Context), /no produjo una respuesta válida/i);
+    const result = await engine.analyze(v3Context);
+    assert.deepEqual(result.integral_analysis.analysis_units[0].evidence_state, derivedRupEvidenceState);
+    assert.notDeepEqual(result.integral_analysis.analysis_units[0].evidence_state, staleCallerState);
   }
 
   // A governed link pointing at a class outside the real 17-class catalog is a
@@ -1151,13 +1154,15 @@ assert.throws(
   }
 
   {
-    // Per-unit invariant (governed evidence_state mismatch) embeds unit_id/requirement_id in
-    // its message -> must keep falling back to the generic v3_invariant_violation.
+    // Per-unit smuggling attempt: a tender unit supplying model-owned evidence_state is
+    // rejected with the same closed shape subcode; values/messages never enter telemetry.
     const observability = spyObservability();
     const mismatchedEvidenceState = { ...derivedRupEvidenceState, review: 'partially_reviewed' };
-    const client = fakeClient(async (options) => ({
-      content: JSON.stringify(buildV3ModelOutput(options, mismatchedEvidenceState)), usage: { input_tokens: 3, output_tokens: 3 },
-    }));
+    const client = fakeClient(async (options) => {
+      const output = buildV3ModelOutput(options);
+      output.integral_analysis.analysis_units[0].evidence_state = mismatchedEvidenceState;
+      return { content: JSON.stringify(output), usage: { input_tokens: 3, output_tokens: 3 } };
+    });
     const engine = createAgt002PreviewEngine({
       client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
       categoryOverrides: { 'req-poliza': 'habilitating' },
@@ -1170,7 +1175,7 @@ assert.throws(
     assert.equal(observability.records.length, 1);
     const [{ fields }] = observability.records;
     assert.equal(fields.stage, 'semantic_validation');
-    assert.equal(fields.validation_code, 'v3_invariant_violation');
+    assert.equal(fields.validation_code, 'v3_model_output_shape_mismatch');
   }
 
   // integralContractV3 requires contextV2 + documentRetrieval + a company evidence

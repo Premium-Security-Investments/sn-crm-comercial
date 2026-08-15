@@ -121,10 +121,12 @@ function buildV3ModelOutput(options, evidenceState = AGT002_EVIDENCE_STATE_SAFE_
       // (mirrors buildV3ModelOutput in tests/agt002-preview-engine.test.mjs).
       analysis_units: [{
         unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: requirementEntry.requirement_id,
-        category: 'habilitating', sequence: 1, title: 'Póliza vigente', assessment_mode: 'assessed',
+        category: null, sequence: 1, title: 'Póliza vigente', assessment_mode: 'assessed',
         conclusion: { status: 'human_validation_required', summary: 'Evidencia disponible; sin determinación de cumplimiento gobernada.', confidence: 'medium' },
         blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
-        evidence_state: evidenceState,
+        // Governed-unit contract: category/evidence_state are server-assembled for a
+        // tender requirement and must be null on the model wire.
+        evidence_state: null,
         evidence_refs: [{ ref: allowedRef, source_type: 'tender_document', purpose: 'requirement_basis' }],
         missing_evidence: [],
         commercial_impact: { level: 'low', summary: 'Sin impacto.', dimension: 'eligibility' },
