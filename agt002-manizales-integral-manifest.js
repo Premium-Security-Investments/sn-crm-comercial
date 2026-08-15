@@ -534,6 +534,9 @@ const ENTRY_KEYS = Object.freeze([
 
 const SOURCE_REF_TYPES = new Set(['section_ledger', 'proposal_ledger', 'governed_runtime', 'registry_supplement']);
 
+// Único registry_supplement de vocabulario cerrado emitido por el builder (compuerta cierre/prórroga).
+const REGISTRY_SUPPLEMENT_REFS = new Set(['1.8']);
+
 export function validateAgt002ManizalesIntegralManifest(manifest) {
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
     throw new Error('AGT-002 manifiesto integral: el artefacto debe ser un objeto.');
@@ -552,6 +555,7 @@ export function validateAgt002ManizalesIntegralManifest(manifest) {
     throw new Error('AGT-002 manifiesto integral: source_documents debe tener exactamente 17 documentos.');
   }
   const docsById = new Map(manifest.source_documents.map(d => [d.document_id, d]));
+  const sourceText = manifest.source_text_by_document_id;
 
   const entries = manifest.entries;
   if (!Array.isArray(entries)) throw new Error('AGT-002 manifiesto integral: entries debe ser un arreglo.');
@@ -582,6 +586,15 @@ export function validateAgt002ManizalesIntegralManifest(manifest) {
     if (!Array.isArray(e.source_refs) || !e.source_refs.some(r => r.resolved && SOURCE_REF_TYPES.has(r.type))) {
       throw new Error(`AGT-002 manifiesto integral: ${e.requirement_id} sin source_ref resuelto de tipo permitido.`);
     }
+    // Cada source_ref debe identificar algo real, no sólo declararse resuelto.
+    for (const r of e.source_refs) {
+      if (r.type === 'governed_runtime' && !AGT002_INTEGRAL_GOVERNED_RUNTIME_IDS.includes(r.ref)) {
+        throw new Error(`AGT-002 manifiesto integral: ${e.requirement_id} referencia governed_runtime desconocida: ${r.ref}.`);
+      }
+      if (r.type === 'registry_supplement' && !REGISTRY_SUPPLEMENT_REFS.has(r.ref)) {
+        throw new Error(`AGT-002 manifiesto integral: ${e.requirement_id} referencia registry_supplement inexistente: ${r.ref}.`);
+      }
+    }
     // Citas: coherencia de metadatos con las fuentes.
     for (const c of e.citations) {
       const doc = docsById.get(c.document_id);
@@ -591,6 +604,10 @@ export function validateAgt002ManizalesIntegralManifest(manifest) {
       }
       if (!Number.isInteger(c.char_start) || !Number.isInteger(c.char_end) || c.char_end <= c.char_start) {
         throw new Error(`AGT-002 manifiesto integral: rango de cita inválido en ${e.requirement_id}.`);
+      }
+      // `resolved` no se confía tal cual: se recomputa contra source_text_by_document_id.
+      if (c.resolved !== citationResolved(sourceText, c)) {
+        throw new Error(`AGT-002 manifiesto integral: resolved de cita no coincide con source_text_by_document_id en ${e.requirement_id}.`);
       }
     }
     // material/scorable/economic nunca se excluye en silencio.

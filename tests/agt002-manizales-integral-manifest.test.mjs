@@ -263,6 +263,42 @@ test('validator round-trips the built artifact and rejects tampering', () => {
   assert.throws(() => validateAgt002ManizalesIntegralManifest(tampered3));
 });
 
+test('validator recomputes citation resolution against source_text_by_document_id (rejects forged quote/char bounds)', () => {
+  const m = build();
+  const tampered = JSON.parse(JSON.stringify(m));
+  const entry = tampered.entries.find(e => e.analyzable && e.citations.some(c => c.is_vigente && c.resolved));
+  assert.ok(entry, 'fixture must have an analyzable entry with a resolved vigente citation');
+  const citation = entry.citations.find(c => c.is_vigente && c.resolved);
+  const span = citation.char_end - citation.char_start;
+  // forge the quote text while keeping resolved:true and the entry analyzable:true: the span/quote
+  // no longer match the real fragment in source_text_by_document_id, so validate must recompute
+  // resolution from the source text rather than trust the stored `resolved` flag.
+  citation.quote = '#'.repeat(span);
+  assert.throws(() => validateAgt002ManizalesIntegralManifest(tampered));
+});
+
+test('validator rejects unknown governed_runtime and nonexistent registry_supplement source_refs, while section_ledger/proposal_ledger refs still resolve', () => {
+  const m = build();
+  assert.equal(validateAgt002ManizalesIntegralManifest(m), m);
+
+  const tamperedGoverned = JSON.parse(JSON.stringify(m));
+  const govEntry = tamperedGoverned.entries.find(e => e.source_refs.some(r => r.type === 'governed_runtime'));
+  assert.ok(govEntry, 'fixture must have a governed_runtime entry');
+  govEntry.source_refs.find(r => r.type === 'governed_runtime').ref = 'unknown-governed-requirement-id';
+  assert.throws(() => validateAgt002ManizalesIntegralManifest(tamperedGoverned));
+
+  const tamperedSupplement = JSON.parse(JSON.stringify(m));
+  const gateEntry = tamperedSupplement.entries.find(e => e.origin === 'lifecycle_gate');
+  gateEntry.source_refs.find(r => r.type === 'registry_supplement').ref = '99.9';
+  assert.throws(() => validateAgt002ManizalesIntegralManifest(tamperedSupplement));
+
+  // section_ledger/proposal_ledger refs on the untouched artifact must keep resolving
+  const withSectionRefs = m.entries.filter(e => e.source_refs.some(r => r.type === 'section_ledger'));
+  const withProposalRefs = m.entries.filter(e => e.source_refs.some(r => r.type === 'proposal_ledger'));
+  assert.ok(withSectionRefs.length > 0);
+  assert.ok(withProposalRefs.length > 0);
+});
+
 test('build is deterministic (same inputs => byte-identical JSON)', () => {
   const a = JSON.stringify(build());
   const b = JSON.stringify(build());
