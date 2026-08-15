@@ -37,10 +37,20 @@ test('generator validates and applies the PII guard before writing', () => {
   assert.ok(validateIdx < writeIdx && piiIdx < writeIdx, 'valida y aplica PII antes de escribir');
 });
 
-test('generator writes only the two required generated artifacts', () => {
+test('generator writes only the three required generated artifacts', () => {
   assert.match(source, /data\/agt002\/manizales-sa-24-2026\.integral-manifest\.v1\.json/);
   assert.match(source, /docs\/governance\/manizales-sa-24-2026\.integral-manifest-consolidated\.md/);
+  assert.match(source, /docs\/governance\/manizales-sa-24-2026\.integral-manifest-corrections\.json/);
   const writes = source.match(/writeFileSync\(/g) || [];
-  assert.equal(writes.length, 2, 'exactamente dos escrituras');
+  assert.equal(writes.length, 3, 'exactamente tres escrituras (manifiesto, consolidado, correcciones)');
   assert.doesNotMatch(source, /supabase|migrations|rollbacks|\.env/);
+});
+
+test('generator applies the deterministic mechanical corrections pass before validating', () => {
+  assert.match(source, /applyManizalesManifestCorrections/);
+  assert.match(source, /buildManizalesManifestCorrectionsArtifact/);
+  const correctIdx = source.indexOf('applyManizalesManifestCorrections(built)');
+  const validateIdx = source.indexOf('validateAgt002ManizalesIntegralManifest(manifest)');
+  assert.ok(correctIdx > -1 && validateIdx > -1);
+  assert.ok(correctIdx < validateIdx, 'corrige antes de validar el artefacto final');
 });

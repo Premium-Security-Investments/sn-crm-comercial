@@ -95,3 +95,47 @@ That ratio is contract-envelope coverage, not the full Manizales procurement cov
 Status: **PASS**.
 
 The baseline is reproducible, the live data observation was read-only, the real V2 comparison source is preserved sanitised, and all publication/deployment gates remain closed.
+
+## Phase 2 — Mechanical corrections pass
+
+### Scope and safety
+
+- Start commit: `66045ac`.
+- No runtime/server/UI/persistence change; no network, DB, env, push, deploy or migration.
+- New pure module `agt002-manizales-manifest-corrections.js`: deterministic, idempotent, downgrade/abstention only. The Phase-1 validator (`validateAgt002ManizalesIntegralManifest`) was **not** weakened; the corrected artifact re-passes it unchanged.
+
+### Tests
+
+- `tests/agt002-manizales-manifest-corrections.test.mjs`: **21 passed** (contract surface, purity, no-op + idempotency on the conformant artifact, the nine rules each firing on an injected defect with downgrade-only outcomes, corrections-artifact determinism).
+- `tests/agt002-manizales-integral-manifest.test.mjs` + `tests/agt002-manizales-integral-manifest-generate-static.test.mjs`: pass (60 total with the corrections suite).
+- Generator run twice at fixed timestamp `2026-08-15T00:00:00.000Z`: manifest JSON, consolidated MD and corrections JSON all **byte-identical**; the regenerated manifest/MD are byte-identical to the Phase-1 committed artifacts.
+
+### Corrections applied
+
+**Total: 0.** The Phase-1 artifact is already conformant to all nine rules, so the pass is a no-op and a second pass yields zero corrections (idempotent). By rule: citation-quote-equality 0, vigencia-precedence 0, atomization 0, duplicate-collapse 0, phase-reconciliation 0, materiality-derivation 0, subsanability-normalization 0, candidate-evidence-validity 0, suspicious-association 0. Recorded in `docs/governance/manizales-sa-24-2026.integral-manifest-corrections.json`.
+
+- Before/after entry counts: **25 → 25** (no atomization/duplicate change).
+- Analyzable: **20 → 20**; unresolved_visible: **5 → 5** (4 governed_runtime excerpt-bound + 1 lifecycle gate).
+
+### Independent QA sample (10 deterministic entries)
+
+Verified manually against the citation bounds and source excerpts **available in the artifact** (excerpt-bound; not a full-PDF verification):
+
+| entry | category | analyzable | verdict | note |
+|---|---|---|---|---|
+| financial-working-capital | habilitating | false | PASS (abstains) | governed excerpt span, no covering fragment → unresolved_visible, human review |
+| legal-rce-policy | habilitating | false | PASS (abstains) | governed excerpt span → unresolved_visible |
+| legal-collective-life-policy | habilitating | false | PASS (abstains) | governed excerpt span → unresolved_visible |
+| technical-video-surveillance-scope | technical | false | PASS (abstains) | governed excerpt span, evidence class null (never fabricated) |
+| lifecycle:cierre-prorroga | null | false | PASS (abstains) | lifecycle gate, category null → unresolved_visible |
+| proposal:2.3:indices-capacidad-organizacional | habilitating | true | PASS | quote == source slice [93564,93645) |
+| proposal:2.4:experiencia-rup-unspsc-sumatoria | habilitating | true | PASS | quote == source slice [94814,94859) |
+| proposal:3.1:calidad-lenguaje-senas | technical | true | PASS | quote == source slice [117449,117505) |
+| proposal:3.4:puntaje-emprendimiento-empresa-mujeres | technical | true | PASS | quote == source slice [97266,97307) |
+| proposal:3.6:oferta-economica-anexo-9 | financial_execution | true | PASS | quote == source slice [123997,124040) |
+
+All 10 show consistent analyzability↔grounding and status↔analyzability; no promotion. Limitation: verification is bounded to the excerpt fragments stored in `source_text_by_document_id`; the underlying PDFs were not re-read.
+
+### Phase 2 gate
+
+Status: **PASS**. Deterministic, idempotent, downgrade-only corrections pass added under strict TDD; zero corrections needed on the conformant artifact; all Phase-1 invariants (17 documents, 68 registry refs, 15/20 ledgers, 4 governed runtime entries, closure gate, citation/provenance hashes) preserved; publication/deployment gates remain closed.

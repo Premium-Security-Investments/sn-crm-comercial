@@ -19,6 +19,10 @@ import {
   buildAgt002ManizalesIntegralManifest,
   validateAgt002ManizalesIntegralManifest,
 } from '../agt002-manizales-integral-manifest.js';
+import {
+  applyManizalesManifestCorrections,
+  buildManizalesManifestCorrectionsArtifact,
+} from '../agt002-manizales-manifest-corrections.js';
 import { assertNoOpenPii } from '../agt002-contractual-registry-taxonomy.js';
 
 const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -27,6 +31,7 @@ const ANALYSIS_JSON = resolve(PROJECT_ROOT, 'docs/governance/analisis/manizales-
 const PROPOSALS_JSON = resolve(PROJECT_ROOT, 'docs/governance/propuestas/manizales-sa-24-2026.section-proposals.json');
 const OUTPUT_JSON = resolve(PROJECT_ROOT, 'data/agt002/manizales-sa-24-2026.integral-manifest.v1.json');
 const OUTPUT_MD = resolve(PROJECT_ROOT, 'docs/governance/manizales-sa-24-2026.integral-manifest-consolidated.md');
+const OUTPUT_CORRECTIONS_JSON = resolve(PROJECT_ROOT, 'docs/governance/manizales-sa-24-2026.integral-manifest-corrections.json');
 
 function renderMarkdown(m) {
   const lines = [];
@@ -85,21 +90,29 @@ function main() {
   const analysis = JSON.parse(readFileSync(ANALYSIS_JSON, 'utf8'));
   const proposals = JSON.parse(readFileSync(PROPOSALS_JSON, 'utf8'));
 
-  const manifest = buildAgt002ManizalesIntegralManifest({ registry, analysis, proposals, generatedAt });
+  const built = buildAgt002ManizalesIntegralManifest({ registry, analysis, proposals, generatedAt });
+
+  // Pasada de correcciones mecánicas (Phase 2): pura, determinista, idempotente y sólo degrada.
+  const { manifest, corrections } = applyManizalesManifestCorrections(built);
+  const correctionsArtifact = buildManizalesManifestCorrectionsArtifact({ manifest, corrections, generatedAt });
 
   validateAgt002ManizalesIntegralManifest(manifest);
   assertNoOpenPii(manifest);
+  assertNoOpenPii(correctionsArtifact);
 
   const markdown = renderMarkdown(manifest);
 
   mkdirSync(dirname(OUTPUT_JSON), { recursive: true });
   mkdirSync(dirname(OUTPUT_MD), { recursive: true });
+  mkdirSync(dirname(OUTPUT_CORRECTIONS_JSON), { recursive: true });
   writeFileSync(OUTPUT_JSON, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
   writeFileSync(OUTPUT_MD, markdown, 'utf8');
+  writeFileSync(OUTPUT_CORRECTIONS_JSON, `${JSON.stringify(correctionsArtifact, null, 2)}\n`, 'utf8');
 
   process.stdout.write(
     `manifiesto integral generado: ${manifest.coverage.section_ledger.total} secciones + ${manifest.coverage.proposal_ledger.total} propuestas, `
-    + `${manifest.coverage.entries.total} entradas (validated_candidate).\n-> ${OUTPUT_JSON}\n-> ${OUTPUT_MD}\n`,
+    + `${manifest.coverage.entries.total} entradas (validated_candidate); correcciones: ${corrections.length}.\n`
+    + `-> ${OUTPUT_JSON}\n-> ${OUTPUT_MD}\n-> ${OUTPUT_CORRECTIONS_JSON}\n`,
   );
 }
 
