@@ -61,6 +61,7 @@ import {
 } from '../agt002-fixed-snapshot-reanalysis.js';
 import { adaptAgt002RetrievalDocuments } from '../agt002-retrieval-document-adapter.js';
 import { loadPublishedAgt002LegalCorpus } from '../agt002-legal-corpus-store.js';
+import { selectAgt002ManizalesManifestSource } from '../agt002-manizales-manifest-source.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2782,6 +2783,7 @@ async function reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analys
     const engine = createAgt002PreviewRuntime({
           environment: process.env,
           countDailyRuns: () => countAgt002PreviewRunsToday(database),
+          manizalesManifestSource: selectAgt002ManizalesManifestSource({ integralContractV3: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3, opportunityId }),
           legalCorpusContext,
           onBridgeInvocationStarted: () => { bridgeTelemetry.invocationStarted = true; },
           onBridgeResponseReceived: () => { bridgeTelemetry.responseReceived = true; },
@@ -3442,6 +3444,7 @@ function buildTenderProcessingWorkerDeps(database) {
         const engine = createAgt002PreviewRuntime({
           environment: process.env,
           countDailyRuns: () => countAgt002PreviewRunsToday(database),
+          manizalesManifestSource: selectAgt002ManizalesManifestSource({ integralContractV3: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3, opportunityId }),
           legalCorpusContext,
           ...(integralV3Governance ? {
             companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
@@ -4055,6 +4058,7 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
       const engine = createAgt002PreviewRuntime({
           environment: process.env,
           countDailyRuns: () => countAgt002PreviewRunsToday(database),
+          manizalesManifestSource: selectAgt002ManizalesManifestSource({ integralContractV3: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3, opportunityId }),
           onBridgeInvocationStarted: () => { bridgeTelemetry.invocationStarted = true; },
           onBridgeResponseReceived: () => { bridgeTelemetry.responseReceived = true; },
           legalCorpusContext,

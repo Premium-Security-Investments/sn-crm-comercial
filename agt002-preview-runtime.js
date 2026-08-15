@@ -102,6 +102,7 @@ function positiveIntFromEnv(environment, key, fallback) {
 export function createAgt002PreviewRuntime({
   environment = process.env, countDailyRuns, legalCorpusContext,
   companyEvidenceRegistryEntries, categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance, contextVersionId,
+  manizalesManifestSource,
   onBridgeInvocationStarted, onBridgeResponseReceived,
   createEngine = createAgt002PreviewEngine,
 } = {}) {
@@ -177,6 +178,12 @@ export function createAgt002PreviewRuntime({
       evidenceClassLinkByRequirementId: evidenceClassLinkByRequirementId ?? {},
       governanceProvenance: governanceProvenance ?? {},
       contextVersionId: contextVersionId ?? null,
+      // AGT002_INTEGRAL_CONTRACT_V3 Phase 3: the server layer loads the checked-in pilot
+      // manifest read-only and injects it here for the exact Manizales opportunity/process
+      // only, mirroring the company-evidence registry/category-override injection above. The
+      // engine validates it fail-closed (wrong pilot/malformed throws through the boundary
+      // wrapper below); an absent source keeps the current governed 4-requirement behavior.
+      manizalesManifestSource: manizalesManifestSource ?? null,
     } : {}),
     ...(countDailyRuns ? { countDailyRuns } : {}),
   }));

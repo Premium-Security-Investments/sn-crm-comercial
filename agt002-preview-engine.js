@@ -17,6 +17,7 @@ import { projectAgt002IntegralV3ToV2 } from './agt002-v3-compatibility.js';
 import { deriveAgt002IntegralCategoryManifest } from './agt002-integral-category-manifest.js';
 import { buildAgt002EvidenceStateManifest } from './agt002-evidence-state-manifest.js';
 import { buildAgt002CompanyEvidenceClasses, AGT002_COMPANY_EVIDENCE_CLASS_IDS } from './agt002-company-evidence-classes.js';
+import { deriveAgt002ManizalesManifestWiring } from './agt002-manizales-manifest-wiring.js';
 import { validateTenderAnalysisResult } from './tender-analysis-domain.js';
 import { AGT002_OUTPUT_REJECTION_STAGES, createAgt002AnalysisObservability } from './agt002-analysis-observability.js';
 
@@ -234,6 +235,7 @@ export function createAgt002PreviewEngine({
   governanceProvenance = {},
   companyEvidenceClassesProvider,
   contextVersionId = null,
+  manizalesManifestSource = null,
   observability = createAgt002AnalysisObservability(),
 } = {}) {
   if (!client || typeof client.run !== 'function'
@@ -248,10 +250,27 @@ export function createAgt002PreviewEngine({
     throw new Error('AGT-002 Preview no está configurado: falta configuración o evidencia jurídica determinística.');
   }
 
+  // AGT002_INTEGRAL_CONTRACT_V3 Phase 3: an injected, checked-in Manizales integral manifest
+  // is the governed source of truth for this run. It is validated fail-closed at construction
+  // (exact pilot identity, Phase-1 manifest contract) — a malformed or wrong-pilot source
+  // throws here, never a generic fallback — and its analyzable entries drive both the
+  // category overrides and the evidence-class links, superseding any DB-injected maps for the
+  // run. `null` (the default, non-pilot callers/tests) preserves the current governed path.
+  const manifestWiring = integralContractV3 && manizalesManifestSource !== null && manizalesManifestSource !== undefined
+    ? deriveAgt002ManizalesManifestWiring(manizalesManifestSource)
+    : null;
+  const effectiveCategoryOverrides = manifestWiring ? manifestWiring.categoryOverrides : categoryOverrides;
+  const effectiveEvidenceClassLinkByRequirementId = manifestWiring
+    ? manifestWiring.evidenceClassLinkByRequirementId
+    : evidenceClassLinkByRequirementId;
+
   // Validate the binding before any provider/model call. A non-empty governed map without
   // the exact curated record that authorized it is a configuration defect and must never
-  // execute, even if a later persistence layer would reject the incomplete envelope.
-  const boundGovernanceProvenance = integralContractV3
+  // execute, even if a later persistence layer would reject the incomplete envelope. A
+  // manifest-driven run carries its provenance inside the manifest's own citations (not the
+  // legacy governanceProvenance record shape), so no bound governance-provenance block is
+  // assembled for it.
+  const boundGovernanceProvenance = integralContractV3 && !manifestWiring
     ? selectBoundGovernanceProvenance(governanceProvenance, categoryOverrides, evidenceClassLinkByRequirementId)
     : {};
 
@@ -427,7 +446,7 @@ export function createAgt002PreviewEngine({
       throw new Error('AGT-002 Preview v3 requiere AGT002_DOCUMENT_RETRIEVAL habilitado.');
     }
 
-    const requirementManifest = deriveAgt002IntegralCategoryManifest(documentEvidence.requirement_manifest, categoryOverrides);
+    const requirementManifest = deriveAgt002IntegralCategoryManifest(documentEvidence.requirement_manifest, effectiveCategoryOverrides);
 
     // Governed evidence-state map (audit P0 "cumplimiento inferido por presencia"): built
     // fail-closed from the real 17-class catalog and a curated, explicit requirement_id ->
@@ -437,7 +456,7 @@ export function createAgt002PreviewEngine({
     // match exactly or the whole run is rejected by validateAgt002IntegralAnalysisV3.
     const evidenceStateManifest = buildAgt002EvidenceStateManifest(documentEvidence.requirement_manifest, {
       evidenceClasses: companyEvidenceClasses.classes,
-      evidenceClassLinkByRequirementId,
+      evidenceClassLinkByRequirementId: effectiveEvidenceClassLinkByRequirementId,
     });
 
     const companyEvidenceIds = new Set();
@@ -599,6 +618,10 @@ export function createAgt002PreviewEngine({
       const previewInput = buildAgt002PreviewInput({
         ...(context || {}), contextV2, documentRetrieval, legalCorpus, legalEvidencePackage,
         ...(integralContractV3 ? { companyEvidenceClasses } : {}),
+        // Engine-owned governed configuration: the injected manifest source always wins over
+        // (and is set explicitly to null in the absence of) anything a caller's context might
+        // carry, so a provider/caller can never forge or suppress the manifest binding.
+        manizalesManifestSource: manifestWiring ? manizalesManifestSource : null,
       });
       const key = nonEmpty(idempotencyKey) ? idempotencyKey : `${previewInput.snapshot_id}:${policyVersion}:${model}`;
 
