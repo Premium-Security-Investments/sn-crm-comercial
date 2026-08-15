@@ -290,6 +290,16 @@ function expectRejects(mutate, pattern) {
   assert.throws(() => validateAgt002IntegralAnalysisV3(mutated, validationContext), pattern);
 }
 
+function expectSemanticCode(mutate, expectedCode) {
+  const { integralAnalysis, validationContext } = buildFixture();
+  mutate(integralAnalysis, validationContext);
+  assert.throws(
+    () => validateAgt002IntegralAnalysisV3(integralAnalysis, validationContext),
+    error => error?.code === expectedCode,
+    `expected closed semantic code ${expectedCode}`,
+  );
+}
+
 function run() {
   // ---------------------------------------------------------------------
   // Task 2 — Step 1: minimal valid fixture
@@ -750,6 +760,43 @@ function run() {
     ia.analysis_units[4].closure.status = 'evidence_satisfied';
     ia.analysis_units[4].evidence_refs = [];
   }, /evidence_satisfied|closure|cierre/i);
+
+  // Closed static diagnostic taxonomy for semantic/cross-field failures. These codes are
+  // fixed at call sites (never derived from messages, ids, or model content) so production
+  // can identify the failing invariant domain without persisting raw validator text.
+  expectSemanticCode((ia) => {
+    ia.analysis_units[0].conclusion.status = 'insufficient_evidence';
+    ia.analysis_units[0].conclusion.confidence = 'unavailable';
+  }, 'v3_evidence_abstention_invariant');
+  expectSemanticCode((ia) => {
+    ia.analysis_units[0].legal_assessment = {
+      status: 'supported', basis_refs: [], summary: 'Síntesis sintética.', human_legal_review_required: true,
+    };
+  }, 'v3_legal_assessment_invariant');
+  expectSemanticCode((ia) => {
+    ia.analysis_units[2].actions = [];
+  }, 'v3_blocking_action_invariant');
+  expectSemanticCode((ia) => {
+    ia.analysis_units[0].milestone.status = 'verified';
+  }, 'v3_milestone_invariant');
+  expectSemanticCode((ia) => {
+    ia.analysis_units[0].escalation.level = 'management';
+  }, 'v3_escalation_invariant');
+  expectSemanticCode((ia) => {
+    ia.analysis_units[1].actions = [{
+      action_id: 'ACT-CLOSE-1', action_type: 'verify_validity', summary: 'Verificación sintética.',
+      basis_unit_id: 'UNIT-REQ-HAB-1', suggested_role: 'technical', priority: 'low', external_side_effect: false,
+    }];
+  }, 'v3_closure_invariant');
+  expectSemanticCode((_ia, ctx) => {
+    ctx.evidenceStateManifest[0].evidence_state = {
+      presence: 'present', review: 'reviewed', validity: 'unknown', applicability: 'applicable',
+      compliance: 'supported_pending_human_review',
+    };
+  }, 'v3_governed_evidence_state_mismatch');
+  expectSemanticCode((ia) => {
+    ia.analysis_units[1].sequence = 1;
+  }, 'v3_unit_ordering_invariant');
 
   console.log('agt002-integral-analysis-v3 structural contract passed');
 }

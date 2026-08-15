@@ -145,6 +145,23 @@ function fail(message, code) {
   throw error;
 }
 
+// Static diagnostic domains for semantic relationships that JSON Schema cannot express.
+// Every code is fixed here and never derived from the message, unit id, reference, or model data.
+const failEvidenceAbstention = message => fail(message, 'v3_evidence_abstention_invariant');
+const failEvidenceState = message => fail(message, 'v3_evidence_state_invariant');
+const failConclusionCompliance = message => fail(message, 'v3_conclusion_compliance_invariant');
+const failEvidenceReference = message => fail(message, 'v3_evidence_reference_invariant');
+const failMissingEvidence = message => fail(message, 'v3_missing_evidence_invariant');
+const failBlockingAction = message => fail(message, 'v3_blocking_action_invariant');
+const failLegalAssessment = message => fail(message, 'v3_legal_assessment_invariant');
+const failAction = message => fail(message, 'v3_action_invariant');
+const failMilestone = message => fail(message, 'v3_milestone_invariant');
+const failEscalation = message => fail(message, 'v3_escalation_invariant');
+const failClosure = message => fail(message, 'v3_closure_invariant');
+const failGovernedEvidenceState = message => fail(message, 'v3_governed_evidence_state_mismatch');
+const failUnitIdentity = message => fail(message, 'v3_unit_identity_invariant');
+const failUnitOrdering = message => fail(message, 'v3_unit_ordering_invariant');
+
 function exactKeys(value, expected, label, code) {
   if (!isRecord(value)) fail(`${label} debe ser un objeto.`, code);
   const keys = Object.keys(value);
@@ -424,13 +441,13 @@ function validateEvidenceRefs(evidenceRefs, unitId, ctx) {
     requireEnum(entry.source_type, AGT002_INTEGRAL_SOURCE_TYPES, `${label}.source_type`);
     requireEnum(entry.purpose, AGT002_INTEGRAL_EVIDENCE_PURPOSES, `${label}.purpose`);
     if (!ctx.allowlist[entry.source_type].has(entry.ref)) {
-      fail(`${label}.ref no está en la allowlist de ${entry.source_type}: ${entry.ref}.`);
+      failEvidenceReference(`${label}.ref no está en la allowlist de ${entry.source_type}: ${entry.ref}.`);
     }
     if (!PURPOSE_ALLOWED_SOURCE_TYPES.get(entry.purpose).has(entry.source_type)) {
-      fail(`${label}: purpose "${entry.purpose}" no admite source_type "${entry.source_type}" (desajuste fuente/propósito).`);
+      failEvidenceReference(`${label}: purpose "${entry.purpose}" no admite source_type "${entry.source_type}" (desajuste fuente/propósito).`);
     }
     const pairKey = `${entry.ref}::${entry.purpose}`;
-    if (seenPairs.has(pairKey)) fail(`${label} referencia duplicada (ref, purpose) dentro de la misma unidad.`);
+    if (seenPairs.has(pairKey)) failEvidenceReference(`${label} referencia duplicada (ref, purpose) dentro de la misma unidad.`);
     seenPairs.add(pairKey);
   }
 }
@@ -442,7 +459,7 @@ function validateMissingEvidence(missingEvidence, unitId, ctx) {
     const label = `analysis_units[${unitId}].missing_evidence[${index}]`;
     exactKeys(entry, MISSING_EVIDENCE_KEYS, label);
     boundedString(entry.missing_id, ID_MAX_LENGTH, `${label}.missing_id`);
-    if (seenIds.has(entry.missing_id)) fail(`${label}.missing_id duplicado dentro de la misma unidad.`);
+    if (seenIds.has(entry.missing_id)) failMissingEvidence(`${label}.missing_id duplicado dentro de la misma unidad.`);
     seenIds.add(entry.missing_id);
     nullableAllowlistedRef(entry.evidence_class_id, ctx.companyEvidenceClassIds, `${label}.evidence_class_id`);
     requireEnum(entry.needed_source_type, AGT002_INTEGRAL_SOURCE_TYPES, `${label}.needed_source_type`);
@@ -465,7 +482,7 @@ function validateLegalAssessment(legalAssessment, unitId, ctx) {
   for (const [index, ref] of legalAssessment.basis_refs.entries()) {
     const label = `analysis_units[${unitId}].legal_assessment.basis_refs[${index}]`;
     boundedString(ref, ID_MAX_LENGTH, label);
-    if (!ctx.allowlist.legal_corpus.has(ref)) fail(`${label} no está en la allowlist del corpus jurídico publicado: ${ref}.`);
+    if (!ctx.allowlist.legal_corpus.has(ref)) failLegalAssessment(`${label} no está en la allowlist del corpus jurídico publicado: ${ref}.`);
   }
   boundedString(legalAssessment.summary, TEXT_MAX_LENGTH, `analysis_units[${unitId}].legal_assessment.summary`);
   requireBoolean(legalAssessment.human_legal_review_required, `analysis_units[${unitId}].legal_assessment.human_legal_review_required`);
@@ -478,15 +495,15 @@ function validateActions(actions, unitId) {
     const label = `analysis_units[${unitId}].actions[${index}]`;
     exactKeys(action, ACTION_KEYS, label);
     boundedString(action.action_id, ID_MAX_LENGTH, `${label}.action_id`);
-    if (seenIds.has(action.action_id)) fail(`${label}.action_id duplicado dentro de la misma unidad.`);
+    if (seenIds.has(action.action_id)) failAction(`${label}.action_id duplicado dentro de la misma unidad.`);
     seenIds.add(action.action_id);
     requireEnum(action.action_type, AGT002_INTEGRAL_ACTION_TYPES, `${label}.action_type`);
     boundedString(action.summary, TEXT_MAX_LENGTH, `${label}.summary`);
     boundedString(action.basis_unit_id, ID_MAX_LENGTH, `${label}.basis_unit_id`);
-    if (action.basis_unit_id !== unitId) fail(`${label}.basis_unit_id debe coincidir con el unit_id contenedor.`);
+    if (action.basis_unit_id !== unitId) failAction(`${label}.basis_unit_id debe coincidir con el unit_id contenedor.`);
     requireEnum(action.suggested_role, AGT002_INTEGRAL_SUGGESTED_ROLES, `${label}.suggested_role`);
     requireEnum(action.priority, AGT002_INTEGRAL_ACTION_PRIORITIES, `${label}.priority`);
-    if (action.external_side_effect !== false) fail(`${label}.external_side_effect debe ser siempre false en el envelope de IA.`);
+    if (action.external_side_effect !== false) failAction(`${label}.external_side_effect debe ser siempre false en el envelope de IA.`);
   }
 }
 
@@ -496,13 +513,13 @@ function validateMilestone(milestone, unitId, ctx) {
   requireEnum(milestone.type, AGT002_INTEGRAL_MILESTONE_TYPES, `analysis_units[${unitId}].milestone.type`);
   if (milestone.at !== null) {
     if (typeof milestone.at !== 'string' || Number.isNaN(Date.parse(milestone.at))) {
-      fail(`analysis_units[${unitId}].milestone.at debe ser null o una fecha ISO-8601 válida.`);
+      failMilestone(`analysis_units[${unitId}].milestone.at debe ser null o una fecha ISO-8601 válida.`);
     }
   }
   if (milestone.source_ref !== null) {
     const allAllowlisted = new Set([...ctx.allowlist.tender_document, ...ctx.allowlist.human_evidence, ...ctx.allowlist.legal_corpus, ...ctx.allowlist.objective_validation]);
     if (typeof milestone.source_ref !== 'string' || !allAllowlisted.has(milestone.source_ref)) {
-      fail(`analysis_units[${unitId}].milestone.source_ref debe ser null o una referencia permitida.`);
+      failMilestone(`analysis_units[${unitId}].milestone.source_ref debe ser null o una referencia permitida.`);
     }
   }
   boundedString(milestone.summary, TEXT_MAX_LENGTH, `analysis_units[${unitId}].milestone.summary`);
@@ -510,10 +527,10 @@ function validateMilestone(milestone, unitId, ctx) {
   // Task 3 (design 7.10): a verified milestone must be traceable to a concrete date and
   // source; an unidentified milestone must not smuggle in either.
   if (milestone.status === 'verified' && (milestone.at === null || milestone.source_ref === null)) {
-    fail(`analysis_units[${unitId}].milestone: status "verified" exige "at" y "source_ref" no nulos.`);
+    failMilestone(`analysis_units[${unitId}].milestone: status "verified" exige "at" y "source_ref" no nulos.`);
   }
   if (milestone.status === 'not_identified' && (milestone.at !== null || milestone.source_ref !== null)) {
-    fail(`analysis_units[${unitId}].milestone: status "not_identified" exige "at" y "source_ref" nulos.`);
+    failMilestone(`analysis_units[${unitId}].milestone: status "not_identified" exige "at" y "source_ref" nulos.`);
   }
 }
 
@@ -526,10 +543,10 @@ function validateEscalation(escalation, unitId) {
   // Task 3 (design 7.11): "required: false exige level: none" and the converse — a
   // named level implies escalation was in fact required.
   if (escalation.required === false && escalation.level !== 'none') {
-    fail(`analysis_units[${unitId}].escalation: required=false exige level="none".`);
+    failEscalation(`analysis_units[${unitId}].escalation: required=false exige level="none".`);
   }
   if (escalation.required === true && escalation.level === 'none') {
-    fail(`analysis_units[${unitId}].escalation: required=true exige un level distinto de "none".`);
+    failEscalation(`analysis_units[${unitId}].escalation: required=true exige un level distinto de "none".`);
   }
 }
 
@@ -576,27 +593,27 @@ function validateUnitInvariants(unit, ctx) {
 
   // Evidence or abstention (7.2).
   if (MATERIAL_CONCLUSION_STATUSES.has(conclusion.status) && evidenceRefs.length === 0) {
-    fail(`analysis_units[${unitId}]: conclusion.status "${conclusion.status}" exige al menos una referencia de evidencia.`);
+    failEvidenceAbstention(`analysis_units[${unitId}]: conclusion.status "${conclusion.status}" exige al menos una referencia de evidencia.`);
   }
   if (conclusion.status === 'insufficient_evidence') {
     if (unit.assessment_mode !== 'abstained') {
-      fail(`analysis_units[${unitId}]: conclusion.status "insufficient_evidence" exige assessment_mode "abstained".`);
+      failEvidenceAbstention(`analysis_units[${unitId}]: conclusion.status "insufficient_evidence" exige assessment_mode "abstained".`);
     }
     if (missingEvidence.length === 0) {
-      fail(`analysis_units[${unitId}]: conclusion.status "insufficient_evidence" exige al menos un missing_evidence.`);
+      failEvidenceAbstention(`analysis_units[${unitId}]: conclusion.status "insufficient_evidence" exige al menos un missing_evidence.`);
     }
   }
   if (unit.assessment_mode === 'abstained' && !['insufficient_evidence', 'human_validation_required'].includes(conclusion.status)) {
-    fail(`analysis_units[${unitId}]: assessment_mode "abstained" sólo permite conclusion.status "insufficient_evidence" o "human_validation_required".`);
+    failEvidenceAbstention(`analysis_units[${unitId}]: assessment_mode "abstained" sólo permite conclusion.status "insufficient_evidence" o "human_validation_required".`);
   }
   if (conclusion.confidence === 'unavailable' && unit.assessment_mode !== 'abstained') {
-    fail(`analysis_units[${unitId}]: conclusion.confidence "unavailable" exige assessment_mode "abstained".`);
+    failEvidenceAbstention(`analysis_units[${unitId}]: conclusion.confidence "unavailable" exige assessment_mode "abstained".`);
   }
   if (unit.assessment_mode === 'abstained' && conclusion.confidence !== 'unavailable') {
-    fail(`analysis_units[${unitId}]: assessment_mode "abstained" exige conclusion.confidence "unavailable".`);
+    failEvidenceAbstention(`analysis_units[${unitId}]: assessment_mode "abstained" exige conclusion.confidence "unavailable".`);
   }
   if (conclusion.status === 'gap_evidenced' && !evidenceRefs.some(ref => ref.purpose === 'gap_basis')) {
-    fail(`analysis_units[${unitId}]: conclusion.status "gap_evidenced" exige una referencia con purpose "gap_basis".`);
+    failEvidenceAbstention(`analysis_units[${unitId}]: conclusion.status "gap_evidenced" exige una referencia con purpose "gap_basis".`);
   }
 
   // human_validation_required (P1 - independent review): never "high" confidence, and
@@ -604,36 +621,36 @@ function validateUnitInvariants(unit, ctx) {
   // or abstention, never neither.
   if (conclusion.status === 'human_validation_required') {
     if (conclusion.confidence === 'high') {
-      fail(`analysis_units[${unitId}]: conclusion.status "human_validation_required" no admite conclusion.confidence "high".`);
+      failEvidenceAbstention(`analysis_units[${unitId}]: conclusion.status "human_validation_required" no admite conclusion.confidence "high".`);
     }
     if (unit.assessment_mode !== 'abstained' && evidenceRefs.length === 0) {
-      fail(`analysis_units[${unitId}]: conclusion.status "human_validation_required" con assessment_mode distinto de "abstained" exige al menos una referencia de evidencia.`);
+      failEvidenceAbstention(`analysis_units[${unitId}]: conclusion.status "human_validation_required" con assessment_mode distinto de "abstained" exige al menos una referencia de evidencia.`);
     }
   }
 
   // Five independent axes (7.4).
   if (evidenceState.presence === 'absent') {
     if (evidenceState.review === 'reviewed') {
-      fail(`analysis_units[${unitId}]: evidence_state.review "reviewed" es inválido con presence "absent".`);
+      failEvidenceState(`analysis_units[${unitId}]: evidence_state.review "reviewed" es inválido con presence "absent".`);
     }
     if (evidenceState.validity === 'valid' || evidenceState.validity === 'expired') {
-      fail(`analysis_units[${unitId}]: evidence_state.validity "${evidenceState.validity}" es inválido con presence "absent".`);
+      failEvidenceState(`analysis_units[${unitId}]: evidence_state.validity "${evidenceState.validity}" es inválido con presence "absent".`);
     }
   }
   if (evidenceState.compliance !== 'unknown') {
     if (evidenceState.review === 'not_reviewed') {
-      fail(`analysis_units[${unitId}]: evidence_state.compliance material exige review distinto de "not_reviewed".`);
+      failEvidenceState(`analysis_units[${unitId}]: evidence_state.compliance material exige review distinto de "not_reviewed".`);
     }
     if (evidenceRefs.length === 0) {
-      fail(`analysis_units[${unitId}]: evidence_state.compliance material exige al menos una referencia de evidencia.`);
+      failEvidenceState(`analysis_units[${unitId}]: evidence_state.compliance material exige al menos una referencia de evidencia.`);
     }
   }
   if (evidenceState.compliance === 'supported_pending_human_review') {
     if (evidenceState.validity !== 'valid') {
-      fail(`analysis_units[${unitId}]: compliance "supported_pending_human_review" exige evidence_state.validity "valid".`);
+      failEvidenceState(`analysis_units[${unitId}]: compliance "supported_pending_human_review" exige evidence_state.validity "valid".`);
     }
     if (evidenceState.applicability === 'unknown') {
-      fail(`analysis_units[${unitId}]: compliance "supported_pending_human_review" no admite evidence_state.applicability "unknown".`);
+      failEvidenceState(`analysis_units[${unitId}]: compliance "supported_pending_human_review" no admite evidence_state.applicability "unknown".`);
     }
   }
 
@@ -644,7 +661,7 @@ function validateUnitInvariants(unit, ctx) {
   if (MATERIAL_CONCLUSION_STATUSES.has(conclusion.status)) {
     const expectedCompliance = CONCLUSION_STATUS_TO_COMPLIANCE.get(conclusion.status);
     if (evidenceState.compliance !== expectedCompliance) {
-      fail(
+      failConclusionCompliance(
         `analysis_units[${unitId}]: conclusion.status "${conclusion.status}" exige evidence_state.compliance `
         + `"${expectedCompliance}" (recibido "${evidenceState.compliance}").`,
       );
@@ -653,31 +670,31 @@ function validateUnitInvariants(unit, ctx) {
 
   // Blocking effect / curability (7.3).
   if (blocking.effect === 'blocker' && unit.assessment_mode === 'abstained') {
-    fail(`analysis_units[${unitId}]: blocking.effect "blocker" es inválido con assessment_mode "abstained" (debe ser "undetermined").`);
+    failBlockingAction(`analysis_units[${unitId}]: blocking.effect "blocker" es inválido con assessment_mode "abstained" (debe ser "undetermined").`);
   }
   if (blocking.curability === 'not_curable') {
     const hasSupport = evidenceRefs.some(ref => ref.source_type === 'tender_document' || ref.source_type === 'legal_corpus');
-    if (!hasSupport) fail(`analysis_units[${unitId}]: blocking.curability "not_curable" exige evidencia del pliego o fundamento jurídico.`);
+    if (!hasSupport) failBlockingAction(`analysis_units[${unitId}]: blocking.curability "not_curable" exige evidencia del pliego o fundamento jurídico.`);
   }
   if ((blocking.effect === 'blocker' || blocking.effect === 'conditional') && actions.length === 0) {
-    fail(`analysis_units[${unitId}]: blocking.effect "${blocking.effect}" exige al menos una acción.`);
+    failBlockingAction(`analysis_units[${unitId}]: blocking.effect "${blocking.effect}" exige al menos una acción.`);
   }
 
   // Legal assessment (7.8) and corpus-null invariant (design section 5, invariant 7).
   if (legalAssessment.status === 'supported' && legalAssessment.basis_refs.length === 0) {
-    fail(`analysis_units[${unitId}]: legal_assessment.status "supported" exige basis_refs no vacío.`);
+    failLegalAssessment(`analysis_units[${unitId}]: legal_assessment.status "supported" exige basis_refs no vacío.`);
   }
   if (legalAssessment.status === 'not_verified' && legalAssessment.human_legal_review_required !== true) {
-    fail(`analysis_units[${unitId}]: legal_assessment.status "not_verified" exige human_legal_review_required=true.`);
+    failLegalAssessment(`analysis_units[${unitId}]: legal_assessment.status "not_verified" exige human_legal_review_required=true.`);
   }
   if (ctx.legalCorpusVersionId === null && !['not_applicable', 'not_verified'].includes(legalAssessment.status)) {
-    fail(`analysis_units[${unitId}]: sin legal_corpus_version_id publicado, legal_assessment.status debe ser "not_applicable" o "not_verified".`);
+    failLegalAssessment(`analysis_units[${unitId}]: sin legal_corpus_version_id publicado, legal_assessment.status debe ser "not_applicable" o "not_verified".`);
   }
 
   // Actions / roles (7.9).
   for (const action of actions) {
     if (action.action_type === 'human_decision' && action.suggested_role !== 'authorized_human') {
-      fail(`analysis_units[${unitId}]: action_type "human_decision" exige suggested_role "authorized_human".`);
+      failAction(`analysis_units[${unitId}]: action_type "human_decision" exige suggested_role "authorized_human".`);
     }
   }
 
@@ -686,16 +703,16 @@ function validateUnitInvariants(unit, ctx) {
   const materialLegalUncertainty = legalAssessment.status === 'not_verified' && legalAssessment.human_legal_review_required === true;
   const criticalExposure = commercialImpact.level === 'critical';
   if ((notCurableBlocker || materialLegalUncertainty || criticalExposure) && escalation.required !== true) {
-    fail(`analysis_units[${unitId}]: condición crítica definida (bloqueo no subsanable, incertidumbre jurídica material o exposición crítica) exige escalation.required=true.`);
+    failEscalation(`analysis_units[${unitId}]: condición crítica definida (bloqueo no subsanable, incertidumbre jurídica material o exposición crítica) exige escalation.required=true.`);
   }
 
   // Closure (7.12).
   if (closure.status === 'evidence_satisfied') {
     if (evidenceRefs.length === 0) {
-      fail(`analysis_units[${unitId}]: closure.status "evidence_satisfied" exige evidencia allowlisted.`);
+      failClosure(`analysis_units[${unitId}]: closure.status "evidence_satisfied" exige evidencia allowlisted.`);
     }
     if (actions.some(action => action.action_type !== 'human_decision')) {
-      fail(`analysis_units[${unitId}]: closure.status "evidence_satisfied" no admite acciones pendientes distintas de "human_decision".`);
+      failClosure(`analysis_units[${unitId}]: closure.status "evidence_satisfied" no admite acciones pendientes distintas de "human_decision".`);
     }
   }
 }
@@ -743,16 +760,16 @@ function validateUnitShape(unit, ctx) {
   requireEnum(unit.assessment_mode, AGT002_INTEGRAL_ASSESSMENT_MODES, `analysis_units[${unitId}].assessment_mode`);
 
   if (unit.unit_kind === 'strategic_consideration') {
-    if (unit.requirement_id !== null) fail(`analysis_units[${unitId}]: strategic_consideration debe tener requirement_id null.`);
-    if (unit.category !== 'strategic') fail(`analysis_units[${unitId}]: strategic_consideration debe usar category "strategic".`);
+    if (unit.requirement_id !== null) failUnitIdentity(`analysis_units[${unitId}]: strategic_consideration debe tener requirement_id null.`);
+    if (unit.category !== 'strategic') failUnitIdentity(`analysis_units[${unitId}]: strategic_consideration debe usar category "strategic".`);
   } else {
-    if (unit.category === 'strategic') fail(`analysis_units[${unitId}]: tender_requirement no puede usar category "strategic".`);
+    if (unit.category === 'strategic') failUnitIdentity(`analysis_units[${unitId}]: tender_requirement no puede usar category "strategic".`);
     if (typeof unit.requirement_id !== 'string' || !ctx.requirementManifestById.has(unit.requirement_id)) {
-      fail(`analysis_units[${unitId}]: requirement_id debe estar allowlisted en el manifiesto gobernado.`);
+      failUnitIdentity(`analysis_units[${unitId}]: requirement_id debe estar allowlisted en el manifiesto gobernado.`);
     }
     const manifestEntry = ctx.requirementManifestById.get(unit.requirement_id);
     if (manifestEntry.category !== unit.category) {
-      fail(`analysis_units[${unitId}]: category no coincide con la categoría gobernada del manifiesto para ${unit.requirement_id}.`);
+      failUnitIdentity(`analysis_units[${unitId}]: category no coincide con la categoría gobernada del manifiesto para ${unit.requirement_id}.`);
     }
   }
 
@@ -792,7 +809,7 @@ function validateGovernedEvidenceStateMatch(unit, ctx) {
   const governedEvidenceState = ctx.evidenceStateByRequirementId.get(unit.requirement_id);
   const mismatch = EVIDENCE_STATE_KEYS.some(key => unit.evidence_state[key] !== governedEvidenceState[key]);
   if (mismatch) {
-    fail(
+    failGovernedEvidenceState(
       `analysis_units[${unit.unit_id}]: evidence_state no coincide con el mapa gobernado por requirement_id `
       + '(governed evidence-state map) — los cinco ejes deben provenir de estado gobernado explícito o de abstención '
       + '("unknown"/"not_reviewed"), nunca de salida libre del modelo.',
@@ -808,22 +825,22 @@ function validateUnitsOrdering(units, ctx) {
   const formalRequirementIdsInOrder = [];
 
   for (const unit of units) {
-    if (seenUnitIds.has(unit.unit_id)) fail(`unit_id duplicado: ${unit.unit_id}.`);
+    if (seenUnitIds.has(unit.unit_id)) failUnitOrdering(`unit_id duplicado: ${unit.unit_id}.`);
     seenUnitIds.add(unit.unit_id);
 
     if (!(unit.sequence > previousSequence)) {
-      fail(`analysis_units[${unit.unit_id}].sequence debe ser estrictamente ascendente.`);
+      failUnitOrdering(`analysis_units[${unit.unit_id}].sequence debe ser estrictamente ascendente.`);
     }
     previousSequence = unit.sequence;
 
     const categoryRank = CATEGORY_RANK.get(unit.category);
     if (categoryRank < previousCategoryRank) {
-      fail(`analysis_units[${unit.unit_id}]: violación de orden institucional de categorías.`);
+      failUnitOrdering(`analysis_units[${unit.unit_id}]: violación de orden institucional de categorías.`);
     }
     previousCategoryRank = categoryRank;
 
     if (unit.unit_kind === 'tender_requirement') {
-      if (seenRequirementIds.has(unit.requirement_id)) fail(`requirement_id duplicado: ${unit.requirement_id}.`);
+      if (seenRequirementIds.has(unit.requirement_id)) failUnitOrdering(`requirement_id duplicado: ${unit.requirement_id}.`);
       seenRequirementIds.add(unit.requirement_id);
       formalRequirementIdsInOrder.push(unit.requirement_id);
     }

@@ -707,11 +707,11 @@ test('V3: a non-allowlisted/hostile engine validation code never reaches the dur
   }
 });
 
-// Hostile value THROUGH the real engine: a genuine invariant violation whose validator code is
-// not one of the enumerated closed subcodes. The engine already collapses it to its own generic
-// 'v3_invariant_violation' fallback (never a raw string); the runner must then also refuse to
-// forward that non-allowlisted fallback and keep the fixed generic durable message.
-test('V3: a real invariant with a non-allowlisted code keeps the fixed durable message (engine + runner both fail closed)', async () => {
+// Real semantic-domain value THROUGH the real engine: a legal cross-field violation receives
+// the fixed call-site code and both the engine and durable runner accept it only because it is
+// present in the shared immutable allowlist. Unknown/hostile values remain covered separately
+// above and still collapse to the generic message.
+test('V3: a real legal-assessment invariant persists its closed domain code through engine and runner', async () => {
   const { client, telemetry } = trackedClient(async (options) => {
     const output = buildV3ModelOutput(options);
     output.integral_analysis.analysis_units[0].legal_assessment = {
@@ -732,10 +732,9 @@ test('V3: a real invariant with a non-allowlisted code keeps the fixed durable m
   assert.equal(params.p_error_code, 'AGT002_INTEGRAL_V3_INVALID');
   assert.equal(
     params.p_error_message,
-    'Vig-IA no completó el análisis: la salida integral v3 no superó la validación.',
-    'the engine generic fallback (v3_invariant_violation) is not allowlisted and must not be forwarded',
+    'Vig-IA no completó el análisis: la salida integral v3 no superó la validación. [v3_legal_assessment_invariant]',
+    'the fixed legal-assessment domain code must survive both closed allowlist gates',
   );
-  assert.ok(!params.p_error_message.includes('v3_invariant_violation'), 'the engine generic fallback code must never reach the durable row');
 });
 
 // --- Requirement 8: a genuinely unattributed post-response failure (the engine throws with no
