@@ -22,6 +22,8 @@
 // Disciplina: reglas cerradas, deterministas, sin I/O, sin reloj, sin red. El builder recibe los
 // tres artefactos ya parseados y una marca ISO; el espejo de 066 es una constante congelada.
 
+import { createHash } from 'node:crypto';
+
 import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from './agt002-company-evidence-classes.js';
 import { assertNoOpenPii } from './agt002-contractual-registry-taxonomy.js';
 
@@ -109,15 +111,29 @@ function assertIsoTimestamp(value, label) {
   return value;
 }
 
-// Digest determinista (FNV-1a 32 bits) de metadatos estables del documento. No hay red ni cripto
-// externa: es un resumen reproducible de identidad/provenance, no un hash del contenido íntegro.
-function fnv1aHex(text) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i += 1) {
-    h ^= text.charCodeAt(i);
-    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
-  }
-  return h.toString(16).padStart(8, '0');
+// Digest determinista de PROVENANCE, no del contenido. Se serializan de forma canónica (claves
+// ordenadas) los metadatos estables de identidad/provenance del documento y se calcula SHA-256
+// sobre ese texto, con prefijo explícito `provenance-sha256:`. NO es un hash del PDF/contenido
+// íntegro (que no poseemos): es un identificador reproducible de la provenance declarada. El
+// validador recomputa este valor y verifica que cada cita comparta el hash de su documento fuente.
+const PROVENANCE_HASH_PREFIX = 'provenance-sha256:';
+
+function canonicalProvenanceMetadata(doc) {
+  // Orden de claves fijo => serialización canónica reproducible.
+  return JSON.stringify({
+    document_id: doc.document_id,
+    name: doc.name,
+    document_type: doc.document_type,
+    provenance_kind: doc.provenance_kind,
+    version: doc.version,
+    is_vigente: doc.is_vigente,
+    is_vigente_pliego: doc.is_vigente_pliego,
+  });
+}
+
+function provenanceHash(doc) {
+  const digest = createHash('sha256').update(canonicalProvenanceMetadata(doc), 'utf8').digest('hex');
+  return `${PROVENANCE_HASH_PREFIX}${digest}`;
 }
 
 const VIGENCIA_RANK = Object.freeze({ vigente: 0, soporte: 1, historico: 2, superseded: 3 });
@@ -153,7 +169,7 @@ function buildSourceDocuments(registry) {
     is_vigente: d.is_vigente,
     is_vigente_pliego: d.is_vigente_pliego,
     precedence: i + 1,
-    hash: fnv1aHex(`${d.document_id}:${d.name}:${d.version}`),
+    hash: provenanceHash(d),
   }));
 }
 
@@ -229,10 +245,11 @@ function freezeEntry(entry) {
   };
 }
 
-function buildGovernedRuntimeEntries(registry, sourceDocsById, sourceText) {
+function buildGovernedRuntimeEntries(registry, sourceDocsById, sourceText, sectionLedgerRefs) {
   const itemsByRef = new Map(registry.items.map(i => [i.ref, i]));
-  // Secciones (en section_ledger) que listan cada requisito gobernado: dan el source_ref
-  // section_ledger y el item_ref primario (la primera sección habilitante que lo lista).
+  // Secciones del registro que listan cada requisito gobernado. Sólo las que están dentro del
+  // libro cerrado de 15 secciones pueden citarse como `section_ledger`; el resto son secciones
+  // reales del registro fuera del libro pre-GO y se citan honestamente como `registry_supplement`.
   const producedBy = new Map(GOVERNED_RUNTIME.map(g => [g.requirement_id, []]));
   for (const item of registry.items) {
     for (const id of item.governed_requirement_ids || []) {
@@ -248,8 +265,13 @@ function buildGovernedRuntimeEntries(registry, sourceDocsById, sourceText) {
     // item_ref primario: preferimos una sección habilitante; si no, la primera que lo lista.
     const primaryRef = producingRefs.find(ref => itemsByRef.get(ref)?.fase === 'habilitante') || producingRefs[0] || null;
 
+    // El governed_runtime self-ref siempre está presente y es suficiente. Cada sección productora
+    // usa `section_ledger` sólo si está en el libro cerrado de 15; en otro caso `registry_supplement`.
     const source_refs = [{ type: 'governed_runtime', ref: g.requirement_id, resolved: true }];
-    for (const ref of producingRefs) source_refs.push({ type: 'section_ledger', ref, resolved: true });
+    for (const ref of producingRefs) {
+      const type = sectionLedgerRefs.has(ref) ? 'section_ledger' : 'registry_supplement';
+      source_refs.push({ type, ref, resolved: true });
+    }
 
     // Cita disponible: el span de la sección primaria del registro. Es un EXCERPT (quote != span
     // completo), así que no resuelve a fragmento => la entrada no es analizable por cita.
@@ -264,6 +286,9 @@ function buildGovernedRuntimeEntries(registry, sourceDocsById, sourceText) {
       }));
     }
 
+    // El estado debe concordar con la analizabilidad: analizable => analyzed_candidate; si no es
+    // analizable (cita excerpt no resuelta, sin exclusión documental) => unresolved_visible.
+    const analyzable = analyzableFrom(category, citations);
     return freezeEntry({
       requirement_id: g.requirement_id,
       origin: 'governed_runtime',
@@ -272,8 +297,8 @@ function buildGovernedRuntimeEntries(registry, sourceDocsById, sourceText) {
       evidence_class_id,
       materiality: g.materiality,
       subsanability: primaryItem?.subsanabilidad ?? 'no_determinado',
-      status: 'analyzed_candidate',
-      analyzable: analyzableFrom(category, citations),
+      status: analyzable ? 'analyzed_candidate' : 'unresolved_visible',
+      analyzable,
       human_review_required: true,
       source_refs,
       citations,
@@ -375,13 +400,31 @@ function buildSectionLedger(registry, analysis, proposals) {
       fase: c.fase,
       categoria: c.categoria ?? null,
       origin,
-      disposition: 'analyzed_candidate',
+      // Disposición derivada de las entradas producidas (se fija en applyLedgerDispositions una vez
+      // construidas las entradas); nunca se afirma analyzed_candidate por defecto.
+      disposition: null,
       produced_requirement_ids: produced,
       reason: origin === 'governed_runtime'
         ? 'seccion_pre_go_con_requisito_gobernado_reconocido'
         : 'seccion_pre_go_con_propuesta_curada_para_revision_humana',
     };
   });
+}
+
+// Disposición de un asiento derivada de sus entradas producidas: si toda entrada producida es
+// analizable => analyzed_candidate; si alguna es no resuelta (y no hay exclusión documental) =>
+// unresolved_visible. Sin entradas => unresolved_visible (fail-closed, no se afirma analizado).
+function deriveDispositionFromProduced(producedIds, entriesById) {
+  const produced = (producedIds || []).map(id => entriesById.get(id)).filter(Boolean);
+  if (produced.length > 0 && produced.every(e => e.analyzable)) return 'analyzed_candidate';
+  return 'unresolved_visible';
+}
+
+function applyLedgerDispositions(ledger, entriesById) {
+  for (const item of ledger) {
+    item.disposition = deriveDispositionFromProduced(item.produced_requirement_ids, entriesById);
+  }
+  return ledger;
 }
 
 function buildProposalLedger(proposals) {
@@ -394,7 +437,7 @@ function buildProposalLedger(proposals) {
         label: r.label,
         requirement_kind: r.requirement_kind,
         candidate_evidence_class_id: r.candidate_evidence_class_id ?? null,
-        disposition: 'analyzed_candidate',
+        disposition: null,
         produced_requirement_ids: [r.requirement_id],
         reason: 'propuesta_curada_atomizada_para_revision_humana',
       });
@@ -438,12 +481,18 @@ export function buildAgt002ManizalesIntegralManifest({ registry, analysis, propo
 
   const section_ledger = buildSectionLedger(registry, analysis, proposals);
   const proposal_ledger = buildProposalLedger(proposals);
+  const sectionLedgerRefs = new Set(section_ledger.map(s => s.item_ref));
 
   const entries = [
-    ...buildGovernedRuntimeEntries(registry, sourceDocsById, source_text_by_document_id),
+    ...buildGovernedRuntimeEntries(registry, sourceDocsById, source_text_by_document_id, sectionLedgerRefs),
     ...buildProposalEntries(proposals, sourceDocsById, source_text_by_document_id),
     buildLifecycleGateEntry(registry, sourceDocsById, source_text_by_document_id),
   ];
+
+  // Disposición de cada asiento derivada de la analizabilidad de sus entradas producidas.
+  const entriesById = new Map(entries.map(e => [e.requirement_id, e]));
+  applyLedgerDispositions(section_ledger, entriesById);
+  applyLedgerDispositions(proposal_ledger, entriesById);
 
   const proposalTotal = (proposals.sections || []).reduce((n, s) => n + s.requirements.length, 0);
   const byCategory = {};
@@ -487,6 +536,9 @@ export function buildAgt002ManizalesIntegralManifest({ registry, analysis, propo
         taxonomy_version: typeof registry.taxonomy_version === 'string' ? registry.taxonomy_version : null,
         total_secciones: registry.items.length,
         provenance: source_documents.length,
+        // Lista CERRADA de los 68 refs de sección del registro: dominio de identidad contra el que
+        // el validador resuelve todo source_ref de tipo registry_supplement.
+        registry_item_refs: registry.items.map(i => i.ref),
       },
       pre_go_analysis: {
         artifact_type: typeof analysis.artifact_type === 'string' ? analysis.artifact_type : null,
@@ -534,9 +586,6 @@ const ENTRY_KEYS = Object.freeze([
 
 const SOURCE_REF_TYPES = new Set(['section_ledger', 'proposal_ledger', 'governed_runtime', 'registry_supplement']);
 
-// Único registry_supplement de vocabulario cerrado emitido por el builder (compuerta cierre/prórroga).
-const REGISTRY_SUPPLEMENT_REFS = new Set(['1.8']);
-
 export function validateAgt002ManizalesIntegralManifest(manifest) {
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
     throw new Error('AGT-002 manifiesto integral: el artefacto debe ser un objeto.');
@@ -557,8 +606,30 @@ export function validateAgt002ManizalesIntegralManifest(manifest) {
   const docsById = new Map(manifest.source_documents.map(d => [d.document_id, d]));
   const sourceText = manifest.source_text_by_document_id;
 
+  // Hash de provenance: se recomputa y se exige el prefijo explícito; no se confía en el valor
+  // almacenado ni se admite que se presente como hash de contenido.
+  for (const d of manifest.source_documents) {
+    if (typeof d.hash !== 'string' || !d.hash.startsWith(PROVENANCE_HASH_PREFIX)) {
+      throw new Error(`AGT-002 manifiesto integral: hash de documento sin prefijo provenance-sha256 en ${d.document_id}.`);
+    }
+    if (d.hash !== provenanceHash(d)) {
+      throw new Error(`AGT-002 manifiesto integral: hash de provenance no coincide al recomputarse en ${d.document_id}.`);
+    }
+  }
+
+  // Dominio de identidad para resolver source_refs: 68 refs del registro, y los refs reales de
+  // cada libro cerrado. Un ref que no resuelve a una identidad real es un fallo, no un adorno.
+  const registryRefs = manifest.source_set?.registry?.registry_item_refs;
+  if (!Array.isArray(registryRefs) || registryRefs.length !== 68 || new Set(registryRefs).size !== 68) {
+    throw new Error('AGT-002 manifiesto integral: source_set.registry.registry_item_refs debe listar exactamente 68 refs únicos.');
+  }
+  const registryRefSet = new Set(registryRefs);
+  const sectionLedgerRefSet = new Set((manifest.section_ledger || []).map(s => s.item_ref));
+  const proposalLedgerRefSet = new Set((manifest.proposal_ledger || []).map(p => p.requirement_id));
+
   const entries = manifest.entries;
   if (!Array.isArray(entries)) throw new Error('AGT-002 manifiesto integral: entries debe ser un arreglo.');
+  const entriesById = new Map(entries.map(e => [e.requirement_id, e]));
   const entryIds = new Set();
   for (const e of entries) {
     if (JSON.stringify(Object.keys(e).sort()) !== JSON.stringify(ENTRY_KEYS)) {
@@ -578,6 +649,21 @@ export function validateAgt002ManizalesIntegralManifest(manifest) {
     if (e.analyzable && (e.category === null || !e.citations.some(c => c.is_vigente && c.resolved))) {
       throw new Error(`AGT-002 manifiesto integral: ${e.requirement_id} marcada analizable sin categoría o sin cita vigente resuelta.`);
     }
+    // El status usa el vocabulario de disposición y debe CONCORDAR con la analizabilidad:
+    // analizable => analyzed_candidate; no analizable (sin exclusión documental) => unresolved_visible
+    // con revisión humana. Nunca analyzed_candidate para una entrada no resuelta.
+    if (!AGT002_INTEGRAL_MANIFEST_DISPOSITIONS.includes(e.status)) {
+      throw new Error(`AGT-002 manifiesto integral: status de entrada fuera de vocabulario en ${e.requirement_id}.`);
+    }
+    if (e.analyzable) {
+      if (e.status !== 'analyzed_candidate') {
+        throw new Error(`AGT-002 manifiesto integral: ${e.requirement_id} analizable debe tener status analyzed_candidate.`);
+      }
+    } else if (e.status !== 'excluded_with_reason') {
+      if (e.status !== 'unresolved_visible' || e.human_review_required !== true) {
+        throw new Error(`AGT-002 manifiesto integral: ${e.requirement_id} no analizable y no excluida debe ser unresolved_visible con revisión humana.`);
+      }
+    }
     // Origen pliego (proposal) => cita vigente del pliego presente.
     if (e.origin === 'section_proposal' && !e.citations.some(c => c.document_id === VIGENTE_PLIEGO_DOCUMENT_ID && c.is_vigente)) {
       throw new Error(`AGT-002 manifiesto integral: propuesta ${e.requirement_id} sin cita del pliego vigente.`);
@@ -586,13 +672,19 @@ export function validateAgt002ManizalesIntegralManifest(manifest) {
     if (!Array.isArray(e.source_refs) || !e.source_refs.some(r => r.resolved && SOURCE_REF_TYPES.has(r.type))) {
       throw new Error(`AGT-002 manifiesto integral: ${e.requirement_id} sin source_ref resuelto de tipo permitido.`);
     }
-    // Cada source_ref debe identificar algo real, no sólo declararse resuelto.
+    // Cada source_ref debe RESOLVER POR IDENTIDAD a algo real, no sólo declararse resuelto.
     for (const r of e.source_refs) {
       if (r.type === 'governed_runtime' && !AGT002_INTEGRAL_GOVERNED_RUNTIME_IDS.includes(r.ref)) {
         throw new Error(`AGT-002 manifiesto integral: ${e.requirement_id} referencia governed_runtime desconocida: ${r.ref}.`);
       }
-      if (r.type === 'registry_supplement' && !REGISTRY_SUPPLEMENT_REFS.has(r.ref)) {
-        throw new Error(`AGT-002 manifiesto integral: ${e.requirement_id} referencia registry_supplement inexistente: ${r.ref}.`);
+      if (r.type === 'section_ledger' && !sectionLedgerRefSet.has(r.ref)) {
+        throw new Error(`AGT-002 manifiesto integral: ${e.requirement_id} referencia section_ledger fuera del libro de 15: ${r.ref}.`);
+      }
+      if (r.type === 'proposal_ledger' && !proposalLedgerRefSet.has(r.ref)) {
+        throw new Error(`AGT-002 manifiesto integral: ${e.requirement_id} referencia proposal_ledger inexistente: ${r.ref}.`);
+      }
+      if (r.type === 'registry_supplement' && !registryRefSet.has(r.ref)) {
+        throw new Error(`AGT-002 manifiesto integral: ${e.requirement_id} referencia registry_supplement inexistente en el registro: ${r.ref}.`);
       }
     }
     // Citas: coherencia de metadatos con las fuentes.
@@ -601,6 +693,10 @@ export function validateAgt002ManizalesIntegralManifest(manifest) {
       if (!doc) throw new Error(`AGT-002 manifiesto integral: cita a documento desconocido en ${e.requirement_id}.`);
       if (c.is_vigente !== doc.is_vigente || c.precedence !== doc.precedence) {
         throw new Error(`AGT-002 manifiesto integral: metadatos de cita inconsistentes con la fuente en ${e.requirement_id}.`);
+      }
+      // El hash de la cita debe ser exactamente el hash de provenance del documento fuente resuelto.
+      if (c.hash !== doc.hash) {
+        throw new Error(`AGT-002 manifiesto integral: hash de cita no coincide con el documento fuente en ${e.requirement_id}.`);
       }
       if (!Number.isInteger(c.char_start) || !Number.isInteger(c.char_end) || c.char_end <= c.char_start) {
         throw new Error(`AGT-002 manifiesto integral: rango de cita inválido en ${e.requirement_id}.`);
@@ -651,6 +747,13 @@ export function validateAgt002ManizalesIntegralManifest(manifest) {
       }
       for (const id of item.produced_requirement_ids || []) {
         if (!entryIds.has(id)) throw new Error(`AGT-002 manifiesto integral: ${label} ${key} produce un id que no resuelve a una entrada: ${id}.`);
+      }
+      // La disposición debe DERIVAR de las entradas producidas, no afirmarse por defecto.
+      if (item.disposition !== 'excluded_with_reason') {
+        const expected = deriveDispositionFromProduced(item.produced_requirement_ids, entriesById);
+        if (item.disposition !== expected) {
+          throw new Error(`AGT-002 manifiesto integral: ${label} ${key} disposición ${item.disposition} no deriva de sus entradas producidas (esperado ${expected}).`);
+        }
       }
     }
   };

@@ -46,7 +46,7 @@ function renderMarkdown(m) {
   lines.push(`- Secciones del registro: **${m.coverage.registry_sections}**; documentos fuente: **${m.source_documents.length}**.`);
   lines.push(`- Propuestas curadas: **${m.coverage.proposals}** en **${m.coverage.proposal_sections}** secciones.`);
   lines.push(`- Requisitos gobernados en tiempo de ejecución: **${m.coverage.governed_runtime}**; bindings 066: **${m.coverage.governed_bindings_066}**.`);
-  lines.push(`- section_ledger: **${m.coverage.section_ledger.total}** (analyzed_candidate ${m.coverage.section_ledger.by_disposition.analyzed_candidate}).`);
+  lines.push(`- section_ledger: **${m.coverage.section_ledger.total}** (analyzed_candidate ${m.coverage.section_ledger.by_disposition.analyzed_candidate}, unresolved_visible ${m.coverage.section_ledger.by_disposition.unresolved_visible}).`);
   lines.push(`- proposal_ledger: **${m.coverage.proposal_ledger.total}** (analyzed_candidate ${m.coverage.proposal_ledger.by_disposition.analyzed_candidate}).`);
   lines.push(`- Entradas: **${m.coverage.entries.total}** (analizables ${m.coverage.entries.analyzable}, unresolved_visible ${m.coverage.entries.unresolved_visible}).`);
   lines.push('');

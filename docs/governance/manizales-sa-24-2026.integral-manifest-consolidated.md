@@ -14,9 +14,9 @@ compuertas humanas. La categoría es metadato de gobernanza, nunca una decisión
 - Secciones del registro: **68**; documentos fuente: **17**.
 - Propuestas curadas: **20** en **10** secciones.
 - Requisitos gobernados en tiempo de ejecución: **4**; bindings 066: **3**.
-- section_ledger: **15** (analyzed_candidate 15).
+- section_ledger: **15** (analyzed_candidate 10, unresolved_visible 5).
 - proposal_ledger: **20** (analyzed_candidate 20).
-- Entradas: **25** (analizables 20, unresolved_visible 1).
+- Entradas: **25** (analizables 20, unresolved_visible 5).
 
 ## Entradas por categoría de gobernanza
 
@@ -31,15 +31,15 @@ compuertas humanas. La categoría es metadato de gobernanza, nunca una decisión
 
 | item_ref | fase | disposición | origen | produce |
 |---|---|---|---|---|
-| 1.3 | generalidad | analyzed_candidate | governed_runtime | 1 |
-| 1.9 | generalidad | analyzed_candidate | governed_runtime | 1 |
-| 2.1 | habilitante | analyzed_candidate | governed_runtime | 3 |
-| 2.2 | habilitante | analyzed_candidate | governed_runtime | 1 |
+| 1.3 | generalidad | unresolved_visible | governed_runtime | 1 |
+| 1.9 | generalidad | unresolved_visible | governed_runtime | 1 |
+| 2.1 | habilitante | unresolved_visible | governed_runtime | 3 |
+| 2.2 | habilitante | unresolved_visible | governed_runtime | 1 |
 | 2.3 | habilitante | analyzed_candidate | section_proposal | 2 |
 | 2.4 | habilitante | analyzed_candidate | section_proposal | 4 |
 | 2.4.1 | habilitante | analyzed_candidate | section_proposal | 4 |
 | 2.5 | habilitante | analyzed_candidate | section_proposal | 1 |
-| 2.6 | habilitante | analyzed_candidate | governed_runtime | 1 |
+| 2.6 | habilitante | unresolved_visible | governed_runtime | 1 |
 | 3.1 | puntuable | analyzed_candidate | section_proposal | 2 |
 | 3.2 | puntuable | analyzed_candidate | section_proposal | 1 |
 | 3.3 | puntuable | analyzed_candidate | section_proposal | 1 |

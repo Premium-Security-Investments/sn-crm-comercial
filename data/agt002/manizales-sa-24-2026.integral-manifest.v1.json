@@ -13,7 +13,77 @@
       "artifact_type": "agt002_contractual_registry",
       "taxonomy_version": "agt002-contractual-registry-taxonomy@1",
       "total_secciones": 68,
-      "provenance": 17
+      "provenance": 17,
+      "registry_item_refs": [
+        "1.1",
+        "1.2",
+        "1.2.1",
+        "1.2.2",
+        "1.3",
+        "1.4",
+        "1.5",
+        "1.6",
+        "1.7",
+        "1.8",
+        "1.9",
+        "1.10",
+        "1.11",
+        "1.12",
+        "1.13",
+        "1.14",
+        "1.15",
+        "1.16",
+        "1.17",
+        "1.17.1",
+        "1.17.2",
+        "1.17.3",
+        "1.17.4",
+        "1.18",
+        "1.19",
+        "1.20",
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.4",
+        "2.4.1",
+        "2.5",
+        "2.6",
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4",
+        "3.5",
+        "3.6",
+        "4.1",
+        "4.2",
+        "4.3",
+        "4.4",
+        "4.5",
+        "5.1",
+        "5.2",
+        "5.3",
+        "5.3.1",
+        "5.3.2",
+        "5.4",
+        "5.4.1",
+        "5.4.2",
+        "6.1",
+        "6.2",
+        "6.3",
+        "6.4",
+        "6.5",
+        "6.6",
+        "6.7",
+        "6.8",
+        "6.9",
+        "6.10",
+        "6.11",
+        "6.12",
+        "6.13",
+        "6.14",
+        "6.15",
+        "6.16"
+      ]
     },
     "pre_go_analysis": {
       "artifact_type": "agt002_pre_go_analysis",
@@ -46,7 +116,7 @@
       "is_vigente": true,
       "is_vigente_pliego": true,
       "precedence": 1,
-      "hash": "67d23bce"
+      "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45"
     },
     {
       "document_id": "7a37e964-2081-4dc3-93fa-67b3e87edc5a",
@@ -57,7 +127,7 @@
       "is_vigente": true,
       "is_vigente_pliego": false,
       "precedence": 2,
-      "hash": "51ac9a4d"
+      "hash": "provenance-sha256:cb5126429e907a02d23fa1a36a0a7cbb646dc6beaf93f3af5011b48ec32c8f14"
     },
     {
       "document_id": "03950a0c-74e9-4d21-a308-7181daa4aa82",
@@ -68,7 +138,7 @@
       "is_vigente": false,
       "is_vigente_pliego": false,
       "precedence": 3,
-      "hash": "703aba0c"
+      "hash": "provenance-sha256:e572244117eff80ed5f3e9bdbd5059cfddd340b0ff3f40c2322448cc68b618a4"
     },
     {
       "document_id": "03b5fff9-a9d4-407b-a7f3-25df1496f1e6",
@@ -79,7 +149,7 @@
       "is_vigente": false,
       "is_vigente_pliego": false,
       "precedence": 4,
-      "hash": "fed3f724"
+      "hash": "provenance-sha256:7ae6cc6875edba9e57ba288fb5bf44b2a62efb992913c8e2961f14238a9a39e9"
     },
     {
       "document_id": "2100f041-f9b3-435d-a521-eb8e27c1c04b",
@@ -90,7 +160,7 @@
       "is_vigente": false,
       "is_vigente_pliego": false,
       "precedence": 5,
-      "hash": "2d29d656"
+      "hash": "provenance-sha256:fd0dfe09fe3fc9b43e1ffbe44572bd2ab73dbceea0e2abcbad808c8ff038fb92"
     },
     {
       "document_id": "47af9d7a-317e-48c6-9f83-fbb67fa808db",
@@ -101,7 +171,7 @@
       "is_vigente": false,
       "is_vigente_pliego": false,
       "precedence": 6,
-      "hash": "0d72f2c8"
+      "hash": "provenance-sha256:36118ca2cfae6182a5ef2bbf77e7f10d4ccad9036e9874a6089b6b2846eb8691"
     },
     {
       "document_id": "51169076-95a6-447c-a09a-6770e21809ce",
@@ -112,7 +182,7 @@
       "is_vigente": false,
       "is_vigente_pliego": false,
       "precedence": 7,
-      "hash": "6a28997c"
+      "hash": "provenance-sha256:6d6e675803df77c4e09f822ffa3f2efd75eb4aed58c4f12e67f55aae993ac26e"
     },
     {
       "document_id": "5a2bc385-5452-4a0f-b662-33736f9bf0d7",
@@ -123,7 +193,7 @@
       "is_vigente": false,
       "is_vigente_pliego": false,
       "precedence": 8,
-      "hash": "9a36aeb5"
+      "hash": "provenance-sha256:040b29d0bcb97b9dfc6cb040a13e31d25d0f7df7c3b413ae52834057d907323d"
     },
     {
       "document_id": "610606d2-32f0-4ccb-b43c-ae38416077bc",
@@ -134,7 +204,7 @@
       "is_vigente": false,
       "is_vigente_pliego": false,
       "precedence": 9,
-      "hash": "f7e728fc"
+      "hash": "provenance-sha256:1d7ca0991d7c1755e36e7de69e23f122bb8df68f92f5b44148d8de377c7ec2a4"
     },
     {
       "document_id": "7cba4176-e34e-44c8-9b54-767f955a025b",
@@ -145,7 +215,7 @@
       "is_vigente": false,
       "is_vigente_pliego": false,
       "precedence": 10,
-      "hash": "f4b02bbd"
+      "hash": "provenance-sha256:265caee6330f1e17e1c47133d739b2c39af086219f6c6313e4d4c045f1f9d396"
     },
     {
       "document_id": "a75a1bc2-aab2-4af2-b561-692c20bc1c1d",
@@ -156,7 +226,7 @@
       "is_vigente": false,
       "is_vigente_pliego": false,
       "precedence": 11,
-      "hash": "5230bd0a"
+      "hash": "provenance-sha256:79c75ef609d4ae2b184c4e6ea00b496b70a927740ea4bedfb386d4649caa79b4"
     },
     {
       "document_id": "bc9964bf-9dbe-40ee-82f5-b391bb15c059",
@@ -167,7 +237,7 @@
       "is_vigente": false,
       "is_vigente_pliego": false,
       "precedence": 12,
-      "hash": "68bcf4cd"
+      "hash": "provenance-sha256:e61049734f269a8ae7ec45dee126e6c8c02cc225e9c9e2a43f95e40ae9a251b0"
     },
     {
       "document_id": "c21c7cbd-126d-4afc-8389-e6c117d5f833",
@@ -178,7 +248,7 @@
       "is_vigente": false,
       "is_vigente_pliego": false,
       "precedence": 13,
-      "hash": "aecd9a24"
+      "hash": "provenance-sha256:baa952d7cf4d83b01d16ec4ed625831bc526be23f1caaaae17c1bd0636d33a7f"
     },
     {
       "document_id": "cf887957-40da-4cdc-a1ba-700c1db08c5a",
@@ -189,7 +259,7 @@
       "is_vigente": false,
       "is_vigente_pliego": false,
       "precedence": 14,
-      "hash": "a2a35d6e"
+      "hash": "provenance-sha256:b91ba0a0295dc222f1c015b62504d90032ab7dea8547c48d0bc9d139f38f4cbf"
     },
     {
       "document_id": "d2612ab5-3239-42e2-b251-b1c7d4bd62e1",
@@ -200,7 +270,7 @@
       "is_vigente": false,
       "is_vigente_pliego": false,
       "precedence": 15,
-      "hash": "a589b20f"
+      "hash": "provenance-sha256:2b2a94dbf4a06fe5e8ec091be0b57f7962663cb4950959ac9f30d3a9329b3e15"
     },
     {
       "document_id": "43b7c438-0d50-481c-8e4a-b522b105bd42",
@@ -211,7 +281,7 @@
       "is_vigente": false,
       "is_vigente_pliego": false,
       "precedence": 16,
-      "hash": "bb0b7f64"
+      "hash": "provenance-sha256:68c03e992bcc40a47c3ce861d1df80f1e3ec3e45ddba49709c6eb4b8e34e2fe8"
     },
     {
       "document_id": "fe33782b-f94b-470f-8500-213ee0dba25e",
@@ -222,7 +292,7 @@
       "is_vigente": false,
       "is_vigente_pliego": false,
       "precedence": 17,
-      "hash": "c0630ab0"
+      "hash": "provenance-sha256:c40d94bb2b9cc41a85fda57fe28f8735d3710da8216e929c395580d7c58e3954"
     }
   ],
   "source_text_by_document_id": {
@@ -360,7 +430,7 @@
       "fase": "generalidad",
       "categoria": "proceso",
       "origin": "governed_runtime",
-      "disposition": "analyzed_candidate",
+      "disposition": "unresolved_visible",
       "produced_requirement_ids": [
         "legal-collective-life-policy"
       ],
@@ -372,7 +442,7 @@
       "fase": "generalidad",
       "categoria": "proceso",
       "origin": "governed_runtime",
-      "disposition": "analyzed_candidate",
+      "disposition": "unresolved_visible",
       "produced_requirement_ids": [
         "legal-collective-life-policy"
       ],
@@ -384,7 +454,7 @@
       "fase": "habilitante",
       "categoria": "juridico",
       "origin": "governed_runtime",
-      "disposition": "analyzed_candidate",
+      "disposition": "unresolved_visible",
       "produced_requirement_ids": [
         "legal-rce-policy",
         "legal-collective-life-policy",
@@ -398,7 +468,7 @@
       "fase": "habilitante",
       "categoria": "financiero",
       "origin": "governed_runtime",
-      "disposition": "analyzed_candidate",
+      "disposition": "unresolved_visible",
       "produced_requirement_ids": [
         "financial-working-capital"
       ],
@@ -465,7 +535,7 @@
       "fase": "habilitante",
       "categoria": "proceso",
       "origin": "governed_runtime",
-      "disposition": "analyzed_candidate",
+      "disposition": "unresolved_visible",
       "produced_requirement_ids": [
         "legal-collective-life-policy"
       ],
@@ -798,7 +868,7 @@
       "evidence_class_id": "rup",
       "materiality": "material",
       "subsanability": "no_determinado",
-      "status": "analyzed_candidate",
+      "status": "unresolved_visible",
       "analyzable": false,
       "human_review_required": true,
       "source_refs": [
@@ -817,7 +887,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 91502,
@@ -835,7 +905,7 @@
       "evidence_class_id": "rce_policy",
       "materiality": "ordinary",
       "subsanability": "no_subsanable",
-      "status": "analyzed_candidate",
+      "status": "unresolved_visible",
       "analyzable": false,
       "human_review_required": true,
       "source_refs": [
@@ -850,7 +920,7 @@
           "resolved": true
         },
         {
-          "type": "section_ledger",
+          "type": "registry_supplement",
           "ref": "6.4",
           "resolved": true
         }
@@ -859,7 +929,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 55690,
@@ -877,7 +947,7 @@
       "evidence_class_id": "collective_life_policy",
       "materiality": "ordinary",
       "subsanability": "no_subsanable",
-      "status": "analyzed_candidate",
+      "status": "unresolved_visible",
       "analyzable": false,
       "human_review_required": true,
       "source_refs": [
@@ -911,7 +981,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 55690,
@@ -929,7 +999,7 @@
       "evidence_class_id": null,
       "materiality": "ordinary",
       "subsanability": "no_subsanable",
-      "status": "analyzed_candidate",
+      "status": "unresolved_visible",
       "analyzable": false,
       "human_review_required": true,
       "source_refs": [
@@ -939,7 +1009,7 @@
           "resolved": true
         },
         {
-          "type": "section_ledger",
+          "type": "registry_supplement",
           "ref": "1.2.1",
           "resolved": true
         },
@@ -949,7 +1019,7 @@
           "resolved": true
         },
         {
-          "type": "section_ledger",
+          "type": "registry_supplement",
           "ref": "6.4",
           "resolved": true
         }
@@ -958,7 +1028,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 55690,
@@ -995,7 +1065,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 93564,
@@ -1032,7 +1102,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 94135,
@@ -1069,7 +1139,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 94814,
@@ -1106,7 +1176,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 95391,
@@ -1143,7 +1213,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 95853,
@@ -1180,7 +1250,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 96862,
@@ -1217,7 +1287,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 97266,
@@ -1254,7 +1324,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 105768,
@@ -1291,7 +1361,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 107039,
@@ -1328,7 +1398,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 108919,
@@ -1365,7 +1435,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 109005,
@@ -1402,7 +1472,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 117449,
@@ -1439,7 +1509,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 117918,
@@ -1476,7 +1546,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 119744,
@@ -1513,7 +1583,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 120281,
@@ -1550,7 +1620,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 122367,
@@ -1587,7 +1657,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 123180,
@@ -1624,7 +1694,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 123997,
@@ -1661,7 +1731,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 124245,
@@ -1698,7 +1768,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 125948,
@@ -1730,7 +1800,7 @@
         {
           "document_id": "db9752a1-e9ee-49af-b321-883d0c23cf0a",
           "version": "vigente",
-          "hash": "67d23bce",
+          "hash": "provenance-sha256:80b7edd5e4f1cf125d12c5793dfa1cc373b62652a7fed0c8a717b10e6a56ed45",
           "is_vigente": true,
           "precedence": 1,
           "char_start": 26729,
@@ -1750,9 +1820,9 @@
     "section_ledger": {
       "total": 15,
       "by_disposition": {
-        "analyzed_candidate": 15,
+        "analyzed_candidate": 10,
         "excluded_with_reason": 0,
-        "unresolved_visible": 0
+        "unresolved_visible": 5
       }
     },
     "proposal_ledger": {
@@ -1766,7 +1836,7 @@
     "entries": {
       "total": 25,
       "analyzable": 20,
-      "unresolved_visible": 1,
+      "unresolved_visible": 5,
       "by_category": {
         "habilitating": 14,
         "technical": 7,

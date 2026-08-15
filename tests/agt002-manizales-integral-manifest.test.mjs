@@ -129,14 +129,16 @@ test('coverage proves the required counts and disposition tallies', () => {
   assert.equal(m.coverage.governed_runtime, 4);
   assert.equal(m.coverage.governed_bindings_066, 3);
   assert.equal(m.coverage.section_ledger.total, 15);
-  assert.equal(m.coverage.section_ledger.by_disposition.analyzed_candidate, 15);
+  // honest split: 5 governed source sections produce unresolved entries, 10 produce analyzable proposals
+  assert.equal(m.coverage.section_ledger.by_disposition.analyzed_candidate, 10);
   assert.equal(m.coverage.section_ledger.by_disposition.excluded_with_reason, 0);
-  assert.equal(m.coverage.section_ledger.by_disposition.unresolved_visible, 0);
+  assert.equal(m.coverage.section_ledger.by_disposition.unresolved_visible, 5);
   assert.equal(m.coverage.proposal_ledger.total, 20);
   assert.equal(m.coverage.proposal_ledger.by_disposition.analyzed_candidate, 20);
   // tallies are internally consistent with the ledgers
   const tally = (ledger) => ledger.reduce((acc, x) => (acc[x.disposition] = (acc[x.disposition] || 0) + 1, acc), {});
-  assert.equal(tally(m.section_ledger).analyzed_candidate, 15);
+  assert.equal(tally(m.section_ledger).analyzed_candidate, 10);
+  assert.equal(tally(m.section_ledger).unresolved_visible, 5);
   assert.equal(tally(m.proposal_ledger).analyzed_candidate, 20);
 });
 
@@ -303,4 +305,171 @@ test('build is deterministic (same inputs => byte-identical JSON)', () => {
   const a = JSON.stringify(build());
   const b = JSON.stringify(build());
   assert.equal(a, b);
+});
+
+// --- Phase 1 hardening ----------------------------------------------------------------------
+
+test('source_set.registry persists the closed list of all 68 registry item refs', () => {
+  const m = build();
+  const refs = m.source_set.registry.registry_item_refs;
+  assert.ok(Array.isArray(refs), 'registry_item_refs must be an array');
+  assert.equal(refs.length, 68);
+  assert.equal(new Set(refs).size, 68);
+  const expected = registry.items.map(i => i.ref);
+  assert.deepEqual([...refs].sort(), [...expected].sort());
+});
+
+test('validator rejects a registry_item_refs list that is not exactly 68 unique refs', () => {
+  const m = build();
+  const short = JSON.parse(JSON.stringify(m));
+  short.source_set.registry.registry_item_refs.pop();
+  assert.throws(() => validateAgt002ManizalesIntegralManifest(short));
+  const dup = JSON.parse(JSON.stringify(m));
+  dup.source_set.registry.registry_item_refs[0] = dup.source_set.registry.registry_item_refs[1];
+  assert.throws(() => validateAgt002ManizalesIntegralManifest(dup));
+});
+
+test('validator rejects a section_ledger source_ref whose ref is not a real section_ledger item_ref', () => {
+  const m = build();
+  const tampered = JSON.parse(JSON.stringify(m));
+  const e = tampered.entries.find(x => x.source_refs.some(r => r.type === 'section_ledger'));
+  assert.ok(e, 'fixture must have a section_ledger source_ref');
+  e.source_refs.find(r => r.type === 'section_ledger').ref = '9.9.9';
+  assert.throws(() => validateAgt002ManizalesIntegralManifest(tampered));
+});
+
+test('validator rejects a proposal_ledger source_ref whose ref is not a real proposal_ledger requirement_id', () => {
+  const m = build();
+  const tampered = JSON.parse(JSON.stringify(m));
+  const e = tampered.entries.find(x => x.source_refs.some(r => r.type === 'proposal_ledger'));
+  assert.ok(e, 'fixture must have a proposal_ledger source_ref');
+  e.source_refs.find(r => r.type === 'proposal_ledger').ref = 'not-a-real-proposal-requirement';
+  assert.throws(() => validateAgt002ManizalesIntegralManifest(tampered));
+});
+
+test('validator rejects a registry_supplement source_ref that resolves to no registry section', () => {
+  const m = build();
+  const tampered = JSON.parse(JSON.stringify(m));
+  const e = tampered.entries.find(x => x.source_refs.some(r => r.type === 'registry_supplement'));
+  assert.ok(e, 'fixture must have a registry_supplement source_ref');
+  e.source_refs.find(r => r.type === 'registry_supplement').ref = '99.9';
+  assert.throws(() => validateAgt002ManizalesIntegralManifest(tampered));
+});
+
+test('governed entries only cite section_ledger for refs in the closed 15; others become registry_supplement', () => {
+  const m = build();
+  const ledgerRefs = new Set(m.section_ledger.map(s => s.item_ref));
+  const governed = m.entries.filter(e => e.origin === 'governed_runtime');
+  assert.equal(governed.length, 4);
+  for (const e of governed) {
+    // governed_runtime self-ref always present
+    assert.ok(e.source_refs.some(r => r.type === 'governed_runtime' && r.ref === e.requirement_id));
+    for (const r of e.source_refs) {
+      if (r.type === 'section_ledger') assert.ok(ledgerRefs.has(r.ref), `section_ledger ref ${r.ref} must be in the closed 15`);
+      if (r.type === 'registry_supplement') assert.ok(!ledgerRefs.has(r.ref), `registry_supplement ref ${r.ref} must be outside the closed 15`);
+    }
+  }
+  // the two registry refs outside the closed 15 (1.2.1, 6.4) must appear as registry_supplement, never section_ledger
+  const allRefs = governed.flatMap(e => e.source_refs);
+  for (const outside of ['1.2.1', '6.4']) {
+    assert.ok(allRefs.some(r => r.type === 'registry_supplement' && r.ref === outside), `${outside} must be registry_supplement`);
+    assert.ok(!allRefs.some(r => r.type === 'section_ledger' && r.ref === outside), `${outside} must never be section_ledger`);
+  }
+});
+
+test('governed runtime entries with unresolved citations are unresolved_visible, human-reviewed, never analyzed_candidate', () => {
+  const m = build();
+  for (const e of m.entries.filter(x => x.origin === 'governed_runtime')) {
+    assert.equal(e.analyzable, false);
+    assert.equal(e.status, 'unresolved_visible');
+    assert.equal(e.human_review_required, true);
+  }
+});
+
+test('validator rejects an analyzable:false entry mislabeled as analyzed_candidate', () => {
+  const m = build();
+  const tampered = JSON.parse(JSON.stringify(m));
+  const e = tampered.entries.find(x => x.analyzable === false && x.status === 'unresolved_visible');
+  assert.ok(e, 'fixture must have an unresolved entry');
+  e.status = 'analyzed_candidate';
+  assert.throws(() => validateAgt002ManizalesIntegralManifest(tampered));
+});
+
+test('validator rejects an analyzable:true entry not marked analyzed_candidate', () => {
+  const m = build();
+  const tampered = JSON.parse(JSON.stringify(m));
+  const e = tampered.entries.find(x => x.analyzable === true);
+  assert.ok(e, 'fixture must have an analyzable entry');
+  e.status = 'unresolved_visible';
+  assert.throws(() => validateAgt002ManizalesIntegralManifest(tampered));
+});
+
+test('section_ledger disposition is derived from produced entries: 5 unresolved (governed), 10 analyzed', () => {
+  const m = build();
+  const byId = new Map(m.entries.map(e => [e.requirement_id, e]));
+  const unresolved = m.section_ledger.filter(s => s.disposition === 'unresolved_visible').map(s => s.item_ref);
+  const analyzed = m.section_ledger.filter(s => s.disposition === 'analyzed_candidate').map(s => s.item_ref);
+  assert.deepEqual([...unresolved].sort(), ['1.3', '1.9', '2.1', '2.2', '2.6']);
+  assert.equal(analyzed.length, 10);
+  // derivation is truthful: every unresolved ledger item produces an unresolved entry; analyzed produce only analyzable
+  for (const s of m.section_ledger) {
+    const produced = s.produced_requirement_ids.map(id => byId.get(id));
+    if (s.disposition === 'analyzed_candidate') assert.ok(produced.every(e => e && e.analyzable));
+    else assert.ok(produced.some(e => e && !e.analyzable));
+  }
+});
+
+test('validator rejects a section_ledger disposition that disagrees with its produced entries', () => {
+  const m = build();
+  const tampered = JSON.parse(JSON.stringify(m));
+  const s = tampered.section_ledger.find(x => x.disposition === 'unresolved_visible');
+  assert.ok(s, 'fixture must have an unresolved ledger item');
+  s.disposition = 'analyzed_candidate';
+  assert.throws(() => validateAgt002ManizalesIntegralManifest(tampered));
+});
+
+test('coverage tallies reflect the honest 10/5 section_ledger split and 5 unresolved entries', () => {
+  const m = build();
+  assert.equal(m.coverage.section_ledger.by_disposition.analyzed_candidate, 10);
+  assert.equal(m.coverage.section_ledger.by_disposition.unresolved_visible, 5);
+  assert.equal(m.coverage.section_ledger.by_disposition.excluded_with_reason, 0);
+  // 4 governed runtime + 1 lifecycle gate produce unresolved entries; 20 proposals analyzable
+  assert.equal(m.coverage.entries.analyzable, 20);
+  assert.equal(m.coverage.entries.unresolved_visible, 5);
+});
+
+test('source document hash is a deterministic provenance-sha256 digest, not a content hash', () => {
+  const m = build();
+  for (const d of m.source_documents) {
+    assert.match(d.hash, /^provenance-sha256:[0-9a-f]{64}$/, 'hash must be a prefixed sha-256 over provenance metadata');
+  }
+  // deterministic across builds
+  const again = build();
+  assert.deepEqual(m.source_documents.map(d => d.hash), again.source_documents.map(d => d.hash));
+});
+
+test('every citation hash equals its resolved source document hash', () => {
+  const m = build();
+  const byId = new Map(m.source_documents.map(d => [d.document_id, d]));
+  for (const e of m.entries) {
+    for (const c of e.citations) {
+      assert.equal(c.hash, byId.get(c.document_id).hash);
+    }
+  }
+});
+
+test('validator recomputes the provenance hash and rejects a forged source document hash', () => {
+  const m = build();
+  const tampered = JSON.parse(JSON.stringify(m));
+  tampered.source_documents[0].hash = 'provenance-sha256:' + '0'.repeat(64);
+  assert.throws(() => validateAgt002ManizalesIntegralManifest(tampered));
+});
+
+test('validator rejects a citation hash that does not equal the resolved source document hash', () => {
+  const m = build();
+  const tampered = JSON.parse(JSON.stringify(m));
+  const e = tampered.entries.find(x => x.citations.length > 0);
+  assert.ok(e, 'fixture must have a citation');
+  e.citations[0].hash = 'provenance-sha256:' + 'f'.repeat(64);
+  assert.throws(() => validateAgt002ManizalesIntegralManifest(tampered));
 });
