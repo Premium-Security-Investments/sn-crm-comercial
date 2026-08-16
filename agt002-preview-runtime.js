@@ -9,7 +9,12 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_CONCURRENT = 2;
 const DEFAULT_DAILY_MAX_RUNS = 20;
 export const AGT002_PREVIEW_DEFAULT_POLICY_VERSION = 'agt002-preview-policy-v2';
-export const AGT002_INTEGRAL_V3_POLICY_VERSION = 'agt002-integral-v3-policy-v1';
+// v2 (Phase 5 remediation): AGT002_INTEGRAL_V3_POLICY was strengthened to state the exact closed
+// { integral_analysis: { analysis_units: [...] } } shape and forbid server-owned contract_version /
+// coverage / category / evidence_state writes explicitly. The instruction text is materially
+// different, so the version identifier moves with it (persisted provenance must identify the exact
+// policy actually sent). No V2 flag-off policy or its version changes.
+export const AGT002_INTEGRAL_V3_POLICY_VERSION = 'agt002-integral-v3-policy-v2';
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;

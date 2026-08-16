@@ -27,7 +27,7 @@ test('V3 wire schema binds every model-supplied reference to governed allowlists
 
   assert.deepEqual(
     unit.properties.requirement_id,
-    { anyOf: [{ type: 'string', enum: ['REQ-1', 'REQ-2'] }, { type: 'null' }] },
+    { type: 'string', enum: ['REQ-1', 'REQ-2'] },
   );
 
   const evidenceRef = unit.properties.evidence_refs.items;

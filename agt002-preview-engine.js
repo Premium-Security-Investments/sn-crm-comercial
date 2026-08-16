@@ -20,6 +20,7 @@ import { buildAgt002CompanyEvidenceClasses, AGT002_COMPANY_EVIDENCE_CLASS_IDS } 
 import { deriveAgt002ManizalesManifestWiring } from './agt002-manizales-manifest-wiring.js';
 import { validateTenderAnalysisResult } from './tender-analysis-domain.js';
 import { AGT002_OUTPUT_REJECTION_STAGES, createAgt002AnalysisObservability } from './agt002-analysis-observability.js';
+import { budgetAgt002V3PromptRequest, AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS } from './agt002-v3-prompt-budget.js';
 
 // design section 5: fixed version tag for the 17-class company-evidence catalog. The
 // catalog itself is fixed by code (agt002-company-evidence-classes.js), not by a stored
@@ -61,7 +62,16 @@ export const AGT002_INTEGRAL_V3_POLICY = [
   'Nunca uses estados definitivos como "compliant", "sufficient" o "approved": toda conclusión favorable queda pendiente de validación humana.',
   'Cita jurídica exclusivamente desde el corpus jurídico publicado recibido; si no hay corpus o la fuente no está verificada, usa legal_assessment.status "not_verified" con human_legal_review_required=true.',
   'Toda unidad con efecto bloqueante o condicional exige una acción concreta con rol sugerido, sin nombres ni datos personales, y external_side_effect siempre en false.',
-  'Devuelve exclusivamente el objeto JSON estructurado acordado ({ integral_analysis }), sin texto adicional ni claves fuera de las solicitadas.',
+  // Phase 5 remediation (v3_model_output_shape_mismatch): the corrected real canary fit the context
+  // window but the model turn returned an integral_analysis carrying server-owned keys beyond
+  // analysis_units. The closed wire schema (buildAgt002IntegralAnalysisV3OutputJsonSchema) and the
+  // server validator (validateAgt002PreviewModelOutputV3) already forbid those keys fail-closed; these
+  // two sentences make the same closed shape explicit in the instructions so a best-effort structured
+  // decoder is far less likely to emit them in the first place. They add NO new server contract — they
+  // restate what the schema/validator enforce — but the policy text is now materially different, so
+  // AGT002_INTEGRAL_V3_POLICY_VERSION is bumped in the runtime to identify it.
+  'Devuelve exclusivamente un objeto JSON con exactamente esta forma anidada y ninguna otra clave: { "integral_analysis": { "analysis_units": [ … ] } }. El nivel raíz sólo contiene la clave integral_analysis, e integral_analysis sólo contiene la clave analysis_units (un arreglo); sin texto adicional, comentarios ni envolturas.',
+  'contract_version y coverage son metadatos que ensambla el servidor: nunca los incluyas dentro de integral_analysis. Junto con category y evidence_state de cada tender_requirement (que van en null, como ya se indicó), son campos gobernados por el servidor y jamás se aceptan de tu respuesta: si envías contract_version, coverage o un category/evidence_state gobernado, la salida se rechaza.',
 ].join(' ');
 
 const SAFE_UNAVAILABLE = 'AGT-002 Preview no está disponible en este momento.';
@@ -101,6 +111,19 @@ export const AGT002_V3_SAFE_VALIDATION_CODES = Object.freeze([
   'v3_governed_evidence_state_mismatch',
   'v3_unit_identity_invariant',
   'v3_unit_ordering_invariant',
+  'v3_unit_shape_invariant',
+  'v3_conclusion_shape_invariant',
+  'v3_blocking_shape_invariant',
+  'v3_evidence_state_shape_invariant',
+  'v3_evidence_refs_shape_invariant',
+  'v3_missing_evidence_shape_invariant',
+  'v3_commercial_impact_shape_invariant',
+  'v3_legal_assessment_shape_invariant',
+  'v3_actions_shape_invariant',
+  'v3_milestone_shape_invariant',
+  'v3_escalation_shape_invariant',
+  'v3_closure_shape_invariant',
+  'v3_human_validation_shape_invariant',
 ]);
 const AGT002_V3_SAFE_VALIDATION_CODE_SET = new Set(AGT002_V3_SAFE_VALIDATION_CODES);
 
@@ -237,6 +260,14 @@ export function createAgt002PreviewEngine({
   contextVersionId = null,
   manizalesManifestSource = null,
   observability = createAgt002AnalysisObservability(),
+  // Phase 5 remediation (context_window_exceeded): server-owned deterministic prompt budgeting for
+  // the manifest-driven integral-V3 request. Off by default, so every existing caller/test assembles
+  // a byte-identical provider request; when on, the total assembled request (input + policy +
+  // outputSchema) is measured with a conservative estimator and its raw document-chunk text is
+  // reduced — or the run fails closed before the provider call — never touching governed content.
+  promptBudget = false,
+  promptMaxInputTokens = AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS,
+  onPromptBudget,
 } = {}) {
   if (!client || typeof client.run !== 'function'
     || !nonEmpty(model) || !nonEmpty(policyVersion) || !nonEmpty(policyText)
@@ -248,6 +279,12 @@ export function createAgt002PreviewEngine({
     || (integralContractV3 && (!contextV2 || !documentRetrieval || typeof companyEvidenceClassesProvider !== 'function'))
     || !observability || typeof observability.record !== 'function') {
     throw new Error('AGT-002 Preview no está configurado: falta configuración o evidencia jurídica determinística.');
+  }
+  if (promptBudget && (!Number.isInteger(promptMaxInputTokens) || promptMaxInputTokens <= 0)) {
+    throw new Error('AGT-002 Preview: el presupuesto de prompt V3 requiere promptMaxInputTokens como entero positivo.');
+  }
+  if (onPromptBudget !== undefined && typeof onPromptBudget !== 'function') {
+    throw new Error('AGT-002 Preview: onPromptBudget, si se provee, debe ser una función.');
   }
 
   // AGT002_INTEGRAL_CONTRACT_V3 Phase 3: an injected, checked-in Manizales integral manifest
@@ -533,8 +570,28 @@ export function createAgt002PreviewEngine({
   async function runOnceV3(previewInput, idempotencyKey, signal, validationContext) {
     const outputSchema = buildAgt002IntegralAnalysisV3OutputJsonSchema(validationContext);
     const modelInput = withRequirementGovernedFields(previewInput, validationContext.requirementManifest, validationContext.evidenceStateManifest);
+
+    // Phase 5 remediation: measure the assembled request and reduce ONLY the raw document-chunk
+    // text (deterministic, provenance-tracked) — or fail closed BEFORE the provider call — when
+    // promptBudget is on. The governed skeleton the validator enforces (requirement manifest,
+    // 17 evidence classes, citation allowlist, governed evidence_state) is never touched here, and
+    // `evidence_coverage` below is still built from the ORIGINAL previewInput, so persisted
+    // coverage/manifest_scope are byte-identical regardless of any model-facing text reduction.
+    let requestInput = modelInput;
+    if (promptBudget) {
+      let budgeted;
+      try {
+        budgeted = budgetAgt002V3PromptRequest({ model, policy: policyText, input: modelInput, outputSchema, maxInputTokens: promptMaxInputTokens });
+      } catch (budgetError) {
+        if (typeof onPromptBudget === 'function' && budgetError?.report) onPromptBudget(budgetError.report);
+        throw budgetError;
+      }
+      if (typeof onPromptBudget === 'function') onPromptBudget(budgeted.report);
+      requestInput = budgeted.input;
+    }
+
     const raw = await client.run({
-      model, policy: policyText, input: modelInput, outputSchema, timeoutMs, idempotencyKey, signal,
+      model, policy: policyText, input: requestInput, outputSchema, timeoutMs, idempotencyKey, signal,
     });
 
     const rawContent = typeof raw?.content === 'string' ? raw.content : '';
