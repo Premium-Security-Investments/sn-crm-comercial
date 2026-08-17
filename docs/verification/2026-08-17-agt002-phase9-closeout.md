@@ -53,7 +53,7 @@ El escaneo estático independiente no encontró secretos, `eval`, ejecución she
 
 ## 4. Limpieza
 
-Después del gate final se revalidaron y eliminaron seis worktrees fusionados y limpios, junto con sus ramas locales. Ninguna rama remota, detached, rama no fusionada o worktree con cambios fue eliminado. El recuento pasó de 43 a 37; el único candidato fusionado/limpio restante es el worktree operativo `main`, explícitamente protegido.
+Después del gate final se revalidaron y eliminaron seis worktrees fusionados y limpios, junto con sus ramas locales. Tras integrar los dos worktrees auxiliares de Fase 9, `git cherry` confirmó equivalencia de parche de sus cuatro commits y ambos se eliminaron también. Ninguna rama remota, detached, rama no absorbida o worktree con cambios fue eliminado. El recuento pasó de 43 a 35; el único candidato fusionado/limpio restante es el worktree operativo `main`, explícitamente protegido.
 
 Detalle exacto: `docs/operations/2026-08-17-agt002-branch-worktree-inventory.md` §8.
 

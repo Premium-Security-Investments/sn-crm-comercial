@@ -95,7 +95,7 @@ Todos preservados por instrucción directa del plan ("cualquier no fusionado").
 | Fusionado con cambios locales (§4) | 2 | Preservar |
 | No fusionado (§5) | 25 | Ninguna — preservado por regla general |
 | **Total antes de limpieza** | **43** | — |
-| **Total después de limpieza** | **37** | 6 eliminados; remoto intacto |
+| **Total después de limpieza** | **35** | 8 eliminados; remoto intacto |
 
 ## 7. Qué falta para poder ejecutar limpieza real en el futuro
 
@@ -116,4 +116,11 @@ Antes de cada eliminación se volvió a comprobar `git status --porcelain` vací
 | `/root/worktrees/sn-crm-main-deploy` | `fix/radar-go-timeline` | `701822d` |
 | `/tmp/siio-deploy-0536746-TTvTxS` | `deploy/agt002-0536746-20260814` | `0536746` |
 
-`git worktree prune` se ejecutó después. El inventario mecánico posterior reportó 37 worktrees: `candidate_remove=1` (exclusivamente el worktree `main`, protegido), `merged_but_dirty=2` (preservados), `unmerged_clean=29`, `unmerged_dirty=4`, `keep_current=1`. No se eliminó ninguna rama remota, ningún detached y ningún worktree con cambios.
+Después de integrar mediante cherry-pick los bloques de documentación y arquitectura, `git cherry` reportó equivalencia de parche (`-`) para `f7af989`, `c366d23`, `d63b587` y `54cec05`; ambos worktrees auxiliares estaban limpios. Por esa evidencia se eliminaron también:
+
+| Worktree auxiliar eliminado | Rama local eliminada | Evidencia de absorción |
+|---|---|---|
+| `/root/worktrees/agt002-phase9-docs` | `chore/agt002-phase9-docs` | `git cherry` marcó `f7af989` como equivalente |
+| `/root/worktrees/agt002-phase9-architecture` | `feat/agt002-phase9-architecture` | `git cherry` marcó sus tres commits como equivalentes |
+
+`git worktree prune` se ejecutó después. El inventario mecánico terminal reportó 35 worktrees: `candidate_remove=1` (exclusivamente el worktree `main`, protegido), `merged_but_dirty=2` (preservados), `unmerged_clean=27`, `unmerged_dirty=4`, `keep_current=1`. No se eliminó ninguna rama remota, ningún detached y ningún worktree con cambios.
