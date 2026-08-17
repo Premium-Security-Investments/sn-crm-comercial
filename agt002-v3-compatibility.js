@@ -156,13 +156,23 @@ function deriveRecommendation(units, coverage) {
 export function projectAgt002IntegralV3ToV2(integralAnalysis) {
   const { coverage, analysis_units: units } = integralAnalysis;
 
+  // The full open-question surface: one finding per question unit, each carrying its own
+  // `critical` flag (design section 10 ties `critical: true` to `isCriticalOpenUnit`).
+  const questions = units.filter(isQuestionUnit).map(unit => toFinding(unit, 'question', { critical: isCriticalOpenUnit(unit) }));
+
   return {
     recommendation: deriveRecommendation(units, coverage),
     summary: buildSummary(units, coverage),
     strengths: units.filter(isStrengthUnit).map(unit => toFinding(unit, 'strength')),
     weaknesses: units.filter(isWeaknessUnit).map(unit => toFinding(unit, 'weakness')),
     blockers: units.filter(isBlockerUnit).map(unit => toFinding(unit, 'blocker')),
-    questions: units.filter(isQuestionUnit).map(unit => toFinding(unit, 'question', { critical: isCriticalOpenUnit(unit) })),
+    questions,
+    // `critical_questions` is a DERIVED SUBSET of `questions` (never a replacement): exactly the
+    // findings whose unit is critical-open, so the same finding objects also remain in the full
+    // `questions` list above. This gives a human a material-exception shortlist without hiding the
+    // complete set. In a fully-abstained governed run no unit is critical-open, so this is honestly
+    // empty while `questions` still lists one entry per requirement.
+    critical_questions: questions.filter(finding => finding.critical === true),
     unverified: units.filter(isUnverifiedUnit).map(unit => toFinding(unit, 'unverified')),
     next_action: deriveNextAction(units),
     human_review_required: true,

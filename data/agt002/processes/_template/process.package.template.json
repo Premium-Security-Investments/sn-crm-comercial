@@ -1,0 +1,28 @@
+{
+  "schema_version": "agt002-process-package@1",
+  "opportunity_id": "00000000-0000-4000-8000-000000000000",
+  "proceso": "REPLACE-WITH-PROCESO",
+  "manifest_ref": {
+    "artifact_type": "REPLACE-WITH-MANIFEST-ARTIFACT-TYPE",
+    "contract_version": "REPLACE-WITH-MANIFEST-CONTRACT-VERSION",
+    "path": "data/agt002/REPLACE-WITH-MANIFEST-FILE.json"
+  },
+  "human_approval": {
+    "required": true,
+    "approved": false,
+    "approver": null,
+    "approved_at": null
+  },
+  "onboarding_gate": {
+    "checklist": [
+      { "id": "manifest_validated", "passed": false },
+      { "id": "manifest_scope_server_owned", "passed": false },
+      { "id": "human_review_policy_ack", "passed": false },
+      { "id": "canary_preflight_reviewed", "passed": false }
+    ]
+  },
+  "enablement": {
+    "flag": "AGT002_INTEGRAL_CONTRACT_V3",
+    "explicitly_enabled": false
+  }
+}

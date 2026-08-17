@@ -4,6 +4,8 @@
 
 **Execution status (2026-08-07):** implemented locally through Tasks 1–10 plus the audited category/five-axis provenance gaps and the subsequently approved real five-phase UI. Flag remains off; no real case, remote migration, push, PR or deploy was performed. Exact evidence is in `docs/verification/2026-08-07-agt002-integral-v3-local.md`.
 
+> **Superseded (2026-08-17):** the "flag remains off / no real case" status above described this plan's own execution date and is kept verbatim as historical record — it is not rewritten. The Manizales SA-24-2026 governed pilot later completed the real case this plan deferred and merged to `main` as `960a96702e869531aad94545c137e1b3fe28c0b0`; per external confirmation from Juan Botero (not mechanically re-verified in the phase-9 documentation session), the flag is active in production today, scoped to Manizales only. See `CURRENT.md` §0 and `docs/evidence/2026-08-17-agt002-v3-production-closeout.md` for the current authoritative state.
+
 **Goal:** Introduce a closed, evidence-or-abstention AGT‑002 v3 contract whose canonical source is one ordered analysis unit per governed requirement, while preserving immutable v2 history and generating a deterministic v2 compatibility projection.
 
 **Architecture:** Add pure v3 validators and projection first. Extend the existing Preview contract/engine behind a fail-closed flag. The model returns only `integral_analysis`; the engine attaches governed run/context/coverage/corpus metadata, derives the v2 projection, and persists both atomically in the existing append-only run JSON. Existing v2 readers remain unchanged; v3-aware readers receive an optional extension. No UI or production activation in this block.

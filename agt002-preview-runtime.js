@@ -189,6 +189,18 @@ export function createAgt002PreviewRuntime({
       // engine validates it fail-closed (wrong pilot/malformed throws through the boundary
       // wrapper below); an absent source keeps the current governed 4-requirement behavior.
       manizalesManifestSource: manizalesManifestSource ?? null,
+      // Phase 9 (T7): the deterministic server-owned prompt budget is now ACTIVE for every V3
+      // runtime construction (it was previously wired into runOnceV3 but left dormant at its
+      // default-off, reachable only by a canary script). Enabling it here means an oversized V3
+      // request is deterministically reduced (summarize omitted_chunks, then water-fill-truncate
+      // selected_chunks[].text with provenance) or FAILS CLOSED with AGT002_V3_PROMPT_BUDGET_EXCEEDED
+      // *before* any provider call — strictly safer than shipping an over-window prompt and getting
+      // a non-deterministic context_window_exceeded from the model. A request already under budget is
+      // byte-identical (the engine returns the same input reference), so non-oversized runs are
+      // unchanged. The engine's default cap (AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS = 81_284) is a
+      // conservative floor anchored to the observed prod plateau, NOT a measured model window; it must
+      // be reconfirmed/raised against the real model context window before any authorized live run.
+      promptBudget: true,
     } : {}),
     ...(countDailyRuns ? { countDailyRuns } : {}),
   }));

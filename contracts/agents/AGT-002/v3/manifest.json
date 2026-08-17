@@ -1,0 +1,38 @@
+{
+  "agent_id": "AGT-002",
+  "contract_version": "3.0.0",
+  "schema_draft": "https://json-schema.org/draft/2020-12/schema",
+  "owner_system": "SIIO",
+  "status": "contract_only",
+  "immutable": false,
+  "description": "Static JSON Schemas reflecting the AGT-002 V3 integral-contract runtime. These schemas DOCUMENT the JS runtime validators; they do not change the runtime contract. Agreement with the JS is enforced by tests/agt002-v3-contract-json-agreement.test.mjs, which ties every enum and closed key set here to the exported constants in agt002-integral-analysis-v3.js, agt002-tender-adapter.js and agt002-process-package.js.",
+  "schemas": [
+    {
+      "id": "envelope",
+      "file": "envelope.schema.json",
+      "mirrors": "validateAgt002TenderAnalysisEnvelopeV3 (agt002-tender-adapter.js)"
+    },
+    {
+      "id": "integral_analysis",
+      "file": "integral-analysis.schema.json",
+      "mirrors": "validateAgt002IntegralAnalysisV3 (agt002-integral-analysis-v3.js)"
+    },
+    {
+      "id": "manifest_scope",
+      "file": "manifest-scope.schema.json",
+      "mirrors": "validateAgt002ManifestScope (agt002-tender-adapter.js)"
+    },
+    {
+      "id": "process_package",
+      "file": "process-package.schema.json",
+      "mirrors": "validateAgt002ProcessPackage (agt002-process-package.js)"
+    }
+  ],
+  "runtime_only_rules": [
+    "manifest_scope is accepted only when the server supplies a governed expected scope (never from the payload alone).",
+    "manifest_scope and governance_provenance are mutually exclusive on the envelope.",
+    "v2_projection must deep-equal projectAgt002IntegralV3ToV2(integral_analysis); it is never hand-authored.",
+    "Each unit's category and evidence_state are server-owned; the model turn writes null for both.",
+    "A process package grants nothing on its own; enablement is decided by the onboarding gate plus the server-owned explicit allowlist."
+  ]
+}

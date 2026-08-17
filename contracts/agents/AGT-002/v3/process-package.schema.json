@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:psi:siio:agents:agt002:v3:process-package",
+  "title": "AGT-002 process package descriptor",
+  "description": "Closed, human-authored descriptor binding one tender process (opportunity_id + proceso) to its checked-in integral manifest and recording the governance facts the fail-closed registry keys off. Mirrors validateAgt002ProcessPackage (agt002-process-package.js). Grants nothing on its own; enablement is decided by the onboarding gate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "opportunity_id", "proceso", "manifest_ref", "human_approval", "onboarding_gate", "enablement"],
+  "properties": {
+    "schema_version": { "const": "agt002-process-package@1" },
+    "opportunity_id": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+    "proceso": { "type": "string", "minLength": 1 },
+    "manifest_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_type", "contract_version", "path"],
+      "properties": {
+        "artifact_type": { "type": "string", "minLength": 1 },
+        "contract_version": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 }
+      }
+    },
+    "human_approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "approved", "approver", "approved_at"],
+      "properties": {
+        "required": { "const": true },
+        "approved": { "type": "boolean" },
+        "approver": { "type": ["string", "null"] },
+        "approved_at": { "type": ["string", "null"] }
+      }
+    },
+    "onboarding_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checklist"],
+      "properties": {
+        "checklist": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "passed"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "passed": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "enablement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["flag", "explicitly_enabled"],
+      "properties": {
+        "flag": { "type": "string", "minLength": 1 },
+        "explicitly_enabled": { "type": "boolean" }
+      }
+    }
+  }
+}
