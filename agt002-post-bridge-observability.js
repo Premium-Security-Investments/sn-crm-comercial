@@ -335,5 +335,6 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
   return {
     status, analysis_run_id: analysisRunId, context_version_id: contextVersionId,
     correlation_id: correlationId, presented,
+    error_code: status === 'unavailable' ? errorCode : null,
   };
 }

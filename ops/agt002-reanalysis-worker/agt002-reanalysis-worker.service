@@ -1,0 +1,30 @@
+[Unit]
+Description=SIIO AGT-002 durable canonical reanalysis worker
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=psi-agt002
+Group=psi-agt002
+WorkingDirectory=/opt/psi-comercial/app
+EnvironmentFile=/etc/psi-agt002-reanalysis/env
+ExecStart=/usr/bin/node /opt/psi-comercial/app/ops/agt002-reanalysis-worker/run-agt002-reanalysis-worker.mjs
+TimeoutStartSec=660
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

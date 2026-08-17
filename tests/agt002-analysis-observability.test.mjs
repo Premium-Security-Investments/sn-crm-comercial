@@ -299,12 +299,13 @@ test('canonical_preview_unavailable has a closed stage enum and never emits sens
   }]);
 });
 
-test('canonical_preview_unavailable call sites prefer the safe runtime boundary code and keep Express/Vercel parity', () => {
+test('durable reanalysis worker prefers the safe runtime boundary code and keeps Express/Vercel parity', () => {
   const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
   const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
+  const worker = readFileSync(new URL('../agt002-reanalysis-worker.js', import.meta.url), 'utf8');
   assert.equal(server, api);
-  assert.match(server, /error_code: error\?\.runtime_boundary_code \|\| error\?\.code,/);
-  assert.doesNotMatch(server, /canonical_preview_unavailable[\s\S]{0,800}error_message:/);
+  assert.match(worker, /error\?\.runtime_boundary_code \|\| error\?\.code/);
+  assert.doesNotMatch(worker, /error_message\s*:/);
 });
 
 test('canonical_preview_unavailable drops a stage outside its closed enum', () => {

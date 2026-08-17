@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the SIIO AGT-002 reanalysis worker after each completed cycle
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=30s
+RandomizedDelaySec=5s
+Persistent=false
+Unit=agt002-reanalysis-worker.service
+
+[Install]
+WantedBy=timers.target

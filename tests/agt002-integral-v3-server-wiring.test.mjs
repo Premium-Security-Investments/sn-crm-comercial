@@ -33,19 +33,25 @@ assert.match(server, /if \(!agt002AnalysisConfig\.AGT002_INTEGRAL_CONTRACT_V3\) 
 assert.match(server, /loadAgt002CompanyEvidenceRegistryEntries\(database\)/);
 assert.match(server, /loadAgt002IntegralGovernanceOverrides\(database, opportunityId\)/);
 
-// All three canonical flows (reanalysis after human answer, worker-triggered auto
-// analysis, manual agent-preview endpoint) must call the same shared loader before
-// constructing the runtime, and forward every field the runtime requires.
-assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 3, 'los tres flujos canónicos deben cargar la gobernanza v3 antes de construir el runtime');
-assert.equal(count(server, 'companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,'), 3, 'los tres runtimes deben recibir el registro real de evidencia empresarial');
-assert.equal(count(server, 'categoryOverrides: integralV3Governance.categoryOverrides,'), 3, 'los tres runtimes deben recibir las anulaciones de categoría curadas');
-assert.equal(count(server, 'evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,'), 3, 'los tres runtimes deben recibir el enlace requisito -> clase de evidencia curado');
-// P2-1: la procedencia gobernada (clase, rationale, versión) detrás de esas dos anulaciones
-// debe llegar al runtime exactamente igual — sin ella el run persistido no puede citar
-// binding/versionado/procedencia de lo que aplicó.
-assert.match(server, /governanceProvenance: governanceOverrides\.provenance,/, 'el loader compartido debe exponer la procedencia gobernada junto a los dos mapas');
-assert.equal(count(server, 'governanceProvenance: integralV3Governance.governanceProvenance,'), 3, 'los tres runtimes deben recibir la procedencia gobernada de las anulaciones curadas');
-assert.equal(count(server, 'contextVersionId: contextVersion?.id ?? null,'), 3, 'los tres runtimes deben poder trazar la versión de contexto que consumieron');
+// All three preparation flows load the same governed data. Two legacy direct-runtime
+// paths forward it in the server; the durable canonical path freezes the complete
+// governance object and the direct-host executor reconstructs the third runtime.
+assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 3, 'los tres flujos deben cargar la gobernanza v3');
+for (const token of [
+  'companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,',
+  'categoryOverrides: integralV3Governance.categoryOverrides,',
+  'evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,',
+  'governanceProvenance: integralV3Governance.governanceProvenance,',
+]) assert.equal(count(server, token), 2, `dos runtimes legacy deben recibir ${token}`);
+const executor = readFileSync(new URL('../agt002-reanalysis-executor.js', import.meta.url), 'utf8');
+assert.match(executor, /companyEvidenceRegistryEntries: governance\.companyEvidenceRegistryEntries/);
+assert.match(executor, /categoryOverrides: governance\.categoryOverrides/);
+assert.match(executor, /evidenceClassLinkByRequirementId: governance\.evidenceClassLinkByRequirementId/);
+assert.match(executor, /governanceProvenance: governance\.governanceProvenance/);
+assert.match(executor, /contextVersionId: job\.contextVersionId/);
+assert.match(server, /governanceProvenance: governanceOverrides\.provenance,/);
+assert.match(server, /buildAgt002FrozenEngineInput\([\s\S]*integralV3Governance/);
+assert.match(server, /contextVersionId: contextVersion\.id/);
 
 // The runtime itself must remain DB-free: only the server layer may query Supabase,
 // exactly like the legal corpus wiring already enforces.
