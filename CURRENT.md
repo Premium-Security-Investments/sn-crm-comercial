@@ -31,6 +31,7 @@ El nombre y valor exactos fueron comprobados mediante `vercel env pull` desde el
 - Migración `062_siio_f2_security_coherence.sql` permanece aplicada en producción sin rollback versionado; el gap está documentado, no inventado, en `docs/migrations/agt002-process-governance-ledger.md`.
 - GO/NO-GO, firma, envío, presentación y compromiso de recursos sobre Manizales SA-24-2026 siguen siendo exclusivamente humanos; el piloto V3 no decide cumplimiento — ver `docs/architecture/agt002-human-review-policy.md`.
 - Incorporar un segundo proceso/licitación exige paquete aprobado + gate de onboarding + flag explícito; ninguno de los tres existe hoy para ningún proceso distinto de Manizales — ver `docs/runbooks/agt002-process-onboarding-gate.md`.
+- La ruta interactiva activa presupuesto de prompt V3. La instrumentación post-bridge del worker durable permanece deliberadamente abierta para no alterar semántica de claim/retry sin una fase TDD separada — ver `docs/architecture/agt002-phase9-runtime-open-gaps.md`.
 
 ---
 

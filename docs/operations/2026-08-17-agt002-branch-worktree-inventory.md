@@ -1,6 +1,6 @@
 # AGT-002 fase 9 — inventario de worktrees y ramas, 2026-08-17
 
-**Alcance:** inventario y clasificación previa a limpieza. La eliminación real se ejecuta sólo después de integrar/validar la Fase 9 y únicamente sobre candidatos fusionados y limpios.
+**Alcance:** inventario, clasificación y resultado de limpieza. La eliminación se ejecutó después de integrar/validar la Fase 9 y únicamente sobre candidatos fusionados y limpios.
 
 ## 0. Nota sobre la fuente de datos
 
@@ -91,13 +91,29 @@ Todos preservados por instrucción directa del plan ("cualquier no fusionado").
 | Actual + hermanos fase 9 (§1) | 3 | Ninguna — trabajo activo |
 | Protegido por instrucción explícita (§2) | 1 | Ninguna — `siio-e6-scheduler-fix` preservado |
 | Detached ambiguo (§3) | 5 | Ninguna — preservado por regla general |
-| Fusionado limpio, no operativo (§4) | 6 | Candidato después de QA |
+| Fusionado limpio, no operativo (§4) | 6 | Eliminados después de QA; ver §8 |
 | Fusionado con cambios locales (§4) | 2 | Preservar |
 | No fusionado (§5) | 25 | Ninguna — preservado por regla general |
-| **Total worktrees inventariados (corte fresco)** | **43** | **Cero eliminaciones antes de integrar y validar Fase 9** |
+| **Total antes de limpieza** | **43** | — |
+| **Total después de limpieza** | **37** | 6 eliminados; remoto intacto |
 
 ## 7. Qué falta para poder ejecutar limpieza real en el futuro
 
 1. Integrar los bloques documental y runtime de Fase 9 y completar QA.
 2. Para cada uno de los seis candidatos limpios, volver a confirmar inmediatamente antes de eliminar: `git status --porcelain` vacío y `git merge-base --is-ancestor <sha> main` exitoso.
 3. Eliminar el worktree, volver a comprobar la rama y sólo entonces borrar la rama local. Las ramas remotas se preservan en esta fase salvo decisión explícita separada.
+
+## 8. Limpieza ejecutada después del gate final
+
+Antes de cada eliminación se volvió a comprobar `git status --porcelain` vacío, rama esperada y `git merge-base --is-ancestor <sha> main`. Se eliminaron estos seis worktrees y sus ramas **locales**:
+
+| Worktree eliminado | Rama local eliminada | HEAD absorbido |
+|---|---|---|
+| `/root/worktrees/agt002-v3-governed-metadata-prod` | `feat/agt002-manizales-v3-complete-pilot` | `0d4e865` |
+| `/root/worktrees/siio-f2-release` | `release/siio-f2-prod-20260806` | `e0c5a2f` |
+| `/root/worktrees/siio-origin-main-baseline-agt002` | `qa/origin-main-baseline-agt002-20260806` | `39bef1d` |
+| `/root/worktrees/siio-vigia-v3-foundations` | `docs/agt002-v3-canary-blocked-20260814` | `afbf522` |
+| `/root/worktrees/sn-crm-main-deploy` | `fix/radar-go-timeline` | `701822d` |
+| `/tmp/siio-deploy-0536746-TTvTxS` | `deploy/agt002-0536746-20260814` | `0536746` |
+
+`git worktree prune` se ejecutó después. El inventario mecánico posterior reportó 37 worktrees: `candidate_remove=1` (exclusivamente el worktree `main`, protegido), `merged_but_dirty=2` (preservados), `unmerged_clean=29`, `unmerged_dirty=4`, `keep_current=1`. No se eliminó ninguna rama remota, ningún detached y ningún worktree con cambios.
