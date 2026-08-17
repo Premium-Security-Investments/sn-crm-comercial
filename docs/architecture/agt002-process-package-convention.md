@@ -1,51 +1,87 @@
 # AGT-002 — convención de paquete por proceso
 
-**Fecha:** 2026-08-17 · **Estado:** convención documental para cuando exista el paquete reusable (tareas 3/4 del plan de fase 9, no implementadas todavía). No crea ningún archivo bajo `data/agt002/processes/` en esta sesión — ese directorio no existe hoy en el repositorio.
+**Fecha:** 2026-08-17 · **Estado:** implementada en `agt002-process-package.js`, el schema V3 y `data/agt002/processes/`.
 
-Este documento fija la convención de nombres y estructura que debe seguir cualquier implementación futura del paquete reusable descrito en `docs/architecture/agt002-reusable-licitacion-architecture.md`, tomando como único precedente real el manifiesto de Manizales.
+Este documento resume la forma ejecutable real. La autoridad es `agt002-process-package.js` y `contracts/agents/AGT-002/v3/process-package.schema.json`.
 
-## 1. Precedente real (verificado en código)
+## 1. Ubicación y descubrimiento
 
-Hoy, el único manifiesto gobernado vive como un archivo plano en `data/agt002/manizales-sa-24-2026.integral-manifest.v1.json`, cargado por `agt002-manizales-integral-manifest.js` y expuesto por `agt002-manizales-manifest-source.js`. No hay convención de carpeta por proceso — hay exactamente un archivo, para exactamente un proceso.
-
-## 2. Convención objetivo: un directorio por proceso
-
-```
+```text
 data/agt002/processes/
-  README.md                                  <- explica la convención, enlaza este documento
+  README.md
   _template/
-    process.package.template.json            <- forma vacía, con comentarios de campo obligatorio/opcional
-  manizales-sa-24-2026/                       <- slug: <municipio-o-entidad>-<expediente>
-    process.package.json                      <- metadatos del paquete + referencia al manifiesto
-    manifest.v1.json                          <- el manifiesto gobernado (hoy: manizales-sa-24-2026.integral-manifest.v1.json)
-    governance/
-      category-overrides.json                 <- espejo versionado de lo curado en la migración 064/066
-      evidence-class-links.json
+    process.package.template.json
 ```
 
-**Slug:** `<identificador-corto-entidad>-<expediente-o-proceso>`, en minúsculas, guiones, sin espacios ni caracteres especiales — mismo patrón que ya usa el nombre de archivo de Manizales (`manizales-sa-24-2026`). El slug es sólo un identificador legible de directorio; el índice real del registry sigue siendo `(opportunity_id, proceso)`, nunca el slug ni el nombre de archivo (ver `docs/architecture/agt002-reusable-licitacion-architecture.md` §3).
+La carpeta no tiene autodiscovery. Agregar un archivo no registra ni habilita un proceso. La inscripción real ocurre explícitamente en el registry server-owned de `agt002-integral-manifest-source.js`.
 
-## 3. Campos obligatorios de `process.package.json`
+Manizales conserva su manifiesto en `data/agt002/manizales-sa-24-2026.integral-manifest.v1.json`; el descriptor inicial lo referencia por medio del módulo gobernado existente, sin moverlo ni duplicarlo.
 
-Basado en lo que la migración `066` ya exige y verifica para Manizales (procedencia completa, no inferida):
+## 2. Forma cerrada del descriptor
 
-- `opportunity_id` (uuid) y `proceso` (texto) — la clave de indexación real.
-- `manifest_ref` — ruta relativa al manifiesto gobernado del paquete.
-- `schema_version` del paquete (independiente del `schema_version` del contrato V3, que sigue siendo `3.0.0`).
-- Por cada entrada de gobernanza: `requirement_id`, `override_kind`, `category_value` o `evidence_class_id`, `rationale`, `source_reference`, `curated_by`, `curated_at`, `version` — exactamente los campos que la migración `066` exige y valida para Manizales, no un subconjunto relajado.
-- `approval` — quién aprobó el paquete para pasar el gate de onboarding y cuándo (persona, no "el sistema").
+Un descriptor contiene exactamente:
 
-## 4. Qué NO va en el paquete
+- `schema_version` — hoy `agt002-process-package@1`.
+- `opportunity_id` — UUID real de la oportunidad.
+- `proceso` — identificador exacto del proceso.
+- `manifest_ref`:
+  - `artifact_type`;
+  - `contract_version`;
+  - `path` relativo al manifiesto gobernado.
+- `human_approval`:
+  - `required` debe ser `true`;
+  - `approved` booleano;
+  - `approver` y `approved_at`, obligatorios y no vacíos cuando `approved=true`.
+- `onboarding_gate.checklist` — arreglo cerrado de `{id, passed}`, sin IDs duplicados.
+- `enablement`:
+  - `flag` server-owned;
+  - `explicitly_enabled` booleano.
 
-- Nunca un archivo, secreto o URL firmada — el precedente de la migración `061` (registro de evidencia empresarial) es explícito: sólo metadatos, nunca el documento en sí.
-- Nunca una conclusión de cumplimiento pre-calculada — el paquete provee la gobernanza de entrada (a qué clase de evidencia corresponde cada requisito), no el resultado del análisis.
-- Nunca un manifiesto sin citas verificables contra un excerpt real; ver `docs/architecture/agt002-lessons-learned.md` §3 sobre qué significa "verificado" en este sistema.
+Propiedades desconocidas, UUID inválido, identidad inconsistente, referencias vacías, checklist vacío/duplicado o tipos inválidos producen rechazo.
 
-## 5. Migración de Manizales a la convención
+El descriptor no embebe las entradas del manifiesto, clases de evidencia ni overrides. Esos activos permanecen en módulos gobernados separados y el registry los resuelve sólo después de pasar el gate.
 
-Cuando se implemente el paquete reusable (tarea 3), migrar Manizales a esta convención debe hacerse **sin reescribir su manifiesto ni su gobernanza curada** — mover/enlazar los archivos existentes a la nueva estructura de carpeta, conservando el contenido byte-idéntico, y dejar `agt002-manizales-manifest-source.js` como delegador compatible del registry genérico (no eliminarlo). El primer y único registro real del registry, el día que exista, debe seguir siendo Manizales.
+## 3. Gate de onboarding
 
-## 6. Qué este documento no autoriza
+Además de la forma válida, `agt002-process-onboarding-gate.js` exige:
 
-- No autoriza crear `data/agt002/processes/` ni ningún archivo bajo esa ruta en esta sesión.
-- No autoriza mover ni modificar el manifiesto real de Manizales — permanece donde está hasta que la tarea 3 se implemente y pruebe.
+1. coincidencia exacta de `(opportunity_id, proceso)`;
+2. `human_approval.approved === true`;
+3. aprobador y fecha no vacíos;
+4. presencia y aprobación de todos los IDs de checklist requeridos;
+5. `enablement.flag` igual al flag server-owned esperado;
+6. `enablement.explicitly_enabled === true`;
+7. pareja incluida explícitamente en la allowlist server-owned.
+
+La validación de forma y la autorización son gates distintos: una plantilla deshabilitada puede tener forma válida, pero nunca pasar onboarding.
+
+## 4. Estado seguro de la plantilla
+
+`data/agt002/processes/_template/process.package.template.json` nace no habilitable:
+
+- identidad de reemplazo, no productiva;
+- aprobación humana en falso;
+- checklist completo en falso;
+- `explicitly_enabled=false`;
+- referencia de manifiesto de reemplazo.
+
+Copiar la plantilla sin completar y aprobar todos los gates falla cerrado.
+
+## 5. Qué no va en el descriptor
+
+- secretos, tokens, headers, connection strings o URLs firmadas;
+- PDFs, documentos empresariales o payloads crudos;
+- conclusiones de cumplimiento o GO/NO-GO;
+- entradas de manifiesto inventadas;
+- flags globales que descubran/habiliten cualquier archivo presente.
+
+## 6. Reglas para un proceso nuevo
+
+- Mantener el validador V3 y la cobertura 1:1 sin relajaciones.
+- Crear manifiesto y gobernanza separados, trazables y revisados.
+- Crear pruebas de flag apagado, proceso desconocido, mismatch de identidad y checklist incompleto.
+- Demostrar que Manizales conserva comportamiento idéntico.
+- Obtener aprobación humana y autorización antes de ampliar la allowlist.
+- Ejecutar canary único y revisión humana antes de disponibilidad continua.
+
+Runbook operativo: `docs/runbooks/agt002-process-onboarding-gate.md`.

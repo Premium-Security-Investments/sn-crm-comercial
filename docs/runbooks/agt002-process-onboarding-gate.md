@@ -1,6 +1,6 @@
 # AGT-002 — runbook de onboarding de un proceso/licitación nuevo
 
-**Fecha:** 2026-08-17 · **Estado:** procedimiento objetivo para cuando exista el paquete reusable (tareas 3/4 del plan de fase 9, no implementadas todavía). Hasta entonces, este runbook documenta el procedimiento que Manizales SA-24-2026 sí siguió, generalizado, y sirve de checklist de gate para la primera vez que se ejecute con un segundo proceso.
+**Fecha:** 2026-08-17 · **Estado:** procedimiento vigente sobre el paquete reusable, registry y gate fail-closed implementados en Fase 9.
 
 ## 0. Invariante de entrada
 
@@ -12,14 +12,14 @@ Ningún proceso distinto de Manizales SA-24-2026 (`opportunity_id 54190e51-15fb-
 - Confirmar que existe una oportunidad convertida en el Radar por el encargado de Licitaciones — AGT-002 nunca convierte procesos.
 - Confirmar snapshot documental vigente y actor humano activo para ese caso.
 
-## 2. Paquete de proceso (requiere las tareas 3/4 implementadas)
+## 2. Paquete de proceso
 
 - Construir el manifiesto gobernado siguiendo el mismo patrón que `agt002-manizales-integral-manifest.js`: entradas atadas a citas verificadas contra excerpts reales, no contra el PDF completo sin registrar esa limitación.
 - Curar `categoryOverrides` y `evidenceClassLinkByRequirementId` con `rationale`/`source_reference` trazables al pliego real — nunca overrides "para que pase" (ver `docs/architecture/agt002-human-review-policy.md` §2 sobre por qué esto es un acto humano, no de runtime).
-- Validar el paquete contra el schema JSON versionado de `contracts/agents/AGT-002/v3/` (tarea 4 — no existe todavía; hasta que exista, no hay forma automatizada de validar estructuralmente un paquete nuevo).
+- Validar el paquete contra los schemas JSON versionados de `contracts/agents/AGT-002/v3/` y el validador de `agt002-process-package.js`.
 - Ejecutar una corrección determinista (patrón `agt002-manizales-manifest-corrections.js`) sólo de degradación/abstención sobre el paquete nuevo, y confirmar idempotencia (segunda pasada = cero correcciones si la primera ya es conformante).
 
-## 3. Gate fail-closed (requiere la tarea 3 implementada)
+## 3. Gate fail-closed
 
 - El registry indexado por `(opportunity_id, proceso)` debe retornar `null`/error cerrado hasta que existan simultáneamente: paquete aprobado + gate de onboarding completo + flag explícito para ese proceso puntual.
 - Confirmar mecánicamente (como se hizo para Manizales en esta sesión, leyendo `agt002-manizales-manifest-source.js`) que cualquier combinación `(opportunity_id, proceso)` no registrada lanza excepción antes de tocar el proveedor — nunca devuelve un manifiesto vacío ni hereda el de otro proceso.
@@ -51,6 +51,6 @@ Sólo después de que los pasos 1–5 estén verdes y un humano decida explícit
 
 ## 7. Qué este runbook no autoriza
 
-- No autoriza construir código nuevo de registry/paquete en esta sesión (tareas 3/4 explícitamente fuera de alcance del bloque documental de fase 9).
+- No autoriza modificar, relajar ni circunvenir `agt002-integral-manifest-source.js`, `agt002-process-package.js` o `agt002-process-onboarding-gate.js` para incorporar un proceso sin los gates anteriores.
 - No autoriza relajar el validador `agt002-integral-analysis-v3.js` para el proceso nuevo — la cobertura 1:1 del `evidenceStateManifest` es exigida igual que para Manizales.
 - No autoriza ningún GO/NO-GO, firma, envío o presentación derivada del canary — eso permanece humano.
