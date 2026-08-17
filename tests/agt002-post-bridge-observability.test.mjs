@@ -911,14 +911,16 @@ test('server/index.js and api/[...path].js stay byte-identical (existing parity 
   assert.equal(server, api, 'production backends must remain byte-identical');
 });
 
-// Positive, forward-looking requirement (not a snapshot of today's gap): once GREEN work wires
-// reanalyzeAgt002AfterHumanAnswer to the closed post-bridge stage catalog, this passes with no
-// further edit to the test itself — GREEN never depends on deleting or loosening this assertion.
-test('reanalyzeAgt002AfterHumanAnswer must classify its failures through the closed post-bridge stage catalog', () => {
+test('reanalyzeAgt002AfterHumanAnswer delegates provider execution to the durable queue', () => {
   const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
   const start = server.indexOf('async function reanalyzeAgt002AfterHumanAnswer');
   const end = server.indexOf('\n}\n', start);
   const body = start >= 0 && end > start ? server.slice(start, end) : '';
   assert.ok(body, 'reanalyzeAgt002AfterHumanAnswer must exist in server/index.js');
-  assert.match(body, /AGT002_POST_BRIDGE_STAGES/, 'reanalyzeAgt002AfterHumanAnswer must classify its failures through the closed post-bridge stage catalog instead of one generic catch-all');
+  assert.match(body, /enqueueAgt002CanonicalReanalysis\(database,/);
+  assert.doesNotMatch(body, /AGT002_POST_BRIDGE_STAGES|runAgt002PostBridgeAnalysis|engine\.analyze/,
+    'the HTTP helper must not classify or execute provider work; the direct-host executor owns that frontier');
+  const executor = readFileSync(new URL('../agt002-reanalysis-executor.js', import.meta.url), 'utf8');
+  assert.match(executor, /runPostBridgeAnalysis\(database,/);
+  assert.match(executor, /mapPostBridgeOutcomeCode/);
 });

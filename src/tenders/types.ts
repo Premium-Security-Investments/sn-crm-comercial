@@ -395,6 +395,20 @@ export type TenderAnalysisAttempt = {
   analysis_run_id: string | null;
   created_at: string | null;
 };
+export type Agt002ReanalysisJob = {
+  job_id: string | null;
+  opportunity_id?: string;
+  snapshot_id?: string;
+  context_version_id?: string;
+  status: 'no_job' | 'queued' | 'running' | 'completed' | 'unavailable';
+  analysis_run_id: string | null;
+  error_code: string | null;
+  error_message?: string | null;
+  created_at?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  updated_at?: string | null;
+};
 export type TenderDocumentsPayload = Partial<TenderDocumentRefreshResult> & {
   import_error?: { kind?: string; source?: string | null; created_at?: string | null; failure_marker?: string | null } | null;
   documents: TenderDocumentRecord[];
@@ -402,7 +416,8 @@ export type TenderDocumentsPayload = Partial<TenderDocumentRefreshResult> & {
   analyses: TenderDocumentAnalysis[];
   question_responses?: TenderQuestionResponse[];
   analysis_attempt?: TenderAnalysisAttempt | null;
-  analysis_engine?: { requested: 'AGT-002'; used: 'AGT-002' | 'siio_rules_v1'; fallback: boolean; reason?: 'not_configured' | 'preview_unavailable'; reused?: boolean; human_review_required: true };
+  reanalysis_job?: Agt002ReanalysisJob | null;
+  analysis_engine?: { requested: 'AGT-002'; used: 'AGT-002' | 'siio_rules_v1' | null; fallback: boolean; state?: Agt002ReanalysisJob['status']; job_id?: string; reason?: 'not_configured' | 'preview_unavailable'; reused?: boolean; human_review_required: true };
 };
 export type TenderAnalysisFinding = string | {
   id?: string;

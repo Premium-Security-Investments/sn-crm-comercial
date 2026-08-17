@@ -23,7 +23,8 @@ import { loadTenderGoNoGoDecision, loadTenderOfferStatus, loadTrackingEvents, po
 import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
 import { tenderSharePointStatusLabel } from './tenders/statusLabels';
 import { shouldReloadTenderArtifacts } from './tenders/processingStatus';
-import type { TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
+import { AGT002_REANALYSIS_MAX_POLLS, AGT002_REANALYSIS_POLL_INTERVAL_MS, classifyAgt002ReanalysisPoll } from './tenders/agt002ReanalysisPolling';
+import type { Agt002ReanalysisJob, TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
 import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
 import { supabaseBrowser } from './supabaseBrowser';
@@ -856,10 +857,13 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
   const [analysisStatus, setAnalysisStatus] = useState<{ message: string; tone: 'status' | 'error' }>({ message: '', tone: 'status' });
   const [refreshResult, setRefreshResult] = useState<TenderDocumentRefreshResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [activeReanalysisJobId, setActiveReanalysisJobId] = useState<string | null>(null);
   const requestVersionRef = useRef(0);
   const activeOpportunityRef = useRef(opportunity.id);
   const processingStatusRef = useRef<TenderProcessingStatus | null>(null);
   const terminalReloadedJobRef = useRef<string | null>(null);
+  const reanalysisAbortRef = useRef<AbortController | null>(null);
+  const reloadedReanalysisJobRef = useRef<string | null>(null);
   activeOpportunityRef.current = opportunity.id;
   const documents = payload.documents || [];
   const analysis = payload.analysis;
@@ -889,13 +893,22 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     }
   };
   useEffect(() => {
+    reanalysisAbortRef.current?.abort();
+    reanalysisAbortRef.current = null;
+    reloadedReanalysisJobRef.current = null;
+    setActiveReanalysisJobId(null);
     activeOpportunityRef.current = opportunity.id; requestVersionRef.current += 1;
     processingStatusRef.current = null; terminalReloadedJobRef.current = null;
     setPayload({ documents: [], analysis: null, analyses: [] }); setProcessingStatus(null); setRefreshResult(null); setStatusText(''); setAnalysisStatus({ message: '', tone: 'status' }); setBusy(false); onAnalysisChanged?.(null); onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
     void loadDocuments().catch(err => { if (activeOpportunityRef.current === opportunity.id) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'error', message }); } });
     void loadProcessingStatus().catch(err => { if (activeOpportunityRef.current === opportunity.id) setStatusText(err instanceof Error ? err.message : String(err)); });
     const processingTimer = window.setInterval(() => void loadProcessingStatus().catch(() => undefined), 10_000);
-    return () => { requestVersionRef.current += 1; window.clearInterval(processingTimer); };
+    return () => {
+      requestVersionRef.current += 1;
+      reanalysisAbortRef.current?.abort();
+      reanalysisAbortRef.current = null;
+      window.clearInterval(processingTimer);
+    };
   }, [opportunity.id]);
   const addFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(event.currentTarget.files || []);
@@ -917,16 +930,83 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     finally { setBusy(false); }
   };
 
-  const analyzeDocumentsWithAgt002 = async () => {
-    setBusy(true);
-    setAnalysisStatus({ message: `Analizando con ${VIGIA_VISIBLE_NAMES.tenders}; la revisión humana sigue siendo obligatoria…`, tone: 'status' });
+  const pollAgt002Reanalysis = async (jobId: string, requestedOpportunityId: string) => {
+    reanalysisAbortRef.current?.abort();
+    const controller = new AbortController();
+    reanalysisAbortRef.current = controller;
+    setActiveReanalysisJobId(jobId);
     try {
-      const data = await api<TenderDocumentsPayload>('/api/tender-documents-analyze-agent-preview', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
+      for (let attempt = 0; attempt < AGT002_REANALYSIS_MAX_POLLS; attempt += 1) {
+        if (controller.signal.aborted || activeOpportunityRef.current !== requestedOpportunityId) return null;
+        const job = await api<Agt002ReanalysisJob>(
+          `/api/agt002-reanalysis-status?opportunity_id=${encodeURIComponent(requestedOpportunityId)}`,
+          { signal: controller.signal },
+        );
+        if (controller.signal.aborted || activeOpportunityRef.current !== requestedOpportunityId) return null;
+        if (job.job_id !== jobId) throw new Error('El estado del reanálisis activo cambió; recargue el expediente.');
+        const decision = classifyAgt002ReanalysisPoll(job.status, reloadedReanalysisJobRef.current === jobId);
+        if (job.status === 'completed') {
+          if (decision.shouldReload) {
+            reloadedReanalysisJobRef.current = jobId;
+            await Promise.all([loadDocuments(), onReload?.()]);
+          }
+          setAnalysisStatus({ message: `${VIGIA_VISIBLE_NAMES.tenders} completó el análisis. La recomendación requiere revisión humana.`, tone: decision.tone });
+          return job;
+        }
+        if (job.status === 'unavailable') {
+          setAnalysisStatus({
+            message: `${VIGIA_VISIBLE_NAMES.tenders} no pudo completar el análisis. El análisis canónico anterior se conserva; puede solicitar uno nuevo manualmente después de verificar la disponibilidad del servicio.`,
+            tone: decision.tone,
+          });
+          return job;
+        }
+        setAnalysisStatus({
+          message: job.status === 'running'
+            ? `Análisis en curso con ${VIGIA_VISIBLE_NAMES.tenders}; la revisión humana sigue siendo obligatoria…`
+            : `Análisis en cola con ${VIGIA_VISIBLE_NAMES.tenders}; la revisión humana sigue siendo obligatoria…`,
+          tone: decision.tone,
+        });
+        await new Promise<void>(resolve => {
+          const timer = window.setTimeout(resolve, AGT002_REANALYSIS_POLL_INTERVAL_MS);
+          controller.signal.addEventListener('abort', () => { window.clearTimeout(timer); resolve(); }, { once: true });
+        });
+      }
+      setAnalysisStatus({ message: 'El análisis continúa en segundo plano. Recargue el expediente más tarde para consultar el resultado.', tone: 'status' });
+      return null;
+    } catch (error) {
+      if (controller.signal.aborted) return null;
+      throw error;
+    } finally {
+      if (reanalysisAbortRef.current === controller) {
+        reanalysisAbortRef.current = null;
+        setActiveReanalysisJobId(null);
+      }
+    }
+  };
+
+  const analyzeDocumentsWithAgt002 = async () => {
+    if (activeReanalysisJobId) return;
+    setBusy(true);
+    setAnalysisStatus({ message: `Preparando análisis con ${VIGIA_VISIBLE_NAMES.tenders}…`, tone: 'status' });
+    try {
+      const requestedOpportunityId = opportunity.id;
+      const data = await api<TenderDocumentsPayload>('/api/tender-documents-analyze-agent-preview', { method: 'POST', body: JSON.stringify({ opportunity_id: requestedOpportunityId }) });
+      if (activeOpportunityRef.current !== requestedOpportunityId) return;
       setPayload(data); onAnalysisChanged?.(data.analysis || null);
-      setAnalysisStatus({
-        message: data.analysis_engine?.fallback ? `${VIGIA_VISIBLE_NAMES.tenders} no estuvo disponible; se aplicó fallback seguro por reglas.` : `${VIGIA_VISIBLE_NAMES.tenders} completó el análisis. La recomendación requiere revisión humana.`,
-        tone: 'status',
-      });
+      if (data.reanalysis_job?.job_id) {
+        setAnalysisStatus({
+          message: data.reanalysis_job.status === 'running'
+            ? `Análisis en curso con ${VIGIA_VISIBLE_NAMES.tenders}; la revisión humana sigue siendo obligatoria…`
+            : `Análisis en cola con ${VIGIA_VISIBLE_NAMES.tenders}; la revisión humana sigue siendo obligatoria…`,
+          tone: 'status',
+        });
+        await pollAgt002Reanalysis(data.reanalysis_job.job_id, requestedOpportunityId);
+      } else {
+        setAnalysisStatus({
+          message: data.analysis_engine?.fallback ? `${VIGIA_VISIBLE_NAMES.tenders} no estuvo disponible; se aplicó fallback seguro por reglas.` : `${VIGIA_VISIBLE_NAMES.tenders} completó el análisis. La recomendación requiere revisión humana.`,
+          tone: 'status',
+        });
+      }
     } catch (err) {
       setAnalysisStatus({ message: err instanceof Error ? err.message : String(err), tone: 'error' });
     }
@@ -940,12 +1020,21 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     setBusy(true); setStatusText('Guardando respuesta humana…');
     try {
       const { response_id, response_ticket, attachments } = await questionResponseActions.uploadAttachments(opportunity.id, files);
-      const data = await api<{ question_responses: NonNullable<TenderDocumentsPayload['question_responses']> }>('/api/tender-question-responses', {
+      const data = await api<{
+        question_responses: NonNullable<TenderDocumentsPayload['question_responses']>;
+        reanalysis?: { status: Agt002ReanalysisJob['status']; job_id?: string | null; context_version_id?: string | null } | null;
+      }>('/api/tender-question-responses', {
         method: 'POST',
         body: JSON.stringify({ opportunity_id: opportunity.id, response_id, response_ticket, attachments, ...input }),
       });
       setPayload(current => ({ ...current, question_responses: data.question_responses }));
       setStatusText('Respuesta registrada con autor, fecha y trazabilidad. La decisión GO / NO GO no cambió.');
+      if (data.reanalysis?.job_id) {
+        setAnalysisStatus({ message: `Respuesta incorporada. Reanálisis en cola con ${VIGIA_VISIBLE_NAMES.tenders}…`, tone: 'status' });
+        void pollAgt002Reanalysis(data.reanalysis.job_id, opportunity.id).catch(error => {
+          if (activeOpportunityRef.current === opportunity.id) setAnalysisStatus({ message: error instanceof Error ? error.message : String(error), tone: 'error' });
+        });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setStatusText(message);
@@ -983,7 +1072,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
   return <div id="tender-document-review" className="tender-guided-review" tabIndex={-1} ref={focusTargetRef}>
     <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} sourceUrl={sourceUrl} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
     <TenderIntegralAnalysisV3View analysis={analysis} />
-    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} />
+    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} />
   </div>;
 }
 function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, onNavigationStateChanged }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void>; onNavigationStateChanged?: (state: TenderPanelState<TenderPreparationNavigationValue>) => void }) {

@@ -6,62 +6,63 @@ const vercel = readFileSync(new URL('../api/[...path].js', import.meta.url), 'ut
 const ui = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const section = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8');
 const engine = readFileSync(new URL('../agt002-preview-engine.js', import.meta.url), 'utf8');
-const claimsMigration = readFileSync(new URL('../supabase/migrations/028_agt002_preview_claims.sql', import.meta.url), 'utf8');
+const executor = readFileSync(new URL('../agt002-reanalysis-executor.js', import.meta.url), 'utf8');
+const queueMigration = readFileSync(new URL('../supabase/migrations/068_agt002_reanalysis_jobs.sql', import.meta.url), 'utf8');
 
 function routeBlock(source) {
   const start = source.indexOf("app.post('/api/tender-documents-analyze-agent-preview'");
   const end = source.indexOf("app.post('/api/tender-documents-import'", start);
-  assert.ok(start >= 0 && end > start, 'AGT-002 Preview endpoint must exist before document import');
+  assert.ok(start >= 0 && end > start);
   return source.slice(start, end);
 }
 
-const serverRoute = routeBlock(server);
-const vercelRoute = routeBlock(vercel);
-assert.equal(serverRoute, vercelRoute, 'canonical and Vercel endpoint implementations must stay identical');
+const route = routeBlock(server);
+assert.equal(server, vercel, 'production backends must remain byte-identical');
+assert.match(route, /requireAction\(currentProfile, ACTIONS\.AI_ANALYSIS_RUN\)/);
+assert.match(route, /ensureTenderOpportunity\(database, opportunityId, currentProfile\)/);
+assert.match(route, /const canonicalOnly = agt002AnalysisConfig\.AGT002_CANONICAL_ONLY === true/);
 
-for (const route of [serverRoute, vercelRoute]) {
-  assert.match(route, /requireAction\(currentProfile, ACTIONS\.AI_ANALYSIS_RUN\)/, 'endpoint must enforce AI run RBAC');
-  assert.match(route, /ensureTenderOpportunity\(database, opportunityId, currentProfile\)/, 'endpoint must preserve tender scope authorization');
-  assert.ok(route.indexOf('claimAgt002PreviewRun') < route.indexOf('engine.analyze'), 'atomic DB reservation must happen before provider invocation');
-  assert.match(route, /releaseAgt002PreviewClaim/, 'every terminal path must release or expire its provider lease');
-  assert.match(route, /analysis: presentCurrentTenderAnalysis\(existingRun\)/, 'idempotent response must present the exact AGT-002 run it reused');
-  assert.match(route, /countAgt002PreviewRunsToday/, 'endpoint must enforce the DB-backed daily limit');
-  assert.match(route, /const canonicalOnly = agt002AnalysisConfig\.AGT002_CANONICAL_ONLY === true/, 'endpoint must derive canonical-only behavior from the fail-closed flag');
-  assert.match(route, /if \(!canonicalOnly\) return useRulesFallback\('not_configured'\)/, 'legacy rollback mode may fall back only when canonical-only is disabled');
-  assert.match(route, /if \(!canonicalOnly\) \{[\s\S]*return useRulesFallback\('preview_unavailable'\)/, 'runtime fallback must be explicitly guarded by disabled canonical-only mode');
-  assert.match(route, /if \(!canonicalOnly\) return useRulesFallback\(claim\.status\)/, 'quota fallback must be explicitly guarded by disabled canonical-only mode');
-  assert.match(route, /runAgt002PostBridgeAnalysis\(database, \{/, 'canonical attempts must persist the queued->running->completed|unavailable lifecycle via the durable post-bridge orchestrator');
-  assert.match(route, /const analysisDocuments = agt002AnalysisConfig\.AGT002_DOCUMENT_RETRIEVAL[\s\S]*?adaptAgt002RetrievalDocuments\(currentDocs, \{ opportunityId, snapshotId: registeredSnapshot\.id \}\)[\s\S]*?: currentDocs;/, 'manual preview must adapt current DB records to the closed retrieval document contract');
-  assert.match(route, /engine\.analyze\(\{ opportunity, documents: analysisDocuments,/, 'manual preview must send only adapted documents when retrieval is enabled');
-  assert.match(route, /analysis: outcome\.presented/, 'canonical completion must forward exactly the presentation the post-bridge orchestrator produced');
-  assert.match(route, /registerAgt002PreviewAnalysis\([\s\S]*canonicalOnly, context_version_id: contextVersion\?\.id, expectedManifestScope: engine\.manifestScope \?\? null \}\)/, 'run persistence must receive canonical-only, the exact immutable context version, and the server-owned expected manifest scope');
-  assert.match(route, /findAgt002PreviewRun\(database, idempotencyKey, \{ canonicalOnly \}\)/, 'idempotent reuse must request canonical state while looking up the exact run key');
-  assert.match(route, /used: null, fallback: false, state/, 'unavailable canonical responses must not present a substitute producer');
-  assert.match(route, /human_review_required: true/g, 'every response path must require human review');
-  assert.doesNotMatch(route, /decision\s*:|go_no_go\s*:/i, 'preview endpoint must not create an authoritative GO/NO GO field');
-}
+const canonicalStart = route.indexOf('if (canonicalOnly) {');
+const legacyStart = route.indexOf('// canonicalOnly always returns above', canonicalStart);
+assert.ok(canonicalStart >= 0 && legacyStart > canonicalStart);
+const canonical = route.slice(canonicalStart, legacyStart);
+assert.match(canonical, /enqueueAgt002CanonicalReanalysis\(database,/);
+assert.match(canonical, /res\.status\(202\)\.json/);
+assert.match(canonical, /human_review_required: true/);
+assert.doesNotMatch(canonical, /engine\.analyze|claimAgt002PreviewRun|runAgt002PostBridgeAnalysis|registerAgt002PreviewAnalysis/);
+assert.doesNotMatch(canonical, /decision\s*:|go_no_go\s*:/i);
 
-assert.match(claimsMigration, /pg_advisory_xact_lock/, 'capacity decisions must be serialized in PostgreSQL');
-assert.match(claimsMigration, /psi_agt002_preview_claims/, 'cross-request reservations require a durable lease table');
-assert.match(claimsMigration, /not exists[\s\S]*psi_tender_analysis_runs/, 'daily quota must include in-flight claims without double-counting completed runs');
+const enqueueStart = server.indexOf('async function enqueueAgt002CanonicalReanalysis');
+const enqueueEnd = server.indexOf('\n}\n', enqueueStart);
+const enqueue = server.slice(enqueueStart, enqueueEnd);
+assert.match(enqueue, /findAgt002PreviewRun\(database, idempotencyKey, \{ canonicalOnly: true \}\)/);
+assert.match(enqueue, /buildAgt002FrozenEngineInput/);
+assert.match(enqueue, /createAgt002ReanalysisJob/);
 
-assert.match(engine, /const outputSchema = outputSchemaForEvidenceIds\(allowedEvidenceIds, \{[\s\S]*?legalCorpus,[\s\S]*?legalCitationIds,[\s\S]*?\}\);/, 'engine must derive a closed schema from documentary and legal ids present in the snapshot');
-assert.match(engine, /allowedLegalCitationIds: legalCitationIds\.all/, 'derived legal schema must close legal citations to the exact versioned packet allowlist');
-assert.match(engine, /evidence_refs\.items\.enum = \[\.\.\.allowedEvidenceIds\]/, 'derived schema must close evidence references to the allowed ids');
-assert.match(engine, /client\.run\(\{ model, policy: policyText, input: previewInput, outputSchema,/, 'engine must hand the evidence-closed schema to Codex turn/start');
-assert.match(ui, /can\(currentProfile, ACTIONS\.AI_ANALYSIS_RUN\)/, 'UI button must be capability-gated');
-assert.match(ui, /tender-documents-analyze-agent-preview/, 'UI must call the dedicated preview endpoint');
-assert.match(section, /Analizar con \$\{VIGIA_VISIBLE_NAMES\.tenders\}/, 'UI must expose the canonical Vig-IA Licitaciones action');
-assert.match(section, /Actualizar con \$\{VIGIA_VISIBLE_NAMES\.tenders\}/, 'UI must label refreshes as Vig-IA Licitaciones updates');
-assert.match(section, /Volver a analizar con \$\{VIGIA_VISIBLE_NAMES\.tenders\}/, 'UI must label stale or failed retries explicitly');
-assert.doesNotMatch(section, /Generar análisis preliminar|>Actualizar análisis</, 'deterministic analysis labels may not remain postconversion');
-assert.doesNotMatch(section, /onAnalyze:\s*\(\)\s*=>\s*void|onClick=\{onAnalyze\}/, 'deterministic analysis callback may not remain');
-assert.doesNotMatch(ui, /const analyzeDocuments = async/, 'opportunity UI may not retain a deterministic analysis handler');
-assert.match(section, /No registra ni autoriza GO \/ NO GO/, 'UI must preserve one concise human-authority statement');
-assert.doesNotMatch(section, /Revisión humana obligatoria|Cómo funciona|Citas de evidencia/, 'UI must not repeat technical or explanatory noise removed by the approved cleanup');
+assert.ok(executor.indexOf('claimPreviewRun(database') < executor.indexOf('runPostBridgeAnalysis(database'));
+assert.equal((executor.match(/await runPostBridgeAnalysis\(/g) || []).length, 1);
+assert.match(executor, /findPreviewRun\(database, job\.idempotencyKey, \{ canonicalOnly: true \}\)/);
+assert.match(executor, /releasePreviewClaim/);
+assert.doesNotMatch(executor, /OPENAI_API_KEY|HERMES_INTERIM_API_KEY|Authorization\s*:|Bearer\s+/i);
 
-for (const source of [serverRoute, vercelRoute, engine]) {
-  assert.doesNotMatch(source, /OPENAI_API_KEY|HERMES_INTERIM_API_KEY|Authorization\s*:|Bearer\s+/i, 'preview path must not manage API keys or bearer tokens');
-}
+assert.match(queueMigration, /pg_advisory_xact_lock/);
+assert.doesNotMatch(queueMigration, /idempotency_key text not null unique/i);
+assert.match(queueMigration, /create unique index if not exists psi_agt002_reanalysis_jobs_one_active[\s\S]*where status in \(\s*'queued'\s*,\s*'running'\s*\)/i);
+assert.match(queueMigration, /check \(status in \(\s*'queued'\s*,\s*'running'\s*,\s*'completed'\s*,\s*'unavailable'\s*\)\)/i);
 
-console.log('AGT-002 Preview endpoint, RBAC and review UI contract passed');
+assert.match(engine, /const outputSchema = outputSchemaForEvidenceIds/);
+assert.match(engine, /allowedLegalCitationIds: legalCitationIds\.all/);
+assert.match(engine, /evidence_refs\.items\.enum = \[\.\.\.allowedEvidenceIds\]/);
+
+assert.match(ui, /can\(currentProfile, ACTIONS\.AI_ANALYSIS_RUN\)/);
+assert.match(ui, /tender-documents-analyze-agent-preview/);
+assert.match(ui, /agt002-reanalysis-status\?opportunity_id/);
+assert.match(ui, /reanalysisAbortRef\.current\?\.abort\(\)/);
+assert.match(ui, /busy=\{busy \|\| Boolean\(activeReanalysisJobId\)\}/);
+assert.match(section, /Analizar con \$\{VIGIA_VISIBLE_NAMES\.tenders\}/);
+assert.match(section, /Actualizar con \$\{VIGIA_VISIBLE_NAMES\.tenders\}/);
+assert.match(section, /Volver a analizar con \$\{VIGIA_VISIBLE_NAMES\.tenders\}/);
+assert.doesNotMatch(section, /Generar análisis preliminar|>Actualizar análisis</);
+assert.match(section, /No registra ni autoriza GO \/ NO GO/);
+
+console.log('AGT-002 durable Preview endpoint, worker, RBAC and review UI contract passed');

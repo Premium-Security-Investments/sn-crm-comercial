@@ -42,15 +42,15 @@ import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeT
 import { canonicalizeTenderDocuments } from '../tender-document-canonicalizer.js';
 import { isCriticalTenderDocument } from '../tender-critical-documents.js';
 import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
-import { createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
+import { AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
 import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, appendAgt002AnalysisAttempt, claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, getLatestAgt002AnalysisAttempt, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim } from '../agt002-preview-persistence.js';
 import { getAgt002WorkbenchApi, postAgt002LearningReviewApi, postAgt002MessageApi, postAgt002RetryApi } from '../agt002-workbench-api.js';
 import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt002WorkbenchDrain } from '../agt002-workbench-runtime.js';
 import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
 import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../tender-actuation-types.js';
 import { buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
-import { AGT002_CANONICAL_PREVIEW_STAGES, createAgt002AnalysisObservability, toBoundedAgt002Error } from '../agt002-analysis-observability.js';
-import { AGT002_POST_BRIDGE_STAGES, runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability.js';
+import { createAgt002AnalysisObservability } from '../agt002-analysis-observability.js';
+import { runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability.js';
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { loadAgt002CompanyEvidenceRegistryEntries } from '../agt002-company-evidence-classes.js';
@@ -62,6 +62,9 @@ import {
 import { adaptAgt002RetrievalDocuments } from '../agt002-retrieval-document-adapter.js';
 import { loadPublishedAgt002LegalCorpus } from '../agt002-legal-corpus-store.js';
 import { selectAgt002ManizalesManifestSource } from '../agt002-manizales-manifest-source.js';
+import { buildAgt002FrozenEngineInput } from '../agt002-reanalysis-input.js';
+import { createAgt002ReanalysisJob, findLatestAgt002ReanalysisStatusForOpportunity } from '../agt002-reanalysis-jobs.js';
+import { presentAgt002ReanalysisStatus } from '../agt002-reanalysis-api.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -106,6 +109,86 @@ async function loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId) 
     categoryOverrides: governanceOverrides.categoryOverrides,
     evidenceClassLinkByRequirementId: governanceOverrides.evidenceClassLinkByRequirementId,
     governanceProvenance: governanceOverrides.provenance,
+  };
+}
+
+async function enqueueAgt002CanonicalReanalysis(database, {
+  opportunityId, tenderId, snapshotId, actorId, opportunity, currentDocs,
+  companyProfile, deepAnalysis, contextV2Sections, companyDossierV2,
+  humanEvidence = [],
+}) {
+  const config = getAgt002PreviewRuntimeConfig(process.env);
+  const legalCorpusContext = await loadAgt002LegalCorpusContextIfEnabled(database);
+  const contextVersion = await registerAgt002ContextVersion(database, {
+    opportunity_id: opportunityId,
+    tender_id: tenderId,
+    snapshot_id: snapshotId,
+    actor_id: actorId,
+    context: {
+      snapshot_id: snapshotId,
+      ...contextV2Sections,
+      company_dossier: companyDossierV2,
+      human_evidence: humanEvidence,
+    },
+  });
+  const policyVersion = agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3
+    ? AGT002_INTEGRAL_V3_POLICY_VERSION
+    : config.policyVersion;
+  const idempotencyKey = computeAgt002PreviewIdempotencyKey({
+    snapshotId,
+    policyVersion,
+    model: config.model,
+    contextVersionId: contextVersion.id,
+    legalCorpusVersionId: legalCorpusContext?.legal_corpus_version_id,
+    contractVersion: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? AGT002_INTEGRAL_V3_CONTRACT_VERSION : null,
+  });
+  const existingRun = await findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly: true });
+  if (existingRun?.run_id) {
+    return {
+      status: 'completed', job_id: null, context_version_id: contextVersion.id,
+      analysis_run_id: existingRun.run_id, analysis: presentCurrentTenderAnalysis(existingRun), reused: true,
+    };
+  }
+
+  const analysisDocuments = agt002AnalysisConfig.AGT002_DOCUMENT_RETRIEVAL
+    ? adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId })
+    : currentDocs;
+  const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
+  const manizalesManifestSource = await selectAgt002ManizalesManifestForTender(database, { opportunityId, tenderId });
+  const analysisContext = {
+    opportunity,
+    documents: analysisDocuments,
+    companyProfile,
+    deepAnalysis,
+    snapshotId,
+    canonicalOnly: true,
+    contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: humanEvidence },
+  };
+  const frozenEngineInput = buildAgt002FrozenEngineInput({
+    runtimeConfig: { ...config, policyVersion },
+    analysisConfig: agt002AnalysisConfig,
+    analysisContext,
+    legalCorpusContext,
+    integralV3Governance,
+    manizalesManifestSource,
+    idempotencyKey,
+  });
+  const job = await createAgt002ReanalysisJob(database, {
+    opportunityId,
+    tenderId,
+    snapshotId,
+    contextVersionId: contextVersion.id,
+    idempotencyKey,
+    frozenEngineInput,
+    requestedBy: actorId,
+  });
+  return {
+    status: job.status === 'existing' ? 'running' : 'queued',
+    job_id: job.jobId,
+    context_version_id: contextVersion.id,
+    analysis_run_id: null,
+    analysis: null,
+    reused: job.status === 'existing',
   };
 }
 
@@ -162,6 +245,8 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'POST /api/vigia/copilot/feedback': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
 
   'GET /api/tenders': ['tenders', ACTIONS.LICITACIONES_VIEW],
+  'POST /api/tender-documents-analyze-agent-preview': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
+  'GET /api/agt002-reanalysis-status': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/users': ['users', ACTIONS.USERS_MANAGE],
   'GET /api/access-catalog': ['users', ACTIONS.USERS_MANAGE],
 
@@ -2735,111 +2820,48 @@ async function reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analys
   const companyProfile = await getTenderCompanyProfile(database);
   const deepAnalysis = buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile);
   const humanEvidence = agt002HumanEvidenceFromResponses(await getTenderQuestionResponses(database, opportunityId, analysisRunId));
-
-  const contextVersion = await registerAgt002ContextVersion(database, {
-    opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, actor_id: currentProfile.id,
-    context: { snapshot_id: snapshotId, ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: humanEvidence },
-  });
-
-  const config = getAgt002PreviewRuntimeConfig(process.env);
-  const legalCorpusContext = await loadAgt002LegalCorpusContextIfEnabled(database);
-  const idempotencyKey = computeAgt002PreviewIdempotencyKey({
-    snapshotId,
-    policyVersion: config.policyVersion,
-    model: config.model,
-    contextVersionId: contextVersion.id,
-    legalCorpusVersionId: legalCorpusContext?.legal_corpus_version_id,
-    contractVersion: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? AGT002_INTEGRAL_V3_CONTRACT_VERSION : null,
-  });
-  let claimId = null;
+  let queued;
   try {
-    const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
-    if (claim.status === 'existing') {
-      const existingRun = await findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly });
-      agt002AnalysisObservability.record('reanalysis_triggered', {
-        opportunity_id: opportunityId, tender_id: tenderId, analysis_run_id: existingRun?.run_id,
-        context_version_id: contextVersion.id, status: 'completed',
-      });
-      return { status: 'completed', context_version_id: contextVersion.id, analysis: presentCurrentTenderAnalysis(existingRun), reused: true };
-    }
-    if (claim.status !== 'claimed') {
-      agt002AnalysisObservability.record('reanalysis_triggered', {
-        opportunity_id: opportunityId, tender_id: tenderId, context_version_id: contextVersion.id, status: claim.status,
-      });
-      return { status: claim.status, context_version_id: contextVersion.id };
-    }
-    claimId = claim.claim_id;
-    const analysisDocuments = agt002AnalysisConfig.AGT002_DOCUMENT_RETRIEVAL
-      ? adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId })
-      : currentDocs;
-    const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
-    // App-side correlation id for the single closed-catalog `reanalysis_post_bridge_outcome`
-    // event runAgt002PostBridgeAnalysis emits below — never the real historical incident's id.
-    const correlationId = randomUUID();
-    // Mutable telemetry the runtime's bridge-client wrapper flips as the real bridge call
-    // resolves; runAgt002PostBridgeAnalysis reads it fresh after engine.analyze() settles so it
-    // can tell "the bridge itself never answered" apart from any later post-response failure.
-    const bridgeTelemetry = { invocationStarted: false, responseReceived: false };
-    const engine = createAgt002PreviewRuntime({
-          environment: process.env,
-          countDailyRuns: () => countAgt002PreviewRunsToday(database),
-          manizalesManifestSource: await selectAgt002ManizalesManifestForTender(database, { opportunityId, tenderId }),
-          legalCorpusContext,
-          onBridgeInvocationStarted: () => { bridgeTelemetry.invocationStarted = true; },
-          onBridgeResponseReceived: () => { bridgeTelemetry.responseReceived = true; },
-          ...(integralV3Governance ? {
-            companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
-            categoryOverrides: integralV3Governance.categoryOverrides,
-            evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,
-            governanceProvenance: integralV3Governance.governanceProvenance,
-            contextVersionId: contextVersion?.id ?? null,
-          } : {}),
-        });
-    // runAgt002PostBridgeAnalysis owns the entire post-claim frontier from here: exactly one
-    // engine.analyze() call, exactly one persistence attempt, the durable
-    // psi_agt002_analysis_attempt_events lifecycle, the single closed-catalog observability
-    // event, and the claim release — so this call site must never release `claimId` itself.
-    const outcome = await runAgt002PostBridgeAnalysis(database, {
-      opportunityId, tenderId, snapshotId, contextVersionId: contextVersion.id,
-      attemptKey: idempotencyKey, correlationId, claimId, idempotencyKey, canonicalOnly,
-    }, {
-      engine,
-      observability: agt002AnalysisObservability,
-      analysisContext: { opportunity, documents: analysisDocuments, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: humanEvidence } },
-      bridgeTelemetry,
-      integralContractV3: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3 === true,
-      presentAnalysis: registeredRun => presentCurrentTenderAnalysis(registeredRun),
+    queued = await enqueueAgt002CanonicalReanalysis(database, {
+      opportunityId,
+      tenderId,
+      snapshotId,
+      actorId: currentProfile.id,
+      opportunity,
+      currentDocs,
+      companyProfile,
+      deepAnalysis,
+      contextV2Sections,
+      companyDossierV2,
+      humanEvidence,
     });
-    claimId = null; // Already released inside runAgt002PostBridgeAnalysis: never release twice.
-    if (outcome.status === 'completed') {
-      agt002AnalysisObservability.record('canonical_run_recorded', {
-        opportunity_id: opportunityId, tender_id: tenderId, analysis_run_id: outcome.analysis_run_id, reused: false,
-      });
-    }
-    agt002AnalysisObservability.record('reanalysis_triggered', {
-      opportunity_id: opportunityId, tender_id: tenderId, analysis_run_id: outcome.analysis_run_id,
-      context_version_id: contextVersion.id, status: outcome.status,
-    });
-    if (outcome.status === 'completed') {
-      return { status: 'completed', context_version_id: contextVersion.id, analysis: outcome.presented, reused: false };
-    }
-    return { status: 'unavailable', context_version_id: contextVersion.id };
   } catch (error) {
-    console.warn('agt002_reanalysis_after_human_answer_failed', {
-      event: 'agt002_reanalysis_after_human_answer_failed',
-      stage: AGT002_POST_BRIDGE_STAGES.UNEXPECTED,
-      ...toBoundedAgt002Error(error),
-    });
-    agt002AnalysisObservability.record('reanalysis_triggered', {
-      opportunity_id: opportunityId, tender_id: tenderId, context_version_id: contextVersion.id, status: 'unavailable',
-    });
-    return { status: 'unavailable', context_version_id: contextVersion.id };
-  } finally {
-    if (claimId) {
-      try { await releaseAgt002PreviewClaim(database, { idempotencyKey, claimId }); }
-      catch { console.warn('agt002_preview_claim_release_failed', { event: 'agt002_preview_claim_release_failed' }); }
-    }
+    const activeConflict = error?.code === '55000'
+      && String(error?.message || '').includes('otro trabajo AGT-002 activo');
+    if (!activeConflict) throw error;
+    const activeJob = await findLatestAgt002ReanalysisStatusForOpportunity(database, opportunityId);
+    return {
+      status: 'busy',
+      job_id: activeJob?.jobId || null,
+      context_version_id: null,
+      analysis: null,
+      reused: true,
+    };
   }
+  agt002AnalysisObservability.record('reanalysis_triggered', {
+    opportunity_id: opportunityId,
+    tender_id: tenderId,
+    analysis_run_id: queued.analysis_run_id,
+    context_version_id: queued.context_version_id,
+    status: queued.status,
+  });
+  return {
+    status: queued.status,
+    job_id: queued.job_id,
+    context_version_id: queued.context_version_id,
+    analysis: queued.analysis,
+    reused: queued.reused,
+  };
 }
 
 async function getTenderOfferPreparationRecords(database, opportunityId) {
@@ -4016,42 +4038,73 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
       });
     };
 
-    if (!isAgt002PreviewConfigured(process.env)) {
-      if (!canonicalOnly) return useRulesFallback('not_configured');
-      const unavailableKey = computeAgt002PreviewIdempotencyKey({ snapshotId: registeredSnapshot.id, policyVersion: 'unavailable:not_configured', model: 'unavailable' });
-      try {
-        await appendAttempt(unavailableKey, 'queued');
-        await appendAttempt(unavailableKey, 'unavailable', { error_code: 'AGT002_NOT_CONFIGURED', error_message: 'Vig-IA no está disponible; el análisis queda pendiente.' });
-      } catch { console.warn('agt002_attempt_state_failed', { event: 'agt002_attempt_state_failed' }); }
-      return sendCanonicalState(503, 'unavailable', 'not_configured');
+    if (canonicalOnly) {
+      if (!isAgt002PreviewConfigured(process.env)) {
+        const unavailableKey = computeAgt002PreviewIdempotencyKey({ snapshotId: registeredSnapshot.id, policyVersion: 'unavailable:not_configured', model: 'unavailable' });
+        try {
+          await appendAttempt(unavailableKey, 'queued');
+          await appendAttempt(unavailableKey, 'unavailable', { error_code: 'AGT002_NOT_CONFIGURED', error_message: 'Vig-IA no está disponible; el análisis queda pendiente.' });
+        } catch { console.warn('agt002_attempt_state_failed', { event: 'agt002_attempt_state_failed' }); }
+        return sendCanonicalState(503, 'unavailable', 'not_configured');
+      }
+      const queued = await enqueueAgt002CanonicalReanalysis(database, {
+        opportunityId,
+        tenderId,
+        snapshotId: registeredSnapshot.id,
+        actorId: currentProfile.id,
+        opportunity,
+        currentDocs,
+        companyProfile,
+        deepAnalysis,
+        contextV2Sections,
+        companyDossierV2,
+        humanEvidence: [],
+      });
+      const payload = await getTenderDocumentRecords(database, opportunityId);
+      if (queued.status === 'completed') {
+        return res.json({
+          ...payload,
+          analysis: queued.analysis,
+          reanalysis_job: null,
+          analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, state: 'completed', reused: true, human_review_required: true },
+        });
+      }
+      return res.status(202).json({
+        ...payload,
+        reanalysis_job: {
+          job_id: queued.job_id,
+          status: queued.status,
+          context_version_id: queued.context_version_id,
+          analysis_run_id: null,
+          error_code: null,
+          error_message: null,
+        },
+        analysis_engine: {
+          requested: 'AGT-002', used: null, fallback: false, state: queued.status,
+          job_id: queued.job_id, reused: queued.reused, human_review_required: true,
+        },
+      });
     }
+
+    // canonicalOnly always returns above; everything below only ever runs for the
+    // legacy non-canonical preview/rules-fallback mode.
+    if (!isAgt002PreviewConfigured(process.env)) return useRulesFallback('not_configured');
     let claimId = null;
     let idempotencyKey = null;
-    const canonicalCorrelationId = randomUUID();
-    const canonicalStartedAt = Date.now();
-    let canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.RUNTIME_CONFIG;
     const bridgeTelemetry = { invocationStarted: false, responseReceived: false };
     try {
       const config = getAgt002PreviewRuntimeConfig(process.env);
-      canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.LEGAL_CORPUS;
       const legalCorpusContext = await loadAgt002LegalCorpusContextIfEnabled(database);
-      canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.CONTEXT_VERSION;
-      const contextVersion = canonicalOnly ? await registerAgt002ContextVersion(database, {
-        opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, actor_id: currentProfile.id,
-        context: { snapshot_id: registeredSnapshot.id, ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: [] },
-      }) : null;
       idempotencyKey = computeAgt002PreviewIdempotencyKey({
         snapshotId: registeredSnapshot.id,
         policyVersion: config.policyVersion,
         model: config.model,
-        contextVersionId: contextVersion?.id,
         legalCorpusVersionId: legalCorpusContext?.legal_corpus_version_id,
         contractVersion: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? AGT002_INTEGRAL_V3_CONTRACT_VERSION : null,
       });
-      canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.CLAIM;
       const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
       if (claim.status === 'existing') {
-        const existingRun = await findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly });
+        const existingRun = await findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly: false });
         if (!existingRun) throw new Error('La ejecución Vig-IA reservada no está disponible.');
         const payload = await getTenderDocumentRecords(database, opportunityId);
         return res.json({ ...payload, analysis: presentCurrentTenderAnalysis(existingRun), analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, state: 'completed', reused: true, human_review_required: true } });
@@ -4059,16 +4112,9 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
       if (claim.status === 'in_progress') {
         return res.status(409).json({ error: 'Vig-IA ya está procesando este snapshot.', analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, state: 'running', in_progress: true, human_review_required: true } });
       }
-      if (claim.status === 'quota' || claim.status === 'saturated') {
-        if (!canonicalOnly) return useRulesFallback(claim.status);
-        await appendAttempt(idempotencyKey, 'queued');
-        await appendAttempt(idempotencyKey, 'retry_wait', { error_code: `AGT002_${claim.status.toUpperCase()}`, error_message: 'Vig-IA está esperando capacidad.' });
-        return sendCanonicalState(429, 'retry_wait', claim.status);
-      }
+      if (claim.status === 'quota' || claim.status === 'saturated') return useRulesFallback(claim.status);
       claimId = claim.claim_id;
-      canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.GOVERNANCE;
       const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
-      canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.RUNTIME_CREATION;
       const engine = createAgt002PreviewRuntime({
           environment: process.env,
           countDailyRuns: () => countAgt002PreviewRunsToday(database),
@@ -4081,61 +4127,38 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
             categoryOverrides: integralV3Governance.categoryOverrides,
             evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,
             governanceProvenance: integralV3Governance.governanceProvenance,
-            contextVersionId: contextVersion?.id ?? null,
+            contextVersionId: null,
           } : {}),
         });
       const analysisDocuments = agt002AnalysisConfig.AGT002_DOCUMENT_RETRIEVAL
         ? adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId: registeredSnapshot.id })
         : currentDocs;
-      canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.ENGINE_ANALYSIS;
-      if (canonicalOnly) {
-        // runAgt002PostBridgeAnalysis owns the entire post-claim frontier from here: exactly one
-        // engine.analyze() call, exactly one persistence attempt, the durable
-        // psi_agt002_analysis_attempt_events lifecycle, the single closed-catalog observability
-        // event, and the claim release — so this call site must never release `claimId` itself.
-        const outcome = await runAgt002PostBridgeAnalysis(database, {
-          opportunityId, tenderId, snapshotId: registeredSnapshot.id, contextVersionId: contextVersion?.id,
-          attemptKey: idempotencyKey, correlationId: canonicalCorrelationId, claimId, idempotencyKey, canonicalOnly,
-        }, {
-          engine,
-          observability: agt002AnalysisObservability,
-          analysisContext: { opportunity, documents: analysisDocuments, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } },
-          bridgeTelemetry,
-          integralContractV3: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3 === true,
-          presentAnalysis: registeredRun => presentCurrentTenderAnalysis(registeredRun),
-        });
-        claimId = null; // Already released inside runAgt002PostBridgeAnalysis: never release twice.
-        if (outcome.status !== 'completed') return sendCanonicalState(503, 'unavailable', 'preview_unavailable');
-        const payload = await getTenderDocumentRecords(database, opportunityId);
-        return res.json({ ...payload, analysis: outcome.presented, analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, state: 'completed', reused: false, human_review_required: true } });
-      }
-      const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
-      canonicalStage = AGT002_CANONICAL_PREVIEW_STAGES.PERSISTENCE;
-      const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope, canonicalOnly, context_version_id: contextVersion?.id, expectedManifestScope: engine.manifestScope ?? null });
+      const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id, canonicalOnly: false, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
+      const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope, canonicalOnly: false, context_version_id: null, expectedManifestScope: engine.manifestScope ?? null });
       const payload = await getTenderDocumentRecords(database, opportunityId);
       return res.json({ ...payload, analysis: presentCurrentTenderAnalysis(registeredRun), analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, state: 'completed', reused: false, human_review_required: true } });
     } catch (error) {
-      if (!canonicalOnly) {
-        console.warn('agt002_preview_fallback', { event: 'agt002_preview_fallback', reason: 'preview_unavailable' });
-        return useRulesFallback('preview_unavailable');
-      }
-      agt002AnalysisObservability.record('canonical_preview_unavailable', {
-        correlation_id: canonicalCorrelationId,
-        stage: canonicalStage,
-        error_code: error?.runtime_boundary_code || error?.code,
-        bridge_invocation_started: bridgeTelemetry.invocationStarted,
-        duration_ms: Date.now() - canonicalStartedAt,
-        opportunity_id: opportunityId,
-        tender_id: tenderId,
-        snapshot_id: registeredSnapshot.id,
-      });
-      return sendCanonicalState(503, 'unavailable', 'preview_unavailable');
+      console.warn('agt002_preview_fallback', { event: 'agt002_preview_fallback', reason: 'preview_unavailable' });
+      return useRulesFallback('preview_unavailable');
     } finally {
       if (claimId && idempotencyKey) {
         try { await releaseAgt002PreviewClaim(database, { idempotencyKey, claimId }); }
         catch { console.warn('agt002_preview_claim_release_failed', { event: 'agt002_preview_claim_release_failed' }); }
       }
     }
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.get('/api/agt002-reanalysis-status', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.AI_ANALYSIS_RUN);
+    const database = requireDb();
+    const opportunityId = String(req.query.opportunity_id || '');
+    if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const job = await findLatestAgt002ReanalysisStatusForOpportunity(database, opportunityId);
+    return res.json(presentAgt002ReanalysisStatus(job));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
