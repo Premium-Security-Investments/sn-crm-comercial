@@ -1,8 +1,42 @@
 # CURRENT — SIIO Comercial / Licitaciones / Vig‑IA
 
-## 0. Corte autoritativo final — canary único `unavailable` y rollback estable, 2026-08-14
+## 0. Corte autoritativo vigente — piloto gobernado Manizales V3 completo, en producción, 2026-08-17
 
-**Este bloque reemplaza como autoridad a todos los cortes e historiales posteriores de este archivo.** Se verificó contra Git local/remoto, GitHub, Supabase productivo, Vercel, el marcador/resultados locales y el bridge. Los bloques siguientes conservan trazabilidad histórica, pero no mandan cuando contradigan este corte.
+**Este bloque reemplaza como autoridad a todos los cortes e historiales posteriores de este archivo, incluido el corte 2026-08-14 que sigue abajo como historial.** El corte 2026-08-14 declaró el canary único `unavailable` (sin `analysis_run_id`) como bloqueo material vigente. Ese bloqueo quedó **resuelto** por el piloto gobernado Manizales SA-24-2026, cerrado y fusionado a `main` el 2026-08-17. La evidencia se verificó mecánicamente en la sesión Hermes que abrió esta Fase 9: Git, Vercel CLI, endpoint público protegido, lectura sanitizada del entorno productivo y consulta sanitaria de metadatos en Supabase. El worktree documental posterior no repitió llamadas remotas; conserva los resultados y comandos en `docs/evidence/2026-08-17-agt002-v3-production-closeout.md`.
+
+### 0.1 Resultado terminal
+
+El piloto gobernado Manizales V3 (rama `feat/agt002-manizales-v3-complete-pilot`) se completó y se fusionó a `main`. **Evidencia mecánica:** el merge commit `960a96702e869531aad94545c137e1b3fe28c0b0` tiene como padres `837b5742055be7a56a9097c203c75f7393082fb7` (punta previa de `main`) y `0d4e865189a6c95d7a53eef6970444c685fab306` (punta de la rama del piloto); `git rev-parse main origin/main` en esta sesión confirma que ambos apuntan exactamente a `960a967`. El commit trae la migración `067_agt002_integral_v3_persistence.sql` y su rollback, el manifiesto gobernado Manizales, el wiring del runtime y las pruebas asociadas (55 archivos, ver `git show --stat 960a967`).
+
+Según `docs/verification/2026-08-15-agt002-manizales-v3-pilot.md` (documento incorporado en el mismo merge), el piloto ejecutó un canary real V3 no persistente (`ok=true`, `valid_contract=true`, contrato `agt002-integral-analysis-v3`, 20/20 unidades de requisito evaluadas en orden de manifiesto, cero pérdidas frente a los 9 ejes históricos V2) y cerró con la suite focal AGT‑002 en **410/410** tras agregar la migración 067. Ese documento es evidencia mecánica de **su propia sesión de trabajo**, no de esta; aquí se cita, no se re-ejecuta.
+
+### 0.2 Despliegue, flag y persistencia verificados mecánicamente
+
+```text
+main / origin/main = 960a96702e869531aad94545c137e1b3fe28c0b0
+Vercel deployment  = dpl_6jMm4YBn1sAiWBM1T5YoYzTeFv7t, target production, READY
+Alias público       = https://seguridad-nacional-crm.vercel.app
+AGT002_INTEGRAL_CONTRACT_V3 = true (producción; `_ENABLED` no existe)
+Migración 067        = aplicada en Supabase productivo
+```
+
+El nombre y valor exactos fueron comprobados mediante `vercel env pull` desde el worktree enlazado, imprimiendo sólo presencia/booleano y eliminando inmediatamente el archivo temporal. La consulta sanitaria de Supabase confirmó: oportunidad Manizales vinculada, función 067 activa, canonical actual `schema_version=3.0.0` y contrato `agt002-integral-analysis-v3`, sin exponer contenido de negocio ni secretos.
+
+### 0.3 Alcance del proceso habilitado — fail-closed por código, verificado en esta sesión
+
+`agt002-manizales-manifest-source.js` (leído íntegro en esta sesión) sólo devuelve un manifiesto gobernado cuando `opportunityId` y `process` coinciden exactamente con el piloto Manizales (`AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID` / `AGT002_INTEGRAL_MANIFEST_PROCESO`, es decir, la oportunidad `54190e51-15fb-46af-b0aa-8f13461a3110` y el proceso `SA-24-2026`); cualquier otra combinación lanza `AGT002_MANIZALES_PILOT_SCOPE_MISMATCH` antes de tocar el proveedor. Ningún parámetro de request controla `manifest_scope`. Esto es la base mecánica de la invariante "Manizales sigue siendo el único proceso V3 habilitado" — ver `docs/architecture/agt002-reusable-licitacion-architecture.md` para el diseño reusable que preserva este cierre para futuros procesos.
+
+### 0.4 Qué sigue abierto
+
+- Migración `062_siio_f2_security_coherence.sql` permanece aplicada en producción sin rollback versionado; el gap está documentado, no inventado, en `docs/migrations/agt002-process-governance-ledger.md`.
+- GO/NO-GO, firma, envío, presentación y compromiso de recursos sobre Manizales SA-24-2026 siguen siendo exclusivamente humanos; el piloto V3 no decide cumplimiento — ver `docs/architecture/agt002-human-review-policy.md`.
+- Incorporar un segundo proceso/licitación exige paquete aprobado + gate de onboarding + flag explícito; ninguno de los tres existe hoy para ningún proceso distinto de Manizales — ver `docs/runbooks/agt002-process-onboarding-gate.md`.
+
+---
+
+## Historial anterior — corte 2026-08-14, superseded por el corte §0 vigente
+
+**Este bloque fue autoritativo en su fecha.** Se conserva como historial de cómo se llegó al bloqueo que el corte §0 vigente (2026-08-17) resolvió; no se reescribe su contenido ni su intención original. El corte §0 anterior manda ante cualquier conflicto.
 
 ### 0.1 Resultado terminal
 

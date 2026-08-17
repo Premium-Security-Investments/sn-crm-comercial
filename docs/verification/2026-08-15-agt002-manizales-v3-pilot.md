@@ -192,3 +192,7 @@ The rollback restores the exact 063 RPC behavior without touching rows, the 063 
 ### Pre-deployment gate
 
 Status: **PASS**. Code, canary, compatibility and migration are ready for commit/push and the authorized production rollout. No production write or deployment is represented by this section.
+
+## Post-merge note (added 2026-08-17, phase 9 documentation pass — does not alter the sections above)
+
+This branch (`feat/agt002-manizales-v3-complete-pilot`, tip `0d4e865189a6c95d7a53eef6970444c685fab306`) was merged into `main` as `960a96702e869531aad94545c137e1b3fe28c0b0` (merge parents `837b5742055be7a56a9097c203c75f7393082fb7` and `0d4e865189a6c95d7a53eef6970444c685fab306`, mechanically confirmed via `git log` in the `agt002-phase9-docs` worktree). The migration referenced throughout this document as "067" is `067_agt002_integral_v3_persistence.sql`, with rollback `supabase/rollbacks/067_agt002_integral_v3_persistence_rollback.sql` — both landed in the same merge and are present on `main`/`origin/main` at the commit above. Whether 067 was applied against the production Supabase instance is a claim external to this document and to this repository state; see `docs/evidence/2026-08-17-agt002-v3-production-closeout.md` for how that claim is sourced and what remains externally-confirmed-only versus mechanically verified.

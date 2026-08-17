@@ -1,6 +1,12 @@
 # AGT-002 integral analysis v3 — fail-closed canary runbook
 
-## Status and hard-off gate
+## Status update, 2026-08-17 (phase 9 documentation pass)
+
+This runbook was written while `AGT002_INTEGRAL_CONTRACT_V3` was hard-off everywhere (§"Status and hard-off gate" below, kept verbatim as historical record). Since then, the Manizales SA-24-2026 governed pilot (`feat/agt002-manizales-v3-complete-pilot`, merged to `main` as `960a96702e869531aad94545c137e1b3fe28c0b0`) ran exactly this procedure end to end for that one process and completed it — see `docs/verification/2026-08-15-agt002-manizales-v3-pilot.md`. Per Juan Botero's confirmation in this session (external to this repository, not mechanically re-verified here — no network access to Vercel/Supabase from this sandbox), `AGT002_INTEGRAL_CONTRACT_V3=true` in production today, scoped to Manizales only by the fail-closed check in `agt002-manizales-manifest-source.js` (any other `opportunity_id`/`process` throws `AGT002_MANIZALES_PILOT_SCOPE_MISMATCH` before reaching the provider — mechanically confirmed by reading that file in this session).
+
+**What this means for using this runbook going forward:** the "Status and hard-off gate" section below no longer describes the flag's live production state for Manizales, but its procedure and preconditions remain the correct template for onboarding any *additional* process — see `docs/runbooks/agt002-process-onboarding-gate.md`, which layers the process-package/registry gate on top of this canary procedure. Do not read the paragraph below as claiming the flag is off in production today.
+
+## Status and hard-off gate (as originally written — historical for Manizales)
 
 This branch does **not** activate `AGT002_INTEGRAL_CONTRACT_V3` anywhere, apply any remote migration, deploy, or run against real evidence. The flag stays off until every precondition below is satisfied and a human explicitly enables it for exactly one controlled run.
 
