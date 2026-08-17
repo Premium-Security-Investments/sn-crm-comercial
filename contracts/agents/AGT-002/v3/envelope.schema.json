@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:psi:siio:agents:agt002:v3:envelope",
+  "title": "AGT-002 v3 tender-analysis envelope",
+  "description": "Closed persisted envelope. Mirrors validateAgt002TenderAnalysisEnvelopeV3 (agt002-tender-adapter.js:236). NOTE: two runtime rules are NOT expressible in JSON Schema and are documented here: (1) manifest_scope is accepted ONLY when the server supplies a governed expected scope, and (2) manifest_scope and governance_provenance are mutually exclusive. The base required keys are the 14 ENVELOPE_KEYS_V3; manifest_scope and governance_provenance are optional server-owned additions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "agent_id",
+    "run_id",
+    "policy_version",
+    "snapshot_id",
+    "context_version_id",
+    "status",
+    "method",
+    "integral_analysis",
+    "evidence_coverage",
+    "legal_corpus_version_id",
+    "human_review_required",
+    "v2_projection",
+    "usage"
+  ],
+  "properties": {
+    "schema_version": { "const": "3.0.0" },
+    "agent_id": { "const": "AGT-002" },
+    "run_id": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+    "policy_version": { "type": "string", "minLength": 1 },
+    "snapshot_id": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+    "context_version_id": { "type": ["string", "null"], "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+    "status": { "const": "completed" },
+    "method": { "const": "agent_ai" },
+    "integral_analysis": { "$ref": "integral-analysis.schema.json" },
+    "evidence_coverage": { "type": "object" },
+    "legal_corpus_version_id": { "type": ["string", "null"], "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
+    "human_review_required": { "const": true },
+    "v2_projection": {
+      "type": "object",
+      "description": "Deterministic v2 projection recomputed by projectAgt002IntegralV3ToV2; never hand-authored. Its own closed shape is validated by agt002-preview-contract.js.",
+      "required": ["recommendation", "summary", "strengths", "weaknesses", "blockers", "questions", "critical_questions", "unverified", "next_action", "human_review_required"]
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "model", "input_tokens", "output_tokens", "rate_limit"],
+      "properties": {
+        "provider": { "type": "string" },
+        "model": { "type": "string" },
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens": { "type": "integer", "minimum": 0 },
+        "rate_limit": { "type": ["object", "null"] }
+      }
+    },
+    "manifest_scope": { "$ref": "manifest-scope.schema.json" },
+    "governance_provenance": { "type": "object" }
+  }
+}

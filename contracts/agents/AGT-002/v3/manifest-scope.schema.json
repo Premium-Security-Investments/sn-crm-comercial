@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:psi:siio:agents:agt002:v3:manifest-scope",
+  "title": "AGT-002 v3 manifest_scope",
+  "description": "Server-owned, top-level sibling of integral_analysis. Distinguishes honest documentary/registry coverage from the always-N/N analyzed/expected requirement manifest. Never sourced from the model turn. Mirrors validateAgt002ManifestScope (agt002-tender-adapter.js:181).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "registry_sections",
+    "pre_go_relevant",
+    "proposal_sections",
+    "analyzable_requirement_ids",
+    "atomized_entry_count",
+    "dispositions",
+    "section_ledger_accounted",
+    "proposal_ledger_accounted"
+  ],
+  "properties": {
+    "registry_sections": { "type": "integer", "minimum": 0 },
+    "pre_go_relevant": { "type": "integer", "minimum": 0 },
+    "proposal_sections": { "type": "integer", "minimum": 0 },
+    "analyzable_requirement_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "atomized_entry_count": { "type": "integer", "minimum": 0 },
+    "dispositions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["analyzed_candidate", "excluded_with_reason", "unresolved_visible"],
+      "properties": {
+        "analyzed_candidate": { "type": "integer", "minimum": 0 },
+        "excluded_with_reason": { "type": "integer", "minimum": 0 },
+        "unresolved_visible": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "section_ledger_accounted": { "type": "integer", "minimum": 0 },
+    "proposal_ledger_accounted": { "type": "integer", "minimum": 0 }
+  }
+}
