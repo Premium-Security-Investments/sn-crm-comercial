@@ -1,0 +1,36 @@
+{
+  "artifact_type": "agt002_manizales_integral_manifest_corrections",
+  "contract_version": "agt002-manizales-integral-manifest-corrections@1",
+  "status": "validated_candidate",
+  "human_approval_required": true,
+  "human_approved": false,
+  "opportunity_id": "54190e51-15fb-46af-b0aa-8f13461a3110",
+  "proceso": "SA-24-2026",
+  "generated_at": "2026-08-15T00:00:00.000Z",
+  "source_manifest": {
+    "artifact_type": "agt002_manizales_integral_manifest",
+    "contract_version": "agt002-manizales-integral-manifest@1",
+    "version": 1,
+    "generated_at": "2026-08-15T00:00:00.000Z"
+  },
+  "summary": {
+    "total": 0,
+    "by_rule": {
+      "citation-quote-equality": 0,
+      "vigencia-precedence": 0,
+      "atomization": 0,
+      "duplicate-collapse": 0,
+      "phase-reconciliation": 0,
+      "materiality-derivation": 0,
+      "subsanability-normalization": 0,
+      "candidate-evidence-validity": 0,
+      "suspicious-association": 0
+    }
+  },
+  "corrections": [],
+  "probative_limits": [
+    "Correcciones mecánicas deterministas: sólo degradan o abstienen; nunca promueven analizabilidad, cumplimiento, suficiencia, puntaje, categoría gobernada ni aprobación.",
+    "Cada corrección cita su base (cita/regla/taxonomía); no se inventan citas ni evidencia; una clase o cita dudosa se anula, no se reemplaza por una adivinada.",
+    "Una segunda pasada sobre el artefacto corregido produce cero correcciones (idempotente) y un manifiesto byte-idéntico."
+  ]
+}

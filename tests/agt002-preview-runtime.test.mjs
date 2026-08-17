@@ -218,18 +218,20 @@ assert.throws(
   };
   const evidenceClassLinkByRequirementId = { 'req-1': 'rup' };
   const categoryOverrides = { 'req-2': 'technical' };
+  const manizalesManifestSource = { artifact_type: 'agt002_manizales_integral_manifest', marker: 'server-owned-test-source' };
   const governanceProvenance = {
     'evidence_class_link:req-1': { requirement_id: 'req-1', override_kind: 'evidence_class_link', evidence_class_id: 'rup', rationale: 'x', source_reference: 'y', curated_by: 'z', curated_at: '2026-08-07T00:00:00.000Z', version: 1 },
     'category_override:req-2': { requirement_id: 'req-2', override_kind: 'category_override', category_value: 'technical', rationale: 'x', source_reference: 'y', curated_by: 'z', curated_at: '2026-08-07T00:00:00.000Z', version: 1 },
   };
   createAgt002PreviewRuntime({
     environment: baseEnv(V3_BASE_ENV), countDailyRuns: async () => 0,
-    companyEvidenceRegistryEntries: [], categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance,
+    companyEvidenceRegistryEntries: [], categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance, manizalesManifestSource,
     contextVersionId: '10101010-1010-4010-8010-101010101010',
     createEngine: spyEngine,
   });
   assert.deepEqual(capturedOptions.evidenceClassLinkByRequirementId, evidenceClassLinkByRequirementId, 'the runtime must forward evidenceClassLinkByRequirementId to the engine, exactly like categoryOverrides');
   assert.deepEqual(capturedOptions.categoryOverrides, categoryOverrides);
+  assert.equal(capturedOptions.manizalesManifestSource, manizalesManifestSource, 'the runtime must forward the exact server-owned manifest source to the engine');
   assert.equal(capturedOptions.policyText, AGT002_INTEGRAL_V3_POLICY, 'V3 runtime must use the V3 wire policy, never the legacy preview policy');
   assert.equal(capturedOptions.policyVersion, AGT002_INTEGRAL_V3_POLICY_VERSION, 'persisted policy version must identify the V3 policy actually used');
   assert.notEqual(capturedOptions.policyText, AGT002_PREVIEW_POLICY);

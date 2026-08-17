@@ -4,6 +4,7 @@ import { buildAgt002DocumentChunks } from './agt002-document-chunks.js';
 import { buildAgt002DocumentRetrieval } from './agt002-document-retrieval.js';
 import { AGT002_LEGAL_REVIEW_REASONS, isAgt002OfficialLegalUrl } from './agt002-legal-corpus.js';
 import { buildAgt002RequirementManifest, resolveAgt002DeepAnalysisMatrix } from './agt002-deep-analysis-matrix.js';
+import { deriveAgt002ManizalesManifestWiring } from './agt002-manizales-manifest-wiring.js';
 
 export const AGT002_MAX_DOCUMENTS = 12;
 export const AGT002_MAX_DOCUMENT_CHARS = 3000;
@@ -112,10 +113,20 @@ function buildRetrievalRequirements(deepAnalysis) {
   return requirements.sort((left, right) => left.requirement_id.localeCompare(right.requirement_id));
 }
 
-function buildDocumentEvidencePackage({ snapshotId, documents, documentGaps, deepAnalysis }) {
-  const requirements = buildRetrievalRequirements(deepAnalysis);
+function buildDocumentEvidencePackage({ snapshotId, documents, documentGaps, deepAnalysis, manizalesManifestSource }) {
+  const manifestWiring = manizalesManifestSource
+    ? deriveAgt002ManizalesManifestWiring(manizalesManifestSource)
+    : null;
+  const requirements = manifestWiring
+    ? manifestWiring.requirementManifest.requirement_manifest
+      .map(entry => ({ requirement_id: entry.requirement_id, terms: normalizeRetrievalTerms(entry.label) }))
+      .filter(entry => entry.terms.length > 0)
+      .sort((left, right) => left.requirement_id.localeCompare(right.requirement_id))
+    : buildRetrievalRequirements(deepAnalysis);
   if (!requirements.length) {
-    throw new Error('AGT-002 Preview con recuperación de evidencia requiere al menos un requisito estructurado recuperable en deepAnalysis.matrix.');
+    throw new Error(manifestWiring
+      ? 'AGT-002 Preview con manifiesto integral requiere al menos un requisito recuperable.'
+      : 'AGT-002 Preview con recuperación de evidencia requiere al menos un requisito estructurado recuperable en deepAnalysis.matrix.');
   }
 
   const { chunks, gaps: extractionGaps } = buildAgt002DocumentChunks(documents ?? []);
@@ -140,14 +151,22 @@ function buildDocumentEvidencePackage({ snapshotId, documents, documentGaps, dee
     max_tokens: AGT002_RETRIEVAL_MAX_TOKENS,
   });
 
-  // Requirement provenance manifest (self-contained, no new table): resolved from the same
-  // deterministic v1.0 matrix and the same adapted retrieval `documents` list used above, never
-  // from the selected/omitted chunks — a requirement's provenance is independent of whether its
-  // evidence happened to win the retrieval budget.
-  const requirementManifest = buildAgt002RequirementManifest({
-    matrix: resolveAgt002DeepAnalysisMatrix(deepAnalysis),
-    documents,
-  });
+  // Requirement provenance manifest (self-contained, no new table). By default it is
+  // resolved from the same deterministic v1.0 matrix and the same adapted retrieval
+  // `documents` list used above, never from the selected/omitted chunks — a requirement's
+  // provenance is independent of whether its evidence happened to win the retrieval budget.
+  //
+  // AGT002_INTEGRAL_CONTRACT_V3 Phase 3: when a checked-in Manizales integral manifest is
+  // injected (engine/runtime configuration, never a model-forgeable field), the requirement
+  // manifest is instead derived from that manifest's analyzable entries in deterministic
+  // order — validated fail-closed to the exact pilot identity and to the same closed
+  // requirement-manifest unit shape (no raw/open source text ever copied into runtime input).
+  const requirementManifest = manifestWiring
+    ? manifestWiring.requirementManifest
+    : buildAgt002RequirementManifest({
+      matrix: resolveAgt002DeepAnalysisMatrix(deepAnalysis),
+      documents,
+    });
   const hasUnresolvedProvenance = requirementManifest.requirement_manifest
     .some(entry => entry.unresolved_sources.length > 0);
 
@@ -389,7 +408,7 @@ function buildLegalEvidenceSection(legalEvidencePackage) {
 
 function buildContextV2Input({
   snapshotId, contextV2Sections, documents, documentGaps, deepAnalysis, documentRetrieval, legalCorpus, legalEvidencePackage,
-  companyEvidenceClasses,
+  companyEvidenceClasses, manizalesManifestSource,
 }) {
   if (!contextV2Sections || typeof contextV2Sections !== 'object' || Array.isArray(contextV2Sections)) {
     throw new Error('AGT-002 Preview con contexto v2 requiere contextV2Sections completo.');
@@ -424,7 +443,7 @@ function buildContextV2Input({
   };
 
   if (documentRetrieval) {
-    const retrieval = buildDocumentEvidencePackage({ snapshotId, documents, documentGaps, deepAnalysis });
+    const retrieval = buildDocumentEvidencePackage({ snapshotId, documents, documentGaps, deepAnalysis, manizalesManifestSource });
     result.document_evidence = {
       ...retrieval,
       // Chunk text is redacted for the packet carried in previewInput; the untruncated,
@@ -455,7 +474,7 @@ function buildContextV2Input({
 export function buildAgt002PreviewInput({
   opportunity = {}, documents = [], documentGaps = [], companyProfile = {}, deepAnalysis = {}, snapshotId, canonicalOnly = false,
   contextV2 = false, contextV2Sections = null, documentRetrieval = false, legalCorpus = false, legalEvidencePackage = null,
-  companyEvidenceClasses = null,
+  companyEvidenceClasses = null, integralContractV3 = false, manizalesManifestSource = null,
 }) {
   if (typeof snapshotId !== 'string' || !snapshotId.trim()) {
     throw new Error('AGT-002 Preview requiere un snapshot documental vigente.');
@@ -470,6 +489,7 @@ export function buildAgt002PreviewInput({
     return buildContextV2Input({
       snapshotId: snapshotId.trim(), contextV2Sections, documents, documentGaps, deepAnalysis, documentRetrieval, legalCorpus, legalEvidencePackage,
       companyEvidenceClasses,
+      manizalesManifestSource: integralContractV3 === true ? manizalesManifestSource : null,
     });
   }
 

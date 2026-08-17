@@ -486,11 +486,10 @@ test('a fully valid model output is persisted through the real engine and persis
 test('V3: JSON válido pero output V3 inválido clasifica como integral_v3_validation, nunca persistence ni model_output_validation', async () => {
   const { client, calls: clientCalls, telemetry } = trackedClient(async (options) => {
     const output = buildV3ModelOutput(options);
-    // A real, engine-rejected invariant violation: a substantive legal conclusion without any
-    // published legal corpus (mirrors tests/agt002-preview-engine.test.mjs's own coverage of
-    // this exact invariant).
+    // A real, engine-rejected invariant violation that the conservative no-corpus normalizer
+    // must not repair: a not-applicable assessment smuggling a non-allowlisted legal basis.
     output.integral_analysis.analysis_units[0].legal_assessment = {
-      status: 'supported', basis_refs: [], summary: 'Afirmación jurídica sin corpus.', human_legal_review_required: true,
+      status: 'not_applicable', basis_refs: ['legal:unknown'], summary: 'No aplica.', human_legal_review_required: false,
     };
     return { content: JSON.stringify(output), usage: { input_tokens: 5, output_tokens: 5 } };
   });
@@ -715,7 +714,7 @@ test('V3: a real legal-assessment invariant persists its closed domain code thro
   const { client, telemetry } = trackedClient(async (options) => {
     const output = buildV3ModelOutput(options);
     output.integral_analysis.analysis_units[0].legal_assessment = {
-      status: 'supported', basis_refs: [], summary: 'Afirmación jurídica sin corpus.', human_legal_review_required: true,
+      status: 'not_applicable', basis_refs: ['legal:unknown'], summary: 'No aplica.', human_legal_review_required: false,
     };
     return { content: JSON.stringify(output), usage: { input_tokens: 5, output_tokens: 5 } };
   });

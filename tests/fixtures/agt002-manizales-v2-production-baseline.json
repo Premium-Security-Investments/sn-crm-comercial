@@ -1,0 +1,105 @@
+{
+  "artifact_type": "agt002_manizales_v2_production_baseline",
+  "contract_version": "agt002-manizales-v2-production-baseline@1",
+  "read_only": true,
+  "metadata_only": true,
+  "human_go_no_go_required": true,
+  "opportunity_id": "54190e51-15fb-46af-b0aa-8f13461a3110",
+  "generated_at": "2026-08-15T18:08:27Z",
+  "source_run": {
+    "id": "4f5f8bcf-6de2-45d9-b74a-4588a514bdf3",
+    "created_at": "2026-08-12T15:40:49.335995+00:00",
+    "completed_at": "2026-08-12T15:40:49.335995+00:00",
+    "status": "completed",
+    "producer": "AGT-002",
+    "method": "agent_ai",
+    "canonical": false,
+    "critical_open_count": 3,
+    "schema_version": "2.0-preview.1",
+    "policy_version": "agt002-preview-policy-v2",
+    "critical_question_count": 3
+  },
+  "result_field_counts": {
+    "strengths": 3,
+    "weaknesses": 3,
+    "blockers": 2,
+    "questions": 3,
+    "unverified": 3
+  },
+  "dimensions": {
+    "closing_or_extension": {
+      "present": true,
+      "occurrences": 6,
+      "source_sections": [
+        "blockers",
+        "next_action",
+        "questions",
+        "summary"
+      ]
+    },
+    "supervigilancia_license": {
+      "present": true,
+      "occurrences": 5,
+      "source_sections": [
+        "legal_evidence",
+        "strengths"
+      ]
+    },
+    "experience": {
+      "present": true,
+      "occurrences": 3,
+      "source_sections": [
+        "blockers",
+        "questions",
+        "strengths"
+      ]
+    },
+    "sst": {
+      "present": true,
+      "occurrences": 1,
+      "source_sections": [
+        "questions"
+      ]
+    },
+    "insurance_package": {
+      "present": true,
+      "occurrences": 5,
+      "source_sections": [
+        "blockers",
+        "evidence_coverage",
+        "questions",
+        "unverified"
+      ]
+    },
+    "financial_capacity": {
+      "present": true,
+      "occurrences": 4,
+      "source_sections": [
+        "evidence_coverage",
+        "strengths"
+      ]
+    },
+    "documentary_package": {
+      "present": true,
+      "occurrences": 1,
+      "source_sections": [
+        "blockers"
+      ]
+    },
+    "technical_cctv": {
+      "present": true,
+      "occurrences": 4,
+      "source_sections": [
+        "evidence_coverage",
+        "weaknesses"
+      ]
+    },
+    "economic_viability": {
+      "present": true,
+      "occurrences": 1,
+      "source_sections": [
+        "questions"
+      ]
+    }
+  }
+}

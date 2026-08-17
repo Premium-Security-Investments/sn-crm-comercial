@@ -3,6 +3,12 @@ import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, registerAgt002PreviewAnalysis, findAgt002PreviewRun, computeAgt002PreviewIdempotencyKey } from '../agt002-preview-persistence.js';
 import { projectAgt002IntegralV3ToV2 } from '../agt002-v3-compatibility.js';
+import { validateAgt002IntegralAnalysisV3 } from '../agt002-integral-analysis-v3.js';
+import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
+import { deriveAgt002ManizalesManifestWiring } from '../agt002-manizales-manifest-wiring.js';
+import { AGT002_MANIZALES_CHECKED_IN_MANIFEST } from '../agt002-manizales-manifest-source.js';
+import { AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID } from '../agt002-manizales-integral-manifest.js';
 
 // Task 7, Step 2: v2/v3 coexistence on the real append-only + canonical-promotion (063)
 // schema, driven through the actual JS persistence module (not raw RPC calls) — a
@@ -18,7 +24,8 @@ const migration053 = migrationSource('053_agt002_legal_corpus.sql');
 const migration056 = migrationSource('056_agt002_legal_corpus_publication_gate.sql');
 const migration063 = migrationSource('063_agt002_canonical_promotion.sql');
 
-const O = '11111111-1111-4111-8111-111111111111';
+const AGT002_COMPANY_EVIDENCE_MANIFEST_VERSION = 'agt002-company-evidence-classes-v1';
+const O = AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID;
 const T = '22222222-2222-4222-8222-222222222222';
 const S = '33333333-3333-4333-8333-333333333333';
 const P = '44444444-4444-4444-8444-444444444444';
@@ -122,28 +129,63 @@ function v2Envelope() {
 }
 
 function v3Envelope() {
-  const integral_analysis = {
+  const wiring = deriveAgt002ManizalesManifestWiring(AGT002_MANIZALES_CHECKED_IN_MANIFEST);
+  const requirements = wiring.requirementManifest.requirement_manifest.map(entry => ({
+    requirement_id: entry.requirement_id,
+    category: wiring.categoryOverrides[entry.requirement_id],
+  }));
+  const expectedIds = requirements.map(entry => entry.requirement_id);
+  const evidenceStateManifest = expectedIds.map(requirementId => ({
+    requirement_id: requirementId,
+    evidence_state: structuredClone(AGT002_EVIDENCE_STATE_SAFE_UNKNOWN),
+    rule_id: 'manifest_unverified',
+    provenance: null,
+  }));
+  const candidate = {
     contract_version: 'agt002-integral-analysis-v3',
     coverage: {
-      manifest_version: 'agt002-deep-analysis-v1', expected_requirement_ids: ['req-1'], analyzed_requirement_ids: ['req-1'],
-      material_omissions: false, omission_reasons: [], company_evidence_manifest_version: 'agt002-company-evidence-classes-v1',
-      company_evidence_class_ids: [], legal_corpus_version_id: null,
+      manifest_version: wiring.requirementManifest.requirement_manifest_version,
+      expected_requirement_ids: expectedIds,
+      analyzed_requirement_ids: expectedIds,
+      material_omissions: false,
+      omission_reasons: [],
+      company_evidence_manifest_version: AGT002_COMPANY_EVIDENCE_MANIFEST_VERSION,
+      company_evidence_class_ids: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
+      legal_corpus_version_id: null,
     },
-    analysis_units: [{
-      unit_id: 'UNIT-1', unit_kind: 'tender_requirement', requirement_id: 'req-1', category: 'habilitating', sequence: 1,
-      title: 'Póliza vigente', assessment_mode: 'assessed',
-      conclusion: { status: 'supported_with_evidence', summary: 'Evidencia sustenta la póliza.', confidence: 'high' },
-      blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin efecto.' },
-      evidence_state: { presence: 'present', review: 'reviewed', validity: 'valid', applicability: 'applicable', compliance: 'supported_pending_human_review' },
-      evidence_refs: [{ ref: 'chunk:1', source_type: 'tender_document', purpose: 'requirement_basis' }],
-      missing_evidence: [], commercial_impact: { level: 'low', summary: 'Sin impacto.', dimension: 'eligibility' },
-      legal_assessment: { status: 'not_applicable', basis_refs: [], summary: 'No aplica.', human_legal_review_required: false },
-      actions: [], milestone: { status: 'not_identified', type: 'none', at: null, source_ref: null, summary: 'Sin hito.' },
-      escalation: { required: false, level: 'none', reason: 'Sin condición crítica.' },
-      closure: { status: 'human_confirmation_required', condition: 'Persona confirma.', evidence_required: ['tender_document'] },
-      human_validation: { required: true, status: 'pending', reason: 'Confirmar.' },
-    }],
+    analysis_units: requirements.map((requirement, index) => ({
+      unit_id: `MANIZALES-UNIT-${index + 1}`,
+      unit_kind: 'tender_requirement',
+      requirement_id: requirement.requirement_id,
+      category: requirement.category,
+      sequence: index + 1,
+      title: wiring.requirementManifest.requirement_manifest[index].label.slice(0, 200),
+      assessment_mode: 'abstained',
+      conclusion: { status: 'human_validation_required', summary: 'Pendiente de validación humana.', confidence: 'unavailable' },
+      blocking: { effect: 'undetermined', curability: 'undetermined', reason: 'Sin determinación automática.' },
+      evidence_state: structuredClone(AGT002_EVIDENCE_STATE_SAFE_UNKNOWN),
+      evidence_refs: [],
+      missing_evidence: [],
+      commercial_impact: { level: 'unknown', summary: 'Impacto no determinado.', dimension: 'unknown' },
+      legal_assessment: { status: 'not_applicable', basis_refs: [], summary: 'No aplica fundamento jurídico automático.', human_legal_review_required: false },
+      actions: [],
+      milestone: { status: 'not_identified', type: 'none', at: null, source_ref: null, summary: 'Sin hito.' },
+      escalation: { required: false, level: 'none', reason: 'Sin condición crítica determinada.' },
+      closure: { status: 'human_confirmation_required', condition: 'Persona autorizada valida.', evidence_required: [] },
+      human_validation: { required: true, status: 'pending', reason: 'Validación humana pendiente.' },
+    })),
   };
+  const integral_analysis = validateAgt002IntegralAnalysisV3(candidate, {
+    requirementManifestVersion: wiring.requirementManifest.requirement_manifest_version,
+    requirementManifest: requirements,
+    companyEvidenceManifestVersion: AGT002_COMPANY_EVIDENCE_MANIFEST_VERSION,
+    companyEvidenceClassIds: [...AGT002_COMPANY_EVIDENCE_CLASS_IDS].sort(),
+    legalCorpusVersionId: null,
+    allowlist: { tender_document: [], company_evidence: [], legal_corpus: [], human_evidence: [], objective_validation: [] },
+    materialOmissionsObserved: false,
+    omissionReasons: [],
+    evidenceStateManifest,
+  });
   return {
     schema_version: '3.0.0', agent_id: 'AGT-002', run_id: '55555555-5555-4555-8555-555555555552',
     policy_version: 'agt002-integral-v3-policy-1', snapshot_id: S, context_version_id: null,
@@ -152,8 +194,6 @@ function v3Envelope() {
     evidence_coverage: undefined,
     legal_corpus_version_id: null,
     human_review_required: true,
-    // Persistence recomputes and rejects a mismatch, so this must be the real
-    // deterministic projection, not hand-typed placeholder text.
     v2_projection: projectAgt002IntegralV3ToV2(integral_analysis),
     usage: { provider: 'codex_app_server', model: 'v3-model', input_tokens: 3, output_tokens: 3, rate_limit: null },
   };
@@ -176,7 +216,12 @@ async function run() {
   assert.equal(v3Registered.canonical, true);
   assert.notEqual(v3Registered.run_id, v2Registered.run_id);
   assert.ok(v3Registered.result.integral_analysis, 'the v3 run must persist integral_analysis');
-  assert.equal(v3Registered.result.recommendation, 'advance', 'the v3 run must also persist its v2 projection fields');
+  assert.equal(v3Registered.result.integral_analysis.analysis_units.length, 20, 'the persisted V3 run must carry all 20 analyzable manifest requirements');
+  assert.deepEqual(
+    v3Registered.result.integral_analysis.coverage.expected_requirement_ids,
+    deriveAgt002ManizalesManifestWiring(AGT002_MANIZALES_CHECKED_IN_MANIFEST).requirementManifest.requirement_manifest.map(entry => entry.requirement_id),
+  );
+  assert.equal(v3Registered.result.recommendation, 'advance_conditionally', 'the v3 run must also persist its v2 projection fields');
 
   // Exactly one completed canonical run remains for the opportunity.
   const canonicalCount = await pg.query(`select count(*)::int n from public.psi_tender_analysis_runs where opportunity_id = '${O}' and canonical and status = 'completed'`);
@@ -217,7 +262,7 @@ async function run() {
 
   const currentV3 = await findAgt002PreviewRun(database, v3Key, { canonicalOnly: true });
   assert.equal(currentV3.canonical, true);
-  assert.equal(currentV3.result.recommendation, 'advance');
+  assert.equal(currentV3.result.recommendation, 'advance_conditionally');
 
   const historicalV2 = await findAgt002PreviewRun(database, v2Key, { canonicalOnly: true });
   assert.equal(historicalV2.canonical, false);

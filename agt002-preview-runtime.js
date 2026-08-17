@@ -9,7 +9,12 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_CONCURRENT = 2;
 const DEFAULT_DAILY_MAX_RUNS = 20;
 export const AGT002_PREVIEW_DEFAULT_POLICY_VERSION = 'agt002-preview-policy-v2';
-export const AGT002_INTEGRAL_V3_POLICY_VERSION = 'agt002-integral-v3-policy-v1';
+// v2 (Phase 5 remediation): AGT002_INTEGRAL_V3_POLICY was strengthened to state the exact closed
+// { integral_analysis: { analysis_units: [...] } } shape and forbid server-owned contract_version /
+// coverage / category / evidence_state writes explicitly. The instruction text is materially
+// different, so the version identifier moves with it (persisted provenance must identify the exact
+// policy actually sent). No V2 flag-off policy or its version changes.
+export const AGT002_INTEGRAL_V3_POLICY_VERSION = 'agt002-integral-v3-policy-v2';
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -102,6 +107,7 @@ function positiveIntFromEnv(environment, key, fallback) {
 export function createAgt002PreviewRuntime({
   environment = process.env, countDailyRuns, legalCorpusContext,
   companyEvidenceRegistryEntries, categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance, contextVersionId,
+  manizalesManifestSource,
   onBridgeInvocationStarted, onBridgeResponseReceived,
   createEngine = createAgt002PreviewEngine,
 } = {}) {
@@ -177,6 +183,12 @@ export function createAgt002PreviewRuntime({
       evidenceClassLinkByRequirementId: evidenceClassLinkByRequirementId ?? {},
       governanceProvenance: governanceProvenance ?? {},
       contextVersionId: contextVersionId ?? null,
+      // AGT002_INTEGRAL_CONTRACT_V3 Phase 3: the server layer loads the checked-in pilot
+      // manifest read-only and injects it here for the exact Manizales opportunity/process
+      // only, mirroring the company-evidence registry/category-override injection above. The
+      // engine validates it fail-closed (wrong pilot/malformed throws through the boundary
+      // wrapper below); an absent source keeps the current governed 4-requirement behavior.
+      manizalesManifestSource: manizalesManifestSource ?? null,
     } : {}),
     ...(countDailyRuns ? { countDailyRuns } : {}),
   }));

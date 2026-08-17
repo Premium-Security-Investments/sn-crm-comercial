@@ -93,6 +93,11 @@ export function TenderIntegralAnalysisV3View({ analysis }: TenderIntegralAnalysi
     ['compliance', selected.evidence_state.compliance],
   ];
   const coverageRatio = `${integral.coverage.analyzed_requirement_ids.length} / ${integral.coverage.expected_requirement_ids.length}`;
+  // Phase 4: the server-owned, top-level honest coverage scope for a manifest-driven run. When
+  // present, it replaces the misleading generic "Cobertura" ratio (analyzed/expected) with the
+  // distinct 20/25, 15 (68), and closed 15/15 + 20/20 figures — never presenting analyzed/expected
+  // as total manifest coverage. Always optional: absent for non-manifest V3 runs.
+  const scope = analysis?.manifest_scope ?? null;
 
   return <section className="agt002-v3-preview" aria-labelledby="agt002-v3-title">
     <header className="agt002-v3-overview">
@@ -102,9 +107,16 @@ export function TenderIntegralAnalysisV3View({ analysis }: TenderIntegralAnalysi
         <p>Evidencia, brechas y acciones organizadas por requisito. La decisión institucional sigue siendo humana.</p>
       </div>
       <div className="agt002-v3-overview-summary">
-        <span><small>Cobertura</small><strong>{coverageRatio}</strong></span>
+        {scope
+          ? <span><small>Requisitos analizables</small><strong>{scope.analyzable_requirement_ids.length} / {scope.atomized_entry_count}</strong></span>
+          : <span><small>Cobertura</small><strong>{coverageRatio}</strong></span>}
         <span><small>Estado</small><strong>{integral.coverage.material_omissions ? 'Con omisiones' : 'Revisión humana'}</strong></span>
       </div>
+      {scope && <dl className="agt002-v3-scope" aria-label="Alcance del manifiesto gobernado">
+        <div><dt>Secciones pre-GO del manifiesto</dt><dd>{scope.pre_go_relevant} ({scope.registry_sections} registradas)</dd></div>
+        <div><dt>Libros conciliados</dt><dd>Secciones {scope.section_ledger_accounted}/{scope.pre_go_relevant} · Propuestas {scope.proposal_ledger_accounted}/{scope.proposal_ledger_accounted}</dd></div>
+        <div><dt>Disposiciones</dt><dd>Candidatas analizadas {scope.dispositions.analyzed_candidate} · Excluidas con razón {scope.dispositions.excluded_with_reason} · No resueltas visibles {scope.dispositions.unresolved_visible}</dd></div>
+      </dl>}
       <div className="agt002-v3-overview-footer">
         <div className="agt002-v3-guard"><strong>Validación humana pendiente</strong><span>No decide GO / NO GO · No firma · No envía · No presenta ofertas</span></div>
         <details className="agt002-v3-run-details">

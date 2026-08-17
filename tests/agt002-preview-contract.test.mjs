@@ -834,6 +834,19 @@ function buildMinimalV3IntegralAnalysis() {
   // evidence with an assessed/high-confidence conclusion. The server must repair only toward
   // the honest abstention state before semantic validation — never toward a favorable finding.
   {
+    const governedComplianceMismatch = structuredClone(buildMinimalV3IntegralAnalysis());
+    const unit = governedComplianceMismatch.analysis_units[0];
+    unit.assessment_mode = 'assessed';
+    unit.conclusion = { status: 'supported_with_evidence', summary: 'Conclusión material no autorizada por el estado gobernado.', confidence: 'high' };
+    const beforeNormalization = structuredClone(governedComplianceMismatch);
+    const normalized = validateAgt002PreviewModelOutputV3({ integral_analysis: governedComplianceMismatch }, ctx);
+    assert.equal(normalized.analysis_units[0].assessment_mode, 'abstained');
+    assert.equal(normalized.analysis_units[0].conclusion.status, 'insufficient_evidence');
+    assert.equal(normalized.analysis_units[0].conclusion.confidence, 'unavailable');
+    assert.deepEqual(governedComplianceMismatch, beforeNormalization, 'compliance normalization must not mutate the model payload');
+  }
+
+  {
     const noEvidence = structuredClone(buildMinimalV3IntegralAnalysis());
     noEvidence.analysis_units[0].evidence_refs = [];
     const beforeNormalization = structuredClone(noEvidence);
@@ -885,6 +898,204 @@ function buildMinimalV3IntegralAnalysis() {
     assert.equal(normalized.analysis_units[0].assessment_mode, 'abstained');
     assert.equal(normalized.analysis_units[0].conclusion.status, 'insufficient_evidence');
     assert.equal(normalized.analysis_units[0].conclusion.confidence, 'unavailable');
+  }
+
+  // Conservative evidence_refs normalization at the server-owned boundary: a ref that IS
+  // governed (present under exactly one validationContext.allowlist source-type bucket) but
+  // was mistagged by the model with a different source_type/purpose is corrected toward the
+  // allowlist — this only ever narrows toward governed ground truth, it never invents a ref.
+  {
+    const sourceTypeCtx = structuredClone(ctx);
+    sourceTypeCtx.allowlist.company_evidence = ['CE-1'];
+    const misTagged = structuredClone(buildMinimalV3IntegralAnalysis());
+    // CE-1 exists only in the company_evidence bucket; the model mislabeled it as
+    // tender_document with a purpose that only fits the (wrong) declared source_type.
+    misTagged.analysis_units[0].evidence_refs = [{ ref: 'CE-1', source_type: 'tender_document', purpose: 'requirement_basis' }];
+    const beforeNormalization = structuredClone(misTagged);
+    const normalized = validateAgt002PreviewModelOutputV3({ integral_analysis: misTagged }, sourceTypeCtx);
+    assert.equal(normalized.analysis_units[0].evidence_refs[0].source_type, 'company_evidence');
+    // company_evidence admits exactly one purpose (company_capacity), so the purpose
+    // correction here is deterministic, not a guess among several valid options.
+    assert.equal(normalized.analysis_units[0].evidence_refs[0].purpose, 'company_capacity');
+    assert.deepEqual(misTagged, beforeNormalization, 'evidence_refs normalization must not mutate the model payload');
+  }
+
+  // Purpose-only correction: source_type is already correct, but the purpose the model
+  // picked is invalid for it; company_evidence admits only company_capacity, so the fix is
+  // deterministic.
+  {
+    const purposeCtx = structuredClone(ctx);
+    purposeCtx.allowlist.company_evidence = ['CE-1'];
+    const wrongPurpose = structuredClone(buildMinimalV3IntegralAnalysis());
+    wrongPurpose.analysis_units[0].evidence_refs = [{ ref: 'CE-1', source_type: 'company_evidence', purpose: 'commercial_context' }];
+    const normalized = validateAgt002PreviewModelOutputV3({ integral_analysis: wrongPurpose }, purposeCtx);
+    assert.equal(normalized.analysis_units[0].evidence_refs[0].purpose, 'company_capacity');
+  }
+
+  // Non-deterministic purpose mismatch (tender_document admits four valid purposes) is never
+  // guessed at — it stays a hard, fail-closed rejection.
+  {
+    const ambiguousPurposeCtx = structuredClone(ctx);
+    const wrongPurpose = structuredClone(buildMinimalV3IntegralAnalysis());
+    wrongPurpose.analysis_units[0].evidence_refs = [{ ref: 'TD-1', source_type: 'tender_document', purpose: 'company_capacity' }];
+    assert.throws(
+      () => validateAgt002PreviewModelOutputV3({ integral_analysis: wrongPurpose }, ambiguousPurposeCtx),
+      error => error?.code === 'v3_evidence_reference_invariant',
+    );
+  }
+
+  // A ref present under more than one allowlist bucket is genuinely ambiguous — it is left
+  // untouched rather than guessed at, so a mistagged source_type for it still hard-fails.
+  {
+    const ambiguousCtx = structuredClone(ctx);
+    ambiguousCtx.allowlist.company_evidence = ['SHARED-1'];
+    ambiguousCtx.allowlist.human_evidence = ['SHARED-1'];
+    const ambiguous = structuredClone(buildMinimalV3IntegralAnalysis());
+    ambiguous.analysis_units[0].evidence_refs = [{ ref: 'SHARED-1', source_type: 'tender_document', purpose: 'requirement_basis' }];
+    assert.throws(
+      () => validateAgt002PreviewModelOutputV3({ integral_analysis: ambiguous }, ambiguousCtx),
+      error => error?.code === 'v3_evidence_reference_invariant',
+    );
+  }
+
+  // Duplicate (ref, purpose) pairs produced by these corrections collapse to the first
+  // occurrence rather than double-counting the same citation — no evidence is invented.
+  {
+    const dedupeCtx = structuredClone(ctx);
+    const duplicated = structuredClone(buildMinimalV3IntegralAnalysis());
+    duplicated.analysis_units[0].evidence_refs = [
+      { ref: 'TD-1', source_type: 'tender_document', purpose: 'requirement_basis' },
+      // Mistagged duplicate of the exact same governed ref/purpose pair — corrects to an
+      // identical entry and must collapse, not double-cite.
+      { ref: 'TD-1', source_type: 'objective_validation', purpose: 'requirement_basis' },
+    ];
+    const normalized = validateAgt002PreviewModelOutputV3({ integral_analysis: duplicated }, dedupeCtx);
+    assert.equal(normalized.analysis_units[0].evidence_refs.length, 1);
+    assert.deepEqual(normalized.analysis_units[0].evidence_refs[0], { ref: 'TD-1', source_type: 'tender_document', purpose: 'requirement_basis' });
+  }
+
+  // A ref absent from every allowlist bucket is never allowlisted, correctable or not — the
+  // hard, fail-closed rejection is fully preserved.
+  {
+    const rejectCtx = structuredClone(ctx);
+    const unknownRef = structuredClone(buildMinimalV3IntegralAnalysis());
+    unknownRef.analysis_units[0].evidence_refs = [{ ref: 'TD-UNKNOWN', source_type: 'tender_document', purpose: 'requirement_basis' }];
+    assert.throws(
+      () => validateAgt002PreviewModelOutputV3({ integral_analysis: unknownRef }, rejectCtx),
+      error => error?.code === 'v3_evidence_reference_invariant',
+    );
+  }
+
+  {
+    const unsupportedLegalClaim = structuredClone(buildMinimalV3IntegralAnalysis());
+    const unit = unsupportedLegalClaim.analysis_units[0];
+    unit.legal_assessment = {
+      status: 'supported', basis_refs: [], summary: 'Afirmación jurídica sin corpus publicado.', human_legal_review_required: false,
+    };
+    unit.escalation = { required: false, level: 'none', reason: 'Pendiente.' };
+    const beforeNormalization = structuredClone(unsupportedLegalClaim);
+    const normalized = validateAgt002PreviewModelOutputV3({ integral_analysis: unsupportedLegalClaim }, ctx);
+    assert.equal(normalized.analysis_units[0].legal_assessment.status, 'not_verified');
+    assert.equal(normalized.analysis_units[0].legal_assessment.human_legal_review_required, true);
+    assert.equal(normalized.analysis_units[0].escalation.required, true);
+    assert.equal(normalized.analysis_units[0].escalation.level, 'role_review');
+    assert.deepEqual(unsupportedLegalClaim, beforeNormalization, 'legal normalization must not mutate the model payload');
+  }
+
+  {
+    const orderedCtx = structuredClone(ctx);
+    orderedCtx.requirementManifest = [
+      { requirement_id: 'REQ-1', category: 'discard' },
+      { requirement_id: 'REQ-2', category: 'discard' },
+    ];
+    orderedCtx.evidenceStateManifest = [
+      { ...structuredClone(ctx.evidenceStateManifest[0]), requirement_id: 'REQ-1' },
+      { ...structuredClone(ctx.evidenceStateManifest[0]), requirement_id: 'REQ-2' },
+    ];
+    const first = structuredClone(buildMinimalV3IntegralAnalysis().analysis_units[0]);
+    const second = structuredClone(first);
+    second.unit_id = 'UNIT-2';
+    second.requirement_id = 'REQ-2';
+    second.sequence = 2;
+    const inverted = { analysis_units: [second, first] };
+    const normalized = validateAgt002PreviewModelOutputV3({ integral_analysis: inverted }, orderedCtx);
+    assert.deepEqual(normalized.analysis_units.map(unit => unit.requirement_id), ['REQ-1', 'REQ-2']);
+    assert.deepEqual(normalized.analysis_units.map(unit => unit.sequence), [1, 2]);
+
+    const duplicate = { analysis_units: [structuredClone(first), structuredClone(first)] };
+    duplicate.analysis_units[1].unit_id = 'UNIT-DUPLICATE';
+    duplicate.analysis_units[1].sequence = 2;
+    const safelyCompleted = validateAgt002PreviewModelOutputV3({ integral_analysis: duplicate }, orderedCtx);
+    assert.deepEqual(safelyCompleted.analysis_units.map(unit => unit.requirement_id), ['REQ-1', 'REQ-2']);
+    assert.ok(safelyCompleted.analysis_units.every(unit => unit.assessment_mode === 'abstained'));
+    assert.ok(safelyCompleted.analysis_units.every(unit => unit.evidence_refs.length === 0));
+    assert.ok(safelyCompleted.analysis_units.every(unit => unit.human_validation.required === true));
+  }
+
+  {
+    const inconsistentActions = structuredClone(buildMinimalV3IntegralAnalysis());
+    inconsistentActions.analysis_units[0].actions = [
+      {
+        action_id: 'ACTION-1', action_type: 'human_decision', summary: 'Validar el requisito.',
+        basis_unit_id: 'WRONG-UNIT', suggested_role: 'commercial', priority: 'high', external_side_effect: false,
+      },
+      {
+        action_id: 'ACTION-1', action_type: 'obtain_evidence', summary: 'Obtener evidencia.',
+        basis_unit_id: 'WRONG-UNIT', suggested_role: 'tender_lead', priority: 'medium', external_side_effect: false,
+      },
+    ];
+    const normalized = validateAgt002PreviewModelOutputV3({ integral_analysis: inconsistentActions }, ctx);
+    assert.ok(normalized.analysis_units[0].actions.every(action => action.basis_unit_id === 'UNIT-1'));
+    assert.equal(normalized.analysis_units[0].actions[0].suggested_role, 'authorized_human');
+    assert.equal(new Set(normalized.analysis_units[0].actions.map(action => action.action_id)).size, 2);
+  }
+
+  {
+    const inconsistentEscalation = structuredClone(buildMinimalV3IntegralAnalysis());
+    inconsistentEscalation.analysis_units[0].escalation = { required: true, level: 'none', reason: 'Escalamiento declarado.' };
+    const normalized = validateAgt002PreviewModelOutputV3({ integral_analysis: inconsistentEscalation }, ctx);
+    assert.equal(normalized.analysis_units[0].escalation.required, true);
+    assert.equal(normalized.analysis_units[0].escalation.level, 'role_review');
+  }
+
+  {
+    const staleEscalationLevel = structuredClone(buildMinimalV3IntegralAnalysis());
+    staleEscalationLevel.analysis_units[0].escalation = { required: false, level: 'role_review', reason: 'Sin condición crítica.' };
+    const normalized = validateAgt002PreviewModelOutputV3({ integral_analysis: staleEscalationLevel }, ctx);
+    assert.equal(normalized.analysis_units[0].escalation.required, false);
+    assert.equal(normalized.analysis_units[0].escalation.level, 'none');
+  }
+
+  {
+    const criticalLegalUncertainty = structuredClone(buildMinimalV3IntegralAnalysis());
+    const unit = criticalLegalUncertainty.analysis_units[0];
+    unit.legal_assessment = {
+      status: 'not_verified', basis_refs: [], summary: 'Requiere validación jurídica humana.', human_legal_review_required: true,
+    };
+    unit.escalation = { required: false, level: 'none', reason: 'El modelo omitió el escalamiento obligatorio.' };
+    const beforeNormalization = structuredClone(criticalLegalUncertainty);
+    const normalized = validateAgt002PreviewModelOutputV3({ integral_analysis: criticalLegalUncertainty }, ctx);
+    assert.deepEqual(
+      normalized.analysis_units[0].escalation,
+      { required: true, level: 'role_review', reason: 'El modelo omitió el escalamiento obligatorio.' },
+    );
+    assert.deepEqual(criticalLegalUncertainty, beforeNormalization, 'critical escalation normalization must not mutate the model payload');
+  }
+
+  {
+    const invalidUnitTitle = structuredClone(buildMinimalV3IntegralAnalysis());
+    invalidUnitTitle.analysis_units[0].title = '';
+    assert.throws(
+      () => validateAgt002PreviewModelOutputV3({ integral_analysis: invalidUnitTitle }, ctx),
+      error => error?.code === 'v3_unit_shape_invariant',
+    );
+
+    const invalidClosure = structuredClone(buildMinimalV3IntegralAnalysis());
+    invalidClosure.analysis_units[0].closure.condition = '';
+    assert.throws(
+      () => validateAgt002PreviewModelOutputV3({ integral_analysis: invalidClosure }, ctx),
+      error => error?.code === 'v3_closure_shape_invariant',
+    );
   }
 
   // A model cannot smuggle either governed field: non-null values on a tender unit are

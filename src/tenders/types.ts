@@ -323,6 +323,22 @@ export type TenderIntegralAnalysisV3 = {
   };
   analysis_units: TenderIntegralAnalysisUnit[];
 };
+// AGT-002 manifest scope (optional, read-only): the server-owned, top-level honest coverage
+// accounting for a manifest-driven V3 run. Mirrors the closed shape derived in
+// agt002-manizales-manifest-wiring.js. It is a SIBLING of integral_analysis — never nested inside
+// TenderIntegralAnalysisV3 — so a reader can tell the 20 analyzable requirements, the 25 atomized
+// entries, the 15 pre-GO sections of 68 registered, and the closed 15/15 + 20/20 ledgers apart
+// from analyzed/expected. UI code must always treat this as optional and never require it.
+export type TenderManifestScope = {
+  registry_sections: number;
+  pre_go_relevant: number;
+  proposal_sections: number;
+  analyzable_requirement_ids: string[];
+  atomized_entry_count: number;
+  dispositions: { analyzed_candidate: number; excluded_with_reason: number; unresolved_visible: number };
+  section_ledger_accounted: number;
+  proposal_ledger_accounted: number;
+};
 
 export type TenderDocumentAnalysis = {
   run_id: string;
@@ -352,6 +368,7 @@ export type TenderDocumentAnalysis = {
   legal_findings?: TenderLegalFinding[];
   legal_evidence?: TenderLegalEvidence | null;
   integral_analysis?: TenderIntegralAnalysisV3 | null;
+  manifest_scope?: TenderManifestScope | null;
   [key: string]: unknown;
 };
 export type TenderDocumentRecord = {

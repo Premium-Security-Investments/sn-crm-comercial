@@ -436,6 +436,9 @@ function buildV3EvidenceRefsSchema(allowlist) {
 // object only for `strategic_consideration` (never governed there).
 function buildV3AnalysisUnitSchema(validationContext) {
   const hasGovernedContext = isRecord(validationContext) && isRecord(validationContext.allowlist);
+  const governedLegalStatuses = hasGovernedContext && validationContext.legalCorpusVersionId == null
+    ? ['not_applicable', 'not_verified']
+    : [...AGT002_INTEGRAL_LEGAL_STATUSES];
   const requirementIds = hasGovernedContext && Array.isArray(validationContext.requirementManifest)
     ? validationContext.requirementManifest.map(entry => entry?.requirement_id)
     : [];
@@ -448,13 +451,15 @@ function buildV3AnalysisUnitSchema(validationContext) {
 
   return v3ClosedObject({
   unit_id: v3String(V3_WIRE_ID_MAX_LENGTH),
-  unit_kind: { type: 'string', enum: [...AGT002_INTEGRAL_UNIT_KINDS] },
+  unit_kind: { type: 'string', enum: hasGovernedContext ? ['tender_requirement'] : [...AGT002_INTEGRAL_UNIT_KINDS] },
   requirement_id: hasGovernedContext
     ? (governedStringValues(requirementIds).length > 0
-      ? v3GovernedNullableString(requirementIds)
+      ? { type: 'string', enum: governedStringValues(requirementIds) }
       : { type: 'null' })
     : v3NullableString(V3_WIRE_ID_MAX_LENGTH),
-  category: { anyOf: [{ type: 'string', enum: ['strategic'] }, { type: 'null' }] },
+  category: hasGovernedContext
+    ? { type: 'null' }
+    : { anyOf: [{ type: 'string', enum: ['strategic'] }, { type: 'null' }] },
   sequence: { type: 'integer', minimum: 1 },
   title: v3String(V3_WIRE_TITLE_MAX_LENGTH),
   assessment_mode: { type: 'string', enum: [...AGT002_INTEGRAL_ASSESSMENT_MODES] },
@@ -468,7 +473,9 @@ function buildV3AnalysisUnitSchema(validationContext) {
     curability: { type: 'string', enum: [...AGT002_INTEGRAL_BLOCKING_CURABILITY] },
     reason: v3String(),
   }),
-  evidence_state: { anyOf: [v3EvidenceStateSchema, { type: 'null' }] },
+  evidence_state: hasGovernedContext
+    ? { type: 'null' }
+    : { anyOf: [v3EvidenceStateSchema, { type: 'null' }] },
   evidence_refs: hasGovernedContext
     ? buildV3EvidenceRefsSchema(validationContext.allowlist)
     : {
@@ -499,7 +506,7 @@ function buildV3AnalysisUnitSchema(validationContext) {
     dimension: { type: 'string', enum: [...AGT002_INTEGRAL_COMMERCIAL_IMPACT_DIMENSIONS] },
   }),
   legal_assessment: v3ClosedObject({
-    status: { type: 'string', enum: [...AGT002_INTEGRAL_LEGAL_STATUSES] },
+    status: { type: 'string', enum: governedLegalStatuses },
     basis_refs: hasGovernedContext ? v3GovernedStringArray(legalBasisRefs) : v3StringArray(),
     summary: v3String(),
     human_legal_review_required: { type: 'boolean' },
@@ -610,6 +617,60 @@ function v3ShapeMismatch(message) {
  * fields themselves (no governed per-requirement entry exists for them) and are passed
  * through unchanged, other than fail-closed rejection of a `null` the model should never send.
  */
+// Conservative evidence_refs normalization at the server-owned boundary (production
+// `v3_evidence_reference_invariant` rejections): a ref that IS governed — present under
+// exactly one validationContext.allowlist source-type bucket — but was mistagged by the
+// model with the wrong source_type is corrected to the allowlisted bucket; this only ever
+// narrows toward the governed allowlist, it never invents a ref that isn't there. A purpose
+// is corrected only when the (possibly corrected) source_type admits exactly one purpose per
+// V3_PURPOSES_BY_SOURCE_TYPE above (the exact inverse of agt002-integral-analysis-v3.js's
+// private PURPOSE_ALLOWED_SOURCE_TYPES) — any source_type with more than one valid purpose is
+// left for the model to have gotten right, never guessed. Corrections that collide into an
+// identical (ref, purpose) pair collapse to the first occurrence, so no citation is
+// double-counted. A ref absent from every bucket, or present in more than one (ambiguous), is
+// left untouched — validateEvidenceRefs's hard, fail-closed rejection still applies to it.
+function correctedEvidenceRefSourceType(entry, allowlist) {
+  if (typeof entry.source_type === 'string' && Array.isArray(allowlist[entry.source_type]) && allowlist[entry.source_type].includes(entry.ref)) {
+    return entry.source_type;
+  }
+  const matches = AGT002_INTEGRAL_SOURCE_TYPES.filter(sourceType => Array.isArray(allowlist[sourceType]) && allowlist[sourceType].includes(entry.ref));
+  return matches.length === 1 ? matches[0] : entry.source_type;
+}
+
+function correctedEvidenceRefPurpose(purpose, sourceType) {
+  const allowedPurposes = V3_PURPOSES_BY_SOURCE_TYPE[sourceType];
+  if (!Array.isArray(allowedPurposes) || allowedPurposes.includes(purpose)) return purpose;
+  return allowedPurposes.length === 1 ? allowedPurposes[0] : purpose;
+}
+
+function normalizeAgt002EvidenceReferencesUnit(unit, validationContext) {
+  if (!isRecord(unit) || !Array.isArray(unit.evidence_refs)) return unit;
+  const allowlist = isRecord(validationContext) && isRecord(validationContext.allowlist) ? validationContext.allowlist : null;
+  if (!allowlist) return unit;
+
+  let changed = false;
+  const seenPairs = new Set();
+  const correctedRefs = [];
+  for (const entry of unit.evidence_refs) {
+    if (!isRecord(entry) || typeof entry.ref !== 'string') {
+      correctedRefs.push(entry);
+      continue;
+    }
+    const sourceType = correctedEvidenceRefSourceType(entry, allowlist);
+    const purpose = correctedEvidenceRefPurpose(entry.purpose, sourceType);
+    const pairKey = `${entry.ref}::${purpose}`;
+    if (seenPairs.has(pairKey)) { changed = true; continue; }
+    seenPairs.add(pairKey);
+    if (sourceType === entry.source_type && purpose === entry.purpose) {
+      correctedRefs.push(entry);
+    } else {
+      changed = true;
+      correctedRefs.push({ ...entry, source_type: sourceType, purpose });
+    }
+  }
+  return changed ? { ...unit, evidence_refs: correctedRefs } : unit;
+}
+
 function normalizeAgt002EvidenceAbstentionUnit(unit) {
   if (!isRecord(unit) || !isRecord(unit.conclusion)) return unit;
 
@@ -665,6 +726,197 @@ function normalizeAgt002EvidenceAbstentionUnit(unit) {
   };
 }
 
+function normalizeAgt002ConclusionToGovernedComplianceUnit(unit) {
+  if (!isRecord(unit) || !isRecord(unit.conclusion) || !isRecord(unit.evidence_state)) return unit;
+  const expectedComplianceByConclusion = new Map([
+    ['supported_with_evidence', 'supported_pending_human_review'],
+    ['partially_supported', 'partially_supported_pending_human_review'],
+    ['gap_evidenced', 'gap_evidenced_pending_human_review'],
+  ]);
+  const expectedCompliance = expectedComplianceByConclusion.get(unit.conclusion.status);
+  if (!expectedCompliance || unit.evidence_state.compliance === expectedCompliance) return unit;
+
+  return normalizeAgt002EvidenceAbstentionUnit({
+    ...unit,
+    conclusion: {
+      ...unit.conclusion,
+      status: 'insufficient_evidence',
+      confidence: 'unavailable',
+    },
+  });
+}
+
+function normalizeAgt002ConservativeLegalAssessmentUnit(unit, validationContext) {
+  if (!isRecord(unit) || !isRecord(unit.legal_assessment)) return unit;
+  const legal = unit.legal_assessment;
+  const noPublishedLegalCorpus = validationContext?.legalCorpusVersionId == null;
+  const unsupportedClaim = legal.status === 'supported' && (!Array.isArray(legal.basis_refs) || legal.basis_refs.length === 0);
+  const invalidWithoutCorpus = noPublishedLegalCorpus && !['not_applicable', 'not_verified'].includes(legal.status);
+  const missingRequiredReview = legal.status === 'not_verified' && legal.human_legal_review_required !== true;
+  if (!(unsupportedClaim || invalidWithoutCorpus || missingRequiredReview)) return unit;
+
+  return {
+    ...unit,
+    legal_assessment: {
+      ...legal,
+      status: 'not_verified',
+      human_legal_review_required: true,
+    },
+  };
+}
+
+function normalizeAgt002ActionsUnit(unit) {
+  if (!isRecord(unit) || !Array.isArray(unit.actions) || typeof unit.unit_id !== 'string') return unit;
+  const seenActionIds = new Set();
+  let changed = false;
+  const actions = unit.actions.map((action, index) => {
+    if (!isRecord(action)) return action;
+    let actionId = action.action_id;
+    if (seenActionIds.has(actionId)) {
+      actionId = `${unit.unit_id}-ACTION-${index + 1}`;
+      while (seenActionIds.has(actionId)) actionId += '-X';
+    }
+    seenActionIds.add(actionId);
+    const suggestedRole = action.action_type === 'human_decision' ? 'authorized_human' : action.suggested_role;
+    const normalized = {
+      ...action,
+      action_id: actionId,
+      basis_unit_id: unit.unit_id,
+      suggested_role: suggestedRole,
+      external_side_effect: false,
+    };
+    if (
+      normalized.action_id !== action.action_id
+      || normalized.basis_unit_id !== action.basis_unit_id
+      || normalized.suggested_role !== action.suggested_role
+      || normalized.external_side_effect !== action.external_side_effect
+    ) changed = true;
+    return normalized;
+  });
+  return changed ? { ...unit, actions } : unit;
+}
+
+function normalizeAgt002CriticalEscalationUnit(unit) {
+  if (!isRecord(unit) || !isRecord(unit.escalation)) return unit;
+  const notCurableBlocker = unit.blocking?.effect === 'blocker' && unit.blocking?.curability === 'not_curable';
+  const materialLegalUncertainty = unit.legal_assessment?.status === 'not_verified'
+    && unit.legal_assessment?.human_legal_review_required === true;
+  const criticalExposure = unit.commercial_impact?.level === 'critical';
+  const criticalCondition = notCurableBlocker || materialLegalUncertainty || criticalExposure;
+  const required = criticalCondition || unit.escalation.required === true;
+  const level = required
+    ? (unit.escalation.level === 'none' ? 'role_review' : unit.escalation.level)
+    : 'none';
+  if (required === unit.escalation.required && level === unit.escalation.level) return unit;
+
+  return {
+    ...unit,
+    escalation: {
+      ...unit.escalation,
+      required,
+      level,
+    },
+  };
+}
+
+function buildAgt002GovernedAbstentionUnit(requirementId, sequence, usedUnitIds) {
+  let unitId = `GOVERNED-ABSTENTION-${sequence}`;
+  while (usedUnitIds.has(unitId)) unitId += '-X';
+  usedUnitIds.add(unitId);
+  return {
+    unit_id: unitId,
+    unit_kind: 'tender_requirement',
+    requirement_id: requirementId,
+    category: null,
+    sequence,
+    title: `Requisito ${requirementId}`,
+    assessment_mode: 'abstained',
+    conclusion: {
+      status: 'insufficient_evidence',
+      summary: 'El modelo no entregó una unidad única para este requisito; se exige revisión humana.',
+      confidence: 'unavailable',
+    },
+    blocking: {
+      effect: 'undetermined',
+      curability: 'undetermined',
+      reason: 'No se determina efecto ni subsanabilidad sin una unidad única y evidencia revisada.',
+    },
+    evidence_state: null,
+    evidence_refs: [],
+    missing_evidence: [],
+    commercial_impact: {
+      level: 'unknown',
+      summary: 'Impacto comercial no determinado; requiere revisión humana.',
+      dimension: 'unknown',
+    },
+    legal_assessment: {
+      status: 'not_verified',
+      basis_refs: [],
+      summary: 'Evaluación jurídica no verificada; requiere revisión humana.',
+      human_legal_review_required: true,
+    },
+    actions: [],
+    milestone: {
+      status: 'not_identified',
+      type: 'none',
+      at: null,
+      source_ref: null,
+      summary: 'No se identificó un hito verificable para la unidad omitida o duplicada.',
+    },
+    escalation: {
+      required: true,
+      level: 'role_review',
+      reason: 'Unidad omitida o duplicada por el modelo; revisión del responsable requerida.',
+    },
+    closure: {
+      status: 'human_confirmation_required',
+      condition: 'El responsable revisa el requisito y confirma la evidencia aplicable.',
+      evidence_required: ['human_evidence'],
+    },
+    human_validation: {
+      required: true,
+      status: 'pending',
+      reason: 'Validar manualmente el requisito omitido o duplicado.',
+    },
+  };
+}
+
+function normalizeAgt002TenderUnitsToManifestOrder(analysisUnits, validationContext) {
+  if (!Array.isArray(analysisUnits) || !Array.isArray(validationContext?.requirementManifest)) return analysisUnits;
+  const expectedIds = validationContext.requirementManifest.map(entry => entry?.requirement_id);
+  if (expectedIds.some(id => typeof id !== 'string')) return analysisUnits;
+
+  const unitsByRequirementId = new Map();
+  const usedUnitIds = new Set();
+  const strategicUnits = [];
+  for (const unit of analysisUnits) {
+    if (!isRecord(unit) || typeof unit.unit_id !== 'string') continue;
+    usedUnitIds.add(unit.unit_id);
+    if (unit.unit_kind === 'strategic_consideration') {
+      strategicUnits.push(unit);
+      continue;
+    }
+    if (unit.unit_kind !== 'tender_requirement' || typeof unit.requirement_id !== 'string') continue;
+    const bucket = unitsByRequirementId.get(unit.requirement_id) || [];
+    bucket.push(unit);
+    unitsByRequirementId.set(unit.requirement_id, bucket);
+  }
+
+  const formalUnits = expectedIds.map((requirementId, index) => {
+    const matchingUnits = unitsByRequirementId.get(requirementId) || [];
+    if (matchingUnits.length !== 1) {
+      return buildAgt002GovernedAbstentionUnit(requirementId, index + 1, usedUnitIds);
+    }
+    const unit = matchingUnits[0];
+    return unit.sequence === index + 1 ? unit : { ...unit, sequence: index + 1 };
+  });
+  const normalizedStrategicUnits = strategicUnits.map((unit, index) => {
+    const sequence = formalUnits.length + index + 1;
+    return unit.sequence === sequence ? unit : { ...unit, sequence };
+  });
+  return [...formalUnits, ...normalizedStrategicUnits];
+}
+
 function assembleAgt002GovernedIntegralAnalysisV3Units(analysisUnits, validationContext) {
   const ctx = isRecord(validationContext) ? validationContext : {};
   const requirementManifest = Array.isArray(ctx.requirementManifest) ? ctx.requirementManifest : [];
@@ -672,9 +924,19 @@ function assembleAgt002GovernedIntegralAnalysisV3Units(analysisUnits, validation
   const evidenceStateManifest = Array.isArray(ctx.evidenceStateManifest) ? ctx.evidenceStateManifest : [];
   const evidenceStateByRequirementId = new Map(evidenceStateManifest.map(entry => [entry?.requirement_id, entry?.evidence_state]));
 
-  return (Array.isArray(analysisUnits) ? analysisUnits : []).map(modelUnit => {
+  const orderedAnalysisUnits = normalizeAgt002TenderUnitsToManifestOrder(analysisUnits, validationContext);
+  return (Array.isArray(orderedAnalysisUnits) ? orderedAnalysisUnits : []).map(modelUnit => {
     if (!isRecord(modelUnit)) return modelUnit;
-    const unit = normalizeAgt002EvidenceAbstentionUnit(modelUnit);
+    const unit = normalizeAgt002CriticalEscalationUnit(
+      normalizeAgt002ActionsUnit(
+        normalizeAgt002ConservativeLegalAssessmentUnit(
+          normalizeAgt002EvidenceAbstentionUnit(
+            normalizeAgt002EvidenceReferencesUnit(modelUnit, validationContext),
+          ),
+          validationContext,
+        ),
+      ),
+    );
     if (unit.unit_kind === 'tender_requirement') {
       if (unit.category !== null || unit.evidence_state !== null) {
         throw v3ShapeMismatch(
@@ -683,11 +945,11 @@ function assembleAgt002GovernedIntegralAnalysisV3Units(analysisUnits, validation
         );
       }
       const governedEvidenceState = evidenceStateByRequirementId.get(unit.requirement_id);
-      return {
+      return normalizeAgt002ConclusionToGovernedComplianceUnit({
         ...unit,
         category: categoryByRequirementId.get(unit.requirement_id),
         evidence_state: isRecord(governedEvidenceState) ? { ...governedEvidenceState } : governedEvidenceState,
-      };
+      });
     }
     if (unit.unit_kind === 'strategic_consideration' && (unit.category === null || unit.evidence_state === null)) {
       throw v3ShapeMismatch(
@@ -728,7 +990,29 @@ export function validateAgt002PreviewModelOutputV3(value, validationContext) {
     coverage: buildAgt002GovernedIntegralAnalysisV3Coverage(validationContext),
     analysis_units: assembleAgt002GovernedIntegralAnalysisV3Units(value.integral_analysis.analysis_units, validationContext),
   };
-  return validateAgt002IntegralAnalysisV3(governedIntegralAnalysis, validationContext);
+  try {
+    return validateAgt002IntegralAnalysisV3(governedIntegralAnalysis, validationContext);
+  } catch (error) {
+    if (error?.code) throw error;
+    const message = typeof error?.message === 'string' ? error.message : '';
+    const structuralDomains = [
+      ['conclusion', 'v3_conclusion_shape_invariant'],
+      ['blocking', 'v3_blocking_shape_invariant'],
+      ['evidence_state', 'v3_evidence_state_shape_invariant'],
+      ['evidence_refs', 'v3_evidence_refs_shape_invariant'],
+      ['missing_evidence', 'v3_missing_evidence_shape_invariant'],
+      ['commercial_impact', 'v3_commercial_impact_shape_invariant'],
+      ['legal_assessment', 'v3_legal_assessment_shape_invariant'],
+      ['actions', 'v3_actions_shape_invariant'],
+      ['milestone', 'v3_milestone_shape_invariant'],
+      ['escalation', 'v3_escalation_shape_invariant'],
+      ['closure', 'v3_closure_shape_invariant'],
+      ['human_validation', 'v3_human_validation_shape_invariant'],
+    ];
+    const matched = structuralDomains.find(([field]) => message.includes(`.${field}`));
+    error.code = matched?.[1] || 'v3_unit_shape_invariant';
+    throw error;
+  }
 }
 
 /**

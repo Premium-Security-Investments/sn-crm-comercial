@@ -829,7 +829,8 @@ assert.match(AGT002_INTEGRAL_V3_POLICY, /strategic_consideration[^.]*strategic[^
   }
 
   // With no legal_corpus_version_id, the provider cannot smuggle a substantive legal
-  // conclusion into an otherwise valid unit: the whole run fails closed.
+  // conclusion into an otherwise valid unit: the server conservatively degrades it to
+  // not_verified and forces human legal review plus escalation.
   {
     const client = fakeClient(async (options) => {
       const output = buildV3ModelOutput(options);
@@ -844,7 +845,12 @@ assert.match(AGT002_INTEGRAL_V3_POLICY, /strategic_consideration[^.]*strategic[^
       governanceProvenance: governanceProvenanceFixture(),
       companyEvidenceClassesProvider: () => [],
     });
-    await assert.rejects(() => engine.analyze(v3Context), /no produjo una respuesta válida/i);
+    const result = await engine.analyze(v3Context);
+    const normalizedUnit = result.integral_analysis.analysis_units[0];
+    assert.equal(normalizedUnit.legal_assessment.status, 'not_verified');
+    assert.equal(normalizedUnit.legal_assessment.human_legal_review_required, true);
+    assert.equal(normalizedUnit.escalation.required, true);
+    assert.notEqual(normalizedUnit.escalation.level, 'none');
   }
 
   // Design test 27 / audit P1-1: the REAL envelope emitted by runOnceV3 — not a
