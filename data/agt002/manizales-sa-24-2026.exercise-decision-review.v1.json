@@ -1,0 +1,448 @@
+{
+  "artifact_type": "agt002_manizales_exercise_decision_review",
+  "contract_version": "agt002-manizales-exercise-decision-review@1",
+  "version": 1,
+  "status": "draft_for_human_review",
+  "human_approval_required": true,
+  "exercise_mode": true,
+  "opportunity_id": "54190e51-15fb-46af-b0aa-8f13461a3110",
+  "note": "Fixture NO CANÓNICO de revisión de decisión para EJERCICIO (evaluación pre-cierre, ignora el gate temporal de ciclo de vida sin borrar trazabilidad). No sustituye integral_analysis ni v2_projection; los preserva intactos. Clasificación humana curada para el piloto Manizales SA-24-2026, con referencias reales a sub_item_id del registro contractual (docs/governance/registro/manizales-sa-24-2026.registry.json) o al requirement_id canónico/del manifiesto (data/agt002/manizales-sa-24-2026.integral-manifest.v1.json).",
+  "review_findings": [
+    {
+      "id": "review::rup-2025-financial-organizational",
+      "disposition": "supports",
+      "source_id": "corporate-rup-2025:8b7d472a37d80cf7",
+      "locator": "RUP con corte 31-dic-2025, indicadores financieros y organizacionales",
+      "summary": "El RUP revisado reporta liquidez 2,3713, endeudamiento 50,56%, capital de trabajo $9.589.715.984, cobertura de intereses 17,4741, ROE 49,33% y ROA 24,39%; todos superan los umbrales de Manizales."
+    },
+    {
+      "id": "review::rup-2025-accredited-experience",
+      "disposition": "supports",
+      "source_id": "manizales-deep-review@2026-08-18",
+      "locator": "§3 Matriz consolidada, experiencia RUP/UNSPSC",
+      "summary": "La revisión del RUP encontró múltiples contratos superiores a 1.000 SMMLV y códigos UNSPSC compatibles; sostiene cumplimiento probable, sujeto a seleccionar y cotejar hasta tres filas para el Anexo 8."
+    },
+    {
+      "id": "review::agency-manizales-current-status",
+      "disposition": "requires_verification",
+      "source_id": "manizales-deep-review@2026-08-18",
+      "locator": "§5 VM-1 — Territorialidad Manizales",
+      "summary": "La documentación operativa de 2026 muestra presencia y dirección de agencia en Manizales, pero la Resolución SuperVigilancia 20214100005697 sólo prorroga la licencia principal de Pereira y no nombra Manizales. No se encontró acto sectorial territorial ni certificado de Cámara de Comercio de Manizales vigente; el habilitante permanece no probado, sin incumplimiento confirmado."
+    },
+    {
+      "id": "review::mintic-communications-current-status",
+      "disposition": "requires_verification",
+      "source_id": "manizales-deep-review@2026-08-18",
+      "locator": "§6 VM-2 — Comunicaciones y medios tecnológicos",
+      "summary": "La Resolución MinTIC 01535 de 2026 fue revisada: renueva el permiso por diez años desde el 1-ene-2026 y la licencia general SuperVigilancia autoriza medio tecnológico. Sin embargo, el CCTR 29062 no incluye Manizales, no se encontró pago abril-junio de 2026 y tampoco contrato o certificación de operador para la ruta alternativa celular; ninguna ruta está acreditada integralmente y no hay incumplimiento confirmado."
+    }
+  ],
+  "entries": [
+    {
+      "id": "exercise::indices-capacidad-organizacional",
+      "requirement_id": "proposal:2.3:indices-capacidad-organizacional",
+      "label": "Índices de capacidad organizacional (§2.3)",
+      "origin": "canonical_unit",
+      "reviewed_status": "supported",
+      "rationale": "El RUP vigente revisado sostiene cumplimiento probable de los índices de capacidad organizacional exigidos en §2.3; permanece sujeto a acreditación formal en la oferta.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:2.3:indices-capacidad-organizacional"
+        },
+        {
+          "type": "review_finding",
+          "finding_id": "review::rup-2025-financial-organizational"
+        }
+      ]
+    },
+    {
+      "id": "exercise::regla-plural-integrante-organizacional",
+      "requirement_id": "proposal:2.3:regla-plural-integrante-organizacional",
+      "label": "Regla de agregación organizacional para integrante plural (§2.3)",
+      "origin": "canonical_unit",
+      "reviewed_status": "not_applicable",
+      "rationale": "Regla de agregación aplicable sólo a proponente plural (consorcio/UT); no aplica a la modalidad de oferta revisada.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:2.3:regla-plural-integrante-organizacional"
+        }
+      ]
+    },
+    {
+      "id": "exercise::experiencia-rup-unspsc-sumatoria",
+      "requirement_id": "proposal:2.4:experiencia-rup-unspsc-sumatoria",
+      "label": "Experiencia RUP/UNSPSC por sumatoria (§2.4)",
+      "origin": "canonical_unit",
+      "reviewed_status": "supported",
+      "rationale": "La evidencia RUP revisada sostiene cumplimiento probable de experiencia/UNSPSC por sumatoria; falta seleccionar y cotejar formalmente hasta tres contratos para el Anexo 8.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:2.4:experiencia-rup-unspsc-sumatoria"
+        },
+        {
+          "type": "review_finding",
+          "finding_id": "review::rup-2025-accredited-experience"
+        }
+      ]
+    },
+    {
+      "id": "exercise::anexo-8-formato-experiencia",
+      "requirement_id": "proposal:2.4:anexo-8-formato-experiencia",
+      "label": "Formato Anexo 8 de experiencia (§2.4)",
+      "origin": "canonical_unit",
+      "reviewed_status": "preparation",
+      "rationale": "Documento de formato diligenciable con la oferta; conseguible/preparable, no bloquea el pre-cierre.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:2.4:anexo-8-formato-experiencia"
+        }
+      ]
+    },
+    {
+      "id": "exercise::regla-sumatoria-plural-experiencia",
+      "requirement_id": "proposal:2.4:regla-sumatoria-plural-experiencia",
+      "label": "Regla de sumatoria de experiencia para plural (§2.4)",
+      "origin": "canonical_unit",
+      "reviewed_status": "not_applicable",
+      "rationale": "Regla de agregación de experiencia aplicable sólo a proponente plural; no aplica a la modalidad de oferta revisada.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:2.4:regla-sumatoria-plural-experiencia"
+        }
+      ]
+    },
+    {
+      "id": "exercise::experiencia-extranjera-traduccion",
+      "requirement_id": "proposal:2.4:experiencia-extranjera-traduccion",
+      "label": "Traducción de experiencia extranjera (§2.4)",
+      "origin": "canonical_unit",
+      "reviewed_status": "not_applicable",
+      "rationale": "Regla condicional a experiencia acreditada en el extranjero; evidencia revisada no invoca experiencia extranjera.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:2.4:experiencia-extranjera-traduccion"
+        }
+      ]
+    },
+    {
+      "id": "exercise::diferencial-mujeres-experiencia",
+      "requirement_id": "proposal:2.4.1:diferencial-mujeres-experiencia",
+      "label": "Diferencial de experiencia mujeres (§2.4.1)",
+      "origin": "canonical_unit",
+      "reviewed_status": "not_applicable",
+      "rationale": "Criterio diferencial opcional de puntaje; no es una obligación habilitante de la oferta.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:2.4.1:diferencial-mujeres-experiencia"
+        }
+      ]
+    },
+    {
+      "id": "exercise::diferencial-mipyme-experiencia",
+      "requirement_id": "proposal:2.4.1:diferencial-mipyme-experiencia",
+      "label": "Diferencial de experiencia MIPYME (§2.4.1)",
+      "origin": "canonical_unit",
+      "reviewed_status": "not_applicable",
+      "rationale": "Criterio diferencial opcional de puntaje; no es una obligación habilitante de la oferta.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:2.4.1:diferencial-mipyme-experiencia"
+        }
+      ]
+    },
+    {
+      "id": "exercise::diferencial-discapacidad-experiencia",
+      "requirement_id": "proposal:2.4.1:diferencial-discapacidad-experiencia",
+      "label": "Diferencial de experiencia discapacidad (§2.4.1)",
+      "origin": "canonical_unit",
+      "reviewed_status": "not_applicable",
+      "rationale": "Criterio diferencial opcional de puntaje; no es una obligación habilitante de la oferta.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:2.4.1:diferencial-discapacidad-experiencia"
+        }
+      ]
+    },
+    {
+      "id": "exercise::regla-sumatoria-contratos-adicionales",
+      "requirement_id": "proposal:2.4.1:regla-sumatoria-contratos-adicionales",
+      "label": "Regla de sumatoria de contratos adicionales (§2.4.1)",
+      "origin": "canonical_unit",
+      "reviewed_status": "not_applicable",
+      "rationale": "Regla de agregación de contratos adicionales para el diferencial; no es una obligación habilitante independiente.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:2.4.1:regla-sumatoria-contratos-adicionales"
+        }
+      ]
+    },
+    {
+      "id": "exercise::regla-subsanabilidad",
+      "requirement_id": "proposal:2.5:regla-subsanabilidad",
+      "label": "Regla de subsanabilidad (§2.5)",
+      "origin": "canonical_unit",
+      "reviewed_status": "not_applicable",
+      "rationale": "Regla procedimental de la entidad sobre subsanación; no es un requisito probatorio del proponente.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:2.5:regla-subsanabilidad"
+        }
+      ]
+    },
+    {
+      "id": "exercise::calidad-lenguaje-senas",
+      "requirement_id": "proposal:3.1:calidad-lenguaje-senas",
+      "label": "Calidad del servicio de lenguaje de señas (§3.1)",
+      "origin": "canonical_unit",
+      "reviewed_status": "preparation",
+      "rationale": "Capacidad de servicio a disponer/preparar antes de ejecución; conseguible, no bloquea el pre-cierre.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:3.1:calidad-lenguaje-senas"
+        }
+      ]
+    },
+    {
+      "id": "exercise::calidad-capacitaciones",
+      "requirement_id": "proposal:3.1:calidad-capacitaciones",
+      "label": "Calidad del programa de capacitaciones (§3.1)",
+      "origin": "canonical_unit",
+      "reviewed_status": "preparation",
+      "rationale": "Programa de capacitación a preparar antes de ejecución; conseguible, no bloquea el pre-cierre.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:3.1:calidad-capacitaciones"
+        }
+      ]
+    },
+    {
+      "id": "exercise::industria-nacional-servicios-colombianos",
+      "requirement_id": "proposal:3.2:industria-nacional-servicios-colombianos",
+      "label": "Certificación de industria nacional de servicios colombianos (§3.2)",
+      "origin": "canonical_unit",
+      "reviewed_status": "preparation",
+      "rationale": "Certificado obtenible con la oferta; documento preparable, no bloquea el pre-cierre.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:3.2:industria-nacional-servicios-colombianos"
+        }
+      ]
+    },
+    {
+      "id": "exercise::puntaje-discapacidad",
+      "requirement_id": "proposal:3.3:puntaje-discapacidad",
+      "label": "Criterio de puntaje por discapacidad (§3.3)",
+      "origin": "canonical_unit",
+      "reviewed_status": "not_applicable",
+      "rationale": "Criterio de puntuación de la entidad, no una obligación probatoria del proponente.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:3.3:puntaje-discapacidad"
+        }
+      ]
+    },
+    {
+      "id": "exercise::puntaje-emprendimiento-empresa-mujeres",
+      "requirement_id": "proposal:3.4:puntaje-emprendimiento-empresa-mujeres",
+      "label": "Criterio de puntaje por emprendimiento de empresa de mujeres (§3.4)",
+      "origin": "canonical_unit",
+      "reviewed_status": "not_applicable",
+      "rationale": "Criterio de puntuación de la entidad, no una obligación probatoria del proponente.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:3.4:puntaje-emprendimiento-empresa-mujeres"
+        }
+      ]
+    },
+    {
+      "id": "exercise::puntaje-mipyme",
+      "requirement_id": "proposal:3.5:puntaje-mipyme",
+      "label": "Criterio de puntaje MIPYME (§3.5)",
+      "origin": "canonical_unit",
+      "reviewed_status": "not_applicable",
+      "rationale": "Criterio de puntuación de la entidad, no una obligación probatoria del proponente.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:3.5:puntaje-mipyme"
+        }
+      ]
+    },
+    {
+      "id": "exercise::oferta-economica-anexo-9",
+      "requirement_id": "proposal:3.6:oferta-economica-anexo-9",
+      "label": "Oferta económica — Anexo 9 (§3.6)",
+      "origin": "canonical_unit",
+      "reviewed_status": "preparation",
+      "rationale": "Formato de oferta económica a diligenciar; preparable con la oferta, no bloquea el pre-cierre.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:3.6:oferta-economica-anexo-9"
+        }
+      ]
+    },
+    {
+      "id": "exercise::tarifa-minima-regulada",
+      "requirement_id": "proposal:3.6:tarifa-minima-regulada",
+      "label": "Tarifa mínima regulada (§3.6)",
+      "origin": "canonical_unit",
+      "reviewed_status": "preparation",
+      "rationale": "Piso tarifario a observar al preparar la oferta económica; acción de preparación, no un hallazgo pendiente.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:3.6:tarifa-minima-regulada"
+        }
+      ]
+    },
+    {
+      "id": "exercise::metodo-media-aritmetica",
+      "requirement_id": "proposal:3.6:metodo-media-aritmetica",
+      "label": "Método de media aritmética (§3.6)",
+      "origin": "canonical_unit",
+      "reviewed_status": "not_applicable",
+      "rationale": "Metodología de evaluación de la entidad; no es una obligación probatoria del proponente.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "proposal:3.6:metodo-media-aritmetica"
+        }
+      ]
+    },
+    {
+      "id": "exercise::financial-working-capital",
+      "requirement_id": "financial-working-capital",
+      "label": "Capital de trabajo (§2.2)",
+      "origin": "manifest_unresolved_entry",
+      "reviewed_status": "supported",
+      "rationale": "El RUP 2025 revisado sostiene cumplimiento probable: capital de trabajo $9.589.715.984 frente al mínimo de $505.728.424,50; falta acreditación formal del RUP vigente.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "financial-working-capital"
+        },
+        {
+          "type": "review_finding",
+          "finding_id": "review::rup-2025-financial-organizational"
+        }
+      ]
+    },
+    {
+      "id": "exercise::legal-rce-policy",
+      "requirement_id": "legal-rce-policy",
+      "label": "Póliza RCE (§2.1)",
+      "origin": "manifest_unresolved_entry",
+      "reviewed_status": "preparation",
+      "rationale": "La RCE 2026 observada sostiene cumplimiento probable (400 SMMLV, cobertura Colombia y uso indebido de armas); validar pago, vigencia y carta de mantenimiento e incluirla con la oferta.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "legal-rce-policy"
+        }
+      ]
+    },
+    {
+      "id": "exercise::legal-collective-life-policy",
+      "requirement_id": "legal-collective-life-policy",
+      "label": "Póliza de vida colectivo (§2.1)",
+      "origin": "manifest_unresolved_entry",
+      "reviewed_status": "preparation",
+      "rationale": "La póliza de vida colectiva observada está vigente hasta mayo de 2027; validar cobertura 24 horas, Decreto 1588 y prima exacta contra Anexo 9 e incluirla con la oferta.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "legal-collective-life-policy"
+        }
+      ]
+    },
+    {
+      "id": "exercise::technical-video-surveillance-scope",
+      "requirement_id": "technical-video-surveillance-scope",
+      "label": "Alcance de videovigilancia/CCTV (§2.1)",
+      "origin": "manifest_unresolved_entry",
+      "reviewed_status": "preparation",
+      "rationale": "Medios técnicos a disponer antes de ejecución; faltante ordinario conseguible, no bloquea el pre-cierre.",
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "technical-video-surveillance-scope"
+        }
+      ]
+    },
+    {
+      "id": "exercise::lifecycle-cierre-prorroga",
+      "requirement_id": "lifecycle:cierre-prorroga",
+      "label": "Cronograma: cierre y prórroga del proceso (§1.8)",
+      "origin": "manifest_unresolved_entry",
+      "reviewed_status": "not_applicable",
+      "rationale": "Compuerta temporal de ciclo de vida (fecha de cierre/prórroga). AGT-002 Manizales se evalúa aquí como EJERCICIO pre-cierre: la compuerta se ignora para efectos de la recomendación, pero permanece visible y trazable (nunca se elimina ni se oculta).",
+      "exercise_bypassed": true,
+      "evidence_refs": [
+        {
+          "type": "manifest_requirement",
+          "requirement_id": "lifecycle:cierre-prorroga"
+        }
+      ]
+    },
+    {
+      "id": "exercise::territorialidad-agencia-manizales",
+      "requirement_id": "legal-territorial-agency-manizales",
+      "label": "Sede principal, sucursal o agencia en Manizales — territorialidad de la licencia de funcionamiento (§2.1#i11)",
+      "origin": "registry_supplement",
+      "reviewed_status": "decision_question",
+      "material_impediment_category": "licencia_habilitante_esencial_imposible",
+      "rationale": "NOTA PARA LA ENCARGADA: el pliego (SA-24-2026#2.1#i11) exige infraestructura física en Manizales-Caldas autorizada por SuperVigilancia y registrada en la Cámara de Comercio respectiva. La evidencia operativa 2026 confirma presencia material, pero no sustituye esos dos soportes oficiales; la Resolución 20214100005697 sólo acredita licencia principal en Pereira. La territorialidad queda no_probada, no incumplida. AGT-002 sólo resalta el caso; la encargada decide si continúa, descarta o gestiona la validación.",
+      "evidence_refs": [
+        {
+          "type": "registry_citation",
+          "item_ref": "2.1",
+          "sub_item_id": "SA-24-2026#2.1#i11",
+          "char_start": 72323
+        },
+        {
+          "type": "review_finding",
+          "finding_id": "review::agency-manizales-current-status"
+        }
+      ]
+    },
+    {
+      "id": "exercise::licencia-comunicaciones-mintic",
+      "requirement_id": "legal-communications-mintic-license",
+      "label": "Licencia de Comunicaciones y Medios Tecnológicos — MinTIC (§2.1#i12)",
+      "origin": "registry_supplement",
+      "reviewed_status": "decision_question",
+      "material_impediment_category": "licencia_habilitante_esencial_imposible",
+      "rationale": "NOTA PARA LA ENCARGADA: el pliego (SA-24-2026#2.1#i12) exige licencia/permiso que ampare los equipos en los lugares del servicio y pago abril-junio de 2026, o permite una ruta alternativa con operador autorizado para medios distintos a radios. La Resolución MinTIC 01535 está vigente, pero su CCTR 29062 no incluye Manizales; tampoco se encontró el pago exigido ni contrato/certificación de operador celular. Ambas rutas permanecen no_probadas, sin incumplimiento confirmado. AGT-002 sólo resalta el caso; la encargada decide si continúa, descarta o gestiona la validación.",
+      "evidence_refs": [
+        {
+          "type": "registry_citation",
+          "item_ref": "2.1",
+          "sub_item_id": "SA-24-2026#2.1#i12",
+          "char_start": 73328
+        },
+        {
+          "type": "review_finding",
+          "finding_id": "review::mintic-communications-current-status"
+        }
+      ]
+    }
+  ],
+  "proceso": "SA-24-2026"
+}
