@@ -5,13 +5,19 @@ const component = readFileSync(new URL('../src/tenders/components/TenderAnalysis
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-assert.match(component, /\{hasIntegralV3 && analysis && <section className="tender-v3-questions"/, 'V3 debe conservar una sección específica de dudas.');
+// Legacy fallback: the 20-question V3 section renders exactly when there is no decision_review
+// (AGT-002 Manizales decision-review presentation gate — see TenderAnalysisSection.tsx).
+assert.match(component, /\{hasIntegralV3 && analysis && !analysis\.decision_review && <section className="tender-v3-questions"/, 'V3 debe conservar una sección específica de dudas cuando no hay decision_review.');
 assert.match(component, /<h3 id="tender-v3-questions-title">Dudas por resolver<\/h3>/, 'La sección V3 debe tener un título claro.');
 assert.match(component, /questions\.map\(question => <QuestionResponseCard/, 'Las dudas V3 deben conservar el formulario trazable de respuesta.');
 assert.match(component, /analysisRunId=\{analysis\.run_id\}/, 'Las respuestas deben quedar vinculadas al run V3 vigente.');
 assert.match(component, /questions\.length \? `\$\{questions\.length\} pendiente\(s\)` : 'Sin pendientes'/, 'La UI debe mostrar el número de dudas pendientes.');
 assert.match(component, /Sin dudas abiertas registradas/, 'V3 debe conservar un estado vacío honesto.');
 assert.match(styles, /\.tender-v3-questions\{/, 'La sección de dudas V3 debe tener estilos propios.');
+
+// When decision_review IS present, the same V3 slot renders the dedicated decision-review panel
+// instead — never the raw 20-question section.
+assert.match(component, /\{hasIntegralV3 && analysis && analysis\.decision_review && <ManizalesDecisionReviewPanel/, 'Con decision_review, V3 debe renderizar el panel dedicado en lugar de las 20 dudas.');
 
 const reviewPanel = main.match(/function TenderDocumentReviewPanel[\s\S]*?\n}\nfunction TenderOfferPreparationPanel/)?.[0] || '';
 const integralIndex = reviewPanel.indexOf('<TenderIntegralAnalysisV3View analysis={analysis} />');

@@ -353,6 +353,56 @@ export type TenderManifestUnresolvedEntry = {
   status: 'unresolved_visible';
   human_review_required: true;
 };
+// AGT-002 Manizales decision-review presentation (optional, read-only, single pinned production
+// artifact — see tender-analysis-foundation.js): a human-curated review that the server attaches
+// ONLY for the exact governed opportunity+run it was authored against. Replaces the raw 20-item
+// v2 question projection with 2 real decision_questions in the UI; everything else (preparation,
+// supported, not_applicable, blockers) is presentational, never an answerable question. A SIBLING
+// of manifest_unresolved_entries/integral_analysis, never nested inside either.
+export type TenderDecisionReviewEvidenceRef =
+  | { type: 'registry_citation'; item_ref: string; sub_item_id: string; char_start: number }
+  | { type: 'manifest_requirement'; requirement_id: string }
+  | { type: 'review_finding'; finding_id: string };
+export type TenderDecisionReviewStatus = 'supported' | 'preparation' | 'not_applicable' | 'decision_question' | 'blocker';
+export type TenderDecisionReviewFinding = {
+  id: string;
+  requirement_id: string;
+  label: string;
+  reviewed_status: TenderDecisionReviewStatus;
+  rationale: string;
+  evidence_refs: TenderDecisionReviewEvidenceRef[];
+  material_impediment_category?: string;
+  curability?: 'curable' | 'not_curable';
+  exercise_bypassed?: true;
+};
+export type TenderDecisionReviewFindingSource = {
+  id: string;
+  disposition: 'supports' | 'requires_verification';
+  source_id: string;
+  locator: string;
+  summary: string;
+};
+export type TenderDecisionReview = {
+  artifact_type: string;
+  contract_version: string;
+  source_fixture_version: number;
+  opportunity_id: string;
+  human_approval_required: true;
+  decision_status: 'pending_human_decision';
+  decision_ready: boolean;
+  routing_action: 'flag_for_responsible_person';
+  external_communications_allowed: false;
+  evidence_requests_allowed: false;
+  review_findings: TenderDecisionReviewFindingSource[];
+  exercise_mode: { active: true; bypassed_requirement_ids: string[] };
+  recommendation: string;
+  blockers: TenderDecisionReviewFinding[];
+  decision_questions: TenderDecisionReviewFinding[];
+  supported: TenderDecisionReviewFinding[];
+  preparation: TenderDecisionReviewFinding[];
+  not_applicable: TenderDecisionReviewFinding[];
+  counts: { supported: number; preparation: number; not_applicable: number; decision_questions: number; blockers: number };
+};
 
 export type TenderDocumentAnalysis = {
   run_id: string;
@@ -384,6 +434,7 @@ export type TenderDocumentAnalysis = {
   integral_analysis?: TenderIntegralAnalysisV3 | null;
   manifest_scope?: TenderManifestScope | null;
   manifest_unresolved_entries?: TenderManifestUnresolvedEntry[] | null;
+  decision_review?: TenderDecisionReview | null;
   [key: string]: unknown;
 };
 export type TenderDocumentRecord = {

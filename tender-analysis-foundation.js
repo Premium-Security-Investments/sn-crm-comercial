@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { AGT002_CONTEXT_VERSION, buildAgt002ContextV2 } from './agt002-context-v2.js';
 import { AGT002_MANIZALES_CHECKED_IN_MANIFEST } from './agt002-manizales-manifest-source.js';
@@ -6,6 +7,7 @@ import {
   deriveAgt002ManizalesUnresolvedManifestEntries,
 } from './agt002-manizales-manifest-wiring.js';
 import { validateAgt002ManifestScope } from './agt002-tender-adapter.js';
+import { deriveAgt002ManizalesExerciseDecisionReview } from './agt002-manizales-exercise-decision-review.js';
 
 const RULES_PRODUCER = 'siio_rules_v1';
 const RULES_METHOD = 'rules';
@@ -200,6 +202,7 @@ export async function getCurrentTenderAnalysis(database, opportunityId, currentD
     || buildTenderSnapshotInput(currentDocuments, {}).document_hash === latestSnapshot.document_hash;
   return {
     run_id: run.id,
+    opportunity_id: normalizedOpportunityId,
     snapshot_id: run.snapshot_id,
     producer: run.producer,
     method: run.method,
@@ -278,20 +281,80 @@ function integralAnalysisAlignedWithManizalesAnalyzableIds(integralAnalysis) {
     && analyzedIds.every((id, index) => id === expectedIds[index]);
 }
 
+// Manizales SA-24-2026 decision-review presentation (read-side only, opt-in for a single pinned
+// production artifact): the human-curated review of the 20 canonical units + the manifest's
+// unresolved_visible entries + 2 registry-supplement requirements, derived by the pure, generic,
+// fail-closed layer in agt002-manizales-exercise-decision-review.js. This is a PRESENTATION
+// integration only — it never touches the engine, the canonical run, or persistence — and it is
+// gated to the exact production opportunity + the exact pinned canonical run this review was
+// authored against, so it can never attach to any other opportunity, tender, or later re-run.
+//
+// Runtime data source, versioned outside tests/fixtures so production code never depends on a
+// test-only path; the checked-in tests/fixtures copy is verified byte-identical to this source by
+// tests/agt002-manizales-decision-review-presentation.test.mjs to prevent drift.
+const MANIZALES_EXERCISE_DECISION_REVIEW_SOURCE = JSON.parse(readFileSync(
+  new URL('./data/agt002/manizales-sa-24-2026.exercise-decision-review.v1.json', import.meta.url),
+  'utf8',
+));
+// Real, checked-in governed contractual registry — the only source of registry_citation
+// evidence_refs. Never fabricated: the derivation layer fail-closes if a fixture citation does
+// not match this index exactly.
+const MANIZALES_CONTRACTUAL_REGISTRY = JSON.parse(readFileSync(
+  new URL('./docs/governance/registro/manizales-sa-24-2026.registry.json', import.meta.url),
+  'utf8',
+));
+const MANIZALES_REGISTRY_CITATION_INDEX = new Map();
+for (const item of MANIZALES_CONTRACTUAL_REGISTRY.items) {
+  for (const subItem of item.sub_items || []) {
+    MANIZALES_REGISTRY_CITATION_INDEX.set(subItem.sub_item_id, { item_ref: item.ref, char_start: subItem.cite.char_start });
+  }
+}
+const MANIZALES_PILOT_MANIFEST_UNRESOLVED_REQUIREMENT_IDS = new Set(
+  MANIZALES_PILOT_UNRESOLVED_MANIFEST_ENTRIES.map(entry => entry.requirement_id),
+);
+// The single production artifact this presentation integration targets: opportunity 54190e51 and
+// its canonical run 7553a51f. Any other opportunity/run never receives decision_review.
+const MANIZALES_DECISION_REVIEW_OPPORTUNITY_ID = '54190e51-15fb-46af-b0aa-8f13461a3110';
+const MANIZALES_DECISION_REVIEW_RUN_ID = '7553a51f-e4ca-4ad4-bde8-02528063d178';
+
+// Fail-closed: derives decision_review only when the artifact's own opportunity/run identity, the
+// Manizales pilot manifest_scope, and the real 20-canonical-unit alignment all match. A validation
+// failure inside the derivation (e.g. a future canonical run that no longer matches the reviewed
+// fixture) never surfaces a partial/broken review — it silently omits the key, exactly like the
+// manifest_unresolved_entries gate above.
+function deriveManizalesDecisionReviewIfEligible(currentAnalysis, result) {
+  if (currentAnalysis?.opportunity_id !== MANIZALES_DECISION_REVIEW_OPPORTUNITY_ID) return null;
+  if (currentAnalysis?.run_id !== MANIZALES_DECISION_REVIEW_RUN_ID) return null;
+  if (!matchesManizalesPilotManifestScope(result.manifest_scope)) return null;
+  if (!integralAnalysisAlignedWithManizalesAnalyzableIds(result.integral_analysis)) return null;
+  try {
+    const canonicalUnitIds = new Set(result.integral_analysis.analysis_units.map(unit => unit.requirement_id));
+    return deriveAgt002ManizalesExerciseDecisionReview(result.integral_analysis, MANIZALES_EXERCISE_DECISION_REVIEW_SOURCE, {
+      canonicalUnitIds,
+      manifestUnresolvedRequirementIds: MANIZALES_PILOT_MANIFEST_UNRESOLVED_REQUIREMENT_IDS,
+      registryIndex: MANIZALES_REGISTRY_CITATION_INDEX,
+    });
+  } catch (error) {
+    console.warn('agt002_manizales_decision_review_validation_failed', { event: 'agt002_manizales_decision_review_validation_failed', message: error instanceof Error ? error.message : String(error) });
+    return null;
+  }
+}
+
 /** Produces the document-API analysis payload without allowing result JSON to forge typed-run authority. */
 export function presentCurrentTenderAnalysis(currentAnalysis) {
   if (!currentAnalysis) return null;
   const rawResult = currentAnalysis.result && typeof currentAnalysis.result === 'object' && !Array.isArray(currentAnalysis.result)
     ? currentAnalysis.result
     : {};
-  // Never let a model/result-JSON-forged manifest_unresolved_entries pass through the spread
-  // below; the only value ever presented under this key is the server-derived one, and only when
-  // the pilot-scope + alignment gate passes.
-  const { manifest_unresolved_entries: _forgedManifestUnresolvedEntries, ...result } = rawResult;
+  // Never let a model/result-JSON-forged manifest_unresolved_entries or decision_review pass
+  // through the spread below; the only values ever presented under these keys are server-derived,
+  // and only when their respective fail-closed gates pass.
+  const { manifest_unresolved_entries: _forgedManifestUnresolvedEntries, decision_review: _forgedDecisionReview, ...result } = rawResult;
   const manifestUnresolvedEntries = matchesManizalesPilotManifestScope(result.manifest_scope)
     && integralAnalysisAlignedWithManizalesAnalyzableIds(result.integral_analysis)
     ? MANIZALES_PILOT_UNRESOLVED_MANIFEST_ENTRIES
     : null;
+  const decisionReview = deriveManizalesDecisionReviewIfEligible(currentAnalysis, result);
   return {
     ...result,
     run_id: currentAnalysis.run_id,
@@ -305,5 +368,6 @@ export function presentCurrentTenderAnalysis(currentAnalysis) {
     created_at: currentAnalysis.created_at || null,
     completed_at: currentAnalysis.completed_at || null,
     ...(manifestUnresolvedEntries ? { manifest_unresolved_entries: manifestUnresolvedEntries } : {}),
+    ...(decisionReview ? { decision_review: decisionReview } : {}),
   };
 }
