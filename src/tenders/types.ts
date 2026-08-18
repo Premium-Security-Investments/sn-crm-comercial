@@ -339,6 +339,20 @@ export type TenderManifestScope = {
   section_ledger_accounted: number;
   proposal_ledger_accounted: number;
 };
+// AGT-002 manifest unresolved entries (optional, read-only): the identities of the manifest's
+// status=unresolved_visible entries (material omissions the engine never fed to the model) —
+// the 5 of the 25 atomized entries the coverage scope's dispositions tally already counts but
+// never named. A SIBLING of TenderManifestScope and integral_analysis, never nested inside
+// either. Closed, minimal shape: no citation text/quotes, never a conclusion or compliance
+// claim. UI code must always treat this as optional and never require it.
+export type TenderManifestUnresolvedEntry = {
+  requirement_id: string;
+  label: string;
+  category: TenderIntegralCategory | null;
+  origin: string;
+  status: 'unresolved_visible';
+  human_review_required: true;
+};
 
 export type TenderDocumentAnalysis = {
   run_id: string;
@@ -369,6 +383,7 @@ export type TenderDocumentAnalysis = {
   legal_evidence?: TenderLegalEvidence | null;
   integral_analysis?: TenderIntegralAnalysisV3 | null;
   manifest_scope?: TenderManifestScope | null;
+  manifest_unresolved_entries?: TenderManifestUnresolvedEntry[] | null;
   [key: string]: unknown;
 };
 export type TenderDocumentRecord = {

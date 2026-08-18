@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
 import { AGT002_CONTEXT_VERSION, buildAgt002ContextV2 } from './agt002-context-v2.js';
+import { AGT002_MANIZALES_CHECKED_IN_MANIFEST } from './agt002-manizales-manifest-source.js';
+import {
+  deriveAgt002ManizalesManifestScope,
+  deriveAgt002ManizalesUnresolvedManifestEntries,
+} from './agt002-manizales-manifest-wiring.js';
+import { validateAgt002ManifestScope } from './agt002-tender-adapter.js';
 
 const RULES_PRODUCER = 'siio_rules_v1';
 const RULES_METHOD = 'rules';
@@ -237,12 +243,55 @@ export async function registerAgt002ContextVersion(database, context) {
   return { ...record, id: requireId(record.id, 'La versión de contexto') };
 }
 
+// AGT-002 V3 visibility defect fix: the Manizales SA-24-2026 pilot's manifest_scope carries 25
+// atomized entries, 20 analyzable and 5 unresolved_visible, but nothing surfaced the identities
+// of the 5 to a human. `manifest_unresolved_entries` closes that gap on the READ side only —
+// it never touches the engine's analyzable selection, integral_analysis.analysis_units, or the
+// persisted run. Derived once, at module load, from the same checked-in validated manifest the
+// engine itself uses, so the presented identities can never drift from the governed source.
+const MANIZALES_PILOT_MANIFEST_SCOPE = deriveAgt002ManizalesManifestScope(AGT002_MANIZALES_CHECKED_IN_MANIFEST);
+const MANIZALES_PILOT_UNRESOLVED_MANIFEST_ENTRIES = deriveAgt002ManizalesUnresolvedManifestEntries(AGT002_MANIZALES_CHECKED_IN_MANIFEST);
+
+// Fail-closed match against the exact pilot scope: an absent, malformed, or foreign scope never
+// enriches — never a generic fallback. Compared field-by-field (via the stable/sorted-key
+// serialization already used for hashing above) rather than by raw key order, since a scope that
+// round-tripped through JSON/DB storage is not guaranteed to preserve insertion order.
+function matchesManizalesPilotManifestScope(candidateScope) {
+  if (!candidateScope || typeof candidateScope !== 'object') return false;
+  let normalized;
+  try {
+    normalized = validateAgt002ManifestScope(candidateScope);
+  } catch {
+    return false;
+  }
+  return JSON.stringify(stable(normalized)) === JSON.stringify(stable(MANIZALES_PILOT_MANIFEST_SCOPE));
+}
+
+// The integral_analysis must itself be the governed 20-analyzable run this manifest_scope
+// describes — never a mismatched or partial run (e.g. a stalled job that only persisted a few
+// units) wearing the pilot's manifest_scope.
+function integralAnalysisAlignedWithManizalesAnalyzableIds(integralAnalysis) {
+  const analyzedIds = integralAnalysis?.coverage?.analyzed_requirement_ids;
+  const expectedIds = MANIZALES_PILOT_MANIFEST_SCOPE.analyzable_requirement_ids;
+  return Array.isArray(analyzedIds)
+    && analyzedIds.length === expectedIds.length
+    && analyzedIds.every((id, index) => id === expectedIds[index]);
+}
+
 /** Produces the document-API analysis payload without allowing result JSON to forge typed-run authority. */
 export function presentCurrentTenderAnalysis(currentAnalysis) {
   if (!currentAnalysis) return null;
-  const result = currentAnalysis.result && typeof currentAnalysis.result === 'object' && !Array.isArray(currentAnalysis.result)
+  const rawResult = currentAnalysis.result && typeof currentAnalysis.result === 'object' && !Array.isArray(currentAnalysis.result)
     ? currentAnalysis.result
     : {};
+  // Never let a model/result-JSON-forged manifest_unresolved_entries pass through the spread
+  // below; the only value ever presented under this key is the server-derived one, and only when
+  // the pilot-scope + alignment gate passes.
+  const { manifest_unresolved_entries: _forgedManifestUnresolvedEntries, ...result } = rawResult;
+  const manifestUnresolvedEntries = matchesManizalesPilotManifestScope(result.manifest_scope)
+    && integralAnalysisAlignedWithManizalesAnalyzableIds(result.integral_analysis)
+    ? MANIZALES_PILOT_UNRESOLVED_MANIFEST_ENTRIES
+    : null;
   return {
     ...result,
     run_id: currentAnalysis.run_id,
@@ -255,5 +304,6 @@ export function presentCurrentTenderAnalysis(currentAnalysis) {
     critical_open_count: currentAnalysis.critical_open_count,
     created_at: currentAnalysis.created_at || null,
     completed_at: currentAnalysis.completed_at || null,
+    ...(manifestUnresolvedEntries ? { manifest_unresolved_entries: manifestUnresolvedEntries } : {}),
   };
 }

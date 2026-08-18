@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import './tender-integral-analysis-v3.css';
-import type { TenderDocumentAnalysis, TenderIntegralAnalysisUnit, TenderIntegralCategory } from '../types';
+import type { TenderDocumentAnalysis, TenderIntegralAnalysisUnit, TenderIntegralCategory, TenderManifestUnresolvedEntry } from '../types';
 
 type TenderIntegralAnalysisV3ViewProps = { analysis: TenderDocumentAnalysis | null };
 
@@ -14,6 +14,7 @@ const PHASES: Array<{ key: TenderIntegralCategory; label: string; short: string 
   { key: 'financial_execution', label: 'Financiero / ejecución', short: '04' },
   { key: 'strategic', label: 'Estratégico', short: '05' },
 ];
+const CATEGORY_LABEL_BY_KEY: Record<string, string> = Object.fromEntries(PHASES.map(item => [item.key, item.label]));
 
 const CONCLUSION_LABEL: Record<string, string> = {
   supported_with_evidence: 'Sustentado con evidencia',
@@ -71,6 +72,10 @@ function coverageLabel(unit: TenderIntegralAnalysisUnit): string {
   return `${CONCLUSION_LABEL[unit.conclusion.status] ?? unit.conclusion.status}`;
 }
 
+function unresolvedCategoryLabel(entry: TenderManifestUnresolvedEntry): string {
+  return entry.category ? (CATEGORY_LABEL_BY_KEY[entry.category] ?? entry.category) : 'Sin categoría asignada';
+}
+
 export function TenderIntegralAnalysisV3View({ analysis }: TenderIntegralAnalysisV3ViewProps) {
   const integral = analysis?.integral_analysis;
   const units = integral?.analysis_units;
@@ -98,6 +103,10 @@ export function TenderIntegralAnalysisV3View({ analysis }: TenderIntegralAnalysi
   // distinct 20/25, 15 (68), and closed 15/15 + 20/20 figures — never presenting analyzed/expected
   // as total manifest coverage. Always optional: absent for non-manifest V3 runs.
   const scope = analysis?.manifest_scope ?? null;
+  // Phase: the manifest's own status=unresolved_visible entries (material omissions the engine
+  // never fed to the model) — sibling to manifest_scope, never merged into the 20 analyzed
+  // units nor into the separate human question/answer flow (a different component entirely).
+  const unresolvedEntries = analysis?.manifest_unresolved_entries ?? null;
 
   return <section className="agt002-v3-preview" aria-labelledby="agt002-v3-title">
     <header className="agt002-v3-overview">
@@ -138,6 +147,21 @@ export function TenderIntegralAnalysisV3View({ analysis }: TenderIntegralAnalysi
         </div>;
       })}
     </nav>
+
+    {unresolvedEntries && unresolvedEntries.length > 0 && <section className="agt002-v3-unresolved" aria-labelledby="agt002-v3-unresolved-title">
+      <header>
+        <div><span className="agt002-v3-section-label">Manifiesto gobernado</span><h3 id="agt002-v3-unresolved-title">Pendientes sin evidencia suficiente</h3></div>
+        <strong>{unresolvedEntries.length} pendiente(s)</strong>
+      </header>
+      <ul>
+        {unresolvedEntries.map(entry => <li key={entry.requirement_id}>
+          <code>{entry.requirement_id}</code>
+          <strong>{entry.label}</strong>
+          <span>{unresolvedCategoryLabel(entry)}</span>
+          <p>Sin evidencia suficiente para análisis automático · requiere revisión humana.</p>
+        </li>)}
+      </ul>
+    </section>}
 
     <div className="agt002-v3-workbench">
       <aside className="agt002-v3-unit-rail" aria-label="Unidades del análisis">
