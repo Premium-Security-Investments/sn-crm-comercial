@@ -150,6 +150,63 @@ export function deriveAgt002ManizalesManifestScope(manizalesManifestSource) {
   return deriveScopeFromValidatedManifest(manifest);
 }
 
+// Governed, human-readable labels for the manifest's status=unresolved_visible entries — the
+// material omissions the engine never fed to the model (analyzable:false). Sourced verbatim from
+// the same governed labels the extraction/pre-GO layers already use for these requirement ids
+// (tender-requirement-extraction.js) plus the registry's own §1.8 section title for the lifecycle
+// gate. Never invented, never a conclusion or compliance claim — a neutral identity label only.
+const UNRESOLVED_MANIFEST_ENTRY_LABEL_BY_REQUIREMENT_ID = new Map([
+  ['financial-working-capital', 'Capital de trabajo'],
+  ['legal-rce-policy', 'Póliza de responsabilidad civil extracontractual (RCE)'],
+  ['legal-collective-life-policy', 'Póliza de seguro de vida colectivo'],
+  ['technical-video-surveillance-scope', 'Alcance de videovigilancia/CCTV'],
+  ['lifecycle:cierre-prorroga', 'Cronograma: cierre y prórroga del proceso (§1.8)'],
+]);
+
+/**
+ * Validates the checked-in Manizales integral manifest and derives the closed, minimal
+ * presentation shape of its status=unresolved_visible entries (material omissions the engine
+ * never fed to the model), in deterministic manifest order: requirement_id, a governed human
+ * label, nullable category, origin, status and human_review_required. Never copies raw citation
+ * text/quotes. Fails closed on a malformed source, a non-pilot identity, or an entry without a
+ * pinned governed label — never a generic fallback or a fabricated label.
+ *
+ * @param {object} manizalesManifestSource The parsed checked-in integral manifest artifact.
+ * @returns {ReadonlyArray<{
+ *   requirement_id: string, label: string, category: string | null, origin: string,
+ *   status: 'unresolved_visible', human_review_required: true,
+ * }>}
+ */
+export function deriveAgt002ManizalesUnresolvedManifestEntries(manizalesManifestSource) {
+  const manifest = validateAgt002ManizalesIntegralManifest(manizalesManifestSource);
+  if (manifest.opportunity_id !== AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID
+    || manifest.proceso !== AGT002_INTEGRAL_MANIFEST_PROCESO) {
+    throw new Error('AGT-002 Manizales pendientes: la identidad de oportunidad/proceso no corresponde al piloto exacto.');
+  }
+
+  const entries = manifest.entries
+    .filter(entry => entry.status === 'unresolved_visible')
+    .map(entry => {
+      const label = UNRESOLVED_MANIFEST_ENTRY_LABEL_BY_REQUIREMENT_ID.get(entry.requirement_id);
+      if (!nonEmptyString(label)) {
+        throw new Error(`AGT-002 Manizales pendientes: el requisito ${entry.requirement_id} no tiene una etiqueta humana gobernada.`);
+      }
+      if (entry.human_review_required !== true) {
+        throw new Error(`AGT-002 Manizales pendientes: el requisito ${entry.requirement_id} no exige revisión humana (fail-closed).`);
+      }
+      return Object.freeze({
+        requirement_id: entry.requirement_id,
+        label,
+        category: entry.category ?? null,
+        origin: entry.origin,
+        status: entry.status,
+        human_review_required: true,
+      });
+    });
+
+  return Object.freeze(entries);
+}
+
 /**
  * Validates the checked-in Manizales integral manifest and derives the governed V3 wiring
  * from its analyzable entries, in deterministic manifest order. Fails closed on a malformed
