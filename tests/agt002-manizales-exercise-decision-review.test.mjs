@@ -206,7 +206,7 @@ const realOptions = { canonicalUnitIds, manifestUnresolvedRequirementIds, regist
   assert.equal(review.human_approval_required, true);
   assert.equal(review.routing_action, 'flag_for_responsible_person');
   assert.equal(review.external_communications_allowed, false);
-  assert.equal(review.evidence_requests_allowed, false);
+  assert.equal(review.evidence_requests_allowed, true);
   assert.equal(review.blockers.length, 0);
   assert.equal(review.decision_questions.length, 2);
   assert.deepEqual(

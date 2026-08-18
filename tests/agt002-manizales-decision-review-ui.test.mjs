@@ -77,15 +77,21 @@ test('the decision-review panel keeps stable ids and links answers to analysis.r
 
 test('the decision-review panel heading and count reflect exactly the 2 decision_questions', () => {
   const panel = panelSource();
-  assert.match(panel, /Decisiones de la encargada/, 'must have the required heading');
+  assert.match(panel, /Decisiones y aclaraciones de la encargada/, 'must have the precise in-SIIO decisions and clarifications heading');
   assert.match(panel, /\{decisionQuestions\.length\} pendiente\(s\)/, 'must show the live pending count (2 for the pinned run)');
 });
 
-test('the decision-review panel explicitly states AGT-002 sends no emails, requests no evidence, and does not decide GO/NO-GO', () => {
+test('the decision-review panel explicitly states AGT-002 sends no emails, can request clarifications/support within SIIO, and does not decide GO/NO-GO', () => {
   const panel = panelSource();
-  assert.match(panel, /no env[ií]a correos/i);
-  assert.match(panel, /no solicita soportes/i);
-  assert.match(panel, /no decide GO \/ NO GO/i);
+  assert.match(panel, /no env[ií]a correos/i, 'must state AGT-002 never sends emails');
+  assert.doesNotMatch(panel, /no solicita soportes/i, 'must never claim AGT-002 cannot request support — it can, within SIIO');
+  assert.match(panel, /solicitar aclaraciones? o soportes dentro de SIIO/i, 'must state AGT-002 can request clarifications/support within SIIO');
+  assert.match(panel, /encargada (responde|puede responder)[\s\S]{0,80}(adjunt|SIIO)/i, 'must state the responsible person answers/attaches evidence there');
+  assert.match(panel, /no decide GO \/ NO GO/i, 'must state AGT-002 never decides GO/NO-GO');
+});
+
+test('the question response form still allows the responsible person to attach optional support files within SIIO', () => {
+  assert.match(component, /Archivos de soporte \(opcional\)/, 'the attachment control must remain available for evidence attached within SIIO');
 });
 
 test('preparation notes (9) render inside a secondary details/summary, never as an answerable QuestionResponseCard', () => {

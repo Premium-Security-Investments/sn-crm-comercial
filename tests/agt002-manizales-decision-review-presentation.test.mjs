@@ -65,7 +65,7 @@ test('presentCurrentTenderAnalysis attaches decision_review for the exact pinned
   assert.equal(review.human_approval_required, true);
   assert.equal(review.routing_action, 'flag_for_responsible_person');
   assert.equal(review.external_communications_allowed, false);
-  assert.equal(review.evidence_requests_allowed, false);
+  assert.equal(review.evidence_requests_allowed, true);
   assert.equal(review.counts.decision_questions, 2);
   assert.equal(review.counts.preparation, 9);
   assert.equal(review.counts.supported, 3);

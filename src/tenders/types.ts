@@ -392,7 +392,7 @@ export type TenderDecisionReview = {
   decision_ready: boolean;
   routing_action: 'flag_for_responsible_person';
   external_communications_allowed: false;
-  evidence_requests_allowed: false;
+  evidence_requests_allowed: true;
   review_findings: TenderDecisionReviewFindingSource[];
   exercise_mode: { active: true; bypassed_requirement_ids: string[] };
   recommendation: string;
