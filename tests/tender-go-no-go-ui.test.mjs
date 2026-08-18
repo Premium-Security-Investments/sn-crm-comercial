@@ -18,7 +18,7 @@ const main = read('src/main.tsx');
 assert.match(panel, /opportunityName/);
 assert.doesNotMatch(panel, /<dt>Oportunidad<\/dt>/, 'El modal no debe repetir datos ya visibles de la oportunidad.');
 
-for (const text of ['Lectura ejecutiva de AGT-002', 'Decisión humana', 'Registrar GO', 'Registrar NO GO', 'Comentario opcional']) {
+for (const text of ['Brief de decisión', 'Decisión humana', 'Registrar GO', 'Registrar NO GO', 'Comentario opcional']) {
   assert.match(panel, new RegExp(text), `El panel debe mostrar ${text}.`);
 }
 assert.match(panel, /role="dialog"|<dialog/, 'La decisión debe pedir confirmación accesible.');
@@ -103,12 +103,12 @@ for (const analysis of [
 ]) assert.deepEqual(tenderDecisionGate(analysis), { canGo: true, canNoGo: true }, 'analysis state never blocks an authorized human decision');
 
 const { tenderRecommendationLabel } = await import(gateUrl);
-assert.equal(tenderRecommendationLabel('advance'), 'GO recomendado');
-assert.equal(tenderRecommendationLabel('avanzar'), 'GO recomendado');
+assert.equal(tenderRecommendationLabel('advance'), 'Avanzar el flujo de evidencia');
+assert.equal(tenderRecommendationLabel('avanzar'), 'Avanzar el flujo de evidencia');
 assert.equal(tenderRecommendationLabel('advance_conditionally'), 'Avanzar de forma condicionada');
 assert.equal(tenderRecommendationLabel('avanzar_condicionado'), 'Avanzar de forma condicionada');
-assert.equal(tenderRecommendationLabel('do_not_advance'), 'NO GO recomendado');
-assert.equal(tenderRecommendationLabel('no_avanzar'), 'NO GO recomendado');
+assert.equal(tenderRecommendationLabel('do_not_advance'), 'No avanzar el flujo de evidencia');
+assert.equal(tenderRecommendationLabel('no_avanzar'), 'No avanzar el flujo de evidencia');
 assert.equal(tenderRecommendationLabel('pause'), 'Información insuficiente');
 assert.equal(tenderRecommendationLabel('no_avanzar_temporalmente'), 'Información insuficiente');
 

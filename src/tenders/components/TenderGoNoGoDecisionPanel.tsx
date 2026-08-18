@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { VIGIA_VISIBLE_NAMES } from '../../vigia/agentIdentity';
 import { loadTenderGoNoGoDecision, recordTenderGoNoGoDecision } from '../api';
 import { canApproveTenderGoNoGo } from '../permissions';
-import { tenderDecisionGate, tenderExecutiveOpenIssueCount, tenderExecutiveProjectionAvailable, tenderExecutiveRecommendation, tenderRecommendationLabel } from '../tenderDecisionGate';
+import { tenderDecisionGate, tenderExecutiveOpenIssueCount, tenderExecutiveProjectionAvailable, tenderExecutiveRecommendation, tenderRecommendationKind, tenderRecommendationLabel } from '../tenderDecisionGate';
 import type { TenderPanelState } from '../detailNavigationState';
 import type { TenderCurrentProfile, TenderDocumentAnalysis, TenderGoNoGoDecision, TenderGoNoGoPayload, TenderRequest } from '../types';
 
@@ -40,7 +40,9 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
   activeOpportunityRef.current = opportunityId;
   const allowed = canApproveTenderGoNoGo(currentProfile);
   const decisionGate = tenderDecisionGate(analysis);
-  const recommendation = tenderRecommendationLabel(tenderExecutiveRecommendation(analysis));
+  const recommendationValue = tenderExecutiveRecommendation(analysis);
+  const recommendation = tenderRecommendationLabel(recommendationValue);
+  const recommendationKind = tenderRecommendationKind(recommendationValue);
   const executiveOpenIssueCount = tenderExecutiveOpenIssueCount(analysis);
   const executiveProjectionAvailable = tenderExecutiveProjectionAvailable(analysis);
   const analysisWarnings = useMemo(() => {
@@ -50,17 +52,17 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
       if (analysis.status === 'failed') warnings.push('El análisis falló. Revise el expediente antes de decidir.');
       if (analysis.current === false) warnings.push('El análisis está obsoleto frente al expediente vigente.');
       if (analysis.decision_review) {
-        if (analysis.decision_review.counts.blockers > 0) warnings.push(`Hay ${analysis.decision_review.counts.blockers} bloqueador(es) material(es) confirmado(s).`);
-        if (analysis.decision_review.counts.decision_questions > 0) warnings.push(`Hay ${analysis.decision_review.counts.decision_questions} alerta(s) material(es) por validar con la encargada.`);
+        if (analysis.decision_review.blockers.length > 0) warnings.push('Hay impedimentos materiales confirmados. Revise el brief de decisión antes de registrar.');
+        if (analysis.decision_review.decision_questions.length > 0) warnings.push('Hay condiciones pendientes de validar con la encargada. Revise el brief de decisión.');
       } else if (!executiveProjectionAvailable) warnings.push('La clasificación ejecutiva de materialidad aún no está disponible; revise la trazabilidad técnica antes de decidir.');
       else if (executiveOpenIssueCount > 0) warnings.push(`Hay ${executiveOpenIssueCount} preguntas críticas abiertas.`);
-      if (recommendation === 'Información insuficiente') warnings.push('La recomendación indica Información insuficiente.');
-      const recommendationContradictsDecision = (selectedDecision === 'go' && recommendation === 'NO GO recomendado')
-        || (selectedDecision === 'no_go' && recommendation === 'GO recomendado');
+      if (recommendationKind === 'pause') warnings.push('La postura indica Información insuficiente.');
+      const recommendationContradictsDecision = (selectedDecision === 'go' && recommendationKind === 'do_not_advance')
+        || (selectedDecision === 'no_go' && recommendationKind === 'advance');
       if (recommendationContradictsDecision) warnings.push('Advertencia: recomendación contraria a la decisión humana elegida.');
     }
     return warnings;
-  }, [analysis, executiveOpenIssueCount, executiveProjectionAvailable, recommendation, selectedDecision]);
+  }, [analysis, executiveOpenIssueCount, executiveProjectionAvailable, recommendationKind, selectedDecision]);
 
   const load = useCallback(async (preserveStatus = false, preservePayload = false): Promise<boolean> => {
     const requestVersion = ++requestVersionRef.current;
@@ -225,7 +227,7 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
   return <section className="tender-go-no-go-panel" aria-labelledby="tender-go-no-go-heading">
     <header className="tender-go-no-go-head"><div><span className="eyebrow">Control formal de licitación</span><h3 id="tender-go-no-go-heading">Decisión GO / NO GO</h3><p>{VIGIA_VISIBLE_NAMES.tenders} recomienda; la decisión y el avance operativo pertenecen a la persona autorizada.</p></div></header>
     <div className="tender-go-no-go-grid tender-go-no-go-summary">
-      <article><small>Lectura ejecutiva de AGT-002</small><strong>{recommendation}</strong><span>Referencia de apoyo; no autoriza la oferta.</span></article>
+      <article className="tender-go-no-go-brief-pointer"><small>Brief de decisión</small><strong>La postura y las condiciones viven arriba</strong><span>Esta sección sólo registra la decisión humana. {recommendation} es referencia de apoyo; no autoriza la oferta.</span><button type="button" className="secondary" onClick={() => document.getElementById('tender-analysis')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Ver brief de decisión</button></article>
       <article className="tender-go-no-go-current"><small>Decisión humana vigente</small><strong>{loading ? 'Cargando…' : decisionLabel(current?.decision)}</strong>{current ? <><p>{current.justification || 'Sin comentario humano.'}</p><span>{current.psi_sales_profiles?.full_name || current.decided_by} · {date(current.decided_at)}</span></> : <span>Sin decisión humana registrada</span>}</article>
       {current?.decision === 'go' && <article className="tender-go-no-go-next"><small>Estado operativo</small><strong>Preparación iniciada</strong><p><b>Siguiente paso:</b> completar el expediente y dejar la oferta lista para presentar.</p><button type="button" className="secondary" onClick={scrollToPreparation}>Abrir expediente de oferta</button></article>}
       {current?.decision === 'no_go' && <article className="tender-go-no-go-next"><small>Estado operativo</small><strong>Proceso cerrado por NO GO</strong><p><b>Siguiente paso:</b> conservar la decisión y su evidencia para consulta.</p></article>}
