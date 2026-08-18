@@ -291,7 +291,8 @@ function toFinding(entry) {
 // `advance_conditionally` (avance del FLUJO PROBATORIO, nunca GO empresarial); sólo sin
 // bloqueadores, preguntas ni preparación puede ser `advance`. La decisión empresarial siempre
 // permanece pendiente del humano en esta capa. Esta capa sólo resalta el caso a la persona
-// responsable: no envía comunicaciones externas ni solicita evidencia.
+// responsable: puede solicitar aclaraciones o soportes dentro de SIIO (la encargada responde y
+// adjunta evidencia ahí mismo), pero nunca envía comunicaciones externas ni decide GO/NO-GO.
 function deriveExerciseRecommendation(byStatus) {
   if (byStatus.blocker.some(finding => finding.curability === 'not_curable')) return 'do_not_advance';
   if (byStatus.blocker.length > 0) return 'pause';
@@ -340,7 +341,7 @@ export function deriveAgt002ManizalesExerciseDecisionReview(integralAnalysis, fi
     decision_ready: decisionReady,
     routing_action: 'flag_for_responsible_person',
     external_communications_allowed: false,
-    evidence_requests_allowed: false,
+    evidence_requests_allowed: true,
     review_findings: Object.freeze(fixture.review_findings.map(finding => Object.freeze({ ...finding }))),
     exercise_mode: Object.freeze({ active: true, bypassed_requirement_ids: Object.freeze(bypassedRequirementIds) }),
     recommendation,

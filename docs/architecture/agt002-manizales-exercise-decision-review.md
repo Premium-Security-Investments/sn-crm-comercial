@@ -75,9 +75,11 @@ permanece pendiente del humano. `decision_ready` pasa a `true` únicamente cuand
 humana desfavorable, por lo que la condición no depende de que `blockers` esté vacío.
 
 La única acción de enrutamiento es `routing_action: "flag_for_responsible_person"`. La salida fija
-`external_communications_allowed: false` y `evidence_requests_allowed: false`: AGT-002 deja la
-observación trazable y la encargada decide si continúa, descarta o gestiona soportes. La capa no
-envía correos, no solicita documentos y no realiza gestiones externas.
+`external_communications_allowed: false` y `evidence_requests_allowed: true`: AGT-002 puede
+solicitar aclaraciones o soportes, pero exclusivamente dentro de SIIO — la encargada responde y
+adjunta evidencia ahí mismo (el control de adjuntos existente del formulario de respuesta). La
+capa nunca envía correos ni realiza gestiones externas (comunicación fuera de SIIO), y nunca
+decide GO/NO-GO: esa decisión permanece siempre del humano.
 
 La revisión probatoria del 18-ago-2026 cerró la lectura documental pero no las dos preguntas:
 
