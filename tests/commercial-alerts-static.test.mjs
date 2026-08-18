@@ -16,7 +16,7 @@ for (const forbidden of ['function CommercialAlerts', '<CommercialAlerts']) {
 
 for (const marker of [
   'Prioridades Comerciales',
-  'Impulsado por Vig-IA',
+  'Impulsado por {VIGIA_VISIBLE_NAMES.commercial}',
   'Filtros de gestión',
   'Pipeline en riesgo',
   'Sin próxima acción',

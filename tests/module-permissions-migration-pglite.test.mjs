@@ -4,8 +4,10 @@ import { PGlite } from '@electric-sql/pglite';
 import { MODULE_PERMISSION_CODES, eligibleModulePermissions } from '../module-access.js';
 
 const migrationPath = new URL('../supabase/migrations/021_explicit_user_modules.sql', import.meta.url);
+const cleanupMigrationPath = new URL('../supabase/migrations/069_remove_ineligible_siio_module_grants.sql', import.meta.url);
 const rollbackPath = new URL('../supabase/rollbacks/021_explicit_user_modules_rollback.sql', import.meta.url);
 assert.equal(existsSync(migrationPath), true, 'La migración 021 debe existir.');
+assert.equal(existsSync(cleanupMigrationPath), true, 'La migración correctiva 069 debe existir.');
 assert.equal(existsSync(rollbackPath), true, 'El rollback 021 debe existir.');
 
 const db = new PGlite();
@@ -93,10 +95,14 @@ const permissionsFor = async profileId => (await db.query(
   `select permission_code from public.psi_profile_permissions where profile_id=$1 order by permission_code`, [profileId],
 )).rows.map(row => row.permission_code);
 
+assert.equal((await permissionsFor(ids.director)).includes('modulo_siio_gerencial'), true, '021 reproduce el grant SIIO legado de director antes de la corrección');
+await db.exec(readFileSync(cleanupMigrationPath, 'utf8'));
+await db.exec(readFileSync(cleanupMigrationPath, 'utf8'));
+
 assert.deepEqual(await permissionsFor(ids.admin), [...eligibleModulePermissions('admin')].sort(), 'admin histórico conserva todos los módulos elegibles incluido Usuarios');
 assert.deepEqual(await permissionsFor(ids.gerencia), [...eligibleModulePermissions('gerencia')].filter(code => code !== 'licitaciones').sort(), 'gerencia recibe solo visibilidad legacy dentro de su techo');
-assert.deepEqual(await permissionsFor(ids.director), [...eligibleModulePermissions('director')].filter(code => code !== 'licitaciones').sort(), 'director recibe solo visibilidad legacy dentro de su techo');
-assert.equal((await permissionsFor(ids.director)).includes('modulo_siio_gerencial'), true, 'director histórico recibe el módulo explícito; el scope se aplica por acción');
+assert.deepEqual(await permissionsFor(ids.director), [...eligibleModulePermissions('director')].filter(code => code !== 'licitaciones').sort(), '069 elimina el grant SIIO legado incompatible con el ceiling de director');
+assert.equal(eligibleModulePermissions('director').includes('modulo_siio_gerencial'), false, 'el ceiling runtime y la persistencia quedan alineados para director');
 assert.deepEqual(await permissionsFor(ids.comercial), [...eligibleModulePermissions('comercial')].filter(code => code !== 'modulo_vig_ia').sort(), 'comercial conserva Licitaciones y módulos legacy; Vig-IA requiere concesión explícita posterior');
 assert.deepEqual(await permissionsFor(ids.colaborador), [...eligibleModulePermissions('colaborador')].sort(), 'colaborador recibe únicamente módulos legacy compatibles');
 assert.deepEqual(await permissionsFor(ids.junta), ['modulo_siio_gerencial'], 'junta recibe únicamente SIIO ejecutivo; el email no concede Licitaciones ni otros módulos');

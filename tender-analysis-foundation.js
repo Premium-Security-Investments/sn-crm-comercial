@@ -300,7 +300,7 @@ const MANIZALES_EXERCISE_DECISION_REVIEW_SOURCE = JSON.parse(readFileSync(
 // evidence_refs. Never fabricated: the derivation layer fail-closes if a fixture citation does
 // not match this index exactly.
 const MANIZALES_CONTRACTUAL_REGISTRY = JSON.parse(readFileSync(
-  new URL('./docs/governance/registro/manizales-sa-24-2026.registry.json', import.meta.url),
+  new URL('./data/agt002/manizales-sa-24-2026.registry.json', import.meta.url),
   'utf8',
 ));
 const MANIZALES_REGISTRY_CITATION_INDEX = new Map();

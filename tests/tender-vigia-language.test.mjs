@@ -33,7 +33,8 @@ assert.match(goNoGoPanel, /\{VIGIA_VISIBLE_NAMES\.tenders\} recomienda/, 'El pan
 assert.doesNotMatch(main, /'Ejecutando AGT-002 Preview con revisión humana obligatoria…'/, 'El texto de estado no debe nombrar AGT-002 como actor visible.');
 assert.doesNotMatch(main, /'AGT-002 no estuvo disponible; se aplicó fallback seguro por reglas\.'/, 'El texto de estado no debe nombrar AGT-002 como actor visible.');
 assert.doesNotMatch(main, /'AGT-002 Preview completado\. La recomendación requiere revisión humana\.'/, 'El texto de estado no debe nombrar AGT-002 como actor visible.');
-assert.match(main, /Analizando con \$\{VIGIA_VISIBLE_NAMES\.tenders\}/, 'El texto de estado debe nombrar a Vig-IA Licitaciones.');
+assert.match(main, /Preparando análisis con \$\{VIGIA_VISIBLE_NAMES\.tenders\}/, 'El texto de estado inicial debe nombrar a Vig-IA Licitaciones.');
+assert.match(main, /Análisis en curso con \$\{VIGIA_VISIBLE_NAMES\.tenders\}/, 'El texto de ejecución debe nombrar a Vig-IA Licitaciones.');
 assert.match(main, /\$\{VIGIA_VISIBLE_NAMES\.tenders\} no estuvo disponible; se aplicó fallback seguro por reglas\./, 'El texto de fallback debe nombrar a Vig-IA Licitaciones.');
 assert.match(main, /\$\{VIGIA_VISIBLE_NAMES\.tenders\} completó el análisis\. La recomendación requiere revisión humana\./, 'El texto de éxito debe nombrar a Vig-IA Licitaciones.');
 

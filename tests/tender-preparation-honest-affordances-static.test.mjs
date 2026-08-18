@@ -20,7 +20,7 @@ assert(sharePointAnchor[0].includes('target="_blank"'), 'El enlace de SharePoint
 // --- B. Notes: no false Vig-IA interaction affordance ---
 
 assert(src.includes('Nota interna de preparación'), 'El área de notas debe renombrarse explícitamente a "Nota interna de preparación".');
-assert(/no es procesada ni respondida autom[aá]ticamente por Vig-IA/i.test(src), 'Debe aclararse visiblemente que la nota no es procesada ni respondida automáticamente por Vig-IA.');
+assert(src.includes('No es procesada ni respondida automáticamente por {VIGIA_VISIBLE_NAMES.tenders}.'), 'Debe aclararse visiblemente que la nota no es procesada ni respondida automáticamente por Vig-IA Licitaciones.');
 assert(src.includes('Guardar nota interna'), 'El botón de guardar debe decir "Guardar nota interna".');
 assert(!src.includes('Guardar nota para el asistente'), 'El texto anterior sugería que un asistente conversacional procesaría la nota; debe eliminarse.');
 assert(!src.includes('Informar qué necesitamos para seguir adelante'), 'El encabezado anterior sugería una interacción con un asistente; debe reemplazarse por el área de nota interna renombrada.');
