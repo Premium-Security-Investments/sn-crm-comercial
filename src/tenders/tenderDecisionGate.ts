@@ -27,6 +27,22 @@ export function tenderRecommendationLabel(value: unknown): string {
   return NORMALIZED_RECOMMENDATIONS.get(String(value ?? '').trim().toLowerCase()) || 'Información insuficiente';
 }
 
+export function tenderExecutiveRecommendation(analysis: TenderDocumentAnalysis | null | undefined): unknown {
+  return analysis?.decision_review?.recommendation ?? analysis?.recommendation;
+}
+
+export function tenderExecutiveProjectionAvailable(analysis: TenderDocumentAnalysis | null | undefined): boolean {
+  const hasIntegralV3 = Boolean(analysis?.integral_analysis?.analysis_units?.length);
+  return !hasIntegralV3 || Boolean(analysis?.decision_review);
+}
+
+export function tenderExecutiveOpenIssueCount(analysis: TenderDocumentAnalysis | null | undefined): number {
+  const review = analysis?.decision_review;
+  if (review) return Number(review.counts?.blockers || 0) + Number(review.counts?.decision_questions || 0);
+  if (!tenderExecutiveProjectionAvailable(analysis)) return 0;
+  return Number(analysis?.critical_open_count || 0);
+}
+
 export function tenderDecisionGate(_analysis: TenderDocumentAnalysis | null | undefined): { canGo: boolean; canNoGo: boolean } {
   return { canGo: true, canNoGo: true };
 }

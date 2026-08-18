@@ -22,15 +22,19 @@ function loadTenderRelevance(source, path) {
     extract(source, path, 'tenderPositiveTerms', /const tenderPositiveTerms = \{[\s\S]*?\n\};\n/),
     extract(source, path, 'normTenderText', /function normTenderText\(value\) \{ return normalizeTenderStatusText\(value\); \}\n/),
     extract(source, path, 'tenderContextualPhysicalSecurityReason', /const tenderContextualPhysicalSecurityReason = [^\n]*;\n/),
+    extract(source, path, 'tenderDirectServiceReason', /const tenderDirectServiceReason = [^\n]*;\n/),
     extract(source, path, 'tenderPhysicalSecurityContextTerms', /const tenderPhysicalSecurityContextTerms = \[[\s\S]*?\n\]\.map\(normTenderText\);\n/),
+    extract(source, path, 'tenderNonOfferableDirectIntentTerms', /const tenderNonOfferableDirectIntentTerms = \[[\s\S]*?\n\]\.map\(normTenderText\);\n/),
     extract(source, path, 'tenderCoreServiceTerms', /const tenderCoreServiceTerms = new Set\(\[[\s\S]*?\]\);\n/),
     extract(source, path, 'tenderDisqualifyingTerms', /const tenderDisqualifyingTerms = \[[\s\S]*?\n\];\n/),
     extract(source, path, 'tenderFocusTerms', /const tenderFocusTerms = \{[^\n]*\};\n/),
     extract(source, path, 'tenderMoney', /function tenderMoney\(value\) \{[^\n]*\}\n/),
     extract(source, path, 'tenderText', /function tenderText\(row\) \{[^\n]*\}\n/),
     extract(source, path, 'tenderObjectText', /function tenderObjectText\([\s\S]*?\n\}\n/),
+    extract(source, path, 'tenderObjectParts', /function tenderObjectParts\([\s\S]*?\n\}\n/),
     extract(source, path, 'tenderPositiveEntries', /const tenderPositiveEntries = Object\.entries\(tenderPositiveTerms\)\.map\([^\n]*\);\n/),
     extract(source, path, 'hasTenderPhysicalSecurityContext', /function hasTenderPhysicalSecurityContext\([\s\S]*?\n\}\n/),
+    extract(source, path, 'hasDirectOfferableTenderIntent', /function hasDirectOfferableTenderIntent\([\s\S]*?\n\}\n/),
     extract(source, path, 'hasTenderServiceSignal', /function hasTenderServiceSignal\(item\) \{[\s\S]*?\n\}\n/),
     extract(source, path, 'scoreTender', /function scoreTender\(row, nameFields\) \{[\s\S]*?\n\}\n/),
     extract(source, path, 'classifyTenderSection', /function classifyTenderSection\([\s\S]*?\n\}\n/),
@@ -41,7 +45,7 @@ function loadTenderRelevance(source, path) {
 
 for (const path of backendPaths) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-  const { scoreTender, hasTenderServiceSignal, tenderSources } = loadTenderRelevance(source, path);
+  const { scoreTender, hasTenderServiceSignal, classifyTenderSection, tenderSources } = loadTenderRelevance(source, path);
   const secop2NameFields = tenderSources['SECOP II'].nameFields;
 
   // Synthetic regression fixture representing the reported SECOP CO1.NTC.10520000 case:
@@ -109,6 +113,45 @@ for (const path of backendPaths) {
   };
   const cctvScored = scoreTender(realCctv, secop2NameFields);
   assert.equal(hasTenderServiceSignal(cctvScored), true, `${path}: a real CCTV/videovigilancia/control de acceso process must remain eligible`);
+
+  const falsePositiveFixtures = [
+    {
+      nombre_del_procedimiento: 'Adquisición e instalación de equipos de aire acondicionado',
+      descripci_n_del_procedimiento: 'Equipos para la Superintendencia de Vigilancia y Seguridad Privada',
+    },
+    {
+      nombre_del_procedimiento: 'Prestación de servicios profesionales jurídicos',
+      descripci_n_del_procedimiento: 'Acompañamiento jurídico para la Superintendencia de Vigilancia y Seguridad Privada',
+    },
+    {
+      nombre_del_procedimiento: 'Arrendamiento del espacio destinado a cafetería',
+      descripci_n_del_procedimiento: 'Atención al cuerpo de custodia y vigilancia de la entidad',
+    },
+    {
+      nombre_del_procedimiento: 'Apoyo a la gestión administrativa y financiera',
+      descripci_n_del_procedimiento: 'Consultoría para gestionar y liquidar el contrato de servicio de vigilancia de la universidad',
+    },
+    {
+      nombre_del_procedimiento: 'Asistencia técnica para la supervisión contractual',
+      descripci_n_del_procedimiento: 'Acompañamiento a la prestación del servicio de vigilancia y seguridad privada',
+    },
+  ];
+  for (const fixture of falsePositiveFixtures) {
+    const scored = scoreTender({ ...fixture, precio_base: '900000000' }, secop2NameFields);
+    assert.equal(hasTenderServiceSignal(scored), false, `${path}: contextual mention must not replace a direct offerable procurement object: ${fixture.nombre_del_procedimiento}`);
+  }
+
+  const electronicMaintenance = {
+    nombre_del_procedimiento: 'Mantenimiento preventivo y correctivo del sistema CCTV y control de acceso',
+    descripci_n_del_procedimiento: 'Soporte técnico, repuestos y puesta en funcionamiento del sistema de seguridad electrónica',
+    precio_base: '240000000',
+  };
+  const maintenanceScored = scoreTender(electronicMaintenance, secop2NameFields);
+  assert.equal(hasTenderServiceSignal(maintenanceScored), true, `${path}: electronic-security maintenance is directly offerable even without guards`);
+  assert.equal(maintenanceScored.risks.some(risk => risk.includes('no ofertable')), false, `${path}: electronic-security maintenance must not be blanket-disqualified`);
+
+  assert.equal(classifyTenderSection({ risks: [], score: 220, value: 2_000_000_000, days: null }), 'revisar', `${path}: a missing deadline requires review even when score/value are high`);
+  assert.equal(classifyTenderSection({ risks: [], score: 180, value: 2_000_000_000, days: 7 }), 'hacer', `${path}: an eligible high-fit process with an actionable deadline remains in Hacer`);
 
   // The read-path re-validation gate (persisted tenders) must derive eligibility from the
   // same core-term reasons, not from re-scanning the whole raw row.

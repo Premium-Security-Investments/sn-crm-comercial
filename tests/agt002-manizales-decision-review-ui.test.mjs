@@ -35,26 +35,29 @@ test('types.ts declares a precise TenderDecisionReview type and carries it optio
 });
 
 // ---------------------------------------------------------------------------------------------
-// The legacy 20-question section is now gated on the absence of decision_review.
+// An unclassified V3 run stays technical: no raw question is promoted to a material alert.
 // ---------------------------------------------------------------------------------------------
-test('the legacy 20-question "Dudas por resolver" section only renders when decision_review is absent', () => {
-  assert.match(component, /\{hasIntegralV3 && analysis && !analysis\.decision_review && <section className="tender-v3-questions"/, 'the legacy section must be gated on the absence of decision_review');
-  assert.match(component, /<h3 id="tender-v3-questions-title">Dudas por resolver<\/h3>/, 'legacy section title must be unchanged');
-  assert.match(component, /questions\.map\(question => <QuestionResponseCard key=\{question\.id\} question=\{question\} analysisRunId=\{analysis\.run_id\}/, 'legacy section must still map the full analysis.questions (20)');
+test('an unclassified V3 run renders a pending executive projection instead of 20 answerable questions', () => {
+  assert.match(component, /\{hasIntegralV3 && analysis && !analysis\.decision_review && <section className="tender-v3-questions tender-executive-pending"/);
+  const start = component.indexOf('tender-executive-pending');
+  const end = component.indexOf('{hasIntegralV3 && analysis && analysis.decision_review');
+  const pending = component.slice(start, end);
+  assert.match(pending, /Radar ejecutivo pendiente de clasificación/);
+  assert.doesNotMatch(pending, /QuestionResponseCard/, 'the raw technical questions must not become answerable material alerts');
 });
 
 // ---------------------------------------------------------------------------------------------
 // The new decision-review panel renders only decision_questions (2), never analysis.questions.
 // ---------------------------------------------------------------------------------------------
 test('a dedicated decision-review panel renders only when decision_review is present', () => {
-  assert.match(component, /\{hasIntegralV3 && analysis && analysis\.decision_review && <ManizalesDecisionReviewPanel/, 'the decision-review panel must be gated on the presence of decision_review');
+  assert.match(component, /\{hasIntegralV3 && analysis && analysis\.decision_review && <ExecutiveDecisionReviewPanel/, 'the decision-review panel must be gated on the presence of decision_review');
 });
 
 function panelSource() {
-  const start = component.indexOf('function ManizalesDecisionReviewPanel');
-  assert.ok(start >= 0, 'ManizalesDecisionReviewPanel must be defined');
+  const start = component.indexOf('function ExecutiveDecisionReviewPanel');
+  assert.ok(start >= 0, 'ExecutiveDecisionReviewPanel must be defined');
   const end = component.indexOf('\nexport function TenderAnalysisSection');
-  assert.ok(end > start, 'ManizalesDecisionReviewPanel must be defined before the exported section component');
+  assert.ok(end > start, 'ExecutiveDecisionReviewPanel must be defined before the exported section component');
   return component.slice(start, end);
 }
 
@@ -75,10 +78,10 @@ test('the decision-review panel keeps stable ids and links answers to analysis.r
   assert.match(panel, /responses=\{questionResponses\.filter\(item => item\.question_id === question\.id\)\}/, 'must link existing human answers by the stable question id');
 });
 
-test('the decision-review panel heading and count reflect exactly the 2 decision_questions', () => {
+test('the decision-review panel heading and count reflect the material questions still pending', () => {
   const panel = panelSource();
-  assert.match(panel, /Decisiones y aclaraciones de la encargada/, 'must have the precise in-SIIO decisions and clarifications heading');
-  assert.match(panel, /\{decisionQuestions\.length\} pendiente\(s\)/, 'must show the live pending count (2 for the pinned run)');
+  assert.match(panel, /Radar ejecutivo del caso/, 'must present one executive decision surface');
+  assert.match(panel, /\{pendingCount\} alerta\(s\) material\(es\) pendiente\(s\)/, 'must show the unresolved material-alert count');
 });
 
 test('the decision-review panel explicitly states AGT-002 sends no emails, can request clarifications/support within SIIO, and does not decide GO/NO-GO', () => {
@@ -100,10 +103,10 @@ test('preparation notes (9) render inside a secondary details/summary, never as 
   const end = panel.indexOf('</details>', start);
   assert.ok(start >= 0 && end > start, 'preparation must be inside its own collapsible details/summary');
   const preparationBlock = panel.slice(start, end);
-  assert.match(preparationBlock, /Notas de preparaci[oó]n \(\{decisionReview\.preparation\.length\}\)/);
+  assert.match(preparationBlock, /Acciones de preparaci[oó]n \(\{decisionReview\.preparation\.length\}\)/);
   assert.match(preparationBlock, /decisionReview\.preparation\.map/);
   assert.doesNotMatch(preparationBlock, /QuestionResponseCard/, 'preparation items must never be answerable via QuestionResponseCard');
-  assert.match(preparationBlock, /no son decisiones cr[ií]ticas/i, 'must explicitly avoid describing preparation notes as critical decisions');
+  assert.match(preparationBlock, /no son impedimentos materiales/i, 'must explicitly separate preparation actions from material impediments');
 });
 
 test('a visible summary of the 3 supported aspects renders outside any collapsed section', () => {

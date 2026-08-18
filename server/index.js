@@ -818,10 +818,19 @@ const tenderPositiveTerms = {
 // Terms specific enough, on their own, to prove a process is about a PSI-offerable service.
 // Bare "vigilancia" and "guardas" only rank a candidate; they require explicit physical-security context.
 const tenderContextualPhysicalSecurityReason = 'vigilancia física contextual';
+const tenderDirectServiceReason = 'objeto directo de seguridad ofertable';
 const tenderPhysicalSecurityContextTerms = [
   'vigilancia fisica', 'puesto de vigilancia', 'puestos de vigilancia', 'proteccion de instalaciones',
   'proteccion de bienes', 'proteccion de personas', 'bienes y personas', 'custodia', 'seguridad perimetral',
   'servicio canino', 'vigilancia canina', 'con armas', 'sin armas', 'sedes institucionales'
+].map(normTenderText);
+const tenderNonOfferableDirectIntentTerms = [
+  'servicios profesionales', 'servicio profesional', 'apoyo a la gestion', 'apoyo a la gestión',
+  'consultoria', 'consultoría', 'asesoria juridica', 'asesoría jurídica', 'acompanamiento juridico', 'acompañamiento jurídico',
+  'supervision', 'supervisión', 'interventoria', 'interventoría', 'asistencia tecnica', 'asistencia técnica',
+  'asesoria', 'asesoría', 'acompanamiento', 'acompañamiento',
+  'arrendamiento', 'cafeteria', 'cafetería', 'aire acondicionado', 'compra de inmuebles',
+  'adquisicion de inmuebles', 'adquisición de inmuebles', 'compraventa de inmuebles'
 ].map(normTenderText);
 const tenderCoreServiceTerms = new Set([
   'vigilancia y seguridad privada', 'vigilancia y seguridad', 'servicios de vigilancia', 'servicio de vigilancia',
@@ -834,9 +843,7 @@ const tenderDisqualifyingTerms = [
   'vehiculo blindado', 'vehículo blindado', 'vehiculos blindados', 'vehículos blindados',
   'transporte blindado', 'camioneta blindada', 'camionetas blindadas', 'carro blindado',
   'blindaje vehicular', 'blindaje de vehiculos', 'blindaje de vehículos', 'blindados',
-  // Regla de descarte SN/PSI: no somos empresa de mantenimiento/soporte técnico de equipos.
-  'soporte y mantenimiento', 'mantenimiento y soporte', 'mantenimiento preventivo', 'mantenimiento correctivo',
-  'soporte tecnico', 'soporte técnico', 'mesa de ayuda', 'repuestos', 'calibracion', 'calibración',
+  // Radiocomunicaciones/telecomunicaciones aisladas no son seguridad electrónica ofertable.
   'radiocomunicaciones', 'radiocomunicacion', 'radio comunicaciones', 'radio comunicación',
   'sistema de radiocomunicaciones', 'equipos de comunicacion', 'equipos de comunicación',
   'red de comunicaciones', 'telecomunicaciones'
@@ -1045,23 +1052,58 @@ function tenderObjectText(row, nameFields) {
   if (!Array.isArray(nameFields) || !nameFields.length) return tenderText(row);
   return normTenderText(nameFields.map(field => (typeof row?.[field] === 'string' ? row[field] : '')).join(' '));
 }
+function tenderObjectParts(row, nameFields) {
+  const fields = Array.isArray(nameFields) && nameFields.length ? nameFields : ['title', 'desc'];
+  return fields.map(field => normTenderText(typeof row?.[field] === 'string' ? row[field] : '')).filter(Boolean);
+}
 function stableTenderKey(tender) {
   const base = [tender.source, tender.process_id || tender.ref, tender.entity, tender.title].map(v => normTenderText(v)).join('|');
   return createHash('sha1').update(base).digest('hex').slice(0, 20);
 }
+function canonicalTenderProcessReference(tender) {
+  const reference = normTenderText(tender?.ref || tender?.process_id || tender?.id || '');
+  return reference.replace(/\s*\((?:presentacion de oferta|manifestacion de interes|presentacion de observaciones|evaluacion de ofertas|apertura de ofertas)\)\s*$/i, '').replace(/[.\s]+$/g, '').trim();
+}
+function canonicalTenderProcessKey(tender) {
+  return [tender?.source, tender?.entity, canonicalTenderProcessReference(tender)].map(normTenderText).join('|');
+}
+function tenderProcessStatusRank(tender) {
+  return tender?.internal_status === 'convertida_oportunidad' || tender?.converted_opportunity_id ? 4 : tender?.internal_status === 'en_revision' ? 3 : tender?.internal_status === 'nueva' ? 2 : tender?.internal_status === 'descartada' ? 1 : 0;
+}
+function deduplicateTenderProcesses(tenders) {
+  const byKey = new Map(); const order = [];
+  for (const tender of Array.isArray(tenders) ? tenders : []) {
+    const key = canonicalTenderProcessKey(tender);
+    if (!byKey.has(key)) { byKey.set(key, tender); order.push(key); continue; }
+    const current = byKey.get(key);
+    const currentRank = tenderProcessStatusRank(current); const nextRank = tenderProcessStatusRank(tender);
+    const currentDate = String(current?.last_seen_at || current?.detected_at || current?.published || '');
+    const nextDate = String(tender?.last_seen_at || tender?.detected_at || tender?.published || '');
+    if (nextRank > currentRank || (nextRank === currentRank && (nextDate > currentDate || (nextDate === currentDate && Number(tender?.score || 0) > Number(current?.score || 0))))) byKey.set(key, tender);
+  }
+  return order.map(key => byKey.get(key)).filter(Boolean);
+}
 const tenderPositiveEntries = Object.entries(tenderPositiveTerms).map(([term, pts]) => [term, pts, normTenderText(term), tenderCoreServiceTerms.has(term)]).sort((a, b) => b[2].length - a[2].length);
-// Eligibility (and its read-path re-validation over persisted `reasons`) is decided purely from
-// whether a core PSI-service term matched — never from a generic word, a value/foco-zone bonus, or a
-// re-scan of the whole raw row. Fails closed (ineligible) when reasons are missing.
+// Eligibility is based on a direct offerable procurement object, not merely a service phrase in institutional/context text.
 function hasTenderPhysicalSecurityContext(text) {
   return text.includes(normTenderText('vigilancia')) && tenderPhysicalSecurityContextTerms.some(term => text.includes(term));
 }
+function hasDirectOfferableTenderIntent(row, nameFields) {
+  const parts = tenderObjectParts(row, nameFields);
+  if (!parts.length) return false;
+  const primary = parts[0];
+  if (tenderNonOfferableDirectIntentTerms.some(term => primary.includes(term))) return false;
+  const hasService = text => Array.from(tenderCoreServiceTerms).some(term => term !== tenderContextualPhysicalSecurityReason && text.includes(normTenderText(term)))
+    || (text.includes(normTenderText('vigilancia')) && hasTenderPhysicalSecurityContext(text));
+  if (hasService(primary)) return true;
+  const directProcurementCue = /(contratar|prestacion|prestar|servicio|suministro|adquisicion|instalacion|mantenimiento|operacion|implementacion|puesta en funcionamiento)/;
+  return parts.slice(1).some(part => hasService(part) && directProcurementCue.test(part));
+}
 export function hasTenderServiceSignal(item) {
   const reasons = item?.reasons || [];
-  if (reasons.some(reason => tenderCoreServiceTerms.has(reason))) return true;
-  if (!reasons.includes('vigilancia')) return false;
-  const text = item?.raw ? tenderText(item.raw) : tenderText(item);
-  return hasTenderPhysicalSecurityContext(text);
+  if (reasons.includes(tenderDirectServiceReason)) return true;
+  if (item?.title || item?.desc) return hasDirectOfferableTenderIntent(item, ['title', 'desc']);
+  return false;
 }
 export function scoreTender(row, nameFields) {
   const objectText = tenderObjectText(row, nameFields);
@@ -1077,6 +1119,7 @@ export function scoreTender(row, nameFields) {
   if (reasons.includes('vigilancia') && hasTenderPhysicalSecurityContext(objectText)) {
     reasons.push(tenderContextualPhysicalSecurityReason);
   }
+  if (hasDirectOfferableTenderIntent(row, nameFields)) reasons.unshift(tenderDirectServiceReason);
   const matchedFocusTerms = new Set();
   for (const [term, pts] of Object.entries(tenderFocusTerms)) {
     const normalizedTerm = normTenderText(term);
@@ -1096,7 +1139,8 @@ export function scoreTender(row, nameFields) {
 function classifyTenderSection(tender) {
   if (tender.risks.some(r => r.includes('no ofertable'))) return 'prioridad_baja';
   if (tender.score < 70 || (tender.value > 0 && tender.value < 50000000)) return 'prioridad_baja';
-  if ((tender.days !== null && tender.days <= 10) || tender.score >= 180 || tender.value >= 1000000000) return 'hacer';
+  if (tender.days === null || tender.days === undefined) return 'revisar';
+  if (tender.days <= 10 || tender.score >= 180 || tender.value >= 1000000000) return 'hacer';
   return 'revisar';
 }
 function normalizeTender(row, source, scored) {
@@ -1414,14 +1458,14 @@ async function fetchPublicTenderRadar() {
     if (seen.has(key)) return false;
     seen.add(key); return true;
   });
-  const tenders = persistenceTenders.filter(t => (t.days === null || t.days >= 0) && isTenderTrackable(t)).sort((a,b) => {
+  const tenders = deduplicateTenderProcesses(persistenceTenders.filter(t => (t.days === null || t.days >= 0) && isTenderTrackable(t))).sort((a,b) => {
     const sectionOrder = { hacer: 0, revisar: 1, prioridad_baja: 2 };
     return sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score || (a.days ?? 999) - (b.days ?? 999);
   });
   return { tenders, persistenceTenders, diagnostics };
 }
 function radarPayload(tenders, generatedAt = new Date().toISOString(), source = 'live', diagnostics = []) {
-  const normalized = tenders.map(t => ({ ...t, id: t.stable_key || t.id || stableTenderKey(t), stable_key: t.stable_key || t.id || stableTenderKey(t) }));
+  const normalized = deduplicateTenderProcesses(tenders).map(t => ({ ...t, id: t.stable_key || t.id || stableTenderKey(t), stable_key: t.stable_key || t.id || stableTenderKey(t) }));
   return {
     generatedAt,
     source,
