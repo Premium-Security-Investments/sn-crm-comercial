@@ -18,8 +18,8 @@ const main = read('src/main.tsx');
 assert.match(panel, /opportunityName/);
 assert.doesNotMatch(panel, /<dt>Oportunidad<\/dt>/, 'El modal no debe repetir datos ya visibles de la oportunidad.');
 
-for (const text of ['Brief de decisión', 'Decisión humana', 'Registrar GO', 'Registrar NO GO', 'Comentario opcional']) {
-  assert.match(panel, new RegExp(text), `El panel debe mostrar ${text}.`);
+for (const text of ['brief de decisión', 'Decisión humana', 'Registrar GO', 'Registrar NO GO', 'Comentario opcional']) {
+  assert.match(panel, new RegExp(text, 'i'), `El panel debe mostrar ${text}.`);
 }
 assert.match(panel, /role="dialog"|<dialog/, 'La decisión debe pedir confirmación accesible.');
 assert.match(panel, /recordTenderGoNoGoDecision/, 'La confirmación debe usar la API formal.');

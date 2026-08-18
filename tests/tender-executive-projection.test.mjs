@@ -33,10 +33,11 @@ assert.equal(tenderExecutiveOpenIssueCount(unclassifiedV3), 0, 'Unclassified V3 
 
 const analysisSection = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8');
 const decisionBrief = readFileSync(new URL('../src/tenders/components/TenderDecisionBrief.tsx', import.meta.url), 'utf8');
-assert.match(analysisSection, /<TenderDecisionBrief/);
+const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+assert.match(main, /<TenderDecisionBrief analysis=\{tenderAnalysis\}/);
 assert.match(decisionBrief, /Brief de decisión/);
 assert.match(analysisSection, /alertas materiales/i);
-assert.match(analysisSection, /Radar ejecutivo pendiente de clasificación/);
+assert.match(analysisSection, /Clasificación ejecutiva no disponible/);
 assert.match(analysisSection, /hallazgos técnicos[\s\S]*no se presentan como alertas materiales/i);
 assert.doesNotMatch(analysisSection, /ManizalesDecisionReviewPanel/);
 assert.doesNotMatch(analysisSection, /Decisiones y aclaraciones de la encargada/);
@@ -46,7 +47,6 @@ assert.match(goPanel, /tenderExecutiveRecommendation\(analysis\)/);
 assert.match(goPanel, /tenderExecutiveOpenIssueCount\(analysis\)/);
 assert.doesNotMatch(goPanel, /analysis\.critical_open_count/);
 
-const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const executiveIndex = main.indexOf('<TenderAnalysisSection');
 const traceIndex = main.indexOf('<TenderIntegralAnalysisV3View');
 assert.ok(executiveIndex > -1 && traceIndex > executiveIndex, 'Executive radar must render before technical requirement trace.');
