@@ -22,7 +22,7 @@ import path from 'node:path';
 const ROOT = new URL('..', import.meta.url).pathname;
 const SELF = path.join(ROOT, 'agt002-governance-draft-proposal.js');
 
-const EXCLUDED_DIR_NAMES = new Set(['node_modules', '.git', 'dist', 'tests', 'scripts', 'docs']);
+const EXCLUDED_DIR_NAMES = new Set(['node_modules', '.git', '.vercel', 'dist', 'tests', 'scripts', 'docs']);
 const SCANNABLE_EXTENSIONS = new Set(['.js', '.mjs', '.ts', '.tsx']);
 
 function collectScannableFiles(dir, files = []) {
@@ -60,6 +60,10 @@ for (const entrypoint of RUNTIME_ENTRYPOINTS) {
 
 const scannableFiles = collectScannableFiles(ROOT);
 assert.ok(scannableFiles.length > 100, `El escaneo recursivo debe cubrir el repositorio completo (encontrados: ${scannableFiles.length}).`);
+
+const governedRegistry = readFileSync(path.join(ROOT, 'docs/governance/registro/manizales-sa-24-2026.registry.json'));
+const runtimeRegistry = readFileSync(path.join(ROOT, 'data/agt002/manizales-sa-24-2026.registry.json'));
+assert.deepEqual(runtimeRegistry, governedRegistry, 'La copia runtime del registro contractual debe ser byte-idéntica al artefacto gobernado.');
 
 for (const file of scannableFiles) {
   if (file === SELF) continue;
