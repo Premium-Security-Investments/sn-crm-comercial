@@ -31,7 +31,7 @@ const documentsIndex = coordinator.indexOf('<TenderDocumentSection');
 const analysisIndex = coordinator.indexOf('<TenderAnalysisSection');
 const reviewIndex = detail.indexOf('<TenderDocumentReviewPanel');
 const decisionIndex = detail.indexOf('id="tender-decision"');
-assert.ok(documentsIndex >= 0 && analysisIndex > documentsIndex && reviewIndex >= 0 && decisionIndex >= 0 && decisionIndex < reviewIndex, 'El orden debe ser Brief de decisión → Documentos → Análisis.');
+assert.ok(documentsIndex >= 0 && analysisIndex > documentsIndex && reviewIndex >= 0 && decisionIndex > reviewIndex, 'El orden debe ser Documentos → Análisis → GO/NO GO.');
 assert.match(main, /onAnalysisChanged\?\.\(data\.analysis \|\| null\)/);
 assert.match(coordinator, /analysisStatus/, 'El coordinador debe mantener feedback propio para la acción Vig-IA.');
 assert.match(coordinator, /<TenderAnalysisSection[\s\S]*?statusText=\{analysisStatus\.message\}/, 'El feedback de Vig-IA debe llegar al bloque de análisis, no quedar oculto en Documentos.');

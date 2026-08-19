@@ -115,9 +115,9 @@ test('preparation notes render as a collapsed effort summary, never as an answer
 test('supported findings render as capacity evidence, not as the commercial-potential headline', () => {
   const panel = panelSource();
   assert.match(panel, /Evidencia de capacidad revisada/);
-  assert.match(panel, /capacityPreview/);
-  const potentialBlock = panel.slice(panel.indexOf('Potencial comercial'), panel.indexOf('Impedimentos'));
-  assert.doesNotMatch(potentialBlock, /review\.supported|capacityPreview/, 'supported must not feed the commercial-potential axis');
+  assert.match(panel, /review\.supported\.map/);
+  const capacityStart = panel.indexOf('Evidencia de capacidad revisada');
+  assert.ok(capacityStart > panel.indexOf('<details'), 'capacity evidence must live behind a collapsed details, not as the primary commercial reason');
 });
 
 test('the 13 not_applicable findings, plus version/status traceability, render only inside the collapsed trace section', () => {

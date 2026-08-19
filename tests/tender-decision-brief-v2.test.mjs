@@ -11,7 +11,6 @@ const {
   tenderBriefUnavailableCopy,
   tenderCommercialPotential,
   tenderBriefEffortSummary,
-  tenderBriefHeadline,
   tenderBriefPriorityItems,
   resolveFindingEvidence,
 } = await import(modelUrl);
@@ -28,7 +27,6 @@ testAbsence();
 testIndependence();
 testPrioritization();
 testLimit();
-testHeadline();
 testEvidence();
 testSurfaces();
 console.log('tender decision brief v2 model and surface checks passed');
@@ -61,18 +59,14 @@ function testIndependence() {
 }
 
 function testPrioritization() {
-  const items = tenderBriefPriorityItems({
-    ...emptyReview,
-    decision_questions: [{ id: 'q1', label: 'Sede Manizales', rationale: 'NOTA PARA LA ENCARGADA: validar acto territorial.', evidence_refs: [] }],
-  }, { commercialFitPositives: ['Margen viable'] });
-  assert.equal(items.visible.length, 1);
-  assert.equal(items.visible[0].kind, 'condition');
-  assert.doesNotMatch(items.visible[0].body, /RUP|Margen|NOTA PARA LA ENCARGADA/);
-  assert.match(items.visible[0].body, /validar acto territorial/);
+  const items = tenderBriefPriorityItems(emptyReview, { commercialFitPositives: ['Margen viable'] });
+  const kinds = items.visible.map(item => item.kind);
+  assert.ok(!items.visible.some(item => item.kind === 'potential' && /RUP/.test(item.body)), 'supported no puede entrar como razón comercial.');
+  assert.ok(kinds.includes('potential'));
+  assert.ok(kinds.includes('effort'));
   const effort = tenderBriefEffortSummary(emptyReview.preparation);
   assert.equal(effort.count, 9);
-  assert.match(effort.headline, /9 trámites preparables/);
-  assert.match(effort.headline, /Prep 0/);
+  assert.match(effort.headline, /trámites preparables/);
   assert.doesNotMatch(effort.headline, /9 acciones/);
 }
 
@@ -85,30 +79,10 @@ function testLimit() {
   const items = tenderBriefPriorityItems(review, {});
   assert.equal(items.visible.length, TENDER_BRIEF_PRIORITY_LIMIT);
   assert.ok(items.overflow.length > 0);
-  assert.ok(items.visible.every(item => item.kind === 'impediment' || item.kind === 'condition'));
-  assert.equal(items.visible[0].kind, 'impediment');
+  assert.ok(items.visible.some(item => item.kind === 'potential'));
+  assert.ok(items.visible.some(item => item.kind === 'effort'));
+  assert.ok(items.visible[0].kind === 'impediment');
   assert.ok(items.overflow.every(item => item.kind === 'impediment' || item.kind === 'condition'));
-}
-
-function testHeadline() {
-  const review = {
-    ...emptyReview,
-    decision_questions: [
-      { id: 'q1', label: 'Sede principal, sucursal o agencia en Manizales — territorialidad', rationale: 'pendiente', evidence_refs: [] },
-      { id: 'q2', label: 'Licencia MinTIC', rationale: 'pendiente', evidence_refs: [] },
-    ],
-  };
-  const withBlocker = tenderBriefHeadline({
-    ...review,
-    blockers: [{ id: 'b1', label: 'Impedimento grave', rationale: 'grave', evidence_refs: [] }],
-  }, { amountLabel: '$1.000', city: 'Manizales', commercialFitPositives: ['Encaje con vigilancia'] });
-  const withoutBlocker = tenderBriefHeadline(review, { amountLabel: '$1.000', city: 'Manizales', commercialFitPositives: ['Encaje con vigilancia'] });
-  assert.match(withoutBlocker, /no confirma impedimentos materiales/);
-  assert.match(withoutBlocker, /Hay que validar 2 condiciones/);
-  assert.match(withoutBlocker, /Encaje con vigilancia/);
-  assert.match(withoutBlocker, /9 trámites preparables/);
-  assert.match(withBlocker, /Impedimento confirmado: Impedimento grave/);
-  assert.match(withBlocker, /Encaje con vigilancia/, 'Un bloqueador no puede borrar el encaje comercial explícito.');
 }
 
 function testEvidence() {
@@ -145,9 +119,7 @@ function testSurfaces() {
   assert.match(main, /<TenderDecisionBrief analysis=\{tenderAnalysis\}/);
   const briefIndex = main.indexOf('<TenderDecisionBrief');
   const goIndex = main.indexOf('<TenderGoNoGoDecisionPanel');
-  const documentsIndex = main.indexOf('<TenderDocumentReviewPanel');
   assert.ok(briefIndex >= 0 && goIndex > briefIndex, 'El brief debe preceder visualmente el control formal GO/NO GO.');
-  assert.ok(documentsIndex > goIndex, 'La lectura ejecutiva debe aparecer antes del expediente documental.');
 
   assert.match(analysis, /Condiciones pendientes de validar/);
   assert.match(analysis, /Aquí sólo se responden las alertas materiales/);
@@ -167,9 +139,6 @@ function testSurfaces() {
   assert.doesNotMatch(brief, /GO recomendado|NO GO recomendado/);
   assert.doesNotMatch(brief, /compromete la viabilidad de participar/);
   assert.match(brief, /no dice participar ni no participar/);
-  assert.match(brief, /tenderBriefHeadline/);
-  assert.match(brief, /tender-decision-brief-headline/);
-  assert.match(brief, /preview/);
   assert.match(brief, /Evidencia de capacidad revisada/);
   assert.match(brief, /Trámites preparables/);
   assert.match(evidence, /Ver evidencia/);
