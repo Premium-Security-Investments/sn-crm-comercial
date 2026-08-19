@@ -78,5 +78,5 @@ test('the real view is wired into the actual tender dossier after its executive 
   const analysisSectionIndex = mainSource.indexOf('<TenderAnalysisSection');
   assert.ok(analysisSectionIndex >= 0 && integralViewIndex > analysisSectionIndex, 'the executive question and action surface must render before the technical V3 trace');
   assert.match(mainSource, /<TenderIntegralAnalysisV3View analysis=\{analysis\}/);
-  assert.match(mainSource, /Ver análisis técnico completo/);
+  assert.match(mainSource, /Ver análisis técnico y trazabilidad por requisito/);
 });
