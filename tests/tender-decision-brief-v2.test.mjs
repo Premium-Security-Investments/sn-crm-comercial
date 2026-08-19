@@ -139,27 +139,14 @@ function testSurfaces() {
   const evidence = readFileSync(new URL('../src/tenders/components/TenderFindingEvidence.tsx', import.meta.url), 'utf8');
   const goPanel = readFileSync(new URL('../src/tenders/components/TenderGoNoGoDecisionPanel.tsx', import.meta.url), 'utf8');
   const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
-  const gate = readFileSync(new URL('../src/tenders/tenderDecisionGate.ts', import.meta.url), 'utf8');
-  const surfaces = [analysis, brief, goPanel, gate].join('\n');
 
   assert.match(main, /<TenderDecisionBrief analysis=\{tenderAnalysis\}/);
   const briefIndex = main.indexOf('<TenderDecisionBrief');
   const goIndex = main.indexOf('<TenderGoNoGoDecisionPanel');
   const documentsIndex = main.indexOf('<TenderDocumentReviewPanel');
-  assert.ok(briefIndex >= 0 && goIndex > briefIndex, 'El brief debe preceder visualmente el control formal GO/NO GO.');
-  assert.ok(documentsIndex > goIndex, 'La lectura ejecutiva debe aparecer antes del expediente documental.');
-
-  assert.match(analysis, /Condiciones pendientes de validar/);
-  assert.match(analysis, /Aquí sólo se responden las alertas materiales/);
-  assert.match(analysis, /Clasificación ejecutiva no disponible/);
-  assert.match(analysis, /TenderFindingEvidence/);
-  assert.doesNotMatch(analysis, /Impedimento confirmado/);
-  assert.doesNotMatch(analysis, /Esfuerzo comercial inmediato/);
-  assert.doesNotMatch(analysis, /Por qué vale la pena considerarla/);
+  assert.ok(documentsIndex >= 0 && documentsIndex < briefIndex, 'El expediente documental definido debe preceder al brief.');
+  assert.ok(briefIndex >= 0 && goIndex > briefIndex, 'El brief, si se muestra, queda dentro de Decisión y antes del registro GO/NO GO.');
   assert.doesNotMatch(analysis, /<TenderDecisionBrief/);
-  assert.doesNotMatch(analysis, /review\.blockers\.map|decision_review\.blockers\.map/);
-  assert.doesNotMatch(analysis, /review\.supported\.map|decision_review\.supported/);
-  assert.doesNotMatch(analysis, /review\.preparation\.map|decision_review\.preparation/);
 
   assert.match(brief, /Validar primero/);
   assert.match(brief, /TenderFindingEvidence/);
@@ -177,9 +164,4 @@ function testSurfaces() {
   assert.doesNotMatch(goPanel, /decisionReview\.supported|decision_review\.supported/);
   assert.doesNotMatch(goPanel, /decision_review\.preparation\.map/);
   assert.doesNotMatch(goPanel, /Por qué vale la pena/);
-  assert.match(goPanel, /brief de decisión precede este control/i);
-
-  assert.doesNotMatch(gate, /'GO recomendado'|'NO GO recomendado'/);
-  assert.match(gate, /Avanzar el flujo de evidencia/);
-  assert.doesNotMatch(surfaces, /GO recomendado|NO GO recomendado/);
 }

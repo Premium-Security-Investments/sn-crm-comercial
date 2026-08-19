@@ -39,11 +39,11 @@ export function TenderDecisionBrief({ analysis, commercialContext = {} }: Tender
   const unavailable = tenderBriefUnavailableCopy();
 
   if (!available || !review) {
-    return <section className="tender-v3-questions tender-decision-review tender-decision-brief-v3" aria-labelledby="tender-decision-review-title">
+    return <section className="tender-v3-questions tender-decision-review tender-decision-brief-v3" aria-labelledby="tender-decision-brief-title">
       <header>
         <div>
           <span className="eyebrow">Lectura para decidir</span>
-          <h3 id="tender-decision-review-title">{unavailable.title}</h3>
+          <h3 id="tender-decision-brief-title">{unavailable.title}</h3>
           <p>{unavailable.body}</p>
         </div>
       </header>
@@ -64,11 +64,11 @@ export function TenderDecisionBrief({ analysis, commercialContext = {} }: Tender
   const capacityPreview = review.supported.slice(0, 3);
   const capacityRest = review.supported.slice(3);
 
-  return <section className="tender-v3-questions tender-decision-review tender-decision-brief-v3" aria-labelledby="tender-decision-review-title">
+  return <section className="tender-v3-questions tender-decision-review tender-decision-brief-v3" aria-labelledby="tender-decision-brief-title">
     <header>
       <div>
         <span className="eyebrow">Lectura para decidir</span>
-        <h3 id="tender-decision-review-title">Brief de decisión</h3>
+        <h3 id="tender-decision-brief-title">Brief de decisión</h3>
         <p className="tender-decision-brief-headline">{headline}</p>
         <p className="muted">{VIGIA_VISIBLE_NAMES.tenders} no dice participar ni no participar; la encargada elige el curso y registra GO o NO GO aparte.</p>
       </div>
@@ -126,6 +126,6 @@ export function TenderDecisionBrief({ analysis, commercialContext = {} }: Tender
       <button type="button" className="secondary" onClick={() => openAnchor('tender-decision-register-nogo', undefined, 'tender-go-no-go-actions')}>No continuar — ir al registro humano</button>
     </div>
     <small className="tender-executive-governance">Puede solicitar aclaraciones o soportes dentro de SIIO; la encargada responde y adjunta evidencia allí. AGT-002 no envía correos ni hace contactos externos y no decide GO / NO GO. Validar primero no registra una decisión.</small>
-    <p className="tender-decision-brief-links"><a href="#tender-technical-analysis" onClick={event => openAnchor('tender-technical-analysis', event)}>Ver análisis técnico completo</a></p>
+    <p className="tender-decision-brief-links"><a href="#tender-integral-analysis-v3" onClick={event => openAnchor('tender-integral-analysis-v3', event)}>Ver análisis técnico y trazabilidad por requisito</a></p>
   </section>;
 }
