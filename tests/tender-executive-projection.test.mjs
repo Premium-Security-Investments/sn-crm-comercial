@@ -44,6 +44,6 @@ const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const executiveIndex = main.indexOf('<TenderAnalysisSection');
 const traceIndex = main.indexOf('<TenderIntegralAnalysisV3View');
 assert.ok(executiveIndex > -1 && traceIndex > executiveIndex, 'Executive radar must render before technical requirement trace.');
-assert.match(main, /<details className="tender-integral-analysis-trace">[\s\S]*Ver análisis técnico y trazabilidad por requisito[\s\S]*<TenderIntegralAnalysisV3View/);
+assert.match(main, /<details className="tender-integral-analysis-trace"[^>]*>[\s\S]*Ver análisis técnico y trazabilidad por requisito[\s\S]*<TenderIntegralAnalysisV3View/);
 
 console.log('tender executive projection and hierarchy checks passed');
