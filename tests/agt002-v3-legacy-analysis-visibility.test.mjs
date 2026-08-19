@@ -31,7 +31,7 @@ assert.match(
 );
 assert.match(
   component,
-  /aria-label=\{hasIntegralV3 \? 'Condiciones pendientes de validar' : undefined\}/,
+  /aria-label=\{hasIntegralV3 \? 'Dudas y acciones del análisis integral' : undefined\}/,
   'El modo compacto debe conservar un nombre accesible.',
 );
 assert.match(component, /<div className="tender-analysis-actions">[\s\S]*showAnalysisAction/, 'El botón de actualizar debe permanecer disponible fuera del brief legado.');
