@@ -7,7 +7,10 @@ const attachmentsMigrationUrl = new URL('../supabase/migrations/059_tender_quest
 assert.equal(existsSync(migrationUrl), true, 'Debe existir la migración append-only de respuestas a dudas.');
 assert.equal(existsSync(attachmentsMigrationUrl), true, 'Debe existir la migración append-only de adjuntos de respuestas.');
 const migration = existsSync(migrationUrl) ? readFileSync(migrationUrl, 'utf8') : '';
-const analysis = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8');
+const analysis = [
+  readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8'),
+  readFileSync(new URL('../src/tenders/components/TenderQuestionResponseCard.tsx', import.meta.url), 'utf8'),
+].join('\n');
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const types = readFileSync(new URL('../src/tenders/types.ts', import.meta.url), 'utf8');
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');

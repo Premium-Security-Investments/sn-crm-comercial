@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { AGT002_REANALYSIS_MAX_POLLS, classifyAgt002ReanalysisPoll } from '../src/tenders/agt002ReanalysisPolling.ts';
+import { buildSync } from 'esbuild';
+
+const pollingPath = new URL('../src/tenders/agt002ReanalysisPolling.ts', import.meta.url).pathname;
+const bundled = buildSync({ entryPoints: [pollingPath], bundle: true, platform: 'node', format: 'esm', write: false });
+const pollingUrl = `data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].contents).toString('base64')}`;
+const { AGT002_REANALYSIS_MAX_POLLS, classifyAgt002ReanalysisPoll } = await import(pollingUrl);
 
 assert.ok(Number.isInteger(AGT002_REANALYSIS_MAX_POLLS) && AGT002_REANALYSIS_MAX_POLLS > 0 && AGT002_REANALYSIS_MAX_POLLS <= 200);
 assert.deepEqual(classifyAgt002ReanalysisPoll('queued', false), { terminal: false, shouldReload: false, tone: 'status' });

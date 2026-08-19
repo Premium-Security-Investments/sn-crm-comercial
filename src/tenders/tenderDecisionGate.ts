@@ -1,30 +1,54 @@
 import type { TenderDocumentAnalysis } from './types';
 
-const NORMALIZED_RECOMMENDATIONS = new Map<string, string>([
-  ['advance', 'GO recomendado'],
-  ['go', 'GO recomendado'],
-  ['go recomendado', 'GO recomendado'],
-  ['avanzar', 'GO recomendado'],
-  ['advance_conditionally', 'Avanzar de forma condicionada'],
-  ['avanzar_condicionado', 'Avanzar de forma condicionada'],
-  ['go condicionado', 'Avanzar de forma condicionada'],
-  ['avanzar condicionado', 'Avanzar de forma condicionada'],
-  ['do_not_advance', 'NO GO recomendado'],
-  ['no_avanzar', 'NO GO recomendado'],
-  ['no_go', 'NO GO recomendado'],
-  ['no go', 'NO GO recomendado'],
-  ['no go recomendado', 'NO GO recomendado'],
-  ['no avanzar', 'NO GO recomendado'],
-  ['pause', 'Información insuficiente'],
-  ['no_avanzar_temporalmente', 'Información insuficiente'],
-  ['no avanzar temporalmente', 'Información insuficiente'],
-  ['no go temporal / completar documentos', 'Información insuficiente'],
-  ['información insuficiente', 'Información insuficiente'],
-  ['informacion insuficiente', 'Información insuficiente'],
+export type TenderRecommendationKind = 'advance' | 'advance_conditionally' | 'do_not_advance' | 'pause';
+
+const NORMALIZED_RECOMMENDATION_KINDS = new Map<string, TenderRecommendationKind>([
+  ['advance', 'advance'],
+  ['go', 'advance'],
+  ['go recomendado', 'advance'],
+  ['avanzar', 'advance'],
+  ['advance_conditionally', 'advance_conditionally'],
+  ['avanzar_condicionado', 'advance_conditionally'],
+  ['go condicionado', 'advance_conditionally'],
+  ['avanzar condicionado', 'advance_conditionally'],
+  ['do_not_advance', 'do_not_advance'],
+  ['no_avanzar', 'do_not_advance'],
+  ['no_go', 'do_not_advance'],
+  ['no go', 'do_not_advance'],
+  ['no go recomendado', 'do_not_advance'],
+  ['no avanzar', 'do_not_advance'],
+  ['pause', 'pause'],
+  ['no_avanzar_temporalmente', 'pause'],
+  ['no avanzar temporalmente', 'pause'],
+  ['no go temporal / completar documentos', 'pause'],
+  ['información insuficiente', 'pause'],
+  ['informacion insuficiente', 'pause'],
 ]);
 
+const RECOMMENDATION_LABELS: Record<TenderRecommendationKind, string> = {
+  advance: 'Avanzar el flujo de evidencia',
+  advance_conditionally: 'Avanzar de forma condicionada',
+  do_not_advance: 'No avanzar el flujo de evidencia',
+  pause: 'Información insuficiente',
+};
+
+const RECOMMENDATION_COPY: Record<TenderRecommendationKind, string> = {
+  advance: 'La lectura no registra impedimentos materiales ni condiciones abiertas. La decisión humana permanece aparte.',
+  advance_conditionally: 'Se puede continuar el flujo de evidencia; quedan condiciones o preparación a cargo de la encargada. No equivale a GO.',
+  do_not_advance: 'Hay un impedimento material no subsanable en esta lectura. No equivale a NO GO; la encargada conserva la decisión.',
+  pause: 'Falta evidencia para completar la lectura. No autoriza ni cierra el caso.',
+};
+
+export function tenderRecommendationKind(value: unknown): TenderRecommendationKind {
+  return NORMALIZED_RECOMMENDATION_KINDS.get(String(value ?? '').trim().toLowerCase()) || 'pause';
+}
+
 export function tenderRecommendationLabel(value: unknown): string {
-  return NORMALIZED_RECOMMENDATIONS.get(String(value ?? '').trim().toLowerCase()) || 'Información insuficiente';
+  return RECOMMENDATION_LABELS[tenderRecommendationKind(value)];
+}
+
+export function tenderRecommendationCopy(value: unknown): string {
+  return RECOMMENDATION_COPY[tenderRecommendationKind(value)];
 }
 
 export function tenderExecutiveRecommendation(analysis: TenderDocumentAnalysis | null | undefined): unknown {
