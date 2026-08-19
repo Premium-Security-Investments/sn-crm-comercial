@@ -1,8 +1,102 @@
 # CURRENT — SIIO Comercial / Licitaciones / Vig‑IA
 
-## 0. Corte autoritativo vigente — piloto gobernado Manizales V3 completo, en producción, 2026-08-17
+## 0. Corte autoritativo vigente — brief AGT-002 en prod, `main` sin merge, 2026-08-19
 
-**Este bloque reemplaza como autoridad a todos los cortes e historiales posteriores de este archivo, incluido el corte 2026-08-14 que sigue abajo como historial.** El corte 2026-08-14 declaró el canary único `unavailable` (sin `analysis_run_id`) como bloqueo material vigente. Ese bloqueo quedó **resuelto** por el piloto gobernado Manizales SA-24-2026, cerrado y fusionado a `main` el 2026-08-17. La evidencia se verificó mecánicamente en la sesión Hermes que abrió esta Fase 9: Git, Vercel CLI, endpoint público protegido, lectura sanitizada del entorno productivo y consulta sanitaria de metadatos en Supabase. El worktree documental posterior no repitió llamadas remotas; conserva los resultados y comandos en `docs/evidence/2026-08-17-agt002-v3-production-closeout.md`.
+**Este bloque manda para retomar AGT-002** (canal Discord AGT `<#1527706694665113670>`). El corte 2026-08-17 (piloto Manizales V3) **sigue válido para el motor, el flag y la persistencia**; no se revirtió el runtime V3. Lo que cambió después es la experiencia de decisión y el desalineamiento prod / `main`.
+
+### 0.1 Estado terminal verificado
+
+```text
+origin/main     = 9cd6d2afa8b7dc2d997a1d14a7ce11dfb1cb61a1   #111 revert
+árbol main      = idéntico a 2703312 (#108)
+rama brief      = fix/agt002-decision-brief-contract @ 7ad7b91   (pusheada)
+prod alias      = https://seguridad-nacional-crm.vercel.app
+prod deploy     = dpl_6oz2Qh7h28K73fMUvf4v1Q7BYTKR  2026-08-19 20:36 UTC READY
+prod commit     = 7ad7b91   (NO es origin/main)
+build           = 127 módulos (Vite)
+caso piloto     = Manizales SA-24-2026 / oportunidad 54190e51-15fb-46af-b0aa-8f13461a3110
+```
+
+Redesplegar desde el worktree canónico de `main` **borra el brief** de producción.
+
+### 0.2 Worktrees — no repetir el error de deploy
+
+| Rol | Path | Realidad |
+|---|---|---|
+| Checkout de `main` / deploy canónico | `/root/worktrees/siio-e6-scheduler-fix` | Único `main`. Solo `git pull` + `vercel --prod`. **No implementar features aquí.** |
+| Brief AGT-002 (código nuevo) | `/root/worktrees/agt002-decision-brief-contract` | Rama `fix/agt002-decision-brief-contract` @ `7ad7b91` |
+| NO es main | `/root/psi-comercial/plataforma-ventas/app` | Rama `docs/tender-opportunities-navigation-design` |
+
+Hay ~30 worktrees. `git log origin/main` desde el directorio incorrecto puede mostrar el commit bueno y construir un árbol viejo (ayer: ~90 módulos vs 127). Antes de deploy: `git worktree list`.
+
+```bash
+cd /root/worktrees/siio-e6-scheduler-fix
+git fetch origin --prune && git status -sb && git pull origin main
+vercel --prod --force --yes
+```
+
+Nunca `vercel --prod` desde `plataforma-ventas/app`. Si hay que desplegar la rama del brief otra vez: desde `/root/worktrees/agt002-decision-brief-contract` (copiar solo `.vercel/project.json` del canónico; no `.vercel/output`).
+
+### 0.3 PRs 109 → 112
+
+| PR | Qué era | Destino | Lectura |
+|---|---|---|---|
+| **#109** | Unificar brief AGT-002, quitar KPI del motor como mensaje principal | MERGED | Intención alineada al contrato |
+| **#110** | Lectura ejecutiva real: modelo independiente, `TenderDecisionBrief`, evidencia, “validar primero” | MERGED | Código usable. Exceso: reordenó Decisión **antes** de Documentos |
+| **#111** | Revert de #109+#110 | MERGED | **No es dictamen de producto.** Se revirtió porque el deploy de esa noche salió del cwd incorrecto y no se pudo validar la UI |
+| **#112** | Restaurar pantallas definidas + conservar brief | OPEN | Nav definida sí. **No mergear:** restaura `GO recomendado` / `NO GO recomendado` en el gate |
+
+El patch v1 del asesor (JSX metido en el panel GO/NO GO, `tenderPostura` = `hasBlockers→debil`) **no se reaplica**. Esa revisión de 12 puntos es el **filtro**. #110 ya corregía casi todo el filtro.
+
+### 0.4 Qué se conservó en `7ad7b91` (prod)
+
+Traído de #110, **sin** el reorden de nav:
+
+- `tenderDecisionBriefModel.ts` + `TenderDecisionBrief.tsx` + `TenderFindingEvidence.tsx`
+- Potencial **aparte** de impedimentos (`tenderCommercialPotential`; no `blocker→débil`)
+- Sin `decision_review`: “Clasificación ejecutiva no disponible” / “No se afirma que no existan.”
+- Gate AGT: `Avanzar el flujo de evidencia` — no *GO recomendado* como postura
+- Cursos humanos: validar primero (secondary) / continuar al registro / no continuar
+- Expediente definido: Resumen → Documentos → Análisis → Decisión
+- Análisis V3: solo condiciones pendientes + evidencia; brief vive en Decisión
+- Control formal GO/NO GO (ACL, historial, Registrar GO/NO GO) intacto
+
+Verificado: `tsc --noEmit` PASS; 23 tests AGT/tenders PASS. Bundle vivo contiene esas cadenas y **no** contiene `GO recomendado`.
+
+Login CRM no está en este host. QA visual autenticada de Manizales la hace Juan.
+
+### 0.5 Contrato AGT-002 — no reabrir el producto
+
+AGT-002 **prepara** el brief. **No decide** GO/NO GO.
+
+- Tres planos: brief ≠ registro humano ≠ V3 técnico. No fusionarlos.
+- Ejes independientes: potencial, impedimentos confirmados, incertidumbres, esfuerzo (resumen).
+- `supported` ≠ razones comerciales. `preparation` ≠ lista de esfuerzo.
+- Humano decide. AGT no envía correos. Soportes dentro de SIIO.
+- Máx. 7 elementos prioritarios. Evidencia contextual por afirmación.
+
+### 0.6 Qué sigue (AGT-002)
+
+1. Juan confirma o rechaza la UI de prod (Manizales).
+2. Si confirma: merge de `fix/agt002-decision-brief-contract` a `main` (para que prod = git). Si no: redesplegar canónico y se vuelve al árbol #108.
+3. No mergear #112.
+4. No reabrir el contrato de producto. Siguiente trabajo de agentes: motor / worker / segundo proceso, con este CURRENT como ancla.
+5. Documentar el worktree canónico en README/CLAUDE.md del repo queda pendiente de orden.
+
+### 0.7 Cómo retomar en el canal AGT
+
+1. Leer **este** §0 (no un `CURRENT.md` de otro worktree).
+2. Código del brief: `/root/worktrees/agt002-decision-brief-contract`.
+3. `main` / deploy canónico: `/root/worktrees/siio-e6-scheduler-fix`.
+4. Grok orquesta; código de producto → `claude -p`. No usar el bot Discord ClaudeSDK ni `delegate_task` como si fuera Claude.
+
+---
+
+## Historial — corte 2026-08-17, piloto gobernado Manizales V3 (runtime sigue vigente)
+
+**Este bloque fue autoritativo para el cierre del piloto V3.** El runtime, el flag y la persistencia Manizales **no se deshicieron**. Queda como historial de ese cierre. Para brief / PRs / deploy manda el corte §0 de 2026-08-19.
+
+El corte 2026-08-14 declaró el canary único `unavailable` (sin `analysis_run_id`) como bloqueo material vigente. Ese bloqueo quedó **resuelto** por el piloto gobernado Manizales SA-24-2026, cerrado y fusionado a `main` el 2026-08-17. La evidencia se verificó mecánicamente en la sesión Hermes que abrió esta Fase 9: Git, Vercel CLI, endpoint público protegido, lectura sanitizada del entorno productivo y consulta sanitaria de metadatos en Supabase. El worktree documental posterior no repitió llamadas remotas; conserva los resultados y comandos en `docs/evidence/2026-08-17-agt002-v3-production-closeout.md`.
 
 ### 0.1 Resultado terminal
 
@@ -35,9 +129,9 @@ El nombre y valor exactos fueron comprobados mediante `vercel env pull` desde el
 
 ---
 
-## Historial anterior — corte 2026-08-14, superseded por el corte §0 vigente
+## Historial anterior — corte 2026-08-14, superseded por el cierre V3 de 2026-08-17
 
-**Este bloque fue autoritativo en su fecha.** Se conserva como historial de cómo se llegó al bloqueo que el corte §0 vigente (2026-08-17) resolvió; no se reescribe su contenido ni su intención original. El corte §0 anterior manda ante cualquier conflicto.
+**Este bloque fue autoritativo en su fecha.** Se conserva como historial de cómo se llegó al bloqueo que el corte 2026-08-17 resolvió. El corte §0 de 2026-08-19 manda para brief/PRs/deploy; el de 2026-08-17 manda para el runtime V3 Manizales.
 
 ### 0.1 Resultado terminal
 
