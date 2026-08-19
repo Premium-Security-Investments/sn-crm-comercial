@@ -62,21 +62,55 @@ export function tenderCommercialPotential(context: TenderCommercialContext = {},
   };
 }
 
+export function tenderBriefShortLabel(label: string, max = 88) {
+  const cleaned = String(label || '').replace(/\s+/g, ' ').trim();
+  const head = cleaned.split(/\s+[—–]\s+/)[0];
+  return head.length > max ? `${head.slice(0, max - 1).trim()}…` : head;
+}
+
+export function tenderBriefFindingBody(finding: TenderDecisionReviewFinding) {
+  return String(finding.rationale || '').replace(/^NOTA PARA LA ENCARGADA:\s*/i, '').trim();
+}
+
 export function tenderBriefEffortSummary(preparation: TenderDecisionReviewFinding[] = []) {
   if (!preparation.length) {
     return {
       present: false,
       headline: 'Sin trámites preparables identificados en esta lectura.',
       count: 0,
+      samples: [] as string[],
       items: [] as TenderDecisionReviewFinding[],
     };
   }
+  const samples = preparation.slice(0, 2).map(item => tenderBriefShortLabel(item.label, 42));
   return {
     present: true,
-    headline: 'Hay trámites preparables — documentos y gestiones obtenibles. No miden el esfuerzo comercial ni son impedimentos materiales.',
+    headline: `${preparation.length} trámites preparables${samples.length ? ` (${samples.join('; ')})` : ''}. Documentos y gestiones obtenibles; no miden el esfuerzo comercial ni son impedimentos materiales.`,
     count: preparation.length,
+    samples,
     items: preparation,
   };
+}
+
+export function tenderBriefHeadline(
+  review: TenderDecisionReview,
+  context: TenderCommercialContext = {},
+) {
+  const potential = tenderCommercialPotential(context, review);
+  const effort = tenderBriefEffortSummary(review.preparation);
+  const sentences: string[] = [];
+  if (review.blockers.length === 0) sentences.push('Esta revisión no confirma impedimentos materiales.');
+  else if (review.blockers.length === 1) sentences.push(`Impedimento confirmado: ${tenderBriefShortLabel(review.blockers[0].label)}.`);
+  else sentences.push(`${review.blockers.length} impedimentos confirmados. El potencial comercial se lee aparte.`);
+  if (review.decision_questions.length === 1) sentences.push(`Hay que validar: ${tenderBriefShortLabel(review.decision_questions[0].label)}.`);
+  else if (review.decision_questions.length > 1) sentences.push(`Hay que validar ${review.decision_questions.length} condiciones: ${review.decision_questions.map(item => tenderBriefShortLabel(item.label, 64)).join('; ')}.`);
+  else sentences.push('No hay condiciones materiales abiertas.');
+  if (potential.classified && potential.reasons[0]) sentences.push(`Encaje comercial explícito: ${potential.reasons[0]}`);
+  else if (potential.contextFacts.length) sentences.push(`Sin razones comerciales priorizadas. Contexto de la oportunidad: ${potential.contextFacts.join(' · ')}.`);
+  else sentences.push('Sin razones comerciales priorizadas en el expediente.');
+  if (review.supported.length) sentences.push(`${review.supported.length} aspectos de capacidad ya revisados a favor; no se presentan como razón para invertir.`);
+  if (effort.present) sentences.push(effort.headline);
+  return sentences.join(' ');
 }
 
 export function resolveFindingEvidence(
@@ -115,44 +149,27 @@ export function resolveFindingEvidence(
 
 export function tenderBriefPriorityItems(
   review: TenderDecisionReview | null | undefined,
-  context: TenderCommercialContext = {},
+  _context: TenderCommercialContext = {},
 ): { visible: TenderBriefPriorityItem[]; overflow: TenderBriefPriorityItem[] } {
   if (!review) return { visible: [], overflow: [] };
-  const potential = tenderCommercialPotential(context, review);
-  const effort = tenderBriefEffortSummary(review.preparation);
   const material: TenderBriefPriorityItem[] = [
     ...review.blockers.map(finding => ({
       kind: 'impediment' as const,
       id: finding.id,
       title: finding.label,
-      body: finding.rationale,
+      body: tenderBriefFindingBody(finding),
       finding,
     })),
     ...review.decision_questions.map(finding => ({
       kind: 'condition' as const,
       id: finding.id,
       title: finding.label,
-      body: finding.rationale,
+      body: tenderBriefFindingBody(finding),
       finding,
     })),
   ];
-  const summaries: TenderBriefPriorityItem[] = [
-    {
-      kind: 'potential',
-      id: 'brief-potential',
-      title: potential.classified ? 'Razones comerciales priorizadas' : 'Potencial comercial sin clasificar',
-      body: [potential.note, potential.reasons.join(' '), potential.contextFacts.join(' · ')].filter(Boolean).join(' '),
-    },
-    {
-      kind: 'effort',
-      id: 'brief-effort',
-      title: 'Esfuerzo inmediato',
-      body: effort.headline,
-    },
-  ];
-  const materialBudget = Math.max(0, TENDER_BRIEF_PRIORITY_LIMIT - summaries.length);
   return {
-    visible: [...material.slice(0, materialBudget), ...summaries],
-    overflow: material.slice(materialBudget),
+    visible: material.slice(0, TENDER_BRIEF_PRIORITY_LIMIT),
+    overflow: material.slice(TENDER_BRIEF_PRIORITY_LIMIT),
   };
 }
