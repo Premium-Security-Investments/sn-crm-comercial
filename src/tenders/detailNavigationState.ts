@@ -43,9 +43,9 @@ export const TENDER_DETAIL_SECTIONS: ReadonlyArray<{
   accessibleLabel: string;
 }> = [
   { id: 'tender-summary', label: 'Resumen', accessibleLabel: 'Resumen de la oportunidad' },
+  { id: 'tender-decision', label: 'Decisión', accessibleLabel: 'Brief de decisión y registro GO / NO GO' },
   { id: 'tender-document-review', label: 'Documentos', accessibleLabel: 'Revisión documental' },
   { id: 'tender-analysis', label: 'Análisis', accessibleLabel: 'Análisis / preanálisis' },
-  { id: 'tender-decision', label: 'Decisión', accessibleLabel: 'Decisión GO / NO GO' },
   { id: 'tender-preparation', label: 'Preparación', accessibleLabel: 'Preparación de oferta' },
   { id: 'tender-follow-up', label: 'Seguimiento', accessibleLabel: 'Seguimiento comercial' },
 ];

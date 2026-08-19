@@ -1,10 +1,11 @@
-import { useState } from 'react';
 import { VIGIA_VISIBLE_NAMES } from '../../vigia/agentIdentity';
 import { normalizeTenderEvidence, tenderAnalysisMethodLabel, tenderAnalysisProducerDisclosure, tenderDecisionStatusTone, tenderNextAction } from '../tenderDecisionBrief';
 import { tenderRecommendationLabel } from '../tenderDecisionGate';
 import { deriveTenderProcessingPresentation } from '../processingStatus';
-import type { TenderAnalysisFinding, TenderDecisionReview, TenderDocumentAnalysis, TenderDocumentRecord, TenderDocumentsPayload, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseAttachment, TenderQuestionResponseInput, TenderQuestionResponseStatus } from '../types';
-import { TENDER_QUESTION_RESPONSE_ATTACHMENT_MAX_COUNT } from '../tenderQuestionResponseActions';
+import { tenderBriefUnavailableCopy } from '../tenderDecisionBriefModel';
+import type { TenderAnalysisFinding, TenderDocumentAnalysis, TenderDocumentRecord, TenderDocumentsPayload, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput } from '../types';
+import { TenderFindingEvidence } from './TenderFindingEvidence';
+import { QuestionResponseCard, type NormalizedQuestion } from './TenderQuestionResponseCard';
 
 type TenderAnalysisSectionProps = {
   analysis: TenderDocumentAnalysis | null;
@@ -22,8 +23,6 @@ type TenderAnalysisSectionProps = {
   onRetryProcessing?: () => void;
 };
 
-type NormalizedQuestion = { id: string; text: string; critical: boolean; evidenceRefs: string[] };
-
 function EvidenceList({ items, empty }: { items: unknown; empty: string }) {
   const visible = normalizeTenderEvidence(items);
   return visible.length ? <ul>{visible.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <p className="muted">{empty}</p>;
@@ -39,108 +38,13 @@ function normalizeQuestion(item: TenderAnalysisFinding, index: number): Normaliz
   };
 }
 
-type NormalizedDecisionQuestion = NormalizedQuestion & { rationale: string };
-
-function normalizeDecisionQuestion(entry: TenderDecisionReview['decision_questions'][number]): NormalizedDecisionQuestion {
-  return { id: entry.id, text: entry.label, critical: true, evidenceRefs: [], rationale: entry.rationale };
-}
-
-const questionStatusLabel = (status: TenderQuestionResponseStatus) => status === 'resolved' ? 'Resuelta' : status === 'not_applicable' ? 'No aplica' : 'Pendiente';
-const responseDate = (value: string) => new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
-
-function AttachmentLinks({ attachments }: { attachments: TenderQuestionResponseAttachment[] }) {
-  if (!attachments.length) return null;
-  return <ul className="tender-question-attachments">{attachments.map(attachment => <li key={attachment.id}>{attachment.signed_url ? <a href={attachment.signed_url} target="_blank" rel="noreferrer">{attachment.name}</a> : attachment.name}</li>)}</ul>;
-}
-
-function QuestionResponseCard({ question, analysisRunId, responses, canAnswer, disabled, onSave, criticalLabel = 'Crítica' }: {
-  question: NormalizedQuestion;
-  analysisRunId: string;
-  responses: TenderQuestionResponse[];
-  canAnswer: boolean;
-  disabled: boolean;
-  onSave?: (input: TenderQuestionResponseInput, files: File[]) => Promise<void>;
-  criticalLabel?: string;
-}) {
-  const latest = responses[0];
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [status, setStatus] = useState<TenderQuestionResponseStatus>(latest?.status || 'pending');
-  const [response, setResponse] = useState(latest?.response || '');
-  const [files, setFiles] = useState<File[]>([]);
-  const [error, setError] = useState('');
-  const beginEdit = () => {
-    setStatus(latest?.status || 'pending');
-    setResponse(latest?.response || '');
-    setFiles([]);
-    setError('');
-    setEditing(true);
-  };
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!response.trim() || !onSave) return;
-    setSaving(true); setError('');
-    try {
-      await onSave({ analysis_run_id: analysisRunId, question_id: question.id, question_text: question.text, status, response: response.trim() }, files);
-      setEditing(false);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
-    finally { setSaving(false); }
-  };
-  return <article className="tender-question-response-card">
-    <header><div><strong>{question.text}</strong>{question.critical && <span className="badge badge-red">{criticalLabel}</span>}</div><span className={`tender-question-status status-${latest?.status || 'pending'}`}>{questionStatusLabel(latest?.status || 'pending')}</span></header>
-    {latest ? <div className="tender-question-current"><p>{latest.response}</p><AttachmentLinks attachments={latest.attachments} /><small>{latest.responded_by_name || 'Persona registrada'} · {responseDate(latest.responded_at)}</small></div> : <p className="muted">Aún no hay respuesta humana registrada.</p>}
-    {!editing && canAnswer && <button type="button" className="secondary" disabled={disabled} onClick={beginEdit}>{latest ? 'Actualizar respuesta' : 'Responder duda'}</button>}
-    {editing && <form className="tender-question-form" onSubmit={submit}>
-      <label>Estado<select value={status} onChange={event => setStatus(event.target.value as TenderQuestionResponseStatus)}><option value="pending">Pendiente</option><option value="resolved">Resuelta</option><option value="not_applicable">No aplica</option></select></label>
-      <label>Respuesta<textarea required maxLength={10000} value={response} onChange={event => setResponse(event.target.value)} placeholder="Registre la respuesta de Licitaciones…"/></label>
-      <label>Archivos de soporte (opcional)<input type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx,.txt,application/pdf,image/png,image/jpeg,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/plain" onChange={event => setFiles(Array.from(event.target.files || []).slice(0, TENDER_QUESTION_RESPONSE_ATTACHMENT_MAX_COUNT))}/></label>
-      {files.length > 0 && <ul className="tender-question-attachments-selected">{files.map(file => <li key={file.name}>{file.name}</li>)}</ul>}
-      <small>El autor y la fecha se registran automáticamente desde la sesión. No autoriza GO / NO GO.</small>
-      {error && <div className="error" role="alert">{error}</div>}
-      <div className="row-actions"><button type="submit" disabled={saving || disabled || !response.trim()}>{saving ? 'Guardando…' : 'Guardar respuesta'}</button><button type="button" className="secondary" disabled={saving} onClick={() => setEditing(false)}>Cancelar</button></div>
-    </form>}
-    {responses.length > 1 && <details className="tender-question-history"><summary>Historial de respuestas ({responses.length})</summary><ol>{responses.map(item => <li key={item.id}><strong>{questionStatusLabel(item.status)}</strong><p>{item.response}</p><AttachmentLinks attachments={item.attachments} /><small>{item.responded_by_name || 'Persona registrada'} · {responseDate(item.responded_at)}</small></li>)}</ol></details>}
-  </article>;
-}
-
-// Executive projection: only governed decision questions are answerable. Technical questions and
-// all canonical evidence remain intact below in the trace; this layer changes presentation only.
-function ExecutiveDecisionReviewPanel({ decisionReview, analysisRunId, questionResponses, canAnswerQuestions, busy, onSaveQuestionResponse }: {
-  decisionReview: TenderDecisionReview;
-  analysisRunId: string;
-  questionResponses: TenderQuestionResponse[];
-  canAnswerQuestions: boolean;
-  busy: boolean;
-  onSaveQuestionResponse?: (input: TenderQuestionResponseInput, files: File[]) => Promise<void>;
-}) {
-  const decisionQuestions = decisionReview.decision_questions.map(normalizeDecisionQuestion);
-  const pendingCount = decisionQuestions.filter(question => {
-    const latest = questionResponses.find(item => item.question_id === question.id);
-    return !latest || latest.status === 'pending';
-  }).length;
-  return <section className="tender-v3-questions tender-decision-review" aria-labelledby="tender-decision-review-title">
-    <header><div><span className="eyebrow">Lectura para decisión</span><h3 id="tender-decision-review-title">Radar ejecutivo del caso</h3><p>AGT-002 separa alertas materiales de tareas de preparación y evidencia favorable. Sólo las alertas materiales requieren respuesta de la encargada; la decisión GO / NO GO permanece humana.</p></div><strong>{pendingCount} alerta(s) material(es) pendiente(s)</strong></header>
-    <div className="tender-executive-summary" aria-label="Resumen ejecutivo del análisis">
-      <article><small>Recomendación</small><strong>{tenderRecommendationLabel(decisionReview.recommendation)}</strong></article>
-      <article><small>Bloqueadores confirmados</small><strong>{decisionReview.counts.blockers}</strong></article>
-      <article><small>Alertas materiales</small><strong>{decisionReview.counts.decision_questions}</strong></article>
-      <article><small>Evidencia favorable</small><strong>{decisionReview.counts.supported}</strong></article>
-    </div>
-    <small className="tender-executive-governance">Puede solicitar aclaraciones o soportes dentro de SIIO; la encargada responde y adjunta evidencia allí. AGT-002 no envía correos ni hace contactos externos y no decide GO / NO GO.</small>
-    {decisionQuestions.length ? <div className="tender-question-list">{decisionQuestions.map(question => <article key={question.id} className="tender-decision-review-question"><p className="tender-decision-review-rationale">{question.rationale}</p><QuestionResponseCard question={question} analysisRunId={analysisRunId} responses={questionResponses.filter(item => item.question_id === question.id)} canAnswer={canAnswerQuestions} disabled={busy} onSave={onSaveQuestionResponse} criticalLabel="Alerta material"/></article>)}</div> : <p className="muted">Sin alertas materiales pendientes.</p>}
-    {decisionReview.blockers.length > 0 && <div className="error tender-decision-review-blockers" role="alert"><strong>Bloqueadores confirmados ({decisionReview.blockers.length})</strong><ul>{decisionReview.blockers.map(blocker => <li key={blocker.id}>{blocker.label}</li>)}</ul></div>}
-    <p className="tender-decision-review-supported">{decisionReview.supported.length} aspecto(s) soportado(s) por evidencia revisada; no requieren respuesta adicional.</p>
-    <details className="tender-decision-review-preparation"><summary>Acciones de preparación ({decisionReview.preparation.length})</summary><p className="muted">Documentos y trámites obtenibles o preparables; no son impedimentos materiales.</p><ul>{decisionReview.preparation.map(item => <li key={item.id}>{item.label}</li>)}</ul></details>
-    <details className="tender-decision-review-trace"><summary>Trazabilidad completa ({decisionReview.not_applicable.length} no aplican)</summary><p className="muted"><small>{decisionReview.contract_version} · versión de fuente {decisionReview.source_fixture_version} · {decisionReview.decision_status}</small></p><ul>{decisionReview.not_applicable.map(item => <li key={item.id}>{item.label}</li>)}</ul></details>
-  </section>;
-}
-
 export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview, onAnalyzePreview, statusText = '', statusTone = 'status', analysisEngine, questionResponses = [], canAnswerQuestions = false, onSaveQuestionResponse, processingStatus = null, onRetryProcessing }: TenderAnalysisSectionProps) {
   const strengths = analysis?.strengths ?? analysis?.commercial_fit?.positives ?? [];
   const weaknesses = analysis?.weaknesses ?? analysis?.blockers ?? analysis?.commercial_fit?.concerns ?? [];
   const questions = (analysis?.questions ?? []).map(normalizeQuestion);
   const unverified = analysis?.unverified ?? analysis?.company_profile_crosscheck?.gaps ?? [];
   const hasIntegralV3 = Boolean(analysis?.integral_analysis?.analysis_units?.length);
+  const decisionQuestions = (analysis?.decision_review?.decision_questions || []).map(entry => ({ id: entry.id, text: entry.label, critical: true, evidenceRefs: [] as string[], rationale: entry.rationale, finding: entry }));
   const hasDocuments = documents.length > 0;
   const failed = analysis?.status === 'failed';
   const stale = Boolean(analysis && !analysis.current);
@@ -149,7 +53,8 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
   const actionLabel = failed || stale ? `Volver a analizar con ${VIGIA_VISIBLE_NAMES.tenders}` : analysis ? `Actualizar con ${VIGIA_VISIBLE_NAMES.tenders}` : `Analizar con ${VIGIA_VISIBLE_NAMES.tenders}`;
   const analysisActionDisabled = busy || !hasDocuments || processingPresentation.primaryAction === 'disabled';
   const showAnalysisAction = canRunPreview && processingPresentation.primaryAction !== 'hidden';
-  return <section id="tender-analysis" className={`tender-analysis-section tender-detail-anchor${hasIntegralV3 ? ' is-v3-compact' : ''}`} aria-labelledby={hasIntegralV3 ? undefined : 'tender-analysis-title'} aria-label={hasIntegralV3 ? 'Dudas y acciones del análisis integral' : undefined}>
+  const unavailable = tenderBriefUnavailableCopy();
+  return <section id="tender-analysis" className={`tender-analysis-section tender-detail-anchor${hasIntegralV3 ? ' is-v3-compact' : ''}`} aria-labelledby={hasIntegralV3 ? undefined : 'tender-analysis-title'} aria-label={hasIntegralV3 ? 'Condiciones pendientes de validar' : undefined}>
     {!hasIntegralV3 && <header className="tender-analysis-header"><div><span className="eyebrow">Paso previo a la decisión humana</span><h3 id="tender-analysis-title">Análisis con {VIGIA_VISIBLE_NAMES.tenders}</h3><p>Organiza la evidencia disponible y señala pendientes. No registra ni autoriza GO / NO GO.</p></div><div className={`tender-analysis-state state-${failed ? 'failed' : stale ? 'stale' : analysis ? 'ready' : 'pending'}`}><strong>{state}</strong></div></header>}
     {!hasDocuments && <div className="document-empty-state"><strong>Sin documentos</strong><span>Actualice o cargue documentos antes de analizar con {VIGIA_VISIBLE_NAMES.tenders}.</span></div>}
     {hasDocuments && !analysis && !processingPresentation.visible && <div className="document-empty-state"><strong>Análisis pendiente</strong><span>Hay documentos vigentes, pero todavía no existe una conclusión preliminar para revisar.</span></div>}
@@ -164,10 +69,13 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
       <div className="tender-decision-brief-grid"><section><h4>Fortalezas</h4><EvidenceList items={strengths} empty="Sin fortalezas documentales registradas."/></section><section><h4>Debilidades y bloqueadores</h4><EvidenceList items={weaknesses} empty="Sin debilidades o bloqueadores documentales registrados."/></section><section className="tender-question-responses"><h4>Dudas abiertas</h4>{questions.length ? <div className="tender-question-list">{questions.map(question => <QuestionResponseCard key={question.id} question={question} analysisRunId={analysis.run_id} responses={questionResponses.filter(item => item.question_id === question.id)} canAnswer={canAnswerQuestions} disabled={busy} onSave={onSaveQuestionResponse}/>)}</div> : <p className="muted">Sin dudas abiertas registradas.</p>}</section><section><h4>Información no verificada</h4><EvidenceList items={unverified} empty="Sin información no verificada registrada."/></section><section className="tender-decision-next-action"><h4>Siguiente acción</h4><p>{tenderNextAction(analysis.next_action) || 'Sin siguiente acción documentada; revisar el expediente con Licitaciones.'}</p></section></div>
     </article>}
     {hasIntegralV3 && analysis && !analysis.decision_review && <section className="tender-v3-questions tender-executive-pending" aria-labelledby="tender-v3-questions-title">
-      <header><div><span className="eyebrow">Lectura para decisión</span><h3 id="tender-v3-questions-title">Radar ejecutivo pendiente de clasificación</h3><p>Hay {questions.length} hallazgos técnicos conservados en la trazabilidad. Hasta que su materialidad sea clasificada, no se presentan como alertas materiales ni requieren respuesta indiscriminada.</p></div><strong>Revisión material pendiente</strong></header>
-      <p className="notice" role="status">Revise el análisis técnico por requisito y complete una clasificación ejecutiva antes de usar estos hallazgos como insumo para GO / NO GO.</p>
+      <header><div><span className="eyebrow">Lectura para decisión</span><h3 id="tender-v3-questions-title">Clasificación ejecutiva no disponible</h3><p>{unavailable.body} Hay {questions.length} hallazgos técnicos conservados en la trazabilidad. Hasta que su materialidad sea clasificada, no se presentan como alertas materiales ni requieren respuesta indiscriminada.</p></div><strong>Revisión material pendiente</strong></header>
+      <p className="notice" role="status">{unavailable.impedimentNote}</p>
     </section>}
-    {hasIntegralV3 && analysis && analysis.decision_review && <ExecutiveDecisionReviewPanel decisionReview={analysis.decision_review} analysisRunId={analysis.run_id} questionResponses={questionResponses} canAnswerQuestions={canAnswerQuestions} busy={busy} onSaveQuestionResponse={onSaveQuestionResponse}/>}
+    {hasIntegralV3 && analysis && analysis.decision_review && <section className="tender-v3-questions" aria-labelledby="tender-v3-questions-title">
+      <header><div><span className="eyebrow">Validación humana</span><h3 id="tender-v3-questions-title">Condiciones pendientes de validar</h3><p>Aquí sólo se responden las alertas materiales y se consulta evidencia. El brief de decisión está en la sección Decisión.</p></div></header>
+      {decisionQuestions.length ? <div className="tender-question-list">{decisionQuestions.map(question => <article key={question.id} className="tender-decision-review-question"><p className="tender-decision-review-rationale">{question.rationale}</p>{analysis.decision_review && <TenderFindingEvidence finding={question.finding} review={analysis.decision_review} />}<QuestionResponseCard question={question} analysisRunId={analysis.run_id} responses={questionResponses.filter(item => item.question_id === question.id)} canAnswer={canAnswerQuestions} disabled={busy} onSave={onSaveQuestionResponse} criticalLabel="Alerta material"/></article>)}</div> : <p className="muted">Sin condiciones pendientes de validar.</p>}
+    </section>}
     {analysisEngine?.fallback && <div className="notice" role="status"><strong>Fallback seguro aplicado.</strong> {VIGIA_VISIBLE_NAMES.tenders} no estuvo disponible ({analysisEngine.reason === 'not_configured' ? 'no configurado' : 'servicio no disponible'}); se conservó el preanálisis determinístico por reglas.</div>}
     {statusText && <div className={statusTone === 'error' ? 'error' : 'notice'} role={statusTone === 'error' ? 'alert' : 'status'}>{statusText}</div>}
     <div className="tender-analysis-actions">
