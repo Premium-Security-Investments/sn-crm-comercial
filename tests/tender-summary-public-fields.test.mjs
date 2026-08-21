@@ -1,6 +1,5 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { buildSync } from 'esbuild';
 
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
@@ -22,7 +21,10 @@ for (const duplicatedGroup of ['Proceso oficial', 'Cronograma y cuantía', 'Gest
 assert.doesNotMatch(publicBlock, /tender-opportunity-technical/, 'Los datos técnicos internos no deben aparecer en la vista operativa.');
 
 // The required labels must exist in the public branch.
-for (const label of ['Entidad', 'Cierre oficial', 'Días restantes']) {
+// AGT-002 Task 6: the seven governed fields are the whole public summary. "Días restantes" was
+// removed because its overdue branch printed "Vencida" a second time, next to the single
+// Vigente/Vencida badge owned by TenderDetailNavigation.
+for (const label of ['Entidad', 'Servicio', 'Sector', 'Ciudad', 'Cuantía', 'Cierre oficial', 'Responsable']) {
   assert.match(publicBlock, new RegExp(`label="${label}"`), `El resumen público debe incluir el campo "${label}".`);
 }
 
@@ -44,25 +46,18 @@ for (const hidden of ['Snapshot', 'Productor', 'Estado técnico']) {
   assert.doesNotMatch(publicBlock, new RegExp(`label="${hidden}"`), `El resumen público no debe mostrar "${hidden}".`);
 }
 
-// Días restantes must be computed from the same date shown as "Cierre oficial" (expected_close_date).
 // Postgres date-only values must use the timezone-safe formatter; the generic timestamp
 // formatter shifts 2026-08-06 to 05/08 in America/Bogota.
 assert.match(publicBlock, /label="Cierre oficial" value=\{fmtDateOnly\(o\.expected_close_date\)\}/);
-assert.match(publicBlock, /label="Días restantes" value=\{tenderDaysRemainingLabel\(o\.expected_close_date\)\}/);
-assert.match(main, /function tenderDaysRemainingLabel\(/, 'Debe existir el helper de días restantes.');
 
-// Verify the days-remaining helper behaves correctly by extracting and evaluating it directly with esbuild.
-const helperSource = main.split('\n').find(line => line.trim().startsWith('function tenderDaysRemainingLabel('));
-assert.ok(helperSource, 'Debe poder extraerse el cuerpo del helper de días restantes.');
-const helperModule = `${helperSource}\nexport { tenderDaysRemainingLabel };\n`;
-const built = buildSync({ stdin: { contents: helperModule, loader: 'ts', resolveDir: process.cwd() }, bundle: false, platform: 'node', format: 'esm', write: false });
-const helperUrl = `data:text/javascript;base64,${Buffer.from(built.outputFiles[0].contents).toString('base64')}`;
-const { tenderDaysRemainingLabel } = await import(helperUrl);
-assert.equal(tenderDaysRemainingLabel(null), 'Sin fecha');
-assert.equal(tenderDaysRemainingLabel(undefined), 'Sin fecha');
-const inFiveDays = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
-assert.equal(tenderDaysRemainingLabel(inFiveDays), '5 día(s)');
-const yesterday = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10);
-assert.equal(tenderDaysRemainingLabel(yesterday), 'Vencida');
+// AGT-002 Task 6 · la vigencia temporal aparece una sola vez, en el banner del shell.
+assert.doesNotMatch(publicBlock, /label="Días restantes"/, 'El resumen público no debe repetir la vigencia como conteo regresivo.');
+assert.doesNotMatch(main, /tenderDaysRemainingLabel/, 'El helper que imprimía "Vencida" fuera del banner debe desaparecer.');
+assert.doesNotMatch(publicBlock, /\bVigente\b|\bVencida\b/, 'Sólo TenderDetailNavigation escribe Vigente/Vencida.');
+assert.match(
+  main,
+  /<TenderDetailNavigation[^>]*expectedCloseDate=\{o\.expected_close_date\}/,
+  'La vigencia se computa una sola vez, en el shell, desde la misma fecha de cierre oficial.',
+);
 
 console.log('tender summary public fields passed');

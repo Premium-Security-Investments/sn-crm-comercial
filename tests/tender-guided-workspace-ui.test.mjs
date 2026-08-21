@@ -23,7 +23,8 @@ for (const state of ['Análisis pendiente', 'Análisis desactualizado', 'Anális
 for (const label of ['Analizar', 'Actualizar', 'Volver a analizar']) assert.match(analysis, new RegExp(`${label} con \\$\\{VIGIA_VISIBLE_NAMES\\.tenders\\}`));
 assert.doesNotMatch(analysis, /Generar análisis preliminar|Actualizar análisis/, 'No debe reaparecer una acción determinística equivalente a Vig-IA.');
 assert.match(analysis, /tenderAnalysisMethodLabel\(analysis\.producer\)/);
-assert.match(analysis, /id="tender-analysis"/);
+assert.doesNotMatch(analysis, /id="tender-analysis"/, 'El componente interno no debe duplicar el ancla de Análisis.');
+assert.equal((main.match(/id="tender-analysis"/g) || []).length, 1, 'El coordinador debe declarar una sola ancla de Análisis.');
 assert.doesNotMatch(main, /analysis\s*&&\s*<TenderAnalysisSection/, 'La sección de análisis siempre debe renderizarse.');
 assert.match(main, /<TenderDocumentSection/);
 assert.match(main, /<TenderAnalysisSection/);

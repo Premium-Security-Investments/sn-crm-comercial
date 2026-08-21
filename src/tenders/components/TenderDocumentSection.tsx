@@ -5,7 +5,6 @@ type TenderDocumentSectionProps = {
   documents: TenderDocumentRecord[];
   busy: boolean;
   statusText?: string;
-  sourceUrl?: string | null;
   refreshResult?: TenderDocumentRefreshResult | null;
   onRefresh: () => void;
   onUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
@@ -21,7 +20,7 @@ function defaultTypeLabel(value: string) {
   return String(value || 'otro').replace(/_/g, ' ').replace(/^./, (char: string) => char.toUpperCase());
 }
 
-export function TenderDocumentSection({ documents, busy, statusText, sourceUrl, refreshResult, onRefresh, onUpload, documentTypeLabel = defaultTypeLabel }: TenderDocumentSectionProps) {
+export function TenderDocumentSection({ documents, busy, statusText, refreshResult, onRefresh, onUpload, documentTypeLabel = defaultTypeLabel }: TenderDocumentSectionProps) {
   const [query, setQuery] = useState('');
   const [type, setType] = useState('all');
   const types = useMemo(() => [...new Set(documents.map(document => document.document_type || 'otro'))].sort(), [documents]);
@@ -43,7 +42,6 @@ export function TenderDocumentSection({ documents, busy, statusText, sourceUrl, 
         <button type="button" onClick={onRefresh} disabled={busy}>{busy ? 'Actualizando…' : 'Actualizar documentos'}</button>
         <details><summary className="button secondary">Cargar complementarios</summary><label className="document-upload-box">Seleccionar archivos<input multiple type="file" accept=".pdf,.docx,.zip,.txt,.csv,.xlsx,.xls" onChange={onUpload} disabled={busy}/><small>PDF, Word, TXT, ZIP o archivos de soporte. Límite operativo: 50 MiB por archivo.</small></label></details>
       </div>
-      {sourceUrl ? <a className="button secondary tender-document-external-link" href={sourceUrl} target="_blank" rel="noreferrer">Abrir fuente oficial <span aria-hidden="true">↗</span></a> : <span className="button secondary is-disabled" aria-disabled="true">Fuente oficial no disponible</span>}
     </div>
     {refreshResult && <div className="tender-refresh-summary" role="status"><strong>Última actualización</strong><span>{refreshResult.new_count} nuevos</span><span>{refreshResult.updated_count} actualizados</span><span>{refreshResult.unchanged_count} sin cambios</span><span>{refreshResult.failed_count} fallidos</span></div>}
     {statusText && <div className="notice" role="status">{statusText}</div>}

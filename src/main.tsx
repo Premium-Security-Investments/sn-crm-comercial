@@ -13,6 +13,7 @@ import { TenderAnalysisSection } from './tenders/components/TenderAnalysisSectio
 import { TenderIntegralAnalysisV3View } from './tenders/components/TenderIntegralAnalysisV3View';
 import { TenderDetailNavigation, resolveTenderSourceUrl } from './tenders/components/TenderDetailNavigation';
 import { TenderDocumentSection } from './tenders/components/TenderDocumentSection';
+import { TenderDecisionBrief } from './tenders/components/TenderDecisionBrief';
 import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDecisionPanel';
 import { TenderDossierWorkspacePanel } from './tenders/components/TenderDossierWorkspacePanel';
 import { TenderModuleNavigation } from './tenders/components/TenderModuleNavigation';
@@ -24,7 +25,7 @@ import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderF
 import { tenderSharePointStatusLabel } from './tenders/statusLabels';
 import { shouldReloadTenderArtifacts } from './tenders/processingStatus';
 import { AGT002_REANALYSIS_MAX_POLLS, AGT002_REANALYSIS_POLL_INTERVAL_MS, classifyAgt002ReanalysisPoll } from './tenders/agt002ReanalysisPolling';
-import type { Agt002ReanalysisJob, TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
+import type { Agt002ReanalysisJob, TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
 import { setAreaScopeSelection, type AccessAssignment } from './profileAccessState';
 import { supabaseBrowser } from './supabaseBrowser';
@@ -234,7 +235,9 @@ function fmtMoneyCompact(n: number | null | undefined) {
 }
 function fmtDate(value?: string | null) { return value ? dateFmt.format(new Date(value)) : '—'; }
 function fmtDateOnly(value?: string | null) { return formatDateOnly(value); }
-function tenderDaysRemainingLabel(value: string | null | undefined) { if (!value) return 'Sin fecha'; const [year, month, day] = value.slice(0, 10).split('-').map(Number); const today = new Date(); const remaining = Math.round((Date.UTC(year, month - 1, day) - Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())) / 86_400_000); return remaining < 0 ? 'Vencida' : `${remaining} día(s)`; }
+// La vigencia temporal de la oportunidad se resuelve una sola vez, en TenderDetailNavigation
+// (`resolveTenderValidity` → Vigente / Vencida). El Resumen conserva la fecha de cierre oficial y
+// no vuelve a imprimir un conteo regresivo capaz de degradar a una segunda alerta de vencimiento.
 function formatDisplayName(value?: string | null) {
   const cleaned = String(value || '').trim().replace(/\s+/g, ' ');
   if (!cleaned) return '—';
@@ -736,8 +739,8 @@ function scoreLabel(score?: number) {
   if (value >= 40) return 'Medio';
   return 'Bajo / validar';
 }
-function Select({ value, onChange, options, empty, disabled = false }: { value: string; onChange: (value: string) => void; options: string[][]; empty: string; disabled?: boolean }) {
-  return <select value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>{empty ? <option value="">{empty}</option> : null}{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>;
+function Select({ id, value, onChange, options, empty, disabled = false }: { id?: string; value: string; onChange: (value: string) => void; options: string[][]; empty: string; disabled?: boolean }) {
+  return <select id={id} value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>{empty ? <option value="">{empty}</option> : null}{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>;
 }
 function Badge({ children, tone }: { children: React.ReactNode; tone?: string }) { return <span className={`badge ${tone ? `badge-${tone}` : ''}`}>{children}</span>; }
 function Pagination({ page, pageSize, total, onChange, label }: { page: number; pageSize: number; total: number; onChange: (page: number) => void; label?: string }) {
@@ -749,6 +752,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   const [exitingTender, setExitingTender] = useState<'radar' | 'seguimiento' | null>(null);
   const [exitFeedback, setExitFeedback] = useState<string | null>(null);
   const [tenderAnalysis, setTenderAnalysis] = useState<TenderDocumentAnalysis | null>(null);
+  const [tenderQuestionResponses, setTenderQuestionResponses] = useState<TenderQuestionResponse[]>([]);
   const [tenderDocumentNavigationState, setTenderDocumentNavigationState] = useState<TenderPanelState<TenderDocumentNavigationValue>>({ phase: 'loading' });
   const [tenderAnalysisNavigationState, setTenderAnalysisNavigationState] = useState<TenderPanelState<TenderDocumentAnalysis | null>>({ phase: 'loading' });
   const [tenderDecisionNavigationState, setTenderDecisionNavigationState] = useState<TenderPanelState<TenderGoNoGoDecision | null>>({ phase: 'loading' });
@@ -773,7 +777,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   };
   useEffect(() => {
     activeDetailIdRef.current = id; detailRequestRef.current += 1;
-    setDetail(null); setError(null); setExitFeedback(null); setExitingTender(null); setTenderAnalysis(null); setTenderRevision(0);
+    setDetail(null); setError(null); setExitFeedback(null); setExitingTender(null); setTenderAnalysis(null); setTenderQuestionResponses([]); setTenderRevision(0);
     setTenderDocumentNavigationState({ phase: 'loading' });
     setTenderAnalysisNavigationState({ phase: 'loading' });
     setTenderDecisionNavigationState({ phase: 'loading' });
@@ -816,26 +820,28 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     go(destination === 'seguimiento' ? '#/tenders?view=seguimiento' : '#/tenders?view=radar');
   };
   return <section className="stack">
-    <div id="tender-summary" className="tender-detail-anchor">
+    <div id="tender-summary" className="tender-detail-anchor" tabIndex={-1}>
       <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p></div><div className="row-actions"><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>{o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}</div></div>
       {exitFeedback && <div className="error" role="alert">{exitFeedback}</div>}
     </div>
     {o.service_type_code === 'licitacion_publica' && <TenderModuleNavigation active="oportunidades" navigate={go} currentProfile={data.currentProfile} />}
-    {o.service_type_code === 'licitacion_publica' && <TenderDetailNavigation entity={o.company_name} sourceUrl={o.source_url} observations={o.observaciones} statusSnapshot={tenderNavigationSnapshot} onBack={() => go('#/tenders?view=oportunidades')} />}
+    {o.service_type_code === 'licitacion_publica' && <TenderDetailNavigation entity={o.company_name} sourceUrl={o.source_url} observations={o.observaciones} expectedCloseDate={o.expected_close_date} statusSnapshot={tenderNavigationSnapshot} onBack={() => go('#/tenders?view=oportunidades')} />}
     {o.service_type_code === 'licitacion_publica' ? <>
       <Panel title="Resumen de la oportunidad">
         <div className="tender-opportunity-summary-grid">
-          <Info label="Entidad" value={o.company_name}/><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Sector" value={o.economic_sector}/><Info label="Ciudad" value={o.quote_city}/>
-          <Info label="Cuantía" value={fmtMoney(o.offer_value)}/><Info label="Cierre oficial" value={fmtDateOnly(o.expected_close_date)}/><Info label="Días restantes" value={tenderDaysRemainingLabel(o.expected_close_date)}/><Info label="Etapa" value={o.stage_name}/><Info label="Responsable" value={o.owner_name || 'Sin comercial'}/>
+          <Info label="Entidad" value={o.company_name}/><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Sector" value={o.economic_sector}/><Info label="Ciudad" value={o.quote_city || 'Ciudad por confirmar'}/>
+          <Info label="Cuantía" value={fmtMoney(o.offer_value)}/><Info label="Cierre oficial" value={fmtDateOnly(o.expected_close_date)}/><Info label="Responsable" value={o.owner_name || 'Sin comercial'}/>
         </div>
-        <div className="tender-opportunity-summary-actions">{o.source_url ? <a className="button secondary" href={o.source_url} target="_blank" rel="noreferrer">Abrir fuente oficial</a> : <span className="muted">Fuente oficial no disponible.</span>}</div>
       </Panel>
     </> : <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Fecha creación" value={fmtDate(o.created_at)}/><Info label="Cierre estimado" value={fmtDateOnly(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>}
     {canRenderOpportunityCopilot(data.currentProfile, o.service_type_code) && <VigiaOpportunityCopilot opportunityId={o.id} request={api} />}
-    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} currentProfile={data.currentProfile} focusTargetRef={documentReviewRef} onNavigationStateChanged={(documents, analysis) => { if (activeDetailIdRef.current === o.id) { setTenderDocumentNavigationState(documents); setTenderAnalysisNavigationState(analysis); } }} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onReload={async()=>{await load(); await refresh();}} />}
-    {o.service_type_code === 'licitacion_publica' && <div id="tender-decision" className="tender-detail-anchor"><TenderGoNoGoDecisionPanel key={`tender-decision-${o.id}`} opportunityId={o.id} opportunityName={o.company_name || 'Oportunidad de licitación'} analysis={tenderAnalysis} currentProfile={data.currentProfile} request={api} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderDecisionNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /></div>}
-    {o.service_type_code === 'licitacion_publica' && <div id="tender-preparation" className="tender-detail-anchor"><TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} currentProfile={data.currentProfile} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderPreparationNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /><TenderDossierWorkspacePanel key={`tender-dossier-${o.id}-${tenderRevision}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={can(data.currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE)} offerStatus={o.tender_offer_status || null} /></div>}
-    <div id="tender-follow-up" className="tender-detail-anchor">{o.service_type_code === 'licitacion_publica' ? <PublicTenderFollowUp opportunity={o} profiles={data.profiles} currentProfile={data.currentProfile} /> : <><div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><div id="opportunity-follow-up" className="opportunity-follow-up-anchor" tabIndex={-1} ref={followUpRef}><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div></div>
+    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} currentProfile={data.currentProfile} focusTargetRef={documentReviewRef} onNavigationStateChanged={(documents, analysis) => { if (activeDetailIdRef.current === o.id) { setTenderDocumentNavigationState(documents); setTenderAnalysisNavigationState(analysis); } }} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onQuestionResponsesChanged={responses => { if (activeDetailIdRef.current === o.id) setTenderQuestionResponses(responses); }} onReload={async()=>{await load(); await refresh();}} />}
+    {o.service_type_code === 'licitacion_publica' && <div id="tender-decision" className="tender-detail-anchor" tabIndex={-1}>
+      <TenderDecisionBrief analysis={tenderAnalysis} questionResponses={tenderQuestionResponses} commercialContext={{ amountLabel: fmtMoney(o.offer_value), closeLabel: fmtDateOnly(o.expected_close_date), city: o.quote_city, sector: o.economic_sector, commercialFitPositives: tenderAnalysis?.commercial_fit?.positives || [] }} />
+      <TenderGoNoGoDecisionPanel key={`tender-decision-${o.id}`} opportunityId={o.id} opportunityName={o.company_name || 'Oportunidad de licitación'} analysis={tenderAnalysis} currentProfile={data.currentProfile} request={api} questionResponses={tenderQuestionResponses} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderDecisionNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} />
+    </div>}
+    {o.service_type_code === 'licitacion_publica' && <div id="tender-preparation" className="tender-detail-anchor" tabIndex={-1}><TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} currentProfile={data.currentProfile} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderPreparationNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /><TenderDossierWorkspacePanel key={`tender-dossier-${o.id}-${tenderRevision}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={can(data.currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE)} offerStatus={o.tender_offer_status || null} /></div>}
+    <div id="tender-follow-up" className="tender-detail-anchor" tabIndex={-1}>{o.service_type_code === 'licitacion_publica' ? <PublicTenderFollowUp opportunity={o} profiles={data.profiles} currentProfile={data.currentProfile} /> : <><div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><div id="opportunity-follow-up" className="opportunity-follow-up-anchor" tabIndex={-1} ref={followUpRef}><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div></div>
     <Panel title="Línea de seguimientos"><div className="timeline">{visibleInteractions.length ? visibleInteractions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel></>}</div>
   </section>;
 }
@@ -850,7 +856,7 @@ function fileToBase64(file: File) {
     reader.readAsDataURL(file);
   });
 }
-function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAnalysisChanged, onNavigationStateChanged, focusTargetRef }: { opportunity: Opportunity; currentProfile: Profile; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; onNavigationStateChanged?: (documents: TenderPanelState<TenderDocumentNavigationValue>, analysis: TenderPanelState<TenderDocumentAnalysis | null>) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
+function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAnalysisChanged, onQuestionResponsesChanged, onNavigationStateChanged, focusTargetRef }: { opportunity: Opportunity; currentProfile: Profile; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; onQuestionResponsesChanged?: (responses: TenderQuestionResponse[]) => void; onNavigationStateChanged?: (documents: TenderPanelState<TenderDocumentNavigationValue>, analysis: TenderPanelState<TenderDocumentAnalysis | null>) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
   const [payload, setPayload] = useState<TenderDocumentsPayload>({ documents: [], analysis: null, analyses: [] });
   const [processingStatus, setProcessingStatus] = useState<TenderProcessingStatus | null>(null);
   const [statusText, setStatusText] = useState('');
@@ -876,7 +882,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
     const data = await api<TenderDocumentsPayload>(`/api/tender-documents?id=${encodeURIComponent(requestedId)}`);
     if (version !== requestVersionRef.current || activeOpportunityRef.current !== requestedId) return;
-    setPayload(data); onAnalysisChanged?.(data.analysis || null); emitNavigationPayload(data);
+    setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); emitNavigationPayload(data);
   };
   const loadProcessingStatus = async () => {
     const requestedId = opportunity.id;
@@ -899,7 +905,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     setActiveReanalysisJobId(null);
     activeOpportunityRef.current = opportunity.id; requestVersionRef.current += 1;
     processingStatusRef.current = null; terminalReloadedJobRef.current = null;
-    setPayload({ documents: [], analysis: null, analyses: [] }); setProcessingStatus(null); setRefreshResult(null); setStatusText(''); setAnalysisStatus({ message: '', tone: 'status' }); setBusy(false); onAnalysisChanged?.(null); onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
+    setPayload({ documents: [], analysis: null, analyses: [] }); setProcessingStatus(null); setRefreshResult(null); setStatusText(''); setAnalysisStatus({ message: '', tone: 'status' }); setBusy(false); onAnalysisChanged?.(null); onQuestionResponsesChanged?.([]); onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
     void loadDocuments().catch(err => { if (activeOpportunityRef.current === opportunity.id) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'error', message }); } });
     void loadProcessingStatus().catch(err => { if (activeOpportunityRef.current === opportunity.id) setStatusText(err instanceof Error ? err.message : String(err)); });
     const processingTimer = window.setInterval(() => void loadProcessingStatus().catch(() => undefined), 10_000);
@@ -925,7 +931,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
         content_base64: await fileToBase64(file)
       })));
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-upload', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, files }) });
-      setPayload(data); onAnalysisChanged?.(data.analysis || null); emitNavigationPayload(data); setStatusText('Documentos guardados en Supabase y texto extraído.');
+      setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); emitNavigationPayload(data); setStatusText('Documentos guardados en Supabase y texto extraído.');
     } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'ready', value: payload.analysis || null }); }
     finally { setBusy(false); }
   };
@@ -992,7 +998,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
       const requestedOpportunityId = opportunity.id;
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-analyze-agent-preview', { method: 'POST', body: JSON.stringify({ opportunity_id: requestedOpportunityId }) });
       if (activeOpportunityRef.current !== requestedOpportunityId) return;
-      setPayload(data); onAnalysisChanged?.(data.analysis || null);
+      setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []);
       if (data.reanalysis_job?.job_id) {
         setAnalysisStatus({
           message: data.reanalysis_job.status === 'running'
@@ -1028,6 +1034,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
         body: JSON.stringify({ opportunity_id: opportunity.id, response_id, response_ticket, attachments, ...input }),
       });
       setPayload(current => ({ ...current, question_responses: data.question_responses }));
+      onQuestionResponsesChanged?.(data.question_responses);
       setStatusText('Respuesta registrada con autor, fecha y trazabilidad. La decisión GO / NO GO no cambió.');
       if (data.reanalysis?.job_id) {
         setAnalysisStatus({ message: `Respuesta incorporada. Reanálisis en cola con ${VIGIA_VISIBLE_NAMES.tenders}…`, tone: 'status' });
@@ -1046,7 +1053,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     onNavigationStateChanged?.({ phase: 'pending', label: 'Importación documental en curso' }, { phase: 'ready', value: payload.analysis || null });
     try {
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-import', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
-      setPayload(data); onAnalysisChanged?.(data.analysis || null);
+      setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []);
       const failedCount = Number(data.failed_count || 0);
       if (failedCount > 0) onNavigationStateChanged?.({ phase: 'error', message: `Falló la importación de ${failedCount} documento(s)` }, { phase: 'ready', value: data.analysis || null });
       else onNavigationStateChanged?.(
@@ -1068,12 +1075,17 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     } catch (err) { setStatusText(err instanceof Error ? err.message : String(err)); }
     finally { setBusy(false); }
   };
-  const sourceUrl = resolveTenderSourceUrl(opportunity.source_url, opportunity.observaciones);
-  return <div id="tender-document-review" className="tender-guided-review" tabIndex={-1} ref={focusTargetRef}>
-    <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} sourceUrl={sourceUrl} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
-    <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} />
-    <details className="tender-integral-analysis-trace"><summary>Ver análisis técnico y trazabilidad por requisito</summary><TenderIntegralAnalysisV3View analysis={analysis} /></details>
-  </div>;
+  // Documentos y Análisis son secciones hermanas del expediente: Análisis deja de vivir dentro del
+  // ancla documental para poder ser la superficie completa de condiciones e impedimentos.
+  return <>
+    <div id="tender-document-review" className="tender-guided-review" tabIndex={-1} ref={focusTargetRef}>
+      <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
+    </div>
+    <div id="tender-analysis" className="tender-guided-review" tabIndex={-1}>
+      <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} />
+      <details id="tender-technical-analysis" className="tender-integral-analysis-trace"><summary>Ver respaldo técnico del análisis</summary><TenderIntegralAnalysisV3View analysis={analysis} /></details>
+    </div>
+  </>;
 }
 function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, onNavigationStateChanged }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void>; onNavigationStateChanged?: (state: TenderPanelState<TenderPreparationNavigationValue>) => void }) {
   const [payload, setPayload] = useState<TenderOfferPreparationPayload>({ preparation: null, preparations: [], notes: [] });
@@ -1222,7 +1234,7 @@ function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { oppor
     ...offerHistory.map(event => ({ id: `offer-${event.id}`, title: `${offerStatusLabels[event.from_status] || event.from_status} → ${offerStatusLabels[event.to_status] || event.to_status}`, createdAt: event.changed_at, actor: event.psi_sales_profiles?.full_name || event.actor_id || 'Persona autorizada', note: event.note })),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [events, decisions, offerHistory, profiles]);
   return <div className="stack">
-    <Panel title="Registrar actuación o novedad"><form onSubmit={save} className="form"><Select value={type} onChange={setType} options={publicActuationOptions} empty="Tipo de actuación"/><textarea required placeholder="Describe la actuación o novedad del proceso" value={note} onChange={event => setNote(event.target.value)}/><small>Registrado por: {currentProfile.full_name}</small><button disabled={!note.trim()}>Guardar actuación</button>{status && <small>{status}</small>}</form></Panel>
+    <Panel title="Registrar actuación o novedad"><form onSubmit={save} className="form"><label htmlFor="tender-follow-up-actuation-type">Tipo de actuación</label><Select id="tender-follow-up-actuation-type" value={type} onChange={setType} options={publicActuationOptions} empty="Tipo de actuación"/><label htmlFor="tender-follow-up-note">Descripción de la actuación o novedad</label><textarea id="tender-follow-up-note" required placeholder="Describe la actuación o novedad del proceso" value={note} onChange={event => setNote(event.target.value)}/><small>Registrado por: {currentProfile.full_name}</small><button disabled={!note.trim()}>Guardar actuación</button>{status && <small>{status}</small>}</form></Panel>
     <Panel title="Historial del proceso"><p className="muted">Decisiones, cambios de estado y actuaciones que explican la evolución comercial de la oportunidad.</p><div className="timeline">{processHistory.length ? processHistory.map(item => <div className="event" key={item.id}><strong>{item.title}</strong><span>{fmtDate(item.createdAt)} · {item.actor}</span>{item.note && <p>{item.note}</p>}{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Ver fuente asociada</a>}</div>) : <p className="muted">{loading ? 'Cargando historial…' : 'Sin hitos comerciales registrados.'}</p>}</div>{nextCursor && <button className="secondary" disabled={loading} onClick={() => void loadPage(nextCursor).catch(error => setStatus(error instanceof Error ? error.message : String(error)))}>{loading ? 'Cargando…' : 'Cargar más'}</button>}</Panel>
     <details className="tender-technical-audit"><summary>Auditoría técnica de {VIGIA_VISIBLE_NAMES.tenders}</summary><p className="muted">Procesamiento documental, análisis y fallas técnicas. No representa el avance comercial.</p><div className="timeline">{technicalEvents.length ? technicalEvents.map(event => <div className="event" key={event.id}><strong>{technicalActuationLabel(event.event_type)}</strong><span>{fmtDate(event.created_at)} · {actorLabel(event)}</span>{event.note && <p>{event.note}</p>}</div>) : <p className="muted">Sin eventos técnicos registrados.</p>}</div></details>
   </div>;

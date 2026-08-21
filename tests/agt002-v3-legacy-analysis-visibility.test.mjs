@@ -21,18 +21,8 @@ assert.match(
 );
 assert.match(
   component,
-  /className=\{`tender-analysis-section tender-detail-anchor\$\{hasIntegralV3 \? ' is-v3-compact' : ''\}`\}/,
-  'Los controles operativos V3 deben usar una presentación compacta.',
-);
-assert.match(
-  component,
-  /aria-labelledby=\{hasIntegralV3 \? undefined : 'tender-analysis-title'\}/,
-  'El modo compacto no debe referenciar un título oculto.',
-);
-assert.match(
-  component,
-  /aria-label=\{hasIntegralV3 \? 'Dudas y acciones del análisis integral' : undefined\}/,
-  'El modo compacto debe conservar un nombre accesible.',
+  /return <div className=\{`tender-analysis-section tender-detail-anchor\$\{hasIntegralV3 \? ' is-v3-compact' : ''\}`\}>/,
+  'La raíz del análisis debe ser un div neutro sin aria-labelledby; las secciones internas conservan sus propios títulos.',
 );
 assert.match(component, /<div className="tender-analysis-actions">[\s\S]*showAnalysisAction/, 'El botón de actualizar debe permanecer disponible fuera del brief legado.');
 assert.match(styles, /\.tender-analysis-section\.is-v3-compact\{[^}]*border:0[^}]*background:transparent/s, 'El modo V3 debe retirar visualmente la tarjeta duplicada.');

@@ -230,6 +230,246 @@ const realOptions = { canonicalUnitIds, manifestUnresolvedRequirementIds, regist
   assert.equal(gateFinding.exercise_bypassed, true);
 }
 
+// Matriz obligatoria de `presentation` por reviewed_status (contrato exacto vinculante, §task-1-brief):
+//   decision_question: title, missing, action_required obligatorios; summary opcional.
+//   blocker:           title, summary, action_required obligatorios; missing opcional.
+//   supported:         title, summary obligatorios; missing/action_required no exigidos.
+//   preparation:       title, action_required obligatorios; summary/missing opcionales.
+//   not_applicable:    presentation prohibido (no se renderiza en primera lectura).
+// Únicas claves permitidas: title, summary, missing, action_required. Nunca `headline`.
+function buildSyntheticBlockerEntry(presentation) {
+  return {
+    id: 'exercise::synthetic-blocker-presentation-test',
+    requirement_id: 'lifecycle:cierre-prorroga',
+    label: 'Entrada sintética de prueba (blocker) — sólo para la matriz de presentation',
+    origin: 'manifest_unresolved_entry',
+    reviewed_status: 'blocker',
+    curability: 'curable',
+    rationale: 'Entrada sintética usada únicamente para probar la matriz de presentation de blocker.',
+    evidence_refs: [{ type: 'manifest_requirement', requirement_id: 'lifecycle:cierre-prorroga' }],
+    ...(presentation !== undefined ? { presentation } : {}),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// 10. Fail-closed: `presentation` (objeto ausente) es obligatorio para todo reviewed_status
+//     salvo `not_applicable`. Un objeto ausente nunca debe caer de vuelta a `rationale`.
+// ---------------------------------------------------------------------------------------------
+{
+  const fixture = loadFixture();
+  const tampered = JSON.parse(JSON.stringify(fixture));
+  const target = tampered.entries.find(e => e.reviewed_status === 'supported');
+  delete target.presentation;
+  assert.throws(
+    () => validateAgt002ManizalesExerciseDecisionReviewFixture(tampered, realOptions),
+    /presentation es obligatorio/,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// 11. Fail-closed: `decision_question` exige `title`, `missing` y `action_required` (summary es
+//     opcional). Falta cualquiera de los tres obligatorios ⇒ rechazo.
+// ---------------------------------------------------------------------------------------------
+{
+  const fixture = loadFixture();
+  const tampered = JSON.parse(JSON.stringify(fixture));
+  const target = tampered.entries.find(e => e.reviewed_status === 'decision_question');
+  target.presentation = { title: 'Título de prueba', action_required: 'Acción de prueba requerida.' }; // falta "missing"
+  assert.throws(
+    () => validateAgt002ManizalesExerciseDecisionReviewFixture(tampered, realOptions),
+    /presentation\.missing es obligatorio/,
+  );
+}
+{
+  const fixture = loadFixture();
+  const tampered = JSON.parse(JSON.stringify(fixture));
+  const target = tampered.entries.find(e => e.reviewed_status === 'decision_question');
+  target.presentation = { title: 'Título de prueba', missing: 'Qué falta por confirmar.' }; // falta "action_required"
+  assert.throws(
+    () => validateAgt002ManizalesExerciseDecisionReviewFixture(tampered, realOptions),
+    /presentation\.action_required es obligatorio/,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// 12. Fail-closed: `preparation` exige `title` y `action_required` (summary/missing opcionales).
+// ---------------------------------------------------------------------------------------------
+{
+  const fixture = loadFixture();
+  const tampered = JSON.parse(JSON.stringify(fixture));
+  const target = tampered.entries.find(e => e.reviewed_status === 'preparation');
+  target.presentation = { title: 'Título de prueba' }; // falta "action_required"
+  assert.throws(
+    () => validateAgt002ManizalesExerciseDecisionReviewFixture(tampered, realOptions),
+    /presentation\.action_required es obligatorio/,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// 13. Fail-closed: `supported` exige `title` y `summary`; no exige `missing` ni `action_required`.
+// ---------------------------------------------------------------------------------------------
+{
+  const fixture = loadFixture();
+  const tampered = JSON.parse(JSON.stringify(fixture));
+  const target = tampered.entries.find(e => e.reviewed_status === 'supported');
+  target.presentation = { title: 'Título de prueba' }; // falta "summary"
+  assert.throws(
+    () => validateAgt002ManizalesExerciseDecisionReviewFixture(tampered, realOptions),
+    /presentation\.summary es obligatorio/,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// 14. Fail-closed: `blocker` exige `title`, `summary` y `action_required` (missing opcional).
+// ---------------------------------------------------------------------------------------------
+{
+  const fixture = loadFixture();
+  const tampered = JSON.parse(JSON.stringify(fixture));
+  tampered.entries.push(buildSyntheticBlockerEntry({ title: 'Título de prueba', action_required: 'Acción de prueba requerida.' })); // falta "summary"
+  assert.throws(
+    () => validateAgt002ManizalesExerciseDecisionReviewFixture(tampered, realOptions),
+    /presentation\.summary es obligatorio/,
+  );
+}
+{
+  const fixture = loadFixture();
+  const tampered = JSON.parse(JSON.stringify(fixture));
+  tampered.entries.push(buildSyntheticBlockerEntry({ title: 'Título de prueba', summary: 'Resumen de prueba.' })); // falta "action_required"
+  assert.throws(
+    () => validateAgt002ManizalesExerciseDecisionReviewFixture(tampered, realOptions),
+    /presentation\.action_required es obligatorio/,
+  );
+}
+{
+  // GREEN-shaped: blocker con los tres campos obligatorios y sin "missing" (opcional) es válido.
+  const fixture = loadFixture();
+  const tampered = JSON.parse(JSON.stringify(fixture));
+  tampered.entries.push(buildSyntheticBlockerEntry({ title: 'Título de prueba', summary: 'Resumen de prueba.', action_required: 'Acción de prueba requerida.' }));
+  const review = validateAgt002ManizalesExerciseDecisionReviewFixture(tampered, realOptions);
+  assert.ok(review, 'blocker con title+summary+action_required (sin missing) debe validar');
+}
+
+// ---------------------------------------------------------------------------------------------
+// 15. Fail-closed: campos vacíos rechazados — tanto un campo obligatorio vacío como un campo
+//     opcional presente-pero-vacío.
+// ---------------------------------------------------------------------------------------------
+{
+  const fixture = loadFixture();
+  const tampered = JSON.parse(JSON.stringify(fixture));
+  const target = tampered.entries.find(e => e.reviewed_status === 'preparation');
+  target.presentation = { title: 'Título de prueba', action_required: '' };
+  assert.throws(
+    () => validateAgt002ManizalesExerciseDecisionReviewFixture(tampered, realOptions),
+    /texto humano no vacío/,
+  );
+}
+{
+  const fixture = loadFixture();
+  const tampered = JSON.parse(JSON.stringify(fixture));
+  const target = tampered.entries.find(e => e.reviewed_status === 'decision_question');
+  target.presentation = { title: 'Título de prueba', missing: 'Qué falta.', action_required: 'Acción.', summary: '   ' }; // opcional presente pero vacío
+  assert.throws(
+    () => validateAgt002ManizalesExerciseDecisionReviewFixture(tampered, realOptions),
+    /texto humano no vacío/,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// 16. Fail-closed: claves no permitidas son rechazadas (conjunto cerrado). `headline` en
+//     particular NUNCA se acepta — el contrato exacto sólo permite title/summary/missing/
+//     action_required.
+// ---------------------------------------------------------------------------------------------
+{
+  const fixture = loadFixture();
+  const tampered = JSON.parse(JSON.stringify(fixture));
+  const target = tampered.entries.find(e => e.reviewed_status === 'supported');
+  target.presentation = { title: 'Título de prueba', summary: 'Resumen de prueba.', extra_field: 'no permitido' };
+  assert.throws(
+    () => validateAgt002ManizalesExerciseDecisionReviewFixture(tampered, realOptions),
+    /campos no permitidos/,
+  );
+}
+{
+  const fixture = loadFixture();
+  const tampered = JSON.parse(JSON.stringify(fixture));
+  const target = tampered.entries.find(e => e.reviewed_status === 'supported');
+  target.presentation = { headline: 'Título de prueba', summary: 'Resumen de prueba.' };
+  assert.throws(
+    () => validateAgt002ManizalesExerciseDecisionReviewFixture(tampered, realOptions),
+    /campos no permitidos/,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// 17. Fail-closed: la copia humana nunca puede limitarse a repetir nomenclatura técnica
+//     (identificadores snake_case) en lugar de lenguaje humano real.
+// ---------------------------------------------------------------------------------------------
+{
+  const fixture = loadFixture();
+  const tampered = JSON.parse(JSON.stringify(fixture));
+  const target = tampered.entries.find(e => e.reviewed_status === 'decision_question');
+  target.presentation = { title: 'decision_question', missing: 'Qué falta.', action_required: 'Acción.' };
+  assert.throws(
+    () => validateAgt002ManizalesExerciseDecisionReviewFixture(tampered, realOptions),
+    /nomenclatura técnica/,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// 18. Fail-closed: `presentation` está prohibido en entradas `not_applicable` — ese cubo es
+//     ruido/señal despriorizada y nunca debe crecer copia humana gobernada propia; tampoco se
+//     renderiza en primera lectura.
+// ---------------------------------------------------------------------------------------------
+{
+  const fixture = loadFixture();
+  const tampered = JSON.parse(JSON.stringify(fixture));
+  const target = tampered.entries.find(e => e.reviewed_status === 'not_applicable');
+  target.presentation = { title: 'Título de prueba', summary: 'Resumen de prueba.' };
+  assert.throws(
+    () => validateAgt002ManizalesExerciseDecisionReviewFixture(tampered, realOptions),
+    /presentation sólo aplica/,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// 19. GREEN path: el fixture gobernado real cumple la matriz exacta por reviewed_status, con
+//     únicamente las claves permitidas, congelado (Object.freeze), y sin presentation en
+//     not_applicable.
+// ---------------------------------------------------------------------------------------------
+{
+  const fixture = loadFixture();
+  const review = deriveAgt002ManizalesExerciseDecisionReview(integralAnalysis, fixture, realOptions);
+  const ALLOWED_PRESENTATION_KEYS = ['title', 'summary', 'missing', 'action_required'];
+  const REQUIRED_BY_STATUS = {
+    decision_question: ['title', 'missing', 'action_required'],
+    blocker: ['title', 'summary', 'action_required'],
+    supported: ['title', 'summary'],
+    preparation: ['title', 'action_required'],
+  };
+
+  for (const [status, bucketKey] of [
+    ['supported', 'supported'],
+    ['preparation', 'preparation'],
+    ['decision_question', 'decision_questions'],
+    ['blocker', 'blockers'],
+  ]) {
+    for (const finding of review[bucketKey]) {
+      assert.ok(finding.presentation, `finding ${finding.id} (${status}) must carry governed human presentation`);
+      const keys = Object.keys(finding.presentation);
+      assert.ok(keys.every(key => ALLOWED_PRESENTATION_KEYS.includes(key)), `${finding.id}.presentation must only use allowed keys, got: ${keys.join(', ')}`);
+      for (const requiredField of REQUIRED_BY_STATUS[status]) {
+        assert.ok(Object.hasOwn(finding.presentation, requiredField), `${finding.id}.presentation.${requiredField} is required for ${status}`);
+        assert.equal(typeof finding.presentation[requiredField], 'string');
+        assert.ok(finding.presentation[requiredField].trim().length > 0, `${finding.id}.presentation.${requiredField} must be non-empty`);
+      }
+      assert.ok(Object.isFrozen(finding.presentation), `${finding.id}.presentation must be frozen (governed, immutable)`);
+    }
+  }
+  for (const finding of review.not_applicable) {
+    assert.equal(Object.hasOwn(finding, 'presentation'), false, `${finding.id} (not_applicable) must never carry presentation copy`);
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // 7. Canonical integral_analysis and v2_projection are byte-identical / untouched by this layer.
 // ---------------------------------------------------------------------------------------------

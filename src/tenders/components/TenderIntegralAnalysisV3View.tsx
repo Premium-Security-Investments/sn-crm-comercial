@@ -1,28 +1,26 @@
-import { useMemo, useState } from 'react';
 import './tender-integral-analysis-v3.css';
-import type { TenderDocumentAnalysis, TenderIntegralAnalysisUnit, TenderIntegralCategory, TenderManifestUnresolvedEntry } from '../types';
+import {
+  tenderIntegralAnalysisSummary,
+  tenderIntegralCategoryLabel,
+  tenderIntegralPhaseGroups,
+  tenderIntegralUnitConditionAnchor,
+  type TenderIntegralUnitPresentation,
+} from '../tenderIntegralAnalysisPresentation';
+import type { TenderDocumentAnalysis, TenderManifestUnresolvedEntry } from '../types';
+
+// AGT-002 · respaldo técnico del análisis, en dos capas (task-4-brief).
+// Primera capa: lectura humana completa por requisito, con los campos gobernados verbatim y los
+// enums traducidos por diccionario cerrado. Nunca imprime unit_id, requirement_id, localizadores,
+// hashes, offsets ni nombres de tablas. Segunda capa (`Ver trazabilidad técnica`): la trazabilidad
+// íntegra, donde sí viven los códigos crudos. Toda la derivación (resumen, fases, traducciones y
+// la relación con una condición gobernada) vive en `tenderIntegralAnalysisPresentation`: este
+// componente no calcula conclusiones ni aplica heurísticas de texto.
 
 type TenderIntegralAnalysisV3ViewProps = { analysis: TenderDocumentAnalysis | null };
 
-type Tone = 'supported' | 'partial' | 'gap' | 'insufficient';
-type AxisTone = 'ok' | 'warn' | 'danger';
+type Tone = 'supported' | 'partial' | 'gap' | 'insufficient' | 'unknown';
 
-const PHASES: Array<{ key: TenderIntegralCategory; label: string; short: string }> = [
-  { key: 'discard', label: 'Descarte', short: '01' },
-  { key: 'habilitating', label: 'Habilitantes', short: '02' },
-  { key: 'technical', label: 'Técnico', short: '03' },
-  { key: 'financial_execution', label: 'Financiero / ejecución', short: '04' },
-  { key: 'strategic', label: 'Estratégico', short: '05' },
-];
-const CATEGORY_LABEL_BY_KEY: Record<string, string> = Object.fromEntries(PHASES.map(item => [item.key, item.label]));
-
-const CONCLUSION_LABEL: Record<string, string> = {
-  supported_with_evidence: 'Sustentado con evidencia',
-  partially_supported: 'Sustento parcial',
-  gap_evidenced: 'Brecha evidenciada',
-  insufficient_evidence: 'Evidencia insuficiente',
-  human_validation_required: 'Revisión humana requerida',
-};
+// Sólo tono visual, cerrado sobre el enum real; el rótulo visible siempre viene del helper.
 const CONCLUSION_TONE: Record<string, Tone> = {
   supported_with_evidence: 'supported',
   partially_supported: 'partial',
@@ -31,81 +29,108 @@ const CONCLUSION_TONE: Record<string, Tone> = {
   human_validation_required: 'partial',
 };
 
-const AXIS_LABEL: Record<string, string> = { presence: 'Presencia', review: 'Revisión', validity: 'Vigencia', applicability: 'Aplicabilidad', compliance: 'Sustento' };
-const AXIS_VALUE_LABEL: Record<string, string> = {
-  present: 'Presente', absent: 'Ausente', unknown: 'Desconocido',
-  reviewed: 'Revisada', partially_reviewed: 'Revisión parcial', not_reviewed: 'No revisada',
-  valid: 'Vigente', expired: 'Vencida', not_applicable: 'No aplica',
-  applicable: 'Aplica',
-  supported_pending_human_review: 'Sustento pendiente de validación',
-  partially_supported_pending_human_review: 'Sustento parcial pendiente',
-  gap_evidenced_pending_human_review: 'Brecha evidenciada pendiente',
-};
-const AXIS_DANGER_VALUES = new Set(['absent', 'expired', 'gap_evidenced_pending_human_review']);
-const AXIS_WARN_VALUES = new Set(['unknown', 'not_reviewed', 'partially_reviewed', 'partially_supported_pending_human_review']);
-
-function axisValueLabel(value: string): string {
-  return AXIS_VALUE_LABEL[value] ?? value;
-}
-function axisTone(value: string): AxisTone {
-  if (AXIS_DANGER_VALUES.has(value)) return 'danger';
-  if (AXIS_WARN_VALUES.has(value)) return 'warn';
-  return 'ok';
+function supportText(card: TenderIntegralUnitPresentation): string {
+  if (card.citedEvidenceCount === 0) return 'Sin referencias citadas.';
+  return `${card.citedEvidenceCount} referencia(s) citada(s) · ${card.evidenceSourceLabels.join(' · ')}`;
 }
 
-const SOURCE_TYPE_LABEL: Record<string, string> = {
-  tender_document: 'Documento del pliego', company_evidence: 'Evidencia empresarial', legal_corpus: 'Corpus jurídico',
-  human_evidence: 'Evidencia humana', objective_validation: 'Validación objetiva',
-};
-const PURPOSE_LABEL: Record<string, string> = {
-  requirement_basis: 'Sustento del requisito', company_capacity: 'Capacidad empresarial', legal_basis: 'Fundamento jurídico',
-  commercial_context: 'Contexto comercial', milestone_basis: 'Sustento de hito', gap_basis: 'Sustento de brecha',
-};
-
-const COMMERCIAL_IMPACT_LABEL: Record<string, string> = { critical: 'Crítico', high: 'Alto', medium: 'Medio', low: 'Bajo', unknown: 'Desconocido' };
-const LEGAL_STATUS_LABEL: Record<string, string> = {
-  supported: 'Sustentado', partially_supported: 'Parcialmente sustentado', unsupported: 'Sin sustento',
-  not_verified: 'No verificado', not_applicable: 'No aplica',
-};
-
-function coverageLabel(unit: TenderIntegralAnalysisUnit): string {
-  return `${CONCLUSION_LABEL[unit.conclusion.status] ?? unit.conclusion.status}`;
+function UnitTrace({ card }: { card: TenderIntegralUnitPresentation }) {
+  const technical = card.technical;
+  return <details className="agt002-v3-trace">
+    <summary>Ver trazabilidad técnica</summary>
+    <dl className="agt002-v3-trace-meta">
+      <div><dt>unit_id</dt><dd><code>{technical.unitId}</code></dd></div>
+      <div><dt>requirement_id</dt><dd><code>{technical.requirementId ?? '—'}</code></dd></div>
+      <div><dt>category</dt><dd><code>{technical.category}</code></dd></div>
+      <div><dt>conclusion.status</dt><dd><code>{technical.conclusionStatus}</code> · confianza <code>{technical.confidence}</code></dd></div>
+      <div><dt>unit_kind · sequence · assessment_mode</dt><dd><code>{technical.unitKind}</code> · <code>{technical.sequence}</code> · <code>{technical.assessmentMode}</code></dd></div>
+      <div><dt>commercial_impact</dt><dd><code>{technical.commercialImpactLevel}</code> · <code>{technical.commercialImpactDimension}</code></dd></div>
+      <div><dt>blocking</dt><dd><code>{technical.blocking.effect}</code> · <code>{technical.blocking.curability}</code> · {technical.blocking.reason}</dd></div>
+      <div><dt>escalation</dt><dd><code>{technical.escalation.level}</code> · {technical.escalation.reason}</dd></div>
+      <div><dt>milestone</dt><dd><code>{technical.milestone.status}</code> · <code>{technical.milestone.type}</code> · {technical.milestone.summary} {technical.milestone.at ?? '—'} <code>{technical.milestone.sourceRef ?? '—'}</code></dd></div>
+      <div><dt>legal_assessment</dt><dd><code>{technical.legalStatus}</code> · {technical.legalStatusLabel} · {technical.legalSummary} {technical.legalBasisRefs.length > 0 ? <code>{technical.legalBasisRefs.join(' · ')}</code> : null}</dd></div>
+      <div><dt>closure</dt><dd><code>{technical.closure.status}</code> · {technical.closure.condition} {technical.closure.evidenceRequired.length > 0 ? <code>{technical.closure.evidenceRequired.join(' · ')}</code> : null}</dd></div>
+      <div><dt>human_validation</dt><dd><code>{technical.humanValidation.status}</code> · {technical.humanValidation.reason}</dd></div>
+    </dl>
+    <div className="agt002-v3-trace-block">
+      <span className="agt002-v3-section-label">evidence_state · cinco ejes independientes</span>
+      <ul>{technical.evidenceState.map(axis => <li key={axis.axis}>
+        <strong>{axis.axisLabel}</strong> <code>{axis.value}</code> · {axis.valueLabel}
+      </li>)}</ul>
+    </div>
+    <div className="agt002-v3-trace-block">
+      <span className="agt002-v3-section-label">evidence_refs · localizadores y propósitos</span>
+      {technical.evidenceRefs.length > 0
+        ? <ul>{technical.evidenceRefs.map(ref => <li key={`${ref.ref}-${ref.purpose}`}>
+            <code>{ref.ref}</code> <code>{ref.sourceType}</code> · {ref.sourceTypeLabel} · <code>{ref.purpose}</code> · {ref.purposeLabel}
+          </li>)}</ul>
+        : <p>Sin referencias citadas en esta unidad.</p>}
+    </div>
+    <div className="agt002-v3-trace-block">
+      <span className="agt002-v3-section-label">missing_evidence</span>
+      {technical.missingEvidence.length > 0
+        ? <ul>{technical.missingEvidence.map(item => <li key={item.missingId}>
+            <code>{item.missingId}</code> <code>{item.neededSourceType}</code> <code>{item.evidenceClassId ?? '—'}</code> · {item.critical ? 'crítica' : 'no crítica'} · {item.reason}
+          </li>)}</ul>
+        : <p>Sin evidencia pendiente registrada.</p>}
+    </div>
+  </details>;
 }
 
-function unresolvedCategoryLabel(entry: TenderManifestUnresolvedEntry): string {
-  return entry.category ? (CATEGORY_LABEL_BY_KEY[entry.category] ?? entry.category) : 'Sin categoría asignada';
+function UnitReading({ card, conditionAnchor }: { card: TenderIntegralUnitPresentation; conditionAnchor: string | null }) {
+  const tone = CONCLUSION_TONE[card.technical.conclusionStatus] ?? 'unknown';
+  return <article className="agt002-v3-requirement">
+    <header>
+      <div><span className="agt002-v3-section-label">Requisito</span><h4>{card.title}</h4></div>
+      <b className={`agt002-v3-status tone-${tone}`}>{card.conclusionLabel}</b>
+    </header>
+    <dl>
+      <div><dt>Estado</dt><dd>{card.conclusionLabel}</dd></div>
+      <div><dt>Conclusión</dt><dd>{card.conclusionSummary}</dd></div>
+      <div><dt>Soporte</dt><dd>{supportText(card)}</dd></div>
+      <div><dt>Qué falta</dt><dd>{card.missingEvidenceReasons.length > 0
+        ? <ul>{card.missingEvidenceReasons.map(reason => <li key={reason}>{reason}</li>)}</ul>
+        : 'Sin evidencia pendiente registrada.'}</dd></div>
+      <div><dt>Impacto comercial</dt><dd>{card.commercialImpactLabel} · {card.commercialImpactSummary}</dd></div>
+      <div><dt>Acción</dt><dd>{card.primaryActionSummary ?? 'Sin acción registrada para este requisito.'}</dd></div>
+    </dl>
+    {conditionAnchor ? <p className="agt002-v3-condition-link"><a href={`#${conditionAnchor}`}>Ver condición principal</a></p> : null}
+    <UnitTrace card={card} />
+  </article>;
+}
+
+function UnresolvedEntryReading({ entry }: { entry: TenderManifestUnresolvedEntry }) {
+  return <li>
+    <strong>{entry.label}</strong>
+    <span>{tenderIntegralCategoryLabel(entry.category)}</span>
+    <p>Sin evidencia suficiente para el análisis automático · requiere revisión humana.</p>
+    <details className="agt002-v3-trace">
+      <summary>Ver trazabilidad técnica</summary>
+      <dl className="agt002-v3-trace-meta">
+        <div><dt>requirement_id</dt><dd><code>{entry.requirement_id}</code></dd></div>
+        <div><dt>category</dt><dd><code>{entry.category ?? '—'}</code></dd></div>
+        <div><dt>origin</dt><dd><code>{entry.origin}</code></dd></div>
+        <div><dt>status</dt><dd><code>{entry.status}</code></dd></div>
+      </dl>
+    </details>
+  </li>;
 }
 
 export function TenderIntegralAnalysisV3View({ analysis }: TenderIntegralAnalysisV3ViewProps) {
   const integral = analysis?.integral_analysis;
   const units = integral?.analysis_units;
-  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
+  if (!integral || !units || units.length === 0) return null;
 
-  const selected = useMemo(() => {
-    if (!units || units.length === 0) return null;
-    return units.find(unit => unit.unit_id === selectedUnitId) ?? units[0];
-  }, [units, selectedUnitId]);
-
-  if (!integral || !units || units.length === 0 || !selected) return null;
-
-  const phase = PHASES.find(item => item.key === selected.category) ?? PHASES[0];
-  const tone = CONCLUSION_TONE[selected.conclusion.status] ?? 'partial';
-  const axisEntries: Array<[string, string]> = [
-    ['presence', selected.evidence_state.presence],
-    ['review', selected.evidence_state.review],
-    ['validity', selected.evidence_state.validity],
-    ['applicability', selected.evidence_state.applicability],
-    ['compliance', selected.evidence_state.compliance],
-  ];
+  const summary = tenderIntegralAnalysisSummary(integral);
+  const phases = tenderIntegralPhaseGroups(integral);
+  const review = analysis?.decision_review ?? null;
+  const conditionAnchorByUnitId = new Map(units.map(unit => [unit.unit_id, tenderIntegralUnitConditionAnchor(unit, review)]));
   const coverageRatio = `${integral.coverage.analyzed_requirement_ids.length} / ${integral.coverage.expected_requirement_ids.length}`;
-  // Phase 4: the server-owned, top-level honest coverage scope for a manifest-driven run. When
-  // present, it replaces the misleading generic "Cobertura" ratio (analyzed/expected) with the
-  // distinct 20/25, 15 (68), and closed 15/15 + 20/20 figures — never presenting analyzed/expected
-  // as total manifest coverage. Always optional: absent for non-manifest V3 runs.
+  // Alcance honesto del manifiesto gobernado, cuando la corrida lo trae; nunca se presenta
+  // analyzed/expected como cobertura total del manifiesto.
   const scope = analysis?.manifest_scope ?? null;
-  // Phase: the manifest's own status=unresolved_visible entries (material omissions the engine
-  // never fed to the model) — sibling to manifest_scope, never merged into the 20 analyzed
-  // units nor into the separate human question/answer flow (a different component entirely).
+  // Entradas del manifiesto que el motor nunca alimentó al modelo: hermanas del análisis, jamás
+  // mezcladas con las unidades analizadas.
   const unresolvedEntries = analysis?.manifest_unresolved_entries ?? null;
 
   return <section className="agt002-v3-preview" aria-labelledby="agt002-v3-title">
@@ -126,10 +151,29 @@ export function TenderIntegralAnalysisV3View({ analysis }: TenderIntegralAnalysi
         <div><dt>Libros conciliados</dt><dd>Secciones {scope.section_ledger_accounted}/{scope.pre_go_relevant} · Propuestas {scope.proposal_ledger_accounted}/{scope.proposal_ledger_accounted}</dd></div>
         <div><dt>Disposiciones</dt><dd>Candidatas analizadas {scope.dispositions.analyzed_candidate} · Excluidas con razón {scope.dispositions.excluded_with_reason} · No resueltas visibles {scope.dispositions.unresolved_visible}</dd></div>
       </dl>}
+      <div className="agt002-v3-summary-blocks">
+        <div>
+          <span className="agt002-v3-section-label">Resumen por estado de conclusión</span>
+          <dl className="agt002-v3-summary">
+            <div><dt>Requisitos analizados</dt><dd>{summary.totalUnits}</dd></div>
+            {summary.byConclusion.map(bucket => <div key={bucket.label}><dt>{bucket.label}</dt><dd>{bucket.count}</dd></div>)}
+          </dl>
+        </div>
+        <div>
+          <span className="agt002-v3-section-label">Indicadores de evidencia (no excluyentes)</span>
+          <dl className="agt002-v3-indicators">
+            <div><dt>Unidades con referencias citadas</dt><dd>{summary.unitsWithCitedEvidence}</dd></div>
+            <div><dt>Referencias citadas en total</dt><dd>{summary.citedReferenceCount}</dd></div>
+            <div><dt>Unidades con evidencia pendiente</dt><dd>{summary.unitsWithPendingEvidence}</dd></div>
+            <div><dt>Pendientes de evidencia en total</dt><dd>{summary.pendingEvidenceCount}</dd></div>
+          </dl>
+          <p>Una misma unidad puede citar evidencia y tener pendientes a la vez: los dos indicadores se leen por separado.</p>
+        </div>
+      </div>
       <div className="agt002-v3-overview-footer">
         <div className="agt002-v3-guard"><strong>Validación humana pendiente</strong><span>No decide GO / NO GO · No firma · No envía · No presenta ofertas</span></div>
         <details className="agt002-v3-run-details">
-          <summary>Detalles de ejecución</summary>
+          <summary>Ver trazabilidad técnica</summary>
           <dl className="agt002-v3-run-meta">
             <div><dt>Ejecución</dt><dd>{analysis?.run_id ?? '—'}</dd></div>
             <div><dt>Snapshot</dt><dd>{analysis?.snapshot_id ?? '—'}</dd></div>
@@ -138,82 +182,26 @@ export function TenderIntegralAnalysisV3View({ analysis }: TenderIntegralAnalysi
       </div>
     </header>
 
-    <nav className="agt002-v3-phase-strip" aria-label="Orden institucional del análisis">
-      {PHASES.map(item => {
-        const phaseUnits = units.filter(unit => unit.category === item.key);
-        const alerts = phaseUnits.filter(unit => unit.blocking.effect === 'blocker' || unit.missing_evidence.some(entry => entry.critical)).length;
-        return <div key={item.key} className={item.key === selected.category ? 'active' : ''}>
-          <span>{item.short}</span><strong>{item.label}</strong><small>{phaseUnits.length} unidad(es){alerts ? ` · ${alerts} crítica(s)` : ''}</small>
-        </div>;
-      })}
-    </nav>
-
     {unresolvedEntries && unresolvedEntries.length > 0 && <section className="agt002-v3-unresolved" aria-labelledby="agt002-v3-unresolved-title">
       <header>
         <div><span className="agt002-v3-section-label">Manifiesto gobernado</span><h3 id="agt002-v3-unresolved-title">Pendientes sin evidencia suficiente</h3></div>
         <strong>{unresolvedEntries.length} pendiente(s)</strong>
       </header>
-      <ul>
-        {unresolvedEntries.map(entry => <li key={entry.requirement_id}>
-          <code>{entry.requirement_id}</code>
-          <strong>{entry.label}</strong>
-          <span>{unresolvedCategoryLabel(entry)}</span>
-          <p>Sin evidencia suficiente para análisis automático · requiere revisión humana.</p>
-        </li>)}
-      </ul>
+      <ul>{unresolvedEntries.map(entry => <UnresolvedEntryReading key={entry.requirement_id} entry={entry} />)}</ul>
     </section>}
 
     <div className="agt002-v3-workbench">
-      <aside className="agt002-v3-unit-rail" aria-label="Unidades del análisis">
-        <header><div><span>Manifiesto cubierto</span><strong>Unidades revisables</strong></div><b>{units.length}</b></header>
-        <div className="agt002-v3-unit-list">
-          {units.map(unit => {
-            const unitTone = CONCLUSION_TONE[unit.conclusion.status] ?? 'partial';
-            const critical = unit.blocking.effect === 'blocker' || unit.missing_evidence.some(entry => entry.critical);
-            return <button type="button" key={unit.unit_id} className={`${unit.unit_id === selected.unit_id ? 'active' : ''} tone-${unitTone}`} aria-pressed={unit.unit_id === selected.unit_id} onClick={() => setSelectedUnitId(unit.unit_id)}>
-              <span className="agt002-v3-unit-top"><code>{unit.unit_id}</code>{critical && <b>Crítica</b>}</span>
-              <strong>{unit.title}</strong>
-              <small>{coverageLabel(unit)}</small>
-            </button>;
-          })}
-        </div>
-      </aside>
-
-      <article className="agt002-v3-detail" aria-live="polite">
-        <header className="agt002-v3-detail-head">
-          <div><span>{phase.short} · {phase.label}</span><h3>{selected.title}</h3><code>{selected.unit_id}</code></div>
-          <b className={`agt002-v3-status tone-${tone}`}>{CONCLUSION_LABEL[selected.conclusion.status] ?? selected.conclusion.status}</b>
-        </header>
-
-        <blockquote>{selected.conclusion.summary}</blockquote>
-
-        <section className="agt002-v3-axes" aria-label="Cinco ejes independientes">
-          {axisEntries.map(([key, value]) => <div key={key} className={`axis-${axisTone(value)}`}><span>{AXIS_LABEL[key]}</span><strong>{axisValueLabel(value)}</strong></div>)}
-        </section>
-
-        <div className="agt002-v3-analysis-grid">
-          <section><span className="agt002-v3-section-label">Impacto comercial · {COMMERCIAL_IMPACT_LABEL[selected.commercial_impact.level] ?? selected.commercial_impact.level}</span><p>{selected.commercial_impact.summary}</p></section>
-          <section><span className="agt002-v3-section-label">Lectura jurídica · {LEGAL_STATUS_LABEL[selected.legal_assessment.status] ?? selected.legal_assessment.status}</span><p>{selected.legal_assessment.summary}</p></section>
-        </div>
-
-        <section className={`agt002-v3-evidence ${selected.evidence_refs.length ? '' : 'is-abstention'}`}>
-          <header><div><span className="agt002-v3-section-label">Evidencia citada</span><strong>{selected.evidence_refs.length ? `${selected.evidence_refs.length} referencia(s) permitida(s)` : 'Sin evidencia citada'}</strong></div><span>{selected.evidence_refs.length ? 'Trazable' : 'Falta evidencia'}</span></header>
-          {selected.evidence_refs.length ? <ul>{selected.evidence_refs.map(ref => <li key={`${ref.ref}-${ref.purpose}`}><code>{ref.ref}</code><strong>{SOURCE_TYPE_LABEL[ref.source_type] ?? ref.source_type}</strong><p>{PURPOSE_LABEL[ref.purpose] ?? ref.purpose}</p></li>)}</ul> : <p>Sin evidencia citada para esta unidad.</p>}
-        </section>
-
-        {selected.missing_evidence.length > 0 && <section className="agt002-v3-evidence is-abstention">
-          <header><div><span className="agt002-v3-section-label">Evidencia faltante</span><strong>{selected.missing_evidence.length} faltante(s)</strong></div><span>Abstención explícita</span></header>
-          <ul>{selected.missing_evidence.map(item => <li key={item.missing_id}><code>{item.missing_id}</code><strong>{item.critical ? 'Crítica' : 'No crítica'}</strong><p>{item.reason}</p></li>)}</ul>
-        </section>}
-
-        <section className="agt002-v3-action">
-          <header><div><span className="agt002-v3-section-label">Acción trazable</span><strong>{selected.actions[0]?.summary ?? 'Sin acción registrada para esta unidad.'}</strong></div>{selected.actions[0] && <b>{selected.actions[0].suggested_role}</b>}</header>
-          <dl>
-            <div><dt>Unidad de origen</dt><dd>{selected.unit_id}</dd></div>
-            <div><dt>Condición de cierre</dt><dd>{selected.closure.condition}</dd></div>
-          </dl>
-        </section>
-      </article>
+      {phases.map(group => <details key={group.key} className="agt002-v3-phase" data-phase={group.key} open={group.hasPendingEvidence}>
+        <summary>
+          <strong>{group.label}</strong>
+          <small>{group.units.length} requisito(s){group.pendingEvidenceCount > 0 ? ` · ${group.pendingEvidenceCount} pendiente(s) de evidencia` : ''}</small>
+        </summary>
+        {group.units.length > 0
+          ? <div className="agt002-v3-requirements">
+              {group.units.map(card => <UnitReading key={card.key} card={card} conditionAnchor={conditionAnchorByUnitId.get(card.key) ?? null} />)}
+            </div>
+          : <p className="agt002-v3-empty-phase">Sin requisitos clasificados en esta fase.</p>}
+      </details>)}
     </div>
 
     <footer className="agt002-v3-footer"><strong>Análisis integral · AGT-002 v3</strong><span>Contenido del expediente vigente. Toda conclusión permanece pendiente de validación humana.</span></footer>

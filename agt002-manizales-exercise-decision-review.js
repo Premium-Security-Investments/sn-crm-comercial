@@ -50,6 +50,22 @@ export const AGT002_EXERCISE_REVIEW_STATUSES = Object.freeze([
 const ENTRY_ORIGINS = Object.freeze(['canonical_unit', 'manifest_unresolved_entry', 'registry_supplement']);
 const REVIEW_FINDING_DISPOSITIONS = Object.freeze(['supports', 'requires_verification']);
 
+// Governed human-facing copy (`presentation`): mandatory for every reviewed_status except
+// `not_applicable` (pure noise/deprioritized signal, never rendered on first read, never grows
+// its own human copy). Closed field set — only {title, summary, missing, action_required}, each
+// non-empty human language when present. Never a technical nomenclature echo (snake_case
+// identifiers/status codes) of `rationale`, `reviewed_status`, etc. The REQUIRED subset is
+// per-status (contrato exacto vinculante, task-1-brief); any allowed field not required for a
+// given status is optional, but is still fully validated (non-empty, non-technical) when present.
+const PRESENTATION_ALLOWED_FIELDS = Object.freeze(['title', 'summary', 'missing', 'action_required']);
+const PRESENTATION_REQUIRED_FIELDS_BY_STATUS = Object.freeze({
+  decision_question: Object.freeze(['title', 'missing', 'action_required']),
+  blocker: Object.freeze(['title', 'summary', 'action_required']),
+  supported: Object.freeze(['title', 'summary']),
+  preparation: Object.freeze(['title', 'action_required']),
+});
+const TECHNICAL_NOMENCLATURE_PATTERN = /[a-z0-9]+_[a-z0-9_]+/;
+
 const MATERIAL_IMPEDIMENT_CATEGORY_SET = new Set(AGT002_PRE_GO_MATERIAL_IMPEDIMENT_CATEGORIES);
 
 function nonEmptyString(value) {
@@ -153,6 +169,41 @@ function validateEntryOrigin(entry, label, { canonicalUnitIds, manifestUnresolve
   }
 }
 
+function validatePresentationCopy(value, label) {
+  if (!nonEmptyString(value)) {
+    throw new Error(`AGT-002 ejercicio-revisión: ${label} debe ser texto humano no vacío.`);
+  }
+  if (TECHNICAL_NOMENCLATURE_PATTERN.test(value)) {
+    throw new Error(`AGT-002 ejercicio-revisión: ${label} no puede copiar nomenclatura técnica (identificadores snake_case); debe ser lenguaje humano.`);
+  }
+}
+
+function validatePresentation(entry, label) {
+  const requiredFields = PRESENTATION_REQUIRED_FIELDS_BY_STATUS[entry.reviewed_status];
+  if (!requiredFields) {
+    if (entry.presentation !== undefined) {
+      throw new Error(`AGT-002 ejercicio-revisión: ${label}.presentation sólo aplica a reviewed_status distinto de "not_applicable".`);
+    }
+    return;
+  }
+  if (!entry.presentation || typeof entry.presentation !== 'object' || Array.isArray(entry.presentation)) {
+    throw new Error(`AGT-002 ejercicio-revisión: ${label}.presentation es obligatorio (copia humana gobernada) para reviewed_status "${entry.reviewed_status}".`);
+  }
+  const presentationKeys = Object.keys(entry.presentation);
+  const disallowed = presentationKeys.filter(key => !PRESENTATION_ALLOWED_FIELDS.includes(key));
+  if (disallowed.length > 0) {
+    throw new Error(`AGT-002 ejercicio-revisión: ${label}.presentation contiene campos no permitidos: ${disallowed.join(', ')}.`);
+  }
+  for (const field of requiredFields) {
+    if (!Object.hasOwn(entry.presentation, field)) {
+      throw new Error(`AGT-002 ejercicio-revisión: ${label}.presentation.${field} es obligatorio para reviewed_status "${entry.reviewed_status}".`);
+    }
+  }
+  for (const field of presentationKeys) {
+    validatePresentationCopy(entry.presentation[field], `${label}.presentation.${field}`);
+  }
+}
+
 function validateEntry(entry, index, options) {
   const label = `entries[${index}]`;
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
@@ -200,6 +251,8 @@ function validateEntry(entry, index, options) {
   } else if (entry.curability !== undefined) {
     throw new Error(`AGT-002 ejercicio-revisión: ${label}.curability sólo aplica a reviewed_status "blocker".`);
   }
+
+  validatePresentation(entry, label);
 }
 
 /**
@@ -282,6 +335,7 @@ function toFinding(entry) {
     ...(entry.reviewed_status === 'decision_question' ? { material_impediment_category: entry.material_impediment_category } : {}),
     ...(entry.reviewed_status === 'blocker' ? { curability: entry.curability } : {}),
     ...(entry.exercise_bypassed === true ? { exercise_bypassed: true } : {}),
+    ...(entry.presentation ? { presentation: Object.freeze({ ...entry.presentation }) } : {}),
   });
 }
 

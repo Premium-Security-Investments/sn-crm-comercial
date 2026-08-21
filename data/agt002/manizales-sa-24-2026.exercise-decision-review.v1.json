@@ -45,6 +45,10 @@
       "origin": "canonical_unit",
       "reviewed_status": "supported",
       "rationale": "El RUP vigente revisado sostiene cumplimiento probable de los índices de capacidad organizacional exigidos en §2.3; permanece sujeto a acreditación formal en la oferta.",
+      "presentation": {
+        "title": "Capacidad organizacional al día",
+        "summary": "Los indicadores financieros y organizacionales revisados superan los mínimos exigidos; falta acreditarlos formalmente en la oferta."
+      },
       "evidence_refs": [
         {
           "type": "manifest_requirement",
@@ -77,6 +81,10 @@
       "origin": "canonical_unit",
       "reviewed_status": "supported",
       "rationale": "La evidencia RUP revisada sostiene cumplimiento probable de experiencia/UNSPSC por sumatoria; falta seleccionar y cotejar formalmente hasta tres contratos para el Anexo 8.",
+      "presentation": {
+        "title": "Experiencia acreditable por sumatoria",
+        "summary": "La experiencia revisada respalda el cumplimiento por sumatoria; falta seleccionar y cotejar hasta tres contratos para el Anexo 8."
+      },
       "evidence_refs": [
         {
           "type": "manifest_requirement",
@@ -95,6 +103,10 @@
       "origin": "canonical_unit",
       "reviewed_status": "preparation",
       "rationale": "Documento de formato diligenciable con la oferta; conseguible/preparable, no bloquea el pre-cierre.",
+      "presentation": {
+        "title": "Diligenciar el Anexo 8 de experiencia",
+        "action_required": "Completar y anexar el formato junto con la oferta."
+      },
       "evidence_refs": [
         {
           "type": "manifest_requirement",
@@ -207,6 +219,10 @@
       "origin": "canonical_unit",
       "reviewed_status": "preparation",
       "rationale": "Capacidad de servicio a disponer/preparar antes de ejecución; conseguible, no bloquea el pre-cierre.",
+      "presentation": {
+        "title": "Alistar el servicio de lenguaje de señas",
+        "action_required": "Disponer esta capacidad antes de la ejecución del contrato."
+      },
       "evidence_refs": [
         {
           "type": "manifest_requirement",
@@ -221,6 +237,10 @@
       "origin": "canonical_unit",
       "reviewed_status": "preparation",
       "rationale": "Programa de capacitación a preparar antes de ejecución; conseguible, no bloquea el pre-cierre.",
+      "presentation": {
+        "title": "Preparar el programa de capacitaciones",
+        "action_required": "Dejar listo el programa antes de la ejecución del contrato."
+      },
       "evidence_refs": [
         {
           "type": "manifest_requirement",
@@ -235,6 +255,10 @@
       "origin": "canonical_unit",
       "reviewed_status": "preparation",
       "rationale": "Certificado obtenible con la oferta; documento preparable, no bloquea el pre-cierre.",
+      "presentation": {
+        "title": "Obtener la certificación de industria nacional",
+        "action_required": "Tramitar el certificado y anexarlo con la oferta."
+      },
       "evidence_refs": [
         {
           "type": "manifest_requirement",
@@ -291,6 +315,10 @@
       "origin": "canonical_unit",
       "reviewed_status": "preparation",
       "rationale": "Formato de oferta económica a diligenciar; preparable con la oferta, no bloquea el pre-cierre.",
+      "presentation": {
+        "title": "Completar la oferta económica (Anexo 9)",
+        "action_required": "Diligenciar el formato y anexarlo con la propuesta."
+      },
       "evidence_refs": [
         {
           "type": "manifest_requirement",
@@ -305,6 +333,10 @@
       "origin": "canonical_unit",
       "reviewed_status": "preparation",
       "rationale": "Piso tarifario a observar al preparar la oferta económica; acción de preparación, no un hallazgo pendiente.",
+      "presentation": {
+        "title": "Respetar la tarifa mínima regulada",
+        "action_required": "Aplicar el piso tarifario al construir la oferta económica."
+      },
       "evidence_refs": [
         {
           "type": "manifest_requirement",
@@ -333,6 +365,10 @@
       "origin": "manifest_unresolved_entry",
       "reviewed_status": "supported",
       "rationale": "El RUP 2025 revisado sostiene cumplimiento probable: capital de trabajo $9.589.715.984 frente al mínimo de $505.728.424,50; falta acreditación formal del RUP vigente.",
+      "presentation": {
+        "title": "Capital de trabajo suficiente",
+        "summary": "El capital de trabajo revisado supera holgadamente el mínimo exigido; falta acreditar el RUP vigente."
+      },
       "evidence_refs": [
         {
           "type": "manifest_requirement",
@@ -351,6 +387,10 @@
       "origin": "manifest_unresolved_entry",
       "reviewed_status": "preparation",
       "rationale": "La RCE 2026 observada sostiene cumplimiento probable (400 SMMLV, cobertura Colombia y uso indebido de armas); validar pago, vigencia y carta de mantenimiento e incluirla con la oferta.",
+      "presentation": {
+        "title": "Validar la póliza RCE",
+        "action_required": "Confirmar pago, vigencia y carta de mantenimiento; anexar los soportes con la oferta."
+      },
       "evidence_refs": [
         {
           "type": "manifest_requirement",
@@ -365,6 +405,10 @@
       "origin": "manifest_unresolved_entry",
       "reviewed_status": "preparation",
       "rationale": "La póliza de vida colectiva observada está vigente hasta mayo de 2027; validar cobertura 24 horas, Decreto 1588 y prima exacta contra Anexo 9 e incluirla con la oferta.",
+      "presentation": {
+        "title": "Validar la póliza de vida colectiva",
+        "action_required": "Confirmar cobertura, vigencia y prima exacta; anexar los soportes con la oferta."
+      },
       "evidence_refs": [
         {
           "type": "manifest_requirement",
@@ -379,6 +423,10 @@
       "origin": "manifest_unresolved_entry",
       "reviewed_status": "preparation",
       "rationale": "Medios técnicos a disponer antes de ejecución; faltante ordinario conseguible, no bloquea el pre-cierre.",
+      "presentation": {
+        "title": "Alistar los medios de videovigilancia",
+        "action_required": "Definir y disponer los medios técnicos requeridos antes de la ejecución."
+      },
       "evidence_refs": [
         {
           "type": "manifest_requirement",
@@ -409,6 +457,11 @@
       "reviewed_status": "decision_question",
       "material_impediment_category": "licencia_habilitante_esencial_imposible",
       "rationale": "NOTA PARA LA ENCARGADA: el pliego (SA-24-2026#2.1#i11) exige infraestructura física en Manizales-Caldas autorizada por SuperVigilancia y registrada en la Cámara de Comercio respectiva. La evidencia operativa 2026 confirma presencia material, pero no sustituye esos dos soportes oficiales; la Resolución 20214100005697 sólo acredita licencia principal en Pereira. La territorialidad queda no_probada, no incumplida. AGT-002 sólo resalta el caso; la encargada decide si continúa, descarta o gestiona la validación.",
+      "presentation": {
+        "title": "Validar la autorización de la agencia en Manizales",
+        "missing": "Acto de SuperVigilancia y certificado vigente de Cámara de Comercio que acrediten la agencia en Manizales.",
+        "action_required": "Solicitar y verificar ambos soportes antes de decidir si se continúa."
+      },
       "evidence_refs": [
         {
           "type": "registry_citation",
@@ -430,6 +483,11 @@
       "reviewed_status": "decision_question",
       "material_impediment_category": "licencia_habilitante_esencial_imposible",
       "rationale": "NOTA PARA LA ENCARGADA: el pliego (SA-24-2026#2.1#i12) exige licencia/permiso que ampare los equipos en los lugares del servicio y pago abril-junio de 2026, o permite una ruta alternativa con operador autorizado para medios distintos a radios. La Resolución MinTIC 01535 está vigente, pero su CCTR 29062 no incluye Manizales; tampoco se encontró el pago exigido ni contrato/certificación de operador celular. Ambas rutas permanecen no_probadas, sin incumplimiento confirmado. AGT-002 sólo resalta el caso; la encargada decide si continúa, descarta o gestiona la validación.",
+      "presentation": {
+        "title": "Validar las comunicaciones habilitadas para Manizales",
+        "missing": "Soporte de pago del periodo exigido y cobertura autorizada en Manizales, o contrato y certificación de un operador celular.",
+        "action_required": "Verificar una de las dos rutas habilitantes antes de decidir si se continúa."
+      },
       "evidence_refs": [
         {
           "type": "registry_citation",

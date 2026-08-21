@@ -1,778 +1,428 @@
-# CURRENT — SIIO Comercial / Licitaciones / Vig‑IA
+# CURRENT — AGT-002 Decision Front Consolidation — CHECKPOINT AUTORITATIVO (§12: CIERRE LOCAL / QA PASS)
 
-## 0. Corte autoritativo vigente — piloto gobernado Manizales V3 completo, en producción, 2026-08-17
+> Estado vigente al 2026-08-21: **Task 7 está CERRADA LOCALMENTE / QA PASS**. La sección autoritativa vigente es la **§12**, que **sustituye expresamente a §9–§11 para el estado de Task 7**, incluidos sus HOLD, bloqueos de QA y próximos pasos. Las secciones históricas se conservan intactas como evidencia previa. No hay autorización ni ejecución de commit, push, merge, migración, deploy o restart: los gates de publicación siguen cerrados y cualquier fase posterior requiere una orden separada.
 
-**Este bloque reemplaza como autoridad a todos los cortes e historiales posteriores de este archivo, incluido el corte 2026-08-14 que sigue abajo como historial.** El corte 2026-08-14 declaró el canary único `unavailable` (sin `analysis_run_id`) como bloqueo material vigente. Ese bloqueo quedó **resuelto** por el piloto gobernado Manizales SA-24-2026, cerrado y fusionado a `main` el 2026-08-17. La evidencia se verificó mecánicamente en la sesión Hermes que abrió esta Fase 9: Git, Vercel CLI, endpoint público protegido, lectura sanitizada del entorno productivo y consulta sanitaria de metadatos en Supabase. El worktree documental posterior no repitió llamadas remotas; conserva los resultados y comandos en `docs/evidence/2026-08-17-agt002-v3-production-closeout.md`.
+## 1. Estado y alcance autoritativo
 
-### 0.1 Resultado terminal
+- Fecha de corte operativo: 2026-08-21.
+- Canal/proyecto: AGT-002, consolidación visual y funcional del frente decisional.
+- Worktree: `/root/worktrees/agt002-decision-front-consolidation`.
+- Rama: `feat/agt002-decision-front-consolidation-20260820`.
+- Base del worktree: `408dbc153f4099c71cd72c29350819ac64ec1003`.
+- Referencia de producción: `7ad7b91470228e6abd9b0236a9ac22f304c94624`.
+- Objetivo: lectura frontal breve y accionable; Análisis como superficie completa; Decisión como síntesis y registro humano; V3 como respaldo técnico desplegable; Resumen/Documentos/navegación sin duplicados.
+- Gates cerrados: commit, push, merge, migración y deploy. Todo permanece local y sin commit.
 
-El piloto gobernado Manizales V3 (rama `feat/agt002-manizales-v3-complete-pilot`) se completó y se fusionó a `main`. **Evidencia mecánica:** el merge commit `960a96702e869531aad94545c137e1b3fe28c0b0` tiene como padres `837b5742055be7a56a9097c203c75f7393082fb7` (punta previa de `main`) y `0d4e865189a6c95d7a53eef6970444c685fab306` (punta de la rama del piloto); `git rev-parse main origin/main` en esta sesión confirma que ambos apuntan exactamente a `960a967`. El commit trae la migración `067_agt002_integral_v3_persistence.sql` y su rollback, el manifiesto gobernado Manizales, el wiring del runtime y las pruebas asociadas (55 archivos, ver `git show --stat 960a967`).
+## 2. Tarea exacta en curso al ordenar la pausa
 
-Según `docs/verification/2026-08-15-agt002-manizales-v3-pilot.md` (documento incorporado en el mismo merge), el piloto ejecutó un canary real V3 no persistente (`ok=true`, `valid_contract=true`, contrato `agt002-integral-analysis-v3`, 20/20 unidades de requisito evaluadas en orden de manifiesto, cero pérdidas frente a los 9 ejes históricos V2) y cerró con la suite focal AGT‑002 en **410/410** tras agregar la migración 067. Ese documento es evidencia mecánica de **su propia sesión de trabajo**, no de esta; aquí se cita, no se re-ejecuta.
+**Task 7.1 — Helper reusable de render TSX real y cobertura de los 12 estados mínimos de UX.**
 
-### 0.2 Despliegue, flag y persistencia verificados mecánicamente
+El worker había terminado de preparar:
 
-```text
-main / origin/main = 960a96702e869531aad94545c137e1b3fe28c0b0
-Vercel deployment  = dpl_6jMm4YBn1sAiWBM1T5YoYzTeFv7t, target production, READY
-Alias público       = https://seguridad-nacional-crm.vercel.app
-AGT002_INTEGRAL_CONTRACT_V3 = true (producción; `_ENABLED` no existe)
-Migración 067        = aplicada en Supabase productivo
+- `tests/helpers/bundle-react-component.mjs`;
+- refactor y pruebas nuevas en `tests/tender-decision-front-render.test.mjs`;
+- `.superpowers/sdd/task-7-1-report.md`.
+
+Los archivos fueron comprobados en disco después del retorno del worker. La ejecución fue interrumpida antes de correr la primera prueba aislada de Task 7.1. Por tanto, Task 7 sigue **EN CURSO / NO VERIFICADA**.
+
+## 3. Trabajo completado y evidencia
+
+### Tasks 0–4
+
+- Task 0: worktree aislado; línea base 33/33; TypeScript, Vite y paridad backend limpios.
+- Task 1: presentación humana gobernada; 9/9 focales; fixtures sincronizados; revisión independiente aprobada.
+- Task 2: selectores puros, estados humanos y conteos dinámicos; 28/28 acumuladas; revisión aprobada.
+- Task 3: Análisis consolidado como superficie completa; 38/38 verificación GPT y 46/46 revisión Claude; TypeScript limpio.
+- Task 4: V3 dinámico en dos capas, cinco fases, segundo fixture y anclas opacas; 62/62 y 51/51 en revisiones; TypeScript y diff-check limpios.
+
+### Task 5 — COMPLETADA
+
+- Decisión reducida a brief compacto y registro humano formal.
+- CTA sólo navegan/enfocan; no seleccionan ni persisten GO/NO GO.
+- Respuestas humanas sincronizadas al brief para contar sólo `Pendiente de validación`.
+- Destino de registro con `tabIndex={-1}`.
+- Suite exacta Task 5: **28/28 PASS**.
+- Suite acumulada Tasks 1–5: **64/64 PASS**.
+- `npx tsc --noEmit`: exit 0.
+- `git diff --check`: exit 0.
+- Revisión independiente final: `VERDICT_SPEC=APPROVED`, `VERDICT_QUALITY=APPROVED`, 0 Critical, 0 Important.
+- Minor pendiente no bloqueante: el puntero compacto de `TenderGoNoGoDecisionPanel` puede sobrecontar condiciones ya validadas porque no recibe respuestas humanas.
+
+### Task 6 — COMPLETADA
+
+- Resumen depurado a Entidad, Servicio, Sector, Ciudad, Cuantía, Cierre oficial y Responsable.
+- `Ciudad por confirmar` como fallback exacto.
+- Fuente oficial única en navegación.
+- Vigencia única en shell; se eliminó `Días restantes` para evitar duplicar `Vencida`.
+- Navegación canónica, `IntersectionObserver`, hash inicial, `aria-current`, scroll y foco al contenedor.
+- Jerarquía de oportunidad y Documentos protegida por pruebas.
+- Suite vinculante: **39/39 PASS**.
+- Regresiones adicionales: **5/5 PASS**.
+- `npx tsc --noEmit`: exit 0.
+- `git diff --check`: exit 0.
+- Revisión independiente: `VERDICT_SPEC=APPROVED`, `VERDICT_QUALITY=APPROVED`, 0 Critical, 0 Important, 3 Minor no bloqueantes.
+
+## 4. Qué estaba haciendo cuando se interrumpió
+
+Se había cargado `.superpowers/sdd/task-7-brief.md` y la guía `webapp-testing`. Luego se ejecutó un worker atómico para Task 7.1, sin shell, con el encargo de crear el helper reusable y completar evidencia HTML real para:
+
+1. condición sin respuesta;
+2. respuesta pending;
+3. respuesta resolved;
+4. respuesta not_applicable;
+5. condición sin presentation;
+6. impedimento confirmado;
+7. resumen GO/NO GO sin decisión;
+8. GO registrado;
+9. NO GO registrado;
+10. V3 con cantidad piloto;
+11. V3 con cantidad distinta;
+12. fases vacías y con pendientes.
+
+El worker reportó éxito. Se verificó que el helper y el reporte existen y se leyeron. **No se ejecutó todavía `node --test tests/tender-decision-front-render.test.mjs` después de esos cambios.**
+
+## 5. Última prueba realmente ejecutada
+
+Último comando de pruebas ejecutado antes de los cambios de Task 7.1:
+
+```bash
+node --test \
+  tests/tender-summary-public-fields.test.mjs \
+  tests/tender-opportunity-compact-summary.test.mjs \
+  tests/tender-document-actions-layout.test.mjs \
+  tests/tender-detail-layout-order.test.mjs \
+  tests/tender-detail-navigation-state.test.mjs
 ```
 
-El nombre y valor exactos fueron comprobados mediante `vercel env pull` desde el worktree enlazado, imprimiendo sólo presencia/booleano y eliminando inmediatamente el archivo temporal. La consulta sanitaria de Supabase confirmó: oportunidad Manizales vinculada, función 067 activa, canonical actual `schema_version=3.0.0` y contrato `agt002-integral-analysis-v3`, sin exponer contenido de negocio ni secretos.
+Resultado real: **5/5 PASS, 0 fallos, exit 0**.
 
-### 0.3 Alcance del proceso habilitado — fail-closed por código, verificado en esta sesión
+Inmediatamente antes también se ejecutó la suite vinculante de Task 6 con resultado **39/39 PASS**, seguida en la misma cadena por `npx tsc --noEmit` y `git diff --check`, ambos exit 0.
 
-`agt002-manizales-manifest-source.js` (leído íntegro en esta sesión) sólo devuelve un manifiesto gobernado cuando `opportunityId` y `process` coinciden exactamente con el piloto Manizales (`AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID` / `AGT002_INTEGRAL_MANIFEST_PROCESO`, es decir, la oportunidad `54190e51-15fb-46af-b0aa-8f13461a3110` y el proceso `SA-24-2026`); cualquier otra combinación lanza `AGT002_MANIZALES_PILOT_SCOPE_MISMATCH` antes de tocar el proveedor. Ningún parámetro de request controla `manifest_scope`. Esto es la base mecánica de la invariante "Manizales sigue siendo el único proceso V3 habilitado" — ver `docs/architecture/agt002-reusable-licitacion-architecture.md` para el diseño reusable que preserva este cierre para futuros procesos.
+No hay resultado de pruebas posterior a la creación/refactor de Task 7.1.
 
-### 0.4 Qué sigue abierto
+## 6. Archivos creados o modificados
 
-- Migración `062_siio_f2_security_coherence.sql` permanece aplicada en producción sin rollback versionado; el gap está documentado, no inventado, en `docs/migrations/agt002-process-governance-ledger.md`.
-- GO/NO-GO, firma, envío, presentación y compromiso de recursos sobre Manizales SA-24-2026 siguen siendo exclusivamente humanos; el piloto V3 no decide cumplimiento — ver `docs/architecture/agt002-human-review-policy.md`.
-- Incorporar un segundo proceso/licitación exige paquete aprobado + gate de onboarding + flag explícito; ninguno de los tres existe hoy para ningún proceso distinto de Manizales — ver `docs/runbooks/agt002-process-onboarding-gate.md`.
-- La ruta interactiva activa presupuesto de prompt V3. La instrumentación post-bridge del worker durable permanece deliberadamente abierta para no alterar semántica de claim/retry sin una fase TDD separada — ver `docs/architecture/agt002-phase9-runtime-open-gaps.md`.
+### Estado Git observado justo antes de escribir este checkpoint
 
----
+Archivos rastreados modificados:
 
-## Historial anterior — corte 2026-08-14, superseded por el corte §0 vigente
+- `agt002-manizales-exercise-decision-review.js`
+- `data/agt002/manizales-sa-24-2026.exercise-decision-review.v1.json`
+- `src/main.tsx`
+- `src/styles.css`
+- `src/tenders/components/TenderAnalysisSection.tsx`
+- `src/tenders/components/TenderDecisionBrief.tsx`
+- `src/tenders/components/TenderDetailNavigation.tsx`
+- `src/tenders/components/TenderDocumentSection.tsx`
+- `src/tenders/components/TenderGoNoGoDecisionPanel.tsx`
+- `src/tenders/components/TenderIntegralAnalysisV3View.tsx`
+- `src/tenders/components/TenderQuestionResponseCard.tsx`
+- `src/tenders/components/tender-integral-analysis-v3.css`
+- `src/tenders/tenderDecisionBriefModel.ts`
+- `src/tenders/types.ts`
+- `tests/agt002-manizales-decision-review-presentation.test.mjs`
+- `tests/agt002-manizales-decision-review-ui.test.mjs`
+- `tests/agt002-manizales-exercise-decision-review.test.mjs`
+- `tests/agt002-v3-open-questions-visibility.test.mjs`
+- `tests/agt002-v3-real-analysis-view.test.mjs`
+- `tests/fixtures/agt002-manizales-exercise-decision-review.v1.json`
+- `tests/tender-decision-brief-ui.test.mjs`
+- `tests/tender-decision-brief-v2.test.mjs`
+- `tests/tender-detail-navigation.test.mjs`
+- `tests/tender-document-actions-layout.test.mjs`
+- `tests/tender-executive-projection.test.mjs`
+- `tests/tender-guided-workspace-ui.test.mjs`
+- `tests/tender-question-responses.test.mjs`
+- `tests/tender-summary-public-fields.test.mjs`
+- `CURRENT.md` (este checkpoint sustituye el corte viejo de este worktree).
 
-**Este bloque fue autoritativo en su fecha.** Se conserva como historial de cómo se llegó al bloqueo que el corte §0 vigente (2026-08-17) resolvió; no se reescribe su contenido ni su intención original. El corte §0 anterior manda ante cualquier conflicto.
+Archivos/rutas no rastreados observados:
 
-### 0.1 Resultado terminal
+- `docs/superpowers/plans/2026-08-20-agt002-decision-front-consolidation.md`
+- `src/tenders/components/TenderGoNoGoDecisionSummary.tsx`
+- `src/tenders/tenderDecisionSurface.ts`
+- `src/tenders/tenderIntegralAnalysisPresentation.ts`
+- `tests/fixtures/tender-integral-analysis-dynamic.v3.json`
+- `tests/helpers/bundle-react-component.mjs`
+- `tests/tender-decision-front-render.test.mjs`
+- `tests/tender-decision-surface.test.mjs`
+- `tests/tender-integral-analysis-presentation.test.mjs`
 
-Resultado **B — canary único no concluyente, falla segura y rollback estable**. Una autorización posterior permitió crear una autenticación efímera aislada exclusivamente para `POST /api/internal/agt002-fixed-snapshot-reanalysis`, activar V3 sólo durante la ventana del canary y desplegar un commit temporal sin alias. El preflight completo quedó verde y se ejecutó **exactamente una** solicitud real de Manizales, sin retry ni fallback.
+Archivos operativos bajo `.superpowers/sdd/` relevantes, aunque puedan estar ignorados por Git:
 
-La solicitud respondió HTTP 200 con `status=unavailable`, persistió una versión de contexto, pero no devolvió ni persistió `analysis_run_id`. Por tanto no existe run V3 `3.0.0` validado ni base para producir el brief pre‑GO o promover V3.
+- `context-checkpoint.md`
+- `progress.md`
+- `task-5-brief.md`
+- `task-5-resume-report.md`
+- `task-5-review.diff`
+- `task-6-brief.md`
+- `task-6-report.md`
+- `task-6-review.diff`
+- `task-7-brief.md`
+- `task-7-1-report.md`
 
-### 0.2 Código temporal, revisión y trazabilidad Git
+Diffstat rastreado observado antes de este checkpoint: **28 archivos, 1.808 inserciones y 731 eliminaciones**. Todos los cambios continúan sin commit.
 
-- Base autoritativa de `main`: merge documental `6d3efd19b92004edc5342af847d0a79dd4596c7c`; el código funcional permanente de PR #86 sigue integrado.
-- Rama efímera: `canary/agt002-fixed-ephemeral-auth`.
-- Commits temporales: `542bb45bb0bc3e47687715b788d2fc38ff67a987` y `1e8828fe3e2718d5a0e2e99836555b6de204369c`.
-- PR temporal **#88**: cerrado, no fusionado; rama remota eliminada.
-- La autenticación temporal no entró a `main`.
-- Gates frescos: pruebas focales, suite serial AGT‑002, runtime, paridad backend, build y `git diff --check`, todos exitosos.
-- Revisión independiente Claude Code Opus: **`NO MATERIAL FINDINGS`** después de corregir por TDD el alcance exacto de la ruta Vercel.
+## 7. Riesgos y bloqueos vigentes
 
-### 0.3 Configuración y deployments
+1. **Task 7.1 no verificada:** el helper/refactor puede tener un error de ejecución aunque exista en disco.
+2. Aserción específica pendiente de confirmar: React server puede serializar `<details open>` como `open=""`; el reporte del worker señala esa suposición.
+3. El test del piloto ejecuta el motor completo y puede ser más lento.
+4. El metadato `files_touched: []` del worker ha sido poco fiable; la verdad se verificó directamente en disco.
+5. El sandbox de `claude_worker` no permite ejecutar Node/TypeScript sin aprobación; Hermes debe correr las verificaciones.
+6. QA visual autenticada local, escritorio/móvil, accesibilidad y screenshots aún no han comenzado.
+7. Deuda para QA: el observer conserva `deps: []`; las seis anclas deberían montarse en el mismo commit, pero debe verificarse en navegador.
+8. Minor Task 5: posible sobreconteo del puntero de pendientes en el panel GO/NO GO.
+9. Producción sigue referenciada en `7ad7b91` y no coincide con `main`; queda prohibido desplegar `main` a ciegas.
+10. No hay autorización para commit, push, merge, migración ni deploy.
 
-Perfil efectivo durante la ventana aislada:
+## 8. Próximo paso exacto para retomar
 
-```text
-canonical=true
-context_v2=true
-retrieval=true
-legal=true
-v3=true
-autoAnalysis=true
+Después de autorización expresa para continuar, **no iniciar un worker primero**. Ejecutar exactamente:
+
+```bash
+cd /root/worktrees/agt002-decision-front-consolidation
+node --test tests/tender-decision-front-render.test.mjs
 ```
 
-Estado final verificado después del rollback:
+- Registrar conteo, fallos y exit code reales.
+- Si falla, corregir únicamente helper/pruebas de Task 7.1 mediante TDD y repetir la prueba aislada.
+- Si pasa, ejecutar la suite focal completa indicada en `.superpowers/sdd/task-7-brief.md` §7.2.
+- Sólo después ejecutar `npx tsc --noEmit`, `npx vite build` y `npm run check:backend-parity`.
+- Luego realizar QA visual local autenticada con Playwright en escritorio y móvil, generar screenshots y `docs/verification/2026-08-20-agt002-decision-front-consolidation.md`.
+- Finalmente solicitar revisión independiente. No commit, push, merge, migración ni deploy sin autorización separada.
 
-```text
-canonical=true
-context_v2=true
-retrieval=true
-legal=true
-v3=false
-autoAnalysis=true
+## 9. Estado de pausa (historial y estado actualizado)
+
+- **Histórico:** el 2026-08-20 se ordenó PAUSA TOTAL (sin herramientas, workers, pruebas ni cambios) a la espera de autorización del usuario. Esa evidencia se conserva.
+- **Estado actual:** la **pausa fue levantada**. Ya no rige la PAUSA TOTAL.
+- **Task 7 está en HOLD parcial**, no cerrada, por dos bloqueos vigentes:
+  1. QA visual autenticada y screenshots imposibles sin sesión autorizada;
+  2. los hallazgos **Important** de la revisión independiente requieren autorización expresa para modificar producción/reabrir Task 5.
+- **No hay autorización** para commit, push, merge, migración, deploy ni restart.
+- El detalle verificado de la reanudación está en la **§10**, que es la sección autoritativa.
+
+## 10. Reanudación 2026-08-21 — Task 7.1 y gates Task 7
+
+### 10.1. Smoke de `claude_worker` (solo lectura)
+
+- Resultado: `success: true`, modelo `claude-sonnet-5`, exit 0, respuesta `WORKER_OK`.
+- Marca de estado emitida: **TASK_7_1_HOLD**.
+
+### 10.2. Corrección de ruta
+
+- La ruta errónea `apps/api/...` fue corregida por Juan.
+- Ruta real y única válida: `tests/tender-decision-front-render.test.mjs`.
+
+### 10.3. Dependencias
+
+- El primer test tras el restart **falló antes de llegar a las aserciones** por dependencias ausentes.
+- `npm ci --ignore-scripts`: **144 paquetes, 0 vulnerabilidades, exit 0**.
+
+### 10.4. RED fresco
+
+```bash
+node --test tests/tender-decision-front-render.test.mjs
 ```
 
-- Deployment canary final: `dpl_EmA4usU6HtTxr2aNDDURndnRK73T`, target `production`, `READY`, sin alias; eliminado al cerrar.
-- Deployment preliminar: `dpl_ET5V23HHB7eWUVY2gqgXsqbMdZHY`; eliminado al cerrar.
-- Alias estable: `https://seguridad-nacional-crm.vercel.app` → `dpl_2uWfvqd3791TTVat8EzABxanbbXf`, target `production`, `READY`, HTTP 200.
-- `AGT002_FIXED_CANARY_SECRET` fue eliminado de Vercel Production y su archivo local `0600` fue eliminado.
-- La ruta/operador efímero no existe en el deployment público estable.
-- No se modificaron `TENDER_WORKER_SCHEDULER_SECRET`, `CRON_SECRET`, Preview ni Development.
+- Resultado: **26/27 PASS**, exit 1.
+- Único fallo: `not_applicable`, causado por un `assert` global (no acotado a una tarjeta concreta).
 
-### 0.4 Preflight completo previo al canary
+### 10.5. Cambio único de Task 7.1
 
-Confirmado read-only inmediatamente antes de la solicitud real:
+- En `tests/tender-decision-front-render.test.mjs` se añadió el helper `extractCardByTitle`.
+- Los tres asserts de `not_applicable` se acotaron al `article` de `CONDITION_PRESENTED`.
+- **Sin cambios de producción ni de configuración.** Ese fue el único cambio.
 
-- oportunidad `54190e51-15fb-46af-b0aa-8f13461a3110`;
-- prior run `4f5f8bcf-6de2-45d9-b74a-4588a514bdf3`;
-- snapshot `4770667d-1b47-4a52-af68-b199911b52d4`;
-- productor `AGT-002`, método `agent_ai`, estado `completed`, `canonical=true`;
-- actor humano activo;
-- exactamente 17 documentos con identidades y hashes iguales al snapshot;
-- seis filas de gobernanza exactas;
-- corpus jurídico `legal-corpus-v1.1` publicado, seis fuentes y hash válido;
-- perfil E5/V3 exacto;
-- prueba sanitaria de autenticación: ausente 403, incorrecta 403, body inválido con secreto correcto 400 y fake-id con secreto correcto 409 en el gate de corrida previa;
-- cero claims activos y cero runs V3 previos;
-- bridge `active/running`, sin reinicio, ocho módulos byte-idénticos;
-- deployment aislado `READY`, target `production`, sin alias;
-- marcador inexistente antes del preflight y creado una sola vez al autorizar la ejecución.
+### 10.6. GREEN aislado
 
-### 0.5 Canary, persistencia y conteos finales
+- `node --test tests/tender-decision-front-render.test.mjs`: **27/27 PASS, exit 0**.
 
-```text
-real_operator_requests=1
-http_status=200
-status=unavailable
-reused=false
-context_version_id=ecdfc211-222a-47a4-9fe9-7dbeb34088cf
-analysis_run_id=null
-retries=0
-fallbacks=0
-second_consumption=0
-v3_runs=0
-active_claims=0
-total_historical_runs=12
-canary_context_versions=1
-```
+### 10.7. Suite focal exacta §7.2
 
-La versión de contexto quedó persistida en `psi_agt002_context_versions`, que es append-only. No se creó corrida canónica y no quedó claim activo. La evidencia disponible demuestra que la ejecución falló después de persistir el contexto y antes de persistir una corrida; la respuesta sanitaria `unavailable` no identifica de manera durable el subpaso interno exacto. No se reintentó ni se reconstruyó retrospectivamente ese motivo.
+- Resultado: **117/117 PASS, 0 fail, exit 0**.
 
-No existe brief pre‑GO nuevo porque no existe run V3 validado. No se decidió GO/NO‑GO y no hubo firma, envío, presentación, garantías ni compromiso de recursos.
+### 10.8. Gates técnicos
 
-### 0.6 Ledger y bridge
+- `npx tsc --noEmit`: **exit 0**.
+- `npm run check:backend-parity`: **backend parity OK, exit 0**.
+- `npx vite build`: **129 módulos, build 566 ms, exit 0**; advertencia **no bloqueante** de chunk > 500 kB.
 
-El ledger permaneció read-only: 62 migraciones locales, 22 entradas emparejadas y 40 versiones locales ausentes. No se reparó, aisló ni escribió ninguna migración. El bridge permaneció con el mismo proceso (`MainPID=3758832`, inicio `2026-08-13 14:51:42 UTC`), `active/running`, sin reinicio.
+### 10.9. Higiene de diff y gates cerrados
 
-### 0.7 Bloqueo material y siguiente gate humano
+- `git diff --check`: **exit 0**.
+- **No** se realizó commit, push, merge, migración, deploy ni restart.
 
-**Bloqueo material único:** el runtime devolvió `unavailable` entre la persistencia de la versión de contexto y la persistencia de la corrida canónica; no existe `analysis_run_id` ni razón durable suficiente para declarar V3 operativo.
+### 10.10. QA visual autenticada — BLOQUEADA
 
-Rollback y limpieza completados: V3=`false`, secreto efímero ausente, deployments aislados eliminados, PR temporal cerrado sin merge, rama remota temporal eliminada y alias público estable en HTTP 200.
+- No existe `.env.local` ni en el worktree ni en el canónico.
+- El navegador aislado queda en la pantalla de login, sin sesión.
+- No hay `storageState` ni identidad/contraseña de QA disponibles.
+- El archivo externo `/root/psi-comercial/plataforma-ventas/app/.env.local` **existe** y contiene llaves de Supabase, pero **no** contiene identidad QA; **sus valores no se imprimieron**.
+- Crear el usuario `qahermes` está **fuera de alcance**.
+- **No se generaron screenshots** y **no se simuló ni se fingió** QA.
 
-Cualquier nuevo intento requiere una autorización humana nueva, preflight desde cero y observabilidad durable del error antes de habilitar otro consumo. No se reutilizan la credencial, el deployment, el marcador ni la autorización de consumo de esta ventana.
+### 10.11. Revisión independiente (solo lectura, `claude-opus-5`, exit 0)
 
----
+- **Critical:** ninguno.
+- **Important (verificado):**
+  - `TenderGoNoGoDecisionPanel.tsx` líneas **45-46**: deriva `blockers`/`conditions` **sin** `questionResponses`, por lo que el conteo de pendientes y el warning del modal **no disminuyen**.
+  - `main.tsx` línea **841**: no pasa las respuestas al panel, aunque el brief sí las recibe.
+- **Minor:**
+  - Restauración de foco vulnerable si el trigger desaparece.
+  - La cobertura no prueba el conteo ni el warning del panel con respuestas.
+- **No corregido** por la prohibición vigente de tocar producción / Tasks 0-6.
 
-## Historial anterior — corte 2026-08-14 08:29 COT
+### 10.12. Estado del HOLD
 
-### 0.1 Resumen ejecutivo
+- **EL HOLD NO SE RETIRA.**
+- Bloqueos actuales:
+  - (a) QA visual autenticada + screenshots, imposibles sin sesión autorizada;
+  - (b) los **Important** de la revisión requieren autorización expresa para modificar producción / reabrir Task 5.
+- **Task 7 sigue `in_progress`.**
 
-El lote AGT‑002/V3 fue integrado mediante PR **#85** y está desplegado en la aplicación productiva. La migración lógica 066 tiene sus **seis efectos materiales exactos** en Supabase productivo, pero **no figura en el ledger** `supabase_migrations.schema_migrations`. La aplicación y el bridge están disponibles. Sin embargo, **no se ejecutó el canary V3 de Manizales**: el operador fijo conserva un guard exclusivo de E4 que rechaza el perfil E5/V3 antes de invocar el proveedor. No hubo consumo Codex asociado al canary, run V3, claim activo, GO/NO‑GO, firma, envío ni presentación. Sí hubo antes de la integración una única reproducción externa sintética y no productiva, sin datos de Manizales, descrita en §0.8.
+### 10.13. Próximo paso exacto
 
-Estado de cierre: **integración y deployment completados; canary cancelado por bloqueo material fail‑closed; corrección del operador y reconciliación del ledger pendientes de gate humano.**
+1. Juan debe resolver/autorizar un **mecanismo seguro de sesión QA local**.
+2. Juan debe decidir si autoriza corregir el **Important** del panel.
+3. **No crear usuarios ni generar bypass.**
+4. Cuando se autorice: aplicar **TDD mínimo** al panel; repetir **27/117/tsc/build/paridad**; ejecutar **QA desktop/mobile**; generar **screenshots**; actualizar la evidencia y la revisión final.
+5. **Sin commit, push ni deploy.**
 
-### 0.2 Git — local, remoto y commits
+## 11. GO limitado 2026-08-21 — cierre del Important de TenderGoNoGoDecisionPanel
 
-#### Local
+> Esta sección es autoritativa y supera a la **§10 únicamente** para lo relativo al cierre del Important del panel `TenderGoNoGoDecisionPanel` descrito en §10.11/§10.12. Para todo lo demás (QA visual, bloqueos de sesión, gates de publicación), sigue rigiendo lo indicado en §9/§10.
 
-- Worktree de cierre: `/root/worktrees/siio-vigia-v3-foundations`.
-- Rama documental final: `docs/agt002-final-close-20260814`.
-- HEAD de código integrado antes del commit exclusivamente documental de este corte: `0536746283aa3ccdc078c1c979ca24556b41d1c8`.
-- El commit que contiene este bloque se reporta al finalizar el cierre; no se incluye su propio hash dentro del archivo para evitar una referencia autorrecursiva imposible.
-- Se descartó la prueba RED incompleta de la rama histórica `fix/agt002-fixed-canary-e5`. El mandato posterior de cierre productivo abrió `fix/agt002-fixed-canary-e5-v3`, donde la corrección mínima ya existe en el commit local `288c500`, todavía pendiente de merge y deploy en este corte intermedio.
-- Se retiraron del worktree temporal de deployment el export y los runners de canary creados sólo para diagnóstico. Ese worktree volvió a limpio.
+### 11.1. Autorización
 
-#### Remoto
+- Juan autorizó reabrir **únicamente Task 5**, y sólo para corregir el Important señalado en §10.11 sobre `TenderGoNoGoDecisionPanel`.
+- Alcance explícitamente excluido: sin refactors visuales, sin operaciones externas (sin commit, push, merge, migración, deploy ni restart).
 
-- `origin/main`: `0536746283aa3ccdc078c1c979ca24556b41d1c8` al corte.
-- PR **#85**, `fix/agt002-codex-schema-closure → main`: **MERGED** el `2026-08-14T12:56:56Z`.
-- URL: `https://github.com/Premium-Security-Investments/sn-crm-comercial/pull/85`.
-- Commit de merge: `0536746283aa3ccdc078c1c979ca24556b41d1c8` (`fix(agt002): close Codex V3 schema and stabilize pre-GO (#85)`).
-- Padres del merge: `701822d91de15ef7248961689b95d890da19ff0e` y `2f00c5f55222da6d7e3428139f94b92488effd12`.
-- Commits de la rama integrada: `26ae07a`, `71b2550`, `7345e60`, `5df620a`, `b462628`, `9d59c32`, `7819ede`, `b3cc060`, `4ceed28`, `33e96c8`, `48ccf11`, `4500478`, `3150a78`, `2f00c5f`.
-- GitHub no reportó checks ni workflow runs asociados al merge (`statusCheckRollup=[]`, `gh run list=[]`); por tanto, **no se declara CI GitHub verde**. La confianza proviene de los gates locales frescos descritos en §0.4.
+### 11.2. TDD RED
 
-#### Limpieza y alcance
+- Se añadió una prueba real del panel en `tests/tender-decision-front-render.test.mjs`.
+- Primera ejecución: **28 tests, 27 PASS, 1 FAIL, exit 1**.
+- Único fallo: con una respuesta `resolved` más reciente, el panel seguía mostrando `Revisar pendientes en Análisis`.
 
-Los dos worktrees usados por este proceso quedaron limpios antes del commit documental: el worktree de cierre y `/tmp/siio-deploy-0536746-TTvTxS`. El inventario global encontró cuatro worktrees con cambios preexistentes o ajenos —documentación de navegación, un `__pycache__`, dos imágenes AGT‑003 y otro `CURRENT.md` histórico— que no fueron tocados para no invadir trabajo activo. “Git limpio” en este cierre significa **los worktrees de este proceso**, no la destrucción de trabajo independiente en otros worktrees.
+### 11.3. Implementación mínima
 
-### 0.3 Diff real integrado por PR #85
+- Nueva prop `questionResponses: TenderQuestionResponse[]` en el panel.
+- `main.tsx` pasa `tenderQuestionResponses` al panel.
+- El panel pasa esas respuestas a `tenderDecisionBlockers`/`tenderDecisionConditions`.
+- `pendingConditions` filtra sólo el estado `Pendiente de validación`.
+- La selección de la respuesta más reciente por `responded_at` sigue usando el selector existente; no se introdujo lógica paralela.
 
-Diff mecánico del merge `0536746`:
+### 11.4. Primer intento GREEN (incompleto)
 
-```text
-33 files changed
-1,681 insertions(+)
-186 deletions(-)
-```
+- Permaneció en **27/28** porque faltaba filtrar por estado.
+- El fixture y los timestamps eran correctos; no fue necesario tocarlos.
+- Se añadió únicamente el filtro de estado descrito en §11.3; **no se modificó el test**.
 
-El cambio comprende contrato/schema V3 recursivamente cerrado, validación y persistencia pre‑GO, observabilidad segura, cliente/bridge Codex, runtime Express/Vercel, análisis gobernado de Manizales, migración/rollback 066 y pruebas asociadas. Incluye, entre otros, `agt002-preview-contract.js`, `agt002-preview-codex-client.js`, `agt002-preview-runtime.js`, `agt002-pre-go-analysis.js`, `server/index.js`, `api/[...path].js`, `agt002-hetzner-bridge-server.js`, `supabase/migrations/066_agt002_manizales_integral_governance.sql` y 14 archivos de pruebas AGT‑002. No incorpora el parche posterior del operador E4/E5: ese intento quedó únicamente como RED local y fue descartado.
-
-### 0.4 Pruebas y revisión
+### 11.5. GREEN final
 
-Verificación fresca sobre `0536746`, sin proveedor ni datos productivos escritos:
+- `node --test tests/tender-decision-front-render.test.mjs`: **28/28 PASS, exit 0**.
 
-- regresión integral serial `node --test --test-concurrency=1 tests/agt002-*.test.mjs`: **266/266**;
-- runner Workbench `npm run test:agt002-runtime`: **11/11**;
-- migración 066 PGlite: **1/1**;
-- `npm run check:backend-parity`: **OK**;
-- `npm run build`: **OK**;
-- `git diff --check`: **OK**.
+### 11.6. Suite focal exacta (15 archivos, §7.2)
 
-El build conserva el warning conocido de chunk JavaScript >500 kB; no bloquea compilación y no fue introducido por el cierre documental. La revisión independiente Claude Code Opus del lote de código previo a integración devolvió **`passed=true`**, sin errores lógicos, de seguridad o documentación material. GitHub no contiene review formal ni checks adjuntos al PR; no se debe reinterpretar la revisión local como aprobación registrada en GitHub. Dos intentos read-only de revisión documental Sonnet agotaron su límite de turnos sin emitir veredicto; no se cuentan como gate aprobado.
+- Resultado: **118/118 PASS, exit 0**.
 
-El intento TDD histórico produjo RED **19/21** y fue descartado sin GREEN. El mandato posterior repitió el ciclo desde limpio con Claude Code Sonnet: RED mecánico **18/22** —cuatro fallos esperados— y GREEN **22/22**. La corrección actual conserva E4, admite exclusivamente E5/V3 cuando `legal=true` y `v3=true`, y rechaza combinaciones parciales o ambiguas antes de loaders/proveedor.
+### 11.7. Gates técnicos
 
-### 0.5 Migración 066 — código, efecto material y ledger
+- `npx tsc --noEmit`: **exit 0**.
+- `npx vite build`: **129 módulos, 503 ms, exit 0**; advertencia **no bloqueante** de chunk > 500 kB.
+- `npm run check:backend-parity`: **backend parity OK, exit 0**.
+- `git diff --check`: **exit 0**.
 
-Artefactos integrados:
+### 11.8. Revisión independiente final (`claude-opus-5`)
 
-- `supabase/migrations/066_agt002_manizales_integral_governance.sql`;
-- `supabase/rollbacks/066_agt002_manizales_integral_governance_rollback.sql`.
+- **Critical:** ninguno.
+- **Important:** ninguno.
+- El hallazgo inicial sobre `blockers` fue **retirado** al revisar el contrato: los `blockers` siguen siendo impedimentos confirmados aunque tengan validación humana; sólo las `decision_questions` se filtran como pendientes.
+- **Minor preexistente/fuera de alcance:** el enlace `Revisar pendientes en Análisis (N)` suma `blockers` bajo ese mismo rótulo.
 
-Estado productivo read-only:
+### 11.9. Estado
 
-- existen exactamente **6** filas de Manizales en `psi_agt002_integral_governance_overrides`;
-- las seis coinciden 1:1 con el conjunto aprobado: tres `category_override=habilitating` y tres enlaces `rup`, `rce_policy`, `collective_life_policy`;
-- todas están `current=true`, `version=3`, con el curador y timestamp aprobados;
-- el conjunto no presenta drift material;
-- `supabase_migrations.schema_migrations` devuelve **0** registros para versión/nombre 066.
+- El Important autorizado en §10.11 queda **CERRADO localmente**.
+- **Task 5 no se reabre para nada más** allá de este fix.
+- **Task 7 sigue en HOLD**, únicamente por el bloqueo de QA visual autenticada manual y screenshots (§10.10, §10.12).
 
-Conclusión autoritativa: **la 066 está aplicada materialmente, pero no está registrada en el ledger de migraciones**. No debe reaplicarse a ciegas: aunque el SQL es idempotente para el conjunto exacto, hacerlo no resolvería por sí solo la trazabilidad del ledger y podría ocultar el origen operativo. La reconciliación debe definirse y aprobarse como acción separada, sin modificar las seis filas.
+### 11.10. Reglas QA vigentes (sin cambios)
 
-### 0.6 Aplicación, deployment y producción
+- No crear `qahermes`.
+- No usar service-role ni suplantación.
+- No pedir ni publicar contraseñas.
+- Cuando exista sesión humana autorizada: `storageState` temporal fuera del repo, `chmod 0600`, uso limitado a desktop/móvil/accesibilidad/screenshots, y eliminación al terminar.
+- Actualmente **no existe mecanismo seguro** de sesión en el navegador host: se reporta el bloqueo y **se detiene** aquí.
 
-#### Aplicación integrada
+### 11.11. Gates cerrados
 
-- Código remoto integrado en `origin/main`: `0536746`.
-- La paridad `server/index.js` / `api/[...path].js` pasó fresca.
-- El `origin/main` base `0536746` no contenía la corrección. La rama candidata `fix/agt002-fixed-canary-e5-v3` sí la contiene en `288c500`; sólo podrá considerarse remota/productiva después de merge y deploy verificados.
+- **Sin commit, push, merge, migración, deploy ni restart.**
 
-#### Desplegado en Vercel
+### 11.12. Próximo paso exacto
 
-- Deployment: `dpl_Ff3H6YP2P52JmS7H5bHbvacdqpb2`.
-- Target: `production`.
-- Estado: `Ready`.
-- Creado: `2026-08-14 12:58:47 UTC`.
-- URL de deployment: `https://seguridad-nacional-33bvwwhb1-psi-llc-projects.vercel.app`.
-- Alias: `https://seguridad-nacional-crm.vercel.app`.
-- El alias respondió HTTP **200**.
-- Vercel no mostró metadata Git en `inspect`; la atribución a `0536746` se sostiene por el worktree exacto usado para desplegar y el registro del proceso, no por metadata del deployment.
+- Esperar a que exista un mecanismo seguro de sesión humana manual.
+- **No ejecutar más herramientas ni cambios** por este alcance hasta entonces.
 
-#### Producción Supabase / Manizales
+## 12. Cierre final autoritativo 2026-08-21 — Task 7 CERRADA LOCALMENTE / QA PASS
 
-- Oportunidad: `54190e51-15fb-46af-b0aa-8f13461a3110`.
-- Último run canónico: `4f5f8bcf-6de2-45d9-b74a-4588a514bdf3`.
-- Schema del último run: `2.0-preview.1`.
-- Snapshot de ese run: `4770667d-1b47-4a52-af68-b199911b52d4`.
-- Runs V3 encontrados: **0**.
-- Claims con lease activo: **0**.
-- El preflight fijo había validado 17 documentos y actor humano para el snapshot objetivo, pero el canary no avanzó hasta proveedor ni persistencia.
+> **Esta es la sección autoritativa vigente para Task 7 y sustituye expresamente §9, §10 y §11 en todo lo relativo a su estado, HOLD, QA, revisión y siguiente paso.** Esas secciones se conservan sin borrado como historial de RED, bloqueos y correcciones previas.
 
-### 0.7 Bridge
+### 12.1. Estado y alcance seguro
 
-- Servicio `agt002-bridge.service`: `active/running`.
-- Inicio del proceso vigente: `2026-08-13 14:51:42 UTC`.
-- Los módulos desplegados se habían verificado byte‑idénticos al lote integrado; al no existir diferencia material, **no se reinició** el servicio durante este cierre.
-- El bridge no implementa `GET /health`; ese método responde 405 por contrato.
-- Probe correcto, sin firma y sin payload real, contra local y público: ambos respondieron HTTP **401** con `AGT002_BRIDGE_AUTH_INVALID` en `POST /v1/agt002-preview/run`.
-- Esto verifica listener local, TLS/proxy público y rechazo fail‑closed. No prueba un turno Codex y no consumió proveedor.
+- **Task 7: CERRADA LOCALMENTE / QA PASS.** El HOLD de Task 7 descrito en §9–§11 queda superado.
+- El cierre cubre sólo el worktree local `/root/worktrees/agt002-decision-front-consolidation` y la evidencia local; los cambios permanecen sin commit.
+- No se ejecutaron: commit, push, merge, migración, deploy, restart, cambios de producción, cambios de roles/permisos ni escrituras CRM.
+- Los gates de publicación siguen **cerrados**. Cualquier publicación o fase nueva requiere una **orden separada**.
 
-### 0.8 Acciones realizadas y no realizadas
+### 12.2. Evidencia TDD y regresión de Task 7
 
-#### Realizadas
+1. **RED inicial de accesibilidad/navegación:** 33 tests, **28 PASS / 5 FAIL**.
+2. **GREEN inicial:** **51/51 PASS** tras la corrección focal.
+3. La revisión independiente detectó riesgos de **SSR, teclado y textarea**; se incorporaron a la regresión focal.
+4. **RED de regresión:** 25 tests, **22 PASS / 3 FAIL**.
+5. **GREEN focal ampliado:** **54/54 PASS**.
+6. La inspección visual humana de `mobile-analisis.png` detectó un recorte de la píldora **Pendiente de validación** a 375 px que no estaba cubierto por los 36 gates funcionales.
+7. **RED responsive suplementario:** **4 PASS / 1 FAIL**. La primera corrección mínima dejó el test en **5/5 PASS**, pero una revisión independiente detectó que `align-items: stretch` no vencía la especificidad de la regla base.
+8. Se endureció el contrato para exigir un selector suficientemente específico y `width: 100%` explícito: segundo **RED 4/5**.
+9. Corrección final: `.tender-question-response-card>header.tender-condition-head{align-items:stretch;flex-direction:column}` y `.tender-condition-state{min-width:0;width:100%}`. **GREEN final: 5/5 PASS**.
+10. Navegador real a 375×844: `direction=column`, `align=stretch`, `stateWidth=311px`, documento `375/375`, tarjeta `335/335` y píldora completamente contenida. Evidencia: `mobile-condition-card-after.png`.
 
-1. integración de los 14 commits mediante PR #85;
-2. merge remoto en `0536746`;
-3. deployment productivo Vercel y verificación HTTP 200;
-4. verificación del bridge sin reinicio innecesario;
-5. preflight read-only de oportunidad, snapshot, documentos, actor, runs y claims;
-6. diagnóstico del bloqueo del operador fijo;
-7. una reproducción externa mínima, sintética y no productiva para demostrar la causa del schema abierto: 4.526 s, 9,687 tokens de entrada, 19 de salida y 9,706 totales; sin oportunidad, documentos, snapshot, contexto ni datos de Manizales; coste monetario exacto no observable;
-8. TDD RED histórico para E5/V3, descartado al no existir GREEN; posteriormente, nuevo ciclo RED **18/22** → GREEN **22/22** con corrección mínima en `288c500`;
-9. verificación productiva read-only del efecto material 066, ledger, runs y claims;
-10. limpieza de artefactos temporales propios;
-11. actualización autoritativa de este archivo.
+### 12.3. Gates técnicos y revisión final
 
-#### No realizadas
+- Suite completa final: `node --test --test-force-exit tests/*.test.mjs` → **812 total, 811 PASS, 0 FAIL, 1 SKIP, exit 0**. `--test-force-exit` cierra handles residuales de PGlite después de emitirse TAP; no omite pruebas.
+- `npx tsc --noEmit` → **exit 0**.
+- `npx vite build` → **129 módulos, exit 0**; advertencia de chunk >500 kB registrada como **no bloqueante**.
+- `npm run check:backend-parity` → **backend parity OK, exit 0**.
+- Contrato de navegación `navigation-dashboard-default-static.test.mjs` → **1/1 PASS**.
+- `git diff --check` → **exit 0**.
+- Revisión independiente final del delta responsive → **0 Critical / 0 Important / 0 Minor; sin cambios requeridos**.
 
-- no se ejecutó el canary real de Manizales;
-- no hubo invocación Codex productiva ni consumo de proveedor asociado a Manizales después del deployment; la única invocación del proceso fue la reproducción sintética no productiva declarada arriba;
-- no se creó run V3, claim vigente, contexto nuevo ni análisis alternativo;
-- no se registró respuesta humana ficticia ni se suplantó sesión UI;
-- no se modificó el operador fijo en código integrado;
-- no se creó PR para la corrección E4/E5;
-- no se reaplicó, registró ni revirtió la migración 066 durante este cierre;
-- no se cambiaron secretos, permisos, RLS, scheduler, timer o drain;
-- no se creó ni modificó GO/NO‑GO;
-- no hubo firma, envío, presentación, compromiso de garantías ni acción post‑GO;
-- no se hizo push de la rama documental sin una autorización separada.
+### 12.4. QA autenticada y evidencia visual final
 
-### 0.9 Riesgos residuales y bloqueos materiales
+- Informe canónico autenticado: `/root/.hermes/qa/agt002-evidence/qa-report.json` → **36/36 PASS, 0 FAIL**.
+- `axe` desktop y móvil: **0 violaciones**.
+- `console_errors`, `request_failures`, `http_errors` y `blocked_writes`: vacíos.
+- Guard de escritura: `POST/PUT/PATCH/DELETE` bloqueados en rutas locales CRM `/api/`; no hubo intentos de escritura.
+- Móvil post-layout: muestras posteriores de Decisión y Análisis estables en `top=142`, seis muestras por destino y `range=0`; foco y `aria-current` correctos.
+- Evidencia visual total: **14 capturas** — 12 autenticadas originales y dos suplementarias (`mobile-condition-card-after.png`, `sidebar-contract-licitaciones.png`) inventariadas en `QA-SUMMARY.md`.
+- La captura autenticada `mobile-analisis.png` conserva el hallazgo responsive previo como evidencia RED; no fue sobrescrita ni presentada como post-fix.
+- Notas no bloqueantes: los enlaces de condición V3 son **N/A** porque no están presentes en la forma actual del manifiesto; el modal GO/NO GO quedó bloqueado por acceso real de sólo lectura, sin alteración de permisos.
 
-#### Bloqueo material para el canary
+### 12.5. Aclaración final: Licitaciones/Radar
 
-El bloqueo E4-only fue corregido localmente en `agt002-fixed-snapshot-reanalysis.js` mediante `assertSupportedRuntimeProfile`: admite únicamente E4 (`legal=false`, `v3=false`) y E5/V3 (`legal=true`, `v3=true`), con canonical, retrieval y autoanálisis estrictamente activos. En este corte intermedio la corrección aún no está integrada ni desplegada; por tanto, **no debe ejecutarse el canary** hasta completar PR, merge, deploy y preflight exacto, y nunca por rutas alternativas.
+- Juan confirma que en la plataforma real, con su usuario, **sí ve Licitaciones**. Por tanto, queda retirada la interpretación anterior de que su perfil real carecía de acceso.
+- La sesión local autenticada usada para QA resolvió un conjunto de capacidades distinto o incompleto y ocultó el grupo. Se clasifica como **discrepancia de sesión QA**, no como defecto del código ni falta real de acceso de Juan.
+- El código conserva el grupo **Licitaciones** y la ruta Radar `#/tenders?view=radar` de forma idéntica en la base `408dbc...`, la referencia de producción `7ad7b...` y HEAD/current.
+- El contrato ejecutable real `getVisibleNavGroups`, con la capability `licitaciones`, produjo `Licitaciones → Radar → #/tenders?view=radar`. El fixture visual suplementario `sidebar-contract-licitaciones.png` lo muestra visible, activo, contenido y sin recorte.
+- No se cambiaron roles, permisos, datos ni producción.
 
-#### Riesgos residuales
+### 12.6. Limpieza y observación de datos
 
-1. **Ledger 066 divergente:** efecto material exacto presente, registro formal ausente. Riesgo de auditoría/reaplicación futura.
-2. **Contrato V3 no probado con caso real:** 266/266 y schema sintético pasan, pero no existe aceptación productiva del payload integral de Manizales.
-3. **Operador acoplado a E4:** impide el canary seguro después de activar E5/V3.
-4. **CI remoto ausente:** GitHub no ejecutó/reportó checks para #85; las pruebas son locales y frescas, no checks remotos.
-5. **Metadata de deployment incompleta:** Vercel reporta deployment/estado, pero no el commit Git; conservar el vínculo operacional al worktree exacto.
-6. **Warning de bundle:** chunk >500 kB conocido; no bloqueante para este proceso, pero permanece como deuda técnica.
-7. **Otros worktrees sucios:** cuatro worktrees independientes conservan cambios preexistentes; no son parte de este cierre y deben tratarse por sus propios dueños/gates.
+- Limpieza operativa **completada**: QA Chrome, Xvfb, Fluxbox, x11vnc y websockify detenidos; puertos `5900`, `6080` y `9223` cerrados; storage state, secreto/archivo VNC y perfil Chrome eliminados.
+- Se conservaron sólo evidencia y runner QA. Backend 4173, Vite 5173 y gateway PID 426375 permanecieron vivos.
+- Se observó un carácter corrupto en el nombre vivo del expediente. Los artefactos versionados contienen correctamente `Rama Judicial — Dirección…`; no se realizó escritura de datos.
 
-### 0.10 Rollback seguro
+### 12.7. Próximo paso
 
-No hay run V3 ni claim del canary que revertir.
-
-- **Aplicación:** preferir un revert explícito del merge `0536746` sobre `main`, con pruebas y nuevo deployment; no reescribir historia ni forzar ramas. El padre de código previo es `701822d`.
-- **Vercel:** después del revert probado, desplegar y reasignar el alias productivo. No asumir que cambiar el alias revierte Supabase o bridge.
-- **Bridge:** sólo si el revert modifica su contrato, restaurar los módulos desde el commit previo aprobado y reiniciar una vez, verificando firma/rechazo fail‑closed. No reiniciar por rutina.
-- **Migración 066:** el rollback versionado elimina sólo las seis filas exactas, no runs, documentos ni GO/NO‑GO. Aunque hoy hay cero runs V3, ejecutarlo requiere autorización humana y reconciliación previa del ledger; no usarlo para “arreglar” la ausencia de registro.
-- **Kill switch operativo:** ante duda, mantener sin canary y sin automatización. No crear rutas de bypass, sesiones artificiales ni respuestas humanas ficticias.
-
-### 0.11 Siguiente gate humano consolidado
-
-El mandato autónomo posterior autoriza el paquete mínimo de corrección, PR, merge, deploy y **exactamente un** canary real sin retry ni fallback. La autorización no elimina los gates: antes del consumo deben estar verdes la integración, el deployment, el bridge sin diferencias inesperadas y el preflight productivo exacto. La deriva sistémica del ledger se inventaría read-only y su reparación permanece fuera de alcance.
-
----
-
-## Historial anterior — no autoritativo frente al corte §0
-
-### Corte productivo AGT‑002/Manizales pre‑GO, 2026-08-13
-
-**Este bloque fue autoritativo en su fecha.** Se conserva como historial; el corte §0 anterior manda ante cualquier conflicto.
-
-### 0.1 Verdad de Git y cierre técnico
-
-**Snapshot del 2026-08-13:** rama `feat/agt002-v3-foundations` · HEAD `56a5883` · en ese corte el único cambio local era este archivo `CURRENT.md`. Para el estado local posterior y vigente del cierre del error, ver §0.5.
-
-**Base remota:** `origin/main` en `0e5f150`, merge de PR #84 que integró la punta de feature `18447c0`. Sobre esa punta hay 12 commits adicionales en esta rama.
-
-**Lote técnico estable de nueve commits** (el más reciente al final): `999bbbc`, `368f0d3`, `eb19a4c`, `09ba140`, `3fae8bf`, `26ab35a`, `f866877`, `473c3f0`, `56a5883`.
-
-Clasificación:
-
-- **Ejecución crítica** — `999bbbc` (aísla identidad de idempotencia v3), `368f0d3` (admite payloads v3 integrales acotados), `26ab35a` (conecta requisitos gobernados al runtime v3).
-- **Cierre diagnóstico/confiabilidad** — `eb19a4c` (observa solicitudes de bridge sobredimensionadas), `09ba140` (traza fallos canónicos de forma segura), `3fae8bf` (clasifica fallos de creación de runtime), `f866877` (maneja estado de turno Codex estructurado), `473c3f0` (clasifica fallos de turno Codex de forma segura), `56a5883` (adapta esquemas `const` para el app server de Codex).
-
-Los commits de funcionalidad/gobernanza pre‑GO de Manizales sobre esa misma punta son `641009c`, `29da6eb` y `041c17e` — anteriores y distintos del lote técnico de nueve; no se reclasifican aquí. Ninguno de los nueve automatiza GO/NO‑GO, firma, envío o presentación.
-
-Validación fresca del lote: pruebas AGT‑002 **266/266**, paridad backend **OK**, build **OK** y `git diff --check` limpio. Revisión independiente Claude Code Sonnet: **APPROVE**, sin bloqueos materiales del código revisado.
-
-### 0.2 Preflight productivo del caso real Manizales
-
-Caso: Rama Judicial, proceso `SA-24-2026`, oportunidad `54190e51-15fb-46af-b0aa-8f13461a3110`.
-
-Preflight read-only confirmado:
-
-- aplicación productiva `https://seguridad-nacional-crm.vercel.app` accesible; deployment observado `dpl_GJxnLPyZHURsg69oEp5VwkgbWFzF`, estado `READY` (Vercel no expuso metadata Git suficiente para atribuirle mecánicamente el HEAD local);
-- pliego definitivo resuelto y 68 secciones estructuradas, de las cuales 15 son relevantes al pre‑GO;
-- 17/17 clases empresariales presentes en el catálogo cerrado, pero 17/17 pendientes de revisión humana y aplicabilidad al caso; 15/17 con vigencia desconocida y ninguna promovida a cumplimiento;
-- corpus jurídico `legal-corpus-v1.1` publicado y hash validado;
-- gobernanza Manizales completa: 6/6 filas `current`, versión 3 (tres clasificaciones `habilitating` y tres enlaces a evidencia para capital de trabajo/RUP, póliza RCE y póliza de vida colectiva);
-- persistencia canónica, snapshots, contexto, claims y eventos append-only disponibles;
-- último run canónico previo: schema `2.0-preview.1`; **no existe run integral V3 reutilizable**.
-
-La evidencia empresarial permite presencia documental, no cumplimiento. Toda conclusión sustantiva sigue obligada a evidencia verificable o abstención explícita.
-
-### 0.3 Ejecución humana observada y resultado
-
-El 2026-08-13, desde una sesión humana autorizada en la pestaña **Análisis** del caso real, se accionó **Actualizar con Vig‑IA Licitaciones**. La UI devolvió: **“Vig‑IA no está disponible; no se generó un análisis alternativo.”**
-
-La validación final read-only encontró **dos ciclos humanos** con la misma clave idempotente `d5edd9…a055`, separados por aproximadamente 26 segundos:
-
-```text
-queued → running → unavailable
-queued → running → unavailable
-```
-
-Ambos ciclos:
-
-- conservaron la misma identidad idempotente y el snapshot `4770667d-1b47-4a52-af68-b199911b52d4`;
-- registraron `error_code=AGT002_UNAVAILABLE` y `analysis_run_id=null`;
-- alcanzaron `stage=engine_analysis` con `bridge_invocation_started=true`;
-- terminaron en aproximadamente 4.617 s y 3.645 s;
-- no produjeron fallback ni análisis alternativo.
-
-**Resultado canónico:** no se creó un run nuevo; no existe run V3 `3.0.0`; no se produjo brief pre‑GO real. El V2 histórico no se reutiliza ni se presenta como evidencia V3.
-
-**Bloqueo material único vigente:** el bridge fue invocado, pero el motor no produjo una respuesta canónica válida y la ruta cerró en `AGT002_UNAVAILABLE` durante `engine_analysis`. La telemetría segura actual no distingue todavía entre rechazo del proveedor, incompatibilidad del contrato desplegado, error del bridge o fallo de validación.
-
-**Límites preservados:** no se decidió GO/NO‑GO, no se comprometieron recursos ni garantías y no hubo firma, envío, presentación, scheduler, worker drain ni acción post‑GO. No debe hacerse un tercer intento sin resolver y verificar primero el bloqueo de `engine_analysis`.
-
-**Acciones de repositorio/infraestructura no realizadas en esta actualización:** no hubo commit, push, PR, merge, deploy ni migración remota.
-
-### 0.4 Hard debugging bridge → Codex — 2026-08-13, sin nuevo consumo
-
-Este diagnóstico refina el bloqueo descrito en §0.3 sin cambiar el resultado canónico del caso ni autorizar un nuevo intento.
-
-**Preflight preservado:** rama `feat/agt002-v3-foundations`, HEAD `56a5883`, único cambio local `CURRENT.md`; bridge `active/running` desde 14:51 UTC; Codex App Server `0.145.0`. Los ocho módulos JavaScript cargados por `agt002-bridge.service` en `/opt/agt002-bridge` coinciden byte a byte con `56a5883`. El `package.json` remoto es un manifiesto mínimo de runtime y difiere del manifiesto del repositorio, pero no altera la lógica ejecutada.
-
-**Etapa exacta demostrada:** ambos intentos superaron autenticación, lectura de cuota, `thread/start` y `turn/start`; Codex emitió `turn/started`. El segundo proceso alcanzó además `item/completed`. El cierre recibido por el bridge fue `turn/completed` con `status=failed` y `error.code=other`. El cliente convirtió exactamente ese estado en `AGT002_CODEX_PROVIDER_ERROR`; la extracción de una respuesta válida y la validación del contrato V3 nunca se ejecutaron. No fue un rechazo HTTP del bridge, un fallo al crear el turno ni una validación V3 local.
-
-**Reproducción aislada:** un child process falso, sin red, OAuth ni proveedor, recorrió el protocolo real `initialize → account/read → account/rateLimits/read → thread/start → turn/start` y emitió `turn/completed(failed, other)`. El resultado fue exactamente `AGT002_CODEX_PROVIDER_ERROR`, `provider_status=failed`, `provider_error_code=other` y mensaje seguro. Esto reproduce y demuestra el mapeo observado, no la causa interna por la que Codex marcó el turno como fallido.
-
-**Compatibilidad de schema:** auditoría recursiva local de las variantes legacy y legal del `outputSchema`: 40/48 nodos, 6/7 objetos y 10/13 arrays respectivamente, sin hallazgos; todos los objetos tienen `additionalProperties:false`, propiedades explícitas y `required` completo. Los logs técnicos sanitizados no mostraron indicadores cerrados de schema inválido, auth, cuota, modelo, HTTP 4xx/5xx o transporte. Por tanto, no quedó demostrada una incompatibilidad con Codex `0.145.0`.
-
-**Conclusión del bloque:** la causa interna de `error.code=other` **no quedó demostrada**. La hipótesis prioritaria es un fallo interno del proveedor durante la ejecución del turno, posterior a `turn/start` y anterior al estado final, cuyo detalle se pierde porque el cliente y la telemetría segura conservan sólo la categoría cerrada `other`. La observación mínima faltante es capturar, en una reproducción sintética autorizada y no productiva, el evento final estructurado completo o un diagnóstico técnico correlacionado del App Server, con redacción en origen y sin payloads, prompts ni documentos.
-
-No se implementó corrección ni se invocó Claude Code Sonnet: hacerlo habría sido basarse sólo en una hipótesis. No se ejecutó Manizales, no hubo tercer intento, nuevo consumo de Codex, reinicio, cambio de secretos, modificación remota, commit, push, PR, merge o deploy.
-
-### 0.5 Cierre local de `AGT002_CODEX_PROVIDER_ERROR` — 2026-08-14
-
-Este bloque continúa §0.4 con la única reproducción sintética externa autorizada. No modifica el resultado canónico de Manizales ni autoriza otro intento real.
-
-**Reproducción externa mínima:** se ejecutó exactamente un turno sintético, no productivo y sin documentos, contexto, oportunidad, snapshots, prompts o datos de Manizales. Usó Codex App Server `0.145.0`, modelo `gpt-5.6-sol`, input artificial y schema mínimo cerrado `{ok:boolean}`. El turno recorrió `initialize → account/read → account/rateLimits/read → thread/start → turn/start → item/completed → tokenUsage → turn/completed` y terminó `completed` en 4.526 s. Correlación segura: thread `019c7653-2a62-7b63-a64b-7f8ee75fce29`, turn `019c7653-2aa0-7d92-bd6d-fb611501b88b`; 9.687 tokens de entrada, 19 de salida y 9.706 totales. No se conservaron credenciales, headers, URLs, stderr, prompts, inputs completos ni mensajes libres. No hubo una segunda invocación.
-
-**Causa raíz demostrada:** el App Server, la cuenta, el modelo y la secuencia de protocolo sí completan un turno mínimo. La diferencia causal está en `buildAgt002IntegralAnalysisV3OutputJsonSchema()`: el envelope superior era cerrado, pero `$.properties.integral_analysis` se enviaba como `{type:"object"}`, sin `additionalProperties:false`, `properties` ni `required`. Codex Structured Outputs exige cierre recursivo; el cliente sólo adaptaba `const→enum` y no reparaba el objeto abierto. La prueba de regresión confirmó RED exactamente en `$.properties.integral_analysis must set additionalProperties=false`. Los fallos `failed/other` ocurrieron antes de extracción y validación V3, coherente con el rechazo del schema wire.
-
-**Corrección mínima local:** `agt002-preview-contract.js` materializa ahora el schema estructural V3 completo y recursivamente cerrado, reflejando claves, tipos, enums, nulabilidad y límites ya exigidos por el validador canónico. No mueve las invariantes cruzadas ni allowlists gobernadas fuera de `validateAgt002IntegralAnalysisV3`; no agrega fallback, no transforma error en éxito y no cambia autoridad humana, idempotencia, persistencia o límites pre-GO. El cliente conserva la adaptación wire `const→enum` sin mutar el schema canónico.
-
-**TDD y verificación fresca:** RED específico observado antes del cambio; GREEN específico después. Pruebas focales de contrato y frontera wire `2/2`; schema wire verificado con cierre recursivo, cero `const`, máximo cuatro niveles de objetos y 78 propiedades, dentro de los límites Codex de cinco niveles y 100 propiedades. Suite AGT‑002 serial `266/266`; `npm run check:backend-parity` OK; `npm run build` OK; `git diff --check` limpio. El warning Vite de chunk >500 kB es preexistente/no relacionado. Revisión independiente Claude Code Opus: `passed:true`, sin errores lógicos, de seguridad o documentación material. Commit local de código/pruebas tras rebase sobre `origin/main`: `3150a78` (`fix(agt002): close v3 Codex output schema recursively`).
-
-**Riesgo residual no bloqueante para integración:** no se consumió una segunda invocación para probar el schema V3 completo contra Codex `0.145.0`; por tanto, la aceptación real de todos sus keywords (`minLength`, `maxLength`, `minItems`, `maxItems`, `minimum`, `anyOf`) debe confirmarse únicamente en el canary posterior autorizado. El límite wire de 30 elementos coincide con los arrays internos acotados del contrato y cubre Manizales, pero es más estricto que el validador canónico para `analysis_units`; antes de generalizar a manifiestos o unidades por encima de 30 debe revisarse como límite operativo explícito.
-
-**Estado y límites:** no se ejecutó Manizales ni un tercer intento real; no se tocó `/opt/agt002-bridge`; no hubo reinicio, cambio de secretos, Supabase productivo, scheduler, worker drain, push, PR, merge o deploy. El cambio permanece únicamente local y requiere gate humano consolidado antes de integrar o desplegar. El canary posterior debe ser único, expresamente autorizado y ejecutarse sólo después de integrar y desplegar la corrección.
-
----
-
-**Corte autoritativo:** 2026-08-06 11:52 COT · 2026-08-06 16:52 UTC
-**Producción:** https://seguridad-nacional-crm.vercel.app
-**Commit productivo:** `19987140def78d140cbca197b84f32467b6721e2`
-**Deployment Vercel:** `dpl_5jV5B4PGR9ZGHHZkM2gmJYr6kRz5` · `READY`
-
-## 1. Regla funcional y de autoridad vigente
-
-El encargado de Licitaciones selecciona manualmente un caso del Radar y lo convierte en **Oportunidad**. La existencia de una oportunidad, un análisis completado o una recomendación condicionada no equivale a GO ni autoriza preparar o presentar una oferta.
-
-Vig‑IA/AGT‑002 puede analizar, organizar evidencia, señalar brechas y proponer acciones. Nunca puede:
-
-- convertir procesos del Radar en oportunidades;
-- decidir GO/NO‑GO;
-- aprobar requisitos, evidencias o propuestas de aprendizaje;
-- asignar silenciosamente compromisos humanos;
-- firmar, enviar o presentar ofertas.
-
-Toda decisión humana debe ser trazable y asociarse al análisis vigente. El orden operativo es: **alertas de descarte → habilitantes → técnico → financiero/ejecución → estratégico**. Sin evidencia permitida, Vig‑IA debe abstenerse.
-
-## 2. Estado confirmado por frente
-
-| Frente | Estado confirmado | Gate pendiente |
-|---|---|---|
-| **E1–E3** | Pipeline durable, canonicidad y contexto v2 previamente verificados en producción | Mantener idempotencia, leases y cero fallback silencioso |
-| **E4** | La recuperación/evidence packet fue utilizada por la ruta que produjo el canary E5 vigente | No inferir cobertura completa de SharePoint ni aplicabilidad empresarial por presencia documental |
-| **E5** | **Canary canónico completado y verificado** con corpus jurídico `legal-corpus-v1.1` | La revisión jurídica y el GO/NO‑GO siguen siendo humanos |
-| **E6** | Scheduler, endpoint, bridge, persistencia y autoridad probados técnicamente; secreto reparado y límites explícitos | Primer mensaje humano real en Mesa Vig‑IA y un único canary productivo |
-| **F2 SIIO** | Código, migración de seguridad y deployment productivo completados | QA visual autenticado operado por Juan |
-| **Identidad Vig‑IA** | **Desplegada y aprobada visualmente**: Vig‑IA Gerencial, Vig‑IA Licitaciones y Vig‑IA Comercial | Ninguno para identidad; no reemplaza el QA F2 restante |
-
-El rollout visual de identidad está cerrado. No se declara rollout visual completo de F2 ni activación continua de E6 mientras esos gates permanezcan abiertos.
-
-## 2.1 Fundaciones del análisis integral — F1/F2 en rama, no desplegadas
-
-**Corte de desarrollo:** 2026-08-06 10:43 COT · 2026-08-06 15:43 UTC
-
-**Rama:** `feat/agt002-v3-foundations`
-
-**Base:** `origin/main` en `f85907d12d92d8ab956efd2ee9d6bfd264022c12`
-
-Este lote corrige primero las fundaciones de confiabilidad aprobadas para el análisis integral. Permanece sólo en rama: **no se aplicó la migración 063, no se hizo push/PR/merge/deploy y producción no cambió**.
-
-### F1 — canonicidad transaccional
-
-- Migración aditiva `063_agt002_canonical_promotion.sql` y rollback correspondiente.
-- Índice único parcial: máximo un run `canonical=true,status='completed'` por oportunidad.
-- Promoción serializada por oportunidad; el canónico anterior se desmarca sin reescribir su payload.
-- Idempotencia exacta preservada incluso después de supersesión; una misma key con payload distinto falla.
-- Backend distingue un replay histórico (`canonical=false,current=false`) del análisis vigente.
-- Los runs v2 permanecen consultables; no se borraron ni reinterpretaron.
-
-### F2 — 17 clases tipadas y cobertura explícita
-
-- Módulo `agt002-company-evidence-classes.js` con catálogo cerrado de las 17 clases de la migración 061.
-- Dimensiones separadas: presencia, revisión, vigencia, aplicabilidad y cumplimiento.
-- Cobertura explícita: disponible, seleccionada, omitida, vencida, inaccesible y pendiente de revisión.
-- Una clase ausente no desaparece: se representa como `inaccessible` y `pending_review`.
-- Sólo se transportan referencias y metadatos; no payload documental, PII, armas, banca ni anexos nominales.
-
-### Evidencia mecánica del lote
-
-- Pruebas focales F1/F2/paridad: `4/4` verdes.
-- Regresión AGT‑002: `121/121` verdes.
-- Suite completa: `360` verdes + `1` fallo baseline, reproducido en un worktree puro de `origin/main` (`module-permissions-migration-pglite.test.mjs`, `modulo_siio_gerencial` extra para Director).
-- Paridad Express/Vercel: `OK`.
-- `npm audit --omit=dev`: `0` vulnerabilidades.
-- Build y `git diff --check`: `OK`.
-- Revisión independiente Claude Opus 4.8: `APPROVE`, sin P0/P1.
-
-### Observaciones no bloqueantes
-
-- Dos llamadas simultáneas con la misma key nueva pueden devolver un `23505` genérico a la segunda; no duplican ni corrompen y el reintento es idempotente.
-- `coverage` son flags independientes, no una partición mutuamente excluyente.
-- `source_reference` está seleccionado pero el contrato emite una referencia sintética equivalente.
-- El borde `expiry == asOf` se considera vigente.
-
-### Contrato integral v3 — runtime implementado en rama, flag apagado por defecto
-
-**Corte de este bloque:** 2026-08-07 · **Rama:** `feat/agt002-v3-foundations` (misma rama; no se hizo merge/push/PR/deploy)
-
-- Auditoría: `docs/superpowers/specs/2026-08-06-agt002-integral-analysis-v3-audit.md`.
-- Diseño cerrado: `docs/superpowers/specs/2026-08-06-agt002-integral-analysis-v3-design.md`.
-- Plan TDD ejecutado tarea por tarea (1–9), TDD estricto RED→GREEN→regresión, un commit por tarea: `docs/superpowers/plans/2026-08-06-agt002-integral-analysis-v3-implementation-plan.md`.
-- Verificación local detallada: `docs/verification/2026-08-07-agt002-integral-v3-local.md`.
-
-**Qué queda implementado y probado (todo detrás de `AGT002_INTEGRAL_CONTRACT_V3`, apagado por defecto):**
-
-- Validador puro cerrado (`agt002-integral-analysis-v3.js`): forma exacta, orden institucional descarte→habilitantes→técnico→financiero/ejecución→estratégico, evidencia‑o‑abstención, cinco ejes independientes (presencia/revisión/vigencia/aplicabilidad/cumplimiento) sin derivarse entre sí, controles jurídico/operativos (escalamiento, hitos, acciones sin PII, `external_side_effect` siempre falso, validación humana siempre pendiente).
-- Proyección v2 determinística (`agt002-v3-compatibility.js`): deriva `recommendation/summary/strengths/weaknesses/blockers/questions/unverified/next_action` sólo desde `integral_analysis` validado; `critical_open_count` comparte exactamente el mismo criterio que las preguntas críticas proyectadas.
-- Dispatch de versión explícito, nunca por forma del payload (`agt002-preview-contract.js`, `agt002-tender-adapter.js`): el modelo v3 sólo puede devolver `{ integral_analysis }`; v2 y v3 se rechazan mutuamente.
-- **Origen de la categoría (gap C-3 de la auditoría), cerrado sin fabricar:** `agt002-integral-category-manifest.js` mapea `front: technical→technical` y `front: financial→financial_execution` por identidad honesta; cualquier otro caso (`front: legal`, o una reclasificación) exige una anulación gobernada explícita o falla cerrado — nunca adivina.
-- **Origen de los cinco ejes (gap de esta sesión, cerrado):** `evidence_state` ya NO es salida libre del modelo. `agt002-evidence-state-manifest.js` es un builder puro que deriva, por `requirement_id`, un mapa gobernado desde un enlace curado explícito `evidenceClassLinkByRequirementId → evidence_class_id` (uno de los 17 reales, `agt002-company-evidence-classes.js`, migración 061); cada eje (`presence/review/validity/applicability`) se lee de su propia columna gobernada de esa clase, nunca de otro eje ni de la mera presencia documental; `compliance` nunca sale de `"unknown"` porque no existe todavía una vía de escritura real para esa determinación. Sin enlace curado (el caso por defecto hoy, `{}`), o si la clase enlazada no fue observada en el run, el requisito abstiene al estado seguro `{presence:"unknown",review:"not_reviewed",validity:"unknown",applicability:"unknown",compliance:"unknown"}` — nunca lanza excepción por ausencia de señal (sólo por gobernanza inválida, p. ej. un `evidence_class_id` fuera del catálogo). `validationContext.evidenceStateManifest` (cobertura 1:1 con el manifiesto) es ahora un campo obligatorio del validador (`agt002-integral-analysis-v3.js`): cualquier `evidence_state` que el modelo declare para una unidad `tender_requirement` que no coincida exactamente con ese mapa gobernado se rechaza — incluso si esa combinación es individualmente válida por enum e invariantes cruzados. El engine (`agt002-preview-engine.js`) construye este mapa de forma fail-closed dentro de `buildIntegralV3ValidationContext` y también lo entrega como `evidence_state_governed` en el `requirement_manifest` que ve el proveedor, para que el modelo tenga una oportunidad real de reproducirlo — la validación posterior nunca confía en que lo haya hecho. Las unidades `strategic_consideration` (sin `requirement_id`) quedan fuera de esta capa de gobernanza y conservan sólo los chequeos previos de enum/invariantes cruzados.
-- Engine (`agt002-preview-engine.js`, `agt002-preview-input.js`): ensambla el envelope gobernado (run/snapshot/contexto/cobertura/corpus/uso); el proveedor nunca puede forjar esos campos (probado).
-- Persistencia (`agt002-preview-persistence.js` + PGlite con la migración 063 local): v3 persiste `integral_analysis` + proyección v2 atómicamente; v2 histórico queda byte‑idéntico; coexistencia canónica probada (un run v2 histórico se desmarca sin reescribirse, el v3 lo supera, exactamente un canónico completado permanece, replay idempotente).
-- Wiring de servidor (`agt002-preview-runtime.js`): paridad Express/Vercel es estructural — ambas rutas comparten el mismo módulo; ningún parámetro de solicitud puede activar v3.
-- UI real de cinco fases (`TenderIntegralAnalysisV3View.tsx`): reemplaza el preview sintético de `UNITS` fijos; consume únicamente `analysis.integral_analysis` (opcional, no renderiza nada si está ausente); sin nombre de institución/expediente hardcodeado; preguntas humanas y GO/NO-GO permanecen en sus componentes existentes, sin duplicarse.
-
-**Qué NO se hizo en este bloque (gates siguientes, explícitos):**
-
-- ~~No hay wiring real de `companyEvidenceClassesProvider`/`categoryOverrides`/`evidenceClassLinkByRequirementId` a una fuente de datos gobernada~~ — cerrado en la sesión de continuación del 2026-08-07 (§2.1.1 abajo): el wiring real de lectura existe hoy en `server/index.js`/`api/[...path].js`. Lo que sigue abierto es la **curación humana** de esos mapas para una oportunidad real: con el mapa por defecto (sin filas curadas en la migración `064`), todo requisito real sigue abstenido en sus cinco ejes al estado seguro hasta que un humano cure ese enlace requisito→clase de evidencia para el caso objetivo.
-- No se ejecutó un caso E5 controlado con datos reales de Rama Judicial ni QA visual con etiquetas reales.
-- No se activó el flag en ningún ambiente; no se aplicó ninguna migración remota; no hubo push/PR/deploy.
-- Ningún revisor independiente fuera de esta sesión evaluó el trabajo (ver `docs/verification/2026-08-07-agt002-integral-v3-local.md` §4).
-
-### Gate siguiente
-
-1. Curar, con revisión humana y fuente trazable del pliego real, las filas `category_override` y `evidence_class_link` de la oportunidad objetivo en la superficie gobernada de la migración `064`; el wiring read-only de las 17 clases y de ambos mapas ya está construido y probado.
-2. Ejecutar un caso E5 controlado sobre el snapshot real de Rama Judicial con el flag activado sólo para esa prueba, verificando cobertura 1:1 y abstención donde falte señal.
-3. QA visual autenticado de la UI real (Juan) antes de activar el flag para cualquier usuario.
-4. Sólo entonces, decisión humana sobre activar `AGT002_INTEGRAL_CONTRACT_V3` en un ambiente real, con canary único y sin timer.
-
-### Cierre técnico autónomo — 2026-08-07 07:14 COT
-
-Se verificó de nuevo la verdad de disco sobre `feat/agt002-v3-foundations`: worktree limpio al inicio del cierre, 17 commits locales sobre el merge-base `f85907d`, sin push/PR/merge/deploy y sin migraciones remotas. `origin/main` avanzó dos commits (`1998714`, `39bef1d`); la rama permanece deliberadamente sin integrar esos cambios.
-
-Gates secuenciales frescos del cierre:
-
-- v3 focal: `22/22`;
-- regresión `tests/agt002-*.test.mjs`: `137/137`;
-- PGlite migración 063/canonicidad y coexistencia v2/v3: `2/2`;
-- paridad backend: `OK`;
-- build: `OK` (sólo warning preexistente de chunk >500 kB);
-- `npm audit --omit=dev`: `0` vulnerabilidades;
-- `git diff --check`: limpio;
-- suite completa: `376/377`; único fallo baseline `module-permissions-migration-pglite.test.mjs:98`, reproducido idéntico sobre el `origin/main` actual `39bef1d` (`0/1`). La aserción siguiente del mismo test exige precisamente el permiso extra que rompe la igualdad anterior.
-
-Se añadió cobertura explícita de cierre que prueba: UI alimentada sólo por `analysis.integral_analysis`, sin `UNITS`/fixtures ni “Rama Judicial”; sin corpus publicado no se admite conclusión jurídica sustantiva ni referencia jurídica; el catálogo cerrado rechaza acciones `go`, `no_go`, `approve`, `sign`, `send` y `submit`; cualquier handoff `human_decision` continúa pendiente, reservado a `authorized_human` y con `external_side_effect=false`.
-
-**Estado de release:** **NOT READY para canary real**. El wiring read-only de la fuente DB de 17 clases y de la nueva superficie gobernada de mapas ya existe; no puede rellenarse honestamente el gate restante sin (a) mapas humanos curados `categoryOverrides` y `evidenceClassLinkByRequirementId` con cobertura del caso objetivo y trazabilidad al pliego real, y (b) QA visual autenticado con etiquetas reales. Hasta recibir esas dos evidencias no se autoriza ejecutar el runbook ni consumir un caso real/costos. El runbook queda preparado en `docs/runbooks/agt002-integral-v3-canary.md`, pero no fue ejecutado.
-
-### Continuación autónoma — cierre de wiring gobernado, 2026-08-07
-
-- Commits del bloque: `efad172` (loader crudo de las 17 filas), `9ce504b` (forward del enlace requisito→clase), `154519d` (fuente gobernada + migración/rollback `064` + PGlite) y `b3b8794` (wiring read-only común en los tres flujos Express/Vercel + documentación del expediente).
-- TDD: RED observados antes de cada implementación; GREEN focal confirmado para loader/runtime, builder de overrides, migración `064` PGlite y wiring de servidor.
-- Gates secuenciales frescos: `tests/agt002-*.test.mjs` **140/140**; PGlite relevante **3/3**; backend parity **OK**; build **OK** (único warning preexistente de chunk >500 kB); `npm audit --omit=dev` **0 vulnerabilidades**; `git diff --check` limpio; suite completa **379/380**.
-- El único fallo completo sigue siendo el baseline conocido `tests/module-permissions-migration-pglite.test.mjs:98`: el esperado omite `modulo_siio_gerencial` mientras la migración y la aserción siguiente lo exigen. No hay fallos AGT-002.
-- Para Rama Judicial `54190e51-15fb-46af-b0aa-8f13461a3110` no se inventó ningún mapa: sin pliego/manifest real accesible y sin fuente trazable, la migración `064` conserva cero seeds y el caso sigue fail-closed. Evidencia: `docs/verification/2026-08-07-agt002-rama-judicial-governance-gap.md`.
-
-### Auditoría autónoma de procedencia y mínima exposición — 2026-08-07
-
-- Revisión inicial read-only con Claude Code Opus contra `b99a805`, diseño v3 y gates del
-  canary: sin P0/P1; detectó P2 de auditabilidad del binding gobernado y hardening de la
-  lectura de las 17 clases.
-- Se cerró el binding end-to-end: cada override/enlace aplicado conserva en el envelope y
-  en persistencia su `rationale`, `source_reference`, curator, `curated_at` y `version`.
-  Mapas no vacíos con procedencia ausente o inconsistente fallan antes del proveedor;
-  persistencia y adapter cerrado revalidan el mapa. `curated_at`/`version` inválidos fallan
-  cerrado y los registros quedan congelados.
-- Las dos lecturas runtime de `psi_agt002_company_evidence_registry` tienen allowlists
-  explícitas; `select(*)`, duplicados y columnas no permitidas son rechazados. No se amplió
-  RLS/ACL ni se añadió ninguna escritura.
-- Evidencia final: focales **8/8**; AGT-002 **140/140**; PGlite relevante **3/3**; paridad
-  backend **OK**; build **OK**; diff check/paridad byte Express-Vercel **OK**; suite completa
-  **379/380**. El único fallo fue reproducido **0/1** en archivo limpio `b99a805`
-  (`module-permissions-migration-pglite.test.mjs`) y permanece baseline.
-- `npm audit --omit=dev` reporta ahora 1 high transitivo (`nanoid@3.3.16` vía
-  Vite/PostCSS); `package.json`/`package-lock.json` no cambiaron frente a `b99a805`, por lo
-  que no fue introducido por este lote. Revisión final independiente Opus: **passed**, sin
-  hallazgos de seguridad ni errores lógicos.
-
-**Estado:** **NOT READY para canary real**. Rama Judicial sigue sin mapas porque no hubo
-señal read-only trazable suficiente; se mantiene abstención/missing governance. Siguen
-pendientes curación humana sobre pliego real, caso E5 controlado y QA visual autenticado.
-
-### Borrador de gobernanza Rama Judicial — versión 2, 17/17 documentos — 2026-08-08
-
-- Revisión independiente Claude Opus 4.8 sobre la versión 1 del borrador (`docs/governance/2026-08-07-agt002-rama-judicial-governance-draft.md`, `db257d9`): **APPROVE** para presentar el borrador a aprobación humana, sin P0/P1 bloqueantes de esa presentación. Un P1 real bloqueaba solo *canary*: la extracción cubría 3/17 documentos vigentes porque dependía de `psi_tender_document_chunks`, cuyo pipeline de *chunking* nunca se volvió a ejecutar tras las adendas que reemplazaron 14 de los 17 documentos. Tres P2: semántica ambigua de `snapshot_id`, test de aislamiento no recursivo/no enganchado a un runner, y defensa anti-fuga final imprecisa (regex asimétrica).
-- Esta sesión cerró el P1 y los tres P2 con TDD estricto RED→GREEN, usando las mismas credenciales de solo lectura ya localizadas fuera del worktree (nunca impresas): `scripts/agt002-rama-judicial-governance-draft-generate.mjs` ya no lee texto desde `psi_tender_document_chunks`; lee `extracted_text` de las 17 filas vigentes de `psi_tender_document_versions` y reconstruye chunks **localmente** con el mismo contrato puro de producción (`buildAgt002DocumentChunks`), reconciliado por igualdad exacta de `chunk_id`/`content_hash`/`chunk_hash` contra los 479 chunks reales que sí existen hoy en la base (0 discrepancias). Extracción de requisitos y citas corren ahora sobre **17/17** documentos vigentes.
-- El extractor cerrado (`tender-requirement-extraction.js`) sigue reconociendo exactamente los mismos 3 `requirement_id` de siempre — la ampliación de cobertura documental no inventó ningún `requirement_id` nuevo ni usó un modelo/LLM para clasificar; amplió la evidencia (48 citas legales, 33 técnicas, 4 financieras, frente a 16/9/1) para esos mismos 3 requisitos, releída íntegramente para confirmar honestamente las propuestas/abstenciones (ninguna cambió de conclusión). El borrador declara explícitamente, en un `data_gap` dedicado, que 3 `requirement_id` es el alcance actual del extractor, **no** cobertura semántica total del pliego real.
-- Se agregó el campo cerrado y obligatorio `evidence_chunk_snapshot_ids` al artefacto (`agt002-governance-draft-proposal.js`), se reemplazó la regex final anti-fuga por un escaneo recursivo por clave sobre todo el objeto (corrigiendo un falso positivo real demostrado con test), y se reescribió el test de aislamiento runtime para recorrer recursivamente todo el repositorio (163 archivos), enganchándolo a `npm run test:agt002-runtime` en `package.json`.
-- Gates frescos de cierre tras recuperar el timeout del cron: generador real read-only **17/17**, **1.973** chunks locales y reconciliación **479/479** sin discrepancias; focales de gobernanza **2/2**; runner runtime **11/11**; `tests/agt002-*.test.mjs` secuencial **142/142**; backend parity **OK**; build **OK**; suite completa **381/382**. El único fallo (`module-permissions-migration-pglite.test.mjs:98`) se reprodujo idéntico **0/1** en el worktree limpio de `main` y no fue introducido por este lote. `npm audit --omit=dev` mantiene una vulnerabilidad transitiva alta conocida en `nanoid <3.3.17`, corregible por dependencia y no introducida aquí. Revisión final independiente Claude Opus 4.8: **APPROVE** para presentar el borrador a aprobación humana, sin P0/P1; canary **NOT_READY** hasta curación humana. El gate 4 (filas curadas reales en `psi_agt002_integral_governance_overrides`) permanece abierto: cero escritura remota, cero migración, cero RPC con efecto, cero canary/modelo productivo, cero push/PR/merge/deploy en esta sesión. Detalle: `docs/governance/2026-08-07-agt002-rama-judicial-governance-draft.md`, `docs/verification/2026-08-07-agt002-rama-judicial-governance-gap.md` §7.
-
-### Rebase de integración sobre `origin/main` — 2026-08-11
-
-Se reintegró `feat/agt002-v3-foundations` (30 commits, foundations + gobernanza Rama Judicial) sobre `origin/main` en `bbef30aba84310d92a82fa40636855dc13d640e7`, que ya incluía la identidad visible Vig‑IA (§ "Identidad visible desplegada" arriba, PR #81) y el cierre de hallazgos visuales F2 Important (PR #83, no documentado antes en esta sección). Es **un único producto AGT‑002**, no dos: la ruta productiva de nombres visibles (`Vig‑IA Gerencial/Licitaciones/Comercial`, `Agente Comercial PSI`) y la ruta de `TenderIntegralAnalysisV3View` de esta rama coexisten en `src/main.tsx` sin pisarse — el rebase no tuvo conflictos porque tocan líneas distintas del mismo archivo.
-
-- Rama de respaldo previa al rebase: `backup/agt002-v3-pre-rebase-20260811` → `2a3e398`.
-- `server/index.js` y `api/[...path].js` verificados byte‑idénticos entre sí tras el rebase.
-- Migraciones `063_agt002_canonical_promotion.sql` y `064_agt002_integral_governance_overrides.sql` verificadas byte‑idénticas al contenido pre‑rebase; siguen siendo aditivas después de la `062` de `main` y **no se aplicaron** en ningún ambiente.
-- Gates frescos post‑rebase: `git diff --check origin/main...HEAD` limpio; `tests/agt002-*.test.mjs` **161/161**; `npm run check:backend-parity` **OK**; `npm run build` **OK** (mismo warning preexistente de chunk >500 kB).
-- Sigue sin push/PR/merge/deploy. `AGT002_INTEGRAL_CONTRACT_V3` sigue apagado por defecto. **Estado de release sin cambios: NOT READY para canary real** — los gates pendientes descritos arriba (curación humana de mapas, caso E5 controlado, QA visual autenticado de la vista integral) no se tocaron en este rebase.
-
-## 3. F2 — coherencia y seguridad transversal de SIIO
-
-### Entregado
-
-- PR **#77**: implementación F2.
-- PR **#78**: corrección de colisión de migración.
-- Migración definitiva: `062_siio_f2_security_coherence.sql`.
-- Commit posterior del lote E6/documentación: `2904efba2be9db9fc4622bd1f45d77b609398c4d`.
-- Deployment productivo: `READY`; alias canónico responde HTTP 200.
-
-### Controles verificados
-
-- Director permanece fuera del acceso operativo de SIIO.
-- Junta consume informes en estado `presentado`; no opera el expediente.
-- Nómina `restringido` no se expone por defecto.
-- SIIO falla explícitamente si falta su fundación/configuración requerida.
-- Privilegios directos inseguros post‑migración: `0`.
-- Escrituras prohibidas post‑migración: `0`.
-- Conteos de filas antes/después: idénticos; `data_preserved=true`.
-- `service_role` conserva únicamente los accesos mínimos requeridos.
-
-### Identidad visible desplegada
-
-- PR **#81** fusionado en `main`: `19987140def78d140cbca197b84f32467b6721e2`.
-- Deployment productivo: `dpl_5jV5B4PGR9ZGHHZkM2gmJYr6kRz5` · `READY`.
-- Alias canónico verificado con HTTP 200 y asset `index-FSatnFHf.js`.
-- QA visual autenticado aprobado por Juan sobre el catálogo institucional gobernado.
-- Identidades visibles: **Vig‑IA Gerencial**, **Vig‑IA Licitaciones** y **Vig‑IA Comercial**.
-- `AGT-001/002/003` permanecen como IDs internos; **Agente Comercial PSI** permanece como router y Agente IT no entra al catálogo SIIO.
-- No hubo migraciones, cambios de DB, productores, permisos ni automatización de decisiones.
-
-### Gate abierto
-
-Falta QA visual autenticado. Juan opera la UI; Hermes da **un solo paso** y espera captura. No se declara cierre visual sin esa evidencia.
-
-## 4. E5 — corpus jurídico y run canónico vigente
-
-Run productivo verificado:
-
-```text
-analysis_run_id=50f798f0-a526-421f-bd26-7b0e5dd0d5da
-corpus_version=legal-corpus-v1.1
-corpus_id=fc392e00-0363-4307-b2c4-80835ac474ca
-recommendation=advance_conditionally
-critical_open_count=3
-human_review_required=true
-```
-
-Gates aprobados:
-
-- metadata canónica correcta;
-- snapshot del run era el más reciente para la oportunidad;
-- binding exacto al corpus publicado;
-- evento terminal `completed` presente;
-- cero claims activos;
-- obligaciones jurídicas sólo citan la allowlist verificada;
-- hechos documentales no se renombraron como derecho;
-- cinco fuentes inciertas quedaron en revisión humana y cubiertas por abstención;
-- texto de abstención canónico: `No verificado jurídicamente; requiere revisión humana`;
-- no existe campo decisorio, firma, aprobación, envío o presentación autónoma.
-
-E5 está técnicamente cerrado. Su recomendación condicionada no reemplaza la decisión humana.
-
-## 5. E6 — continuidad hacia la Mesa Vig‑IA
-
-E6 lleva el expediente, snapshot, análisis, evidencia, preguntas y versiones a una conversación durable después del gate humano. El worker procesa como máximo un job por invocación y persiste mensajes/eventos de forma append‑only.
-
-### Root cause y reparación
-
-El scheduler recibía `403 No autorizado` cuando el drain estaba activo. Se confirmó desajuste del secreto dedicado entre el host y Vercel. Con el drain apagado, la misma ruta devuelve `404 No disponible`, que es el comportamiento fail‑closed esperado.
-
-Se completó:
-
-- timer detenido y deshabilitado durante la reparación;
-- secreto dedicado rotado coordinadamente, sin exponer su valor;
-- artefactos systemd instalados byte‑idénticos a Git;
-- archivo de entorno del host con modo `0640`;
-- límites productivos explícitos:
-  - `MAX_CONCURRENT=1`;
-  - `DAILY_MAX_JOBS=1`;
-  - `TIMEOUT_MS=45000`;
-  - `SWEEP_MAX=5`;
-- `AGT002_WORKBENCH_DRAIN_ENABLED=false`;
-- deployment productivo posterior a la rotación: `READY`;
-- probe autenticado con drain apagado: HTTP 404, sin fuga del secreto.
-
-PR **#79** añadió la prueba `secreto esperado ausente → 403, cero DB/RPC y cero bridge`. Revisión independiente: cero Critical/Important.
-
-### Estado de cola al corte
-
-```text
-total_jobs=0
-queued=0
-active_claims=0
-claimed_today=0
-```
-
-No se fabricó una decisión humana, un GO ni un mensaje productivo para aparentar éxito.
-
-### Evidencia mecánica
-
-Pasaron secuencialmente:
-
-- worker route;
-- endpoint estático;
-- scheduler ops;
-- runtime;
-- worker, persistence y responder;
-- paridad Express/Vercel;
-- build;
-- lifecycle E6 en PGlite;
-- autoridad humana estática y dinámica.
-
-El bridge está activo, pero su salud no sustituye la prueba del Workbench: son componentes y secretos separados.
-
-## 6. Próximos pasos autorizables
-
-### Paso 1 — QA visual F2
-
-**Responsable:** Juan opera; Hermes guía y verifica.
-**Acción:** abrir producción, iniciar sesión normalmente y enviar una captura de la pantalla inicial.
-**Criterio de cierre:** recorrido autenticado confirma acceso por rol, Junta `presentado`, ausencia de nómina restringida y errores explícitos esperados.
-**Límite:** un paso por captura; no declarar rollout por HTTP 200 o deployment `READY`.
-
-### Paso 2 — preparar un único canary humano E6
-
-**Precondición:** F2 visual sin bloqueantes críticos y una oportunidad real ya convertida, con gate humano válido.
-**Responsable:** Juan escribe un único mensaje real en la Mesa Vig‑IA; Hermes no lo suplanta.
-**Estado previo obligatorio:** timer deshabilitado, drain apagado, cola sin claims y límites `1/1`.
-
-### Paso 3 — ejecutar el canary técnico E6
-
-**Responsable:** Hermes, después del mensaje humano.
-**Secuencia:**
-
-1. inventario read‑only de cola y snapshot;
-2. habilitar el drain sólo para la ventana controlada;
-3. ejecutar una única invocación manual del servicio, sin timer;
-4. verificar `queued → claimed → completed` o fallo terminal explícito;
-5. comprobar mensaje, eventos, acciones requeridas, versiones y linaje;
-6. comprobar que no existe decisión, aprobación, firma, envío o presentación de IA;
-7. volver a `drain=false` al terminar el canary.
-
-**Criterio de cierre:** exactamente un job procesado, una persistencia terminal válida, cero duplicados, cero claims activos y autoridad humana intacta.
-
-### Paso 4 — decisión humana sobre operación continua
-
-Sólo después del canary, Juan decide si se habilita el timer. Si se autoriza:
-
-- conservar concurrencia `1` y cuota diaria inicial `1`;
-- activar el timer;
-- verificar un ciclo vacío posterior;
-- mantener kill switch y rollback operativo por flags;
-- no ejecutar rollback SQL 045/046/048 con datos dependientes.
-
-### Paso 5 — siguiente evolución de producto, separada del cierre operativo
-
-Después de cerrar F2 visual y E6 humano, diseñar la siguiente versión del análisis integral:
-
-- matriz por requisito del pliego;
-- evidencia empresarial tipada y aplicabilidad por caso;
-- bloqueadores con acción, responsable sugerido, hito y condición de cierre;
-- cobertura/omisiones explícitas de SharePoint;
-- compatibilidad con runs históricos;
-- UI compacta sin KPI duplicado ni panel jurídico desconectado.
-
-Ese trabajo requiere diseño y aprobación humana antes de código. No debe mezclarse con el canary E6.
-
-## 7. Estado operativo seguro al corte
-
-- Producción desplegada y disponible.
-- F2 técnicamente aplicado; QA visual pendiente.
-- E5 canónico completado; decisión humana pendiente según cada caso.
-- E6 desplegado pero **drain apagado y timer deshabilitado**.
-- Cero jobs, cero claims y cero procesamiento masivo.
-- No existe autorización para que Vig‑IA convierta, decida, firme, envíe o presente.
+- Mantener cerrados los gates de publicación.
+- Cualquier publicación o fase posterior requiere orden explícita y separada; no forma parte de este cierre local.

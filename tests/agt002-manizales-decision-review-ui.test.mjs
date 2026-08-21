@@ -2,143 +2,85 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-// AGT-002 Manizales · BLOQUE 2 UI · TenderAnalysisSection debe usar decision_review (2 preguntas)
-// en lugar de analysis.questions (20) cuando el backend fail-closed lo adjunta, y conservar
-// exactamente el comportamiento legado ('Dudas por resolver' con las 20 questions) cuando no
-// existe. Pruebas estáticas (regex sobre fuente) porque el repo no tiene infraestructura de
-// render de componentes (patrón ya usado por tests/agt002-v3-open-questions-visibility.test.mjs y
-// tests/agt002-manizales-unresolved-visibility.test.mjs). No hay red, DB, commit, push ni deploy.
-
 const componentPath = new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url);
+const briefPath = new URL('../src/tenders/components/TenderDecisionBrief.tsx', import.meta.url);
+const panelPath = new URL('../src/tenders/components/TenderGoNoGoDecisionPanel.tsx', import.meta.url);
+const summaryPath = new URL('../src/tenders/components/TenderGoNoGoDecisionSummary.tsx', import.meta.url);
 const typesPath = new URL('../src/tenders/types.ts', import.meta.url);
 const stylesPath = new URL('../src/styles.css', import.meta.url);
+const mainPath = new URL('../src/main.tsx', import.meta.url);
 const component = readFileSync(componentPath, 'utf8');
+const brief = readFileSync(briefPath, 'utf8');
+const panel = readFileSync(panelPath, 'utf8');
+const summary = readFileSync(summaryPath, 'utf8');
 const types = readFileSync(typesPath, 'utf8');
 const styles = readFileSync(stylesPath, 'utf8');
+const main = readFileSync(mainPath, 'utf8');
 
-// ---------------------------------------------------------------------------------------------
-// Types: precise, closed shape for decision_review, carried as optional on TenderDocumentAnalysis.
-// ---------------------------------------------------------------------------------------------
-test('types.ts declares a precise TenderDecisionReview type and carries it optionally on TenderDocumentAnalysis', () => {
+test('types.ts conserva TenderDecisionReview tipado y opcional en TenderDocumentAnalysis', () => {
   assert.match(types, /export type TenderDecisionReview = \{/);
   const reviewType = types.slice(types.indexOf('export type TenderDecisionReview ='), types.indexOf('export type TenderDocumentAnalysis'));
-  for (const field of [
-    'decision_status', 'decision_ready', 'human_approval_required', 'routing_action',
-    'external_communications_allowed', 'evidence_requests_allowed', 'contract_version',
-    'source_fixture_version', 'review_findings', 'exercise_mode', 'recommendation',
-    'blockers', 'decision_questions', 'supported', 'preparation', 'not_applicable', 'counts',
-  ]) {
-    assert.match(reviewType, new RegExp(field), `TenderDecisionReview must carry ${field}`);
+  for (const field of ['review_findings', 'blockers', 'decision_questions', 'supported', 'preparation', 'not_applicable', 'counts']) {
+    assert.match(reviewType, new RegExp(field), `TenderDecisionReview conserva ${field}`);
   }
   const docAnalysis = types.slice(types.indexOf('export type TenderDocumentAnalysis'));
-  assert.match(docAnalysis, /decision_review\?:\s*TenderDecisionReview\s*\|\s*null/, 'TenderDocumentAnalysis must carry the optional decision_review');
+  assert.match(docAnalysis, /decision_review\?:\s*TenderDecisionReview\s*\|\s*null/);
 });
 
-// ---------------------------------------------------------------------------------------------
-// An unclassified V3 run stays technical: no raw question is promoted to a material alert.
-// ---------------------------------------------------------------------------------------------
-test('an unclassified V3 run renders a pending executive projection instead of 20 answerable questions', () => {
-  assert.match(component, /\{hasIntegralV3 && analysis && !analysis\.decision_review && <section className="tender-v3-questions tender-executive-pending"/);
-  const start = component.indexOf('tender-executive-pending');
-  const end = component.indexOf('{hasIntegralV3 && analysis && analysis.decision_review');
-  const pending = component.slice(start, end);
-  assert.match(pending, /Radar ejecutivo pendiente de clasificación/);
-  assert.doesNotMatch(pending, /QuestionResponseCard/, 'the raw technical questions must not become answerable material alerts');
+test('Análisis sigue reservado para las tarjetas completas de condiciones e impedimentos gobernados', () => {
+  assert.match(component, /tenderDecisionConditions\(analysis\??\.decision_review/);
+  assert.match(component, /tenderDecisionBlockers\(analysis\??\.decision_review/);
+  assert.doesNotMatch(component, /analysis\??\.?decision_review\??\.?\.decision_questions/);
+  assert.doesNotMatch(component, /entry\.rationale/);
+  assert.match(component, /<QuestionResponseCard question=\{question\} analysisRunId=\{analysis\.run_id\}/);
 });
 
-// ---------------------------------------------------------------------------------------------
-// The new decision-review panel renders only decision_questions (2), never analysis.questions.
-// ---------------------------------------------------------------------------------------------
-test('a dedicated decision-review panel renders only when decision_review is present', () => {
-  assert.match(component, /\{hasIntegralV3 && analysis && analysis\.decision_review && <ExecutiveDecisionReviewPanel/, 'the decision-review panel must be gated on the presence of decision_review');
+test('el brief consume sólo selectores y se limita a potencial, impedimentos y condiciones compactas', () => {
+  assert.match(brief, /tenderDecisionBlockers\(review, questionResponses\)/);
+  assert.match(brief, /tenderDecisionConditions\(review, questionResponses\)/);
+  assert.match(brief, /Potencial comercial/);
+  assert.match(brief, /Impedimentos/);
+  assert.match(brief, /Condiciones pendientes/);
+  assert.match(brief, /CompactFindingList/);
+  assert.doesNotMatch(brief, /TenderFindingEvidence|TenderIntegralAnalysisV3View|tenderDecisionSupportedAspects|tenderDecisionPreparationActions/);
+  assert.doesNotMatch(brief, /\.rationale|review\.supported|review\.preparation|review\.not_applicable/);
+  assert.doesNotMatch(brief, /QuestionResponseCard|GO recomendado|NO GO recomendado/);
 });
 
-function panelSource() {
-  const start = component.indexOf('function ExecutiveDecisionReviewPanel');
-  assert.ok(start >= 0, 'ExecutiveDecisionReviewPanel must be defined');
-  const end = component.indexOf('\nexport function TenderAnalysisSection');
-  assert.ok(end > start, 'ExecutiveDecisionReviewPanel must be defined before the exported section component');
-  return component.slice(start, end);
-}
-
-test('the decision-review panel uses only decision_review.decision_questions, never analysis.questions', () => {
-  const panel = panelSource();
-  assert.match(panel, /decisionReview\.decision_questions\.map\(normalizeDecisionQuestion\)/, 'must derive its question list from decision_review.decision_questions only');
-  assert.doesNotMatch(panel, /\banalysis\.questions\b/, 'must never read the raw 20-question analysis.questions array');
-  assert.doesNotMatch(panel, /\bquestions\.map\(question => <QuestionResponseCard\b/, 'must never reuse the legacy 20-question mapping');
+test('el brief expone exactamente los CTA de revisión y registro humano, sin seleccionar GO o NO GO', () => {
+  assert.match(brief, /openAnchor\('tender-analysis'\)/);
+  assert.match(brief, /Revisar \{pendingConditions\.length\} condiciones pendientes/);
+  assert.match(brief, /openAnchor\('tender-go-no-go-actions'\)/);
+  assert.match(brief, /Registrar decisión humana/);
+  assert.doesNotMatch(brief, /tender-decision-register-(go|nogo)|open\(['"](?:go|no_go)|recordTenderGoNoGoDecision/);
 });
 
-test('the decision-review panel keeps stable ids and links answers to analysis.run_id/question_id', () => {
-  // normalizeDecisionQuestion is defined once, above the panel component, and keys each
-  // decision question by the review's own stable fixture id (never a positional/index id).
-  assert.match(component, /function normalizeDecisionQuestion\([\s\S]*?id:\s*entry\.id/, 'must key each decision question by its stable fixture id');
-  const panel = panelSource();
-  assert.match(panel, /decisionReview\.decision_questions\.map\(normalizeDecisionQuestion\)/, 'the panel must use the stable-id normalizer, not an ad hoc/positional mapping');
-  assert.match(panel, /<QuestionResponseCard question=\{question\} analysisRunId=\{analysisRunId\}/, 'must reuse the governed human-answer form');
-  assert.match(panel, /responses=\{questionResponses\.filter\(item => item\.question_id === question\.id\)\}/, 'must link existing human answers by the stable question id');
+test('el registro formal se monta inmediatamente bajo el brief y delega el estado vigente al resumen puro', () => {
+  const decisionStart = main.indexOf('id="tender-decision"');
+  const briefIndex = main.indexOf('<TenderDecisionBrief', decisionStart);
+  const panelIndex = main.indexOf('<TenderGoNoGoDecisionPanel', decisionStart);
+  assert.ok(decisionStart >= 0 && briefIndex > decisionStart && panelIndex > briefIndex);
+  const briefTagEnd = main.indexOf('/>', briefIndex) + 2;
+  assert.ok(!main.slice(briefTagEnd, panelIndex).includes('<Tender'), 'ningún componente se interpone entre el brief y el panel');
+  assert.match(panel, /<TenderGoNoGoDecisionSummary loading=\{loading\} current=\{current\} \/>/);
+  assert.match(summary, /Decisión humana vigente/);
+  assert.match(summary, /Sin decisión humana registrada/);
+  assert.match(summary, /current\.justification/);
+  assert.match(summary, /psi_sales_profiles\?\.full_name \|\| current\.decided_by/);
 });
 
-test('the decision-review panel heading and count reflect the material questions still pending', () => {
-  const panel = panelSource();
-  assert.match(panel, /Radar ejecutivo del caso/, 'must present one executive decision surface');
-  assert.match(panel, /\{pendingCount\} alerta\(s\) material\(es\) pendiente\(s\)/, 'must show the unresolved material-alert count');
+test('el puntero compacto del panel deriva sólo de impedimentos y condiciones gobernadas; las advertencias detalladas permanecen en el modal', () => {
+  assert.match(panel, /const hasDecisionPending = decisionBlockers\.length \+ pendingConditions\.length > 0;/);
+  assert.match(panel, /\{hasDecisionPending && <p className="tender-go-no-go-analysis-pointer">/);
+  const pointerStart = panel.indexOf('{hasDecisionPending && <p className="tender-go-no-go-analysis-pointer">');
+  const pointerEnd = panel.indexOf('</p>}', pointerStart);
+  const pointer = panel.slice(pointerStart, pointerEnd);
+  assert.doesNotMatch(pointer, /analysisWarnings/);
+  assert.match(panel, /\{analysisWarnings\.length > 0 && <div className="notice" role="alert">/);
 });
 
-test('the decision-review panel explicitly states AGT-002 sends no emails, can request clarifications/support within SIIO, and does not decide GO/NO-GO', () => {
-  const panel = panelSource();
-  assert.match(panel, /no env[ií]a correos/i, 'must state AGT-002 never sends emails');
-  assert.doesNotMatch(panel, /no solicita soportes/i, 'must never claim AGT-002 cannot request support — it can, within SIIO');
-  assert.match(panel, /solicitar aclaraciones? o soportes dentro de SIIO/i, 'must state AGT-002 can request clarifications/support within SIIO');
-  assert.match(panel, /encargada (responde|puede responder)[\s\S]{0,80}(adjunt|SIIO)/i, 'must state the responsible person answers/attaches evidence there');
-  assert.match(panel, /no decide GO \/ NO GO/i, 'must state AGT-002 never decides GO/NO-GO');
-});
-
-test('the question response form still allows the responsible person to attach optional support files within SIIO', () => {
-  assert.match(component, /Archivos de soporte \(opcional\)/, 'the attachment control must remain available for evidence attached within SIIO');
-});
-
-test('preparation notes (9) render inside a secondary details/summary, never as an answerable QuestionResponseCard', () => {
-  const panel = panelSource();
-  const start = panel.indexOf('<details className="tender-decision-review-preparation">');
-  const end = panel.indexOf('</details>', start);
-  assert.ok(start >= 0 && end > start, 'preparation must be inside its own collapsible details/summary');
-  const preparationBlock = panel.slice(start, end);
-  assert.match(preparationBlock, /Acciones de preparaci[oó]n \(\{decisionReview\.preparation\.length\}\)/);
-  assert.match(preparationBlock, /decisionReview\.preparation\.map/);
-  assert.doesNotMatch(preparationBlock, /QuestionResponseCard/, 'preparation items must never be answerable via QuestionResponseCard');
-  assert.match(preparationBlock, /no son impedimentos materiales/i, 'must explicitly separate preparation actions from material impediments');
-});
-
-test('a visible summary of the 3 supported aspects renders outside any collapsed section', () => {
-  const panel = panelSource();
-  const traceStart = panel.indexOf('<details className="tender-decision-review-trace">');
-  const supportedIndex = panel.indexOf('decisionReview.supported.length} aspecto');
-  assert.ok(supportedIndex >= 0, 'a visible supported-count summary must exist');
-  assert.ok(supportedIndex < traceStart, 'the supported summary must render before/outside the collapsed traceability section, not buried inside it');
-});
-
-test('the 13 not_applicable findings, plus version/status traceability, render only inside the collapsed trace section', () => {
-  const panel = panelSource();
-  const start = panel.indexOf('<details className="tender-decision-review-trace">');
-  const end = panel.indexOf('</details>', start);
-  assert.ok(start >= 0 && end > start, 'traceability must be inside its own collapsible details/summary');
-  const traceBlock = panel.slice(start, end);
-  assert.match(traceBlock, /decisionReview\.not_applicable\.map/);
-  assert.match(traceBlock, /decisionReview\.contract_version/, 'trace must surface the contract version');
-  assert.match(traceBlock, /decisionReview\.decision_status/, 'trace must surface the decision status');
-  assert.doesNotMatch(panel.slice(0, start), /decisionReview\.not_applicable\.map/, 'not_applicable must never render outside the collapsed trace section');
-});
-
-test('blockers render clearly when present, even though the pinned review has none today', () => {
-  const panel = panelSource();
-  assert.match(panel, /decisionReview\.blockers\.length > 0 &&/, 'must conditionally render a visible blocker callout when blockers exist');
-  assert.match(panel, /decisionReview\.blockers\.map/);
-});
-
-// ---------------------------------------------------------------------------------------------
-// Styles: minimal, accessible, responsive — no broad redesign.
-// ---------------------------------------------------------------------------------------------
-test('styles.css has minimal, responsive rules for the decision-review panel', () => {
+test('los estilos conservan reglas compactas y responsivas para la superficie de decisión', () => {
   assert.match(styles, /\.tender-decision-review/);
-  assert.match(styles, /@media\(max-width:720px\)[\s\S]*tender-decision-review/, 'must be covered by a narrow responsive breakpoint');
+  assert.match(styles, /\.tender-decision-brief-v3/);
+  assert.match(styles, /@media\(max-width:720px\)[\s\S]*tender-decision-review/);
 });

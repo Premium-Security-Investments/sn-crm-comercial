@@ -39,7 +39,12 @@ assert.match(panel, /Siguiente paso/, 'La decisión vigente debe comunicar una p
 assert.match(panel, /Preparación iniciada/, 'GO debe mostrar la transición operativa real.');
 assert.match(panel, /getElementById\('tender-preparation'\)[\s\S]*?scrollIntoView/, 'GO debe ofrecer acceso directo al expediente sin romper el hash router.');
 assert.match(panel, /<details className="tender-go-no-go-history"/, 'El historial inmutable debe quedar secundario y plegable.');
-assert.match(panel, /<details className="tender-go-no-go-warnings"/, 'Las alertas deben quedar compactas y plegables.');
+assert.doesNotMatch(panel, /tender-go-no-go-warnings/, 'Las advertencias no deben duplicarse fuera del modal de confirmación.');
+assert.match(panel, /\{hasDecisionPending && <p className="tender-go-no-go-analysis-pointer"><a href="#tender-analysis">Revisar pendientes en Análisis \(\{decisionPendingCount\}\)<\/a><\/p>\}/, 'Cuando hay pendientes, debe dirigir a Análisis sin repetir las advertencias.');
+const confirmationModalStart = panel.indexOf('{selectedDecision && <div className="tender-go-no-go-backdrop"');
+assert.ok(confirmationModalStart >= 0, 'Debe existir el modal de confirmación de la decisión.');
+const confirmationModal = panel.slice(confirmationModalStart);
+assert.match(confirmationModal, /\{analysisWarnings\.length > 0 && <div className="notice" role="alert"><ul>\{analysisWarnings\.map\(warning => <li key=\{warning\}>\{warning\}<\/li>\)\}<\/ul><\/div>\}/, 'Las advertencias del análisis deben conservarse como notice role=alert dentro del modal de confirmación.');
 assert.doesNotMatch(panel, /<dt>Referencia<\/dt>/, 'El modal no debe repetir la referencia técnica.');
 assert.doesNotMatch(panel, /<dt>Recomendación del sistema<\/dt>/, 'El modal no debe repetir la recomendación visible detrás.');
 

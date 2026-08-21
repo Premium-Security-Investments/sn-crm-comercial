@@ -8,9 +8,10 @@ const briefHelperPath = new URL('../src/tenders/tenderDecisionBrief.ts', import.
 const briefHelper = readFileSync(briefHelperPath, 'utf8');
 let analysisSection = '';
 try { analysisSection = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8'); } catch {}
+const questionCardSource = readFileSync(new URL('../src/tenders/components/TenderQuestionResponseCard.tsx', import.meta.url), 'utf8');
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
-const decisionSource = `${analysisSection}\n${briefHelper}`;
+const decisionSource = `${analysisSection}\n${briefHelper}\n${questionCardSource}`;
 const reviewPanel = main.match(/function TenderDocumentReviewPanel[\s\S]*?\n}\nfunction TenderOfferPreparationPanel/)?.[0] || '';
 
 for (const text of [
@@ -38,12 +39,12 @@ assert.match(analysisSection, /const weaknesses = analysis\?\.weaknesses \?\? an
 assert.match(analysisSection, /const questions = \(analysis\?\.questions \?\? \[\]\)\.map\(normalizeQuestion\)/, 'Dudas abiertas debe consumir y normalizar las preguntas tipadas.');
 assert.match(analysisSection, /const unverified = analysis\?\.unverified \?\? analysis\?\.company_profile_crosscheck\?\.gaps \?\? \[\]/, 'Información no verificada debe degradar a brechas del perfil.');
 assert.doesNotMatch(analysisSection, /Cómo funciona/, 'La ayuda técnica redundante debe permanecer fuera de la vista operativa.');
-assert.match(analysisSection, /Responder duda|Actualizar respuesta/, 'El brief debe permitir responder cada duda de forma trazable.');
-assert.match(analysisSection, /No autoriza GO \/ NO GO/, 'La respuesta humana no debe confundirse con una decisión GO/NO GO.');
+assert.match(decisionSource, /Registrar validación|Actualizar validación/, 'El análisis debe permitir registrar o actualizar cada validación de forma trazable.');
+assert.match(decisionSource, /No autoriza GO \/ NO GO/, 'La respuesta humana no debe confundirse con una decisión GO/NO GO.');
 
 // QuestionResponseCard must not render evidenceRefs / "Referencias:".
-const questionCardMatch = analysisSection.match(/function QuestionResponseCard[\s\S]*?\n}\n/);
-assert.ok(questionCardMatch, 'QuestionResponseCard debe existir en TenderAnalysisSection.tsx para validar su render.');
+const questionCardMatch = questionCardSource.match(/export function QuestionResponseCard[\s\S]*$/);
+assert.ok(questionCardMatch, 'QuestionResponseCard debe existir para validar su render.');
 const questionCard = questionCardMatch[0];
 assert.doesNotMatch(questionCard, /evidenceRefs/, 'QuestionResponseCard no debe renderizar question.evidenceRefs.');
 assert.doesNotMatch(questionCard, /Referencias:/, 'QuestionResponseCard no debe renderizar el texto "Referencias:".');
