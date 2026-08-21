@@ -10,7 +10,7 @@ assert.match(component, /<header className="agt002-v3-overview">/, 'V3 debe usar
 assert.match(component, /<h2 id="agt002-v3-title">Análisis integral por requisito<\/h2>/, 'El título debe conservarse.');
 assert.match(component, /<div className="agt002-v3-overview-summary">/, 'Cobertura y estado deben mostrarse de forma compacta.');
 assert.match(component, /<details className="agt002-v3-run-details">/, 'Los identificadores técnicos deben quedar plegables.');
-assert.match(component, /<summary>Detalles de ejecución<\/summary>/, 'El control plegable debe tener una etiqueta clara.');
+assert.match(component, /<summary>Ver trazabilidad técnica<\/summary>/, 'El control plegable debe identificar la trazabilidad técnica.');
 assert.match(component, /Validación humana pendiente/, 'La autoridad humana debe seguir visible.');
 assert.match(css, /\.agt002-v3-overview\{[^}]*background:#fff/s, 'El encabezado debe ser una superficie blanca sobria.');
 assert.match(css, /\.agt002-v3-overview h2\{[^}]*font-size:clamp\(22px,2vw,28px\)/s, 'El título debe usar una escala discreta.');

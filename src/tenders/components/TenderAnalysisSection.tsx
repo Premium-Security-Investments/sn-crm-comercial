@@ -3,8 +3,8 @@ import { normalizeTenderEvidence, tenderAnalysisMethodLabel, tenderAnalysisProdu
 import { tenderRecommendationLabel } from '../tenderDecisionGate';
 import { deriveTenderProcessingPresentation } from '../processingStatus';
 import { tenderBriefUnavailableCopy } from '../tenderDecisionBriefModel';
+import { tenderDecisionBlockers, tenderDecisionConditionAnchor, tenderDecisionConditions, tenderDecisionPreparationActions, tenderDecisionSupportedAspects } from '../tenderDecisionSurface';
 import type { TenderAnalysisFinding, TenderDocumentAnalysis, TenderDocumentRecord, TenderDocumentsPayload, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput } from '../types';
-import { TenderFindingEvidence } from './TenderFindingEvidence';
 import { QuestionResponseCard, type NormalizedQuestion } from './TenderQuestionResponseCard';
 
 type TenderAnalysisSectionProps = {
@@ -44,7 +44,21 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
   const questions = (analysis?.questions ?? []).map(normalizeQuestion);
   const unverified = analysis?.unverified ?? analysis?.company_profile_crosscheck?.gaps ?? [];
   const hasIntegralV3 = Boolean(analysis?.integral_analysis?.analysis_units?.length);
-  const decisionQuestions = (analysis?.decision_review?.decision_questions || []).map(entry => ({ id: entry.id, text: entry.label, critical: true, evidenceRefs: [] as string[], rationale: entry.rationale, finding: entry }));
+  // Análisis es la única superficie completa de condiciones e impedimentos: cada entrada gobernada
+  // se proyecta una sola vez a través de los selectores puros (Task 2). El componente no vuelve a
+  // proyectar `decision_review` ni transporta rationale/ids/evidencia técnica a la capa visible.
+  const conditionCards = tenderDecisionConditions(analysis?.decision_review, questionResponses);
+  const impedimentCards = tenderDecisionBlockers(analysis?.decision_review, questionResponses);
+  const supportedCards = tenderDecisionSupportedAspects(analysis?.decision_review);
+  const preparationCards = tenderDecisionPreparationActions(analysis?.decision_review);
+  const decisionQuestions: NormalizedQuestion[] = [...conditionCards, ...impedimentCards].map(card => ({
+    id: card.key,
+    text: card.persistence.questionText,
+    critical: false,
+    evidenceRefs: [],
+    decisionCopy: { title: card.title, state: card.state, missing: card.missing, actionRequired: card.actionRequired },
+    anchorId: tenderDecisionConditionAnchor(analysis?.decision_review, card.key) ?? undefined,
+  }));
   const hasDocuments = documents.length > 0;
   const failed = analysis?.status === 'failed';
   const stale = Boolean(analysis && !analysis.current);
@@ -54,7 +68,7 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
   const analysisActionDisabled = busy || !hasDocuments || processingPresentation.primaryAction === 'disabled';
   const showAnalysisAction = canRunPreview && processingPresentation.primaryAction !== 'hidden';
   const unavailable = tenderBriefUnavailableCopy();
-  return <section id="tender-analysis" className={`tender-analysis-section tender-detail-anchor${hasIntegralV3 ? ' is-v3-compact' : ''}`} aria-labelledby={hasIntegralV3 ? 'tender-v3-questions-title' : 'tender-analysis-title'}>
+  return <div className={`tender-analysis-section tender-detail-anchor${hasIntegralV3 ? ' is-v3-compact' : ''}`}>
     {!hasIntegralV3 && <header className="tender-analysis-header"><div><span className="eyebrow">Paso previo a la decisión humana</span><h3 id="tender-analysis-title">Análisis con {VIGIA_VISIBLE_NAMES.tenders}</h3><p>Organiza la evidencia disponible y señala pendientes. No registra ni autoriza GO / NO GO.</p></div><div className={`tender-analysis-state state-${failed ? 'failed' : stale ? 'stale' : analysis ? 'ready' : 'pending'}`}><strong>{state}</strong></div></header>}
     {!hasDocuments && <div className="document-empty-state"><strong>Sin documentos</strong><span>Actualice o cargue documentos antes de analizar con {VIGIA_VISIBLE_NAMES.tenders}.</span></div>}
     {hasDocuments && !analysis && !processingPresentation.visible && <div className="document-empty-state"><strong>Análisis pendiente</strong><span>Hay documentos vigentes, pero todavía no existe una conclusión preliminar para revisar.</span></div>}
@@ -73,8 +87,12 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
       <p className="notice" role="status">{unavailable.impedimentNote}</p>
     </section>}
     {hasIntegralV3 && analysis && analysis.decision_review && <section className="tender-v3-questions" aria-labelledby="tender-v3-questions-title">
-      <header><div><span className="eyebrow">Validación humana</span><h3 id="tender-v3-questions-title">Condiciones pendientes de validar</h3><p>Aquí sólo se responden las alertas materiales y se consulta evidencia. El brief de decisión está en la sección Decisión.</p></div></header>
-      {decisionQuestions.length ? <div className="tender-question-list">{decisionQuestions.map(question => <article key={question.id} className="tender-decision-review-question"><p className="tender-decision-review-rationale">{question.rationale}</p>{analysis.decision_review && <TenderFindingEvidence finding={question.finding} review={analysis.decision_review} />}<QuestionResponseCard question={question} analysisRunId={analysis.run_id} responses={questionResponses.filter(item => item.question_id === question.id)} canAnswer={canAnswerQuestions} disabled={busy} onSave={onSaveQuestionResponse} criticalLabel="Alerta material"/></article>)}</div> : <p className="muted">Sin condiciones pendientes de validar.</p>}
+      <header><div><span className="eyebrow">Validación humana</span><h3 id="tender-v3-questions-title">Condiciones pendientes de validar</h3><p>Cada condición e impedimento se valida aquí una sola vez. El brief de decisión está en la sección Decisión.</p></div></header>
+      {decisionQuestions.length ? <div className="tender-question-list">{decisionQuestions.map(question => <article key={question.id} className="tender-decision-review-question"><QuestionResponseCard question={question} analysisRunId={analysis.run_id} responses={questionResponses.filter(item => item.question_id === question.id)} canAnswer={canAnswerQuestions} disabled={busy} onSave={onSaveQuestionResponse}/></article>)}</div> : <p className="muted">Sin condiciones pendientes de validar.</p>}
+      <div className="tender-decision-compact-blocks">
+        <section className="tender-decision-compact-block"><h4>Aspectos favorables y capacidad</h4>{supportedCards.length ? <ul>{supportedCards.map(card => <li key={card.key}><strong>{card.title}</strong>{card.summary && <span> {card.summary}</span>}</li>)}</ul> : <p className="muted">Sin aspectos favorables registrados.</p>}</section>
+        <section className="tender-decision-compact-block"><h4>Acciones de preparación</h4>{preparationCards.length ? <ul>{preparationCards.map(card => <li key={card.key}><strong>{card.title}</strong>{card.actionRequired && <span> {card.actionRequired}</span>}</li>)}</ul> : <p className="muted">Sin acciones de preparación registradas.</p>}</section>
+      </div>
     </section>}
     {analysisEngine?.fallback && <div className="notice" role="status"><strong>Fallback seguro aplicado.</strong> {VIGIA_VISIBLE_NAMES.tenders} no estuvo disponible ({analysisEngine.reason === 'not_configured' ? 'no configurado' : 'servicio no disponible'}); se conservó el preanálisis determinístico por reglas.</div>}
     {statusText && <div className={statusTone === 'error' ? 'error' : 'notice'} role={statusTone === 'error' ? 'alert' : 'status'}>{statusText}</div>}
@@ -82,5 +100,5 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
       {showAnalysisAction && <button type="button" className="tender-analysis-primary-cta" onClick={onAnalyzePreview} disabled={analysisActionDisabled}>{busy ? 'Procesando…' : actionLabel}</button>}
       {analysis && <small>{tenderAnalysisProducerDisclosure(analysis.producer)}</small>}
     </div>
-  </section>;
+  </div>;
 }

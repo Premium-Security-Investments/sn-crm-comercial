@@ -81,6 +81,36 @@ test('presentCurrentTenderAnalysis attaches decision_review for the exact pinned
   // Canonical fields the layer must never touch/replace.
   assert.deepEqual(presented.integral_analysis, integralAnalysis);
   assert.equal(Array.isArray(presented.questions), false, 'this test never fabricates v2_projection.questions; only checks decision_review is additive');
+
+  // Governed human presentation copy (per reviewed_status matrix — contrato exacto vinculante,
+  // §task-1-brief) survives the full read-side pipeline, frozen. Only title/summary/missing/
+  // action_required are ever allowed; `headline` never appears. The front never falls back to
+  // `rationale`.
+  const ALLOWED_PRESENTATION_KEYS = ['title', 'summary', 'missing', 'action_required'];
+  const REQUIRED_BY_STATUS = {
+    supported: ['title', 'summary'],
+    preparation: ['title', 'action_required'],
+    decision_question: ['title', 'missing', 'action_required'],
+  };
+  for (const [status, bucketKey] of [
+    ['supported', 'supported'],
+    ['preparation', 'preparation'],
+    ['decision_question', 'decision_questions'],
+  ]) {
+    for (const finding of review[bucketKey]) {
+      assert.ok(finding.presentation, `finding ${finding.id} (${status}) must carry governed human presentation`);
+      const keys = Object.keys(finding.presentation);
+      assert.ok(keys.every(key => ALLOWED_PRESENTATION_KEYS.includes(key)), `${finding.id}.presentation must only use allowed keys, got: ${keys.join(', ')}`);
+      for (const requiredField of REQUIRED_BY_STATUS[status]) {
+        assert.equal(typeof finding.presentation[requiredField], 'string');
+        assert.ok(finding.presentation[requiredField].trim().length > 0, `${finding.id}.presentation.${requiredField} must be non-empty`);
+      }
+      assert.ok(Object.isFrozen(finding.presentation), `${finding.id}.presentation must be frozen`);
+    }
+  }
+  for (const finding of review.not_applicable) {
+    assert.equal(Object.hasOwn(finding, 'presentation'), false, `${finding.id} (not_applicable) must never carry presentation copy`);
+  }
 });
 
 test('presentCurrentTenderAnalysis never attaches decision_review for a foreign opportunity_id', async () => {

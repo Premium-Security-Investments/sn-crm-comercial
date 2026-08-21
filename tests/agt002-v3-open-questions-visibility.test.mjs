@@ -23,6 +23,7 @@ const reviewPanel = main.match(/function TenderDocumentReviewPanel[\s\S]*?\n}\nf
 const integralIndex = reviewPanel.indexOf('<TenderIntegralAnalysisV3View analysis={analysis} />');
 const controlsIndex = reviewPanel.indexOf('<TenderAnalysisSection analysis={analysis}');
 assert.ok(controlsIndex >= 0 && integralIndex > controlsIndex, 'La lectura ejecutiva debe aparecer antes del análisis técnico V3 subordinado.');
-assert.match(reviewPanel, /Ver análisis técnico completo/);
+// Task 4 · el resumen exterior del contenedor es exactamente «Ver respaldo técnico del análisis».
+assert.match(reviewPanel, /Ver respaldo técnico del análisis/);
 
 console.log('AGT-002 V3 open questions visibility checks passed');

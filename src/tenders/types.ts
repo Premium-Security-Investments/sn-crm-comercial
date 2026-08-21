@@ -364,6 +364,16 @@ export type TenderDecisionReviewEvidenceRef =
   | { type: 'manifest_requirement'; requirement_id: string }
   | { type: 'review_finding'; finding_id: string };
 export type TenderDecisionReviewStatus = 'supported' | 'preparation' | 'not_applicable' | 'decision_question' | 'blocker';
+// Governed human-facing copy, optional here for old-fixture TS compatibility, but the front must
+// never fall back to `rationale` (internal, technical). Mandatory in the governed fixture/runtime
+// for every reviewed_status except `not_applicable`, with a per-status required-field matrix
+// enforced at runtime — see agt002-manizales-exercise-decision-review.js.
+export type TenderDecisionFindingPresentation = {
+  title: string;
+  summary?: string;
+  missing?: string;
+  action_required?: string;
+};
 export type TenderDecisionReviewFinding = {
   id: string;
   requirement_id: string;
@@ -374,6 +384,7 @@ export type TenderDecisionReviewFinding = {
   material_impediment_category?: string;
   curability?: 'curable' | 'not_curable';
   exercise_bypassed?: true;
+  presentation?: TenderDecisionFindingPresentation;
 };
 export type TenderDecisionReviewFindingSource = {
   id: string;

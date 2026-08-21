@@ -58,7 +58,7 @@ const inputTypeMatch = types.match(/export type TenderQuestionResponseInput = [^
 assert.ok(inputTypeMatch, 'Debe existir el tipo de entrada de respuesta.');
 assert.doesNotMatch(inputTypeMatch[0], /evidence_notes/, 'El tipo de entrada ya no debe incluir evidencia/notas.');
 
-assert.match(analysis, /Responder duda|Actualizar respuesta/, 'Cada duda debe ofrecer acción de respuesta.');
+assert.match(analysis, /Registrar validación|Actualizar validación/, 'Cada condición debe ofrecer acción de validación humana.');
 assert.match(analysis, /textarea/, 'La encargada debe poder escribir una respuesta.');
 assert.equal((analysis.match(/<textarea/g) || []).length, 1, 'Debe existir un único campo textarea «Respuesta» (sin textarea de evidencia).');
 assert.doesNotMatch(analysis, /Evidencia o notas/i, 'Ya no debe presentarse «Evidencia o notas» en ningún lugar de la UI.');

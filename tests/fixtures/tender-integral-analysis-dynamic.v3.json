@@ -1,0 +1,529 @@
+{
+  "_comment": "AGT-002 Task 4 · fixture dinámico deliberadamente distinto al piloto (7 unidades en lugar de 20, las cinco categorías institucionales más una desconocida, seis estados de conclusión distintos, referencias citadas y evidencia pendiente coexistiendo). Sin manifest_scope, para ejercitar la rama de Cobertura. decision_review sólo trae lo necesario para probar la igualdad explícita de requirement_id.",
+  "run_id": "0f1c4d0e-9b3a-4a1e-9c1f-2b7d5e6a8c40",
+  "snapshot_id": "snap-dynamic-v3",
+  "producer": "AGT-002",
+  "method": "agent_ai",
+  "status": "completed",
+  "current": true,
+  "integral_analysis": {
+    "contract_version": "agt002.integral_analysis.v3",
+    "coverage": {
+      "manifest_version": "dynamic@1",
+      "expected_requirement_ids": [
+        "req-dyn-experiencia",
+        "req-dyn-territorio",
+        "req-dyn-poliza",
+        "req-dyn-personal",
+        "req-dyn-indicadores",
+        "req-dyn-alianza",
+        "req-dyn-transicion",
+        "req-dyn-no-analizado"
+      ],
+      "analyzed_requirement_ids": [
+        "req-dyn-experiencia",
+        "req-dyn-territorio",
+        "req-dyn-poliza",
+        "req-dyn-personal",
+        "req-dyn-indicadores",
+        "req-dyn-alianza",
+        "req-dyn-transicion"
+      ],
+      "material_omissions": true,
+      "omission_reasons": ["Una entrada del manifiesto quedó sin evidencia suficiente."],
+      "company_evidence_manifest_version": "dynamic-company@1",
+      "company_evidence_class_ids": ["capacidad-tecnica", "capacidad-financiera"],
+      "legal_corpus_version_id": "corpus-dynamic-v1"
+    },
+    "analysis_units": [
+      {
+        "unit_id": "unit-dyn-01",
+        "unit_kind": "tender_requirement",
+        "requirement_id": "req-dyn-experiencia",
+        "category": "habilitating",
+        "sequence": 1,
+        "title": "Experiencia acreditada en contratos similares",
+        "assessment_mode": "assessed",
+        "conclusion": {
+          "status": "supported_with_evidence",
+          "summary": "La experiencia aportada cubre el objeto exigido por el pliego.",
+          "confidence": "high"
+        },
+        "blocking": {
+          "effect": "non_blocking",
+          "curability": "not_applicable",
+          "reason": "No bloquea la presentación de la oferta."
+        },
+        "evidence_state": {
+          "presence": "present",
+          "review": "reviewed",
+          "validity": "valid",
+          "applicability": "applicable",
+          "compliance": "supported_pending_human_review"
+        },
+        "evidence_refs": [
+          { "ref": "evidence:chunk:doc-pliego:0142", "source_type": "tender_document", "purpose": "requirement_basis" },
+          { "ref": "evidence:company:capacidad-tecnica:0007", "source_type": "company_evidence", "purpose": "company_capacity" }
+        ],
+        "missing_evidence": [],
+        "commercial_impact": {
+          "level": "high",
+          "summary": "Habilita la participación en el proceso sin costo adicional.",
+          "dimension": "elegibilidad"
+        },
+        "legal_assessment": {
+          "status": "supported",
+          "basis_refs": ["corpus:ley-80:art-6"],
+          "summary": "El sustento documental es admisible bajo el estatuto de contratación.",
+          "human_legal_review_required": false
+        },
+        "actions": [
+          {
+            "action_id": "act-dyn-01",
+            "action_type": "confirm",
+            "summary": "Confirmar con la encargada que el certificado sigue vigente al cierre.",
+            "basis_unit_id": "unit-dyn-01",
+            "suggested_role": "Licitaciones",
+            "priority": "medium",
+            "external_side_effect": false
+          }
+        ],
+        "milestone": { "status": "identified", "type": "cierre", "at": "2026-09-15", "source_ref": "evidence:chunk:doc-pliego:0009", "summary": "Cierre del proceso." },
+        "escalation": { "required": false, "level": "none", "reason": "Sin condición crítica." },
+        "closure": { "status": "human_confirmation_required", "condition": "Persona autorizada valida la vigencia del certificado.", "evidence_required": [] },
+        "human_validation": { "required": true, "status": "pending", "reason": "Validación humana pendiente." }
+      },
+      {
+        "unit_id": "unit-dyn-02",
+        "unit_kind": "tender_requirement",
+        "requirement_id": "req-dyn-territorio",
+        "category": "discard",
+        "sequence": 2,
+        "title": "Domicilio exigido en el municipio convocante",
+        "assessment_mode": "assessed",
+        "conclusion": {
+          "status": "gap_evidenced",
+          "summary": "No hay constancia de domicilio en el municipio antes del cierre.",
+          "confidence": "medium"
+        },
+        "blocking": {
+          "effect": "blocker",
+          "curability": "curable",
+          "reason": "Puede subsanarse con constancia de domicilio vigente."
+        },
+        "evidence_state": {
+          "presence": "absent",
+          "review": "not_reviewed",
+          "validity": "unknown",
+          "applicability": "applicable",
+          "compliance": "gap_evidenced_pending_human_review"
+        },
+        "evidence_refs": [
+          { "ref": "evidence:chunk:doc-pliego:0031", "source_type": "tender_document", "purpose": "requirement_basis" }
+        ],
+        "missing_evidence": [
+          {
+            "missing_id": "miss-dyn-01",
+            "evidence_class_id": "domicilio",
+            "needed_source_type": "company_evidence",
+            "reason": "Falta la constancia de domicilio vigente en el municipio.",
+            "critical": true
+          }
+        ],
+        "commercial_impact": {
+          "level": "critical",
+          "summary": "Sin domicilio acreditado la oferta queda expuesta a rechazo.",
+          "dimension": "elegibilidad"
+        },
+        "legal_assessment": {
+          "status": "unsupported",
+          "basis_refs": [],
+          "summary": "La exigencia territorial requiere lectura jurídica humana.",
+          "human_legal_review_required": true
+        },
+        "actions": [
+          {
+            "action_id": "act-dyn-02",
+            "action_type": "request_evidence",
+            "summary": "Solicitar la constancia de domicilio y registrarla en la validación.",
+            "basis_unit_id": "unit-dyn-02",
+            "suggested_role": "Licitaciones",
+            "priority": "critical",
+            "external_side_effect": false
+          }
+        ],
+        "milestone": { "status": "not_identified", "type": "none", "at": null, "source_ref": null, "summary": "Sin hito." },
+        "escalation": { "required": true, "level": "high", "reason": "Impedimento material identificado." },
+        "closure": { "status": "human_confirmation_required", "condition": "Persona autorizada valida la constancia de domicilio.", "evidence_required": ["miss-dyn-01"] },
+        "human_validation": { "required": true, "status": "pending", "reason": "Validación humana pendiente." }
+      },
+      {
+        "unit_id": "unit-dyn-03",
+        "unit_kind": "tender_requirement",
+        "requirement_id": "req-dyn-poliza",
+        "category": "technical",
+        "sequence": 3,
+        "title": "Cobertura técnica del servicio ofertado",
+        "assessment_mode": "assessed",
+        "conclusion": {
+          "status": "partially_supported",
+          "summary": "La ficha técnica cubre parte del alcance exigido.",
+          "confidence": "medium"
+        },
+        "blocking": {
+          "effect": "conditional",
+          "curability": "curable",
+          "reason": "Depende de completar la ficha técnica."
+        },
+        "evidence_state": {
+          "presence": "present",
+          "review": "partially_reviewed",
+          "validity": "valid",
+          "applicability": "applicable",
+          "compliance": "partially_supported_pending_human_review"
+        },
+        "evidence_refs": [
+          { "ref": "evidence:objective:validacion-tecnica:0003", "source_type": "objective_validation", "purpose": "requirement_basis" }
+        ],
+        "missing_evidence": [
+          {
+            "missing_id": "miss-dyn-02",
+            "evidence_class_id": null,
+            "needed_source_type": "tender_document",
+            "reason": "Falta el detalle de cobertura horaria en la ficha técnica.",
+            "critical": false
+          }
+        ],
+        "commercial_impact": {
+          "level": "medium",
+          "summary": "Puede afectar el puntaje técnico de la oferta.",
+          "dimension": "puntaje"
+        },
+        "legal_assessment": {
+          "status": "not_verified",
+          "basis_refs": [],
+          "summary": "Sin lectura jurídica registrada para esta unidad.",
+          "human_legal_review_required": false
+        },
+        "actions": [
+          {
+            "action_id": "act-dyn-03",
+            "action_type": "complete_document",
+            "summary": "Completar la ficha técnica con la cobertura horaria exigida.",
+            "basis_unit_id": "unit-dyn-03",
+            "suggested_role": "Operaciones",
+            "priority": "high",
+            "external_side_effect": false
+          }
+        ],
+        "milestone": { "status": "not_identified", "type": "none", "at": null, "source_ref": null, "summary": "Sin hito." },
+        "escalation": { "required": false, "level": "none", "reason": "Sin condición crítica." },
+        "closure": { "status": "human_confirmation_required", "condition": "Persona autorizada valida la ficha técnica completa.", "evidence_required": ["miss-dyn-02"] },
+        "human_validation": { "required": true, "status": "pending", "reason": "Validación humana pendiente." }
+      },
+      {
+        "unit_id": "unit-dyn-04",
+        "unit_kind": "tender_requirement",
+        "requirement_id": "req-dyn-personal",
+        "category": "financial_execution",
+        "sequence": 4,
+        "title": "Capacidad financiera para la ejecución",
+        "assessment_mode": "abstained",
+        "conclusion": {
+          "status": "insufficient_evidence",
+          "summary": "Los estados financieros disponibles no permiten concluir.",
+          "confidence": "unavailable"
+        },
+        "blocking": {
+          "effect": "undetermined",
+          "curability": "undetermined",
+          "reason": "Sin determinación automática; requiere revisión humana."
+        },
+        "evidence_state": {
+          "presence": "unknown",
+          "review": "not_reviewed",
+          "validity": "unknown",
+          "applicability": "unknown",
+          "compliance": "unknown"
+        },
+        "evidence_refs": [],
+        "missing_evidence": [
+          {
+            "missing_id": "miss-dyn-03",
+            "evidence_class_id": "capacidad-financiera",
+            "needed_source_type": "company_evidence",
+            "reason": "Faltan los estados financieros del último ejercicio.",
+            "critical": true
+          },
+          {
+            "missing_id": "miss-dyn-04",
+            "evidence_class_id": "capacidad-financiera",
+            "needed_source_type": "company_evidence",
+            "reason": "Falta el cálculo de los indicadores exigidos por el pliego.",
+            "critical": false
+          }
+        ],
+        "commercial_impact": {
+          "level": "unknown",
+          "summary": "Impacto no determinado hasta contar con los estados financieros.",
+          "dimension": "unknown"
+        },
+        "legal_assessment": {
+          "status": "not_applicable",
+          "basis_refs": [],
+          "summary": "No aplica fundamento jurídico.",
+          "human_legal_review_required": false
+        },
+        "actions": [],
+        "milestone": { "status": "not_identified", "type": "none", "at": null, "source_ref": null, "summary": "Sin hito." },
+        "escalation": { "required": false, "level": "none", "reason": "Sin condición crítica." },
+        "closure": { "status": "human_confirmation_required", "condition": "Persona autorizada valida los indicadores financieros.", "evidence_required": ["miss-dyn-03", "miss-dyn-04"] },
+        "human_validation": { "required": true, "status": "pending", "reason": "Validación humana pendiente." }
+      },
+      {
+        "unit_id": "unit-dyn-05",
+        "unit_kind": "strategic_consideration",
+        "requirement_id": null,
+        "category": "strategic",
+        "sequence": 5,
+        "title": "Conveniencia estratégica de participar",
+        "assessment_mode": "assessed",
+        "conclusion": {
+          "status": "human_validation_required",
+          "summary": "La conveniencia comercial depende de una decisión humana.",
+          "confidence": "low"
+        },
+        "blocking": {
+          "effect": "non_blocking",
+          "curability": "not_applicable",
+          "reason": "No bloquea la presentación de la oferta."
+        },
+        "evidence_state": {
+          "presence": "present",
+          "review": "reviewed",
+          "validity": "not_applicable",
+          "applicability": "applicable",
+          "compliance": "supported_pending_human_review"
+        },
+        "evidence_refs": [
+          { "ref": "evidence:chunk:doc-anexo:0088", "source_type": "tender_document", "purpose": "commercial_context" }
+        ],
+        "missing_evidence": [],
+        "commercial_impact": {
+          "level": "low",
+          "summary": "El margen esperado es acotado frente al esfuerzo operativo.",
+          "dimension": "margen"
+        },
+        "legal_assessment": {
+          "status": "not_applicable",
+          "basis_refs": [],
+          "summary": "No aplica fundamento jurídico.",
+          "human_legal_review_required": false
+        },
+        "actions": [
+          {
+            "action_id": "act-dyn-04",
+            "action_type": "review",
+            "summary": "Revisar el margen esperado con la dirección comercial.",
+            "basis_unit_id": "unit-dyn-05",
+            "suggested_role": "Comercial",
+            "priority": "low",
+            "external_side_effect": false
+          }
+        ],
+        "milestone": { "status": "not_identified", "type": "none", "at": null, "source_ref": null, "summary": "Sin hito." },
+        "escalation": { "required": false, "level": "none", "reason": "Sin condición crítica." },
+        "closure": { "status": "human_confirmation_required", "condition": "Persona autorizada valida la conveniencia comercial.", "evidence_required": [] },
+        "human_validation": { "required": true, "status": "pending", "reason": "Validación humana pendiente." }
+      },
+      {
+        "unit_id": "unit-dyn-06",
+        "unit_kind": "tender_requirement",
+        "requirement_id": "req-dyn-alianza",
+        "category": "categoria_no_reconocida",
+        "sequence": 6,
+        "title": "Reglas de la figura plural propuesta",
+        "assessment_mode": "assessed",
+        "conclusion": {
+          "status": "estado_no_reconocido",
+          "summary": "La figura plural declarada requiere lectura humana adicional.",
+          "confidence": "low"
+        },
+        "blocking": {
+          "effect": "undetermined",
+          "curability": "undetermined",
+          "reason": "Sin determinación automática; requiere revisión humana."
+        },
+        "evidence_state": {
+          "presence": "present",
+          "review": "not_reviewed",
+          "validity": "unknown",
+          "applicability": "unknown",
+          "compliance": "unknown"
+        },
+        "evidence_refs": [],
+        "missing_evidence": [
+          {
+            "missing_id": "miss-dyn-05",
+            "evidence_class_id": null,
+            "needed_source_type": "legal_corpus",
+            "reason": "Falta el documento que formaliza la figura plural.",
+            "critical": false
+          }
+        ],
+        "commercial_impact": {
+          "level": "nivel_no_reconocido",
+          "summary": "El reparto de responsabilidades aún no está definido.",
+          "dimension": "estructura"
+        },
+        "legal_assessment": {
+          "status": "estado_juridico_no_reconocido",
+          "basis_refs": [],
+          "summary": "Requiere lectura jurídica humana.",
+          "human_legal_review_required": true
+        },
+        "actions": [
+          {
+            "action_id": "act-dyn-05",
+            "action_type": "request_evidence",
+            "summary": "Solicitar el documento de constitución de la figura plural.",
+            "basis_unit_id": "unit-dyn-06",
+            "suggested_role": "Jurídica",
+            "priority": "medium",
+            "external_side_effect": false
+          }
+        ],
+        "milestone": { "status": "not_identified", "type": "none", "at": null, "source_ref": null, "summary": "Sin hito." },
+        "escalation": { "required": false, "level": "none", "reason": "Sin condición crítica." },
+        "closure": { "status": "human_confirmation_required", "condition": "Persona autorizada valida la figura plural.", "evidence_required": ["miss-dyn-05"] },
+        "human_validation": { "required": true, "status": "pending", "reason": "Validación humana pendiente." }
+      },
+      {
+        "unit_id": "unit-dyn-07",
+        "unit_kind": "tender_requirement",
+        "requirement_id": "req-dyn-transicion",
+        "category": "technical",
+        "sequence": 7,
+        "title": "Plan de transición del servicio",
+        "assessment_mode": "assessed",
+        "conclusion": {
+          "status": "supported_with_evidence",
+          "summary": "El plan de transición presentado cubre el periodo exigido.",
+          "confidence": "high"
+        },
+        "blocking": {
+          "effect": "non_blocking",
+          "curability": "not_applicable",
+          "reason": "No bloquea la presentación de la oferta."
+        },
+        "evidence_state": {
+          "presence": "present",
+          "review": "reviewed",
+          "validity": "valid",
+          "applicability": "applicable",
+          "compliance": "supported_pending_human_review"
+        },
+        "evidence_refs": [
+          { "ref": "evidence:human:acta-transicion:0002", "source_type": "human_evidence", "purpose": "milestone_basis" },
+          { "ref": "corpus:decreto-1082:art-2", "source_type": "legal_corpus", "purpose": "legal_basis" }
+        ],
+        "missing_evidence": [],
+        "commercial_impact": {
+          "level": "medium",
+          "summary": "Reduce el riesgo operativo del arranque.",
+          "dimension": "operación"
+        },
+        "legal_assessment": {
+          "status": "partially_supported",
+          "basis_refs": ["corpus:decreto-1082:art-2"],
+          "summary": "El plan se apoya en el marco reglamentario aplicable.",
+          "human_legal_review_required": false
+        },
+        "actions": [
+          {
+            "action_id": "act-dyn-06",
+            "action_type": "confirm",
+            "summary": "Confirmar el equipo asignado al periodo de transición.",
+            "basis_unit_id": "unit-dyn-07",
+            "suggested_role": "Operaciones",
+            "priority": "medium",
+            "external_side_effect": false
+          }
+        ],
+        "milestone": { "status": "identified", "type": "inicio", "at": "2026-10-01", "source_ref": "evidence:human:acta-transicion:0002", "summary": "Inicio del servicio." },
+        "escalation": { "required": false, "level": "none", "reason": "Sin condición crítica." },
+        "closure": { "status": "human_confirmation_required", "condition": "Persona autorizada valida el plan de transición.", "evidence_required": [] },
+        "human_validation": { "required": true, "status": "pending", "reason": "Validación humana pendiente." }
+      }
+    ]
+  },
+  "manifest_unresolved_entries": [
+    {
+      "requirement_id": "req-dyn-no-analizado",
+      "label": "Póliza colectiva de vida del personal",
+      "category": "habilitating",
+      "origin": "governed_runtime",
+      "status": "unresolved_visible",
+      "human_review_required": true
+    },
+    {
+      "requirement_id": "lifecycle:cierre-dinamico",
+      "label": "Fecha de cierre sujeta a prórroga",
+      "category": null,
+      "origin": "lifecycle_gate",
+      "status": "unresolved_visible",
+      "human_review_required": true
+    }
+  ],
+  "decision_review": {
+    "artifact_type": "tender_decision_review",
+    "contract_version": "agt002.decision_review.v1",
+    "source_fixture_version": 1,
+    "opportunity_id": "54190e51-15fb-46af-b0aa-8f13461a3110",
+    "human_approval_required": true,
+    "decision_status": "pending_human_decision",
+    "decision_ready": false,
+    "routing_action": "flag_for_responsible_person",
+    "external_communications_allowed": false,
+    "evidence_requests_allowed": true,
+    "review_findings": [],
+    "exercise_mode": { "active": true, "bypassed_requirement_ids": [] },
+    "recommendation": "pending_human_decision",
+    "blockers": [
+      {
+        "id": "agt002::dynamic::blocker::territorio",
+        "requirement_id": "req-dyn-territorio",
+        "label": "ETIQUETA-INTERNA-TERRITORIO",
+        "reviewed_status": "blocker",
+        "rationale": "RATIONALE-INTERNO-TERRITORIO",
+        "evidence_refs": [],
+        "presentation": {
+          "title": "Domicilio exigido en el municipio",
+          "summary": "El pliego exige domicilio antes del cierre.",
+          "missing": "Falta constancia de domicilio vigente.",
+          "action_required": "Confirmar si la sede cumple el requisito territorial."
+        }
+      }
+    ],
+    "decision_questions": [
+      {
+        "id": "agt002::dynamic::decision-question::experiencia",
+        "requirement_id": "req-dyn-experiencia",
+        "label": "ETIQUETA-INTERNA-EXPERIENCIA",
+        "reviewed_status": "decision_question",
+        "rationale": "RATIONALE-INTERNO-EXPERIENCIA",
+        "evidence_refs": [],
+        "presentation": {
+          "title": "Certificación de experiencia específica",
+          "summary": "La experiencia acreditada debe confirmarse.",
+          "missing": "Falta el certificado firmado.",
+          "action_required": "Solicitar el certificado y registrarlo aquí."
+        }
+      }
+    ],
+    "supported": [],
+    "preparation": [],
+    "not_applicable": [],
+    "counts": { "supported": 0, "preparation": 0, "not_applicable": 0, "decision_questions": 1, "blockers": 1 }
+  }
+}

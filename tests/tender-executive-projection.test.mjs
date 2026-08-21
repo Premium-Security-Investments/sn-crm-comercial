@@ -50,6 +50,7 @@ assert.doesNotMatch(goPanel, /analysis\.critical_open_count/);
 const executiveIndex = main.indexOf('<TenderAnalysisSection');
 const traceIndex = main.indexOf('<TenderIntegralAnalysisV3View');
 assert.ok(executiveIndex > -1 && traceIndex > executiveIndex, 'Executive radar must render before technical requirement trace.');
-assert.match(main, /<details id="tender-technical-analysis" className="tender-integral-analysis-trace">[\s\S]*Ver análisis técnico completo[\s\S]*<TenderIntegralAnalysisV3View/);
+// Task 4 · el resumen exterior del contenedor es exactamente «Ver respaldo técnico del análisis».
+assert.match(main, /<details id="tender-technical-analysis" className="tender-integral-analysis-trace">[\s\S]*Ver respaldo técnico del análisis[\s\S]*<TenderIntegralAnalysisV3View/);
 
 console.log('tender executive projection and hierarchy checks passed');

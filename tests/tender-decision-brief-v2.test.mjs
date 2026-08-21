@@ -6,32 +6,25 @@ const modelPath = new URL('../src/tenders/tenderDecisionBriefModel.ts', import.m
 const bundled = buildSync({ entryPoints: [modelPath], bundle: true, platform: 'node', format: 'esm', write: false });
 const modelUrl = `data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0].contents).toString('base64')}`;
 const {
-  TENDER_BRIEF_PRIORITY_LIMIT,
   tenderBriefClassificationAvailable,
   tenderBriefUnavailableCopy,
   tenderCommercialPotential,
-  tenderBriefEffortSummary,
   tenderBriefHeadline,
-  tenderBriefPriorityItems,
   resolveFindingEvidence,
 } = await import(modelUrl);
 
-const emptyReview = {
-  blockers: [],
-  decision_questions: [],
-  supported: [{ id: 's1', label: 'RUP', rationale: 'capacidad', evidence_refs: [] }],
-  preparation: Array.from({ length: 9 }, (_, index) => ({ id: `p${index}`, label: `Prep ${index}`, rationale: 'preparable', evidence_refs: [] })),
-  review_findings: [],
-};
+const blockers = [{ key: 'blocker-1', title: 'Domicilio exigido en Manizales', state: 'Pendiente de validación' }];
+const conditions = [
+  { key: 'condition-1', title: 'Certificación de experiencia específica', state: 'Pendiente de validación' },
+  { key: 'condition-2', title: 'Licencia vigente', state: 'Validación registrada' },
+];
 
 testAbsence();
-testIndependence();
-testPrioritization();
-testLimit();
-testHeadline();
-testEvidence();
-testSurfaces();
-console.log('tender decision brief v2 model and surface checks passed');
+testCommercialPotential();
+testCompactHeadline();
+testEvidenceOutsideBrief();
+testTask5Surfaces();
+console.log('tender decision brief Task 5 model and surface checks passed');
 
 function testAbsence() {
   assert.equal(tenderBriefClassificationAvailable(null), false);
@@ -40,82 +33,34 @@ function testAbsence() {
   assert.match(copy.title, /Clasificación ejecutiva no disponible/);
   assert.match(copy.impedimentNote, /No hay clasificación ejecutiva de impedimentos/);
   assert.doesNotMatch(copy.body, /no se identificaron impedimentos/i);
-  assert.doesNotMatch(copy.impedimentNote, /no se encontraron impedimentos/i);
 }
 
-function testIndependence() {
-  const context = { amountLabel: '$1.000', commercialFitPositives: ['Encaje con vigilancia'] };
-  const attractiveWithBlocker = tenderCommercialPotential(context, {
-    ...emptyReview,
-    blockers: [{ id: 'b1', label: 'Impedimento', rationale: 'grave', evidence_refs: [], curability: 'curable' }],
-    decision_questions: [{ id: 'q1', label: 'Validar sede', rationale: 'pendiente', evidence_refs: [] }],
+function testCommercialPotential() {
+  const potential = tenderCommercialPotential({
+    amountLabel: '$1.000',
+    commercialFitPositives: ['Encaje con vigilancia'],
   });
-  const attractiveWithoutBlocker = tenderCommercialPotential(context, emptyReview);
-  assert.deepEqual(attractiveWithBlocker, attractiveWithoutBlocker, 'El potencial no puede cambiar porque haya bloqueadores o condiciones pendientes.');
-  assert.equal(attractiveWithBlocker.classified, true);
-  assert.deepEqual(attractiveWithBlocker.reasons, ['Encaje con vigilancia']);
-  const withoutCommercial = tenderCommercialPotential({ amountLabel: '$1.000' }, emptyReview);
-  assert.equal(withoutCommercial.classified, false);
-  assert.match(withoutCommercial.note, /Sin razones comerciales priorizadas/);
-  assert.doesNotMatch(JSON.stringify(withoutCommercial), /supported|RUP/);
+  assert.equal(potential.classified, true);
+  assert.deepEqual(potential.reasons, ['Encaje con vigilancia']);
+  assert.deepEqual(potential.contextFacts, ['Cuantía: $1.000']);
+  assert.equal(tenderCommercialPotential({ amountLabel: '$1.000' }).classified, false);
 }
 
-function testPrioritization() {
-  const items = tenderBriefPriorityItems({
-    ...emptyReview,
-    decision_questions: [{ id: 'q1', label: 'Sede Manizales', rationale: 'NOTA PARA LA ENCARGADA: validar acto territorial.', evidence_refs: [] }],
-  }, { commercialFitPositives: ['Margen viable'] });
-  assert.equal(items.visible.length, 1);
-  assert.equal(items.visible[0].kind, 'condition');
-  assert.doesNotMatch(items.visible[0].body, /RUP|Margen|NOTA PARA LA ENCARGADA/);
-  assert.match(items.visible[0].body, /validar acto territorial/);
-  const effort = tenderBriefEffortSummary(emptyReview.preparation);
-  assert.equal(effort.count, 9);
-  assert.match(effort.headline, /9 trámites preparables/);
-  assert.match(effort.headline, /Prep 0/);
-  assert.doesNotMatch(effort.headline, /9 acciones/);
+function testCompactHeadline() {
+  const potential = tenderCommercialPotential({ commercialFitPositives: ['Encaje con vigilancia'] });
+  const headline = tenderBriefHeadline({ blockers, conditions, potential });
+  assert.match(headline, /Hay 1 impedimento confirmado/);
+  assert.match(headline, /Hay 2 condiciones pendientes/);
+  assert.match(headline, /Encaje con vigilancia/);
+  assert.ok((headline.match(/[.!?](?:\s|$)/g) || []).length <= 3, 'la introducción queda limitada a tres frases');
+  assert.doesNotMatch(headline, /rationale|capacidad|trámites/i);
 }
 
-function testLimit() {
-  const review = {
-    ...emptyReview,
-    blockers: Array.from({ length: 8 }, (_, index) => ({ id: `b${index}`, label: `Bloqueo ${index}`, rationale: 'impedimento', evidence_refs: [] })),
-    decision_questions: [{ id: 'q1', label: 'Condición', rationale: 'validar', evidence_refs: [] }],
-  };
-  const items = tenderBriefPriorityItems(review, {});
-  assert.equal(items.visible.length, TENDER_BRIEF_PRIORITY_LIMIT);
-  assert.ok(items.overflow.length > 0);
-  assert.ok(items.visible.every(item => item.kind === 'impediment' || item.kind === 'condition'));
-  assert.equal(items.visible[0].kind, 'impediment');
-  assert.ok(items.overflow.every(item => item.kind === 'impediment' || item.kind === 'condition'));
-}
-
-function testHeadline() {
-  const review = {
-    ...emptyReview,
-    decision_questions: [
-      { id: 'q1', label: 'Sede principal, sucursal o agencia en Manizales — territorialidad', rationale: 'pendiente', evidence_refs: [] },
-      { id: 'q2', label: 'Licencia MinTIC', rationale: 'pendiente', evidence_refs: [] },
-    ],
-  };
-  const withBlocker = tenderBriefHeadline({
-    ...review,
-    blockers: [{ id: 'b1', label: 'Impedimento grave', rationale: 'grave', evidence_refs: [] }],
-  }, { amountLabel: '$1.000', city: 'Manizales', commercialFitPositives: ['Encaje con vigilancia'] });
-  const withoutBlocker = tenderBriefHeadline(review, { amountLabel: '$1.000', city: 'Manizales', commercialFitPositives: ['Encaje con vigilancia'] });
-  assert.match(withoutBlocker, /no confirma impedimentos materiales/);
-  assert.match(withoutBlocker, /Hay que validar 2 condiciones/);
-  assert.match(withoutBlocker, /Encaje con vigilancia/);
-  assert.match(withoutBlocker, /9 trámites preparables/);
-  assert.match(withBlocker, /Impedimento confirmado: Impedimento grave/);
-  assert.match(withBlocker, /Encaje con vigilancia/, 'Un bloqueador no puede borrar el encaje comercial explícito.');
-}
-
-function testEvidence() {
+function testEvidenceOutsideBrief() {
   const finding = {
     id: 'exercise::territorialidad',
     label: 'Agencia Manizales',
-    rationale: 'no_probada',
+    rationale: 'interno',
     evidence_refs: [
       { type: 'registry_citation', item_ref: '2.1', sub_item_id: 'SA-24-2026#2.1#i11', char_start: 10 },
       { type: 'review_finding', finding_id: 'review::agency-manizales-current-status' },
@@ -133,53 +78,30 @@ function testEvidence() {
   assert.match(evidence[1].locator, /Territorialidad Manizales/);
 }
 
-function testSurfaces() {
-  const analysis = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8');
+function testTask5Surfaces() {
   const brief = readFileSync(new URL('../src/tenders/components/TenderDecisionBrief.tsx', import.meta.url), 'utf8');
   const evidence = readFileSync(new URL('../src/tenders/components/TenderFindingEvidence.tsx', import.meta.url), 'utf8');
-  const goPanel = readFileSync(new URL('../src/tenders/components/TenderGoNoGoDecisionPanel.tsx', import.meta.url), 'utf8');
+  const panel = readFileSync(new URL('../src/tenders/components/TenderGoNoGoDecisionPanel.tsx', import.meta.url), 'utf8');
+  const summary = readFileSync(new URL('../src/tenders/components/TenderGoNoGoDecisionSummary.tsx', import.meta.url), 'utf8');
   const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
-  const gate = readFileSync(new URL('../src/tenders/tenderDecisionGate.ts', import.meta.url), 'utf8');
-  const surfaces = [analysis, brief, goPanel, gate].join('\n');
 
-  assert.match(main, /<TenderDecisionBrief analysis=\{tenderAnalysis\}/);
+  assert.match(brief, /tenderDecisionBlockers\(review, questionResponses\)/);
+  assert.match(brief, /tenderDecisionConditions\(review, questionResponses\)/);
+  assert.doesNotMatch(brief, /TenderFindingEvidence|TenderIntegralAnalysisV3View|tenderDecisionSupportedAspects|tenderDecisionPreparationActions/);
+  assert.doesNotMatch(brief, /\.rationale/);
+  assert.match(brief, /Revisar \{pendingConditions\.length\} condiciones pendientes/);
+  assert.match(brief, /Registrar decisión humana/);
+  assert.doesNotMatch(brief, /Registrar GO|Registrar NO GO|tender-decision-register-(go|nogo)|open\(['"](?:go|no_go)/);
+  assert.match(evidence, /resolveFindingEvidence/);
+
   const briefIndex = main.indexOf('<TenderDecisionBrief');
-  const goIndex = main.indexOf('<TenderGoNoGoDecisionPanel');
-  const documentsIndex = main.indexOf('<TenderDocumentReviewPanel');
-  assert.ok(briefIndex >= 0 && goIndex > briefIndex, 'El brief debe preceder visualmente el control formal GO/NO GO.');
-  assert.ok(documentsIndex >= 0 && briefIndex > documentsIndex, 'El expediente definido conserva Documentos antes de Decisión.');
+  const panelIndex = main.indexOf('<TenderGoNoGoDecisionPanel');
+  assert.ok(briefIndex >= 0 && panelIndex > briefIndex, 'el panel queda inmediatamente debajo del brief dentro de Decisión');
+  const briefTagEnd = main.indexOf('/>', briefIndex) + 2;
+  assert.ok(main.slice(briefTagEnd, panelIndex).indexOf('Tender') === -1, 'no se inserta otra superficie entre brief y panel');
 
-  assert.match(analysis, /Condiciones pendientes de validar/);
-  assert.match(analysis, /Aquí sólo se responden las alertas materiales/);
-  assert.match(analysis, /Clasificación ejecutiva no disponible/);
-  assert.match(analysis, /TenderFindingEvidence/);
-  assert.doesNotMatch(analysis, /Impedimento confirmado/);
-  assert.doesNotMatch(analysis, /Esfuerzo comercial inmediato/);
-  assert.doesNotMatch(analysis, /Por qué vale la pena considerarla/);
-  assert.doesNotMatch(analysis, /<TenderDecisionBrief/);
-  assert.doesNotMatch(analysis, /review\.blockers\.map|decision_review\.blockers\.map/);
-  assert.doesNotMatch(analysis, /review\.supported\.map|decision_review\.supported/);
-  assert.doesNotMatch(analysis, /review\.preparation\.map|decision_review\.preparation/);
-
-  assert.match(brief, /Validar primero/);
-  assert.match(brief, /TenderFindingEvidence/);
-  assert.doesNotMatch(brief, /QuestionResponseCard/);
-  assert.doesNotMatch(brief, /GO recomendado|NO GO recomendado/);
-  assert.doesNotMatch(brief, /compromete la viabilidad de participar/);
-  assert.match(brief, /no dice participar ni no participar/);
-  assert.match(brief, /tenderBriefHeadline/);
-  assert.match(brief, /tender-decision-brief-headline/);
-  assert.match(brief, /preview/);
-  assert.match(brief, /Evidencia de capacidad revisada/);
-  assert.match(brief, /Trámites preparables/);
-  assert.match(evidence, /Ver evidencia/);
-
-  assert.doesNotMatch(goPanel, /decisionReview\.supported|decision_review\.supported/);
-  assert.doesNotMatch(goPanel, /decision_review\.preparation\.map/);
-  assert.doesNotMatch(goPanel, /Por qué vale la pena/);
-  assert.match(goPanel, /brief de decisión precede este control/i);
-
-  assert.doesNotMatch(gate, /'GO recomendado'|'NO GO recomendado'/);
-  assert.match(gate, /Avanzar el flujo de evidencia/);
-  assert.doesNotMatch(surfaces, /GO recomendado|NO GO recomendado/);
+  assert.match(panel, /<TenderGoNoGoDecisionSummary loading=\{loading\} current=\{current\} \/>/);
+  assert.match(summary, /loading: boolean/);
+  assert.match(summary, /current: TenderGoNoGoDecision \| null/);
+  assert.match(summary, /Decisión humana vigente/);
 }

@@ -39,7 +39,7 @@ assert.match(analysisSection, /const weaknesses = analysis\?\.weaknesses \?\? an
 assert.match(analysisSection, /const questions = \(analysis\?\.questions \?\? \[\]\)\.map\(normalizeQuestion\)/, 'Dudas abiertas debe consumir y normalizar las preguntas tipadas.');
 assert.match(analysisSection, /const unverified = analysis\?\.unverified \?\? analysis\?\.company_profile_crosscheck\?\.gaps \?\? \[\]/, 'Información no verificada debe degradar a brechas del perfil.');
 assert.doesNotMatch(analysisSection, /Cómo funciona/, 'La ayuda técnica redundante debe permanecer fuera de la vista operativa.');
-assert.match(decisionSource, /Responder duda|Actualizar respuesta/, 'El brief debe permitir responder cada duda de forma trazable.');
+assert.match(decisionSource, /Registrar validación|Actualizar validación/, 'El análisis debe permitir registrar o actualizar cada validación de forma trazable.');
 assert.match(decisionSource, /No autoriza GO \/ NO GO/, 'La respuesta humana no debe confundirse con una decisión GO/NO GO.');
 
 // QuestionResponseCard must not render evidenceRefs / "Referencias:".
