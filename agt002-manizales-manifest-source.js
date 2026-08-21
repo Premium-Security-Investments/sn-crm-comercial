@@ -81,8 +81,10 @@ export function selectAgt002ManizalesManifestSource({ integralContractV3, opport
   try {
     return AGT002_MANIZALES_INTEGRAL_MANIFEST_REGISTRY.select({ integralContractV3, opportunityId, process });
   } catch (error) {
-    // Preserve the exact legacy contract for the pilot delegator: an unregistered key surfaces
-    // as the Manizales pilot-scope-mismatch code/message the runtime and tests already pin.
+    // A fully unrelated (opportunity_id, proceso) never reaches this catch — the registry
+    // returns null for it, and the single canonical analysis continues without pilot context.
+    // Only a partial overlap (one field matches Manizales, the other doesn't) throws here; it
+    // surfaces as the Manizales pilot-scope-mismatch code/message the runtime and tests pin.
     if (error?.code === AGT002_MANIFEST_SOURCE_NOT_REGISTERED_CODE) {
       const scopeError = new Error('AGT-002 V3 integral está habilitado únicamente para el piloto Manizales SA-24-2026.');
       scopeError.code = 'AGT002_MANIZALES_PILOT_SCOPE_MISMATCH';

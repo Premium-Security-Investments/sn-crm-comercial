@@ -17,10 +17,13 @@ import {
 
 // Phase 9 (T3): a generic manifest registry keyed by (opportunity_id, proceso). It returns null
 // when the V3 flag is off, returns the frozen validated manifest for a registered + gate-passed
-// process, and throws a closed coded error for any unregistered key. Manizales is the ONLY
-// registered process and its selector is a compatible delegator over this registry. A process
-// whose package is not human-approved / not gate-passed / not explicitly enabled CANNOT be
-// registered at all (fail closed at construction). Nothing here touches production/network/DB.
+// process, returns null for any (opportunity_id, proceso) fully unrelated to a registration (a
+// single canonical analysis exists for every tender; no manifest applying is not an error), and
+// throws a closed coded error only when the pair partially overlaps a registration (one field
+// matches, the other doesn't — a data-inconsistency signal). Manizales is the ONLY registered
+// process and its selector is a compatible delegator over this registry. A process whose package
+// is not human-approved / not gate-passed / not explicitly enabled CANNOT be registered at all
+// (fail closed at construction). Nothing here touches production/network/DB.
 
 const MANIZALES_MANIFEST_SOURCE = JSON.parse(readFileSync(
   new URL('../data/agt002/manizales-sa-24-2026.integral-manifest.v1.json', import.meta.url), 'utf8',
@@ -57,7 +60,8 @@ function manizalesPackage(overrides = {}) {
     AGT002_MANIZALES_CHECKED_IN_MANIFEST,
   );
 
-  // Any unregistered (opportunity, proceso) => closed coded error, never a fallback.
+  // Partial overlap with a registration (one field matches, the other doesn't) => closed coded
+  // error, never a fallback — this is a data-inconsistency signal (e.g. a misrouted process).
   for (const [opportunityId, process] of [
     ['00000000-0000-4000-8000-000000000000', AGT002_INTEGRAL_MANIFEST_PROCESO],
     [AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID, 'SA-99-2099'],
@@ -67,6 +71,18 @@ function manizalesPackage(overrides = {}) {
       (error) => error?.code === AGT002_MANIFEST_SOURCE_NOT_REGISTERED_CODE,
     );
   }
+
+  // A (opportunity_id, proceso) pair fully unrelated to any registration (neither field
+  // matches) is simply out of scope for this registry => null, not an error. There is a single
+  // canonical analysis for every tender; no manifest applying must never block it.
+  assert.equal(
+    registry.select({
+      integralContractV3: true,
+      opportunityId: 'e5940854-1c50-4fbb-bea2-f18908993b29',
+      process: 'DSAJBO-SAMC-006-2026',
+    }),
+    null,
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -114,6 +130,18 @@ function manizalesPackage(overrides = {}) {
   assert.throws(
     () => selectAgt002ManizalesManifestSource({ integralContractV3: true, opportunityId: AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID, process: 'SA-99-2099' }),
     (error) => error?.code === 'AGT002_MANIZALES_PILOT_SCOPE_MISMATCH',
+  );
+
+  // Reproduces the production incident: a non-Manizales opportunity/proceso (Rama Judicial
+  // Bogotá, DSAJBO-SAMC-006-2026) with V3 active must get null (no throw) — there is a single
+  // canonical Vig-IA analysis for every tender, not a piloto-Manizales gate on the whole product.
+  assert.equal(
+    selectAgt002ManizalesManifestSource({
+      integralContractV3: true,
+      opportunityId: 'e5940854-1c50-4fbb-bea2-f18908993b29',
+      process: 'DSAJBO-SAMC-006-2026',
+    }),
+    null,
   );
 
   // The Manizales module ships a real, registered registry with exactly the pilot process.
