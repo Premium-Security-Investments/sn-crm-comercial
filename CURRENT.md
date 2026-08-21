@@ -1,6 +1,6 @@
-# CURRENT — AGT-002 Decision Front Consolidation — CHECKPOINT AUTORITATIVO (§12: CIERRE LOCAL / QA PASS)
+# CURRENT — AGT-002 Decision Front Consolidation — CHECKPOINT AUTORITATIVO (§13: PUBLICADO / QA PROD PASS)
 
-> Estado vigente al 2026-08-21: **Task 7 está CERRADA LOCALMENTE / QA PASS**. La sección autoritativa vigente es la **§12**, que **sustituye expresamente a §9–§11 para el estado de Task 7**, incluidos sus HOLD, bloqueos de QA y próximos pasos. Las secciones históricas se conservan intactas como evidencia previa. No hay autorización ni ejecución de commit, push, merge, migración, deploy o restart: los gates de publicación siguen cerrados y cualquier fase posterior requiere una orden separada.
+> Estado vigente al 2026-08-21: **AGT-002 está PUBLICADO / QA PROD PASS, sin pendientes**. La sección autoritativa vigente es la **§13**, que sustituye expresamente a §1–§12 únicamente para el estado final de publicación, QA de producción, limpieza y próximos pasos. Las secciones §1–§12 se conservan intactas como historial. El cierre documental no modifica la aplicación ni requiere redeploy.
 
 ## 1. Estado y alcance autoritativo
 
@@ -426,3 +426,29 @@ node --test tests/tender-decision-front-render.test.mjs
 
 - Mantener cerrados los gates de publicación.
 - Cualquier publicación o fase posterior requiere orden explícita y separada; no forma parte de este cierre local.
+
+## 13. Cierre autoritativo de publicación 2026-08-21 — PUBLICADO / QA PROD PASS
+
+> **Esta es la sección autoritativa vigente para el estado final de AGT-002.** Sustituye §1–§12 únicamente respecto de publicación, QA de producción, limpieza y próximos pasos; §1–§12 permanecen intactas como historial verificable.
+
+### 13.1. Publicación y rollback
+
+- PR de publicación: **#113**.
+- Merge publicado en `main`: **`a6cf4a644fdf61015020495893756cb755e2028b`**.
+- Deployment Vercel: **`dpl_Dp7TAssBg2nPZymHTd6ercfEjCr3`**, estado **Ready**.
+- Producción: **https://seguridad-nacional-crm.vercel.app**.
+- Rollback identificado y disponible: **`dpl_6oz2Qh7h28K73fMUvf4v1Q7BYTKR`**.
+- La regla de protección de `main` usada durante la publicación quedó **restaurada**.
+
+### 13.2. QA de producción y seguridad operacional
+
+- Smoke autenticado de producción: **33/33 PASS**.
+- Escrituras observadas durante QA: **0**.
+- Evidencia canónica: **`/root/.hermes/qa/agt002-prod-evidence/`**.
+- Limpieza operativa: **completa**; no quedaron artefactos temporales del proceso.
+
+### 13.3. Cierre documental
+
+- Este cambio modifica **únicamente `CURRENT.md`**.
+- Es un cierre exclusivamente documental: **sin cambios de aplicación y sin redeploy de Vercel**.
+- Estado final: **PUBLICADO / QA PROD PASS, sin pendientes**.
