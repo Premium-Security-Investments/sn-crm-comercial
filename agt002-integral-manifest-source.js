@@ -7,7 +7,10 @@
 // package fails the gate, or whose package identity disagrees with the (opportunity_id, proceso)
 // key or the manifest identity, makes the whole registry refuse to build. At selection time the
 // registry returns `null` when the V3 flag is off, the frozen validated manifest for a registered
-// key, and a closed coded error for any unregistered key — with no generic fallback, ever.
+// key, `null` for any (opportunity_id, proceso) pair that shares NEITHER field with a registration
+// (out of scope for every registered manifest — the canonical analysis proceeds without
+// pilot-specific context), and a closed coded error for a pair that shares ONE field with a
+// registration but not the other — with no generic fallback, ever.
 //
 // Manizales is the ONLY initial registration and its own module (agt002-manizales-manifest-source.js)
 // is a compatible delegator over an instance of this registry. This module is pure: no I/O, clock,
@@ -62,7 +65,7 @@ export function createAgt002IntegralManifestRegistry({ registrations, enabledPro
 
     const key = processKey(opportunityId, proceso);
     if (byKey.has(key)) failRegistration(`registración duplicada para ${key}.`);
-    byKey.set(key, { manifest, package: normalizedPackage });
+    byKey.set(key, { manifest, package: normalizedPackage, opportunityId, proceso });
   }
 
   const registeredProcesses = Object.freeze([...byKey.keys()]);
@@ -74,14 +77,25 @@ export function createAgt002IntegralManifestRegistry({ registrations, enabledPro
   function select({ integralContractV3, opportunityId, process } = {}) {
     if (integralContractV3 !== true) return null;
     const entry = byKey.get(processKey(opportunityId, process));
-    if (!entry) {
+    if (entry) return entry.manifest;
+
+    // Partial overlap with a registration (one field matches, the other doesn't) is a
+    // data-inconsistency signal, not an unrelated tender — fail closed, never a fallback.
+    const partiallyOverlaps = [...byKey.values()].some(
+      registered => registered.opportunityId === opportunityId || registered.proceso === process,
+    );
+    if (partiallyOverlaps) {
       const error = new Error(
         'AGT-002 manifest registry: proceso no registrado; V3 integral está habilitado únicamente para procesos con paquete aprobado y gate completo.',
       );
       error.code = AGT002_MANIFEST_SOURCE_NOT_REGISTERED_CODE;
       throw error;
     }
-    return entry.manifest;
+
+    // Fully unrelated (opportunity_id, proceso): out of scope for every registered manifest.
+    // There is a single canonical analysis for every tender — no manifest applying is not an
+    // error, so the canonical analysis continues without pilot-specific context.
+    return null;
   }
 
   return Object.freeze({ select, has, registeredProcesses });

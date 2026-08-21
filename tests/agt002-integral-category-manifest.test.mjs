@@ -24,7 +24,21 @@ function run() {
     ]);
   }
 
-  // 'legal' front has no real governed signal: fails closed without an explicit override.
+  // The two closed legal-policy extractors only emit these stable ids after finding the
+  // policy in an explicitly habilitating context. Their category is therefore deterministic
+  // across tenders and does not depend on the Manizales pilot or an opportunity-scoped override.
+  {
+    const manifest = [
+      { requirement_id: 'legal-rce-policy', front: 'legal' },
+      { requirement_id: 'legal-collective-life-policy', front: 'legal' },
+    ];
+    assert.deepEqual(deriveAgt002IntegralCategoryManifest(manifest), [
+      { requirement_id: 'legal-rce-policy', category: 'habilitating' },
+      { requirement_id: 'legal-collective-life-policy', category: 'habilitating' },
+    ]);
+  }
+
+  // Any other legal requirement remains ambiguous and fails closed without an explicit override.
   {
     const manifest = [{ requirement_id: 'REQ-LEGAL', front: 'legal' }];
     assert.throws(
@@ -33,7 +47,7 @@ function run() {
     );
   }
 
-  // An explicit governed override resolves it — either as a plain object or a Map.
+  // An explicit governed override resolves an otherwise-ambiguous legal requirement — either as a plain object or a Map.
   {
     const manifest = [{ requirement_id: 'REQ-LEGAL', front: 'legal' }];
     const resultObj = deriveAgt002IntegralCategoryManifest(manifest, { 'REQ-LEGAL': 'habilitating' });

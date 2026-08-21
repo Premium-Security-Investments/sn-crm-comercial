@@ -308,8 +308,9 @@ function buildV3AbstainedUnits(input) {
   }
 }
 
-// Server-owned source selection is inert with V3 off, exact for Manizales and fail-closed
-// for every non-pilot opportunity while the pilot flag is active.
+// Server-owned source selection is inert with V3 off, exact for Manizales, null for any
+// opportunity/proceso fully unrelated to the pilot (single canonical analysis, unblocked), and
+// fail-closed only when the pair partially overlaps the pilot's identity while V3 is active.
 assert.equal(selectAgt002ManizalesManifestSource({ integralContractV3: false, opportunityId: 'other', process: 'OTHER' }), null);
 assert.equal(
   selectAgt002ManizalesManifestSource({
@@ -326,6 +327,19 @@ assert.throws(
 assert.throws(
   () => selectAgt002ManizalesManifestSource({ integralContractV3: true, opportunityId: AGT002_INTEGRAL_MANIFEST_OPPORTUNITY_ID, process: 'SA-99-2099' }),
   error => error?.code === 'AGT002_MANIZALES_PILOT_SCOPE_MISMATCH',
+);
+
+// A single canonical Vig-IA analysis exists for every tender: the Manizales manifest only adds
+// context when it matches, it never gates the product. A non-Manizales opportunity/proceso with
+// V3 active (production incident: Rama Judicial Bogotá, DSAJBO-SAMC-006-2026) must resolve to
+// null — not throw — so the canonical analysis continues unblocked.
+assert.equal(
+  selectAgt002ManizalesManifestSource({
+    integralContractV3: true,
+    opportunityId: 'e5940854-1c50-4fbb-bea2-f18908993b29',
+    process: 'DSAJBO-SAMC-006-2026',
+  }),
+  null,
 );
 
 console.log('agt002-manizales-v3-manifest-wiring: OK');

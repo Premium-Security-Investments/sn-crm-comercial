@@ -1,20 +1,24 @@
 // Deterministic, traceable derivation of the AGT-002 integral v3 "category" (discard |
 // habilitating | technical | financial_execution) for each governed requirement.
 //
-// The real requirement manifest (agt002-deep-analysis-matrix.js) only ever carries
-// `front` in {legal, financial, technical}. Two of those have an honest, traceable 1:1
-// correspondence to a v3 category: 'technical' means 'technical', and 'financial' — the
-// existing financial-capacity-to-execute front — means 'financial_execution'. Neither
-// 'discard' nor 'habilitating' has any real signal in that data today, and 'legal' front
-// does not correspond unambiguously to either one. This module NEVER guesses: any
-// requirement without a direct front mapping requires an explicit, human/product-curated
-// override, or derivation fails closed rather than fabricating a category.
+// The real requirement manifest (agt002-deep-analysis-matrix.js) carries `front` in
+// {legal, financial, technical}. Technical and financial have direct mappings. Legal is
+// ambiguous by default, except for the two stable policy ids emitted by the closed extractors
+// in tender-requirement-extraction.js only when their source text is in habilitating context.
+// Those two ids therefore have a global, process-independent mapping to `habilitating`; every
+// other legal requirement still requires an explicit curated override and fails closed without
+// one. Neither evidence presence nor a model claim can create a category here.
 //
 // Audit: docs/superpowers/specs/2026-08-06-agt002-integral-analysis-v3-audit.md (gap C-3).
 
 const FRONT_CATEGORY_MAP = new Map([
   ['technical', 'technical'],
   ['financial', 'financial_execution'],
+]);
+
+const CLOSED_REQUIREMENT_CATEGORY_MAP = new Map([
+  ['legal-rce-policy', 'habilitating'],
+  ['legal-collective-life-policy', 'habilitating'],
 ]);
 
 const FORMAL_CATEGORIES = new Set(['discard', 'habilitating', 'technical', 'financial_execution']);
@@ -47,7 +51,8 @@ export function deriveAgt002IntegralCategoryManifest(requirementManifest, catego
       return { requirement_id: requirementId, category: overrideCategory };
     }
 
-    const derived = FRONT_CATEGORY_MAP.get(entry?.front);
+    const derived = CLOSED_REQUIREMENT_CATEGORY_MAP.get(requirementId)
+      ?? FRONT_CATEGORY_MAP.get(entry?.front);
     if (!derived) {
       throw new Error(
         `AGT-002 integral category manifest: el requisito ${requirementId} (front "${entry?.front}") no tiene una categoría gobernada `
