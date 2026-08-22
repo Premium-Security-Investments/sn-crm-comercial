@@ -3695,7 +3695,7 @@ app.get('/api/tender-dossier-workspace', async (req, res) => {
     const opportunityId = String(req.query.id || '');
     if (!opportunityId) throw new Error('Debe indicar la oportunidad.');
     await ensureTenderOpportunity(database, opportunityId, currentProfile);
-    res.json(await getTenderDossierWorkspace(database, opportunityId, currentProfile));
+    res.json(await getTenderDossierWorkspace(database, opportunityId, currentProfile, { workbenchEnabled: isAgt002WorkbenchApiEnabled(process.env) }));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 

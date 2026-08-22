@@ -27,7 +27,24 @@ const operator = { id: ids.actor, active: true, identity_type: 'human', role: 'c
 const custodian = { ...operator, permissions: ['licitaciones', 'licitaciones_custodia'] };
 const outsider = { id: ids.outsider, active: true, identity_type: 'human', role: 'colaborador', permissions: [] };
 
-function fakeDb(response = {}, failure = null) {
+// La corrida canónica que el servidor lee en cada POST para derivar —y sobrescribir— el
+// snapshot y los vínculos del mensaje. El body nunca es su origen.
+const canonicalRun = Object.freeze({
+  id: '10000000-0000-4000-8000-000000000030',
+  opportunity_id: ids.opportunity,
+  tender_id: '10000000-0000-4000-8000-000000000031',
+  snapshot_id: ids.snapshot,
+  producer: 'AGT-002',
+  method: 'agent_ai',
+  status: 'completed',
+  canonical: true,
+  context_version_id: null,
+  legal_corpus_version_id: null,
+  result: { questions: [] },
+  created_at: '2026-08-20T10:00:00.000Z',
+});
+
+function fakeDb(response = {}, failure = null, runs = [canonicalRun]) {
   return {
     calls: [],
     async rpc(name, args) {
@@ -36,6 +53,19 @@ function fakeDb(response = {}, failure = null) {
         data: failure ? null : (typeof response === 'function' ? response(name, args) : response),
         error: failure,
       };
+    },
+    from() {
+      const filters = {};
+      const builder = {
+        select: () => builder,
+        eq(column, value) { filters[column] = value; return builder; },
+        order: () => builder,
+        limit: count => Promise.resolve({
+          data: runs.filter(row => Object.entries(filters).every(([column, value]) => row[column] === value)).slice(0, count),
+          error: null,
+        }),
+      };
+      return builder;
     },
   };
 }
@@ -94,6 +124,10 @@ assert.equal(messageDb.calls[0].args.p_message_id, ids.message);
 assert.match(messageDb.calls[0].args.p_idempotency_key, /^[a-f0-9]{64}$/);
 assert.equal(messageDb.calls[0].args.p_contract_version, AGT002_WORKBENCH_CONTRACT_VERSION);
 assert.equal(messageDb.calls[0].args.p_policy_version, AGT002_WORKBENCH_POLICY_VERSION);
+// Snapshot y vínculos persistidos son los que derivó el servidor de la corrida canónica,
+// no los del body (que aquí llega con `context_links: []`).
+assert.equal(messageDb.calls[0].args.p_snapshot_id, canonicalRun.snapshot_id);
+assert.deepEqual(messageDb.calls[0].args.p_context_links.map(link => link.id), [canonicalRun.snapshot_id, canonicalRun.id]);
 
 const secondDb = fakeDb({ status: 'existing', job_id: ids.job });
 await postAgt002MessageApi(secondDb, messageBody, operator, enabled);

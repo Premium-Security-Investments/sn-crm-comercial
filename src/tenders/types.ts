@@ -111,6 +111,18 @@ export type TenderDossierWorkbenchMessage = {
   origin_job_id: string | null;
   created_at: string;
 };
+/**
+ * Estado del trabajo proyectado por el servidor a partir del último evento del trabajo
+ * (migración 070). `queued` está en cola (encolado o liberado tras reintento/barrido);
+ * `in_progress` está reclamado por un worker; `completed` es terminal y observable (el
+ * resultado agente quedó persistido); `failed` es terminal y es el único estado que habilita
+ * reintentar; `obsolete` es terminal por obsolescencia documental y NO es reintentable,
+ * porque el trabajo quedó congelado sobre una versión ya superada.
+ * Un evento desconocido o ausente degrada conservadoramente a `in_progress`.
+ */
+export type TenderDossierWorkbenchJobStatus = 'queued' | 'in_progress' | 'completed' | 'failed' | 'obsolete';
+/** Último evento observado del trabajo, tal como lo proyecta la lectura gobernada. */
+export type TenderDossierWorkbenchJobEventType = 'queued' | 'claimed' | 'released' | 'completed' | 'failed' | 'stale';
 export type TenderDossierWorkbenchJob = {
   id: string;
   thread_id: string;
@@ -126,6 +138,9 @@ export type TenderDossierWorkbenchJob = {
   message: string;
   requested_by: string;
   idempotency_key: string;
+  status: TenderDossierWorkbenchJobStatus;
+  latest_event_type: TenderDossierWorkbenchJobEventType | null;
+  latest_event_at: string | null;
   created_at: string;
 };
 export type TenderDossierWorkbenchRequiredAction = {
@@ -136,6 +151,9 @@ export type TenderDossierWorkbenchRequiredAction = {
   action_text: string;
   created_at: string;
 };
+export type TenderDossierWorkbenchLearningScope = 'tender' | 'entity' | 'modality_sector' | 'psi_rule';
+/** `pendiente` es el literal que proyecta el RPC mientras nadie ha decidido la propuesta. */
+export type TenderDossierWorkbenchLearningReviewStatus = 'pendiente' | 'approved' | 'rejected';
 export type TenderDossierWorkbenchLearningProposal = {
   id: string;
   job_id: string;
@@ -143,19 +161,47 @@ export type TenderDossierWorkbenchLearningProposal = {
   source_message_id: string;
   proposal_type: 'pattern' | 'preference' | 'rule' | 'source';
   proposed_rule: string;
-  requested_scope: 'tender' | 'entity' | 'modality_sector' | 'psi_rule';
+  requested_scope: TenderDossierWorkbenchLearningScope;
+  review_status: TenderDossierWorkbenchLearningReviewStatus;
+  approved_scope: TenderDossierWorkbenchLearningScope | null;
   valid_from: string;
   valid_until: string | null;
   source_links: TenderDossierWorkbenchContextLink[];
   created_at: string;
 };
+/** Sólo un aprendizaje con decisión aprobada se proyecta como política activa. */
+export type TenderDossierWorkbenchActiveLearningPolicy = {
+  proposal_id: string;
+  scope: TenderDossierWorkbenchLearningScope;
+  proposed_rule: string;
+  valid_from: string;
+  valid_until: string | null;
+  decided_at: string;
+};
+/**
+ * Referencia canónica inicial derivada por el servidor desde el último análisis canónico
+ * Vig-IA completado de la oportunidad. Es la única semilla admisible del primer mensaje de
+ * una Mesa recién abierta: el cliente nunca la construye ni puede sustituirla.
+ */
+export type TenderDossierWorkbenchReference = {
+  snapshot_id: string;
+  canonical_run_id: string;
+  tender_id: string;
+  context_version_id: string | null;
+  legal_corpus_version_id: string | null;
+  evidence_coverage: { material_omissions: boolean; omitted_count: number } | null;
+  open_questions: { id: string; text: string; critical: boolean }[];
+  context_links: TenderDossierWorkbenchContextLink[];
+};
 export type TenderDossierWorkbench = {
   enabled: true;
-  thread_id: string | null;
+  thread_id: string;
+  reference: TenderDossierWorkbenchReference;
   messages: TenderDossierWorkbenchMessage[];
   jobs: TenderDossierWorkbenchJob[];
   required_actions: TenderDossierWorkbenchRequiredAction[];
   learning_proposals: TenderDossierWorkbenchLearningProposal[];
+  active_learning_policies: TenderDossierWorkbenchActiveLearningPolicy[];
 };
 export type TenderDossierWorkbenchMessageInput = {
   opportunity_id: string;

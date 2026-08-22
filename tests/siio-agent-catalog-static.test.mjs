@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { build } from 'esbuild';
 
 async function loadModule(relativePath) {
@@ -51,19 +51,67 @@ assert.match(agt001.next_gate, /QA/, 'AGT-001 next gate must require repeating Q
 assert.match(agt001.next_gate, /roles/i, 'AGT-001 next gate must require QA authenticated by roles');
 
 const agt002 = SIIO_AGENT_CATALOG.find(agent => agent.id === 'AGT-002');
-assert.match(agt002.production_capability, /drain|timer/i, 'AGT-002 productive capability must disclose that drain/timer remain off');
-assert.match(agt002.development_status, /v3/i, 'AGT-002 development status must name the v3 contract still outside production');
-assert.doesNotMatch(agt002.production_capability, /v3/i, 'AGT-002 productive capability must never claim v3 as productive');
-assert.match(agt002.development_status, /no desplegado|fuera de producci[oó]n/i, 'AGT-002 development status must explicitly disclose v3 is not in production');
-assert.match(agt002.development_status, /not ready/i, 'AGT-002 development status must explicitly disclose v3 is not ready for a real canary');
 
-assert.match(agt002.current_capability, /E5\/E6/, 'AGT-002 current capability must name the productive E5/E6 capacity, not a generic feature list');
-assert.match(agt002.current_capability, /drain|timer/i, 'AGT-002 current capability must disclose that drain/timer remain off for the productive branch');
-assert.doesNotMatch(agt002.current_capability, /v3/i, 'AGT-002 current capability must never claim the v3 branch as productive');
-assert.match(agt002.next_gate, /v3/i, 'AGT-002 next gate must name the v3 branch gate, not just a legacy RUP closure');
-assert.match(agt002.next_gate, /not ready/i, 'AGT-002 next gate must disclose the v3 canary is NOT READY');
-assert.match(agt002.next_gate, /gate humano|canary/i, 'AGT-002 next gate must name the pending human gate/canary for v3');
-assert.doesNotMatch(agt002.next_gate, /^Cerrar prueba RUP heredada/, 'AGT-002 next gate must not reduce to only closing the legacy RUP test');
+// Governed identity and permissions survive the post-GO activation untouched.
+assert.equal(agt002.name, 'Vig-IA Licitaciones', 'AGT-002 must keep its visible Vig-IA Licitaciones identity');
+assert.equal(agt002.human_review_required, true, 'AGT-002 must keep mandatory human review');
+assert.equal(agt002.can_write_production, false, 'AGT-002 must never gain autonomous production writes');
+assert.ok(
+  agt002.permitted_actions.includes('Preparar insumos y matriz para decisión humana GO/NO GO'),
+  'AGT-002 must keep preparing inputs for the human GO/NO GO decision',
+);
+for (const forbidden of ['Decidir, aprobar o registrar GO/NO GO', 'Presentar ofertas', 'Firmar documentos']) {
+  assert.ok(agt002.forbidden_actions.includes(forbidden), `AGT-002 must keep forbidding: ${forbidden}`);
+}
+
+// Declared state as of the activation cutoff. The pre-GO chain is genuinely productive; the
+// post-GO Mesa is gated by a server-side runtime switch, so the catalog may only claim it as
+// available under controlled activation. That sentence stays true on both sides of a kill
+// switch flip — a "continuous production" claim would become false the moment it is turned off.
+assert.equal(agt002.state_as_of, '2026-08-22', 'AGT-002 state cutoff must be the post-GO activation date');
+assert.match(agt002.current_capability, /producci[oó]n|productiva/i, 'AGT-002 current capability must be stated as a production capability');
+assert.match(agt002.current_capability, /an[aá]lisis can[oó]nico pre-GO/i, 'AGT-002 current capability must name the canonical pre-GO analysis');
+assert.match(agt002.current_capability, /GO humano/i, 'AGT-002 current capability must name the human GO');
+assert.match(agt002.current_capability, /expediente/i, 'AGT-002 current capability must name the dossier');
+assert.match(agt002.current_capability, /Mesa Vig-IA Licitaciones post-GO/i, 'AGT-002 current capability must name the post-GO Mesa under its full visible identity');
+
+for (const [field, value] of [['current_capability', agt002.current_capability], ['production_capability', agt002.production_capability]]) {
+  assert.match(value, /activaci[oó]n controlada/i, `AGT-002 ${field} must describe the post-GO Mesa as available under controlled activation`);
+  assert.doesNotMatch(value, /post-GO continua|continua en producci[oó]n/i,
+    `AGT-002 ${field} must not promise the post-GO Mesa as a continuously running production service`);
+}
+assert.match(agt002.production_capability, /no como servicio continuo garantizado/i,
+  'AGT-002 productive capability must say outright that the post-GO Mesa is not a guaranteed continuous service');
+
+assert.match(agt002.next_gate, /primer caso real post-GO/i, 'AGT-002 next gate must be the first real post-GO case');
+assert.match(agt002.next_gate, /evaluaci[oó]n humana/i, 'AGT-002 next gate must remain a human evaluation');
+assert.match(agt002.next_gate, /Juan/, 'AGT-002 next gate must name Juan as the human evaluator');
+assert.doesNotMatch(agt002.next_gate, /\d/, 'AGT-002 next gate must not embed a volatile opportunity number or date');
+
+// Only the specifically obsolete claims are banned: the undeployed-branch framing and the
+// NOT READY verdict. Words like "drain" or "timer" are not forbidden — a future truthful
+// statement about the drain or its timer must remain expressible.
+for (const field of ['current_capability', 'next_gate', 'production_capability', 'development_status']) {
+  assert.doesNotMatch(agt002[field], /not ready/i, `AGT-002 ${field} must not resurrect the NOT READY claim`);
+  assert.doesNotMatch(agt002[field], /en rama|sin desplegar|no desplegad/i, `AGT-002 ${field} must not claim the capability still lives on an undeployed branch`);
+}
+assert.doesNotMatch(catalog, /NOT READY/i, 'the catalog source must not reintroduce the NOT READY verdict');
+assert.doesNotMatch(catalog, /permanece en rama sin desplegar/i, 'the catalog source must not reintroduce the undeployed-branch claim');
+
+// The declared source must be stable and checkable, not a branch that no longer describes the program.
+assert.doesNotMatch(agt002.state_source, /feat\/agt002-v3-foundations/, 'AGT-002 state source must not point at the stale v3 foundations branch');
+assert.doesNotMatch(agt002.state_source, /\bfeat\/|\bbranch\b|\brama\b/i, 'AGT-002 state source must not be a branch reference');
+const agt002StateSourceDoc = agt002.state_source.match(/docs\/[^\s]+\.md/)?.[0];
+assert.equal(
+  agt002StateSourceDoc,
+  'docs/plans/2026-07-29-agt002-vigia-analysis-improvement-program.md',
+  'AGT-002 state source must cite the governed program plan',
+);
+assert.ok(
+  existsSync(new URL(`../${agt002StateSourceDoc}`, import.meta.url)),
+  `AGT-002 state source must cite a document that exists in the repo: ${agt002StateSourceDoc}`,
+);
+assert.match(agt002.state_source, /verificaci[oó]n productiva/i, 'AGT-002 state source must also cite the productive verification');
 
 for (const marker of ['Capacidad productiva', 'Desarrollo / no desplegado', 'Corte', 'Fuente']) {
   assert.match(agentsView, new RegExp(marker), `agents view must render ${marker}`);
