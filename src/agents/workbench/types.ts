@@ -3,6 +3,7 @@ export type AgentWorkbenchCapability = 'message' | 'attach' | 'draft' | 'review'
 export type AgentWorkbenchConfig = {
   visibleAgentName: string;
   subtitle: string;
+  workbenchTitle: string;
   contextLabel: string;
   capabilities: readonly AgentWorkbenchCapability[];
   humanReviewRequired: true;
@@ -18,9 +19,21 @@ export type AgentWorkbenchMessage = {
   createdAt: string;
 };
 
+/**
+ * Estado del trabajo tal como el adaptador lo recibe del servidor. Sólo `failed` es un
+ * estado terminal reintentable: el shell nunca ofrece reintentar sobre `queued`, sobre
+ * `in_progress`, sobre `completed` ni sobre `obsolete`.
+ *
+ * `obsolete` es terminal y NO reintentable a propósito: el trabajo quedó atado a una versión
+ * documental que ya fue superada, y como el trabajo es inmutable, repetirlo volvería a quedar
+ * obsoleto siempre. La recuperación real es pedirlo de nuevo sobre la versión vigente.
+ */
+export type AgentWorkbenchJobStatus = 'queued' | 'in_progress' | 'completed' | 'failed' | 'obsolete';
+
 export type AgentWorkbenchJob = {
   id: string;
   summary: string;
+  status: AgentWorkbenchJobStatus;
   createdAt: string;
 };
 
@@ -43,12 +56,27 @@ export type AgentWorkbenchArtifact = {
   createdAt: string;
 };
 
+/**
+ * `decided` es la verdad de la revisión humana: una vez decidida, la propuesta ya no ofrece
+ * botones y muestra su resultado. `approvedScope` sólo existe cuando la decisión fue aprobar.
+ */
+export type AgentWorkbenchLearningDecision = 'approved' | 'rejected';
+
 export type AgentWorkbenchLearningProposal = {
   id: string;
   proposedRule: string;
   scope: string;
   createdAt: string;
   decided: boolean;
+  decision: AgentWorkbenchLearningDecision | null;
+  approvedScope: string | null;
+};
+
+export type AgentWorkbenchActiveLearningPolicy = {
+  id: string;
+  rule: string;
+  scope: string;
+  decidedAt: string;
 };
 
 export type AgentWorkbenchWorkspace = {
@@ -58,6 +86,7 @@ export type AgentWorkbenchWorkspace = {
   requiredActions: readonly AgentWorkbenchRequiredAction[];
   artifacts: readonly AgentWorkbenchArtifact[];
   learningProposals: readonly AgentWorkbenchLearningProposal[];
+  activeLearningPolicies: readonly AgentWorkbenchActiveLearningPolicy[];
 };
 
 export type AgentWorkbenchHandlers = {

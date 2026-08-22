@@ -107,12 +107,22 @@ function canApprove(currentProfile) {
   }
 }
 
-export async function getTenderDossierWorkspace(database, opportunityId, currentProfile) {
+/**
+ * `options.workbenchEnabled` es la única fuente de activación de la Mesa Vig-IA y debe
+ * resolverla el servidor (gate de runtime) en cada solicitud. Fail-closed: sin la opción,
+ * o con cualquier valor que no sea el booleano `true`, la mesa queda apagada. El valor
+ * homónimo que pueda venir de la BD o del cliente se descarta siempre.
+ */
+export async function getTenderDossierWorkspace(database, opportunityId, currentProfile, options = {}) {
   const id = requireUuid(opportunityId, 'una oportunidad válida');
   requireOperationalAccess(currentProfile);
   const workspace = await rpc(database, 'psi_get_tender_dossier_workspace', { p_opportunity_id: id });
   const ready = workspace?.readiness?.ready === true;
-  return { ...(workspace || {}), can_mark_ready: ready && canApprove(currentProfile), workbench_enabled: false };
+  return {
+    ...(workspace || {}),
+    can_mark_ready: ready && canApprove(currentProfile),
+    workbench_enabled: options?.workbenchEnabled === true,
+  };
 }
 
 export async function callCreateTenderDossierItem(database, input, currentProfile) {

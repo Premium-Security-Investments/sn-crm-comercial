@@ -90,10 +90,49 @@ await (async function readsWorkspaceAndComputesManagerGate() {
   assert.equal(commercialWorkspace.can_mark_ready, false);
 })();
 
-await (async function workbenchEnabledFlagIsServerLiteral() {
-  const db = fakeDb(() => ({ checklist: [], artifacts: [], readiness: { ready: true }, workbench_enabled: true }));
-  const workspace = await getTenderDossierWorkspace(db, OPP, director);
-  assert.equal(workspace.workbench_enabled, false, 'workbench_enabled debe ser un literal del servidor, no de la BD ni del cliente');
+await (async function workbenchEnabledIsFailClosedServerOption() {
+  const ok = () => ({ checklist: [], artifacts: [], readiness: { ready: true } });
+  const dbSaysOn = () => ({ ...ok(), workbench_enabled: true });
+
+  // Sin opción explícita del servidor la mesa queda apagada.
+  assert.equal((await getTenderDossierWorkspace(fakeDb(ok), OPP, director)).workbench_enabled, false, 'sin opción explícita debe quedar apagada');
+  assert.equal((await getTenderDossierWorkspace(fakeDb(ok), OPP, director, {})).workbench_enabled, false, 'una opción vacía no enciende la mesa');
+
+  // Ni la BD ni un `false` explícito pueden encenderla.
+  assert.equal(
+    (await getTenderDossierWorkspace(fakeDb(dbSaysOn), OPP, director)).workbench_enabled,
+    false,
+    'workbench_enabled debe ser un literal del servidor, no de la BD ni del cliente',
+  );
+  assert.equal((await getTenderDossierWorkspace(fakeDb(dbSaysOn), OPP, director, { workbenchEnabled: false })).workbench_enabled, false);
+
+  // Sólo un `true` literal pasado por el servidor la enciende.
+  assert.equal((await getTenderDossierWorkspace(fakeDb(ok), OPP, director, { workbenchEnabled: true })).workbench_enabled, true);
+  assert.equal(
+    (await getTenderDossierWorkspace(fakeDb(dbSaysOn), OPP, director, { workbenchEnabled: true })).workbench_enabled,
+    true,
+    'el gate del servidor manda incluso cuando la BD también dice true',
+  );
+
+  // Valores truthy no booleanos no bastan (fail-closed estricto).
+  for (const truthy of ['true', 1, {}, 'agt002_workbench_bridge_v1']) {
+    assert.equal(
+      (await getTenderDossierWorkspace(fakeDb(ok), OPP, director, { workbenchEnabled: truthy })).workbench_enabled,
+      false,
+      `un valor truthy no booleano (${JSON.stringify(truthy)}) no debe encender la mesa`,
+    );
+  }
+
+  // Encender la mesa no altera permisos ni la revisión humana existente.
+  const commercialWorkspace = await getTenderDossierWorkspace(fakeDb(ok), OPP, commercial, { workbenchEnabled: true });
+  assert.equal(commercialWorkspace.can_mark_ready, false, 'el gate de la mesa no debe alterar can_mark_ready');
+  const denied = fakeDb(ok);
+  await assert.rejects(
+    () => getTenderDossierWorkspace(denied, OPP, outsider, { workbenchEnabled: true }),
+    error => error?.status === 403,
+    'el gate de la mesa no debe saltarse el control de acceso',
+  );
+  assert.equal(denied.calls.length, 0, 'el permiso se verifica antes de tocar la BD');
 })();
 
 await (async function noAplicaRequiresManagerBeforeDb() {
@@ -178,6 +217,20 @@ await (async function backendsRegisterSevenRoutesWithParity() {
     "app.post('/api/tender-dossier-seed'",
   ];
   for (const route of routes) assert.ok(server.includes(route), `falta ruta ${route}`);
+
+  // La activación de la mesa es una decisión del servidor evaluada por solicitud:
+  // la ruta debe pasar el gate exacto de runtime, nunca la BD, el cliente ni la query.
+  assert.match(
+    server,
+    /getTenderDossierWorkspace\(database, opportunityId, currentProfile, \{ workbenchEnabled: isAgt002WorkbenchApiEnabled\(process\.env\) \}\)/,
+    'la ruta de workspace debe pasar isAgt002WorkbenchApiEnabled(process.env) como gate del servidor',
+  );
+  const workspaceRouteIndex = server.indexOf("app.get('/api/tender-dossier-workspace'");
+  const workspaceRoute = server.slice(workspaceRouteIndex, server.indexOf("app.post('/api/tender-dossier-item'", workspaceRouteIndex));
+  assert.doesNotMatch(workspaceRoute, /workbench_enabled/, 'la ruta no debe reenviar workbench_enabled de la BD ni del cliente');
+  assert.doesNotMatch(workspaceRoute, /req\.(query|body|headers)[^)]*workbench/i, 'la ruta no debe leer el gate del cliente');
+  assert.doesNotMatch(workspaceRoute, /localStorage|process\.env\.AGT002_WORKBENCH_RUNTIME/, 'el gate debe consumirse por el helper del runtime, no reimplementado');
+
   for (const eventType of ['dossier_seeded', 'dossier_artifact_approved', 'offer_ready_for_submission']) {
     assert.match(server, new RegExp(`TENDER_BUSINESS_EVENT_TYPES[\\s\\S]*?'${eventType}'`), `${eventType} debe estar visible en el historial comercial`);
   }

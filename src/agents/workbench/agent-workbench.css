@@ -12,8 +12,16 @@
 .agent-workbench-message strong{font-size:12px}
 .agent-workbench-message p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
 .agent-workbench-jobs{display:grid;gap:6px;margin:0;padding:0;list-style:none}
-.agent-workbench-jobs li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px;border-radius:10px;background:#fffbeb;border:1px solid #fde68a;font-size:12px}
+.agent-workbench-jobs li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px;border-radius:10px;background:#f4f7fb;border:1px solid #dbe7f5;font-size:12px}
 .agent-workbench-jobs li>span{min-width:0;overflow-wrap:anywhere}
+.agent-workbench-job-status{flex:0 0 auto;padding:2px 8px;border-radius:999px;font-weight:800;font-size:11px;letter-spacing:.03em;background:#eaf1fb;color:#1d3a63}
+.agent-workbench-job-completed{background:#f0fdf4;border-color:#bbf7d0}
+.agent-workbench-job-completed .agent-workbench-job-status{background:#dcfce7;color:#166534}
+.agent-workbench-job-failed{background:#fef2f2;border-color:#fecaca}
+.agent-workbench-job-failed .agent-workbench-job-status{background:#fee2e2;color:#991b1b}
+.agent-workbench-job-obsolete{background:#fffbeb;border-color:#fde68a}
+.agent-workbench-job-obsolete .agent-workbench-job-status{background:#fef3c7;color:#92400e}
+.agent-workbench-job-hint{flex:1 1 100%;font-size:11px}
 .agent-workbench-composer{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end}
 .agent-workbench-composer textarea{box-sizing:border-box;width:100%;min-height:64px;resize:vertical;border:1px solid #d5e0ef;border-radius:10px;padding:9px;color:#10213d}
 .agent-workbench-context ul,.agent-workbench-actions ul{margin:0;padding-left:18px;color:#40516b}
@@ -21,5 +29,11 @@
 .agent-workbench-artifacts>ul,.agent-workbench-learning>ul{display:grid;gap:8px;margin:0;padding:0;list-style:none}
 .agent-workbench-review-actions{display:flex;gap:8px;margin-top:6px}
 .agent-workbench-learning{display:grid;gap:8px;margin-top:6px;padding-top:10px;border-top:1px dashed #dbe7f5}
+.agent-workbench-learning li{min-width:0;overflow-wrap:anywhere}
+.agent-workbench-learning-state{display:inline-block;margin-top:6px;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:800;background:#eaf1fb;color:#1d3a63}
+.agent-workbench-learning-state-approved{background:#dcfce7;color:#166534}
+.agent-workbench-learning-state-rejected{background:#fee2e2;color:#991b1b}
+.agent-workbench-learning-policies li{padding:8px 10px;border-radius:10px;background:#f0fdf4;border:1px solid #bbf7d0}
+.agent-workbench-learning-policies p{margin:0}
 .agent-workbench-footer{padding:10px 12px;border-radius:10px;background:#fef3c7;color:#7c5a06;font-size:12px;font-weight:600}
 @media(max-width:640px){.agent-workbench{padding:12px}.agent-workbench-composer{grid-template-columns:minmax(0,1fr)}.agent-workbench-composer button{width:100%}.agent-workbench-jobs li{align-items:stretch;flex-direction:column}.agent-workbench-jobs button{width:100%}.agent-workbench-review-actions{align-items:stretch;flex-direction:column}.agent-workbench-review-actions button{width:100%}}

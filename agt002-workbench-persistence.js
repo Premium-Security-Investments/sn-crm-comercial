@@ -70,6 +70,54 @@ export function getAgt002Workbench(database, { opportunityId, actorId }) {
   });
 }
 
+// Arranque idempotente del hilo de la Mesa. El RPC existente (migración 045) toma el
+// advisory lock por oportunidad, reafirma el permiso del actor y la decisión GO en la
+// base, y devuelve el hilo abierto o crea el único que puede existir. Nunca se llama con
+// argumentos abiertos: un extra aquí sería una clave que el RPC no gobierna.
+export function getOrCreateAgt002WorkbenchThread(database, input) {
+  assertExactKeys(input, ['opportunityId', 'actorId'], 'hilo de la Mesa');
+  return rpc(database, 'psi_get_or_create_agt002_workbench_thread', {
+    p_opportunity_id: input.opportunityId,
+    p_actor_id: input.actorId,
+  });
+}
+
+const CANONICAL_RUN_COLUMNS = [
+  'id', 'opportunity_id', 'tender_id', 'snapshot_id', 'producer', 'method', 'status',
+  'canonical', 'context_version_id', 'legal_corpus_version_id', 'result', 'created_at',
+].join(',');
+
+/**
+ * Latest completed canonical AGT-002 analysis run of an opportunity — the only admissible
+ * origin of a fresh Mesa's initial reference. Every discriminating condition (producer,
+ * method, status, canonical) is applied in the query, so a non-canonical, failed or
+ * rule-based run can never be returned and then filtered away by a caller. Returns null
+ * when the opportunity has none; the caller decides how to fail closed.
+ */
+export async function getLatestCanonicalAgt002AnalysisRun(database, input) {
+  assertExactKeys(input, ['opportunityId'], 'análisis canónico');
+  if (!database || typeof database.from !== 'function') throw new TypeError('database.from es obligatorio.');
+  const response = await database.from('psi_tender_analysis_runs')
+    .select(CANONICAL_RUN_COLUMNS)
+    .eq('opportunity_id', input.opportunityId)
+    .eq('producer', 'AGT-002')
+    .eq('method', 'agent_ai')
+    .eq('status', 'completed')
+    .eq('canonical', true)
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(1);
+  if (response?.error) {
+    const failure = new Error(response.error.message || 'No fue posible leer el análisis canónico Vig-IA.');
+    for (const key of ['code', 'details', 'hint']) {
+      if (response.error[key] !== undefined) failure[key] = response.error[key];
+    }
+    throw failure;
+  }
+  const row = Array.isArray(response?.data) ? response.data[0] : response?.data;
+  return row || null;
+}
+
 export function retryAgt002WorkbenchJob(database, input) {
   assertExactKeys(input, ['opportunityId', 'actorId', 'jobId'], 'retry');
   return rpc(database, 'psi_retry_agt002_workbench_job', {
