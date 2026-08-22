@@ -73,7 +73,7 @@ assert.match(
 const visibleTenderName = identity.match(/tenders:\s*'([^']+)'/)?.[1];
 const visibleSubtitle = adapter.match(/subtitle:\s*'([^']+)'/)?.[1];
 const visibleTitle = adapter.match(/workbenchTitle:\s*'([^']+)'/)?.[1];
-assert.equal(visibleTitle, 'Mesa Vig-IA Licitaciones', 'el título visible de la mesa debe ser exactamente "Mesa Vig-IA Licitaciones"');
+assert.equal(visibleTitle, 'Mesa de ayuda', 'el título visible de la mesa debe ser exactamente "Mesa de ayuda"');
 assert.equal(
   `${visibleTenderName} · ${visibleSubtitle}`,
   'Vig-IA Licitaciones · Preparación de oferta',
@@ -126,7 +126,10 @@ assert.match(
 assert.doesNotMatch(adapter, /AGT-002/i, 'el adapter no debe exponer AGT-002 en copy visible');
 assert.match(adapter, /visibleAgentName:\s*VIGIA_VISIBLE_NAMES\.tenders,/);
 assert.match(adapter, /subtitle:\s*'Preparación de oferta',/);
-assert.match(adapter, /workbenchTitle:\s*'Mesa Vig-IA Licitaciones',/);
+assert.match(adapter, /workbenchTitle:\s*'Mesa de ayuda',/);
+// El título deja de repetir la identidad del agente: ésa ya la dice el eyebrow, que sigue
+// siendo "Vig-IA Licitaciones · Preparación de oferta" y se verifica arriba.
+assert.doesNotMatch(adapter, /workbenchTitle:\s*'Mesa Vig-IA Licitaciones',/, 'el título anterior debe desaparecer');
 assert.match(adapter, /visibleAuthorName:\s*message\.author_kind\s*===\s*'agent'[\s\S]*?VIGIA_DOSSIER_CONFIG\.visibleAgentName/);
 assert.doesNotMatch(adapter, /visibleAuthorName:\s*message\.visible_agent_name,/);
 assert.doesNotMatch(adapter, /visibleAgentName:\s*['"]Vig-IA['"],/);
