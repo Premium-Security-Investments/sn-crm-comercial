@@ -434,13 +434,13 @@ function fakeDatabase({ onRpc } = {}) {
         select() { return this; },
         eq(column, value) { assert.equal(column, 'idempotency_key'); assert.equal(value, 'present-key'); return this; },
         async maybeSingle() {
-          return { data: { id: ids.run, snapshot_id: ids.snapshot, producer: 'AGT-002', method: 'agent_ai', status: 'completed', result: { recommendation: 'pause' }, critical_open_count: 1, created_at: '2026-07-26T00:00:00.000Z', completed_at: '2026-07-26T00:00:01.000Z' }, error: null };
+          return { data: { id: ids.run, opportunity_id: ids.opportunity, snapshot_id: ids.snapshot, producer: 'AGT-002', method: 'agent_ai', status: 'completed', result: { recommendation: 'pause' }, critical_open_count: 1, created_at: '2026-07-26T00:00:00.000Z', completed_at: '2026-07-26T00:00:01.000Z' }, error: null };
         },
       };
     },
   };
   const row = await findAgt002PreviewRun(found, 'present-key');
-  assert.deepEqual(row, { run_id: ids.run, snapshot_id: ids.snapshot, producer: 'AGT-002', method: 'agent_ai', status: 'completed', current: true, result: { recommendation: 'pause' }, critical_open_count: 1, created_at: '2026-07-26T00:00:00.000Z', completed_at: '2026-07-26T00:00:01.000Z' });
+  assert.deepEqual(row, { run_id: ids.run, opportunity_id: ids.opportunity, snapshot_id: ids.snapshot, producer: 'AGT-002', method: 'agent_ai', status: 'completed', current: true, result: { recommendation: 'pause' }, critical_open_count: 1, created_at: '2026-07-26T00:00:00.000Z', completed_at: '2026-07-26T00:00:01.000Z' });
 
   const filters = [];
   const canonicalFound = {
