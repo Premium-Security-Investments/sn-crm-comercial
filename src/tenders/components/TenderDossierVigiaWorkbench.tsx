@@ -8,7 +8,7 @@ import type { TenderDossierWorkbench, TenderRequest } from '../types';
 const VIGIA_DOSSIER_CONFIG = Object.freeze({
   visibleAgentName: VIGIA_VISIBLE_NAMES.tenders,
   subtitle: 'Preparación de oferta',
-  workbenchTitle: 'Mesa Vig-IA Licitaciones',
+  workbenchTitle: 'Mesa de ayuda',
   contextLabel: 'Expediente activo',
   capabilities: ['message', 'attach', 'draft', 'review', 'learning'],
   humanReviewRequired: true,

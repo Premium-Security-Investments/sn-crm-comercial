@@ -64,6 +64,12 @@ for (const forbidden of ['Decidir, aprobar o registrar GO/NO GO', 'Presentar ofe
   assert.ok(agt002.forbidden_actions.includes(forbidden), `AGT-002 must keep forbidding: ${forbidden}`);
 }
 
+// The visible channel must name the surface exactly as the workbench header does, so the
+// catalog and the UI never call the same place two different things.
+assert.equal(agt002.channel, 'Oportunidades / Mesa de ayuda', 'AGT-002 visible channel must name the post-GO surface as "Mesa de ayuda"');
+assert.notEqual(agt002.channel, 'Oportunidades / Mesa Vig-IA Licitaciones', 'AGT-002 must not resurrect the former visible channel');
+assert.doesNotMatch(agt002.channel, /Mesa Vig-IA Licitaciones/i, 'AGT-002 visible channel must not resurrect the former post-GO surface name');
+
 // Declared state as of the activation cutoff. The pre-GO chain is genuinely productive; the
 // post-GO Mesa is gated by a server-side runtime switch, so the catalog may only claim it as
 // available under controlled activation. That sentence stays true on both sides of a kill
@@ -73,9 +79,12 @@ assert.match(agt002.current_capability, /producci[oó]n|productiva/i, 'AGT-002 c
 assert.match(agt002.current_capability, /an[aá]lisis can[oó]nico pre-GO/i, 'AGT-002 current capability must name the canonical pre-GO analysis');
 assert.match(agt002.current_capability, /GO humano/i, 'AGT-002 current capability must name the human GO');
 assert.match(agt002.current_capability, /expediente/i, 'AGT-002 current capability must name the dossier');
-assert.match(agt002.current_capability, /Mesa Vig-IA Licitaciones post-GO/i, 'AGT-002 current capability must name the post-GO Mesa under its full visible identity');
 
+// The post-GO surface is named for what the user sees in the workbench header — "Mesa de
+// ayuda" — not for the agent identity, which the eyebrow already carries.
 for (const [field, value] of [['current_capability', agt002.current_capability], ['production_capability', agt002.production_capability]]) {
+  assert.match(value, /Mesa de ayuda post-GO/i, `AGT-002 ${field} must name the post-GO surface as "Mesa de ayuda"`);
+  assert.doesNotMatch(value, /Mesa Vig-IA Licitaciones/i, `AGT-002 ${field} must not resurrect the former post-GO surface name`);
   assert.match(value, /activaci[oó]n controlada/i, `AGT-002 ${field} must describe the post-GO Mesa as available under controlled activation`);
   assert.doesNotMatch(value, /post-GO continua|continua en producci[oó]n/i,
     `AGT-002 ${field} must not promise the post-GO Mesa as a continuously running production service`);
