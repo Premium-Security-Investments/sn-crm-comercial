@@ -374,7 +374,7 @@ export async function countAgt002PreviewRunsToday(database, { now = () => new Da
 export async function findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly = false } = {}) {
   const key = requireId(idempotencyKey, 'La clave de idempotencia');
   let query = database.from('psi_tender_analysis_runs')
-    .select(`id,snapshot_id,producer,method,status,result,critical_open_count,created_at,completed_at${canonicalOnly ? ',canonical' : ''}`)
+    .select(`id,opportunity_id,snapshot_id,producer,method,status,result,critical_open_count,created_at,completed_at${canonicalOnly ? ',canonical' : ''}`)
     .eq('idempotency_key', key);
   const response = await query.maybeSingle();
   if (response?.error) throw new Error(response.error.message || String(response.error));
@@ -382,6 +382,7 @@ export async function findAgt002PreviewRun(database, idempotencyKey, { canonical
   if (!row) return null;
   return {
     run_id: row.id,
+    opportunity_id: row.opportunity_id,
     snapshot_id: row.snapshot_id,
     producer: row.producer,
     method: row.method,

@@ -399,12 +399,10 @@ export type TenderManifestUnresolvedEntry = {
   status: 'unresolved_visible';
   human_review_required: true;
 };
-// AGT-002 Manizales decision-review presentation (optional, read-only, single pinned production
-// artifact — see tender-analysis-foundation.js): a human-curated review that the server attaches
-// ONLY for the exact governed opportunity+run it was authored against. Replaces the raw 20-item
-// v2 question projection with 2 real decision_questions in the UI; everything else (preparation,
-// supported, not_applicable, blockers) is presentational, never an answerable question. A SIBLING
-// of manifest_unresolved_entries/integral_analysis, never nested inside either.
+// AGT-002 decision-review presentation (optional, read-only — see
+// tender-analysis-foundation.js). The pinned Manizales exercise keeps its curated fixture;
+// operational canonical runs receive a server-derived generic projection. Both are siblings of
+// manifest_unresolved_entries/integral_analysis and never replace or mutate the canonical result.
 export type TenderDecisionReviewEvidenceRef =
   | { type: 'registry_citation'; item_ref: string; sub_item_id: string; char_start: number }
   | { type: 'manifest_requirement'; requirement_id: string }
@@ -442,7 +440,7 @@ export type TenderDecisionReviewFindingSource = {
 export type TenderDecisionReview = {
   artifact_type: string;
   contract_version: string;
-  source_fixture_version: number;
+  source_fixture_version?: number;
   opportunity_id: string;
   human_approval_required: true;
   decision_status: 'pending_human_decision';
@@ -451,7 +449,7 @@ export type TenderDecisionReview = {
   external_communications_allowed: false;
   evidence_requests_allowed: true;
   review_findings: TenderDecisionReviewFindingSource[];
-  exercise_mode: { active: true; bypassed_requirement_ids: string[] };
+  exercise_mode: { active: boolean; bypassed_requirement_ids: string[] };
   recommendation: string;
   blockers: TenderDecisionReviewFinding[];
   decision_questions: TenderDecisionReviewFinding[];

@@ -8,6 +8,7 @@ import {
 } from './agt002-manizales-manifest-wiring.js';
 import { validateAgt002ManifestScope } from './agt002-tender-adapter.js';
 import { deriveAgt002ManizalesExerciseDecisionReview } from './agt002-manizales-exercise-decision-review.js';
+import { deriveAgt002GenericDecisionReview } from './agt002-generic-decision-review.js';
 
 const RULES_PRODUCER = 'siio_rules_v1';
 const RULES_METHOD = 'rules';
@@ -354,7 +355,8 @@ export function presentCurrentTenderAnalysis(currentAnalysis) {
     && integralAnalysisAlignedWithManizalesAnalyzableIds(result.integral_analysis)
     ? MANIZALES_PILOT_UNRESOLVED_MANIFEST_ENTRIES
     : null;
-  const decisionReview = deriveManizalesDecisionReviewIfEligible(currentAnalysis, result);
+  const decisionReview = deriveManizalesDecisionReviewIfEligible(currentAnalysis, result)
+    ?? deriveAgt002GenericDecisionReview(currentAnalysis, result);
   return {
     ...result,
     run_id: currentAnalysis.run_id,
