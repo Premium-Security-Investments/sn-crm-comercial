@@ -682,6 +682,8 @@ assert.throws(
 assert.match(AGT002_INTEGRAL_V3_POLICY, /tender_requirement[^.]*category[^.]*null[^.]*evidence_state[^.]*null/i);
 assert.match(AGT002_INTEGRAL_V3_POLICY, /evidence_state_governed[^.]*conclusi[oó]n/i);
 assert.match(AGT002_INTEGRAL_V3_POLICY, /strategic_consideration[^.]*strategic[^.]*evidence_state/i);
+assert.match(AGT002_INTEGRAL_V3_POLICY, /milestone[^.]*status "verified"[^.]*at[^.]*source_ref[^.]*no nulos/i);
+assert.match(AGT002_INTEGRAL_V3_POLICY, /milestone[^.]*status "not_identified"[^.]*at[^.]*source_ref[^.]*null/i);
 {
   const v3ContextV2Sections = {
     ...buildAgt002OpportunityContextV2({

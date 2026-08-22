@@ -233,6 +233,7 @@ assert.throws(
   assert.deepEqual(capturedOptions.categoryOverrides, categoryOverrides);
   assert.equal(capturedOptions.manizalesManifestSource, manizalesManifestSource, 'the runtime must forward the exact server-owned manifest source to the engine');
   assert.equal(capturedOptions.policyText, AGT002_INTEGRAL_V3_POLICY, 'V3 runtime must use the V3 wire policy, never the legacy preview policy');
+  assert.equal(AGT002_INTEGRAL_V3_POLICY_VERSION, 'agt002-integral-v3-policy-v3', 'material milestone instructions require a distinct persisted policy version');
   assert.equal(capturedOptions.policyVersion, AGT002_INTEGRAL_V3_POLICY_VERSION, 'persisted policy version must identify the V3 policy actually used');
   assert.notEqual(capturedOptions.policyText, AGT002_PREVIEW_POLICY);
   assert.notEqual(capturedOptions.policyVersion, AGT002_PREVIEW_DEFAULT_POLICY_VERSION);

@@ -62,6 +62,7 @@ export const AGT002_INTEGRAL_V3_POLICY = [
   'Nunca uses estados definitivos como "compliant", "sufficient" o "approved": toda conclusión favorable queda pendiente de validación humana.',
   'Cita jurídica exclusivamente desde el corpus jurídico publicado recibido; si no hay corpus o la fuente no está verificada, usa legal_assessment.status "not_verified" con human_legal_review_required=true.',
   'Toda unidad con efecto bloqueante o condicional exige una acción concreta con rol sugerido, sin nombres ni datos personales, y external_side_effect siempre en false.',
+  'En milestone, status "verified" exige at y source_ref no nulos; status "not_identified" exige at y source_ref en null. Si no existe una fecha y referencia permitida que respalden el hito, nunca declares status "verified".',
   // Phase 5 remediation (v3_model_output_shape_mismatch): the corrected real canary fit the context
   // window but the model turn returned an integral_analysis carrying server-owned keys beyond
   // analysis_units. The closed wire schema (buildAgt002IntegralAnalysisV3OutputJsonSchema) and the
