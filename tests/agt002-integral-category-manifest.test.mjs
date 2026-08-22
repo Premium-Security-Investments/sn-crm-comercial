@@ -24,6 +24,25 @@ function run() {
     ]);
   }
 
+  // Production regression: the raw generic manifest is alphabetic by requirement_id,
+  // which can put financial before legal/technical. The governed category manifest must
+  // establish the institutional order required by the v3 contract while preserving the
+  // governed source order inside each category.
+  {
+    const manifest = [
+      { requirement_id: 'financial-working-capital', front: 'financial' },
+      { requirement_id: 'legal-collective-life-policy', front: 'legal' },
+      { requirement_id: 'legal-rce-policy', front: 'legal' },
+      { requirement_id: 'technical-cctv', front: 'technical' },
+    ];
+    assert.deepEqual(deriveAgt002IntegralCategoryManifest(manifest), [
+      { requirement_id: 'legal-collective-life-policy', category: 'habilitating' },
+      { requirement_id: 'legal-rce-policy', category: 'habilitating' },
+      { requirement_id: 'technical-cctv', category: 'technical' },
+      { requirement_id: 'financial-working-capital', category: 'financial_execution' },
+    ]);
+  }
+
   // The two closed legal-policy extractors only emit these stable ids after finding the
   // policy in an explicitly habilitating context. Their category is therefore deterministic
   // across tenders and does not depend on the Manizales pilot or an opportunity-scoped override.
