@@ -554,15 +554,19 @@ export function createAgt002PreviewEngine({
   // rejects any unit whose evidence_state does not match the governed map byte for byte,
   // regardless of what was offered here.
   function withRequirementGovernedFields(previewInput, requirementManifestWithCategory, evidenceStateManifestForInput) {
-    const categoryById = new Map(requirementManifestWithCategory.map(entry => [entry.requirement_id, entry.category]));
+    const rawRequirementById = new Map(
+      previewInput.document_evidence.requirement_manifest.map(entry => [entry.requirement_id, entry]),
+    );
     const evidenceStateById = new Map(evidenceStateManifestForInput.map(entry => [entry.requirement_id, entry.evidence_state]));
     return {
       ...previewInput,
       document_evidence: {
         ...previewInput.document_evidence,
-        requirement_manifest: previewInput.document_evidence.requirement_manifest.map(entry => (
-          { ...entry, category: categoryById.get(entry.requirement_id), evidence_state_governed: evidenceStateById.get(entry.requirement_id) }
-        )),
+        requirement_manifest: requirementManifestWithCategory.map(({ requirement_id: requirementId, category }) => ({
+          ...rawRequirementById.get(requirementId),
+          category,
+          evidence_state_governed: evidenceStateById.get(requirementId),
+        })),
       },
     };
   }

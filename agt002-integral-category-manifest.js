@@ -21,7 +21,9 @@ const CLOSED_REQUIREMENT_CATEGORY_MAP = new Map([
   ['legal-collective-life-policy', 'habilitating'],
 ]);
 
-const FORMAL_CATEGORIES = new Set(['discard', 'habilitating', 'technical', 'financial_execution']);
+const FORMAL_CATEGORY_ORDER = ['discard', 'habilitating', 'technical', 'financial_execution'];
+const FORMAL_CATEGORIES = new Set(FORMAL_CATEGORY_ORDER);
+const FORMAL_CATEGORY_RANK = new Map(FORMAL_CATEGORY_ORDER.map((category, index) => [category, index]));
 
 /**
  * `categoryOverrides`: an explicit, governed requirement_id -> category mapping (plain
@@ -60,5 +62,7 @@ export function deriveAgt002IntegralCategoryManifest(requirementManifest, catego
       );
     }
     return { requirement_id: requirementId, category: derived };
-  });
+  }).sort((left, right) => (
+    FORMAL_CATEGORY_RANK.get(left.category) - FORMAL_CATEGORY_RANK.get(right.category)
+  ));
 }

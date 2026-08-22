@@ -752,6 +752,45 @@ assert.match(AGT002_INTEGRAL_V3_POLICY, /strategic_consideration[^.]*strategic[^
     };
   }
 
+  // Production regression: a generic manifest is built alphabetically by requirement_id,
+  // but the v3 institutional category invariant requires habilitating -> technical ->
+  // financial_execution. The exact governed order must reach the provider input; otherwise
+  // the model is instructed with an order the validator can never accept.
+  {
+    const genericDeepAnalysis = {
+      matrix: {
+        legal: [
+          { id: 'legal-rce-policy', front: 'legal', label: 'Póliza RCE', evidence: [{ document_id: 'ver-01', document_name: 'Pliego', document_type: 'pliego', excerpt: 'Requiere póliza vigente.' }] },
+          { id: 'legal-collective-life-policy', front: 'legal', label: 'Póliza de vida colectiva', evidence: [{ document_id: 'ver-01', document_name: 'Pliego', document_type: 'pliego', excerpt: 'Requiere póliza vigente.' }] },
+        ],
+        technical: [{ id: 'technical-cctv', front: 'technical', label: 'CCTV', evidence: [{ document_id: 'ver-01', document_name: 'Pliego', document_type: 'pliego', excerpt: 'Requiere CCTV.' }] }],
+        financial: [{ id: 'financial-working-capital', front: 'financial', label: 'Capital de trabajo', evidence: [{ document_id: 'ver-01', document_name: 'Pliego', document_type: 'pliego', excerpt: 'Requiere capital de trabajo.' }] }],
+      },
+    };
+    const client = fakeClient(async () => {
+      const error = new Error('stop after governed input capture');
+      error.code = 'TEST_INPUT_CAPTURE';
+      throw error;
+    });
+    const engine = createAgt002PreviewEngine({
+      client, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      governanceProvenance: governanceProvenanceFixture(), companyEvidenceClassesProvider: () => [],
+    });
+    await assert.rejects(
+      () => engine.analyze({ ...v3Context, deepAnalysis: genericDeepAnalysis }),
+      /no está disponible/i,
+    );
+    assert.deepEqual(
+      client.calls[0].input.document_evidence.requirement_manifest.map(entry => [entry.requirement_id, entry.category]),
+      [
+        ['legal-collective-life-policy', 'habilitating'],
+        ['legal-rce-policy', 'habilitating'],
+        ['technical-cctv', 'technical'],
+        ['financial-working-capital', 'financial_execution'],
+      ],
+    );
+  }
+
   // Flag off: the v2 provider-facing schema/prompt/envelope is exactly unchanged (no v3
   // option ever touches the v2 path).
   {
