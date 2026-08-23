@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { loadReactComponent, renderReactComponent } from './helpers/bundle-react-component.mjs';
+import { bundleReactModule, loadReactComponent, renderReactComponent } from './helpers/bundle-react-component.mjs';
 import { runAgt002ManizalesV3LocalRun, AGT002_MANIZALES_V3_ANALYZABLE_REQUIREMENT_COUNT } from '../scripts/agt002-manizales-v3-local-run.mjs';
 
 // AGT-002 Task 3 · Análisis es la única superficie completa de condiciones e impedimentos.
@@ -573,6 +573,151 @@ test('inventario listo (decision_ready === true) rinde el V3 completo y las cond
   assert.equal(v3Html.includes('Cobertura integral no disponible'), false);
   assert.ok(analysisHtml.includes(CONDITION_PRESENTED.presentation.title), 'Análisis debe rendir la condición gobernada');
   assert.ok(v3Html.includes('Unidad técnica 1'), 'V3 debe rendir la unidad gobernada');
+});
+
+// ---------------------------------------------------------------------------------------------
+// 11f · El gate compartido es consciente de la COBERTURA de evidencia completa, no sólo del
+//      inventario legado. `evidence_coverage.tender_semantic_manifest` es la frontera semántica
+//      vigente del expediente: un manifiesto finalizado y gobernado (versión
+//      `tender_semantic_manifest.v1`, `decision_ready: true`, `discovery_coverage` completa y
+//      `analyzed_coverage` completa) ES la cobertura integral, y el inventario legado —fijado hoy
+//      por el contrato P0 en `decision_ready: false` en toda corrida real— ya no puede pausarla.
+//      Al revés, un manifiesto presente pero no listo pausa aunque el inventario legado se
+//      declare listo. Las dos superficies deben coincidir siempre, porque comparten el mismo
+//      selector puro sobre `evidence_coverage`.
+// ---------------------------------------------------------------------------------------------
+const sha256Like = char => char.repeat(64);
+function semanticManifest(overrides = {}) {
+  const requirements = ANALYSIS.integral_analysis.analysis_units.map((unit, index) => ({
+    requirement_id: unit.requirement_id,
+    obligation_key: `obligacion-gobernada-${index + 1}`,
+    kind: 'obligation',
+    label: `Obligación gobernada ${index + 1}`,
+    front: 'legal',
+    front_evidence: { source_unit_id: `su-${index + 1}`, unit_hash: sha256Like('a') },
+    citations: [{ source_unit_id: `su-${index + 1}`, unit_hash: sha256Like('a') }],
+    supplemental_signal_ids: [],
+  }));
+  const total = requirements.length;
+  return {
+    semantic_manifest_version: 'tender_semantic_manifest.v1',
+    snapshot_id: 'snap-task3',
+    snapshot_hash: sha256Like('b'),
+    inventory_hash: sha256Like('c'),
+    origin: 'model_proposal',
+    proposal_hash: null,
+    requirements,
+    excluded: [],
+    unresolved: [],
+    coverage_ledger: {
+      total_source_units: total,
+      cited_count: total,
+      excluded_count: 0,
+      unresolved_count: 0,
+      every_source_unit_disposed: true,
+    },
+    discovery_coverage: { status: 'complete', total_source_units: total, dispositioned_source_units: total, requirement_count: total },
+    analyzed_coverage: { status: 'complete', total_source_units: total, dispositioned_source_units: total, requirement_count: total },
+    decision_ready: true,
+    recommendation: 'ready_for_human_review',
+    human_review_required: true,
+    semantic_manifest_hash: sha256Like('d'),
+    ...overrides,
+  };
+}
+
+// Frontera semántica lista sobre el inventario legado PAUSADO (la forma real de una corrida
+// semántica hoy): debe rendir completo en las dos superficies.
+const SEMANTIC_READY_ANALYSIS = {
+  ...ANALYSIS,
+  evidence_coverage: { ...PAUSED_EVIDENCE_COVERAGE, tender_semantic_manifest: semanticManifest() },
+};
+// Frontera semántica NO lista sobre el inventario legado LISTO: debe pausar en las dos.
+const SEMANTIC_PAUSED_ANALYSIS = {
+  ...ANALYSIS,
+  evidence_coverage: {
+    ...READY_EVIDENCE_COVERAGE,
+    tender_semantic_manifest: semanticManifest({ decision_ready: false, recommendation: 'pause' }),
+  },
+};
+const SEMANTIC_PARTIAL_ANALYSIS = {
+  ...ANALYSIS,
+  evidence_coverage: {
+    ...READY_EVIDENCE_COVERAGE,
+    tender_semantic_manifest: semanticManifest({
+      discovery_coverage: { status: 'partial', total_source_units: 2, dispositioned_source_units: 1, requirement_count: 2 },
+      analyzed_coverage: { status: 'incomplete', total_source_units: 2, dispositioned_source_units: 0, requirement_count: 0 },
+    }),
+  },
+};
+
+// El gate es UNA sola función pura compartida por las dos superficies, y su entrada es toda la
+// cobertura de evidencia (`analysis.evidence_coverage`), no sólo el inventario legado.
+const { tenderAnalysisCoverageReady } = await bundleReactModule('src/tenders/tenderIntegralAnalysisPresentation.ts');
+
+test('tenderAnalysisCoverageReady decide sobre toda la cobertura de evidencia: manifiesto semántico primero, inventario legado como respaldo', () => {
+  assert.equal(typeof tenderAnalysisCoverageReady, 'function', 'el gate compartido debe existir como selector puro exportado');
+
+  // Frontera semántica finalizada y lista: manda sobre el inventario legado pausado.
+  assert.equal(tenderAnalysisCoverageReady(SEMANTIC_READY_ANALYSIS.evidence_coverage), true);
+  // Frontera semántica presente pero no lista: manda sobre el inventario legado listo.
+  assert.equal(tenderAnalysisCoverageReady(SEMANTIC_PAUSED_ANALYSIS.evidence_coverage), false);
+  assert.equal(tenderAnalysisCoverageReady(SEMANTIC_PARTIAL_ANALYSIS.evidence_coverage), false);
+  // Sin frontera semántica: exactamente la lectura legada del inventario.
+  assert.equal(tenderAnalysisCoverageReady(READY_EVIDENCE_COVERAGE), true);
+  assert.equal(tenderAnalysisCoverageReady(PAUSED_EVIDENCE_COVERAGE), false);
+  // Fail-closed ante cualquier cobertura ausente o sin forma gobernada.
+  for (const empty of [null, undefined, {}, [], 'complete']) {
+    assert.equal(tenderAnalysisCoverageReady(empty), false, `una cobertura sin forma gobernada nunca está lista: ${JSON.stringify(empty)}`);
+  }
+});
+
+test('un manifiesto semántico finalizado y listo rinde el análisis integral completo en Análisis y en V3, aunque el inventario legado siga pausado', () => {
+  const analysisHtml = render({ analysis: SEMANTIC_READY_ANALYSIS });
+  const v3Html = renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis: SEMANTIC_READY_ANALYSIS }));
+
+  assert.equal(analysisHtml.includes('Análisis integral pausado'), false, 'con cobertura semántica lista Análisis no puede seguir pausado');
+  assert.equal(v3Html.includes('Cobertura integral no disponible'), false, 'con cobertura semántica lista V3 no puede seguir pausado');
+  assert.ok(analysisHtml.includes(CONDITION_PRESENTED.presentation.title), 'Análisis debe rendir la condición gobernada');
+  assert.ok(analysisHtml.includes(IMPEDIMENT.presentation.title), 'Análisis debe rendir el impedimento gobernado');
+  assert.ok(v3Html.includes('Unidad técnica 1'), 'V3 debe rendir la unidad gobernada');
+  assert.ok(v3Html.includes('Requisitos analizados'), 'V3 debe rendir la cobertura integral');
+});
+
+test('un manifiesto semántico con decision_ready=false o cobertura parcial pausa Análisis y V3, aunque el inventario legado se declare listo', () => {
+  for (const [caso, analysis] of [
+    ['decision_ready=false', SEMANTIC_PAUSED_ANALYSIS],
+    ['cobertura parcial/incompleta', SEMANTIC_PARTIAL_ANALYSIS],
+  ]) {
+    const analysisHtml = render({ analysis });
+    const v3Html = renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis }));
+
+    assert.ok(analysisHtml.includes('Análisis integral pausado'), `Análisis debe pausar con ${caso}`);
+    assert.ok(v3Html.includes('Cobertura integral no disponible'), `V3 debe pausar con ${caso}`);
+
+    for (const html of [analysisHtml, v3Html]) {
+      assert.equal(html.includes(CONDITION_PRESENTED.presentation.title), false, `ninguna condición puede filtrarse con ${caso}`);
+      assert.equal(html.includes(IMPEDIMENT.presentation.title), false, `ningún impedimento puede filtrarse con ${caso}`);
+      assert.equal(html.includes('Unidad técnica 1'), false, `ninguna unidad V3 puede filtrarse con ${caso}`);
+      assert.equal(html.includes('Requisitos analizados'), false, `ningún conteo integral puede filtrarse con ${caso}`);
+    }
+  }
+});
+
+test('sin manifiesto semántico ambas superficies conservan la lectura legada del inventario', () => {
+  // Legado listo → completo en las dos (mismo fixture que el resto del archivo).
+  assert.equal(ANALYSIS.evidence_coverage.tender_semantic_manifest, undefined, 'el fixture legado no anuncia frontera semántica');
+  assert.equal(render().includes('Análisis integral pausado'), false);
+  assert.equal(
+    renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis: ANALYSIS })).includes('Cobertura integral no disponible'),
+    false,
+  );
+
+  // Legado no listo → pausa en las dos.
+  assert.ok(render({ analysis: PAUSED_ANALYSIS }).includes('Análisis integral pausado'));
+  assert.ok(
+    renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis: PAUSED_ANALYSIS })).includes('Cobertura integral no disponible'),
+  );
 });
 
 // ---------------------------------------------------------------------------------------------

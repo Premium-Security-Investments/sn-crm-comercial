@@ -6,6 +6,11 @@ import { AGT002_LEGAL_REVIEW_REASONS, isAgt002OfficialLegalUrl } from './agt002-
 import { buildAgt002RequirementManifest, resolveAgt002DeepAnalysisMatrix } from './agt002-deep-analysis-matrix.js';
 import { deriveAgt002ManizalesManifestWiring } from './agt002-manizales-manifest-wiring.js';
 import { buildTenderRequirementInventory, isTenderDocumentContentHashVerifiable } from './tender-requirement-inventory.js';
+import {
+  validateTenderSemanticManifest,
+  toAgt002RequirementManifest,
+  toAgt002RetrievalRequirements,
+} from './tender-semantic-manifest.js';
 
 export const AGT002_MAX_DOCUMENTS = 12;
 export const AGT002_MAX_DOCUMENT_CHARS = 3000;
@@ -114,6 +119,24 @@ function buildRetrievalRequirements(deepAnalysis) {
   return requirements.sort((left, right) => left.requirement_id.localeCompare(right.requirement_id));
 }
 
+/**
+ * The ids of the fixed historical extractors present in deepAnalysis.matrix, declared verbatim as
+ * SUPPLEMENTAL SIGNALS beside a tender-native frontier. They are surfaced precisely so it stays
+ * auditable that they informed nothing: they never enter requirement_manifest, never drive
+ * retrieval and never count towards coverage.
+ */
+function resolveSupplementalSignalIds(deepAnalysis) {
+  const matrix = resolveAgt002DeepAnalysisMatrix(deepAnalysis);
+  const ids = new Set();
+  for (const front of RETRIEVAL_FRONTS) {
+    for (const requirement of Array.isArray(matrix[front]) ? matrix[front] : []) {
+      const id = typeof requirement?.id === 'string' ? requirement.id.trim() : '';
+      if (id) ids.add(id);
+    }
+  }
+  return [...ids].sort();
+}
+
 function normalizeTenderRequirementDocumentGaps(extractionGaps, documentGaps) {
   return [
     ...extractionGaps.map(gap => ({ document_id: gap.document_id, document_type: gap.document_type, name: gap.name, reason: gap.reason })),
@@ -153,21 +176,30 @@ export function buildAgt002TenderRequirementInventory({ snapshotId, documents = 
   });
 }
 
-function buildDocumentEvidencePackage({ snapshotId, documents, documentGaps, deepAnalysis, manizalesManifestSource }) {
+/**
+ * Re-validates a server-supplied semantic manifest against THIS snapshot's own inventory and
+ * projects it into the existing closed runtime shapes. The manifest is never derived here and
+ * never trusted verbatim: validateTenderSemanticManifest re-checks its identity, citations and
+ * hashes against the exact inventory the packet carries, so a manifest belonging to another
+ * snapshot — or one whose citations were altered anywhere along the way — can never become the
+ * frontier. A manifest that resolved no obligation of its own throws out of the projections, so
+ * the run pauses instead of quietly falling back to the fixed historical four.
+ */
+function resolveSemanticFrontier({ semanticManifest, inventory }) {
+  const manifest = validateTenderSemanticManifest(semanticManifest, { inventory });
+  return {
+    manifest,
+    requirementManifest: toAgt002RequirementManifest({ semanticManifest: manifest, inventory }),
+    retrievalRequirements: toAgt002RetrievalRequirements(manifest),
+  };
+}
+
+function buildDocumentEvidencePackage({
+  snapshotId, documents, documentGaps, deepAnalysis, manizalesManifestSource, semanticManifest = null,
+}) {
   const manifestWiring = manizalesManifestSource
     ? deriveAgt002ManizalesManifestWiring(manizalesManifestSource)
     : null;
-  const requirements = manifestWiring
-    ? manifestWiring.requirementManifest.requirement_manifest
-      .map(entry => ({ requirement_id: entry.requirement_id, terms: normalizeRetrievalTerms(entry.label) }))
-      .filter(entry => entry.terms.length > 0)
-      .sort((left, right) => left.requirement_id.localeCompare(right.requirement_id))
-    : buildRetrievalRequirements(deepAnalysis);
-  if (!requirements.length) {
-    throw new Error(manifestWiring
-      ? 'AGT-002 Preview con manifiesto integral requiere al menos un requisito recuperable.'
-      : 'AGT-002 Preview con recuperación de evidencia requiere al menos un requisito estructurado recuperable en deepAnalysis.matrix.');
-  }
 
   // Same partition as buildAgt002TenderRequirementInventory: an unverifiable document never
   // reaches retrieval as a citable chunk, but is still carried into the inventory below so it
@@ -176,6 +208,40 @@ function buildDocumentEvidencePackage({ snapshotId, documents, documentGaps, dee
   const { chunks, gaps: extractionGaps } = buildAgt002DocumentChunks(chunkable);
   const snapshotChunks = chunks.map(chunk => ({ ...chunk, snapshot_id: snapshotId }));
   const gaps = normalizeTenderRequirementDocumentGaps(extractionGaps, documentGaps);
+
+  // This is the authoritative per-snapshot expediente inventory. It is built from every
+  // document/gap before retrieval selection, so the fixed deep-analysis matrix can remain a
+  // supplementary retrieval aid without falsely defining what the tender contains.
+  const tenderRequirementInventory = buildTenderRequirementInventory({
+    snapshotId,
+    documents,
+    documentGaps: gaps,
+  });
+
+  // This snapshot's OWN obligations, supplied by the server (never by a caller/browser field) and
+  // re-validated here against the very inventory built above — the same expediente identity the
+  // packet carries, so the manifest and the inventory can never describe two different snapshots.
+  //
+  // A governed, human-reviewed pilot package still outranks it: when an exact Manizales wiring is
+  // injected it remains the frontier and the semantic manifest is ignored entirely (not validated,
+  // not carried), so the pilot packet stays byte-identical to before.
+  const semanticFrontier = !manifestWiring && semanticManifest !== null
+    ? resolveSemanticFrontier({ semanticManifest, inventory: tenderRequirementInventory })
+    : null;
+
+  const requirements = manifestWiring
+    ? manifestWiring.requirementManifest.requirement_manifest
+      .map(entry => ({ requirement_id: entry.requirement_id, terms: normalizeRetrievalTerms(entry.label) }))
+      .filter(entry => entry.terms.length > 0)
+      .sort((left, right) => left.requirement_id.localeCompare(right.requirement_id))
+    : semanticFrontier
+      ? semanticFrontier.retrievalRequirements
+      : buildRetrievalRequirements(deepAnalysis);
+  if (!requirements.length) {
+    throw new Error(manifestWiring
+      ? 'AGT-002 Preview con manifiesto integral requiere al menos un requisito recuperable.'
+      : 'AGT-002 Preview con recuperación de evidencia requiere al menos un requisito estructurado recuperable en deepAnalysis.matrix.');
+  }
 
   const retrieval = buildAgt002DocumentRetrieval({
     snapshot_id: snapshotId,
@@ -197,30 +263,44 @@ function buildDocumentEvidencePackage({ snapshotId, documents, documentGaps, dee
   // manifest is instead derived from that manifest's analyzable entries in deterministic
   // order — validated fail-closed to the exact pilot identity and to the same closed
   // requirement-manifest unit shape (no raw/open source text ever copied into runtime input).
+  //
+  // With no governed package and a validated semantic manifest, the frontier is instead the
+  // projection of THIS snapshot's semantic manifest into that same closed unit shape, so every
+  // downstream consumer (retrieval, the V3 validator, persistence) sees an ordinary
+  // requirement_manifest and needs no new table, schema version or migration. The legacy matrix
+  // derivation below survives only for callers that supply neither.
   const requirementManifest = manifestWiring
     ? manifestWiring.requirementManifest
-    : buildAgt002RequirementManifest({
-      matrix: resolveAgt002DeepAnalysisMatrix(deepAnalysis),
-      documents,
-    });
+    : semanticFrontier
+      ? semanticFrontier.requirementManifest
+      : buildAgt002RequirementManifest({
+        matrix: resolveAgt002DeepAnalysisMatrix(deepAnalysis),
+        documents,
+      });
   const hasUnresolvedProvenance = requirementManifest.requirement_manifest
     .some(entry => entry.unresolved_sources.length > 0);
-  // This is the authoritative per-snapshot expediente inventory. It is built from every
-  // document/gap before retrieval selection, so the fixed deep-analysis matrix can remain a
-  // supplementary retrieval aid without falsely defining what the tender contains.
-  const tenderRequirementInventory = buildTenderRequirementInventory({
-    snapshotId,
-    documents,
-    documentGaps: gaps,
-  });
+  // An obligation this tender states but the stage could not resolve, or a source unit it could
+  // not dispose of, is a hole in the analysis of the expediente — it is declared as a material
+  // omission of the packet rather than left for the model to notice.
+  const hasSemanticOmissions = semanticFrontier !== null
+    && (semanticFrontier.manifest.unresolved.length > 0
+      || semanticFrontier.manifest.discovery_coverage.status !== 'complete');
 
   return {
     ...retrieval,
     ...requirementManifest,
     tender_requirement_inventory: tenderRequirementInventory,
+    // Carried only when the validated semantic manifest is the ACTIVE frontier: an exact Manizales
+    // packet never advertises a semantic manifest it did not analyse.
+    ...(semanticFrontier ? {
+      tender_semantic_manifest: semanticFrontier.manifest,
+      // The fixed historical extractors survive only as declared signals. They are never the
+      // frontier, never the count and never the coverage of this tender.
+      supplemental_signal_ids: resolveSupplementalSignalIds(deepAnalysis),
+    } : {}),
     // An unresolved provenance source is itself a material omission, independent of chunk
     // budget/relevance omissions already computed above.
-    material_omissions: retrieval.material_omissions || hasUnresolvedProvenance,
+    material_omissions: retrieval.material_omissions || hasUnresolvedProvenance || hasSemanticOmissions,
   };
 }
 
@@ -453,7 +533,7 @@ function buildLegalEvidenceSection(legalEvidencePackage) {
 
 function buildContextV2Input({
   snapshotId, contextV2Sections, documents, documentGaps, deepAnalysis, documentRetrieval, legalCorpus, legalEvidencePackage,
-  companyEvidenceClasses, manizalesManifestSource,
+  companyEvidenceClasses, manizalesManifestSource, semanticManifest,
 }) {
   if (!contextV2Sections || typeof contextV2Sections !== 'object' || Array.isArray(contextV2Sections)) {
     throw new Error('AGT-002 Preview con contexto v2 requiere contextV2Sections completo.');
@@ -488,7 +568,9 @@ function buildContextV2Input({
   };
 
   if (documentRetrieval) {
-    const retrieval = buildDocumentEvidencePackage({ snapshotId, documents, documentGaps, deepAnalysis, manizalesManifestSource });
+    const retrieval = buildDocumentEvidencePackage({
+      snapshotId, documents, documentGaps, deepAnalysis, manizalesManifestSource, semanticManifest,
+    });
     result.document_evidence = {
       ...retrieval,
       // Chunk text is redacted for the packet carried in previewInput; the untruncated,
@@ -520,12 +602,19 @@ export function buildAgt002PreviewInput({
   opportunity = {}, documents = [], documentGaps = [], companyProfile = {}, deepAnalysis = {}, snapshotId, canonicalOnly = false,
   contextV2 = false, contextV2Sections = null, documentRetrieval = false, legalCorpus = false, legalEvidencePackage = null,
   companyEvidenceClasses = null, integralContractV3 = false, manizalesManifestSource = null,
+  semanticManifest = null,
 }) {
   if (typeof snapshotId !== 'string' || !snapshotId.trim()) {
     throw new Error('AGT-002 Preview requiere un snapshot documental vigente.');
   }
   if (documentRetrieval && !contextV2) {
     throw new Error('AGT-002 Preview con recuperación de evidencia (AGT002_DOCUMENT_RETRIEVAL) requiere AGT002_CONTEXT_V2 habilitado.');
+  }
+  // Without the bounded, hash-verified retrieval corpus there is no inventory to re-validate the
+  // manifest against and no closed evidence packet to carry it, so a supplied manifest could never
+  // be checked against this snapshot's own source units: it fails loudly instead.
+  if (semanticManifest !== null && semanticManifest !== undefined && !(documentRetrieval && contextV2)) {
+    throw new Error('AGT-002 Preview con manifiesto semántico propio del proceso requiere contexto v2 y recuperación de evidencia habilitados.');
   }
   if (legalCorpus && !contextV2) {
     throw new Error('AGT-002 Preview con evidencia jurídica (AGT002_LEGAL_CORPUS) requiere AGT002_CONTEXT_V2 habilitado.');
@@ -535,6 +624,7 @@ export function buildAgt002PreviewInput({
       snapshotId: snapshotId.trim(), contextV2Sections, documents, documentGaps, deepAnalysis, documentRetrieval, legalCorpus, legalEvidencePackage,
       companyEvidenceClasses,
       manizalesManifestSource: integralContractV3 === true ? manizalesManifestSource : null,
+      semanticManifest: semanticManifest ?? null,
     });
   }
 

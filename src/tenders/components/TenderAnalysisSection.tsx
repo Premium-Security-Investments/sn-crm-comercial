@@ -4,7 +4,7 @@ import { tenderRecommendationLabel } from '../tenderDecisionGate';
 import { deriveTenderProcessingPresentation } from '../processingStatus';
 import { tenderBriefUnavailableCopy } from '../tenderDecisionBriefModel';
 import { tenderDecisionBlockers, tenderDecisionConditionAnchor, tenderDecisionConditions, tenderDecisionPreparationActions, tenderDecisionSupportedAspects } from '../tenderDecisionSurface';
-import { tenderRequirementInventoryReady } from '../tenderIntegralAnalysisPresentation';
+import { tenderAnalysisCoverageReady } from '../tenderIntegralAnalysisPresentation';
 import type { TenderAnalysisFinding, TenderDocumentAnalysis, TenderDocumentRecord, TenderDocumentsPayload, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput } from '../types';
 import { QuestionResponseCard, type NormalizedQuestion } from './TenderQuestionResponseCard';
 
@@ -44,15 +44,13 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
   const weaknesses = analysis?.weaknesses ?? analysis?.blockers ?? analysis?.commercial_fit?.concerns ?? [];
   const questions = (analysis?.questions ?? []).map(normalizeQuestion);
   const unverified = analysis?.unverified ?? analysis?.company_profile_crosscheck?.gaps ?? [];
-  const tenderInventory = analysis?.evidence_coverage?.tender_requirement_inventory ?? null;
   const hasIntegralV3Payload = Boolean(analysis?.integral_analysis?.analysis_units?.length);
-  // Mismo gate fail-closed que el respaldo técnico V3 (tenderRequirementInventoryReady): una
-  // corrida sin inventario verificable del expediente vigente, o con inventario presente pero
-  // `decision_ready` !== true, queda pausada. El inventario P0 fija `decision_ready: false`
-  // siempre hoy, así que la superficie ejecutiva completa permanece pausada hasta que un
-  // analizador posterior marque el inventario listo.
-  const inventoryPaused = hasIntegralV3Payload && !tenderRequirementInventoryReady(tenderInventory);
-  const hasIntegralV3 = hasIntegralV3Payload && !inventoryPaused;
+  // Mismo gate fail-closed que el respaldo técnico V3 (tenderAnalysisCoverageReady): decide sobre
+  // toda la cobertura de evidencia de la corrida —la frontera semántica del expediente manda
+  // cuando llega, y el inventario legado es el respaldo histórico—. Sin cobertura lista para
+  // decisión la superficie ejecutiva completa permanece pausada.
+  const coveragePaused = hasIntegralV3Payload && !tenderAnalysisCoverageReady(analysis?.evidence_coverage);
+  const hasIntegralV3 = hasIntegralV3Payload && !coveragePaused;
   // Análisis es la única superficie completa de condiciones e impedimentos: cada entrada gobernada
   // se proyecta una sola vez a través de los selectores puros (Task 2). El componente no vuelve a
   // proyectar `decision_review` ni transporta rationale/ids/evidencia técnica a la capa visible.
@@ -87,9 +85,9 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
     </div>}
     {failed && <div className="error" role="alert"><strong>Análisis fallido.</strong> El último intento no produjo una conclusión utilizable. Puede intentarlo nuevamente sin afectar la decisión humana.</div>}
     {stale && <div className="notice" role="status"><strong>Análisis desactualizado.</strong> El contenido histórico se conserva para trazabilidad, pero los documentos vigentes cambiaron.</div>}
-    {inventoryPaused && <section className="tender-v3-questions tender-executive-pending" aria-labelledby="tender-inventory-paused-title">
-      <header><div><span className="eyebrow">Cobertura del expediente</span><h3 id="tender-inventory-paused-title">Análisis integral pausado</h3><p>Este análisis no incluye un inventario verificable de los requisitos del expediente vigente. Sólo se llega aquí cuando el inventario falta o no tiene la forma gobernada, por lo que no se cita ninguna cifra suya: el análisis anterior se conserva sólo como trazabilidad y no representa cobertura integral de esta licitación.</p></div><strong>Inventario pendiente</strong></header>
-      <p className="notice" role="status">No hay recomendación integral disponible. Revise o actualice el análisis cuando el inventario de requisitos de este expediente esté completo.</p>
+    {coveragePaused && <section className="tender-v3-questions tender-executive-pending" aria-labelledby="tender-inventory-paused-title">
+      <header><div><span className="eyebrow">Cobertura del expediente</span><h3 id="tender-inventory-paused-title">Análisis integral pausado</h3><p>Este análisis no tiene todavía una cobertura de evidencia lista para decisión de este expediente: la frontera semántica no está finalizada, o falta un inventario verificable de sus requisitos. No se cita ninguna cifra suya: el análisis anterior se conserva sólo como trazabilidad y no representa cobertura integral de esta licitación.</p></div><strong>Cobertura pendiente</strong></header>
+      <p className="notice" role="status">No hay recomendación integral disponible. Revise o actualice el análisis cuando la cobertura de requisitos de este expediente esté completa.</p>
     </section>}
     {!hasIntegralV3Payload && analysis && analysis.status !== 'failed' && <article className="tender-decision-brief" aria-label="Conclusión preliminar de licitación">
       <header className="tender-decision-brief-head"><div><small>Recomendación preliminar</small><strong>{tenderRecommendationLabel(analysis.recommendation)}</strong><p>{analysis.summary || 'Sin resumen documental disponible.'}</p></div><div className="tender-decision-brief-status"><span className={`badge badge-${tenderDecisionStatusTone(analysis.recommendation)}`}>{analysis.current ? 'Vigente' : 'Obsoleto'}</span><span>{tenderAnalysisMethodLabel(analysis.producer)}</span><small>{analysis.completed_at ? `Actualizado: ${new Date(analysis.completed_at).toLocaleString('es-CO')}` : analysis.generated_at ? `Generado: ${new Date(analysis.generated_at).toLocaleString('es-CO')}` : 'Fecha no informada'}</small></div></header>

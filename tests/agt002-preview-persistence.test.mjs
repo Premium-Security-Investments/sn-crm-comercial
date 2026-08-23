@@ -1,5 +1,12 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { buildAgt002TenderRequirementInventory } from '../agt002-preview-input.js';
+import {
+  assembleTenderSemanticManifest,
+  buildTenderSemanticManifest,
+  toAgt002RequirementManifest,
+} from '../tender-semantic-manifest.js';
 import {
   appendAgt002AnalysisAttempt,
   claimAgt002PreviewRun,
@@ -334,6 +341,200 @@ function fakeDatabase({ onRpc } = {}) {
     envelope: envelope({ evidence_coverage: { ...envelope().evidence_coverage, requirement_manifest: zeroProvenanceManifest } }),
   }), /procedencia|resuelt/i);
   assert.deepEqual(database.rpcCalls, []);
+}
+
+// ---------------------------------------------------------------------------
+// The tender-native semantic manifest is the audit trail BEHIND the persisted
+// requirement_manifest, so persistence never trusts it verbatim either: it is
+// re-validated against the tender_requirement_inventory the same coverage carries,
+// and its projection must equal the persisted requirement_manifest exactly. Without
+// that boundary check a forged, stale or foreign manifest could be saved as the
+// audit record of a frontier it never produced.
+// ---------------------------------------------------------------------------
+const semanticHash = value => createHash('sha256').update(value).digest('hex');
+
+const SEMANTIC_TEXT = [
+  'REQUISITOS FINANCIEROS',
+  'Nivel de apalancamiento: el proponente deberá acreditar un nivel de apalancamiento entre el 51% y el 60%.',
+].join('\n');
+const SEMANTIC_TEXT_CHANGED = [
+  SEMANTIC_TEXT,
+  'REQUISITOS TÉCNICOS',
+  'Residencia de datos: los datos deberán permanecer almacenados en centros de datos ubicados en territorio colombiano.',
+].join('\n');
+
+function semanticFixture({ snapshotId = ids.snapshot, text = SEMANTIC_TEXT, versionId = 'ver-semantic-1' } = {}) {
+  const documents = [{
+    document_id: 'doc-semantic', document_version_id: versionId, opportunity_id: ids.opportunity, snapshot_id: null,
+    document_type: 'pliego', name: 'Pliego.pdf', version: 1, content_hash: semanticHash(text), current: true,
+    extracted_text: text,
+  }];
+  const inventory = buildAgt002TenderRequirementInventory({ snapshotId, documents, documentGaps: [] });
+  const manifest = buildTenderSemanticManifest({ inventory, documents });
+  return { documents, inventory, manifest, projection: toAgt002RequirementManifest({ semanticManifest: manifest, inventory }) };
+}
+
+const semantic = semanticFixture();
+const semanticChanged = semanticFixture({ text: SEMANTIC_TEXT_CHANGED, versionId: 'ver-semantic-2' });
+const semanticOtherSnapshot = semanticFixture({ snapshotId: '44444444-4444-4444-8444-444444444444' });
+
+function semanticCoverage(overrides = {}) {
+  return {
+    ...envelope().evidence_coverage,
+    requirement_manifest_version: semantic.projection.requirement_manifest_version,
+    requirement_manifest: semantic.projection.requirement_manifest,
+    tender_requirement_inventory: semantic.inventory,
+    tender_semantic_manifest: semantic.manifest,
+    ...overrides,
+  };
+}
+const semanticEnvelope = (coverageOverrides = {}) => envelope({ evidence_coverage: semanticCoverage(coverageOverrides) });
+const semanticContext = envelopeValue => ({
+  opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: envelopeValue,
+});
+
+// An intact manifest whose projection IS the persisted frontier survives verbatim.
+{
+  const database = fakeDatabase();
+  const registered = await registerAgt002PreviewAnalysis(database, semanticContext(semanticEnvelope()));
+  assert.deepEqual(registered.result.evidence_coverage.tender_semantic_manifest, semantic.manifest);
+  assert.deepEqual(registered.result.evidence_coverage.requirement_manifest, semantic.projection.requirement_manifest);
+  assert.equal(database.rpcCalls.length, 1);
+}
+
+// Every way the manifest can disagree with the expediente it claims to describe — or with
+// the frontier it claims to have produced — must fail closed before any RPC.
+{
+  const forgedCitation = structuredClone(semantic.manifest);
+  forgedCitation.requirements[0].citations[0].unit_hash = semanticHash('forjado');
+
+  const cases = [
+    ['forged manifest hash',
+      { tender_semantic_manifest: { ...semantic.manifest, semantic_manifest_hash: semanticHash('otro manifiesto') } },
+      /manifiesto|hash/i],
+    ['forged citation hash', { tender_semantic_manifest: forgedCitation }, /manifiesto|cita|unidad|hash/i],
+    ['a manifest belonging to another snapshot',
+      { tender_semantic_manifest: semanticOtherSnapshot.manifest },
+      /manifiesto|inventario|snapshot|identidad/i],
+    ['a changed requirement whose projection no longer matches the persisted frontier',
+      { tender_requirement_inventory: semanticChanged.inventory, tender_semantic_manifest: semanticChanged.manifest },
+      /manifiesto|requisito|proyección|coincide/i],
+    ['a persisted frontier relabeled away from the manifest that produced it',
+      { requirement_manifest: semantic.projection.requirement_manifest.map((entry, index) => (index === 0 ? { ...entry, label: 'Capital de trabajo' } : entry)) },
+      /manifiesto|requisito|etiqueta|proyección|coincide/i],
+  ];
+  for (const [label, coverageOverrides, pattern] of cases) {
+    const database = fakeDatabase();
+    await assert.rejects(
+      () => registerAgt002PreviewAnalysis(database, semanticContext(semanticEnvelope(coverageOverrides))),
+      pattern,
+      `a semantic manifest with ${label} must never persist`,
+    );
+    assert.deepEqual(database.rpcCalls, [], `${label} must be rejected before any RPC`);
+  }
+}
+
+// A semantic manifest with no inventory in the same coverage has nothing to be
+// re-validated against, so it can never be persisted as an audit record.
+{
+  const database = fakeDatabase();
+  const coverage = semanticCoverage();
+  delete coverage.tender_requirement_inventory;
+  await assert.rejects(
+    () => registerAgt002PreviewAnalysis(database, semanticContext(envelope({ evidence_coverage: coverage }))),
+    /manifiesto|inventario/i,
+  );
+  assert.deepEqual(database.rpcCalls, []);
+}
+
+// ---------------------------------------------------------------------------
+// A manifest whose origin is a MODEL PROPOSAL carries labels a model wrote. Every id and hash
+// beside them was recomputed by the server over exactly those labels, so the manifest is
+// self-consistent no matter what the model invented: a self-contained hash check can never tell
+// `Capital de trabajo` apart from the `Nivel de apalancamiento` clause it cites. The persisted
+// audit record is only worth keeping if the label is literally anchored in the expediente's own
+// text, so persistence must be handed the independent source documents and must re-derive that
+// anchoring itself — refusing the run when they are missing, when they do not reconstruct this
+// inventory, or when the label appears in none of the units it cites.
+// ---------------------------------------------------------------------------
+{
+  const proposed = semantic.manifest.requirements[0];
+  const modelProposal = label => assembleTenderSemanticManifest({
+    inventory: semantic.inventory,
+    documents: semantic.documents,
+    origin: 'model_proposal',
+    proposalHash: semanticHash(`propuesta-modelo:${label}`),
+    requirements: [{
+      kind: 'obligation',
+      label,
+      front: proposed.front,
+      front_evidence: { ...proposed.front_evidence },
+      citations: proposed.citations.map(citation => ({ ...citation })),
+    }],
+  });
+  const proposalCoverage = manifest => {
+    const projection = toAgt002RequirementManifest({ semanticManifest: manifest, inventory: semantic.inventory });
+    return semanticCoverage({
+      requirement_manifest_version: projection.requirement_manifest_version,
+      requirement_manifest: projection.requirement_manifest,
+      tender_semantic_manifest: manifest,
+    });
+  };
+  const anchoredProposal = modelProposal('Nivel de apalancamiento');
+
+  // No independent source documents: nothing anchors the proposed labels, so nothing may persist.
+  {
+    const database = fakeDatabase();
+    await assert.rejects(
+      () => registerAgt002PreviewAnalysis(database, semanticContext(envelope({ evidence_coverage: proposalCoverage(anchoredProposal) }))),
+      /texto|fuente|documento|propuesta|manifiesto/i,
+    );
+    assert.deepEqual(database.rpcCalls, [], 'a model proposal with no source text must be rejected before any RPC');
+  }
+
+  // Documents that do not reconstruct THIS inventory are not this expediente's source text either.
+  {
+    const database = fakeDatabase();
+    await assert.rejects(
+      () => registerAgt002PreviewAnalysis(database, {
+        ...semanticContext(envelope({ evidence_coverage: proposalCoverage(anchoredProposal) })),
+        semanticSourceDocuments: semanticChanged.documents,
+      }),
+      /texto|fuente|documento|inventario|unidad|manifiesto/i,
+    );
+    assert.deepEqual(database.rpcCalls, []);
+  }
+
+  // An invented label over the very same citations, with the real documents supplied.
+  {
+    const database = fakeDatabase();
+    await assert.rejects(
+      async () => registerAgt002PreviewAnalysis(database, {
+        ...semanticContext(envelope({ evidence_coverage: proposalCoverage(modelProposal('Capital de trabajo')) })),
+        semanticSourceDocuments: semantic.documents,
+      }),
+      /etiqueta|literal|texto|fuente|cita|propuesta|manifiesto/i,
+      'this snapshot never says "Capital de trabajo"; a model that wrote it invented an obligation',
+    );
+    assert.deepEqual(database.rpcCalls, []);
+  }
+
+  // With the exact source documents behind it, an anchored proposal persists verbatim.
+  {
+    const database = fakeDatabase();
+    const registered = await registerAgt002PreviewAnalysis(database, {
+      ...semanticContext(envelope({ evidence_coverage: proposalCoverage(anchoredProposal) })),
+      semanticSourceDocuments: semantic.documents,
+    });
+    assert.deepEqual(registered.result.evidence_coverage.tender_semantic_manifest, anchoredProposal);
+    assert.equal(registered.result.evidence_coverage.tender_semantic_manifest.origin, 'model_proposal');
+    assert.equal(database.rpcCalls.length, 1);
+    assert.doesNotMatch(
+      JSON.stringify(registered.result.evidence_coverage),
+      /"(?:text|extracted_text)"\s*:/,
+      'anchoring is verified from the supplied documents; their raw text is never persisted',
+    );
+  }
 }
 
 // Canonical-only registration is fail-closed without an immutable context version.
