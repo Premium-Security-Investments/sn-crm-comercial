@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { deepStrictEqual } from 'node:assert';
 import { validateAgt002RequirementManifest } from './agt002-deep-analysis-matrix.js';
+import { validateTenderRequirementInventory } from './tender-requirement-inventory.js';
 import { projectAgt002IntegralV3ToV2, computeAgt002IntegralV3CriticalOpenCount } from './agt002-v3-compatibility.js';
 import { validateAgt002IntegralGovernanceProvenance } from './agt002-integral-governance-overrides.js';
 import { validateAgt002ManifestScope } from './agt002-tender-adapter.js';
@@ -13,7 +14,7 @@ function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function validateEvidenceCoverage(value, snapshotId) {
+function validateEvidenceCoverage(value, snapshotId, { requireTenderRequirementInventory = false } = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
     || value.snapshot_id !== snapshotId
     || !value.budget || typeof value.budget !== 'object' || Array.isArray(value.budget)
@@ -42,7 +43,21 @@ function validateEvidenceCoverage(value, snapshotId) {
     requirement_manifest_version: value.requirement_manifest_version,
     requirement_manifest: value.requirement_manifest,
   });
+  if (value.tender_requirement_inventory !== undefined) {
+    validateAgt002TenderRequirementInventoryCoverage(value.tender_requirement_inventory);
+  } else if (requireTenderRequirementInventory) {
+    throw new Error('La cobertura canónica requiere tender_requirement_inventory server-side.');
+  }
   return value;
+}
+
+/**
+ * The tender-specific inventory is owned by the server and is deliberately revalidated on the
+ * persistence boundary. A missing inventory, forged citation/hash, undisposed source unit, or
+ * legacy four-item result therefore cannot be saved as an integral decision record.
+ */
+export function validateAgt002TenderRequirementInventoryCoverage(value) {
+  return validateTenderRequirementInventory(value);
 }
 
 function requireId(value, label) {
@@ -66,7 +81,10 @@ function unwrapRpc(response) {
  * created from human evidence), the identity also binds to it, so a reanalysis never
  * collides with the run it supersedes and callers can reserve/find it consistently.
  */
-export function computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, model, contextVersionId = null, legalCorpusVersionId = null, contractVersion = null }) {
+export function computeAgt002PreviewIdempotencyKey({
+  snapshotId, policyVersion, model, contextVersionId = null, legalCorpusVersionId = null, contractVersion = null,
+  inventoryVersion = null, inventoryHash = null, snapshotHash = null,
+}) {
   const base = createHash('sha256').update(`agt002-preview\0${snapshotId}\0${policyVersion}\0${model}`).digest('hex');
   const withContext = contextVersionId
     ? createHash('sha256').update(`${base}\0context_version\0${contextVersionId}`).digest('hex')
@@ -74,9 +92,14 @@ export function computeAgt002PreviewIdempotencyKey({ snapshotId, policyVersion, 
   const withLegalCorpus = legalCorpusVersionId
     ? createHash('sha256').update(`${withContext}\0legal_corpus_version\0${legalCorpusVersionId}`).digest('hex')
     : withContext;
-  return contractVersion
+  const withContract = contractVersion
     ? createHash('sha256').update(`${withLegalCorpus}\0contract_version\0${contractVersion}`).digest('hex')
     : withLegalCorpus;
+  if (inventoryVersion === null && inventoryHash === null && snapshotHash === null) return withContract;
+  if (![inventoryVersion, inventoryHash, snapshotHash].every(value => typeof value === 'string' && value.trim())) {
+    throw new Error('La identidad de idempotencia del inventario requiere versión, inventory_hash y snapshot_hash juntos.');
+  }
+  return createHash('sha256').update(`${withContract}\0inventory_version\0${inventoryVersion}\0inventory_hash\0${inventoryHash}\0snapshot_hash\0${snapshotHash}`).digest('hex');
 }
 
 /** Atomically reserves one cross-request provider slot in PostgreSQL. */
@@ -127,6 +150,10 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     throw new Error('AGT-002 Preview requiere su envelope estructurado real.');
   }
   const isIntegralV3 = envelope.schema_version === AGT002_INTEGRAL_V3_SCHEMA_VERSION;
+  const requireTenderRequirementInventory = context?.requireTenderRequirementInventory === true;
+  if (requireTenderRequirementInventory && envelope.evidence_coverage === undefined) {
+    throw new Error('La persistencia canónica requiere evidence_coverage con tender_requirement_inventory server-side.');
+  }
 
   if (isIntegralV3) {
     if (envelope.agent_id !== 'AGT-002' || envelope.method !== 'agent_ai') {
@@ -181,7 +208,7 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     content = recomputedProjection;
     content.integral_analysis = integralAnalysis;
     if (envelope.evidence_coverage !== undefined) {
-      content.evidence_coverage = validateEvidenceCoverage(envelope.evidence_coverage, snapshotId);
+      content.evidence_coverage = validateEvidenceCoverage(envelope.evidence_coverage, snapshotId, { requireTenderRequirementInventory });
     }
     // P2-1: the engine already scoped this to exactly what it bound (agt002-preview-engine.js's
     // selectBoundGovernanceProvenance), but it is never trusted verbatim — re-validated here
@@ -224,7 +251,7 @@ export async function registerAgt002PreviewAnalysis(database, context) {
   } else {
     content = Object.fromEntries(CONTENT_KEYS.map(key => [key, envelope[key]]));
     if (envelope.evidence_coverage !== undefined) {
-      content.evidence_coverage = validateEvidenceCoverage(envelope.evidence_coverage, snapshotId);
+      content.evidence_coverage = validateEvidenceCoverage(envelope.evidence_coverage, snapshotId, { requireTenderRequirementInventory });
     }
     const hasLegalEvidence = envelope.legal_evidence !== undefined;
     const hasLegalFindings = envelope.legal_findings !== undefined;
@@ -263,11 +290,26 @@ export async function registerAgt002PreviewAnalysis(database, context) {
   if (canonicalOnly && !contextVersionId) {
     throw new Error('Un análisis canónico Vig-IA requiere context_version_id.');
   }
+  const tenderRequirementInventory = content?.evidence_coverage?.tender_requirement_inventory ?? null;
+  const inventoryIdentity = tenderRequirementInventory
+    ? {
+      inventoryVersion: tenderRequirementInventory.inventory_version,
+      inventoryHash: tenderRequirementInventory.inventory_hash,
+      snapshotHash: tenderRequirementInventory.snapshot_hash,
+    }
+    : {};
   const idempotencyKey = computeAgt002PreviewIdempotencyKey({
     snapshotId, policyVersion, model: usage.model, contextVersionId,
     legalCorpusVersionId: hasLegalCorpusVersionId ? legalCorpusVersionId : null,
     contractVersion: isIntegralV3 ? AGT002_INTEGRAL_V3_CONTRACT_VERSION : null,
+    ...inventoryIdentity,
   });
+  if (context?.expectedIdempotencyKey != null) {
+    const expectedIdempotencyKey = requireId(context.expectedIdempotencyKey, 'La clave de idempotencia reservada');
+    if (expectedIdempotencyKey !== idempotencyKey) {
+      throw new Error('La identidad recalculada del análisis no coincide con la reserva de idempotencia.');
+    }
+  }
 
   const commonParams = {
     p_snapshot_id: snapshotId,

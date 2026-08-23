@@ -278,6 +278,24 @@ export type TenderRequirementManifestEntry = {
   sources: TenderRequirementManifestSource[];
   unresolved_sources: TenderRequirementManifestUnresolvedSource[];
 };
+export type TenderRequirementInventoryCoverage = {
+  inventory_version: string;
+  decision_ready: boolean;
+  recommendation: 'pause' | 'proceed_to_analysis';
+  human_review_required: true;
+  expedient_coverage: {
+    status: 'incomplete' | 'partial' | 'complete';
+    total_source_units: number;
+    dispositioned_source_units: number;
+    requirement_count: number;
+  };
+  analyzed_coverage: {
+    status: 'incomplete' | 'partial' | 'complete';
+    total_source_units: number;
+    dispositioned_source_units: number;
+    requirement_count: number;
+  };
+};
 export type TenderEvidenceCoverage = {
   snapshot_id: string;
   budget: {
@@ -296,6 +314,7 @@ export type TenderEvidenceCoverage = {
   material_omissions: boolean;
   requirement_manifest_version: string;
   requirement_manifest: TenderRequirementManifestEntry[];
+  tender_requirement_inventory?: TenderRequirementInventoryCoverage;
 };
 export type TenderLegalFindingClassification = 'tender_requirement' | 'legal_obligation' | 'company_evidence' | 'inference' | 'human_legal_review';
 export type TenderLegalFinding = {

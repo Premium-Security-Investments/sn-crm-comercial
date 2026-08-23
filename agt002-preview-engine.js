@@ -205,6 +205,10 @@ function buildEvidenceCoverage(previewInput) {
     material_omissions: evidence.material_omissions,
     requirement_manifest_version: evidence.requirement_manifest_version,
     requirement_manifest: evidence.requirement_manifest,
+    // The inventory is server-derived before any model turn. It is deliberately distinct
+    // from the legacy requirement_manifest: the latter remains retrieval metadata, while
+    // this ledger is the only claim about disposition/coverage of the whole expediente.
+    tender_requirement_inventory: evidence.tender_requirement_inventory,
   };
 }
 

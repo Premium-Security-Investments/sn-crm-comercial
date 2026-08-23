@@ -9,7 +9,7 @@ const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8
 // and are never promoted to answerable executive alerts.
 assert.match(component, /\{hasIntegralV3 && analysis && !analysis\.decision_review && <section className="tender-v3-questions tender-executive-pending"/, 'V3 debe mostrar una proyección ejecutiva pendiente cuando no hay decision_review.');
 assert.match(component, /Radar ejecutivo pendiente de clasificación|Clasificación ejecutiva no disponible/, 'Debe explicar que falta clasificar materialidad.');
-const pendingPanel = component.slice(component.indexOf('tender-executive-pending'), component.indexOf('{hasIntegralV3 && analysis && analysis.decision_review'));
+const pendingPanel = component.slice(component.indexOf('{hasIntegralV3 && analysis && !analysis.decision_review'), component.indexOf('{hasIntegralV3 && analysis && analysis.decision_review'));
 assert.match(pendingPanel, /hallazgos técnicos/);
 assert.match(pendingPanel, /no se presentan como alertas materiales/i);
 assert.doesNotMatch(pendingPanel, /questions\.map\(question => <QuestionResponseCard/, 'Los hallazgos técnicos sin materialidad no deben convertirse en preguntas respondibles.');

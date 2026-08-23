@@ -60,6 +60,9 @@ import {
   sanitizeAgt002FixedSnapshotError,
 } from '../agt002-fixed-snapshot-reanalysis.js';
 import { adaptAgt002RetrievalDocuments } from '../agt002-retrieval-document-adapter.js';
+import { buildAgt002TenderRequirementInventory } from '../agt002-preview-input.js';
+import { loadAgt002TenderRequirementDocumentGaps } from '../agt002-tender-requirement-gaps.js';
+import { tenderRequirementInventoryIdentity } from '../tender-requirement-inventory.js';
 import { loadPublishedAgt002LegalCorpus } from '../agt002-legal-corpus-store.js';
 import { selectAgt002ManizalesManifestSource } from '../agt002-manizales-manifest-source.js';
 import { buildAgt002FrozenEngineInput } from '../agt002-reanalysis-input.js';
@@ -134,6 +137,23 @@ async function enqueueAgt002CanonicalReanalysis(database, {
   const policyVersion = agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3
     ? AGT002_INTEGRAL_V3_POLICY_VERSION
     : config.policyVersion;
+  const documentRetrieval = agt002AnalysisConfig.AGT002_DOCUMENT_RETRIEVAL === true;
+  const analysisDocuments = documentRetrieval
+    ? adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId })
+    : currentDocs;
+  const documentGaps = await loadAgt002TenderRequirementDocumentGaps(database, { snapshotId });
+  // The tender inventory lives inside the retrieval evidence packet. With
+  // AGT002_DOCUMENT_RETRIEVAL off the envelope carries no evidence_coverage at all, so binding
+  // an inventory identity into the reservation here would guarantee a mismatch against the
+  // identity registerAgt002PreviewAnalysis recomputes from that envelope. Gated on the exact
+  // signal — never inferred from whether documents/gaps happen to exist.
+  const inventoryIdentity = documentRetrieval
+    ? tenderRequirementInventoryIdentity(buildAgt002TenderRequirementInventory({
+      snapshotId,
+      documents: analysisDocuments,
+      documentGaps,
+    }))
+    : {};
   const idempotencyKey = computeAgt002PreviewIdempotencyKey({
     snapshotId,
     policyVersion,
@@ -141,6 +161,7 @@ async function enqueueAgt002CanonicalReanalysis(database, {
     contextVersionId: contextVersion.id,
     legalCorpusVersionId: legalCorpusContext?.legal_corpus_version_id,
     contractVersion: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? AGT002_INTEGRAL_V3_CONTRACT_VERSION : null,
+    ...inventoryIdentity,
   });
   const existingRun = await findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly: true });
   if (existingRun?.run_id) {
@@ -150,14 +171,12 @@ async function enqueueAgt002CanonicalReanalysis(database, {
     };
   }
 
-  const analysisDocuments = agt002AnalysisConfig.AGT002_DOCUMENT_RETRIEVAL
-    ? adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId })
-    : currentDocs;
   const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
   const manizalesManifestSource = await selectAgt002ManizalesManifestForTender(database, { opportunityId, tenderId });
   const analysisContext = {
     opportunity,
     documents: analysisDocuments,
+    documentGaps,
     companyProfile,
     deepAnalysis,
     snapshotId,
@@ -3492,13 +3511,31 @@ function buildTenderProcessingWorkerDeps(database) {
           opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, actor_id: actor.requested_by,
           context: { snapshot_id: snapshotId, ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: [] },
         }) : null;
+        const documentRetrieval = agt002AnalysisConfig.AGT002_DOCUMENT_RETRIEVAL === true;
+        const analysisDocuments = documentRetrieval
+          ? adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId })
+          : currentDocs;
+        const documentGaps = await loadAgt002TenderRequirementDocumentGaps(database, { snapshotId, jobId });
+        // Same fail-closed gate as the enqueue path: the inventory only exists when
+        // AGT002_DOCUMENT_RETRIEVAL builds the evidence packet that carries it.
+        const inventoryIdentity = documentRetrieval
+          ? tenderRequirementInventoryIdentity(buildAgt002TenderRequirementInventory({
+            snapshotId,
+            documents: analysisDocuments,
+            documentGaps,
+          }))
+          : {};
+        const policyVersion = agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3
+          ? AGT002_INTEGRAL_V3_POLICY_VERSION
+          : config.policyVersion;
         idempotencyKey = computeAgt002PreviewIdempotencyKey({
           snapshotId,
-          policyVersion: config.policyVersion,
+          policyVersion,
           model: config.model,
           contextVersionId: contextVersion?.id,
           legalCorpusVersionId: legalCorpusContext?.legal_corpus_version_id,
           contractVersion: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? AGT002_INTEGRAL_V3_CONTRACT_VERSION : null,
+          ...inventoryIdentity,
         });
         const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
         if (claim.status === 'existing') {
@@ -3534,9 +3571,8 @@ function buildTenderProcessingWorkerDeps(database) {
             contextVersionId: contextVersion?.id ?? null,
           } : {}),
         });
-        const analysisDocuments = adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId });
-        const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
-        const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly, context_version_id: contextVersion?.id, expectedManifestScope: engine.manifestScope ?? null });
+        const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, documentGaps, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
+        const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly, context_version_id: contextVersion?.id, expectedManifestScope: engine.manifestScope ?? null, expectedIdempotencyKey: idempotencyKey, requireTenderRequirementInventory: documentRetrieval });
         if (canonicalOnly) await appendAttempt(idempotencyKey, 'completed', { analysis_run_id: registeredRun.run_id });
         return { status: 'completed', analysisRunId: registeredRun.run_id };
       } catch (error) {
@@ -4139,12 +4175,30 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
     try {
       const config = getAgt002PreviewRuntimeConfig(process.env);
       const legalCorpusContext = await loadAgt002LegalCorpusContextIfEnabled(database);
+      const documentRetrieval = agt002AnalysisConfig.AGT002_DOCUMENT_RETRIEVAL === true;
+      const analysisDocuments = documentRetrieval
+        ? adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId: registeredSnapshot.id })
+        : currentDocs;
+      const documentGaps = await loadAgt002TenderRequirementDocumentGaps(database, { snapshotId: registeredSnapshot.id });
+      // Same fail-closed gate as the canonical paths: no retrieval, no inventory, so no
+      // inventory-bound identity may enter this reservation.
+      const inventoryIdentity = documentRetrieval
+        ? tenderRequirementInventoryIdentity(buildAgt002TenderRequirementInventory({
+          snapshotId: registeredSnapshot.id,
+          documents: analysisDocuments,
+          documentGaps,
+        }))
+        : {};
+      const policyVersion = agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3
+        ? AGT002_INTEGRAL_V3_POLICY_VERSION
+        : config.policyVersion;
       idempotencyKey = computeAgt002PreviewIdempotencyKey({
         snapshotId: registeredSnapshot.id,
-        policyVersion: config.policyVersion,
+        policyVersion,
         model: config.model,
         legalCorpusVersionId: legalCorpusContext?.legal_corpus_version_id,
         contractVersion: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? AGT002_INTEGRAL_V3_CONTRACT_VERSION : null,
+        ...inventoryIdentity,
       });
       const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
       if (claim.status === 'existing') {
@@ -4174,11 +4228,8 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
             contextVersionId: null,
           } : {}),
         });
-      const analysisDocuments = agt002AnalysisConfig.AGT002_DOCUMENT_RETRIEVAL
-        ? adaptAgt002RetrievalDocuments(currentDocs, { opportunityId, snapshotId: registeredSnapshot.id })
-        : currentDocs;
-      const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id, canonicalOnly: false, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
-      const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope, canonicalOnly: false, context_version_id: null, expectedManifestScope: engine.manifestScope ?? null });
+      const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, documentGaps, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id, canonicalOnly: false, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
+      const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope, canonicalOnly: false, context_version_id: null, expectedManifestScope: engine.manifestScope ?? null, expectedIdempotencyKey: idempotencyKey, requireTenderRequirementInventory: documentRetrieval });
       const payload = await getTenderDocumentRecords(database, opportunityId);
       return res.json({ ...payload, analysis: presentCurrentTenderAnalysis(registeredRun), analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, state: 'completed', reused: false, human_review_required: true } });
     } catch (error) {

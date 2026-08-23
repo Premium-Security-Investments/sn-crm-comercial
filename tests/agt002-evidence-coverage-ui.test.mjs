@@ -34,8 +34,11 @@ for (const hidden of ['Cómo funciona', 'Citas de evidencia']) {
 }
 assert.match(analysis, /No registra ni autoriza GO \/ NO GO/, 'Debe conservar una sola advertencia concisa de autoridad humana.');
 
-// Coverage remains part of the typed analysis payload, but it is not rendered in this operative view.
-assert.doesNotMatch(analysis, /analysis\??\.evidence_coverage/, 'TenderAnalysisSection no debe leer evidence_coverage para presentarla al usuario.');
+// Coverage remains part of the typed analysis payload. The operative view may read only the
+// server-validated tender inventory summary to render the fail-closed pause; it must never render
+// raw chunks, omissions, hashes or the full coverage payload.
+assert.match(analysis, /evidence_coverage\?\.tender_requirement_inventory/);
+assert.doesNotMatch(analysis, /selected_chunks|omitted_chunks|citation_allowlist|coverage_manifest/);
 
 // Never expose raw chunk text/hashes or the full coverage payload.
 assert.doesNotMatch(analysis, /chunk\.text|chunk_hash|content_hash/, 'La franja no debe exponer texto de chunk ni hashes.');

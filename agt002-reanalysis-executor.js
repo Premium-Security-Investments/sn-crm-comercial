@@ -128,7 +128,13 @@ export function createAgt002ReanalysisExecutor({
         correlationId: createCorrelationId(),
         claimId: previewClaimId,
         idempotencyKey: job.idempotencyKey,
+        expectedIdempotencyKey: job.idempotencyKey,
         canonicalOnly: true,
+        // The frozen flags are the run's own governed truth: the enqueue that reserved
+        // job.idempotencyKey bound the tender inventory into that identity if and only if
+        // AGT002_DOCUMENT_RETRIEVAL was on. Requiring the inventory at persistence with
+        // retrieval off would reject an envelope that legitimately has no evidence_coverage.
+        requireTenderRequirementInventory: input.analysis_flags.AGT002_DOCUMENT_RETRIEVAL === true,
       }, {
         engine,
         observability,

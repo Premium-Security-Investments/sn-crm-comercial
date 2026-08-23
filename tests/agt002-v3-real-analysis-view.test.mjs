@@ -43,8 +43,41 @@ const DYNAMIC = JSON.parse(readFileSync(new URL('fixtures/tender-integral-analys
 const PILOT = (await runAgt002ManizalesV3LocalRun()).envelope;
 
 const render = analysis => renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis }));
-const dynamicHtml = render(DYNAMIC);
-const pilotHtml = render(PILOT);
+// Inventario listo = el inventario gobernado del expediente vigente está presente, bien
+// formado y con `decision_ready: true`. Sólo esa combinación rinde el V3 completo.
+const READY_INVENTORY = Object.freeze({
+  inventory_version: 'tender_requirement_inventory.v1',
+  decision_ready: true,
+  recommendation: 'proceed_to_analysis',
+  human_review_required: true,
+  expedient_coverage: { status: 'complete', total_source_units: 12, dispositioned_source_units: 12, requirement_count: 7 },
+  analyzed_coverage: { status: 'complete', total_source_units: 12, dispositioned_source_units: 12, requirement_count: 7 },
+});
+// Forma real del contrato P0 vigente: inventario presente y bien formado, pero
+// `decision_ready: false`/`recommendation: 'pause'` — el valor que fija toda corrida real hoy,
+// porque la segmentación documental todavía no es análisis semántico. Esa corrida real debe
+// seguir pausada: la sola presencia del inventario nunca sustituye a `decision_ready`.
+const PAUSED_REAL_INVENTORY = Object.freeze({
+  inventory_version: 'tender_requirement_inventory.v1',
+  decision_ready: false,
+  recommendation: 'pause',
+  human_review_required: true,
+  expedient_coverage: { status: 'partial', total_source_units: 12, dispositioned_source_units: 12, requirement_count: 7 },
+  analyzed_coverage: { status: 'incomplete', total_source_units: 12, dispositioned_source_units: 0, requirement_count: 0 },
+});
+const withInventory = (analysis, inventory) => ({
+  ...analysis,
+  evidence_coverage: {
+    ...(analysis.evidence_coverage ?? {}),
+    tender_requirement_inventory: {
+      ...(analysis.evidence_coverage?.tender_requirement_inventory ?? {}),
+      ...inventory,
+    },
+  },
+});
+const withReadyInventory = analysis => withInventory(analysis, READY_INVENTORY);
+const dynamicHtml = render(withReadyInventory(DYNAMIC));
+const pilotHtml = render(withReadyInventory(PILOT));
 
 // La segunda capa vive siempre en `<details class="agt002-v3-trace">`; separarla del HTML deja
 // exactamente la primera capa humana.
@@ -57,6 +90,54 @@ const countOf = (haystack, needle) => haystack.split(needle).length - 1;
 
 const DYNAMIC_UNITS = DYNAMIC.integral_analysis.analysis_units;
 const PILOT_UNITS = PILOT.integral_analysis.analysis_units;
+
+test('un V3 histórico sin inventario verificable se muestra pausado, no como análisis integral', () => {
+  const html = render(DYNAMIC);
+  assert.ok(html.includes('Cobertura integral no disponible'));
+  assert.ok(html.includes('no tiene todavía una cobertura integral lista para decisión'));
+  assert.equal(html.includes('Requisitos analizados'), false);
+  // Ninguna lectura de cobertura se filtra en la pausa: ni fases, ni unidades, ni títulos.
+  assert.equal(html.includes('agt002-v3-workbench'), false);
+  for (const unit of DYNAMIC_UNITS) assert.equal(html.includes(`<h4>${unit.title}</h4>`), false);
+});
+
+test('un inventario presente pero sin la forma gobernada falla cerrado a la misma pausa', () => {
+  for (const broken of [
+    { ...READY_INVENTORY, inventory_version: 'tender_requirement_inventory.v0' },
+    { ...READY_INVENTORY, inventory_version: undefined },
+    { ...READY_INVENTORY, expedient_coverage: null },
+    { ...READY_INVENTORY, analyzed_coverage: { status: 'incomplete' } },
+    { ...READY_INVENTORY, expedient_coverage: [] },
+  ]) {
+    const html = render({ ...DYNAMIC, evidence_coverage: { ...(DYNAMIC.evidence_coverage ?? {}), tender_requirement_inventory: broken } });
+    assert.ok(html.includes('Cobertura integral no disponible'), `un inventario malformado debe pausar: ${JSON.stringify(broken.inventory_version)}`);
+    assert.equal(html.includes('Requisitos analizados'), false);
+  }
+});
+
+test('un inventario listo (decision_ready === true) rinde el V3 completo', () => {
+  assert.equal(READY_INVENTORY.decision_ready, true, 'el fixture debe reproducir el único caso que puede rendir completo');
+  for (const html of [dynamicHtml, pilotHtml]) {
+    assert.ok(html.includes('Análisis integral por requisito'));
+    assert.equal(html.includes('Cobertura integral no disponible'), false);
+    assert.ok(html.includes('Validación humana pendiente'), 'la pausa humana sigue visible dentro del V3 completo');
+  }
+  assert.ok(dynamicHtml.includes(`<dt>Requisitos analizados</dt><dd>${DYNAMIC_UNITS.length}</dd>`));
+});
+
+// La forma real del contrato P0 vigente: un inventario presente, bien formado, pero con
+// `decision_ready: false` — el valor que fija toda corrida real hoy — debe seguir mostrando la
+// misma pausa que un histórico sin inventario en absoluto. Ninguna cifra de cobertura integral,
+// fase, conteo o recomendación puede filtrarse mientras `decision_ready` no sea `true`.
+test('un inventario presente y bien formado pero con decision_ready !== true permanece pausado, no rinde el V3 completo', () => {
+  const html = render(withInventory(DYNAMIC, PAUSED_REAL_INVENTORY));
+  assert.ok(html.includes('Cobertura integral no disponible'));
+  assert.ok(html.includes('no tiene todavía una cobertura integral lista para decisión'));
+  assert.equal(html.includes('Requisitos analizados'), false);
+  assert.equal(html.includes('agt002-v3-workbench'), false);
+  assert.equal(html.includes('Análisis integral por requisito'), false);
+  for (const unit of DYNAMIC_UNITS) assert.equal(html.includes(`<h4>${unit.title}</h4>`), false);
+});
 
 // ---------------------------------------------------------------------------------------------
 // 1 · Resumen calculado desde los arreglos reales; la suma por estado es analysis_units.length.

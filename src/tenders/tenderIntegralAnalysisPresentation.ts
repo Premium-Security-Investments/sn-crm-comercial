@@ -4,6 +4,7 @@ import type {
   TenderIntegralAnalysisUnit,
   TenderIntegralAnalysisV3,
   TenderIntegralCategory,
+  TenderRequirementInventoryCoverage,
 } from './types';
 
 // Pure presentation selectors over the raw V3 integral analysis (contrato exacto vinculante,
@@ -106,6 +107,34 @@ function translateEnum(dictionary: Record<string, string>, value: string | null 
 
 export function tenderIntegralCategoryLabel(category: string | null | undefined): string {
   return translateEnum(CATEGORY_LABELS, category);
+}
+
+export const TENDER_REQUIREMENT_INVENTORY_VERSION = 'tender_requirement_inventory.v1';
+
+/**
+ * A V3 payload may only be presented as integral coverage when the run carries a well-formed
+ * server-owned tender inventory for its own snapshot AND that inventory reports
+ * `decision_ready === true`. The P0 inventory contract (`buildTenderRequirementInventory`)
+ * pins `decision_ready: false` on every real run today — segmentation is not semantic analysis
+ * yet — so this gate deliberately keeps every current production run paused; that is the
+ * fail-closed contract for this cut, not a defect to work around. A legacy/historic run with no
+ * verifiable inventory at all, or a payload whose inventory is not the governed shape, fails
+ * closed to the same pause. Only once a later server-side analyzer marks a snapshot's inventory
+ * `decision_ready: true` does the full V3 surface render.
+ */
+export function tenderRequirementInventoryReady(
+  inventory: TenderRequirementInventoryCoverage | null | undefined,
+): inventory is TenderRequirementInventoryCoverage {
+  if (!inventory || typeof inventory !== 'object') return false;
+  if (inventory.inventory_version !== TENDER_REQUIREMENT_INVENTORY_VERSION) return false;
+  if (inventory.decision_ready !== true) return false;
+  return isCoverageBlock(inventory.expedient_coverage) && isCoverageBlock(inventory.analyzed_coverage);
+}
+
+function isCoverageBlock(value: unknown): boolean {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const coverage = value as { total_source_units?: unknown; dispositioned_source_units?: unknown };
+  return Number.isInteger(coverage.total_source_units) && Number.isInteger(coverage.dispositioned_source_units);
 }
 
 export type TenderIntegralUnitTechnical = {

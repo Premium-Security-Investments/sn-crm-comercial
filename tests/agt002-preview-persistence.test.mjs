@@ -160,6 +160,21 @@ function fakeDatabase({ onRpc } = {}) {
   assert.match(v3a, /^[0-9a-f]{64}$/);
 }
 
+// A caller that reserved one identity may never persist an envelope that recomputes to another.
+// This is checked before any database RPC, so a mismatched inventory/context cannot consume or
+// hijack a different claim.
+{
+  const database = fakeDatabase();
+  await assert.rejects(() => registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity,
+    tender_id: ids.tender,
+    snapshot_id: ids.snapshot,
+    envelope: envelope(),
+    expectedIdempotencyKey: 'f'.repeat(64),
+  }), /idempotencia|reserva|identidad/i);
+  assert.equal(database.rpcCalls.length, 0);
+}
+
 // Registration persists a closed content-only result: no identity/usage duplication, no prompt.
 {
   const database = fakeDatabase();
@@ -327,6 +342,21 @@ function fakeDatabase({ onRpc } = {}) {
   await assert.rejects(() => registerAgt002PreviewAnalysis(database, {
     opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: envelope(), canonicalOnly: true,
   }), /context_version_id/i);
+  assert.deepEqual(database.rpcCalls, []);
+}
+
+// A production-owned canonical registration rejects a legacy envelope with no tender inventory before any RPC.
+{
+  const database = fakeDatabase();
+  await assert.rejects(() => registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity,
+    tender_id: ids.tender,
+    snapshot_id: ids.snapshot,
+    envelope: envelope(),
+    canonicalOnly: true,
+    context_version_id: ids.contextVersion,
+    requireTenderRequirementInventory: true,
+  }), /tender_requirement_inventory|inventario/i);
   assert.deepEqual(database.rpcCalls, []);
 }
 

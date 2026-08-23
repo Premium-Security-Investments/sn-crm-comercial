@@ -58,9 +58,29 @@ test('reconstructs runtime from frozen non-secret input and invokes the real orc
   const [, context, deps] = calls.post[0];
   assert.equal(context.claimId, 'preview-lease-1');
   assert.equal(context.idempotencyKey, 'key-1');
+  assert.equal(context.expectedIdempotencyKey, 'key-1', 'the durable claim identity must reach persistence unchanged');
+  assert.equal(context.requireTenderRequirementInventory, true, 'retrieval on must keep the fail-closed inventory requirement');
   assert.equal(deps.analysisContext, JOB.frozenEngineInput.analysis_context);
   assert.equal(deps.integralContractV3, true);
   assert.equal(calls.release.length, 0, 'post-bridge orchestrator owns the claimed preview lease');
+});
+
+// Blocker: the frozen job's own AGT002_DOCUMENT_RETRIEVAL flag — never a hardcoded true —
+// must gate the persistence-side inventory requirement, or a retrieval-off run (whose
+// envelope legitimately carries no evidence_coverage) pays the provider then fails to persist.
+test('retrieval-off jobs never require the tender inventory at persistence', async () => {
+  const retrievalOffJob = {
+    ...JOB,
+    frozenEngineInput: {
+      ...JOB.frozenEngineInput,
+      analysis_flags: { ...JOB.frozenEngineInput.analysis_flags, AGT002_DOCUMENT_RETRIEVAL: false },
+    },
+  };
+  const { executor, calls } = harness();
+  const result = await executor({ kind: 'db' }, retrievalOffJob);
+  assert.deepEqual(result, { status: 'completed', analysis_run_id: 'run-1', error_code: null, reused: false });
+  const [, context] = calls.post[0];
+  assert.equal(context.requireTenderRequirementInventory, false);
 });
 
 test('closes capacity states without constructing the model or retrying', async () => {

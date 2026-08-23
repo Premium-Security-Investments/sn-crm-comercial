@@ -6,17 +6,17 @@ const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8
 
 assert.match(
   component,
-  /const hasIntegralV3 = Boolean\(analysis\?\.integral_analysis\?\.analysis_units\?\.length\)/,
+  /const hasIntegralV3Payload = Boolean\(analysis\?\.integral_analysis\?\.analysis_units\?\.length\)/,
   'La vista debe detectar explícitamente un análisis integral V3 con unidades.',
 );
 assert.match(
   component,
-  /\{!hasIntegralV3 && <header className="tender-analysis-header"/,
+  /\{!hasIntegralV3Payload && <header className="tender-analysis-header"/,
   'El encabezado legado debe ocultarse cuando existe V3.',
 );
 assert.match(
   component,
-  /\{!hasIntegralV3 && analysis && analysis\.status !== 'failed' && <article className="tender-decision-brief"/,
+  /\{!hasIntegralV3Payload && analysis && analysis\.status !== 'failed' && <article className="tender-decision-brief"/,
   'El brief legado debe ocultarse cuando existe V3.',
 );
 assert.match(
