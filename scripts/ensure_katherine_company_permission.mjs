@@ -1,3 +1,9 @@
+import { pathToFileURL } from 'node:url';
+
+// Nombre exacto de la variable de opt-in en Vercel: renombrarla aquí sin actualizar el
+// entorno de despliegue debe romper el test de contrato, no el despliegue de producción.
+export const KATHERINE_PERMISSION_OPT_IN_ENV = 'RUN_KATHERINE_COMPANY_PERMISSION_BOOTSTRAP';
+
 const TARGET_NAME = 'Katherine Valencia Buitrago';
 const BASE_PERMISSION = 'licitaciones';
 const COMPANY_PERMISSION = 'licitaciones_empresa';
@@ -28,6 +34,9 @@ async function requestJson(fetchImpl, url, options, label) {
 
 export async function ensureKatherineCompanyPermission({ env = process.env, fetchImpl = fetch } = {}) {
   if (env.VERCEL_ENV !== 'production') return { status: 'skipped_non_production' };
+  // El opt-in debe ser exactamente 'true': cualquier otro valor es un no-op total, antes
+  // de validar credenciales y antes de cualquier fetch.
+  if (env[KATHERINE_PERMISSION_OPT_IN_ENV] !== 'true') return { status: 'skipped_opt_in_not_enabled' };
   const baseUrl = String(env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/$/, '');
   const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY;
   if (!baseUrl || !serviceKey) throw new Error('Production Supabase credentials are required.');
@@ -141,9 +150,20 @@ export async function ensureKatherineCompanyPermission({ env = process.env, fetc
   return { status: 'granted' };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   ensureKatherineCompanyPermission()
-    .then(result => console.log(`katherine_company_permission=${result.status}`))
+    .then(result => {
+      if (result.status === 'skipped_opt_in_not_enabled') {
+        console.log(JSON.stringify({
+          script: 'ensure_katherine_company_permission',
+          status: result.status,
+          optInEnvVar: KATHERINE_PERMISSION_OPT_IN_ENV,
+          mutated: false,
+        }));
+        return;
+      }
+      console.log(`katherine_company_permission=${result.status}`);
+    })
     .catch(error => {
       console.error(`katherine_company_permission=failed: ${error.message}`);
       process.exitCode = 1;
