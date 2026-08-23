@@ -188,6 +188,7 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
   const {
     opportunityId, tenderId, snapshotId, contextVersionId, attemptKey,
     correlationId, claimId, idempotencyKey, canonicalOnly = true,
+    requireTenderRequirementInventory = true,
   } = context;
   const {
     engine, observability = createAgt002AnalysisObservability(), analysisContext,
@@ -255,6 +256,8 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
         // from a request body — so persistence can deep-compare it before the RPC. Null for a
         // non-manifest run, leaving persistence's scope check inert.
         expectedManifestScope: engine?.manifestScope ?? null,
+        expectedIdempotencyKey: context.expectedIdempotencyKey,
+        requireTenderRequirementInventory,
       });
       runPersisted = true;
       analysisRunId = registeredRun?.run_id ?? null;

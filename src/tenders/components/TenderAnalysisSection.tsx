@@ -4,6 +4,7 @@ import { tenderRecommendationLabel } from '../tenderDecisionGate';
 import { deriveTenderProcessingPresentation } from '../processingStatus';
 import { tenderBriefUnavailableCopy } from '../tenderDecisionBriefModel';
 import { tenderDecisionBlockers, tenderDecisionConditionAnchor, tenderDecisionConditions, tenderDecisionPreparationActions, tenderDecisionSupportedAspects } from '../tenderDecisionSurface';
+import { tenderRequirementInventoryReady } from '../tenderIntegralAnalysisPresentation';
 import type { TenderAnalysisFinding, TenderDocumentAnalysis, TenderDocumentRecord, TenderDocumentsPayload, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput } from '../types';
 import { QuestionResponseCard, type NormalizedQuestion } from './TenderQuestionResponseCard';
 
@@ -43,7 +44,15 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
   const weaknesses = analysis?.weaknesses ?? analysis?.blockers ?? analysis?.commercial_fit?.concerns ?? [];
   const questions = (analysis?.questions ?? []).map(normalizeQuestion);
   const unverified = analysis?.unverified ?? analysis?.company_profile_crosscheck?.gaps ?? [];
-  const hasIntegralV3 = Boolean(analysis?.integral_analysis?.analysis_units?.length);
+  const tenderInventory = analysis?.evidence_coverage?.tender_requirement_inventory ?? null;
+  const hasIntegralV3Payload = Boolean(analysis?.integral_analysis?.analysis_units?.length);
+  // Mismo gate fail-closed que el respaldo técnico V3 (tenderRequirementInventoryReady): una
+  // corrida sin inventario verificable del expediente vigente, o con inventario presente pero
+  // `decision_ready` !== true, queda pausada. El inventario P0 fija `decision_ready: false`
+  // siempre hoy, así que la superficie ejecutiva completa permanece pausada hasta que un
+  // analizador posterior marque el inventario listo.
+  const inventoryPaused = hasIntegralV3Payload && !tenderRequirementInventoryReady(tenderInventory);
+  const hasIntegralV3 = hasIntegralV3Payload && !inventoryPaused;
   // Análisis es la única superficie completa de condiciones e impedimentos: cada entrada gobernada
   // se proyecta una sola vez a través de los selectores puros (Task 2). El componente no vuelve a
   // proyectar `decision_review` ni transporta rationale/ids/evidencia técnica a la capa visible.
@@ -69,7 +78,7 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
   const showAnalysisAction = canRunPreview && processingPresentation.primaryAction !== 'hidden';
   const unavailable = tenderBriefUnavailableCopy();
   return <div className={`tender-analysis-section tender-detail-anchor${hasIntegralV3 ? ' is-v3-compact' : ''}`}>
-    {!hasIntegralV3 && <header className="tender-analysis-header"><div><span className="eyebrow">Paso previo a la decisión humana</span><h3 id="tender-analysis-title">Análisis con {VIGIA_VISIBLE_NAMES.tenders}</h3><p>Organiza la evidencia disponible y señala pendientes. No registra ni autoriza GO / NO GO.</p></div><div className={`tender-analysis-state state-${failed ? 'failed' : stale ? 'stale' : analysis ? 'ready' : 'pending'}`}><strong>{state}</strong></div></header>}
+    {!hasIntegralV3Payload && <header className="tender-analysis-header"><div><span className="eyebrow">Paso previo a la decisión humana</span><h3 id="tender-analysis-title">Análisis con {VIGIA_VISIBLE_NAMES.tenders}</h3><p>Organiza la evidencia disponible y señala pendientes. No registra ni autoriza GO / NO GO.</p></div><div className={`tender-analysis-state state-${failed ? 'failed' : stale ? 'stale' : analysis ? 'ready' : 'pending'}`}><strong>{state}</strong></div></header>}
     {!hasDocuments && <div className="document-empty-state"><strong>Sin documentos</strong><span>Actualice o cargue documentos antes de analizar con {VIGIA_VISIBLE_NAMES.tenders}.</span></div>}
     {hasDocuments && !analysis && !processingPresentation.visible && <div className="document-empty-state"><strong>Análisis pendiente</strong><span>Hay documentos vigentes, pero todavía no existe una conclusión preliminar para revisar.</span></div>}
     {processingPresentation.visible && <div className={processingPresentation.tone === 'error' ? 'error' : 'notice'} role={processingPresentation.tone === 'error' ? 'alert' : 'status'}>
@@ -78,7 +87,11 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
     </div>}
     {failed && <div className="error" role="alert"><strong>Análisis fallido.</strong> El último intento no produjo una conclusión utilizable. Puede intentarlo nuevamente sin afectar la decisión humana.</div>}
     {stale && <div className="notice" role="status"><strong>Análisis desactualizado.</strong> El contenido histórico se conserva para trazabilidad, pero los documentos vigentes cambiaron.</div>}
-    {!hasIntegralV3 && analysis && analysis.status !== 'failed' && <article className="tender-decision-brief" aria-label="Conclusión preliminar de licitación">
+    {inventoryPaused && <section className="tender-v3-questions tender-executive-pending" aria-labelledby="tender-inventory-paused-title">
+      <header><div><span className="eyebrow">Cobertura del expediente</span><h3 id="tender-inventory-paused-title">Análisis integral pausado</h3><p>Este análisis no incluye un inventario verificable de los requisitos del expediente vigente. Sólo se llega aquí cuando el inventario falta o no tiene la forma gobernada, por lo que no se cita ninguna cifra suya: el análisis anterior se conserva sólo como trazabilidad y no representa cobertura integral de esta licitación.</p></div><strong>Inventario pendiente</strong></header>
+      <p className="notice" role="status">No hay recomendación integral disponible. Revise o actualice el análisis cuando el inventario de requisitos de este expediente esté completo.</p>
+    </section>}
+    {!hasIntegralV3Payload && analysis && analysis.status !== 'failed' && <article className="tender-decision-brief" aria-label="Conclusión preliminar de licitación">
       <header className="tender-decision-brief-head"><div><small>Recomendación preliminar</small><strong>{tenderRecommendationLabel(analysis.recommendation)}</strong><p>{analysis.summary || 'Sin resumen documental disponible.'}</p></div><div className="tender-decision-brief-status"><span className={`badge badge-${tenderDecisionStatusTone(analysis.recommendation)}`}>{analysis.current ? 'Vigente' : 'Obsoleto'}</span><span>{tenderAnalysisMethodLabel(analysis.producer)}</span><small>{analysis.completed_at ? `Actualizado: ${new Date(analysis.completed_at).toLocaleString('es-CO')}` : analysis.generated_at ? `Generado: ${new Date(analysis.generated_at).toLocaleString('es-CO')}` : 'Fecha no informada'}</small></div></header>
       <div className="tender-decision-brief-grid"><section><h4>Fortalezas</h4><EvidenceList items={strengths} empty="Sin fortalezas documentales registradas."/></section><section><h4>Debilidades y bloqueadores</h4><EvidenceList items={weaknesses} empty="Sin debilidades o bloqueadores documentales registrados."/></section><section className="tender-question-responses"><h4>Dudas abiertas</h4>{questions.length ? <div className="tender-question-list">{questions.map(question => <QuestionResponseCard key={question.id} question={question} analysisRunId={analysis.run_id} responses={questionResponses.filter(item => item.question_id === question.id)} canAnswer={canAnswerQuestions} disabled={busy} onSave={onSaveQuestionResponse}/>)}</div> : <p className="muted">Sin dudas abiertas registradas.</p>}</section><section><h4>Información no verificada</h4><EvidenceList items={unverified} empty="Sin información no verificada registrada."/></section><section className="tender-decision-next-action"><h4>Siguiente acción</h4><p>{tenderNextAction(analysis.next_action) || 'Sin siguiente acción documentada; revisar el expediente con Licitaciones.'}</p></section></div>
     </article>}

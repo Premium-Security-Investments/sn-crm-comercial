@@ -4,6 +4,7 @@ import {
   tenderIntegralCategoryLabel,
   tenderIntegralPhaseGroups,
   tenderIntegralUnitConditionAnchor,
+  tenderRequirementInventoryReady,
   type TenderIntegralUnitPresentation,
 } from '../tenderIntegralAnalysisPresentation';
 import type { TenderDocumentAnalysis, TenderManifestUnresolvedEntry } from '../types';
@@ -117,9 +118,35 @@ function UnresolvedEntryReading({ entry }: { entry: TenderManifestUnresolvedEntr
 }
 
 export function TenderIntegralAnalysisV3View({ analysis }: TenderIntegralAnalysisV3ViewProps) {
+  // Consumo opcional (invariante previo): sin payload V3 esta vista no rinde nada en absoluto.
+  // No se sustituye por el aviso de inventario: un expediente sin análisis integral no tiene
+  // cobertura que pausar.
   const integral = analysis?.integral_analysis;
   const units = integral?.analysis_units;
   if (!integral || !units || units.length === 0) return null;
+
+  const inventory = analysis?.evidence_coverage?.tender_requirement_inventory ?? null;
+  // Fail-closed gate (ver tenderRequirementInventoryReady): un payload V3 sin inventario
+  // verificable del expediente vigente, o con inventario presente pero `decision_ready` !==
+  // true, se muestra sólo como trazabilidad pausada, nunca como cobertura integral. Ninguna
+  // derivación de cobertura (resumen, fases, unidades) ocurre antes de este punto. El inventario
+  // P0 fija `decision_ready: false` en toda corrida real de hoy, así que el V3 completo
+  // permanece pausado hasta que un analizador posterior marque el inventario listo.
+  if (!tenderRequirementInventoryReady(inventory)) {
+    return <section className="agt002-v3-preview" aria-labelledby="agt002-inventory-title">
+      <header className="agt002-v3-overview">
+        <div className="agt002-v3-overview-copy">
+          <span className="agt002-v3-eyebrow">AGT-002 · Inventario del expediente</span>
+          <h2 id="agt002-inventory-title">Cobertura integral no disponible</h2>
+          <p>Este análisis no tiene todavía una cobertura integral lista para decisión: falta un inventario verificable de los requisitos del expediente vigente, o el inventario existente aún no está marcado como listo. Se conserva sólo como trazabilidad y no representa cobertura integral.</p>
+        </div>
+        <div className="agt002-v3-overview-summary">
+          <span><small>Estado</small><strong>Análisis pausado</strong></span>
+          <span><small>Decisión</small><strong>Revisión humana</strong></span>
+        </div>
+      </header>
+    </section>;
+  }
 
   const summary = tenderIntegralAnalysisSummary(integral);
   const phases = tenderIntegralPhaseGroups(integral);

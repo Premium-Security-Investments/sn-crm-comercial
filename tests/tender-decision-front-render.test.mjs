@@ -170,9 +170,39 @@ function integralUnit({ unit_id, requirement_id, title, sequence, category = 'ha
   };
 }
 
+// Toda corrida V3 real trae el inventario gobernado del expediente vigente dentro de
+// evidence_coverage (AGT002_INTEGRAL_CONTRACT_V3 exige AGT002_DOCUMENT_RETRIEVAL). El respaldo
+// V3 y la superficie de Análisis sólo rinden completo cuando ese inventario está bien formado y
+// `decision_ready === true`; este fixture representa ese único caso listo. El contrato P0 real
+// (`buildTenderRequirementInventory`) fija hoy `decision_ready: false`/`recommendation: 'pause'`
+// en toda corrida — ese caso pausado, distinto de éste, se prueba explícitamente más abajo.
+const READY_EVIDENCE_COVERAGE = Object.freeze({
+  tender_requirement_inventory: Object.freeze({
+    inventory_version: 'tender_requirement_inventory.v1',
+    decision_ready: true,
+    recommendation: 'proceed_to_analysis',
+    human_review_required: true,
+    expedient_coverage: { status: 'complete', total_source_units: 9, dispositioned_source_units: 9, requirement_count: 4 },
+    analyzed_coverage: { status: 'complete', total_source_units: 9, dispositioned_source_units: 9, requirement_count: 4 },
+  }),
+});
+// Forma real del contrato P0 vigente: inventario presente y bien formado, pero con
+// `decision_ready: false` — el valor que fija toda corrida real hoy. Debe seguir pausada.
+const PAUSED_EVIDENCE_COVERAGE = Object.freeze({
+  tender_requirement_inventory: Object.freeze({
+    inventory_version: 'tender_requirement_inventory.v1',
+    decision_ready: false,
+    recommendation: 'pause',
+    human_review_required: true,
+    expedient_coverage: { status: 'partial', total_source_units: 9, dispositioned_source_units: 9, requirement_count: 4 },
+    analyzed_coverage: { status: 'incomplete', total_source_units: 9, dispositioned_source_units: 0, requirement_count: 0 },
+  }),
+});
+
 const ANALYSIS = {
   run_id: RUN_ID,
   snapshot_id: 'snap-task3',
+  evidence_coverage: READY_EVIDENCE_COVERAGE,
   producer: 'AGT-002',
   method: 'agent_ai',
   status: 'completed',
@@ -197,6 +227,13 @@ const ANALYSIS = {
   },
   decision_review: DECISION_REVIEW,
 };
+
+// Misma corrida V3, pero con la forma real del contrato P0 vigente (inventario presente, bien
+// formado, `decision_ready: false`). Debe pausar en ambas superficies, no rendir el V3 completo.
+const PAUSED_ANALYSIS = { ...ANALYSIS, evidence_coverage: PAUSED_EVIDENCE_COVERAGE };
+// Misma corrida V3, pero sin ningún inventario en absoluto (histórico previo al contrato de
+// inventario). También debe pausar en ambas superficies.
+const NO_INVENTORY_ANALYSIS = { ...ANALYSIS, evidence_coverage: undefined };
 
 const DOCUMENTS = [{
   id: 'doc-1',
@@ -492,6 +529,53 @@ test('el href de Ver condición principal en V3 apunta a un id que existe realme
 });
 
 // ---------------------------------------------------------------------------------------------
+// 11e · Contrato fail-closed AGT-002: TenderAnalysisSection y TenderIntegralAnalysisV3View deben
+//      coincidir. Un inventario presente pero con decision_ready !== true (la forma real del
+//      contrato P0 vigente) y un V3 histórico sin inventario en absoluto pausan ambas
+//      superficies: ninguna condición, impedimento, cobertura, conteo, fase ni recomendación se
+//      filtra en ninguna de las dos vistas.
+// ---------------------------------------------------------------------------------------------
+test('inventario presente con decision_ready=false pausa Análisis y V3 por igual, sin condiciones ni cobertura integral', () => {
+  const analysisHtml = render({ analysis: PAUSED_ANALYSIS });
+  const v3Html = renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis: PAUSED_ANALYSIS }));
+
+  assert.ok(analysisHtml.includes('Análisis integral pausado'), 'Análisis debe mostrar el aviso de pausa');
+  assert.ok(v3Html.includes('Cobertura integral no disponible'), 'V3 debe mostrar el aviso de pausa');
+
+  for (const html of [analysisHtml, v3Html]) {
+    assert.equal(html.includes(CONDITION_PRESENTED.presentation.title), false, 'ninguna condición gobernada puede filtrarse en pausa');
+    assert.equal(html.includes(IMPEDIMENT.presentation.title), false, 'ningún impedimento gobernado puede filtrarse en pausa');
+    assert.equal(html.includes('Unidad técnica 1'), false, 'ninguna unidad V3 puede filtrarse en pausa');
+    assert.equal(html.includes('Requisitos analizados'), false, 'ningún conteo de cobertura integral puede filtrarse en pausa');
+  }
+});
+
+test('V3 histórico sin ningún inventario pausa Análisis y V3 por igual, sin condiciones ni cobertura integral', () => {
+  const analysisHtml = render({ analysis: NO_INVENTORY_ANALYSIS });
+  const v3Html = renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis: NO_INVENTORY_ANALYSIS }));
+
+  assert.ok(analysisHtml.includes('Análisis integral pausado'), 'Análisis debe mostrar el aviso de pausa');
+  assert.ok(v3Html.includes('Cobertura integral no disponible'), 'V3 debe mostrar el aviso de pausa');
+
+  for (const html of [analysisHtml, v3Html]) {
+    assert.equal(html.includes(CONDITION_PRESENTED.presentation.title), false, 'ninguna condición gobernada puede filtrarse en pausa');
+    assert.equal(html.includes(IMPEDIMENT.presentation.title), false, 'ningún impedimento gobernado puede filtrarse en pausa');
+    assert.equal(html.includes('Unidad técnica 1'), false, 'ninguna unidad V3 puede filtrarse en pausa');
+    assert.equal(html.includes('Requisitos analizados'), false, 'ningún conteo de cobertura integral puede filtrarse en pausa');
+  }
+});
+
+test('inventario listo (decision_ready === true) rinde el V3 completo y las condiciones en Análisis, en el mismo fixture', () => {
+  const analysisHtml = render();
+  const v3Html = renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis: ANALYSIS }));
+
+  assert.equal(analysisHtml.includes('Análisis integral pausado'), false);
+  assert.equal(v3Html.includes('Cobertura integral no disponible'), false);
+  assert.ok(analysisHtml.includes(CONDITION_PRESENTED.presentation.title), 'Análisis debe rendir la condición gobernada');
+  assert.ok(v3Html.includes('Unidad técnica 1'), 'V3 debe rendir la unidad gobernada');
+});
+
+// ---------------------------------------------------------------------------------------------
 // 11b · V3 con la cantidad real del piloto (AGT002_MANIZALES_V3_ANALYZABLE_REQUIREMENT_COUNT
 //      unidades) — HTML renderizado real de una corrida completa del motor, no un fixture de
 //      prueba. Prueba que TenderIntegralAnalysisV3View no está atado a los 2 unidades del fixture
@@ -503,7 +587,7 @@ test('TenderIntegralAnalysisV3View renderiza el HTML real con la cantidad de uni
   assert.equal(pilotUnits.length, AGT002_MANIZALES_V3_ANALYZABLE_REQUIREMENT_COUNT, 'el fixture del piloto debe seguir teniendo la cantidad gobernada esperada');
 
   const html = renderReactComponent(TenderIntegralAnalysisV3View, {
-    analysis: { run_id: 'pilot-run', snapshot_id: 'pilot-snapshot', integral_analysis: envelope.integral_analysis, decision_review: null },
+    analysis: { run_id: 'pilot-run', snapshot_id: 'pilot-snapshot', evidence_coverage: READY_EVIDENCE_COVERAGE, integral_analysis: envelope.integral_analysis, decision_review: null },
   });
   assert.ok(html.includes(`<dd>${AGT002_MANIZALES_V3_ANALYZABLE_REQUIREMENT_COUNT}</dd>`), 'el resumen renderizado debe mostrar el total real de unidades del piloto');
   for (const unit of pilotUnits) {
@@ -533,6 +617,7 @@ test('TenderIntegralAnalysisV3View renderiza el HTML real con una cantidad de un
 const PHASES_ANALYSIS = {
   run_id: 'run-phases',
   snapshot_id: 'snap-phases',
+  evidence_coverage: READY_EVIDENCE_COVERAGE,
   producer: 'AGT-002',
   method: 'agent_ai',
   status: 'completed',

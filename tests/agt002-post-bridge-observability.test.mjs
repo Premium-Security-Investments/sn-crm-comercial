@@ -261,7 +261,7 @@ test('a bridge transport failure never reaches response_received, is durably mar
   const observability = spyObservability();
   const database = fakeDatabase();
 
-  const result = await runAgt002PostBridgeAnalysis(database, requestContext(), {
+  const result = await runAgt002PostBridgeAnalysis(database, { ...requestContext(), requireTenderRequirementInventory: false }, {
     engine, observability, analysisContext, bridgeTelemetry: telemetry,
   });
 
@@ -296,7 +296,7 @@ test('a pre-bridge engine rejection is unexpected, never transport/provider, whe
   const observability = spyObservability();
   const database = fakeDatabase();
 
-  const result = await runAgt002PostBridgeAnalysis(database, requestContext(), {
+  const result = await runAgt002PostBridgeAnalysis(database, { ...requestContext(), requireTenderRequirementInventory: false }, {
     engine, observability, analysisContext, bridgeTelemetry: telemetry,
   });
 
@@ -321,7 +321,7 @@ test('non-JSON bridge content after a real bridge_success classifies as json_par
   const observability = spyObservability();
   const database = fakeDatabase();
 
-  const result = await runAgt002PostBridgeAnalysis(database, requestContext(), {
+  const result = await runAgt002PostBridgeAnalysis(database, { ...requestContext(), requireTenderRequirementInventory: false }, {
     engine, observability, analysisContext, bridgeTelemetry: telemetry,
   });
 
@@ -351,7 +351,7 @@ test('missing/empty bridge content after a real bridge_success classifies as con
   const observability = spyObservability();
   const database = fakeDatabase();
 
-  const result = await runAgt002PostBridgeAnalysis(database, requestContext(), {
+  const result = await runAgt002PostBridgeAnalysis(database, { ...requestContext(), requireTenderRequirementInventory: false }, {
     engine, observability, analysisContext, bridgeTelemetry: telemetry,
   });
 
@@ -376,7 +376,7 @@ test('a hallucinated evidence_id (schema-valid JSON, invalid model output) class
   const observability = spyObservability();
   const database = fakeDatabase();
 
-  const result = await runAgt002PostBridgeAnalysis(database, requestContext(), {
+  const result = await runAgt002PostBridgeAnalysis(database, { ...requestContext(), requireTenderRequirementInventory: false }, {
     engine, observability, analysisContext, bridgeTelemetry: telemetry,
   });
 
@@ -404,7 +404,7 @@ test('a schema-valid output whose envelope fails to assemble classifies as envel
   const observability = spyObservability();
   const database = fakeDatabase();
 
-  const result = await runAgt002PostBridgeAnalysis(database, requestContext(), {
+  const result = await runAgt002PostBridgeAnalysis(database, { ...requestContext(), requireTenderRequirementInventory: false }, {
     engine, observability, analysisContext, bridgeTelemetry: telemetry,
   });
 
@@ -425,7 +425,7 @@ test('a fully valid envelope rejected by persistence classifies as persistence, 
     onRecordRun: () => ({ data: null, error: { message: 'duplicate key value violates unique constraint' } }),
   });
 
-  const result = await runAgt002PostBridgeAnalysis(database, requestContext(), {
+  const result = await runAgt002PostBridgeAnalysis(database, { ...requestContext(), requireTenderRequirementInventory: false }, {
     engine, observability, analysisContext, bridgeTelemetry: telemetry,
   });
 
@@ -458,7 +458,7 @@ test('a fully valid model output is persisted through the real engine and persis
     }),
   });
 
-  const result = await runAgt002PostBridgeAnalysis(database, requestContext(), {
+  const result = await runAgt002PostBridgeAnalysis(database, { ...requestContext(), requireTenderRequirementInventory: false }, {
     engine, observability, analysisContext, bridgeTelemetry: telemetry,
   });
 
@@ -748,7 +748,7 @@ test('an unrecognized post-response engine failure (no known stage) classifies a
   const observability = spyObservability();
   const database = fakeDatabase();
 
-  const result = await runAgt002PostBridgeAnalysis(database, requestContext(), {
+  const result = await runAgt002PostBridgeAnalysis(database, { ...requestContext(), requireTenderRequirementInventory: false }, {
     engine, observability, analysisContext, bridgeTelemetry: telemetry,
   });
 
@@ -785,7 +785,7 @@ test('a presentAnalysis failure after a real persist keeps the run/attempt compl
     }),
   });
 
-  const result = await runAgt002PostBridgeAnalysis(database, requestContext(), {
+  const result = await runAgt002PostBridgeAnalysis(database, { ...requestContext(), requireTenderRequirementInventory: false }, {
     engine, observability, analysisContext, bridgeTelemetry: telemetry,
     presentAnalysis: () => { throw new Error('cannot present analysis'); },
   });
@@ -843,7 +843,7 @@ test('a failure while writing the terminal attempt event does not silently conve
     },
   });
 
-  const result = await runAgt002PostBridgeAnalysis(database, requestContext(), {
+  const result = await runAgt002PostBridgeAnalysis(database, { ...requestContext(), requireTenderRequirementInventory: false }, {
     engine, observability, analysisContext, bridgeTelemetry: telemetry,
   });
 
@@ -888,7 +888,7 @@ test('the returned outcome and every observability record are free of prompt/doc
   const observability = spyObservability();
   const database = fakeDatabase({ onRecordRun: () => ({ data: null, error: { message: `rejected: ${secretish}` } }) });
 
-  const result = await runAgt002PostBridgeAnalysis(database, requestContext(), {
+  const result = await runAgt002PostBridgeAnalysis(database, { ...requestContext(), requireTenderRequirementInventory: false }, {
     engine, observability, analysisContext, bridgeTelemetry: telemetry,
   });
 

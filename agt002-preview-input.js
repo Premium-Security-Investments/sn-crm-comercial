@@ -5,6 +5,7 @@ import { buildAgt002DocumentRetrieval } from './agt002-document-retrieval.js';
 import { AGT002_LEGAL_REVIEW_REASONS, isAgt002OfficialLegalUrl } from './agt002-legal-corpus.js';
 import { buildAgt002RequirementManifest, resolveAgt002DeepAnalysisMatrix } from './agt002-deep-analysis-matrix.js';
 import { deriveAgt002ManizalesManifestWiring } from './agt002-manizales-manifest-wiring.js';
+import { buildTenderRequirementInventory, isTenderDocumentContentHashVerifiable } from './tender-requirement-inventory.js';
 
 export const AGT002_MAX_DOCUMENTS = 12;
 export const AGT002_MAX_DOCUMENT_CHARS = 3000;
@@ -113,6 +114,45 @@ function buildRetrievalRequirements(deepAnalysis) {
   return requirements.sort((left, right) => left.requirement_id.localeCompare(right.requirement_id));
 }
 
+function normalizeTenderRequirementDocumentGaps(extractionGaps, documentGaps) {
+  return [
+    ...extractionGaps.map(gap => ({ document_id: gap.document_id, document_type: gap.document_type, name: gap.name, reason: gap.reason })),
+    ...(Array.isArray(documentGaps) ? documentGaps : []).map(gap => ({
+      document_id: String(gap?.document_id ?? ''),
+      document_type: gap?.document_type ?? null,
+      name: gap?.name ?? null,
+      reason: String(gap?.reason ?? ''),
+    })),
+  ];
+}
+
+/**
+ * buildAgt002DocumentChunks validates content_hash fail-closed and throws on a legacy/current
+ * document whose hash is missing or non-hex. Such a document must not take down inventory
+ * identity for the whole snapshot, and must not be chunked into citable evidence either: it is
+ * withheld from chunking and handed straight to buildTenderRequirementInventory, which disposes
+ * it as an unresolved source unit. Both packet builders below partition identically, so the
+ * identity reserved at enqueue equals the one the engine rebuilds for the same snapshot.
+ */
+function partitionHashVerifiableDocuments(documents) {
+  const chunkable = [];
+  const unverifiable = [];
+  for (const document of Array.isArray(documents) ? documents : []) {
+    (isTenderDocumentContentHashVerifiable(document) ? chunkable : unverifiable).push(document);
+  }
+  return { chunkable, unverifiable };
+}
+
+export function buildAgt002TenderRequirementInventory({ snapshotId, documents = [], documentGaps = [] } = {}) {
+  const { chunkable, unverifiable } = partitionHashVerifiableDocuments(documents);
+  const { gaps: extractionGaps } = buildAgt002DocumentChunks(chunkable);
+  return buildTenderRequirementInventory({
+    snapshotId,
+    documents: [...chunkable, ...unverifiable],
+    documentGaps: normalizeTenderRequirementDocumentGaps(extractionGaps, documentGaps),
+  });
+}
+
 function buildDocumentEvidencePackage({ snapshotId, documents, documentGaps, deepAnalysis, manizalesManifestSource }) {
   const manifestWiring = manizalesManifestSource
     ? deriveAgt002ManizalesManifestWiring(manizalesManifestSource)
@@ -129,17 +169,13 @@ function buildDocumentEvidencePackage({ snapshotId, documents, documentGaps, dee
       : 'AGT-002 Preview con recuperación de evidencia requiere al menos un requisito estructurado recuperable en deepAnalysis.matrix.');
   }
 
-  const { chunks, gaps: extractionGaps } = buildAgt002DocumentChunks(documents ?? []);
+  // Same partition as buildAgt002TenderRequirementInventory: an unverifiable document never
+  // reaches retrieval as a citable chunk, but is still carried into the inventory below so it
+  // is disposed as an unresolved source unit instead of vanishing from the expediente.
+  const { chunkable } = partitionHashVerifiableDocuments(documents ?? []);
+  const { chunks, gaps: extractionGaps } = buildAgt002DocumentChunks(chunkable);
   const snapshotChunks = chunks.map(chunk => ({ ...chunk, snapshot_id: snapshotId }));
-  const gaps = [
-    ...extractionGaps.map(gap => ({ document_id: gap.document_id, document_type: gap.document_type, name: gap.name, reason: gap.reason })),
-    ...(Array.isArray(documentGaps) ? documentGaps : []).map(gap => ({
-      document_id: String(gap?.document_id ?? ''),
-      document_type: gap?.document_type ?? null,
-      name: gap?.name ?? null,
-      reason: String(gap?.reason ?? ''),
-    })),
-  ];
+  const gaps = normalizeTenderRequirementDocumentGaps(extractionGaps, documentGaps);
 
   const retrieval = buildAgt002DocumentRetrieval({
     snapshot_id: snapshotId,
@@ -169,10 +205,19 @@ function buildDocumentEvidencePackage({ snapshotId, documents, documentGaps, dee
     });
   const hasUnresolvedProvenance = requirementManifest.requirement_manifest
     .some(entry => entry.unresolved_sources.length > 0);
+  // This is the authoritative per-snapshot expediente inventory. It is built from every
+  // document/gap before retrieval selection, so the fixed deep-analysis matrix can remain a
+  // supplementary retrieval aid without falsely defining what the tender contains.
+  const tenderRequirementInventory = buildTenderRequirementInventory({
+    snapshotId,
+    documents,
+    documentGaps: gaps,
+  });
 
   return {
     ...retrieval,
     ...requirementManifest,
+    tender_requirement_inventory: tenderRequirementInventory,
     // An unresolved provenance source is itself a material omission, independent of chunk
     // budget/relevance omissions already computed above.
     material_omissions: retrieval.material_omissions || hasUnresolvedProvenance,
