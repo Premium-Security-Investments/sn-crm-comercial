@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { deepStrictEqual } from 'node:assert';
 import { validateAgt002RequirementManifest } from './agt002-deep-analysis-matrix.js';
 import { validateTenderRequirementInventory } from './tender-requirement-inventory.js';
+import { validateTenderSemanticManifest, toAgt002RequirementManifest } from './tender-semantic-manifest.js';
 import { projectAgt002IntegralV3ToV2, computeAgt002IntegralV3CriticalOpenCount } from './agt002-v3-compatibility.js';
 import { validateAgt002IntegralGovernanceProvenance } from './agt002-integral-governance-overrides.js';
 import { validateAgt002ManifestScope } from './agt002-tender-adapter.js';
@@ -14,7 +15,7 @@ function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function validateEvidenceCoverage(value, snapshotId, { requireTenderRequirementInventory = false } = {}) {
+function validateEvidenceCoverage(value, snapshotId, { requireTenderRequirementInventory = false, semanticSourceDocuments = null } = {}) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
     || value.snapshot_id !== snapshotId
     || !value.budget || typeof value.budget !== 'object' || Array.isArray(value.budget)
@@ -48,7 +49,72 @@ function validateEvidenceCoverage(value, snapshotId, { requireTenderRequirementI
   } else if (requireTenderRequirementInventory) {
     throw new Error('La cobertura canónica requiere tender_requirement_inventory server-side.');
   }
+  validateSemanticFrontierCoverage(value, { semanticSourceDocuments });
   return value;
+}
+
+/**
+ * The tender-native semantic manifest is the audit trail BEHIND the persisted
+ * requirement_manifest, so it is never trusted verbatim either. It is re-validated against the
+ * inventory the SAME coverage carries — a manifest with no inventory beside it has nothing to be
+ * checked against and can never be saved — and then re-projected: the projection must equal the
+ * persisted frontier exactly. A forged hash, a forged citation, a manifest from another snapshot,
+ * a changed requirement set and a relabeled frontier all fail closed here, before any RPC.
+ *
+ * A manifest whose origin is a MODEL PROPOSAL needs one more thing that no self-contained check can
+ * supply: its labels were written by a model, and every id/hash beside them was recomputed by the
+ * server over exactly those labels, so the manifest is self-consistent whatever the model invented.
+ * Persistence therefore demands the run's own INDEPENDENT source documents (`semanticSourceDocuments`,
+ * the exact documents the engine analysed) and re-derives the literal anchoring itself: no documents,
+ * documents that do not reconstruct this inventory, or a label present in none of the units the
+ * requirement cites, and nothing is written. Only the anchoring is derived from that text — the raw
+ * document text itself is never persisted.
+ */
+function validateSemanticFrontierCoverage(value, { semanticSourceDocuments = null } = {}) {
+  const semanticManifest = value.tender_semantic_manifest;
+  const supplementalSignalIds = value.supplemental_signal_ids;
+  if (semanticManifest === undefined) {
+    if (supplementalSignalIds !== undefined) {
+      throw new Error('Las señales suplementarias sólo existen junto al manifiesto semántico que las declaró; nunca son una frontera de requisitos por sí solas.');
+    }
+    return;
+  }
+  const inventory = value.tender_requirement_inventory;
+  if (inventory === undefined) {
+    throw new Error('El manifiesto semántico persistido requiere el tender_requirement_inventory de la misma cobertura: sin él no hay expediente contra el cual revalidarlo.');
+  }
+  const isModelProposal = isRecord(semanticManifest) && semanticManifest.origin === 'model_proposal';
+  if (isModelProposal && !Array.isArray(semanticSourceDocuments)) {
+    throw new Error('Una propuesta de modelo sólo puede persistirse junto al texto fuente independiente de este expediente: faltan los documentos del snapshot que anclan cada etiqueta propuesta.');
+  }
+  // Handed over only for a model proposal: a structural derivation already read its labels FROM the
+  // source text, so its persistence path stays byte-for-byte what it is today.
+  const documents = isModelProposal ? semanticSourceDocuments : null;
+  const validatedManifest = validateTenderSemanticManifest(semanticManifest, { inventory, documents });
+  const projection = toAgt002RequirementManifest({ semanticManifest: validatedManifest, inventory, documents });
+  try {
+    deepStrictEqual(
+      { version: value.requirement_manifest_version, entries: value.requirement_manifest },
+      { version: projection.requirement_manifest_version, entries: projection.requirement_manifest },
+    );
+  } catch {
+    throw new Error('El manifiesto semántico persistido no proyecta exactamente el requirement_manifest de esta cobertura: la frontera guardada no coincide con el manifiesto que dice haberla producido.');
+  }
+
+  if (supplementalSignalIds === undefined) return;
+  if (!Array.isArray(supplementalSignalIds)
+    || supplementalSignalIds.some(id => typeof id !== 'string' || !id.trim())
+    || new Set(supplementalSignalIds).size !== supplementalSignalIds.length) {
+    throw new Error('Las señales suplementarias de la cobertura deben ser identificadores únicos y no vacíos.');
+  }
+  // A supplemental signal is, by definition, NOT a requirement of this tender: the moment an id
+  // appears on both sides the historical catalog has re-entered the frontier it may never be.
+  const activeRequirementIds = new Set(projection.requirement_manifest.map(entry => entry.requirement_id));
+  for (const signalId of supplementalSignalIds) {
+    if (activeRequirementIds.has(signalId)) {
+      throw new Error(`Una señal suplementaria nunca puede ser también un requisito activo de la frontera: ${signalId}.`);
+    }
+  }
 }
 
 /**
@@ -140,6 +206,10 @@ export async function releaseAgt002PreviewClaim(database, { idempotencyKey, clai
  * Persists a completed AGT-002 Preview run via the existing append-only RPC.
  * Only the model's own closed findings are stored: no prompt, no document
  * text, no policy text, and no credential ever reaches this module.
+ *
+ * `context.semanticSourceDocuments` (the exact documents the engine analysed) is read-only input to
+ * the fail-closed checks: a model-proposed semantic manifest is only accepted when its labels are
+ * literally anchored in that independent text. It is never written to the run.
  */
 export async function registerAgt002PreviewAnalysis(database, context) {
   const opportunityId = requireId(context?.opportunity_id, 'La oportunidad');
@@ -151,6 +221,10 @@ export async function registerAgt002PreviewAnalysis(database, context) {
   }
   const isIntegralV3 = envelope.schema_version === AGT002_INTEGRAL_V3_SCHEMA_VERSION;
   const requireTenderRequirementInventory = context?.requireTenderRequirementInventory === true;
+  // The exact analysis documents the engine ran on, supplied by the caller beside the envelope —
+  // never taken from the envelope itself, which is the very artifact being checked. They exist only
+  // to re-derive the literal anchoring of a model-proposed label; nothing here ever persists them.
+  const semanticSourceDocuments = context?.semanticSourceDocuments ?? null;
   if (requireTenderRequirementInventory && envelope.evidence_coverage === undefined) {
     throw new Error('La persistencia canónica requiere evidence_coverage con tender_requirement_inventory server-side.');
   }
@@ -208,7 +282,7 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     content = recomputedProjection;
     content.integral_analysis = integralAnalysis;
     if (envelope.evidence_coverage !== undefined) {
-      content.evidence_coverage = validateEvidenceCoverage(envelope.evidence_coverage, snapshotId, { requireTenderRequirementInventory });
+      content.evidence_coverage = validateEvidenceCoverage(envelope.evidence_coverage, snapshotId, { requireTenderRequirementInventory, semanticSourceDocuments });
     }
     // P2-1: the engine already scoped this to exactly what it bound (agt002-preview-engine.js's
     // selectBoundGovernanceProvenance), but it is never trusted verbatim — re-validated here
@@ -251,7 +325,7 @@ export async function registerAgt002PreviewAnalysis(database, context) {
   } else {
     content = Object.fromEntries(CONTENT_KEYS.map(key => [key, envelope[key]]));
     if (envelope.evidence_coverage !== undefined) {
-      content.evidence_coverage = validateEvidenceCoverage(envelope.evidence_coverage, snapshotId, { requireTenderRequirementInventory });
+      content.evidence_coverage = validateEvidenceCoverage(envelope.evidence_coverage, snapshotId, { requireTenderRequirementInventory, semanticSourceDocuments });
     }
     const hasLegalEvidence = envelope.legal_evidence !== undefined;
     const hasLegalFindings = envelope.legal_findings !== undefined;

@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { buildAgt002PreviewInput } from './agt002-preview-input.js';
+import { buildAgt002PreviewInput, buildAgt002TenderRequirementInventory } from './agt002-preview-input.js';
 import {
   AGT002_PREVIEW_OUTPUT_JSON_SCHEMA,
   AGT002_PREVIEW_SCHEMA_VERSION,
@@ -19,6 +19,7 @@ import { buildAgt002EvidenceStateManifest } from './agt002-evidence-state-manife
 import { buildAgt002CompanyEvidenceClasses, AGT002_COMPANY_EVIDENCE_CLASS_IDS } from './agt002-company-evidence-classes.js';
 import { deriveAgt002ManizalesManifestWiring } from './agt002-manizales-manifest-wiring.js';
 import { validateTenderAnalysisResult } from './tender-analysis-domain.js';
+import { resolveTenderSemanticDecisionFrontier } from './tender-semantic-manifest.js';
 import { AGT002_OUTPUT_REJECTION_STAGES, createAgt002AnalysisObservability } from './agt002-analysis-observability.js';
 import { budgetAgt002V3PromptRequest, AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS } from './agt002-v3-prompt-budget.js';
 
@@ -149,6 +150,22 @@ function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+// The snapshot identity of a run whose evidence packet cannot be assembled yet (the discovery path
+// below): the same caller-supplied field, normalized and rejected fail-closed by exactly the same
+// rule buildAgt002PreviewInput applies, so the identity used for the inventory and the idempotency
+// key is the one the packet will carry — never a second, divergent notion of "this snapshot".
+function resolveContextSnapshotId(context) {
+  const snapshotId = context?.snapshotId;
+  if (!nonEmpty(snapshotId)) {
+    throw new Error('AGT-002 Preview requiere un snapshot documental vigente.');
+  }
+  return snapshotId.trim();
+}
+
+function safeTokenCount(value) {
+  return Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
 // `stage`/`code` are closed, structural metadata only (an AGT002_OUTPUT_REJECTION_STAGES value
 // and/or a sanitized upstream error code) — never raw text — attached so a caller sitting
 // outside this engine (e.g. the post-bridge observability wrapper) can attribute a rejection to
@@ -192,10 +209,60 @@ function classifyOutputValidationFailure(error) {
   return 'invalid_schema';
 }
 
-function buildEvidenceCoverage(previewInput) {
+// The requirement ids the V3 result actually dispositioned. Strategic-consideration units carry
+// no requirement_id, so they simply never contribute; nothing is invented and nothing is assumed.
+function collectAnalyzedRequirementIds(integralAnalysis) {
+  const units = Array.isArray(integralAnalysis?.analysis_units) ? integralAnalysis.analysis_units : [];
+  return [...new Set(units.map(unit => unit?.requirement_id).filter(nonEmpty).map(id => id.trim()))];
+}
+
+/**
+ * The source units a V3 result ACTUALLY analysed — the only honest input to the finalized
+ * `analyzed_coverage` of a discovered manifest. Pure: it derives nothing, reads no inventory and
+ * mutates nothing; it only intersects what the server already validated with what V3 returned.
+ *
+ * A unit counts as analysed when either:
+ *   (i) a semantic requirement cites it (`citations`) or files it as its `front_evidence`, AND that
+ *       requirement's id appears on a real `tender_requirement` analysis unit — a requirement that
+ *       never reached an analysis unit analysed nothing, so the units only IT cites are not covered;
+ *  (ii) the manifest EXCLUDED it, which is a server-validated disposition of the discovery stage
+ *       (an analyzable unit explicitly carrying no obligation), already decided before this turn.
+ *
+ * `unresolved` units are never included, whatever their origin: an unreadable document or a clause
+ * the discovery stage could not classify is precisely a unit nobody analysed. Nor is the inventory
+ * ever taken wholesale — that would report coverage the run never achieved, which is exactly the
+ * claim a human reviewer relies on when deciding.
+ */
+export function deriveAgt002AnalyzedSourceUnitIds({ semanticManifest, integralAnalysis } = {}) {
+  const analysisUnits = Array.isArray(integralAnalysis?.analysis_units) ? integralAnalysis.analysis_units : [];
+  const analyzedRequirementIds = new Set(analysisUnits
+    .filter(unit => unit?.unit_kind === 'tender_requirement')
+    .map(unit => unit?.requirement_id)
+    .filter(nonEmpty)
+    .map(id => id.trim()));
+
+  const analyzedSourceUnitIds = new Set();
+  for (const requirement of Array.isArray(semanticManifest?.requirements) ? semanticManifest.requirements : []) {
+    if (!nonEmpty(requirement?.requirement_id) || !analyzedRequirementIds.has(requirement.requirement_id.trim())) continue;
+    for (const citation of [requirement.front_evidence, ...(Array.isArray(requirement.citations) ? requirement.citations : [])]) {
+      if (nonEmpty(citation?.source_unit_id)) analyzedSourceUnitIds.add(citation.source_unit_id.trim());
+    }
+  }
+  for (const entry of Array.isArray(semanticManifest?.excluded) ? semanticManifest.excluded : []) {
+    if (nonEmpty(entry?.source_unit_id)) analyzedSourceUnitIds.add(entry.source_unit_id.trim());
+  }
+  return [...analyzedSourceUnitIds].sort();
+}
+
+// `evidence_coverage` is the ONLY part of the envelope that reaches the durable run, so a
+// dynamically discovered frontier has to survive here — not just its projected
+// requirement_manifest, which can never be re-derived from, or re-verified against, this
+// snapshot's own clauses. `previewInput` is only ever read: the finalized manifest is a new object
+// and the packet the model saw stays untouched.
+function buildEvidenceCoverage(previewInput, integralAnalysis = null) {
   const evidence = previewInput?.document_evidence;
   if (!evidence) return null;
-  return {
+  const coverage = {
     snapshot_id: evidence.snapshot_id,
     budget: evidence.budget,
     coverage_manifest: evidence.coverage_manifest,
@@ -209,6 +276,38 @@ function buildEvidenceCoverage(previewInput) {
     // from the legacy requirement_manifest: the latter remains retrieval metadata, while
     // this ledger is the only claim about disposition/coverage of the whole expediente.
     tender_requirement_inventory: evidence.tender_requirement_inventory,
+  };
+  // A legacy or exact-Manizales packet carries no semantic frontier at all: it must keep exactly
+  // the keys above, byte-for-byte, and never advertise a manifest it did not analyse.
+  if (evidence.tender_semantic_manifest === undefined) return coverage;
+
+  // With a real, validated V3 result behind it the manifest is finalized before it is persisted:
+  // otherwise the durable record would say "analysis pending" forever, however complete the run
+  // was. Readiness stays arithmetic — discovery gaps and unresolved units keep decision_ready
+  // false — and the analysed source units are exactly the ones this V3 result dispositioned
+  // (deriveAgt002AnalyzedSourceUnitIds), never the inventory wholesale: a unit cited only by a
+  // requirement that reached no analysis unit, and every unresolved unit, was analysed by nobody.
+  const inventory = evidence.tender_requirement_inventory;
+  const semanticManifest = integralAnalysis
+    ? resolveTenderSemanticDecisionFrontier({
+      semanticManifest: evidence.tender_semantic_manifest,
+      inventory,
+      analyzedRequirementIds: collectAnalyzedRequirementIds(integralAnalysis),
+      analyzedSourceUnitIds: deriveAgt002AnalyzedSourceUnitIds({
+        semanticManifest: evidence.tender_semantic_manifest,
+        integralAnalysis,
+      }),
+    })
+    : evidence.tender_semantic_manifest;
+
+  return {
+    ...coverage,
+    tender_semantic_manifest: semanticManifest,
+    // The historical fixed extractors survive beside it as declared signals only — never the
+    // frontier, never the count, never the coverage of this tender.
+    ...(evidence.supplemental_signal_ids !== undefined
+      ? { supplemental_signal_ids: [...evidence.supplemental_signal_ids] }
+      : {}),
   };
 }
 
@@ -258,6 +357,12 @@ export function createAgt002PreviewEngine({
   legalCorpusVersionId,
   legalCorpusContentSha256,
   integralContractV3 = false,
+  // Derives the frontier of a non-pilot V3 run from THIS process's own expediente instead of the
+  // fixed historical deep-analysis matrix: given the snapshot's requirement inventory it returns
+  // { semanticManifest, categoryOverrides, usage } for one extra, server-owned model turn taken
+  // before the analysis turn. `null` (the default) keeps the legacy fixed-matrix frontier, so a
+  // direct engine caller is unaffected; the production runtime always injects it.
+  semanticDiscoveryProvider = null,
   categoryOverrides = {},
   evidenceClassLinkByRequirementId = {},
   governanceProvenance = {},
@@ -282,6 +387,7 @@ export function createAgt002PreviewEngine({
     || typeof countDailyRuns !== 'function'
     || (legalCorpus && (typeof legalEvidenceProvider !== 'function' || !nonEmpty(legalCorpusVersionId) || !nonEmpty(legalCorpusContentSha256)))
     || (integralContractV3 && (!contextV2 || !documentRetrieval || typeof companyEvidenceClassesProvider !== 'function'))
+    || (semanticDiscoveryProvider !== null && typeof semanticDiscoveryProvider !== 'function')
     || !observability || typeof observability.record !== 'function') {
     throw new Error('AGT-002 Preview no está configurado: falta configuración o evidencia jurídica determinística.');
   }
@@ -320,6 +426,12 @@ export function createAgt002PreviewEngine({
   const boundGovernanceProvenance = integralContractV3 && !manifestWiring
     ? selectBoundGovernanceProvenance(governanceProvenance, categoryOverrides, evidenceClassLinkByRequirementId)
     : {};
+
+  // Whether THIS engine discovers the frontier of each run from the run's own expediente. Decided
+  // once, at construction, from engine configuration only: the governed Manizales wiring still
+  // outranks discovery, and a legacy/non-V3 engine (or one with no provider injected) keeps the
+  // constructor-time frontier and the exact assembly order it has today.
+  const usesSemanticDiscovery = integralContractV3 && !manifestWiring && semanticDiscoveryProvider !== null;
 
   /**
    * Single choke point for the output_rejected diagnostic event (E5): every field is derived
@@ -487,13 +599,21 @@ export function createAgt002PreviewEngine({
     }
   }
 
-  function buildIntegralV3ValidationContext(previewInput, companyEvidenceClasses) {
+  // The two governed maps default to the constructor-derived ones (the pilot manifest wiring or the
+  // DB-injected overrides), but a run whose frontier was discovered from the process's own
+  // expediente carries its OWN requirement ids: those requirements exist only for this run, so the
+  // maps that govern their category/evidence-state must be supplied per run rather than resolved
+  // from construction-time configuration that never heard of them.
+  function buildIntegralV3ValidationContext(previewInput, companyEvidenceClasses, {
+    categoryOverrides: runCategoryOverrides = effectiveCategoryOverrides,
+    evidenceClassLinks: runEvidenceClassLinks = effectiveEvidenceClassLinkByRequirementId,
+  } = {}) {
     const documentEvidence = previewInput.document_evidence;
     if (!documentEvidence) {
       throw new Error('AGT-002 Preview v3 requiere AGT002_DOCUMENT_RETRIEVAL habilitado.');
     }
 
-    const requirementManifest = deriveAgt002IntegralCategoryManifest(documentEvidence.requirement_manifest, effectiveCategoryOverrides);
+    const requirementManifest = deriveAgt002IntegralCategoryManifest(documentEvidence.requirement_manifest, runCategoryOverrides);
 
     // Governed evidence-state map (audit P0 "cumplimiento inferido por presencia"): built
     // fail-closed from the real 17-class catalog and a curated, explicit requirement_id ->
@@ -503,7 +623,7 @@ export function createAgt002PreviewEngine({
     // match exactly or the whole run is rejected by validateAgt002IntegralAnalysisV3.
     const evidenceStateManifest = buildAgt002EvidenceStateManifest(documentEvidence.requirement_manifest, {
       evidenceClasses: companyEvidenceClasses.classes,
-      evidenceClassLinkByRequirementId: effectiveEvidenceClassLinkByRequirementId,
+      evidenceClassLinkByRequirementId: runEvidenceClassLinks,
     });
 
     const companyEvidenceIds = new Set();
@@ -576,7 +696,15 @@ export function createAgt002PreviewEngine({
     };
   }
 
-  async function runOnceV3(previewInput, idempotencyKey, signal, validationContext) {
+  // `priorUsage` accounts for server-owned model turns taken BEFORE this analysis turn (today: the
+  // semantic discovery turn), so the envelope's usage reports what the run actually cost rather
+  // than only its last call. `governanceProvenanceForRun` defaults to the constructor-bound block,
+  // which stays correct for a run governed by construction-time maps; a run whose category
+  // overrides were discovered per run carries its own provenance instead of that block.
+  async function runOnceV3(previewInput, idempotencyKey, signal, validationContext, {
+    priorUsage = null,
+    governanceProvenanceForRun = boundGovernanceProvenance,
+  } = {}) {
     const outputSchema = buildAgt002IntegralAnalysisV3OutputJsonSchema(validationContext);
     const modelInput = withRequirementGovernedFields(previewInput, validationContext.requirementManifest, validationContext.evidenceStateManifest);
 
@@ -669,13 +797,19 @@ export function createAgt002PreviewEngine({
       // Phase 4: server-derived, appended after model validation — never copied from the model
       // turn (a model-supplied top-level manifest_scope is rejected as an unexpected key above).
       ...(manifestScope ? { manifest_scope: manifestScope } : {}),
-      evidence_coverage: buildEvidenceCoverage(previewInput),
+      evidence_coverage: buildEvidenceCoverage(previewInput, validatedIntegralAnalysis),
       legal_corpus_version_id: legalCorpus ? legalCorpusVersionId : null,
       human_review_required: true,
       v2_projection: projectAgt002IntegralV3ToV2(validatedIntegralAnalysis),
-      ...(Object.keys(boundGovernanceProvenance).length ? { governance_provenance: boundGovernanceProvenance } : {}),
+      ...(Object.keys(governanceProvenanceForRun).length ? { governance_provenance: governanceProvenanceForRun } : {}),
       usage: {
-        provider: 'codex_app_server', model, input_tokens: inputTokens, output_tokens: outputTokens, rate_limit: raw.rate_limit ?? null,
+        provider: 'codex_app_server', model,
+        // A prior turn that reported no usable counts contributes 0 rather than failing the run: it
+        // already produced the governed frontier this envelope was validated against, so discarding
+        // a completed analysis over an unreadable token count would be strictly worse.
+        input_tokens: inputTokens + safeTokenCount(priorUsage?.input_tokens),
+        output_tokens: outputTokens + safeTokenCount(priorUsage?.output_tokens),
+        rate_limit: raw.rate_limit ?? null,
       },
     };
   }
@@ -692,7 +826,7 @@ export function createAgt002PreviewEngine({
       const companyEvidenceClasses = integralContractV3
         ? buildAgt002CompanyEvidenceClasses({ registryEntries: companyEvidenceClassesProvider(context || {}) })
         : undefined;
-      const previewInput = buildAgt002PreviewInput({
+      const previewInputOptions = {
         ...(context || {}), contextV2, documentRetrieval, legalCorpus, legalEvidencePackage,
         ...(integralContractV3 ? { companyEvidenceClasses } : {}),
         integralContractV3,
@@ -700,8 +834,23 @@ export function createAgt002PreviewEngine({
         // (and is set explicitly to null in the absence of) anything a caller's context might
         // carry, so a provider/caller can never forge or suppress the manifest binding.
         manizalesManifestSource: manifestWiring ? manizalesManifestSource : null,
-      });
-      const key = nonEmpty(idempotencyKey) ? idempotencyKey : `${previewInput.snapshot_id}:${policyVersion}:${model}`;
+        // Same rule: the frontier of this snapshot is server-owned. It starts absent — a caller's
+        // context can never supply one — and is only ever set below from the semantic discovery
+        // turn this engine itself ran against this snapshot's own inventory.
+        semanticManifest: null,
+      };
+      // A run that discovers its own frontier must NOT assemble a packet before discovery: with no
+      // manifest yet, buildAgt002PreviewInput can only fall back to the fixed historical
+      // deepAnalysis.matrix — the very catalog this run exists to avoid — and an expediente that
+      // carries no matrix at all would fail there, before discovery ever ran. That run's packet is
+      // built exactly once below, from its validated semantic manifest. Every other run (legacy,
+      // non-V3, exact Manizales) builds here, in the same place and the same order as before.
+      const previewInput = usesSemanticDiscovery ? null : buildAgt002PreviewInput(previewInputOptions);
+      // Identity for the run, not content of the packet: for the discovery path it comes from the
+      // same caller-supplied snapshot id the packet will be built from, so a given snapshot keeps
+      // the same idempotency key either way.
+      const snapshotId = previewInput ? previewInput.snapshot_id : resolveContextSnapshotId(context);
+      const key = nonEmpty(idempotencyKey) ? idempotencyKey : `${snapshotId}:${policyVersion}:${model}`;
 
       // Registration into `inflight` must happen synchronously, before any
       // await, so two calls issued back-to-back (e.g. Promise.all) collapse
@@ -717,6 +866,49 @@ export function createAgt002PreviewEngine({
           if (!Number.isInteger(dailyCount) || dailyCount < 0) throw safe(SAFE_UNAVAILABLE);
           if (dailyCount >= dailyMaxRuns) throw safe(SAFE_QUOTA);
           if (integralContractV3) {
+            // The governed, human-reviewed Manizales package still outranks discovery (see
+            // `usesSemanticDiscovery`): when its wiring is injected the frontier is already decided,
+            // so no discovery turn is taken and that run stays byte-identical to before — including
+            // its packet, already assembled above.
+            if (usesSemanticDiscovery) {
+              // Built directly from the exact same snapshot/documents/gaps the evidence packet will
+              // be built from — never from a packet assembled beforehand — so the manifest is
+              // validated against the very inventory it will travel with.
+              const inventory = buildAgt002TenderRequirementInventory({
+                snapshotId,
+                documents: (context || {}).documents ?? [],
+                documentGaps: (context || {}).documentGaps ?? [],
+              });
+              // A discovery failure fails the run. There is no fallback to the fixed historical
+              // matrix: analysing this process against another process's frontier would be a
+              // silently wrong answer, which is worse than no answer.
+              const discovery = await semanticDiscoveryProvider({
+                client, model, timeoutMs, idempotencyKey: key, signal,
+                inventory, documents: (context || {}).documents ?? [],
+              });
+              // The one and only packet assembly of this run, taken now that the frontier exists:
+              // the manifest is re-validated inside the builder against the inventory the packet
+              // itself carries, so what the model sees and what the envelope persists were both
+              // checked against this snapshot's own source units.
+              const discoveredInput = buildAgt002PreviewInput({
+                ...previewInputOptions,
+                semanticManifest: discovery.semanticManifest,
+              });
+              const validationContext = buildIntegralV3ValidationContext(discoveredInput, companyEvidenceClasses, {
+                // The discovered requirements are this run's own: their categories come from the
+                // discovery turn, and no curated requirement_id -> evidence_class link exists for
+                // them yet, so every axis abstains to the safe-unknown state.
+                categoryOverrides: discovery.categoryOverrides,
+                evidenceClassLinks: {},
+              });
+              return await runOnceV3(discoveredInput, key, signal, validationContext, {
+                priorUsage: discovery.usage,
+                // The curated governance-provenance records describe the construction-time maps,
+                // none of which governed this run: emitting them here would attribute a per-run
+                // discovered binding to a curator who never saw it.
+                governanceProvenanceForRun: {},
+              });
+            }
             const validationContext = buildIntegralV3ValidationContext(previewInput, companyEvidenceClasses);
             return await runOnceV3(previewInput, key, signal, validationContext);
           }

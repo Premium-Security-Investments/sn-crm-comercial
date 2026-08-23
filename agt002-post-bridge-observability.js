@@ -258,6 +258,11 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
         expectedManifestScope: engine?.manifestScope ?? null,
         expectedIdempotencyKey: context.expectedIdempotencyKey,
         requireTenderRequirementInventory,
+        // The independent source text a model-proposed label must be literally anchored in, taken
+        // from the very same (frozen, for the durable worker) analysis context this run's engine
+        // analysed — never from the envelope it produced. Persistence re-derives the anchoring and
+        // refuses the run without it; the text itself is never persisted.
+        semanticSourceDocuments: analysisContext?.documents ?? null,
       });
       runPersisted = true;
       analysisRunId = registeredRun?.run_id ?? null;

@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { AGT002_PREVIEW_POLICY, AGT002_INTEGRAL_V3_POLICY } from '../agt002-preview-engine.js';
-import { AGT002_PREVIEW_DEFAULT_POLICY_VERSION, AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
+import { AGT002_PREVIEW_DEFAULT_POLICY_VERSION, AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
 
 function baseEnv(overrides = {}) {
   return {
@@ -63,6 +63,51 @@ assert.throws(
   () => createAgt002PreviewRuntime({ environment: baseEnv({ AGT002_PREVIEW_MAX_CONCURRENT: '0' }), countDailyRuns: async () => 0 }),
   /no está configurado/i,
 );
+
+// Release blocker: the semantic V3 path makes TWO sequential provider turns (semantic
+// discovery, then analysis) inside a single claimed run, and AGT002_PREVIEW_TIMEOUT_MS
+// bounds EACH turn. A lease sized for one timeout expires mid-run while the second turn
+// is still in flight, so the reservation must cover both full timeouts plus the same
+// 15s buffer: leaseSeconds = 2 * ceil(timeoutMs / 1000) + 15.
+{
+  assert.equal(
+    getAgt002PreviewRuntimeConfig(baseEnv()).leaseSeconds,
+    75,
+    'the default 30s timeout funds two sequential provider turns, so the lease must be 2*30+15=75s, not 45s',
+  );
+  assert.equal(
+    getAgt002PreviewRuntimeConfig(baseEnv({ AGT002_PREVIEW_TIMEOUT_MS: '5000' })).leaseSeconds,
+    25,
+    'lease must scale with both turns: 2*5+15=25s',
+  );
+  // Sub-second precision is still rounded up per turn before doubling.
+  assert.equal(
+    getAgt002PreviewRuntimeConfig(baseEnv({ AGT002_PREVIEW_TIMEOUT_MS: '4500' })).leaseSeconds,
+    25,
+    'each turn rounds up to whole seconds before the two-turn lease is computed',
+  );
+}
+
+// Boundary: the 600s reservation ceiling must be enforced against the TWO-turn lease. A
+// timeout that fits under the ceiling for one turn but not for two must fail closed at
+// configuration time rather than being accepted and then expiring mid-run.
+{
+  assert.throws(
+    () => getAgt002PreviewRuntimeConfig(baseEnv({ AGT002_PREVIEW_TIMEOUT_MS: '300000' })),
+    /no está configurado/i,
+    '2*300+15=615 exceeds the 600s ceiling, so a 300s timeout must be rejected even though one turn would fit',
+  );
+  assert.throws(
+    () => getAgt002PreviewRuntimeConfig(baseEnv({ AGT002_PREVIEW_TIMEOUT_MS: '292500' })),
+    /no está configurado/i,
+    'the first rejected value above the ceiling is 2*293+15=601',
+  );
+  assert.equal(
+    getAgt002PreviewRuntimeConfig(baseEnv({ AGT002_PREVIEW_TIMEOUT_MS: '292000' })).leaseSeconds,
+    599,
+    'the largest two-turn lease at or under the 600s ceiling stays accepted',
+  );
+}
 
 // Explicit numeric overrides are honored when valid.
 {
@@ -233,13 +278,19 @@ assert.throws(
   assert.deepEqual(capturedOptions.categoryOverrides, categoryOverrides);
   assert.equal(capturedOptions.manizalesManifestSource, manizalesManifestSource, 'the runtime must forward the exact server-owned manifest source to the engine');
   assert.equal(capturedOptions.policyText, AGT002_INTEGRAL_V3_POLICY, 'V3 runtime must use the V3 wire policy, never the legacy preview policy');
-  assert.equal(AGT002_INTEGRAL_V3_POLICY_VERSION, 'agt002-integral-v3-policy-v3', 'material milestone instructions require a distinct persisted policy version');
+  assert.equal(AGT002_INTEGRAL_V3_POLICY_VERSION, 'agt002-integral-v3-policy-v4', 'material milestone instructions require a distinct persisted policy version');
   assert.equal(capturedOptions.policyVersion, AGT002_INTEGRAL_V3_POLICY_VERSION, 'persisted policy version must identify the V3 policy actually used');
   assert.notEqual(capturedOptions.policyText, AGT002_PREVIEW_POLICY);
   assert.notEqual(capturedOptions.policyVersion, AGT002_PREVIEW_DEFAULT_POLICY_VERSION);
   // P2-1: governance_provenance must reach the engine exactly like categoryOverrides and
   // evidenceClassLinkByRequirementId do — it is the traceability behind those bindings.
   assert.deepEqual(capturedOptions.governanceProvenance, governanceProvenance, 'the runtime must forward governanceProvenance to the engine, exactly like categoryOverrides');
+  // The semantic discovery stage is part of what a V3 run IS — a production run must derive its
+  // frontier from the process's own expediente — so the runtime wires the provider from the V3
+  // flag set alone. There is no separate env flag for it: nothing but AGT002_INTEGRAL_CONTRACT_V3
+  // (plus the context/retrieval flags it already requires) decides whether it is present.
+  assert.equal(typeof capturedOptions.semanticDiscoveryProvider, 'function',
+    'a V3 runtime must inject the semantic discovery provider so the frontier comes from this process, not the fixed historical matrix');
 }
 
 // Without an explicit evidenceClassLinkByRequirementId/governanceProvenance, the engine
@@ -256,11 +307,26 @@ assert.throws(
   assert.deepEqual(capturedOptions.evidenceClassLinkByRequirementId, {});
   assert.deepEqual(capturedOptions.categoryOverrides, {});
   assert.deepEqual(capturedOptions.governanceProvenance, {});
+  assert.equal(typeof capturedOptions.semanticDiscoveryProvider, 'function',
+    'the discovery provider is part of the V3 wiring itself, not an opt-in the caller must remember');
+}
+
+// A non-V3 runtime is unchanged: it never receives a discovery provider, so a legacy preview run
+// keeps its exact current behavior and no environment value can turn discovery on by itself.
+{
+  let capturedOptions = null;
+  const spyEngine = (options) => { capturedOptions = options; return { analyze: async () => {} }; };
+  createAgt002PreviewRuntime({
+    environment: baseEnv({ AGT002_CONTEXT_V2: 'true', AGT002_DOCUMENT_RETRIEVAL: 'true' }),
+    countDailyRuns: async () => 0, createEngine: spyEngine,
+  });
+  assert.equal(capturedOptions.semanticDiscoveryProvider, undefined);
 }
 
 const source = readFileSync(new URL('../agt002-preview-runtime.js', import.meta.url), 'utf8');
 assert.doesNotMatch(source, /OPENAI_API_KEY|HERMES_INTERIM_API_KEY|Authorization|Bearer/i, 'the runtime must never manage an API key or bearer token');
 assert.doesNotMatch(source, /readFileSync/, 'the runtime must never read the local legal corpus fixture as production evidence; it must consume an injected, DB-loaded context');
+assert.doesNotMatch(source, /AGT002_[A-Z0-9_]*SEMANTIC/, 'semantic discovery must not be gated by an environment flag of its own; it belongs to the V3 wiring');
 
 function testConfiguredRequiresHetznerBridgeUrlAndSecret() {
   const baseEnv = { TENDER_ANALYSIS_ENGINE: 'agt002_codex_preview', AGT002_PREVIEW_MODEL: 'gpt-x' };

@@ -140,6 +140,114 @@ test('un inventario presente y bien formado pero con decision_ready !== true per
 });
 
 // ---------------------------------------------------------------------------------------------
+// 0b · El gate es la COBERTURA de evidencia completa, no sólo el inventario legado.
+//      `evidence_coverage.tender_semantic_manifest` es la frontera semántica vigente del
+//      expediente. Cuando llega finalizado y gobernado (`semantic_manifest_version`
+//      `tender_semantic_manifest.v1`, `decision_ready: true`, `discovery_coverage` completa y
+//      `analyzed_coverage` completa) ESA es la cobertura integral: el inventario legado —que el
+//      contrato P0 fija hoy en `decision_ready: false` en toda corrida real— ya no puede pausar
+//      la lectura. Al revés, un manifiesto presente pero no listo (o con cobertura parcial /
+//      incompleta, o sin la forma gobernada) pausa aunque el inventario legado se declare listo.
+//      Sin manifiesto alguno se conserva íntegra la lectura legada del inventario (corridas
+//      históricas y el paquete Manizales exacto, que nunca anuncian frontera semántica).
+// ---------------------------------------------------------------------------------------------
+const sha256Like = char => char.repeat(64);
+function semanticManifestFor(units, overrides = {}) {
+  const requirements = units
+    .filter(unit => Boolean(unit.requirement_id))
+    .map((unit, index) => ({
+      requirement_id: unit.requirement_id,
+      obligation_key: `obligacion-gobernada-${index + 1}`,
+      kind: 'obligation',
+      label: `Obligación gobernada ${index + 1}`,
+      front: 'legal',
+      front_evidence: { source_unit_id: `su-${index + 1}`, unit_hash: sha256Like('a') },
+      citations: [{ source_unit_id: `su-${index + 1}`, unit_hash: sha256Like('a') }],
+      supplemental_signal_ids: [],
+    }));
+  const total = requirements.length;
+  return {
+    semantic_manifest_version: 'tender_semantic_manifest.v1',
+    snapshot_id: 'snap-semantico',
+    snapshot_hash: sha256Like('b'),
+    inventory_hash: sha256Like('c'),
+    origin: 'model_proposal',
+    proposal_hash: null,
+    requirements,
+    excluded: [],
+    unresolved: [],
+    coverage_ledger: {
+      total_source_units: total,
+      cited_count: total,
+      excluded_count: 0,
+      unresolved_count: 0,
+      every_source_unit_disposed: true,
+    },
+    discovery_coverage: { status: 'complete', total_source_units: total, dispositioned_source_units: total, requirement_count: total },
+    analyzed_coverage: { status: 'complete', total_source_units: total, dispositioned_source_units: total, requirement_count: total },
+    decision_ready: true,
+    recommendation: 'ready_for_human_review',
+    human_review_required: true,
+    semantic_manifest_hash: sha256Like('d'),
+    ...overrides,
+  };
+}
+const withCoverage = (analysis, coverage) => ({
+  ...analysis,
+  evidence_coverage: { ...(analysis.evidence_coverage ?? {}), ...coverage },
+});
+const READY_SEMANTIC_MANIFEST = Object.freeze(semanticManifestFor(DYNAMIC_UNITS));
+
+test('un manifiesto semántico finalizado y listo rinde el V3 completo aunque el inventario legado siga en decision_ready:false', () => {
+  const html = render(withCoverage(withInventory(DYNAMIC, PAUSED_REAL_INVENTORY), {
+    tender_semantic_manifest: READY_SEMANTIC_MANIFEST,
+  }));
+  assert.equal(html.includes('Cobertura integral no disponible'), false, 'una frontera semántica finalizada nunca es cobertura ausente');
+  assert.ok(html.includes('Análisis integral por requisito'));
+  assert.ok(html.includes(`<dt>Requisitos analizados</dt><dd>${DYNAMIC_UNITS.length}</dd>`));
+  for (const unit of DYNAMIC_UNITS) {
+    assert.equal(countOf(html, `<h4>${unit.title}</h4>`), 1, `${unit.title} debe rendirse con la cobertura semántica lista`);
+  }
+  assert.ok(html.includes('Validación humana pendiente'), 'listo para revisión humana nunca es autorización');
+});
+
+test('un manifiesto semántico presente pero no listo pausa aunque el inventario legado se declare listo', () => {
+  for (const manifest of [
+    { ...READY_SEMANTIC_MANIFEST, decision_ready: false, recommendation: 'pause' },
+    { ...READY_SEMANTIC_MANIFEST, discovery_coverage: { ...READY_SEMANTIC_MANIFEST.discovery_coverage, status: 'partial' } },
+    { ...READY_SEMANTIC_MANIFEST, discovery_coverage: { ...READY_SEMANTIC_MANIFEST.discovery_coverage, status: 'incomplete' } },
+    { ...READY_SEMANTIC_MANIFEST, analyzed_coverage: { ...READY_SEMANTIC_MANIFEST.analyzed_coverage, status: 'incomplete' } },
+    { ...READY_SEMANTIC_MANIFEST, analyzed_coverage: { ...READY_SEMANTIC_MANIFEST.analyzed_coverage, status: 'partial' } },
+    // Fail-closed: un manifiesto presente sin la forma gobernada nunca degrada al inventario legado.
+    { ...READY_SEMANTIC_MANIFEST, semantic_manifest_version: 'tender_semantic_manifest.v0' },
+    { ...READY_SEMANTIC_MANIFEST, semantic_manifest_version: undefined },
+    { ...READY_SEMANTIC_MANIFEST, discovery_coverage: null },
+    { ...READY_SEMANTIC_MANIFEST, analyzed_coverage: [] },
+  ]) {
+    const html = render(withCoverage(withReadyInventory(DYNAMIC), { tender_semantic_manifest: manifest }));
+    const caso = `${JSON.stringify(manifest.semantic_manifest_version)} · ready=${manifest.decision_ready} · descubrimiento=${JSON.stringify(manifest.discovery_coverage?.status ?? manifest.discovery_coverage)} · analizado=${JSON.stringify(manifest.analyzed_coverage?.status ?? manifest.analyzed_coverage)}`;
+    assert.ok(html.includes('Cobertura integral no disponible'), `un manifiesto no listo debe pausar (${caso})`);
+    assert.equal(html.includes('Requisitos analizados'), false, `ningún conteo puede filtrarse (${caso})`);
+    assert.equal(html.includes('agt002-v3-workbench'), false, `ninguna fase puede filtrarse (${caso})`);
+    for (const unit of DYNAMIC_UNITS) assert.equal(html.includes(`<h4>${unit.title}</h4>`), false, `ninguna unidad puede filtrarse (${caso})`);
+  }
+});
+
+test('sin manifiesto semántico se conserva intacta la lectura legada del inventario', () => {
+  const legacyReady = render(withReadyInventory(DYNAMIC));
+  assert.equal(legacyReady.includes('Cobertura integral no disponible'), false, 'sin frontera semántica manda el inventario legado listo');
+  assert.ok(legacyReady.includes('Análisis integral por requisito'));
+
+  const legacyPaused = render(withInventory(DYNAMIC, PAUSED_REAL_INVENTORY));
+  assert.ok(legacyPaused.includes('Cobertura integral no disponible'), 'sin frontera semántica un inventario no listo sigue pausando');
+  assert.equal(legacyPaused.includes('Requisitos analizados'), false);
+
+  // Un manifiesto ausente explícito (null) es exactamente lo mismo que no traerlo.
+  const nullManifest = render(withCoverage(withInventory(DYNAMIC, PAUSED_REAL_INVENTORY), { tender_semantic_manifest: null }));
+  assert.ok(nullManifest.includes('Cobertura integral no disponible'), 'un manifiesto nulo nunca puede leerse como frontera lista');
+});
+
+// ---------------------------------------------------------------------------------------------
 // 1 · Resumen calculado desde los arreglos reales; la suma por estado es analysis_units.length.
 // ---------------------------------------------------------------------------------------------
 test('el resumen muestra el total de unidades y conteos por estado cuya suma es analysis_units.length', () => {

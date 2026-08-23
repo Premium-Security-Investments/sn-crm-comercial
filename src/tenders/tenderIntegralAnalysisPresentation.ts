@@ -1,6 +1,7 @@
 import { tenderDecisionConditionAnchor } from './tenderDecisionSurface';
 import type {
   TenderDecisionReview,
+  TenderEvidenceCoverage,
   TenderIntegralAnalysisUnit,
   TenderIntegralAnalysisV3,
   TenderIntegralCategory,
@@ -110,31 +111,79 @@ export function tenderIntegralCategoryLabel(category: string | null | undefined)
 }
 
 export const TENDER_REQUIREMENT_INVENTORY_VERSION = 'tender_requirement_inventory.v1';
+export const TENDER_SEMANTIC_MANIFEST_VERSION = 'tender_semantic_manifest.v1';
 
 /**
- * A V3 payload may only be presented as integral coverage when the run carries a well-formed
- * server-owned tender inventory for its own snapshot AND that inventory reports
- * `decision_ready === true`. The P0 inventory contract (`buildTenderRequirementInventory`)
- * pins `decision_ready: false` on every real run today — segmentation is not semantic analysis
- * yet — so this gate deliberately keeps every current production run paused; that is the
- * fail-closed contract for this cut, not a defect to work around. A legacy/historic run with no
- * verifiable inventory at all, or a payload whose inventory is not the governed shape, fails
- * closed to the same pause. Only once a later server-side analyzer marks a snapshot's inventory
- * `decision_ready: true` does the full V3 surface render.
+ * Lectura legada del inventario del expediente: un inventario gobernado del snapshot vigente con
+ * `decision_ready === true`. El contrato P0 (`buildTenderRequirementInventory`) fija hoy
+ * `decision_ready: false` en toda corrida real —la segmentación documental todavía no es análisis
+ * semántico—, así que este helper mantiene pausada cualquier corrida que no traiga frontera
+ * semántica. Un histórico sin inventario verificable, o un inventario sin la forma gobernada,
+ * falla cerrado a la misma pausa. Se conserva como el respaldo exacto (paquete Manizales y
+ * corridas históricas) de `tenderAnalysisCoverageReady`.
  */
 export function tenderRequirementInventoryReady(
   inventory: TenderRequirementInventoryCoverage | null | undefined,
 ): inventory is TenderRequirementInventoryCoverage {
-  if (!inventory || typeof inventory !== 'object') return false;
-  if (inventory.inventory_version !== TENDER_REQUIREMENT_INVENTORY_VERSION) return false;
+  if (!isGovernedInventoryShape(inventory)) return false;
   if (inventory.decision_ready !== true) return false;
-  return isCoverageBlock(inventory.expedient_coverage) && isCoverageBlock(inventory.analyzed_coverage);
+  return true;
+}
+
+/**
+ * Gate compartido por las dos superficies (Análisis y respaldo técnico V3) sobre TODA la cobertura
+ * de evidencia de la corrida, no sólo el inventario legado.
+ *
+ * `evidence_coverage.tender_semantic_manifest` es la frontera semántica vigente del expediente y
+ * tiene precedencia estricta: cuando llega, ELLA decide. Sólo es cobertura integral si está
+ * finalizada y gobernada — versión `tender_semantic_manifest.v1`, `decision_ready: true`,
+ * `recommendation: 'ready_for_human_review'`, `discovery_coverage` y `analyzed_coverage` completas
+ * y numéricas — sobre un inventario del expediente estructuralmente presente y gobernado (cuyo
+ * `decision_ready` ya no manda: el análisis semántico lo supera). Un manifiesto presente pero
+ * pausado, parcial, incompleto o sin la forma gobernada falla cerrado aunque el inventario legado
+ * se declare listo: nunca degrada a la lectura legada.
+ *
+ * Sin manifiesto alguno (ausente o `null`) se conserva íntegra la lectura legada del inventario.
+ * `ready_for_human_review` jamás es autorización: la validación humana sigue siendo obligatoria.
+ */
+export function tenderAnalysisCoverageReady(
+  evidenceCoverage: TenderEvidenceCoverage | null | undefined,
+): boolean {
+  if (!isRecord(evidenceCoverage)) return false;
+  const manifest = evidenceCoverage.tender_semantic_manifest;
+  if (manifest === null || manifest === undefined) {
+    return tenderRequirementInventoryReady(evidenceCoverage.tender_requirement_inventory);
+  }
+  if (!isRecord(manifest)) return false;
+  if (manifest.semantic_manifest_version !== TENDER_SEMANTIC_MANIFEST_VERSION) return false;
+  if (manifest.decision_ready !== true) return false;
+  if (manifest.recommendation !== 'ready_for_human_review') return false;
+  if (!isCompleteSemanticCoverage(manifest.discovery_coverage)) return false;
+  if (!isCompleteSemanticCoverage(manifest.analyzed_coverage)) return false;
+  return isGovernedInventoryShape(evidenceCoverage.tender_requirement_inventory);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+// Forma gobernada del inventario del expediente: versión vigente y bloques de cobertura numéricos.
+// Verifica sólo la FORMA, nunca la disposición (`decision_ready`), que cada lectura decide aparte.
+function isGovernedInventoryShape(value: unknown): value is TenderRequirementInventoryCoverage {
+  if (!isRecord(value)) return false;
+  if (value.inventory_version !== TENDER_REQUIREMENT_INVENTORY_VERSION) return false;
+  return isCoverageBlock(value.expedient_coverage) && isCoverageBlock(value.analyzed_coverage);
 }
 
 function isCoverageBlock(value: unknown): boolean {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
-  const coverage = value as { total_source_units?: unknown; dispositioned_source_units?: unknown };
-  return Number.isInteger(coverage.total_source_units) && Number.isInteger(coverage.dispositioned_source_units);
+  if (!isRecord(value)) return false;
+  return Number.isInteger(value.total_source_units) && Number.isInteger(value.dispositioned_source_units);
+}
+
+// Una cobertura semántica sólo cuenta cuando declara `complete` Y trae el conteo real detrás.
+function isCompleteSemanticCoverage(value: unknown): boolean {
+  if (!isRecord(value) || !isCoverageBlock(value)) return false;
+  return value.status === 'complete' && Number.isInteger(value.requirement_count);
 }
 
 export type TenderIntegralUnitTechnical = {

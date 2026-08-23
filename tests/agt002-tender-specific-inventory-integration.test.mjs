@@ -131,40 +131,59 @@ for (const relativePath of ['../api/[...path].js', '../server/index.js']) {
   assert.match(executorSource, /requireTenderRequirementInventory: input\.analysis_flags\.AGT002_DOCUMENT_RETRIEVAL === true/);
 }
 
-// UI: a V3 payload without a verifiable inventory, or with an inventory present but not
-// `decision_ready: true`, is paused traceability, never integral coverage. The gate requires
-// BOTH presence of the governed inventory AND `decision_ready === true`. The P0 contract pins
-// that flag to false on every real run today (segmentation is not semantic analysis yet), so
-// this deliberately keeps every current production run paused until a later server-side
-// analyzer marks a snapshot's inventory ready — that is the fail-closed contract, not a defect.
+// UI: readiness is a claim about the whole EVIDENCE COVERAGE of the run, not about the legacy
+// inventory alone. `evidence_coverage.tender_semantic_manifest` is this expediente's current
+// semantic frontier: once it arrives finalized and governed (`tender_semantic_manifest.v1`,
+// `decision_ready: true`, complete `discovery_coverage` and complete `analyzed_coverage`) THAT is
+// the integral coverage, and the legacy inventory — which the P0 contract still pins to
+// `decision_ready: false` on every real run — can no longer pause the reading. A semantic
+// manifest present but not ready (or with partial/incomplete coverage, or without the governed
+// shape) fails closed to the pause even if the legacy inventory declares itself ready. With no
+// semantic manifest at all (historic runs, the exact-Manizales packet) the legacy inventory
+// reading is preserved verbatim. Both surfaces must delegate to ONE shared pure selector over
+// `evidence_coverage`; neither may inspect the inventory on its own.
 {
   const analysisSectionSource = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8');
-  assert.match(analysisSectionSource, /const inventoryPaused = hasIntegralV3Payload && !tenderRequirementInventoryReady\(tenderInventory\)/);
+  assert.match(analysisSectionSource, /import \{[^}]*tenderAnalysisCoverageReady[^}]*\} from '\.\.\/tenderIntegralAnalysisPresentation'/s);
+  // El gate lee TODA la cobertura de evidencia (directamente o por una constante local ligada a
+  // ella), nunca sólo el inventario.
+  assert.match(analysisSectionSource, /hasIntegralV3Payload && !tenderAnalysisCoverageReady\((?:analysis\?\.evidence_coverage|[A-Za-z]*[Cc]overage)[^)]*\)/);
+  assert.doesNotMatch(analysisSectionSource, /tenderRequirementInventoryReady/, 'Análisis no puede gatear sobre el inventario legado por su cuenta');
   assert.match(analysisSectionSource, /Análisis integral pausado/);
   assert.match(analysisSectionSource, /!hasIntegralV3Payload && analysis/);
 
   const technicalViewSource = readFileSync(new URL('../src/tenders/components/TenderIntegralAnalysisV3View.tsx', import.meta.url), 'utf8');
-  assert.match(technicalViewSource, /if \(!tenderRequirementInventoryReady\(inventory\)\)/);
+  const v3GateMatch = technicalViewSource.match(/if \(!tenderAnalysisCoverageReady\((?:analysis\?\.evidence_coverage|[A-Za-z]*[Cc]overage)[^)]*\)\)/);
+  assert.ok(v3GateMatch, 'el respaldo V3 debe gatear con el mismo selector puro sobre toda la cobertura de evidencia');
+  const v3Gate = v3GateMatch[0];
+  assert.doesNotMatch(technicalViewSource, /tenderRequirementInventoryReady/, 'el respaldo V3 no puede gatear sobre el inventario legado por su cuenta');
   assert.match(technicalViewSource, /Cobertura integral no disponible/);
   // El aviso de pausa antecede a TODA derivación de cobertura (resumen, fases, unidades): sin
-  // inventario listo, ninguna lectura integral puede rendirse.
+  // cobertura lista, ninguna lectura integral puede rendirse.
   for (const derivation of ['tenderIntegralAnalysisSummary(integral)', 'tenderIntegralPhaseGroups(integral)', 'agt002-v3-workbench']) {
     assert.ok(
-      technicalViewSource.indexOf('if (!tenderRequirementInventoryReady(inventory))') < technicalViewSource.indexOf(derivation),
-      `inventory pause must pre-empt ${derivation}`,
+      technicalViewSource.indexOf(v3Gate) < technicalViewSource.indexOf(derivation),
+      `coverage pause must pre-empt ${derivation}`,
     );
   }
   // El consumo opcional se conserva: sin payload V3 la vista no rinde nada, ni siquiera la pausa.
   assert.ok(
-    technicalViewSource.indexOf('if (!integral || !units || units.length === 0) return null;') < technicalViewSource.indexOf('if (!tenderRequirementInventoryReady(inventory))'),
-    'an absent V3 payload must render nothing at all, not an inventory pause banner',
+    technicalViewSource.indexOf('if (!integral || !units || units.length === 0) return null;') < technicalViewSource.indexOf(v3Gate),
+    'an absent V3 payload must render nothing at all, not a coverage pause banner',
   );
 
-  // Ambas superficies delegan el gate a la misma función pura, que sí debe leer decision_ready:
-  // la presencia del inventario nunca sustituye a decision_ready === true.
+  // Ambas superficies delegan el gate a la MISMA función pura sobre `evidence_coverage`. Esa
+  // función lee primero el manifiesto semántico (versión gobernada, decision_ready === true y
+  // ambas coberturas completas) y sólo en su ausencia recae en el inventario legado, que sigue
+  // exigiendo decision_ready === true: la presencia nunca sustituye a la disposición.
   const presentationSource = readFileSync(new URL('../src/tenders/tenderIntegralAnalysisPresentation.ts', import.meta.url), 'utf8');
-  assert.match(presentationSource, /export function tenderRequirementInventoryReady/);
-  assert.match(presentationSource, /if \(inventory\.decision_ready !== true\) return false;/, 'el predicado de listo debe exigir decision_ready === true');
+  assert.match(presentationSource, /export function tenderAnalysisCoverageReady/, 'el gate compartido debe existir como selector puro exportado');
+  assert.match(presentationSource, /export function tenderRequirementInventoryReady/, 'la lectura legada del inventario se conserva como respaldo del gate');
+  assert.match(presentationSource, /if \(inventory\.decision_ready !== true\) return false;/, 'el predicado legado debe exigir decision_ready === true');
+  assert.match(presentationSource, /'tender_semantic_manifest\.v1'/, 'el gate debe exigir la versión gobernada del manifiesto semántico');
+  for (const fragment of ['tender_semantic_manifest', 'discovery_coverage', 'analyzed_coverage', "'complete'"]) {
+    assert.ok(presentationSource.includes(fragment), `el gate debe decidir sobre ${fragment}`);
+  }
 }
 
 console.log('AGT-002 tender-specific inventory preview/persistence integration passed');

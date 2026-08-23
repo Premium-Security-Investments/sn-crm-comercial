@@ -2,6 +2,7 @@ import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.
 import { AGT002_PREVIEW_POLICY, AGT002_INTEGRAL_V3_POLICY, createAgt002PreviewEngine } from './agt002-preview-engine.js';
 import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
 import { retrieveAgt002LegalEvidence } from './agt002-legal-retrieval.js';
+import { discoverTenderSemanticManifest } from './tender-semantic-discovery.js';
 
 export const AGT002_PREVIEW_ENGINE_ID = 'agt002_codex_preview';
 const REQUIRED_ENV_KEYS = ['AGT002_PREVIEW_MODEL', 'AGT002_HETZNER_BRIDGE_URL', 'AGT002_HETZNER_BRIDGE_HMAC_SECRET'];
@@ -12,7 +13,11 @@ export const AGT002_PREVIEW_DEFAULT_POLICY_VERSION = 'agt002-preview-policy-v2';
 // v3: AGT002_INTEGRAL_V3_POLICY now states the milestone relationships already enforced
 // fail-closed by validateAgt002IntegralAnalysisV3: verified requires non-null at/source_ref,
 // while not_identified requires both null. Provenance must distinguish this materially aligned prompt.
-export const AGT002_INTEGRAL_V3_POLICY_VERSION = 'agt002-integral-v3-policy-v3';
+// v4: the governed frontier of a non-pilot V3 run is no longer the fixed historical deep-analysis
+// matrix — it is discovered from THIS process's own expediente by discoverTenderSemanticManifest
+// before the analysis turn. The requirements the model is asked about therefore differ materially
+// from a v3 run, so the persisted policy version must tell the two apart.
+export const AGT002_INTEGRAL_V3_POLICY_VERSION = 'agt002-integral-v3-policy-v4';
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -77,7 +82,12 @@ export function getAgt002PreviewRuntimeConfig(environment = process.env) {
   const timeoutMs = positiveIntFromEnv(environment, 'AGT002_PREVIEW_TIMEOUT_MS', DEFAULT_TIMEOUT_MS);
   const maxConcurrent = positiveIntFromEnv(environment, 'AGT002_PREVIEW_MAX_CONCURRENT', DEFAULT_MAX_CONCURRENT);
   const dailyMaxRuns = positiveIntFromEnv(environment, 'AGT002_PREVIEW_DAILY_MAX_RUNS', DEFAULT_DAILY_MAX_RUNS);
-  const leaseSeconds = Math.ceil(timeoutMs / 1000) + 15;
+  // A V3 run spends TWO sequential provider turns under one reservation — semantic discovery
+  // (discoverTenderSemanticManifest) and then the analysis turn — and `timeoutMs` bounds EACH
+  // turn independently, so each turn is rounded up to whole seconds on its own before they are
+  // summed, plus a 15s buffer. A lease sized for a single turn expires while the analysis turn
+  // is still in flight and the run gets reclaimed underneath itself.
+  const leaseSeconds = 2 * Math.ceil(timeoutMs / 1000) + 15;
   if (!Number.isInteger(timeoutMs) || !Number.isInteger(maxConcurrent) || !Number.isInteger(dailyMaxRuns) || leaseSeconds > 600) {
     throw new Error('AGT-002 Preview no está configurado.');
   }
@@ -177,6 +187,11 @@ export function createAgt002PreviewRuntime({
     integralContractV3: analysisConfig.AGT002_INTEGRAL_CONTRACT_V3,
     ...(analysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? {
       companyEvidenceClassesProvider: () => companyEvidenceRegistryEntries,
+      // The semantic discovery stage is not behind an env flag: a V3 run built by this runtime is
+      // always a production run, and a production run must derive its frontier from the process's
+      // own expediente. Direct engine callers (unit tests, canary scripts) leave the provider unset
+      // and keep the legacy fixed-matrix frontier.
+      semanticDiscoveryProvider: discoverTenderSemanticManifest,
       categoryOverrides: categoryOverrides ?? {},
       evidenceClassLinkByRequirementId: evidenceClassLinkByRequirementId ?? {},
       governanceProvenance: governanceProvenance ?? {},

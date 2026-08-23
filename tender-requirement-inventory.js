@@ -327,6 +327,51 @@ export function buildTenderRequirementInventory({ snapshotId, documents = [], do
   return validateTenderRequirementInventory(result);
 }
 
+export function resolveTenderInventorySourceTexts({ inventory, documents = [] } = {}) {
+  const validatedInventory = validateTenderRequirementInventory(inventory);
+  const { documents: canonicalDocuments } = canonicalDocumentRecords(documents);
+  const inventoryUnits = new Map(validatedInventory.source_units.map(unit => [unit.source_unit_id, unit]));
+  const resolved = new Map();
+
+  for (const document of canonicalDocuments) {
+    const paragraphs = document.content.split(/\n\s*\n|\n+/).map(normalizedText).filter(Boolean);
+    paragraphs.forEach((text, index) => {
+      const unitHash = sha256(text);
+      const sourceUnitId = unitId({
+        snapshotId: validatedInventory.snapshot_id,
+        documentId: document.document_id,
+        documentVersionId: document.document_version_id,
+        index,
+        unitHash,
+      });
+      const unit = inventoryUnits.get(sourceUnitId);
+      if (!unit
+        || unit.disposition !== 'analyzable'
+        || unit.document_id !== document.document_id
+        || unit.document_version_id !== document.document_version_id
+        || unit.content_hash !== document.content_hash
+        || unit.unit_hash !== unitHash) {
+        throw new Error(`El texto de source_unit ${sourceUnitId} no coincide con el inventario ligado al snapshot.`);
+      }
+      resolved.set(sourceUnitId, {
+        document_id: document.document_id,
+        document_version_id: document.document_version_id,
+        content_hash: document.content_hash,
+        unit_hash: unitHash,
+        index,
+        text,
+      });
+    });
+  }
+
+  for (const unit of validatedInventory.source_units) {
+    if (unit.disposition === 'analyzable' && !resolved.has(unit.source_unit_id)) {
+      throw new Error(`No se pudo reconstruir el texto de source_unit ${unit.source_unit_id} desde los documentos del snapshot.`);
+    }
+  }
+  return resolved;
+}
+
 export function tenderRequirementInventoryIdentity(value) {
   const inventory = validateTenderRequirementInventory(value);
   return {

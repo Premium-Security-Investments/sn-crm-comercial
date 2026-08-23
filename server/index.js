@@ -3572,7 +3572,7 @@ function buildTenderProcessingWorkerDeps(database) {
           } : {}),
         });
         const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, documentGaps, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
-        const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly, context_version_id: contextVersion?.id, expectedManifestScope: engine.manifestScope ?? null, expectedIdempotencyKey: idempotencyKey, requireTenderRequirementInventory: documentRetrieval });
+        const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly, context_version_id: contextVersion?.id, expectedManifestScope: engine.manifestScope ?? null, expectedIdempotencyKey: idempotencyKey, requireTenderRequirementInventory: documentRetrieval, semanticSourceDocuments: analysisDocuments });
         if (canonicalOnly) await appendAttempt(idempotencyKey, 'completed', { analysis_run_id: registeredRun.run_id });
         return { status: 'completed', analysisRunId: registeredRun.run_id };
       } catch (error) {
@@ -4229,7 +4229,7 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
           } : {}),
         });
       const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, documentGaps, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id, canonicalOnly: false, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
-      const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope, canonicalOnly: false, context_version_id: null, expectedManifestScope: engine.manifestScope ?? null, expectedIdempotencyKey: idempotencyKey, requireTenderRequirementInventory: documentRetrieval });
+      const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope, canonicalOnly: false, context_version_id: null, expectedManifestScope: engine.manifestScope ?? null, expectedIdempotencyKey: idempotencyKey, requireTenderRequirementInventory: documentRetrieval, semanticSourceDocuments: analysisDocuments });
       const payload = await getTenderDocumentRecords(database, opportunityId);
       return res.json({ ...payload, analysis: presentCurrentTenderAnalysis(registeredRun), analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, state: 'completed', reused: false, human_review_required: true } });
     } catch (error) {

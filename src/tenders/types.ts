@@ -296,6 +296,25 @@ export type TenderRequirementInventoryCoverage = {
     requirement_count: number;
   };
 };
+// Frontera semántica del expediente (opcional, sólo lectura): el manifiesto que declara las
+// obligaciones propias de ESTA licitación, derivado y validado en el servidor
+// (`tender-semantic-manifest.js`). La UI sólo necesita el encabezado gobernado de readiness y las
+// dos coberturas; el resto del manifiesto (requisitos, exclusiones, ledger, hashes) se conserva
+// estructuralmente sin fijarlo aquí, porque el front nunca lo interpreta.
+export type TenderSemanticManifestCoverage = {
+  status: 'incomplete' | 'partial' | 'complete';
+  total_source_units: number;
+  dispositioned_source_units: number;
+  requirement_count: number;
+};
+export type TenderSemanticManifest = {
+  semantic_manifest_version: string;
+  decision_ready: boolean;
+  recommendation: 'pause' | 'ready_for_human_review';
+  discovery_coverage: TenderSemanticManifestCoverage;
+  analyzed_coverage: TenderSemanticManifestCoverage;
+  [key: string]: unknown;
+};
 export type TenderEvidenceCoverage = {
   snapshot_id: string;
   budget: {
@@ -315,6 +334,7 @@ export type TenderEvidenceCoverage = {
   requirement_manifest_version: string;
   requirement_manifest: TenderRequirementManifestEntry[];
   tender_requirement_inventory?: TenderRequirementInventoryCoverage;
+  tender_semantic_manifest?: TenderSemanticManifest | null;
 };
 export type TenderLegalFindingClassification = 'tender_requirement' | 'legal_obligation' | 'company_evidence' | 'inference' | 'human_legal_review';
 export type TenderLegalFinding = {
