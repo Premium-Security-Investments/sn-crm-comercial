@@ -1,8 +1,12 @@
 import { strict as assert } from 'node:assert';
-import { readFileSync } from 'node:fs';
-import { ensureKatherineCompanyPermission } from '../scripts/ensure_katherine_company_permission.mjs';
+import { spawnSync } from 'node:child_process';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { ensureKatherineCompanyPermission, KATHERINE_PERMISSION_OPT_IN_ENV } from '../scripts/ensure_katherine_company_permission.mjs';
 
-const env = { VERCEL_ENV: 'production', NEXT_PUBLIC_SUPABASE_URL: 'https://example.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'test-service-key' };
+const env = { VERCEL_ENV: 'production', RUN_KATHERINE_COMPANY_PERMISSION_BOOTSTRAP: 'true', NEXT_PUBLIC_SUPABASE_URL: 'https://example.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'test-service-key' };
 const katherine = { id: '00000000-0000-4000-8000-000000000123', full_name: '  Katherine   Valencia Buitrago ', active: true, identity_type: null };
 const response = (body, status = 200) => ({ ok: status >= 200 && status < 300, status, text: async () => body == null ? '' : JSON.stringify(body) });
 
@@ -38,6 +42,78 @@ function mockFetch({
   const result = await ensureKatherineCompanyPermission({ env: { VERCEL_ENV: 'preview' }, fetchImpl });
   assert.equal(result.status, 'skipped_non_production');
   assert.equal(calls.length, 0);
+}
+
+// El nombre de la variable de opt-in es parte del contrato de despliegue: renombrarla
+// sin actualizar Vercel debe romper aquí, no en producción.
+assert.equal(KATHERINE_PERMISSION_OPT_IN_ENV, 'RUN_KATHERINE_COMPANY_PERMISSION_BOOTSTRAP');
+
+// Producción sin opt-in explícito: no-op total, incluso sin credenciales Supabase
+// (el corte debe ocurrir antes de validarlas y antes de cualquier fetch).
+for (const optIn of [undefined, '', 'false', 'FALSE', 'TRUE', 'True', 'yes', '1', ' true ', 'true\n']) {
+  const { calls, fetchImpl } = mockFetch();
+  const optInEnv = optIn === undefined ? {} : { [KATHERINE_PERMISSION_OPT_IN_ENV]: optIn };
+  const result = await ensureKatherineCompanyPermission({ env: { VERCEL_ENV: 'production', ...optInEnv }, fetchImpl });
+  assert.equal(result.status, 'skipped_opt_in_not_enabled', `opt-in=${JSON.stringify(optIn)} debe ser no-op.`);
+  assert.equal(calls.length, 0, `opt-in=${JSON.stringify(optIn)} no debe emitir ninguna llamada.`);
+}
+
+{
+  // Con credenciales presentes el resultado es el mismo: solo el opt-in habilita la escritura.
+  const { calls, fetchImpl } = mockFetch();
+  const { RUN_KATHERINE_COMPANY_PERMISSION_BOOTSTRAP: _optIn, ...envWithoutOptIn } = env;
+  const result = await ensureKatherineCompanyPermission({ env: envWithoutOptIn, fetchImpl });
+  assert.equal(result.status, 'skipped_opt_in_not_enabled');
+  assert.equal(calls.length, 0, 'El despliegue de producción normal nunca debe tocar Supabase.');
+}
+
+{
+  // El opt-in no habilita ejecuciones fuera de producción.
+  const { calls, fetchImpl } = mockFetch();
+  const result = await ensureKatherineCompanyPermission({ env: { ...env, VERCEL_ENV: 'preview' }, fetchImpl });
+  assert.equal(result.status, 'skipped_non_production');
+  assert.equal(calls.length, 0);
+}
+
+{
+  // Con opt-in exacto la validación de credenciales sigue vigente.
+  const { calls, fetchImpl } = mockFetch();
+  await assert.rejects(
+    () => ensureKatherineCompanyPermission({ env: { VERCEL_ENV: 'production', [KATHERINE_PERMISSION_OPT_IN_ENV]: 'true' }, fetchImpl }),
+    /Production Supabase credentials are required/,
+  );
+  assert.equal(calls.length, 0);
+}
+
+// Contrato del postbuild: producción sin opt-in imprime un JSON determinista y sale con 0.
+const scriptPath = fileURLToPath(new URL('../scripts/ensure_katherine_company_permission.mjs', import.meta.url));
+const runScript = extraEnv => spawnSync(process.execPath, [scriptPath], { encoding: 'utf8', env: { PATH: process.env.PATH, ...extraEnv } });
+const SKIP_JSON = '{"script":"ensure_katherine_company_permission","status":"skipped_opt_in_not_enabled","optInEnvVar":"RUN_KATHERINE_COMPANY_PERMISSION_BOOTSTRAP","mutated":false}';
+
+for (const extraEnv of [{ VERCEL_ENV: 'production' }, { VERCEL_ENV: 'production', RUN_KATHERINE_COMPANY_PERMISSION_BOOTSTRAP: 'false' }]) {
+  const run = runScript(extraEnv);
+  assert.equal(run.status, 0, `El postbuild debe salir con 0. stderr: ${run.stderr}`);
+  assert.equal(run.stdout.trim(), SKIP_JSON, 'El resultado de skip debe ser JSON determinista.');
+}
+
+{
+  const tempDirectory = mkdtempSync(join(tmpdir(), 'katherine postbuild '));
+  const spacedScriptPath = join(tempDirectory, 'ensure permission.mjs');
+  try {
+    copyFileSync(scriptPath, spacedScriptPath);
+    const run = spawnSync(process.execPath, [spacedScriptPath], { encoding: 'utf8', env: { PATH: process.env.PATH, VERCEL_ENV: 'production' } });
+    assert.equal(run.status, 0, `El postbuild debe ejecutar desde rutas con espacios. stderr: ${run.stderr}`);
+    assert.equal(run.stdout.trim(), SKIP_JSON);
+  } finally {
+    rmSync(tempDirectory, { recursive: true, force: true });
+  }
+}
+
+{
+  // El skip no productivo preexistente se mantiene tal cual.
+  const run = runScript({ VERCEL_ENV: 'preview' });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stdout.trim(), 'katherine_company_permission=skipped_non_production');
 }
 
 {
@@ -100,6 +176,11 @@ function mockFetch({
   assert.equal(calls.some(call => call.method === 'POST' && call.url.includes('psi_profile_permissions')), false);
   assert.equal(calls.some(call => call.method === 'POST' && call.url.includes('psi_access_audit_log')), false);
 }
+
+const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+assert.equal(packageJson.scripts['check:deployment-safety'], 'node tests/katherine-company-permission-deployment.test.mjs');
+assert.match(packageJson.scripts.build, /^npm run check:deployment-safety && /, 'Cada build debe ejecutar primero el contrato de seguridad del postbuild.');
+assert.equal(packageJson.scripts.postbuild, 'node scripts/ensure_katherine_company_permission.mjs');
 
 const migration = readFileSync(new URL('../supabase/migrations/060_katherine_company_profile_permission.sql', import.meta.url), 'utf8');
 const rollback = readFileSync(new URL('../supabase/rollbacks/060_katherine_company_profile_permission_rollback.sql', import.meta.url), 'utf8');
