@@ -7,7 +7,7 @@ import {
   tenderIntegralUnitConditionAnchor,
   type TenderIntegralUnitPresentation,
 } from '../tenderIntegralAnalysisPresentation';
-import type { TenderDocumentAnalysis, TenderManifestUnresolvedEntry } from '../types';
+import type { TenderDocumentAnalysis, TenderIntegralAnalysisV3, TenderManifestUnresolvedEntry } from '../types';
 
 // AGT-002 · respaldo técnico del análisis, en dos capas (task-4-brief).
 // Primera capa: lectura humana completa por requisito, con los campos gobernados verbatim y los
@@ -128,28 +128,18 @@ export function TenderIntegralAnalysisV3View({ analysis }: TenderIntegralAnalysi
   // Fail-closed gate compartido con la superficie de Análisis (ver tenderAnalysisCoverageReady):
   // decide sobre toda la cobertura de evidencia de la corrida —la frontera semántica del
   // expediente manda cuando llega, y el inventario legado es el respaldo histórico—. Una corrida
-  // sin cobertura lista para decisión se muestra sólo como trazabilidad pausada, nunca como
-  // cobertura integral. Ninguna derivación (resumen, fases, unidades) ocurre antes de este punto.
+  // sin cobertura lista para decisión NUNCA rinde cobertura integral: ninguna derivación agregada
+  // (resumen, indicadores, alcance del manifiesto, fases con cifras de cobertura) ocurre antes de
+  // este punto. Lo que sí se conserva es el análisis realmente guardado de ESTE expediente, como
+  // respaldo técnico histórico y sólo trazabilidad — repetir aquí el mismo aviso genérico de pausa
+  // hacía indistinguibles dos expedientes distintos y borraba su trazabilidad (AGT-002-002).
   if (!tenderAnalysisCoverageReady(analysis?.evidence_coverage)) {
-    return <section className="agt002-v3-preview" aria-labelledby="agt002-inventory-title">
-      <header className="agt002-v3-overview">
-        <div className="agt002-v3-overview-copy">
-          <span className="agt002-v3-eyebrow">AGT-002 · Cobertura del expediente</span>
-          <h2 id="agt002-inventory-title">Cobertura integral no disponible</h2>
-          <p>Este análisis no tiene todavía una cobertura integral lista para decisión: la frontera semántica del expediente vigente no está finalizada, o falta un inventario verificable de sus requisitos, o el existente aún no está marcado como listo. Se conserva sólo como trazabilidad y no representa cobertura integral.</p>
-        </div>
-        <div className="agt002-v3-overview-summary">
-          <span><small>Estado</small><strong>Análisis pausado</strong></span>
-          <span><small>Decisión</small><strong>Revisión humana</strong></span>
-        </div>
-      </header>
-    </section>;
+    return <HistoricalTechnicalBackup analysis={analysis} integral={integral} />;
   }
 
   const summary = tenderIntegralAnalysisSummary(integral);
-  const phases = tenderIntegralPhaseGroups(integral);
   const review = analysis?.decision_review ?? null;
-  const conditionAnchorByUnitId = new Map(units.map(unit => [unit.unit_id, tenderIntegralUnitConditionAnchor(unit, review)]));
+  const conditionAnchorByUnitId = new Map<string, string | null>(units.map(unit => [unit.unit_id, tenderIntegralUnitConditionAnchor(unit, review)]));
   const coverageRatio = `${integral.coverage.analyzed_requirement_ids.length} / ${integral.coverage.expected_requirement_ids.length}`;
   // Alcance honesto del manifiesto gobernado, cuando la corrida lo trae; nunca se presenta
   // analyzed/expected como cobertura total del manifiesto.
@@ -196,39 +186,104 @@ export function TenderIntegralAnalysisV3View({ analysis }: TenderIntegralAnalysi
         </div>
       </div>
       <div className="agt002-v3-overview-footer">
-        <div className="agt002-v3-guard"><strong>Validación humana pendiente</strong><span>No decide GO / NO GO · No firma · No envía · No presenta ofertas</span></div>
-        <details className="agt002-v3-run-details">
-          <summary>Ver trazabilidad técnica</summary>
-          <dl className="agt002-v3-run-meta">
-            <div><dt>Ejecución</dt><dd>{analysis?.run_id ?? '—'}</dd></div>
-            <div><dt>Snapshot</dt><dd>{analysis?.snapshot_id ?? '—'}</dd></div>
-          </dl>
-        </details>
+        <HumanAuthorityGuard />
+        <RunTrace analysis={analysis} />
       </div>
     </header>
 
-    {unresolvedEntries && unresolvedEntries.length > 0 && <section className="agt002-v3-unresolved" aria-labelledby="agt002-v3-unresolved-title">
-      <header>
-        <div><span className="agt002-v3-section-label">Manifiesto gobernado</span><h3 id="agt002-v3-unresolved-title">Pendientes sin evidencia suficiente</h3></div>
-        <strong>{unresolvedEntries.length} pendiente(s)</strong>
-      </header>
-      <ul>{unresolvedEntries.map(entry => <UnresolvedEntryReading key={entry.requirement_id} entry={entry} />)}</ul>
-    </section>}
+    <UnresolvedManifestEntries entries={unresolvedEntries} />
 
-    <div className="agt002-v3-workbench">
-      {phases.map(group => <details key={group.key} className="agt002-v3-phase" data-phase={group.key} open={group.hasPendingEvidence}>
-        <summary>
-          <strong>{group.label}</strong>
-          <small>{group.units.length} requisito(s){group.pendingEvidenceCount > 0 ? ` · ${group.pendingEvidenceCount} pendiente(s) de evidencia` : ''}</small>
-        </summary>
-        {group.units.length > 0
-          ? <div className="agt002-v3-requirements">
-              {group.units.map(card => <UnitReading key={card.key} card={card} conditionAnchor={conditionAnchorByUnitId.get(card.key) ?? null} />)}
-            </div>
-          : <p className="agt002-v3-empty-phase">Sin requisitos clasificados en esta fase.</p>}
-      </details>)}
-    </div>
+    <PhaseWorkbench integral={integral} conditionAnchorByUnitId={conditionAnchorByUnitId} />
 
     <footer className="agt002-v3-footer"><strong>Análisis integral · AGT-002 v3</strong><span>Contenido del expediente vigente. Toda conclusión permanece pendiente de validación humana.</span></footer>
   </section>;
+}
+
+// Respaldo técnico histórico · sólo trazabilidad (AGT-002-002).
+//
+// Cuando la cobertura de evidencia no está lista para decisión, el respaldo técnico ya no repite el
+// aviso genérico de pausa de la superficie de Análisis: esa repetición hacía que dos expedientes
+// distintos —dos corridas, dos payloads, dos inventarios documentales distintos— rindieran
+// exactamente la misma pantalla, borrando la trazabilidad de cada uno.
+//
+// Aquí se conserva el análisis realmente guardado de ESTE expediente, y sólo eso:
+//  · las unidades gobernadas con su lectura humana y su trazabilidad técnica íntegra,
+//  · los pendientes del manifiesto de esta misma corrida,
+//  · la ejecución y el snapshot que la identifican.
+// Nunca se rinde ninguna derivación agregada que pudiera leerse como cobertura integral vigente
+// (resumen por estado, indicadores de evidencia, alcance del manifiesto, razón analizado/esperado),
+// ni el enlace a una condición gobernada: la superficie de decisión está pausada, así que ese
+// destino no existe y un ancla colgante sería peor que su ausencia. El rótulo dice de forma
+// explícita que esto no es una recomendación integral vigente y que no expresa GO / NO GO.
+function HistoricalTechnicalBackup({ analysis, integral }: { analysis: TenderDocumentAnalysis | null; integral: TenderIntegralAnalysisV3 }) {
+  const unresolvedEntries = analysis?.manifest_unresolved_entries ?? null;
+  return <section className="agt002-v3-preview agt002-v3-historical" data-mode="historical-traceability" aria-labelledby="agt002-v3-historical-title">
+    <header className="agt002-v3-overview">
+      <div className="agt002-v3-overview-copy">
+        <span className="agt002-v3-eyebrow">AGT-002 · Respaldo técnico histórico</span>
+        <h2 id="agt002-v3-historical-title">Respaldo técnico histórico · solo trazabilidad</h2>
+        <p>Este es el análisis técnico conservado de este expediente y se muestra únicamente como trazabilidad histórica. No es una recomendación integral vigente, no representa cobertura integral de esta licitación y no expresa GO / NO GO ni disposición alguna para la decisión. La lectura para decisión permanece pausada hasta que la cobertura de requisitos de este expediente esté completa.</p>
+      </div>
+      <div className="agt002-v3-overview-summary">
+        <span><small>Estado</small><strong>Solo trazabilidad</strong></span>
+        <span><small>Recomendación integral</small><strong>No disponible</strong></span>
+      </div>
+      <div className="agt002-v3-overview-footer">
+        <HumanAuthorityGuard />
+        <RunTrace analysis={analysis} />
+      </div>
+    </header>
+
+    <UnresolvedManifestEntries entries={unresolvedEntries} />
+
+    <PhaseWorkbench integral={integral} conditionAnchorByUnitId={null} />
+
+    <footer className="agt002-v3-footer"><strong>Respaldo técnico histórico · solo trazabilidad</strong><span>Contenido conservado de este expediente. No es una recomendación integral vigente y toda conclusión permanece pendiente de validación humana.</span></footer>
+  </section>;
+}
+
+function HumanAuthorityGuard() {
+  return <div className="agt002-v3-guard"><strong>Validación humana pendiente</strong><span>No decide GO / NO GO · No firma · No envía · No presenta ofertas</span></div>;
+}
+
+function RunTrace({ analysis }: { analysis: TenderDocumentAnalysis | null }) {
+  return <details className="agt002-v3-run-details">
+    <summary>Ver trazabilidad técnica</summary>
+    <dl className="agt002-v3-run-meta">
+      <div><dt>Ejecución</dt><dd>{analysis?.run_id ?? '—'}</dd></div>
+      <div><dt>Snapshot</dt><dd>{analysis?.snapshot_id ?? '—'}</dd></div>
+    </dl>
+  </details>;
+}
+
+// Entradas del manifiesto que el motor nunca alimentó al modelo: hermanas del análisis, jamás
+// mezcladas con las unidades analizadas.
+function UnresolvedManifestEntries({ entries }: { entries: TenderManifestUnresolvedEntry[] | null }) {
+  if (!entries || entries.length === 0) return null;
+  return <section className="agt002-v3-unresolved" aria-labelledby="agt002-v3-unresolved-title">
+    <header>
+      <div><span className="agt002-v3-section-label">Manifiesto gobernado</span><h3 id="agt002-v3-unresolved-title">Pendientes sin evidencia suficiente</h3></div>
+      <strong>{entries.length} pendiente(s)</strong>
+    </header>
+    <ul>{entries.map(entry => <UnresolvedEntryReading key={entry.requirement_id} entry={entry} />)}</ul>
+  </section>;
+}
+
+// Las cinco fases institucionales sobre las unidades reales de la corrida. `conditionAnchorByUnitId`
+// es `null` cuando no hay superficie de decisión activa a la cual enlazar (respaldo histórico).
+function PhaseWorkbench({ integral, conditionAnchorByUnitId }: { integral: TenderIntegralAnalysisV3; conditionAnchorByUnitId: Map<string, string | null> | null }) {
+  const phases = tenderIntegralPhaseGroups(integral);
+  return <div className="agt002-v3-workbench">
+    {phases.map(group => <details key={group.key} className="agt002-v3-phase" data-phase={group.key} open={group.hasPendingEvidence}>
+      <summary>
+        <strong>{group.label}</strong>
+        <small>{group.units.length} requisito(s){group.pendingEvidenceCount > 0 ? ` · ${group.pendingEvidenceCount} pendiente(s) de evidencia` : ''}</small>
+      </summary>
+      {group.units.length > 0
+        ? <div className="agt002-v3-requirements">
+            {group.units.map(card => <UnitReading key={card.key} card={card} conditionAnchor={conditionAnchorByUnitId?.get(card.key) ?? null} />)}
+          </div>
+        : <p className="agt002-v3-empty-phase">Sin requisitos clasificados en esta fase.</p>}
+    </details>)}
+  </div>;
 }

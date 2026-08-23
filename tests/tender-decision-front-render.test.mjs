@@ -529,40 +529,48 @@ test('el href de Ver condición principal en V3 apunta a un id que existe realme
 });
 
 // ---------------------------------------------------------------------------------------------
-// 11e · Contrato fail-closed AGT-002: TenderAnalysisSection y TenderIntegralAnalysisV3View deben
-//      coincidir. Un inventario presente pero con decision_ready !== true (la forma real del
-//      contrato P0 vigente) y un V3 histórico sin inventario en absoluto pausan ambas
-//      superficies: ninguna condición, impedimento, cobertura, conteo, fase ni recomendación se
-//      filtra en ninguna de las dos vistas.
+// 11e · Contrato fail-closed AGT-002 (revisado por AGT-002-002). El gate de cobertura sigue siendo
+//      UNO solo y compartido, pero las dos superficies no se comportan igual ante él:
+//        · TenderAnalysisSection es la superficie de DECISIÓN y permanece pausada sin excepción:
+//          ninguna condición, impedimento, cobertura, conteo, fase ni recomendación se filtra.
+//        · TenderIntegralAnalysisV3View es el RESPALDO TÉCNICO y deja de repetir esa pausa —al
+//          repetirla, dos expedientes distintos rendían exactamente la misma pantalla—. Conserva el
+//          análisis realmente guardado de ese expediente como respaldo histórico / solo
+//          trazabilidad, sin ninguna derivación agregada legible como cobertura integral vigente.
 // ---------------------------------------------------------------------------------------------
-test('inventario presente con decision_ready=false pausa Análisis y V3 por igual, sin condiciones ni cobertura integral', () => {
-  const analysisHtml = render({ analysis: PAUSED_ANALYSIS });
-  const v3Html = renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis: PAUSED_ANALYSIS }));
+const HISTORICAL_TITLE = 'Respaldo técnico histórico · solo trazabilidad';
 
-  assert.ok(analysisHtml.includes('Análisis integral pausado'), 'Análisis debe mostrar el aviso de pausa');
-  assert.ok(v3Html.includes('Cobertura integral no disponible'), 'V3 debe mostrar el aviso de pausa');
+function assertPausedDecisionSurface(analysisHtml, caso) {
+  assert.ok(analysisHtml.includes('Análisis integral pausado'), `Análisis debe mostrar el aviso de pausa (${caso})`);
+  assert.equal(analysisHtml.includes(CONDITION_PRESENTED.presentation.title), false, `ninguna condición gobernada puede filtrarse en pausa (${caso})`);
+  assert.equal(analysisHtml.includes(IMPEDIMENT.presentation.title), false, `ningún impedimento gobernado puede filtrarse en pausa (${caso})`);
+  assert.equal(analysisHtml.includes('Unidad técnica 1'), false, `ninguna unidad V3 puede filtrarse a la decisión (${caso})`);
+  assert.equal(analysisHtml.includes('Requisitos analizados'), false, `ningún conteo de cobertura integral puede filtrarse (${caso})`);
+}
 
-  for (const html of [analysisHtml, v3Html]) {
-    assert.equal(html.includes(CONDITION_PRESENTED.presentation.title), false, 'ninguna condición gobernada puede filtrarse en pausa');
-    assert.equal(html.includes(IMPEDIMENT.presentation.title), false, 'ningún impedimento gobernado puede filtrarse en pausa');
-    assert.equal(html.includes('Unidad técnica 1'), false, 'ninguna unidad V3 puede filtrarse en pausa');
-    assert.equal(html.includes('Requisitos analizados'), false, 'ningún conteo de cobertura integral puede filtrarse en pausa');
-  }
+function assertHistoricalBackup(v3Html, caso) {
+  assert.ok(v3Html.includes(HISTORICAL_TITLE), `el respaldo técnico debe rotularse como histórico (${caso})`);
+  assert.match(v3Html, /no es una recomendaci[oó]n integral vigente/i, `debe negar ser una recomendación integral vigente (${caso})`);
+  assert.ok(v3Html.includes('No decide GO / NO GO'), `nunca puede insinuar GO (${caso})`);
+  // La trazabilidad de ESE expediente sí se conserva: es justamente lo que la pausa repetida borraba.
+  assert.ok(v3Html.includes('Unidad técnica 1'), `la unidad conservada de este expediente debe seguir visible (${caso})`);
+  assert.ok(v3Html.includes('Unidad técnica 2'), `la unidad conservada de este expediente debe seguir visible (${caso})`);
+  // Pero ninguna lectura agregada que pueda confundirse con cobertura integral vigente.
+  assert.equal(v3Html.includes('Cobertura integral no disponible'), false, `ya no repite el aviso de pausa de la decisión (${caso})`);
+  assert.equal(v3Html.includes('Análisis integral por requisito'), false, `nunca se presenta como el análisis integral vigente (${caso})`);
+  assert.equal(v3Html.includes('Requisitos analizados'), false, `ningún conteo de cobertura integral puede filtrarse (${caso})`);
+  assert.equal(v3Html.includes(CONDITION_PRESENTED.presentation.title), false, `el respaldo técnico nunca proyecta condiciones gobernadas (${caso})`);
+  assert.equal(/href="#tender-condition-\d+"/.test(v3Html), false, `ningún ancla puede quedar colgando hacia una decisión pausada (${caso})`);
+}
+
+test('inventario presente con decision_ready=false pausa la decisión y conserva el respaldo técnico como trazabilidad histórica', () => {
+  assertPausedDecisionSurface(render({ analysis: PAUSED_ANALYSIS }), 'decision_ready=false');
+  assertHistoricalBackup(renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis: PAUSED_ANALYSIS })), 'decision_ready=false');
 });
 
-test('V3 histórico sin ningún inventario pausa Análisis y V3 por igual, sin condiciones ni cobertura integral', () => {
-  const analysisHtml = render({ analysis: NO_INVENTORY_ANALYSIS });
-  const v3Html = renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis: NO_INVENTORY_ANALYSIS }));
-
-  assert.ok(analysisHtml.includes('Análisis integral pausado'), 'Análisis debe mostrar el aviso de pausa');
-  assert.ok(v3Html.includes('Cobertura integral no disponible'), 'V3 debe mostrar el aviso de pausa');
-
-  for (const html of [analysisHtml, v3Html]) {
-    assert.equal(html.includes(CONDITION_PRESENTED.presentation.title), false, 'ninguna condición gobernada puede filtrarse en pausa');
-    assert.equal(html.includes(IMPEDIMENT.presentation.title), false, 'ningún impedimento gobernado puede filtrarse en pausa');
-    assert.equal(html.includes('Unidad técnica 1'), false, 'ninguna unidad V3 puede filtrarse en pausa');
-    assert.equal(html.includes('Requisitos analizados'), false, 'ningún conteo de cobertura integral puede filtrarse en pausa');
-  }
+test('V3 histórico sin ningún inventario pausa la decisión y conserva el respaldo técnico como trazabilidad histórica', () => {
+  assertPausedDecisionSurface(render({ analysis: NO_INVENTORY_ANALYSIS }), 'sin inventario');
+  assertHistoricalBackup(renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis: NO_INVENTORY_ANALYSIS })), 'sin inventario');
 });
 
 test('inventario listo (decision_ready === true) rinde el V3 completo y las condiciones en Análisis, en el mismo fixture', () => {
@@ -570,7 +578,8 @@ test('inventario listo (decision_ready === true) rinde el V3 completo y las cond
   const v3Html = renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis: ANALYSIS }));
 
   assert.equal(analysisHtml.includes('Análisis integral pausado'), false);
-  assert.equal(v3Html.includes('Cobertura integral no disponible'), false);
+  assert.equal(v3Html.includes(HISTORICAL_TITLE), false, 'con cobertura lista el respaldo nunca se rotula como histórico');
+  assert.ok(v3Html.includes('Análisis integral por requisito'), 'con cobertura lista se rinde la lectura integral vigente');
   assert.ok(analysisHtml.includes(CONDITION_PRESENTED.presentation.title), 'Análisis debe rendir la condición gobernada');
   assert.ok(v3Html.includes('Unidad técnica 1'), 'V3 debe rendir la unidad gobernada');
 });
@@ -677,47 +686,35 @@ test('un manifiesto semántico finalizado y listo rinde el análisis integral co
   const v3Html = renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis: SEMANTIC_READY_ANALYSIS }));
 
   assert.equal(analysisHtml.includes('Análisis integral pausado'), false, 'con cobertura semántica lista Análisis no puede seguir pausado');
-  assert.equal(v3Html.includes('Cobertura integral no disponible'), false, 'con cobertura semántica lista V3 no puede seguir pausado');
+  assert.equal(v3Html.includes(HISTORICAL_TITLE), false, 'con cobertura semántica lista V3 no puede degradar a respaldo histórico');
   assert.ok(analysisHtml.includes(CONDITION_PRESENTED.presentation.title), 'Análisis debe rendir la condición gobernada');
   assert.ok(analysisHtml.includes(IMPEDIMENT.presentation.title), 'Análisis debe rendir el impedimento gobernado');
   assert.ok(v3Html.includes('Unidad técnica 1'), 'V3 debe rendir la unidad gobernada');
   assert.ok(v3Html.includes('Requisitos analizados'), 'V3 debe rendir la cobertura integral');
 });
 
-test('un manifiesto semántico con decision_ready=false o cobertura parcial pausa Análisis y V3, aunque el inventario legado se declare listo', () => {
+test('un manifiesto semántico con decision_ready=false o cobertura parcial pausa la decisión y degrada V3 a trazabilidad histórica, aunque el inventario legado se declare listo', () => {
   for (const [caso, analysis] of [
     ['decision_ready=false', SEMANTIC_PAUSED_ANALYSIS],
     ['cobertura parcial/incompleta', SEMANTIC_PARTIAL_ANALYSIS],
   ]) {
-    const analysisHtml = render({ analysis });
-    const v3Html = renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis }));
-
-    assert.ok(analysisHtml.includes('Análisis integral pausado'), `Análisis debe pausar con ${caso}`);
-    assert.ok(v3Html.includes('Cobertura integral no disponible'), `V3 debe pausar con ${caso}`);
-
-    for (const html of [analysisHtml, v3Html]) {
-      assert.equal(html.includes(CONDITION_PRESENTED.presentation.title), false, `ninguna condición puede filtrarse con ${caso}`);
-      assert.equal(html.includes(IMPEDIMENT.presentation.title), false, `ningún impedimento puede filtrarse con ${caso}`);
-      assert.equal(html.includes('Unidad técnica 1'), false, `ninguna unidad V3 puede filtrarse con ${caso}`);
-      assert.equal(html.includes('Requisitos analizados'), false, `ningún conteo integral puede filtrarse con ${caso}`);
-    }
+    assertPausedDecisionSurface(render({ analysis }), caso);
+    assertHistoricalBackup(renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis })), caso);
   }
 });
 
 test('sin manifiesto semántico ambas superficies conservan la lectura legada del inventario', () => {
-  // Legado listo → completo en las dos (mismo fixture que el resto del archivo).
+  // Legado listo → lectura integral completa en las dos (mismo fixture que el resto del archivo).
   assert.equal(ANALYSIS.evidence_coverage.tender_semantic_manifest, undefined, 'el fixture legado no anuncia frontera semántica');
   assert.equal(render().includes('Análisis integral pausado'), false);
   assert.equal(
-    renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis: ANALYSIS })).includes('Cobertura integral no disponible'),
+    renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis: ANALYSIS })).includes(HISTORICAL_TITLE),
     false,
   );
 
-  // Legado no listo → pausa en las dos.
-  assert.ok(render({ analysis: PAUSED_ANALYSIS }).includes('Análisis integral pausado'));
-  assert.ok(
-    renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis: PAUSED_ANALYSIS })).includes('Cobertura integral no disponible'),
-  );
+  // Legado no listo → decisión pausada y respaldo técnico degradado a trazabilidad histórica.
+  assertPausedDecisionSurface(render({ analysis: PAUSED_ANALYSIS }), 'legado no listo');
+  assertHistoricalBackup(renderToStaticMarkup(createElement(TenderIntegralAnalysisV3View, { analysis: PAUSED_ANALYSIS })), 'legado no listo');
 });
 
 // ---------------------------------------------------------------------------------------------
