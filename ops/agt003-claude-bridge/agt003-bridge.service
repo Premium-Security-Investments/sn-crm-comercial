@@ -1,0 +1,36 @@
+# Artefacto declarativo AGT-003: revisar y aplicar manualmente en el servidor.
+# Este archivo no instala ni activa nada por sí solo.
+[Unit]
+Description=AGT-003 dedicated Claude bridge
+After=network.target
+
+[Service]
+Type=simple
+User=agt003-bridge
+Group=agt003-bridge
+EnvironmentFile=/etc/agt003-bridge/agt003-bridge.env
+# La sesión OAuth de Claude Code vive en un directorio propio bajo /opt y no en
+# $HOME: con ProtectHome=true cualquier credencial ubicada en $HOME sería
+# ilegible para el servicio.
+Environment=CLAUDE_CONFIG_DIR=/opt/agt003-bridge/.claude
+# `claude` y sus dependencias escriben en $HOME aunque CLAUDE_CONFIG_DIR esté
+# fijado. Con ProtectHome=true un HOME heredado (o vacío) haría fallar el spawn
+# con un error de escritura inútil: HOME apunta al mismo directorio del servicio
+# que ya está en ReadWritePaths.
+Environment=HOME=/opt/agt003-bridge
+ExecStart=/usr/bin/node /opt/agt003-bridge/ops/agt003-claude-bridge/run-server.mjs
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/agt003-bridge/.claude /opt/agt003-bridge/var
+CPUQuota=100%
+# Un turno del proveedor con salida larga sostiene picos por encima de 512 MiB;
+# con el techo más bajo el OOM killer mata el subproceso a media respuesta y el
+# llamador recibe un fallo indistinguible de un error del modelo.
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target
