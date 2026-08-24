@@ -141,7 +141,16 @@ const AGT002_OUTPUT_REJECTION_STAGE_VALUES = new Set(Object.values(AGT002_OUTPUT
 // attach. Deliberately a shape check, not an imported allowlist Set: this engine treats
 // semanticDiscoveryProvider as an injected boundary (see its constructor option), never a module
 // it reaches into directly.
-const DISCOVERY_VALIDATION_CODE_PATTERN = /^v4_discovery_[a-z_]+$/;
+//
+// The version segment is a CLOSED alternation, not `v\d+`: it names exactly the two discovery code
+// generations this engine currently recognizes — `v4_` for the local gates the discovery module has
+// attributed to the AGT-002 V4 frontier since its policy v1 (citation/anchor/uniqueness/inventory/
+// shape/coverage/usage/json/content, all unchanged), and `v5_` for the codes its v5 policy
+// introduces (today `v5_discovery_no_requirements`, the zero-obligation proposal that breaks no gate
+// and still cannot produce a frontier). A future generation must widen this deliberately, exactly as
+// v5 did; an unrecognized code still collapses to the generic closed fallback below rather than
+// reaching a durable row.
+const DISCOVERY_VALIDATION_CODE_PATTERN = /^v(?:4|5)_discovery_[a-z_]+$/;
 
 function outputSchemaForEvidenceIds(allowedEvidenceIds, {
   legalCorpus = false,

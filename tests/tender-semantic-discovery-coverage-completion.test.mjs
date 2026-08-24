@@ -155,34 +155,49 @@ async function assertRejection(promiseFactory, { code, message }) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// 6. The canonical disposition behaviour changed materially, so the policy version moved with it,
-//    and the policy text states the new truth without ever making omission an acceptable answer.
+// 6. The canonical disposition behaviour changed materially, so the policy version moved with it.
+//
+//    v5 (see tests/tender-semantic-discovery-v5-obligation-contract.test.mjs for the whole new
+//    contract): the COMPLETION behaviour pinned by this file is unchanged, but the policy no longer
+//    ASKS for the exhaustive enumeration the completion made unnecessary — asking for it while the
+//    server already did it is what spent a real run's whole output on the list nobody needed. The
+//    truthful half of the v4 sentences stays: an unlisted unit is preserved server-side as
+//    unresolved, and that entry keeps the analysis paused.
 // ---------------------------------------------------------------------------------------------
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v4',
-    'a proposal that omits a source unit is now canonicalized differently, which is a material change '
-    + 'to this module\'s contract and must bump the policy version',
+    'tender-semantic-discovery.v5',
+    'the model-facing coverage contract changed again in v5 (dispositions became optional), which is '
+    + 'a material change to what the model is asked for and must bump the policy version',
   );
 
-  // Still asked for in full: the classification duty is what produces a classified expediente.
-  assert.match(
+  // The exhaustive-enumeration demand is GONE, and no equivalent survives anywhere in the policy.
+  assert.doesNotMatch(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
     /Dispón todas las source_units exactamente una vez/,
-    'the policy must still require every source unit to be dispositioned exactly once',
+    'the policy must no longer demand that every source unit be dispositioned exactly once',
+  );
+  assert.doesNotMatch(
+    TENDER_SEMANTIC_DISCOVERY_POLICY,
+    /No omitas unidades/,
+    'the policy must no longer forbid omitting units the server itself completes',
+  );
+
+  // What replaced it: dispositions are optional and high-confidence, and leaving a unit unlisted is
+  // explicitly allowed rather than tolerated.
+  assert.match(
+    TENDER_SEMANTIC_DISCOVERY_POLICY,
+    /Las listas "excluded" y "unresolved" son opcionales y secundarias/,
+    'the policy must state that the two disposition lists are optional and secondary',
   );
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
-    /No omitas unidades\./,
-    'the policy must still tell the model not to omit units',
+    /Puedes dejar sin listar cualquier unidad que no sustente un requisito/,
+    'the policy must explicitly permit leaving a non-requirement unit unlisted',
   );
-  assert.match(
-    TENDER_SEMANTIC_DISCOVERY_POLICY,
-    /Clasifica todo lo que el texto recibido te permita clasificar/,
-    'the policy must ask the model to classify everything it can',
-  );
-  // And told the truth about what happens if it omits one anyway.
+
+  // And still told the truth about what an unlisted unit costs.
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
     /el servidor la conservará por su cuenta como unidad sin resolver con la razón "source_unit_not_dispositioned"/,
@@ -193,21 +208,10 @@ async function assertRejection(promiseFactory, { code, message }) {
     /mantiene el análisis en pausa, sin disponibilidad para decidir/,
     'the policy must state that a preserved omission blocks decision readiness',
   );
-  // Never as a licence: an omission is not a valid answer and never supports continuing or a GO.
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
-    /omitir una unidad nunca es una respuesta válida ni completa/,
-    'the policy must forbid treating an omission as a valid or complete answer',
-  );
-  assert.match(
-    TENDER_SEMANTIC_DISCOVERY_POLICY,
-    /no declares que una omisión está bien/,
-    'the policy must forbid the model declaring an omission acceptable',
-  );
-  assert.match(
-    TENDER_SEMANTIC_DISCOVERY_POLICY,
-    /nunca recomiendes continuar ni dar GO sobre un expediente con unidades sin listar/,
-    'the policy must forbid recommending GO over an expediente with unlisted units',
+    /Una omisión nunca se convierte en exclusión ni se da por analizada/,
+    'the policy must state that an omission never becomes an exclusion nor counts as analysed',
   );
 }
 

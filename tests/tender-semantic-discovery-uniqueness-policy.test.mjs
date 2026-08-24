@@ -142,15 +142,18 @@ import { tenderSemanticObligationKey } from '../tender-semantic-manifest.js';
     /No incluyas en "excluded" ni en "unresolved" ninguna unidad cuyo texto contenga literalmente un fragmento que hayas elegido como "label"/,
     'policy must state the overlap rule in the derived form the model can actually check',
   );
+  // v5: the disposition lists still hold ONLY units the derived binding left over, and a unit still
+  // gets at most one disposition — but listing every leftover is no longer demanded, so the rule is
+  // stated as a bound (no more than one) rather than as a quota (exactly one each).
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
-    /Dispón allí exactamente las unidades restantes, todas ellas/,
-    'policy must state that the model disposes exactly the units the derived binding leaves over',
+    /Dispón allí, si acaso, sólo unidades restantes/,
+    'policy must confine the disposition lists to units the derived binding leaves over',
   );
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
-    /Cada unidad recibe exactamente una disposición/,
-    'policy must state the exactly-one-disposition rule',
+    /Ninguna unidad puede recibir más de una disposición/,
+    'policy must state the at-most-one-disposition rule',
   );
 }
 

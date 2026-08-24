@@ -162,10 +162,10 @@ async function assertRejection(promiseFactory, { stage, code, message }) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v4',
-    'removing the requirement source-id fields (v3) and then making coverage fail-safe (v4) are both '
-    + 'material changes to what the model is asked for and to how the answer is canonicalized, so the '
-    + 'policy version must move with them',
+    'tender-semantic-discovery.v5',
+    'removing the requirement source-id fields (v3), making coverage fail-safe (v4) and then making '
+    + 'the dispositions themselves optional (v5) are all material changes to what the model is asked '
+    + 'for and to how the answer is canonicalized, so the policy version must move with them',
   );
 }
 
@@ -224,10 +224,18 @@ let capturedRequest;
     /no envíes "source_unit_ids", ni "front_evidence_source_unit_id"/,
     'the policy must forbid sending any requirement source id',
   );
+  // v5: the disposition lists hold ONLY units the derived binding left over — unchanged — but the
+  // model is no longer told it must list all of them there (see
+  // tests/tender-semantic-discovery-v5-obligation-contract.test.mjs).
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
-    /Dispón allí exactamente las unidades restantes, todas ellas/,
-    'the policy must state the model disposes exactly the remaining units in excluded/unresolved',
+    /Dispón allí, si acaso, sólo unidades restantes/,
+    'the policy must confine excluded/unresolved to units no requirement already cites, without demanding all of them',
+  );
+  assert.doesNotMatch(
+    TENDER_SEMANTIC_DISCOVERY_POLICY,
+    /todas ellas/,
+    'no residue of the exhaustive-enumeration demand may survive in the policy',
   );
 }
 

@@ -109,11 +109,12 @@ function proposalWith(requirements, derivedOwnerIds) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v4',
-    'the wire contract this catalog feeds is v4: the label enum is pinned, a requirement carries no '
+    'tender-semantic-discovery.v5',
+    'the wire contract this catalog feeds is v5: the label enum is pinned, a requirement carries no '
     + 'model-provided source id (the server derives front_evidence/citations from this same catalog), '
-    + 'and an undispositioned source unit is completed into unresolved instead of rejecting the turn '
-    + '— each a material model-facing change that must bump the policy version',
+    + 'an undispositioned source unit is completed into unresolved instead of rejecting the turn, and '
+    + 'the disposition lists themselves are optional — each a material model-facing change that must '
+    + 'bump the policy version',
   );
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
@@ -374,9 +375,9 @@ let capturedRequest;
     idempotencyKey: 'idem-label-catalog-noisy',
     inventory: noisyInventory,
     documents: noisyDocuments,
-    // v4 completes the empty proposal's coverage into `unresolved` instead of rejecting it, so this
-    // no longer throws; the catch stays so the captured request — the actual subject here — is what
-    // the assertions read either way.
+    // v5 rejects this empty proposal at the discovery boundary (`v5_discovery_no_requirements`)
+    // AFTER the provider call; the catch keeps the captured request — the actual subject here — as
+    // what the assertions read, exactly as it did when v4 completed the same proposal instead.
   }).catch(() => {});
 
   const request = noisyClient.captured.request;
@@ -527,8 +528,8 @@ let capturedRequest;
     idempotencyKey: 'idem-label-catalog-quoted',
     inventory: quotedInventory,
     documents: quotedDocuments,
-    // As above: under v4 the empty proposal is completed rather than rejected; the captured request
-    // is the subject either way.
+    // As above: under v5 the empty proposal is rejected at the discovery boundary; the captured
+    // request is the subject either way.
   }).catch(() => {});
 
   const enumValues = labelSchemaOf(quotedClient.captured.request).enum;
