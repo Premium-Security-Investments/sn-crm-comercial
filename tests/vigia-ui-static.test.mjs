@@ -9,27 +9,25 @@ const ui = `${main}\n${component}\n${copilotComponent}`;
 const css = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
 const markers = [
-  'function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }',
+  'function VigiaCommercial({ canOpenOpportunity }',
   "api<VigiaPayload>('/api/vigia/priorities')",
   'Prioridades Comerciales',
   'Prioridades explicables del CRM',
   'CRM-F1',
   'Requiere validación humana; no ejecuta acciones.',
-  'Ver en Dashboard',
   'Ver oportunidad',
-  'Marcar revisada',
-  'Útil',
-  'No útil',
+  'Registrar seguimiento',
   'vigia-priority-card',
   'vigia-score',
   'vigia-source-status',
   "if (route.page === 'alerts') return <VigiaCommercial",
-  "canOpenDashboard={isModulePermissionEligible(data.currentProfile.role, 'modulo_dashboard_comercial')",
   "canOpenOpportunity={isModulePermissionEligible(data.currentProfile.role, 'modulo_oportunidades')",
-  'canOpenDashboard && <a className="button"',
-  'canOpenOpportunity && <a className="button secondary"',
+  'canOpenOpportunity && <div className="vigia-card-actions">',
 ];
 for (const marker of markers) assert.ok(ui.includes(marker), `Vig-IA UI missing marker: ${marker}`);
+for (const forbidden of ['Ver en Dashboard', '>Marcar revisada<', '>Útil<', '>No útil<']) {
+  assert.ok(!component.includes(forbidden), `Prioridades Comerciales card must not expose: ${forbidden}`);
+}
 assert.match(component, /VIGIA_VISIBLE_NAMES\.commercial/);
 assert.match(component, /Impulsado por \{VIGIA_VISIBLE_NAMES\.commercial\}/);
 assert.doesNotMatch(component, /Vig-IA(?! Comercial)/);

@@ -30,14 +30,16 @@ for (const marker of [
   'El enlace contiene filtros inválidos o no disponibles para su alcance',
   'Motor de priorización',
   'Fuente de datos',
-  'Marcar revisada',
-  'Ver en Dashboard',
   'Ver oportunidad',
   'Requiere validación humana; no ejecuta acciones.',
   "filterCommercialPriorities(payload?.priorities || []",
   'summarizeCommercialPriorities(payload.priorities)',
   '.slice(0, PRIORITY_INBOX_LIMIT)',
 ]) assert.ok(component.includes(marker), `Prioridades Comerciales missing marker: ${marker}`);
+
+for (const forbidden of ['Ver en Dashboard', '>Marcar revisada<', '>Útil<', '>No útil<']) {
+  assert.ok(!component.includes(forbidden), `Prioridades Comerciales card must not expose: ${forbidden}`);
+}
 
 for (const marker of ['interactionFocusRequested', 'followUpRef', 'id="opportunity-follow-up"']) {
   assert.ok(main.includes(marker), `Opportunity follow-up focus missing marker: ${marker}`);

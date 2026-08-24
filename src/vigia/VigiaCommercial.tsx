@@ -33,7 +33,6 @@ export type VigiaPayload = {
   priorities: VigiaPriority[];
 };
 
-type Feedback = 'revisada' | 'util' | 'no_util';
 type OperationalCategory = '' | 'risk' | 'missing' | 'overdue' | 'managed' | 'closing' | 'high_value_stalled' | 'stalled_sustentacion';
 type PriorityCategory = OperationalCategory | '__invalid__';
 const PRIORITY_INBOX_LIMIT = 20;
@@ -50,15 +49,6 @@ function displayDate(value: string | null) {
 
 function displayDateOnly(value: string | null) { return formatDateOnly(value, 'Sin datos'); }
 
-function dashboardLink(priority: VigiaPriority) {
-  const params = new URLSearchParams();
-  if (priority.owner_id) params.set('owner', priority.owner_id);
-  if (priority.stage_code) params.set('stage', priority.stage_code);
-  if (priority.service_type_code) params.set('service', priority.service_type_code);
-  params.set('active', '1');
-  return `#/dashboard2?${params.toString()}`;
-}
-
 function uniqueOptions(rows: VigiaPriority[], value: (row: VigiaPriority) => string | null, label: (row: VigiaPriority) => string | null) {
   const options = new Map<string, string>();
   for (const row of rows) {
@@ -68,7 +58,7 @@ function uniqueOptions(rows: VigiaPriority[], value: (row: VigiaPriority) => str
   return [...options.entries()].sort((a, b) => a[1].localeCompare(b[1], 'es'));
 }
 
-export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canOpenDashboard: boolean; canOpenOpportunity: boolean }) {
+export function VigiaCommercial({ canOpenOpportunity }: { canOpenOpportunity: boolean }) {
   const initialHashFilters = useMemo(() => filtersFromAlertsHash(window.location.hash), []);
   const [payload, setPayload] = useState<VigiaPayload | null>(null);
   const [status, setStatus] = useState('Cargando prioridades del CRM…');
@@ -82,7 +72,6 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
   const [customerSegment, setCustomerSegment] = useState(initialHashFilters.customerSegment);
   const [hashInvalid, setHashInvalid] = useState(initialHashFilters.invalid);
   const [linkedContext, setLinkedContext] = useState(Boolean(window.location.hash.split('?')[1]));
-  const [feedback, setFeedback] = useState<Record<string, Feedback>>({});
 
   const load = async () => {
     setStatus('Cargando prioridades del CRM…');
@@ -114,7 +103,6 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
 
   const priorities = payload?.priorities || [];
   const summary = payload ? summarizeCommercialPriorities(payload.priorities) : null;
-  const reviewedIds = useMemo(() => new Set(Object.entries(feedback).filter(([, value]) => value === 'revisada').map(([id]) => id)), [feedback]);
   const invalidLink = useMemo(() => Boolean(payload && !priorityHashFiltersAreValid(priorities, {
     category,
     owner,
@@ -133,10 +121,8 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
     service,
     customerSegment,
     level,
-    reviewedIds,
-  }), [payload, query, category, invalidLink, owner, regional, stage, service, customerSegment, level, reviewedIds]);
+  }), [payload, query, category, invalidLink, owner, regional, stage, service, customerSegment, level]);
   const visible = filtered.slice(0, PRIORITY_INBOX_LIMIT);
-  const reviewed = reviewedIds.size;
   const ownerOptions = useMemo(() => uniqueOptions(priorities, row => row.owner_id, row => row.owner_name), [priorities]);
   const regionalOptions = useMemo(() => uniqueOptions(priorities, row => row.regional_nombre, row => row.regional_nombre), [priorities]);
   const stageOptions = useMemo(() => uniqueOptions(priorities, row => row.stage_code, row => row.stage_name), [priorities]);
@@ -190,7 +176,7 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
       </div>
     </section>
 
-    <section className="vigia-control-strip"><div><strong>{filtered.length}</strong> resultados de {payload?.totals.prioritized || 0} prioridades{reviewed ? ` · ${reviewed} revisadas en esta sesión` : ''}{filtered.length > PRIORITY_INBOX_LIMIT ? ` · mostrando las ${PRIORITY_INBOX_LIMIT} más críticas` : ''}</div><button className="secondary" onClick={load}>Actualizar lectura</button></section>
+    <section className="vigia-control-strip"><div><strong>{filtered.length}</strong> resultados de {payload?.totals.prioritized || 0} prioridades{filtered.length > PRIORITY_INBOX_LIMIT ? ` · mostrando las ${PRIORITY_INBOX_LIMIT} más críticas` : ''}</div><button className="secondary" onClick={load}>Actualizar lectura</button></section>
     {status && <div className={payload ? 'muted' : 'error'}>{status}</div>}
 
     <section className="vigia-priority-grid">
@@ -200,10 +186,9 @@ export function VigiaCommercial({ canOpenDashboard, canOpenOpportunity }: { canO
         <ul className="vigia-signal-list">{priority.signals.map(signal => <li key={signal.code}><div><strong>{signal.label}</strong><span>{signal.evidence}</span></div><b>{signal.points > 0 ? `+${signal.points}` : 'Dato'}</b></li>)}</ul>
         <div className="vigia-recommendation"><small>Acción sugerida</small><strong>{priority.recommendation}</strong><p>{priority.explanation}</p></div>
         <div className="vigia-evidence"><span>Actividad: {displayDate(priority.evidence.activity_at)} ({priority.evidence.activity_basis})</span><span>Próxima acción: {displayDate(priority.evidence.next_action_at)}</span><span>Cierre esperado: {displayDateOnly(priority.evidence.expected_close_date)}</span></div>
-        <footer>{(canOpenDashboard || canOpenOpportunity) && <div className="vigia-card-actions">{canOpenDashboard && <a className="button" href={dashboardLink(priority)}>Ver en Dashboard</a>}{canOpenOpportunity && <a className="button secondary" href={`#/detail/${priority.id}`}>Ver oportunidad</a>}{canOpenOpportunity && <a className="button secondary" href={`#/detail/${priority.id}?focus=interaction`}>Registrar seguimiento</a>}</div>}<div className="vigia-feedback" aria-label="Feedback local"><button className={feedback[priority.id] === 'revisada' ? 'active' : 'secondary'} onClick={() => setFeedback(current => ({ ...current, [priority.id]: 'revisada' }))}>Marcar revisada</button><button className={feedback[priority.id] === 'util' ? 'active' : 'secondary'} onClick={() => setFeedback(current => ({ ...current, [priority.id]: 'util' }))}>Útil</button><button className={feedback[priority.id] === 'no_util' ? 'active' : 'secondary'} onClick={() => setFeedback(current => ({ ...current, [priority.id]: 'no_util' }))}>No útil</button></div></footer>
+        <footer>{canOpenOpportunity && <div className="vigia-card-actions"><a className="button" href={`#/detail/${priority.id}?focus=interaction`}>Registrar seguimiento</a><a className="button secondary" href={`#/detail/${priority.id}`}>Ver oportunidad</a></div>}</footer>
       </article>)}
     </section>
     {!status && !visible.length && <div className="empty"><strong>Sin prioridades para estos filtros</strong><span>Prueba otra combinación o actualiza la lectura.</span>{hasFilters && <button className="secondary" onClick={resetFilters}>Limpiar</button>}</div>}
-    <p className="muted">Feedback local de sesión: no se guarda en el CRM, no cambia el score y se pierde al recargar.</p>
   </section>;
 }
