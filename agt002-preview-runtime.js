@@ -17,7 +17,14 @@ export const AGT002_PREVIEW_DEFAULT_POLICY_VERSION = 'agt002-preview-policy-v2';
 // matrix — it is discovered from THIS process's own expediente by discoverTenderSemanticManifest
 // before the analysis turn. The requirements the model is asked about therefore differ materially
 // from a v3 run, so the persisted policy version must tell the two apart.
-export const AGT002_INTEGRAL_V3_POLICY_VERSION = 'agt002-integral-v3-policy-v4';
+// v5: the model-facing input of a DISCOVERED-frontier run changed, and AGT002_INTEGRAL_V3_POLICY
+// changed with it. The provider no longer receives the two full per-source-unit audit ledgers
+// (tender_requirement_inventory / tender_semantic_manifest) — which on a real expediente are tens of
+// thousands of entries and exhausted the prompt budget before the analysis turn — but a server-
+// derived `semantic_frontier_summary` of their arithmetic, while the durable envelope keeps both
+// ledgers complete. What the model is shown and told is therefore materially different from a v4
+// run, so the persisted policy version must tell the two apart. The OUTPUT contract is unchanged.
+export const AGT002_INTEGRAL_V3_POLICY_VERSION = 'agt002-integral-v3-policy-v5';
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
