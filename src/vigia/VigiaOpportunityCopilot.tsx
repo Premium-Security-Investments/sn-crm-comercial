@@ -63,7 +63,7 @@ export function VigiaOpportunityCopilot({ opportunityId, request }: Props) {
   const ready = state.phase === 'ready' ? state : null;
   const brief = ready?.result.output.brief;
   return <section className="vigia-opportunity-copilot" aria-labelledby="vigia-copilot-title">
-    <header><div><span className="eyebrow">{VIGIA_VISIBLE_NAMES.commercial} · copiloto comercial</span><h3 id="vigia-copilot-title">Próxima conversación y borrador</h3><p>Usa únicamente el contexto autorizado de esta oportunidad. No envía mensajes ni modifica el CRM.</p></div>{state.phase !== 'loading' && <button type="button" onClick={generate}>Generar borrador</button>}</header>
+    <header><div><span className="eyebrow">{VIGIA_VISIBLE_NAMES.commercial}</span><h3 id="vigia-copilot-title">Próximo seguimiento</h3><p>Analiza el contexto y propone un siguiente paso de seguimiento</p></div>{state.phase !== 'loading' && <button type="button" onClick={generate}>Preparar seguimiento</button>}</header>
     {state.phase === 'idle' && <p className="muted">Genera una propuesta editable y separada del registro original.</p>}
     {state.phase === 'loading' && <div className="notice" role="status">{VIGIA_VISIBLE_NAMES.commercial} está preparando un borrador acotado…</div>}
     {state.phase === 'error' && <div className="error" role="alert"><strong>No fue posible generar el borrador.</strong><p>{state.message}</p></div>}

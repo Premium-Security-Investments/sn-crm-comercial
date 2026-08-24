@@ -6,7 +6,7 @@ const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
 for (const marker of [
-  'VIGIA_VISIBLE_NAMES.commercial', 'Generar borrador', 'Copiar', 'Descartar', 'Útil', 'Necesita cambios',
+  'VIGIA_VISIBLE_NAMES.commercial', 'Preparar seguimiento', 'Copiar', 'Descartar', 'Útil', 'Necesita cambios',
   'Revisión humana obligatoria', 'missing_information', 'contact_objective', 'recommended_asset_ids',
   '/api/vigia/copilot/generate', '/api/vigia/copilot/feedback', 'navigator.clipboard.writeText',
   'changeCopilotOpportunity', 'completeCopilotGeneration',
