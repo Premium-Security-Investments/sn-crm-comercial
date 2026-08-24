@@ -309,6 +309,63 @@ function nonEmpty(value) { return typeof value === 'string' && value.trim().leng
   );
 }
 
+// Root-cause fix (AGT-002 V4 discoverTenderSemanticManifest immediate provider failure,
+// providerErrorCode=other, ~3.3s): `uniqueItems` is not part of the JSON Schema subset Codex
+// Structured Outputs accepts. The proven-working V3 schema (real production canary, see
+// docs/runbooks/agt002-integral-v3-canary.md) already relies on minLength/maxLength/minItems/
+// maxItems end to end and never uses uniqueItems — local strict validation (never the wire
+// schema) is what has always enforced uniqueness. codexCompatibleOutputSchema must strip
+// uniqueItems on the wire exactly like it adapts const to enum, while leaving
+// minLength/maxLength/minItems/maxItems untouched.
+{
+  const SCHEMA_WITH_UNIQUE_ITEMS = Object.freeze({
+    type: 'object',
+    additionalProperties: false,
+    required: ['ids'],
+    properties: {
+      ids: { type: 'array', minItems: 1, maxItems: 5, uniqueItems: true, items: { type: 'string', minLength: 1, maxLength: 10 } },
+    },
+  });
+  let capturedTurnStartParams = null;
+  function fakeSpawn() {
+    const child = new EventEmitter();
+    child.stdin = { write: (data) => { queueMicrotask(() => onWrite(data)); }, end() {} };
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => { child.killed = true; };
+    function onWrite(data) {
+      const message = JSON.parse(String(data).trim());
+      const respond = result => child.stdout.emit('data', Buffer.from(`${JSON.stringify({ id: message.id, result })}\n`));
+      if (message.method === 'initialize') { respond({ codexHome: '/tmp', platformFamily: 'unix', platformOs: 'linux', userAgent: 'fake/1.0' }); return; }
+      if (message.method === 'account/read') { respond({ account: { type: 'chatgpt', email: null, planType: 'team' }, requiresOpenaiAuth: false }); return; }
+      if (message.method === 'account/rateLimits/read') { respond({ rateLimits: { primary: { usedPercent: 1 } } }); return; }
+      if (message.method === 'thread/start') { respond({ thread: { id: 'thread-fake' }, approvalPolicy: 'never', approvalsReviewer: 'user', cwd: '/tmp', model: 'x', modelProvider: 'openai', sandbox: {} }); return; }
+      if (message.method === 'turn/start') {
+        capturedTurnStartParams = message.params;
+        respond({ turn: { id: 'turn-fake', status: 'inProgress', items: [] } });
+        child.stdout.emit('data', Buffer.from(`${JSON.stringify({ method: 'item/completed', params: { threadId: 'thread-fake', turnId: 'turn-fake', completedAtMs: 0, item: { id: 'i1', type: 'agentMessage', text: JSON.stringify({ ids: ['a'] }) } } })}\n`));
+        child.stdout.emit('data', Buffer.from(`${JSON.stringify({ method: 'thread/tokenUsage/updated', params: { threadId: 'thread-fake', turnId: 'turn-fake', tokenUsage: { total: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 2 }, last: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 2 } } } })}\n`));
+        child.stdout.emit('data', Buffer.from(`${JSON.stringify({ method: 'turn/completed', params: { threadId: 'thread-fake', turn: { id: 'turn-fake', status: 'completed', items: [] } } })}\n`));
+        return;
+      }
+    }
+    return child;
+  }
+  const client = createCodexAppServerClient({ spawn: fakeSpawn, command: 'ignored', args: [], timeoutMs: 2000 });
+  await client.run(baseRunOptions({ outputSchema: SCHEMA_WITH_UNIQUE_ITEMS }));
+  const wireIds = capturedTurnStartParams.outputSchema.properties.ids;
+  assert.equal(Object.hasOwn(wireIds, 'uniqueItems'), false, 'uniqueItems is not part of the Codex Structured Outputs schema subset and must be stripped on the wire');
+  assert.equal(wireIds.minItems, 1, 'minItems must still reach the wire — Codex Structured Outputs does support it');
+  assert.equal(wireIds.maxItems, 5, 'maxItems must still reach the wire — Codex Structured Outputs does support it');
+  assert.equal(wireIds.items.minLength, 1, 'minLength must still reach the wire — Codex Structured Outputs does support it');
+  assert.equal(wireIds.items.maxLength, 10, 'maxLength must still reach the wire — Codex Structured Outputs does support it');
+  assert.deepEqual(
+    SCHEMA_WITH_UNIQUE_ITEMS.properties.ids,
+    { type: 'array', minItems: 1, maxItems: 5, uniqueItems: true, items: { type: 'string', minLength: 1, maxLength: 10 } },
+    'the caller schema must not be mutated by the wire adaptation',
+  );
+}
+
 // --- Separate, human-gated ChatGPT device-code login flow -----------------
 // This flow must never be reachable from the AGT-002 Preview analysis path.
 for (const file of ['../agt002-preview-engine.js', '../agt002-preview-runtime.js', '../server/index.js', '../api/[...path].js']) {
