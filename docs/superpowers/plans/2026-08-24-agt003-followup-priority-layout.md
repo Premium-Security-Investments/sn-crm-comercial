@@ -176,7 +176,7 @@ Crear `src/opportunity-followup-presentation.d.ts` con los tipos y las siete fir
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `node --test tests/opportunity-followup-presentation.test.mjs`
-Expected: PASS — 8 subtests en verde.
+Expected: PASS — 9 subtests en verde.
 
 - [ ] **Step 5: Commit**
 
