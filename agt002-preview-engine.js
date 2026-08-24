@@ -129,6 +129,20 @@ export const AGT002_V3_SAFE_VALIDATION_CODES = Object.freeze([
 ]);
 const AGT002_V3_SAFE_VALIDATION_CODE_SET = new Set(AGT002_V3_SAFE_VALIDATION_CODES);
 
+// Closed set of every stage this engine itself ever attaches to a rejection (content_extraction,
+// json_parse, semantic_validation, usage, envelope). Used to re-gate a stage tag an injected
+// semanticDiscoveryProvider (tender-semantic-discovery.js) attaches to its OWN post-response
+// rejections: this engine never trusts that tag blindly, even though it comes from a module in
+// this same codebase, because the provider is an injected dependency, not this engine's own code.
+const AGT002_OUTPUT_REJECTION_STAGE_VALUES = new Set(Object.values(AGT002_OUTPUT_REJECTION_STAGES));
+
+// A discovery-provider validation code is only ever trusted onto a durable/observable field when
+// it matches this shape — never an arbitrary string the provider (or a future bug in it) might
+// attach. Deliberately a shape check, not an imported allowlist Set: this engine treats
+// semanticDiscoveryProvider as an injected boundary (see its constructor option), never a module
+// it reaches into directly.
+const DISCOVERY_VALIDATION_CODE_PATTERN = /^v4_discovery_[a-z_]+$/;
+
 function outputSchemaForEvidenceIds(allowedEvidenceIds, {
   legalCorpus = false,
   legalCitationIds = { verified: [], all: [] },
@@ -882,10 +896,26 @@ export function createAgt002PreviewEngine({
               // A discovery failure fails the run. There is no fallback to the fixed historical
               // matrix: analysing this process against another process's frontier would be a
               // silently wrong answer, which is worse than no answer.
-              const discovery = await semanticDiscoveryProvider({
-                client, model, timeoutMs, idempotencyKey: key, signal,
-                inventory, documents: (context || {}).documents ?? [],
-              });
+              let discovery;
+              try {
+                discovery = await semanticDiscoveryProvider({
+                  client, model, timeoutMs, idempotencyKey: key, signal,
+                  inventory, documents: (context || {}).documents ?? [],
+                });
+              } catch (error) {
+                // tender-semantic-discovery.js tags its OWN post-response rejections (the bridge
+                // already answered; its content/JSON/usage/semantic gates rejected the answer)
+                // with a real AGT002_OUTPUT_REJECTION_STAGES value. An untagged error — a
+                // transport/provider failure from client.run, or a pre-invocation config error —
+                // falls through unchanged to the generic catch below, which already classifies
+                // those correctly from bridge telemetry alone; only a recognized stage is ever
+                // turned into a diagnosable rejection here.
+                if (!AGT002_OUTPUT_REJECTION_STAGE_VALUES.has(error?.stage)) throw error;
+                const validationCode = typeof error.code === 'string' && DISCOVERY_VALIDATION_CODE_PATTERN.test(error.code)
+                  ? error.code : 'v4_discovery_invariant_violation';
+                recordOutputRejected({ stage: error.stage, validationCode, content: '', snapshotId, usage: undefined });
+                throw safe(SAFE_INVALID, { stage: error.stage, code: validationCode });
+              }
               // The one and only packet assembly of this run, taken now that the frontier exists:
               // the manifest is re-validated inside the builder against the inventory the packet
               // itself carries, so what the model sees and what the envelope persists were both

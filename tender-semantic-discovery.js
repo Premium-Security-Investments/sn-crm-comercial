@@ -8,12 +8,71 @@ import {
   TENDER_SEMANTIC_KINDS,
   TENDER_SEMANTIC_UNRESOLVED_REASONS,
 } from './tender-semantic-manifest.js';
+import { AGT002_OUTPUT_REJECTION_STAGES } from './agt002-analysis-observability.js';
 
 export const TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION = 'tender-semantic-discovery.v1';
 export const TENDER_SEMANTIC_CATEGORIES = Object.freeze([
   'discard', 'habilitating', 'technical', 'financial_execution',
 ]);
 export const TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS = 40_000;
+
+// Closed, privacy-safe internal codes for a rejection that happens AFTER a real bridge response
+// (schema-valid or not) reaches this module: the provider answered, but the answer failed one of
+// this module's own local semantic gates — citation anchoring, disposition coverage, source_unit
+// uniqueness, or a reference outside this snapshot's inventory — none of which the wire JSON
+// Schema can express or enforce (see codexCompatibleOutputSchema in agt002-preview-codex-client.js).
+// Exported as an immutable value list, mirroring AGT002_V3_SAFE_VALIDATION_CODES in
+// agt002-preview-engine.js, so a caller outside this module can recognize a known local invariant
+// without ever trusting an arbitrary string. The final member is the fail-closed fallback for any
+// local check this catalog does not (yet) name individually.
+export const TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES = Object.freeze([
+  'v4_discovery_missing_content',
+  'v4_discovery_invalid_json',
+  'v4_discovery_invalid_usage',
+  'v4_discovery_shape_invariant',
+  'v4_discovery_citation_invariant',
+  'v4_discovery_coverage_invariant',
+  'v4_discovery_uniqueness_invariant',
+  'v4_discovery_inventory_invariant',
+  'v4_discovery_invariant_violation',
+]);
+
+/**
+ * Attaches closed, structural {stage, code} metadata — never raw content, never the proposal
+ * itself — to a post-response discovery rejection, so a caller outside this module (today:
+ * agt002-preview-engine.js) can attribute the failure to an unambiguous frontier (the bridge
+ * already answered; THIS module's own checks rejected the answer) without this function's own
+ * `.message` contract changing for any existing caller/test that only inspects `.message`.
+ */
+function discoveryError(message, stage, code) {
+  const error = new Error(message);
+  if (stage) error.stage = stage;
+  if (code) error.code = code;
+  return error;
+}
+
+/**
+ * Pattern-matches canonicalizeProposal's own fixed Spanish messages into one closed
+ * TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES member — never the raw message itself and never a
+ * label/source_unit_id it might embed — mirroring classifyOutputValidationFailure in
+ * agt002-preview-engine.js. An unmatched message (a future/renamed local check this classifier
+ * does not yet know about) always falls back to the generic 'v4_discovery_invariant_violation'
+ * member, never an unbounded/unrecognized string.
+ */
+function classifySemanticDiscoveryInvariant(message) {
+  const text = String(message || '');
+  if (/refiere una source_unit no permitida/.test(text)) return 'v4_discovery_inventory_invariant';
+  if (/cita una .*source_unit no permitida/.test(text)) return 'v4_discovery_citation_invariant';
+  if (/anclada literalmente/.test(text)) return 'v4_discovery_citation_invariant';
+  if (/debe citar al menos una source_unit/.test(text)) return 'v4_discovery_citation_invariant';
+  if (/source_unit duplicada/.test(text)) return 'v4_discovery_uniqueness_invariant';
+  if (/disposición duplicada/.test(text)) return 'v4_discovery_uniqueness_invariant';
+  if (/obligación vacía o duplicada/.test(text)) return 'v4_discovery_uniqueness_invariant';
+  if (/dejó .+ source_unit sin disponer/.test(text)) return 'v4_discovery_coverage_invariant';
+  if (/tiene una razón no permitida/.test(text)) return 'v4_discovery_shape_invariant';
+  if (/vocabulario permitido|etiqueta inválida|claves inválidas|debe ser un objeto|como listas/.test(text)) return 'v4_discovery_shape_invariant';
+  return 'v4_discovery_invariant_violation';
+}
 
 const TOP_LEVEL_KEYS = Object.freeze(['requirements', 'excluded', 'unresolved']);
 const REQUIREMENT_KEYS = Object.freeze([
@@ -270,12 +329,29 @@ export async function discoverTenderSemanticManifest({
     signal,
   });
   if (typeof raw?.content !== 'string' || !raw.content.trim()) {
-    throw new Error('El proveedor no devolvió una propuesta semántica utilizable.');
+    throw discoveryError(
+      'El proveedor no devolvió una propuesta semántica utilizable.',
+      AGT002_OUTPUT_REJECTION_STAGES.CONTENT_EXTRACTION, 'v4_discovery_missing_content',
+    );
   }
   let parsed;
   try { parsed = JSON.parse(raw.content); } catch {
-    throw new Error('El proveedor devolvió una propuesta semántica que no es JSON válido.');
+    throw discoveryError(
+      'El proveedor devolvió una propuesta semántica que no es JSON válido.',
+      AGT002_OUTPUT_REJECTION_STAGES.JSON_PARSE, 'v4_discovery_invalid_json',
+    );
   }
-  const usage = requireUsage(raw);
-  return { ...canonicalizeProposal(parsed, { visible, omitted, inventory: validatedInventory, documents }), usage };
+  let usage;
+  try {
+    usage = requireUsage(raw);
+  } catch (error) {
+    throw discoveryError(error.message, AGT002_OUTPUT_REJECTION_STAGES.USAGE, 'v4_discovery_invalid_usage');
+  }
+  try {
+    return { ...canonicalizeProposal(parsed, { visible, omitted, inventory: validatedInventory, documents }), usage };
+  } catch (error) {
+    throw discoveryError(
+      error.message, AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, classifySemanticDiscoveryInvariant(error.message),
+    );
+  }
 }
