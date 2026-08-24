@@ -15,8 +15,13 @@ import { AGT002_OUTPUT_REJECTION_STAGES } from '../agt002-analysis-observability
 // classify as 'unexpected' once the bridge has already answered. This file pins that every
 // post-response rejection now carries a real, closed `.stage` (AGT002_OUTPUT_REJECTION_STAGES) and
 // a stable, closed internal `.code` (TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES) — WITHOUT
-// relaxing any citation/coverage/uniqueness/inventory gate: every fixture below is still, and must
-// remain, rejected.
+// relaxing any citation/uniqueness/inventory gate: every fixture below that makes a WRONG CLAIM is
+// still, and must remain, rejected.
+//
+// Policy v4 changes exactly one of these fixtures, and only because it was never a wrong claim: a
+// proposal that omits a visible source_unit asserted nothing about it, so it is completed into
+// `unresolved` rather than rejected (see the coverage block below). Every other rejection here is
+// untouched.
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const document = ({ id, version, text }) => ({
@@ -192,15 +197,30 @@ await assertRejection(
   { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, code: 'v4_discovery_uniqueness_invariant' },
 );
 
-// Coverage gate: a visible source_unit the proposal never disposed of at all (dropped unitB).
-await assertRejection(
-  () => run(semanticProposal({
+// Coverage: a visible source_unit the proposal never disposed of at all (dropped unitB) is NOT a
+// post-response rejection under policy v4. An omission is not a wrong claim — nothing was asserted
+// about unitB — so the turn survives and the unit is completed into `unresolved` under the closed
+// reason 'source_unit_not_dispositioned', which keeps the run paused and non-decidable.
+// 'v4_discovery_coverage_invariant' consequently has no live producer; it stays a closed catalog
+// member (asserted below) purely so a diagnostic already recorded under v1..v3 keeps classifying to
+// the code it was recorded with.
+{
+  const result = await run(semanticProposal({
     requirements: [baseRequirement()],
     excluded: [],
     unresolved: [],
-  })),
-  { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, code: 'v4_discovery_coverage_invariant' },
-);
+  }));
+  assert.deepEqual(
+    result.semanticManifest.unresolved.map(entry => [entry.source_unit_id, entry.origin, entry.reason]),
+    [[unitB.source_unit_id, 'semantic', 'source_unit_not_dispositioned']],
+  );
+  assert.equal(result.semanticManifest.discovery_coverage.status, 'partial');
+  assert.equal(result.semanticManifest.decision_ready, false);
+  assert.ok(
+    TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES.includes('v4_discovery_coverage_invariant'),
+    'the coverage code stays a closed catalog member for already-closed historical diagnostics',
+  );
+}
 
 // Inventory gate: a disposition referencing a source_unit_id outside this snapshot's inventory
 // (a hallucinated id a compliant wire schema would reject, but a hostile/non-compliant provider

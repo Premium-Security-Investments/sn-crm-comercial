@@ -148,7 +148,30 @@ await rejectsProposal(proposal => { proposal.requirements[0].source_unit_ids = [
 // The liquidity unit is already cited by the derived binding, so disposing of it again is an
 // overlap, not a second opinion.
 await rejectsProposal(proposal => { proposal.excluded.push({ source_unit_id: liquidity.source_unit_id, reason: 'not_an_obligation' }); }, /disposici|duplicad|unidad/i);
-await rejectsProposal(proposal => { proposal.requirements.splice(1, 1); }, /disponer|cobertura|unidad|faltante/i);
+
+// v4: dropping a requirement leaves the monitoring clause unlisted. That is an omission, not a
+// wrong claim, so it no longer rejects the turn: the obligation the proposal DID state survives and
+// the unlisted unit is preserved as an unresolved entry, which keeps discovery 'partial' and the
+// decision paused. Nothing is inferred for it — no requirement, no category, no exclusion.
+{
+  const proposal = validProposal();
+  proposal.requirements.splice(1, 1);
+  const result = await discoverTenderSemanticManifest({
+    client: { run: async () => ({ content: JSON.stringify(proposal), usage: { input_tokens: 1, output_tokens: 1 } }) },
+    model: 'test-model', timeoutMs: 1000, idempotencyKey: 'coverage-completion', inventory: INVENTORY, documents: DOCUMENTS,
+  });
+  assert.equal(result.semanticManifest.requirements.length, 1);
+  assert.deepEqual(result.semanticManifest.unresolved, [{
+    source_unit_id: monitoring.source_unit_id,
+    unit_hash: monitoring.unit_hash,
+    origin: 'semantic',
+    reason: 'source_unit_not_dispositioned',
+  }]);
+  assert.equal(result.semanticManifest.coverage_ledger.every_source_unit_disposed, true);
+  assert.equal(result.semanticManifest.discovery_coverage.status, 'partial');
+  assert.equal(result.semanticManifest.decision_ready, false);
+  assert.equal(result.semanticManifest.recommendation, 'pause');
+}
 
 {
   const otherSnapshot = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';

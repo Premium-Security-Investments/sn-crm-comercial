@@ -107,10 +107,11 @@ function proposalWith(requirements, derivedOwnerIds) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v3',
-    'the wire contract this catalog feeds is v3: the label enum is pinned AND a requirement no longer '
-    + 'carries any model-provided source id, because the server derives front_evidence/citations from '
-    + 'this same catalog — a material model-facing change that must bump the policy version',
+    'tender-semantic-discovery.v4',
+    'the wire contract this catalog feeds is v4: the label enum is pinned, a requirement carries no '
+    + 'model-provided source id (the server derives front_evidence/citations from this same catalog), '
+    + 'and an undispositioned source unit is completed into unresolved instead of rejecting the turn '
+    + '— each a material model-facing change that must bump the policy version',
   );
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
@@ -361,7 +362,10 @@ let capturedRequest;
     idempotencyKey: 'idem-label-catalog-noisy',
     inventory: noisyInventory,
     documents: noisyDocuments,
-  }).catch(() => {}); // the empty proposal fails the coverage gate; the captured request is the subject.
+    // v4 completes the empty proposal's coverage into `unresolved` instead of rejecting it, so this
+    // no longer throws; the catch stays so the captured request — the actual subject here — is what
+    // the assertions read either way.
+  }).catch(() => {});
 
   const request = noisyClient.captured.request;
   const enumValues = labelSchemaOf(request).enum;
@@ -501,7 +505,9 @@ let capturedRequest;
     idempotencyKey: 'idem-label-catalog-quoted',
     inventory: quotedInventory,
     documents: quotedDocuments,
-  }).catch(() => {}); // the empty proposal fails the coverage gate; the captured request is the subject.
+    // As above: under v4 the empty proposal is completed rather than rejected; the captured request
+    // is the subject either way.
+  }).catch(() => {});
 
   const enumValues = labelSchemaOf(quotedClient.captured.request).enum;
   assert.ok(enumValues.length > 0, 'the quoted-but-alternative-bearing document must still yield a non-empty enum');

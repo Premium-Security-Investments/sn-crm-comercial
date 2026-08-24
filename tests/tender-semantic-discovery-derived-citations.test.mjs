@@ -33,7 +33,9 @@ import { AGT002_OUTPUT_REJECTION_STAGES } from '../agt002-analysis-observability
 //     primary owner;
 //   * a model-supplied requirement source id is rejected, never read;
 //   * excluded/unresolved overlapping a DERIVED owner is rejected fail-closed;
-//   * omitted units stay unresolved and coverage stays fail-closed;
+//   * omitted units stay unresolved, and under policy v4 a visible unit the proposal never listed
+//     is COMPLETED into unresolved instead of destroying the turn
+//     (tests/tender-semantic-discovery-coverage-completion.test.mjs pins that end to end);
 //   * a label outside the catalog is rejected, with no fuzzy matching and no invented source.
 // No provider, network, bridge, DB or environment is touched anywhere below.
 
@@ -160,8 +162,10 @@ async function assertRejection(promiseFactory, { stage, code, message }) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v3',
-    'removing the requirement source-id fields is a material wire-contract change and must bump the policy version',
+    'tender-semantic-discovery.v4',
+    'removing the requirement source-id fields (v3) and then making coverage fail-safe (v4) are both '
+    + 'material changes to what the model is asked for and to how the answer is canonicalized, so the '
+    + 'policy version must move with them',
   );
 }
 
@@ -347,18 +351,33 @@ for (const smuggled of [
 }
 
 // ---------------------------------------------------------------------------------------------
-// 6. Coverage stays fail-closed over every VISIBLE unit, and every OMITTED unit stays unresolved.
+// 6. Coverage is COMPLETED, not destroyed: a visible unit the proposal never listed becomes an
+//    unresolved entry (v4), and every OMITTED unit stays unresolved exactly as before.
 // ---------------------------------------------------------------------------------------------
 {
-  // A visible unit the proposal never disposed of at all.
-  await assertRejection(
-    () => run(capturingClient({ requirements: [requirement(soloCandidate)], excluded: [], unresolved: [] })),
-    {
-      stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION,
-      code: 'v4_discovery_coverage_invariant',
-      message: /sin disponer/,
-    },
+  // A proposal that got one requirement right and simply never disposed of the other three visible
+  // units. Under v1..v3 this threw 'v4_discovery_coverage_invariant' and the correct requirement
+  // died with it; under v4 the requirement survives and the three unlisted units are recorded.
+  const completed = await run(capturingClient({
+    requirements: [requirement(soloCandidate)],
+    excluded: [],
+    unresolved: [],
+  }));
+  assert.equal(completed.semanticManifest.requirements.length, 1, 'the correct requirement must survive the omission');
+  assert.deepEqual(
+    completed.semanticManifest.unresolved
+      .map(entry => [entry.source_unit_id, entry.origin, entry.reason])
+      .sort(([left], [right]) => left.localeCompare(right)),
+    unitIdByParagraph.slice(1)
+      .map(sourceUnitId => [sourceUnitId, 'semantic', 'source_unit_not_dispositioned'])
+      .sort(([left], [right]) => left.localeCompare(right)),
+    'every visible unit the model left unlisted must be preserved as unresolved, never dropped',
   );
+  // The omission still blocks the decision — that is what makes completing it safe.
+  assert.equal(completed.semanticManifest.coverage_ledger.every_source_unit_disposed, true);
+  assert.equal(completed.semanticManifest.discovery_coverage.status, 'partial');
+  assert.equal(completed.semanticManifest.decision_ready, false);
+  assert.equal(completed.semanticManifest.recommendation, 'pause');
 
   // A source budget that only fits the first paragraph. The label catalog keeps its own (ample)
   // budget, so this exercises omission, not the catalog's fail-closed coverage gate.
