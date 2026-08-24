@@ -45,7 +45,7 @@ function baseEngineOptions(overrides = {}) {
   const observability = spyObservability();
   const taggedError = new Error('requirements[0]: la etiqueta debe estar anclada literalmente en el texto de una source_unit citada: [contenido sensible del expediente que nunca debe salir de este módulo]');
   taggedError.stage = AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION;
-  taggedError.code = 'v4_discovery_citation_invariant';
+  taggedError.code = 'v4_discovery_citation_anchor_invariant';
 
   const engine = createAgt002PreviewEngine(baseEngineOptions({
     observability,
@@ -58,7 +58,7 @@ function baseEngineOptions(overrides = {}) {
       assert.equal(error.message, 'AGT-002 Preview no produjo una respuesta válida.',
         'the public message contract stays exactly the fixed SAFE_INVALID string');
       assert.equal(error.stage, AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION);
-      assert.equal(error.code, 'v4_discovery_citation_invariant');
+      assert.equal(error.code, 'v4_discovery_citation_anchor_invariant');
       return true;
     },
   );
@@ -67,7 +67,7 @@ function baseEngineOptions(overrides = {}) {
   const { eventType, fields } = observability.records[0];
   assert.equal(eventType, 'output_rejected');
   assert.equal(fields.stage, AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION);
-  assert.equal(fields.validation_code, 'v4_discovery_citation_invariant');
+  assert.equal(fields.validation_code, 'v4_discovery_citation_anchor_invariant');
 
   const serialized = JSON.stringify(observability.records);
   assert.ok(!serialized.includes('contenido sensible del expediente'), 'raw discovery error text must never leak into the observability event');

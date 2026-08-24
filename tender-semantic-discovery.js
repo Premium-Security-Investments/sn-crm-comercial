@@ -25,11 +25,27 @@ export const TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS = 40_000;
 // agt002-preview-engine.js, so a caller outside this module can recognize a known local invariant
 // without ever trusting an arbitrary string. The final member is the fail-closed fallback for any
 // local check this catalog does not (yet) name individually.
+//
+// The three v4_discovery_citation_* members below split what used to be a single broad
+// 'v4_discovery_citation_invariant' code into the distinct fixed validator checks a diagnostic
+// consumer needs to tell apart without ever reading `.message` (which may embed a label or
+// source_unit id):
+//   - citation_inventory: a requirement cites (front_evidence_source_unit_id or a source_unit_ids
+//     entry) a source_unit outside this snapshot's inventory.
+//   - citation_anchor: a requirement's label is not literally anchored in the text of a
+//     source_unit it cites.
+//   - citation_missing: a requirement carries no source_unit_ids citation at all.
+// 'v4_discovery_citation_invariant' itself stays only as a closed, backward-compatible catalog
+// member for any existing caller still matching on it — classifySemanticDiscoveryInvariant below
+// no longer returns it directly.
 export const TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES = Object.freeze([
   'v4_discovery_missing_content',
   'v4_discovery_invalid_json',
   'v4_discovery_invalid_usage',
   'v4_discovery_shape_invariant',
+  'v4_discovery_citation_inventory_invariant',
+  'v4_discovery_citation_anchor_invariant',
+  'v4_discovery_citation_missing_invariant',
   'v4_discovery_citation_invariant',
   'v4_discovery_coverage_invariant',
   'v4_discovery_uniqueness_invariant',
@@ -55,16 +71,20 @@ function discoveryError(message, stage, code) {
  * Pattern-matches canonicalizeProposal's own fixed Spanish messages into one closed
  * TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES member — never the raw message itself and never a
  * label/source_unit_id it might embed — mirroring classifyOutputValidationFailure in
- * agt002-preview-engine.js. An unmatched message (a future/renamed local check this classifier
+ * agt002-preview-engine.js. The three citation checks (cited source_unit outside inventory, label
+ * not literally anchored, no source_unit citation at all) each get their own distinct
+ * v4_discovery_citation_* member instead of collapsing into the old broad
+ * 'v4_discovery_citation_invariant' code, so a diagnostic consumer can tell them apart without
+ * ever reading `.message`. An unmatched message (a future/renamed local check this classifier
  * does not yet know about) always falls back to the generic 'v4_discovery_invariant_violation'
  * member, never an unbounded/unrecognized string.
  */
 function classifySemanticDiscoveryInvariant(message) {
   const text = String(message || '');
   if (/refiere una source_unit no permitida/.test(text)) return 'v4_discovery_inventory_invariant';
-  if (/cita una .*source_unit no permitida/.test(text)) return 'v4_discovery_citation_invariant';
-  if (/anclada literalmente/.test(text)) return 'v4_discovery_citation_invariant';
-  if (/debe citar al menos una source_unit/.test(text)) return 'v4_discovery_citation_invariant';
+  if (/cita una .*source_unit no permitida/.test(text)) return 'v4_discovery_citation_inventory_invariant';
+  if (/anclada literalmente/.test(text)) return 'v4_discovery_citation_anchor_invariant';
+  if (/debe citar al menos una source_unit/.test(text)) return 'v4_discovery_citation_missing_invariant';
   if (/source_unit duplicada/.test(text)) return 'v4_discovery_uniqueness_invariant';
   if (/disposición duplicada/.test(text)) return 'v4_discovery_uniqueness_invariant';
   if (/obligación vacía o duplicada/.test(text)) return 'v4_discovery_uniqueness_invariant';

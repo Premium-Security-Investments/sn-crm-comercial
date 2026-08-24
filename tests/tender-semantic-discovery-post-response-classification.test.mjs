@@ -124,15 +124,47 @@ function semanticProposal(proposal) {
   return { content: JSON.stringify(proposal), usage: { input_tokens: 5, output_tokens: 5 } };
 }
 
-// Citation gate: a label the model did not literally anchor in its cited source_unit text — a
-// hallucinated label on otherwise schema-valid JSON.
+// Citation gate (anchor): a label the model did not literally anchor in its cited source_unit
+// text — a hallucinated label on otherwise schema-valid JSON.
 await assertRejection(
   () => run(semanticProposal({
     requirements: [baseRequirement({ label: 'requisito inventado que no aparece en el texto' })],
     excluded: [{ source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' }],
     unresolved: [],
   })),
-  { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, code: 'v4_discovery_citation_invariant' },
+  { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, code: 'v4_discovery_citation_anchor_invariant' },
+);
+
+// Citation gate (inventory): source_unit_ids cites a source_unit outside this snapshot's
+// inventory — distinct from the disposition-side v4_discovery_inventory_invariant gate.
+await assertRejection(
+  () => run(semanticProposal({
+    requirements: [baseRequirement({ source_unit_ids: ['hallucinated-source-unit-id'] })],
+    excluded: [{ source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' }],
+    unresolved: [],
+  })),
+  { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, code: 'v4_discovery_citation_inventory_invariant' },
+);
+
+// Citation gate (inventory): front_evidence_source_unit_id outside this snapshot's inventory hits
+// the same subcode as a bad source_unit_ids entry — both are "cited source_unit not allowed".
+await assertRejection(
+  () => run(semanticProposal({
+    requirements: [baseRequirement({ front_evidence_source_unit_id: 'hallucinated-source-unit-id' })],
+    excluded: [{ source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' }],
+    unresolved: [],
+  })),
+  { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, code: 'v4_discovery_citation_inventory_invariant' },
+);
+
+// Citation gate (missing): a requirement with no source_unit_ids citation at all.
+await assertRejection(
+  () => run(semanticProposal({
+    requirements: [baseRequirement({ source_unit_ids: [] })],
+    excluded: [{ source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' }],
+    unresolved: [],
+  })),
+  { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, code: 'v4_discovery_citation_missing_invariant' },
 );
 
 // Uniqueness gate: the same source_unit_id cited twice within one requirement.
