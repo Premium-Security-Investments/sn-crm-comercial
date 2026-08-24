@@ -426,4 +426,97 @@ let capturedRequest;
   assert.equal(called, false, 'the empty-catalog check must run before the provider is called');
 }
 
+// ---------------------------------------------------------------------------------------------
+// Provider wire-compatibility: no candidate literal-enum member may carry an ASCII double quote
+// (U+0022). Real canaries (Codex/Luna) proved a schema enum containing that exact character is
+// rejected outright, and the same catalog passes once every U+0022-bearing candidate is excluded.
+// The quote is never stripped or rephrased out of a span: a candidate that cannot avoid it is
+// simply left uncataloged, exactly like a control-character or redaction-placeholder span already
+// is — this is a provider wire-compatibility gate, not a new content judgement.
+// ---------------------------------------------------------------------------------------------
+
+// A source unit that carries a quoted fragment AND a viable unquoted excerpt must still
+// contribute to the catalog via the unquoted excerpt, and none of its excerpts may carry the
+// quote character.
+{
+  const quotedUnitId = 'unit:quoted-with-alternative';
+  const text = 'El oferente debera entregar el "certificado de calidad" junto con la propuesta economica y tecnica antes del cierre del proceso de contratacion publica.';
+  const catalog = buildTenderSemanticLabelCatalog({
+    units: [{ source_unit_id: quotedUnitId, text, source_text: text }],
+    maxCatalogChars: 1_000,
+  });
+  assert.deepEqual(
+    catalog.units_without_eligible_candidates, [],
+    'a quoted paragraph that also offers a viable unquoted excerpt must not be reported as ineligible',
+  );
+  assert.deepEqual(catalog.units_dropped_by_budget, []);
+  assert.ok(catalog.candidates.length > 0, 'the viable unquoted excerpt must still reach the catalog');
+  for (const candidate of catalog.candidates) {
+    assert.ok(!candidate.includes('"'), `candidate must never carry an ASCII double quote: ${JSON.stringify(candidate)}`);
+  }
+}
+
+// Same property, exercised through the full discovery pipeline: a document mixing the existing
+// fixture paragraphs with a quoted-but-alternative-bearing one must never place a U+0022 in the
+// wire enum, while the enum still stays non-empty.
+{
+  const quotedParagraph = 'El oferente debera entregar el "certificado de calidad" junto con la propuesta economica y tecnica antes del cierre del proceso de contratacion publica.';
+  const quotedDocuments = [document({ id: 'pliego-con-comillas', version: 'v1', text: [...PARAGRAPHS, quotedParagraph].join('\n\n') })];
+  const quotedInventory = buildTenderRequirementInventory({ snapshotId: 'snap-label-catalog-quoted', documents: quotedDocuments, documentGaps: [] });
+  const quotedClient = capturingClient({ requirements: [], excluded: [], unresolved: [] });
+  await discoverTenderSemanticManifest({
+    client: quotedClient,
+    model: 'test-model',
+    timeoutMs: 1000,
+    idempotencyKey: 'idem-label-catalog-quoted',
+    inventory: quotedInventory,
+    documents: quotedDocuments,
+  }).catch(() => {}); // the empty proposal fails the coverage gate; the captured request is the subject.
+
+  const enumValues = labelSchemaOf(quotedClient.captured.request).enum;
+  assert.ok(enumValues.length > 0, 'the quoted-but-alternative-bearing document must still yield a non-empty enum');
+  for (const candidate of enumValues) {
+    assert.ok(!candidate.includes('"'), `wire enum must never carry an ASCII double quote: ${JSON.stringify(candidate)}`);
+  }
+}
+
+// A source whose only content is an unusable quoted fragment, with no viable alternative
+// anywhere in that unit, fails closed: the builder reports it as ineligible rather than
+// stripping or rephrasing the quote out of it.
+{
+  const catalog = buildTenderSemanticLabelCatalog({
+    units: [{ source_unit_id: 'unit:quoted-only', text: 'El "software" falla.', source_text: 'El "software" falla.' }],
+    maxCatalogChars: 1_000,
+  });
+  assert.deepEqual(catalog.candidates, []);
+  assert.deepEqual(catalog.units_without_eligible_candidates, ['unit:quoted-only']);
+  assert.deepEqual(catalog.units_dropped_by_budget, []);
+}
+
+// An expediente where NO unit offers any viable alternative to its quoted fragment fails closed
+// at full discovery, before any provider turn, instead of shipping a schema built by stripping or
+// rephrasing the quote out of an otherwise-unusable excerpt.
+{
+  const quoteOnlyDocuments = [document({
+    id: 'pliego-solo-comillas',
+    version: 'v1',
+    text: ['El "software" falla.', 'La "garantia" vence.', 'Un "defecto" persiste.'].join('\n\n'),
+  })];
+  const quoteOnlyInventory = buildTenderRequirementInventory({ snapshotId: 'snap-label-catalog-quote-only', documents: quoteOnlyDocuments, documentGaps: [] });
+  let called = false;
+  await assert.rejects(
+    () => discoverTenderSemanticManifest({
+      client: { run: async () => { called = true; return { content: '{}', usage: { input_tokens: 1, output_tokens: 1 } }; } },
+      model: 'test-model',
+      timeoutMs: 1000,
+      idempotencyKey: 'idem-label-catalog-quote-only',
+      inventory: quoteOnlyInventory,
+      documents: quoteOnlyDocuments,
+    }),
+    /catálogo de fragmentos literales/,
+    'an expediente whose only content is an unusable quoted fragment must fail closed instead of stripping the quote',
+  );
+  assert.equal(called, false, 'the fail-closed catalog check must run before the provider is called');
+}
+
 console.log('tests/tender-semantic-discovery-label-catalog.test.mjs OK');

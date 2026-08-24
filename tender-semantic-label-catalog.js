@@ -23,8 +23,10 @@
 //     satisfies the manifest validator's independent re-anchor, and can never straddle a redaction
 //     placeholder — such spans are dropped, never repaired),
 //   * between TENDER_SEMANTIC_LABEL_MIN_CHARS and TENDER_SEMANTIC_LABEL_MAX_CHARS,
-//   * free of control characters and carrying a derivable obligation key, matching what
-//     assembleTenderSemanticManifest already demands of a label,
+//   * free of control characters and of the ASCII double quote (U+0022) — the latter purely a
+//     provider wire-compatibility gate (see hasAsciiDoubleQuote below), not a semantic one — and
+//     carrying a derivable obligation key, matching what assembleTenderSemanticManifest already
+//     demands of a label,
 //   * deterministic and stable: the same snapshot always yields the same catalog, in the same
 //     order, with no clock, randomness, locale-sensitive sort or iteration-order dependency.
 //
@@ -85,6 +87,16 @@ function hasControlChar(value) {
   return false;
 }
 
+// Real canaries proved a JSON Schema string `enum` member carrying an ASCII double quote (U+0022)
+// is rejected outright by the Codex/Luna bridge: the same literal value without that one character
+// passes, and the full actual catalog (633 entries / 37,818 chars) passes once every U+0022-bearing
+// candidate is excluded. This is a provider wire-compatibility gate, not a content judgement — a
+// candidate is dropped here exactly as a control-character candidate already is (never stripped,
+// never rewritten), so a span whose only viable form contains a quote is correctly left uncataloged.
+function hasAsciiDoubleQuote(value) {
+  return value.includes('"');
+}
+
 // Code-point ordering, deliberately NOT localeCompare: the catalog becomes part of a wire schema
 // whose bytes must be identical on every host, and localeCompare is ICU/locale dependent.
 function byCodePoint(left, right) {
@@ -107,6 +119,7 @@ function cropCandidate(span) {
   }
   if (value.length < TENDER_SEMANTIC_LABEL_MIN_CHARS) return null;
   if (hasControlChar(value)) return null;
+  if (hasAsciiDoubleQuote(value)) return null;
   return value;
 }
 
