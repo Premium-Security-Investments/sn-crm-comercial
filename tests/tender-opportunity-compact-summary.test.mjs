@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
-const tenderBranch = main.match(/\{o\.service_type_code === 'licitacion_publica' \? <>[\s\S]*?<\/\> : <div className="grid three">/)?.[0] || '';
+const tenderBranch = main.match(/\{o\.service_type_code === 'licitacion_publica' \? <>[\s\S]*?<\/\> : <section className="opportunity-insight-grid opportunity-priority-grid"/)?.[0] || '';
 const followUp = main.match(/function PublicTenderFollowUp[\s\S]*?\n}\n/)?.[0] || '';
 
 assert.match(tenderBranch, /Panel title="Resumen de la oportunidad"/, 'La oportunidad debe consolidar sus datos principales en un único resumen.');

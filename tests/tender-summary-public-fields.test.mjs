@@ -6,11 +6,11 @@ const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 // Locate the ternary that replaces the private "grid three" summary for licitaciones.
 const ternaryStart = main.indexOf("service_type_code === 'licitacion_publica' ? <>");
 assert.ok(ternaryStart >= 0, 'Debe existir una rama pública dedicada del resumen para licitaciones.');
-const privateBranchMarker = main.indexOf('</> : <div className="grid three">', ternaryStart);
+const privateBranchMarker = main.indexOf('</> : <section className="opportunity-insight-grid opportunity-priority-grid"', ternaryStart);
 assert.ok(privateBranchMarker > ternaryStart, 'La rama pública debe cerrar antes de la rama privada del grid.');
 const publicBlock = main.slice(ternaryStart, privateBranchMarker);
 const privateBranchStart = privateBranchMarker + '</> : '.length;
-const privateBranchEnd = main.indexOf('</div>}', privateBranchStart) + '</div>}'.length;
+const privateBranchEnd = main.indexOf('</section>}', privateBranchStart) + '</section>}'.length;
 const privateBlock = main.slice(privateBranchStart, privateBranchEnd);
 
 // Public data is intentionally consolidated to avoid four oversized, repetitive groups.
@@ -33,12 +33,9 @@ for (const label of ['Tipo de cliente', 'Decisor', 'Correo decisor', 'Teléfono'
   assert.doesNotMatch(publicBlock, new RegExp(`label="${label}"`), `El resumen público no debe mostrar "${label}".`);
 }
 
-// The private branch (non-licitación opportunities) must keep exactly its current fields, intact.
-for (const label of [
-  'Servicio', 'Tipo de cliente', 'Área comercial', 'Fecha creación', 'Cierre estimado',
-  'Próxima acción', 'Estado próxima gestión', 'Días sin seguimiento', 'Decisor', 'Correo decisor', 'Teléfono',
-]) {
-  assert.match(privateBlock, new RegExp(`label="${label}"`), `El grid privado debe conservar el campo "${label}".`);
+// The private branch (non-licitación opportunities) now shows the four priority cards.
+for (const label of ['Próxima gestión', 'Último seguimiento', 'Cierre estimado', 'Contacto decisor']) {
+  assert.match(privateBlock, new RegExp(`<small>${label}</small>`), `El resumen prioritario debe incluir la tarjeta "${label}".`);
 }
 assert.doesNotMatch(privateBlock, /<Panel title="Proceso oficial"/, 'El grid privado no debe reorganizarse en los grupos públicos.');
 
