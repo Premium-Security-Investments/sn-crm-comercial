@@ -8,15 +8,19 @@ import {
 
 // Companion to tests/tender-semantic-discovery-post-response-classification.test.mjs, focused on
 // the recurring real-model failure mode for v4_discovery_citation_anchor_invariant: the model
-// paraphrases a label instead of copying it verbatim from a cited source_unit. canonicalizeProposal
-// already normalizes NFC, collapses whitespace, and lowercases (es) before the literal `.includes`
-// anchor check (normalizedForAnchor) — that check itself is NOT relaxed here. This file only pins
-// the strengthened model-facing contract (policy text) and proves the anchor gate's existing
-// behavior end to end: a paraphrase must still fail, and a literal quote that only differs by
-// whitespace layout in the source text must still pass.
-
-// The policy is the only lever available to reduce a real model's paraphrase rate — no fuzzy
-// matching, repair, or label derivation is introduced anywhere in canonicalizeProposal.
+// paraphrases a label instead of copying it verbatim from a source_unit.
+//
+// Policy v3: the anchor gate is now STRONGER, not merely unrelaxed. A requirement no longer
+// carries any model-provided source id, so "is this label anchored in a cited unit?" collapses
+// into "is this label a member of this snapshot's own literal catalog?" — the citations are then
+// derived from the catalog itself. The previously tolerated case (a literal quote the model
+// re-rendered with doubled interior spaces, which the old whitespace-collapsing anchor accepted)
+// is therefore no longer accepted: there is nothing to fall back on but exact catalog membership,
+// and inventing a citation for a string the catalog does not contain is precisely what this
+// remediation forbids. That case is kept below, now asserting the fail-closed behaviour.
+//
+// The policy text remains the lever for a real model's paraphrase rate — and no fuzzy matching,
+// repair, or label derivation is introduced anywhere in canonicalizeProposal.
 {
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
@@ -42,6 +46,13 @@ import {
     TENDER_SEMANTIC_DISCOVERY_POLICY,
     /antes de responder.*subcadena exacta y literal/is,
     'policy must instruct a final self-check that every label is an exact normalized substring',
+  );
+  // v3: that self-check is stated against the closed enum, never against a source id list the
+  // requirement no longer carries.
+  assert.match(
+    TENDER_SEMANTIC_DISCOVERY_POLICY,
+    /antes de responder.*uno de los fragmentos del enumerado/is,
+    'policy must anchor the final self-check on the closed enum, not on model-chosen source ids',
   );
 }
 
@@ -78,14 +89,13 @@ const unitA = inventory.source_units.find(unit => resolvedTexts.get(unit.source_
 const unitB = inventory.source_units.find(unit => unit.source_unit_id !== unitA.source_unit_id);
 assert.ok(unitA && unitB, 'fixture must resolve both source units unambiguously');
 
+// v3: {kind, label, front, category} only. The citation back to unitA is derived from the label.
 function baseRequirement(overrides = {}) {
   return {
     kind: 'obligation',
     label: 'experiencia especifica en vigilancia hospitalaria',
     front: 'technical',
     category: 'technical',
-    front_evidence_source_unit_id: unitA.source_unit_id,
-    source_unit_ids: [unitA.source_unit_id],
     ...overrides,
   };
 }
@@ -105,24 +115,42 @@ function run(proposal) {
   });
 }
 
-// Literal quote, whitespace-normalized: the proposed label has doubled interior spaces the model's
-// own generation introduced (the source text itself has single spaces only) — after
-// normalizedForAnchor collapses whitespace on both sides, it must still anchor and pass. (A raw
-// newline/tab is deliberately NOT used here: assembleTenderSemanticManifest's own label validation
-// rejects control characters regardless of anchoring, so it is not a whitespace-normalization case.)
+// The exact catalog excerpt is accepted verbatim, and the citations it earns are derived — the
+// proposal above names no source unit at all.
 {
   const result = await run({
-    requirements: [baseRequirement({ label: 'experiencia  especifica  en  vigilancia hospitalaria' })],
+    requirements: [baseRequirement()],
     excluded: [{ source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' }],
     unresolved: [],
   });
-  assert.equal(result.semanticManifest.requirements.length, 1, 'a whitespace-normalized literal quote must still be accepted');
+  assert.equal(result.semanticManifest.requirements.length, 1, 'an exact catalog excerpt must be accepted');
   assert.equal(
     result.semanticManifest.requirements[0].label,
-    'experiencia  especifica  en  vigilancia hospitalaria',
-    'the canonicalized label preserves the original text (only trimmed/NFC-normalized), never rewritten',
+    'experiencia especifica en vigilancia hospitalaria',
+    'the canonicalized label is the catalog member itself, never a rewriting of the model string',
+  );
+  assert.deepEqual(
+    result.semanticManifest.requirements[0].citations.map(citation => citation.source_unit_id),
+    [unitA.source_unit_id],
+    'the citation is derived from the label, not supplied by the model',
   );
 }
+
+// Literal quote, re-rendered with doubled interior spaces the model's own generation introduced
+// (the source text has single spaces only). Under v2 the whitespace-collapsing anchor accepted
+// this; under v3 there is no model-provided citation to fall back on, so accepting it would mean
+// inventing a source for a string that is not in the catalog. It fails closed instead. (A raw
+// newline/tab is deliberately NOT used here: assembleTenderSemanticManifest's own label validation
+// rejects control characters regardless of anchoring, so it is not a whitespace case at all.)
+await assert.rejects(
+  () => run({
+    requirements: [baseRequirement({ label: 'experiencia  especifica  en  vigilancia hospitalaria' })],
+    excluded: [{ source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' }],
+    unresolved: [],
+  }),
+  /anclada literalmente/,
+  'a re-rendered quote is not a catalog member and must be rejected rather than repaired',
+);
 
 // Paraphrase: reordered/reworded text that is semantically equivalent but not a literal substring
 // of the cited source_unit must still be rejected — this is the exact recurring real-model failure

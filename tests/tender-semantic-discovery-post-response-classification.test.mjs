@@ -46,14 +46,15 @@ const unitA = inventory.source_units.find(unit => resolvedTexts.get(unit.source_
 const unitB = inventory.source_units.find(unit => unit.source_unit_id !== unitA.source_unit_id);
 assert.ok(unitA && unitB, 'fixture must resolve both source units unambiguously');
 
+// v3: a requirement carries no source id at all; unitA is CITED because the label is a catalog
+// excerpt of unitA's own text, derived server-side (see
+// tests/tender-semantic-discovery-derived-citations.test.mjs).
 function baseRequirement(overrides = {}) {
   return {
     kind: 'obligation',
     label: 'experiencia especifica en vigilancia hospitalaria',
     front: 'technical',
     category: 'technical',
-    front_evidence_source_unit_id: unitA.source_unit_id,
-    source_unit_ids: [unitA.source_unit_id],
     ...overrides,
   };
 }
@@ -88,10 +89,19 @@ async function assertRejection(promiseFactory, { stage, code }) {
 }
 
 // Sanity: the catalog is closed and immutable, mirroring AGT002_V3_SAFE_VALIDATION_CODES.
+// It deliberately keeps 'v4_discovery_citation_inventory_invariant' and
+// 'v4_discovery_citation_missing_invariant' even though no fixture below can reach them any more:
+// under v3 a requirement's citations are derived by the server from its own catalog, so those two
+// now guard a server-side derivation rather than a model answer. They stay distinct, closed
+// members so a future catalog/packet divergence surfaces as its own diagnosable code instead of
+// collapsing into the generic 'v4_discovery_invariant_violation' fallback.
 {
   assert.ok(Array.isArray(TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES));
   assert.ok(Object.isFrozen(TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES));
   assert.throws(() => TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES.push('hostile'), TypeError);
+  for (const preserved of ['v4_discovery_citation_inventory_invariant', 'v4_discovery_citation_missing_invariant']) {
+    assert.ok(TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES.includes(preserved), `${preserved} must stay a closed catalog member`);
+  }
 }
 
 // Missing/empty content: distinct stage from JSON parse, matching agt002-preview-engine.js's own
@@ -124,8 +134,11 @@ function semanticProposal(proposal) {
   return { content: JSON.stringify(proposal), usage: { input_tokens: 5, output_tokens: 5 } };
 }
 
-// Citation gate (anchor): a label the model did not literally anchor in its cited source_unit
-// text — a hallucinated label on otherwise schema-valid JSON.
+// Citation gate (anchor): a label outside this request's own literal catalog — a hallucinated
+// label on otherwise schema-valid JSON. This is the recurring real-model failure, and under v3 it
+// is also the ONLY citation subcode a non-compliant provider can still reach: the other two guard
+// a mapping the server derives itself. The code is deliberately unchanged, so an existing
+// diagnostic consumer's attribution keeps meaning what it meant.
 await assertRejection(
   () => run(semanticProposal({
     requirements: [baseRequirement({ label: 'requisito inventado que no aparece en el texto' })],
@@ -135,43 +148,45 @@ await assertRejection(
   { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, code: 'v4_discovery_citation_anchor_invariant' },
 );
 
-// Citation gate (inventory): source_unit_ids cites a source_unit outside this snapshot's
-// inventory — distinct from the disposition-side v4_discovery_inventory_invariant gate.
+// A real catalog excerpt of unitA is accepted and cites unitA; a real excerpt is NOT accepted
+// merely because it is real — the paraphrase above and the respaced variant below both fail the
+// same gate, with no fuzzy repair.
 await assertRejection(
   () => run(semanticProposal({
-    requirements: [baseRequirement({ source_unit_ids: ['hallucinated-source-unit-id'] })],
+    requirements: [baseRequirement({ label: 'experiencia  especifica  en vigilancia hospitalaria' })],
     excluded: [{ source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' }],
     unresolved: [],
   })),
-  { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, code: 'v4_discovery_citation_inventory_invariant' },
+  { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, code: 'v4_discovery_citation_anchor_invariant' },
 );
 
-// Citation gate (inventory): front_evidence_source_unit_id outside this snapshot's inventory hits
-// the same subcode as a bad source_unit_ids entry — both are "cited source_unit not allowed".
-await assertRejection(
-  () => run(semanticProposal({
-    requirements: [baseRequirement({ front_evidence_source_unit_id: 'hallucinated-source-unit-id' })],
-    excluded: [{ source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' }],
-    unresolved: [],
-  })),
-  { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, code: 'v4_discovery_citation_inventory_invariant' },
-);
+// Shape gate: any source id inside a requirement. The v3 wire contract has no such field, so a
+// proposal carrying one is a contract violation classified as a shape invariant — never read, and
+// never allowed to override the derived citation.
+for (const smuggled of [
+  { source_unit_ids: ['hallucinated-source-unit-id'] },
+  { source_unit_ids: [unitA.source_unit_id, unitA.source_unit_id] },
+  { source_unit_ids: [] },
+  { front_evidence_source_unit_id: 'hallucinated-source-unit-id' },
+]) {
+  await assertRejection(
+    () => run(semanticProposal({
+      requirements: [baseRequirement(smuggled)],
+      excluded: [{ source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' }],
+      unresolved: [],
+    })),
+    { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, code: 'v4_discovery_shape_invariant' },
+  );
+}
 
-// Citation gate (missing): a requirement with no source_unit_ids citation at all.
+// Uniqueness gate: a unit the derived citation already claims may not also be dispositioned.
 await assertRejection(
   () => run(semanticProposal({
-    requirements: [baseRequirement({ source_unit_ids: [] })],
-    excluded: [{ source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' }],
-    unresolved: [],
-  })),
-  { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, code: 'v4_discovery_citation_missing_invariant' },
-);
-
-// Uniqueness gate: the same source_unit_id cited twice within one requirement.
-await assertRejection(
-  () => run(semanticProposal({
-    requirements: [baseRequirement({ source_unit_ids: [unitA.source_unit_id, unitA.source_unit_id] })],
-    excluded: [{ source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' }],
+    requirements: [baseRequirement()],
+    excluded: [
+      { source_unit_id: unitA.source_unit_id, reason: 'duplicate_source_unit' },
+      { source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' },
+    ],
     unresolved: [],
   })),
   { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, code: 'v4_discovery_uniqueness_invariant' },

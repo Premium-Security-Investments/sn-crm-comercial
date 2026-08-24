@@ -34,6 +34,21 @@
 // fixed granularities, with no keyword list, no topic catalog and no notion of what an obligation
 // is. Choosing which span (if any) names an obligation stays the model's job, and validating that
 // choice stays the server's.
+//
+// v3 (AGT-002 V4 citation-anchor remediation, second half): the model no longer sends ANY
+// source_unit id for a requirement. `candidates_by_unit_id` is therefore not merely a diagnostic —
+// it is the reverse mapping tender-semantic-discovery.js derives every requirement citation from
+// (see buildTenderSemanticLabelOwnerIndex below). That promotion changes what it has to mean:
+// a unit OWNS a candidate when the unit's own text literally states it, not merely when this
+// module happened to GENERATE it from that unit. The two differ whenever a span survives in one
+// unit's candidate list and is also present verbatim in another unit's text (window offsets,
+// `selectSpread` pruning, per-unit obligation-key dedup). Under generation-only crediting the
+// model could not predict which units the server would bind — the very "wasted provider turn"
+// class this remediation exists to remove — while containment IS predictable from the packet the
+// model already receives, which is exactly what the v3 policy now promises it. Budget accounting
+// (`units_dropped_by_budget`) deliberately keeps the narrower generation-based reading: a unit
+// that lost every span it could ORIGINATE is a real coverage loss even if some other unit's
+// surviving span happens to occur in its text too.
 
 import { tenderSemanticObligationKey, TENDER_HISTORICAL_FIXED_REQUIREMENT_IDS } from './tender-semantic-manifest.js';
 
@@ -213,6 +228,8 @@ export function buildTenderSemanticLabelCatalog({ units = [], maxCatalogChars } 
     const sourceText = String(unit?.source_text ?? '');
     return {
       source_unit_id: String(unit?.source_unit_id ?? ''),
+      visible_text: visibleText,
+      source_text: sourceText,
       available: selectSpread(unitLabelCandidates(visibleText, sourceText), TENDER_SEMANTIC_LABEL_CANDIDATES_PER_UNIT),
     };
   });
@@ -239,8 +256,22 @@ export function buildTenderSemanticLabelCatalog({ units = [], maxCatalogChars } 
   const unitsWithoutEligibleCandidates = [];
   const unitsDroppedByBudget = [];
   for (const entry of perUnit) {
+    // What this unit can ORIGINATE and that survived the bounds. This — never the containment
+    // credit below — is what the budget accounting reads, so a unit whose own spans were all
+    // dropped is still reported as a coverage loss the caller must fail closed on.
     const own = entry.available.filter(candidate => chosenSet.has(candidate));
-    candidatesByUnitId.set(entry.source_unit_id, own);
+    const ownSet = new Set(own);
+    // Ownership is containment, checked against BOTH texts exactly as `push` already checks a
+    // generated span: the fragment must be literal in the redacted text the model receives (so the
+    // model can see for itself that this unit is bound) AND in the snapshot's own text (so
+    // validateTenderSemanticManifest's independent re-anchor holds for the citation derived from
+    // it). Own candidates come first, most-general first, so the unit's own most representative
+    // excerpt stays the head of its list; foreign contained candidates follow in catalog
+    // allocation order. Both segments are deterministic — no clock, no locale, no set iteration.
+    const foreign = chosen.filter(candidate => !ownSet.has(candidate)
+      && entry.visible_text.includes(candidate)
+      && entry.source_text.includes(candidate));
+    candidatesByUnitId.set(entry.source_unit_id, [...own, ...foreign]);
     if (!entry.available.length) {
       // This unit cannot yield ANY 3..160-char literal excerpt with a derivable obligation key —
       // it could never have carried a label under the unchanged gates either, so this is not a
@@ -258,4 +289,51 @@ export function buildTenderSemanticLabelCatalog({ units = [], maxCatalogChars } 
     units_dropped_by_budget: unitsDroppedByBudget,
     total_chars: totalChars,
   };
+}
+
+/**
+ * The reverse of `candidates_by_unit_id`: for each catalog candidate, EVERY visible source unit
+ * that owns it.
+ *
+ * This is the whole point of the v3 discovery wire contract. The model returns a `label` and
+ * nothing else about provenance; tender-semantic-discovery.js looks the label up here and derives
+ * the requirement's `front_evidence` and `citations` from the answer. No source id ever travels
+ * from the model, so there is no model-provided id left to disagree with the label — the relation
+ * the wire JSON Schema provably could not express (a `label` enum member belonging to the units a
+ * separate `source_unit_ids` array names) stops being a relation the model can get wrong.
+ *
+ * Order is fixed twice over, because it decides both the citation list and which owner becomes the
+ * requirement's front evidence:
+ *   * across units, `orderedUnitIds` as given — the discovery source packet's own deterministic
+ *     order (document_id, then document_version_id, then paragraph index, then source_unit_id, all
+ *     compared as strings/numbers, never by locale);
+ *   * within a unit, that unit's `candidates_by_unit_id` order, which is itself deterministic.
+ * The FIRST owner of a candidate is therefore stable for a given snapshot, and re-running the same
+ * snapshot re-derives the identical mapping.
+ *
+ * A candidate absent from every unit's list simply has no entry: the caller must treat that as a
+ * fail-closed rejection, never as "no citations needed". Nothing here invents an owner.
+ *
+ * @param {object} args
+ * @param {string[]} args.orderedUnitIds Visible source unit ids, in source-packet order.
+ * @param {Map<string, string[]>} args.candidatesByUnitId `candidates_by_unit_id` from the catalog.
+ * @returns {Map<string, string[]>} candidate -> owning source_unit_ids (frozen, deduplicated).
+ */
+export function buildTenderSemanticLabelOwnerIndex({ orderedUnitIds = [], candidatesByUnitId } = {}) {
+  if (!Array.isArray(orderedUnitIds)) {
+    throw new Error('El índice de propietarios de etiquetas requiere la lista ordenada de unidades visibles.');
+  }
+  if (!(candidatesByUnitId instanceof Map)) {
+    throw new Error('El índice de propietarios de etiquetas requiere el mapa de candidatos por unidad del catálogo.');
+  }
+  const owners = new Map();
+  for (const sourceUnitId of orderedUnitIds) {
+    for (const candidate of candidatesByUnitId.get(sourceUnitId) ?? []) {
+      if (!owners.has(candidate)) owners.set(candidate, []);
+      const ownerIds = owners.get(candidate);
+      if (!ownerIds.includes(sourceUnitId)) ownerIds.push(sourceUnitId);
+    }
+  }
+  for (const ownerIds of owners.values()) Object.freeze(ownerIds);
+  return owners;
 }

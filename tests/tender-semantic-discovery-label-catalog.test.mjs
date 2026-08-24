@@ -20,12 +20,19 @@ import {
 // tests/tender-semantic-discovery-citation-anchor-policy.test.mjs, which pins the POLICY TEXT half
 // of the contract and proves the anchor gate itself is not relaxed.
 //
-// This file pins the structural half: `requirements[].label` is now a closed JSON Schema enum of
+// This file pins the structural half: `requirements[].label` is a closed JSON Schema enum of
 // literal contiguous excerpts of THIS snapshot's own visible (already redacted) source units, so a
 // paraphrase is not a schema-valid value at all. Everything below is about that catalog being
-// exact by construction, deterministic, bounded, privacy-equivalent and honest about coverage —
-// while canonicalizeProposal stays byte-for-byte the gate it already was, because the enum cannot
-// express "this excerpt belongs to a unit this requirement cites".
+// exact by construction, deterministic, bounded, privacy-equivalent and honest about coverage.
+//
+// Pinning the enum was necessary and provably not sufficient: it constrains `label` and it
+// constrained the old `source_unit_ids[]` INDEPENDENTLY, and no JSON Schema can express the only
+// thing that mattered — that the excerpt chosen for `label` belongs to the units those ids named.
+// Policy v3 therefore removes the relation instead of guarding it: a requirement carries only
+// {kind, label, front, category} and the server derives `front_evidence`/`citations` from this very
+// catalog (tests/tender-semantic-discovery-derived-citations.test.mjs pins that end to end). The
+// catalog is consequently load-bearing twice over — as the wire enum AND as the sole provenance of
+// every requirement — which is exactly why its exactness properties are asserted here.
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const document = ({ id, version, text }) => ({
@@ -80,9 +87,11 @@ function run(client, overrides = {}) {
 
 const labelSchemaOf = request => request.outputSchema.properties.requirements.items.properties.label;
 
-// A proposal that disposes of every visible unit, so only the property under test can fail.
-function proposalWith(requirements, citedUnitIds) {
-  const cited = new Set(citedUnitIds);
+// A proposal that disposes of every visible unit the DERIVED citation mapping does not already
+// claim, so only the property under test can fail. `derivedOwnerIds` are the units the server binds
+// from the proposed labels — the model itself never names a unit inside a requirement.
+function proposalWith(requirements, derivedOwnerIds) {
+  const cited = new Set(derivedOwnerIds);
   return {
     requirements,
     excluded: inventory.source_units
@@ -98,8 +107,10 @@ function proposalWith(requirements, citedUnitIds) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v2',
-    'pinning the label enum is a material change to the model-facing contract and must bump the policy version',
+    'tender-semantic-discovery.v3',
+    'the wire contract this catalog feeds is v3: the label enum is pinned AND a requirement no longer '
+    + 'carries any model-provided source id, because the server derives front_evidence/citations from '
+    + 'this same catalog — a material model-facing change that must bump the policy version',
   );
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
@@ -139,13 +150,13 @@ let capturedRequest;
   });
   const anchorCandidate = catalog.candidates_by_unit_id.get(anchorUnit.source_unit_id)[0];
 
+  // v3: the requirement declares exactly the four fields the model may decide. It names no source
+  // unit, so the citations asserted below are derived by the server from this candidate alone.
   const client = capturingClient(proposalWith([{
     kind: 'obligation',
     label: anchorCandidate,
     front: 'technical',
     category: 'technical',
-    front_evidence_source_unit_id: anchorUnit.source_unit_id,
-    source_unit_ids: [anchorUnit.source_unit_id],
   }], [anchorUnit.source_unit_id]));
 
   const result = await run(client);
@@ -156,6 +167,17 @@ let capturedRequest;
   // re-anchor against the snapshot's own documents.
   assert.equal(result.semanticManifest.requirements.length, 1, 'a catalog candidate must be accepted verbatim');
   assert.equal(result.semanticManifest.requirements[0].label, anchorCandidate);
+  // And the unit the candidate was catalogued from is the unit the server cites for it.
+  assert.deepEqual(
+    result.semanticManifest.requirements[0].citations.map(citation => citation.source_unit_id),
+    [anchorUnit.source_unit_id],
+    'the catalog is the provenance: a candidate of the anchor unit derives its citation to that unit',
+  );
+  assert.equal(
+    result.semanticManifest.requirements[0].front_evidence.source_unit_id,
+    anchorUnit.source_unit_id,
+    'front evidence is derived from the same catalog ownership, never proposed',
+  );
 
   // Output object keys are preserved exactly.
   assert.deepEqual(
@@ -268,41 +290,49 @@ let capturedRequest;
   );
 
   // A non-compliant provider that ignores the enum must STILL be rejected locally, by the
-  // untouched anchor gate — the wire schema is never the security boundary.
+  // untouched anchor gate — the wire schema is never the security boundary. Under v3 there is no
+  // model-provided citation left to fall back on, so a non-member label has no derivable
+  // provenance at all and the requirement is withdrawn rather than credited to an invented source.
   await assert.rejects(
     () => run(capturingClient(proposalWith([{
       kind: 'obligation',
       label: paraphrase,
       front: 'technical',
       category: 'technical',
-      front_evidence_source_unit_id: anchorUnit.source_unit_id,
-      source_unit_ids: [anchorUnit.source_unit_id],
     }], [anchorUnit.source_unit_id]))),
     /anclada literalmente/,
     'the unchanged literal anchor gate must still reject a paraphrase the schema no longer allows',
   );
 }
 
-// The enum is global to the request, so it cannot express "this excerpt belongs to a cited unit".
-// A REAL catalog candidate of unit X, cited against a different unit Y, must still be rejected.
+// The enum is global to the request, so it still cannot express "this excerpt belongs to unit X".
+// Under v3 that is no longer a relation the model can get wrong: it names no unit, and the catalog
+// itself decides. A candidate exclusive to the anchor unit is bound to THAT unit, and a proposal
+// that disposes of the derived owner elsewhere is rejected fail-closed rather than reconciled.
 {
-  const otherUnit = inventory.source_units.find(unit => unit.source_unit_id !== anchorUnit.source_unit_id);
-  const foreignCandidate = labelSchemaOf(capturedRequest).enum
+  const otherUnitIds = inventory.source_units
+    .map(unit => unit.source_unit_id)
+    .filter(sourceUnitId => sourceUnitId !== anchorUnit.source_unit_id);
+  const exclusiveCandidate = labelSchemaOf(capturedRequest).enum
     .find(candidate => resolvedTexts.get(anchorUnit.source_unit_id).text.includes(candidate)
-      && !resolvedTexts.get(otherUnit.source_unit_id).text.includes(candidate));
-  assert.ok(foreignCandidate, 'fixture must expose a candidate exclusive to the anchor unit');
+      && otherUnitIds.every(sourceUnitId => !resolvedTexts.get(sourceUnitId).text.includes(candidate)));
+  assert.ok(exclusiveCandidate, 'fixture must expose a candidate exclusive to the anchor unit');
 
+  const requirement = { kind: 'obligation', label: exclusiveCandidate, front: 'technical', category: 'technical' };
+
+  const bound = await run(capturingClient(proposalWith([requirement], [anchorUnit.source_unit_id])));
+  assert.deepEqual(
+    bound.semanticManifest.requirements[0].citations.map(citation => citation.source_unit_id),
+    [anchorUnit.source_unit_id],
+    'an exclusive candidate must derive exactly one citation, to the only unit that states it',
+  );
+
+  // The same proposal, with the anchor unit dispositioned as if some other unit owned the label:
+  // the server does not move the citation, it rejects the whole proposal.
   await assert.rejects(
-    () => run(capturingClient(proposalWith([{
-      kind: 'obligation',
-      label: foreignCandidate,
-      front: 'technical',
-      category: 'technical',
-      front_evidence_source_unit_id: otherUnit.source_unit_id,
-      source_unit_ids: [otherUnit.source_unit_id],
-    }], [otherUnit.source_unit_id]))),
-    /anclada literalmente/,
-    'a schema-valid catalog excerpt paired with a unit it does not belong to must still be rejected',
+    () => run(capturingClient(proposalWith([requirement], [otherUnitIds[0]]))),
+    /disposición duplicada/,
+    'a unit the catalog binds to a label may not also be dispositioned by the model',
   );
 }
 
