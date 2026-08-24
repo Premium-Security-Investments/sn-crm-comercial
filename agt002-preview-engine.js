@@ -153,15 +153,17 @@ const AGT002_OUTPUT_REJECTION_STAGE_VALUES = new Set(Object.values(AGT002_OUTPUT
 // semanticDiscoveryProvider as an injected boundary (see its constructor option), never a module
 // it reaches into directly.
 //
-// The version segment is a CLOSED alternation, not `v\d+`: it names exactly the two discovery code
+// The version segment is a CLOSED alternation, not `v\d+`: it names exactly the discovery code
 // generations this engine currently recognizes — `v4_` for the local gates the discovery module has
 // attributed to the AGT-002 V4 frontier since its policy v1 (citation/anchor/uniqueness/inventory/
-// shape/coverage/usage/json/content, all unchanged), and `v5_` for the codes its v5 policy
-// introduces (today `v5_discovery_no_requirements`, the zero-obligation proposal that breaks no gate
-// and still cannot produce a frontier). A future generation must widen this deliberately, exactly as
-// v5 did; an unrecognized code still collapses to the generic closed fallback below rather than
-// reaching a durable row.
-const DISCOVERY_VALIDATION_CODE_PATTERN = /^v(?:4|5)_discovery_[a-z_]+$/;
+// shape/coverage/usage/json/content, all unchanged), `v5_` for the codes its v5 policy introduced
+// (today `v5_discovery_no_requirements`, the zero-obligation proposal that breaks no gate and still
+// cannot produce a frontier), and `v6_` so a code minted by the current discovery policy generation
+// is recognized rather than collapsed. Every historical v4/v5 code stays recognized exactly as
+// before — widening an alternation never withdraws a member. A future generation must widen this
+// deliberately, exactly as v5 and v6 did; an unrecognized code still collapses to the generic closed
+// fallback below rather than reaching a durable row.
+const DISCOVERY_VALIDATION_CODE_PATTERN = /^v(?:4|5|6)_discovery_[a-z_]+$/;
 
 function outputSchemaForEvidenceIds(allowedEvidenceIds, {
   legalCorpus = false,

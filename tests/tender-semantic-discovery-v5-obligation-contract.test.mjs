@@ -158,8 +158,9 @@ function run(client) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v5',
-    'the model-facing task and the disposition duty both changed, so the policy version must move',
+    'tender-semantic-discovery.v6',
+    'the model-facing task and the disposition duty both changed in v5, and v6 changed how a repeated '
+    + 'obligation is canonicalized, so the policy version must move with each',
   );
 
   assert.match(

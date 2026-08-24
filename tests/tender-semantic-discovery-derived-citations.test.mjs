@@ -162,10 +162,11 @@ async function assertRejection(promiseFactory, { stage, code, message }) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v5',
-    'removing the requirement source-id fields (v3), making coverage fail-safe (v4) and then making '
-    + 'the dispositions themselves optional (v5) are all material changes to what the model is asked '
-    + 'for and to how the answer is canonicalized, so the policy version must move with them',
+    'tender-semantic-discovery.v6',
+    'removing the requirement source-id fields (v3), making coverage fail-safe (v4), making the '
+    + 'dispositions themselves optional (v5) and coalescing an exact obligation repetition (v6) are '
+    + 'all material changes to what the model is asked for and to how the answer is canonicalized, '
+    + 'so the policy version must move with them',
   );
 }
 

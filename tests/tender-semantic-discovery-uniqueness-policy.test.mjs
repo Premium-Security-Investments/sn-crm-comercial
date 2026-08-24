@@ -340,21 +340,25 @@ for (const smuggled of [
   );
 }
 
-// Rule 2 — two requirements deriving the SAME normalized obligation key are still rejected. The
-// catalog itself now guarantees at most one enum member per obligation key (proved above), so a
-// model can only reach this key twice by repeating the very same catalog label across two
-// requirements — there is no second, differently-spelled enum member left to pick instead. This
-// proves the obligation-key gate is still live as defence in depth, not merely reachable via a
-// catalog collision that can no longer occur. Nothing merges them: the whole proposal is rejected.
-await assert.rejects(
-  () => run({
-    requirements: [requirement(obligationOnA), requirement(obligationOnA)],
-    excluded: [{ source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' }],
-    unresolved: [],
-  }),
-  /obligación vacía o duplicada/,
-  'repeating the same catalog label across two requirements must still be rejected fail-closed',
-);
+// Rule 2 — two requirements deriving the SAME normalized obligation key with any CONFLICTING
+// explicit field are still rejected. The catalog itself now guarantees at most one enum member per
+// obligation key (proved above), so a model can only reach this key twice by repeating the very same
+// catalog label across two requirements — there is no second, differently-spelled enum member left
+// to pick instead. This proves the obligation-key gate is still live as defence in depth, not merely
+// reachable via a catalog collision that can no longer occur. Nothing merges a conflict: the whole
+// proposal is rejected. (v6 coalesces the EXACT repetition, and only that — see
+// tests/tender-semantic-discovery-v6-repeat-coalescing.test.mjs.)
+for (const conflicting of [{ category: 'habilitating' }, { front: 'legal' }, { kind: 'deliverable' }]) {
+  await assert.rejects(
+    () => run({
+      requirements: [requirement(obligationOnA), requirement(obligationOnA, conflicting)],
+      excluded: [{ source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' }],
+      unresolved: [],
+    }),
+    /obligación vacía o duplicada/,
+    'repeating the same catalog label with a conflicting explicit field must still be rejected fail-closed',
+  );
+}
 
 // Rule 2, prescribed remedy — ONE requirement carrying the fragment both units state is accepted,
 // and the server consolidates both units into it (the policy never asks the model to drop a unit,

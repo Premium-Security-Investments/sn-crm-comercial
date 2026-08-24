@@ -73,6 +73,39 @@ function baseEngineOptions(overrides = {}) {
   assert.ok(!serialized.includes('contenido sensible del expediente'), 'raw discovery error text must never leak into the observability event');
 }
 
+// Requirement: the engine's CLOSED discovery-code pattern must recognize every generation the
+// discovery module has minted — the historical v4_/v5_ codes exactly as before, and a v6_ code from
+// the current discovery policy generation — so a current code reaches the durable row instead of
+// collapsing to the generic fallback, while an unknown generation still collapses.
+{
+  for (const [code, expected] of [
+    ['v4_discovery_uniqueness_invariant', 'v4_discovery_uniqueness_invariant'],
+    ['v4_discovery_citation_anchor_invariant', 'v4_discovery_citation_anchor_invariant'],
+    ['v5_discovery_no_requirements', 'v5_discovery_no_requirements'],
+    ['v6_discovery_repeat_invariant', 'v6_discovery_repeat_invariant'],
+    ['v7_discovery_future_invariant', 'v4_discovery_invariant_violation'],
+  ]) {
+    const observability = spyObservability();
+    const tagged = new Error('local semantic gate');
+    tagged.stage = AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION;
+    tagged.code = code;
+
+    const engine = createAgt002PreviewEngine(baseEngineOptions({
+      observability,
+      semanticDiscoveryProvider: async () => { throw tagged; },
+    }));
+
+    await assert.rejects(
+      () => engine.analyze({ snapshotId: '00000000-0000-4000-8000-0000000000d4', documents: [] }),
+      (error) => {
+        assert.equal(error.code, expected, `discovery code ${code} must surface as ${expected}`);
+        return true;
+      },
+    );
+    assert.equal(observability.records[0].fields.validation_code, expected);
+  }
+}
+
 // Requirement: an UNTAGGED discovery failure (no `.stage` at all — a transport/provider failure
 // from client.run inside the discovery turn, or any bug that raises a bare Error) must fall
 // through unchanged to the engine's existing generic handling: SAFE_UNAVAILABLE, no `.stage`, and

@@ -167,9 +167,10 @@ async function assertRejection(promiseFactory, { code, message }) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v5',
-    'the model-facing coverage contract changed again in v5 (dispositions became optional), which is '
-    + 'a material change to what the model is asked for and must bump the policy version',
+    'tender-semantic-discovery.v6',
+    'the model-facing coverage contract changed again in v5 (dispositions became optional) and v6 '
+    + 'changed how a repeated obligation is canonicalized, each a material change to what the model '
+    + 'is asked for and to how its answer is canonicalized, so the policy version must move',
   );
 
   // The exhaustive-enumeration demand is GONE, and no equivalent survives anywhere in the policy.
@@ -493,9 +494,15 @@ function permutationsOf(items) {
     { code: 'v4_discovery_uniqueness_invariant', message: /disposición duplicada/ },
   );
 
-  // The same obligation proposed twice. Nothing is merged, deduplicated or completed around it.
+  // The same obligation proposed twice with a CONFLICTING explicit field. Nothing is merged and
+  // nothing is completed around it: this module never picks which of two categories was meant.
+  // (An EXACT repetition is a different case entirely — see
+  // tests/tender-semantic-discovery-v6-repeat-coalescing.test.mjs.)
   await assertRejection(
-    () => run({ ...baseProposal(), requirements: [requirement(), requirement()] }),
+    () => run({
+      ...baseProposal(),
+      requirements: [requirement(), { ...requirement(), category: 'habilitating' }],
+    }),
     { code: 'v4_discovery_uniqueness_invariant', message: /obligación vacía o duplicada/ },
   );
 

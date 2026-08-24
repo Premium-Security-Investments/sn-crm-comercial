@@ -145,7 +145,36 @@ import {
 // THIS module's own discovery turn is asked for a proposal — a request-only, non-durable surface
 // this version string already exists to name. Re-keying the analysis identity would invalidate the
 // provenance of runs whose analysis contract did not, in fact, change.
-export const TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION = 'tender-semantic-discovery.v5';
+//
+// v6 (AGT-002 V4 discovery-repeat coalescing). With the catalog globally unique by obligation key,
+// the only way live Luna can still reach the obligation-key gate is by returning the SAME catalog
+// label twice — the exact same server-owned bytes, with the same kind/front/category — which it does
+// repeatedly. That answer states one obligation once and then restates it identically; rejecting it
+// under `v4_discovery_uniqueness_invariant` burned a whole provider turn over a repetition that
+// carries no second claim, no second category and no second citation.
+//
+// So v6 coalesces an EXACT repetition, deterministically, at exactly one point: in the requirements
+// loop, BEFORE the categoryByObligationKey uniqueness rejection and therefore before the manifest is
+// assembled. Two proposals coalesce only when they resolve to the identical server-owned
+// `catalogLabel` AND every explicit wire semantic field of the requirement (today kind/front/
+// category — compared as the whole model-decided object, so a future field is covered by
+// construction) is identical. The first occurrence is kept whole, with the same server-derived
+// citations and front evidence it would have had alone, and the repeat contributes nothing: no
+// second requirement, no second disposition, no change to the canonical proposal or its hash.
+//
+// What is deliberately NOT relaxed: a repeat with ANY conflicting explicit field — a different
+// category, front or kind under the same label/obligation key — is still rejected fail-closed under
+// the unchanged `v4_discovery_uniqueness_invariant` code and message. That is a genuine
+// contradiction, not a repetition, and choosing between two categories for one obligation is exactly
+// the inference this module never makes. Nothing is fuzzy-matched, no two DIFFERENT labels are ever
+// merged (distinct labels folding to one key still reject), the label catalog, ids, derived
+// citations, coverage completion, exclusion/unresolved overlap checks and the zero-requirement
+// boundary are all untouched.
+//
+// This changes how a provider answer is canonicalized, so the version moves with it; the validation
+// codes do not, for the reason stated above — the gate they name did not change meaning, it only
+// stopped firing on an identical restatement.
+export const TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION = 'tender-semantic-discovery.v6';
 export const TENDER_SEMANTIC_CATEGORIES = Object.freeze([
   'discard', 'habilitating', 'technical', 'financial_execution',
 ]);
@@ -311,9 +340,11 @@ const DISPOSITION_KEYS = Object.freeze(['source_unit_id', 'reason']);
 //
 // The uniqueness sentences (one requirement per obligation key, one disposition per unit) still
 // state model-facing what canonicalizeProposal has always rejected locally under
-// 'v4_discovery_uniqueness_invariant'. They remain policy text ONLY: no gate is relaxed, no
-// duplicate is deduplicated or repaired here, and a real run that still repeats an obligation key
-// or a disposition is still rejected fail-closed exactly as before.
+// 'v4_discovery_uniqueness_invariant'. They remain policy text ONLY: nothing is repaired here, and
+// a real run that repeats an obligation key with any conflicting field, or repeats a disposition, is
+// still rejected fail-closed exactly as before. v6 adds one sentence beside them, stating the single
+// narrow case canonicalizeProposal now canonicalizes instead of rejecting: an EXACT repetition of
+// the same label with identical explicit fields, which is a restatement rather than a second claim.
 //
 // v5: the exhaustive-enumeration duty is GONE from the policy, because under v4 it was both
 // impossible to satisfy honestly at scale and unnecessary. "Dispón todas las source_units
@@ -360,6 +391,7 @@ export const TENDER_SEMANTIC_DISCOVERY_POLICY = [
   'No inventes requisitos para llenar la lista. Si el texto recibido realmente no contiene ninguna obligación, devuelve "requirements" vacío: es una respuesta permitida por el esquema, y el servidor detendrá el análisis por falta de frontera propia en lugar de analizar este proceso contra obligaciones ajenas.',
   'No incluyas en "excluded" ni en "unresolved" ninguna unidad cuyo texto contenga literalmente un fragmento que hayas elegido como "label": esa unidad ya queda citada por el servidor, y una disposición adicional sobre ella hace que se rechace toda la propuesta. Dispón allí, si acaso, sólo unidades restantes.',
   'Propón cada obligación semántica una sola vez: dos requisitos no pueden usar etiquetas que deriven la misma clave de obligación normalizada (la etiqueta plegada a minúsculas, sin tildes y con todo signo no alfanumérico tratado como separador). Si varias unidades sustentan la misma obligación, propón un único requisito con un solo fragmento: el servidor consolida por sí mismo todas las unidades que contienen ese fragmento en ese único requisito. El enumerado de requirements.items.properties.label.enum ya es único por esa misma clave de obligación normalizada en todo el expediente, entre todas las unidades visibles: nunca contiene dos fragmentos, de la misma unidad o de unidades distintas, que pleguen a la misma clave, así que esta regla nunca te exige elegir entre dos candidatos del enumerado para una sola obligación.',
+  'Si repites una obligación con exactamente el mismo "label", "kind", "front" y "category", el servidor la canoniza una sola vez sin contarla dos veces; pero si repites esa etiqueta u obligación con algún campo distinto, se rechaza toda la propuesta.',
   'Las disposiciones tampoco se repiten: ningún source_unit_id puede aparecer dos veces en "excluded", dos veces en "unresolved", ni en ambas listas, ni figurar en alguna de ellas si ya está citado por un requisito. Ninguna unidad puede recibir más de una disposición.',
   'Usa exclusivamente source_unit_id recibidos, y sólo dentro de "excluded" y "unresolved". Nunca inventes identificadores, hashes, documentos ni evidencia.',
   'Antes de responder, revisa cada "label": debe ser, carácter por carácter, uno de los fragmentos del enumerado, y por lo tanto una subcadena exacta y literal del texto de alguna unidad fuente de este expediente. Si algún label no lo es, elige del mismo enumerado otro fragmento; si no existe uno adecuado, retira el requisito y dispón esa unidad como exclusión explícita o como unidad sin resolver, o simplemente déjala sin listar. Nunca escribas un fragmento fuera del enumerado.',
@@ -538,6 +570,10 @@ function canonicalizeProposal(parsed, { visible, omitted, inventory, documents, 
   const dispositioned = new Set();
   const canonicalRequirements = [];
   const categoryByObligationKey = new Map();
+  // v6: obligation key -> the stable fingerprint of the explicit semantic fields the accepted
+  // requirement was built from, so a later occurrence of the same key can be told apart as an exact
+  // repetition (coalesced) or a conflicting restatement (rejected).
+  const semanticFieldsByObligationKey = new Map();
 
   for (const [index, proposed] of parsed.requirements.entries()) {
     const label = `requirements[${index}]`;
@@ -589,9 +625,28 @@ function canonicalizeProposal(parsed, { visible, omitted, inventory, documents, 
       throw new Error(`${label}: la etiqueta debe estar anclada literalmente en el texto de una source_unit citada.`);
     }
     const obligationKey = tenderSemanticObligationKey(catalogLabel);
-    if (!obligationKey || categoryByObligationKey.has(obligationKey)) {
+    if (!obligationKey) {
       throw new Error(`${label}: obligación vacía o duplicada en la propuesta semántica.`);
     }
+    // v6 exact-repeat coalescing, placed BEFORE the uniqueness rejection and therefore before the
+    // manifest is assembled. The fingerprint is the WHOLE model-decided object with the model's
+    // rendering of the label replaced by the server-owned catalog member, so two proposals coalesce
+    // only when they resolve to the identical catalogLabel AND every explicit semantic field
+    // matches — and a wire field added later is compared without this line changing.
+    const semanticFields = stableJson({ ...proposed, label: catalogLabel });
+    const alreadyProposed = semanticFieldsByObligationKey.get(obligationKey);
+    if (alreadyProposed !== undefined) {
+      // A conflicting restatement of the same obligation is still a duplicate, fail-closed under
+      // the unchanged code: this module never picks which of two categories/fronts/kinds is meant.
+      if (alreadyProposed !== semanticFields) {
+        throw new Error(`${label}: obligación vacía o duplicada en la propuesta semántica.`);
+      }
+      // An identical repetition adds nothing: the canonical requirement already emitted for this
+      // obligation keeps its server-derived citations, and this occurrence dispositions no unit the
+      // first one did not already claim (same label => same owners).
+      continue;
+    }
+    semanticFieldsByObligationKey.set(obligationKey, semanticFields);
     categoryByObligationKey.set(obligationKey, proposed.category);
     // Every owner unit is dispositioned by this requirement, so a model that ALSO excluded or
     // left one of them unresolved is rejected below under 'disposición duplicada'.
