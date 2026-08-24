@@ -35,6 +35,6 @@ for (const marker of cssMarkers) {
 }
 
 assert.ok(main.includes('value={String(form.next_action_at || \'\').slice(0,16)}'), 'OpportunityForm should expose next_action_at as editable datetime');
-assert.ok(main.includes('Programar próxima gestión<input type="datetime-local"'), 'Follow-up form should label next action clearly');
+assert.ok(main.includes('Próxima gestión (opcional)<input type="datetime-local"'), 'Follow-up form should label next action clearly');
 
 console.log('next-action static checks passed');
