@@ -33,6 +33,7 @@ import { VigiaCommercial } from './vigia/VigiaCommercial';
 import { VigiaOpportunityCopilot } from './vigia/VigiaOpportunityCopilot';
 import { PSI_AGENT_ROUTER_NAME, VIGIA_VISIBLE_NAMES } from './vigia/agentIdentity';
 import { canRenderOpportunityCopilot } from './vigia/opportunity-copilot-state';
+import { buildFollowUpHistory, followUpInteractionTypeLabel } from './opportunity-followup-presentation.js';
 import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
 import { ACTIONS, can } from '../access-control.js';
@@ -788,7 +789,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   useEffect(() => { if (interactionFocusRequested && detail?.opportunity.id) focusDocumentReviewArea(followUpRef.current); }, [interactionFocusRequested, detail?.opportunity.id]);
   if (error) return <div className="error">{error}</div>; if (!detail) return <div className="notice">Cargando detalle…</div>;
   const o = detail.opportunity;
-  const visibleInteractions = detail.interactions.filter(i => i.interaction_type !== 'documento');
+  const followUpHistory = buildFollowUpHistory(o, detail.interactions);
   const action = nextActionStatus(o);
   const tenderNavigationSnapshot: TenderDetailStatusSnapshot = {
     documents: tenderDocumentNavigationState,
@@ -798,6 +799,11 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     followUp: action,
   };
   const lastDays = daysSince(o.last_interaction_at || o.updated_at || o.created_at);
+  const locationChip = [o.quote_city, o.sede].map(v => (v || '').trim()).filter(Boolean).join(' · ');
+  const decisionMakerSummary = [o.decision_maker_name, o.decision_maker_email, o.decision_maker_phone].map(v => (v || '').trim()).filter(Boolean).join(' · ') || 'Por completar';
+  const legacyId = (o.legacy_excel_id || '').trim();
+  const legacySheet = (o.excel_hoja_origen || '').trim();
+  const legacyStatus = (o.estado_pipeline_original || '').trim();
   const exitTender = async (destination: 'radar' | 'seguimiento') => {
     const confirmed = window.confirm(destination === 'radar' ? 'La licitación volverá al Radar y dejará de ser una oportunidad activa. ¿Desea continuar?' : 'La licitación quedará en Seguimiento y dejará de ser una oportunidad activa. ¿Desea continuar?');
     if (!confirmed) return;
@@ -820,7 +826,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   };
   return <section className="stack">
     <div id="tender-summary" className="tender-detail-anchor" tabIndex={-1}>
-      <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p></div><div className="row-actions"><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>{o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}</div></div>
+      <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p>{o.service_type_code !== 'licitacion_publica' && <div className="hero-chip-row"><Badge>Servicio: {o.service_type_name || o.tipo_producto_original || 'Sin servicio'}</Badge><Badge>Tipo de cliente: {customerSegmentLabel(o.customer_segment)}</Badge>{locationChip && <Badge>Ubicación: {locationChip}</Badge>}</div>}</div><div className="row-actions"><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>{o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}</div></div>
       {exitFeedback && <div className="error" role="alert">{exitFeedback}</div>}
     </div>
     {o.service_type_code === 'licitacion_publica' && <TenderModuleNavigation active="oportunidades" navigate={go} currentProfile={data.currentProfile} />}
@@ -832,16 +838,42 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
           <Info label="Cuantía" value={fmtMoney(o.offer_value)}/><Info label="Cierre oficial" value={fmtDateOnly(o.expected_close_date)}/><Info label="Responsable" value={o.owner_name || 'Sin comercial'}/>
         </div>
       </Panel>
-    </> : <div className="grid three"><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Tipo de cliente" value={customerSegmentLabel(o.customer_segment)}/><Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/><Info label="Fecha creación" value={fmtDate(o.created_at)}/><Info label="Cierre estimado" value={fmtDateOnly(o.expected_close_date)}/><Info label="Próxima acción" value={fmtDate(o.next_action_at)}/><Info label="Estado próxima gestión" value={`${action.label} · ${action.detail}`}/><Info label="Días sin seguimiento" value={lastDays === null ? 'Sin registro' : `${lastDays} día(s)`}/><Info label="Decisor" value={o.decision_maker_name}/><Info label="Correo decisor" value={o.decision_maker_email}/><Info label="Teléfono" value={o.decision_maker_phone}/></div>}
-    {canRenderOpportunityCopilot(data.currentProfile, o.service_type_code) && <VigiaOpportunityCopilot opportunityId={o.id} request={api} />}
+    </> : <section className="opportunity-insight-grid opportunity-priority-grid" aria-label="Resumen prioritario de la oportunidad"><div className="opportunity-insight-card"><small>Próxima gestión</small><strong>{fmtDate(o.next_action_at)}</strong><span>{`${action.label} · ${action.detail}`}</span></div><div className="opportunity-insight-card"><small>Último seguimiento</small><strong>{fmtDate(o.last_interaction_at)}</strong><span>{lastDays === null ? 'Sin registro' : `${lastDays} día(s) de antigüedad`}</span></div><div className="opportunity-insight-card"><small>Cierre estimado</small><strong>{fmtDateOnly(o.expected_close_date)}</strong></div><div className="opportunity-insight-card"><small>Contacto decisor</small><strong>{decisionMakerSummary}</strong></div></section>}
     {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} currentProfile={data.currentProfile} focusTargetRef={documentReviewRef} onNavigationStateChanged={(documents, analysis) => { if (activeDetailIdRef.current === o.id) { setTenderDocumentNavigationState(documents); setTenderAnalysisNavigationState(analysis); } }} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onQuestionResponsesChanged={responses => { if (activeDetailIdRef.current === o.id) setTenderQuestionResponses(responses); }} onReload={async()=>{await load(); await refresh();}} />}
     {o.service_type_code === 'licitacion_publica' && <div id="tender-decision" className="tender-detail-anchor" tabIndex={-1}>
       <TenderDecisionBrief analysis={tenderAnalysis} questionResponses={tenderQuestionResponses} commercialContext={{ amountLabel: fmtMoney(o.offer_value), closeLabel: fmtDateOnly(o.expected_close_date), city: o.quote_city, sector: o.economic_sector, commercialFitPositives: tenderAnalysis?.commercial_fit?.positives || [] }} />
       <TenderGoNoGoDecisionPanel key={`tender-decision-${o.id}`} opportunityId={o.id} opportunityName={o.company_name || 'Oportunidad de licitación'} analysis={tenderAnalysis} currentProfile={data.currentProfile} request={api} questionResponses={tenderQuestionResponses} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderDecisionNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} />
     </div>}
     {o.service_type_code === 'licitacion_publica' && <div id="tender-preparation" className="tender-detail-anchor" tabIndex={-1}><TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} currentProfile={data.currentProfile} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderPreparationNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /><TenderDossierWorkspacePanel key={`tender-dossier-${o.id}-${tenderRevision}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={can(data.currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE)} offerStatus={o.tender_offer_status || null} /></div>}
-    <div id="tender-follow-up" className="tender-detail-anchor" tabIndex={-1}>{o.service_type_code === 'licitacion_publica' ? <PublicTenderFollowUp opportunity={o} profiles={data.profiles} currentProfile={data.currentProfile} /> : <><div className="grid two"><Panel title="Datos comerciales"><dl><Dt label="Sector" value={o.economic_sector}/><Dt label="Ciudad" value={o.quote_city}/><Dt label="Sede" value={o.sede}/><Dt label="ID legacy" value={o.legacy_excel_id}/><Dt label="Hoja origen" value={o.excel_hoja_origen}/><Dt label="Estado original" value={o.estado_pipeline_original}/><Dt label="Observaciones" value={o.observaciones}/></dl></Panel><div id="opportunity-follow-up" className="opportunity-follow-up-anchor" tabIndex={-1} ref={followUpRef}><FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} /></div></div>
-    <Panel title="Línea de seguimientos"><div className="timeline">{visibleInteractions.length ? visibleInteractions.map(i => <div className="event" key={i.id}><strong>{i.interaction_type}</strong><span>{fmtDate(i.occurred_at)} · {i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span><p>{i.notes}</p></div>) : <p className="muted">Sin seguimientos registrados.</p>}</div></Panel></>}</div>
+    <div id="tender-follow-up" className="tender-detail-anchor" tabIndex={-1}>{o.service_type_code === 'licitacion_publica' ? <PublicTenderFollowUp opportunity={o} profiles={data.profiles} currentProfile={data.currentProfile} /> : <>
+      <h2 className="followup-section-title">Seguimiento comercial</h2>
+      <div className="followup-section-grid">
+        <div id="opportunity-follow-up" className="opportunity-follow-up-anchor followup-form-slot" tabIndex={-1} ref={followUpRef}>
+          <FollowUpForm opportunityId={id} profiles={data.profiles} currentProfile={data.currentProfile} onSaved={async()=>{await load(); await refresh();}} />
+        </div>
+        <Panel title="Historial de seguimiento" className="followup-history">
+          <div className="timeline followup-timeline">{followUpHistory.length
+            ? followUpHistory.map(i => <div className="event" key={i.id}>
+                <strong>{followUpInteractionTypeLabel(i.interaction_type)}</strong>
+                <span>{fmtDate(i.occurred_at)} · {i.actor_label || i.psi_sales_profiles?.full_name || 'Migrado / sistema'}</span>
+                <p>{i.notes}</p>
+              </div>)
+            : <p className="muted">Sin seguimientos registrados.</p>}</div>
+        </Panel>
+      </div>
+    </>}</div>
+    {canRenderOpportunityCopilot(data.currentProfile, o.service_type_code) && <VigiaOpportunityCopilot opportunityId={o.id} request={api} />}
+    {o.service_type_code !== 'licitacion_publica' && <details className="opportunity-more-info">
+      <summary>Más información</summary>
+      <div className="grid three">
+        <Info label="Fecha creación" value={fmtDate(o.created_at)}/>
+        <Info label="Área comercial" value={commercialAreaLabel(o.owner_commercial_area)}/>
+        <Info label="Sector" value={o.economic_sector}/>
+        {legacyId && <Info label="ID legacy" value={o.legacy_excel_id}/>}
+        {legacySheet && <Info label="Hoja origen" value={o.excel_hoja_origen}/>}
+        {legacyStatus && <Info label="Estado original" value={o.estado_pipeline_original}/>}
+      </div>
+    </details>}
   </section>;
 }
 const tenderDocumentTypeOptions = [
@@ -1155,11 +1187,12 @@ function inferTenderDocumentType(name: string) {
 }
 function Info({ label, value }: { label: string; value?: string | null }) { return <div className="card info"><small>{label}</small><strong>{value || '—'}</strong></div>; }
 function Dt({ label, value }: { label: string; value?: string | null }) { return <><dt>{label}</dt><dd>{value || '—'}</dd></>; }
+const FOLLOW_UP_NOTES_PLACEHOLDER = 'Resultado de la gestión\nAcuerdos o compromisos\nSiguiente paso';
 function FollowUpForm({ opportunityId, profiles, currentProfile, onSaved }: { opportunityId: string; profiles: Profile[]; currentProfile: Profile; onSaved: () => Promise<void> }) {
   const [form, setForm] = useState({ interaction_type: 'nota', notes: '', occurred_at: new Date().toISOString().slice(0,16), created_by: currentProfile.id, next_action_at: '' }); const [status, setStatus] = useState('');
   const interactionTypeLabels: Record<string, string> = { llamada:'Llamada', correo:'Correo', reunion:'Reunión', whatsapp:'WhatsApp', nota:'Nota', cambio_estado:'Cambio de estado', documento:'Documento' };
   const save = async (e: React.FormEvent) => { e.preventDefault(); setStatus('Guardando…'); try { await api(`/api/opportunity-interactions?id=${encodeURIComponent(opportunityId)}`, { method:'POST', body: JSON.stringify({ ...form, occurred_at: new Date(form.occurred_at).toISOString(), next_action_at: form.next_action_at ? new Date(form.next_action_at).toISOString() : null, created_by: form.created_by || null }) }); setForm({...form, notes:''}); setStatus('Seguimiento registrado.'); await onSaved(); } catch(err) { setStatus(err instanceof Error ? err.message : String(err)); } };
-  return <Panel title="Registrar seguimiento"><form onSubmit={save} className="form followup-form"><label>Tipo de seguimiento<Select value={form.interaction_type} onChange={v=>setForm({...form, interaction_type:v})} options={interactionTypes.map(t=>[t, interactionTypeLabels[t]])} empty=""/></label>{profiles.length > 1 && <label>Registrado por<Select value={form.created_by} onChange={v=>setForm({...form, created_by:v})} options={profiles.map(p=>[p.id,p.full_name])} empty=""/></label>}<label>Fecha del seguimiento<input type="datetime-local" value={form.occurred_at} onChange={e=>setForm({...form, occurred_at:e.target.value})}/></label><label>Próxima gestión (opcional)<input type="datetime-local" value={form.next_action_at} onChange={e=>setForm({...form, next_action_at:e.target.value})}/></label><label>Detalle del seguimiento<textarea required placeholder="Registre el resultado, los acuerdos y el siguiente paso" value={form.notes} onChange={e=>setForm({...form, notes:e.target.value})}/></label><button>Guardar seguimiento</button>{status && <small>{status}</small>}</form></Panel>;
+  return <Panel title="Registrar seguimiento"><p className="followup-form-hint">Este registro alimenta el historial comercial y las recomendaciones de {VIGIA_VISIBLE_NAMES.commercial}. Describa hechos, acuerdos, responsables y el siguiente paso.</p><form onSubmit={save} className="form followup-form"><label>Tipo de seguimiento<Select value={form.interaction_type} onChange={v=>setForm({...form, interaction_type:v})} options={interactionTypes.map(t=>[t, interactionTypeLabels[t]])} empty=""/></label>{profiles.length > 1 && <label>Registrado por<Select value={form.created_by} onChange={v=>setForm({...form, created_by:v})} options={profiles.map(p=>[p.id,p.full_name])} empty=""/></label>}<label>Fecha del seguimiento<input type="datetime-local" value={form.occurred_at} onChange={e=>setForm({...form, occurred_at:e.target.value})}/></label><label>Próxima gestión (opcional)<input type="datetime-local" value={form.next_action_at} onChange={e=>setForm({...form, next_action_at:e.target.value})}/></label><label>Detalle del seguimiento<textarea required placeholder={FOLLOW_UP_NOTES_PLACEHOLDER} value={form.notes} onChange={e=>setForm({...form, notes:e.target.value})}/></label><button>Guardar seguimiento</button>{status && <small>{status}</small>}</form></Panel>;
 }
 const publicActuationOptions = [['requirement_pending','Requerimiento pendiente'],['information_requested','Información solicitada'],['addendum_reviewed','Adenda revisada'],['observation_recorded','Observación registrada'],['internal_meeting','Reunión interna'],['case_note','Nota del caso']];
 const businessEventLabels: Record<string, string> = {

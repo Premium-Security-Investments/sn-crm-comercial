@@ -376,6 +376,19 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .tenders-page .eyebrow,.tender-decision-review .eyebrow,.tender-document-section .eyebrow,.tender-analysis-section .eyebrow,.tender-go-no-go-panel .eyebrow,.tender-offer-status-panel .eyebrow,.tender-document-panel .eyebrow{background:#eaf2ff;color:#174ea6}
 @media(max-width:700px){.tender-document-section>header,.tender-analysis-header{flex-direction:column}.tender-document-actions{flex-direction:column;align-items:stretch}.tender-document-actions-group>*{width:100%;box-sizing:border-box;text-align:center}.tender-document-browser{width:auto;max-height:none}.tender-document-filters{grid-template-columns:1fr}.tender-analysis-state{width:100%;box-sizing:border-box}}
 
+/* AGT-003 — layout de prioridad de seguimiento */
+.hero-chip-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.opportunity-priority-grid .opportunity-insight-card strong{font-size:19px;letter-spacing:-.02em;line-height:1.25}
+.followup-section-title{margin:0;font-size:20px;letter-spacing:-.015em;color:#111827}
+.followup-section-grid{display:grid;gap:16px;min-width:0;align-items:start;grid-template-columns:minmax(0,3fr) minmax(280px,2fr)}
+.followup-section-grid>.followup-history{order:1;min-width:0}
+.followup-section-grid>.followup-form-slot{order:2;min-width:0}
+.followup-timeline .event strong{text-transform:none}
+.followup-form-hint{margin:-6px 0 14px;color:#526173;font-size:13px;line-height:1.45}
+.opportunity-more-info>summary{cursor:pointer;font-weight:800;color:#40516b;padding:4px 0}
+.opportunity-more-info>.grid{margin-top:12px}
+@media(max-width:760px){.followup-section-grid{grid-template-columns:1fr}.followup-section-grid>.followup-history,.followup-section-grid>.followup-form-slot{order:0}}
+
 /* Licitaciones — análisis V3 sin brief legado duplicado */
 .tender-analysis-section.is-v3-compact{padding:0;border:0;background:transparent;box-shadow:none;gap:8px}.tender-analysis-section.is-v3-compact .tender-analysis-actions{justify-content:flex-end}
 .tender-v3-questions{display:grid;gap:14px;padding:18px;border:1px solid #dbe7f5;border-radius:20px;background:#fff}.tender-v3-questions>header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}.tender-v3-questions>header h3{margin:5px 0;color:#10213d}.tender-v3-questions>header>strong{flex:0 0 auto;padding:7px 10px;border-radius:999px;background:#fff3cd;color:#7a5200;font-size:12px}.tender-v3-questions .tender-question-list{grid-template-columns:1fr}
