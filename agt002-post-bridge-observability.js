@@ -34,10 +34,21 @@ const AGT002_V3_SAFE_VALIDATION_CODE_SET = new Set(AGT002_V3_SAFE_VALIDATION_COD
 
 export { AGT002_POST_BRIDGE_STAGES, AGT002_POST_BRIDGE_ERROR_CODES };
 
-// Real bridge client codes (agt002-hetzner-bridge-client.js) that mean "the bridge call itself
-// never produced a usable response" (timeout/cancel/malformed transport shape). Anything else
-// reaching phase 'transport' with a code is a provider-reported failure instead.
-const TRANSPORT_CODE_PREFIX = 'AGT002_CODEX_';
+// Real bridge client codes (agt002-preview-codex-client.js) that mean "the bridge call itself
+// never produced a usable response" (timeout/cancel/malformed transport shape/session). This is
+// a CLOSED set, not a prefix match: AGT002_CODEX_PROVIDER_ERROR shares the same prefix but means
+// the provider itself reported a failure, and must classify as PROVIDER_ERROR, not TRANSPORT_ERROR.
+// Any code not in this set — known-provider or unknown/future — also falls through to
+// PROVIDER_ERROR, never TRANSPORT_ERROR, so an unrecognized code can never be mistaken for "the
+// bridge itself is unreachable".
+const TRANSPORT_CODES = new Set([
+  'AGT002_CODEX_TIMEOUT',
+  'AGT002_CODEX_TRANSPORT_ERROR',
+  'AGT002_CODEX_CANCELLED',
+  'AGT002_CODEX_LOGIN_REQUIRED',
+  'AGT002_CODEX_ACCOUNT_INVALID',
+  'AGT002_CODEX_INVALID_RESPONSE',
+]);
 
 // Both possible RPC names agt002-preview-persistence.js's registerAgt002PreviewAnalysis can
 // call, depending on canonicalOnly — tracked (never re-implemented) purely to tell "the RPC was
@@ -103,7 +114,7 @@ export function classifyAgt002PostBridgeFailure({ phase, error, integralContract
   switch (phase) {
     case 'transport': {
       const code = typeof error?.code === 'string' ? error.code : '';
-      const isTransport = code.startsWith(TRANSPORT_CODE_PREFIX);
+      const isTransport = TRANSPORT_CODES.has(code);
       return Object.freeze({
         stage: AGT002_POST_BRIDGE_STAGES.TRANSPORT,
         error_code: isTransport ? AGT002_POST_BRIDGE_ERROR_CODES.TRANSPORT_ERROR : AGT002_POST_BRIDGE_ERROR_CODES.PROVIDER_ERROR,
