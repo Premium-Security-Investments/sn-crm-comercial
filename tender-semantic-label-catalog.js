@@ -49,6 +49,47 @@
 // (`units_dropped_by_budget`) deliberately keeps the narrower generation-based reading: a unit
 // that lost every span it could ORIGINATE is a real coverage loss even if some other unit's
 // surviving span happens to occur in its text too.
+//
+// v4 (AGT-002 V4 uniqueness remediation, real `v4_discovery_uniqueness_invariant`): the per-unit
+// obligation-key dedup above only ever bounded ONE unit's own candidate list. Two DIFFERENT units
+// can each state the same obligation in a literally different form — punctuation, accents, a
+// capitalization difference at a sentence boundary — and each form survives its own unit's dedup
+// while still folding to the identical `tenderSemanticObligationKey`. Nothing in the per-unit pass
+// ever saw the other unit's form, so the wire enum could offer both, and a model choosing either
+// one alone was always compliant — the collision was unavoidable BY CONSTRUCTION, not a model
+// mistake, and canonicalizeProposal's unchanged (and still necessary) same-obligation-key gate
+// then burned the whole provider turn rejecting it under `v4_discovery_uniqueness_invariant`.
+//
+// `buildTenderSemanticLabelCatalog` below now also dedups GLOBALLY, across every visible unit, at
+// the point candidates are chosen for the wire enum: the FIRST literal form of an obligation key,
+// in the same round-major (round, then unit, in caller order) traversal that already decides
+// `chosen`'s order, wins that key, and every later candidate — from the SAME unit or ANY other —
+// that folds to the same key is simply never added to the enum. This is a catalog-construction
+// change only: canonicalizeProposal's own obligation-key gate is untouched and still rejects a
+// proposal fail-closed (defence in depth over a catalog bug, and over a model that repeats the one
+// surviving label across two requirements); nothing is deduplicated, merged or repaired on the
+// model's answer, only removed from what the model could ever have been offered.
+//
+// A unit whose OWN candidates are all discarded this way (some other unit's literal form of the
+// identical obligation already claimed the enum slot) is not a budget failure: the obligation is
+// still represented in the catalog, verbatim, by the other unit's form, and nothing about this
+// unit's budget allocation was ever exceeded. `units_dropped_by_budget` therefore excludes it — see
+// `units_dropped_by_semantic_collision` below, tracked separately so the two causes are never
+// conflated.
+//
+// The dedup is decided over NORMALIZED obligation keys; ownership is not, and the two never mix.
+// The discarded literal form is credited to nobody — it is absent from the catalog entirely, so no
+// requirement can ever carry it. The winning form is credited to the losing unit only under the
+// unchanged exact-containment rule (see buildTenderSemanticLabelOwnerIndex): that unit's own
+// visible AND source text must literally contain it, character for character. A merely equivalent
+// form never buys ownership. In the ordinary case the two forms differ precisely BECAUSE the losing
+// unit does not state the winning one, so that unit is left owning nothing at all: it is uncited by
+// every requirement, falls through to v4 coverage completion (tender-semantic-discovery.js) as
+// `unresolved` with reason `source_unit_not_dispositioned`, and keeps the manifest's
+// `discovery_coverage.status` at 'partial' and `decision_ready` false — a real, visible gap in the
+// analysis, never a silently invented citation. If that unit's text does happen to state the
+// winning form verbatim, it is cited for it exactly as any other containing unit is — that is the
+// same literal witness the anchor gates re-check, not a repair of the collision.
 
 import { tenderSemanticObligationKey, TENDER_HISTORICAL_FIXED_REQUIREMENT_IDS } from './tender-semantic-manifest.js';
 
@@ -210,12 +251,22 @@ function selectSpread(values, limit) {
  * reported in `units_dropped_by_budget` and the caller fails closed rather than shipping a schema
  * that silently makes part of the expediente unlabelable.
  *
+ * The same traversal also enforces a GLOBAL obligation-key uniqueness invariant on `chosen`: at
+ * most one candidate per normalized `tenderSemanticObligationKey` ever reaches the enum, across
+ * every visible unit, not merely within one. The first candidate to reach a given key in
+ * round-major order wins it; every later candidate — same unit or different — that folds to the
+ * same key is left out of `chosen` entirely and is never credited to any unit's owner list. A unit
+ * whose own candidates are ALL discarded this way (never a budget cap) is reported separately in
+ * `units_dropped_by_semantic_collision`, not `units_dropped_by_budget`: its obligation is still in
+ * the catalog, verbatim, in the winning unit's own literal form, so nothing here was lost to a
+ * budget the caller controls — see the v4 header comment above for why this is not a repair.
+ *
  * @param {object} args
  * @param {Array} args.units Visible source units: {source_unit_id, text (redacted), source_text}.
  * @param {number} args.maxCatalogChars Total character budget for the emitted catalog.
  * @returns {{candidates: string[], candidates_by_unit_id: Map<string, string[]>,
  *   units_without_eligible_candidates: string[], units_dropped_by_budget: string[],
- *   total_chars: number}}
+ *   units_dropped_by_semantic_collision: string[], total_chars: number}}
  */
 export function buildTenderSemanticLabelCatalog({ units = [], maxCatalogChars } = {}) {
   if (!Array.isArray(units)) throw new Error('El catálogo de etiquetas literales requiere la lista de unidades visibles.');
@@ -237,6 +288,14 @@ export function buildTenderSemanticLabelCatalog({ units = [], maxCatalogChars } 
   const totalCap = Math.max(perUnit.length, TENDER_SEMANTIC_LABEL_CANDIDATES_TOTAL_FLOOR);
   const chosen = [];
   const chosenSet = new Set();
+  // Global cross-unit obligation-key uniqueness (v4): the same round-major traversal that decides
+  // `chosen`'s order also decides which literal form of a given obligation wins it. Every candidate
+  // in `entry.available` already carries a derivable, non-empty obligation key (unitLabelCandidates
+  // filters out any that don't), so this set only ever gains real keys.
+  const chosenObligationKeys = new Set();
+  // Candidates skipped for exactly that reason — never for the budget caps below — so unit
+  // accounting can tell a semantic collision apart from a real budget loss.
+  const collisionDroppedCandidates = new Set();
   let totalChars = 0;
   for (let round = 0; round < TENDER_SEMANTIC_LABEL_CANDIDATES_PER_UNIT; round += 1) {
     for (const entry of perUnit) {
@@ -245,16 +304,30 @@ export function buildTenderSemanticLabelCatalog({ units = [], maxCatalogChars } 
       // the SAME literal string, so it still anchors in this unit too (identical paragraphs are the
       // only way this happens) and `candidates_by_unit_id` below still credits it to both.
       if (candidate === undefined || chosenSet.has(candidate)) continue;
+      // Budget caps are checked BEFORE the obligation-key check: a candidate that would not have
+      // fit the catalog anyway is a budget loss regardless of what its key is, never a collision.
       if (chosen.length >= totalCap || totalChars + candidate.length > maxCatalogChars) continue;
+      const obligationKey = tenderSemanticObligationKey(candidate);
+      if (obligationKey && chosenObligationKeys.has(obligationKey)) {
+        // A DIFFERENT literal string than the one already chosen (an exact duplicate was already
+        // filtered above) that folds to the SAME normalized obligation key: some other unit's form
+        // of this exact obligation already claimed the enum slot. Never emitted — see the v4 header
+        // comment for why the wire enum must not offer two labels the model could legally choose
+        // between for what is, semantically, one obligation.
+        collisionDroppedCandidates.add(candidate);
+        continue;
+      }
       chosenSet.add(candidate);
       chosen.push(candidate);
       totalChars += candidate.length;
+      if (obligationKey) chosenObligationKeys.add(obligationKey);
     }
   }
 
   const candidatesByUnitId = new Map();
   const unitsWithoutEligibleCandidates = [];
   const unitsDroppedByBudget = [];
+  const unitsDroppedBySemanticCollision = [];
   for (const entry of perUnit) {
     // What this unit can ORIGINATE and that survived the bounds. This — never the containment
     // credit below — is what the budget accounting reads, so a unit whose own spans were all
@@ -268,6 +341,9 @@ export function buildTenderSemanticLabelCatalog({ units = [], maxCatalogChars } 
     // it). Own candidates come first, most-general first, so the unit's own most representative
     // excerpt stays the head of its list; foreign contained candidates follow in catalog
     // allocation order. Both segments are deterministic — no clock, no locale, no set iteration.
+    // A candidate this unit could ORIGINATE but that lost the global obligation-key collision is
+    // absent from `chosen` altogether (see above), so it can never appear here either, as own or as
+    // foreign anywhere else — the discarded literal form is not unioned into any owner list.
     const foreign = chosen.filter(candidate => !ownSet.has(candidate)
       && entry.visible_text.includes(candidate)
       && entry.source_text.includes(candidate));
@@ -278,7 +354,17 @@ export function buildTenderSemanticLabelCatalog({ units = [], maxCatalogChars } 
       // regression. It stays dispositionable as excluded/unresolved by the existing contract.
       unitsWithoutEligibleCandidates.push(entry.source_unit_id);
     } else if (!own.length) {
-      unitsDroppedByBudget.push(entry.source_unit_id);
+      // Tell apart WHY this unit contributed nothing to the enum: if every one of its own
+      // candidates was discarded purely by the global obligation-key dedup (never by a budget cap),
+      // the obligation itself is still catalogued — by another unit's literal form of it — so this
+      // is not a coverage loss the caller must fail closed on, and must not inflate
+      // `units_dropped_by_budget`. A unit with even one candidate that hit an actual budget cap
+      // still counts as a real budget loss.
+      if (entry.available.every(candidate => collisionDroppedCandidates.has(candidate))) {
+        unitsDroppedBySemanticCollision.push(entry.source_unit_id);
+      } else {
+        unitsDroppedByBudget.push(entry.source_unit_id);
+      }
     }
   }
 
@@ -287,6 +373,7 @@ export function buildTenderSemanticLabelCatalog({ units = [], maxCatalogChars } 
     candidates_by_unit_id: candidatesByUnitId,
     units_without_eligible_candidates: unitsWithoutEligibleCandidates,
     units_dropped_by_budget: unitsDroppedByBudget,
+    units_dropped_by_semantic_collision: unitsDroppedBySemanticCollision,
     total_chars: totalChars,
   };
 }

@@ -26,7 +26,11 @@ import { tenderSemanticObligationKey } from '../tender-semantic-manifest.js';
 //     unrepresentable — there is no id list to repeat, and a requirement that ships one is rejected
 //     outright as an invalid shape rather than de-duplicated;
 //   * "one requirement per semantic obligation" survives unchanged, and is still the model's duty:
-//     two labels folding to the same normalized obligation key are still rejected fail-closed;
+//     two labels folding to the same normalized obligation key are still rejected fail-closed. The
+//     catalog itself (tender-semantic-label-catalog.js) now ALSO enforces this globally, across
+//     every visible unit, at construction time: the wire enum never offers two labels that fold to
+//     the same key in the first place, closing the real `v4_discovery_uniqueness_invariant` failure
+//     where two different units' literal forms of one obligation both reached the enum;
 //   * "one disposition per unit" survives and now also governs the DERIVED citations: a unit the
 //     server binds to some label may not additionally appear in excluded/unresolved.
 //
@@ -111,6 +115,15 @@ import { tenderSemanticObligationKey } from '../tender-semantic-manifest.js';
     TENDER_SEMANTIC_DISCOVERY_POLICY,
     /propón un único requisito con un solo fragmento: el servidor consolida por sí mismo todas las unidades que contienen ese fragmento/,
     'policy must resolve a duplicated obligation by one fragment the server consolidates on',
+  );
+  // v4 uniqueness remediation (real `v4_discovery_uniqueness_invariant`): the catalog itself now
+  // dedups GLOBALLY by obligation key (tender-semantic-label-catalog.js), across every visible
+  // unit, not merely within one — so the policy must truthfully say the enum already guarantees
+  // this instead of only asking the model to behave as if it did.
+  assert.match(
+    TENDER_SEMANTIC_DISCOVERY_POLICY,
+    /El enumerado de requirements\.items\.properties\.label\.enum ya es único por esa misma clave de obligación normalizada en todo el expediente, entre todas las unidades visibles/,
+    'policy must truthfully state the label enum is globally unique by normalized obligation key across every visible unit',
   );
 
   // 4. Dispositions never repeat, and never overlap a DERIVED citation.
@@ -209,29 +222,60 @@ function candidateOwnedByExactly(sourceUnitIds) {
   return found;
 }
 
-/** Two DIFFERENT catalog candidates that fold to one obligation key, owned by disjoint units. */
-function collidingObligationCandidates() {
-  for (const first of catalog.candidates) {
-    for (const second of catalog.candidates) {
-      if (first === second) continue;
-      if (tenderSemanticObligationKey(first) !== tenderSemanticObligationKey(second)) continue;
-      const firstOwners = ownerIndex.get(first) ?? [];
-      const secondOwners = ownerIndex.get(second) ?? [];
-      if (firstOwners.some(sourceUnitId => secondOwners.includes(sourceUnitId))) continue;
-      return [first, second];
-    }
-  }
-  return assert.fail('fixture must expose two catalog candidates folding to the same obligation key');
+// v4 uniqueness remediation (real `v4_discovery_uniqueness_invariant`): the two paragraphs above
+// were deliberately built so their shared clause differs ONLY by the case of its first word
+// ("Vigilancia"/"vigilancia") between units — under the OLD per-unit-only dedup this produced two
+// DIFFERENT catalog candidates folding to the same obligation key, one exclusive to each unit,
+// which canonicalizeProposal then had to reject fail-closed if the model proposed both
+// (v4_discovery_uniqueness_invariant burning a whole real provider turn). The catalog itself now
+// dedups that collision GLOBALLY, across units, at construction time (tender-semantic-label-
+// catalog.js): only the FIRST literal form, in deterministic traversal order, ever reaches the
+// enum, and this fixture proves it end to end.
+{
+  // unitA (first paragraph) is processed before unitB in the packet's deterministic order, so its
+  // capitalized form of the shared clause is the one deterministic traversal picks.
+  const survivingClause = 'Vigilancia hospitalaria permanente durante toda la ejecucion del contrato';
+  const discardedClause = 'vigilancia hospitalaria permanente durante toda la ejecucion del contrato';
+  assert.notEqual(survivingClause, discardedClause, 'the two literal forms of the clause must actually differ');
+  assert.equal(
+    tenderSemanticObligationKey(survivingClause),
+    tenderSemanticObligationKey(discardedClause),
+    'the two literal forms must fold to the same normalized obligation key',
+  );
+  assert.ok(
+    catalog.candidates.includes(survivingClause),
+    'the first unit\'s literal form of the colliding clause must reach the catalog',
+  );
+  assert.equal(
+    catalog.candidates.includes(discardedClause), false,
+    'the second unit\'s colliding literal form must never reach the catalog: the enum cannot offer two labels for the same obligation',
+  );
+  assert.deepEqual(
+    [...ownerIndex.get(survivingClause)], [unitA.source_unit_id],
+    'the surviving form\'s owners stay literal-only: the colliding unit must not be falsely credited as an owner',
+  );
+  assert.equal(
+    ownerIndex.has(discardedClause), false,
+    'a discarded colliding form must not appear in the owner index at all',
+  );
+  assert.equal(
+    catalog.units_dropped_by_budget.includes(unitB.source_unit_id), false,
+    'losing one candidate to a global obligation-key collision is not a budget drop for the unit that still owns other candidates',
+  );
+  // Global invariant: no two enum members may ever fold to the same obligation key, over the whole
+  // catalog this fixture built — not merely over the one pair constructed above.
+  const catalogObligationKeys = catalog.candidates.map(candidate => tenderSemanticObligationKey(candidate));
+  assert.equal(
+    new Set(catalogObligationKeys).size, catalogObligationKeys.length,
+    'the output schema must never offer two labels that produce the same normalized obligation key',
+  );
 }
 
-const [obligationOnA, obligationOnB] = collidingObligationCandidates();
-assert.deepEqual([...ownerIndex.get(obligationOnA)], [unitA.source_unit_id], 'the first colliding label must be exclusive to unit A');
-assert.deepEqual([...ownerIndex.get(obligationOnB)], [unitB.source_unit_id], 'the second colliding label must be exclusive to unit B');
-assert.equal(
-  tenderSemanticObligationKey(obligationOnA),
-  tenderSemanticObligationKey(obligationOnB),
-  'the two colliding labels must fold to one obligation key',
-);
+// A single valid, catalog-member label exclusive to unit A — used below exactly as the old
+// `obligationOnA` was, as an ordinary one-obligation requirement label. It is deliberately NOT the
+// collision clause above: any of unit A's several other exclusive candidates works equally well for
+// the plain single-obligation cases that follow.
+const obligationOnA = candidateOwnedByExactly([unitA.source_unit_id]);
 
 // A single fragment both paragraphs state verbatim: the server binds BOTH units to it, which is
 // what the consolidation remedy relies on.
@@ -293,18 +337,20 @@ for (const smuggled of [
   );
 }
 
-// Rule 2 — two requirements whose distinct, individually anchored labels fold to the SAME
-// obligation key are still rejected. Both labels are catalog members owned by the unit each one is
-// derived to, so this proves the obligation-key gate rejects them, not the citation-anchor gate.
-// Nothing merges them: the whole proposal is rejected.
+// Rule 2 — two requirements deriving the SAME normalized obligation key are still rejected. The
+// catalog itself now guarantees at most one enum member per obligation key (proved above), so a
+// model can only reach this key twice by repeating the very same catalog label across two
+// requirements — there is no second, differently-spelled enum member left to pick instead. This
+// proves the obligation-key gate is still live as defence in depth, not merely reachable via a
+// catalog collision that can no longer occur. Nothing merges them: the whole proposal is rejected.
 await assert.rejects(
   () => run({
-    requirements: [requirement(obligationOnA), requirement(obligationOnB)],
-    excluded: [],
+    requirements: [requirement(obligationOnA), requirement(obligationOnA)],
+    excluded: [{ source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' }],
     unresolved: [],
   }),
   /obligación vacía o duplicada/,
-  'two labels deriving the same normalized obligation key must still be rejected fail-closed',
+  'repeating the same catalog label across two requirements must still be rejected fail-closed',
 );
 
 // Rule 2, prescribed remedy — ONE requirement carrying the fragment both units state is accepted,

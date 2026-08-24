@@ -8,11 +8,13 @@ import {
 } from '../tender-semantic-discovery.js';
 import {
   buildTenderSemanticLabelCatalog,
+  buildTenderSemanticLabelOwnerIndex,
   TENDER_SEMANTIC_LABEL_CANDIDATES_PER_UNIT,
   TENDER_SEMANTIC_LABEL_CANDIDATES_TOTAL_FLOOR,
   TENDER_SEMANTIC_LABEL_MAX_CHARS,
   TENDER_SEMANTIC_LABEL_MIN_CHARS,
 } from '../tender-semantic-label-catalog.js';
+import { tenderSemanticObligationKey, TENDER_HISTORICAL_FIXED_REQUIREMENT_IDS } from '../tender-semantic-manifest.js';
 
 // AGT-002 V4, repeated `v4_discovery_citation_anchor_invariant`: the model kept paraphrasing the
 // label instead of quoting a cited source_unit verbatim, and every such run burned a provider turn
@@ -247,6 +249,16 @@ let capturedRequest;
       `catalog is not broad enough to name "${term}"`,
     );
   }
+
+  // v4 global uniqueness invariant: the wire enum this catalog feeds may never offer two labels
+  // that fold to the same normalized obligation key, over the whole catalog — not merely within
+  // one unit's own candidate list (tests/tender-semantic-discovery-uniqueness-policy.test.mjs pins
+  // the end-to-end collision fixture; this is the general property over an ordinary expediente).
+  const obligationKeys = catalog.candidates.map(candidate => tenderSemanticObligationKey(candidate));
+  assert.equal(
+    new Set(obligationKeys).size, obligationKeys.length,
+    'the catalog must never offer two labels that fold to the same normalized obligation key',
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -409,6 +421,16 @@ let capturedRequest;
   for (const unit of request.input.source_units) {
     assert.ok(!Object.hasOwn(unit, 'source_text'), 'the unredacted source text must never be sent to the provider');
   }
+
+  // v4 global uniqueness invariant at scale: 120 near-identical clauses (differing only by their
+  // "Clausula {index}:" lead-in) are exactly the shape that used to produce many cross-unit
+  // obligation-key collisions once the lead-in falls outside a shorter candidate window. The wire
+  // enum must still never offer two labels folding to the same key.
+  const obligationKeys = enumValues.map(candidate => tenderSemanticObligationKey(candidate));
+  assert.equal(
+    new Set(obligationKeys).size, obligationKeys.length,
+    'a large expediente must not let the enum offer two labels folding to the same obligation key',
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -553,6 +575,226 @@ let capturedRequest;
     'an expediente whose only content is an unusable quoted fragment must fail closed instead of stripping the quote',
   );
   assert.equal(called, false, 'the fail-closed catalog check must run before the provider is called');
+}
+
+// ---------------------------------------------------------------------------------------------
+// v4 global obligation-key uniqueness (real `v4_discovery_uniqueness_invariant`): the per-unit
+// dedup inside unitLabelCandidates only ever bounded ONE unit's own candidate list. Two different
+// units stating the identical obligation in a literally different form — here, only the case of
+// the first letter — used to each contribute their own form to the enum, because neither unit's
+// own dedup pass ever saw the other's text. `buildTenderSemanticLabelCatalog` now also dedups
+// GLOBALLY, at the point candidates are chosen for the enum, so at most one literal form per
+// normalized obligation key ever reaches the catalog, across every visible unit.
+// ---------------------------------------------------------------------------------------------
+
+// Cross-unit case-equivalent labels collapse to exactly one catalog member, chosen by the same
+// deterministic round-major (round, then unit, in caller order) traversal that already orders
+// `candidates`: the first unit's literal form wins, the second unit's is discarded outright, and
+// ownership stays exact-containment-only — the discarded unit is never credited with a label its
+// own text does not literally contain.
+{
+  // Deliberately only THREE words: `unitLabelCandidates`'s word-window granularities (16, 8) only
+  // ever produce a sub-span when the unit has more words than the window's own stride, so a
+  // 3-word unit yields exactly ONE candidate — the whole text — and no accidental shorter shared
+  // sub-span can blur what this test is isolating.
+  const unitAId = 'unit:collision-a';
+  const unitBId = 'unit:collision-b';
+  const textA = 'Vigilancia hospitalaria permanente.';
+  const textB = 'vigilancia hospitalaria permanente';
+  const winner = 'Vigilancia hospitalaria permanente';
+  const discarded = 'vigilancia hospitalaria permanente';
+  assert.equal(
+    tenderSemanticObligationKey(winner), tenderSemanticObligationKey(discarded),
+    'fixture sanity: the two forms must fold to the same obligation key',
+  );
+
+  const catalog = buildTenderSemanticLabelCatalog({
+    units: [
+      { source_unit_id: unitAId, text: textA, source_text: textA },
+      { source_unit_id: unitBId, text: textB, source_text: textB },
+    ],
+    maxCatalogChars: 1_000,
+  });
+
+  assert.deepEqual(catalog.candidates, [winner], 'exactly one literal form of the colliding obligation may reach the enum');
+  assert.deepEqual(catalog.candidates_by_unit_id.get(unitAId), [winner], 'the winning unit keeps owning its own literal form');
+  assert.deepEqual(
+    catalog.candidates_by_unit_id.get(unitBId), [],
+    'the losing unit must not be credited with its own discarded form, nor with the winner it does not literally contain (different case)',
+  );
+  assert.deepEqual(catalog.units_without_eligible_candidates, []);
+  assert.deepEqual(catalog.units_dropped_by_budget, [], 'a global obligation-key collision must never be counted as a budget drop');
+  assert.deepEqual(
+    catalog.units_dropped_by_semantic_collision, [unitBId],
+    'a unit whose only candidate was discarded purely by the global collision must be reported under that separate cause',
+  );
+
+  const ownerIndex = buildTenderSemanticLabelOwnerIndex({
+    orderedUnitIds: [unitAId, unitBId],
+    candidatesByUnitId: catalog.candidates_by_unit_id,
+  });
+  assert.deepEqual(
+    [...ownerIndex.get(winner)], [unitAId],
+    'the colliding unit must not be falsely added as an owner of the surviving label',
+  );
+  assert.equal(ownerIndex.has(discarded), false, 'the discarded colliding form must never appear in the owner index at all');
+}
+
+// First deterministic representative wins: reversing which unit comes first in the caller-supplied
+// order reverses which literal form survives, proving the winner is decided by traversal order —
+// never by string content, sort order or which unit happens to be "first" some other way.
+{
+  const winner = 'Vigilancia hospitalaria permanente';
+  const discarded = 'vigilancia hospitalaria permanente';
+  const reversed = buildTenderSemanticLabelCatalog({
+    units: [
+      { source_unit_id: 'unit:collision-b', text: discarded, source_text: discarded },
+      { source_unit_id: 'unit:collision-a', text: winner, source_text: winner },
+    ],
+    maxCatalogChars: 1_000,
+  });
+  assert.deepEqual(
+    reversed.candidates, [discarded],
+    'the first unit in the given traversal order wins the shared obligation key, regardless of which literal form it carries',
+  );
+}
+
+// Case is not the only way two units can state one obligation in literally different forms.
+// `tenderSemanticObligationKey` folds accents away and treats EVERY non-alphanumeric character as a
+// separator, so a comma or an accent is exactly as invisible to it as a capital letter — and the
+// enum must not offer both forms merely because their bytes differ. Each unit below is deliberately
+// four words long, so `unitLabelCandidates` yields exactly that unit's own whole text (the 16/8-word
+// windows cannot produce a shorter span) and the only thing under test is the cross-unit fold.
+for (const [variant, textA, winner, textB] of [
+  ['punctuation', 'Poliza de cumplimiento, vigente.', 'Poliza de cumplimiento, vigente', 'Poliza de cumplimiento vigente'],
+  ['accents', 'Garantía única de cumplimiento.', 'Garantía única de cumplimiento', 'Garantia unica de cumplimiento'],
+]) {
+  const unitAId = `unit:${variant}-a`;
+  const unitBId = `unit:${variant}-b`;
+  const discarded = textB;
+  assert.notEqual(winner, discarded, `fixture sanity (${variant}): the two literal forms must actually differ`);
+  assert.equal(
+    tenderSemanticObligationKey(winner), tenderSemanticObligationKey(discarded),
+    `fixture sanity (${variant}): the two forms must fold to the same obligation key`,
+  );
+
+  const catalog = buildTenderSemanticLabelCatalog({
+    units: [
+      { source_unit_id: unitAId, text: textA, source_text: textA },
+      { source_unit_id: unitBId, text: textB, source_text: textB },
+    ],
+    maxCatalogChars: 1_000,
+  });
+
+  assert.deepEqual(
+    catalog.candidates, [winner],
+    `exactly one literal form may reach the enum when the forms differ only by ${variant}`,
+  );
+  assert.deepEqual(catalog.candidates_by_unit_id.get(unitAId), [winner]);
+  assert.deepEqual(
+    catalog.candidates_by_unit_id.get(unitBId), [],
+    `the losing unit keeps neither its discarded form nor the winner its text does not literally contain (${variant})`,
+  );
+  assert.deepEqual(catalog.units_dropped_by_budget, [], `a ${variant} collision must never be counted as a budget drop`);
+  assert.deepEqual(catalog.units_dropped_by_semantic_collision, [unitBId]);
+
+  const ownerIndex = buildTenderSemanticLabelOwnerIndex({
+    orderedUnitIds: [unitAId, unitBId],
+    candidatesByUnitId: catalog.candidates_by_unit_id,
+  });
+  assert.deepEqual(
+    [...ownerIndex.get(winner)], [unitAId],
+    `the ${variant}-colliding unit must not be falsely added as an owner of the surviving label`,
+  );
+  assert.equal(ownerIndex.has(discarded), false, `the discarded ${variant} form must never appear in the owner index`);
+}
+
+// The historical-fixed-id guard predates the global dedup and is unchanged by it: a span whose
+// literal value OR whose derived obligation key is one of the four historical fixed requirement ids
+// is dropped inside `unitLabelCandidates`, BEFORE any candidate is considered for the enum. So such
+// a form can never become the first representative that claims an obligation key globally, and the
+// units it came from are reported as ineligible — never as a semantic collision and never as a
+// budget drop.
+{
+  const historicalId = 'legal-rce-policy';
+  assert.ok(
+    TENDER_HISTORICAL_FIXED_REQUIREMENT_IDS.includes(historicalId),
+    'fixture sanity: the guarded id must be one of the historical fixed requirement ids',
+  );
+  // Two literally different forms of the SAME historical id: under the v4 global dedup these are
+  // exactly the shape that would otherwise have one form claim the key and the other be discarded
+  // as a collision. Neither may reach the catalog at all.
+  const historicalUnits = [
+    { source_unit_id: 'unit:historical-a', text: 'Legal RCE policy', source_text: 'Legal RCE policy' },
+    { source_unit_id: 'unit:historical-b', text: 'legal rce policy.', source_text: 'legal rce policy.' },
+  ];
+  for (const unit of historicalUnits) {
+    assert.equal(
+      tenderSemanticObligationKey(unit.text), historicalId,
+      `fixture sanity: ${unit.source_unit_id} must fold to the historical fixed id`,
+    );
+  }
+  const ordinaryId = 'unit:ordinary-beside-historical';
+  const ordinaryText = 'El contratista entregara un informe mensual de operaciones cada mes.';
+
+  const catalog = buildTenderSemanticLabelCatalog({
+    units: [...historicalUnits, { source_unit_id: ordinaryId, text: ordinaryText, source_text: ordinaryText }],
+    maxCatalogChars: 1_000,
+  });
+
+  assert.ok(catalog.candidates.length > 0, 'the ordinary unit beside them must still contribute to the catalog');
+  for (const candidate of catalog.candidates) {
+    assert.ok(
+      !TENDER_HISTORICAL_FIXED_REQUIREMENT_IDS.includes(candidate)
+      && !TENDER_HISTORICAL_FIXED_REQUIREMENT_IDS.includes(tenderSemanticObligationKey(candidate)),
+      `a historical fixed id must never reach the catalog: ${JSON.stringify(candidate)}`,
+    );
+    assert.ok(ordinaryText.includes(candidate), 'every surviving candidate must come from the ordinary unit');
+  }
+  for (const unit of historicalUnits) {
+    assert.deepEqual(
+      catalog.candidates_by_unit_id.get(unit.source_unit_id), [],
+      `${unit.source_unit_id} must own nothing: its only literal form is a guarded historical id`,
+    );
+  }
+  assert.deepEqual(
+    catalog.units_without_eligible_candidates,
+    historicalUnits.map(unit => unit.source_unit_id),
+    'a unit whose only form is a guarded historical id is ineligible, exactly as before v4',
+  );
+  assert.deepEqual(
+    catalog.units_dropped_by_semantic_collision, [],
+    'a guarded historical form is dropped before the global dedup, so it is never a semantic collision',
+  );
+  assert.deepEqual(catalog.units_dropped_by_budget, []);
+
+  const ownerIndex = buildTenderSemanticLabelOwnerIndex({
+    orderedUnitIds: [...historicalUnits.map(unit => unit.source_unit_id), ordinaryId],
+    candidatesByUnitId: catalog.candidates_by_unit_id,
+  });
+  for (const [candidate, owners] of ownerIndex) {
+    assert.notEqual(
+      tenderSemanticObligationKey(candidate), historicalId,
+      `no owner-index entry may carry a guarded historical obligation key: ${JSON.stringify(candidate)}`,
+    );
+    assert.deepEqual([...owners], [ordinaryId], 'only the ordinary unit may own anything in this fixture');
+  }
+}
+
+// Existing per-unit candidate behavior is untouched by the global dedup: a unit whose several own
+// candidates fold to DISTINCT obligation keys keeps every one of them, none discarded.
+{
+  const unitId = 'unit:no-collision';
+  const text = 'El oferente debera acreditar experiencia especifica en vigilancia hospitalaria durante los ultimos cinco anos.';
+  const catalog = buildTenderSemanticLabelCatalog({ units: [{ source_unit_id: unitId, text, source_text: text }], maxCatalogChars: 1_000 });
+  assert.ok(catalog.candidates.length > 1, 'a single ordinary unit must still contribute more than one non-colliding candidate');
+  assert.deepEqual(
+    [...catalog.candidates_by_unit_id.get(unitId)].sort(),
+    [...catalog.candidates].sort(),
+    'every one of this unit\'s own candidates must survive when none of them collide',
+  );
+  assert.deepEqual(catalog.units_dropped_by_semantic_collision, []);
+  assert.deepEqual(catalog.units_dropped_by_budget, []);
 }
 
 console.log('tests/tender-semantic-discovery-label-catalog.test.mjs OK');

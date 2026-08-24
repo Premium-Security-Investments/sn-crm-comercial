@@ -67,6 +67,23 @@ import {
 //
 // This is a material change to the model-facing contract AND to this module's canonical disposition
 // behaviour, so the version moves with it.
+//
+// Deliberately NOT bumped past v4: the catalog's GLOBAL obligation-key uniqueness
+// (tender-semantic-label-catalog.js, the remediation of the real `v4_discovery_uniqueness_invariant`)
+// changes what the enum CONTAINS, not what the model is asked to do with it. The requirement shape,
+// the disposition rules, the derived citations and the coverage completion are all exactly the v4
+// ones; the enum's membership is snapshot-derived data this version string never named, since it
+// differs for every expediente by construction. The single policy sentence that moved with it states
+// a guarantee the schema now keeps FOR the model instead of asking the model to keep it, which is
+// why it is a truthful narrowing rather than a new demand.
+//
+// The narrowing is not free, and the cost is stated rather than hidden: a unit whose only literal
+// form of an obligation lost the global dedup can no longer be cited by any label, so it is
+// completed into `unresolved` and keeps the decision paused (see the label catalog's own header).
+// That is the deliberate trade — a visible gap over an enum that offers two labels for one
+// obligation and therefore guarantees the rejected turn this remediation exists to remove. No
+// successful v4 run exists whose provenance keeping v4 could misname, and every test that pins this
+// version pins it at 'tender-semantic-discovery.v4' on purpose.
 // Nothing keyed on this string is durable: it is carried in the request `input` only, and the
 // provider idempotency key is derived from the caller's own key
 // (`${idempotencyKey}:semantic-discovery`), NOT from this version — so bumping it changes what a
@@ -243,7 +260,7 @@ export const TENDER_SEMANTIC_DISCOVERY_POLICY = [
   'Dispón todas las source_units exactamente una vez: como unidad citada automáticamente por el "label" de algún requisito, como exclusión explícita en "excluded", o como unidad sin resolver en "unresolved". No omitas unidades.',
   'Clasifica todo lo que el texto recibido te permita clasificar. Si aun así dejas alguna unidad visible sin listar, el servidor la conservará por su cuenta como unidad sin resolver con la razón "source_unit_not_dispositioned": no se descarta, no se da por analizada y no se rechaza tu propuesta por ello, pero queda registrada como un vacío del expediente y mantiene el análisis en pausa, sin disponibilidad para decidir. Por eso omitir una unidad nunca es una respuesta válida ni completa: no declares que una omisión está bien, no la presentes como cobertura íntegra y nunca recomiendes continuar ni dar GO sobre un expediente con unidades sin listar.',
   'No incluyas en "excluded" ni en "unresolved" ninguna unidad cuyo texto contenga literalmente un fragmento que hayas elegido como "label": esa unidad ya queda citada por el servidor, y una disposición adicional sobre ella hace que se rechace toda la propuesta. Dispón allí exactamente las unidades restantes, todas ellas.',
-  'Propón cada obligación semántica una sola vez: dos requisitos no pueden usar etiquetas que deriven la misma clave de obligación normalizada (la etiqueta plegada a minúsculas, sin tildes y con todo signo no alfanumérico tratado como separador). Si varias unidades sustentan la misma obligación, propón un único requisito con un solo fragmento: el servidor consolida por sí mismo todas las unidades que contienen ese fragmento en ese único requisito.',
+  'Propón cada obligación semántica una sola vez: dos requisitos no pueden usar etiquetas que deriven la misma clave de obligación normalizada (la etiqueta plegada a minúsculas, sin tildes y con todo signo no alfanumérico tratado como separador). Si varias unidades sustentan la misma obligación, propón un único requisito con un solo fragmento: el servidor consolida por sí mismo todas las unidades que contienen ese fragmento en ese único requisito. El enumerado de requirements.items.properties.label.enum ya es único por esa misma clave de obligación normalizada en todo el expediente, entre todas las unidades visibles: nunca contiene dos fragmentos, de la misma unidad o de unidades distintas, que pleguen a la misma clave, así que esta regla nunca te exige elegir entre dos candidatos del enumerado para una sola obligación.',
   'Las disposiciones tampoco se repiten: ningún source_unit_id puede aparecer dos veces en "excluded", dos veces en "unresolved", ni en ambas listas, ni figurar en alguna de ellas si ya está citado por un requisito. Cada unidad recibe exactamente una disposición.',
   'Usa exclusivamente source_unit_id recibidos, y sólo dentro de "excluded" y "unresolved". Nunca inventes identificadores, hashes, documentos ni evidencia.',
   'Antes de responder, revisa cada "label": debe ser, carácter por carácter, uno de los fragmentos del enumerado, y por lo tanto una subcadena exacta y literal del texto de alguna unidad fuente de este expediente. Si algún label no lo es, elige del mismo enumerado otro fragmento; si no existe uno adecuado, retira el requisito y dispón esa unidad como exclusión explícita o como unidad sin resolver. Nunca escribas un fragmento fuera del enumerado.',
@@ -580,6 +597,16 @@ export async function discoverTenderSemanticManifest({
     // A unit that CAN yield a literal excerpt but lost it to the catalog budget would be silently
     // unlabelable: the model could only ever dispose of it as excluded or unresolved, which would
     // understate this tender's own obligations. Refuse the run instead of shipping that schema.
+    //
+    // Deliberately NOT checked here: `labelCatalog.units_dropped_by_semantic_collision`. A unit
+    // reported there lost its own literal excerpt to the catalog's GLOBAL obligation-key dedup —
+    // some other unit's literal form of the identical obligation already claimed the enum slot, so
+    // the obligation itself is still in the catalog and nothing was lost to a budget this caller
+    // controls. Unless that unit's own text literally states the winning form too (in which case the
+    // unchanged containment rule cites it, like any other containing unit), it is left uncited,
+    // falls through v4 coverage completion below into `unresolved` with reason
+    // `source_unit_not_dispositioned`, and keeps the run paused — a real, visible gap, but not one
+    // this fail-closed budget check is about.
     throw new Error(`El catálogo de etiquetas literales no cubre ${labelCatalog.units_dropped_by_budget.length} source_unit visible dentro del presupuesto configurado; el descubrimiento semántico se detiene en lugar de reducir la cobertura.`);
   }
   if (!labelCatalog.candidates.length) {
