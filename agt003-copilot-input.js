@@ -20,6 +20,11 @@ const OPPORTUNITY_FACT_FIELDS = [
   'observations',
 ];
 
+// Convención monetaria vigente del CRM: los valores se registran en COP salvo que la oportunidad
+// declare explícitamente otra moneda. VIG-IA no debe pedir la "moneda exacta" cuando este contexto
+// ya la resuelve.
+export const AGT003_CRM_DEFAULT_CURRENCY = 'COP';
+
 function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -46,24 +51,63 @@ export function redactAgt003CopilotText(value) {
     .replace(/(?:\+?57[\s.-]*)?(?:3\d{2})[\s.-]*\d{3}[\s.-]*\d{4}\b/g, '[REDACTED_PHONE]');
 }
 
+// offer_value es un hecho monetario, no texto libre: un decimal grande (p.ej. 3500000000) puede
+// coincidir con el patrón de teléfono colombiano de redactAgt003CopilotText. Una representación
+// numérica finita/no negativa viaja intacta; cualquier otra cosa cae al camino de redacción normal.
+const OFFER_VALUE_DECIMAL_PATTERN = /^\d+(\.\d+)?$/;
+
+function offerValueLiteral(raw) {
+  if (typeof raw === 'number') {
+    return Number.isFinite(raw) && raw >= 0 ? String(raw) : null;
+  }
+  if (typeof raw === 'string' && OFFER_VALUE_DECIMAL_PATTERN.test(raw.trim())) {
+    return raw.trim();
+  }
+  return null;
+}
+
 function requiredText(value, field) {
   const text = redactAgt003CopilotText(value).trim();
   if (!text) throw new Error(`La oportunidad requiere ${field}.`);
   return text;
 }
 
-function buildFacts(opportunity) {
+// Fecha real de ejecución de la preparación (no la de creación de la oportunidad ni la de un run
+// anterior). `now` es inyectable para pruebas deterministas; por defecto usa el reloj real.
+export function agt003PreparationDate(now = () => new Date()) {
+  return now().toISOString().slice(0, 10);
+}
+
+function buildFacts(opportunity, preparationDate) {
   const id = canonicalIdPart(opportunity.id);
   const facts = [];
   for (const field of OPPORTUNITY_FACT_FIELDS) {
     const raw = opportunity[field];
     if (raw === null || raw === undefined || String(raw).trim() === '') continue;
-    const value = redactAgt003CopilotText(raw).slice(0, 2000);
+    // NaN/Infinity no son un hecho monetario representable: se omiten en lugar de viajar como texto.
+    if (field === 'offer_value' && typeof raw === 'number' && !Number.isFinite(raw)) continue;
+    const literal = field === 'offer_value' ? offerValueLiteral(raw) : null;
+    const value = literal !== null ? literal : redactAgt003CopilotText(raw).slice(0, 2000);
     if (!value) continue;
     facts.push({
       evidence_id: `evidence:opportunity:${id}:${field}`,
       field,
       value,
+      source: 'SIIO',
+    });
+  }
+  facts.push({
+    evidence_id: `evidence:opportunity:${id}:preparation_date`,
+    field: 'preparation_date',
+    value: preparationDate,
+    source: 'SIIO',
+  });
+  if (facts.some(fact => fact.field === 'offer_value')) {
+    const currency = nonEmptyString(opportunity.currency) ? opportunity.currency.trim() : AGT003_CRM_DEFAULT_CURRENCY;
+    facts.push({
+      evidence_id: `evidence:opportunity:${id}:offer_currency`,
+      field: 'offer_currency',
+      value: currency,
       source: 'SIIO',
     });
   }
@@ -104,11 +148,16 @@ function buildInteractions(interactions) {
   return result;
 }
 
-export function buildAgt003CopilotRequest({ opportunity, interactions = [], approvedAssets = [], correlationId, snapshotId }) {
+export function buildAgt003CopilotRequest({ opportunity, interactions = [], approvedAssets = [], correlationId, snapshotId, now = () => new Date() }) {
   if (!opportunity || typeof opportunity !== 'object' || Array.isArray(opportunity)) throw new Error('La oportunidad es obligatoria.');
   if (!nonEmptyString(correlationId)) throw new Error('correlationId es obligatorio.');
   if (!nonEmptyString(snapshotId)) throw new Error('snapshotId es obligatorio.');
   if (!Array.isArray(approvedAssets)) throw new Error('approvedAssets debe ser un arreglo validado.');
+  // El backend puede fijar `preparation_date` (misma fuente que el hash del snapshot); en ese caso
+  // gobierna sobre `now`, así un run reutilizado no arrastra una fecha vieja ni una nueva inconsistente.
+  const preparationDate = nonEmptyString(opportunity.preparation_date)
+    ? opportunity.preparation_date.trim()
+    : agt003PreparationDate(now);
 
   const request = {
     contract_version: AGT003_COPILOT_CONTRACT_VERSION,
@@ -122,7 +171,7 @@ export function buildAgt003CopilotRequest({ opportunity, interactions = [], appr
       stage: requiredText(opportunity.stage, 'stage'),
       service: requiredText(opportunity.service, 'service'),
       owner_name: requiredText(opportunity.owner_name, 'owner_name'),
-      facts: buildFacts(opportunity),
+      facts: buildFacts(opportunity, preparationDate),
     },
     interactions: buildInteractions(interactions),
     approved_assets: approvedAssets.map(asset => ({

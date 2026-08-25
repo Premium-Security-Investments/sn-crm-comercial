@@ -14,7 +14,10 @@ const requiredMainMarkers = [
   'readOnly',
   'disabled',
   'Se asigna automáticamente con la fecha del día en que se crea la oportunidad.',
-  '<Info label="Fecha creación" value={fmtDate(o.created_at)}/>',
+  // AGT-003 — refinamiento posterior de la ficha comercial: "Más información" dejó de usar el
+  // componente genérico `Info` (seis tarjetas grandes) y pasó a `FichaField` en grupos compactos
+  // (ver `agt003-first-analysis-refinement-static`); el campo y su valor se conservan igual.
+  '<FichaField label="Fecha creación" value={fmtDate(o.created_at)}/>',
 ];
 
 for (const marker of requiredMainMarkers) {

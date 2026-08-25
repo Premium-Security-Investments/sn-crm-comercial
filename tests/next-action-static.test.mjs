@@ -9,8 +9,11 @@ const mainMarkers = [
   'Programar próxima gestión',
   '<small>Próxima gestión</small>',
   '<small>Último seguimiento</small>',
-  '`${action.label} · ${action.detail}`',
-  'día(s) de antigüedad',
+  // AGT-003 — refinamiento posterior de la ficha comercial (ver `agt003-first-analysis-refinement-static`):
+  // el copy de las tarjetas de prioridad pasó al módulo puro `opportunity-ficha-presentation`, con estados
+  // visuales y copy natural en lugar de la concatenación `${action.label} · ${action.detail}` y `día(s)`.
+  'priorityNextAction.detail',
+  'followUpAgeLabel(o.last_interaction_at)',
   'next_action_at: existing?.next_action_at',
   'consultant-opportunity-filters',
   'filteredOpportunities',

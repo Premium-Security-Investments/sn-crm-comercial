@@ -36,6 +36,7 @@ import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
 import { createAgt003CopilotApi } from '../agt003-copilot-api.js';
 import { createAgt003CopilotRuntime, getAgt003CopilotRuntimeConfig, isAgt003CopilotConfigured } from '../agt003-copilot-runtime.js';
 import { claimAgt003CopilotRun, computeAgt003CopilotHash, findAgt003CopilotRunById, findAgt003CopilotRunByKey, recordAgt003CopilotFeedback, recordAgt003CopilotFailure, recordAgt003CopilotRun, releaseAgt003CopilotClaim } from '../agt003-copilot-persistence.js';
+import { agt003PreparationDate } from '../agt003-copilot-input.js';
 import { loadVigiaApprovedAssets } from '../vigia-approved-assets.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
 import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
@@ -2325,7 +2326,7 @@ async function resolveAgt003OpportunityResource(database, opportunityId, profile
   return crmResource(opportunity.owner_id, authorized);
 }
 
-async function loadAgt003OpportunityContext(database, opportunityId) {
+async function loadAgt003OpportunityContext(database, opportunityId, now = () => new Date()) {
   const row = await must(database.from('v_psi_sales_opportunity_enriched').select(VIGIA_COPILOT_OPPORTUNITY_SELECT).eq('id', opportunityId).single());
   const interactions = await must(database.from('psi_sales_interactions')
     .select('id,interaction_type,occurred_at,created_at,notes')
@@ -2342,6 +2343,7 @@ async function loadAgt003OpportunityContext(database, opportunityId) {
     offer_value: row.offer_value,
     expected_close_date: row.expected_close_date,
     next_action_date: row.next_action_at,
+    preparation_date: agt003PreparationDate(now),
   };
   return {
     opportunity,
