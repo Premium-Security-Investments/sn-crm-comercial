@@ -62,11 +62,11 @@ assert.match(
   'FollowUpForm must wrap the required notes textarea directly inside a "Detalle del seguimiento" label',
 );
 
-// 7) the notes textarea placeholder must read exactly as specified.
-assert.ok(
-  followUp.includes('placeholder="Registre el resultado, los acuerdos y el siguiente paso"'),
-  'FollowUpForm textarea must use the exact placeholder "Registre el resultado, los acuerdos y el siguiente paso"',
-);
+// 7) the notes textarea placeholder is now a multiline module-level constant, interpolated as a JSX expression.
+assert.match(main, /const FOLLOW_UP_NOTES_PLACEHOLDER = 'Resultado de la gestión\\nAcuerdos o compromisos\\nSiguiente paso';/);
+assert.ok(followUp.includes('placeholder={FOLLOW_UP_NOTES_PLACEHOLDER}'), 'el placeholder multilínea debe venir de una expresión JSX');
+assert.ok(!followUp.includes('placeholder="Registre el resultado'), 'el placeholder de una línea queda retirado');
+assert.match(followUp, /<p className="followup-form-hint">Este registro alimenta el historial comercial y las recomendaciones de \{VIGIA_VISIBLE_NAMES\.commercial\}\./);
 
 // 8) preserve the save action, the endpoint, and the payload field names.
 assert.ok(followUp.includes('Guardar seguimiento'), 'FollowUpForm must keep the "Guardar seguimiento" action label');

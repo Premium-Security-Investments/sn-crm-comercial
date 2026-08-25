@@ -7,8 +7,10 @@ const css = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8
 const mainMarkers = [
   'function nextActionStatus',
   'Programar próxima gestión',
-  'Estado próxima gestión',
-  'Días sin seguimiento',
+  '<small>Próxima gestión</small>',
+  '<small>Último seguimiento</small>',
+  '`${action.label} · ${action.detail}`',
+  'día(s) de antigüedad',
   'next_action_at: existing?.next_action_at',
   'consultant-opportunity-filters',
   'filteredOpportunities',
