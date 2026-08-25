@@ -32,6 +32,10 @@ assert.throws(() => createAgt003CopilotRuntime({ environment: {} }), /no está c
 assert.throws(() => getAgt003CopilotRuntimeConfig(env({ AGT003_COPILOT_TIMEOUT_MS: 'bad' })), /no está configurado/i);
 assert.throws(() => getAgt003CopilotRuntimeConfig(env({ AGT003_COPILOT_MAX_CONCURRENT: '0' })), /no está configurado/i);
 assert.throws(() => getAgt003CopilotRuntimeConfig(env({ AGT003_COPILOT_TIMEOUT_MS: '600000' })), /no está configurado/i);
+// El techo por defecto del runtime no puede superar al del puente
+// (`AGT003_BRIDGE_MAX_CONCURRENCY = 1`): un default mayor sólo produce turnos
+// que el puente rechaza con `AGT003_BRIDGE_BUSY`.
+assert.equal(getAgt003CopilotRuntimeConfig(env()).maxConcurrent, 1, 'el default de concurrencia del runtime coincide con el techo del puente');
 const config = getAgt003CopilotRuntimeConfig(env({ AGT003_COPILOT_TIMEOUT_MS: '5000', AGT003_COPILOT_MAX_CONCURRENT: '1', AGT003_COPILOT_DAILY_MAX_RUNS: '4' }));
 assert.deepEqual(config, { model: 'synthetic-model', policyVersion: 'agt003-copilot-policy-v1', timeoutMs: 5000, maxConcurrent: 1, dailyMaxRuns: 4, leaseSeconds: 20, wireProtocol: 'agt003' });
 assert.equal(getAgt003CopilotRuntimeConfig(env({ AGT003_COPILOT_WIRE_PROTOCOL: 'agt002' })).wireProtocol, 'agt002');

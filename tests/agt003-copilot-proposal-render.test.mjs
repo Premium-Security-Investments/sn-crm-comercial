@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { loadReactComponent, renderReactComponent } from './helpers/bundle-react-component.mjs';
 
-// AGT-003 — jerarquía action-first de la propuesta generada por VIG-IA Comercial.
+// AGT-003 — jerarquía action-first de la propuesta generada por Vig-IA Comercial.
 //
 // Render real del componente presentacional (sin mocks ni markup copiado a mano).
 // Conducta exigida (RED antes de producción):
@@ -10,7 +10,8 @@ import { loadReactComponent, renderReactComponent } from './helpers/bundle-react
 //    plegable con resumen + objetivo; revisión humana compacta con copy humano.
 //  - El lenguaje técnico/interno nunca llega a la UI aunque el modelo lo devuelva.
 //  - Acciones exactas `Copiar correo` y `Descartar`; `Útil` y `Necesita cambios` retirados.
-//  - Marca visible exacta VIG-IA, nunca `Vig-IA`.
+//  - Identidad visible canónica exacta `Vig-IA Comercial`, nunca la mayúscula legacy `VIG-IA`
+//    ni la marca desnuda `Vig-IA` (`src/vigia/agentIdentity.ts`).
 
 const VigiaCopilotProposal = await loadReactComponent('src/vigia/VigiaOpportunityCopilot.tsx', 'VigiaCopilotProposal');
 
@@ -89,7 +90,8 @@ assert.equal(html.includes('Necesita cambios'), false, '`Necesita cambios` sale 
 assert.ok(html.includes('Puede editar esta propuesta sin modificar el historial de la oportunidad. Verifique nombres, fechas, compromisos y tono antes de copiar el mensaje.'));
 
 // --- marca ------------------------------------------------------------------------------------------
-assert.equal(/Vig-IA/.test(html), false, 'la marca visible nunca es `Vig-IA`');
+assert.equal(/VIG-IA/.test(html), false, 'la mayúscula legacy `VIG-IA` está retirada de la UI');
+assert.equal(/Vig-IA(?! Comercial)/.test(html), false, 'la identidad visible siempre es `Vig-IA Comercial`, nunca la marca desnuda');
 
 // --- estados vacíos ----------------------------------------------------------------------------------
 const clean = renderReactComponent(VigiaCopilotProposal, {

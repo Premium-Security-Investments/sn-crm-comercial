@@ -1,10 +1,37 @@
 import { randomUUID } from 'node:crypto';
 import { ACTIONS, requireAction } from './access-control.js';
 import { buildAgt003CopilotRequest } from './agt003-copilot-input.js';
-import { computeAgt003CopilotIdempotencyKey } from './agt003-copilot-persistence.js';
+import {
+  computeAgt003CopilotIdempotencyKey,
+  computeAgt003CopilotRetryKey,
+} from './agt003-copilot-persistence.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const FEEDBACK_RATINGS = new Set(['useful', 'needs_change', 'discarded']);
+const MAX_ATTEMPTS = 4;
+const SAFE_FAILURE_CODES = new Set([
+  'AGT003_CLAUDE_SESSION_LIMIT',
+  'AGT003_CLAUDE_LOGIN_REQUIRED',
+  'AGT003_CLAUDE_PROVIDER_ERROR',
+  'AGT003_CLAUDE_TRANSPORT_ERROR',
+  'AGT003_CLAUDE_TIMEOUT',
+  'AGT003_CLAUDE_CANCELLED',
+  'AGT003_CLAUDE_INVALID_RESPONSE',
+  'AGT003_CLAUDE_OUTPUT_TOO_LARGE',
+  'AGT003_CLAUDE_SCHEMA_TOO_LARGE',
+  'AGT003_COPILOT_TRANSPORT_ERROR',
+  'AGT003_COPILOT_INVALID_RESPONSE',
+  'AGT003_COPILOT_CANCELLED',
+]);
+// Rechazos del puente anteriores al turno del proveedor. No hubo ejecución que
+// registrar: no se persiste un run fallido, no consumen la cadena de retry ni
+// la cuota terminal, y el claim se libera para que el siguiente click pueda
+// reclamar la misma clave. Todo código fuera de esta lista sigue fallando
+// cerrado y se persiste como `COPILOT_UNAVAILABLE`.
+const RECOVERABLE_FAILURE_CODES = new Set([
+  'AGT003_BRIDGE_BUSY',
+  'AGT003_BRIDGE_AUTH_INVALID',
+]);
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -84,7 +111,29 @@ function claimError(status) {
 
 function failureCode(error) {
   const candidate = typeof error?.code === 'string' ? error.code.trim().toUpperCase() : '';
-  return /^[A-Z0-9_]{1,80}$/.test(candidate) ? candidate : 'COPILOT_UNAVAILABLE';
+  return SAFE_FAILURE_CODES.has(candidate) ? candidate : 'COPILOT_UNAVAILABLE';
+}
+
+function recoverableCode(error) {
+  const candidate = typeof error?.code === 'string' ? error.code.trim().toUpperCase() : '';
+  return RECOVERABLE_FAILURE_CODES.has(candidate) ? candidate : null;
+}
+
+// Ninguna de las dos ramas revela el detalle del puente: `BUSY` se presenta como
+// saturación transitoria y `AUTH_INVALID` como problema de configuración local,
+// sin secreto, cabecera firmada ni mensaje upstream.
+function recoverablePublicError(code) {
+  if (code === 'AGT003_BRIDGE_BUSY') {
+    return publicError('Vig-IA no tiene capacidad disponible.', 503, 'VIGIA_COPILOT_SATURATED');
+  }
+  return publicError('Vig-IA no está configurado.', 503, 'VIGIA_COPILOT_NOT_CONFIGURED');
+}
+
+function providerPublicError(code) {
+  if (code === 'AGT003_CLAUDE_SESSION_LIMIT') {
+    return publicError('Vig-IA alcanzó temporalmente el límite de sesión. Intente de nuevo más tarde.', 503, 'VIGIA_COPILOT_SESSION_LIMIT');
+  }
+  return publicError('Vig-IA no pudo generar el borrador.', 502, 'VIGIA_COPILOT_UNAVAILABLE');
 }
 
 function failureUsage(error, model) {
@@ -147,21 +196,32 @@ export function createAgt003CopilotApi(dependencies) {
         correlationId: correlationId(),
         snapshotId: context.snapshotId,
       });
-      const idempotencyKey = computeAgt003CopilotIdempotencyKey({
+      let idempotencyKey = computeAgt003CopilotIdempotencyKey({
         snapshotId: request.snapshot_id,
         policyVersion: config.policyVersion,
         model: config.model,
       });
-      const claim = await dependencies.claimRun({
-        idempotencyKey,
-        dailyMaxRuns: config.dailyMaxRuns,
-        maxConcurrent: config.maxConcurrent,
-        leaseSeconds: config.leaseSeconds,
-      });
-      if (claim.status === 'existing') {
-        return resultPayload(await dependencies.findRunByKey(idempotencyKey), true);
+      let claim;
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+        claim = await dependencies.claimRun({
+          idempotencyKey,
+          dailyMaxRuns: config.dailyMaxRuns,
+          maxConcurrent: config.maxConcurrent,
+          leaseSeconds: config.leaseSeconds,
+        });
+        if (claim.status !== 'existing') break;
+
+        const existing = await dependencies.findRunByKey(idempotencyKey);
+        if (existing?.status === 'completed') return resultPayload(existing, true);
+        if (existing?.status !== 'failed' || typeof existing.run_id !== 'string' || !UUID.test(existing.run_id)) {
+          throw publicError('La ejecución Vig-IA no está disponible.', 502, 'VIGIA_COPILOT_UNAVAILABLE');
+        }
+        if (attempt === MAX_ATTEMPTS - 1) {
+          throw publicError('Vig-IA agotó el límite seguro de reintentos para este contexto.', 503, 'VIGIA_COPILOT_RETRY_LIMIT');
+        }
+        idempotencyKey = computeAgt003CopilotRetryKey({ previousKey: idempotencyKey, failedRunId: existing.run_id });
       }
-      if (claim.status !== 'claimed') throw claimError(claim.status);
+      if (claim?.status !== 'claimed') throw claimError(claim?.status);
 
       let terminalRecorded = false;
       try {
@@ -170,6 +230,7 @@ export function createAgt003CopilotApi(dependencies) {
           opportunityId,
           actorId: profile.id,
           claimId: claim.claim_id,
+          idempotencyKey,
           request,
           response: generated.response,
           usage: generated.usage,
@@ -177,22 +238,28 @@ export function createAgt003CopilotApi(dependencies) {
         terminalRecorded = true;
         return resultPayload(run, false);
       } catch (error) {
+        // Recuperable: se sale sin `recordFailure`, de modo que `terminalRecorded`
+        // sigue en false y el `finally` libera exactamente este claim.
+        const recoverable = recoverableCode(error);
+        if (recoverable) throw recoverablePublicError(recoverable);
+        const code = failureCode(error);
         try {
           await dependencies.recordFailure({
             opportunityId,
             actorId: profile.id,
             claimId: claim.claim_id,
+            idempotencyKey,
             request,
             policyVersion: config.policyVersion,
             model: config.model,
             usage: failureUsage(error, config.model),
-            failureCode: failureCode(error),
+            failureCode: code,
           });
           terminalRecorded = true;
         } catch {
           // The finally block releases a claim when no terminal row could be recorded.
         }
-        throw publicError('Vig-IA no pudo generar el borrador.', 502, 'VIGIA_COPILOT_UNAVAILABLE');
+        throw providerPublicError(code);
       } finally {
         if (!terminalRecorded) {
           try { await dependencies.releaseClaim({ idempotencyKey, claimId: claim.claim_id }); } catch { /* lease expiry is the final fallback */ }

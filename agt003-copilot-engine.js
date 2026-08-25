@@ -21,13 +21,37 @@ const SAFE_UNAVAILABLE = 'Vig-IA no está disponible en este momento.';
 const SAFE_INVALID = 'Vig-IA no produjo una respuesta válida.';
 const SAFE_QUOTA = 'Vig-IA alcanzó su cuota diaria y no se llamó al proveedor.';
 const SAFE_CONCURRENCY = 'Vig-IA está saturado; intente nuevamente en unos segundos.';
+const SAFE_UPSTREAM_CODES = new Set([
+  'AGT003_CLAUDE_SESSION_LIMIT',
+  'AGT003_CLAUDE_LOGIN_REQUIRED',
+  'AGT003_CLAUDE_PROVIDER_ERROR',
+  'AGT003_CLAUDE_TRANSPORT_ERROR',
+  'AGT003_CLAUDE_TIMEOUT',
+  'AGT003_CLAUDE_CANCELLED',
+  'AGT003_CLAUDE_INVALID_RESPONSE',
+  'AGT003_CLAUDE_OUTPUT_TOO_LARGE',
+  'AGT003_CLAUDE_SCHEMA_TOO_LARGE',
+  'AGT003_COPILOT_TRANSPORT_ERROR',
+  'AGT003_COPILOT_INVALID_RESPONSE',
+  'AGT003_COPILOT_CANCELLED',
+]);
+// Rechazos que el puente emite antes de dar el turno al proveedor: no hubo
+// ejecución, así que son recuperables y su código debe cruzar para que la capa
+// API no los trate como fallo terminal. Cualquier otro código del puente sigue
+// colapsando en el mensaje seguro sin código.
+const SAFE_RECOVERABLE_CODES = new Set([
+  'AGT003_BRIDGE_BUSY',
+  'AGT003_BRIDGE_AUTH_INVALID',
+]);
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
-function safe(message) {
-  return new Error(message);
+function safe(message, code) {
+  const error = new Error(message);
+  if (SAFE_UPSTREAM_CODES.has(code) || SAFE_RECOVERABLE_CODES.has(code)) error.code = code;
+  return error;
 }
 
 function evidenceSchema(allowedEvidenceIds) {
@@ -178,7 +202,7 @@ export function createAgt003CopilotEngine({
           return await runOnce(request, key, signal);
         } catch (error) {
           if ([SAFE_INVALID, SAFE_QUOTA, SAFE_CONCURRENCY, SAFE_UNAVAILABLE].includes(error?.message)) throw error;
-          throw safe(SAFE_UNAVAILABLE);
+          throw safe(SAFE_UNAVAILABLE, error?.code);
         } finally {
           active -= 1;
         }

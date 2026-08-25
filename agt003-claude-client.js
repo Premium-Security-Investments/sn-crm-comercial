@@ -62,6 +62,7 @@ const LOGIN_SUBTYPES = new Set([
 
 const KILL_GRACE_MS = 200;
 const FLUSH_GRACE_MS = 250;
+const SESSION_LIMIT_PHRASE = "you've hit your session limit";
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -86,7 +87,16 @@ function safeProviderAtom(value) {
 }
 
 function providerFailure(parsed) {
-  const atom = safeProviderAtom(parsed?.subtype) ?? safeProviderAtom(parsed?.error?.type);
+  // Claude CLI puede marcar el envelope como `subtype: success` y a la vez
+  // `is_error: true`. Sólo la frase operativa conocida se clasifica; ninguna
+  // otra parte de `result` cruza esta frontera.
+  if (typeof parsed?.result === 'string' && parsed.result.toLowerCase().includes(SESSION_LIMIT_PHRASE)) {
+    return failure('La sesión de Claude Code alcanzó temporalmente su límite.', 'AGT003_CLAUDE_SESSION_LIMIT');
+  }
+  const subtype = safeProviderAtom(parsed?.subtype);
+  const atom = subtype && subtype !== 'success'
+    ? subtype
+    : safeProviderAtom(parsed?.error?.type);
   if (atom && LOGIN_SUBTYPES.has(atom)) {
     return failure('AGT-003 requiere una sesión de Claude Code iniciada; no se inició sesión automáticamente.', 'AGT003_CLAUDE_LOGIN_REQUIRED');
   }

@@ -240,6 +240,44 @@ async function testProviderErrorsMapToSafeCodes() {
   }
 }
 
+async function testSessionLimitUsesOnlyTheKnownSafePhrase() {
+  const cases = [
+    "You've hit your session limit · resets 9:20pm (UTC)",
+    "yOu'Ve HiT YoUr SeSsIoN LiMiT · resets later",
+  ];
+  for (const result of cases) {
+    const { client, children } = harness();
+    const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: SCHEMA, timeoutMs: 5000 });
+    await settleSoon(() => {
+      children[0].stdout.emit('data', JSON.stringify({ is_error: true, subtype: 'success', result }));
+      children[0].emit('exit', 0, null);
+    });
+    await assert.rejects(pending, error => {
+      assert.equal(error.code, 'AGT003_CLAUDE_SESSION_LIMIT');
+      assert.equal(error.providerErrorCode, undefined, '`success` nunca es un provider_error_code');
+      const serialized = `${error.message} ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`;
+      assert.equal(serialized.includes(result), false, 'el texto libre del proveedor no se propaga');
+      assert.equal(serialized.includes('9:20pm'), false, 'la hora libre del proveedor no se propaga');
+      return true;
+    });
+  }
+
+  for (const result of ['session limit', 'You have hit your session limit', 'arbitrary provider detail']) {
+    const { client, children } = harness();
+    const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: SCHEMA, timeoutMs: 5000 });
+    await settleSoon(() => {
+      children[0].stdout.emit('data', JSON.stringify({ is_error: true, subtype: 'success', result }));
+      children[0].emit('exit', 0, null);
+    });
+    await assert.rejects(pending, error => {
+      assert.equal(error.code, 'AGT003_CLAUDE_PROVIDER_ERROR', `no se debe sobreclasificar: ${result}`);
+      assert.equal(error.providerErrorCode, undefined, '`success` no describe un error del proveedor');
+      assert.equal(error.message.includes(result), false);
+      return true;
+    });
+  }
+}
+
 async function testOversizedStdoutFailsClosed() {
   const { client, children } = harness();
   const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: SCHEMA, timeoutMs: 5000 });
@@ -359,6 +397,7 @@ await testAbortCancelsTheRun();
 await testPreAbortedSignalNeverSpawns();
 await testMalformedOutputsFailClosed();
 await testProviderErrorsMapToSafeCodes();
+await testSessionLimitUsesOnlyTheKnownSafePhrase();
 await testOversizedStdoutFailsClosed();
 await testStderrIsNeverSurfaced();
 await testSpawnFailureFailsClosed();

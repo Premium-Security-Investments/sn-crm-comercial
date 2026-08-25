@@ -73,4 +73,28 @@ const noAssetsEngine = createAgt003CopilotEngine({ client: noAssetsClient, model
 await noAssetsEngine.draft(noAssetsRequest);
 assert.equal(noAssetsClient.calls[0].outputSchema.properties.recommended_asset_ids.maxItems, 0);
 
+for (const [providerCode, expectedCode] of [
+  ['AGT003_CLAUDE_SESSION_LIMIT', 'AGT003_CLAUDE_SESSION_LIMIT'],
+  ['AGT003_CLAUDE_LOGIN_REQUIRED', 'AGT003_CLAUDE_LOGIN_REQUIRED'],
+  // Rechazos del puente anteriores al proveedor: recuperables, así que su
+  // código debe cruzar para que la API no los persista como run fallido.
+  ['AGT003_BRIDGE_BUSY', 'AGT003_BRIDGE_BUSY'],
+  ['AGT003_BRIDGE_AUTH_INVALID', 'AGT003_BRIDGE_AUTH_INVALID'],
+  // El resto de códigos del puente sigue colapsando: sólo esos dos son seguros.
+  ['AGT003_BRIDGE_BAD_REQUEST', undefined],
+  ['AGT003_BRIDGE_INTERNAL', undefined],
+  ['AGT003_BRIDGE_PAYLOAD_TOO_LARGE', undefined],
+  ['REMOTE_TIMEOUT', undefined],
+  ['AGT003_CLAUDE_PRIVATE_DETAIL', undefined],
+]) {
+  const failingClient = { async run() { const error = new Error('detalle privado'); error.code = providerCode; throw error; } };
+  const failingEngine = createAgt003CopilotEngine({ client: failingClient, model: 'm', policyVersion: 'p', countDailyRuns: async () => 0 });
+  await assert.rejects(() => failingEngine.draft(request), error => {
+    assert.equal(error.message, 'Vig-IA no está disponible en este momento.');
+    assert.equal(error.code, expectedCode, `${providerCode} debe cruzar sólo si está allowlisted`);
+    assert.equal(error.message.includes('privado'), false);
+    return true;
+  });
+}
+
 console.log('AGT-003 copilot fail-closed engine passed');

@@ -827,7 +827,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     window.alert(destination === 'radar' ? 'La licitación salió de oportunidades y volvió al Radar.' : 'La licitación pasó a Seguimiento.');
     go(destination === 'seguimiento' ? '#/tenders?view=seguimiento' : '#/tenders?view=radar');
   };
-  return <section className={o.service_type_code === 'licitacion_publica' ? 'stack' : 'stack opportunity-ficha'}>
+  return <section className={o.service_type_code === 'licitacion_publica' ? 'stack' : 'stack opportunity-ficha detail-page-shell'}>
     <div id="tender-summary" className="tender-detail-anchor" tabIndex={-1}>
       <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p>{o.service_type_code !== 'licitacion_publica' && <div className="hero-chip-row"><Badge>Servicio: {o.service_type_name || o.tipo_producto_original || 'Sin servicio'}</Badge><Badge>Tipo de cliente: {customerSegmentLabel(o.customer_segment)}</Badge>{locationChip && <Badge>Ubicación: {locationChip}</Badge>}</div>}</div><div className="row-actions"><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>{o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}</div></div>
       {exitFeedback && <div className="error" role="alert">{exitFeedback}</div>}
