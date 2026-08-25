@@ -5,9 +5,10 @@ import { projectAgt002RadarLearningObservations } from './agt002-radar-learning-
 import { buildAgt002RadarLearningSignals } from './agt002-radar-learning-retrieval.js';
 import { createAgt002RadarPreanalysisRuntime } from './agt002-radar-preanalysis-runtime.js';
 import { classifyAgt002RadarPreanalysisError } from './agt002-radar-preanalysis-worker.js';
+import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
 
 export const AGT002_RADAR_PIPELINE_STAGES=Object.freeze(['fetch','gate','ledger','claim','learning','agt','persist']);
-function enabled(environment){return environment?.AGT002_RADAR_GATE==='true'||environment?.AGT002_RADAR_GATE==='1';}
+function enabled(environment){return buildAgt002AnalysisConfig(environment).AGT002_RADAR_GATE;}
 async function defaultFetch(database,{limit}){const response=await database.from('psi_public_tenders').select('*').order('last_seen_at',{ascending:false}).order('id',{ascending:true}).limit(limit);if(response?.error)throw response.error;return response?.data||[];}
 function normalize(value){return typeof value==='string'?value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim():null;}
 function candidate(row){return{tender_id:row.id,service_terms:[...new Set(`${row.title||''} ${row.description||row.desc||''}`.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().split(/[^a-z0-9]+/).filter(token=>token.length>3))].sort(),entity_key:normalize(row.entity_nit||row.entity),modality_key:normalize(row.category||row.modality),source_key:normalize(row.source),territory_key:{city:normalize(row.city),dept:normalize(row.dept)}};}

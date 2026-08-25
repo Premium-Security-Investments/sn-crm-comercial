@@ -10,6 +10,8 @@ export const ANALYSIS_FLAG_NAMES = Object.freeze([
   'AGT002_DOCUMENT_RETRIEVAL',
   'AGT002_LEGAL_CORPUS',
   'AGT002_INTEGRAL_CONTRACT_V3',
+  'AGT002_RADAR_GATE',
+  'AGT002_RADAR_VISIBILITY',
 ]);
 
 const TRUE_LITERALS = new Set(['true', '1']);
@@ -53,6 +55,10 @@ export function buildAgt002AnalysisConfig(environment = process.env) {
     throw new Error(
       'agt002-analysis-config: AGT002_INTEGRAL_CONTRACT_V3 requires AGT002_CANONICAL_ONLY, AGT002_CONTEXT_V2 and AGT002_DOCUMENT_RETRIEVAL to be enabled.',
     );
+  }
+
+  if (flags.AGT002_RADAR_VISIBILITY && !flags.AGT002_RADAR_GATE) {
+    throw new Error('agt002-analysis-config: AGT002_RADAR_VISIBILITY requires AGT002_RADAR_GATE to be enabled.');
   }
 
   return Object.freeze({ ...flags });

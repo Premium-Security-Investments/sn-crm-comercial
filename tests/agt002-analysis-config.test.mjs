@@ -40,6 +40,7 @@ function run() {
         AGT002_CONTEXT_V2: 'true',
         AGT002_DOCUMENT_RETRIEVAL: 'true',
       },
+      AGT002_RADAR_VISIBILITY: { AGT002_RADAR_GATE: 'true' },
     };
     for (const name of ANALYSIS_FLAG_NAMES) {
       const base = requiredBaseByFlag[name] || {};
