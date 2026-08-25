@@ -73,6 +73,7 @@ import { tenderRequirementInventoryIdentity } from '../tender-requirement-invent
 import { loadPublishedAgt002LegalCorpus } from '../agt002-legal-corpus-store.js';
 import { selectAgt002ManizalesManifestSource } from '../agt002-manizales-manifest-source.js';
 import { buildAgt002FrozenEngineInput } from '../agt002-reanalysis-input.js';
+import { agt002CanonicalEnqueueBlockCode } from '../agt002-canonical-enqueue-gate.js';
 import { createAgt002ReanalysisJob, findLatestAgt002ReanalysisStatusForOpportunity } from '../agt002-reanalysis-jobs.js';
 import { presentAgt002ReanalysisStatus } from '../agt002-reanalysis-api.js';
 
@@ -2911,7 +2912,9 @@ function agt002HumanEvidenceFromResponses(responses) {
 async function reanalyzeAgt002AfterHumanAnswer(database, { opportunityId, analysisRunId, currentProfile }) {
   if (currentProfile?.identity_type === 'agent') return null;
   const canonicalOnly = agt002AnalysisConfig.AGT002_CANONICAL_ONLY === true;
-  if (!canonicalOnly || !isAgt002PreviewConfigured(process.env)) return null;
+  // A configuration this host cannot use must skip the automatic reanalysis exactly like an
+  // absent one does — never fail the human answer that was already recorded.
+  if (!canonicalOnly || agt002CanonicalEnqueueBlockCode(process.env)) return null;
   const priorRun = await must(database.from('psi_tender_analysis_runs').select('snapshot_id,tender_id').eq('id', analysisRunId).single());
   const snapshotId = priorRun.snapshot_id;
   const tenderId = priorRun.tender_id || await getTenderIdForOpportunity(database, opportunityId);
@@ -4160,11 +4163,17 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
     };
 
     if (canonicalOnly) {
-      if (!isAgt002PreviewConfigured(process.env)) {
+      // Same pre-claim pattern as the durable worker: EVERY configuration this host cannot use —
+      // variables absent, or present but out of range — closes as one operator state with a fixed
+      // code. Gating only on isAgt002PreviewConfigured left the second case escaping the enqueue
+      // as an HTTP 400 carrying the runtime's raw "no está configurado" text, with no attempt row
+      // and no corrida, on a deployment that was configured.
+      const configBlockCode = agt002CanonicalEnqueueBlockCode(process.env);
+      if (configBlockCode) {
         const unavailableKey = computeAgt002PreviewIdempotencyKey({ snapshotId: registeredSnapshot.id, policyVersion: 'unavailable:not_configured', model: 'unavailable' });
         try {
           await appendAttempt(unavailableKey, 'queued');
-          await appendAttempt(unavailableKey, 'unavailable', { error_code: 'AGT002_NOT_CONFIGURED', error_message: 'Vig-IA no está disponible; el análisis queda pendiente.' });
+          await appendAttempt(unavailableKey, 'unavailable', { error_code: configBlockCode, error_message: 'Vig-IA no está disponible; el análisis queda pendiente.' });
         } catch { console.warn('agt002_attempt_state_failed', { event: 'agt002_attempt_state_failed' }); }
         return sendCanonicalState(503, 'unavailable', 'not_configured');
       }
