@@ -48,6 +48,7 @@ import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, appendAgt002AnalysisAttempt, claim
 import { getAgt002WorkbenchApi, postAgt002LearningReviewApi, postAgt002MessageApi, postAgt002RetryApi } from '../agt002-workbench-api.js';
 import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt002WorkbenchDrain } from '../agt002-workbench-runtime.js';
 import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
+import { TENDER_DISQUALIFYING_TERMS, TENDER_NON_COMMERCIAL_ACT_TERMS, TENDER_NON_SECURITY_CONTEXT_TERMS } from '../tender-relevance-terms.js';
 import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../tender-actuation-types.js';
 import { buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
 import { createAgt002AnalysisObservability } from '../agt002-analysis-observability.js';
@@ -858,27 +859,9 @@ const tenderCoreServiceTerms = new Set([
   'cctv', 'videovigilancia', 'video vigilancia', 'control de acceso', 'circuito cerrado',
   tenderContextualPhysicalSecurityReason
 ]);
-const tenderDisqualifyingTerms = [
-  'interventoria', 'interventoría',
-  'vehiculo blindado', 'vehículo blindado', 'vehiculos blindados', 'vehículos blindados',
-  'transporte blindado', 'camioneta blindada', 'camionetas blindadas', 'carro blindado',
-  'blindaje vehicular', 'blindaje de vehiculos', 'blindaje de vehículos', 'blindados',
-  // Radiocomunicaciones/telecomunicaciones aisladas no son seguridad electrónica ofertable.
-  'radiocomunicaciones', 'radiocomunicacion', 'radio comunicaciones', 'radio comunicación',
-  'sistema de radiocomunicaciones', 'equipos de comunicacion', 'equipos de comunicación',
-  'red de comunicaciones', 'telecomunicaciones'
-];
-const tenderNonSecurityContextTerms = [
-  // "Vigilancia" en salud/agro no es vigilancia y seguridad privada.
-  'vigilancia epidemiologica', 'vigilancia sanitaria', 'vigilancia en salud publica',
-  'vigilancia fitosanitaria', 'vigilancia veterinaria', 'monitoreo epidemiologico',
-  'sanidad aviar', 'influenza aviar', 'tifosis aviar', 'enfermedad de newcastle',
-  'diagnostico veterinario', 'cadena avicola'
-];
-const tenderNonCommercialActTerms = [
-  // Convenios de coordinación o financiación institucional: no seleccionan un proveedor ofertante.
-  'aunar esfuerzos'
-];
+const tenderDisqualifyingTerms = TENDER_DISQUALIFYING_TERMS;
+const tenderNonSecurityContextTerms = TENDER_NON_SECURITY_CONTEXT_TERMS;
+const tenderNonCommercialActTerms = TENDER_NON_COMMERCIAL_ACT_TERMS;
 const tenderFocusTerms = { 'bogotá': 22, 'bogota': 22, 'distrito capital': 20, 'medellín': 22, 'medellin': 22, 'antioquia': 14 };
 const tenderInternalStatuses = ['nueva','en_revision','descartada','convertida_oportunidad'];
 export function canViewTenders(profile) { return can(profile, ACTIONS.LICITACIONES_VIEW); }
