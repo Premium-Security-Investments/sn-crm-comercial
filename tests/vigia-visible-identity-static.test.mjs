@@ -61,4 +61,11 @@ for (const [label, source] of [
   assert.doesNotMatch(source, /VIG-IA/, `${label} contains the obsolete uppercase label`);
 }
 
+const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+assert.match(
+  styles,
+  /\.vigia-opportunity-copilot \.eyebrow\{[^}]*text-transform:none[^}]*\}/,
+  'vigia-opportunity-copilot .eyebrow must override text-transform to none so the identity renders exactly "Vig-IA Comercial"',
+);
+
 console.log('Vig-IA visible identity contract OK');

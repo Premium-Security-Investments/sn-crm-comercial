@@ -22,14 +22,24 @@ const moreInfo = main.indexOf('<summary>Más información</summary>', vigia);
 assert.ok(banner > 0 && banner < priority && priority < followUp && followUp < vigia && vigia < moreInfo,
   'orden: Banner → Estado seguimiento → Seguimiento comercial → VIG-IA → Más información');
 
-// --- 2) compactación y ancho máximo ---------------------------------------------------------------
-assert.match(main, /className=\{o\.service_type_code === 'licitacion_publica' \? 'stack' : 'stack opportunity-ficha'\}/,
-  'la compactación se aplica sólo a la ficha comercial, nunca a la ruta de licitaciones');
-assert.match(css, /\.opportunity-ficha\{[^}]*max-width:1180px/, 'en pantallas anchas la ficha deja de estirarse');
-assert.match(css, /\.opportunity-ficha\{[^}]*gap:14px/);
+// --- 2) compactación y uso responsable del ancho --------------------------------------------------
+assert.match(main, /className=\{o\.service_type_code === 'licitacion_publica' \? 'stack' : 'stack opportunity-ficha detail-page-shell'\}/,
+  'el shell amplio se aplica sólo a la ficha comercial, nunca a la ruta de licitaciones');
+assert.doesNotMatch(css, /\.detail-page-shell\{[^}]*1180/, 'el cuello de botella de 1180px no puede volver al shell de detalle');
+assert.match(css, /\.detail-page-shell\{[^}]*width:100%[^}]*max-width:1680px/,
+  'el shell de detalle usa casi todo el área disponible con un techo extremo legible');
+assert.match(css, /\.detail-page-shell\{[^}]*gap:clamp\(/, 'los gaps deben crecer de forma fluida');
+assert.match(css, /\.detail-page-shell\{[^}]*padding-inline:clamp\(/, 'los márgenes internos deben ser fluidos');
 assert.match(css, /\.opportunity-ficha\s+\.hero\{/, 'el banner se compacta sólo dentro de la ficha');
 assert.match(css, /\.opportunity-ficha\s+\.opportunity-priority-grid\s+\.opportunity-insight-card\{/);
-assert.match(css, /@media\(max-width:760px\)\{[^}]*\.opportunity-ficha\{max-width:none/, 'la compactación no rompe responsive');
+assert.match(css, /\.opportunity-ficha>\.tender-detail-anchor,\.opportunity-ficha>\.vigia-opportunity-copilot,\.opportunity-ficha>\.opportunity-more-info\{[^}]*width:100%/,
+  'banner/KPIs, Vig-IA y Más información ocupan el contenedor completo');
+assert.match(css, /\.followup-section-grid\{[^}]*grid-template-columns:minmax\(0,7fr\) minmax\(280px,5fr\)/,
+  'seguimiento conserva una proporción aproximada 60/40');
+assert.match(css, /@media\(max-width:980px\)\{[^}]*\.followup-section-grid\{grid-template-columns:1fr/,
+  'tablet apila el seguimiento antes de que sus columnas sean ilegibles');
+assert.match(css, /@media\(max-width:760px\)\{[^}]*\.detail-page-shell\{[^}]*padding-inline:0/,
+  'móvil elimina el padding adicional de la ficha');
 
 // --- 3) tarjetas con estado accionable --------------------------------------------------------------
 assert.match(main, /import \{[^}]*decisionMakerCardState[^}]*\} from '\.\/vigia\/opportunity-ficha-presentation';/);

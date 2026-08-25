@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 
 process.env.VERCEL = '1';
-process.env.NEXT_PUBLIC_SUPABASE_URL ||= 'http://127.0.0.1:1';
+process.env.NEXT_PUBLIC_SUPABASE_URL = /^https?:\/\//i.test(process.env.NEXT_PUBLIC_SUPABASE_URL || '')
+  ? process.env.NEXT_PUBLIC_SUPABASE_URL
+  : 'http://127.0.0.1:1';
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'tender-relevance-test-key';
 
 for (const [index, backendPath] of ['../server/index.js', '../api/[...path].js'].entries()) {
