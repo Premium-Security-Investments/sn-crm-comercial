@@ -5,7 +5,9 @@ const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
 // 1) módulo puro conectado
-assert.match(main, /import \{ buildFollowUpHistory, followUpInteractionTypeLabel \} from '\.\/opportunity-followup-presentation\.js';/);
+// El tipo y el autor visibles ahora los deriva `presentFollowUpEntry` (AGT-003 — refinamiento
+// posterior); `followUpInteractionTypeLabel` ya no se importa aquí de forma directa.
+assert.match(main, /import \{ buildFollowUpHistory \} from '\.\/opportunity-followup-presentation\.js';/);
 assert.match(main, /const followUpHistory = buildFollowUpHistory\(o, detail\.interactions\);/);
 assert.ok(!main.includes("const visibleInteractions = detail.interactions.filter"));
 
@@ -47,8 +49,11 @@ assert.ok(section > 0 && section < formSlot && formSlot < history && history < c
   'orden: sección → formulario → historial → copiloto → Más información');
 assert.match(main, /id="opportunity-follow-up" className="opportunity-follow-up-anchor followup-form-slot" tabIndex=\{-1\} ref=\{followUpRef\}/);
 assert.match(main, /<div className="timeline followup-timeline">/);
-assert.match(main, /<strong>\{followUpInteractionTypeLabel\(i\.interaction_type\)\}<\/strong>/);
-assert.match(main, /\{i\.actor_label \|\| i\.psi_sales_profiles\?\.full_name \|\| 'Migrado \/ sistema'\}/);
+// El tipo y el autor (con su fallback a "Migrado / sistema") ahora los resuelve la presentación
+// pura `presentFollowUpEntry` (AGT-003 — refinamiento posterior), no un literal inline aquí.
+assert.match(main, /const entry = presentFollowUpEntry\(i\);/);
+assert.match(main, /<strong>\{entry\.typeLabel\}<\/strong>/);
+assert.match(main, /entry\.authorLabel/);
 assert.ok(main.includes('Sin seguimientos registrados.'));
 
 // 7) Más información
@@ -76,7 +81,7 @@ for (const rule of [
   '.opportunity-priority-grid .opportunity-insight-card strong{',
   '.followup-section-title{', '.followup-section-grid{', '.followup-section-grid>.followup-history{order:1',
   '.followup-section-grid>.followup-form-slot{order:2', '.followup-timeline .event strong{text-transform:none}',
-  '.followup-form-hint{', '.opportunity-more-info>summary{', '.opportunity-more-info>.grid{',
+  '.followup-form-hint{', '.opportunity-more-info>summary{', '.opportunity-more-info-group{',
   '@media(max-width:760px){.followup-section-grid{grid-template-columns:1fr}',
 ]) assert.ok(css.includes(rule), `styles.css debe incluir ${rule}`);
 assert.ok(css.includes('.event strong{text-transform:capitalize}'), 'la regla global compartida no se toca');
