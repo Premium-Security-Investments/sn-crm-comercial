@@ -24,7 +24,7 @@ import { createTenderQuestionResponseActions } from './tenders/tenderQuestionRes
 import { loadTenderGoNoGoDecision, loadTenderOfferStatus, loadTrackingEvents, postActuation } from './tenders/api';
 import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
 import { tenderSharePointStatusLabel } from './tenders/statusLabels';
-import { shouldReloadTenderArtifacts } from './tenders/processingStatus';
+import { shouldReloadTenderArtifacts, tenderAnalysisCompletionMessage } from './tenders/processingStatus';
 import { AGT002_REANALYSIS_MAX_POLLS, AGT002_REANALYSIS_POLL_INTERVAL_MS, classifyAgt002ReanalysisPoll } from './tenders/agt002ReanalysisPolling';
 import type { Agt002ReanalysisJob, TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
@@ -926,12 +926,15 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     { phase: 'ready', value: { currentDocumentCount: (data.documents || []).filter(document => document.current !== false).length, importError: Boolean(data.import_error) } },
     { phase: 'ready', value: data.analysis || null },
   );
-  const loadDocuments = async () => {
+  // Devuelve lo que realmente cargó, para que quien recarga pueda leer el expediente fresco sin
+  // esperar al siguiente render; `undefined` cuando la petición quedó superada y no se aplicó.
+  const loadDocuments = async (): Promise<TenderDocumentsPayload | undefined> => {
     const requestedId = opportunity.id; const version = ++requestVersionRef.current;
     onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
     const data = await api<TenderDocumentsPayload>(`/api/tender-documents?id=${encodeURIComponent(requestedId)}`);
-    if (version !== requestVersionRef.current || activeOpportunityRef.current !== requestedId) return;
+    if (version !== requestVersionRef.current || activeOpportunityRef.current !== requestedId) return undefined;
     setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); emitNavigationPayload(data);
+    return data;
   };
   const loadProcessingStatus = async () => {
     const requestedId = opportunity.id;
@@ -1001,11 +1004,18 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
         if (job.job_id !== jobId) throw new Error('El estado del reanálisis activo cambió; recargue el expediente.');
         const decision = classifyAgt002ReanalysisPoll(job.status, reloadedReanalysisJobRef.current === jobId);
         if (job.status === 'completed') {
+          // El cierre se deriva del análisis RECIÉN recargado, nunca del estado de React capturado
+          // en este render: ese estado todavía no conoce la corrida que acaba de terminar, así que
+          // decidiría la cobertura con el expediente anterior. Si esta vuelta no recarga es porque
+          // el expediente ya se recargó para ESTE mismo job y el payload en memoria es ese mismo
+          // resultado.
+          let reloaded: TenderDocumentsPayload | undefined;
           if (decision.shouldReload) {
             reloadedReanalysisJobRef.current = jobId;
-            await Promise.all([loadDocuments(), onReload?.()]);
+            const [loaded] = await Promise.all([loadDocuments(), onReload?.()]);
+            reloaded = loaded;
           }
-          setAnalysisStatus({ message: `${VIGIA_VISIBLE_NAMES.tenders} completó el análisis. La recomendación requiere revisión humana.`, tone: decision.tone });
+          setAnalysisStatus({ message: tenderAnalysisCompletionMessage(reloaded ? reloaded.analysis : payload.analysis), tone: decision.tone });
           return job;
         }
         if (job.status === 'unavailable') {
@@ -1058,7 +1068,9 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
         await pollAgt002Reanalysis(data.reanalysis_job.job_id, requestedOpportunityId);
       } else {
         setAnalysisStatus({
-          message: data.analysis_engine?.fallback ? `${VIGIA_VISIBLE_NAMES.tenders} no estuvo disponible; se aplicó fallback seguro por reglas.` : `${VIGIA_VISIBLE_NAMES.tenders} completó el análisis. La recomendación requiere revisión humana.`,
+          // Éxito inmediato sin job: la cobertura se lee del análisis que acaba de devolver la
+          // petición, no del estado de React todavía sin actualizar.
+          message: data.analysis_engine?.fallback ? `${VIGIA_VISIBLE_NAMES.tenders} no estuvo disponible; se aplicó fallback seguro por reglas.` : tenderAnalysisCompletionMessage(data.analysis),
           tone: 'status',
         });
       }

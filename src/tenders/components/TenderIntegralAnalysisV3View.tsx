@@ -193,7 +193,7 @@ export function TenderIntegralAnalysisV3View({ analysis }: TenderIntegralAnalysi
 
     <UnresolvedManifestEntries entries={unresolvedEntries} />
 
-    <PhaseWorkbench integral={integral} conditionAnchorByUnitId={conditionAnchorByUnitId} />
+    <PhaseWorkbench integral={integral} conditionAnchorByUnitId={conditionAnchorByUnitId} autoOpenPendingPhases />
 
     <footer className="agt002-v3-footer"><strong>Análisis integral · AGT-002 v3</strong><span>Contenido del expediente vigente. Toda conclusión permanece pendiente de validación humana.</span></footer>
   </section>;
@@ -215,6 +215,10 @@ export function TenderIntegralAnalysisV3View({ analysis }: TenderIntegralAnalysi
 // ni el enlace a una condición gobernada: la superficie de decisión está pausada, así que ese
 // destino no existe y un ancla colgante sería peor que su ausencia. El rótulo dice de forma
 // explícita que esto no es una recomendación integral vigente y que no expresa GO / NO GO.
+//
+// Las fases arrancan TODAS plegadas (`autoOpenPendingPhases={false}`): esto es trazabilidad para
+// consultar, no la agenda del día, y abrirlas por evidencia pendiente desplegaba el expediente
+// entero de una vez. Ninguna se oculta ni se recorta: siguen íntegras a un clic de su <summary>.
 function HistoricalTechnicalBackup({ analysis, integral }: { analysis: TenderDocumentAnalysis | null; integral: TenderIntegralAnalysisV3 }) {
   const unresolvedEntries = analysis?.manifest_unresolved_entries ?? null;
   return <section className="agt002-v3-preview agt002-v3-historical" data-mode="historical-traceability" aria-labelledby="agt002-v3-historical-title">
@@ -236,7 +240,7 @@ function HistoricalTechnicalBackup({ analysis, integral }: { analysis: TenderDoc
 
     <UnresolvedManifestEntries entries={unresolvedEntries} />
 
-    <PhaseWorkbench integral={integral} conditionAnchorByUnitId={null} />
+    <PhaseWorkbench integral={integral} conditionAnchorByUnitId={null} autoOpenPendingPhases={false} />
 
     <footer className="agt002-v3-footer"><strong>Respaldo técnico histórico · solo trazabilidad</strong><span>Contenido conservado de este expediente. No es una recomendación integral vigente y toda conclusión permanece pendiente de validación humana.</span></footer>
   </section>;
@@ -271,10 +275,15 @@ function UnresolvedManifestEntries({ entries }: { entries: TenderManifestUnresol
 
 // Las cinco fases institucionales sobre las unidades reales de la corrida. `conditionAnchorByUnitId`
 // es `null` cuando no hay superficie de decisión activa a la cual enlazar (respaldo histórico).
-function PhaseWorkbench({ integral, conditionAnchorByUnitId }: { integral: TenderIntegralAnalysisV3; conditionAnchorByUnitId: Map<string, string | null> | null }) {
+//
+// `autoOpenPendingPhases` es una decisión deliberada del llamador, nunca del taller: en la lectura
+// integral vigente abrir las fases con evidencia pendiente es el trabajo del día, mientras que en el
+// respaldo histórico —donde la lectura para decisión está pausada— desplegaba el expediente entero
+// de golpe. Plegar no quita acceso: el contenido íntegro sigue en el HTML, a un clic del <summary>.
+function PhaseWorkbench({ integral, conditionAnchorByUnitId, autoOpenPendingPhases }: { integral: TenderIntegralAnalysisV3; conditionAnchorByUnitId: Map<string, string | null> | null; autoOpenPendingPhases: boolean }) {
   const phases = tenderIntegralPhaseGroups(integral);
   return <div className="agt002-v3-workbench">
-    {phases.map(group => <details key={group.key} className="agt002-v3-phase" data-phase={group.key} open={group.hasPendingEvidence}>
+    {phases.map(group => <details key={group.key} className="agt002-v3-phase" data-phase={group.key} open={autoOpenPendingPhases && group.hasPendingEvidence}>
       <summary>
         <strong>{group.label}</strong>
         <small>{group.units.length} requisito(s){group.pendingEvidenceCount > 0 ? ` · ${group.pendingEvidenceCount} pendiente(s) de evidencia` : ''}</small>
