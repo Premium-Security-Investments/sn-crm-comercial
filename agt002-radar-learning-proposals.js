@@ -1,0 +1,6 @@
+export function buildAgt002RadarLearningProposals({observations,generatedAt}={}){
+ if(!observations||!Array.isArray(observations.precedents)||typeof generatedAt!=='string'||!Number.isFinite(Date.parse(generatedAt))){const error=new Error('AGT002_RADAR_LEARNING_PROPOSAL_INVALID');error.code='AGT002_RADAR_LEARNING_PROPOSAL_INVALID';throw error;}
+ const counts={favorable:0,desfavorable:0,neutra:0};const services=new Map();const evidence=new Set();
+ for(const item of observations.precedents){if(counts[item.signal_polarity]===undefined)counts.neutra+=1;else counts[item.signal_polarity]+=1;for(const term of item.service_terms||[])services.set(term,(services.get(term)||0)+1);for(const entry of item.evidence||[])if(entry.record_id)evidence.add(entry.record_id);}
+ return Object.freeze({artifact_type:'agt002-radar-governance-proposal',schema_version:'agt002-radar-learning-proposal-v1',status:'DRAFT',human_approval_required:true,generated_at:new Date(generatedAt).toISOString(),aggregates:{total_observations:observations.precedents.length,polarity_counts:counts,service_term_counts:Object.fromEntries([...services].sort(([a],[b])=>a.localeCompare(b)))},evidence_record_ids:[...evidence].sort(),instructions:'Revisar evidencia y editar manualmente la política versionada si corresponde.'});
+}

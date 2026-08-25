@@ -1,0 +1,12 @@
+[Unit]
+Description=Schedule AGT-002 Radar one-shot pipeline
+
+[Timer]
+OnBootSec=10m
+OnUnitActiveSec=15m
+RandomizedDelaySec=90
+Persistent=false
+Unit=agt002-radar-pipeline.service
+
+[Install]
+WantedBy=timers.target
