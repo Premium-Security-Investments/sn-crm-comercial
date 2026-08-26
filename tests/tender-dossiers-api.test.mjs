@@ -281,6 +281,15 @@ const fakePort = await listen(fakeSupabase);
 process.env.NEXT_PUBLIC_SUPABASE_URL = `http://127.0.0.1:${fakePort}`;
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-key';
 process.env.VERCEL = '1';
+for (const name of [
+  'TENDER_IMMEDIATE_DISPATCH',
+  'TENDER_CONTINUOUS_DRAIN',
+  'AGT002_CANONICAL_ONLY',
+  'AGT002_CONTEXT_V2',
+  'AGT002_DOCUMENT_RETRIEVAL',
+  'AGT002_LEGAL_CORPUS',
+  'AGT002_INTEGRAL_CONTRACT_V3',
+]) process.env[name] = 'false';
 
 const { buildTenderDossierSummary, listTenderOpportunities, default: app } = await import('../server/index.js');
 

@@ -1,9 +1,18 @@
 import { createHash } from 'node:crypto';
 import { validateAgt003CopilotRequest, validateAgt003CopilotResponse } from './agt003-copilot-contract.js';
 
+const IDEMPOTENCY_KEY = /^[a-f0-9]{64}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function requireText(value, label) {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${label} es obligatorio para persistir Vig-IA.`);
   return value.trim();
+}
+
+function requireIdempotencyKey(value) {
+  const key = requireText(value, 'La clave de idempotencia');
+  if (!IDEMPOTENCY_KEY.test(key)) throw new Error('La clave de idempotencia Vig-IA no es válida.');
+  return key;
 }
 
 function requirePositiveLimits(values) {
@@ -35,8 +44,15 @@ export function computeAgt003CopilotIdempotencyKey({ snapshotId, policyVersion, 
   return createHash('sha256').update(`agt003-copilot\0${snapshot}\0${policy}\0${modelId}`).digest('hex');
 }
 
+export function computeAgt003CopilotRetryKey({ previousKey, failedRunId }) {
+  const key = requireIdempotencyKey(previousKey);
+  const runId = requireText(failedRunId, 'La ejecución fallida');
+  if (!UUID.test(runId)) throw new Error('La ejecución fallida Vig-IA no es válida.');
+  return createHash('sha256').update(`agt003-copilot-retry\0${key}\0${runId}`).digest('hex');
+}
+
 export async function claimAgt003CopilotRun(database, { idempotencyKey, dailyMaxRuns, maxConcurrent, leaseSeconds }) {
-  const key = requireText(idempotencyKey, 'La clave de idempotencia');
+  const key = requireIdempotencyKey(idempotencyKey);
   requirePositiveLimits([dailyMaxRuns, maxConcurrent, leaseSeconds]);
   const result = unwrapRpc(await database.rpc('psi_claim_agt003_copilot_run', {
     p_idempotency_key: key,
@@ -53,7 +69,7 @@ export async function claimAgt003CopilotRun(database, { idempotencyKey, dailyMax
 }
 
 export async function findAgt003CopilotRunByKey(database, idempotencyKey) {
-  const key = requireText(idempotencyKey, 'La clave de idempotencia');
+  const key = requireIdempotencyKey(idempotencyKey);
   const response = await database.rpc('psi_get_agt003_copilot_run_by_key', { p_idempotency_key: key });
   if (response?.error) throw new Error(response.error.message || String(response.error));
   if (response?.data == null) return null;
@@ -74,7 +90,7 @@ export async function findAgt003CopilotRunById(database, runId) {
 
 export async function releaseAgt003CopilotClaim(database, { idempotencyKey, claimId }) {
   const released = unwrapRpc(await database.rpc('psi_release_agt003_copilot_claim', {
-    p_idempotency_key: requireText(idempotencyKey, 'La clave de idempotencia'),
+    p_idempotency_key: requireIdempotencyKey(idempotencyKey),
     p_claim_id: requireText(claimId, 'La reserva'),
   }), 'La liberación de reserva Vig-IA');
   if (released !== true) throw new Error('No fue posible liberar la reserva Vig-IA.');
@@ -92,18 +108,21 @@ function validateUsage(usage, model) {
   }
 }
 
-export async function recordAgt003CopilotRun(database, { opportunityId, actorId, claimId, request, response, usage }) {
+export async function recordAgt003CopilotRun(database, { opportunityId, actorId, claimId, idempotencyKey: claimedIdempotencyKey, request, response, usage }) {
   const opportunity = requireText(opportunityId, 'La oportunidad');
   const actor = requireText(actorId, 'El actor');
   const claim = requireText(claimId, 'La reserva');
   validateAgt003CopilotRequest(request);
   validateAgt003CopilotResponse(response, { request });
   validateUsage(usage, response.model);
-  const idempotencyKey = computeAgt003CopilotIdempotencyKey({
+  const baseIdempotencyKey = computeAgt003CopilotIdempotencyKey({
     snapshotId: response.snapshot_id,
     policyVersion: response.policy_version,
     model: response.model,
   });
+  const idempotencyKey = claimedIdempotencyKey === undefined
+    ? baseIdempotencyKey
+    : requireIdempotencyKey(claimedIdempotencyKey);
   const row = unwrapRpc(await database.rpc('psi_record_agt003_copilot_run', {
     p_idempotency_key: idempotencyKey,
     p_claim_id: claim,
@@ -134,6 +153,7 @@ export async function recordAgt003CopilotFailure(database, {
   opportunityId,
   actorId,
   claimId,
+  idempotencyKey: claimedIdempotencyKey,
   request,
   policyVersion,
   model,
@@ -150,11 +170,14 @@ export async function recordAgt003CopilotFailure(database, {
   if (typeof failureCode !== 'string' || !/^[A-Z0-9_]{1,80}$/.test(failureCode)) {
     throw new Error('El código de failure Vig-IA no es válido.');
   }
-  const idempotencyKey = computeAgt003CopilotIdempotencyKey({
+  const baseIdempotencyKey = computeAgt003CopilotIdempotencyKey({
     snapshotId: request.snapshot_id,
     policyVersion: policy,
     model: modelId,
   });
+  const idempotencyKey = claimedIdempotencyKey === undefined
+    ? baseIdempotencyKey
+    : requireIdempotencyKey(claimedIdempotencyKey);
   const row = unwrapRpc(await database.rpc('psi_record_agt003_copilot_failure', {
     p_idempotency_key: idempotencyKey,
     p_claim_id: claim,

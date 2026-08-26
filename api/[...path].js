@@ -4623,10 +4623,11 @@ app.post('/api/opportunities/:id/interactions', async (req, res) => {
     requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    if (req.body.created_by && req.body.created_by !== currentProfile.id) { const error = new Error('No puede registrar seguimientos a nombre de otro usuario.'); error.status = 403; throw error; }
     const notes = preparePublicInteractionNotes(req.body.notes);
     const occurred_at = req.body.occurred_at || new Date().toISOString();
     const interaction_type = req.body.interaction_type || 'nota';
-    const created_by = globalCrmScopeRoles.has(currentProfile?.role) ? (req.body.created_by || currentProfile.id) : currentProfile.id;
+    const created_by = currentProfile.id;
     const next_action_at = req.body.next_action_at || null;
     const row = { opportunity_id: req.params.id, notes, occurred_at, interaction_type, created_by };
     const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());
@@ -4684,10 +4685,11 @@ app.post('/api/opportunity-interactions', async (req, res) => {
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
     await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
+    if (req.body.created_by && req.body.created_by !== currentProfile.id) { const error = new Error('No puede registrar seguimientos a nombre de otro usuario.'); error.status = 403; throw error; }
     const notes = preparePublicInteractionNotes(req.body.notes);
     const occurred_at = req.body.occurred_at || new Date().toISOString();
     const interaction_type = req.body.interaction_type || 'nota';
-    const created_by = globalCrmScopeRoles.has(currentProfile?.role) ? (req.body.created_by || currentProfile.id) : currentProfile.id;
+    const created_by = currentProfile.id;
     const next_action_at = req.body.next_action_at || null;
     const row = { opportunity_id: id, notes, occurred_at, interaction_type, created_by };
     const data = await must(database.from('psi_sales_interactions').insert(row).select('id').single());

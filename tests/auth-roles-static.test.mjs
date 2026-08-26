@@ -25,8 +25,16 @@ assert(src.includes('UsersAdmin'), 'Frontend debe incluir módulo UsersAdmin.');
 assert(src.includes('canManageUsers'), 'Frontend debe ocultar administración a roles no autorizados.');
 assert(apiClient.includes('Authorization') && apiClient.includes('Bearer ${currentAccessToken}'), 'Frontend debe enviar Authorization Bearer a la API.');
 assert(src.includes("['director','Directivo']"), 'Frontend debe mostrar el rol director como Directivo para usuarios ejecutivos.');
-assert(src.includes('currentProfile={data.currentProfile}'), 'Formulario de seguimiento debe recibir currentProfile para preseleccionar quien registra.');
-assert(src.includes('created_by: currentProfile.id'), 'Formulario de seguimiento debe preseleccionar al usuario logueado, no el primer perfil alfabético.');
+assert(src.includes('currentProfile={data.currentProfile}'), 'Formulario de seguimiento debe recibir currentProfile como identidad autenticada.');
+const followUpStart = src.indexOf('function FollowUpForm(');
+const followUpEnd = src.indexOf('\nconst publicActuationOptions', followUpStart);
+assert.notEqual(followUpStart, -1, 'FollowUpForm debe existir.');
+assert.notEqual(followUpEnd, -1, 'Debe poder aislarse FollowUpForm.');
+const followUp = src.slice(followUpStart, followUpEnd);
+assert.doesNotMatch(followUp, /profiles\s*:/, 'FollowUpForm no debe recibir la lista de perfiles.');
+assert.doesNotMatch(followUp, /<Select[^>]*created_by|profiles\.map/, 'Registrado por no debe permitir seleccionar otra identidad.');
+assert.match(followUp, /<label>Registrado por<input[^>]*value=\{currentProfile\.full_name\}[^>]*readOnly[^>]*\/><\/label>/, 'Registrado por debe mostrar el perfil autenticado como identidad fija.');
+assert.doesNotMatch(followUp, /created_by\s*:/, 'El frontend no debe enviar created_by en el payload del seguimiento.');
 
 for (const file of [server, api]) {
   assert(file.includes('getAuthContext'), 'API debe validar sesión Supabase en getAuthContext.');
@@ -39,6 +47,7 @@ for (const file of [server, api]) {
   assert(file.includes('normalizeUserRole'), 'API debe normalizar aliases de rol como directivo -> director.');
   assert(file.includes("raw === 'directivo'"), 'API debe aceptar Directivo como alias compatible del rol director.');
   assert(file.includes("role === 'comercial'"), 'API debe tratar comercial como rol restringido.');
+  assert.equal((file.match(/const created_by = currentProfile\.id;/g) || []).length, 2, 'Ambas rutas de interacción deben derivar el autor del perfil autenticado.');
 }
 
 assert.match(server, /psi_profile_area_assignments'\)\.select\('profile_id,area_code,subarea_code'\)/, 'El bootstrap debe derivar alcance desde asignaciones canónicas del servidor.');

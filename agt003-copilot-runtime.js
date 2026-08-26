@@ -4,7 +4,11 @@ import { AGT003_COPILOT_POLICY, createAgt003CopilotEngine } from './agt003-copil
 export const AGT003_COPILOT_ENGINE_ID = 'agt003_bridge_preview';
 export const AGT003_COPILOT_DEFAULT_POLICY_VERSION = 'agt003-copilot-policy-v1';
 const DEFAULT_TIMEOUT_MS = 30_000;
-const DEFAULT_MAX_CONCURRENT = 2;
+// El puente sólo sostiene un turno del proveedor a la vez
+// (`AGT003_BRIDGE_MAX_CONCURRENCY = 1`). Un default mayor aquí no añade
+// capacidad: sólo produce turnos que el puente rechaza con
+// `AGT003_BRIDGE_BUSY`. El operador puede subirlo por entorno junto al puente.
+const DEFAULT_MAX_CONCURRENT = 1;
 const DEFAULT_DAILY_MAX_RUNS = 20;
 
 function nonEmpty(value) {

@@ -82,9 +82,11 @@ for (const rule of [
   '.followup-section-title{', '.followup-section-grid{', '.followup-section-grid>.followup-history{order:1',
   '.followup-section-grid>.followup-form-slot{order:2', '.followup-timeline .event strong{text-transform:none}',
   '.followup-form-hint{', '.opportunity-more-info>summary{', '.opportunity-more-info-group{',
-  '@media(max-width:760px){.followup-section-grid{grid-template-columns:1fr}',
+  '@media(max-width:980px){.followup-section-grid{grid-template-columns:1fr}',
 ]) assert.ok(css.includes(rule), `styles.css debe incluir ${rule}`);
 assert.ok(css.includes('.event strong{text-transform:capitalize}'), 'la regla global compartida no se toca');
-assert.match(css, /\.followup-section-grid\{[^}]*grid-template-columns:minmax\(0,3fr\) minmax\(280px,2fr\)/);
+assert.doesNotMatch(css, /\.detail-page-shell\{[^}]*1180/, 'el shell de detalle no debe volver al cuello fijo de 1180px');
+assert.match(css, /\.detail-page-shell\{[^}]*width:100%[^}]*max-width:1680px/);
+assert.match(css, /\.followup-section-grid\{[^}]*grid-template-columns:minmax\(0,7fr\) minmax\(280px,5fr\)/);
 
 console.log('agt003 follow-up priority layout static checks passed');
