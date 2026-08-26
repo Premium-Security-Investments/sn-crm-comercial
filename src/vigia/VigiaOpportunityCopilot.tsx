@@ -24,16 +24,15 @@ type ProposalProps = {
   onDiscard: () => void;
 };
 
-// Jerarquía action-first: la acción recomendada decide primero; el contexto que la sustenta queda
-// plegado detrás. El lenguaje técnico/interno del modelo ya se filtró en `copilot-presentation.ts`,
-// así que este componente sólo compone lo ya depurado.
+// La propuesta final no repite riesgos ni faltantes: abre con un plan numerado, mantiene el correo
+// editable y deja el contexto plegado al final. La revisión humana queda junto a las acciones.
 export function VigiaCopilotProposal({ brief, draft, onDraftChange, onCopy, onDiscard }: ProposalProps) {
   const presented = presentCopilotBrief(brief);
   return <div className="vigia-copilot-result">
-    <section className="vigia-copilot-action"><h4>Acción recomendada</h4><p>{presented.strategy}</p></section>
-    {presented.missingInformation.length > 0 && <section className="vigia-copilot-missing"><h4>Antes de contactar</h4><ul>{presented.missingInformation.map(item => <li key={item}>{item}</li>)}</ul></section>}
+    <section className="vigia-copilot-plan"><h4>Plan de contacto</h4><ol>{presented.contactPlanSteps.map((step, index) => <li key={`${index}-${step}`}>{step}</li>)}</ol></section>
     <div className="vigia-copilot-draft"><label>Asunto<input value={draft.subject} maxLength={300} onChange={event => onDraftChange({ subject: event.target.value })}/></label><label>Cuerpo<textarea value={draft.body} maxLength={8000} rows={10} onChange={event => onDraftChange({ body: event.target.value })}/></label></div>
     <div className="vigia-copilot-actions"><button type="button" onClick={onCopy}>Copiar correo</button><button type="button" className="secondary" onClick={onDiscard}>Descartar</button></div>
+    <div className="vigia-human-warning"><strong>Revisión humana</strong><span>Puede editar esta propuesta sin modificar el historial de la oportunidad. Verifique nombres, fechas, compromisos y tono antes de copiar el mensaje.</span></div>
     <details className="vigia-copilot-context"><summary>Contexto analizado</summary>
       <p>{presented.summary}</p>
       <div><small>Objetivo de contacto</small><p>{presented.contactObjective}</p></div>
@@ -41,8 +40,6 @@ export function VigiaCopilotProposal({ brief, draft, onDraftChange, onCopy, onDi
       <section><h5>Inferencias</h5>{presented.inferences.length ? <ul>{presented.inferences.map((item, index) => <li key={`${item.text}-${index}`}>{item.text} <small>Confianza {item.confidence}</small></li>)}</ul> : <p className="muted">Sin inferencias.</p>}</section>
       {presented.hasApprovedAssets && <section><h5>Adjuntos sugeridos</h5><ul>{presented.recommendedAssetIds.map(id => <li key={id}>{id}</li>)}</ul></section>}
     </details>
-    {presented.warnings.length > 0 && <div className="notice vigia-copilot-warnings"><strong>Alertas comerciales</strong><ul>{presented.warnings.map(item => <li key={item}>{item}</li>)}</ul></div>}
-    <div className="vigia-human-warning"><strong>Revisión humana</strong><span>Puede editar esta propuesta sin modificar el historial de la oportunidad. Verifique nombres, fechas, compromisos y tono antes de copiar el mensaje.</span></div>
   </div>;
 }
 
