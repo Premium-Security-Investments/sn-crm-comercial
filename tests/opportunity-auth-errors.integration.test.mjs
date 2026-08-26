@@ -14,15 +14,20 @@ async function listen(server) {
   return server.address().port;
 }
 
-function requestJson(port, path) {
+function requestJson(port, path, { method = 'GET', body } = {}) {
   return new Promise((resolve, reject) => {
-    const request = http.request({ hostname: '127.0.0.1', port, path }, response => {
+    const payload = body === undefined ? null : JSON.stringify(body);
+    const request = http.request({
+      hostname: '127.0.0.1', port, path, method,
+      headers: payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : undefined,
+    }, response => {
       let text = '';
       response.setEncoding('utf8');
       response.on('data', chunk => { text += chunk; });
       response.on('end', () => resolve({ status: response.statusCode, body: JSON.parse(text) }));
     });
     request.on('error', reject);
+    if (payload) request.write(payload);
     request.end();
   });
 }
@@ -57,6 +62,13 @@ try {
     assert.equal(response.status, 401, `${path} must return 401 without a session`);
     assert.deepEqual(response.body, { error: 'Debe iniciar sesión.' });
   }
+
+  const preflight = await requestJson(appPort, '/api/vigia/opportunity-preflight', {
+    method: 'POST',
+    body: { opportunity_id: OPPORTUNITY_ID },
+  });
+  assert.equal(preflight.status, 401, 'preflight must return 401 without a session');
+  assert.deepEqual(preflight.body, { error: 'Debe iniciar sesión.' });
 
   assert.equal(observed.supabaseRequests, 0, 'authentication must fail before any Supabase request');
 
