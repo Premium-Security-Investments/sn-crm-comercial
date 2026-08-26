@@ -36,7 +36,7 @@ import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
 import { createAgt003CopilotApi } from '../agt003-copilot-api.js';
 import { createAgt003CopilotRuntime, getAgt003CopilotRuntimeConfig, isAgt003CopilotConfigured } from '../agt003-copilot-runtime.js';
 import { createAgt003PreflightApi } from '../agt003-preflight-api.js';
-import { createAgt003PreflightRuntime, isAgt003PreflightConfigured } from '../agt003-preflight-runtime.js';
+import { createAgt003PreflightRuntime, getAgt003PreflightRuntimeConfig, isAgt003PreflightConfigured } from '../agt003-preflight-runtime.js';
 import { claimAgt003CopilotRun, computeAgt003CopilotHash, findAgt003CopilotRunById, findAgt003CopilotRunByKey, recordAgt003CopilotFeedback, recordAgt003CopilotFailure, recordAgt003CopilotRun, releaseAgt003CopilotClaim } from '../agt003-copilot-persistence.js';
 import { agt003PreparationDate } from '../agt003-copilot-input.js';
 import { loadVigiaApprovedAssets } from '../vigia-approved-assets.js';

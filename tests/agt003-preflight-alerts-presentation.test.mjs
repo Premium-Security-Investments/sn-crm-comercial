@@ -59,7 +59,7 @@ const ordered = buildCommercialAlerts({
 assert.deepEqual(ordered.map(item => item.category), ['next_action', 'close_date', 'decision_maker']);
 assert.equal(new Set(ordered.map(item => item.key)).size, ordered.length, 'at most one key per category');
 assert.deepEqual(KNOWN_PREFLIGHT_ISSUE_CODES, ['next_action', 'close_date', 'decision_maker']);
-assert.equal(COMMERCIAL_PREFLIGHT_EXPLANATION, 'Actualizar estos datos en el CRM antes de continuar mejora la propuesta que Vig-IA Comercial genera.');
+assert.equal(COMMERCIAL_PREFLIGHT_EXPLANATION, 'Estos datos requieren actualización en el CRM antes de generar una propuesta.');
 
 const actions = Object.freeze([
   Object.freeze({ issue_code: 'next_action', title: 'Primera acción', description: 'Defina la fecha.', evidence_refs: Object.freeze(['e1', 'e2']) }),

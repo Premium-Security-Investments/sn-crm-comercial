@@ -23,6 +23,7 @@ import {
   buildCommercialAlerts,
   COMMERCIAL_PREFLIGHT_EXPLANATION,
   mergeCommercialAlertsWithPreflight,
+  normalizePreflightErrorMessage,
   type CommercialAlert,
   type CommercialPreflightInput,
   type ConsolidatedPreflightAction,
@@ -53,9 +54,10 @@ export function VigiaCommercialAlerts({ alerts }: { alerts: CommercialAlert[] })
       ? <p className="muted">Sin alertas comerciales detectadas.</p>
       : <>
           <p>{COMMERCIAL_PREFLIGHT_EXPLANATION}</p>
-          <ul>{alerts.map(alert => <li key={alert.key}>{alert.risk_text}</li>)}</ul>
-          <h5>Acciones para mejorar la propuesta</h5>
-          <ol>{alerts.map(alert => <li key={alert.key}>{alert.contextualAction?.description ?? alert.action_text}</li>)}</ol>
+          <ul>{alerts.map(alert => <li key={alert.key}>
+            {alert.risk_text}
+            {alert.contextualAction && <p className="vigia-preflight-context">{alert.contextualAction.description}</p>}
+          </li>)}</ul>
         </>}
   </section>;
 }
@@ -79,7 +81,7 @@ export function VigiaPreflightAnalysis({
     <h4 id="vigia-preflight-analysis-title">Análisis inteligente del seguimiento</h4>
     {phase === 'idle' && <button type="button" onClick={onAnalyze}>Analizar cómo fortalecer el seguimiento</button>}
     {phase === 'loading' && <div className="notice" role="status">{VIGIA_VISIBLE_NAMES.commercial} está revisando el historial de la oportunidad…</div>}
-    {phase === 'error' && <div className="error" role="alert"><strong>No fue posible analizar el historial.</strong>{errorMessage && <p>{errorMessage}</p>}<button type="button" onClick={onRetry}>Reintentar</button></div>}
+    {phase === 'error' && <div className="error" role="alert"><strong>No fue posible analizar el historial.</strong>{errorMessage && <p>{normalizePreflightErrorMessage(errorMessage)}</p>}<button type="button" onClick={onRetry}>Reintentar</button></div>}
     {phase === 'ready' && <>
       {standaloneActions.length === 0
         ? <p className="muted">Vig-IA no encontró acciones adicionales fuera de las alertas comerciales.</p>
