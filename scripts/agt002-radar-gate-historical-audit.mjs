@@ -22,8 +22,8 @@ function loadEnvFile(path = resolve(root, '.env.local')) {
   }
 }
 
-async function readRest(baseUrl, serviceKey, table, params) {
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/rest/v1/${table}?${params}`, {
+async function readRest(baseUrl, serviceKey, table, params, fetchImpl = globalThis.fetch) {
+  const response = await fetchImpl(`${baseUrl.replace(/\/$/, '')}/rest/v1/${table}?${params}`, {
     method: 'GET',
     headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, Accept: 'application/json' },
   });
@@ -35,12 +35,12 @@ async function readRest(baseUrl, serviceKey, table, params) {
   return response.json();
 }
 
-async function readAll(baseUrl, serviceKey, table, select = '*') {
+async function readAll(baseUrl, serviceKey, table, select = '*', fetchImpl = globalThis.fetch) {
   const pageSize = 1000;
   const rows = [];
   for (let offset = 0; ; offset += pageSize) {
     const params = new URLSearchParams({ select, order: 'id.asc', limit: String(pageSize), offset: String(offset) });
-    const page = await readRest(baseUrl, serviceKey, table, params.toString());
+    const page = await readRest(baseUrl, serviceKey, table, params.toString(), fetchImpl);
     rows.push(...page);
     if (page.length < pageSize) return rows;
   }
@@ -111,7 +111,7 @@ export function planAgt002RadarGateAudit({
     else if (canonical.visibility_verdict === 'no_concluyente') category = 'no_concluyente';
     else category = 'invalid_verdict';
     canonicalBreakdown[category] += 1;
-    if (category !== 'fresh_mostrar_en_radar') uncovered.push(tender.id);
+    if (!['fresh_mostrar_en_radar', 'no_mostrar_en_radar', 'no_concluyente'].includes(category)) uncovered.push(tender.id);
   }
 
   ocultables.sort();
@@ -134,13 +134,13 @@ export function planAgt002RadarGateAudit({
   };
 }
 
-export async function runAgt002RadarGateHistoricalAudit({ baseUrl, serviceKey, nowIso = new Date().toISOString() } = {}) {
+export async function runAgt002RadarGateHistoricalAudit({ baseUrl, serviceKey, nowIso = new Date().toISOString(), fetchImpl = globalThis.fetch } = {}) {
   if (!baseUrl || !serviceKey) throw new Error('Faltan NEXT_PUBLIC_SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY.');
-  const tenders = await readAll(baseUrl, serviceKey, 'psi_public_tenders');
+  const tenders = await readAll(baseUrl, serviceKey, 'psi_public_tenders', '*', fetchImpl);
   let canonicalRows = [];
   let ledgerAvailable = true;
   try {
-    canonicalRows = await readAll(baseUrl, serviceKey, 'psi_agt002_radar_preanalysis_runs', 'tender_id,canonical,visibility_verdict,source_row_hash,policy_version,context_version,completed_at');
+    canonicalRows = await readAll(baseUrl, serviceKey, 'psi_agt002_radar_preanalysis_runs', 'tender_id,canonical,visibility_verdict,source_row_hash,policy_version,context_version,completed_at', fetchImpl);
   } catch (error) {
     if (error?.status !== 404) throw error;
     ledgerAvailable = false;

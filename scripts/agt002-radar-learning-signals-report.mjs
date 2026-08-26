@@ -20,8 +20,8 @@ function loadEnvFile(path = resolve(root, '.env.local')) {
   }
 }
 
-async function readRest(baseUrl, serviceKey, table, params) {
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/rest/v1/${table}?${params}`, {
+async function readRest(baseUrl, serviceKey, table, params, fetchImpl = globalThis.fetch) {
+  const response = await fetchImpl(`${baseUrl.replace(/\/$/, '')}/rest/v1/${table}?${params}`, {
     method: 'GET',
     headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, Accept: 'application/json' },
   });
@@ -29,22 +29,21 @@ async function readRest(baseUrl, serviceKey, table, params) {
   return response.json();
 }
 
-function createReadOnlyDatabase(baseUrl, serviceKey) {
+function createReadOnlyDatabase(baseUrl, serviceKey, fetchImpl) {
   return {
     from(table) {
       let fields = '*';
-      return {
-        select(value) {
-          fields = value;
-          return {
-            limit(limit) {
-              const params = new URLSearchParams({ select: fields, limit: String(limit) });
-              return readRest(baseUrl, serviceKey, table, params.toString())
-                .then(data => ({ data, error: null }), error => ({ data: null, error }));
-            },
-          };
+      const filters = new Map();
+      const query = {
+        select(value) { fields = value; return query; },
+        eq(column, value) { filters.set(column, `eq.${value}`); return query; },
+        limit(limit) {
+          const params = new URLSearchParams({ select: fields, limit: String(limit), ...Object.fromEntries(filters) });
+          return readRest(baseUrl, serviceKey, table, params.toString(), fetchImpl)
+            .then(data => ({ data, error: null }), error => ({ data: null, error }));
         },
       };
+      return query;
     },
   };
 }
@@ -72,16 +71,17 @@ export async function runAgt002RadarLearningSignalsReport({
   candidateLimit = 25,
   maxSignals = 5,
   generatedAt = new Date().toISOString(),
+  fetchImpl = globalThis.fetch,
 } = {}) {
   if (!baseUrl || !serviceKey) throw new Error('Faltan NEXT_PUBLIC_SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY.');
-  const database = createReadOnlyDatabase(baseUrl, serviceKey);
+  const database = createReadOnlyDatabase(baseUrl, serviceKey, fetchImpl);
   const observations = await projectAgt002RadarLearningObservations(database, { limit });
   const candidateParams = new URLSearchParams({
     select: 'id,title,description,entity,city,dept,source,category',
     order: 'last_seen_at.desc',
     limit: String(candidateLimit),
   });
-  const candidates = await readRest(baseUrl, serviceKey, 'psi_public_tenders', candidateParams.toString());
+  const candidates = await readRest(baseUrl, serviceKey, 'psi_public_tenders', candidateParams.toString(), fetchImpl);
   const candidateSignals = candidates.map(tender => ({
     tender_id: tender.id,
     learning: buildAgt002RadarLearningSignals({ candidate: candidateFromTender(tender), observations, maxSignals }),

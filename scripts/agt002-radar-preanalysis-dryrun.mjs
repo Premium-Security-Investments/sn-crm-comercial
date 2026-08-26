@@ -21,8 +21,8 @@ function loadEnvFile(path = resolve(root, '.env.local')) {
   }
 }
 
-async function readRest(baseUrl, serviceKey, table, params) {
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/rest/v1/${table}?${params}`, {
+async function readRest(baseUrl, serviceKey, table, params, fetchImpl = globalThis.fetch) {
+  const response = await fetchImpl(`${baseUrl.replace(/\/$/, '')}/rest/v1/${table}?${params}`, {
     method: 'GET',
     headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, Accept: 'application/json' },
   });
@@ -30,22 +30,21 @@ async function readRest(baseUrl, serviceKey, table, params) {
   return response.json();
 }
 
-function createReadOnlyDatabase(baseUrl, serviceKey) {
+function createReadOnlyDatabase(baseUrl, serviceKey, fetchImpl) {
   return {
     from(table) {
       let fields = '*';
-      return {
-        select(value) {
-          fields = value;
-          return {
-            limit(limit) {
-              const params = new URLSearchParams({ select: fields, limit: String(limit) });
-              return readRest(baseUrl, serviceKey, table, params.toString())
-                .then(data => ({ data, error: null }), error => ({ data: null, error }));
-            },
-          };
+      const filters = new Map();
+      const query = {
+        select(value) { fields = value; return query; },
+        eq(column, value) { filters.set(column, `eq.${value}`); return query; },
+        limit(limit) {
+          const params = new URLSearchParams({ select: fields, limit: String(limit), ...Object.fromEntries(filters) });
+          return readRest(baseUrl, serviceKey, table, params.toString(), fetchImpl)
+            .then(data => ({ data, error: null }), error => ({ data: null, error }));
         },
       };
+      return query;
     },
   };
 }
@@ -73,18 +72,21 @@ export async function runAgt002RadarPreanalysisDryRun({
   serviceKey,
   environment = process.env,
   nowIso = new Date().toISOString(),
+  fetchImpl = globalThis.fetch,
+  createRuntime = createAgt002RadarPreanalysisRuntime,
 } = {}) {
   if (!tenderId) throw new Error('Falta tender-id.');
   if (!baseUrl || !serviceKey) throw new Error('Faltan NEXT_PUBLIC_SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY.');
   const params = new URLSearchParams({ select: '*', id: `eq.${tenderId}`, limit: '1' });
-  const tenders = await readRest(baseUrl, serviceKey, 'psi_public_tenders', params.toString());
+  const tenders = await readRest(baseUrl, serviceKey, 'psi_public_tenders', params.toString(), fetchImpl);
   if (tenders.length !== 1) throw new Error('La licitación solicitada no existe o no es única.');
   const tender = tenders[0];
   const gate = evaluateAgt002RadarGate(tender, { nowIso });
   const gateEvaluation = { ...gate, id: `dryrun:${gate.idempotency_key}` };
-  const observations = await projectAgt002RadarLearningObservations(createReadOnlyDatabase(baseUrl, serviceKey), { limit: 1000 });
-  const learningSignals = buildAgt002RadarLearningSignals({ candidate: candidateFromTender(tender), observations, maxSignals: 5 });
-  const runtime = createAgt002RadarPreanalysisRuntime({ environment: { ...environment, AGT002_RADAR_GATE: 'true' } });
+  const observations = await projectAgt002RadarLearningObservations(createReadOnlyDatabase(baseUrl, serviceKey, fetchImpl), { limit: 1000 });
+  const retrievedLearningSignals = buildAgt002RadarLearningSignals({ candidate: candidateFromTender(tender), observations, maxSignals: 5 });
+  const learningSignals = retrievedLearningSignals.signals.length ? retrievedLearningSignals : null;
+  const runtime = createRuntime({ environment: { ...environment, AGT002_RADAR_GATE: 'true' } });
   const output = await runtime.runOnce({
     tenderRow: tender,
     gateEvaluation,
