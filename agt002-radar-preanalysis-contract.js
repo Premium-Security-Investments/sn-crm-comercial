@@ -72,6 +72,7 @@ export function validateAgt002RadarPreanalysis(value, { expectedLearningSignalId
   if (value.schema_version !== AGT002_RADAR_PREANALYSIS_SCHEMA_VERSION) contractError('schema_version');
   if (value.agent_id !== 'AGT-002') contractError('agent_id must be AGT-002');
   for (const key of ['run_id','policy_version','context_version','tender_id','gate_evaluation_id','summary']) nonempty(value[key], key);
+  if (value.policy_version !== AGT002_RADAR_PREANALYSIS_POLICY_VERSION) contractError('policy_version');
   if (value.human_review_required !== true) contractError('human_review_required must be true');
   if (!['completed','abstained'].includes(value.status)) contractError('status');
   if (!['mostrar_en_radar','no_mostrar_en_radar','no_concluyente'].includes(value.visibility_verdict)) contractError('visibility_verdict');

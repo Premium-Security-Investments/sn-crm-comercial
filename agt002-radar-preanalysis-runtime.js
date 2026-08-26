@@ -1,6 +1,6 @@
 import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.js';
 import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
-import { AGT002_RADAR_PREANALYSIS_OUTPUT_SCHEMA, validateAgt002RadarPreanalysis } from './agt002-radar-preanalysis-contract.js';
+import { AGT002_RADAR_PREANALYSIS_OUTPUT_SCHEMA, AGT002_RADAR_PREANALYSIS_POLICY_VERSION, validateAgt002RadarPreanalysis } from './agt002-radar-preanalysis-contract.js';
 import { buildAgt002RadarPreanalysisInput } from './agt002-radar-preanalysis-input.js';
 
 const REQUIRED=['AGT002_RADAR_PREANALYSIS_MODEL','AGT002_HETZNER_BRIDGE_URL','AGT002_HETZNER_BRIDGE_HMAC_SECRET'];
@@ -26,7 +26,7 @@ export function createAgt002RadarPreanalysisRuntime({environment=process.env,cre
         const output=response?.output??JSON.parse(response?.content);
         const expectedLearningSignalIds=learningSignals?.signals?.map(item=>item.signal_id)||[];
         validateAgt002RadarPreanalysis(output,{expectedLearningSignalIds});
-        if(output.tender_id!==tenderRow.id||output.gate_evaluation_id!==gateEvaluation.id||output.policy_version!==gateEvaluation.policy_version||output.context_version!==gateEvaluation.context_version) throw new Error('output provenance mismatch');
+        if(output.tender_id!==tenderRow.id||output.gate_evaluation_id!==gateEvaluation.id||output.policy_version!==AGT002_RADAR_PREANALYSIS_POLICY_VERSION||output.context_version!==gateEvaluation.context_version) throw new Error('output provenance mismatch');
         return output;
       }catch(error){throw boundary(error,'AGT002_RADAR_PREANALYSIS_INVALID_OUTPUT');}
     },

@@ -33,6 +33,7 @@ assert.equal((await record()).status, 'existing');
 assert.equal((await db.query('select count(*)::int count from public.psi_agt002_radar_gate_evaluations')).rows[0].count, 1);
 await assert.rejects(() => record({ verdict: 'eliminada', rules: ['estado_terminal'], reasons: [{ rule_id: 'estado_terminal', field: 'status', observed_value: 'cancelado', source: 'psi_public_tenders', policy_version: 'p1', context_version: 'c1' }] }), /conflict|duplicate|23505/i);
 await assert.rejects(() => record({ key: 'key-bad', verdict: 'eliminada', rules: ['estado_terminal'], reasons: [{}] }), /invalid|22023/i);
+await assert.rejects(() => record({ key: 'key-empty-observed', verdict: 'eliminada', rules: ['fecha_no_verificable'], reasons: [{ rule_id: 'fecha_no_verificable', field: 'deadline_at', observed_value: '', source: 'psi_public_tenders', policy_version: 'p1', context_version: 'c1' }] }), /invalid|22023/i);
 
 const created = (await db.query('select id from public.psi_agt002_radar_gate_evaluations')).rows[0];
 await assert.rejects(() => db.query('update public.psi_agt002_radar_gate_evaluations set verdict=$1 where id=$2', ['eliminada', created.id]), /append-only|55000/i);

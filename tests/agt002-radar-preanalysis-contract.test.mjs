@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   AGT002_RADAR_FORBIDDEN_ALLOWED_TERMS,
+  AGT002_RADAR_PREANALYSIS_POLICY_VERSION,
   findAgt002RadarForbiddenVocabulary,
   validateAgt002RadarPreanalysis,
 } from '../agt002-radar-preanalysis-contract.js';
@@ -18,6 +19,12 @@ const valid = {
 };
 
 assert.deepEqual(validateAgt002RadarPreanalysis(valid), valid);
+assert.throws(() => validateAgt002RadarPreanalysis({
+  ...valid,
+  policy_version: 'agt002-radar-gate-policy-v1',
+  evidence: valid.evidence.map(item => ({ ...item, policy_version: 'agt002-radar-gate-policy-v1' })),
+}), /policy_version/i);
+assert.equal(valid.policy_version, AGT002_RADAR_PREANALYSIS_POLICY_VERSION);
 for (const value of [false, 'true', 1, null, undefined]) {
   const candidate = { ...valid };
   if (value === undefined) delete candidate.human_review_required; else candidate.human_review_required = value;

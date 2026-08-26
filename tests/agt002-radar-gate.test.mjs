@@ -65,7 +65,24 @@ assert.equal(
   computeAgt002RadarSourceRowHash({ ...base, raw: { b: 2, a: 1 } }),
   computeAgt002RadarSourceRowHash({ ...base, raw: { a: 1, b: 2 } }),
 );
+const sourceHash = computeAgt002RadarSourceRowHash(base);
+assert.equal(sourceHash, computeAgt002RadarSourceRowHash({
+  ...base,
+  last_seen_at: '2026-08-26T00:00:00.000Z',
+  updated_at: '2026-08-26T00:00:01.000Z',
+  score: 99,
+  reasons: ['heurística mutable'],
+  risks: ['heurística mutable'],
+  internal_status: 'convertida_oportunidad',
+  converted_opportunity_id: '44444444-4444-4444-8444-444444444444',
+  reviewed_by: '55555555-5555-4555-8555-555555555555',
+  reviewed_at: '2026-08-26T00:00:02.000Z',
+}), 'la frescura no cambia por reingesta, scoring ni revisión humana');
 assert.notEqual(computeAgt002RadarSourceRowHash(base), computeAgt002RadarSourceRowHash({ ...base, status: 'Cancelado' }));
+assert.notEqual(computeAgt002RadarSourceRowHash(base), computeAgt002RadarSourceRowHash({ ...base, deadline_at: '2026-09-01' }));
+assert.notEqual(computeAgt002RadarSourceRowHash(base), computeAgt002RadarSourceRowHash({ ...base, raw: { modalidad_de_contratacion: 'Selección abreviada' } }));
+const missingDeadline = evaluateAgt002RadarGate({ ...base, deadline_at: null }, { nowIso: NOW });
+assert.equal(missingDeadline.reasons[0].observed_value, '<null>');
 assert.throws(() => evaluateAgt002RadarGate(null, { nowIso: NOW }), /AGT002_RADAR_GATE_INPUT_INVALID/);
 assert.throws(() => evaluateAgt002RadarGate(base, { nowIso: 'not-a-date' }), /AGT002_RADAR_GATE_INPUT_INVALID/);
 

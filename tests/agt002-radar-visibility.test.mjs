@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { filterRadarRowsByCanonicalPreanalysis } from '../agt002-radar-visibility.js';
+import { computeAgt002RadarSourceRowHash } from '../agt002-radar-gate.js';
 
 const nueva = { id: 't1', stable_key: 'k1', status: 'abierto' };
 const convertida = { id: 't2', stable_key: 'k2', status: 'cerrado' };
@@ -31,6 +32,10 @@ for (const override of [
   assert.deepEqual(filterRadarRowsByCanonicalPreanalysis([preanalizada], { ...options, canonicalByTenderId: staleMap, alwaysVisibleTenderIds: new Set(), enabled: true }), []);
 }
 assert.equal(filterRadarRowsByCanonicalPreanalysis(rows, { ...options, enabled: true })[1], preanalizada);
+const firstIngest = { id: 't5', stable_key: 'k5', status: 'abierto', deadline_at: '2026-09-01T12:00:00Z', raw: { ref: 'x' }, last_seen_at: '2026-08-25T00:00:00Z' };
+const secondIngest = { ...firstIngest, last_seen_at: '2026-08-26T00:00:00Z' };
+const ingestedCanonical = new Map([['t5', { visibility_verdict: 'mostrar_en_radar', source_row_hash: computeAgt002RadarSourceRowHash(firstIngest), policy_version: policyVersion, context_version: contextVersion }]]);
+assert.deepEqual(filterRadarRowsByCanonicalPreanalysis([secondIngest], { canonicalByTenderId: ingestedCanonical, alwaysVisibleTenderIds: new Set(), computeSourceRowHash: computeAgt002RadarSourceRowHash, policyVersion, contextVersion, enabled: true }), [secondIngest], 'un nuevo last_seen_at no vuelve stale una fila fuente sin cambios');
 assert.throws(
   () => filterRadarRowsByCanonicalPreanalysis(rows, { ...options, canonicalByTenderId: null, enabled: true }),
   error => error.runtime_boundary_code === 'AGT002_RADAR_VISIBILITY_LEDGER_UNAVAILABLE',

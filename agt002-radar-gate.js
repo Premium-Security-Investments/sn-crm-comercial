@@ -15,6 +15,11 @@ export const AGT002_RADAR_GATE_RULE_IDS = Object.freeze([
   'contratacion_directa',
   'contexto_no_seguridad',
 ]);
+export const AGT002_RADAR_SOURCE_ROW_FIELDS = Object.freeze([
+  'id', 'stable_key', 'source', 'entity', 'entity_nit', 'dept', 'city', 'ref', 'process_id',
+  'title', 'description', 'desc', 'value', 'status', 'category', 'modality',
+  'published_at', 'published', 'deadline_at', 'deadline', 'url', 'raw',
+]);
 
 const BOGOTA_DATE = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit',
@@ -36,7 +41,8 @@ function stableValue(value) {
 
 export function computeAgt002RadarSourceRowHash(tenderRow) {
   if (!tenderRow || typeof tenderRow !== 'object' || Array.isArray(tenderRow)) failInput();
-  return createHash('sha256').update(JSON.stringify(stableValue(tenderRow))).digest('hex');
+  const sourceProjection = Object.fromEntries(AGT002_RADAR_SOURCE_ROW_FIELDS.map(field => [field, tenderRow[field] ?? null]));
+  return createHash('sha256').update(JSON.stringify(stableValue(sourceProjection))).digest('hex');
 }
 
 function calendarDate(value) {
@@ -68,10 +74,15 @@ function modalityEvidence(row) {
 }
 
 function reason(ruleId, field, observedValue, contextVersion) {
+  const evidenceValue = observedValue === null
+    ? '<null>'
+    : observedValue === undefined
+      ? '<undefined>'
+      : String(observedValue).trim() || '<empty>';
   return {
     rule_id: ruleId,
     field,
-    observed_value: String(observedValue ?? ''),
+    observed_value: evidenceValue,
     source: 'psi_public_tenders',
     policy_version: AGT002_RADAR_GATE_POLICY_VERSION,
     context_version: contextVersion,

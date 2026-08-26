@@ -67,6 +67,7 @@ begin
       or (select count(*) from jsonb_object_keys(v_reason)) <> 6
       or not ((v_reason->>'rule_id') = any(p_rule_ids))
       or nullif(btrim(v_reason->>'field'),'') is null
+      or nullif(btrim(v_reason->>'observed_value'),'') is null
       or nullif(btrim(v_reason->>'source'),'') is null
       or v_reason->>'policy_version' <> p_policy_version
       or v_reason->>'context_version' <> p_context_version then
