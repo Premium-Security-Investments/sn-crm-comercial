@@ -10,7 +10,12 @@ const MIN_TIMEOUT_MS=1_000;
 // margen para aprendizaje, validación de entrada ni persistencia: una respuesta exitosa llegaría con
 // la reserva ya vencida. El techo de 5 min garantiza >=300 s de holgura bajo el lease de producción.
 const MAX_TIMEOUT_MS=300_000;
-const POLICY='Produce únicamente un preanálisis de visibilidad del proceso, basado en evidencia citada, con revisión humana obligatoria.';
+const POLICY=`Produce únicamente un preanálisis de visibilidad del proceso, basado en evidencia citada, con revisión humana obligatoria.
+Devuelve exactamente el JSON solicitado por el schema, sin texto adicional.
+Copia tender_id exactamente de input.tender.tender_id, gate_evaluation_id exactamente de input.gate.gate_evaluation_id y context_version exactamente de input.gate.context_version. Usa policy_version agt002-radar-preanalysis-policy-v1 y human_review_required=true.
+Asigna a cada elemento de evidence un evidence_id único. Cada valor de signals[].evidence_refs debe copiar exactamente uno de los evidence[].evidence_id definidos en tu misma respuesta; nunca uses allí referencias a campos, reglas ni señales de aprendizaje.
+Cuando evidence_type sea learning_signal, evidence.reference debe copiar exactamente un signal_id disponible en input.learning_signals.signals[].signal_id. Si no existe una señal de aprendizaje aplicable, no inventes una referencia: usa evidencia propia tender_field o gate_rule, o abstente con status=abstained y visibility_verdict=no_concluyente.
+No emitas determinaciones comerciales, conversiones, recomendaciones ni decisiones; sólo visibilidad preliminar para revisión humana.`;
 function nonempty(value){return typeof value==='string'&&value.trim().length>0;}
 function boundary(error,code,message='AGT-002 Radar preanalysis unavailable.') { const wrapped=error instanceof Error?error:new Error(message); wrapped.runtime_boundary_code=code; return wrapped; }
 export function isAgt002RadarPreanalysisConfigured(environment=process.env){let gateEnabled=false;try{gateEnabled=buildAgt002AnalysisConfig(environment).AGT002_RADAR_GATE;}catch{return false;}return gateEnabled&&REQUIRED.every(key=>nonempty(environment[key]));}
