@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
-import { buildAgt003CopilotRequest, redactAgt003CopilotText } from '../agt003-copilot-input.js';
+import {
+  buildAgt003CopilotRequest,
+  buildAgt003Facts,
+  buildAgt003Interactions,
+  redactAgt003CopilotText,
+} from '../agt003-copilot-input.js';
 
 const opportunity = {
   id: 'opp-001',
@@ -67,6 +72,17 @@ assert.match(allText, /\[REDACTED_SIGNED_URL\]/);
 assert.ok(request.interactions.reduce((sum, item) => sum + item.summary.length, 0) <= 20000, 'aggregate interaction text is bounded');
 assert.deepEqual(request.approved_assets, assets);
 assert.ok(Object.isFrozen(request) && Object.isFrozen(request.opportunity) && Object.isFrozen(request.interactions));
+
+assert.deepEqual(
+  buildAgt003Facts(opportunity, request.opportunity.facts.find(fact => fact.field === 'preparation_date').value),
+  request.opportunity.facts,
+  'the exported fact builder preserves canonical ordering, evidence ids, redaction, date and currency',
+);
+assert.deepEqual(
+  buildAgt003Interactions([...interactions].reverse()),
+  request.interactions,
+  'the exported interaction builder preserves ordering, limits, redaction and evidence ids',
+);
 
 const reordered = buildAgt003CopilotRequest({
   opportunity: { ...opportunity },
