@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createAgt003CopilotRuntime, getAgt003CopilotRuntimeConfig, isAgt003CopilotConfigured } from '../agt003-copilot-runtime.js';
+import {
+  createAgt003CopilotRuntime,
+  getAgt003CopilotRuntimeConfig,
+  isAgt003CopilotConfigured,
+  resolveAgt003BridgeConnection,
+} from '../agt003-copilot-runtime.js';
 
 function env(overrides = {}) {
   return {
@@ -14,6 +19,12 @@ function env(overrides = {}) {
 
 assert.equal(isAgt003CopilotConfigured({}), false);
 assert.equal(isAgt003CopilotConfigured(env()), true);
+assert.deepEqual(resolveAgt003BridgeConnection(env()), {
+  wireProtocol: 'agt003',
+  model: 'synthetic-model',
+  bridgeUrl: 'https://agents.example.test/v1/agt003-copilot/run',
+  hmacSecret: 's'.repeat(32),
+});
 assert.equal(isAgt003CopilotConfigured(env({ AGT003_COPILOT_ENGINE: 'other' })), false);
 assert.equal(isAgt003CopilotConfigured(env({ AGT003_COPILOT_MODEL: '' })), false);
 assert.equal(isAgt003CopilotConfigured(env({ AGT003_COPILOT_HMAC_SECRET: '' })), false);
