@@ -7,9 +7,9 @@ const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8
 
 // Fail-closed fallback: without a governed decision_review, V3 technical findings stay in traceability
 // and are never promoted to answerable executive alerts.
-assert.match(component, /\{hasIntegralV3 && analysis && !analysis\.decision_review && <section className="tender-v3-questions tender-executive-pending"/, 'V3 debe mostrar una proyección ejecutiva pendiente cuando no hay decision_review.');
+assert.match(component, /\{hasIntegralV3 && !decisionSurfaceElsewhere && analysis && !analysis\.decision_review && <section className="tender-v3-questions tender-executive-pending"/, 'Sin superficie autoritativa, V3 debe mostrar una proyección ejecutiva pendiente cuando no hay decision_review.');
 assert.match(component, /Radar ejecutivo pendiente de clasificación|Clasificación ejecutiva no disponible/, 'Debe explicar que falta clasificar materialidad.');
-const pendingPanel = component.slice(component.indexOf('{hasIntegralV3 && analysis && !analysis.decision_review'), component.indexOf('{hasIntegralV3 && analysis && analysis.decision_review'));
+const pendingPanel = component.slice(component.indexOf('{hasIntegralV3 && !decisionSurfaceElsewhere && analysis && !analysis.decision_review'), component.indexOf('{hasIntegralV3 && !decisionSurfaceElsewhere && analysis && analysis.decision_review'));
 assert.match(pendingPanel, /hallazgos técnicos/);
 assert.match(pendingPanel, /no se presentan como alertas materiales/i);
 assert.doesNotMatch(pendingPanel, /questions\.map\(question => <QuestionResponseCard/, 'Los hallazgos técnicos sin materialidad no deben convertirse en preguntas respondibles.');
@@ -17,7 +17,7 @@ assert.match(styles, /\.tender-v3-questions\{/, 'La sección ejecutiva V3 debe c
 
 // When decision_review IS present, the same V3 slot renders the dedicated decision-review panel
 // instead — never the raw 20-question section.
-assert.match(component, /\{hasIntegralV3 && analysis && analysis\.decision_review && <section className="tender-v3-questions"/, 'Con decision_review, V3 debe renderizar las condiciones materiales en lugar de las 20 dudas.');
+assert.match(component, /\{hasIntegralV3 && !decisionSurfaceElsewhere && analysis && analysis\.decision_review && <section className="tender-v3-questions"/, 'Sin superficie autoritativa, V3 debe renderizar las condiciones materiales cuando existe decision_review.');
 
 const reviewPanel = main.match(/function TenderDocumentReviewPanel[\s\S]*?\n}\nfunction TenderOfferPreparationPanel/)?.[0] || '';
 const integralIndex = reviewPanel.indexOf('<TenderIntegralAnalysisV3View analysis={analysis} />');

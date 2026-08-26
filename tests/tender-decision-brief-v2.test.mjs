@@ -84,6 +84,7 @@ function testTask5Surfaces() {
   const panel = readFileSync(new URL('../src/tenders/components/TenderGoNoGoDecisionPanel.tsx', import.meta.url), 'utf8');
   const summary = readFileSync(new URL('../src/tenders/components/TenderGoNoGoDecisionSummary.tsx', import.meta.url), 'utf8');
   const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  const experience = readFileSync(new URL('../src/tenders/components/TenderDecisionExperience.tsx', import.meta.url), 'utf8');
 
   assert.match(brief, /tenderDecisionBlockers\(review, questionResponses\)/);
   assert.match(brief, /tenderDecisionConditions\(review, questionResponses\)/);
@@ -94,11 +95,12 @@ function testTask5Surfaces() {
   assert.doesNotMatch(brief, /Registrar GO|Registrar NO GO|tender-decision-register-(go|nogo)|open\(['"](?:go|no_go)/);
   assert.match(evidence, /resolveFindingEvidence/);
 
-  const briefIndex = main.indexOf('<TenderDecisionBrief');
-  const panelIndex = main.indexOf('<TenderGoNoGoDecisionPanel');
+  assert.match(main, /<TenderDecisionExperience/);
+  const briefIndex = experience.indexOf('<TenderDecisionBrief');
+  const panelIndex = experience.indexOf('<TenderGoNoGoDecisionPanel');
   assert.ok(briefIndex >= 0 && panelIndex > briefIndex, 'el panel queda inmediatamente debajo del brief dentro de Decisión');
-  const briefTagEnd = main.indexOf('/>', briefIndex) + 2;
-  assert.ok(main.slice(briefTagEnd, panelIndex).indexOf('Tender') === -1, 'no se inserta otra superficie entre brief y panel');
+  const briefTagEnd = experience.indexOf('/>', briefIndex) + 2;
+  assert.ok(experience.slice(briefTagEnd, panelIndex).indexOf('Tender') === -1, 'no se inserta otra superficie entre brief y panel en fallback');
 
   assert.match(panel, /<TenderGoNoGoDecisionSummary loading=\{loading\} current=\{current\} \/>/);
   assert.match(summary, /loading: boolean/);

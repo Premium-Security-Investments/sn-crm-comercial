@@ -1,0 +1,20 @@
+AGT-002 — QA visual determinista de Análisis para decidir
+
+Alcance: fixture React SSR local; sin red, base de datos ni sesión autenticada.
+Chromium: Chromium 151.0.7922.108 snap
+
+flag-off: HTML+PNG · sha256 90b4bd35811f5d07f1a1a23c220321fed334bdccba202d68d860a4206f34debb
+paused-bogota: HTML+PNG · sha256 115072caa41948e57954d5fa2ddda164f0e152dcd0f745593739875d97ab6d97
+ready: HTML+PNG · sha256 c9bef29cb15ded96ea204b57ccc51d847c4e073233dbf01a0cab8ad7a4ee181c
+post-go: HTML+PNG · sha256 9e46e5abe57e64f8519a0eca38e6a964837bc591c026369f3d8c7948884802e5
+ready-mobile: PNG 390px · regla <=640px ejercitada
+
+Checks:
+- fallback flag off sin superficie nueva; brief + panel formal únicos
+- flag on: una superficie, una CTA primaria y un panel formal por escenario
+- Bogotá HOLD: 8/11.345, 11.337 sin resolver, cinco ejes No evaluado, cero favorable y CTA primaria sólo a respaldo técnico
+- cuatro estados cerrados presentes; decision_question rotulada pregunta material pendiente
+- post_go reafirma autoridad humana y enlaza Mesa de ayuda
+- copy prohibido "Sin impedimentos" ausente
+
+Resultado: PASS

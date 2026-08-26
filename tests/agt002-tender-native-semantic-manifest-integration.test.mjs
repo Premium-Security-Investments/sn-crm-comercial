@@ -609,8 +609,33 @@ const createTestEngine = ({ client, semanticDiscoveryProvider }) => createAgt002
   }
   assert.deepEqual([...requestEvidence.supplemental_signal_ids].sort(), HISTORICAL_FOUR,
     'the historical extractors reach the model only as declared supplemental signals');
-  assert.equal(requestEvidence.tender_semantic_manifest.semantic_manifest_hash, semanticManifest.semantic_manifest_hash,
-    'the engine analysed the same deterministic manifest this test derived independently');
+  // The two per-source-unit audit ledgers are no longer sent to the provider on a discovered
+  // frontier: they are replaced by the server-derived semantic_frontier_summary (see
+  // projectAgt002DiscoveredModelInput in agt002-preview-engine.js, and
+  // tests/agt002-preview-engine-discovery-frontier-projection.test.mjs, which owns that contract).
+  // What the engine analysed is still exactly the manifest this test derived independently — the
+  // summary's arithmetic proves it, and section 7 below proves the FULL manifest still reaches the
+  // durable envelope.
+  assert.equal(requestEvidence.tender_semantic_manifest, undefined,
+    'a discovered frontier no longer ships the full semantic manifest to the provider');
+  assert.equal(requestEvidence.tender_requirement_inventory, undefined,
+    'a discovered frontier no longer ships the full source-unit inventory to the provider');
+  // Independently rebuilt packet: its material_omissions is the same server-derived flag the
+  // summary must report, without this assertion reading it back off the request under test.
+  const independentEvidence = buildAgt002PreviewInput({ ...baseArgs, semanticManifest }).document_evidence;
+  assert.deepEqual(requestEvidence.semantic_frontier_summary, {
+    inventory_version: inventory.inventory_version,
+    semantic_manifest_version: semanticManifest.semantic_manifest_version,
+    total_source_units: semanticManifest.coverage_ledger.total_source_units,
+    analyzable_source_units: inventory.coverage_ledger.analyzable_count,
+    requirement_count: semanticManifest.discovery_coverage.requirement_count,
+    excluded_count: semanticManifest.coverage_ledger.excluded_count,
+    unresolved_count: semanticManifest.coverage_ledger.unresolved_count,
+    discovery_coverage_status: semanticManifest.discovery_coverage.status,
+    analyzed_coverage_status: semanticManifest.analyzed_coverage.status,
+    decision_ready: semanticManifest.decision_ready,
+    material_omissions: independentEvidence.material_omissions,
+  }, 'the summary must report the arithmetic of the very manifest this test derived independently');
 }
 
 // ===========================================================================

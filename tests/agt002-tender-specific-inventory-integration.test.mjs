@@ -157,9 +157,16 @@ for (const relativePath of ['../api/[...path].js', '../server/index.js']) {
   assert.ok(v3GateMatch, 'el respaldo V3 debe gatear con el mismo selector puro sobre toda la cobertura de evidencia');
   const v3Gate = v3GateMatch[0];
   assert.doesNotMatch(technicalViewSource, /tenderRequirementInventoryReady/, 'el respaldo V3 no puede gatear sobre el inventario legado por su cuenta');
-  assert.match(technicalViewSource, /Cobertura integral no disponible/);
-  // El aviso de pausa antecede a TODA derivación de cobertura (resumen, fases, unidades): sin
-  // cobertura lista, ninguna lectura integral puede rendirse.
+  // AGT-002-002: el respaldo técnico ya no repite el aviso de pausa de la superficie de decisión
+  // —repetirlo hacía indistinguibles dos expedientes distintos—. Sin cobertura lista conserva el
+  // análisis de ESE expediente como respaldo técnico histórico / solo trazabilidad, negando de
+  // forma explícita ser una recomendación integral vigente y sin insinuar GO.
+  assert.doesNotMatch(technicalViewSource, /Cobertura integral no disponible/);
+  assert.match(technicalViewSource, /Respaldo técnico histórico · solo trazabilidad/);
+  assert.match(technicalViewSource, /No es una recomendación integral vigente/);
+  assert.match(technicalViewSource, /data-mode="historical-traceability"/);
+  // El gate antecede a TODA derivación agregada de cobertura (resumen por estado, fases, banco de
+  // trabajo): sin cobertura lista, ninguna lectura integral vigente puede rendirse.
   for (const derivation of ['tenderIntegralAnalysisSummary(integral)', 'tenderIntegralPhaseGroups(integral)', 'agt002-v3-workbench']) {
     assert.ok(
       technicalViewSource.indexOf(v3Gate) < technicalViewSource.indexOf(derivation),

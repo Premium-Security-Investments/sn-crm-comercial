@@ -12,10 +12,9 @@ import { SiioDashboard } from './siio/SiioDashboard';
 import { TendersModule } from './tenders/TendersModule';
 import { TenderAnalysisSection } from './tenders/components/TenderAnalysisSection';
 import { TenderIntegralAnalysisV3View } from './tenders/components/TenderIntegralAnalysisV3View';
-import { TenderDetailNavigation, resolveTenderSourceUrl } from './tenders/components/TenderDetailNavigation';
+import { TenderDetailNavigation, focusTenderDetailSection, resolveTenderSourceUrl } from './tenders/components/TenderDetailNavigation';
 import { TenderDocumentSection } from './tenders/components/TenderDocumentSection';
-import { TenderDecisionBrief } from './tenders/components/TenderDecisionBrief';
-import { TenderGoNoGoDecisionPanel } from './tenders/components/TenderGoNoGoDecisionPanel';
+import { TenderDecisionExperience } from './tenders/components/TenderDecisionExperience';
 import { TenderDossierWorkspacePanel } from './tenders/components/TenderDossierWorkspacePanel';
 import { TenderModuleNavigation } from './tenders/components/TenderModuleNavigation';
 import { TenderOfferStatusPanel } from './tenders/components/TenderOfferStatusPanel';
@@ -24,7 +23,7 @@ import { createTenderQuestionResponseActions } from './tenders/tenderQuestionRes
 import { loadTenderGoNoGoDecision, loadTenderOfferStatus, loadTrackingEvents, postActuation } from './tenders/api';
 import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
 import { tenderSharePointStatusLabel } from './tenders/statusLabels';
-import { shouldReloadTenderArtifacts } from './tenders/processingStatus';
+import { shouldReloadTenderArtifacts, tenderAnalysisCompletionMessage } from './tenders/processingStatus';
 import { AGT002_REANALYSIS_MAX_POLLS, AGT002_REANALYSIS_POLL_INTERVAL_MS, classifyAgt002ReanalysisPoll } from './tenders/agt002ReanalysisPolling';
 import type { Agt002ReanalysisJob, TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
 import { focusDocumentReviewArea, normalizeTenderModuleView } from './tenders/viewUtils';
@@ -755,6 +754,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   const [exitFeedback, setExitFeedback] = useState<string | null>(null);
   const [tenderAnalysis, setTenderAnalysis] = useState<TenderDocumentAnalysis | null>(null);
   const [tenderQuestionResponses, setTenderQuestionResponses] = useState<TenderQuestionResponse[]>([]);
+  const [tenderDecisionAxisSurfaceEnabled, setTenderDecisionAxisSurfaceEnabled] = useState(false);
   const [tenderDocumentNavigationState, setTenderDocumentNavigationState] = useState<TenderPanelState<TenderDocumentNavigationValue>>({ phase: 'loading' });
   const [tenderAnalysisNavigationState, setTenderAnalysisNavigationState] = useState<TenderPanelState<TenderDocumentAnalysis | null>>({ phase: 'loading' });
   const [tenderDecisionNavigationState, setTenderDecisionNavigationState] = useState<TenderPanelState<TenderGoNoGoDecision | null>>({ phase: 'loading' });
@@ -765,6 +765,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   activeDetailIdRef.current = id;
   const documentReviewRef = useRef<HTMLDivElement>(null);
   const followUpRef = useRef<HTMLDivElement>(null);
+  const tenderQuestionResponseSaveRef = useRef<((input: TenderQuestionResponseInput, files: File[]) => Promise<void>) | null>(null);
   const focusTarget = new URLSearchParams(window.location.hash.split('?')[1] || '').get('focus');
   const documentFocusRequested = focusTarget === 'documents';
   const interactionFocusRequested = focusTarget === 'interaction';
@@ -779,7 +780,8 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   };
   useEffect(() => {
     activeDetailIdRef.current = id; detailRequestRef.current += 1;
-    setDetail(null); setError(null); setExitFeedback(null); setExitingTender(null); setTenderAnalysis(null); setTenderQuestionResponses([]); setTenderRevision(0);
+    setDetail(null); setError(null); setExitFeedback(null); setExitingTender(null); setTenderAnalysis(null); setTenderQuestionResponses([]); setTenderDecisionAxisSurfaceEnabled(false); setTenderRevision(0);
+    tenderQuestionResponseSaveRef.current = null;
     setTenderDocumentNavigationState({ phase: 'loading' });
     setTenderAnalysisNavigationState({ phase: 'loading' });
     setTenderDecisionNavigationState({ phase: 'loading' });
@@ -843,10 +845,27 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
         </div>
       </Panel>
     </> : <section className="opportunity-insight-grid opportunity-priority-grid" aria-label="Resumen prioritario de la oportunidad"><div className={`opportunity-insight-card ${priorityNextAction.className}`}><small>Próxima gestión</small><strong>{fmtDate(o.next_action_at)}</strong><span>{priorityNextAction.detail}</span></div><div className="opportunity-insight-card"><small>Último seguimiento</small><strong>{fmtDate(o.last_interaction_at)}</strong><span>{followUpAgeLabel(o.last_interaction_at)}</span></div><div className={`opportunity-insight-card ${priorityClose.className}`}><small>Cierre estimado</small><strong>{fmtDateOnly(o.expected_close_date)}</strong><span>{priorityClose.detail}</span></div><div className={`opportunity-insight-card ${priorityDecisionMaker.className}`}><small>Contacto decisor</small><strong>{decisionMakerSummary}</strong><span>{priorityDecisionMaker.detail}</span></div></section>}
-    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} currentProfile={data.currentProfile} focusTargetRef={documentReviewRef} onNavigationStateChanged={(documents, analysis) => { if (activeDetailIdRef.current === o.id) { setTenderDocumentNavigationState(documents); setTenderAnalysisNavigationState(analysis); } }} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onQuestionResponsesChanged={responses => { if (activeDetailIdRef.current === o.id) setTenderQuestionResponses(responses); }} onReload={async()=>{await load(); await refresh();}} />}
+    {o.service_type_code === 'licitacion_publica' && <TenderDocumentReviewPanel key={`tender-documents-${o.id}`} opportunity={o} currentProfile={data.currentProfile} focusTargetRef={documentReviewRef} onQuestionResponseSaverReady={saver => { tenderQuestionResponseSaveRef.current = saver; }} onDecisionSurfaceFlagChanged={enabled => { if (activeDetailIdRef.current === o.id) setTenderDecisionAxisSurfaceEnabled(enabled); }} onNavigationStateChanged={(documents, analysis) => { if (activeDetailIdRef.current === o.id) { setTenderDocumentNavigationState(documents); setTenderAnalysisNavigationState(analysis); } }} onAnalysisChanged={analysis => { if (activeDetailIdRef.current === o.id) { setTenderAnalysis(analysis); setTenderRevision(revision => revision + 1); } }} onQuestionResponsesChanged={responses => { if (activeDetailIdRef.current === o.id) setTenderQuestionResponses(responses); }} onReload={async()=>{await load(); await refresh();}} />}
     {o.service_type_code === 'licitacion_publica' && <div id="tender-decision" className="tender-detail-anchor" tabIndex={-1}>
-      <TenderDecisionBrief analysis={tenderAnalysis} questionResponses={tenderQuestionResponses} commercialContext={{ amountLabel: fmtMoney(o.offer_value), closeLabel: fmtDateOnly(o.expected_close_date), city: o.quote_city, sector: o.economic_sector, commercialFitPositives: tenderAnalysis?.commercial_fit?.positives || [] }} />
-      <TenderGoNoGoDecisionPanel key={`tender-decision-${o.id}`} opportunityId={o.id} opportunityName={o.company_name || 'Oportunidad de licitación'} analysis={tenderAnalysis} currentProfile={data.currentProfile} request={api} questionResponses={tenderQuestionResponses} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderDecisionNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} />
+      <TenderDecisionExperience
+        decisionAxisSurfaceEnabled={tenderDecisionAxisSurfaceEnabled}
+        opportunityId={o.id}
+        opportunityName={o.company_name || 'Oportunidad de licitación'}
+        analysis={tenderAnalysis}
+        questionResponses={tenderQuestionResponses}
+        currentProfile={data.currentProfile}
+        request={api}
+        canAnswerQuestions={data.currentProfile.identity_type == null || data.currentProfile.identity_type === 'human'}
+        onSaveQuestionResponse={async (input, files) => {
+          if (!tenderQuestionResponseSaveRef.current) throw new Error('La respuesta humana aún no está disponible.');
+          await tenderQuestionResponseSaveRef.current(input, files);
+        }}
+        decisionState={tenderDecisionNavigationState}
+        onDecisionNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderDecisionNavigationState(state); }}
+        onDecisionChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }}
+        onOpenHelpDesk={() => focusTenderDetailSection(document.getElementById('tender-preparation'))}
+        commercialContext={{ amountLabel: fmtMoney(o.offer_value), closeLabel: fmtDateOnly(o.expected_close_date), city: o.quote_city, sector: o.economic_sector, commercialFitPositives: tenderAnalysis?.commercial_fit?.positives || [] }}
+      />
     </div>}
     {o.service_type_code === 'licitacion_publica' && <div id="tender-preparation" className="tender-detail-anchor" tabIndex={-1}><TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} currentProfile={data.currentProfile} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderPreparationNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /><TenderDossierWorkspacePanel key={`tender-dossier-${o.id}-${tenderRevision}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={can(data.currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE)} offerStatus={o.tender_offer_status || null} /></div>}
     <div id="tender-follow-up" className="tender-detail-anchor" tabIndex={-1}>{o.service_type_code === 'licitacion_publica' ? <PublicTenderFollowUp opportunity={o} profiles={data.profiles} currentProfile={data.currentProfile} /> : <>
@@ -905,7 +924,7 @@ function fileToBase64(file: File) {
     reader.readAsDataURL(file);
   });
 }
-function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAnalysisChanged, onQuestionResponsesChanged, onNavigationStateChanged, focusTargetRef }: { opportunity: Opportunity; currentProfile: Profile; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; onQuestionResponsesChanged?: (responses: TenderQuestionResponse[]) => void; onNavigationStateChanged?: (documents: TenderPanelState<TenderDocumentNavigationValue>, analysis: TenderPanelState<TenderDocumentAnalysis | null>) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
+function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAnalysisChanged, onQuestionResponsesChanged, onDecisionSurfaceFlagChanged, onQuestionResponseSaverReady, onNavigationStateChanged, focusTargetRef }: { opportunity: Opportunity; currentProfile: Profile; onReload?: () => Promise<void>; onAnalysisChanged?: (analysis: TenderDocumentAnalysis | null) => void; onQuestionResponsesChanged?: (responses: TenderQuestionResponse[]) => void; onDecisionSurfaceFlagChanged?: (enabled: boolean) => void; onQuestionResponseSaverReady?: (saver: ((input: TenderQuestionResponseInput, files: File[]) => Promise<void>) | null) => void; onNavigationStateChanged?: (documents: TenderPanelState<TenderDocumentNavigationValue>, analysis: TenderPanelState<TenderDocumentAnalysis | null>) => void; focusTargetRef?: React.RefObject<HTMLDivElement | null> }) {
   const [payload, setPayload] = useState<TenderDocumentsPayload>({ documents: [], analysis: null, analyses: [] });
   const [processingStatus, setProcessingStatus] = useState<TenderProcessingStatus | null>(null);
   const [statusText, setStatusText] = useState('');
@@ -926,12 +945,15 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     { phase: 'ready', value: { currentDocumentCount: (data.documents || []).filter(document => document.current !== false).length, importError: Boolean(data.import_error) } },
     { phase: 'ready', value: data.analysis || null },
   );
-  const loadDocuments = async () => {
+  // Devuelve lo que realmente cargó, para que quien recarga pueda leer el expediente fresco sin
+  // esperar al siguiente render; `undefined` cuando la petición quedó superada y no se aplicó.
+  const loadDocuments = async (): Promise<TenderDocumentsPayload | undefined> => {
     const requestedId = opportunity.id; const version = ++requestVersionRef.current;
     onNavigationStateChanged?.({ phase: 'loading' }, { phase: 'loading' });
     const data = await api<TenderDocumentsPayload>(`/api/tender-documents?id=${encodeURIComponent(requestedId)}`);
-    if (version !== requestVersionRef.current || activeOpportunityRef.current !== requestedId) return;
-    setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); emitNavigationPayload(data);
+    if (version !== requestVersionRef.current || activeOpportunityRef.current !== requestedId) return undefined;
+    setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); onDecisionSurfaceFlagChanged?.(data.decision_axis_surface_enabled === true); emitNavigationPayload(data);
+    return data;
   };
   const loadProcessingStatus = async () => {
     const requestedId = opportunity.id;
@@ -980,7 +1002,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
         content_base64: await fileToBase64(file)
       })));
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-upload', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, files }) });
-      setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); emitNavigationPayload(data); setStatusText('Documentos guardados en Supabase y texto extraído.');
+      setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); onDecisionSurfaceFlagChanged?.(data.decision_axis_surface_enabled === true); emitNavigationPayload(data); setStatusText('Documentos guardados en Supabase y texto extraído.');
     } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }, { phase: 'ready', value: payload.analysis || null }); }
     finally { setBusy(false); }
   };
@@ -1001,11 +1023,18 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
         if (job.job_id !== jobId) throw new Error('El estado del reanálisis activo cambió; recargue el expediente.');
         const decision = classifyAgt002ReanalysisPoll(job.status, reloadedReanalysisJobRef.current === jobId);
         if (job.status === 'completed') {
+          // El cierre se deriva del análisis RECIÉN recargado, nunca del estado de React capturado
+          // en este render: ese estado todavía no conoce la corrida que acaba de terminar, así que
+          // decidiría la cobertura con el expediente anterior. Si esta vuelta no recarga es porque
+          // el expediente ya se recargó para ESTE mismo job y el payload en memoria es ese mismo
+          // resultado.
+          let reloaded: TenderDocumentsPayload | undefined;
           if (decision.shouldReload) {
             reloadedReanalysisJobRef.current = jobId;
-            await Promise.all([loadDocuments(), onReload?.()]);
+            const [loaded] = await Promise.all([loadDocuments(), onReload?.()]);
+            reloaded = loaded;
           }
-          setAnalysisStatus({ message: `${VIGIA_VISIBLE_NAMES.tenders} completó el análisis. La recomendación requiere revisión humana.`, tone: decision.tone });
+          setAnalysisStatus({ message: tenderAnalysisCompletionMessage(reloaded ? reloaded.analysis : payload.analysis), tone: decision.tone });
           return job;
         }
         if (job.status === 'unavailable') {
@@ -1047,7 +1076,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
       const requestedOpportunityId = opportunity.id;
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-analyze-agent-preview', { method: 'POST', body: JSON.stringify({ opportunity_id: requestedOpportunityId }) });
       if (activeOpportunityRef.current !== requestedOpportunityId) return;
-      setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []);
+      setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); onDecisionSurfaceFlagChanged?.(data.decision_axis_surface_enabled === true);
       if (data.reanalysis_job?.job_id) {
         setAnalysisStatus({
           message: data.reanalysis_job.status === 'running'
@@ -1058,7 +1087,9 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
         await pollAgt002Reanalysis(data.reanalysis_job.job_id, requestedOpportunityId);
       } else {
         setAnalysisStatus({
-          message: data.analysis_engine?.fallback ? `${VIGIA_VISIBLE_NAMES.tenders} no estuvo disponible; se aplicó fallback seguro por reglas.` : `${VIGIA_VISIBLE_NAMES.tenders} completó el análisis. La recomendación requiere revisión humana.`,
+          // Éxito inmediato sin job: la cobertura se lee del análisis que acaba de devolver la
+          // petición, no del estado de React todavía sin actualizar.
+          message: data.analysis_engine?.fallback ? `${VIGIA_VISIBLE_NAMES.tenders} no estuvo disponible; se aplicó fallback seguro por reglas.` : tenderAnalysisCompletionMessage(data.analysis),
           tone: 'status',
         });
       }
@@ -1097,12 +1128,16 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
       throw error;
     } finally { setBusy(false); }
   };
+  useEffect(() => {
+    onQuestionResponseSaverReady?.(saveQuestionResponse);
+    return () => onQuestionResponseSaverReady?.(null);
+  }, [onQuestionResponseSaverReady, saveQuestionResponse]);
   const importOfficialDocuments = async () => {
     setBusy(true); setStatusText('Actualizando documentos oficiales desde la fuente…');
     onNavigationStateChanged?.({ phase: 'pending', label: 'Importación documental en curso' }, { phase: 'ready', value: payload.analysis || null });
     try {
       const data = await api<TenderDocumentsPayload>('/api/tender-documents-import', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id }) });
-      setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []);
+      setPayload(data); onAnalysisChanged?.(data.analysis || null); onQuestionResponsesChanged?.(data.question_responses || []); onDecisionSurfaceFlagChanged?.(data.decision_axis_surface_enabled === true);
       const failedCount = Number(data.failed_count || 0);
       if (failedCount > 0) onNavigationStateChanged?.({ phase: 'error', message: `Falló la importación de ${failedCount} documento(s)` }, { phase: 'ready', value: data.analysis || null });
       else onNavigationStateChanged?.(
@@ -1131,7 +1166,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
       <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
     </div>
     <div id="tender-analysis" className="tender-guided-review" tabIndex={-1}>
-      <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} />
+      <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} decisionSurfaceElsewhere={payload.decision_axis_surface_enabled === true} />
       <details id="tender-technical-analysis" className="tender-integral-analysis-trace"><summary>Ver respaldo técnico del análisis</summary><TenderIntegralAnalysisV3View analysis={analysis} /></details>
     </div>
   </>;

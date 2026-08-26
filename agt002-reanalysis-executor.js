@@ -9,25 +9,11 @@ import {
   releaseAgt002PreviewClaim,
 } from './agt002-preview-persistence.js';
 import { createAgt002PreviewRuntime } from './agt002-preview-runtime.js';
+import { AGT002_MAX_PREVIEW_CLAIM_LEASE_SECONDS, agt002RequiredPreviewClaimLeaseSeconds } from './agt002-reanalysis-input.js';
 import { classifyAgt002ReanalysisWorkerError } from './agt002-reanalysis-worker.js';
 
 function isObject(value) {
   return value != null && typeof value === 'object' && !Array.isArray(value);
-}
-
-/** Hard ceiling the durable preview reservation accepts for a single claim lease. */
-const MAX_PREVIEW_CLAIM_LEASE_SECONDS = 600;
-
-/**
- * Single deterministic source for the durable preview claim lease, so the validation gate and
- * the claim itself can never drift apart. A V3 run spends TWO sequential provider turns under
- * one claim (semantic discovery, then analysis) and `timeout_ms` bounds each turn independently,
- * so each turn rounds up to whole seconds on its own before they are summed, plus the executor's
- * 30s buffer. The result is NEVER clamped: clamping would hand back a lease that silently
- * underfunds both turns and the run would be reclaimed mid-flight after the provider is paid.
- */
-function requiredPreviewClaimLeaseSeconds(timeoutMs) {
-  return 2 * Math.ceil(timeoutMs / 1000) + 30;
 }
 
 function validFrozenInput(job) {
@@ -45,7 +31,7 @@ function validFrozenInput(job) {
   // not a capacity state: reject it here — before any claim, runtime construction or post-bridge
   // call — exactly like the other pre-claim validation failures. 285_000ms is the largest fundable
   // timeout (2*285+30 = 600 exactly); 285_001ms needs 602s and is rejected.
-  if (requiredPreviewClaimLeaseSeconds(identity.timeout_ms) > MAX_PREVIEW_CLAIM_LEASE_SECONDS) return null;
+  if (agt002RequiredPreviewClaimLeaseSeconds(identity.timeout_ms) > AGT002_MAX_PREVIEW_CLAIM_LEASE_SECONDS) return null;
   if (identity.idempotency_key != null && identity.idempotency_key !== job.idempotencyKey) return null;
   if (context?.opportunity?.id !== job.opportunityId
     || context.snapshotId !== job.snapshotId
@@ -103,7 +89,7 @@ export function createAgt002ReanalysisExecutor({
 
     const identity = input.engine_identity;
     // Never clamped — validFrozenInput already rejected anything the ceiling cannot fund.
-    const leaseSeconds = requiredPreviewClaimLeaseSeconds(identity.timeout_ms);
+    const leaseSeconds = agt002RequiredPreviewClaimLeaseSeconds(identity.timeout_ms);
     let previewClaimId = null;
     try {
       const claim = await claimPreviewRun(database, {

@@ -34,7 +34,7 @@ assert.equal(tenderExecutiveOpenIssueCount(unclassifiedV3), 0, 'Unclassified V3 
 const analysisSection = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8');
 const decisionBrief = readFileSync(new URL('../src/tenders/components/TenderDecisionBrief.tsx', import.meta.url), 'utf8');
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
-assert.match(main, /<TenderDecisionBrief analysis=\{tenderAnalysis\}/);
+assert.match(main, /<TenderDecisionExperience[\s\S]*analysis=\{tenderAnalysis\}/);
 assert.match(decisionBrief, /Brief de decisión/);
 assert.match(analysisSection, /alertas materiales/i);
 assert.match(analysisSection, /Clasificación ejecutiva no disponible/);

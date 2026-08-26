@@ -3,6 +3,17 @@ import http from 'node:http';
 import { readFileSync } from 'node:fs';
 import { buildTenderSnapshotInput } from '../tender-analysis-foundation.js';
 
+// Este contrato prueba el dossier base. No debe heredar flags AGT002 del proceso que ejecuta la
+// suite, porque esos modos añaden proveedores/tablas que el mock deliberadamente no representa.
+for (const flag of [
+  'AGT002_CANONICAL_ONLY',
+  'AGT002_CONTEXT_V2',
+  'AGT002_DOCUMENT_RETRIEVAL',
+  'AGT002_INTEGRAL_CONTRACT_V3',
+  'AGT002_LEGAL_CORPUS',
+  'AGT002_WORKBENCH_DRAIN_ENABLED',
+]) process.env[flag] = 'false';
+
 const backends = ['../api/[...path].js', '../server/index.js'].map(path =>
   readFileSync(new URL(path, import.meta.url), 'utf8')
 );

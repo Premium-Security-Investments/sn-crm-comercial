@@ -4,6 +4,16 @@
 // It only projects an already persisted, canonical/current/completed integral-analysis-v3
 // into the human-facing decision-review shape. Potential blockers remain questions until a
 // person confirms them; therefore this generic path never self-creates a confirmed blocker.
+//
+// Locked invariants (§4 of docs/superpowers/specs/2026-08-25-agt002-analisis-para-decidir.md,
+// verified by tests/agt002-generic-decision-review-materiality.test.mjs — never relax silently):
+//   (a) every finding keeps `requirement_id` verbatim from its source unit;
+//   (b) `evidence_refs` is always exactly [{ type: 'manifest_requirement', requirement_id }],
+//       frozen, never transformed or enriched;
+//   (c) `blocking.effect === 'blocker'` from the model NEVER fills the `blocker` bucket here —
+//       this path only ever produces `decision_question`/`supported`/`preparation`/`not_applicable`;
+//   (d) any `material_impediment_category`/`axis` a model result injects on a unit is ignored —
+//       findings only ever carry the fields this module itself derives.
 
 export const AGT002_GENERIC_DECISION_REVIEW_ARTIFACT_TYPE = 'agt002_generic_decision_review';
 export const AGT002_GENERIC_DECISION_REVIEW_CONTRACT_VERSION = 'agt002-generic-decision-review@1';

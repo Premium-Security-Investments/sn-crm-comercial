@@ -91,17 +91,39 @@ const countOf = (haystack, needle) => haystack.split(needle).length - 1;
 const DYNAMIC_UNITS = DYNAMIC.integral_analysis.analysis_units;
 const PILOT_UNITS = PILOT.integral_analysis.analysis_units;
 
-test('un V3 histórico sin inventario verificable se muestra pausado, no como análisis integral', () => {
-  const html = render(DYNAMIC);
-  assert.ok(html.includes('Cobertura integral no disponible'));
-  assert.ok(html.includes('no tiene todavía una cobertura integral lista para decisión'));
-  assert.equal(html.includes('Requisitos analizados'), false);
-  // Ninguna lectura de cobertura se filtra en la pausa: ni fases, ni unidades, ni títulos.
-  assert.equal(html.includes('agt002-v3-workbench'), false);
-  for (const unit of DYNAMIC_UNITS) assert.equal(html.includes(`<h4>${unit.title}</h4>`), false);
+// AGT-002-002 · sin cobertura lista, el respaldo técnico NO repite el aviso de pausa de la
+// superficie de decisión (que sí permanece pausada, fail-closed). Repetirlo hacía que dos
+// expedientes distintos rindieran exactamente la misma pantalla y borraba su trazabilidad. Lo que
+// se rinde aquí es el análisis realmente conservado de ESE expediente, rotulado como respaldo
+// técnico histórico / solo trazabilidad: ninguna derivación agregada que pudiera leerse como
+// cobertura integral vigente, ningún enlace a una superficie de decisión pausada, ninguna
+// insinuación de GO.
+const HISTORICAL_TITLE = 'Respaldo técnico histórico · solo trazabilidad';
+
+function assertHistoricalTraceabilityOnly(html, units, caso) {
+  assert.ok(html.includes(HISTORICAL_TITLE), `debe rotularse como respaldo técnico histórico (${caso})`);
+  assert.match(html, /no es una recomendaci[oó]n integral vigente/i, `debe negar ser una recomendación integral vigente (${caso})`);
+  assert.ok(html.includes('No decide GO / NO GO'), `nunca puede insinuar GO (${caso})`);
+  assert.ok(html.includes('Validación humana pendiente'), `la autoridad humana sigue visible (${caso})`);
+
+  assert.equal(html.includes('Cobertura integral no disponible'), false, `ya no repite el aviso de pausa de la decisión (${caso})`);
+  assert.equal(html.includes('Análisis integral por requisito'), false, `nunca se presenta como el análisis integral vigente (${caso})`);
+  assert.equal(html.includes('Requisitos analizados'), false, `ninguna cifra agregada de cobertura puede filtrarse (${caso})`);
+  assert.equal(html.includes('Requisitos analizables'), false, `ninguna cifra de alcance del manifiesto puede filtrarse (${caso})`);
+  assert.equal(html.includes('Indicadores de evidencia'), false, `los indicadores agregados no pertenecen al modo histórico (${caso})`);
+  assert.equal(html.includes('Ver condición principal'), false, `sin superficie de decisión activa no hay destino que enlazar (${caso})`);
+
+  // La trazabilidad del expediente exacto sí se conserva, íntegra y una sola vez por unidad.
+  for (const unit of units) {
+    assert.equal(countOf(html, `<h4>${unit.title}</h4>`), 1, `la trazabilidad conserva ${unit.title} (${caso})`);
+  }
+}
+
+test('un V3 histórico sin inventario verificable conserva su trazabilidad, nunca como análisis integral vigente', () => {
+  assertHistoricalTraceabilityOnly(render(DYNAMIC), DYNAMIC_UNITS, 'sin inventario');
 });
 
-test('un inventario presente pero sin la forma gobernada falla cerrado a la misma pausa', () => {
+test('un inventario presente pero sin la forma gobernada falla cerrado al mismo respaldo histórico', () => {
   for (const broken of [
     { ...READY_INVENTORY, inventory_version: 'tender_requirement_inventory.v0' },
     { ...READY_INVENTORY, inventory_version: undefined },
@@ -110,8 +132,7 @@ test('un inventario presente pero sin la forma gobernada falla cerrado a la mism
     { ...READY_INVENTORY, expedient_coverage: [] },
   ]) {
     const html = render({ ...DYNAMIC, evidence_coverage: { ...(DYNAMIC.evidence_coverage ?? {}), tender_requirement_inventory: broken } });
-    assert.ok(html.includes('Cobertura integral no disponible'), `un inventario malformado debe pausar: ${JSON.stringify(broken.inventory_version)}`);
-    assert.equal(html.includes('Requisitos analizados'), false);
+    assertHistoricalTraceabilityOnly(html, DYNAMIC_UNITS, `inventario malformado ${JSON.stringify(broken.inventory_version)}`);
   }
 });
 
@@ -119,24 +140,18 @@ test('un inventario listo (decision_ready === true) rinde el V3 completo', () =>
   assert.equal(READY_INVENTORY.decision_ready, true, 'el fixture debe reproducir el único caso que puede rendir completo');
   for (const html of [dynamicHtml, pilotHtml]) {
     assert.ok(html.includes('Análisis integral por requisito'));
-    assert.equal(html.includes('Cobertura integral no disponible'), false);
+    assert.equal(html.includes(HISTORICAL_TITLE), false, 'con cobertura lista nunca se rotula como respaldo histórico');
     assert.ok(html.includes('Validación humana pendiente'), 'la pausa humana sigue visible dentro del V3 completo');
   }
   assert.ok(dynamicHtml.includes(`<dt>Requisitos analizados</dt><dd>${DYNAMIC_UNITS.length}</dd>`));
 });
 
 // La forma real del contrato P0 vigente: un inventario presente, bien formado, pero con
-// `decision_ready: false` — el valor que fija toda corrida real hoy — debe seguir mostrando la
-// misma pausa que un histórico sin inventario en absoluto. Ninguna cifra de cobertura integral,
-// fase, conteo o recomendación puede filtrarse mientras `decision_ready` no sea `true`.
-test('un inventario presente y bien formado pero con decision_ready !== true permanece pausado, no rinde el V3 completo', () => {
-  const html = render(withInventory(DYNAMIC, PAUSED_REAL_INVENTORY));
-  assert.ok(html.includes('Cobertura integral no disponible'));
-  assert.ok(html.includes('no tiene todavía una cobertura integral lista para decisión'));
-  assert.equal(html.includes('Requisitos analizados'), false);
-  assert.equal(html.includes('agt002-v3-workbench'), false);
-  assert.equal(html.includes('Análisis integral por requisito'), false);
-  for (const unit of DYNAMIC_UNITS) assert.equal(html.includes(`<h4>${unit.title}</h4>`), false);
+// `decision_ready: false` — el valor que fija toda corrida real hoy — nunca puede rendir cobertura
+// integral. Ninguna cifra agregada, alcance, indicador o recomendación puede filtrarse mientras
+// `decision_ready` no sea `true`; sólo la trazabilidad histórica del expediente.
+test('un inventario presente y bien formado pero con decision_ready !== true no rinde el V3 completo, sólo trazabilidad histórica', () => {
+  assertHistoricalTraceabilityOnly(render(withInventory(DYNAMIC, PAUSED_REAL_INVENTORY)), DYNAMIC_UNITS, 'decision_ready:false');
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -202,7 +217,7 @@ test('un manifiesto semántico finalizado y listo rinde el V3 completo aunque el
   const html = render(withCoverage(withInventory(DYNAMIC, PAUSED_REAL_INVENTORY), {
     tender_semantic_manifest: READY_SEMANTIC_MANIFEST,
   }));
-  assert.equal(html.includes('Cobertura integral no disponible'), false, 'una frontera semántica finalizada nunca es cobertura ausente');
+  assert.equal(html.includes(HISTORICAL_TITLE), false, 'una frontera semántica finalizada nunca degrada a respaldo histórico');
   assert.ok(html.includes('Análisis integral por requisito'));
   assert.ok(html.includes(`<dt>Requisitos analizados</dt><dd>${DYNAMIC_UNITS.length}</dd>`));
   for (const unit of DYNAMIC_UNITS) {
@@ -211,7 +226,7 @@ test('un manifiesto semántico finalizado y listo rinde el V3 completo aunque el
   assert.ok(html.includes('Validación humana pendiente'), 'listo para revisión humana nunca es autorización');
 });
 
-test('un manifiesto semántico presente pero no listo pausa aunque el inventario legado se declare listo', () => {
+test('un manifiesto semántico presente pero no listo nunca rinde cobertura integral, aunque el inventario legado se declare listo', () => {
   for (const manifest of [
     { ...READY_SEMANTIC_MANIFEST, decision_ready: false, recommendation: 'pause' },
     { ...READY_SEMANTIC_MANIFEST, discovery_coverage: { ...READY_SEMANTIC_MANIFEST.discovery_coverage, status: 'partial' } },
@@ -226,25 +241,27 @@ test('un manifiesto semántico presente pero no listo pausa aunque el inventario
   ]) {
     const html = render(withCoverage(withReadyInventory(DYNAMIC), { tender_semantic_manifest: manifest }));
     const caso = `${JSON.stringify(manifest.semantic_manifest_version)} · ready=${manifest.decision_ready} · descubrimiento=${JSON.stringify(manifest.discovery_coverage?.status ?? manifest.discovery_coverage)} · analizado=${JSON.stringify(manifest.analyzed_coverage?.status ?? manifest.analyzed_coverage)}`;
-    assert.ok(html.includes('Cobertura integral no disponible'), `un manifiesto no listo debe pausar (${caso})`);
-    assert.equal(html.includes('Requisitos analizados'), false, `ningún conteo puede filtrarse (${caso})`);
-    assert.equal(html.includes('agt002-v3-workbench'), false, `ninguna fase puede filtrarse (${caso})`);
-    for (const unit of DYNAMIC_UNITS) assert.equal(html.includes(`<h4>${unit.title}</h4>`), false, `ninguna unidad puede filtrarse (${caso})`);
+    assertHistoricalTraceabilityOnly(html, DYNAMIC_UNITS, `manifiesto no listo ${caso}`);
   }
 });
 
 test('sin manifiesto semántico se conserva intacta la lectura legada del inventario', () => {
   const legacyReady = render(withReadyInventory(DYNAMIC));
-  assert.equal(legacyReady.includes('Cobertura integral no disponible'), false, 'sin frontera semántica manda el inventario legado listo');
+  assert.equal(legacyReady.includes(HISTORICAL_TITLE), false, 'sin frontera semántica manda el inventario legado listo');
   assert.ok(legacyReady.includes('Análisis integral por requisito'));
 
-  const legacyPaused = render(withInventory(DYNAMIC, PAUSED_REAL_INVENTORY));
-  assert.ok(legacyPaused.includes('Cobertura integral no disponible'), 'sin frontera semántica un inventario no listo sigue pausando');
-  assert.equal(legacyPaused.includes('Requisitos analizados'), false);
+  assertHistoricalTraceabilityOnly(
+    render(withInventory(DYNAMIC, PAUSED_REAL_INVENTORY)),
+    DYNAMIC_UNITS,
+    'sin frontera semántica, inventario legado no listo',
+  );
 
   // Un manifiesto ausente explícito (null) es exactamente lo mismo que no traerlo.
-  const nullManifest = render(withCoverage(withInventory(DYNAMIC, PAUSED_REAL_INVENTORY), { tender_semantic_manifest: null }));
-  assert.ok(nullManifest.includes('Cobertura integral no disponible'), 'un manifiesto nulo nunca puede leerse como frontera lista');
+  assertHistoricalTraceabilityOnly(
+    render(withCoverage(withInventory(DYNAMIC, PAUSED_REAL_INVENTORY), { tender_semantic_manifest: null })),
+    DYNAMIC_UNITS,
+    'manifiesto nulo',
+  );
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -411,18 +428,21 @@ test('Ver condición principal aparece sólo cuando hay igualdad no nula de requ
   const matching = DYNAMIC_UNITS.filter(unit => unit.requirement_id === 'req-dyn-experiencia' || unit.requirement_id === 'req-dyn-territorio').length;
   assert.equal(countOf(dynamicHtml, 'Ver condición principal'), matching, 'una unidad sin entrada gobernada equivalente no ofrece el enlace');
 
-  const sinReview = render({ ...DYNAMIC, decision_review: null });
+  // Con cobertura lista (la única lectura que ofrece el enlace) pero sin decision_review gobernado.
+  const sinReview = render(withReadyInventory({ ...DYNAMIC, decision_review: null }));
+  assert.ok(sinReview.includes('Análisis integral por requisito'), 'el caso debe evaluarse sobre la lectura integral completa');
   assert.equal(countOf(sinReview, 'Ver condición principal'), 0, 'sin decision_review gobernado no hay destino seguro: se omite el enlace');
   assert.equal(countOf(pilotHtml, 'Ver condición principal'), 0);
 
   // Nunca por texto: mismos títulos, requirement_id que no existe en decision_review.
-  const sinIgualdad = render({
+  const sinIgualdad = render(withReadyInventory({
     ...DYNAMIC,
     integral_analysis: {
       ...DYNAMIC.integral_analysis,
       analysis_units: DYNAMIC_UNITS.map(unit => ({ ...unit, requirement_id: unit.requirement_id ? `${unit.requirement_id}-otro` : null })),
     },
-  });
+  }));
+  assert.ok(sinIgualdad.includes('Análisis integral por requisito'), 'el caso debe evaluarse sobre la lectura integral completa');
   assert.equal(countOf(sinIgualdad, 'Ver condición principal'), 0);
 });
 

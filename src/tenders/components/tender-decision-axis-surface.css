@@ -1,0 +1,293 @@
+.tender-decision-axis-surface {
+  --axis-ink: #16342f;
+  --axis-muted: #5f6f6b;
+  --axis-line: color-mix(in srgb, #16342f 18%, transparent);
+  --axis-paper: #fbfcf8;
+  display: grid;
+  gap: 1rem;
+  color: var(--axis-ink);
+}
+
+.tender-decision-axis-hero,
+.tender-decision-axis-banner,
+.tender-decision-axis-body > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.tender-decision-axis-hero {
+  padding: clamp(1rem, 2.4vw, 1.75rem);
+  border: 1px solid var(--axis-line);
+  border-radius: 20px;
+  background: linear-gradient(130deg, #f6f5ec, #eef6ef 62%, #e5f1ed);
+}
+
+.tender-decision-axis-hero h2,
+.tender-decision-axis-body h3 {
+  margin: .2rem 0 .45rem;
+  letter-spacing: -.025em;
+}
+
+.tender-decision-axis-hero p,
+.tender-decision-axis-banner span {
+  display: block;
+  max-width: 68ch;
+  margin: 0;
+  color: var(--axis-muted);
+}
+
+.tender-decision-axis-help {
+  flex: 0 0 auto;
+  border: 1px solid var(--axis-line);
+  background: rgba(255, 255, 255, .72);
+  color: var(--axis-ink);
+}
+
+/* Insignia de cobertura del §13: estado por TEXTO ("PAUSADA"/"LISTA"), nunca sólo por color. */
+.tender-decision-axis-coverage {
+  flex: 0 0 auto;
+  padding: .4rem .7rem;
+  border: 1px solid var(--axis-line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .72);
+  font-size: .78rem;
+  letter-spacing: .05em;
+}
+
+.tender-decision-axis-coverage.is-paused { border-color: #c79136; color: #7a5315; }
+.tender-decision-axis-coverage.is-ready { border-color: #278167; color: #17634e; }
+
+.tender-decision-axis-banner {
+  align-items: center;
+  padding: .85rem 1rem;
+  border: 1px solid var(--axis-line);
+  border-left: 4px solid #c79136;
+  border-radius: 14px;
+  background: #fffaf0;
+}
+
+.tender-decision-axis-banner.post_go {
+  border-left-color: #24765f;
+  background: #f0f8f3;
+}
+
+.tender-decision-axis-cta {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: .65rem .9rem;
+  border: 1px solid #174a3d;
+  border-radius: 10px;
+  background: #174a3d;
+  color: #fff;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.tender-decision-axis-rail {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: .55rem;
+}
+
+.tender-decision-axis-chip {
+  min-width: 0;
+  padding: .8rem;
+  border: 1px solid var(--axis-line);
+  border-radius: 14px;
+  background: var(--axis-paper);
+  color: var(--axis-ink);
+  text-align: left;
+}
+
+.tender-decision-axis-chip[aria-pressed="true"] {
+  outline: 3px solid color-mix(in srgb, #174a3d 22%, transparent);
+  border-color: #174a3d;
+}
+
+/* Foco visible propio en TODOS los controles de la superficie (chips, acciones de fila, CTA,
+   drawer y barra final): el estado de teclado nunca depende del outline por defecto del navegador,
+   que aquí quedaría enterrado bajo los bordes de color de cada estado. */
+.tender-decision-axis-surface :is(button, a, summary, [tabindex]):focus-visible,
+.tender-decision-axis-drawer :is(button, a, summary, input, textarea, select, [tabindex]):focus-visible {
+  outline: 3px solid #174a3d;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.tender-decision-axis-chip span,
+.tender-decision-axis-chip small {
+  display: block;
+}
+
+.tender-decision-axis-chip small {
+  margin-top: .35rem;
+  color: var(--axis-muted);
+  line-height: 1.25;
+}
+
+.tender-decision-axis-chip.state-favorable { border-top: 4px solid #278167; }
+.tender-decision-axis-chip.state-blocker { border-top: 4px solid #b9473d; }
+.tender-decision-axis-chip.state-pending { border-top: 4px solid #c79136; }
+.tender-decision-axis-chip.state-not-evaluated { border-top: 4px solid #8a9693; }
+
+.tender-decision-axis-body {
+  min-width: 0;
+  padding: clamp(1rem, 2.2vw, 1.5rem);
+  border: 1px solid var(--axis-line);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 14px 38px rgba(18, 52, 46, .07);
+}
+
+.tender-decision-axis-body > header strong {
+  padding: .4rem .6rem;
+  border-radius: 999px;
+  background: #f0f2f1;
+  font-size: .84rem;
+}
+
+.tender-decision-axis-body > header strong.state-favorable { background: #e3f3eb; color: #17634e; }
+.tender-decision-axis-body > header strong.state-blocker { background: #fbe9e6; color: #8e3029; }
+.tender-decision-axis-body > header strong.state-pending { background: #fff2d5; color: #7a5315; }
+.tender-decision-axis-body > header strong.state-not-evaluated { background: #eef0ef; color: #596461; }
+
+.tender-decision-axis-table-wrap { display: none; }
+.tender-decision-axis-table { width: 100%; border-collapse: collapse; }
+.tender-decision-axis-table caption { padding: .8rem 0; color: var(--axis-muted); text-align: left; }
+.tender-decision-axis-table th,
+.tender-decision-axis-table td { padding: .8rem .65rem; border-top: 1px solid var(--axis-line); text-align: left; vertical-align: top; }
+.tender-decision-axis-table thead th { color: var(--axis-muted); font-size: .78rem; text-transform: uppercase; letter-spacing: .055em; }
+
+/* Celda "Acción": la acción gobernada en texto sobre el punto de entrada al detalle, en una sola
+   columna, para que la fila no dependa del ancho de la tabla para ser legible. */
+.tender-decision-axis-table .tender-decision-axis-action-copy { display: block; margin-bottom: .45rem; max-width: 32ch; overflow-wrap: anywhere; }
+
+/* Neutraliza `td:last-child { white-space: nowrap; text-align: right }` de src/styles.css: en
+   escritorio esa regla global cortaba la acción gobernada ("Revisar el soporte con la persona
+   responsable.") en una sola línea alineada a la derecha. La celda Acción de este eje necesita
+   ajuste normal y alineación a la izquierda para permanecer legible. */
+.tender-decision-axis-table td:last-child { white-space: normal; text-align: left; min-width: 0; }
+
+.tender-decision-axis-cards { display: grid; gap: .75rem; margin-top: 1rem; }
+.tender-decision-axis-card { padding: 1rem; border: 1px solid var(--axis-line); border-radius: 14px; background: var(--axis-paper); }
+.tender-decision-axis-card h4 { margin: 0 0 .75rem; }
+.tender-decision-axis-card-fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: .55rem; margin: 0 0 .85rem; }
+.tender-decision-axis-card-fields div { min-width: 0; }
+.tender-decision-axis-card-fields dt { color: var(--axis-muted); font-size: .76rem; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+.tender-decision-axis-card-fields dd { margin: .12rem 0 0; overflow-wrap: anywhere; }
+
+/* Preparación ordinaria: plegada, secundaria y nunca con la jerarquía visual de un eje. */
+.tender-decision-axis-preparation {
+  padding: .85rem 1rem;
+  border: 1px solid var(--axis-line);
+  border-radius: 14px;
+  background: var(--axis-paper);
+}
+
+.tender-decision-axis-preparation summary { color: var(--axis-muted); cursor: pointer; }
+.tender-decision-axis-preparation ul { margin: .75rem 0 0; padding-left: 1.1rem; display: grid; gap: .5rem; }
+.tender-decision-axis-preparation li { min-width: 0; overflow-wrap: anywhere; }
+.tender-decision-axis-preparation span { display: block; color: var(--axis-muted); }
+
+/* Barra final: control formal + Mesa de ayuda + única CTA primaria, siempre al cierre. */
+.tender-decision-axis-final {
+  display: grid;
+  gap: .75rem;
+}
+
+.tender-decision-axis-formal {
+  border-top: 1px solid var(--axis-line);
+  padding-top: .25rem;
+}
+
+.tender-decision-axis-final-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: .75rem;
+  padding: .85rem 1rem;
+  border: 1px solid var(--axis-line);
+  border-radius: 14px;
+  background: var(--axis-paper);
+}
+
+.tender-decision-axis-final-bar p {
+  flex: 1 1 18rem;
+  min-width: 0;
+  margin: 0;
+  color: var(--axis-muted);
+}
+
+.tender-decision-axis-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(8, 25, 22, .42);
+}
+
+.tender-decision-axis-drawer {
+  width: min(580px, 100%);
+  height: 100%;
+  overflow-y: auto;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  background: #fff;
+  box-shadow: -18px 0 54px rgba(6, 25, 21, .22);
+}
+
+.tender-decision-axis-drawer > header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: .8rem;
+  background: #fff;
+}
+
+.tender-decision-axis-drawer h3 { margin: .2rem 0 0; }
+.tender-decision-axis-audit { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--axis-line); }
+.tender-decision-axis-audit dl { display: grid; gap: .5rem; }
+.tender-decision-axis-audit dd { margin: .2rem 0 0; overflow-wrap: anywhere; }
+.tender-decision-axis-audit li { display: grid; gap: .2rem; margin-bottom: .7rem; }
+
+@media (min-width: 760px) {
+  .tender-decision-axis-card-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1120px) {
+  .tender-decision-axis-table-wrap { display: block; overflow-x: auto; }
+  .tender-decision-axis-cards { display: none; }
+}
+
+@media (max-width: 820px) {
+  .tender-decision-axis-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tender-decision-axis-hero,
+  .tender-decision-axis-banner { flex-direction: column; align-items: stretch; }
+  .tender-decision-axis-help,
+  .tender-decision-axis-cta { width: 100%; }
+}
+
+@media (max-width: 640px) {
+  .tender-decision-axis-rail { grid-template-columns: minmax(0, 1fr); }
+  .tender-decision-axis-body > header { flex-direction: column; }
+  .tender-decision-axis-drawer { width: 100%; }
+  /* Móvil (§14): una sola columna en las tarjetas y CTA primaria fija al pie, sin sacarla del
+     orden de tabulación ni convertirla en el primer foco de la sección. */
+  .tender-decision-axis-card-fields { grid-template-columns: minmax(0, 1fr); }
+  .tender-decision-axis-final-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    background: #fff;
+    box-shadow: 0 -10px 24px rgba(18, 52, 46, .1);
+  }
+}

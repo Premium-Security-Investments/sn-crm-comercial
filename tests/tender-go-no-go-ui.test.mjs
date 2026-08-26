@@ -15,6 +15,7 @@ const gateSource = read('src/tenders/tenderDecisionGate.ts');
 const api = read('src/tenders/api.ts');
 const types = read('src/tenders/types.ts');
 const main = read('src/main.tsx');
+const experience = read('src/tenders/components/TenderDecisionExperience.tsx');
 assert.match(panel, /opportunityName/);
 assert.doesNotMatch(panel, /<dt>Oportunidad<\/dt>/, 'El modal no debe repetir datos ya visibles de la oportunidad.');
 
@@ -36,11 +37,12 @@ assert.match(api, /recordTenderGoNoGoDecision[\s\S]*\/api\/tender-go-no-go-decis
 assert.match(types, /TenderGoNoGoDecisionInput/, 'Deben existir tipos de input GO/NO GO.');
 assert.match(types, /run_id:\s*string/, 'El análisis debe exponer el run_id tipado requerido.');
 assert.match(types, /analysis_run_id\?:\s*string \| null/, 'El input GO/NO GO debe aceptar ausencia de análisis.');
-assert.match(main, /TenderGoNoGoDecisionPanel/, 'El detalle debe integrar el panel formal.');
+assert.match(main, /TenderDecisionExperience/, 'El detalle debe integrar una sola experiencia de decisión.');
+assert.match(experience, /TenderGoNoGoDecisionPanel/, 'El fallback y la superficie nueva deben conservar el panel formal.');
 assert.match(main, /onAnalysisChanged/, 'La revisión documental debe elevar el análisis vigente.');
 assert.match(main, /onAnalysisChanged\?:\s*\(analysis: TenderDocumentAnalysis \| null\)/, 'La revisión documental debe exponer el análisis vigente al detalle.');
 assert.match(main, /onAnalysisChanged\?\.\(data\.analysis \|\| null\)/, 'Cada carga o mutación documental debe elevar análisis o null.');
-assert.match(main, /<TenderGoNoGoDecisionPanel[\s\S]*?opportunityId=\{o\.id\}[\s\S]*?analysis=\{tenderAnalysis\}/, 'La decisión debe recibir el análisis vigente de la revisión documental.');
+assert.match(main, /<TenderDecisionExperience[\s\S]*?opportunityId=\{o\.id\}[\s\S]*?analysis=\{tenderAnalysis\}/, 'La decisión debe recibir el análisis vigente de la revisión documental.');
 assert.match(main, /key=\{`tender-preparation-\$\{o\.id\}-\$\{tenderRevision\}`\}/, 'La preparación debe recargar después de una decisión formal y aislarse por oportunidad.');
 assert.doesNotMatch(main, />Aprobar preparación de oferta</, 'No puede quedar el control legacy de preparación.');
 assert.doesNotMatch(main, /\/api\/tender-offer-preparation-approve/, 'La UI no puede invocar la aprobación legacy.');
@@ -82,6 +84,11 @@ assert.match(panel, /requestVersionRef|requestVersion/, 'Las cargas deben descar
 assert.match(panel, /syncPending/, 'Un POST persistido debe bloquear reintentos mientras sincroniza.');
 assert.match(panel, /document\.activeElement|previouslyFocused/, 'El modal debe recordar el foco previo.');
 assert.match(panel, /Escape|Tab/, 'El modal debe manejar Escape y trap de Tab.');
+assert.match(
+  panel,
+  /event\.shiftKey && \(document\.activeElement === first \|\| document\.activeElement === initialFocusRef\.current\)/,
+  'Shift+Tab desde el encabezado inicialmente enfocado debe ciclar al último control y no escapar del modal.',
+);
 
 const gateBundle = buildSync({ entryPoints: [decisionGatePath.pathname], bundle: true, platform: 'node', format: 'esm', write: false });
 const gateUrl = `data:text/javascript;base64,${Buffer.from(gateBundle.outputFiles[0].contents).toString('base64')}`;

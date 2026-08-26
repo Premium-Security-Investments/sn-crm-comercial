@@ -285,6 +285,42 @@ test('a bridge transport failure never reaches response_received, is durably mar
   assert.equal(typeof fields.duration_ms, 'number');
 });
 
+test('a provider-reported failure (AGT002_CODEX_PROVIDER_ERROR) classifies as provider error, never transport, is durably marked unavailable, and releases the claim without leaking the raw error text', async () => {
+  const { client, calls: clientCalls, telemetry } = trackedClient(async () => {
+    const error = new Error('El proveedor Codex reportó un fallo de turno.');
+    error.code = 'AGT002_CODEX_PROVIDER_ERROR';
+    error.providerStatus = 'failed';
+    error.providerErrorCode = 'other';
+    throw error;
+  });
+  const engine = createAgt002PreviewEngine({ client, ...engineOptions() });
+  const observability = spyObservability();
+  const database = fakeDatabase();
+
+  const result = await runAgt002PostBridgeAnalysis(database, { ...requestContext(), requireTenderRequirementInventory: false }, {
+    engine, observability, analysisContext, bridgeTelemetry: telemetry,
+  });
+
+  assert.equal(result.status, 'unavailable');
+  assert.equal(result.analysis_run_id, null);
+  assert.equal(result.error_code, 'AGT002_PROVIDER_ERROR');
+  assert.equal(clientCalls.length, 1, 'zero retry: the bridge must be called exactly once');
+  assert.deepEqual(attemptStates(database), ['queued', 'running', 'unavailable']);
+  assert.equal(recordRunCallCount(database), 0, 'a provider-reported failure must never reach persistence');
+  assert.equal(releaseClaimCallCount(database), 1, 'the claim must always be released');
+
+  assert.equal(observability.records.length, 1);
+  const { fields } = observability.records[0];
+  assert.equal(fields.stage, 'transport');
+  assert.equal(fields.error_code, 'AGT002_PROVIDER_ERROR');
+  assert.notEqual(fields.error_code, 'AGT002_TRANSPORT_ERROR', 'a provider-reported failure must never be misclassified as a transport failure');
+  assert.equal(fields.bridge_invocation_started, true);
+  assert.equal(fields.bridge_response_received, false, 'the boundary rejected rather than resolving, mirroring how bridgeClient.run() propagates a provider error');
+
+  const serialized = JSON.stringify({ result, calls: database.calls, records: observability.records });
+  assert.ok(!serialized.includes('El proveedor Codex reportó un fallo de turno.'), 'the raw provider error message must never leak into the outcome, durable row, or observability');
+});
+
 test('a pre-bridge engine rejection is unexpected, never transport/provider, when invocation never started', async () => {
   const { client, calls: clientCalls, telemetry } = trackedClient(async () => {
     throw new Error('the bridge fixture must not be reached');

@@ -36,6 +36,12 @@ assert.doesNotMatch(main, /'AGT-002 Preview completado\. La recomendación requi
 assert.match(main, /Preparando análisis con \$\{VIGIA_VISIBLE_NAMES\.tenders\}/, 'El texto de estado inicial debe nombrar a Vig-IA Licitaciones.');
 assert.match(main, /Análisis en curso con \$\{VIGIA_VISIBLE_NAMES\.tenders\}/, 'El texto de ejecución debe nombrar a Vig-IA Licitaciones.');
 assert.match(main, /\$\{VIGIA_VISIBLE_NAMES\.tenders\} no estuvo disponible; se aplicó fallback seguro por reglas\./, 'El texto de fallback debe nombrar a Vig-IA Licitaciones.');
-assert.match(main, /\$\{VIGIA_VISIBLE_NAMES\.tenders\} completó el análisis\. La recomendación requiere revisión humana\./, 'El texto de éxito debe nombrar a Vig-IA Licitaciones.');
+// El copy de cierre dejó de ser un literal incondicional en main.tsx (mentía cuando la cobertura
+// del expediente estaba pausada) y vive ahora en el helper puro `tenderAnalysisCompletionMessage`.
+// El contrato de identidad visible no cambia: los dos mensajes de cierre nombran al agente visible.
+const processingStatus = readFileSync(new URL('../src/tenders/processingStatus.ts', import.meta.url), 'utf8');
+assert.match(main, /tenderAnalysisCompletionMessage\(/, 'El texto de éxito debe derivarse del helper puro de cierre.');
+assert.match(processingStatus, /\$\{VIGIA_VISIBLE_NAMES\.tenders\} completó el análisis\./, 'El texto de éxito debe nombrar a Vig-IA Licitaciones.');
+assert.match(processingStatus, /\$\{VIGIA_VISIBLE_NAMES\.tenders\} completó la revisión técnica\./, 'El texto de cierre sin cobertura debe nombrar a Vig-IA Licitaciones.');
 
 console.log('tender Vig-IA language checks passed');

@@ -64,12 +64,20 @@ function codexErrorInfoType(value) {
   return 'other';
 }
 
+// Adapts a caller's outputSchema to the JSON Schema subset Codex Structured Outputs accepts:
+// `const` becomes a single-value `enum`, and `uniqueItems` is dropped — it is not part of that
+// subset and a schema declaring it is rejected by the provider before any generation happens
+// (AGT002_CODEX_PROVIDER_ERROR / providerErrorCode 'other', failing in ~3s). minLength, maxLength,
+// minItems and maxItems are left untouched: the real, proven-working V3 schema already relies on
+// them end to end. Dropping uniqueItems from the wire never relaxes anything a caller actually
+// depends on — uniqueness is enforced locally, after the response, by the caller's own strict
+// validation (e.g. tender-semantic-discovery.js's canonicalizeProposal), never by the provider.
 function codexCompatibleOutputSchema(value) {
   if (Array.isArray(value)) return value.map(codexCompatibleOutputSchema);
   if (!isPlainObject(value)) return value;
   const copy = {};
   for (const [key, child] of Object.entries(value)) {
-    if (key === 'const') continue;
+    if (key === 'const' || key === 'uniqueItems') continue;
     copy[key] = codexCompatibleOutputSchema(child);
   }
   if (Object.hasOwn(value, 'const')) {

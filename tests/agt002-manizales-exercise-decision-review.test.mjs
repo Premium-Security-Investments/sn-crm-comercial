@@ -246,6 +246,7 @@ function buildSyntheticBlockerEntry(presentation) {
     reviewed_status: 'blocker',
     curability: 'curable',
     rationale: 'Entrada sintética usada únicamente para probar la matriz de presentation de blocker.',
+    material_impediment_category: 'plazo_objetivamente_imposible',
     evidence_refs: [{ type: 'manifest_requirement', requirement_id: 'lifecycle:cierre-prorroga' }],
     ...(presentation !== undefined ? { presentation } : {}),
   };
@@ -347,6 +348,53 @@ function buildSyntheticBlockerEntry(presentation) {
   tampered.entries.push(buildSyntheticBlockerEntry({ title: 'Título de prueba', summary: 'Resumen de prueba.', action_required: 'Acción de prueba requerida.' }));
   const review = validateAgt002ManizalesExerciseDecisionReviewFixture(tampered, realOptions);
   assert.ok(review, 'blocker con title+summary+action_required (sin missing) debe validar');
+}
+
+// ---------------------------------------------------------------------------------------------
+// 14b. Fail-closed (§9/AC9): un blocker curado sin material_impediment_category debe rechazarse
+//      mencionando explícitamente material_impediment_category — el catálogo cerrado no es
+//      opcional para blockers.
+// ---------------------------------------------------------------------------------------------
+{
+  const fixture = loadFixture();
+  const tampered = JSON.parse(JSON.stringify(fixture));
+  const blockerEntry = buildSyntheticBlockerEntry({ title: 'Título de prueba', summary: 'Resumen de prueba.', action_required: 'Acción de prueba requerida.' });
+  delete blockerEntry.material_impediment_category;
+  tampered.entries.push(blockerEntry);
+  assert.throws(
+    () => validateAgt002ManizalesExerciseDecisionReviewFixture(tampered, realOptions),
+    /material_impediment_category/,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// 14c. Fail-closed (§9/AC9): un blocker curado con material_impediment_category fuera del
+//      catálogo cerrado debe rechazarse.
+// ---------------------------------------------------------------------------------------------
+{
+  const fixture = loadFixture();
+  const tampered = JSON.parse(JSON.stringify(fixture));
+  tampered.entries.push(buildSyntheticBlockerEntry({ title: 'Título de prueba', summary: 'Resumen de prueba.', action_required: 'Acción de prueba requerida.' }));
+  const target = tampered.entries[tampered.entries.length - 1];
+  target.material_impediment_category = 'categoria_inventada';
+  assert.throws(
+    () => validateAgt002ManizalesExerciseDecisionReviewFixture(tampered, realOptions),
+    /no pertenece al catálogo cerrado/,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// 14d. GREEN path (§9/AC9): un blocker curado válido llega a review.blockers conservando
+//      exactamente material_impediment_category='plazo_objetivamente_imposible'.
+// ---------------------------------------------------------------------------------------------
+{
+  const fixture = loadFixture();
+  const tampered = JSON.parse(JSON.stringify(fixture));
+  tampered.entries.push(buildSyntheticBlockerEntry({ title: 'Título de prueba', summary: 'Resumen de prueba.', action_required: 'Acción de prueba requerida.' }));
+  const review = deriveAgt002ManizalesExerciseDecisionReview(integralAnalysis, tampered, realOptions);
+  const blockerFinding = review.blockers.find(f => f.id === 'exercise::synthetic-blocker-presentation-test');
+  assert.ok(blockerFinding, 'el blocker sintético curado debe aparecer en review.blockers');
+  assert.equal(blockerFinding.material_impediment_category, 'plazo_objetivamente_imposible');
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -31,6 +31,8 @@ function run() {
   //    AGT002_INTEGRAL_CONTRACT_V3 requiere AGT002_CANONICAL_ONLY + AGT002_CONTEXT_V2 +
   //    AGT002_DOCUMENT_RETRIEVAL (ver caso 4), así que cada una se activa aquí junto a su
   //    dependencia para aislar solo el parseo del literal.
+  //    AGT002_DECISION_AXIS_SURFACE queda fuera de este lote a propósito: su parseo es más
+  //    estricto (sólo el literal exacto 'true') y se verifica en el caso 3b.
   {
     const requiredBaseByFlag = {
       AGT002_DOCUMENT_RETRIEVAL: { AGT002_CONTEXT_V2: 'true' },
@@ -43,6 +45,7 @@ function run() {
       AGT002_RADAR_VISIBILITY: { AGT002_RADAR_GATE: 'true' },
     };
     for (const name of ANALYSIS_FLAG_NAMES) {
+      if (name === 'AGT002_DECISION_AXIS_SURFACE') continue;
       const base = requiredBaseByFlag[name] || {};
 
       const literalTrue = buildAgt002AnalysisConfig({ ...base, [name]: 'true' });
@@ -54,6 +57,27 @@ function run() {
       const literalUpper = buildAgt002AnalysisConfig({ ...base, [name]: 'TRUE' });
       assert.equal(literalUpper[name], true, `${name}='TRUE' debe habilitar (sin distinción de mayúsculas)`);
     }
+  }
+
+  // 3b) AGT002_DECISION_AXIS_SURFACE (§17 / AC22 de la spec "Análisis para decidir"): apagada por
+  //     defecto y activada EXCLUSIVAMENTE por el literal exacto 'true'. Es presentación pura, así
+  //     que no exige ninguna otra bandera para encenderse.
+  {
+    assert.equal(
+      buildAgt002AnalysisConfig({}).AGT002_DECISION_AXIS_SURFACE,
+      false,
+      'AGT002_DECISION_AXIS_SURFACE debe estar apagada por defecto',
+    );
+    for (const rawValue of ['1', 'TRUE', 'True', ' true ', 'yes', 'on', '', undefined, null, true]) {
+      assert.equal(
+        buildAgt002AnalysisConfig({ AGT002_DECISION_AXIS_SURFACE: rawValue }).AGT002_DECISION_AXIS_SURFACE,
+        false,
+        `AGT002_DECISION_AXIS_SURFACE=${JSON.stringify(rawValue)} NO debe habilitar (sólo el literal 'true')`,
+      );
+    }
+    const enabled = buildAgt002AnalysisConfig({ AGT002_DECISION_AXIS_SURFACE: 'true' });
+    assert.equal(enabled.AGT002_DECISION_AXIS_SURFACE, true, "AGT002_DECISION_AXIS_SURFACE='true' debe habilitar");
+    assert.equal(enabled.AGT002_INTEGRAL_CONTRACT_V3, false, 'la superficie no arrastra ninguna otra bandera');
   }
 
   // 4) estados contradictorios se rechazan: retrieval o legal corpus sin context v2;

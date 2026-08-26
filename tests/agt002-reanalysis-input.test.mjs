@@ -32,6 +32,11 @@ test('deep-clones inputs so later request mutations cannot change the queued pay
 test('fails closed when canonical identity/config are incomplete or exceed the worker lease budget', () => {
   assert.throws(() => buildAgt002FrozenEngineInput({ ...source, analysisConfig: { ...source.analysisConfig, AGT002_CANONICAL_ONLY: false } }));
   assert.throws(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 0 } }));
-  assert.doesNotThrow(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 480_000 } }));
-  assert.throws(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 480_001 } }));
+  // The worker lease budget IS the queue budget: the executor rejects an unfundable two-turn lease
+  // before claiming, so a job frozen above 285_000ms (2*285+30 = 600 exactly) could only be
+  // reserved and then die on its first cycle. This contract used to stop at 480_000ms, which let
+  // the enqueue reserve corridas the worker always refused.
+  assert.doesNotThrow(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 285_000 } }));
+  assert.throws(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 285_001 } }));
+  assert.throws(() => buildAgt002FrozenEngineInput({ ...source, runtimeConfig: { ...source.runtimeConfig, timeoutMs: 480_000 } }));
 });

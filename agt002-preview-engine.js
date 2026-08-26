@@ -21,7 +21,11 @@ import { deriveAgt002ManizalesManifestWiring } from './agt002-manizales-manifest
 import { validateTenderAnalysisResult } from './tender-analysis-domain.js';
 import { resolveTenderSemanticDecisionFrontier } from './tender-semantic-manifest.js';
 import { AGT002_OUTPUT_REJECTION_STAGES, createAgt002AnalysisObservability } from './agt002-analysis-observability.js';
-import { budgetAgt002V3PromptRequest, AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS } from './agt002-v3-prompt-budget.js';
+import {
+  budgetAgt002V3PromptRequest,
+  AGT002_V3_PROMPT_BUDGET_EXCEEDED_CODE,
+  AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS,
+} from './agt002-v3-prompt-budget.js';
 
 // design section 5: fixed version tag for the 17-class company-evidence catalog. The
 // catalog itself is fixed by code (agt002-company-evidence-classes.js), not by a stored
@@ -64,6 +68,13 @@ export const AGT002_INTEGRAL_V3_POLICY = [
   'Cita jurídica exclusivamente desde el corpus jurídico publicado recibido; si no hay corpus o la fuente no está verificada, usa legal_assessment.status "not_verified" con human_legal_review_required=true.',
   'Toda unidad con efecto bloqueante o condicional exige una acción concreta con rol sugerido, sin nombres ni datos personales, y external_side_effect siempre en false.',
   'En milestone, status "verified" exige at y source_ref no nulos; status "not_identified" exige at y source_ref en null. Si no existe una fecha y referencia permitida que respalden el hito, nunca declares status "verified".',
+  // Model-facing projection of a DISCOVERED frontier (see projectAgt002DiscoveredModelInput below):
+  // for those runs the provider receives a server-derived structural summary instead of the two full
+  // audit ledgers (tender_requirement_inventory / tender_semantic_manifest), which stay complete in
+  // the durable envelope. One truthful sentence says exactly that, so the model is never left to
+  // infer that a ledger it cannot see means there is nothing left to analyse. The model-facing input
+  // and this policy both changed, so AGT002_INTEGRAL_V3_POLICY_VERSION is bumped in the runtime.
+  'Cuando la frontera de este proceso fue descubierta por el servidor, recibes semantic_frontier_summary —un resumen estructural derivado por el servidor— en lugar de los libros de auditoría completos (inventario de unidades fuente y manifiesto semántico): debes analizar cada requisito de requirement_manifest sin excepción, y tratar material_omissions y unresolved_count como contexto de pausa y abstención, nunca como evidencia ni como permiso para omitir un requisito.',
   // Phase 5 remediation (v3_model_output_shape_mismatch): the corrected real canary fit the context
   // window but the model turn returned an integral_analysis carrying server-owned keys beyond
   // analysis_units. The closed wire schema (buildAgt002IntegralAnalysisV3OutputJsonSchema) and the
@@ -128,6 +139,31 @@ export const AGT002_V3_SAFE_VALIDATION_CODES = Object.freeze([
   'v3_human_validation_shape_invariant',
 ]);
 const AGT002_V3_SAFE_VALIDATION_CODE_SET = new Set(AGT002_V3_SAFE_VALIDATION_CODES);
+
+// Closed set of every stage this engine itself ever attaches to a rejection (content_extraction,
+// json_parse, semantic_validation, usage, envelope). Used to re-gate a stage tag an injected
+// semanticDiscoveryProvider (tender-semantic-discovery.js) attaches to its OWN post-response
+// rejections: this engine never trusts that tag blindly, even though it comes from a module in
+// this same codebase, because the provider is an injected dependency, not this engine's own code.
+const AGT002_OUTPUT_REJECTION_STAGE_VALUES = new Set(Object.values(AGT002_OUTPUT_REJECTION_STAGES));
+
+// A discovery-provider validation code is only ever trusted onto a durable/observable field when
+// it matches this shape — never an arbitrary string the provider (or a future bug in it) might
+// attach. Deliberately a shape check, not an imported allowlist Set: this engine treats
+// semanticDiscoveryProvider as an injected boundary (see its constructor option), never a module
+// it reaches into directly.
+//
+// The version segment is a CLOSED alternation, not `v\d+`: it names exactly the discovery code
+// generations this engine currently recognizes — `v4_` for the local gates the discovery module has
+// attributed to the AGT-002 V4 frontier since its policy v1 (citation/anchor/uniqueness/inventory/
+// shape/coverage/usage/json/content, all unchanged), `v5_` for the codes its v5 policy introduced
+// (today `v5_discovery_no_requirements`, the zero-obligation proposal that breaks no gate and still
+// cannot produce a frontier), and `v6_` so a code minted by the current discovery policy generation
+// is recognized rather than collapsed. Every historical v4/v5 code stays recognized exactly as
+// before — widening an alternation never withdraws a member. A future generation must widen this
+// deliberately, exactly as v5 and v6 did; an unrecognized code still collapses to the generic closed
+// fallback below rather than reaching a durable row.
+const DISCOVERY_VALIDATION_CODE_PATTERN = /^v(?:4|5|6)_discovery_[a-z_]+$/;
 
 function outputSchemaForEvidenceIds(allowedEvidenceIds, {
   legalCorpus = false,
@@ -308,6 +344,77 @@ function buildEvidenceCoverage(previewInput, integralAnalysis = null) {
     ...(evidence.supplemental_signal_ids !== undefined
       ? { supplemental_signal_ids: [...evidence.supplemental_signal_ids] }
       : {}),
+  };
+}
+
+// The single key under which a discovered frontier's server-derived structural summary reaches the
+// model. Exported so a test (or a future consumer) names the same key this engine writes.
+export const AGT002_SEMANTIC_FRONTIER_SUMMARY_KEY = 'semantic_frontier_summary';
+
+/**
+ * The ONLY thing about the two audit ledgers a discovered-frontier run sends to the provider.
+ *
+ * `tender_requirement_inventory` and `tender_semantic_manifest` are per-source-unit ledgers: on a
+ * real expediente they carry tens of thousands of entries (the live V5 diagnostic measured 11 329
+ * unresolved units against 16 requirements), which is what pushed the assembled request past the
+ * prompt budget BEFORE the analysis turn could be taken — while budgetAgt002V3PromptRequest only
+ * ever reduces raw `selected_chunks` text and the omitted-chunk list, never governed content. The
+ * model cannot cite a source unit anyway (the citation boundary is `citation_allowlist`), so what it
+ * actually needs from those ledgers is their arithmetic: how much of the expediente was disposed of,
+ * how much stayed unresolved, and whether the frontier is decision-ready.
+ *
+ * Everything here is server-derived structural data. No source_unit_id, no unit/inventory/snapshot
+ * hash, no label, no document id and no raw text is ever copied in — so this summary cannot leak an
+ * identifier the closed model-facing surface does not already carry. Frozen: it is a fact about the
+ * run, never a slot anything downstream may edit.
+ *
+ * Returns null when the packet carries no semantic frontier at all (legacy, non-V3 and exact
+ * Manizales packets), so those requests stay byte-identical.
+ */
+export function buildAgt002SemanticFrontierSummary(documentEvidence) {
+  const manifest = documentEvidence?.tender_semantic_manifest;
+  const inventory = documentEvidence?.tender_requirement_inventory;
+  if (!manifest || !inventory) return null;
+  return Object.freeze({
+    inventory_version: inventory.inventory_version,
+    semantic_manifest_version: manifest.semantic_manifest_version,
+    total_source_units: manifest.coverage_ledger.total_source_units,
+    analyzable_source_units: inventory.coverage_ledger.analyzable_count,
+    requirement_count: manifest.discovery_coverage.requirement_count,
+    excluded_count: manifest.coverage_ledger.excluded_count,
+    unresolved_count: manifest.coverage_ledger.unresolved_count,
+    discovery_coverage_status: manifest.discovery_coverage.status,
+    analyzed_coverage_status: manifest.analyzed_coverage.status,
+    decision_ready: manifest.decision_ready,
+    material_omissions: documentEvidence.material_omissions === true,
+  });
+}
+
+/**
+ * Model-facing projection of a discovered-frontier request. Pure: it builds new objects and never
+ * mutates the packet handed to it, so `buildEvidenceCoverage(previewInput, …)` still sees — and
+ * persists — the ORIGINAL, complete inventory and semantic manifest, every unresolved unit included.
+ *
+ * Nothing governed is touched: `requirement_manifest` (with its categories and
+ * evidence_state_governed), the company evidence classes, the citation allowlist, the selected
+ * evidence, `material_omissions`, the coverage manifest and every other validation input reach the
+ * provider exactly as before. Only the two per-source-unit audit ledgers are replaced by the summary.
+ */
+export function projectAgt002DiscoveredModelInput(modelInput) {
+  const evidence = modelInput?.document_evidence;
+  const summary = buildAgt002SemanticFrontierSummary(evidence);
+  if (!summary) return modelInput;
+  const {
+    tender_requirement_inventory: _inventory,
+    tender_semantic_manifest: _semanticManifest,
+    ...modelFacingEvidence
+  } = evidence;
+  return {
+    ...modelInput,
+    document_evidence: {
+      ...modelFacingEvidence,
+      [AGT002_SEMANTIC_FRONTIER_SUMMARY_KEY]: summary,
+    },
   };
 }
 
@@ -704,9 +811,18 @@ export function createAgt002PreviewEngine({
   async function runOnceV3(previewInput, idempotencyKey, signal, validationContext, {
     priorUsage = null,
     governanceProvenanceForRun = boundGovernanceProvenance,
+    // Discovery path ONLY (set explicitly at the single usesSemanticDiscovery call site below).
+    // Left false for every other caller — legacy, non-V3 and exact Manizales — so their provider
+    // request stays byte-identical to what it is today.
+    projectSemanticFrontierSummary = false,
   } = {}) {
     const outputSchema = buildAgt002IntegralAnalysisV3OutputJsonSchema(validationContext);
-    const modelInput = withRequirementGovernedFields(previewInput, validationContext.requirementManifest, validationContext.evidenceStateManifest);
+    const governedInput = withRequirementGovernedFields(previewInput, validationContext.requirementManifest, validationContext.evidenceStateManifest);
+    // Applied BEFORE budgeting, so the budget measures the request that will actually be sent; and
+    // never applied to `previewInput` itself, which is what `evidence_coverage` is built from below.
+    const modelInput = projectSemanticFrontierSummary
+      ? projectAgt002DiscoveredModelInput(governedInput)
+      : governedInput;
 
     // Phase 5 remediation: measure the assembled request and reduce ONLY the raw document-chunk
     // text (deterministic, provenance-tracked) — or fail closed BEFORE the provider call — when
@@ -721,7 +837,27 @@ export function createAgt002PreviewEngine({
         budgeted = budgetAgt002V3PromptRequest({ model, policy: policyText, input: modelInput, outputSchema, maxInputTokens: promptMaxInputTokens });
       } catch (budgetError) {
         if (typeof onPromptBudget === 'function' && budgetError?.report) onPromptBudget(budgetError.report);
-        throw budgetError;
+        // Observability fix: this rejection happens AFTER the discovery turn already answered and
+        // BEFORE the analysis turn is ever issued, so an untagged error here reached the post-bridge
+        // classifier as 'unexpected'/provider_error — attributing to the provider a refusal the
+        // server made on its own, without calling it. ENVELOPE is the closed, already-recognized
+        // pre-provider stage of this engine (classifyEnginePhase maps it to envelope_build →
+        // AGT002_ENVELOPE_INVALID → the worker's invalid_output), so the failure is now attributed to
+        // the server-side assembly frontier it actually belongs to. `.message` stays exactly the
+        // fixed SAFE_INVALID string and the only thing forwarded from the upstream error is the
+        // closed AGT002_V3_PROMPT_BUDGET_EXCEEDED code — never its report, text or any content.
+        const isBudgetExceeded = budgetError?.code === AGT002_V3_PROMPT_BUDGET_EXCEEDED_CODE;
+        recordOutputRejected({
+          stage: AGT002_OUTPUT_REJECTION_STAGES.ENVELOPE,
+          validationCode: isBudgetExceeded ? 'v3_prompt_budget_exceeded' : 'v3_prompt_budget_invalid',
+          content: '',
+          snapshotId: previewInput.snapshot_id,
+          usage: undefined,
+        });
+        throw safe(SAFE_INVALID, {
+          stage: AGT002_OUTPUT_REJECTION_STAGES.ENVELOPE,
+          ...(isBudgetExceeded ? { code: AGT002_V3_PROMPT_BUDGET_EXCEEDED_CODE } : {}),
+        });
       }
       if (typeof onPromptBudget === 'function') onPromptBudget(budgeted.report);
       requestInput = budgeted.input;
@@ -882,10 +1018,26 @@ export function createAgt002PreviewEngine({
               // A discovery failure fails the run. There is no fallback to the fixed historical
               // matrix: analysing this process against another process's frontier would be a
               // silently wrong answer, which is worse than no answer.
-              const discovery = await semanticDiscoveryProvider({
-                client, model, timeoutMs, idempotencyKey: key, signal,
-                inventory, documents: (context || {}).documents ?? [],
-              });
+              let discovery;
+              try {
+                discovery = await semanticDiscoveryProvider({
+                  client, model, timeoutMs, idempotencyKey: key, signal,
+                  inventory, documents: (context || {}).documents ?? [],
+                });
+              } catch (error) {
+                // tender-semantic-discovery.js tags its OWN post-response rejections (the bridge
+                // already answered; its content/JSON/usage/semantic gates rejected the answer)
+                // with a real AGT002_OUTPUT_REJECTION_STAGES value. An untagged error — a
+                // transport/provider failure from client.run, or a pre-invocation config error —
+                // falls through unchanged to the generic catch below, which already classifies
+                // those correctly from bridge telemetry alone; only a recognized stage is ever
+                // turned into a diagnosable rejection here.
+                if (!AGT002_OUTPUT_REJECTION_STAGE_VALUES.has(error?.stage)) throw error;
+                const validationCode = typeof error.code === 'string' && DISCOVERY_VALIDATION_CODE_PATTERN.test(error.code)
+                  ? error.code : 'v4_discovery_invariant_violation';
+                recordOutputRejected({ stage: error.stage, validationCode, content: '', snapshotId, usage: undefined });
+                throw safe(SAFE_INVALID, { stage: error.stage, code: validationCode });
+              }
               // The one and only packet assembly of this run, taken now that the frontier exists:
               // the manifest is re-validated inside the builder against the inventory the packet
               // itself carries, so what the model sees and what the envelope persists were both
@@ -907,6 +1059,10 @@ export function createAgt002PreviewEngine({
                 // none of which governed this run: emitting them here would attribute a per-run
                 // discovered binding to a curator who never saw it.
                 governanceProvenanceForRun: {},
+                // The only place this projection is ever enabled: a discovered frontier carries the
+                // two per-source-unit audit ledgers, which the durable envelope keeps in full while
+                // the provider receives only their server-derived structural summary.
+                projectSemanticFrontierSummary: true,
               });
             }
             const validationContext = buildIntegralV3ValidationContext(previewInput, companyEvidenceClasses);

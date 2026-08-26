@@ -1,4 +1,6 @@
 import { VIGIA_VISIBLE_NAMES } from '../vigia/agentIdentity';
+import { tenderAnalysisCoverageReady } from './tenderIntegralAnalysisPresentation';
+import type { TenderEvidenceCoverage } from './types';
 
 type ProcessingStatusSnapshot = { job_id: string | null; status: string };
 
@@ -123,6 +125,30 @@ export function deriveTenderProcessingPresentation(
     primaryAction: 'disabled',
     showRetry: false,
   };
+}
+
+type TenderAnalysisCompletionSource = { evidence_coverage?: TenderEvidenceCoverage | null };
+
+export const TENDER_ANALYSIS_COMPLETED_MESSAGE = `${VIGIA_VISIBLE_NAMES.tenders} completó el análisis. La recomendación queda disponible únicamente para la revisión humana obligatoria.`;
+export const TENDER_ANALYSIS_COVERAGE_PENDING_MESSAGE = `${VIGIA_VISIBLE_NAMES.tenders} completó la revisión técnica. La cobertura del expediente sigue pendiente; no hay recomendación integral disponible.`;
+
+/**
+ * Copy de cierre del análisis, derivado del MISMO gate fail-closed que pausa la superficie de
+ * decisión y el respaldo técnico (`tenderAnalysisCoverageReady`). Anunciar «completó el análisis,
+ * la recomendación requiere revisión humana» mientras la propia pantalla mostraba la cobertura
+ * pausada y «No hay recomendación integral disponible» era sencillamente falso: sin cobertura lista
+ * lo que terminó es la revisión técnica, no una recomendación integral.
+ *
+ * Se evalúa siempre sobre el análisis recién cargado, nunca sobre estado de React previo. Sin
+ * cobertura, sin cobertura reconocible o sin análisis, falla cerrado al mensaje pendiente. Ninguno
+ * de los dos mensajes autoriza nada: la validación humana sigue siendo obligatoria.
+ */
+export function tenderAnalysisCompletionMessage(
+  analysis: TenderAnalysisCompletionSource | null | undefined,
+): string {
+  return tenderAnalysisCoverageReady(analysis?.evidence_coverage)
+    ? TENDER_ANALYSIS_COMPLETED_MESSAGE
+    : TENDER_ANALYSIS_COVERAGE_PENDING_MESSAGE;
 }
 
 export function shouldReloadTenderArtifacts(
