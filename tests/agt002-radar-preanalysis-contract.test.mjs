@@ -43,6 +43,12 @@ for (const key of ['recommendation', 'decision', 'go_no_go', 'opportunity_id', '
 }
 assert.throws(() => validateAgt002RadarPreanalysis({ ...valid, summary: 'Recomendación: GO' }), /forbidden/i);
 assert.throws(() => validateAgt002RadarPreanalysis({ ...valid, summary: 'Convertir en oportunidad' }), /forbidden/i);
+// Regresión: el vocabulario prohibido de columnas de conversión debe detectarse también
+// como valor de texto libre, no sólo como clave extra que `exactKeys` ya rechaza.
+for (const leak of ['opportunity_id', 'converted_opportunity_id']) {
+  assert.ok(findAgt002RadarForbiddenVocabulary(`Se escribió ${leak} en la fila.`).length > 0, leak);
+  assert.throws(() => validateAgt002RadarPreanalysis({ ...valid, summary: `Se escribió ${leak} en la fila.` }), /forbidden/i);
+}
 for (const allowed of AGT002_RADAR_FORBIDDEN_ALLOWED_TERMS) {
   assert.equal(findAgt002RadarForbiddenVocabulary(`Análisis de ${allowed}.`).length, 0, allowed);
   assert.equal(validateAgt002RadarPreanalysis({ ...valid, summary: `Análisis de ${allowed}.` }).summary, `Análisis de ${allowed}.`);

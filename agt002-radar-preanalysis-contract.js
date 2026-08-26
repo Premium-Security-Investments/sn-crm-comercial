@@ -10,6 +10,9 @@ export const AGT002_RADAR_FORBIDDEN_PHRASES = Object.freeze([
   Object.freeze(['no', 'go']), Object.freeze(['go', 'no', 'go']),
   Object.freeze(['recomendacion', 'de', 'go']), Object.freeze(['decision', 'de', 'go']),
   Object.freeze(['convertir', 'en', 'oportunidad']),
+  // `opportunity_id` y `converted_opportunity_id` sólo son alcanzables como frase: la
+  // tokenización parte por `[^a-z0-9]+`, así que nunca existe un token igual a ellos.
+  Object.freeze(['opportunity', 'id']), Object.freeze(['converted', 'opportunity', 'id']),
 ]);
 export const AGT002_RADAR_FORBIDDEN_ALLOWED_TERMS = Object.freeze([
   'riesgo', 'riesgos', 'matriz de riesgos', 'Bogotá', 'bogota', 'catálogo', 'código', 'pliego',

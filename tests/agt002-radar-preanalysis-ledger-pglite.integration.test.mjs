@@ -70,6 +70,11 @@ await assert.rejects(() => db.query('delete from public.psi_agt002_radar_preanal
 const gt2 = await gate(T2,'k2',HASH1,'gate-t2'); await enqueue(T2,gt2.id,HASH1,'job-t2'); const ct2 = await claim();
 assert.equal((await db.query('select public.psi_fail_agt002_radar_preanalysis_job($1,$2,$3) result',[ct2.job_id,ct2.lease_id,'timeout'])).rows[0].result.status, 'unavailable');
 await assert.rejects(() => db.query('select public.psi_fail_agt002_radar_preanalysis_job($1,$2,$3)',[ct2.job_id,ct2.lease_id,'raw-provider-message']), /22023|error code/i);
+const retryT2 = await enqueue(T2,gt2.id,HASH1,'job-t2-retry','job-t2-retry-attempt');
+assert.equal(retryT2.status, 'created', 'un job terminal no debe bloquear un intento posterior');
+const retryCt2 = await claim();
+assert.equal(retryCt2.job_id, retryT2.job_id);
+await db.query('select public.psi_fail_agt002_radar_preanalysis_job($1,$2,$3)',[retryCt2.job_id,retryCt2.lease_id,'capacity_unavailable']);
 
 const gt3 = await gate(T3,'k3',HASH1,'gate-t3'); await enqueue(T3,gt3.id,HASH1,'job-t3'); const ct3 = await claim(1);
 await db.query("update public.psi_agt002_radar_preanalysis_jobs set lease_expires_at=now()-interval '1 second' where id=$1",[ct3.job_id]);
