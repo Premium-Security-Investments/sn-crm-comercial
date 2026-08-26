@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   AGT002_RADAR_FORBIDDEN_ALLOWED_TERMS,
+  AGT002_RADAR_PREANALYSIS_OUTPUT_SCHEMA,
   AGT002_RADAR_PREANALYSIS_POLICY_VERSION,
   findAgt002RadarForbiddenVocabulary,
   validateAgt002RadarPreanalysis,
@@ -19,6 +20,13 @@ const valid = {
 };
 
 assert.deepEqual(validateAgt002RadarPreanalysis(valid), valid);
+assert.deepEqual(Object.keys(AGT002_RADAR_PREANALYSIS_OUTPUT_SCHEMA.properties).sort(), Object.keys(valid).sort(), 'el JSON Schema cerrado declara todas las claves requeridas');
+assert.equal(AGT002_RADAR_PREANALYSIS_OUTPUT_SCHEMA.properties.policy_version.const, AGT002_RADAR_PREANALYSIS_POLICY_VERSION);
+for (const field of ['signals', 'evidence', 'usage']) {
+  const schema = field === 'usage' ? AGT002_RADAR_PREANALYSIS_OUTPUT_SCHEMA.properties[field] : AGT002_RADAR_PREANALYSIS_OUTPUT_SCHEMA.properties[field].items;
+  assert.equal(schema.additionalProperties, false, `${field} debe tener forma cerrada`);
+  assert.deepEqual([...schema.required].sort(), Object.keys(schema.properties).sort(), `${field} declara todas sus claves`);
+}
 assert.throws(() => validateAgt002RadarPreanalysis({
   ...valid,
   policy_version: 'agt002-radar-gate-policy-v1',

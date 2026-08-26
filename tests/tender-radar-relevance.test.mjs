@@ -1,7 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { normalizeTenderStatusText } from '../tender-source-status.js';
-import { TENDER_DISQUALIFYING_TERMS } from '../tender-relevance-terms.js';
+import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS } from '../tender-relevance-terms.js';
 
 // Regression coverage for the Radar de licitaciones eligibility bug: a SECOP process
 // unrelated to PSI's offerable business (vigilancia, seguridad privada, CCTV/videovigilancia,
@@ -41,7 +41,7 @@ function loadTenderRelevance(source, path) {
     extract(source, path, 'classifyTenderSection', /function classifyTenderSection\([\s\S]*?\n\}\n/),
   ];
   const body = `${pieces.join('')}\nreturn { scoreTender, hasTenderServiceSignal, classifyTenderSection, tenderSources };`;
-  return new Function('normalizeTenderStatusText', 'TENDER_DISQUALIFYING_TERMS', body)(normalizeTenderStatusText, TENDER_DISQUALIFYING_TERMS);
+  return new Function('normalizeTenderStatusText', 'TENDER_CORE_SERVICE_TERMS', 'TENDER_DISQUALIFYING_TERMS', body)(normalizeTenderStatusText, TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS);
 }
 
 for (const path of backendPaths) {

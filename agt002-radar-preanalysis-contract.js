@@ -21,13 +21,55 @@ const SIGNAL_KEYS = Object.freeze(['signal_id','text','evidence_refs']);
 const EVIDENCE_KEYS = Object.freeze(['evidence_id','evidence_type','reference','observed_value','policy_version','context_version']);
 const USAGE_KEYS = Object.freeze(['provider','model','input_tokens','output_tokens','cost_usd']);
 
+const stringField = Object.freeze({ type: 'string', minLength: 1 });
+const signalSchema = Object.freeze({
+  type: 'object', required: SIGNAL_KEYS, additionalProperties: false,
+  properties: Object.freeze({
+    signal_id: stringField,
+    text: stringField,
+    evidence_refs: Object.freeze({ type: 'array', minItems: 1, items: stringField }),
+  }),
+});
+const evidenceSchema = Object.freeze({
+  type: 'object', required: EVIDENCE_KEYS, additionalProperties: false,
+  properties: Object.freeze({
+    evidence_id: stringField,
+    evidence_type: Object.freeze({ enum: ['tender_field','gate_rule','learning_signal'] }),
+    reference: stringField,
+    observed_value: stringField,
+    policy_version: Object.freeze({ const: AGT002_RADAR_PREANALYSIS_POLICY_VERSION }),
+    context_version: stringField,
+  }),
+});
+const usageSchema = Object.freeze({
+  type: 'object', required: USAGE_KEYS, additionalProperties: false,
+  properties: Object.freeze({
+    provider: stringField,
+    model: stringField,
+    input_tokens: Object.freeze({ type: 'number', minimum: 0 }),
+    output_tokens: Object.freeze({ type: 'number', minimum: 0 }),
+    cost_usd: Object.freeze({ type: 'number', minimum: 0 }),
+  }),
+});
+
 export const AGT002_RADAR_PREANALYSIS_OUTPUT_SCHEMA = Object.freeze({
   type: 'object', required: ENVELOPE_KEYS, additionalProperties: false,
   properties: Object.freeze({
-    schema_version: { const: AGT002_RADAR_PREANALYSIS_SCHEMA_VERSION }, agent_id: { const: 'AGT-002' },
-    status: { enum: ['completed','abstained'] },
-    visibility_verdict: { enum: ['mostrar_en_radar','no_mostrar_en_radar','no_concluyente'] },
-    human_review_required: { const: true },
+    schema_version: Object.freeze({ const: AGT002_RADAR_PREANALYSIS_SCHEMA_VERSION }),
+    agent_id: Object.freeze({ const: 'AGT-002' }),
+    run_id: stringField,
+    policy_version: Object.freeze({ const: AGT002_RADAR_PREANALYSIS_POLICY_VERSION }),
+    context_version: stringField,
+    tender_id: stringField,
+    gate_evaluation_id: stringField,
+    status: Object.freeze({ enum: ['completed','abstained'] }),
+    visibility_verdict: Object.freeze({ enum: ['mostrar_en_radar','no_mostrar_en_radar','no_concluyente'] }),
+    summary: stringField,
+    signals: Object.freeze({ type: 'array', items: signalSchema }),
+    evidence: Object.freeze({ type: 'array', minItems: 1, items: evidenceSchema }),
+    data_gaps: Object.freeze({ type: 'array', items: stringField }),
+    human_review_required: Object.freeze({ const: true }),
+    usage: usageSchema,
   }),
 });
 
