@@ -56,6 +56,11 @@ const validOutput = { schema_version:'agt002-radar-preanalysis-v1',agent_id:'AGT
 const runtime = createAgt002RadarPreanalysisRuntime({environment:env,createClient:()=>({run:async value => {request=value; return {content:JSON.stringify(validOutput),usage:{input_tokens:1,output_tokens:1}};}})});
 assert.deepEqual(await runtime.runOnce({tenderRow,gateEvaluation,learningSignals:null,idempotencyKey:'idem'}),validOutput);
 assert.equal(request.model,'m1'); assert.equal(request.idempotencyKey,'idem'); assert.equal(request.input.learning_signals,null);
+// Regresión producción 2026-08-26: el JSON Schema no puede expresar referencias cruzadas.
+// La política enviada al proveedor debe explicar las dos copias exactas que el validador exige.
+assert.match(request.policy, /signals\[\]\.evidence_refs[\s\S]*evidence\[\]\.evidence_id/i);
+assert.match(request.policy, /learning_signal[\s\S]*reference[\s\S]*learning_signals[\s\S]*signal_id/i);
+assert.match(request.policy, /no inventes una referencia|abstente/i);
 const gatePolicyOutput = {
   ...validOutput,
   policy_version: gateEvaluation.policy_version,
