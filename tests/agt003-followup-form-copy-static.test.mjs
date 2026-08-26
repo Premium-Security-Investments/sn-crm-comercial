@@ -38,12 +38,13 @@ assert.match(
   'FollowUpForm must wrap the interaction_type Select directly inside a "Tipo de seguimiento" label',
 );
 
-// 4) the author selector, when rendered under profiles.length > 1, must be wrapped directly by a visible "Registrado por" label.
+// 4) the authenticated author is visible but fixed: no profile selector and no editable identity.
 assert.match(
   followUp,
-  /\{profiles\.length > 1 && <label>Registrado por<Select\s+value=\{form\.created_by\}[^<]*\/?>\s*<\/label>\}/,
-  'FollowUpForm must wrap the created_by Select directly inside a "Registrado por" label, rendered only when profiles.length > 1',
+  /<label>Registrado por<input\s+value=\{currentProfile\.full_name\}[^>]*readOnly[^>]*\/>\s*<\/label>/,
+  'FollowUpForm must render currentProfile.full_name as a read-only "Registrado por" identity',
 );
+assert.doesNotMatch(followUp, /profiles\.map|form\.created_by|<Select[^>]*created_by/, 'FollowUpForm must not expose an author selector');
 
 // 5) the optional next-action field copy must change from "Programar próxima gestión" to "Próxima gestión (opcional)".
 assert.ok(!followUp.includes('Programar próxima gestión'), 'FollowUpForm must drop the old "Programar próxima gestión" copy');
@@ -68,11 +69,12 @@ assert.ok(followUp.includes('placeholder={FOLLOW_UP_NOTES_PLACEHOLDER}'), 'el pl
 assert.ok(!followUp.includes('placeholder="Registre el resultado'), 'el placeholder de una línea queda retirado');
 assert.match(followUp, /<p className="followup-form-hint">Este registro alimenta el historial comercial y las recomendaciones de \{VIGIA_VISIBLE_NAMES\.commercial\}\./);
 
-// 8) preserve the save action, the endpoint, and the payload field names.
+// 8) preserve the save action, endpoint and business fields, while omitting client-controlled authorship.
 assert.ok(followUp.includes('Guardar seguimiento'), 'FollowUpForm must keep the "Guardar seguimiento" action label');
 assert.ok(followUp.includes('/api/opportunity-interactions?id='), 'FollowUpForm must keep posting to /api/opportunity-interactions');
-for (const field of ['interaction_type:', 'notes:', 'occurred_at:', 'created_by:', 'next_action_at:']) {
+for (const field of ['interaction_type:', 'notes:', 'occurred_at:', 'next_action_at:']) {
   assert.ok(followUp.includes(field), `FollowUpForm payload must keep the "${field.slice(0, -1)}" field name`);
 }
+assert.doesNotMatch(followUp, /created_by\s*:/, 'FollowUpForm payload must never include created_by');
 
 console.log('follow-up form copy static checks passed');

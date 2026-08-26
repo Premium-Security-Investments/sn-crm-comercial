@@ -70,8 +70,10 @@ assert.match(main, /className="form followup-form followup-form-compact"/);
 assert.match(css, /\.followup-form-compact\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
 assert.match(css, /\.followup-form-compact>label:has\(textarea\)\{grid-column:1\/-1\}/);
 assert.match(css, /@media\(max-width:760px\)\{[^}]*\.followup-form-compact\{grid-template-columns:1fr\}/);
-assert.match(main, /\{profiles\.length > 1 && <label>Registrado por<Select value=\{form\.created_by\}/,
-  'la semántica de `Registrado por` no cambia');
+assert.match(main, /<label>Registrado por<input value=\{currentProfile\.full_name\} readOnly\/><\/label>/,
+  '`Registrado por` conserva la identidad autenticada como dato fijo');
+assert.doesNotMatch(main.slice(main.indexOf('function FollowUpForm('), main.indexOf('\nconst publicActuationOptions')), /profiles\.map|form\.created_by/,
+  'el seguimiento no permite seleccionar o enviar otro autor');
 
 // --- 5) registro migrado sin redundancia técnica ---------------------------------------------------------
 const timeline = main.slice(main.indexOf('<div className="timeline followup-timeline">'), main.indexOf('Sin seguimientos registrados.'));
