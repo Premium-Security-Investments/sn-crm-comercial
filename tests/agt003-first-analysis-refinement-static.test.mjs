@@ -84,9 +84,9 @@ assert.ok(timeline.includes('{i.notes}') === false, 'el contenido se muestra ya 
 assert.match(timeline, /entry\.migrated && <span className="badge followup-migrated-badge">\{entry\.authorLabel\}<\/span>/);
 assert.match(css, /\.followup-migrated-badge\{/);
 
-// --- 6) VIG-IA: estado vacío compacto y botón de actualización -------------------------------------------
-assert.match(copilot, />\{ready \? 'Actualizar propuesta' : 'Preparar seguimiento'\}</,
-  'con resultado el botón dice `Actualizar propuesta`');
+// --- 6) VIG-IA: estado vacío compacto y CTA híbrido de generación ----------------------------------------
+assert.match(copilot, />\{ready \? 'Actualizar propuesta con el contexto actual' : 'Generar propuesta con el contexto actual'\}</,
+  'el CTA de generación distingue crear de actualizar y conserva el contexto actual');
 assert.ok(copilot.includes('vigia-copilot-empty'), 'el estado vacío tiene su propio contenedor compacto');
 assert.match(css, /\.vigia-copilot-empty\{/);
 assert.equal(copilot.includes('>Útil<'), false);
@@ -116,6 +116,8 @@ assert.match(css, /\.opportunity-more-info-group\{/);
 
 // --- marca ---------------------------------------------------------------------------------------------------
 assert.ok(!/VIG-IA/.test(main), 'en main.tsx la identidad visible se interpola, nunca se escribe literal');
-assert.equal(/Vig-IA/.test(copilot), false, 'el panel nunca escribe `Vig-IA`');
+assert.ok(copilot.includes('Vig-IA no encontró acciones adicionales fuera de las alertas comerciales.'),
+  'el único copy abreviado aprobado se conserva para el resultado vacío del preanálisis');
+assert.equal(/VIG-IA/.test(copilot), false, 'el panel nunca escribe la variante antigua `VIG-IA`');
 
 console.log('AGT-003 first analysis refinement static checks passed');
