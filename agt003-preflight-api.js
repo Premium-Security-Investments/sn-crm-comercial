@@ -57,7 +57,7 @@ function mapRuntimeError(error) {
 }
 
 function assertDependencies(dependencies) {
-  const required = ['isConfigured', 'resolveOpportunityResource', 'loadOpportunityContext', 'createRuntime'];
+  const required = ['isConfigured', 'getConfig', 'resolveOpportunityResource', 'loadOpportunityContext', 'createRuntime'];
   if (!isRecord(dependencies) || required.some(name => typeof dependencies[name] !== 'function')) {
     throw new Error('Las dependencias de la API de preflight Vig-IA no están completas.');
   }
@@ -70,13 +70,14 @@ export function createAgt003PreflightApi(dependencies) {
     : randomUUID;
 
   return Object.freeze({
-    async run({ profile, body }) {
+    async preflight({ profile, body }) {
       const { opportunityId } = parseBody(body);
       const resource = await dependencies.resolveOpportunityResource(opportunityId, profile);
       requireAction(profile, ACTIONS.AI_COMMERCIAL_DRAFT_RUN, resource);
       if (!dependencies.isConfigured()) {
         throw publicError('Vig-IA no está configurado.', 503, 'VIGIA_PREFLIGHT_NOT_CONFIGURED');
       }
+      const config = dependencies.getConfig();
 
       const context = await dependencies.loadOpportunityContext(opportunityId);
       if (!context || context.opportunity?.id !== opportunityId || !context.snapshotId) {
@@ -94,11 +95,12 @@ export function createAgt003PreflightApi(dependencies) {
       });
 
       try {
-        const generated = await dependencies.createRuntime().preflight(request);
+        const generated = await dependencies.createRuntime().preflight(request, {
+          idempotencyKey: `${context.snapshotId}:${config.policyVersion}:${config.model}`,
+        });
         return {
           status: 'completed',
-          output: generated.response,
-          human_review_required: true,
+          actions: generated.response.actions,
         };
       } catch (error) {
         throw mapRuntimeError(error);

@@ -25,12 +25,14 @@ function dependencies(overrides = {}) {
   const events = [];
   const deps = {
     isConfigured: () => true,
+    getConfig: () => { events.push('config'); return { model: 'synthetic-model', policyVersion: 'agt003-preflight-policy-v1' }; },
     resolveOpportunityResource: async id => { events.push('resolve'); assert.equal(id, opportunityId); return resource; },
     loadOpportunityContext: async id => { events.push('context'); assert.equal(id, opportunityId); return context; },
     createRuntime: () => ({
-      preflight: async request => {
+      preflight: async (request, options) => {
         events.push('provider');
         assert.equal(request.snapshot_id, context.snapshotId);
+        assert.equal(options.idempotencyKey, `${context.snapshotId}:agt003-preflight-policy-v1:synthetic-model`);
         return {
           response: {
             contract_version: request.contract_version,
@@ -59,22 +61,12 @@ function dependencies(overrides = {}) {
 
 {
   const { deps, events } = dependencies();
-  const result = await createAgt003PreflightApi(deps).run({ profile, body: { opportunity_id: opportunityId } });
+  const result = await createAgt003PreflightApi(deps).preflight({ profile, body: { opportunity_id: opportunityId } });
   assert.deepEqual(result, {
     status: 'completed',
-    output: {
-      contract_version: 'agt003-preflight-v1',
-      capability_id: 'agt003.opportunity-preflight.preview',
-      correlation_id: 'corr-preflight-api-001',
-      snapshot_id: context.snapshotId,
-      policy_version: 'agt003-preflight-policy-v1',
-      model: 'synthetic-model',
-      generated_at: '2030-02-01T10:01:00.000Z',
-      actions: [{ issue_code: 'next_action', title: 'Definir próximo paso', description: 'Acordar una fecha concreta con el cliente.', evidence_refs: ['evidence:opportunity:stage'] }],
-    },
-    human_review_required: true,
+    actions: [{ issue_code: 'next_action', title: 'Definir próximo paso', description: 'Acordar una fecha concreta con el cliente.', evidence_refs: ['evidence:opportunity:stage'] }],
   });
-  assert.deepEqual(events, ['resolve', 'context', 'provider']);
+  assert.deepEqual(events, ['resolve', 'config', 'context', 'provider']);
 }
 
 for (const body of [
@@ -84,7 +76,7 @@ for (const body of [
 ]) {
   const { deps, events } = dependencies();
   await assert.rejects(
-    () => createAgt003PreflightApi(deps).run({ profile, body }),
+    () => createAgt003PreflightApi(deps).preflight({ profile, body }),
     error => error?.status === 400 && error?.code === 'VIGIA_PREFLIGHT_BAD_REQUEST',
   );
   assert.deepEqual(events, [], 'closed body rejects before all reads');
@@ -94,7 +86,7 @@ for (const body of [
   const denied = { ...profile, permissions: ['modulo_oportunidades'] };
   const { deps, events } = dependencies();
   await assert.rejects(
-    () => createAgt003PreflightApi(deps).run({ profile: denied, body: { opportunity_id: opportunityId } }),
+    () => createAgt003PreflightApi(deps).preflight({ profile: denied, body: { opportunity_id: opportunityId } }),
     error => error?.status === 403 && error?.code === 'FORBIDDEN',
   );
   assert.deepEqual(events, ['resolve'], 'authorization only reads scope metadata');
@@ -103,7 +95,7 @@ for (const body of [
 {
   const { deps, events } = dependencies({ isConfigured: () => false });
   await assert.rejects(
-    () => createAgt003PreflightApi(deps).run({ profile, body: { opportunity_id: opportunityId } }),
+    () => createAgt003PreflightApi(deps).preflight({ profile, body: { opportunity_id: opportunityId } }),
     error => error?.status === 503 && error?.code === 'VIGIA_PREFLIGHT_NOT_CONFIGURED',
   );
   assert.deepEqual(events, ['resolve'], 'configuration fails after scope and before context');
@@ -112,10 +104,10 @@ for (const body of [
 {
   const { deps, events } = dependencies({ loadOpportunityContext: async () => { events.push('context'); return null; } });
   await assert.rejects(
-    () => createAgt003PreflightApi(deps).run({ profile, body: { opportunity_id: opportunityId } }),
+    () => createAgt003PreflightApi(deps).preflight({ profile, body: { opportunity_id: opportunityId } }),
     error => error?.status === 503 && error?.code === 'VIGIA_PREFLIGHT_CONTEXT_UNAVAILABLE',
   );
-  assert.deepEqual(events, ['resolve', 'context']);
+  assert.deepEqual(events, ['resolve', 'config', 'context']);
 }
 
 for (const [providerCode, status, publicCode] of [
@@ -129,7 +121,7 @@ for (const [providerCode, status, publicCode] of [
     createRuntime: () => ({ preflight: async () => { events.push('provider'); const error = new Error('detalle privado'); error.code = providerCode; throw error; } }),
   });
   await assert.rejects(
-    () => createAgt003PreflightApi(deps).run({ profile, body: { opportunity_id: opportunityId } }),
+    () => createAgt003PreflightApi(deps).preflight({ profile, body: { opportunity_id: opportunityId } }),
     error => {
       assert.equal(error?.status, status);
       assert.equal(error?.code, publicCode);
@@ -138,7 +130,7 @@ for (const [providerCode, status, publicCode] of [
       return true;
     },
   );
-  assert.deepEqual(events, ['resolve', 'context', 'provider']);
+  assert.deepEqual(events, ['resolve', 'config', 'context', 'provider']);
 }
 
 assert.throws(

@@ -271,7 +271,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/goals': ['goals', ACTIONS.MODULE_GOALS_VIEW],
   'PUT /api/goals': ['goals', ACTIONS.MODULE_GOALS_VIEW],
   'GET /api/vigia/priorities': ['vigia', ACTIONS.MODULE_VIGIA_VIEW],
-  'POST /api/vigia/opportunity-preflight': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
+  'POST /api/vigia/copilot/preflight': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/vigia/copilot/generate': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
   'POST /api/vigia/copilot/feedback': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN],
 
@@ -2392,6 +2392,7 @@ function createBackendAgt003CopilotApi(database) {
 function createBackendAgt003PreflightApi(database) {
   return createAgt003PreflightApi({
     isConfigured: () => isAgt003PreflightConfigured(process.env),
+    getConfig: () => getAgt003PreflightRuntimeConfig(process.env),
     resolveOpportunityResource: (opportunityId, profile) => resolveAgt003OpportunityResource(database, opportunityId, profile),
     loadOpportunityContext: opportunityId => loadAgt003OpportunityContext(database, opportunityId),
     createRuntime: () => createAgt003PreflightRuntime({ environment: process.env }),
@@ -2414,15 +2415,16 @@ app.get('/api/vigia/priorities', async (req, res) => {
 });
 app.all('/api/vigia/priorities', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
 
-app.post('/api/vigia/opportunity-preflight', async (req, res) => {
+app.post('/api/vigia/copilot/preflight', async (req, res) => {
   try {
     const { profile } = await getAuthContext(req);
-    const result = await createBackendAgt003PreflightApi(requireDb()).run({ profile, body: req.body });
+    const result = await createBackendAgt003PreflightApi(requireDb()).preflight({ profile, body: req.body });
     res.status(200).json(result);
-  } catch (error) { sendAuthError(res, error); }
+  } catch (error) {
+    sendAuthError(res, error);
+  }
 });
-app.all('/api/vigia/opportunity-preflight', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
-
+app.all('/api/vigia/copilot/preflight', (_req, res) => res.status(405).json({ error: 'Método no permitido.' }));
 app.post('/api/vigia/copilot/generate', async (req, res) => {
   try {
     const { profile } = await getAuthContext(req);

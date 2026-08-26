@@ -63,7 +63,7 @@ try {
     assert.deepEqual(response.body, { error: 'Debe iniciar sesión.' });
   }
 
-  const preflight = await requestJson(appPort, '/api/vigia/opportunity-preflight', {
+  const preflight = await requestJson(appPort, '/api/vigia/copilot/preflight', {
     method: 'POST',
     body: { opportunity_id: OPPORTUNITY_ID },
   });
