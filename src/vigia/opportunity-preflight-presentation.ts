@@ -38,13 +38,32 @@ export type PreflightMergeResult = {
 };
 
 export const COMMERCIAL_PREFLIGHT_EXPLANATION =
-  'Actualizar estos datos en el CRM antes de continuar mejora la propuesta que Vig-IA Comercial genera.';
+  'Estos datos requieren actualización en el CRM antes de generar una propuesta.';
 
 export const KNOWN_PREFLIGHT_ISSUE_CODES: readonly CommercialAlertCategory[] = Object.freeze([
   'next_action',
   'close_date',
   'decision_maker',
 ]);
+
+export const PREFLIGHT_ANALYSIS_UNAVAILABLE_MESSAGE =
+  'El análisis no está disponible temporalmente. Puede reintentar.';
+
+const TECHNICAL_PREFLIGHT_ERROR_PATTERNS = [
+  /\bis not defined\b/i,
+  /\b(ReferenceError|TypeError|SyntaxError|RangeError|EvalError|URIError)\b/,
+  /^\s*at\s+\S+\s*\(/m,
+  /\.(js|ts|tsx|jsx|mjs):\d+:\d+/,
+  /\bundefined is not a function\b/i,
+];
+
+export function normalizePreflightErrorMessage(message: string | null | undefined): string {
+  const text = String(message ?? '').trim();
+  if (!text) return PREFLIGHT_ANALYSIS_UNAVAILABLE_MESSAGE;
+  return TECHNICAL_PREFLIGHT_ERROR_PATTERNS.some(pattern => pattern.test(text))
+    ? PREFLIGHT_ANALYSIS_UNAVAILABLE_MESSAGE
+    : text;
+}
 
 function nextActionAlert(state: FichaCardState): BaseCommercialAlert | null {
   const mapped: Record<string, { risk_text: string; action_text: string }> = {

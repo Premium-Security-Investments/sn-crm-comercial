@@ -8,7 +8,6 @@ const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 for (const marker of [
   'VIGIA_VISIBLE_NAMES.commercial',
   'Alertas comerciales',
-  'Acciones para mejorar la propuesta',
   'Plan de contacto',
   'Análisis inteligente del seguimiento',
   'Analizar cómo fortalecer el seguimiento',
@@ -35,7 +34,7 @@ for (const forbidden of [
   '>Enviar<', 'decision_maker_email', 'recipient', '/api/opportunities', 'stage_code',
   '>Útil<', 'Necesita cambios', '/api/vigia/copilot/feedback',
   'Antes de contactar', 'Acción recomendada', 'vigia-copilot-missing', 'vigia-copilot-warnings',
-  'Preparar seguimiento',
+  'Preparar seguimiento', 'Acciones para mejorar la propuesta',
 ]) assert.equal(component.includes(forbidden), false, `panel Vig-IA contains forbidden capability/copy: ${forbidden}`);
 
 const header = component.indexOf('<header>');

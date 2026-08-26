@@ -56,6 +56,22 @@ function mapRuntimeError(error) {
   return publicError('Vig-IA no pudo completar el preflight.', 502, 'VIGIA_PREFLIGHT_UNAVAILABLE');
 }
 
+function isNotConfiguredError(error) {
+  return error?.status === 503 && error?.code === 'VIGIA_PREFLIGHT_NOT_CONFIGURED';
+}
+
+function resolveConfiguration(dependencies) {
+  try {
+    if (!dependencies.isConfigured()) {
+      throw publicError('Vig-IA no está configurado.', 503, 'VIGIA_PREFLIGHT_NOT_CONFIGURED');
+    }
+    return dependencies.getConfig();
+  } catch (error) {
+    if (isNotConfiguredError(error)) throw error;
+    throw publicError('Vig-IA no está configurado.', 503, 'VIGIA_PREFLIGHT_NOT_CONFIGURED');
+  }
+}
+
 function assertDependencies(dependencies) {
   const required = ['isConfigured', 'getConfig', 'resolveOpportunityResource', 'loadOpportunityContext', 'createRuntime'];
   if (!isRecord(dependencies) || required.some(name => typeof dependencies[name] !== 'function')) {
@@ -74,10 +90,7 @@ export function createAgt003PreflightApi(dependencies) {
       const { opportunityId } = parseBody(body);
       const resource = await dependencies.resolveOpportunityResource(opportunityId, profile);
       requireAction(profile, ACTIONS.AI_COMMERCIAL_DRAFT_RUN, resource);
-      if (!dependencies.isConfigured()) {
-        throw publicError('Vig-IA no está configurado.', 503, 'VIGIA_PREFLIGHT_NOT_CONFIGURED');
-      }
-      const config = dependencies.getConfig();
+      const config = resolveConfiguration(dependencies);
 
       const context = await dependencies.loadOpportunityContext(opportunityId);
       if (!context || context.opportunity?.id !== opportunityId || !context.snapshotId) {

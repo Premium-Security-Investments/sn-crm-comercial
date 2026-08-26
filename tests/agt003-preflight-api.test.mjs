@@ -102,6 +102,23 @@ for (const body of [
 }
 
 {
+  const { deps, events } = dependencies({
+    getConfig: () => { events.push('config'); throw new Error('getAgt003PreflightRuntimeConfig is not defined'); },
+  });
+  await assert.rejects(
+    () => createAgt003PreflightApi(deps).preflight({ profile, body: { opportunity_id: opportunityId } }),
+    error => {
+      assert.equal(error?.status, 503);
+      assert.equal(error?.code, 'VIGIA_PREFLIGHT_NOT_CONFIGURED');
+      assert.equal(error.message.includes('getAgt003PreflightRuntimeConfig'), false);
+      assert.equal(error.message.includes('is not defined'), false);
+      return true;
+    },
+  );
+  assert.deepEqual(events, ['resolve', 'config'], 'config failure occurs after scope authorization and before context/provider');
+}
+
+{
   const { deps, events } = dependencies({ loadOpportunityContext: async () => { events.push('context'); return null; } });
   await assert.rejects(
     () => createAgt003PreflightApi(deps).preflight({ profile, body: { opportunity_id: opportunityId } }),

@@ -8,6 +8,14 @@ for (const [name, url] of [
   const source = readFileSync(url, 'utf8');
   assert.ok(source.includes("from '../agt003-preflight-api.js'"), `${name} imports the shared preflight API`);
   assert.ok(source.includes("from '../agt003-preflight-runtime.js'"), `${name} imports the governed preflight runtime`);
+
+  const runtimeImportMatch = source.match(/import\s*{([^}]*)}\s*from\s*'\.\.\/agt003-preflight-runtime\.js'/);
+  assert.ok(runtimeImportMatch, `${name} has a named import from agt003-preflight-runtime.js`);
+  const runtimeImportedNames = runtimeImportMatch[1].split(',').map(part => part.trim());
+  assert.ok(
+    runtimeImportedNames.includes('getAgt003PreflightRuntimeConfig'),
+    `${name} imports getAgt003PreflightRuntimeConfig because the factory invokes it`,
+  );
   assert.ok(source.includes("'POST /api/vigia/copilot/preflight': ['vigia', ACTIONS.AI_COMMERCIAL_DRAFT_RUN]"), `${name} inventories preflight`);
   assert.ok(source.includes("app.post('/api/vigia/copilot/preflight'"), `${name} exposes preflight endpoint`);
   assert.ok(source.includes("app.all('/api/vigia/copilot/preflight'"), `${name} rejects wrong methods`);
