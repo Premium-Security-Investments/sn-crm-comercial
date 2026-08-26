@@ -27,7 +27,14 @@ create table public.psi_agt002_radar_preanalysis_runs (
     (status='completed' and visibility_verdict in ('mostrar_en_radar','no_mostrar_en_radar'))
     or (status='abstained' and visibility_verdict='no_concluyente')
   ),
-  constraint psi_agt002_radar_preanalysis_runs_human_review_check check ((result->'human_review_required')='true'::jsonb),
+  -- Autoridad humana no negociable. `(result->'human_review_required')='true'::jsonb` era permisivo
+  -- ante NULL: si la clave faltaba, `->` devolvia SQL NULL, la comparacion era NULL y un CHECK que no
+  -- es falso pasa. Una corrida sin la marca se colaba por la puerta directa a la tabla. El coalesce
+  -- explicito cierra a falso todo lo que no sea el booleano JSON `true`: clave ausente, `null` JSON,
+  -- `false`, cadenas, numeros u objetos, y tambien un `result` que no sea objeto.
+  constraint psi_agt002_radar_preanalysis_runs_human_review_check check (
+    coalesce((result->'human_review_required')='true'::jsonb, false) is true
+  ),
   constraint psi_agt002_radar_preanalysis_runs_evidence_check check (jsonb_typeof(evidence)='array' and jsonb_array_length(evidence)>=1),
   constraint psi_agt002_radar_preanalysis_runs_learning_shape_check check (
     (learning_signals_version is null and learning_signals_count=0)
@@ -119,8 +126,11 @@ create function public.psi_record_agt002_radar_preanalysis_run(
 declare v_existing public.psi_agt002_radar_preanalysis_runs%rowtype; v_previous public.psi_agt002_radar_preanalysis_runs%rowtype;
 declare v_gate public.psi_agt002_radar_gate_evaluations%rowtype; v_new public.psi_agt002_radar_preanalysis_runs%rowtype;
 begin
+  -- Misma correccion que en el CHECK de la tabla: `<>` sobre una clave ausente daba NULL, el `if`
+  -- no se tomaba y la corrida sin marca de revision humana se insertaba. `not coalesce(...=true,false)`
+  -- no puede ser NULL, asi que ausencia, `null` JSON, `false` y cualquier no-booleano fallan cerrado.
   if p_tender_id is null or p_gate_evaluation_id is null or jsonb_typeof(p_result)<>'object'
-    or (p_result->'human_review_required')<>'true'::jsonb or jsonb_typeof(p_evidence)<>'array' or jsonb_array_length(p_evidence)<1
+    or not coalesce((p_result->'human_review_required')='true'::jsonb, false) or jsonb_typeof(p_evidence)<>'array' or jsonb_array_length(p_evidence)<1
     or nullif(btrim(p_policy_version),'') is null or nullif(btrim(p_context_version),'') is null
     or p_learning_signals_count is null or p_learning_signals_count<0 or nullif(btrim(p_idempotency_key),'') is null
     or not ((p_status='completed' and p_visibility_verdict in ('mostrar_en_radar','no_mostrar_en_radar')) or (p_status='abstained' and p_visibility_verdict='no_concluyente'))

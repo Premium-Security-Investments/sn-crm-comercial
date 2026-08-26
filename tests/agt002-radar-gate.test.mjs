@@ -126,4 +126,75 @@ assert.equal(beforeDeadline.source_row_hash, afterDeadline.source_row_hash);
 // La fecha de evaluación entra en la identidad del gate pero nunca en el hash de la fila fuente.
 assert.equal(computeAgt002RadarSourceRowHash(base), computeAgt002RadarSourceRowHash({ ...base, evaluation_date: '2026-08-26' }));
 
+// BLOCKER: `deadline_at` es `timestamptz` (migración 005) y el día de evaluación es America/Bogota.
+// Leer el `YYYY-MM-DD` inicial equivalía a leer el día en UTC: una marca todavía perteneciente al día
+// anterior de Bogotá sobrevivía un día de más. La semántica sigue siendo de día calendario inclusivo:
+// no vence en el instante, vence cuando el día de Bogotá del cierre ya quedó atrás.
+const BOGOTA_25 = '2026-08-25T15:00:00.000Z';
+const BOGOTA_26 = '2026-08-26T15:00:00.000Z';
+
+// 04:30Z del 26 es todavía el 25 en Bogotá (UTC-5): vigente el día 25, vencida el día 26.
+const utcNextDay = { ...base, deadline_at: '2026-08-26T04:30:00Z' };
+assert.equal(evaluateAgt002RadarGate(utcNextDay, { nowIso: BOGOTA_25 }).verdict, 'sobreviviente');
+const utcNextDayExpired = evaluateAgt002RadarGate(utcNextDay, { nowIso: BOGOTA_26 });
+assert.equal(utcNextDayExpired.verdict, 'eliminada');
+assert.deepEqual(utcNextDayExpired.rule_ids, ['fecha_vencida']);
+
+// 23:59Z del 26 sigue siendo el 26 en Bogotá (18:59): no vence en su propio día.
+const utcSameDay = { ...base, deadline_at: '2026-08-26T23:59:00Z' };
+assert.equal(evaluateAgt002RadarGate(utcSameDay, { nowIso: BOGOTA_26 }).verdict, 'sobreviviente');
+assert.equal(evaluateAgt002RadarGate(utcSameDay, { nowIso: '2026-08-27T15:00:00.000Z' }).verdict, 'eliminada');
+
+// El desplazamiento explícito se respeta, venga como `Z`, `+00:00`, `-05:00` o forma de Postgres.
+for (const [deadline, expiredOnBogota26] of [
+  ['2026-08-26T04:30:00Z', true],
+  ['2026-08-26T04:30:00.000Z', true],
+  ['2026-08-26T04:30:00+00:00', true],
+  ['2026-08-26 04:30:00+00', true],
+  ['2026-08-25T23:30:00-05:00', true],
+  ['2026-08-26T23:30:00-05:00', false],
+  ['2026-08-26T23:59:00Z', false],
+  ['2026-08-27T00:00:00Z', false],
+]) {
+  const result = evaluateAgt002RadarGate({ ...base, deadline_at: deadline }, { nowIso: BOGOTA_26 });
+  assert.equal(result.rule_ids.includes('fecha_vencida'), expiredOnBogota26, deadline);
+  assert.equal(result.rule_ids.includes('fecha_no_verificable'), false, deadline);
+}
+
+// La forma sólo fecha no denota un instante y no se reinterpreta: sigue siendo su propio día.
+assert.equal(evaluateAgt002RadarGate({ ...base, deadline_at: '2026-08-26' }, { nowIso: BOGOTA_26 }).verdict, 'sobreviviente');
+assert.deepEqual(evaluateAgt002RadarGate({ ...base, deadline_at: '2026-08-25' }, { nowIso: BOGOTA_26 }).rule_ids, ['fecha_vencida']);
+// Tampoco una marca sin zona: se lee como hora de pared de Bogotá, es decir el día que dice.
+assert.equal(evaluateAgt002RadarGate({ ...base, deadline_at: '2026-08-26T00:00:00' }, { nowIso: BOGOTA_26 }).verdict, 'sobreviviente');
+assert.equal(evaluateAgt002RadarGate({ ...base, deadline_at: '2026-08-26 23:59:00' }, { nowIso: BOGOTA_26 }).verdict, 'sobreviviente');
+
+// Un sufijo arbitrario que sólo empieza con una fecha ya no se acepta en silencio.
+for (const invalid of [
+  '2026-08-26T', '2026-08-26T25:00:00Z', '2026-08-26T12:61:00Z', '2026-08-26T12:00:61Z',
+  '2026-08-26T04:30:00+99:00', '2026-08-26 basura', '2026-08-26Tbasura', '2026-08-26-15',
+  '2026-13-01T00:00:00Z', '2026-02-30T00:00:00Z', 'ayer', '',
+]) {
+  const result = evaluateAgt002RadarGate({ ...base, deadline_at: invalid }, { nowIso: BOGOTA_26 });
+  assert.equal(result.verdict, 'eliminada', invalid);
+  assert.ok(result.rule_ids.includes('fecha_no_verificable'), invalid);
+  assert.equal(result.rule_ids.includes('fecha_vencida'), false, invalid);
+}
+
+// La normalización a Bogotá no toca la identidad: el hash es de la fila fuente literal y la clave
+// diaria sigue derivándose del día de evaluación, no del día normalizado del cierre.
+assert.equal(
+  computeAgt002RadarSourceRowHash(utcNextDay),
+  computeAgt002RadarSourceRowHash({ ...base, deadline_at: '2026-08-26T04:30:00Z' }),
+);
+assert.notEqual(
+  computeAgt002RadarSourceRowHash(utcNextDay),
+  computeAgt002RadarSourceRowHash({ ...base, deadline_at: '2026-08-25T23:30:00-05:00' }),
+  'dos textos distintos que caen en el mismo día de Bogotá siguen siendo filas fuente distintas',
+);
+const identityMorning = evaluateAgt002RadarGate(utcNextDay, { nowIso: '2026-08-26T13:05:00.000Z' });
+const identityEvening = evaluateAgt002RadarGate(utcNextDay, { nowIso: '2026-08-27T04:59:59.000Z' });
+assert.equal(identityMorning.evaluation_date, '2026-08-26');
+assert.equal(identityMorning.idempotency_key, identityEvening.idempotency_key);
+assert.equal(identityMorning.source_row_hash, identityEvening.source_row_hash);
+
 console.log('AGT-002 deterministic Radar gate contract passed');

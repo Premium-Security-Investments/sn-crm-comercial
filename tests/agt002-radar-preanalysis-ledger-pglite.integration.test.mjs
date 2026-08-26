@@ -10,12 +10,13 @@ for (const sql of [migration072, rollback072]) assert.doesNotMatch(sql, /psi_sal
 const T1 = '22222222-2222-4222-8222-222222222221';
 const T2 = '22222222-2222-4222-8222-222222222222';
 const T3 = '22222222-2222-4222-8222-222222222223';
+const T4 = '22222222-2222-4222-8222-222222222224';
 const HASH1 = 'a'.repeat(64), HASH2 = 'b'.repeat(64), HASH3 = 'c'.repeat(64);
 const db = new PGlite();
 await db.exec(`
   create role authenticated; create role service_role; create role anon; alter role service_role bypassrls; grant service_role to current_user;
   create table public.psi_public_tenders(id uuid primary key, stable_key text not null unique, title text);
-  insert into public.psi_public_tenders values ('${T1}','k1','One'),('${T2}','k2','Two'),('${T3}','k3','Three');
+  insert into public.psi_public_tenders values ('${T1}','k1','One'),('${T2}','k2','Two'),('${T3}','k3','Three'),('${T4}','k4','Four');
   ${migration071}
   ${migration072}
 `);
@@ -99,6 +100,53 @@ assert.deepEqual(current, [{ id:r3.id, status:'completed', visibility_verdict:'n
 assert.equal((await db.query('select count(*)::int n from public.psi_agt002_radar_preanalysis_runs where tender_id=$1 and canonical',[T1])).rows[0].n, 1);
 await assert.rejects(() => db.query("update public.psi_agt002_radar_preanalysis_runs set result='{}' where id=$1",[r1.id]), /append-only|55000/i);
 await assert.rejects(() => db.query('delete from public.psi_agt002_radar_preanalysis_runs where id=$1',[r1.id]), /append-only|55000/i);
+
+// BLOCKER: `human_review_required` es autoridad humana no negociable, y su comprobacion era permisiva
+// ante NULL en las dos rutas. En la tabla, `(result->'human_review_required')='true'::jsonb` devolvia
+// SQL NULL con la clave ausente y un CHECK que no es falso pasa. En la RPC, `<>` devolvia NULL y el
+// `if` de validacion no se tomaba. Una corrida sin la marca entraba al ledger canonico por cualquiera
+// de las dos puertas. Ahora ambas cierran a falso: solo el booleano JSON `true` es aceptado.
+const gt4 = await gate(T4,'k4',HASH1,'gate-t4');
+const REJECTED_HUMAN_REVIEW = [
+  ['clave ausente', JSON.stringify({ summary:'ok' })],
+  ['null JSON', JSON.stringify({ summary:'ok', human_review_required:null })],
+  ['false', JSON.stringify({ summary:'ok', human_review_required:false })],
+  ['cadena "true"', JSON.stringify({ summary:'ok', human_review_required:'true' })],
+  ['cadena vacia', JSON.stringify({ summary:'ok', human_review_required:'' })],
+  ['numero 1', JSON.stringify({ summary:'ok', human_review_required:1 })],
+  ['objeto', JSON.stringify({ summary:'ok', human_review_required:{} })],
+  ['arreglo', JSON.stringify({ summary:'ok', human_review_required:[] })],
+  ['objeto vacio', '{}'],
+];
+async function recordRaw(resultJson, key) {
+  return db.query('select public.psi_record_agt002_radar_preanalysis_run($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) result',
+    [T4,gt4.id,'mostrar_en_radar','completed',resultJson,JSON.stringify(evidence),'p1','c1',null,0,'m1',null,key]);
+}
+async function insertRaw(resultJson, key) {
+  return db.query(`insert into public.psi_agt002_radar_preanalysis_runs
+    (tender_id,gate_evaluation_id,status,visibility_verdict,result,evidence,policy_version,context_version,source_row_hash,idempotency_key)
+    values ($1,$2,'completed','mostrar_en_radar',$3::jsonb,$4::jsonb,'p1','c1',$5,$6)`,
+    [T4,gt4.id,resultJson,JSON.stringify(evidence),HASH1,key]);
+}
+for (const [index, [label, resultJson]] of REJECTED_HUMAN_REVIEW.entries()) {
+  await assert.rejects(() => recordRaw(resultJson, `hr-rpc-${index}`), /22023|invalid/i, `la RPC debe rechazar ${label}`);
+  await assert.rejects(() => insertRaw(resultJson, `hr-direct-${index}`), /human_review_check|check constraint|23514/i,
+    `la puerta directa a la tabla debe rechazar ${label}`);
+}
+// Un `result` que ni siquiera es objeto tampoco entra: la RPC lo rechaza por forma y la puerta directa
+// porque `->` sobre un escalar no da el booleano `true`. Aqui solo se exige el rechazo, no su clase.
+await assert.rejects(() => recordRaw('true', 'hr-rpc-scalar'), /22023|invalid/i);
+await assert.rejects(() => insertRaw('true', 'hr-direct-scalar'));
+await assert.rejects(() => recordRaw('[{"human_review_required":true}]', 'hr-rpc-array'), /22023|invalid/i);
+await assert.rejects(() => insertRaw('[{"human_review_required":true}]', 'hr-direct-array'));
+assert.equal((await db.query('select count(*)::int n from public.psi_agt002_radar_preanalysis_runs where tender_id=$1',[T4])).rows[0].n, 0,
+  'ninguna corrida sin marca de revision humana quedo en el ledger');
+// El booleano JSON `true` sigue pasando por ambas puertas: el cierre es fail-closed, no un bloqueo total.
+const acceptedRpc = (await recordRaw(JSON.stringify({ summary:'ok', human_review_required:true }), 'hr-rpc-valid')).rows[0].result;
+assert.equal(acceptedRpc.canonical, true);
+assert.equal(acceptedRpc.result.human_review_required, true);
+await insertRaw(JSON.stringify({ summary:'ok', human_review_required:true }), 'hr-direct-valid');
+assert.equal((await db.query('select count(*)::int n from public.psi_agt002_radar_preanalysis_runs where tender_id=$1',[T4])).rows[0].n, 2);
 
 const gt2 = await gate(T2,'k2',HASH1,'gate-t2'); await enqueue(T2,gt2.id,HASH1,'job-t2'); const ct2 = await claim();
 assert.equal((await db.query('select public.psi_fail_agt002_radar_preanalysis_job($1,$2,$3) result',[ct2.job_id,ct2.lease_id,'timeout'])).rows[0].result.status, 'unavailable');

@@ -90,6 +90,27 @@ assert.deepEqual(
   filterRadarRowsByCanonicalPreanalysis(gateRows, { ...realOptions, canonicalByTenderId: gateCanonical, alwaysVisibleTenderIds: new Set(['g2']), nowIso: '2026-08-27T15:00:00.000Z' }).map(row => row.id),
   ['g2'],
 );
+// BLOCKER: `deadline_at` es `timestamptz` y el dia de evaluacion es Bogota. Una marca UTC que todavia
+// pertenece al dia anterior de Bogota se ocultaba un dia tarde en la lectura del Radar. La conversion
+// sigue resolviendose antes del gate, asi que una fila convertida con esa misma marca sigue visible.
+const cierreUtcTardio = { ...vigente, id: 'g3', stable_key: 'kg3', deadline_at: '2026-08-26T04:30:00Z' };
+const cierreUtcCanonical = new Map([positivo(cierreUtcTardio)]);
+assert.deepEqual(
+  filterRadarRowsByCanonicalPreanalysis([cierreUtcTardio], { ...realOptions, canonicalByTenderId: cierreUtcCanonical, alwaysVisibleTenderIds: new Set(), nowIso: '2026-08-25T15:00:00.000Z' }).map(row => row.id),
+  ['g3'],
+  'el dia de Bogota del cierre todavia es hoy: sigue visible',
+);
+assert.deepEqual(
+  filterRadarRowsByCanonicalPreanalysis([cierreUtcTardio], { ...realOptions, canonicalByTenderId: cierreUtcCanonical, alwaysVisibleTenderIds: new Set(), nowIso: '2026-08-26T15:00:00.000Z' }).map(row => row.id),
+  [],
+  '04:30Z del 26 es el 25 en Bogota: al dia siguiente ya no se muestra',
+);
+assert.deepEqual(
+  filterRadarRowsByCanonicalPreanalysis([cierreUtcTardio], { ...realOptions, canonicalByTenderId: cierreUtcCanonical, alwaysVisibleTenderIds: new Set(['g3']), nowIso: '2026-08-26T15:00:00.000Z' }).map(row => row.id),
+  ['g3'],
+  'una convertida se resuelve antes del gate y sigue siempre visible',
+);
+
 // Un unico reloj para toda la pagina: el gate recibe exactamente el mismo `nowIso` en cada fila.
 const clocks = [];
 filterRadarRowsByCanonicalPreanalysis(gateRows, {

@@ -55,14 +55,40 @@ export function agt002RadarEvaluationDate(nowIso) {
   return BOGOTA_DATE.format(now);
 }
 
+// `psi_public_tenders.deadline_at` es `timestamptz` (migración 005) y el día de evaluación es
+// America/Bogota. Tomar el `YYYY-MM-DD` inicial del texto equivalía a leer el día en UTC, así que un
+// cierre como `2026-08-26T04:30:00Z` —que en Bogotá ya es el 25— sobrevivía un día de más.
+// Se conserva la semántica inclusiva de día calendario (no vence en el instante, vence al pasar el
+// día): una fecha sin hora sigue siendo ese mismo día, y una marca de tiempo con zona explícita se
+// normaliza al día calendario de Bogotá antes de comparar. Una marca sin zona no denota un instante,
+// así que se lee como hora de pared de Bogotá, es decir su propio día. Cualquier sufijo que no sea una
+// marca de tiempo parseable ya no se ignora: devuelve null y el gate emite `fecha_no_verificable`.
+const TIMESTAMP_PATTERN = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?[ ]?(Z|[+-]\d{2}(?::?\d{2})?)?)?$/i;
+
+function normalizedOffset(zone) {
+  if (zone.toUpperCase() === 'Z') return 'Z';
+  const digits = zone.slice(1).replace(':', '');
+  const hours = digits.slice(0, 2);
+  const minutes = digits.length > 2 ? digits.slice(2, 4) : '00';
+  if (Number(hours) > 23 || Number(minutes) > 59) return null;
+  return `${zone[0]}${hours}:${minutes}`;
+}
+
 function calendarDate(value) {
   if (typeof value !== 'string' || !value.trim()) return null;
-  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?$/);
+  const match = value.trim().match(TIMESTAMP_PATTERN);
   if (!match) return null;
-  const [, y, m, d] = match;
+  const [, y, m, d, hh, mi, ss, zone] = match;
   const date = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
   if (date.getUTCFullYear() !== Number(y) || date.getUTCMonth() + 1 !== Number(m) || date.getUTCDate() !== Number(d)) return null;
-  return `${y}-${m}-${d}`;
+  if (hh === undefined) return `${y}-${m}-${d}`;
+  if (Number(hh) > 23 || Number(mi) > 59 || Number(ss ?? '0') > 59) return null;
+  if (!zone) return `${y}-${m}-${d}`;
+  const offset = normalizedOffset(zone);
+  if (!offset) return null;
+  const instant = new Date(`${y}-${m}-${d}T${hh}:${mi}:${ss ?? '00'}${offset}`);
+  if (Number.isNaN(instant.getTime())) return null;
+  return BOGOTA_DATE.format(instant);
 }
 
 function sourceText(row) {
