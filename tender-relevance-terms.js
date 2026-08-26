@@ -18,3 +18,24 @@ export const TENDER_NON_SECURITY_CONTEXT_TERMS = Object.freeze([
 export const TENDER_NON_COMMERCIAL_ACT_TERMS = Object.freeze([
   'aunar esfuerzos',
 ]);
+
+export const TENDER_CORE_SERVICE_TERMS = Object.freeze([
+  'vigilancia y seguridad privada', 'vigilancia y seguridad', 'servicios de vigilancia', 'servicio de vigilancia',
+  'vigilancia armada', 'vigilancia privada', 'seguridad privada', 'seguridad electronica', 'seguridad electrónica',
+  'cctv', 'videovigilancia', 'video vigilancia', 'control de acceso', 'circuito cerrado',
+]);
+
+function normalizeTenderTerm(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+const NORMALIZED_CORE_SERVICE_TERMS = new Set(TENDER_CORE_SERVICE_TERMS.map(normalizeTenderTerm));
+
+export function isTenderCoreServiceTerm(value) {
+  return NORMALIZED_CORE_SERVICE_TERMS.has(normalizeTenderTerm(value));
+}
+
+export function extractTenderCoreServiceTerms(value) {
+  const text = ` ${normalizeTenderTerm(value)} `;
+  return [...NORMALIZED_CORE_SERVICE_TERMS].filter(term => text.includes(` ${term} `)).sort();
+}

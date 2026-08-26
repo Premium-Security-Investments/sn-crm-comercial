@@ -48,7 +48,7 @@ import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, appendAgt002AnalysisAttempt, claim
 import { getAgt002WorkbenchApi, postAgt002LearningReviewApi, postAgt002MessageApi, postAgt002RetryApi } from '../agt002-workbench-api.js';
 import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt002WorkbenchDrain } from '../agt002-workbench-runtime.js';
 import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
-import { TENDER_DISQUALIFYING_TERMS, TENDER_NON_COMMERCIAL_ACT_TERMS, TENDER_NON_SECURITY_CONTEXT_TERMS } from '../tender-relevance-terms.js';
+import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS, TENDER_NON_COMMERCIAL_ACT_TERMS, TENDER_NON_SECURITY_CONTEXT_TERMS } from '../tender-relevance-terms.js';
 import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../tender-actuation-types.js';
 import { buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
 import { AGT002_RADAR_GATE_CONTEXT_VERSION, AGT002_RADAR_GATE_POLICY_VERSION, computeAgt002RadarSourceRowHash } from '../agt002-radar-gate.js';
@@ -861,9 +861,7 @@ const tenderNonOfferableDirectIntentTerms = [
   'adquisicion de inmuebles', 'adquisición de inmuebles', 'compraventa de inmuebles'
 ].map(normTenderText);
 const tenderCoreServiceTerms = new Set([
-  'vigilancia y seguridad privada', 'vigilancia y seguridad', 'servicios de vigilancia', 'servicio de vigilancia',
-  'vigilancia armada', 'vigilancia privada', 'seguridad privada', 'seguridad electronica', 'seguridad electrónica',
-  'cctv', 'videovigilancia', 'video vigilancia', 'control de acceso', 'circuito cerrado',
+  ...TENDER_CORE_SERVICE_TERMS,
   tenderContextualPhysicalSecurityReason
 ]);
 const tenderDisqualifyingTerms = TENDER_DISQUALIFYING_TERMS;

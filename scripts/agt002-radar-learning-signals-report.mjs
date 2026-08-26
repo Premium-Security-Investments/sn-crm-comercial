@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { projectAgt002RadarLearningObservations } from '../agt002-radar-learning-projection.js';
 import { buildAgt002RadarLearningSignals } from '../agt002-radar-learning-retrieval.js';
 import { buildAgt002RadarLearningProposals } from '../agt002-radar-learning-proposals.js';
+import { extractTenderCoreServiceTerms } from '../tender-relevance-terms.js';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
@@ -34,11 +35,16 @@ function createReadOnlyDatabase(baseUrl, serviceKey, fetchImpl) {
     from(table) {
       let fields = '*';
       const filters = new Map();
+      const ordering = [];
       const query = {
         select(value) { fields = value; return query; },
         eq(column, value) { filters.set(column, `eq.${value}`); return query; },
+        in(column, values) { filters.set(column, `in.(${values.join(',')})`); return query; },
+        is(column, value) { filters.set(column, value === null ? 'is.null' : `is.${value}`); return query; },
+        order(column, { ascending = true } = {}) { ordering.push(`${column}.${ascending ? 'asc' : 'desc'}`); return query; },
         limit(limit) {
           const params = new URLSearchParams({ select: fields, limit: String(limit), ...Object.fromEntries(filters) });
+          if (ordering.length) params.set('order', ordering.join(','));
           return readRest(baseUrl, serviceKey, table, params.toString(), fetchImpl)
             .then(data => ({ data, error: null }), error => ({ data: null, error }));
         },
@@ -54,9 +60,7 @@ function candidateFromTender(tender) {
     : null;
   return {
     tender_id: tender.id,
-    service_terms: [...new Set(`${tender.title || ''} ${tender.description || tender.desc || ''}`
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
-      .split(/[^a-z0-9]+/).filter(token => token.length > 3))].sort(),
+    service_terms: extractTenderCoreServiceTerms(`${tender.title || ''} ${tender.description || tender.desc || ''}`),
     entity_key: normalize(tender.entity_nit || tender.entity),
     modality_key: normalize(tender.category || tender.modality),
     source_key: normalize(tender.source),

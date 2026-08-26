@@ -6,12 +6,13 @@ import { buildAgt002RadarLearningSignals } from './agt002-radar-learning-retriev
 import { createAgt002RadarPreanalysisRuntime } from './agt002-radar-preanalysis-runtime.js';
 import { classifyAgt002RadarPreanalysisError } from './agt002-radar-preanalysis-worker.js';
 import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
+import { extractTenderCoreServiceTerms } from './tender-relevance-terms.js';
 
 export const AGT002_RADAR_PIPELINE_STAGES=Object.freeze(['fetch','gate','ledger','claim','learning','agt','persist']);
 function enabled(environment){return buildAgt002AnalysisConfig(environment).AGT002_RADAR_GATE;}
 async function defaultFetch(database,{limit}){const response=await database.from('psi_public_tenders').select('*').order('last_seen_at',{ascending:false}).order('id',{ascending:true}).limit(limit);if(response?.error)throw response.error;return response?.data||[];}
 function normalize(value){return typeof value==='string'?value.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim():null;}
-function candidate(row){return{tender_id:row.id,service_terms:[...new Set(`${row.title||''} ${row.description||row.desc||''}`.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().split(/[^a-z0-9]+/).filter(token=>token.length>3))].sort(),entity_key:normalize(row.entity_nit||row.entity),modality_key:normalize(row.category||row.modality),source_key:normalize(row.source),territory_key:{city:normalize(row.city),dept:normalize(row.dept)}};}
+function candidate(row){return{tender_id:row.id,service_terms:extractTenderCoreServiceTerms(`${row.title||''} ${row.description||row.desc||''}`),entity_key:normalize(row.entity_nit||row.entity),modality_key:normalize(row.category||row.modality),source_key:normalize(row.source),territory_key:{city:normalize(row.city),dept:normalize(row.dept)}};}
 async function defaultRunPreanalysis(_database,{environment,tenderRow,gateEvaluation,learningSignals,idempotencyKey}){return createAgt002RadarPreanalysisRuntime({environment}).runOnce({tenderRow,gateEvaluation,learningSignals,idempotencyKey});}
 export function createAgt002RadarPipeline({
  database,environment=process.env,now,fetchTenderPage=defaultFetch,evaluateGate=evaluateAgt002RadarGate,
