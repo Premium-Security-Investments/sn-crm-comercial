@@ -1,0 +1,17 @@
+{
+  "contract_version": "agt003-preflight-v1",
+  "capability_id": "agt003.opportunity-preflight.preview",
+  "correlation_id": "corr-preflight-synthetic-001",
+  "snapshot_id": "snapshot-preflight-synthetic-001",
+  "policy_version": "agt003-preflight-policy-v1",
+  "model": "synthetic-structured-model",
+  "generated_at": "2030-02-01T10:01:00.000Z",
+  "actions": [
+    {
+      "issue_code": "stalled_conversation",
+      "title": "Retomar conversación sobre cobertura",
+      "description": "Retome la conversación con el cliente y confirme el número de sedes antes de definir el alcance.",
+      "evidence_refs": ["evidence:interaction:001"]
+    }
+  ]
+}

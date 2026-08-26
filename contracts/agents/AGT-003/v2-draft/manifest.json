@@ -17,6 +17,17 @@
       "external_send_allowed": false,
       "crm_write_allowed": false,
       "public_research_allowed": false
+    },
+    {
+      "id": "agt003.opportunity-preflight.preview",
+      "mode": "preview",
+      "persisted_results_only": false,
+      "request_schema": "opportunity-preflight.request.schema.json",
+      "response_schema": "opportunity-preflight.response.schema.json",
+      "human_review_required": true,
+      "external_send_allowed": false,
+      "crm_write_allowed": false,
+      "public_research_allowed": false
     }
   ],
   "fixtures": [
@@ -28,6 +39,16 @@
     {
       "path": "fixtures/valid-opportunity-copilot-response.json",
       "schema": "opportunity-copilot.response.schema.json",
+      "valid": true
+    },
+    {
+      "path": "fixtures/valid-opportunity-preflight-request.json",
+      "schema": "opportunity-preflight.request.schema.json",
+      "valid": true
+    },
+    {
+      "path": "fixtures/valid-opportunity-preflight-response.json",
+      "schema": "opportunity-preflight.response.schema.json",
       "valid": true
     }
   ]

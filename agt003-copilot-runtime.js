@@ -25,7 +25,7 @@ function validHttps(value) {
   try { return new URL(value).protocol === 'https:'; } catch { return false; }
 }
 
-function resolveRuntimeValues(environment = {}) {
+export function resolveAgt003BridgeConnection(environment = {}) {
   const wireProtocol = nonEmpty(environment.AGT003_COPILOT_WIRE_PROTOCOL)
     ? environment.AGT003_COPILOT_WIRE_PROTOCOL.trim()
     : 'agt003';
@@ -45,7 +45,7 @@ function resolveRuntimeValues(environment = {}) {
 }
 
 export function isAgt003CopilotConfigured(environment = process.env) {
-  const resolved = resolveRuntimeValues(environment);
+  const resolved = resolveAgt003BridgeConnection(environment);
   return environment?.AGT003_COPILOT_ENGINE === AGT003_COPILOT_ENGINE_ID
     && ['agt002', 'agt003'].includes(resolved.wireProtocol)
     && nonEmpty(resolved.model)
@@ -56,7 +56,7 @@ export function isAgt003CopilotConfigured(environment = process.env) {
 
 export function getAgt003CopilotRuntimeConfig(environment = process.env) {
   if (!isAgt003CopilotConfigured(environment)) throw new Error('Vig-IA no está configurado.');
-  const resolved = resolveRuntimeValues(environment);
+  const resolved = resolveAgt003BridgeConnection(environment);
   const timeoutMs = positiveInt(environment, 'AGT003_COPILOT_TIMEOUT_MS', DEFAULT_TIMEOUT_MS);
   const maxConcurrent = positiveInt(environment, 'AGT003_COPILOT_MAX_CONCURRENT', DEFAULT_MAX_CONCURRENT);
   const dailyMaxRuns = positiveInt(environment, 'AGT003_COPILOT_DAILY_MAX_RUNS', DEFAULT_DAILY_MAX_RUNS);
@@ -79,7 +79,7 @@ export function getAgt003CopilotRuntimeConfig(environment = process.env) {
 
 export function createAgt003CopilotRuntime({ environment = process.env, countDailyRuns } = {}) {
   const config = getAgt003CopilotRuntimeConfig(environment);
-  const resolved = resolveRuntimeValues(environment);
+  const resolved = resolveAgt003BridgeConnection(environment);
   const client = createAgt003CopilotBridgeClient({
     url: resolved.bridgeUrl,
     hmacSecret: resolved.hmacSecret,

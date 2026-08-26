@@ -867,7 +867,12 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
         </Panel>
       </div>
     </>}</div>
-    {canRenderOpportunityCopilot(data.currentProfile, o.service_type_code) && <VigiaOpportunityCopilot opportunityId={o.id} request={api} />}
+    {canRenderOpportunityCopilot(data.currentProfile, o.service_type_code) && <VigiaOpportunityCopilot
+      opportunityId={o.id}
+      request={api}
+      preflight={{ nextAction: priorityNextAction, expectedClose: priorityClose, decisionMaker: priorityDecisionMaker }}
+      contextVersion={`${o.updated_at}|${o.last_interaction_at ?? ''}`}
+    />}
     {o.service_type_code !== 'licitacion_publica' && <details className="opportunity-more-info">
       <summary>Más información</summary>
       <div className="opportunity-more-info-group">

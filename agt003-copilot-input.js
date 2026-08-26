@@ -78,7 +78,7 @@ export function agt003PreparationDate(now = () => new Date()) {
   return now().toISOString().slice(0, 10);
 }
 
-function buildFacts(opportunity, preparationDate) {
+export function buildAgt003Facts(opportunity, preparationDate) {
   const id = canonicalIdPart(opportunity.id);
   const facts = [];
   for (const field of OPPORTUNITY_FACT_FIELDS) {
@@ -120,7 +120,7 @@ function interactionTimestamp(interaction) {
   return Number.isNaN(parsed) ? null : new Date(parsed).toISOString();
 }
 
-function buildInteractions(interactions) {
+export function buildAgt003Interactions(interactions) {
   if (!Array.isArray(interactions)) throw new Error('interactions debe ser un arreglo.');
   const sorted = interactions
     .map(item => ({ item, occurredAt: interactionTimestamp(item), id: String(item?.id || '') }))
@@ -171,9 +171,9 @@ export function buildAgt003CopilotRequest({ opportunity, interactions = [], appr
       stage: requiredText(opportunity.stage, 'stage'),
       service: requiredText(opportunity.service, 'service'),
       owner_name: requiredText(opportunity.owner_name, 'owner_name'),
-      facts: buildFacts(opportunity, preparationDate),
+      facts: buildAgt003Facts(opportunity, preparationDate),
     },
-    interactions: buildInteractions(interactions),
+    interactions: buildAgt003Interactions(interactions),
     approved_assets: approvedAssets.map(asset => ({
       asset_id: asset.asset_id,
       title: asset.title,

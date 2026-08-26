@@ -1,0 +1,45 @@
+{
+  "contract_version": "agt003-preflight-v1",
+  "capability_id": "agt003.opportunity-preflight.preview",
+  "correlation_id": "corr-preflight-synthetic-001",
+  "snapshot_id": "snapshot-preflight-synthetic-001",
+  "opportunity": {
+    "opportunity_id": "opp-synthetic-001",
+    "title": "Modernización de seguridad física",
+    "company_name": "Empresa Sintética S.A.S.",
+    "stage": "Contacto inicial",
+    "service": "Seguridad electrónica",
+    "owner_name": "Comercial Sintético",
+    "facts": [
+      {
+        "evidence_id": "evidence:opportunity:stage",
+        "field": "stage",
+        "value": "Contacto inicial",
+        "source": "SIIO"
+      },
+      {
+        "evidence_id": "evidence:opportunity:service",
+        "field": "service",
+        "value": "Seguridad electrónica",
+        "source": "SIIO"
+      }
+    ]
+  },
+  "interactions": [
+    {
+      "interaction_id": "interaction-synthetic-001",
+      "interaction_type": "note",
+      "occurred_at": "2030-02-01T10:00:00.000Z",
+      "summary": "El cliente solicitó una conversación sobre cobertura de sedes.",
+      "evidence_id": "evidence:interaction:001",
+      "untrusted_crm_text": true
+    }
+  ],
+  "authority": {
+    "read_only": true,
+    "human_review_required": true,
+    "external_send_allowed": false,
+    "crm_write_allowed": false,
+    "public_research_allowed": false
+  }
+}
