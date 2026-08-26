@@ -19,5 +19,11 @@ assert.equal(top1.signals.some(s=>s.effect==='exclude'),false);assert.equal(buil
 const missingModality=buildAgt002RadarLearningSignals({candidate:{...candidate,modality_key:null},observations,maxSignals:1});assert.ok(missingModality.data_gaps.some(g=>g.gap_id==='modalidad_no_reportada'));
 
 const source=readFileSync(new URL('../agt002-radar-learning-projection.js',import.meta.url),'utf8');assert.doesNotMatch(source,/\.(insert|update|upsert|delete)\s*\(/);
-const readCalls=[];const fake={from:table=>{readCalls.push(table);return{select(){return this;},limit(){return Promise.resolve({data:[],error:null});}};}};assert.deepEqual(await projectAgt002RadarLearningObservations(fake,{limit:10}),{schema_version:'agt002-radar-learning-observations-v1',precedents:[]});assert.equal(readCalls.length,4);
+const readCalls=[];const filterCalls=[];
+const fake={from:table=>{readCalls.push(table);const query={select(){return query;},eq(column,value){filterCalls.push({table,column,value});return query;},limit(){return Promise.resolve({data:[],error:null});}};return query;}};
+assert.deepEqual(await projectAgt002RadarLearningObservations(fake,{limit:10}),{schema_version:'agt002-radar-learning-observations-v1',precedents:[]});
+assert.equal(readCalls.length,4);
+assert.ok(filterCalls.some(call=>call.table==='psi_public_tenders'&&call.column==='internal_status'&&call.value==='convertida_oportunidad'),'sólo las conversiones manuales pueden originar converted_tender');
+assert.ok(filterCalls.some(call=>call.table==='psi_tender_analysis_runs'&&call.column==='canonical'&&call.value===true),'sólo el análisis canónico puede originar canonical_analysis');
+assert.ok(filterCalls.some(call=>call.table==='psi_tender_analysis_runs'&&call.column==='status'&&call.value==='completed'),'un análisis no completado no puede ser precedente');
 console.log('AGT-002 candidate-specific deterministic learning retrieval passed');

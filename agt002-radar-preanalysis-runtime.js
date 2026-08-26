@@ -1,4 +1,5 @@
 import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.js';
+import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
 import { AGT002_RADAR_PREANALYSIS_OUTPUT_SCHEMA, validateAgt002RadarPreanalysis } from './agt002-radar-preanalysis-contract.js';
 import { buildAgt002RadarPreanalysisInput } from './agt002-radar-preanalysis-input.js';
 
@@ -6,7 +7,7 @@ const REQUIRED=['AGT002_RADAR_PREANALYSIS_MODEL','AGT002_HETZNER_BRIDGE_URL','AG
 const POLICY='Produce únicamente un preanálisis de visibilidad del proceso, basado en evidencia citada, con revisión humana obligatoria.';
 function nonempty(value){return typeof value==='string'&&value.trim().length>0;}
 function boundary(error,code,message='AGT-002 Radar preanalysis unavailable.') { const wrapped=error instanceof Error?error:new Error(message); wrapped.runtime_boundary_code=code; return wrapped; }
-export function isAgt002RadarPreanalysisConfigured(environment=process.env){return environment?.AGT002_RADAR_GATE==='true'&&REQUIRED.every(key=>nonempty(environment[key]));}
+export function isAgt002RadarPreanalysisConfigured(environment=process.env){let gateEnabled=false;try{gateEnabled=buildAgt002AnalysisConfig(environment).AGT002_RADAR_GATE;}catch{return false;}return gateEnabled&&REQUIRED.every(key=>nonempty(environment[key]));}
 export function getAgt002RadarPreanalysisRuntimeConfig(environment=process.env){
   if(!isAgt002RadarPreanalysisConfigured(environment)){const error=new Error('AGT002_RADAR_RUNTIME_CONFIG_INVALID: runtime is off or incomplete');error.code='AGT002_RADAR_RUNTIME_CONFIG_INVALID';throw error;}
   const timeoutMs=nonempty(environment.AGT002_RADAR_PREANALYSIS_TIMEOUT_MS)?Number(environment.AGT002_RADAR_PREANALYSIS_TIMEOUT_MS):30_000;

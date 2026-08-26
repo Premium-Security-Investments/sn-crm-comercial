@@ -21,7 +21,7 @@ export function buildAgt002RadarPreanalysisInput({ tenderRow, gateEvaluation, le
 
   let learning = null;
   if (learningSignals !== null) {
-    if (!learningSignals || typeof learningSignals !== 'object' || !Array.isArray(learningSignals.signals)
+    if (!learningSignals || typeof learningSignals !== 'object' || !Array.isArray(learningSignals.signals) || learningSignals.signals.length < 1
       || !Number.isInteger(learningSignals.max_signals) || learningSignals.max_signals < 1
       || learningSignals.signals.length > learningSignals.max_signals || typeof learningSignals.version !== 'string') invalid('learning signals invalid');
     if (learningSignals.candidate_id !== tenderId) invalid('learning candidate mismatch', 'AGT002_RADAR_LEARNING_CANDIDATE_INVALID');

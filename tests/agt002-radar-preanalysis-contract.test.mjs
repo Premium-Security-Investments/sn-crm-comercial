@@ -68,6 +68,7 @@ const learningSignals = {
 const withLearning = buildAgt002RadarPreanalysisInput({ tenderRow, gateEvaluation, learningSignals });
 assert.equal(withLearning.learning_signals_count, 1);
 assert.equal(withLearning.learning_signals.candidate_id, valid.tender_id);
+assert.throws(() => buildAgt002RadarPreanalysisInput({ tenderRow, gateEvaluation, learningSignals: { ...learningSignals, considered: 0, signals: [] } }), /learning signals invalid/i);
 assert.throws(() => buildAgt002RadarPreanalysisInput({ tenderRow, gateEvaluation, learningSignals: { ...learningSignals, candidate_id: 'other' } }), /CANDIDATE_INVALID/);
 assert.throws(() => buildAgt002RadarPreanalysisInput({ tenderRow, gateEvaluation, learningSignals: { ...learningSignals, signals: [{ ...learningSignals.signals[0], candidate_match: [] }] } }), /NOT_CANDIDATE_SPECIFIC/);
 assert.throws(() => buildAgt002RadarPreanalysisInput({ tenderRow, gateEvaluation, learningSignals: { ...learningSignals, max_signals: 0 } }), /INVALID/);

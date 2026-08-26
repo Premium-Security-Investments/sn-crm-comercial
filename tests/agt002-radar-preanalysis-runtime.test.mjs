@@ -3,6 +3,8 @@ import { createAgt002RadarPreanalysisRuntime, getAgt002RadarPreanalysisRuntimeCo
 
 const env = { AGT002_RADAR_GATE:'true', AGT002_RADAR_PREANALYSIS_MODEL:'m1', AGT002_HETZNER_BRIDGE_URL:'https://bridge.example.test/run', AGT002_HETZNER_BRIDGE_HMAC_SECRET:'x'.repeat(48) };
 assert.equal(isAgt002RadarPreanalysisConfigured(env), true);
+assert.equal(isAgt002RadarPreanalysisConfigured({...env,AGT002_RADAR_GATE:' 1 '}), true);
+assert.equal(isAgt002RadarPreanalysisConfigured({...env,AGT002_RADAR_GATE:'TRUE'}), true);
 assert.equal(isAgt002RadarPreanalysisConfigured({...env,AGT002_RADAR_GATE:'false'}), false);
 assert.equal(isAgt002RadarPreanalysisConfigured({...env,AGT002_RADAR_PREANALYSIS_MODEL:''}), false);
 assert.equal(isAgt002RadarPreanalysisConfigured({}), false);
