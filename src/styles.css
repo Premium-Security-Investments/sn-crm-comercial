@@ -457,6 +457,16 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .vigia-copilot-empty{padding:14px 16px;border:1px dashed #cbdcf2;border-radius:14px;background:#f8fbff}
 .vigia-copilot-empty p{margin:0}
 .vigia-opportunity-copilot>header{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}.vigia-opportunity-copilot h3{margin:4px 0 5px;color:#10213d}.vigia-opportunity-copilot header p{margin:0;color:#52647d}.vigia-copilot-result{display:grid;gap:15px}.vigia-copilot-result details{padding:14px;border:1px solid #dce7f4;border-radius:16px;background:#fff}.vigia-copilot-result summary{display:grid;gap:4px;cursor:pointer;color:#17345b}.vigia-copilot-result summary span{font-size:13px;font-weight:500;color:#52647d}.vigia-copilot-evidence{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.vigia-copilot-evidence section{padding:12px;border-radius:12px;background:#f8fbff}.vigia-copilot-evidence h4,.vigia-copilot-result h4{margin:0 0 7px;color:#17345b}.vigia-copilot-draft{display:grid;gap:10px;padding:15px;border:1px solid #bfdbfe;border-radius:16px;background:#eff6ff}.vigia-copilot-draft label{display:grid;gap:6px;color:#334e72;font-size:12px;font-weight:900}.vigia-copilot-draft input,.vigia-copilot-draft textarea{width:100%;box-sizing:border-box;background:#fff;font-weight:400}.vigia-copilot-draft textarea{resize:vertical}.vigia-human-warning{display:grid;gap:4px;padding:12px 14px;border-left:4px solid #d97706;border-radius:12px;background:#fffbeb;color:#78350f}.vigia-human-warning span{font-size:13px}.vigia-copilot-actions{display:flex;flex-wrap:wrap;gap:9px}
+.vigia-preflight-alerts{display:grid;gap:8px}
+.vigia-preflight-alerts h4{margin:0;color:#124174}
+.vigia-preflight-alerts h5{margin:6px 0 0;font-size:13px;color:#124174}
+.vigia-preflight-alerts ul,.vigia-preflight-alerts ol{margin:0;padding-left:20px;display:grid;gap:4px}
+.vigia-preflight-analysis{display:grid;gap:8px;margin-top:8px}
+.vigia-preflight-analysis h4{margin:0;color:#124174}
+.vigia-preflight-standalone{margin:0;padding-left:20px;display:grid;gap:6px}
+.vigia-copilot-generate{display:grid;gap:6px;margin-top:8px}
+.vigia-preflight-ack{display:flex;gap:6px;align-items:flex-start;font-size:13px;color:#5b6472}
+.vigia-copilot-plan ol{margin:0;padding-left:20px;display:grid;gap:6px}
 @media(max-width:720px){.vigia-opportunity-copilot>header{align-items:stretch;flex-direction:column}.vigia-opportunity-copilot>header button{width:100%}.vigia-copilot-evidence{grid-template-columns:1fr}.vigia-copilot-actions button{flex:1 1 45%}}
 
 /* Licitaciones — cola transaccional de seguimiento */
