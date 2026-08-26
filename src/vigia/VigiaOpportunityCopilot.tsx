@@ -56,7 +56,7 @@ export function VigiaCommercialAlerts({ alerts }: { alerts: CommercialAlert[] })
           <p>{COMMERCIAL_PREFLIGHT_EXPLANATION}</p>
           <ul>{alerts.map(alert => <li key={alert.key}>
             {alert.risk_text}
-            {alert.contextualAction && <p className="vigia-preflight-context">{alert.contextualAction.description}</p>}
+            {alert.contextualAction && <p className="vigia-preflight-context"><strong>Sugerencia contextual:</strong> {alert.contextualAction.description}</p>}
           </li>)}</ul>
         </>}
   </section>;

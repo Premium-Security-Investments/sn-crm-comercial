@@ -16,9 +16,8 @@ assert.equal(emptyAlerts.includes('<ol>'), false);
 
 const countOccurrences = (haystack, needle) => haystack.split(needle).length - 1;
 
-const explanationCopy = 'Estos datos requieren actualización en el CRM antes de generar una propuesta.';
+const explanationCopy = 'Señales para tener en cuenta durante el seguimiento. No impiden continuar.';
 const riskText = 'La próxima gestión está vencida hace 4 días.';
-const defaultAction = 'Actualice la próxima gestión en el CRM antes de generar la propuesta.';
 const contextualDescription = 'Retome la llamada del 14 de agosto con la gerente de compras.';
 
 const preContextualHtml = renderReactComponent(VigiaCommercialAlerts, {
@@ -26,22 +25,21 @@ const preContextualHtml = renderReactComponent(VigiaCommercialAlerts, {
     key: 'next_action:overdue',
     category: 'next_action',
     risk_text: riskText,
-    action_text: defaultAction,
     contextualAction: null,
   }],
 });
 assert.ok(preContextualHtml.includes(explanationCopy), 'usa la explicación coherente antes del análisis contextual');
 assert.equal(countOccurrences(preContextualHtml, riskText), 1, 'cada riesgo se renderiza una sola vez');
-assert.equal(preContextualHtml.includes(defaultAction), false, 'sin análisis contextual, el action_text genérico no se renderiza');
 assert.equal(preContextualHtml.includes('Acciones para mejorar la propuesta'), false, 'no existe un encabezado de acciones genérico');
 assert.equal(preContextualHtml.includes('<ol>'), false, 'no existe una lista genérica de acciones');
+assert.equal(preContextualHtml.includes('requieren actualización'), false, 'las alertas no se presentan como instrucciones obligatorias');
+assert.equal(preContextualHtml.includes('antes de generar'), false, 'las alertas no se presentan como prerrequisitos para generar la propuesta');
 
 const contextualHtml = renderReactComponent(VigiaCommercialAlerts, {
   alerts: [{
     key: 'next_action:overdue',
     category: 'next_action',
     risk_text: riskText,
-    action_text: defaultAction,
     contextualAction: {
       issue_code: 'next_action', title: 'Retomar conversación', description: contextualDescription,
       evidence_refs: ['evidence:interaction:1'],
@@ -51,10 +49,17 @@ const contextualHtml = renderReactComponent(VigiaCommercialAlerts, {
 assert.ok(contextualHtml.includes(explanationCopy), 'usa la explicación coherente tras el análisis contextual');
 assert.equal(countOccurrences(contextualHtml, riskText), 1, 'cada riesgo se renderiza una sola vez');
 assert.equal(countOccurrences(contextualHtml, contextualDescription), 1, 'la descripción contextual se renderiza una sola vez, como apoyo bajo la alerta correspondiente');
-assert.equal(contextualHtml.includes(defaultAction), false, 'la acción contextual reemplaza la genérica, no la duplica');
 assert.equal(contextualHtml.includes('Acciones para mejorar la propuesta'), false, 'no existe un encabezado de acciones genérico');
 assert.equal(contextualHtml.includes('<ol>'), false, 'no existe una lista genérica de acciones');
 assert.equal(contextualHtml.includes('evidence:interaction:1'), false, 'evidence_refs nunca se renderiza');
+assert.equal(countOccurrences(contextualHtml, 'Sugerencia contextual:'), 1, 'la acción contextual lleva una etiqueta explícita de sugerencia, no de instrucción');
+{
+  const labelIndex = contextualHtml.indexOf('Sugerencia contextual:');
+  const descriptionIndex = contextualHtml.indexOf(contextualDescription);
+  const between = contextualHtml.slice(labelIndex + 'Sugerencia contextual:'.length, descriptionIndex);
+  assert.ok(labelIndex >= 0 && descriptionIndex > labelIndex, 'la etiqueta "Sugerencia contextual:" precede a la descripción contextual');
+  assert.ok(/^[\s\S]{0,40}$/.test(between) && !/<(h\d|p|li|div|section)[ >]/.test(between), 'la etiqueta "Sugerencia contextual:" está asociada de forma inmediata a la descripción contextual, sin otro bloque entre ambas');
+}
 
 const idle = renderReactComponent(VigiaPreflightAnalysis, {
   phase: 'idle', standaloneActions: [], onAnalyze: noop, onRetry: noop, errorMessage: null,
