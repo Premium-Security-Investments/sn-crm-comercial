@@ -36,19 +36,22 @@ const fake={from:table=>{readCalls.push(table);const tableCalls=[];const track=(
  limit(value){
   track('limit','limit',value);
   const filteredStatuses=tableCalls.some(call=>call.method==='in'&&call.column==='to_status'&&call.value.join(',')==='presentada,adjudicada,no_adjudicada');
-  const currentLeaves=tableCalls.some(call=>call.method==='is'&&call.column==='superseded_by'&&call.value===null);
+  const supersessionEdgeLookup=tableCalls.some(call=>call.method==='in'&&call.column==='supersedes_decision_id');
   if(table==='psi_tender_offer_status_transitions'&&filteredStatuses)return Promise.resolve({data:[{id:'transition-relevant',tender_id:tender.id,to_status:'adjudicada',changed_at:'2026-08-03T00:00:00Z',psi_public_tenders:tender}],error:null});
-  if(table==='psi_tender_go_no_go_decisions'&&currentLeaves)return Promise.resolve({data:[{id:'decision-current',tender_id:tender.id,decision:'no_go',decided_at:'2026-08-02T00:00:00Z',psi_public_tenders:tender,superseded_by:[]}],error:null});
+  if(table==='psi_tender_go_no_go_decisions')return Promise.resolve({data:supersessionEdgeLookup?[]:[{id:'decision-current',tender_id:tender.id,decision:'no_go',decided_at:'2026-08-02T00:00:00Z',supersedes_decision_id:null,psi_public_tenders:tender}],error:null});
   return Promise.resolve({data:[],error:null});
  },
 };return query;}};
 const projected=await projectAgt002RadarLearningObservations(fake,{limit:10});
 assert.deepEqual(projected.precedents.map(item=>item.observation_id),['human_decision:decision-current','offer_outcome:transition-relevant']);
-assert.equal(readCalls.length,4);
+assert.equal(readCalls.length,5,'cuatro fuentes más la resolución acotada de la arista inversa de supersesión');
 assert.ok(queryCalls.some(call=>call.table==='psi_public_tenders'&&call.method==='eq'&&call.column==='internal_status'&&call.value==='convertida_oportunidad'),'sólo las conversiones manuales pueden originar converted_tender');
 assert.ok(queryCalls.some(call=>call.table==='psi_tender_analysis_runs'&&call.method==='eq'&&call.column==='canonical'&&call.value===true),'sólo el análisis canónico puede originar canonical_analysis');
 assert.ok(queryCalls.some(call=>call.table==='psi_tender_analysis_runs'&&call.method==='eq'&&call.column==='status'&&call.value==='completed'),'un análisis no completado no puede ser precedente');
-assert.ok(queryCalls.some(call=>call.table==='psi_tender_go_no_go_decisions'&&call.method==='is'&&call.column==='superseded_by'&&call.value===null),'sólo hojas vigentes GO/NO-GO se consultan');
+assert.ok(queryCalls.some(call=>call.table==='psi_tender_go_no_go_decisions'&&call.method==='select'&&call.value.includes('supersedes_decision_id')),'la vigencia GO/NO-GO se resuelve por la columna plana existente');
+assert.ok(queryCalls.some(call=>call.table==='psi_tender_go_no_go_decisions'&&call.method==='in'&&call.column==='supersedes_decision_id'&&call.value.includes('decision-current')),'la arista inversa se consulta acotada a las decisiones aún candidatas a vigentes');
+assert.equal(queryCalls.some(call=>call.method==='select'&&/superseded_by:|!left\(|_fkey/.test(call.value)),false,'ninguna lectura depende de una relación PostgREST autorreferente');
+assert.equal(queryCalls.some(call=>call.method==='is'),false,'no se filtra por un embed inexistente en el schema cache');
 assert.ok(queryCalls.some(call=>call.table==='psi_tender_offer_status_transitions'&&call.method==='in'&&call.column==='to_status'),'estados irrelevantes se filtran antes del límite');
 for(const table of readCalls){
  const calls=queryCalls.filter(call=>call.table===table);const limitIndex=calls.findIndex(call=>call.method==='limit');

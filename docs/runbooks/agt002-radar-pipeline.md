@@ -131,6 +131,17 @@ El DRAFT del tercero es **para lectura humana**. Cambiar una regla del gate exig
 lea y edite `agt002-radar-gate.js` subiendo `AGT002_RADAR_GATE_POLICY_VERSION`. No existe camino de
 escritura de reglas en tiempo de ejecución.
 
+**Vigencia de las decisiones GO/NO-GO en el aprendizaje.** `psi_tender_go_no_go_decisions` no expone
+una relación PostgREST autorreferente sobre `supersedes_decision_id`: pedirla devuelve `HTTP 400
+PGRST200` y tumbaba el reporte y el dry-run completos. La proyección lee la columna plana y resuelve
+la sucesión en JS. Como el lote principal está acotado por `limit`, un sucesor puede quedar fuera de
+él (por ejemplo una corrección retrofechada), así que además se consulta la arista inversa
+`supersedes_decision_id in (…)` acotada a las decisiones que el lote todavía considera vigentes, en
+trozos de 50 identificadores; si un trozo vuelve saturado se subdivide hasta que ninguna decisión
+quede escondida detrás del truncamiento. De cada cadena sobrevive sólo la hoja y, si un tender
+conserva varias hojas, la más reciente por `decided_at` (desempate por `id`). Todo esto son `GET`:
+no hay RPC ni escritura, y la evidencia sigue citando el `id` de la decisión humana proyectada.
+
 ## 7. Qué significa "fresco", y por qué una licitación desaparece
 
 Con `AGT002_RADAR_VISIBILITY` encendido, una fila **no convertida** se muestra si y sólo si:
