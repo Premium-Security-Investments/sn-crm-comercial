@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
-import { classifyAgt002RadarPreanalysisError, createAgt002RadarPreanalysisWorker } from '../agt002-radar-preanalysis-worker.js';
-for (const [code,expected] of [['AGT002_RADAR_PREANALYSIS_TIMEOUT','timeout'],['AGT002_RADAR_PREANALYSIS_INVALID_OUTPUT','invalid_output'],['AGT002_RADAR_PERSISTENCE_FAILURE','persistence_failure'],['AGT002_RADAR_LEASE_LOST','lease_lost'],['AGT002_RADAR_CAPACITY_UNAVAILABLE','capacity_unavailable']]) assert.equal(classifyAgt002RadarPreanalysisError({runtime_boundary_code:code}),expected);
+import { readFileSync } from 'node:fs';
+import { AGT002_RADAR_QUEUE_ERROR_CODES, classifyAgt002RadarPreanalysisError, createAgt002RadarPreanalysisWorker } from '../agt002-radar-preanalysis-worker.js';
+for (const [code,expected] of [['AGT002_RADAR_PREANALYSIS_TIMEOUT','timeout'],['AGT002_RADAR_PREANALYSIS_INVALID_OUTPUT','invalid_output'],['AGT002_RADAR_PERSISTENCE_FAILURE','persistence_failure'],['AGT002_RADAR_LEASE_LOST','lease_lost'],['AGT002_RADAR_CAPACITY_UNAVAILABLE','capacity_unavailable'],['AGT002_RADAR_STALE_INPUT','stale_input']]) assert.equal(classifyAgt002RadarPreanalysisError({runtime_boundary_code:code}),expected);
 assert.equal(classifyAgt002RadarPreanalysisError(new Error('boom')),'provider_error');
+// El conjunto de codigos terminales es acotado y explicito: la migracion 072 debe aceptar los mismos.
+assert.deepEqual([...AGT002_RADAR_QUEUE_ERROR_CODES].sort(),['capacity_unavailable','invalid_output','lease_lost','persistence_failure','provider_error','stale_input','timeout']);
+const migration072=readFileSync(new URL('../supabase/migrations/072_agt002_radar_preanalysis_ledger.sql',import.meta.url),'utf8');
+for (const code of AGT002_RADAR_QUEUE_ERROR_CODES) {
+  assert.ok(migration072.includes(`'${code}'`),`072 debe declarar el codigo terminal ${code}`);
+  assert.ok(new RegExp(`when '${code}' then`).test(migration072),`072 debe mapear un mensaje acotado para ${code}`);
+}
 const job={jobId:'j1',leaseId:'l1',tenderId:'t1',gateEvaluationId:'g1',attemptKey:'a1'};
 const calls=[];
 const failed=createAgt002RadarPreanalysisWorker({database:{},leaseSeconds:120,claimJob:async()=>{calls.push('claim');return job;},executeJob:async()=>{calls.push('exec');throw new Error('boom');},completeJob:async()=>calls.push('complete'),failJob:async(_db,{errorCode})=>calls.push(`fail:${errorCode}`)});

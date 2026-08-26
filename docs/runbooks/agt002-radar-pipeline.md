@@ -138,15 +138,26 @@ Con `AGT002_RADAR_VISIBILITY` encendido, una fila **no convertida** se muestra s
 1. existe corrida canónica para ella;
 2. su `visibility_verdict` es `mostrar_en_radar`;
 3. su `source_row_hash` coincide con el hash recalculado sobre **la fila que se va a mostrar**;
-4. su `policy_version` **y** su `context_version` son las vigentes en el proceso lector.
+4. su `policy_version` **y** su `context_version` son las vigentes en el proceso lector;
+5. el **gate determinista vigente** la sigue considerando `sobreviviente` al reevaluarla en lectura.
 
-Las **convertidas históricas se muestran siempre**, cortocircuitando las cuatro condiciones: no se
-ocultan por hash rezagado, por versión vieja ni por no tener preanálisis alguno.
+La quinta condición existe porque una canónica positiva es una **foto del día en que se produjo**.
+El veredicto `fecha_vencida` depende del día calendario en `America/Bogota`, así que una fila
+preanalizada como visible el lunes puede haber cruzado su cierre el martes sin que cambie ni su
+`source_row_hash` ni ninguna versión. La lectura reevalúa el gate con **un único reloj para toda la
+página** —determinista, sin reloj por fila— y oculta lo que ya no sobrevive.
 
-Cinco causas ocultan, y son deliberadamente indistinguibles en la superficie: sin canónica,
+Las **convertidas históricas se muestran siempre**, cortocircuitando las cinco condiciones —la
+reevaluación del gate incluida—: no se ocultan por hash rezagado, por versión vieja, por cierre
+vencido ni por no tener preanálisis alguno.
+
+Si el reloj o el evaluador no están disponibles, la lectura **no** degrada a "mostrar igual": falla
+cerrado en el mismo borde 503 del §8.
+
+Seis causas ocultan, y son deliberadamente indistinguibles en la superficie: sin canónica,
 canónica `no_mostrar_en_radar`, canónica `no_concluyente`, canónica con hash rezagado, canónica con
-versión rezagada. El desglose por causa **existe**, y vive en el informe del §6 —que es donde un
-humano lo necesita—, no en el payload.
+versión rezagada, y fila eliminada por el gate vigente. El desglose por causa **existe**, y vive en
+el informe del §6 —que es donde un humano lo necesita—, no en el payload.
 
 **Una fila oculta por rezago se repara sola.** El triple `(source_row_hash, policy_version,
 context_version)` que oculta es exactamente el que impide al encolado corto circuitar en
@@ -186,6 +197,34 @@ leída: es una elección deliberada que acota el costo por invocación y el radi
 Si el ritmo resulta insuficiente, las palancas son la **frecuencia del `timer`** y
 `AGT002_RADAR_PREANALYSIS_DAILY_MAX_RUNS` — nunca un bucle interno, que reintroduciría exactamente
 el modo de falla que la cola durable elimina.
+
+### Identidad diaria del gate y coalescencia de intentos
+
+La clave de idempotencia del gate incluye la **fecha calendario efectiva en `America/Bogota`**
+además de `(tender, source_row_hash, policy_version, context_version)`. Sin ella, la misma fila
+producía dos veredictos distintos bajo la misma clave al cruzar su cierre y el ledger append-only
+devolvía `23505` permanente. Consecuencia operativa: el ledger de gate crece una fila por licitación
+y **por día** mientras el productor corra; es historia, no estado mutable.
+
+Esa identidad diaria **no** dispara reanálisis diario: el corto circuito `satisfied` del encolado
+sigue comparando sólo `(source_row_hash, policy_version, context_version)` contra la canónica.
+
+Cuando ya existe un job `queued`/`running` para la licitación y llega un intento con la **misma
+entrada semántica** —mismo `source_row_hash` y mismas versiones, aunque el `gate_evaluation_id` y la
+clave de intento sean nuevos por el cambio de día—, el encolado devuelve **el job existente
+conservando su identidad de intento original** en vez de conflictuar. Si la entrada difiere en algo
+material, sigue siendo conflicto `55000`: no se conflacionan fuente, política ni contexto. Ese
+rechazo es de esa fila, no de la corrida: el lote continúa y el `claim` se ejecuta igual.
+
+### `stale_input`: un job que sobrevivió a su fila
+
+La cola es durable y el gate se reevalúa en cada disparo, así que un job encolado ayer puede
+reclamarse hoy sobre una fila que el gate vigente ya eliminó. Tras el `claim`, el pipeline exige que
+la evaluación vigente siga siendo `sobreviviente` y coincida con `(source_row_hash, policy_version,
+context_version)` del job. Si no coincide, el job se cierra como **`stale_input`** —código terminal
+acotado, mensaje fijo— **sin invocar a AGT-002 y sin persistir corrida**: nunca se produce una
+canónica positiva para una fila actualmente eliminada. Un `stale_input` no bloquea nada: es terminal,
+y la fila se reencola limpia en la corrida siguiente si vuelve a sobrevivir.
 
 Si `AGT002_RADAR_GATE_POLICY_VERSION` cambia con jobs sin drenar, esos jobs conservan la política
 congelada en su fila y se ejecutan igual, atribuidos a la versión con la que se encolaron; el gate

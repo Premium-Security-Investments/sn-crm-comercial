@@ -45,6 +45,16 @@ export function computeAgt002RadarSourceRowHash(tenderRow) {
   return createHash('sha256').update(JSON.stringify(stableValue(sourceProjection))).digest('hex');
 }
 
+// Fecha calendario efectiva de la evaluación en America/Bogota, derivada del reloj inyectado.
+// El veredicto `fecha_vencida` depende de este día, así que el día también es identidad: sin él,
+// la misma fila producía dos veredictos distintos bajo la misma clave y el ledger append-only
+// devolvía 23505 permanente al cruzar el cierre.
+export function agt002RadarEvaluationDate(nowIso) {
+  const now = new Date(nowIso);
+  if (typeof nowIso !== 'string' || !nowIso.trim() || Number.isNaN(now.getTime())) failInput();
+  return BOGOTA_DATE.format(now);
+}
+
 function calendarDate(value) {
   if (typeof value !== 'string' || !value.trim()) return null;
   const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ].*)?$/);
@@ -93,6 +103,7 @@ export function evaluateAgt002RadarGate(tenderRow, { nowIso, contextVersion = AG
   if (!tenderRow || typeof tenderRow !== 'object' || Array.isArray(tenderRow) || !String(tenderRow.id || '').trim()) failInput();
   const now = new Date(nowIso);
   if (typeof nowIso !== 'string' || Number.isNaN(now.getTime()) || !String(contextVersion).trim()) failInput();
+  const evaluationDate = agt002RadarEvaluationDate(nowIso);
 
   const reasonsByRule = new Map();
   const statusText = tenderStatusSearchText(tenderRow);
@@ -101,7 +112,7 @@ export function evaluateAgt002RadarGate(tenderRow, { nowIso, contextVersion = AG
   const deadline = calendarDate(tenderRow.deadline_at);
   if (!deadline) {
     reasonsByRule.set('fecha_no_verificable', reason('fecha_no_verificable', 'deadline_at', tenderRow.deadline_at, contextVersion));
-  } else if (deadline < BOGOTA_DATE.format(now)) {
+  } else if (deadline < evaluationDate) {
     reasonsByRule.set('fecha_vencida', reason('fecha_vencida', 'deadline_at', tenderRow.deadline_at, contextVersion));
   }
 
@@ -124,7 +135,7 @@ export function evaluateAgt002RadarGate(tenderRow, { nowIso, contextVersion = AG
   const sourceRowHash = computeAgt002RadarSourceRowHash(tenderRow);
   const tenderId = String(tenderRow.id);
   const idempotencyKey = createHash('sha256')
-    .update([tenderId, AGT002_RADAR_GATE_POLICY_VERSION, contextVersion, sourceRowHash].join('|'))
+    .update([tenderId, AGT002_RADAR_GATE_POLICY_VERSION, contextVersion, sourceRowHash, evaluationDate].join('|'))
     .digest('hex');
 
   return {
@@ -137,6 +148,7 @@ export function evaluateAgt002RadarGate(tenderRow, { nowIso, contextVersion = AG
     policy_version: AGT002_RADAR_GATE_POLICY_VERSION,
     context_version: contextVersion,
     source_row_hash: sourceRowHash,
+    evaluation_date: evaluationDate,
     idempotency_key: idempotencyKey,
     evaluated_at: now.toISOString(),
   };

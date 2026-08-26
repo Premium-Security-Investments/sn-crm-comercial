@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
+import { evaluateAgt002RadarGate } from '../agt002-radar-gate.js';
 
 const migration = readFileSync(new URL('../supabase/migrations/071_agt002_radar_gate.sql', import.meta.url), 'utf8');
 const rollback = readFileSync(new URL('../supabase/rollbacks/071_agt002_radar_gate_rollback.sql', import.meta.url), 'utf8');
@@ -59,6 +60,36 @@ await db.exec('set role service_role');
 await assert.rejects(() => db.query(`insert into public.psi_agt002_radar_gate_evaluations(tender_id,stable_key,verdict,reasons,policy_version,context_version,source_row_hash,idempotency_key) values ($1,'k1','sobreviviente','[]','p1','c1',$2,'direct')`, [payload.tender, payload.hash]), /permission denied/i);
 assert.equal((await record({ key: 'key-2' })).status, 'created');
 await db.exec('reset role');
+
+// BLOCKER A: cruce de cierre bajo la identidad diaria real del gate. La misma fila fuente cambia de
+// veredicto al pasar su fecha de cierre en Bogotá; como el día calendario efectivo entra en la clave
+// deterministica, el ledger append-only inserta una evaluacion nueva en vez de devolver 23505.
+const crossingRow = {
+  id: payload.tender, stable_key: 'k1', source: 'SECOP II', title: 'Servicio de vigilancia armada',
+  description: 'Guardas para las sedes', entity: 'Entidad A', status: 'Abierto', deadline_at: '2026-08-25',
+  category: 'Licitación Pública', raw: { modalidad_de_contratacion: 'Licitación pública' },
+};
+const beforeCross = evaluateAgt002RadarGate(crossingRow, { nowIso: '2026-08-25T13:05:00.000Z' });
+const afterCross = evaluateAgt002RadarGate(crossingRow, { nowIso: '2026-08-26T13:05:00.000Z' });
+assert.equal(beforeCross.verdict, 'sobreviviente');
+assert.equal(afterCross.verdict, 'eliminada');
+assert.notEqual(beforeCross.idempotency_key, afterCross.idempotency_key);
+assert.equal(beforeCross.source_row_hash, afterCross.source_row_hash);
+const recordEvaluation = evaluation => record({
+  verdict: evaluation.verdict, rules: evaluation.rule_ids, reasons: evaluation.reasons, gaps: evaluation.data_gaps,
+  policy: evaluation.policy_version, context: evaluation.context_version, hash: evaluation.source_row_hash,
+  key: evaluation.idempotency_key, at: evaluation.evaluated_at,
+});
+const crossingCountBefore = (await db.query('select count(*)::int count from public.psi_agt002_radar_gate_evaluations')).rows[0].count;
+assert.equal((await recordEvaluation(beforeCross)).status, 'created');
+assert.equal((await recordEvaluation(beforeCross)).status, 'existing');
+assert.equal((await recordEvaluation(afterCross)).status, 'created', 'cruzar el cierre estrena clave: nunca 23505');
+assert.equal((await recordEvaluation(afterCross)).status, 'existing');
+assert.equal((await db.query('select count(*)::int count from public.psi_agt002_radar_gate_evaluations')).rows[0].count, crossingCountBefore + 2);
+assert.deepEqual(
+  (await db.query('select verdict from public.psi_agt002_radar_gate_evaluations where idempotency_key=any($1) order by idempotency_key', [[beforeCross.idempotency_key, afterCross.idempotency_key].sort()])).rows.map(r => r.verdict).sort(),
+  ['eliminada', 'sobreviviente'],
+);
 
 assert.deepEqual((await db.query('select * from public.psi_public_tenders order by id')).rows, before);
 await db.exec(rollback);

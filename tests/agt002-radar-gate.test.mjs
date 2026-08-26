@@ -3,6 +3,7 @@ import {
   AGT002_RADAR_GATE_CONTEXT_VERSION,
   AGT002_RADAR_GATE_POLICY_VERSION,
   AGT002_RADAR_GATE_RULE_IDS,
+  agt002RadarEvaluationDate,
   computeAgt002RadarSourceRowHash,
   evaluateAgt002RadarGate,
 } from '../agt002-radar-gate.js';
@@ -85,5 +86,44 @@ const missingDeadline = evaluateAgt002RadarGate({ ...base, deadline_at: null }, 
 assert.equal(missingDeadline.reasons[0].observed_value, '<null>');
 assert.throws(() => evaluateAgt002RadarGate(null, { nowIso: NOW }), /AGT002_RADAR_GATE_INPUT_INVALID/);
 assert.throws(() => evaluateAgt002RadarGate(base, { nowIso: 'not-a-date' }), /AGT002_RADAR_GATE_INPUT_INVALID/);
+
+// La fecha calendario efectiva es America/Bogota (UTC-5) derivada del reloj inyectado, nunca del
+// reloj de pared: 23:30 del 25 en Bogotá sigue siendo el día 25 aunque en UTC ya sea el 26.
+assert.equal(agt002RadarEvaluationDate(NOW), '2026-08-25');
+assert.equal(agt002RadarEvaluationDate('2026-08-26T04:30:00.000Z'), '2026-08-25');
+assert.equal(agt002RadarEvaluationDate('2026-08-26T05:00:00.000Z'), '2026-08-26');
+for (const invalid of [null, undefined, '', '   ', 'not-a-date', 42, {}]) {
+  assert.throws(() => agt002RadarEvaluationDate(invalid), /AGT002_RADAR_GATE_INPUT_INVALID/);
+}
+assert.equal(evaluateAgt002RadarGate(base, { nowIso: NOW }).evaluation_date, '2026-08-25');
+
+// BLOCKER A: el veredicto `fecha_vencida` depende del día calendario, así que el día es identidad.
+// Mismo día Bogotá con relojes distintos = misma clave (idempotente frente al temporizador).
+const morning = evaluateAgt002RadarGate(base, { nowIso: '2026-08-25T13:05:00.000Z' });
+const evening = evaluateAgt002RadarGate(base, { nowIso: '2026-08-26T04:59:59.000Z' });
+assert.equal(morning.evaluation_date, evening.evaluation_date);
+assert.equal(morning.idempotency_key, evening.idempotency_key);
+assert.equal(morning.source_row_hash, evening.source_row_hash);
+assert.notEqual(morning.evaluated_at, evening.evaluated_at);
+
+// Día Bogotá siguiente sobre la misma fila = clave nueva, con el mismo source_row_hash de ingesta.
+const nextDay = evaluateAgt002RadarGate(base, { nowIso: '2026-08-26T13:05:00.000Z' });
+assert.equal(nextDay.evaluation_date, '2026-08-26');
+assert.notEqual(nextDay.idempotency_key, morning.idempotency_key);
+assert.equal(nextDay.source_row_hash, morning.source_row_hash, 'el hash de la fila fuente no depende del reloj');
+
+// Cruce de cierre: la misma fila cambia de veredicto al pasar la fecha, pero bajo una clave nueva,
+// de modo que el ledger append-only inserta en vez de chocar con 23505.
+const crossing = { ...base, deadline_at: '2026-08-25' };
+const beforeDeadline = evaluateAgt002RadarGate(crossing, { nowIso: '2026-08-25T13:05:00.000Z' });
+const afterDeadline = evaluateAgt002RadarGate(crossing, { nowIso: '2026-08-26T13:05:00.000Z' });
+assert.equal(beforeDeadline.verdict, 'sobreviviente');
+assert.equal(afterDeadline.verdict, 'eliminada');
+assert.deepEqual(afterDeadline.rule_ids, ['fecha_vencida']);
+assert.notEqual(beforeDeadline.idempotency_key, afterDeadline.idempotency_key);
+assert.equal(beforeDeadline.source_row_hash, afterDeadline.source_row_hash);
+
+// La fecha de evaluación entra en la identidad del gate pero nunca en el hash de la fila fuente.
+assert.equal(computeAgt002RadarSourceRowHash(base), computeAgt002RadarSourceRowHash({ ...base, evaluation_date: '2026-08-26' }));
 
 console.log('AGT-002 deterministic Radar gate contract passed');

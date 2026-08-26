@@ -41,7 +41,10 @@ const staleHash = row('55555555-5555-4555-8555-555555555555', 'stale-hash');
 const stalePolicy = row('66666666-6666-4666-8666-666666666666', 'stale-policy');
 const staleContext = row('77777777-7777-4777-8777-777777777777', 'stale-context');
 const missing = row('88888888-8888-4888-8888-888888888888', 'missing');
-const activeRows = [visible, converted, hidden, inconclusive, staleHash, stalePolicy, staleContext, missing];
+// BLOCKER A2: canonico positivo y fresco, pero la fecha de cierre ya paso. El gate determinista se
+// reevalua en lectura, asi que esta fila no puede seguir visible por inercia del canonico.
+const expired = row('99999999-9999-4999-8999-999999999999', 'expired', { deadline_at: '2020-01-01T00:00:00.000Z' });
+const activeRows = [visible, converted, hidden, inconclusive, staleHash, stalePolicy, staleContext, missing, expired];
 const canonicalRows = [
   { tender_id: visible.id, canonical: true, visibility_verdict: 'mostrar_en_radar', source_row_hash: computeAgt002RadarSourceRowHash(visible), policy_version: AGT002_RADAR_GATE_POLICY_VERSION, context_version: AGT002_RADAR_GATE_CONTEXT_VERSION },
   { tender_id: hidden.id, canonical: true, visibility_verdict: 'no_mostrar_en_radar', source_row_hash: computeAgt002RadarSourceRowHash(hidden), policy_version: AGT002_RADAR_GATE_POLICY_VERSION, context_version: AGT002_RADAR_GATE_CONTEXT_VERSION },
@@ -49,7 +52,12 @@ const canonicalRows = [
   { tender_id: staleHash.id, canonical: true, visibility_verdict: 'mostrar_en_radar', source_row_hash: 'f'.repeat(64), policy_version: AGT002_RADAR_GATE_POLICY_VERSION, context_version: AGT002_RADAR_GATE_CONTEXT_VERSION },
   { tender_id: stalePolicy.id, canonical: true, visibility_verdict: 'mostrar_en_radar', source_row_hash: computeAgt002RadarSourceRowHash(stalePolicy), policy_version: 'old-policy', context_version: AGT002_RADAR_GATE_CONTEXT_VERSION },
   { tender_id: staleContext.id, canonical: true, visibility_verdict: 'mostrar_en_radar', source_row_hash: computeAgt002RadarSourceRowHash(staleContext), policy_version: AGT002_RADAR_GATE_POLICY_VERSION, context_version: 'old-context' },
+  { tender_id: expired.id, canonical: true, visibility_verdict: 'mostrar_en_radar', source_row_hash: computeAgt002RadarSourceRowHash(expired), policy_version: AGT002_RADAR_GATE_POLICY_VERSION, context_version: AGT002_RADAR_GATE_CONTEXT_VERSION },
 ];
+// El hash de la fila fuente no depende del reloj de ingesta: el unico eje que oculta a `expired` es
+// el veredicto vigente del gate, no una supuesta falta de frescura.
+assert.equal(computeAgt002RadarSourceRowHash(expired), computeAgt002RadarSourceRowHash({ ...expired, last_seen_at: '2026-08-26T23:00:00.000Z' }));
+assert.equal(computeAgt002RadarSourceRowHash(visible), computeAgt002RadarSourceRowHash({ ...visible, last_seen_at: '2026-08-26T23:00:00.000Z' }));
 let scenario = { ledgerError: false, ledgerQueries: 0 };
 const fakeSupabase = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
@@ -105,7 +113,11 @@ try {
 
     const on = await runBackend(backend, `${backendIndex}-on`, { gate: 'true', visibility: 'true' });
     assert.equal(on.status, 200);
+    // `visible` sigue vigente (cierre 2030); `expired` tiene canonico positivo y fresco pero ya
+    // cruzo su cierre; `converted` esta cancelada y vencida y aun asi se muestra siempre.
     assert.deepEqual(on.body.tenders.map(item => item.stable_key).sort(), ['converted', 'visible']);
+    assert.equal(on.body.tenders.some(item => item.stable_key === 'expired'), false, `${backend} debe ocultar un positivo canonico ya vencido`);
+    assert.equal(on.body.tenders.some(item => item.stable_key === 'converted'), true, `${backend} debe mostrar siempre las convertidas`);
     assert.deepEqual(Object.keys(on.body.tenders.find(item => item.stable_key === 'visible')).sort(), Object.keys(off.body.tenders.find(item => item.stable_key === 'visible')).sort());
     assert.equal(scenario.ledgerQueries, 1);
 

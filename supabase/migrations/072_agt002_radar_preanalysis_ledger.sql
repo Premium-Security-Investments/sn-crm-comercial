@@ -62,7 +62,7 @@ create table public.psi_agt002_radar_preanalysis_jobs (
   lease_id uuid,
   lease_expires_at timestamptz,
   preanalysis_run_id uuid references public.psi_agt002_radar_preanalysis_runs(id) on delete restrict,
-  error_code text check (error_code is null or error_code in ('timeout','provider_error','invalid_output','persistence_failure','lease_lost','capacity_unavailable')),
+  error_code text check (error_code is null or error_code in ('timeout','provider_error','invalid_output','persistence_failure','lease_lost','capacity_unavailable','stale_input')),
   error_message text,
   created_at timestamptz not null default now(),
   started_at timestamptz,
@@ -200,15 +200,26 @@ begin
   if found then
     if v_job.tender_id=p_tender_id and v_job.gate_evaluation_id=p_gate_evaluation_id and v_job.attempt_key=p_attempt_key
       and v_job.policy_version=p_policy_version and v_job.context_version=p_context_version and v_job.source_row_hash=p_source_row_hash then
-      return jsonb_build_object('status','existing','job_id',v_job.id);
+      return jsonb_build_object('status','existing','job_id',v_job.id,'attempt_key',v_job.attempt_key);
     end if;
     raise exception using errcode='23505',message='AGT-002 Radar queue idempotency conflict';
   end if;
   select * into v_job from public.psi_agt002_radar_preanalysis_jobs where tender_id=p_tender_id and status in ('queued','running') for update;
   if found then
-    if v_job.gate_evaluation_id=p_gate_evaluation_id and v_job.attempt_key=p_attempt_key and v_job.idempotency_key=p_idempotency_key
-      and v_job.policy_version=p_policy_version and v_job.context_version=p_context_version and v_job.source_row_hash=p_source_row_hash then
-      return jsonb_build_object('status','existing','job_id',v_job.id);
+    -- Coalescencia semantica de intentos equivalentes. Cada disparo del temporizador trae una
+    -- identidad de intento nueva, y la identidad diaria del gate cambia con el calendario de Bogota
+    -- aunque la fila fuente y el veredicto no cambien. Exigir el mismo gate_evaluation_id/attempt_key
+    -- convertia cada corrida posterior en un 55000 permanente mientras el primer job seguia activo.
+    -- La entrada semantica es (source_row_hash, policy_version, context_version) sobre un gate
+    -- superviviente del mismo tender: si coincide, es el mismo trabajo y se devuelve el job activo
+    -- conservando su identidad de intento original. Si difiere en algo material, sigue siendo 55000.
+    if v_job.source_row_hash=p_source_row_hash and v_job.policy_version=p_policy_version and v_job.context_version=p_context_version
+      and exists(
+        select 1 from public.psi_agt002_radar_gate_evaluations g
+        where g.id=v_job.gate_evaluation_id and g.tender_id=p_tender_id and g.verdict='sobreviviente'
+          and g.source_row_hash=p_source_row_hash and g.policy_version=p_policy_version and g.context_version=p_context_version
+      ) then
+      return jsonb_build_object('status','existing','job_id',v_job.id,'attempt_key',v_job.attempt_key,'gate_evaluation_id',v_job.gate_evaluation_id);
     end if;
     raise exception using errcode='55000',message='AGT-002 Radar tender already has a different active job';
   end if;
@@ -216,7 +227,7 @@ begin
   values(p_tender_id,p_gate_evaluation_id,p_source_row_hash,p_policy_version,p_context_version,p_attempt_key,p_idempotency_key) returning * into v_job;
   insert into public.psi_agt002_radar_preanalysis_attempt_events(event_key,job_id,tender_id,attempt_key,status)
   values(p_attempt_key||':queued',v_job.id,p_tender_id,p_attempt_key,'queued');
-  return jsonb_build_object('status','created','job_id',v_job.id);
+  return jsonb_build_object('status','created','job_id',v_job.id,'attempt_key',v_job.attempt_key,'gate_evaluation_id',v_job.gate_evaluation_id);
 end;
 $$;
 
@@ -270,7 +281,8 @@ declare v_job public.psi_agt002_radar_preanalysis_jobs%rowtype; v_message text;
 begin
   v_message=case p_error_code when 'timeout' then 'Provider timeout' when 'provider_error' then 'Provider unavailable'
     when 'invalid_output' then 'Provider output rejected' when 'persistence_failure' then 'Persistence failed'
-    when 'lease_lost' then 'Worker lease expired' when 'capacity_unavailable' then 'Provider capacity unavailable' else null end;
+    when 'lease_lost' then 'Worker lease expired' when 'capacity_unavailable' then 'Provider capacity unavailable'
+    when 'stale_input' then 'Claimed input no longer matches a current survivor' else null end;
   if v_message is null then raise exception using errcode='22023',message='invalid AGT-002 Radar error code'; end if;
   select * into v_job from public.psi_agt002_radar_preanalysis_jobs where id=p_job_id for update;
   if not found then raise exception using errcode='P0002',message='AGT-002 Radar job not found'; end if;

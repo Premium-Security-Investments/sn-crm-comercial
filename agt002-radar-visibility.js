@@ -12,6 +12,8 @@ export function filterRadarRowsByCanonicalPreanalysis(rows, {
   computeSourceRowHash,
   policyVersion,
   contextVersion,
+  nowIso,
+  evaluateGate,
   enabled,
 } = {}) {
   if (enabled === false) return rows;
@@ -25,16 +27,31 @@ export function filterRadarRowsByCanonicalPreanalysis(rows, {
     || !policyVersion
     || typeof contextVersion !== 'string'
     || !contextVersion
+    || typeof evaluateGate !== 'function'
+    || typeof nowIso !== 'string'
+    || !Number.isFinite(Date.parse(nowIso))
   ) throw ledgerUnavailable();
 
   try {
     return rows.filter(row => {
       if (alwaysVisibleTenderIds.has(row?.id)) return true;
       const canonical = canonicalByTenderId.get(row?.id);
-      return canonical?.visibility_verdict === 'mostrar_en_radar'
-        && canonical.source_row_hash === computeSourceRowHash(row)
-        && canonical.policy_version === policyVersion
-        && canonical.context_version === contextVersion;
+      if (
+        canonical?.visibility_verdict !== 'mostrar_en_radar'
+        || canonical.source_row_hash !== computeSourceRowHash(row)
+        || canonical.policy_version !== policyVersion
+        || canonical.context_version !== contextVersion
+      ) return false;
+      // Un positivo canónico sigue siendo una foto de cuando se produjo. El gate determinista se
+      // reevalúa aquí con un único reloj para toda la página, de modo que una fila que ya cruzó su
+      // fecha de cierre deja de mostrarse aunque su canónico positivo siga fresco.
+      const gate = evaluateGate(row, { nowIso, contextVersion });
+      if (
+        gate === null
+        || typeof gate !== 'object'
+        || (gate.verdict !== 'sobreviviente' && gate.verdict !== 'eliminada')
+      ) throw ledgerUnavailable();
+      return gate.verdict === 'sobreviviente';
     });
   } catch {
     throw ledgerUnavailable();

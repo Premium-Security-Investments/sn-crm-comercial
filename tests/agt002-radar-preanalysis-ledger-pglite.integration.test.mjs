@@ -38,10 +38,43 @@ const g1 = await gate(T1,'k1',HASH1,'gate-1');
 const created = await enqueue(T1,g1.id,HASH1,'job-1');
 assert.equal(created.status, 'created');
 assert.equal((await enqueue(T1,g1.id,HASH1,'job-1')).status, 'existing');
-await assert.rejects(() => enqueue(T1,g1.id,HASH1,'job-conflict','other-attempt'), /55000|active/i);
+
+// BLOCKER B: cada disparo del temporizador estrena identidad de intento, y la identidad diaria del
+// gate cambia con el calendario de Bogota aunque la fila fuente y el veredicto no cambien. Un intento
+// nuevo con la misma entrada semantica no es un conflicto: es el mismo trabajo. Debe devolver el job
+// activo conservando su identidad de intento original, o el temporizador se atasca en 55000 para siempre.
+const equivalentAttempt = await enqueue(T1,g1.id,HASH1,'job-1-next-tick','attempt-next-tick');
+assert.equal(equivalentAttempt.status, 'existing');
+assert.equal(equivalentAttempt.job_id, created.job_id);
+assert.equal(equivalentAttempt.attempt_key, 'job-1-attempt', 'se conserva la identidad de intento original');
+// El gate diario nuevo (misma fila, mismo veredicto, otra clave) tampoco debe conflictuar.
+const g1Daily = await gate(T1,'k1',HASH1,'gate-1-next-day');
+assert.notEqual(g1Daily.id, g1.id);
+const dailyAttempt = await enqueue(T1,g1Daily.id,HASH1,'job-1-next-day','attempt-next-day');
+assert.equal(dailyAttempt.status, 'existing');
+assert.equal(dailyAttempt.job_id, created.job_id);
+assert.equal(dailyAttempt.attempt_key, 'job-1-attempt');
+assert.equal(dailyAttempt.gate_evaluation_id, g1.id, 'el job activo conserva su gate original');
+assert.equal((await db.query('select count(*)::int n from public.psi_agt002_radar_preanalysis_jobs where tender_id=$1',[T1])).rows[0].n, 1, 'coalescer no crea filas nuevas');
+assert.equal((await db.query('select count(*)::int n from public.psi_agt002_radar_preanalysis_attempt_events where tender_id=$1',[T1])).rows[0].n, 1, 'no se inventan intentos en el ledger append-only');
+// Entrada materialmente distinta sigue siendo fail-closed: no se conflaciona fuente/policy/contexto.
+const g1Changed = await gate(T1,'k1',HASH2,'gate-1-changed');
+await assert.rejects(() => enqueue(T1,g1Changed.id,HASH2,'job-changed-hash','attempt-changed-hash'), /55000|active/i);
+const g1Policy = await gate(T1,'k1',HASH1,'gate-1-policy','p2');
+await assert.rejects(() => enqueue(T1,g1Policy.id,HASH1,'job-changed-policy','attempt-changed-policy','p2'), /55000|active/i);
+const g1Context = await gate(T1,'k1',HASH1,'gate-1-context','p1','c2');
+await assert.rejects(() => enqueue(T1,g1Context.id,HASH1,'job-changed-context','attempt-changed-context','p1','c2'), /55000|active/i);
+assert.equal((await db.query('select count(*)::int n from public.psi_agt002_radar_preanalysis_jobs where tender_id=$1',[T1])).rows[0].n, 1);
+
 const c1 = await claim();
 assert.equal(c1.status, 'claimed');
 assert.equal(c1.tender_id, T1);
+assert.equal(c1.attempt_key, 'job-1-attempt');
+// Tambien con el job ya en `running`: el temporizador no puede quedarse en 55000 mientras trabaja.
+const runningAttempt = await enqueue(T1,g1Daily.id,HASH1,'job-1-running','attempt-running');
+assert.equal(runningAttempt.status, 'existing');
+assert.equal(runningAttempt.job_id, created.job_id);
+assert.equal(runningAttempt.attempt_key, 'job-1-attempt');
 const r1 = await run(T1,g1.id,'run-1');
 assert.equal(r1.canonical, true);
 assert.equal((await db.query('select public.psi_complete_agt002_radar_preanalysis_job($1,$2,$3) result',[c1.job_id,c1.lease_id,r1.id])).rows[0].result.status, 'completed');
@@ -75,6 +108,24 @@ assert.equal(retryT2.status, 'created', 'un job terminal no debe bloquear un int
 const retryCt2 = await claim();
 assert.equal(retryCt2.job_id, retryT2.job_id);
 await db.query('select public.psi_fail_agt002_radar_preanalysis_job($1,$2,$3)',[retryCt2.job_id,retryCt2.lease_id,'capacity_unavailable']);
+
+// BLOCKER B2: cierre acotado y explicito para un job cuya entrada dejo de ser superviviente vigente.
+const staleT2 = await enqueue(T2,gt2.id,HASH1,'job-t2-stale','job-t2-stale-attempt');
+assert.equal(staleT2.status, 'created');
+const staleCt2 = await claim();
+const staleFail = (await db.query('select public.psi_fail_agt002_radar_preanalysis_job($1,$2,$3) result',[staleCt2.job_id,staleCt2.lease_id,'stale_input'])).rows[0].result;
+assert.equal(staleFail.status, 'unavailable');
+assert.equal(staleFail.error_code, 'stale_input');
+const staleRow = (await db.query('select status,error_code,error_message,preanalysis_run_id from public.psi_agt002_radar_preanalysis_jobs where id=$1',[staleCt2.job_id])).rows[0];
+assert.equal(staleRow.status, 'unavailable');
+assert.equal(staleRow.preanalysis_run_id, null, 'un job rancio no puede dejar una corrida canonica');
+assert.ok(staleRow.error_message && !/sql|exception|stack/i.test(staleRow.error_message), 'el mensaje terminal es acotado');
+assert.equal((await db.query("select count(*)::int n from public.psi_agt002_radar_preanalysis_attempt_events where event_key=$1",['job-t2-stale-attempt:unavailable'])).rows[0].n, 1);
+// Un job rancio terminal tampoco bloquea el siguiente intento del temporizador.
+assert.equal((await enqueue(T2,gt2.id,HASH1,'job-t2-after-stale','job-t2-after-stale-attempt')).status, 'created');
+const afterStale = await claim();
+await db.query('select public.psi_fail_agt002_radar_preanalysis_job($1,$2,$3)',[afterStale.job_id,afterStale.lease_id,'provider_error']);
+await assert.rejects(() => db.query('select public.psi_fail_agt002_radar_preanalysis_job($1,$2,$3)',[afterStale.job_id,afterStale.lease_id,'stale']), /22023|error code/i);
 
 const gt3 = await gate(T3,'k3',HASH1,'gate-t3'); await enqueue(T3,gt3.id,HASH1,'job-t3'); const ct3 = await claim(1);
 await db.query("update public.psi_agt002_radar_preanalysis_jobs set lease_expires_at=now()-interval '1 second' where id=$1",[ct3.job_id]);

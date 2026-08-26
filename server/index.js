@@ -51,7 +51,7 @@ import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatu
 import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS, TENDER_NON_COMMERCIAL_ACT_TERMS, TENDER_NON_SECURITY_CONTEXT_TERMS } from '../tender-relevance-terms.js';
 import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../tender-actuation-types.js';
 import { buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
-import { AGT002_RADAR_GATE_CONTEXT_VERSION, AGT002_RADAR_GATE_POLICY_VERSION, computeAgt002RadarSourceRowHash } from '../agt002-radar-gate.js';
+import { AGT002_RADAR_GATE_CONTEXT_VERSION, AGT002_RADAR_GATE_POLICY_VERSION, computeAgt002RadarSourceRowHash, evaluateAgt002RadarGate } from '../agt002-radar-gate.js';
 import { readAgt002RadarCanonicalPreanalysis } from '../agt002-radar-preanalysis-persistence.js';
 import { filterRadarRowsByCanonicalPreanalysis } from '../agt002-radar-visibility.js';
 import { createAgt002AnalysisObservability } from '../agt002-analysis-observability.js';
@@ -1584,6 +1584,8 @@ async function readPersistedTenderRadar(database) {
       computeSourceRowHash: computeAgt002RadarSourceRowHash,
       policyVersion: AGT002_RADAR_GATE_POLICY_VERSION,
       contextVersion: AGT002_RADAR_GATE_CONTEXT_VERSION,
+      nowIso: new Date().toISOString(),
+      evaluateGate: evaluateAgt002RadarGate,
       enabled: true,
     });
   }
