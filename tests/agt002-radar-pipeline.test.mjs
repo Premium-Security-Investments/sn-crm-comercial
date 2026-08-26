@@ -16,10 +16,15 @@ let enqueueCalled=false;const ledgerBroken=createAgt002RadarPipeline({database:{
 
 // Una falla terminal debe poder reencolarse en una corrida posterior. Cada corrida tiene
 // una identidad de intento distinta, mientras que repetir la misma corrida sigue siendo idempotente.
-const retryEnqueues=[];const retryTimes=[NOW,'2026-08-25T15:01:00.000Z'];
-const retryable=createAgt002RadarPipeline({database:{},environment:{AGT002_RADAR_GATE:'true'},now:()=>retryTimes.shift(),fetchTenderPage:async()=>[TENDER],evaluateGate:()=>({verdict:'sobreviviente',rule_ids:[],reasons:[],data_gaps:[],tender_id:TENDER.id,source_row_hash:'a'.repeat(64),policy_version:'p',context_version:'c'}),recordGateEvaluation:async()=>({id:'gate-1'}),enqueueJob:async(_db,value)=>{retryEnqueues.push(value);return{status:'created',job_id:`j${retryEnqueues.length}`};},claimJob:async()=>null,completeJob:hostile,failJob:hostile,projectLearningObservations:hostile,buildLearningSignals:hostile,runPreanalysis:hostile,recordPreanalysisRun:hostile});
+const retryEnqueues=[];const retryGateWrites=[];const retryTimes=[NOW,'2026-08-25T15:01:00.000Z'];
+const retryable=createAgt002RadarPipeline({database:{},environment:{AGT002_RADAR_GATE:'true'},now:()=>retryTimes.shift(),fetchTenderPage:async()=>[TENDER],evaluateGate:()=>({verdict:'sobreviviente',rule_ids:[],reasons:[],data_gaps:[],tender_id:TENDER.id,source_row_hash:'a'.repeat(64),policy_version:'p',context_version:'c'}),recordGateEvaluation:async(_db,value)=>{retryGateWrites.push(value);return{id:'gate-1'};},enqueueJob:async(_db,value)=>{retryEnqueues.push(value);return{status:'created',job_id:`j${retryEnqueues.length}`};},claimJob:async()=>null,completeJob:hostile,failJob:hostile,projectLearningObservations:hostile,buildLearningSignals:hostile,runPreanalysis:hostile,recordPreanalysisRun:hostile});
 assert.equal((await retryable.runOnce()).status,'empty');assert.equal((await retryable.runOnce()).status,'empty');
 assert.equal(retryEnqueues.length,2);assert.notEqual(retryEnqueues[0].attemptKey,retryEnqueues[1].attemptKey);assert.notEqual(retryEnqueues[0].idempotencyKey,retryEnqueues[1].idempotencyKey);
+// Forma exacta que el ledger de gate recibe en produccion y que el RPC 071 debe tolerar:
+// misma clave deterministica sobre una fila sin cambios, con un `evaluated_at` distinto por corrida.
+assert.equal(retryGateWrites.length,2);
+assert.equal(retryGateWrites[0].idempotencyKey,retryGateWrites[1].idempotencyKey);
+assert.notEqual(retryGateWrites[0].evaluatedAt,retryGateWrites[1].evaluatedAt);
 
 const source=readFileSync(new URL('../agt002-radar-pipeline.js',import.meta.url),'utf8');assert.doesNotMatch(source,/Date\.now\(\)|new Date\(\)/);assert.doesNotMatch(source,/learning-proposals/);
 console.log('AGT-002 real ordered pipeline and default-off no-op passed');

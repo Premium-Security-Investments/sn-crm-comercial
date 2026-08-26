@@ -28,10 +28,26 @@ async function record(overrides = {}) {
   ) result`, [p.tender,p.stable,p.verdict,p.rules,JSON.stringify(p.reasons),JSON.stringify(p.gaps),p.policy,p.context,p.hash,p.key,p.at])).rows[0].result;
 }
 
+const evaluatedAtOf = async key => (await db.query('select evaluated_at from public.psi_agt002_radar_gate_evaluations where idempotency_key=$1', [key])).rows[0].evaluated_at;
+
 assert.equal((await record()).status, 'created');
 assert.equal((await record()).status, 'existing');
 assert.equal((await db.query('select count(*)::int count from public.psi_agt002_radar_gate_evaluations')).rows[0].count, 1);
+
+// Segunda corrida del temporizador sobre una fila que no cambio: la clave de idempotencia es
+// deterministica (tender + hash + versiones) pero `evaluated_at` es un reloj nuevo. Debe devolver
+// la evaluacion existente, no 23505, o la cadena queda atascada en `ledger` para siempre.
+const firstEvaluatedAt = await evaluatedAtOf(payload.key);
+assert.equal((await record({ at: '2026-08-25T18:45:12.345Z' })).status, 'existing');
+assert.equal((await db.query('select count(*)::int count from public.psi_agt002_radar_gate_evaluations')).rows[0].count, 1);
+assert.deepEqual(await evaluatedAtOf(payload.key), firstEvaluatedAt, 'gana la primera observacion; el ledger es append-only');
+
 await assert.rejects(() => record({ verdict: 'eliminada', rules: ['estado_terminal'], reasons: [{ rule_id: 'estado_terminal', field: 'status', observed_value: 'cancelado', source: 'psi_public_tenders', policy_version: 'p1', context_version: 'c1' }] }), /conflict|duplicate|23505/i);
+// El conflicto real sigue siendo conflicto aunque el reloj tambien haya cambiado: aflojar
+// `evaluated_at` no puede aflojar la deteccion de payload semantico divergente bajo la misma clave.
+await assert.rejects(() => record({ at: '2026-08-25T18:45:12.345Z', verdict: 'eliminada', rules: ['estado_terminal'], reasons: [{ rule_id: 'estado_terminal', field: 'status', observed_value: 'cancelado', source: 'psi_public_tenders', policy_version: 'p1', context_version: 'c1' }] }), /conflict|duplicate|23505/i);
+await assert.rejects(() => record({ at: '2026-08-25T18:45:12.345Z', hash: 'd'.repeat(64) }), /conflict|duplicate|23505/i);
+await assert.rejects(() => record({ at: '2026-08-25T18:45:12.345Z', gaps: [{ gap_id: 'modalidad_no_reportada' }] }), /conflict|duplicate|23505/i);
 await assert.rejects(() => record({ key: 'key-bad', verdict: 'eliminada', rules: ['estado_terminal'], reasons: [{}] }), /invalid|22023/i);
 await assert.rejects(() => record({ key: 'key-empty-observed', verdict: 'eliminada', rules: ['fecha_no_verificable'], reasons: [{ rule_id: 'fecha_no_verificable', field: 'deadline_at', observed_value: '', source: 'psi_public_tenders', policy_version: 'p1', context_version: 'c1' }] }), /invalid|22023/i);
 

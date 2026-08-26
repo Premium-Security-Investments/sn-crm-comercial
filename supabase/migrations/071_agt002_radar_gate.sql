@@ -78,12 +78,17 @@ begin
     raise exception using errcode='22023', message='invalid AGT-002 Radar tender identity';
   end if;
 
+  -- Corto circuito de idempotencia. La comparacion cubre exactamente el payload semantico
+  -- inmutable: la misma clave con evidencia distinta sigue siendo 23505. `evaluated_at` queda
+  -- deliberadamente fuera porque es cuando se observo la fila, no que se concluyo de ella: cada
+  -- disparo del temporizador trae un reloj nuevo sobre una fila sin cambios, y exigirlo aqui
+  -- convertia toda segunda corrida en un 23505 permanente. Gana la primera observacion.
   select * into v_existing from public.psi_agt002_radar_gate_evaluations where idempotency_key=p_idempotency_key;
   if found then
     if v_existing.tender_id=p_tender_id and v_existing.stable_key=p_stable_key and v_existing.verdict=p_verdict
       and v_existing.rule_ids=p_rule_ids and v_existing.reasons=p_reasons and v_existing.data_gaps=p_data_gaps
       and v_existing.policy_version=p_policy_version and v_existing.context_version=p_context_version
-      and v_existing.source_row_hash=p_source_row_hash and v_existing.evaluated_at=p_evaluated_at then
+      and v_existing.source_row_hash=p_source_row_hash then
       return jsonb_build_object('status','existing','id',v_existing.id);
     end if;
     raise exception using errcode='23505', message='AGT-002 Radar gate idempotency conflict';
