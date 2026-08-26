@@ -147,7 +147,15 @@ export async function getTenderGoNoGoDecision(database, opportunityId, currentPr
     getTenderDocumentsAndAnalysis(database, id),
   ]);
   const decision = currentDecisionFromHistory(history);
-  return { decision, history: history || [], preparation: decision?.decision === 'go' ? records.preparation : null, analysis: await getCurrentTenderAnalysis(database, id, records.documents) };
+  // The opportunity detail loads this endpoint and /api/tender-documents concurrently for the
+  // same opportunity, and both used to read the current run's whole `result` JSONB. That payload
+  // is only ever rendered from the /api/tender-documents response (the decision panel receives
+  // `analysis` as a prop, never from this payload), so this read takes the typed provenance only
+  // and stops duplicating the single most expensive statement of the page. The GO path
+  // (callTenderGoNoGoDecision) still reads the full result — it builds the offer preparation from
+  // it — so no gate loses information.
+  const analysis = await getCurrentTenderAnalysis(database, id, records.documents, { includeResult: false });
+  return { decision, history: history || [], preparation: decision?.decision === 'go' ? records.preparation : null, analysis };
 }
 
 /** Shared gate for every preparation read/write path; NO_GO never reveals or mutates prior preparation. */

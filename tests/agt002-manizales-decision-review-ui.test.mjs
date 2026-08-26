@@ -9,6 +9,7 @@ const summaryPath = new URL('../src/tenders/components/TenderGoNoGoDecisionSumma
 const typesPath = new URL('../src/tenders/types.ts', import.meta.url);
 const stylesPath = new URL('../src/styles.css', import.meta.url);
 const mainPath = new URL('../src/main.tsx', import.meta.url);
+const experiencePath = new URL('../src/tenders/components/TenderDecisionExperience.tsx', import.meta.url);
 const component = readFileSync(componentPath, 'utf8');
 const brief = readFileSync(briefPath, 'utf8');
 const panel = readFileSync(panelPath, 'utf8');
@@ -16,6 +17,7 @@ const summary = readFileSync(summaryPath, 'utf8');
 const types = readFileSync(typesPath, 'utf8');
 const styles = readFileSync(stylesPath, 'utf8');
 const main = readFileSync(mainPath, 'utf8');
+const experience = readFileSync(experiencePath, 'utf8');
 
 test('types.ts conserva TenderDecisionReview tipado y opcional en TenderDocumentAnalysis', () => {
   assert.match(types, /export type TenderDecisionReview = \{/);
@@ -55,13 +57,16 @@ test('el brief expone exactamente los CTA de revisión y registro humano, sin se
   assert.doesNotMatch(brief, /tender-decision-register-(go|nogo)|open\(['"](?:go|no_go)|recordTenderGoNoGoDecision/);
 });
 
-test('el registro formal se monta inmediatamente bajo el brief y delega el estado vigente al resumen puro', () => {
+test('el montaje con flag conserva brief + registro formal adyacentes en fallback y una sola experiencia en main', () => {
   const decisionStart = main.indexOf('id="tender-decision"');
-  const briefIndex = main.indexOf('<TenderDecisionBrief', decisionStart);
-  const panelIndex = main.indexOf('<TenderGoNoGoDecisionPanel', decisionStart);
-  assert.ok(decisionStart >= 0 && briefIndex > decisionStart && panelIndex > briefIndex);
-  const briefTagEnd = main.indexOf('/>', briefIndex) + 2;
-  assert.ok(!main.slice(briefTagEnd, panelIndex).includes('<Tender'), 'ningún componente se interpone entre el brief y el panel');
+  const experienceMount = main.indexOf('<TenderDecisionExperience', decisionStart);
+  assert.ok(decisionStart >= 0 && experienceMount > decisionStart);
+  const briefIndex = experience.indexOf('<TenderDecisionBrief');
+  const panelIndex = experience.indexOf('<TenderGoNoGoDecisionPanel');
+  assert.ok(briefIndex >= 0 && panelIndex > briefIndex);
+  const briefTagEnd = experience.indexOf('/>', briefIndex) + 2;
+  assert.ok(!experience.slice(briefTagEnd, panelIndex).includes('<Tender'), 'ningún componente se interpone entre el brief y el panel en fallback');
+  assert.match(experience, /if \(decisionAxisSurfaceEnabled\)[\s\S]*<TenderDecisionAxisSurface/);
   assert.match(panel, /<TenderGoNoGoDecisionSummary loading=\{loading\} current=\{current\} \/>/);
   assert.match(summary, /Decisión humana vigente/);
   assert.match(summary, /Sin decisión humana registrada/);

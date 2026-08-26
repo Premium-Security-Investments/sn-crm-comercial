@@ -2803,13 +2803,15 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
     { canonicalOnly },
   );
   const latestAnalysisAttempt = canonicalOnly ? await getLatestAgt002AnalysisAttempt(database, opportunityId) : null;
-  const presentedAnalysis = presentCurrentTenderAnalysis(currentAnalysis);
-  const questionResponses = presentedAnalysis?.run_id ? await getTenderQuestionResponses(database, opportunityId, presentedAnalysis.run_id) : [];
+  const questionResponses = currentAnalysis?.run_id ? await getTenderQuestionResponses(database, opportunityId, currentAnalysis.run_id) : [];
+  const presentedAnalysis = presentCurrentTenderAnalysis(currentAnalysis, questionResponses);
   return {
     documents: includeExtractedText ? signed : signed.map(publicTenderDocumentProjection),
     analysis: presentedAnalysis,
     analyses,
     question_responses: questionResponses,
+    // Literal server-owned del flag (§17/AC22): nunca llega del cliente ni de la base de datos.
+    decision_axis_surface_enabled: agt002AnalysisConfig.AGT002_DECISION_AXIS_SURFACE === true,
     import_error: importErrors.at(-1) || null,
     ...(canonicalOnly ? { analysis_attempt: latestAnalysisAttempt } : {}),
   };

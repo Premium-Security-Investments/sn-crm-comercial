@@ -498,6 +498,42 @@ export type TenderDecisionReview = {
   counts: { supported: number; preparation: number; not_applicable: number; decision_questions: number; blockers: number };
 };
 
+export type TenderDecisionAxisId =
+  | 'legal'
+  | 'experiencia_financiera'
+  | 'imposibilidad_tecnica_grave'
+  | 'plazo'
+  | 'viabilidad_economica';
+export type TenderDecisionAxisState =
+  | 'Favorable con evidencia'
+  | 'Impedimento material'
+  | 'Por confirmar'
+  | 'No evaluado';
+export type TenderDecisionAxisFinding = TenderDecisionReviewFinding & {
+  material_impediment_category: string;
+  question_responses: TenderQuestionResponse[];
+};
+export type TenderDecisionAxisBucket = {
+  axis: TenderDecisionAxisId;
+  state: TenderDecisionAxisState;
+  findings: TenderDecisionAxisFinding[];
+  counts: { blocker: number; decision_question: number; supported: number };
+};
+export type TenderDecisionAxisAnalysis = {
+  contract_version: 'agt002-decision-axis-analysis@1';
+  global_state: 'paused' | 'ready_for_human_review';
+  paused_reason: string | null;
+  coverage: {
+    decision_ready: boolean;
+    total_source_units: number;
+    dispositioned_source_units: number;
+    unresolved_source_units: number;
+  };
+  axes: Record<TenderDecisionAxisId, TenderDecisionAxisBucket>;
+  preparation: TenderDecisionReviewFinding[];
+  counts: { material_findings: number; ordinary_reclassified: number };
+};
+
 export type TenderDocumentAnalysis = {
   run_id: string;
   snapshot_id: string;
@@ -529,6 +565,7 @@ export type TenderDocumentAnalysis = {
   manifest_scope?: TenderManifestScope | null;
   manifest_unresolved_entries?: TenderManifestUnresolvedEntry[] | null;
   decision_review?: TenderDecisionReview | null;
+  decision_axis_analysis?: TenderDecisionAxisAnalysis | null;
   [key: string]: unknown;
 };
 export type TenderDocumentRecord = {
@@ -577,6 +614,7 @@ export type TenderDocumentsPayload = Partial<TenderDocumentRefreshResult> & {
   question_responses?: TenderQuestionResponse[];
   analysis_attempt?: TenderAnalysisAttempt | null;
   reanalysis_job?: Agt002ReanalysisJob | null;
+  decision_axis_surface_enabled?: boolean;
   analysis_engine?: { requested: 'AGT-002'; used: 'AGT-002' | 'siio_rules_v1' | null; fallback: boolean; state?: Agt002ReanalysisJob['status']; job_id?: string; reason?: 'not_configured' | 'preview_unavailable'; reused?: boolean; human_review_required: true };
 };
 export type TenderAnalysisFinding = string | {

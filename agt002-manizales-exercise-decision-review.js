@@ -228,19 +228,21 @@ function validateEntry(entry, index, options) {
     throw new Error(`AGT-002 ejercicio-revisión: ${label} supported exige un hallazgo probatorio revisado con disposition "supports"; el requisito por sí solo no prueba cumplimiento.`);
   }
 
-  if (entry.reviewed_status === 'decision_question') {
+  if (entry.reviewed_status === 'decision_question' || entry.reviewed_status === 'blocker') {
     const category = requireNonEmptyString(entry.material_impediment_category, `${label}.material_impediment_category`);
     if (!MATERIAL_IMPEDIMENT_CATEGORY_SET.has(category)) {
-      throw new Error(`AGT-002 ejercicio-revisión: ${label}.material_impediment_category "${category}" no pertenece al catálogo cerrado AGT002_PRE_GO_MATERIAL_IMPEDIMENT_CATEGORIES (fail-closed: una decision_question sólo existe si resolverla puede confirmar/descartar un impedimento material).`);
+      throw new Error(`AGT-002 ejercicio-revisión: ${label}.material_impediment_category "${category}" no pertenece al catálogo cerrado AGT002_PRE_GO_MATERIAL_IMPEDIMENT_CATEGORIES (fail-closed: sólo existe si resolverla puede confirmar/descartar un impedimento material).`);
     }
-    if (!entry.evidence_refs.some(ref => ref.type === 'registry_citation')) {
-      throw new Error(`AGT-002 ejercicio-revisión: ${label} decision_question exige una cita contractual real.`);
-    }
-    if (!reviewFindings.some(finding => finding.disposition === 'requires_verification')) {
-      throw new Error(`AGT-002 ejercicio-revisión: ${label} decision_question exige un hallazgo revisado que documente la verificación pendiente.`);
+    if (entry.reviewed_status === 'decision_question') {
+      if (!entry.evidence_refs.some(ref => ref.type === 'registry_citation')) {
+        throw new Error(`AGT-002 ejercicio-revisión: ${label} decision_question exige una cita contractual real.`);
+      }
+      if (!reviewFindings.some(finding => finding.disposition === 'requires_verification')) {
+        throw new Error(`AGT-002 ejercicio-revisión: ${label} decision_question exige un hallazgo revisado que documente la verificación pendiente.`);
+      }
     }
   } else if (entry.material_impediment_category !== undefined) {
-    throw new Error(`AGT-002 ejercicio-revisión: ${label}.material_impediment_category sólo aplica a reviewed_status "decision_question".`);
+    throw new Error(`AGT-002 ejercicio-revisión: ${label}.material_impediment_category sólo aplica a reviewed_status "decision_question" o "blocker".`);
   }
 
   if (entry.exercise_bypassed !== undefined && typeof entry.exercise_bypassed !== 'boolean') {
@@ -332,7 +334,7 @@ function toFinding(entry) {
     reviewed_status: entry.reviewed_status,
     rationale: entry.rationale,
     evidence_refs: entry.evidence_refs.map(ref => Object.freeze({ ...ref })),
-    ...(entry.reviewed_status === 'decision_question' ? { material_impediment_category: entry.material_impediment_category } : {}),
+    ...((entry.reviewed_status === 'decision_question' || entry.reviewed_status === 'blocker') ? { material_impediment_category: entry.material_impediment_category } : {}),
     ...(entry.reviewed_status === 'blocker' ? { curability: entry.curability } : {}),
     ...(entry.exercise_bypassed === true ? { exercise_bypassed: true } : {}),
     ...(entry.presentation ? { presentation: Object.freeze({ ...entry.presentation }) } : {}),

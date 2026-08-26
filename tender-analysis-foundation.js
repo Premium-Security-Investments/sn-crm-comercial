@@ -9,6 +9,7 @@ import {
 import { validateAgt002ManifestScope } from './agt002-tender-adapter.js';
 import { deriveAgt002ManizalesExerciseDecisionReview } from './agt002-manizales-exercise-decision-review.js';
 import { deriveAgt002GenericDecisionReview } from './agt002-generic-decision-review.js';
+import { deriveAgt002DecisionAnalysis } from './agt002-decision-axis-analysis.js';
 
 const RULES_PRODUCER = 'siio_rules_v1';
 const RULES_METHOD = 'rules';
@@ -168,7 +169,30 @@ export async function registerSiioRulesAnalysis(database, context) {
   };
 }
 
-export async function getCurrentTenderAnalysis(database, opportunityId, currentDocuments = null, { canonicalOnly = false } = {}) {
+// Columns of psi_tender_analysis_runs the current-analysis read ever needs. `result` is the
+// only wide one: an AGT-002 V3 canonical run carries its whole integral analysis there, so the
+// value is TOASTed and every read of it is charged to the statement that selects it (that is the
+// statement Supabase cancels with `canceling statement due to statement timeout`). Callers that
+// never render the payload ask for the typed metadata only.
+function currentAnalysisRunColumns({ canonicalOnly, includeResult }) {
+  return [
+    'id', 'snapshot_id', 'producer', 'method', 'status',
+    ...(includeResult ? ['result'] : []),
+    'critical_open_count', 'created_at', 'completed_at',
+    ...(canonicalOnly ? ['canonical'] : []),
+  ].join(',');
+}
+
+/**
+ * Resolves the analysis run that is authoritative for the opportunity's current snapshot.
+ *
+ * `includeResult: false` returns the same typed provenance (run_id/snapshot_id/producer/method/
+ * status/canonical/current/critical_open_count/timestamps) with `result: null`, and never asks
+ * PostgREST for the run payload. It is a projection of the read, never a relaxation of any gate:
+ * callers that decide anything on the analysis content (GO preparation, presentation) keep the
+ * default and still receive the full result.
+ */
+export async function getCurrentTenderAnalysis(database, opportunityId, currentDocuments = null, { canonicalOnly = false, includeResult = true } = {}) {
   const normalizedOpportunityId = requireId(opportunityId, 'La oportunidad');
   const stateResponse = await database.from('psi_tender_document_state')
     .select('current_snapshot_id,refresh_in_progress')
@@ -185,11 +209,24 @@ export async function getCurrentTenderAnalysis(database, opportunityId, currentD
   const latestSnapshot = snapshotResponse?.data;
   if (!latestSnapshot?.id) return null;
 
+  // Indexable read contract — locked by tests/tender-current-analysis-read-contract.test.mjs.
+  // Every equality below must be provable by Postgres against an existing index, otherwise this
+  // lookup silently degrades into a descending scan over every run of the opportunity with a heap
+  // visibility check per row, which is exactly what exhausts statement_timeout on a cold cache:
+  //   * `status = 'completed'` on the canonical branch adds NO restriction — 050's
+  //     psi_tender_analysis_runs_canonical_agt002_check already guarantees canonical ⇒ completed —
+  //     but it is what lets the planner match the predicate of the two canonical partial indexes
+  //     (050 psi_tender_analysis_runs_canonical_current_idx and 063's unique
+  //     psi_tender_analysis_runs_one_canonical_current_idx, both `where canonical and
+  //     status = 'completed'`). Without it neither index is usable at all.
+  //   * the (opportunity_id, snapshot_id) equality pair is covered by 071's composite index, so
+  //     the snapshot-scoped lookup is an exact index range whose ORDER BY is already satisfied and
+  //     whose cost no longer grows with the number of runs the opportunity accumulates.
   const selectLatestRun = async (snapshotId = null) => {
     let query = database.from('psi_tender_analysis_runs')
-      .select(`id,snapshot_id,producer,method,status,result,critical_open_count,created_at,completed_at${canonicalOnly ? ',canonical' : ''}`)
+      .select(currentAnalysisRunColumns({ canonicalOnly, includeResult }))
       .eq('opportunity_id', normalizedOpportunityId);
-    if (canonicalOnly) query = query.eq('canonical', true);
+    if (canonicalOnly) query = query.eq('canonical', true).eq('status', 'completed');
     if (snapshotId) query = query.eq('snapshot_id', snapshotId);
     const response = await query.order('created_at', { ascending: false }).order('id', { ascending: false }).limit(1);
     if (response?.error) throw new Error(response.error.message || String(response.error));
@@ -210,7 +247,7 @@ export async function getCurrentTenderAnalysis(database, opportunityId, currentD
     status: run.status,
     ...(canonicalOnly ? { canonical: run.canonical === true } : {}),
     current: !state.refresh_in_progress && run.snapshot_id === latestSnapshot.id && documentsMatchSnapshot,
-    result: run.result,
+    result: includeResult ? run.result : null,
     critical_open_count: run.critical_open_count ?? 0,
     created_at: run.created_at || null,
     completed_at: run.completed_at || null,
@@ -342,21 +379,38 @@ function deriveManizalesDecisionReviewIfEligible(currentAnalysis, result) {
 }
 
 /** Produces the document-API analysis payload without allowing result JSON to forge typed-run authority. */
-export function presentCurrentTenderAnalysis(currentAnalysis) {
+export function presentCurrentTenderAnalysis(currentAnalysis, questionResponses = []) {
   if (!currentAnalysis) return null;
+  const trustedQuestionResponses = Array.isArray(questionResponses) ? questionResponses : [];
   const rawResult = currentAnalysis.result && typeof currentAnalysis.result === 'object' && !Array.isArray(currentAnalysis.result)
     ? currentAnalysis.result
     : {};
   // Never let a model/result-JSON-forged manifest_unresolved_entries or decision_review pass
   // through the spread below; the only values ever presented under these keys are server-derived,
   // and only when their respective fail-closed gates pass.
-  const { manifest_unresolved_entries: _forgedManifestUnresolvedEntries, decision_review: _forgedDecisionReview, ...result } = rawResult;
+  const {
+    manifest_unresolved_entries: _forgedManifestUnresolvedEntries,
+    decision_review: _forgedDecisionReview,
+    decision_axis_analysis: _forgedDecisionAxisAnalysis,
+    ...result
+  } = rawResult;
   const manifestUnresolvedEntries = matchesManizalesPilotManifestScope(result.manifest_scope)
     && integralAnalysisAlignedWithManizalesAnalyzableIds(result.integral_analysis)
     ? MANIZALES_PILOT_UNRESOLVED_MANIFEST_ENTRIES
     : null;
   const decisionReview = deriveManizalesDecisionReviewIfEligible(currentAnalysis, result)
     ?? deriveAgt002GenericDecisionReview(currentAnalysis, result);
+  // Server-owned, read-only "Análisis para decidir" projection over the decision_review already
+  // resolved above (curated Manizales branch or generic). Never fabricates its own decision_review
+  // and never lets the derivation throw out of this function: any failure is fail-closed, exactly
+  // like the curated Manizales gate above — the key is simply omitted, never a partial/broken value.
+  let decisionAxisAnalysis = null;
+  try {
+    decisionAxisAnalysis = deriveAgt002DecisionAnalysis(currentAnalysis, result, trustedQuestionResponses, decisionReview);
+  } catch (error) {
+    console.warn('agt002_decision_axis_analysis_failed', { event: 'agt002_decision_axis_analysis_failed', message: error instanceof Error ? error.message : String(error) });
+    decisionAxisAnalysis = null;
+  }
   return {
     ...result,
     run_id: currentAnalysis.run_id,
@@ -371,5 +425,6 @@ export function presentCurrentTenderAnalysis(currentAnalysis) {
     completed_at: currentAnalysis.completed_at || null,
     ...(manifestUnresolvedEntries ? { manifest_unresolved_entries: manifestUnresolvedEntries } : {}),
     ...(decisionReview ? { decision_review: decisionReview } : {}),
+    ...(decisionAxisAnalysis ? { decision_axis_analysis: decisionAxisAnalysis } : {}),
   };
 }

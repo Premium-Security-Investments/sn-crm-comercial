@@ -129,6 +129,11 @@ function requirementMaterialPolicy(requirementId) {
   return policy;
 }
 
+/** Única fuente de verdad de materialidad por requisito gobernado (fail-closed: lanza si no está clasificado). */
+export function resolveAgt002RequirementMaterialPolicy(requirementId) {
+  return requirementMaterialPolicy(requirementId);
+}
+
 // Precedencia «más conservadora primero» para agregar el estado de una sección con varios
 // requisitos gobernados: un documento requerido AUSENTE domina sobre uno vencido, y así.
 const CROSS_STATE_PRECEDENCE = Object.freeze([

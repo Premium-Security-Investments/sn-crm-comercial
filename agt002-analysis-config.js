@@ -12,7 +12,15 @@ export const ANALYSIS_FLAG_NAMES = Object.freeze([
   'AGT002_INTEGRAL_CONTRACT_V3',
   'AGT002_RADAR_GATE',
   'AGT002_RADAR_VISIBILITY',
+  'AGT002_DECISION_AXIS_SURFACE',
 ]);
+
+// Banderas cuyo parseo es MÁS ESTRICTO que TRUE_LITERALS: sólo el literal exacto `true`
+// (sin trim, sin '1', sin mayúsculas) las activa. `AGT002_DECISION_AXIS_SURFACE` gobierna qué
+// superficie de decisión ve una persona antes de un GO/NO-GO, así que un '1' heredado de otro
+// ambiente, un 'TRUE' copiado a mano o un ' true ' con espacios nunca deben encenderla por
+// accidente — §17 y AC22 de docs/superpowers/specs/2026-08-25-agt002-analisis-para-decidir.md.
+const STRICT_TRUE_LITERAL_FLAG_NAMES = Object.freeze(['AGT002_DECISION_AXIS_SURFACE']);
 
 const TRUE_LITERALS = new Set(['true', '1']);
 
@@ -21,10 +29,16 @@ function parseAnalysisFlag(rawValue) {
   return TRUE_LITERALS.has(rawValue.trim().toLowerCase());
 }
 
+function parseStrictTrueLiteral(rawValue) {
+  return rawValue === 'true';
+}
+
 export function buildAgt002AnalysisConfig(environment = process.env) {
   const flags = {};
   for (const name of ANALYSIS_FLAG_NAMES) {
-    flags[name] = parseAnalysisFlag(environment?.[name]);
+    flags[name] = STRICT_TRUE_LITERAL_FLAG_NAMES.includes(name)
+      ? parseStrictTrueLiteral(environment?.[name])
+      : parseAnalysisFlag(environment?.[name]);
   }
 
   // AGT002_DOCUMENT_RETRIEVAL and AGT002_LEGAL_CORPUS both depend on the

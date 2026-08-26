@@ -64,7 +64,7 @@ for (const fragment of ['tender_semantic_manifest', 'tender_requirement_inventor
 
 // La pausa fail-closed de la SUPERFICIE DE DECISIÓN sigue intacta cuando la cobertura no está
 // lista: es la única superficie que decide, y permanece pausada sin excepción.
-assert.match(analysis, /coveragePaused && <section/, 'La vista operativa debe seguir rindiendo la pausa de cobertura.');
+assert.match(analysis, /coveragePaused && !decisionSurfaceElsewhere && <section/, 'La vista operativa debe rendir la pausa de cobertura sólo cuando la superficie autoritativa no está montada.');
 assert.match(analysis, /Análisis integral pausado/, 'La pausa operativa conserva su encabezado legible.');
 assert.match(analysis, /No hay recomendación integral disponible/, 'La pausa operativa no debe insinuar cobertura integral.');
 

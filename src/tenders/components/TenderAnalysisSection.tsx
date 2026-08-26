@@ -22,6 +22,13 @@ type TenderAnalysisSectionProps = {
   onSaveQuestionResponse?: (input: TenderQuestionResponseInput, files: File[]) => Promise<void>;
   processingStatus?: TenderProcessingStatus | null;
   onRetryProcessing?: () => void;
+  // Con la superficie única "Análisis para decidir" activa (flag AGT002_DECISION_AXIS_SURFACE),
+  // la lectura de condiciones/impedimentos/preguntas/aspectos/preparación vive una sola vez, en
+  // #tender-decision. Análisis conserva los controles de corrida, el estado de procesamiento y el
+  // respaldo técnico V3, pero deja de renderizar esas vistas como pestaña competidora
+  // (§10 y AC14 de docs/superpowers/specs/2026-08-25-agt002-analisis-para-decidir.md).
+  // Por defecto `false`: con el flag apagado el render es idéntico al de hoy.
+  decisionSurfaceElsewhere?: boolean;
 };
 
 function EvidenceList({ items, empty }: { items: unknown; empty: string }) {
@@ -39,7 +46,7 @@ function normalizeQuestion(item: TenderAnalysisFinding, index: number): Normaliz
   };
 }
 
-export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview, onAnalyzePreview, statusText = '', statusTone = 'status', analysisEngine, questionResponses = [], canAnswerQuestions = false, onSaveQuestionResponse, processingStatus = null, onRetryProcessing }: TenderAnalysisSectionProps) {
+export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview, onAnalyzePreview, statusText = '', statusTone = 'status', analysisEngine, questionResponses = [], canAnswerQuestions = false, onSaveQuestionResponse, processingStatus = null, onRetryProcessing, decisionSurfaceElsewhere = false }: TenderAnalysisSectionProps) {
   const strengths = analysis?.strengths ?? analysis?.commercial_fit?.positives ?? [];
   const weaknesses = analysis?.weaknesses ?? analysis?.blockers ?? analysis?.commercial_fit?.concerns ?? [];
   const questions = (analysis?.questions ?? []).map(normalizeQuestion);
@@ -85,19 +92,19 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
     </div>}
     {failed && <div className="error" role="alert"><strong>Análisis fallido.</strong> El último intento no produjo una conclusión utilizable. Puede intentarlo nuevamente sin afectar la decisión humana.</div>}
     {stale && <div className="notice" role="status"><strong>Análisis desactualizado.</strong> El contenido histórico se conserva para trazabilidad, pero los documentos vigentes cambiaron.</div>}
-    {coveragePaused && <section className="tender-v3-questions tender-executive-pending" aria-labelledby="tender-inventory-paused-title">
+    {coveragePaused && !decisionSurfaceElsewhere && <section className="tender-v3-questions tender-executive-pending" aria-labelledby="tender-inventory-paused-title">
       <header><div><span className="eyebrow">Cobertura del expediente</span><h3 id="tender-inventory-paused-title">Análisis integral pausado</h3><p>Este análisis no tiene todavía una cobertura de evidencia lista para decisión de este expediente: la frontera semántica no está finalizada, o falta un inventario verificable de sus requisitos. No se cita ninguna cifra suya: el análisis anterior se conserva sólo como trazabilidad y no representa cobertura integral de esta licitación.</p></div><strong>Cobertura pendiente</strong></header>
       <p className="notice" role="status">No hay recomendación integral disponible. Revise o actualice el análisis cuando la cobertura de requisitos de este expediente esté completa. El respaldo técnico histórico de esta licitación se conserva más abajo, sólo como trazabilidad.</p>
     </section>}
-    {!hasIntegralV3Payload && analysis && analysis.status !== 'failed' && <article className="tender-decision-brief" aria-label="Conclusión preliminar de licitación">
+    {!decisionSurfaceElsewhere && !hasIntegralV3Payload && analysis && analysis.status !== 'failed' && <article className="tender-decision-brief" aria-label="Conclusión preliminar de licitación">
       <header className="tender-decision-brief-head"><div><small>Recomendación preliminar</small><strong>{tenderRecommendationLabel(analysis.recommendation)}</strong><p>{analysis.summary || 'Sin resumen documental disponible.'}</p></div><div className="tender-decision-brief-status"><span className={`badge badge-${tenderDecisionStatusTone(analysis.recommendation)}`}>{analysis.current ? 'Vigente' : 'Obsoleto'}</span><span>{tenderAnalysisMethodLabel(analysis.producer)}</span><small>{analysis.completed_at ? `Actualizado: ${new Date(analysis.completed_at).toLocaleString('es-CO')}` : analysis.generated_at ? `Generado: ${new Date(analysis.generated_at).toLocaleString('es-CO')}` : 'Fecha no informada'}</small></div></header>
       <div className="tender-decision-brief-grid"><section><h4>Fortalezas</h4><EvidenceList items={strengths} empty="Sin fortalezas documentales registradas."/></section><section><h4>Debilidades y bloqueadores</h4><EvidenceList items={weaknesses} empty="Sin debilidades o bloqueadores documentales registrados."/></section><section className="tender-question-responses"><h4>Dudas abiertas</h4>{questions.length ? <div className="tender-question-list">{questions.map(question => <QuestionResponseCard key={question.id} question={question} analysisRunId={analysis.run_id} responses={questionResponses.filter(item => item.question_id === question.id)} canAnswer={canAnswerQuestions} disabled={busy} onSave={onSaveQuestionResponse}/>)}</div> : <p className="muted">Sin dudas abiertas registradas.</p>}</section><section><h4>Información no verificada</h4><EvidenceList items={unverified} empty="Sin información no verificada registrada."/></section><section className="tender-decision-next-action"><h4>Siguiente acción</h4><p>{tenderNextAction(analysis.next_action) || 'Sin siguiente acción documentada; revisar el expediente con Licitaciones.'}</p></section></div>
     </article>}
-    {hasIntegralV3 && analysis && !analysis.decision_review && <section className="tender-v3-questions tender-executive-pending" aria-labelledby="tender-v3-questions-title">
+    {hasIntegralV3 && !decisionSurfaceElsewhere && analysis && !analysis.decision_review && <section className="tender-v3-questions tender-executive-pending" aria-labelledby="tender-v3-questions-title">
       <header><div><span className="eyebrow">Lectura para decisión</span><h3 id="tender-v3-questions-title">Clasificación ejecutiva no disponible</h3><p>{unavailable.body} Hay {questions.length} hallazgos técnicos conservados en la trazabilidad. Hasta que su materialidad sea clasificada, no se presentan como alertas materiales ni requieren respuesta indiscriminada.</p></div><strong>Revisión material pendiente</strong></header>
       <p className="notice" role="status">{unavailable.impedimentNote}</p>
     </section>}
-    {hasIntegralV3 && analysis && analysis.decision_review && <section className="tender-v3-questions" aria-labelledby="tender-v3-questions-title">
+    {hasIntegralV3 && !decisionSurfaceElsewhere && analysis && analysis.decision_review && <section className="tender-v3-questions" aria-labelledby="tender-v3-questions-title">
       <header><div><span className="eyebrow">Validación humana</span><h3 id="tender-v3-questions-title">Condiciones pendientes de validar</h3><p>Cada condición e impedimento se valida aquí una sola vez. El brief de decisión está en la sección Decisión.</p></div></header>
       {decisionQuestions.length ? <div className="tender-question-list">{decisionQuestions.map(question => <article key={question.id} className="tender-decision-review-question"><QuestionResponseCard question={question} analysisRunId={analysis.run_id} responses={questionResponses.filter(item => item.question_id === question.id)} canAnswer={canAnswerQuestions} disabled={busy} onSave={onSaveQuestionResponse}/></article>)}</div> : <p className="muted">Sin condiciones pendientes de validar.</p>}
       <div className="tender-decision-compact-blocks">

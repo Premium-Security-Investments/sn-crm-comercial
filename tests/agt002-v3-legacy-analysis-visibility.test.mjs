@@ -16,8 +16,8 @@ assert.match(
 );
 assert.match(
   component,
-  /\{!hasIntegralV3Payload && analysis && analysis\.status !== 'failed' && <article className="tender-decision-brief"/,
-  'El brief legado debe ocultarse cuando existe V3.',
+  /\{!decisionSurfaceElsewhere && !hasIntegralV3Payload && analysis && analysis\.status !== 'failed' && <article className="tender-decision-brief"/,
+  'El brief legado debe ocultarse cuando existe V3 o cuando la superficie autoritativa vive en Decisión.',
 );
 assert.match(
   component,

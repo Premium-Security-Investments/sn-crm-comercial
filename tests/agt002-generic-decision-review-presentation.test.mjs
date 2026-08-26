@@ -176,3 +176,81 @@ test('generic decision review is additive, frozen and does not mutate the canoni
   assert.ok(Object.isFrozen(presented.decision_review.decision_questions));
   assert.ok(Object.isFrozen(presented.decision_review.decision_questions[0].presentation));
 });
+
+test('presentCurrentTenderAnalysis exposes a server-owned decision_axis_analysis with the 5 fixed axes', () => {
+  const currentAnalysis = bogotaCurrentAnalysis();
+  const presented = presentCurrentTenderAnalysis(currentAnalysis);
+
+  assert.ok(presented.decision_axis_analysis, 'a canonical operational run must expose decision_axis_analysis');
+  assert.equal(presented.decision_axis_analysis.contract_version, 'agt002-decision-axis-analysis@1');
+  assert.deepEqual(
+    Object.keys(presented.decision_axis_analysis.axes).sort(),
+    ['experiencia_financiera', 'imposibilidad_tecnica_grave', 'legal', 'plazo', 'viabilidad_economica'],
+  );
+});
+
+test('presentCurrentTenderAnalysis discards a model-forged decision_axis_analysis and replaces it with the server-owned derivation', () => {
+  const currentAnalysis = bogotaCurrentAnalysis();
+  currentAnalysis.result.decision_axis_analysis = {
+    contract_version: 'forged',
+    global_state: 'ready_for_human_review',
+    axes: {},
+  };
+
+  const presented = presentCurrentTenderAnalysis(currentAnalysis);
+  assert.notEqual(presented.decision_axis_analysis.contract_version, 'forged');
+  assert.equal(presented.decision_axis_analysis.contract_version, 'agt002-decision-axis-analysis@1');
+});
+
+test('presentCurrentTenderAnalysis never mutates integral_analysis when deriving decision_axis_analysis', () => {
+  const currentAnalysis = bogotaCurrentAnalysis();
+  const before = JSON.parse(JSON.stringify(currentAnalysis.result.integral_analysis));
+  Object.freeze(currentAnalysis.result);
+  Object.freeze(currentAnalysis);
+
+  const presented = presentCurrentTenderAnalysis(currentAnalysis);
+  assert.deepEqual(currentAnalysis.result.integral_analysis, before);
+  assert.strictEqual(presented.integral_analysis, currentAnalysis.result.integral_analysis);
+});
+
+test('presentCurrentTenderAnalysis attaches persisted question responses without auto-confirming the axis', () => {
+  const currentAnalysis = bogotaCurrentAnalysis();
+  currentAnalysis.result.integral_analysis.analysis_units[0].requirement_id = 'financial-working-capital';
+  currentAnalysis.result.integral_analysis.coverage.analyzed_requirement_ids = ['financial-working-capital'];
+  currentAnalysis.result.integral_analysis.coverage.expected_requirement_ids = ['financial-working-capital'];
+  const coverageBlock = { status: 'complete', total_source_units: 1, dispositioned_source_units: 1, requirement_count: 1 };
+  currentAnalysis.result.evidence_coverage = {
+    tender_requirement_inventory: {
+      inventory_version: 'tender_requirement_inventory.v1',
+      recommendation: 'proceed_to_analysis',
+      human_review_required: true,
+      decision_ready: true,
+      expedient_coverage: coverageBlock,
+      analyzed_coverage: coverageBlock,
+    },
+  };
+
+  const firstPresentation = presentCurrentTenderAnalysis(currentAnalysis);
+  const finding = firstPresentation.decision_axis_analysis.axes.experiencia_financiera.findings[0];
+  assert.ok(finding, 'the financial-working-capital finding must be classified as material');
+  assert.equal(finding.reviewed_status, 'decision_question');
+  assert.deepEqual(finding.question_responses, []);
+
+  const response = {
+    id: 'resp-1',
+    opportunity_id: currentAnalysis.opportunity_id,
+    analysis_run_id: currentAnalysis.run_id,
+    question_id: finding.id,
+    question_text: '¿Cuál es el capital de trabajo disponible?',
+    status: 'resolved',
+    response: 'Se adjunta certificación bancaria.',
+    responded_by: 'user-1',
+    responded_at: '2026-08-24T10:00:00.000Z',
+    attachments: [],
+  };
+
+  const secondPresentation = presentCurrentTenderAnalysis(currentAnalysis, [response]);
+  const axis = secondPresentation.decision_axis_analysis.axes.experiencia_financiera;
+  assert.deepEqual(axis.findings[0].question_responses, [response]);
+  assert.equal(axis.state, 'Por confirmar');
+});
