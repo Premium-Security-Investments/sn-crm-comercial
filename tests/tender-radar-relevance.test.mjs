@@ -1,6 +1,7 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { normalizeTenderStatusText } from '../tender-source-status.js';
+import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS } from '../tender-relevance-terms.js';
 
 // Regression coverage for the Radar de licitaciones eligibility bug: a SECOP process
 // unrelated to PSI's offerable business (vigilancia, seguridad privada, CCTV/videovigilancia,
@@ -26,7 +27,7 @@ function loadTenderRelevance(source, path) {
     extract(source, path, 'tenderPhysicalSecurityContextTerms', /const tenderPhysicalSecurityContextTerms = \[[\s\S]*?\n\]\.map\(normTenderText\);\n/),
     extract(source, path, 'tenderNonOfferableDirectIntentTerms', /const tenderNonOfferableDirectIntentTerms = \[[\s\S]*?\n\]\.map\(normTenderText\);\n/),
     extract(source, path, 'tenderCoreServiceTerms', /const tenderCoreServiceTerms = new Set\(\[[\s\S]*?\]\);\n/),
-    extract(source, path, 'tenderDisqualifyingTerms', /const tenderDisqualifyingTerms = \[[\s\S]*?\n\];\n/),
+    extract(source, path, 'tenderDisqualifyingTerms', /const tenderDisqualifyingTerms = TENDER_DISQUALIFYING_TERMS;\n/),
     extract(source, path, 'tenderFocusTerms', /const tenderFocusTerms = \{[^\n]*\};\n/),
     extract(source, path, 'tenderMoney', /function tenderMoney\(value\) \{[^\n]*\}\n/),
     extract(source, path, 'tenderText', /function tenderText\(row\) \{[^\n]*\}\n/),
@@ -40,7 +41,7 @@ function loadTenderRelevance(source, path) {
     extract(source, path, 'classifyTenderSection', /function classifyTenderSection\([\s\S]*?\n\}\n/),
   ];
   const body = `${pieces.join('')}\nreturn { scoreTender, hasTenderServiceSignal, classifyTenderSection, tenderSources };`;
-  return new Function('normalizeTenderStatusText', body)(normalizeTenderStatusText);
+  return new Function('normalizeTenderStatusText', 'TENDER_CORE_SERVICE_TERMS', 'TENDER_DISQUALIFYING_TERMS', body)(normalizeTenderStatusText, TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS);
 }
 
 for (const path of backendPaths) {

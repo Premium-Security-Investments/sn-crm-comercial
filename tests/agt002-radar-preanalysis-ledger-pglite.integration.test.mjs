@@ -1,0 +1,196 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { PGlite } from '@electric-sql/pglite';
+
+const migration071 = readFileSync(new URL('../supabase/migrations/071_agt002_radar_gate.sql', import.meta.url), 'utf8').replace(/^\s*begin;\s*$/im, '').replace(/^\s*commit;\s*$/im, '');
+const migration072 = readFileSync(new URL('../supabase/migrations/072_agt002_radar_preanalysis_ledger.sql', import.meta.url), 'utf8').replace(/^\s*begin;\s*$/im, '').replace(/^\s*commit;\s*$/im, '');
+const rollback072 = readFileSync(new URL('../supabase/rollbacks/072_agt002_radar_preanalysis_ledger_rollback.sql', import.meta.url), 'utf8').replace(/^\s*begin;\s*$/im, '').replace(/^\s*commit;\s*$/im, '');
+for (const sql of [migration072, rollback072]) assert.doesNotMatch(sql, /psi_sales_opportunities|psi_convert_tender_to_opportunity|converted_opportunity_id|internal_status/i);
+
+const T1 = '22222222-2222-4222-8222-222222222221';
+const T2 = '22222222-2222-4222-8222-222222222222';
+const T3 = '22222222-2222-4222-8222-222222222223';
+const T4 = '22222222-2222-4222-8222-222222222224';
+const HASH1 = 'a'.repeat(64), HASH2 = 'b'.repeat(64), HASH3 = 'c'.repeat(64);
+const db = new PGlite();
+await db.exec(`
+  create role authenticated; create role service_role; create role anon; alter role service_role bypassrls; grant service_role to current_user;
+  create table public.psi_public_tenders(id uuid primary key, stable_key text not null unique, title text);
+  insert into public.psi_public_tenders values ('${T1}','k1','One'),('${T2}','k2','Two'),('${T3}','k3','Three'),('${T4}','k4','Four');
+  ${migration071}
+  ${migration072}
+`);
+const before = (await db.query('select * from public.psi_public_tenders order by id')).rows;
+
+async function gate(tender, stable, hash, key, policy = 'p1', context = 'c1') {
+  return (await db.query(`select public.psi_record_agt002_radar_gate_evaluation($1,$2,'sobreviviente',array[]::text[],'[]','[]',$3,$4,$5,$6,'2026-08-25T00:00:00Z') result`, [tender,stable,policy,context,hash,key])).rows[0].result;
+}
+async function enqueue(tender, gateId, hash, key, attempt = `${key}-attempt`, policy = 'p1', context = 'c1') {
+  return (await db.query('select public.psi_enqueue_agt002_radar_preanalysis_job($1,$2,$3,$4,$5,$6,$7) result', [tender,gateId,attempt,key,policy,context,hash])).rows[0].result;
+}
+async function claim(seconds = 60) { return (await db.query('select public.psi_claim_agt002_radar_preanalysis_job($1) result', [seconds])).rows[0].result; }
+const evidence = [{ evidence_id:'e1', evidence_type:'tender_field', reference:'title', observed_value:'vigilancia', policy_version:'p1', context_version:'c1' }];
+async function run(tender, gateId, key, verdict = 'mostrar_en_radar', status = 'completed', learningVersion = null, learningCount = 0, context = 'c1') {
+  const result = { summary:'ok', human_review_required:true };
+  return (await db.query(`select public.psi_record_agt002_radar_preanalysis_run($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) result`, [tender,gateId,verdict,status,JSON.stringify(result),JSON.stringify(evidence.map(item => ({...item,context_version:context}))),'p1',context,learningVersion,learningCount,'m1',JSON.stringify({input_tokens:1}),key])).rows[0].result;
+}
+
+const g1 = await gate(T1,'k1',HASH1,'gate-1');
+const created = await enqueue(T1,g1.id,HASH1,'job-1');
+assert.equal(created.status, 'created');
+assert.equal((await enqueue(T1,g1.id,HASH1,'job-1')).status, 'existing');
+
+// BLOCKER B: cada disparo del temporizador estrena identidad de intento, y la identidad diaria del
+// gate cambia con el calendario de Bogota aunque la fila fuente y el veredicto no cambien. Un intento
+// nuevo con la misma entrada semantica no es un conflicto: es el mismo trabajo. Debe devolver el job
+// activo conservando su identidad de intento original, o el temporizador se atasca en 55000 para siempre.
+const equivalentAttempt = await enqueue(T1,g1.id,HASH1,'job-1-next-tick','attempt-next-tick');
+assert.equal(equivalentAttempt.status, 'existing');
+assert.equal(equivalentAttempt.job_id, created.job_id);
+assert.equal(equivalentAttempt.attempt_key, 'job-1-attempt', 'se conserva la identidad de intento original');
+// El gate diario nuevo (misma fila, mismo veredicto, otra clave) tampoco debe conflictuar.
+const g1Daily = await gate(T1,'k1',HASH1,'gate-1-next-day');
+assert.notEqual(g1Daily.id, g1.id);
+const dailyAttempt = await enqueue(T1,g1Daily.id,HASH1,'job-1-next-day','attempt-next-day');
+assert.equal(dailyAttempt.status, 'existing');
+assert.equal(dailyAttempt.job_id, created.job_id);
+assert.equal(dailyAttempt.attempt_key, 'job-1-attempt');
+assert.equal(dailyAttempt.gate_evaluation_id, g1.id, 'el job activo conserva su gate original');
+assert.equal((await db.query('select count(*)::int n from public.psi_agt002_radar_preanalysis_jobs where tender_id=$1',[T1])).rows[0].n, 1, 'coalescer no crea filas nuevas');
+assert.equal((await db.query('select count(*)::int n from public.psi_agt002_radar_preanalysis_attempt_events where tender_id=$1',[T1])).rows[0].n, 1, 'no se inventan intentos en el ledger append-only');
+// Entrada materialmente distinta sigue siendo fail-closed: no se conflaciona fuente/policy/contexto.
+const g1Changed = await gate(T1,'k1',HASH2,'gate-1-changed');
+await assert.rejects(() => enqueue(T1,g1Changed.id,HASH2,'job-changed-hash','attempt-changed-hash'), /55000|active/i);
+const g1Policy = await gate(T1,'k1',HASH1,'gate-1-policy','p2');
+await assert.rejects(() => enqueue(T1,g1Policy.id,HASH1,'job-changed-policy','attempt-changed-policy','p2'), /55000|active/i);
+const g1Context = await gate(T1,'k1',HASH1,'gate-1-context','p1','c2');
+await assert.rejects(() => enqueue(T1,g1Context.id,HASH1,'job-changed-context','attempt-changed-context','p1','c2'), /55000|active/i);
+assert.equal((await db.query('select count(*)::int n from public.psi_agt002_radar_preanalysis_jobs where tender_id=$1',[T1])).rows[0].n, 1);
+
+const c1 = await claim();
+assert.equal(c1.status, 'claimed');
+assert.equal(c1.tender_id, T1);
+assert.equal(c1.attempt_key, 'job-1-attempt');
+// Tambien con el job ya en `running`: el temporizador no puede quedarse en 55000 mientras trabaja.
+const runningAttempt = await enqueue(T1,g1Daily.id,HASH1,'job-1-running','attempt-running');
+assert.equal(runningAttempt.status, 'existing');
+assert.equal(runningAttempt.job_id, created.job_id);
+assert.equal(runningAttempt.attempt_key, 'job-1-attempt');
+const r1 = await run(T1,g1.id,'run-1');
+assert.equal(r1.canonical, true);
+assert.equal((await db.query('select public.psi_complete_agt002_radar_preanalysis_job($1,$2,$3) result',[c1.job_id,c1.lease_id,r1.id])).rows[0].result.status, 'completed');
+assert.equal((await enqueue(T1,g1.id,HASH1,'job-satisfied')).status, 'satisfied');
+
+const g2 = await gate(T1,'k1',HASH2,'gate-2');
+assert.equal((await enqueue(T1,g2.id,HASH2,'job-2')).status, 'created');
+const c2 = await claim();
+const r2 = await run(T1,g2.id,'run-2','no_concluyente','abstained');
+assert.equal(r2.supersedes_run_id, r1.id);
+await db.query('select public.psi_complete_agt002_radar_preanalysis_job($1,$2,$3)',[c2.job_id,c2.lease_id,r2.id]);
+let current = (await db.query('select id,status,visibility_verdict from public.psi_agt002_radar_preanalysis_runs where tender_id=$1 and canonical',[T1])).rows;
+assert.deepEqual(current, [{ id:r2.id, status:'abstained', visibility_verdict:'no_concluyente' }]);
+assert.equal((await enqueue(T1,g2.id,HASH2,'job-abstained-satisfied')).status, 'satisfied');
+
+const g3 = await gate(T1,'k1',HASH3,'gate-3');
+await enqueue(T1,g3.id,HASH3,'job-3'); const c3 = await claim();
+const r3 = await run(T1,g3.id,'run-3','no_mostrar_en_radar','completed');
+await db.query('select public.psi_complete_agt002_radar_preanalysis_job($1,$2,$3)',[c3.job_id,c3.lease_id,r3.id]);
+current = (await db.query('select id,status,visibility_verdict from public.psi_agt002_radar_preanalysis_runs where tender_id=$1 and canonical',[T1])).rows;
+assert.deepEqual(current, [{ id:r3.id, status:'completed', visibility_verdict:'no_mostrar_en_radar' }]);
+assert.equal((await db.query('select count(*)::int n from public.psi_agt002_radar_preanalysis_runs where tender_id=$1 and canonical',[T1])).rows[0].n, 1);
+await assert.rejects(() => db.query("update public.psi_agt002_radar_preanalysis_runs set result='{}' where id=$1",[r1.id]), /append-only|55000/i);
+await assert.rejects(() => db.query('delete from public.psi_agt002_radar_preanalysis_runs where id=$1',[r1.id]), /append-only|55000/i);
+
+// BLOCKER: `human_review_required` es autoridad humana no negociable, y su comprobacion era permisiva
+// ante NULL en las dos rutas. En la tabla, `(result->'human_review_required')='true'::jsonb` devolvia
+// SQL NULL con la clave ausente y un CHECK que no es falso pasa. En la RPC, `<>` devolvia NULL y el
+// `if` de validacion no se tomaba. Una corrida sin la marca entraba al ledger canonico por cualquiera
+// de las dos puertas. Ahora ambas cierran a falso: solo el booleano JSON `true` es aceptado.
+const gt4 = await gate(T4,'k4',HASH1,'gate-t4');
+const REJECTED_HUMAN_REVIEW = [
+  ['clave ausente', JSON.stringify({ summary:'ok' })],
+  ['null JSON', JSON.stringify({ summary:'ok', human_review_required:null })],
+  ['false', JSON.stringify({ summary:'ok', human_review_required:false })],
+  ['cadena "true"', JSON.stringify({ summary:'ok', human_review_required:'true' })],
+  ['cadena vacia', JSON.stringify({ summary:'ok', human_review_required:'' })],
+  ['numero 1', JSON.stringify({ summary:'ok', human_review_required:1 })],
+  ['objeto', JSON.stringify({ summary:'ok', human_review_required:{} })],
+  ['arreglo', JSON.stringify({ summary:'ok', human_review_required:[] })],
+  ['objeto vacio', '{}'],
+];
+async function recordRaw(resultJson, key) {
+  return db.query('select public.psi_record_agt002_radar_preanalysis_run($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) result',
+    [T4,gt4.id,'mostrar_en_radar','completed',resultJson,JSON.stringify(evidence),'p1','c1',null,0,'m1',null,key]);
+}
+async function insertRaw(resultJson, key) {
+  return db.query(`insert into public.psi_agt002_radar_preanalysis_runs
+    (tender_id,gate_evaluation_id,status,visibility_verdict,result,evidence,policy_version,context_version,source_row_hash,idempotency_key)
+    values ($1,$2,'completed','mostrar_en_radar',$3::jsonb,$4::jsonb,'p1','c1',$5,$6)`,
+    [T4,gt4.id,resultJson,JSON.stringify(evidence),HASH1,key]);
+}
+for (const [index, [label, resultJson]] of REJECTED_HUMAN_REVIEW.entries()) {
+  await assert.rejects(() => recordRaw(resultJson, `hr-rpc-${index}`), /22023|invalid/i, `la RPC debe rechazar ${label}`);
+  await assert.rejects(() => insertRaw(resultJson, `hr-direct-${index}`), /human_review_check|check constraint|23514/i,
+    `la puerta directa a la tabla debe rechazar ${label}`);
+}
+// Un `result` que ni siquiera es objeto tampoco entra: la RPC lo rechaza por forma y la puerta directa
+// porque `->` sobre un escalar no da el booleano `true`. Aqui solo se exige el rechazo, no su clase.
+await assert.rejects(() => recordRaw('true', 'hr-rpc-scalar'), /22023|invalid/i);
+await assert.rejects(() => insertRaw('true', 'hr-direct-scalar'));
+await assert.rejects(() => recordRaw('[{"human_review_required":true}]', 'hr-rpc-array'), /22023|invalid/i);
+await assert.rejects(() => insertRaw('[{"human_review_required":true}]', 'hr-direct-array'));
+assert.equal((await db.query('select count(*)::int n from public.psi_agt002_radar_preanalysis_runs where tender_id=$1',[T4])).rows[0].n, 0,
+  'ninguna corrida sin marca de revision humana quedo en el ledger');
+// El booleano JSON `true` sigue pasando por ambas puertas: el cierre es fail-closed, no un bloqueo total.
+const acceptedRpc = (await recordRaw(JSON.stringify({ summary:'ok', human_review_required:true }), 'hr-rpc-valid')).rows[0].result;
+assert.equal(acceptedRpc.canonical, true);
+assert.equal(acceptedRpc.result.human_review_required, true);
+await insertRaw(JSON.stringify({ summary:'ok', human_review_required:true }), 'hr-direct-valid');
+assert.equal((await db.query('select count(*)::int n from public.psi_agt002_radar_preanalysis_runs where tender_id=$1',[T4])).rows[0].n, 2);
+
+const gt2 = await gate(T2,'k2',HASH1,'gate-t2'); await enqueue(T2,gt2.id,HASH1,'job-t2'); const ct2 = await claim();
+assert.equal((await db.query('select public.psi_fail_agt002_radar_preanalysis_job($1,$2,$3) result',[ct2.job_id,ct2.lease_id,'timeout'])).rows[0].result.status, 'unavailable');
+await assert.rejects(() => db.query('select public.psi_fail_agt002_radar_preanalysis_job($1,$2,$3)',[ct2.job_id,ct2.lease_id,'raw-provider-message']), /22023|error code/i);
+const retryT2 = await enqueue(T2,gt2.id,HASH1,'job-t2-retry','job-t2-retry-attempt');
+assert.equal(retryT2.status, 'created', 'un job terminal no debe bloquear un intento posterior');
+const retryCt2 = await claim();
+assert.equal(retryCt2.job_id, retryT2.job_id);
+await db.query('select public.psi_fail_agt002_radar_preanalysis_job($1,$2,$3)',[retryCt2.job_id,retryCt2.lease_id,'capacity_unavailable']);
+
+// BLOCKER B2: cierre acotado y explicito para un job cuya entrada dejo de ser superviviente vigente.
+const staleT2 = await enqueue(T2,gt2.id,HASH1,'job-t2-stale','job-t2-stale-attempt');
+assert.equal(staleT2.status, 'created');
+const staleCt2 = await claim();
+const staleFail = (await db.query('select public.psi_fail_agt002_radar_preanalysis_job($1,$2,$3) result',[staleCt2.job_id,staleCt2.lease_id,'stale_input'])).rows[0].result;
+assert.equal(staleFail.status, 'unavailable');
+assert.equal(staleFail.error_code, 'stale_input');
+const staleRow = (await db.query('select status,error_code,error_message,preanalysis_run_id from public.psi_agt002_radar_preanalysis_jobs where id=$1',[staleCt2.job_id])).rows[0];
+assert.equal(staleRow.status, 'unavailable');
+assert.equal(staleRow.preanalysis_run_id, null, 'un job rancio no puede dejar una corrida canonica');
+assert.ok(staleRow.error_message && !/sql|exception|stack/i.test(staleRow.error_message), 'el mensaje terminal es acotado');
+assert.equal((await db.query("select count(*)::int n from public.psi_agt002_radar_preanalysis_attempt_events where event_key=$1",['job-t2-stale-attempt:unavailable'])).rows[0].n, 1);
+// Un job rancio terminal tampoco bloquea el siguiente intento del temporizador.
+assert.equal((await enqueue(T2,gt2.id,HASH1,'job-t2-after-stale','job-t2-after-stale-attempt')).status, 'created');
+const afterStale = await claim();
+await db.query('select public.psi_fail_agt002_radar_preanalysis_job($1,$2,$3)',[afterStale.job_id,afterStale.lease_id,'provider_error']);
+await assert.rejects(() => db.query('select public.psi_fail_agt002_radar_preanalysis_job($1,$2,$3)',[afterStale.job_id,afterStale.lease_id,'stale']), /22023|error code/i);
+
+const gt3 = await gate(T3,'k3',HASH1,'gate-t3'); await enqueue(T3,gt3.id,HASH1,'job-t3'); const ct3 = await claim(1);
+await db.query("update public.psi_agt002_radar_preanalysis_jobs set lease_expires_at=now()-interval '1 second' where id=$1",[ct3.job_id]);
+assert.equal((await claim()).status, 'empty');
+assert.equal((await db.query('select status,error_code from public.psi_agt002_radar_preanalysis_jobs where id=$1',[ct3.job_id])).rows[0].error_code, 'lease_lost');
+assert.equal((await db.query("select count(*)::int n from public.psi_agt002_radar_preanalysis_attempt_events where event_key like '%:lease_lost'")).rows[0].n, 1);
+
+await db.exec('set role service_role');
+await assert.rejects(() => db.query(`insert into public.psi_agt002_radar_preanalysis_runs(tender_id,gate_evaluation_id,producer,method,status,visibility_verdict,result,evidence,policy_version,context_version,source_row_hash,idempotency_key) values ($1,$2,'AGT-002','agent_ai','completed','mostrar_en_radar','{"human_review_required":true}',$3,'p1','c1',$4,'direct')`,[T1,g1.id,JSON.stringify(evidence),HASH1]), /permission denied/i);
+await db.exec('reset role; set role authenticated');
+await assert.rejects(() => claim(), /permission denied/i);
+await db.exec('reset role');
+
+assert.deepEqual((await db.query('select * from public.psi_public_tenders order by id')).rows, before);
+await db.exec(rollback072);
+for (const table of ['psi_agt002_radar_preanalysis_jobs','psi_agt002_radar_preanalysis_attempt_events','psi_agt002_radar_preanalysis_runs']) assert.equal((await db.query('select to_regclass($1) value',[`public.${table}`])).rows[0].value, null);
+assert.notEqual((await db.query("select to_regclass('public.psi_agt002_radar_gate_evaluations') value")).rows[0].value, null);
+assert.deepEqual((await db.query('select * from public.psi_public_tenders order by id')).rows, before);
+await db.close();
+console.log('AGT-002 Radar preanalysis canonical ledger and durable queue apply/rollback passed');

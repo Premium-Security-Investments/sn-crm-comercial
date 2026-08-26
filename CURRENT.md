@@ -452,3 +452,88 @@ node --test tests/tender-decision-front-render.test.mjs
 - Este cambio modifica **únicamente `CURRENT.md`**.
 - Es un cierre exclusivamente documental: **sin cambios de aplicación y sin redeploy de Vercel**.
 - Estado final: **PUBLICADO / QA PROD PASS, sin pendientes**.
+
+---
+
+## 14. AGT-002 Radar — gate, preanálisis y aprendizaje gobernado (estado local, 2026-08-25)
+
+> **No sustituye a §13.** §13 sigue siendo la sección autoritativa del frente de decisión AGT-002.
+> Esta sección registra un alcance **distinto y local**: la cadena del Radar, entregada **apagada**.
+
+### 14.1. Alcance y documentos
+
+- Spec: `docs/superpowers/specs/2026-08-25-agt002-radar-learning-design.md`.
+- Plan: `docs/superpowers/plans/2026-08-25-agt002-radar-learning-implementation.md`.
+- Runbook operacional: `docs/runbooks/agt002-radar-pipeline.md`.
+
+### 14.2. Estado de flags — ambos OFF
+
+- `AGT002_RADAR_GATE`: **OFF**. `AGT002_RADAR_VISIBILITY`: **OFF**.
+- Declarados en `ANALYSIS_FLAG_NAMES` (`agt002-analysis-config.js`) con la semántica congelada del
+  módulo: sólo `'true'`/`'1'` encienden; cualquier otro valor, incluida la ausencia, queda apagado.
+- Dependencia fail-closed activa: `AGT002_RADAR_VISIBILITY` sin `AGT002_RADAR_GATE` **lanza** en
+  `buildAgt002AnalysisConfig`.
+- **No se encendió ningún flag en ningún entorno.**
+
+### 14.3. Esquema — creado en Git, no aplicado
+
+- `supabase/migrations/071_agt002_radar_gate.sql` y
+  `supabase/migrations/072_agt002_radar_preanalysis_ledger.sql` existen en el árbol, con sus
+  rollbacks independientes (`supabase/rollbacks/071_...`, `supabase/rollbacks/072_...`).
+- **No se aplicaron a ninguna base real ni a producción.** La cola durable existe sólo como esquema
+  local: ninguna tabla real creada, ningún job persistido.
+- Orden de rollback, si algún día se aplican: `072` primero, `071` después. Ninguno toca
+  `psi_public_tenders`.
+
+### 14.4. Entrypoint — creado, no instalado
+
+- `ops/agt002-radar-pipeline/` existe en Git con runner, `.service`, `.timer`, `env.example` y
+  `README.md`.
+- **`systemctl` nunca se ejecutó.** Ninguna unidad instalada, ninguna habilitada, ningún temporizador
+  corriendo. Instalar y habilitar son dos autorizaciones separadas entre sí y separadas del flag.
+
+### 14.5. Lectura del Radar
+
+- `readPersistedTenderRadar` (`server/index.js` y su par byte-idéntico `api/[...path].js`) aplica el
+  filtro de visibilidad **sólo** bajo `agt002AnalysisConfig.AGT002_RADAR_VISIBILITY`, sobre filas de
+  base de datos y **antes** de `dbTenderToPublic`.
+- Con el flag apagado —el estado actual— **no se emite ninguna consulta adicional** y el payload es
+  el de siempre.
+- Fallo de lectura del ledger con el flag encendido ⇒ `AGT002_RADAR_VISIBILITY_LEDGER_UNAVAILABLE`
+  (HTTP 503) vía `sendError`. Recuperación: apagar el flag.
+- `persistTenderRadar` **no se modificó**: la ingesta cruda sigue intacta.
+
+### 14.6. Gates cerrados
+
+- **Sin push, sin PR, sin merge, sin migración productiva, sin deploy, sin cambio de flags
+  productivos.** Los commits son locales.
+- Sin cambios bajo `src/`: no hay cambios visuales.
+- Producción **no** se asume igual a `origin/main` (§7.9 sigue vigente): cualquier acción futura
+  contra producción exige reconfirmar antes el commit realmente desplegado.
+
+### 14.7. Verificación local ejecutada — PASS
+
+Matriz ejecutada el 2026-08-26, sin aplicar migraciones a bases reales y con ambos flags apagados:
+
+- Focal Radar: **19/19 PASS**.
+- Suite AGT-002: **535 tests; 534 PASS, 1 SKIP, 0 FAIL**.
+- Suite completa: **900 tests; 899 PASS, 1 SKIP, 0 FAIL**.
+- PGlite `071` y `072`: ciclos apply/verify/rollback **PASS** dentro de la suite focal.
+- `npm run check:backend-parity`: **PASS** (`backend parity OK`).
+- `npm run build`: **PASS**; permanece sólo la advertencia no bloqueante de chunk cliente mayor a 500 kB.
+- `git diff --check`: **PASS**. Los artefactos nuevos quedan en modo Git `100644`.
+- La prueba dinámica con transportes falsos verificó que auditoría histórica, reporte de aprendizaje y
+  dry-run sólo usan `GET` contra Supabase y no llaman RPC de persistencia ni de cola.
+
+La auditoría contra el entorno local fue intentada, pero la URL Supabase configurada no fue parseable;
+por tanto **no hay resultado histórico real ni autorización de rollout**. El dry-run vivo no se ejecutó
+porque no había una fuente Supabase válida de la cual elegir una sobreviviente. Ningún intento escribió
+datos.
+
+### 14.8. Próximo paso exacto
+
+**Detenerse.** Corregir/proveer credenciales read-only válidas, ejecutar la auditoría histórica y exigir
+`uncovered_visible_tenders = 0` con revisión humana antes de cualquier rollout. Aplicar `071`/`072`,
+instalar la unidad, encender `AGT002_RADAR_GATE`, habilitar el temporizador y encender
+`AGT002_RADAR_VISIBILITY` siguen siendo **cinco autorizaciones distintas**. Este cierre no concede
+ninguna de ellas.

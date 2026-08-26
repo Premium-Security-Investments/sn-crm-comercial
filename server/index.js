@@ -48,8 +48,12 @@ import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, appendAgt002AnalysisAttempt, claim
 import { getAgt002WorkbenchApi, postAgt002LearningReviewApi, postAgt002MessageApi, postAgt002RetryApi } from '../agt002-workbench-api.js';
 import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt002WorkbenchDrain } from '../agt002-workbench-runtime.js';
 import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
+import { TENDER_CORE_SERVICE_TERMS, TENDER_DISQUALIFYING_TERMS, TENDER_NON_COMMERCIAL_ACT_TERMS, TENDER_NON_SECURITY_CONTEXT_TERMS } from '../tender-relevance-terms.js';
 import { assertPublicActuationType, PUBLIC_ACTUATION_TYPES } from '../tender-actuation-types.js';
 import { buildAgt002AnalysisConfig } from '../agt002-analysis-config.js';
+import { AGT002_RADAR_GATE_CONTEXT_VERSION, AGT002_RADAR_GATE_POLICY_VERSION, computeAgt002RadarSourceRowHash, evaluateAgt002RadarGate } from '../agt002-radar-gate.js';
+import { readAgt002RadarCanonicalPreanalysis } from '../agt002-radar-preanalysis-persistence.js';
+import { filterRadarRowsByCanonicalPreanalysis } from '../agt002-radar-visibility.js';
 import { createAgt002AnalysisObservability } from '../agt002-analysis-observability.js';
 import { runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability.js';
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
@@ -213,6 +217,10 @@ async function enqueueAgt002CanonicalReanalysis(database, {
 }
 
 function sendError(res, error, status = 500) {
+  if (error?.runtime_boundary_code === 'AGT002_RADAR_VISIBILITY_LEDGER_UNAVAILABLE') {
+    console.warn('agt002_radar_visibility_ledger_unavailable', { event: 'agt002_radar_visibility_ledger_unavailable' });
+    return res.status(503).json({ error: 'El ledger de visibilidad del Radar no está disponible.', code: 'AGT002_RADAR_VISIBILITY_LEDGER_UNAVAILABLE' });
+  }
   if (isTenderAnalysisFoundationUnavailable(error)) {
     console.warn('tender_analysis_foundation_unavailable', { event: 'tender_analysis_foundation_unavailable' });
     return res.status(503).json({ error: 'La fundación de análisis documental no está disponible.', code: 'TENDER_ANALYSIS_FOUNDATION_UNAVAILABLE' });
@@ -853,32 +861,12 @@ const tenderNonOfferableDirectIntentTerms = [
   'adquisicion de inmuebles', 'adquisición de inmuebles', 'compraventa de inmuebles'
 ].map(normTenderText);
 const tenderCoreServiceTerms = new Set([
-  'vigilancia y seguridad privada', 'vigilancia y seguridad', 'servicios de vigilancia', 'servicio de vigilancia',
-  'vigilancia armada', 'vigilancia privada', 'seguridad privada', 'seguridad electronica', 'seguridad electrónica',
-  'cctv', 'videovigilancia', 'video vigilancia', 'control de acceso', 'circuito cerrado',
+  ...TENDER_CORE_SERVICE_TERMS,
   tenderContextualPhysicalSecurityReason
 ]);
-const tenderDisqualifyingTerms = [
-  'interventoria', 'interventoría',
-  'vehiculo blindado', 'vehículo blindado', 'vehiculos blindados', 'vehículos blindados',
-  'transporte blindado', 'camioneta blindada', 'camionetas blindadas', 'carro blindado',
-  'blindaje vehicular', 'blindaje de vehiculos', 'blindaje de vehículos', 'blindados',
-  // Radiocomunicaciones/telecomunicaciones aisladas no son seguridad electrónica ofertable.
-  'radiocomunicaciones', 'radiocomunicacion', 'radio comunicaciones', 'radio comunicación',
-  'sistema de radiocomunicaciones', 'equipos de comunicacion', 'equipos de comunicación',
-  'red de comunicaciones', 'telecomunicaciones'
-];
-const tenderNonSecurityContextTerms = [
-  // "Vigilancia" en salud/agro no es vigilancia y seguridad privada.
-  'vigilancia epidemiologica', 'vigilancia sanitaria', 'vigilancia en salud publica',
-  'vigilancia fitosanitaria', 'vigilancia veterinaria', 'monitoreo epidemiologico',
-  'sanidad aviar', 'influenza aviar', 'tifosis aviar', 'enfermedad de newcastle',
-  'diagnostico veterinario', 'cadena avicola'
-];
-const tenderNonCommercialActTerms = [
-  // Convenios de coordinación o financiación institucional: no seleccionan un proveedor ofertante.
-  'aunar esfuerzos'
-];
+const tenderDisqualifyingTerms = TENDER_DISQUALIFYING_TERMS;
+const tenderNonSecurityContextTerms = TENDER_NON_SECURITY_CONTEXT_TERMS;
+const tenderNonCommercialActTerms = TENDER_NON_COMMERCIAL_ACT_TERMS;
 const tenderFocusTerms = { 'bogotá': 22, 'bogota': 22, 'distrito capital': 20, 'medellín': 22, 'medellin': 22, 'antioquia': 14 };
 const tenderInternalStatuses = ['nueva','en_revision','descartada','convertida_oportunidad'];
 export function canViewTenders(profile) { return can(profile, ACTIONS.LICITACIONES_VIEW); }
@@ -1546,6 +1534,12 @@ async function readAllConvertedTenderRows(database) {
     if (page.length < pageSize) return rows;
   }
 }
+function radarVisibilityLedgerUnavailable() {
+  const error = new Error('AGT002_RADAR_VISIBILITY_LEDGER_UNAVAILABLE');
+  error.runtime_boundary_code = 'AGT002_RADAR_VISIBILITY_LEDGER_UNAVAILABLE';
+  error.status = 503;
+  return error;
+}
 async function readPersistedTenderRadar(database) {
   const latestRunResult = await database.from('psi_tender_radar_runs').select('run_at,mode').order('run_at', { ascending: false }).limit(1).maybeSingle();
   if (latestRunResult.error && !isMissingTenderTable(latestRunResult.error)) throw latestRunResult.error;
@@ -1573,7 +1567,29 @@ async function readPersistedTenderRadar(database) {
     throw convertedError;
   }
   const mergedRows = Array.from(new Map([...(data || []), ...convertedRows].map((row, index) => [row.stable_key || row.id || `radar-row-${index}`, row])).values());
-  const rows = mergedRows.filter(row => isConvertedTenderRecord(row) || isTenderTrackable(row)).map(dbTenderToPublic).filter(t => isConvertedTenderRecord(t) || !['SECOP I','SECOP II'].includes(t.source) || hasTenderServiceSignal(t)).sort((a,b) => {
+  const trackableRows = mergedRows.filter(row => isConvertedTenderRecord(row) || isTenderTrackable(row));
+  let visibleRows = trackableRows;
+  if (agt002AnalysisConfig.AGT002_RADAR_VISIBILITY) {
+    let canonicalRows;
+    try {
+      canonicalRows = await readAgt002RadarCanonicalPreanalysis(database, trackableRows.map(row => row.id));
+    } catch {
+      throw radarVisibilityLedgerUnavailable();
+    }
+    const canonicalByTenderId = new Map(canonicalRows.map(row => [row.tender_id, row]));
+    const alwaysVisibleTenderIds = new Set(trackableRows.filter(isConvertedTenderRecord).map(row => row.id));
+    visibleRows = filterRadarRowsByCanonicalPreanalysis(trackableRows, {
+      canonicalByTenderId,
+      alwaysVisibleTenderIds,
+      computeSourceRowHash: computeAgt002RadarSourceRowHash,
+      policyVersion: AGT002_RADAR_GATE_POLICY_VERSION,
+      contextVersion: AGT002_RADAR_GATE_CONTEXT_VERSION,
+      nowIso: new Date().toISOString(),
+      evaluateGate: evaluateAgt002RadarGate,
+      enabled: true,
+    });
+  }
+  const rows = visibleRows.map(dbTenderToPublic).filter(t => isConvertedTenderRecord(t) || !['SECOP I','SECOP II'].includes(t.source) || hasTenderServiceSignal(t)).sort((a,b) => {
     const statusOrder = { nueva: 0, en_revision: 1, convertida_oportunidad: 2, descartada: 3 };
     const sectionOrder = { hacer: 0, revisar: 1, prioridad_baja: 2 };
     return (statusOrder[a.internal_status] ?? 9) - (statusOrder[b.internal_status] ?? 9) || sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score;

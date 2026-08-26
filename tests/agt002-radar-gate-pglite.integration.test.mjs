@@ -1,0 +1,99 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { PGlite } from '@electric-sql/pglite';
+import { evaluateAgt002RadarGate } from '../agt002-radar-gate.js';
+
+const migration = readFileSync(new URL('../supabase/migrations/071_agt002_radar_gate.sql', import.meta.url), 'utf8');
+const rollback = readFileSync(new URL('../supabase/rollbacks/071_agt002_radar_gate_rollback.sql', import.meta.url), 'utf8');
+const forbidden = /psi_sales_opportunities|psi_convert_tender_to_opportunity|converted_opportunity_id|internal_status/i;
+assert.doesNotMatch(migration, forbidden);
+assert.doesNotMatch(rollback, forbidden);
+
+const db = new PGlite();
+await db.exec(`
+  create role anon; create role authenticated; create role service_role; alter role service_role bypassrls; grant service_role to current_user;
+  create table public.psi_public_tenders (id uuid primary key, stable_key text not null, title text);
+  insert into public.psi_public_tenders values ('00000000-0000-4000-8000-000000000001','k1','Original');
+`);
+const before = (await db.query('select * from public.psi_public_tenders order by id')).rows;
+await db.exec(migration);
+
+const payload = {
+  tender: '00000000-0000-4000-8000-000000000001', stable: 'k1', verdict: 'sobreviviente',
+  rules: [], reasons: [], gaps: [], policy: 'p1', context: 'c1', hash: 'a'.repeat(64), key: 'key-1', at: '2026-08-25T00:00:00Z',
+};
+async function record(overrides = {}) {
+  const p = { ...payload, ...overrides };
+  return (await db.query(`select public.psi_record_agt002_radar_gate_evaluation(
+    $1::uuid,$2::text,$3::text,$4::text[],$5::jsonb,$6::jsonb,$7::text,$8::text,$9::text,$10::text,$11::timestamptz
+  ) result`, [p.tender,p.stable,p.verdict,p.rules,JSON.stringify(p.reasons),JSON.stringify(p.gaps),p.policy,p.context,p.hash,p.key,p.at])).rows[0].result;
+}
+
+const evaluatedAtOf = async key => (await db.query('select evaluated_at from public.psi_agt002_radar_gate_evaluations where idempotency_key=$1', [key])).rows[0].evaluated_at;
+
+assert.equal((await record()).status, 'created');
+assert.equal((await record()).status, 'existing');
+assert.equal((await db.query('select count(*)::int count from public.psi_agt002_radar_gate_evaluations')).rows[0].count, 1);
+
+// Segunda corrida del temporizador sobre una fila que no cambio: la clave de idempotencia es
+// deterministica (tender + hash + versiones) pero `evaluated_at` es un reloj nuevo. Debe devolver
+// la evaluacion existente, no 23505, o la cadena queda atascada en `ledger` para siempre.
+const firstEvaluatedAt = await evaluatedAtOf(payload.key);
+assert.equal((await record({ at: '2026-08-25T18:45:12.345Z' })).status, 'existing');
+assert.equal((await db.query('select count(*)::int count from public.psi_agt002_radar_gate_evaluations')).rows[0].count, 1);
+assert.deepEqual(await evaluatedAtOf(payload.key), firstEvaluatedAt, 'gana la primera observacion; el ledger es append-only');
+
+await assert.rejects(() => record({ verdict: 'eliminada', rules: ['estado_terminal'], reasons: [{ rule_id: 'estado_terminal', field: 'status', observed_value: 'cancelado', source: 'psi_public_tenders', policy_version: 'p1', context_version: 'c1' }] }), /conflict|duplicate|23505/i);
+// El conflicto real sigue siendo conflicto aunque el reloj tambien haya cambiado: aflojar
+// `evaluated_at` no puede aflojar la deteccion de payload semantico divergente bajo la misma clave.
+await assert.rejects(() => record({ at: '2026-08-25T18:45:12.345Z', verdict: 'eliminada', rules: ['estado_terminal'], reasons: [{ rule_id: 'estado_terminal', field: 'status', observed_value: 'cancelado', source: 'psi_public_tenders', policy_version: 'p1', context_version: 'c1' }] }), /conflict|duplicate|23505/i);
+await assert.rejects(() => record({ at: '2026-08-25T18:45:12.345Z', hash: 'd'.repeat(64) }), /conflict|duplicate|23505/i);
+await assert.rejects(() => record({ at: '2026-08-25T18:45:12.345Z', gaps: [{ gap_id: 'modalidad_no_reportada' }] }), /conflict|duplicate|23505/i);
+await assert.rejects(() => record({ key: 'key-bad', verdict: 'eliminada', rules: ['estado_terminal'], reasons: [{}] }), /invalid|22023/i);
+await assert.rejects(() => record({ key: 'key-empty-observed', verdict: 'eliminada', rules: ['fecha_no_verificable'], reasons: [{ rule_id: 'fecha_no_verificable', field: 'deadline_at', observed_value: '', source: 'psi_public_tenders', policy_version: 'p1', context_version: 'c1' }] }), /invalid|22023/i);
+
+const created = (await db.query('select id from public.psi_agt002_radar_gate_evaluations')).rows[0];
+await assert.rejects(() => db.query('update public.psi_agt002_radar_gate_evaluations set verdict=$1 where id=$2', ['eliminada', created.id]), /append-only|55000/i);
+await assert.rejects(() => db.query('delete from public.psi_agt002_radar_gate_evaluations where id=$1', [created.id]), /append-only|55000/i);
+
+await db.exec('set role service_role');
+await assert.rejects(() => db.query(`insert into public.psi_agt002_radar_gate_evaluations(tender_id,stable_key,verdict,reasons,policy_version,context_version,source_row_hash,idempotency_key) values ($1,'k1','sobreviviente','[]','p1','c1',$2,'direct')`, [payload.tender, payload.hash]), /permission denied/i);
+assert.equal((await record({ key: 'key-2' })).status, 'created');
+await db.exec('reset role');
+
+// BLOCKER A: cruce de cierre bajo la identidad diaria real del gate. La misma fila fuente cambia de
+// veredicto al pasar su fecha de cierre en Bogotá; como el día calendario efectivo entra en la clave
+// deterministica, el ledger append-only inserta una evaluacion nueva en vez de devolver 23505.
+const crossingRow = {
+  id: payload.tender, stable_key: 'k1', source: 'SECOP II', title: 'Servicio de vigilancia armada',
+  description: 'Guardas para las sedes', entity: 'Entidad A', status: 'Abierto', deadline_at: '2026-08-25',
+  category: 'Licitación Pública', raw: { modalidad_de_contratacion: 'Licitación pública' },
+};
+const beforeCross = evaluateAgt002RadarGate(crossingRow, { nowIso: '2026-08-25T13:05:00.000Z' });
+const afterCross = evaluateAgt002RadarGate(crossingRow, { nowIso: '2026-08-26T13:05:00.000Z' });
+assert.equal(beforeCross.verdict, 'sobreviviente');
+assert.equal(afterCross.verdict, 'eliminada');
+assert.notEqual(beforeCross.idempotency_key, afterCross.idempotency_key);
+assert.equal(beforeCross.source_row_hash, afterCross.source_row_hash);
+const recordEvaluation = evaluation => record({
+  verdict: evaluation.verdict, rules: evaluation.rule_ids, reasons: evaluation.reasons, gaps: evaluation.data_gaps,
+  policy: evaluation.policy_version, context: evaluation.context_version, hash: evaluation.source_row_hash,
+  key: evaluation.idempotency_key, at: evaluation.evaluated_at,
+});
+const crossingCountBefore = (await db.query('select count(*)::int count from public.psi_agt002_radar_gate_evaluations')).rows[0].count;
+assert.equal((await recordEvaluation(beforeCross)).status, 'created');
+assert.equal((await recordEvaluation(beforeCross)).status, 'existing');
+assert.equal((await recordEvaluation(afterCross)).status, 'created', 'cruzar el cierre estrena clave: nunca 23505');
+assert.equal((await recordEvaluation(afterCross)).status, 'existing');
+assert.equal((await db.query('select count(*)::int count from public.psi_agt002_radar_gate_evaluations')).rows[0].count, crossingCountBefore + 2);
+assert.deepEqual(
+  (await db.query('select verdict from public.psi_agt002_radar_gate_evaluations where idempotency_key=any($1) order by idempotency_key', [[beforeCross.idempotency_key, afterCross.idempotency_key].sort()])).rows.map(r => r.verdict).sort(),
+  ['eliminada', 'sobreviviente'],
+);
+
+assert.deepEqual((await db.query('select * from public.psi_public_tenders order by id')).rows, before);
+await db.exec(rollback);
+assert.equal((await db.query("select to_regclass('public.psi_agt002_radar_gate_evaluations') value")).rows[0].value, null);
+assert.deepEqual((await db.query('select * from public.psi_public_tenders order by id')).rows, before);
+await db.close();
+console.log('AGT-002 Radar gate ledger migration apply/rollback passed');
