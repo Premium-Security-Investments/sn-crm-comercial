@@ -19,8 +19,8 @@ Cualquier solución que introduzca una segunda fuente de recomendaciones (un pre
 
 ## Decisión: flujo híbrido en cuatro etapas
 
-1. **Alertas comerciales deterministas** — visibles en cuanto se abre la oportunidad, antes de cualquier llamada a Vig-IA. Se derivan de datos ya cargados (decisor incompleto, próxima gestión y fecha de cierre vencidas o faltantes). Sin LLM, de solo lectura, no bloquean nada.
-2. **Preanálisis inteligente** — una llamada real a Vig-IA, distinta de la generación, disparada por el botón explícito **«Analizar cómo fortalecer el seguimiento»**. Analiza el historial cualitativo de la oportunidad (interacciones/notas) y devuelve acciones contextuales concretas (p. ej. «hable con Daniela de Gerencia sobre el descuento pedido», «retome la llamada del 14/08 con el gerente de compras», «aclare con el cliente los términos de pago pendientes»).
+1. **Alertas comerciales deterministas** — visibles en cuanto se abre la oportunidad, antes de cualquier llamada a Vig-IA. Son señales factuales de atención (decisor incompleto, próxima gestión y fecha de cierre vencidas o faltantes), no instrucciones ni acciones a ejecutar: no traen un texto de acción precisa, ni una acción genérica, ni un prerrequisito, ni una validación, ni una condición bloqueante. Una fecha vencida o faltante nunca impide continuar. Sin LLM, de solo lectura, no bloquean nada y no participan en absoluto de la condición que habilita generar la propuesta (`canGenerate`).
+2. **Preanálisis inteligente** — una llamada real a Vig-IA, distinta de la generación, disparada por el botón explícito **«Analizar cómo fortalecer el seguimiento»**. Analiza el historial cualitativo de la oportunidad (interacciones/notas) y devuelve sugerencias contextuales concretas (p. ej. «hable con Daniela de Gerencia sobre el descuento pedido», «retome la llamada del 14/08 con el gerente de compras», «aclare con el cliente los términos de pago pendientes») que siguen siendo opcionales y de decisión humana: el comercial evalúa si aplicarlas o no.
 3. **Edición opcional del CRM** — el comercial puede actuar sobre esas acciones y actualizar el CRM, pero nada de esto es obligatorio. Al guardar, las alertas deterministas se recalculan solas (ya lo hacían) y el preanálisis queda invalidado: puede volver a ejecutarlo sobre el contexto nuevo.
 4. **Generación de la propuesta** — botón **«Generar propuesta con el contexto actual»**, que vuelve a cargar contexto fresco (como ya hace hoy `POST /api/vigia/copilot/generate`) y produce: Plan de contacto en lista ordenada, asunto y cuerpo editables, una revisión humana compacta junto a las acciones de copiar/descartar, y el contexto analizado plegado al final. El preanálisis es el camino normal antes de generar, pero no es una puerta cerrada: si falla o el comercial no lo ejecuta, puede generar igual tras reconocerlo explícitamente (ver «Etapa 2», sección «Continuidad sin preanálisis»).
 
@@ -29,11 +29,11 @@ Cualquier solución que introduzca una segunda fuente de recomendaciones (un pre
 Secuencia de acciones del humano en el panel `VigiaOpportunityCopilot` (no es el orden exacto de píxeles: describe cuándo tiene sentido usar cada control):
 
 ```
-Alertas comerciales (deterministas: riesgos + acción por defecto)   ← visible siempre, sin llamar a Vig-IA
+Alertas comerciales (deterministas: sólo señales factuales, nunca bloquean) ← visible siempre, sin llamar a Vig-IA
    ↓
 [botón] Analizar cómo fortalecer el seguimiento                     ← dispara POST /api/vigia/copilot/preflight
    ↓
-Acciones contextuales de Vig-IA (asociadas a un riesgo o autónomas) ← reemplaza/enriquece la acción por defecto
+Sugerencia contextual de Vig-IA (asociada a una alerta o autónoma)  ← se agrega bajo la alerta, opcional, decisión humana
    ↓ (el humano puede ir a editar el CRM aquí; opcional, no bloqueante)
    ↓    al guardar → alertas deterministas se recalculan solas, preanálisis se invalida
    ↓    (puede repetir el ciclo "Analizar" ⇄ "editar CRM" cuantas veces quiera)
@@ -78,9 +78,8 @@ export type CommercialAlertCategory = 'next_action' | 'close_date' | 'decision_m
 export type CommercialAlert = {
   key: string;                          // `${category}:${state.code}`, p. ej. "next_action:overdue"
   category: CommercialAlertCategory;
-  risk_text: string;                    // bullet en "Alertas comerciales"
-  action_text: string;                  // acción por defecto (sin preanálisis, o si el preanálisis no cubrió esta categoría)
-  contextualAction: ConsolidatedPreflightAction | null; // NUEVO — reemplaza action_text en el render cuando existe
+  risk_text: string;                    // señal factual; bullet en "Alertas comerciales" — nunca una instrucción ni una acción
+  contextualAction: ConsolidatedPreflightAction | null; // sugerencia contextual opcional del preanálisis (etapa 2), sólo si Vig-IA la asoció a esta categoría
 };
 
 export type CommercialPreflightInput = {
@@ -123,22 +122,26 @@ export function mergeCommercialAlertsWithPreflight(
 
 ### Reglas determinísticas (texto por categoría/código)
 
-| Categoría | `code` | `tone` | `risk_text` | `action_text` (por defecto) |
-|---|---|---|---|---|
-| `next_action` | `missing` | critical | «No hay una próxima gestión agendada.» | «Agende la próxima gestión en el CRM antes de generar la propuesta.» |
-| `next_action` | `overdue` | critical | `` `La próxima gestión está ${detail.toLowerCase()}.` `` → «La próxima gestión está vencida hace N días.» | «Actualice la próxima gestión en el CRM antes de generar la propuesta.» |
-| `next_action` | `today` | attention | «La próxima gestión está programada para hoy.» | «Realice o reprograme la gestión de hoy antes de generar la propuesta.» |
-| `next_action` | `soon` | attention | `` `La próxima gestión es ${detail.toLowerCase()}.` `` → «La próxima gestión es en N días.» | «Prepare la gestión próxima antes de generar la propuesta.» |
-| `next_action` | `scheduled`/`closed` | ok | *(sin alerta)* | *(sin alerta)* |
-| `close_date` | `missing` | attention | «No hay fecha de cierre estimada registrada.» | «Registre la fecha de cierre estimada en el CRM.» |
-| `close_date` | `overdue` | critical | «La fecha de cierre estimada ya venció.» | «Actualice la fecha de cierre estimada en el CRM antes de generar la propuesta.» |
-| `close_date` | `today` | attention | «La fecha de cierre estimada es hoy.» | «Confirme el estado de cierre antes de generar la propuesta.» |
-| `close_date` | `scheduled` | ok | *(sin alerta)* | *(sin alerta)* |
-| `decision_maker` | `pending` | attention | «No hay datos de contacto del decisor registrados.» | «Registre el nombre, correo o teléfono del decisor en el CRM.» |
-| `decision_maker` | `partial` | attention | `` `El contacto del decisor está incompleto (${detail.toLowerCase()}).` `` → «El contacto del decisor está incompleto (falta correo).» | «Complete el dato faltante del decisor en el CRM antes de generar la propuesta.» |
-| `decision_maker` | `complete` | ok | *(sin alerta)* | *(sin alerta)* |
+Cada fila produce únicamente un `risk_text` factual: una descripción de lo que se observa en los datos, nunca una instrucción, una acción genérica, un prerrequisito ni una condición de bloqueo. No existe una columna de acción por defecto: si el preanálisis no asocia una sugerencia contextual a la categoría, la alerta se muestra sólo con su `risk_text`.
 
-`COMMERCIAL_PREFLIGHT_EXPLANATION = 'Actualizar estos datos en el CRM antes de continuar mejora la propuesta que Vig-IA Comercial genera.'` — se muestra sólo cuando hay al menos una alerta.
+| Categoría | `code` | `tone` | `risk_text` |
+|---|---|---|---|
+| `next_action` | `missing` | critical | «No hay una próxima gestión agendada.» |
+| `next_action` | `overdue` | critical | `` `La próxima gestión está ${detail.toLowerCase()}.` `` → «La próxima gestión está vencida hace N días.» |
+| `next_action` | `today` | attention | «La próxima gestión está programada para hoy.» |
+| `next_action` | `soon` | attention | `` `La próxima gestión es ${detail.toLowerCase()}.` `` → «La próxima gestión es en N días.» |
+| `next_action` | `scheduled`/`closed` | ok | *(sin alerta)* |
+| `close_date` | `missing` | attention | «No hay fecha de cierre estimada registrada.» |
+| `close_date` | `overdue` | critical | «La fecha de cierre estimada ya venció.» |
+| `close_date` | `today` | attention | «La fecha de cierre estimada es hoy.» |
+| `close_date` | `scheduled` | ok | *(sin alerta)* |
+| `decision_maker` | `pending` | attention | «No hay datos de contacto del decisor registrados.» |
+| `decision_maker` | `partial` | attention | `` `El contacto del decisor está incompleto (${detail.toLowerCase()}).` `` → «El contacto del decisor está incompleto (falta correo).» |
+| `decision_maker` | `complete` | ok | *(sin alerta)* |
+
+Ninguna fila —tampoco `overdue` ni `missing`— impide continuar: son señales de atención, no validaciones ni bloqueos.
+
+`COMMERCIAL_PREFLIGHT_EXPLANATION = 'Señales para tener en cuenta durante el seguimiento. No impiden continuar.'` — se muestra sólo cuando hay al menos una alerta.
 
 ### Frescura de contexto (etapa 1)
 
@@ -284,11 +287,13 @@ Con sus fixtures `fixtures/valid-opportunity-preflight-request.json` y `fixtures
 
 ### Continuidad sin preanálisis (requisito: no bloquear al comercial)
 
-El preanálisis es el camino normal antes de generar, pero **no es obligatorio**: ni ejecutarlo, ni actuar sobre sus acciones. El botón «Generar propuesta con el contexto actual» (etapa 4):
+El preanálisis es el camino normal antes de generar, pero **no es obligatorio**: ni ejecutarlo, ni actuar sobre sus sugerencias. El botón «Generar propuesta con el contexto actual» (etapa 4):
 
 - Si `preflightPhase === 'ready'` (el preanálisis de esta oportunidad, con este contexto, terminó bien): habilitado sin fricción adicional.
 - Si `preflightPhase === 'loading'`: deshabilitado (evita generar mientras el análisis está en curso; no hay cancelación en este alcance).
 - Si `preflightPhase === 'idle'` o `'error'` (nunca se ejecutó, o falló): habilitado sólo tras marcar una casilla explícita «Entiendo que no se ejecutó el análisis inteligente antes de generar» — esto es el «reconocer» que pide el diseño aprobado: no es un bloqueo duro (el comercial puede seguir sin IA por continuidad operativa), pero tampoco es silencioso.
+
+Esta gobernanza (ejecutar o saltar el preanálisis, y la casilla de reconocimiento) es enteramente independiente de las alertas comerciales de la etapa 1. `canGenerate` sólo depende de `preflightPhase` y de la casilla; las alertas deterministas —incluida cualquiera con `code: 'overdue'` o `code: 'missing'`— **nunca** son un insumo de esa condición ni de ninguna otra puerta del flujo: son señales de lectura, no requisitos.
 
 La casilla es estado local de `VigiaOpportunityCopilot` (no del módulo de estado del preanálisis) y se reinicia a no marcada cada vez que `preflightPhase` transiciona a `'idle'` — incluida una invalidación automática por cambio de contexto (ver «Frescura de contexto (etapa 2)»), para que un reconocimiento viejo nunca se arrastre a un contexto nuevo.
 
@@ -306,11 +311,11 @@ Cada `CommercialAlert.key` es `${category}:${code}`. Como `buildCommercialAlerts
 
 `mergeCommercialAlertsWithPreflight(alerts, actions)` hace el cruce con la etapa 1:
 
-- Si el `issue_code` consolidado coincide con la `category` de una alerta determinista **actualmente activa**, esa acción se adjunta como `alerts[i].contextualAction` — sustituye al `action_text` genérico en el render, pero **no** genera un ítem nuevo de riesgo ni una alerta adicional: es una única entrada enriquecida, nunca dos.
+- Si el `issue_code` consolidado coincide con la `category` de una alerta determinista **actualmente activa**, esa acción se adjunta como `alerts[i].contextualAction` — se muestra como **sugerencia contextual**, opcional y de decisión humana, bajo el `risk_text` de esa misma alerta, pero **no** genera un ítem nuevo de riesgo ni una alerta adicional: es una única entrada enriquecida, nunca dos. La alerta no tiene ninguna acción por defecto que reemplazar (no existe `action_text`): sin sugerencia contextual, la alerta se muestra sólo con su `risk_text`.
 - Si el `issue_code` es uno de los tres nombres de categoría (`next_action`/`close_date`/`decision_maker`) pero **no** hay ninguna alerta determinista activa para esa categoría en este momento (p. ej. el modelo señaló `decision_maker` pero el decisor ya está completo en los datos vigentes), la acción se descarta en silencio: los datos deterministas recién cargados son la fuente de verdad para esas tres categorías, y una recomendación de IA que las contradiga no se muestra como si fuera vigente.
-- Si el `issue_code` no es ninguno de los tres nombres de categoría (`stalled_conversation`, `pending_terms`, `escalation_needed`, `other`), la acción no tiene una alerta determinista con la que fusionarse por definición — se agrega a `standaloneActions`, una lista separada dentro del mismo panel de la etapa 2.
+- Si el `issue_code` no es ninguno de los tres nombres de categoría (`stalled_conversation`, `pending_terms`, `escalation_needed`, `other`), la acción no tiene una alerta determinista con la que fusionarse por definición — se agrega a `standaloneActions`, presentada por separado en el mismo panel de la etapa 2 como sugerencia opcional adicional, no asociada a ninguna alerta.
 
-Esto resuelve, con una identidad exacta y sin heurísticas de similitud, los dos requisitos pedidos: «un issue determinístico puede tener una sola acción contextual asociada, sin volver a presentar el mismo riesgo como otra alerta» y «varias acciones del mismo issue se consolidan».
+Esto resuelve, con una identidad exacta y sin heurísticas de similitud, los dos requisitos pedidos: «un issue determinístico puede tener una sola sugerencia contextual asociada, sin volver a presentar el mismo riesgo como otra alerta» y «varias acciones del mismo issue se consolidan».
 
 ### Frescura de contexto (etapa 2)
 
@@ -364,6 +369,8 @@ export function VigiaOpportunityCopilot({ opportunityId, request, preflight, con
     ? mergeCommercialAlertsWithPreflight(baseAlerts, preflightState.result.actions)
     : { alerts: baseAlerts.map(a => ({ ...a, contextualAction: null })), standaloneActions: [] };
 
+  // canGenerate depende sólo del preanálisis (etapa 2) y de la casilla de reconocimiento;
+  // `merged.alerts`/`baseAlerts` (etapa 1) nunca son un insumo de esta condición.
   const canGenerate = state.phase !== 'loading' && preflightState.phase !== 'loading'
     && (preflightState.phase === 'ready' || acknowledgedNoPreflight);
 
@@ -404,15 +411,18 @@ function VigiaCommercialAlerts({ alerts }: { alerts: CommercialAlert[] }) {
       ? <p className="muted">Sin alertas comerciales detectadas.</p>
       : <>
           <p>{COMMERCIAL_PREFLIGHT_EXPLANATION}</p>
-          <ul>{alerts.map(a => <li key={a.key}>{a.risk_text}</li>)}</ul>
-          <h5>Acciones para mejorar la propuesta</h5>
-          <ol>{alerts.map(a => <li key={a.key}>{a.contextualAction ? a.contextualAction.description : a.action_text}</li>)}</ol>
+          <ul>{alerts.map(a => <li key={a.key}>
+            {a.risk_text}
+            {a.contextualAction && <p className="vigia-preflight-suggestion"><strong>Sugerencia contextual:</strong> {a.contextualAction.description}</p>}
+          </li>)}</ul>
         </>}
   </section>;
 }
 ```
 
-Estado vacío (`alerts.length === 0`): el contenedor **no desaparece** — sigue siendo la misma capa canónica, con un mensaje de confirmación en vez de listas.
+No hay ninguna sección/lista «Acciones para mejorar la propuesta»: cada alerta muestra únicamente su `risk_text` factual y, si el preanálisis le asoció una, su sugerencia contextual opcional inmediatamente debajo, etiquetada «Sugerencia contextual:». Sin preanálisis o sin coincidencia, la alerta se muestra sin ninguna acción — nunca con un texto de acción genérico, porque `CommercialAlert` no tiene ningún campo de acción por defecto.
+
+Estado vacío (`alerts.length === 0`): el contenedor **no desaparece** — sigue siendo la misma capa canónica, con un mensaje de confirmación en vez de la lista.
 
 ### `VigiaPreflightAnalysis` (nuevo, co-ubicado en `VigiaOpportunityCopilot.tsx`)
 
@@ -429,7 +439,7 @@ function VigiaPreflightAnalysis({ phase, standaloneActions, onAnalyze, onRetry, 
     {phase === 'error' && <div className="error" role="alert"><strong>No fue posible analizar el historial.</strong><p>{errorMessage}</p><button type="button" onClick={onRetry}>Reintentar</button></div>}
     {phase === 'ready' && <>
       {standaloneActions.length === 0
-        ? <p className="muted">Vig-IA no encontró acciones adicionales fuera de las alertas comerciales.</p>
+        ? <p className="muted">Vig-IA no encontró sugerencias adicionales fuera de las alertas comerciales.</p>
         : <ul className="vigia-preflight-standalone">{standaloneActions.map(a => <li key={a.issue_code}><strong>{a.title}</strong><p>{a.description}</p></li>)}</ul>}
       <button type="button" className="secondary" onClick={onAnalyze}>Actualizar análisis</button>
     </>}
@@ -506,7 +516,7 @@ Al retirar `missingInformation`/`warnings` de la salida, quedan sin ningún cons
 ```ts
 // src/vigia/opportunity-preflight-presentation.ts
 export type CommercialAlertCategory = 'next_action' | 'close_date' | 'decision_maker';
-export type CommercialAlert = { key: string; category: CommercialAlertCategory; risk_text: string; action_text: string; contextualAction: ConsolidatedPreflightAction | null };
+export type CommercialAlert = { key: string; category: CommercialAlertCategory; risk_text: string; contextualAction: ConsolidatedPreflightAction | null };
 export type CommercialPreflightInput = { nextAction: FichaCardState; expectedClose: FichaCardState; decisionMaker: FichaCardState };
 export const COMMERCIAL_PREFLIGHT_EXPLANATION: string;
 export function buildCommercialAlerts(input: CommercialPreflightInput): Omit<CommercialAlert, 'contextualAction'>[];
@@ -562,18 +572,18 @@ export function resolveAgt003BridgeConnection(environment?: NodeJS.ProcessEnv): 
 
 | Componente | Loading | Error | Vacío | Listo |
 |---|---|---|---|---|
-| `VigiaCommercialAlerts` (etapa 1) | *(no aplica — cálculo síncrono, sin red)* | *(no aplica)* | `alerts.length === 0` → «Sin alertas comerciales detectadas.» | `alerts.length > 0` → frase de CRM + `<ul>` de riesgos + `<ol>` de acciones (genéricas o `contextualAction`) |
-| `VigiaPreflightAnalysis` (etapa 2, `preflightState.phase`) | `loading` → notice `role="status"`, botón «Analizar»/«Actualizar» oculto | `error` → `div.error role="alert"` + botón «Reintentar» | `idle` → sólo el botón «Analizar cómo fortalecer el seguimiento» | `ready` → `standaloneActions` (lista o mensaje «sin acciones adicionales») + botón «Actualizar análisis» |
+| `VigiaCommercialAlerts` (etapa 1) | *(no aplica — cálculo síncrono, sin red)* | *(no aplica)* | `alerts.length === 0` → «Sin alertas comerciales detectadas.» | `alerts.length > 0` → frase explicativa + `<ul>` con el `risk_text` de cada alerta y, si existe, su `contextualAction.description` como «Sugerencia contextual:» debajo — nunca bloquea, nunca influye en `canGenerate` |
+| `VigiaPreflightAnalysis` (etapa 2, `preflightState.phase`) | `loading` → notice `role="status"`, botón «Analizar»/«Actualizar» oculto | `error` → `div.error role="alert"` + botón «Reintentar» | `idle` → sólo el botón «Analizar cómo fortalecer el seguimiento» | `ready` → `standaloneActions` (lista de sugerencias opcionales o mensaje «sin sugerencias adicionales») + botón «Actualizar análisis» |
 | Generación (etapa 4, `state.phase`) | `loading` → notice `role="status"` (sin cambios) | `error` → `div.error role="alert"` (sin cambios) | `idle` → `.vigia-copilot-empty` (sin cambios) | `ready` → `VigiaCopilotProposal` (contenido interno cambia, ver arriba) |
-| Botón «Generar…» | deshabilitado si `preflightState.phase === 'loading'` | — | — | habilitado si `preflightState.phase === 'ready'` o si la casilla de reconocimiento está marcada |
+| Botón «Generar…» | deshabilitado si `preflightState.phase === 'loading'` | — | — | habilitado si `preflightState.phase === 'ready'` o si la casilla de reconocimiento está marcada — condición independiente de las alertas de la etapa 1 |
 | `VigiaCopilotProposal` → Plan de contacto | — | — | *(no puede estar vacío: `contactPlanSteps` nunca es `[]`)* | `<ol>` con 1+ `<li>` |
 
-Invalidación: cualquier cambio de `opportunityId` o `contextVersion` reinicia `preflightState` a `'idle'` (`invalidateStalePreflight`, salvo que haya una llamada en curso, que se descarta al completar si el contexto ya cambió — ver «Frescura de contexto (etapa 2)»). La casilla de reconocimiento se reinicia junto con `'idle'`. Esto garantiza que nunca se muestren acciones de un contexto anterior como vigentes.
+Invalidación: cualquier cambio de `opportunityId` o `contextVersion` reinicia `preflightState` a `'idle'` (`invalidateStalePreflight`, salvo que haya una llamada en curso, que se descarta al completar si el contexto ya cambió — ver «Frescura de contexto (etapa 2)»). La casilla de reconocimiento se reinicia junto con `'idle'`. Esto garantiza que nunca se muestren sugerencias de un contexto anterior como vigentes.
 
 ## Accesibilidad
 
 - `VigiaCommercialAlerts` y `VigiaPreflightAnalysis` son `<section aria-labelledby="...">` con un `<h4 id="...">` real, igual criterio que ya se usó para `aria-label="Resumen prioritario de la oportunidad"` en el mismo archivo.
-- Los riesgos van en `<ul>` y las acciones en `<ol>`/`<ul>` — semántica de lista real, no párrafos con guiones.
+- Los riesgos van en `<ul>` (cada `<li>` incluye su `risk_text` y, si existe, la sugerencia contextual asociada); las sugerencias independientes de la etapa 2 (`standaloneActions`) van en su propio `<ul>` — semántica de lista real, no párrafos con guiones.
 - `Plan de contacto` usa `<ol>` en vez de `<p>`: cada paso es navegable individualmente.
 - El estado `loading` de `VigiaPreflightAnalysis` usa `role="status"` (anuncio no interruptor) y el estado `error` usa `role="alert"` (anuncio inmediato) — mismo criterio ya usado en la generación.
 - El botón «Reintentar» y el botón «Analizar»/«Actualizar análisis» son `<button type="button">` normales, alcanzables por teclado, sin `tabindex` manual.
@@ -586,8 +596,8 @@ Invalidación: cualquier cambio de `opportunityId` o `contextVersion` reinicia `
 ```css
 .vigia-preflight-alerts{display:grid;gap:8px}
 .vigia-preflight-alerts h4{margin:0;color:#124174}
-.vigia-preflight-alerts h5{margin:6px 0 0;font-size:13px;color:#124174}
-.vigia-preflight-alerts ul,.vigia-preflight-alerts ol{margin:0;padding-left:20px;display:grid;gap:4px}
+.vigia-preflight-alerts ul{margin:0;padding-left:20px;display:grid;gap:6px}
+.vigia-preflight-alerts .vigia-preflight-suggestion{margin:2px 0 0;font-size:13px;color:#374151}
 .vigia-preflight-analysis{display:grid;gap:8px;margin-top:8px}
 .vigia-preflight-analysis h4{margin:0;color:#124174}
 .vigia-preflight-standalone{margin:0;padding-left:20px;display:grid;gap:6px}
@@ -602,7 +612,7 @@ No se modifica ninguna regla existente. `.vigia-preflight-alerts`/`.vigia-prefli
 
 ### Unitarias
 
-- **`tests/agt003-preflight-alerts-presentation.test.mjs`** (nuevo) — `buildCommercialAlerts` (tabla de casos, unicidad de `key`, pureza — igual alcance que en el diseño determinista original) **más**: `consolidatePreflightActions` (agrupa por `issue_code` exacto, sin comparar texto; conserva orden de primera aparición; une `evidence_refs` sin duplicados) y `mergeCommercialAlertsWithPreflight` (una acción con `issue_code` de categoría activa se adjunta como `contextualAction` sin crear una alerta nueva; una acción con `issue_code` de categoría sin alerta activa se descarta; una acción con `issue_code` fuera del vocabulario de categorías cae en `standaloneActions`; con `actions: []` todas las alertas tienen `contextualAction: null` y `standaloneActions` es `[]`).
+- **`tests/agt003-preflight-alerts-presentation.test.mjs`** (nuevo) — `buildCommercialAlerts` (tabla de casos, unicidad de `key`, pureza, cada alerta expone únicamente `key`/`category`/`risk_text` — sin ningún campo de acción, ni `action_text`) **más**: `consolidatePreflightActions` (agrupa por `issue_code` exacto, sin comparar texto; conserva orden de primera aparición; une `evidence_refs` sin duplicados) y `mergeCommercialAlertsWithPreflight` (una acción con `issue_code` de categoría activa se adjunta como `contextualAction` sin crear una alerta nueva; una acción con `issue_code` de categoría sin alerta activa se descarta; una acción con `issue_code` fuera del vocabulario de categorías cae en `standaloneActions`; con `actions: []` todas las alertas tienen `contextualAction: null` y `standaloneActions` es `[]`).
 - **`tests/agt003-preflight-state.test.mjs`** (nuevo) — `createOpportunityPreflightState`/`beginPreflightAnalysis`/`completePreflightAnalysis`/`failPreflightAnalysis`/`invalidateStalePreflight`: transiciones válidas, eventos con `requestId`/`opportunityId` obsoletos se ignoran (mismo patrón que ya prueba `opportunity-copilot-state.ts`), y el caso propio de esta capa — `completePreflightAnalysis` con `currentContextFingerprint` distinto al capturado al iniciar descarta el resultado y vuelve a `'idle'` con el fingerprint nuevo.
 - **`tests/agt003-copilot-presentation.test.mjs`** (actualizar) — mismos cambios que en el diseño original: retirar aserciones sobre `missingInformation`/`warnings`/símbolos eliminados; reemplazar por `contactPlanSteps`; casos de `splitContactPlanSteps`.
 - **`tests/agt003-preflight-input.test.mjs`** (nuevo) — `buildAgt003CopilotPreflightRequest` produce `evidence_id` idénticos en forma a los que ya prueba `tests/agt003-copilot-input.test.mjs` para `buildAgt003Facts`/`buildAgt003Interactions` (mismo truncado, mismo orden, misma redacción); el objeto resultante no incluye `approved_assets`.
@@ -633,25 +643,25 @@ No se modifica ninguna regla existente. `.vigia-preflight-alerts`/`.vigia-prefli
 
 ### Estáticas
 
-- **`tests/vigia-opportunity-copilot-ui-static.test.mjs`** (actualizar) — agregar a los marcadores requeridos: `Alertas comerciales`, `Acciones para mejorar la propuesta`, `Plan de contacto`, `Analizar cómo fortalecer el seguimiento`, `Generar propuesta con el contexto actual`, `Entiendo que no se ejecutó el análisis inteligente`, `buildCommercialAlerts`, `mergeCommercialAlertsWithPreflight`, `contactPlanSteps`; agregar a los prohibidos: `Antes de contactar`, `Acción recomendada`, `vigia-copilot-missing`, `vigia-copilot-warnings`, `Preparar seguimiento` (el botón original desaparece; su texto no debe seguir presente en ningún punto).
+- **`tests/vigia-opportunity-copilot-ui-static.test.mjs`** (actualizar) — agregar a los marcadores requeridos: `Alertas comerciales`, `Sugerencia contextual`, `Plan de contacto`, `Analizar cómo fortalecer el seguimiento`, `Generar propuesta con el contexto actual`, `Entiendo que no se ejecutó el análisis inteligente`, `buildCommercialAlerts`, `mergeCommercialAlertsWithPreflight`, `contactPlanSteps`; agregar a los prohibidos: `Antes de contactar`, `Acción recomendada`, `Acciones para mejorar la propuesta`, `action_text`, `vigia-copilot-missing`, `vigia-copilot-warnings`, `Preparar seguimiento` (el botón original desaparece; su texto no debe seguir presente en ningún punto).
 
 ### Render
 
 - **`tests/agt003-copilot-proposal-render.test.mjs`** (actualizar, `renderReactComponent` real): `Plan de contacto` antes de `vigia-copilot-draft`; `vigia-human-warning` antes de `vigia-copilot-context`; ausencia total de `Antes de contactar` y de una segunda ocurrencia de `Alertas comerciales` dentro del HTML de `VigiaCopilotProposal`; el `<ol>` de `vigia-copilot-plan` contiene tantos `<li>` como pasos produce `splitContactPlanSteps`.
-- **`tests/agt003-preflight-alerts-render.test.mjs`** (nuevo, `renderReactComponent` real) para `VigiaCommercialAlerts` y `VigiaPreflightAnalysis`: `VigiaCommercialAlerts` con `alerts: []` → «Sin alertas comerciales detectadas.»; con una alerta cuyo `contextualAction` no es `null` → el `<li>` de acción muestra `contextualAction.description`, no `action_text`; `VigiaPreflightAnalysis` en cada fase (`idle`/`loading`/`error`/`ready`) renderiza exactamente los elementos de la tabla «Estados UI»; en `ready` con `standaloneActions` no vacío, cada acción aparece con su `title`/`description` y sin exponer `evidence_refs` en el HTML.
+- **`tests/agt003-preflight-alerts-render.test.mjs`** (nuevo, `renderReactComponent` real) para `VigiaCommercialAlerts` y `VigiaPreflightAnalysis`: `VigiaCommercialAlerts` con `alerts: []` → «Sin alertas comerciales detectadas.»; cada `<li>` muestra siempre el `risk_text` de la alerta; con una alerta cuyo `contextualAction` es `null` → no aparece ningún texto de «Sugerencia contextual:» ni ningún otro texto de acción para esa alerta (no hay `action_text` en el tipo, así que no hay nada que caiga por defecto); con una alerta cuyo `contextualAction` no es `null` → aparece «Sugerencia contextual:» seguido de `contextualAction.description` debajo del `risk_text` de esa misma alerta; el HTML nunca contiene «Acciones para mejorar la propuesta»; `VigiaPreflightAnalysis` en cada fase (`idle`/`loading`/`error`/`ready`) renderiza exactamente los elementos de la tabla «Estados UI»; en `ready` con `standaloneActions` no vacío, cada sugerencia aparece con su `title`/`description` y sin exponer `evidence_refs` en el HTML.
 
 ### E2E manual
 
 Checklist contra un entorno con datos reales/seed (una oportunidad no licitatoria, permiso `vigia_copilot_pilot` activo, `AGT003_COPILOT_ENGINE`/variables de puente configuradas):
 
-1. Abrir una oportunidad con próxima gestión vencida y decisor sin correo/teléfono → «Alertas comerciales» debe verse de inmediato, con 2 riesgos y 2 acciones numeradas (genéricas), **sin** haber pulsado ningún botón.
-2. Pulsar «Analizar cómo fortalecer el seguimiento» → ver el estado de carga, y al completar, confirmar que las acciones genéricas de los riesgos coincidentes se reemplazan por las acciones contextuales devueltas por Vig-IA, y que cualquier acción de tipo `stalled_conversation`/`pending_terms`/`escalation_needed` aparece en la lista separada de acciones adicionales.
-3. Editar la oportunidad (completar el correo del decisor) → al volver al detalle: la alerta de decisor desaparece de «Alertas comerciales» sin recargar manualmente, y el panel de análisis inteligente vuelve a mostrar el botón «Analizar cómo fortalecer el seguimiento» (no las acciones viejas).
-4. Sin volver a analizar, pulsar «Generar propuesta con el contexto actual» → debe aparecer la casilla de reconocimiento; sin marcarla el botón de generar permanece deshabilitado; al marcarla se habilita y la generación se completa con normalidad.
+1. Abrir una oportunidad con próxima gestión vencida y decisor sin correo/teléfono → «Alertas comerciales» debe verse de inmediato, con 2 señales factuales (`risk_text`) y ninguna acción/instrucción asociada todavía, **sin** haber pulsado ningún botón. Confirmar que el botón «Generar propuesta con el contexto actual» no está condicionado por estas alertas (su estado depende únicamente del preanálisis y de la casilla de reconocimiento).
+2. Pulsar «Analizar cómo fortalecer el seguimiento» → ver el estado de carga, y al completar, confirmar que las alertas cuyo `issue_code` coincide ahora muestran, debajo de su `risk_text`, una «Sugerencia contextual:» con la descripción devuelta por Vig-IA (opcional, no reemplaza nada porque no había ninguna acción por defecto), y que cualquier sugerencia de tipo `stalled_conversation`/`pending_terms`/`escalation_needed` aparece en la lista separada de sugerencias adicionales.
+3. Editar la oportunidad (completar el correo del decisor) → al volver al detalle: la alerta de decisor desaparece de «Alertas comerciales» sin recargar manualmente, y el panel de análisis inteligente vuelve a mostrar el botón «Analizar cómo fortalecer el seguimiento» (no las sugerencias viejas).
+4. Sin volver a analizar, pulsar «Generar propuesta con el contexto actual» aunque sigan visibles alertas con fecha vencida o faltante → debe aparecer la casilla de reconocimiento; sin marcarla el botón de generar permanece deshabilitado; al marcarla se habilita y la generación se completa con normalidad — confirmar que las alertas deterministas por sí solas nunca bloquean este paso.
 5. Repetir el análisis inteligente hasta `ready` y luego generar sin pasar por la casilla (debe estar habilitado directamente).
 6. Provocar un fallo del preanálisis (p. ej. desconectando temporalmente el puente) → ver el mensaje de error con «Reintentar»; confirmar que aun así se puede generar la propuesta marcando la casilla.
 7. Tras generar: confirmar «Plan de contacto» con pasos numerados, ausencia de «Antes de contactar», ausencia de una segunda «Alertas comerciales» dentro de la propuesta, «Revisión humana» inmediatamente debajo de «Copiar correo»/«Descartar», y «Contexto analizado» plegado al final.
-8. Abrir una oportunidad sin ningún riesgo determinista → «Sin alertas comerciales detectadas.», y tras analizar, si Vig-IA tampoco encuentra nada en el historial, «Vig-IA no encontró acciones adicionales fuera de las alertas comerciales.»
+8. Abrir una oportunidad sin ningún riesgo determinista → «Sin alertas comerciales detectadas.», y tras analizar, si Vig-IA tampoco encuentra nada en el historial, «Vig-IA no encontró sugerencias adicionales fuera de las alertas comerciales.»
 9. Verificar con el árbol de accesibilidad del navegador que ambas secciones (alertas y análisis inteligente) se anuncian como regiones con nombre propio, que el estado de carga se anuncia como `status` y el de error como `alert`.
 
 ## Rollout
@@ -674,7 +684,7 @@ No hay migraciones que revertir (esta spec no crea tablas ni columnas) y no hay 
 - Ejecutar acciones automáticamente sobre el CRM desde el panel del preanálisis (crear una interacción, reagendar la próxima gestión, etc.): el comercial actúa manualmente sobre el CRM existente; el preanálisis nunca escribe.
 - Cambios a `src/vigia/opportunity-ficha-presentation.ts` o a sus pruebas existentes: se reutiliza tal cual.
 - La rama de licitaciones (`service_type_code === 'licitacion_publica'`) y sus componentes.
-- Enlaces de navegación directa desde las alertas o las acciones contextuales hacia el formulario de edición del CRM: el texto explica el beneficio de actualizar el CRM, pero no agrega botones ni rutas nuevas.
+- Enlaces de navegación directa desde las alertas o las sugerencias contextuales hacia el formulario de edición del CRM: el texto describe la señal detectada, pero no agrega botones ni rutas nuevas.
 - El feedback `Útil`/`Necesita cambios`, ya retirado de esta UI en un cambio anterior — sigue fuera, y no se extiende a la etapa de preanálisis.
 - `OpportunityForm` (creación/edición de oportunidades) y `FollowUpForm`: no se les agrega ningún enlace ni referencia nueva.
 - Cancelar una llamada de preanálisis en curso desde la UI: el botón de generar simplemente permanece deshabilitado hasta que termine.
@@ -682,21 +692,22 @@ No hay migraciones que revertir (esta spec no crea tablas ni columnas) y no hay 
 ## Criterios de aceptación
 
 1. `VigiaOpportunityCopilot` recibe `preflight: CommercialPreflightInput` y `contextVersion: string`, y renderiza `VigiaCommercialAlerts` seguido de `VigiaPreflightAnalysis` inmediatamente después del `<header>`, antes de cualquier rama de fase de generación.
-2. `buildCommercialAlerts` es puro y devuelve como máximo una alerta por categoría, nunca dos con la misma `key`.
+2. `buildCommercialAlerts` es puro y devuelve como máximo una alerta por categoría, nunca dos con la misma `key`; cada alerta expone únicamente `key`/`category`/`risk_text` (más `contextualAction`, resuelto aparte) — el tipo `CommercialAlert` no tiene ningún campo `action_text` ni de acción por defecto, y `risk_text` es siempre una descripción factual, nunca una instrucción, un prerrequisito ni una condición de bloqueo.
 3. `POST /api/vigia/copilot/preflight` existe en `api/[...path].js` y en `server/index.js`, con el mismo texto en ambos archivos (`tests/backend-parity.test.mjs` sigue en verde), protegido por `ACTIONS.AI_COMMERCIAL_DRAFT_RUN` a través de `resolveAgt003OpportunityResource`, y devuelve `503` si `isAgt003PreflightConfigured()` es `false`.
 4. `POST /api/vigia/copilot/preflight` reutiliza `loadAgt003OpportunityContext` (misma consulta que `generate`) en cada llamada — no hay caché propia del contexto de esta ruta.
 5. La respuesta de `/preflight` valida contra `opportunity-preflight.response.schema.json`; una respuesta con un `issue_code` fuera del enum o con un `evidence_ref` que no existe en la solicitud es rechazada por `validateAgt003PreflightResponse` y nunca llega al cliente como éxito.
 6. `/preflight` no invoca ninguna función de `agt003-copilot-persistence.js` ni escribe en `psi_agt003_copilot_runs`, `psi_sales_opportunities` ni `psi_sales_interactions` — verificable porque `createAgt003PreflightApi` no declara esas dependencias en su firma.
 7. `consolidatePreflightActions`/`mergeCommercialAlertsWithPreflight` usan comparación exacta de `issue_code` en toda su lógica — ningún test ni implementación compara texto de forma difusa (`includes`, similitud, distancia de edición) para deduplicar.
-8. Con una acción de preanálisis cuyo `issue_code` coincide con una alerta determinista activa, el render muestra una única entrada en «Acciones para mejorar la propuesta» (la contextual, no la genérica) y no aparece como una alerta adicional en ningún otro punto de la UI.
-9. Con una acción de preanálisis cuyo `issue_code` no coincide con ninguna de las tres categorías deterministas, aparece en la lista de acciones adicionales de `VigiaPreflightAnalysis`, no dentro de `VigiaCommercialAlerts`.
-10. Editar la oportunidad (cambiar `updated_at` o `last_interaction_at`) mientras `preflightState.phase === 'ready'` o `'error'` la reinicia a `'idle'` en el siguiente render; si ocurre mientras `phase === 'loading'`, el resultado que llega después se descarta (vuelve a `'idle'`) en vez de mostrarse como vigente.
-11. El botón «Generar propuesta con el contexto actual» está deshabilitado mientras `preflightState.phase === 'loading'`; si `phase` es `'idle'` o `'error'`, sólo se habilita tras marcar la casilla de reconocimiento, que se reinicia a no marcada cada vez que `phase` vuelve a `'idle'`.
-12. `VigiaCopilotProposal` ya no renderiza `<section className="vigia-copilot-missing">`, el texto «Antes de contactar», ni `<div className="notice vigia-copilot-warnings">`; renderiza `<h4>Plan de contacto</h4>` seguido de un `<ol>` con uno o más `<li>`.
-13. `.vigia-human-warning` se renderiza inmediatamente después de `.vigia-copilot-actions` y antes de `<details className="vigia-copilot-context">`.
-14. `presentCopilotBrief` ya no expone `missingInformation` ni `warnings`; expone `contactPlanSteps: string[]` no vacío. `splitContactPlanSteps` es puro, exportado y cubierto por los casos: multilínea, una sola oración, varias oraciones en un bloque, y texto patológico (>8 fragmentos).
-15. Ningún archivo de `contracts/agents/AGT-003/v1/`, `agt003-copilot-engine.js`, `agt003-copilot-runtime.js`, `agt003-copilot-persistence.js`, `agt003-copilot-api.js`, `supabase/migrations/` cambia.
-16. `tests/vigia-opportunity-copilot-ui-static.test.mjs`, `tests/agt003-copilot-proposal-render.test.mjs`, `tests/agt003-preflight-alerts-render.test.mjs`, `tests/agt003-copilot-presentation.test.mjs`, `tests/agt003-preflight-alerts-presentation.test.mjs`, `tests/agt003-preflight-state.test.mjs`, `tests/agt003-preflight-contract.test.mjs`, `tests/agt003-preflight-engine.test.mjs`, `tests/agt003-preflight-runtime.test.mjs`, `tests/agt003-preflight-api.test.mjs`, `tests/agt003-preflight-endpoint-static.test.mjs`, `tests/agt003-preflight-end-to-end.integration.test.mjs` existen y pasan.
-17. `tests/backend-parity.test.mjs` sigue en verde después de agregar la ruta nueva.
-18. No hay cambios de esquema de base de datos ni de permisos (`access-control.js` no agrega ninguna acción nueva).
-19. La suite completa del repositorio pasa en verde antes de considerar la tarea completa.
+8. Con una acción de preanálisis cuyo `issue_code` coincide con una alerta determinista activa, el render muestra, bajo el `risk_text` de esa alerta y sólo ahí, una única línea «Sugerencia contextual:» con `contextualAction.description`; no existe ninguna sección ni encabezado «Acciones para mejorar la propuesta», y la sugerencia no aparece como una alerta adicional en ningún otro punto de la UI.
+9. Con una acción de preanálisis cuyo `issue_code` no coincide con ninguna de las tres categorías deterministas, aparece como sugerencia independiente en `VigiaPreflightAnalysis` (`standaloneActions`), no dentro de `VigiaCommercialAlerts`.
+10. Las alertas comerciales (etapa 1) nunca son un insumo de `canGenerate` ni de ninguna otra condición que habilite o bloquee avanzar: ni una alerta `overdue` ni una `missing` deshabilitan el botón «Generar propuesta con el contexto actual» por sí solas. La gobernanza de ejecutar/saltar el preanálisis y la casilla de reconocimiento (criterio 12) es independiente de las alertas y no cambia por su presencia o ausencia.
+11. Editar la oportunidad (cambiar `updated_at` o `last_interaction_at`) mientras `preflightState.phase === 'ready'` o `'error'` la reinicia a `'idle'` en el siguiente render; si ocurre mientras `phase === 'loading'`, el resultado que llega después se descarta (vuelve a `'idle'`) en vez de mostrarse como vigente.
+12. El botón «Generar propuesta con el contexto actual» está deshabilitado mientras `preflightState.phase === 'loading'`; si `phase` es `'idle'` o `'error'`, sólo se habilita tras marcar la casilla de reconocimiento, que se reinicia a no marcada cada vez que `phase` vuelve a `'idle'`.
+13. `VigiaCopilotProposal` ya no renderiza `<section className="vigia-copilot-missing">`, el texto «Antes de contactar», ni `<div className="notice vigia-copilot-warnings">`; renderiza `<h4>Plan de contacto</h4>` seguido de un `<ol>` con uno o más `<li>`.
+14. `.vigia-human-warning` se renderiza inmediatamente después de `.vigia-copilot-actions` y antes de `<details className="vigia-copilot-context">`.
+15. `presentCopilotBrief` ya no expone `missingInformation` ni `warnings`; expone `contactPlanSteps: string[]` no vacío. `splitContactPlanSteps` es puro, exportado y cubierto por los casos: multilínea, una sola oración, varias oraciones en un bloque, y texto patológico (>8 fragmentos).
+16. Ningún archivo de `contracts/agents/AGT-003/v1/`, `agt003-copilot-engine.js`, `agt003-copilot-runtime.js`, `agt003-copilot-persistence.js`, `agt003-copilot-api.js`, `supabase/migrations/` cambia.
+17. `tests/vigia-opportunity-copilot-ui-static.test.mjs`, `tests/agt003-copilot-proposal-render.test.mjs`, `tests/agt003-preflight-alerts-render.test.mjs`, `tests/agt003-copilot-presentation.test.mjs`, `tests/agt003-preflight-alerts-presentation.test.mjs`, `tests/agt003-preflight-state.test.mjs`, `tests/agt003-preflight-contract.test.mjs`, `tests/agt003-preflight-engine.test.mjs`, `tests/agt003-preflight-runtime.test.mjs`, `tests/agt003-preflight-api.test.mjs`, `tests/agt003-preflight-endpoint-static.test.mjs`, `tests/agt003-preflight-end-to-end.integration.test.mjs` existen y pasan.
+18. `tests/backend-parity.test.mjs` sigue en verde después de agregar la ruta nueva.
+19. No hay cambios de esquema de base de datos ni de permisos (`access-control.js` no agrega ninguna acción nueva).
+20. La suite completa del repositorio pasa en verde antes de considerar la tarea completa.

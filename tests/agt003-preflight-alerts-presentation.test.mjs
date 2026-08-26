@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { buildSync } from 'esbuild';
 
 const entry = new URL('../src/vigia/opportunity-preflight-presentation.ts', import.meta.url).pathname;
+assert.equal(
+  readFileSync(entry, 'utf8').includes('action_text'),
+  false,
+  'the presentation source module must not define or emit an action_text field at all',
+);
 const bundle = buildSync({ entryPoints: [entry], bundle: true, platform: 'node', format: 'esm', write: false });
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].contents).toString('base64')}`;
 const {
@@ -18,26 +24,33 @@ const okClose = state('scheduled', 'En 30 días', 'ok');
 const okDecision = state('complete', 'Contacto verificado', 'ok');
 
 const cases = [
-  ['nextAction', state('missing', 'Programe la próxima gestión', 'critical'), 'next_action:missing', 'No hay una próxima gestión agendada.', 'Agende la próxima gestión en el CRM antes de generar la propuesta.'],
-  ['nextAction', state('overdue', 'Vencida hace 4 días', 'critical'), 'next_action:overdue', 'La próxima gestión está vencida hace 4 días.', 'Actualice la próxima gestión en el CRM antes de generar la propuesta.'],
-  ['nextAction', state('today', 'Gestionar hoy', 'attention'), 'next_action:today', 'La próxima gestión está programada para hoy.', 'Realice o reprograme la gestión de hoy antes de generar la propuesta.'],
-  ['nextAction', state('soon', 'En 2 días', 'attention'), 'next_action:soon', 'La próxima gestión es en 2 días.', 'Prepare la gestión próxima antes de generar la propuesta.'],
-  ['expectedClose', state('missing', 'Sin fecha de cierre', 'attention'), 'close_date:missing', 'No hay fecha de cierre estimada registrada.', 'Registre la fecha de cierre estimada en el CRM.'],
-  ['expectedClose', state('overdue', 'Vencido hace 3 días', 'critical'), 'close_date:overdue', 'La fecha de cierre estimada ya venció.', 'Actualice la fecha de cierre estimada en el CRM antes de generar la propuesta.'],
-  ['expectedClose', state('today', 'Cierra hoy', 'attention'), 'close_date:today', 'La fecha de cierre estimada es hoy.', 'Confirme el estado de cierre antes de generar la propuesta.'],
-  ['decisionMaker', state('pending', 'Complete el contacto decisor', 'attention'), 'decision_maker:pending', 'No hay datos de contacto del decisor registrados.', 'Registre el nombre, correo o teléfono del decisor en el CRM.'],
-  ['decisionMaker', state('partial', 'Falta correo', 'attention'), 'decision_maker:partial', 'El contacto del decisor está incompleto (falta correo).', 'Complete el dato faltante del decisor en el CRM antes de generar la propuesta.'],
+  ['nextAction', state('missing', 'Programe la próxima gestión', 'critical'), 'next_action:missing', 'No hay una próxima gestión agendada.'],
+  ['nextAction', state('overdue', 'Vencida hace 4 días', 'critical'), 'next_action:overdue', 'La próxima gestión está vencida hace 4 días.'],
+  ['nextAction', state('today', 'Gestionar hoy', 'attention'), 'next_action:today', 'La próxima gestión está programada para hoy.'],
+  ['nextAction', state('soon', 'En 2 días', 'attention'), 'next_action:soon', 'La próxima gestión es en 2 días.'],
+  ['expectedClose', state('missing', 'Sin fecha de cierre', 'attention'), 'close_date:missing', 'No hay fecha de cierre estimada registrada.'],
+  ['expectedClose', state('overdue', 'Vencido hace 3 días', 'critical'), 'close_date:overdue', 'La fecha de cierre estimada ya venció.'],
+  ['expectedClose', state('today', 'Cierra hoy', 'attention'), 'close_date:today', 'La fecha de cierre estimada es hoy.'],
+  ['decisionMaker', state('pending', 'Complete el contacto decisor', 'attention'), 'decision_maker:pending', 'No hay datos de contacto del decisor registrados.'],
+  ['decisionMaker', state('partial', 'Falta correo', 'attention'), 'decision_maker:partial', 'El contacto del decisor está incompleto (falta correo).'],
 ];
 
-for (const [field, candidate, key, riskText, actionText] of cases) {
+const FORBIDDEN_ACTION_STRINGS = ['antes de generar', 'Actualice', 'Agende', 'Registre', 'Complete'];
+
+for (const [field, candidate, key, riskText] of cases) {
   const input = Object.freeze({ nextAction: okNext, expectedClose: okClose, decisionMaker: okDecision, [field]: candidate });
   const before = JSON.stringify(input);
-  assert.deepEqual(buildCommercialAlerts(input), [{
+  const result = buildCommercialAlerts(input);
+  assert.deepEqual(result, [{
     key,
     category: key.split(':')[0],
     risk_text: riskText,
-    action_text: actionText,
   }], key);
+  assert.equal(Object.prototype.hasOwnProperty.call(result[0], 'action_text'), false, `${key} base alert must not have an own action_text property`);
+  const serialized = JSON.stringify(result);
+  for (const forbidden of FORBIDDEN_ACTION_STRINGS) {
+    assert.equal(serialized.includes(forbidden), false, `${key} serialized alert must not contain mandatory-instruction string "${forbidden}"`);
+  }
   assert.equal(JSON.stringify(input), before, `${key} does not mutate its input`);
 }
 
@@ -59,7 +72,9 @@ const ordered = buildCommercialAlerts({
 assert.deepEqual(ordered.map(item => item.category), ['next_action', 'close_date', 'decision_maker']);
 assert.equal(new Set(ordered.map(item => item.key)).size, ordered.length, 'at most one key per category');
 assert.deepEqual(KNOWN_PREFLIGHT_ISSUE_CODES, ['next_action', 'close_date', 'decision_maker']);
-assert.equal(COMMERCIAL_PREFLIGHT_EXPLANATION, 'Estos datos requieren actualización en el CRM antes de generar una propuesta.');
+assert.equal(COMMERCIAL_PREFLIGHT_EXPLANATION, 'Señales para tener en cuenta durante el seguimiento. No impiden continuar.');
+assert.equal(COMMERCIAL_PREFLIGHT_EXPLANATION.includes('requieren actualización'), false, 'las alertas no son instrucciones obligatorias');
+assert.equal(COMMERCIAL_PREFLIGHT_EXPLANATION.includes('antes de generar'), false, 'las alertas no son prerrequisitos para generar la propuesta');
 
 const actions = Object.freeze([
   Object.freeze({ issue_code: 'next_action', title: 'Primera acción', description: 'Defina la fecha.', evidence_refs: Object.freeze(['e1', 'e2']) }),

@@ -20,7 +20,6 @@ export type CommercialAlert = {
   key: string;
   category: CommercialAlertCategory;
   risk_text: string;
-  action_text: string;
   contextualAction: ConsolidatedPreflightAction | null;
 };
 
@@ -38,7 +37,7 @@ export type PreflightMergeResult = {
 };
 
 export const COMMERCIAL_PREFLIGHT_EXPLANATION =
-  'Estos datos requieren actualización en el CRM antes de generar una propuesta.';
+  'Señales para tener en cuenta durante el seguimiento. No impiden continuar.';
 
 export const KNOWN_PREFLIGHT_ISSUE_CODES: readonly CommercialAlertCategory[] = Object.freeze([
   'next_action',
@@ -66,22 +65,18 @@ export function normalizePreflightErrorMessage(message: string | null | undefine
 }
 
 function nextActionAlert(state: FichaCardState): BaseCommercialAlert | null {
-  const mapped: Record<string, { risk_text: string; action_text: string }> = {
+  const mapped: Record<string, { risk_text: string }> = {
     missing: {
       risk_text: 'No hay una próxima gestión agendada.',
-      action_text: 'Agende la próxima gestión en el CRM antes de generar la propuesta.',
     },
     overdue: {
       risk_text: `La próxima gestión está ${state.detail.toLowerCase()}.`,
-      action_text: 'Actualice la próxima gestión en el CRM antes de generar la propuesta.',
     },
     today: {
       risk_text: 'La próxima gestión está programada para hoy.',
-      action_text: 'Realice o reprograme la gestión de hoy antes de generar la propuesta.',
     },
     soon: {
       risk_text: `La próxima gestión es ${state.detail.toLowerCase()}.`,
-      action_text: 'Prepare la gestión próxima antes de generar la propuesta.',
     },
   };
   const copy = mapped[state.code];
@@ -89,18 +84,15 @@ function nextActionAlert(state: FichaCardState): BaseCommercialAlert | null {
 }
 
 function expectedCloseAlert(state: FichaCardState): BaseCommercialAlert | null {
-  const mapped: Record<string, { risk_text: string; action_text: string }> = {
+  const mapped: Record<string, { risk_text: string }> = {
     missing: {
       risk_text: 'No hay fecha de cierre estimada registrada.',
-      action_text: 'Registre la fecha de cierre estimada en el CRM.',
     },
     overdue: {
       risk_text: 'La fecha de cierre estimada ya venció.',
-      action_text: 'Actualice la fecha de cierre estimada en el CRM antes de generar la propuesta.',
     },
     today: {
       risk_text: 'La fecha de cierre estimada es hoy.',
-      action_text: 'Confirme el estado de cierre antes de generar la propuesta.',
     },
   };
   const copy = mapped[state.code];
@@ -108,14 +100,12 @@ function expectedCloseAlert(state: FichaCardState): BaseCommercialAlert | null {
 }
 
 function decisionMakerAlert(state: FichaCardState): BaseCommercialAlert | null {
-  const mapped: Record<string, { risk_text: string; action_text: string }> = {
+  const mapped: Record<string, { risk_text: string }> = {
     pending: {
       risk_text: 'No hay datos de contacto del decisor registrados.',
-      action_text: 'Registre el nombre, correo o teléfono del decisor en el CRM.',
     },
     partial: {
       risk_text: `El contacto del decisor está incompleto (${state.detail.toLowerCase()}).`,
-      action_text: 'Complete el dato faltante del decisor en el CRM antes de generar la propuesta.',
     },
   };
   const copy = mapped[state.code];
