@@ -198,6 +198,21 @@ Si el ritmo resulta insuficiente, las palancas son la **frecuencia del `timer`**
 `AGT002_RADAR_PREANALYSIS_DAILY_MAX_RUNS` — nunca un bucle interno, que reintroduciría exactamente
 el modo de falla que la cola durable elimina.
 
+### Timeout del proveedor: techo de 5 minutos bajo el lease de 600 s
+
+`AGT002_RADAR_PREANALYSIS_TIMEOUT_MS` acota una única llamada al proveedor. Rango aceptado
+**`1000`–`300000` ms**, por defecto **`30000`**, que es también el valor recomendado en producción.
+Un valor fuera de rango o malformado **no se recorta**: `getAgt002RadarPreanalysisRuntimeConfig`
+lanza `AGT002_RADAR_RUNTIME_CONFIG_INVALID` y el runtime no llega a construirse.
+
+El techo existe por la cola durable. El pipeline reclama el job con `leaseSeconds = 600`; después de
+que el proveedor responde todavía quedan aprendizaje, validación del sobre y persistencia. Permitir
+un timeout de 600 000 ms era admitir que la reserva venciera **después** de una respuesta exitosa:
+otro disparo podría reclamar el mismo job mientras el primero aún estaba persistiendo. Con 300 000 ms
+quedan ≥300 s de holgura. El lease y `TimeoutStartSec=720` de la unidad **no** se tocan; subir el
+timeout no es la palanca para un backfill más rápido (véanse la frecuencia del `timer` y
+`AGT002_RADAR_PREANALYSIS_DAILY_MAX_RUNS`, arriba).
+
 ### Identidad diaria del gate y coalescencia de intentos
 
 La clave de idempotencia del gate incluye la **fecha calendario efectiva en `America/Bogota`**

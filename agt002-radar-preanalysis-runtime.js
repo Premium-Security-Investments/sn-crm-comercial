@@ -4,14 +4,20 @@ import { AGT002_RADAR_PREANALYSIS_OUTPUT_SCHEMA, AGT002_RADAR_PREANALYSIS_POLICY
 import { buildAgt002RadarPreanalysisInput } from './agt002-radar-preanalysis-input.js';
 
 const REQUIRED=['AGT002_RADAR_PREANALYSIS_MODEL','AGT002_HETZNER_BRIDGE_URL','AGT002_HETZNER_BRIDGE_HMAC_SECRET'];
+const DEFAULT_TIMEOUT_MS=30_000;
+const MIN_TIMEOUT_MS=1_000;
+// El pipeline reclama el job con leaseSeconds=600. Un timeout de proveedor igual al lease no deja
+// margen para aprendizaje, validación de entrada ni persistencia: una respuesta exitosa llegaría con
+// la reserva ya vencida. El techo de 5 min garantiza >=300 s de holgura bajo el lease de producción.
+const MAX_TIMEOUT_MS=300_000;
 const POLICY='Produce únicamente un preanálisis de visibilidad del proceso, basado en evidencia citada, con revisión humana obligatoria.';
 function nonempty(value){return typeof value==='string'&&value.trim().length>0;}
 function boundary(error,code,message='AGT-002 Radar preanalysis unavailable.') { const wrapped=error instanceof Error?error:new Error(message); wrapped.runtime_boundary_code=code; return wrapped; }
 export function isAgt002RadarPreanalysisConfigured(environment=process.env){let gateEnabled=false;try{gateEnabled=buildAgt002AnalysisConfig(environment).AGT002_RADAR_GATE;}catch{return false;}return gateEnabled&&REQUIRED.every(key=>nonempty(environment[key]));}
 export function getAgt002RadarPreanalysisRuntimeConfig(environment=process.env){
   if(!isAgt002RadarPreanalysisConfigured(environment)){const error=new Error('AGT002_RADAR_RUNTIME_CONFIG_INVALID: runtime is off or incomplete');error.code='AGT002_RADAR_RUNTIME_CONFIG_INVALID';throw error;}
-  const timeoutMs=nonempty(environment.AGT002_RADAR_PREANALYSIS_TIMEOUT_MS)?Number(environment.AGT002_RADAR_PREANALYSIS_TIMEOUT_MS):30_000;
-  if(!Number.isInteger(timeoutMs)||timeoutMs<1000||timeoutMs>600_000){const error=new Error('AGT002_RADAR_RUNTIME_CONFIG_INVALID: timeout');error.code='AGT002_RADAR_RUNTIME_CONFIG_INVALID';throw error;}
+  const timeoutMs=nonempty(environment.AGT002_RADAR_PREANALYSIS_TIMEOUT_MS)?Number(environment.AGT002_RADAR_PREANALYSIS_TIMEOUT_MS):DEFAULT_TIMEOUT_MS;
+  if(!Number.isInteger(timeoutMs)||timeoutMs<MIN_TIMEOUT_MS||timeoutMs>MAX_TIMEOUT_MS){const error=new Error('AGT002_RADAR_RUNTIME_CONFIG_INVALID: timeout');error.code='AGT002_RADAR_RUNTIME_CONFIG_INVALID';throw error;}
   return Object.freeze({model:environment.AGT002_RADAR_PREANALYSIS_MODEL.trim(),timeoutMs,bridgeUrl:environment.AGT002_HETZNER_BRIDGE_URL.trim(),hmacSecret:environment.AGT002_HETZNER_BRIDGE_HMAC_SECRET});
 }
 export function createAgt002RadarPreanalysisRuntime({environment=process.env,createClient=createAgt002HetznerBridgeClient}={}){

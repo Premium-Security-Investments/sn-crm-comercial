@@ -13,6 +13,18 @@ AGT002_RADAR_VISIBILITY=false
 
 Con `AGT002_RADAR_GATE=false`, el runner responde `disabled` sin consultar base de datos, modificar cola ni invocar proveedor. `AGT002_RADAR_VISIBILITY=true` exige que `AGT002_RADAR_GATE=true`; la configuración rechaza la combinación insegura. Ningún script de este directorio fija flags ni ejecuta `systemctl`.
 
+## Timeout del proveedor y lease de la cola
+
+`AGT002_RADAR_PREANALYSIS_TIMEOUT_MS` acota **una** llamada al proveedor. Rango aceptado:
+`1000`..`300000` ms; el valor por defecto y el recomendado en producción es `30000`. Cualquier valor
+fuera de rango, no entero o malformado hace fallar cerrado la configuración del runtime: no se
+recorta en silencio y no se construye cliente del puente.
+
+El techo son 5 min porque el pipeline reclama el job con `leaseSeconds = 600`. Un timeout igual al
+lease no dejaría margen para el aprendizaje, la validación de la salida ni la persistencia: una
+respuesta exitosa del proveedor llegaría con la reserva ya vencida. El techo garantiza ≥300 s de
+holgura. Ni el lease ni `TimeoutStartSec` cambian con esta variable.
+
 ## Contrato operacional
 
 - Radar sólo muestra. Convertir a Oportunidad es una acción humana separada.
