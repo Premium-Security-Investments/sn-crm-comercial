@@ -4,11 +4,8 @@ import { readFileSync } from 'node:fs';
 const component = readFileSync(new URL('../src/vigia/VigiaOpportunityCopilot.tsx', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
-// AGT-003 exact copy: eyebrow renders "VIG-IA COMERCIAL" (base name, uppercased by
-// the shared .eyebrow CSS rule — no extra " · copiloto comercial" suffix), title
-// "Próximo seguimiento", button "Preparar seguimiento" (or "Actualizar propuesta" once
-// hay resultado — ver `agt003-first-analysis-refinement-static`), and help copy describing
-// the analysis/follow-up proposal.
+// AGT-003 exact copy: eyebrow renders "Vig-IA Comercial" without an extra suffix, title
+// "Próximo seguimiento", and the generation CTA names the current-context boundary.
 assert.ok(
   component.includes('<span className="eyebrow">{VIGIA_VISIBLE_NAMES.commercial}</span>'),
   'eyebrow debe mostrar únicamente el nombre visible de Vig-IA Comercial',
@@ -16,8 +13,8 @@ assert.ok(
 assert.equal(component.includes('copiloto comercial</span>'), false, 'eyebrow no debe incluir el sufijo "· copiloto comercial"');
 assert.ok(component.includes('>Próximo seguimiento<'), 'título debe ser exactamente "Próximo seguimiento"');
 assert.ok(
-  component.includes(">{ready ? 'Actualizar propuesta' : 'Preparar seguimiento'}<"),
-  'botón debe decir exactamente "Preparar seguimiento" en el estado inicial y "Actualizar propuesta" con resultado',
+  component.includes(">{ready ? 'Actualizar propuesta con el contexto actual' : 'Generar propuesta con el contexto actual'}<"),
+  'botón debe distinguir generar/actualizar y declarar que usa el contexto actual',
 );
 assert.ok(
   component.includes('>Analiza el contexto y propone un siguiente paso de seguimiento</p>'),

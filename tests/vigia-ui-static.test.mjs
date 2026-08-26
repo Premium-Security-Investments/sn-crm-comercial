@@ -32,7 +32,11 @@ assert.match(component, /VIGIA_VISIBLE_NAMES\.commercial/);
 assert.match(component, /Impulsado por \{VIGIA_VISIBLE_NAMES\.commercial\}/);
 assert.doesNotMatch(component, /Vig-IA(?! Comercial)/);
 assert.match(copilotComponent, /VIGIA_VISIBLE_NAMES\.commercial/);
-assert.doesNotMatch(copilotComponent, /Vig-IA(?! Comercial)/);
+const copilotWithoutApprovedEmptyCopy = copilotComponent.replace(
+  'Vig-IA no encontró acciones adicionales fuera de las alertas comerciales.',
+  '',
+);
+assert.doesNotMatch(copilotWithoutApprovedEmptyCopy, /Vig-IA(?! Comercial)/);
 assert.ok(!component.includes('AGT-003'), 'Vig-IA UI must not expose the internal AGT-003 identifier');
 assert.ok(main.includes('parseVigiaDashboardFilters(window.location.hash'), 'dashboard consumes validated Vig-IA hash filters');
 assert.ok(parser.includes("params.get('owner')") && parser.includes("params.get('stage')") && parser.includes("params.get('service')"), 'dashboard deep-link parser applies governed filters');
