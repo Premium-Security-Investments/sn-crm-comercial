@@ -92,9 +92,13 @@ function pinnedHttpsRequest(target, { method = 'GET', body = null, headers = {},
       response.on('end', () => resolve({ status: response.statusCode || 0, headers: response.headers, body: Buffer.concat(chunks), remoteAddress }));
     });
     request.setTimeout(timeoutMs, () => request.destroy(new Error('Tiempo de espera agotado al consultar la fuente oficial.')));
-    request.on('socket', socket => socket.once('secureConnect', () => {
-      if (!isPublicNetworkAddress(socket.remoteAddress)) request.destroy(new Error('La conexión oficial terminó en una dirección no pública.'));
-    }));
+    request.on('socket', socket => {
+      const validateRemoteAddress = () => {
+        if (!isPublicNetworkAddress(socket.remoteAddress)) request.destroy(new Error('La conexión oficial terminó en una dirección no pública.'));
+      };
+      if (socket.connecting === false) validateRemoteAddress();
+      else socket.once('secureConnect', validateRemoteAddress);
+    });
     request.on('error', reject);
     if (outboundBody !== null && outboundBody !== undefined) request.write(outboundBody);
     request.end();
