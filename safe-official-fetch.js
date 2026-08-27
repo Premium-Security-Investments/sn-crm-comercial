@@ -62,6 +62,13 @@ export function responseRemoteAddress(response, target) {
 
 function pinnedHttpsRequest(target, { method = 'GET', body = null, headers = {}, maxBytes = 50 * 1024 * 1024, timeoutMs = 20_000 } = {}) {
   return new Promise((resolve, reject) => {
+    const outboundBody = body !== null && body !== undefined
+      ? (Buffer.isBuffer(body) ? body : Buffer.from(String(body)))
+      : body;
+    if (outboundBody !== null && outboundBody !== undefined
+      && !Object.keys(headers).some(key => key.toLowerCase() === 'content-length' || key.toLowerCase() === 'transfer-encoding')) {
+      headers = { ...headers, 'Content-Length': String(outboundBody.byteLength) };
+    }
     const request = https.request(target.url, {
       method, headers, servername: bareHostname(target.url.hostname),
       lookup: (_hostname, lookupOptions, callback) => lookupOptions?.all
@@ -89,7 +96,7 @@ function pinnedHttpsRequest(target, { method = 'GET', body = null, headers = {},
       if (!isPublicNetworkAddress(socket.remoteAddress)) request.destroy(new Error('La conexión oficial terminó en una dirección no pública.'));
     }));
     request.on('error', reject);
-    if (body !== null && body !== undefined) request.write(Buffer.isBuffer(body) ? body : String(body));
+    if (outboundBody !== null && outboundBody !== undefined) request.write(outboundBody);
     request.end();
   });
 }
