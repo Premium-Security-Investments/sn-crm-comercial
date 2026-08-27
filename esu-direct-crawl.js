@@ -263,7 +263,10 @@ export async function fetchEsuProcessDetail(process) {
     return null;
   }
 }
-export async function fetchEsuProcesses({ fetchIndexPages = fetchEsuIndexPages, searchProcesses = searchEsuProcesses } = {}) {
+function sortEsuTenders(list) {
+  return list.sort((a, b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
+}
+export async function fetchEsuProcesses({ includeHistorical = false, fetchIndexPages = fetchEsuIndexPages, searchProcesses = searchEsuProcesses } = {}) {
   const seen = new Map();
   let successfulTraversals = 0;
   let lastTraversalError = null;
@@ -289,7 +292,13 @@ export async function fetchEsuProcesses({ fetchIndexPages = fetchEsuIndexPages, 
     const reason = lastTraversalError?.message || 'todos los recorridos de índice/búsqueda fallaron';
     throw new Error(`ESU Contratación directo no disponible: ${reason}`);
   }
-  const preliminary = Array.from(seen.values()).map(row => normalizeEsuProcess(row)).filter(t => t.days === null || t.days >= 0).filter(isEsuTenderTrackable).sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
+  const normalized = Array.from(seen.values()).map(row => normalizeEsuProcess(row));
+  // Reconciliation (includeHistorical) needs past/terminal rows too, and must not pay for up to 40
+  // detail-page fetches just to reconcile deadline/status against already-persisted rows: return
+  // the index/search-derived rows as-is, before the current-candidate filters below and before any
+  // detail enrichment. Default candidate-discovery behavior is unchanged.
+  if (includeHistorical) return sortEsuTenders(normalized);
+  const preliminary = sortEsuTenders(normalized.filter(t => t.days === null || t.days >= 0).filter(isEsuTenderTrackable));
   const enriched = [];
   for (const [index, tender] of preliminary.entries()) {
     if (index >= 40) { enriched.push(tender); continue; }
@@ -297,5 +306,5 @@ export async function fetchEsuProcesses({ fetchIndexPages = fetchEsuIndexPages, 
     const detail = await fetchEsuProcessDetail(sourceRow);
     enriched.push(normalizeEsuProcess(sourceRow, detail));
   }
-  return enriched.filter(t => t.days === null || t.days >= 0).filter(isEsuTenderTrackable).sort((a,b) => b.score - a.score || (a.days ?? 999) - (b.days ?? 999));
+  return sortEsuTenders(enriched.filter(t => t.days === null || t.days >= 0).filter(isEsuTenderTrackable));
 }

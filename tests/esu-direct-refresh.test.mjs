@@ -113,6 +113,42 @@ test('null fallback fields cannot erase authoritative direct ESU deadline or sta
   }
 });
 
+test('upsertTenders returning a fractional, negative, or otherwise non-integer count falls back to processes.length', async () => {
+  const processes = [{ stable_key: 'a' }, { stable_key: 'b' }, { stable_key: 'c' }];
+  const invalidCounts = [1.5, -1, -0.5, -100, NaN, Infinity, -Infinity];
+  for (const bogusCount of invalidCounts) {
+    const checkpoints = [];
+    const refresher = createEsuDirectRefresher({
+      now: () => NOW,
+      readLastCheckpoint: async () => null,
+      fetchDirectProcesses: async () => processes,
+      upsertTenders: async () => bogusCount,
+      recordCheckpoint: async checkpoint => { checkpoints.push(checkpoint); },
+    });
+    const result = await refresher.runOnce();
+    assert.equal(result.count_upserted, processes.length,
+      `upsertTenders returning ${bogusCount} must fall back to processes.length, not be treated as an actual persisted count`);
+    assert.equal(result.rows, processes.length);
+    assert.equal(checkpoints[0].count_upserted, processes.length);
+  }
+
+  const validCounts = [0, 1, 2, processes.length];
+  for (const realCount of validCounts) {
+    const checkpoints = [];
+    const refresher = createEsuDirectRefresher({
+      now: () => NOW,
+      readLastCheckpoint: async () => null,
+      fetchDirectProcesses: async () => processes,
+      upsertTenders: async () => realCount,
+      recordCheckpoint: async checkpoint => { checkpoints.push(checkpoint); },
+    });
+    const result = await refresher.runOnce();
+    assert.equal(result.count_upserted, realCount,
+      `upsertTenders returning the nonnegative integer ${realCount} must be trusted as the actual persisted count`);
+    assert.equal(checkpoints[0].count_upserted, realCount);
+  }
+});
+
 test('pipeline refreshes ESU before candidate fetch and continues source-locally on unavailable', async () => {
   const calls = [];
   const pipeline = createAgt002RadarPipeline({
