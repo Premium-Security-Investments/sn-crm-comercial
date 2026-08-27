@@ -5,6 +5,7 @@ const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8'
 const src = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const documents = readFileSync(new URL('../src/tenders/components/TenderDocumentSection.tsx', import.meta.url), 'utf8');
 const conversionViews = readFileSync(new URL('../src/tenders/TenderRadarView.tsx', import.meta.url), 'utf8') + readFileSync(new URL('../src/tenders/TenderTrackingView.tsx', import.meta.url), 'utf8');
+const sharedCrawler = readFileSync(new URL('../esu-direct-crawl.js', import.meta.url), 'utf8');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -18,7 +19,7 @@ for (const file of [server, api]) {
   assert(!/downloadSecopDocument[\s\S]{0,350}fetch\(doc\.url_descarga_documento\.url/.test(file), 'SECOP no debe usar fetch directo sobre URL entregada por datos.gov.');
   assert(file.includes("source: 'ESU Contratación'"), 'La interacción documental debe identificar fuente ESU Contratación.');
   assert(file.includes("canonicalTender.source === 'ESU Contratación'"), 'La conversión a oportunidad debe disparar importación automática para ESU usando la fuente canónica persistida.');
-  assert(file.includes('community.secop.gov.co') && file.includes('esucontratacion.com'), 'El importador oficial debe soportar SECOP II y ESU, no solo SECOP.');
+  assert((file + sharedCrawler).includes('community.secop.gov.co') && (file + sharedCrawler).includes('esucontratacion.com'), 'El importador oficial debe soportar SECOP II y ESU, no solo SECOP.');
   assert(!file.includes('La importación automática solo está disponible para enlaces SECOP II'), 'El mensaje no debe bloquear ESU como carga manual.');
   assert(file.includes("errorPrefix: 'ESU'"), 'Los errores por documento ESU deben quedar identificados sin tumbar todo el lote.');
   assert(file.includes('buildTenderDocumentAnalysis(opportunity, currentDocs, companyProfile)'), 'ESU debe reutilizar el análisis documental persistente existente con ficha/RUP.');
