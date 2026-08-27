@@ -8,7 +8,7 @@ if(!url||!key){console.error(JSON.stringify({status:'unavailable',code:'AGT002_R
  try{
   const database=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
   const now=()=>new Date().toISOString();
-  const refresher=createSupabaseEsuDirectRefresher({database,now,fetchDirectProcesses:fetchEsuProcesses});
+  const refresher=createSupabaseEsuDirectRefresher({database,now,fetchDirectProcesses:()=>fetchEsuProcesses({includeHistorical:true})});
   const pipeline=createAgt002RadarPipeline({database,environment:process.env,now,refreshEsuDirect:()=>refresher.runOnce()});
   const result=await pipeline.runOnce();console.log(JSON.stringify(result));
  }
