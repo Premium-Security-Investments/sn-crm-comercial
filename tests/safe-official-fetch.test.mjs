@@ -140,4 +140,61 @@ async function capturePinnedRequest(requestOptions) {
 
 console.log('pinnedHttpsRequest Content-Length regression coverage passed');
 
+// Regression for MaxListenersExceededWarning: Node's keep-alive HTTPS agent
+// reuses one TLSSocket across requests. On the first assignment the socket is
+// still connecting and emits 'secureConnect'; on later assignments
+// request.reusedSocket is true, the socket is already connected, and
+// 'secureConnect' never fires again. pinnedHttpsRequest's
+// `request.on('socket', socket => socket.once('secureConnect', ...))` adds a
+// listener on every call, but only the first is ever consumed, so reused
+// sockets accumulate listeners forever.
+function mockKeepAliveHttpsRequest(sharedSocket) {
+  const calls = [];
+  return {
+    calls,
+    impl(url, opts, callback) {
+      const request = new EventEmitter();
+      request.setTimeout = () => request;
+      request.destroy = () => {};
+      request.write = () => true;
+      request.end = () => {
+        const isFirstUse = calls.length === 0;
+        calls.push({ url, options: opts });
+        sharedSocket.connecting = isFirstUse;
+        request.reusedSocket = !isFirstUse;
+        request.emit('socket', sharedSocket);
+        if (isFirstUse) sharedSocket.emit('secureConnect');
+        const response = new EventEmitter();
+        response.statusCode = 200;
+        response.headers = {};
+        response.socket = sharedSocket;
+        callback(response);
+        response.emit('data', Buffer.from('ok'));
+        response.emit('end');
+      };
+      return request;
+    },
+  };
+}
+
+{
+  const sharedSocket = new EventEmitter();
+  sharedSocket.remoteAddress = '1.1.1.1';
+  const mock = mockKeepAliveHttpsRequest(sharedSocket);
+  const originalRequest = https.request;
+  https.request = mock.impl;
+  try {
+    for (let i = 0; i < 12; i += 1) {
+      await safeOfficialFetch('https://esucontratacion.com/procesos/view/1', esu, { lookup: publicLookup });
+    }
+  } finally {
+    https.request = originalRequest;
+  }
+  assert.equal(mock.calls.length, 12, 'expected 12 sequential pinned HTTPS requests over the shared keep-alive socket');
+  assert.equal(sharedSocket.listenerCount('secureConnect'), 0,
+    'reused keep-alive sockets must not accumulate secureConnect listeners across sequential pinnedHttpsRequest calls');
+}
+
+console.log('pinnedHttpsRequest keep-alive socket listener regression coverage passed');
+
 console.log('safe official fetch SSRF policy passed');
