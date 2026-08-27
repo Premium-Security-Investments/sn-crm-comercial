@@ -184,7 +184,17 @@ export function parseEsuProcessDetail(html, url) {
 }
 function normalizeEsuProcess(process, detail = null) {
   const cells = process.cells || [];
-  const [_rowNumber, numero, objeto, tipoProceso, fechaApertura, fechaCierre, estado, funcionario] = cells;
+  const numero = cells[1];
+  const objeto = cells[2];
+  // 10-cell POST /procesos/buscar layout: [row, numero, objeto, fechaApertura, fechaCierre,
+  // estado, UNSPSC codes, categories, blank, actions] — dates/status sit two cells earlier than
+  // the 9-cell index layout and there's no funcionario column, only UNSPSC codes/categories.
+  const isSearchLayout = cells.length >= 10;
+  const tipoProceso = isSearchLayout ? (cells[7] || '') : cells[3];
+  const fechaApertura = isSearchLayout ? cells[3] : cells[4];
+  const fechaCierre = isSearchLayout ? cells[4] : cells[5];
+  const estado = isSearchLayout ? cells[5] : cells[6];
+  const funcionario = isSearchLayout ? '' : cells[7];
   const row = {
     nombre_entidad: 'Empresa para la Seguridad y Soluciones Urbanas - ESU',
     departamento_entidad: 'Antioquia',
