@@ -21,6 +21,19 @@ modelar — la próxima vez que el worker se reactive, sin necesidad de tocar la
 contrato existente. Ver §3.3 y §4 para el delta completo; §2 se actualiza para reflejar que
 `agt002-radar-worker.js` ya no queda fuera de alcance.
 
+**Segunda ampliación (mismo día, bloqueo Critical de revisión independiente).** §3 y §3.3 sólo
+resuelven el churn **antes de encolar** y **al reclamar un job**: ninguno de los dos toca lo que ya
+está persistido. Pero el positivo canónico persiste con su `source_row_hash` de cuando se generó, y
+dos lectores comparaban ese hash contra la fila de **hoy** con igualdad estricta, ajenos al filtro:
+`agt002-radar-visibility.js:41` (`filterRadarRowsByCanonicalPreanalysis`, el filtro de lectura del
+Radar en `server/index.js`/`api/[...path].js`) y
+`scripts/agt002-radar-gate-historical-audit.mjs:106` (`planAgt002RadarGateAudit`, el script de
+auditoría de solo lectura). El resultado: una oportunidad con un positivo canónico vigente
+desaparecía del Radar el día después de que el recolector reescribiera `raw.days`/`raw.window`, y el
+mismo caso se reportaba como `stale_hash`/`uncovered_visible_tenders` en la auditoría — contradiciendo
+el propio hotfix, que documenta esta deriva como no-reanalizable. Ver §3.4 y §4.3/§4.4 para el delta
+completo; §2 se actualiza para reflejar que estos dos archivos ahora también consumen el clasificador.
+
 ## 1. Causa raíz (dada por demostrada en producción)
 
 - El gate calcula `source_row_hash` sobre una proyección que incluye **`raw` entero**
@@ -56,6 +69,11 @@ contrato existente. Ver §3.3 y §4 para el delta completo; §2 se actualiza par
   gate -> ledger -> [gate/ledger ya resolvían `stale_input` aquí] -> learning -> agt -> persist`,
   `AGT002_RADAR_WORKER_STAGES` no cambia y no se añade ninguna llamada a `claimJob`/`completeJob`/
   `failJob` nueva ni distinta de las que ya existían.
+- **No** se duplica el algoritmo de `isAgt002RadarDerivedDayOnlyChurn`/`hasAgt002RadarDerivedDayShape`
+  en ningún sitio nuevo. En la segunda ampliación de este documento (§3.4), tanto
+  `agt002-radar-visibility.js` como `scripts/agt002-radar-gate-historical-audit.mjs` **importan** el
+  mismo clasificador que ya usan el scan (§3) y el worker (§3.3); ninguno de los dos reimplementa la
+  comparación de hash ni el cálculo de `window_label`.
 - **No** hay autoridad de conversión ni CRM: no se tocan `internal_status`,
   `converted_opportunity_id`, `responsible`, `followup`, `notes`, `decision`, ni ninguna ruta de
   conversión. `agt002-radar-derived-day-churn.js` queda bajo `DECISION_PATH_FILES` de
@@ -232,6 +250,36 @@ para que el drenaje ocurra en producción es un acto operativo posterior, separa
   comportamiento ya cubierto por la suite existente (`tests/agt002-radar-worker.test.mjs`, casos
   9c/9d) y no alterado por este delta.
 
+### 4.3 `agt002-radar-visibility.js` (segunda ampliación, §3.4)
+
+- `filterRadarRowsByCanonicalPreanalysis` no gana ni pierde parámetros: sigue recibiendo exactamente
+  `canonicalByTenderId`, `alwaysVisibleTenderIds`, `computeSourceRowHash`, `policyVersion`,
+  `contextVersion`, `nowIso`, `evaluateGate`, `enabled`. No hay inyección nueva de
+  `isAgt002RadarDerivedDayOnlyChurn`: se importa directo de `agt002-radar-derived-day-churn.js`, igual
+  que el scan y el worker importan `hasAgt002RadarDerivedDayShape`/`isAgt002RadarDerivedDayOnlyChurn`
+  sin inyectarlos.
+- El borde `AGT002_RADAR_VISIBILITY_LEDGER_UNAVAILABLE` (503) y su condición de disparo **no
+  cambian**: un `evaluateGate`/`nowIso` roto o ausente sigue lanzando exactamente igual; este delta
+  vive por completo antes de esa etapa, en la condición que decide si el canónico es hash-compatible.
+- El shape de la fila devuelta **no cambia**: sigue siendo la fila original de `rows`, sin propiedades
+  añadidas. Ningún caller (`server/index.js`, `api/[...path].js`) cambia su firma de llamada.
+
+### 4.4 `scripts/agt002-radar-gate-historical-audit.mjs` (segunda ampliación, §3.4)
+
+- `planAgt002RadarGateAudit` no gana ni pierde parámetros de entrada (`tenders`, `nowIso`,
+  `canonicalPreanalysisByTenderId`, `policyVersion`, `contextVersion`) ni claves nuevas en el reporte:
+  `canonical_breakdown` conserva exactamente sus ocho claves (`missing`, `stale_hash`, `stale_policy`,
+  `stale_context`, `fresh_mostrar_en_radar`, `no_mostrar_en_radar`, `no_concluyente`,
+  `invalid_verdict`); no se añade una novena categoría para el caso derivado-solo porque, una vez
+  demostrado hash-compatible, es indistinguible de un canónico exacto para el resto del pipeline de
+  categorización.
+- `ready_for_visibility_flag` y `uncovered_visible_tenders` siguen siendo una función pura de
+  `canonical_breakdown`: `uncovered` es exactamente lo que no cae en
+  `{fresh_mostrar_en_radar, no_mostrar_en_radar, no_concluyente}`, sin cambios en esa regla.
+- Sigue siendo un script de sólo lectura: no gana ninguna llamada de escritura, no acepta `--apply`, y
+  las invariantes ya cubiertas por `tests/agt002-radar-no-conversion-authority.test.mjs`
+  (`READ_ONLY_REPORT_FILES`) no cambian.
+
 ## 5. Riesgos residuales
 
 - **Falso negativo de reanálisis.** Si la fuente cambiara algo material **y** ese cambio produjera
@@ -255,9 +303,56 @@ para que el drenaje ocurra en producción es un acto operativo posterior, separa
   como corresponde. Este hotfix no reordena la cola ni necesita hacerlo: cada job se decide de forma
   independiente en el momento en que se reclama.
 
+### 3.4 Lectura del Radar y auditoría histórica: mismo clasificador, sin cambiar la identidad de hash
+
+§3 y §3.3 evitan que la deriva de `raw.days`/`raw.window` genere trabajo **nuevo** (encolado, modelado).
+Pero un positivo canónico ya escrito congela su `source_row_hash` del día en que se generó, y dos
+lectores de sólo lectura comparaban ese hash contra la fila de **hoy** con igualdad estricta, sin
+conocer el filtro de §3:
+
+- `filterRadarRowsByCanonicalPreanalysis` (`agt002-radar-visibility.js:41`), el filtro que decide qué
+  licitaciones se muestran en el Radar (`server/index.js`, `api/[...path].js`) cuando
+  `AGT002_RADAR_VISIBILITY=true`.
+- `planAgt002RadarGateAudit` (`scripts/agt002-radar-gate-historical-audit.mjs:106`), el script de
+  auditoría de sólo lectura que reporta `canonical_breakdown`/`uncovered_visible_tenders`.
+
+Sin el filtro, un positivo canónico vigente —gate actual sobreviviente, `policy_version`/
+`context_version` al día, `visibility_verdict: 'mostrar_en_radar'`— desaparecía del Radar el primer
+día que el recolector reescribía `raw.days`/`raw.window` sin reanalizarse (porque §3 ya lo impidió), y
+el mismo caso se contaba como `stale_hash`/`uncovered_visible_tenders` en la auditoría: dos lecturas
+contradiciendo directamente lo que el propio hotfix documenta como no-reanalizable.
+
+**Corrección, en ambos lectores por igual:** se reutiliza `isAgt002RadarDerivedDayOnlyChurn`
+(`agt002-radar-derived-day-churn.js`), la misma función pura que ya usan el scan y el worker — sin
+copiar su algoritmo. Un candidato con `visibility_verdict`/`policy_version`/`context_version`
+correctos (ese chequeo **no** cambia y sigue siendo el primer filtro) se considera hash-compatible si:
+
+1. `source_row_hash` coincide exactamente con el de la fila de hoy (el camino que ya existía), **o**
+2. `isAgt002RadarDerivedDayOnlyChurn(row, canonical, { policyVersion, contextVersion })` es `true` — el
+   canónico se reproduce cambiando únicamente `raw.days`/`raw.window` a una variante histórica válida.
+
+Cualquier otra diferencia — material, `policy_version`/`context_version` distintos (el helper ya
+exige que coincidan con los vigentes; una política/contexto atrasados nunca se "cuelan" como
+hash-compatibles por esta vía), forma de `raw` inválida, canónico ausente o envenenado por duplicado,
+offset fuera del techo declarado (§3.1) — sigue cerrando el camino exactamente igual que antes de esta
+ampliación: oculto en `agt002-radar-visibility.js`, `stale_hash`/`uncovered` en la auditoría.
+
+En `agt002-radar-visibility.js` esto **no** cambia la reevaluación del gate en lectura (§ el propio
+archivo, "un positivo canónico sigue siendo una foto de cuando se produjo"): vencido o eliminado sigue
+oculto, y `alwaysVisibleTenderIds` (las convertidas) conserva exactamente su precedencia — se resuelve
+antes de mirar el canónico y nunca se ve afectado por este cambio. En
+`scripts/agt002-radar-gate-historical-audit.mjs` esto tampoco cambia la precedencia de categorías: si
+el hash coincide exactamente pero `policy_version`/`context_version` quedaron atrás, la categoría
+sigue siendo `stale_policy`/`stale_context` como hoy — el helper sólo amplía qué cuenta como "el hash
+coincide", nunca reordena las comprobaciones que vienen después.
+
 ## 6. Reversión
 
-Revertir el commit. No hay migración, ni backfill, ni estado nuevo que deshacer: el filtro es puro y
-no escribe nada. Un `git revert` devuelve exactamente el comportamiento de encolado y de drenaje
-anterior (`agt002-radar-scan.js` vuelve a encolar todo el churn; `agt002-radar-worker.js` vuelve a
-modelar los jobs legacy que coincidan exactamente con la fila vigente).
+Revertir el commit (o los dos commits, si la segunda ampliación de §3.4 quedó en un commit separado).
+No hay migración, ni backfill, ni estado nuevo que deshacer: el filtro es puro y no escribe nada. Un
+`git revert` devuelve exactamente el comportamiento de encolado y de drenaje anterior
+(`agt002-radar-scan.js` vuelve a encolar todo el churn; `agt002-radar-worker.js` vuelve a modelar los
+jobs legacy que coincidan exactamente con la fila vigente) y, para la segunda ampliación,
+`agt002-radar-visibility.js` vuelve a exigir igualdad exacta de `source_row_hash` (una fila derivada-
+solo vuelve a ocultarse el día siguiente al rollover) y
+`scripts/agt002-radar-gate-historical-audit.mjs` vuelve a clasificar ese mismo caso como `stale_hash`.

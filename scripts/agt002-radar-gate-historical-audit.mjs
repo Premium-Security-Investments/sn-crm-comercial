@@ -6,6 +6,7 @@ import {
   AGT002_RADAR_GATE_POLICY_VERSION,
   evaluateAgt002RadarGate,
 } from '../agt002-radar-gate.js';
+import { isAgt002RadarDerivedDayOnlyChurn } from '../agt002-radar-derived-day-churn.js';
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
@@ -102,8 +103,19 @@ export function planAgt002RadarGateAudit({
 
     const canonical = canonicalPreanalysisByTenderId.get(tender.id);
     let category;
+    // Un rollover diario del recolector externo reescribe SÓLO raw.days/raw.window y por eso cambia
+    // el hash literal sin cambiar nada material (agt002-radar-derived-day-churn.js). Se reutiliza el
+    // mismo clasificador puro que ya usan el scan y el worker antes de encolar: `stale_hash` sólo
+    // aplica si el hash exacto no coincide Y el helper tampoco demuestra equivalencia derivada-solo
+    // con la política/contexto vigentes. El helper ya exige que `canonical.policy_version`/
+    // `context_version` coincidan con los pasados aquí, así que una política/contexto atrasados
+    // nunca se "promueven" a fresco por esta vía: siguen cayendo en `stale_hash` igual que antes.
+    const hashMatches = Boolean(canonical) && (
+      canonical.source_row_hash === evaluation.source_row_hash
+      || isAgt002RadarDerivedDayOnlyChurn(tender, canonical, { policyVersion, contextVersion })
+    );
     if (!canonical) category = 'missing';
-    else if (canonical.source_row_hash !== evaluation.source_row_hash) category = 'stale_hash';
+    else if (!hashMatches) category = 'stale_hash';
     else if (canonical.policy_version !== policyVersion) category = 'stale_policy';
     else if (canonical.context_version !== contextVersion) category = 'stale_context';
     else if (canonical.visibility_verdict === 'mostrar_en_radar') category = 'fresh_mostrar_en_radar';
