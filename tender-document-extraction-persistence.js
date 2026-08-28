@@ -143,6 +143,38 @@ export function mergeCanonicalExtractionIntoDocument(document, extractionRow, le
   };
 }
 
+// Motivo cerrado de último recurso: una extracción persistida como 'gap' sin gap_reason
+// legible sigue siendo un hueco, nunca un documento utilizable. Nunca se compone con
+// datos del proceso.
+const UNSPECIFIED_EXTRACTION_GAP_REASON = 'unspecified_extraction_gap';
+
+/**
+ * Deriva los huecos documentales tipados de documentos ya fusionados con su extracción
+ * canónica (mergeCanonicalExtractionIntoDocument).
+ *
+ * Un documento vigente cuya extracción canónica quedó en 'gap' —el caso real: un ZIP
+ * oficial con entradas ilegibles— está descargado, versionado y con su import item en
+ * 'imported', pero no aporta texto analizable. Es un hueco del expediente y tiene que
+ * viajar dentro del snapshot inmutable, no solo en un evento.
+ *
+ * Devuelve la forma cerrada que canoniza tender-document-gap-canonical.js: identidad,
+ * tipo, nombre y motivo. Nunca el texto, la ruta de almacenamiento ni la URL firmada del
+ * documento.
+ */
+export function deriveTenderDocumentExtractionGaps(documents) {
+  return (documents || [])
+    // Solo el expediente vigente: una versión superada ya no es un hueco de hoy.
+    .filter(document => document?.current !== false && document?.extraction_status === 'gap')
+    .map(document => ({
+      // La identidad de origen es con la que se enumera en todas partes; el id de la
+      // versión documental solo entra si la fila no tiene identidad de origen.
+      document_id: nonEmptyString(document.source_document_id) || nonEmptyString(document.id),
+      document_type: nonEmptyString(document.document_type),
+      name: nonEmptyString(document.name),
+      reason: nonEmptyString(document.extraction_gap_reason) || UNSPECIFIED_EXTRACTION_GAP_REASON,
+    }));
+}
+
 /**
  * Safe, browser-facing projection of a document record: strips the full extracted
  * text and any raw metadata/error, keeping only bounded/typed extraction summary

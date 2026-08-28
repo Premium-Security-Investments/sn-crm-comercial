@@ -1,8 +1,23 @@
 import { classifyPipelineError, computeBackoffMs, MAX_ATTEMPTS } from './tender-pipeline-backoff.js';
 import { createAgt002AnalysisObservability, toBoundedAgt002Error } from './agt002-analysis-observability.js';
+import { isCriticalTenderDocument } from './tender-critical-documents.js';
+import { TENDER_OFFICIAL_DOCUMENT_OMITTED_ERROR_CODE } from './tender-official-document-coverage.js';
 
 function safeMessage(error) {
   return typeof error?.message === 'string' ? error.message : 'error desconocido';
+}
+
+// discoverDocuments() returns the structured `{ items, coverage }` shape so the job
+// can distinguish "the process published 7 documents and all 7 are here" from "it
+// published 43 and 40 are here". The legacy flat-array shape still advances the job,
+// but it declares NO coverage: a null coverage is the only honest answer when the
+// discovery phase never measured what it left behind.
+function normalizeDiscoveredDocuments(discovered) {
+  if (Array.isArray(discovered)) return { items: discovered, coverage: null };
+  return {
+    items: Array.isArray(discovered?.items) ? discovered.items : [],
+    coverage: discovered?.coverage ?? null,
+  };
 }
 
 // A lost/expired lease surfaces as a thrown error from psi_update_tender_processing_job
@@ -111,17 +126,40 @@ export function createTenderProcessingWorker(deps) {
     const pipelineStatus = claim.status;
 
     if (pipelineStatus === 'queued' || pipelineStatus === 'discovering_documents') {
-      const discovered = await discoverDocuments({ jobId, tenderId, opportunityId });
+      const { items, coverage } = normalizeDiscoveredDocuments(await discoverDocuments({ jobId, tenderId, opportunityId }));
+
+      // An official document the selection left out cannot live only in an event:
+      // it is recorded as an enumerated terminal failure BEFORE the job advances,
+      // so the durable machinery that already exists carries it (claim marks
+      // any_critical_terminal_failure, and loadAgt002TenderRequirementDocumentGaps
+      // turns it into an inventory gap -> decision_ready fails closed). The RPC
+      // dedupes by job_id + source_document_id, so retrying the phase re-records
+      // the same identities instead of duplicating them.
+      const omittedDocuments = Array.isArray(coverage?.omitted_documents) ? coverage.omitted_documents : [];
+      const officialSource = items.find(item => item?.source)?.source ?? null;
+      for (const omitted of omittedDocuments) {
+        await recordImportItem({
+          jobId, source: officialSource, sourceDocumentId: omitted.document_id,
+          sourceUrl: null, name: omitted.name, status: 'failed_terminal',
+          // Same objective taxonomy as an imported document: what makes a missing
+          // document critical cannot depend on how it went missing.
+          critical: isCriticalTenderDocument(omitted.name),
+          lastErrorCode: TENDER_OFFICIAL_DOCUMENT_OMITTED_ERROR_CODE,
+          lastErrorMessage: `Documento oficial no importado: ${omitted.reason}`,
+        });
+      }
+
       await updateJobObserved({
         status: 'importing_documents',
         current_step: 'documents',
-        documents_discovered: discovered.length,
+        documents_discovered: items.length,
       });
       await appendEvent({
         tenderId, eventType: 'document_discovery_started', actorKind: 'system',
-        sourceRefType: 'job', sourceRefId: jobId, metadata: { discovered: discovered.length },
+        sourceRefType: 'job', sourceRefId: jobId,
+        metadata: { discovered: items.length, official_document_coverage: coverage },
       });
-      return finishStage('discover_documents', 'discovered', { status: 'discovered', job_id: jobId, discovered: discovered.length });
+      return finishStage('discover_documents', 'discovered', { status: 'discovered', job_id: jobId, discovered: items.length });
     }
 
     if (pipelineStatus === 'importing_documents' || pipelineStatus === 'retry_wait') {

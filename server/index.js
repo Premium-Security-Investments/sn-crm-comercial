@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { extractTenderDocumentText, resolveLegacyExtractedText } from '../tender-document-text-extraction.js';
-import { buildTenderDocumentExtractionRpcParams, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../tender-document-extraction-persistence.js';
+import { buildTenderDocumentExtractionRpcParams, deriveTenderDocumentExtractionGaps, mergeCanonicalExtractionIntoDocument, publicTenderDocumentProjection, selectCanonicalExtractionsByDocumentVersion } from '../tender-document-extraction-persistence.js';
 import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderOpportunityExit, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 import { isTenderDurablePipelineEnabled, isTenderPublicUiEnabled, isTenderAutoAnalysisEnabled } from '../tender-durable-flags.js';
 import { createTenderProcessingWorker } from '../tender-processing-worker.js';
@@ -44,6 +44,7 @@ import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } fro
 import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
 import { canonicalizeTenderDocuments } from '../tender-document-canonicalizer.js';
 import { isCriticalTenderDocument } from '../tender-critical-documents.js';
+import { selectTenderOfficialDocuments, tenderOfficialCoverageGaps } from '../tender-official-document-coverage.js';
 import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
 import { AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
 import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, appendAgt002AnalysisAttempt, claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, getLatestAgt002AnalysisAttempt, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim } from '../agt002-preview-persistence.js';
@@ -2916,11 +2917,6 @@ async function downloadSecopDocument(doc, referer) {
   const arrayBuffer = await response.arrayBuffer();
   return Buffer.from(arrayBuffer);
 }
-function selectPriorityTenderDocuments(docs, nameGetter = d => d?.nombre_archivo || d?.name || '') {
-  const priority = ['pliego','estudio','previo','especificacion','especificación','tecnico','técnico','anexo','formato','indicador','financier','experiencia','matriz','riesgo','convocatoria','minuta'];
-  const selected = (docs || []).filter(d => priority.some(term => String(nameGetter(d) || '').toLowerCase().includes(term))).slice(0, 40);
-  return selected.length ? selected : (docs || []).slice(0, 40);
-}
 async function listEsuDocumentsFromProcessUrl(sourceUrl) {
   const processUrl = String(sourceUrl || '');
   if (!/^https:\/\/esucontratacion\.com\/procesos\/view\/\d+/i.test(processUrl)) throw new Error('La oportunidad no tiene enlace ESU /procesos/view/<id> para importar documentos automáticamente.');
@@ -2982,13 +2978,22 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
   let sourceLabel = '';
   let sourceContext = {};
   let toDownload = [];
+  // Cobertura documental oficial del proceso: todo lo publicado entra (no hay
+  // catálogo de nombres) y lo que el tope deje fuera queda enumerado con
+  // identidad y motivo, nunca con la URL firmada de descarga.
+  let officialCoverage = null;
   if (/community\.secop\.gov\.co/i.test(officialUrl)) {
     const process = await resolveSecopProcessByExactUrl(officialUrl);
     const docs = await listSecopDocumentsByPortfolio(process.id_del_portafolio);
     if (!docs.length) throw new Error('SECOP no retornó documentos para este portafolio.');
     sourceLabel = 'SECOP II';
     sourceContext = { source: 'SECOP II', process_id: process.id_del_proceso, portfolio_id: process.id_del_portafolio, notice_uid: noticeUidFromSecopUrl(officialUrl) };
-    toDownload = selectPriorityTenderDocuments(docs, d => d.nombre_archivo).map(doc => ({
+    const secopSelection = selectTenderOfficialDocuments(docs, {
+      nameGetter: doc => doc.nombre_archivo,
+      idGetter: doc => String(doc.id_documento || deterministicDocumentFallbackId({ name: doc.nombre_archivo, url: doc.url_descarga_documento.url }).slice(0, 24)),
+    });
+    officialCoverage = secopSelection.coverage;
+    toDownload = secopSelection.selected.map(doc => ({
       name: doc.nombre_archivo,
       mime_type: doc.extensi_n === 'pdf' ? 'application/pdf' : 'application/octet-stream',
       document_type: normalizeDocumentType('', doc.nombre_archivo),
@@ -3002,7 +3007,12 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
     if (!docs.length) throw new Error('ESU no retornó documentos descargables para este proceso.');
     sourceLabel = 'ESU Contratación';
     sourceContext = { source: 'ESU Contratación', process_url: sourceUrl, process_id: parseEsuProcessId(sourceUrl) };
-    toDownload = selectPriorityTenderDocuments(docs, d => d.name).map(doc => ({
+    const esuSelection = selectTenderOfficialDocuments(docs, {
+      nameGetter: doc => doc.name,
+      idGetter: doc => esuDocumentId(doc),
+    });
+    officialCoverage = esuSelection.coverage;
+    toDownload = esuSelection.selected.map(doc => ({
       name: doc.name,
       mime_type: doc.name?.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream',
       document_type: normalizeDocumentType(doc.type, doc.name),
@@ -3048,7 +3058,8 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
     });
   });
   const refreshSummary = summarizeTenderDocumentRefresh(refreshResults);
-  await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_refresh', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, ...refreshSummary, results: refreshResults }) }).select('id').single());
+  const officialCoverageGaps = tenderOfficialCoverageGaps(officialCoverage);
+  await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ kind: 'tender_document_refresh', auto_import: true, ...sourceContext, opportunity: opportunity.company_name, ...refreshSummary, official_document_coverage: officialCoverage, official_document_gaps: officialCoverageGaps, results: refreshResults }) }).select('id').single());
   const beginRefresh = await database.rpc('psi_begin_tender_document_refresh', { p_opportunity_id: opportunityId, p_tender_id: tenderId });
   if (beginRefresh.error) throw beginRefresh.error;
   const refreshToken = String(beginRefresh.data || '').trim();
@@ -3056,9 +3067,14 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
   const refreshedRecords = await getTenderDocumentRecords(database, opportunityId, { includeExtractedText: true });
   const currentDocs = refreshedRecords.documents.filter(document => document.current !== false);
   const companyProfile = await getTenderCompanyProfile(database);
+  // Los DOS huecos reales del expediente refrescado, atados al hecho inmutable y no solo
+  // narrados en la interacción: lo que el tope oficial dejó fuera, y los documentos
+  // vigentes cuya extracción tipada quedó en gap (un ZIP con entradas ilegibles se importa
+  // y se versiona, pero no aporta texto analizable).
+  const snapshotDocumentGaps = [...officialCoverageGaps, ...deriveTenderDocumentExtractionGaps(currentDocs)];
   const registeredSnapshot = await registerTenderDocumentSnapshot(database, {
     opportunity_id: opportunityId, tender_id: tenderId, actor_id: currentProfile.id, refresh_token: refreshToken,
-    documents: currentDocs, company_profile: companyProfile,
+    documents: currentDocs, company_profile: companyProfile, document_gaps: snapshotDocumentGaps,
   });
   const analysisGenerated = await runOptionalTenderAnalysis({
     analyze,
@@ -3067,7 +3083,8 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
       const analysis = buildTenderDocumentAnalysis(opportunity, documents, companyProfile);
       const registered = await registerSiioRulesAnalysis(database, {
         opportunity_id: opportunityId, tender_id: tenderId, actor_id: currentProfile.id,
-        documents, company_profile: companyProfile, result: analysis, snapshot_record: registeredSnapshot,
+        documents, company_profile: companyProfile, result: analysis,
+        document_gaps: snapshotDocumentGaps, snapshot_record: registeredSnapshot,
       });
       await must(database.from('psi_sales_interactions').insert({ opportunity_id: opportunityId, interaction_type: 'documento', created_by: currentProfile.id, occurred_at: new Date().toISOString(), notes: JSON.stringify({ ...analysis, analysis_run_id: registered.run_id, report_title: 'Preanálisis por reglas SIIO', auto_import: true, source: sourceLabel }) }).select('id').single());
     },
@@ -3077,6 +3094,7 @@ async function refreshTenderDocumentsFromOfficialSource(database, opportunityId,
     ...records,
     ...refreshSummary,
     imported_count: refreshSummary.new_count + refreshSummary.updated_count + refreshSummary.unchanged_count,
+    official_document_coverage: officialCoverage,
     analysis_generated: analysisGenerated && Boolean(records.analysis)
   };
 }
@@ -3231,7 +3249,15 @@ function buildTenderProcessingWorkerDeps(database) {
         docs = await listEsuDocumentsFromProcessUrl(sourceUrl);
       }
       const nameGetter = d => (sourceLabel === 'SECOP II' ? d.nombre_archivo : d.name);
-      const selected = selectPriorityTenderDocuments(docs, nameGetter);
+      // La identidad con la que se enumera un omitido es la MISMA con la que se
+      // habría registrado el import item, de modo que el hueco durable nombra al
+      // documento que falta y no a una identidad paralela.
+      const { selected, coverage } = selectTenderOfficialDocuments(docs, {
+        nameGetter,
+        idGetter: d => normalizeTenderSourceDocumentId(sourceLabel === 'SECOP II'
+          ? String(d.id_documento || deterministicDocumentFallbackId({ name: d.nombre_archivo, url: d.url_descarga_documento.url }).slice(0, 24))
+          : esuDocumentId(d)),
+      });
       const items = selected.map(doc => {
         const name = nameGetter(doc);
         const url = sourceLabel === 'SECOP II' ? doc.url_descarga_documento.url : doc.url;
@@ -3240,13 +3266,16 @@ function buildTenderProcessingWorkerDeps(database) {
           : esuDocumentId(doc));
         return { source: sourceLabel, sourceDocumentId, sourceUrl: url, name, critical: isCriticalTenderDocument(name) };
       });
-      // Bounded concurrency: up to 40 items (selectPriorityTenderDocuments)
-      // each need their own recordTenderImportItem RPC round-trip. Sequential
+      // Bounded concurrency: up to 40 items (the official selection cap) each
+      // need their own recordTenderImportItem RPC round-trip. Sequential
       // awaits ran past the caller's request timeout before updateJob could
       // run; unlimited Promise.all would still risk saturating the DB pool.
       await runInConcurrentChunks(items, TENDER_DISCOVERY_RECORD_CONCURRENCY, item =>
         recordTenderImportItem(database, { jobId, ...item, status: 'pending' }));
-      return items;
+      // Estructurado a propósito: el worker cuenta los importables y hace durable
+      // cada omitido. Devolver solo la lista plana volvería a perder, en silencio,
+      // la diferencia entre "estaban los 7" y "eran 43 y están 40".
+      return { items, coverage };
     },
 
     importOneDocument: async ({ jobId, opportunityId, tenderId, document }) => {
@@ -3292,7 +3321,12 @@ function buildTenderProcessingWorkerDeps(database) {
       });
       return {
         status: result.status === 'unchanged' ? 'unchanged' : 'imported',
-        hasText: true,
+        // Texto utilizable derivado del estado tipado de extracción, nunca fijo: un ZIP
+        // cuya extracción es 'gap' se importó y se versionó, pero no aporta nada
+        // analizable y no puede empujar el job a ready_for_snapshot. Una versión
+        // 'unchanged' no reextrae (no trae extraction_status) y su texto ya está
+        // verificado, así que sigue contando como utilizable.
+        hasText: result.extraction_status !== 'gap',
         documentVersionId: result.version?.id || currentVersion?.id || null,
       };
     },
@@ -3372,9 +3406,15 @@ function buildTenderProcessingWorkerDeps(database) {
       const records = await getTenderDocumentRecords(database, opportunityId, { includeExtractedText: true });
       const currentDocs = records.documents.filter(document => document.current !== false);
       const companyProfile = await getTenderCompanyProfile(database);
+      // El hueco se ata al manifiesto inmutable ANTES de que exista el snapshot, no
+      // después: requestAgt002 resuelve sus huecos leyendo este manifiesto
+      // (loadAgt002TenderRequirementDocumentGaps), así que un gap de extracción publicado
+      // más tarde como evento ya nunca llegaría a Vig-IA.
+      const documentGaps = deriveTenderDocumentExtractionGaps(currentDocs);
       const registered = await registerTenderDocumentSnapshot(database, {
         opportunity_id: opportunityId, tender_id: tenderId, actor_id: actor.requested_by,
         refresh_token: refreshToken, documents: currentDocs, company_profile: companyProfile,
+        document_gaps: documentGaps,
       });
       return { id: registered.id };
     },

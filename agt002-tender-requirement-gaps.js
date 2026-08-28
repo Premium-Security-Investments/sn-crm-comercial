@@ -1,3 +1,5 @@
+import { canonicalizeTenderDocumentGaps } from './tender-document-gap-canonical.js';
+
 function normalizedId(value) {
   const text = typeof value === 'string' ? value.trim() : '';
   return text || null;
@@ -44,37 +46,40 @@ function gapDocumentId(item) {
 }
 
 /**
- * Loads durable document gaps for the processing job that produced a snapshot.
- * An explicit jobId wins on the initial processing route; reanalysis routes resolve
- * the newest job for the immutable snapshot. Historical failures from other snapshots
- * are never mixed into the current inventory.
+ * Reads the gaps written into the snapshot's immutable document_manifest.
+ *
+ * This is the only durable record of what was missing at publication time. A ZIP whose
+ * typed extraction resolved as `status='gap'` is imported (its import item says
+ * 'imported') and yet contributes no analyzable text: the job rows alone can never see
+ * that hole, so reading the manifest is what keeps it alive until AGT-002.
+ *
+ * Fail-closed: an unreadable manifest raises, it never degrades into "no gaps". A
+ * historical manifest published before gaps existed simply has none.
+ */
+async function loadSnapshotManifestDocumentGaps(database, snapshotId) {
+  if (!snapshotId) return [];
+  const snapshotResponse = await database.from('psi_tender_document_snapshots')
+    .select('id,document_manifest')
+    .eq('id', snapshotId)
+    .maybeSingle();
+  if (snapshotResponse.error) throw snapshotResponse.error;
+  return canonicalizeTenderDocumentGaps(snapshotResponse.data?.document_manifest?.document_gaps);
+}
+
+/**
+ * Reads the unresolved import items of a processing job.
  *
  * Every row for the job is read and classified here rather than filtered in SQL: a NULL,
  * empty or future status value must become a visible gap, and an `.eq`/`.in` predicate
  * would drop exactly those rows instead.
  */
-export async function loadAgt002TenderRequirementDocumentGaps(database, { snapshotId, jobId = null } = {}) {
-  let resolvedJobId = normalizedId(jobId);
-  if (!resolvedJobId) {
-    const normalizedSnapshotId = normalizedId(snapshotId);
-    if (!normalizedSnapshotId) return [];
-    const jobResponse = await database.from('psi_tender_processing_jobs')
-      .select('id')
-      .eq('snapshot_id', normalizedSnapshotId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (jobResponse.error) throw jobResponse.error;
-    resolvedJobId = normalizedId(jobResponse.data?.id);
-  }
-  if (!resolvedJobId) return [];
-
+async function loadJobImportItemDocumentGaps(database, jobId) {
   const gapResponse = await database.from('psi_tender_document_import_items')
     .select('id,source_document_id,name,status')
-    .eq('job_id', resolvedJobId);
+    .eq('job_id', jobId);
   if (gapResponse.error) throw gapResponse.error;
 
-  const gaps = (gapResponse.data || [])
+  return (gapResponse.data || [])
     .map(item => {
       const reason = agt002ImportItemGapReason(item?.status);
       if (reason === null) return null;
@@ -86,24 +91,41 @@ export async function loadAgt002TenderRequirementDocumentGaps(database, { snapsh
       };
     })
     .filter(gap => gap != null);
+}
 
-  // Two distinct job-item rows can resolve to the identical (document_id, reason) pair — e.g.
-  // the same source_document_id imported under two different `source` connectors and both
-  // still unresolved with the same status. The inventory builder treats a duplicate
-  // (document_id, reason) pair as corrupt input and refuses to run, so it is collapsed here.
-  // Sorting before dedup makes which physical row "wins" a function of the data, never of
-  // unspecified database row order.
-  const seen = new Set();
-  return gaps
-    .sort((left, right) => (
-      left.document_id.localeCompare(right.document_id)
-      || left.reason.localeCompare(right.reason)
-      || String(left.name).localeCompare(String(right.name))
-    ))
-    .filter(gap => {
-      const key = `${gap.document_id}\0${gap.reason}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+/**
+ * Loads the durable document gaps of an expediente: the immutable snapshot manifest
+ * merged with the import items of the processing job that produced it.
+ *
+ * The two sources answer different questions and neither subsumes the other. The
+ * manifest holds what was missing when the snapshot was published — official documents
+ * left out by the selection cap and current documents whose typed extraction is a gap.
+ * The job rows hold what never finished importing at all. An explicit jobId wins on the
+ * initial processing route; reanalysis routes resolve the newest job for the immutable
+ * snapshot. A snapshot with no originating job (manual load, reanalysis) still keeps its
+ * manifest gaps: the immutable fact is a source on its own.
+ *
+ * Merging is deterministic — canonicalizeTenderDocumentGaps sorts by (document_id,
+ * reason, name) before collapsing duplicate (document_id, reason) pairs — so the same
+ * hole reported by both sources is a single gap, and the result never depends on the
+ * order the database returned rows in.
+ */
+export async function loadAgt002TenderRequirementDocumentGaps(database, { snapshotId, jobId = null } = {}) {
+  const normalizedSnapshotId = normalizedId(snapshotId);
+  const manifestGaps = await loadSnapshotManifestDocumentGaps(database, normalizedSnapshotId);
+
+  let resolvedJobId = normalizedId(jobId);
+  if (!resolvedJobId && normalizedSnapshotId) {
+    const jobResponse = await database.from('psi_tender_processing_jobs')
+      .select('id')
+      .eq('snapshot_id', normalizedSnapshotId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (jobResponse.error) throw jobResponse.error;
+    resolvedJobId = normalizedId(jobResponse.data?.id);
+  }
+  const jobGaps = resolvedJobId ? await loadJobImportItemDocumentGaps(database, resolvedJobId) : [];
+
+  return canonicalizeTenderDocumentGaps([...manifestGaps, ...jobGaps]);
 }

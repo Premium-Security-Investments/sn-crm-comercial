@@ -6,6 +6,16 @@ import {
 } from '../agt002-tender-requirement-gaps.js';
 import { buildTenderRequirementInventory } from '../tender-requirement-inventory.js';
 
+const SNAPSHOTS_TABLE = 'psi_tender_document_snapshots';
+
+// Historical manifest: published before document gaps existed, so it enumerates its
+// documents and no `document_gaps` at all. Every snapshot read in this file resolves to
+// it on purpose — that keeps each gap asserted below attributable to the job import
+// items, which is what this file covers. The manifest source of gaps (and an unreadable
+// manifest failing closed) is covered by
+// tests/tender-snapshot-document-gaps-fail-closed.test.mjs.
+const HISTORICAL_DOCUMENT_MANIFEST = { documents: [] };
+
 function fakeDatabase({ snapshotJob = null, gaps = [], jobError = null, gapError = null } = {}) {
   const calls = [];
   return {
@@ -13,12 +23,23 @@ function fakeDatabase({ snapshotJob = null, gaps = [], jobError = null, gapError
     from(table) {
       const operations = [];
       calls.push({ table, operations });
+      // The snapshot manifest and the job resolution are two distinct reads that happen
+      // to share `.maybeSingle()`: each one answers with its own table's row, so a job
+      // error can never be mistaken for a manifest error (or vice versa).
+      const snapshotRow = () => ({
+        id: operations.find(([operation, column]) => operation === 'eq' && column === 'id')?.[2] ?? null,
+        document_manifest: HISTORICAL_DOCUMENT_MANIFEST,
+      });
       const query = {
         select(value) { operations.push(['select', value]); return this; },
         eq(column, value) { operations.push(['eq', column, value]); return this; },
         order(column, options) { operations.push(['order', column, options]); return this; },
         limit(value) { operations.push(['limit', value]); return this; },
-        async maybeSingle() { return { data: snapshotJob, error: jobError }; },
+        async maybeSingle() {
+          return table === SNAPSHOTS_TABLE
+            ? { data: snapshotRow(), error: null }
+            : { data: snapshotJob, error: jobError };
+        },
         then(resolve, reject) {
           return Promise.resolve({ data: gaps, error: gapError }).then(resolve, reject);
         },
@@ -190,23 +211,35 @@ test('reanálisis resolves the newest processing job by immutable snapshot befor
   const result = await loadAgt002TenderRequirementDocumentGaps(database, { snapshotId: ' snapshot-1 ' });
 
   assert.equal(result[0].document_id, 'doc-gap');
+  // The immutable manifest is read FIRST and on its own trimmed snapshot id: it is a gap
+  // source by itself, so it can never be made conditional on resolving a job.
   assert.deepEqual(database.calls.map(call => call.table), [
+    'psi_tender_document_snapshots',
     'psi_tender_processing_jobs',
     'psi_tender_document_import_items',
   ]);
   assert.deepEqual(database.calls[0].operations, [
+    ['select', 'id,document_manifest'],
+    ['eq', 'id', 'snapshot-1'],
+  ]);
+  assert.deepEqual(database.calls[1].operations, [
     ['select', 'id'],
     ['eq', 'snapshot_id', 'snapshot-1'],
     ['order', 'created_at', { ascending: false }],
     ['limit', 1],
   ]);
-  assert.deepEqual(database.calls[1].operations.slice(1), [
+  assert.deepEqual(database.calls[2].operations.slice(1), [
     ['eq', 'job_id', 'job-for-snapshot'],
   ]);
 });
 
-test('a snapshot with no originating processing job has no durable import gaps', async () => {
+test('a snapshot with no originating processing job still reads both sources and has no durable import gaps', async () => {
   const database = fakeDatabase({ snapshotJob: null });
   assert.deepEqual(await loadAgt002TenderRequirementDocumentGaps(database, { snapshotId: 'snapshot-manual' }), []);
-  assert.equal(database.calls.length, 1);
+  // Fail-closed: the empty result is what BOTH durable sources actually said — a
+  // historical manifest with no gaps and no originating job — never a source left unread.
+  assert.deepEqual(database.calls.map(call => call.table), [
+    'psi_tender_document_snapshots',
+    'psi_tender_processing_jobs',
+  ]);
 });

@@ -10,6 +10,7 @@ import { validateAgt002ManifestScope } from './agt002-tender-adapter.js';
 import { deriveAgt002ManizalesExerciseDecisionReview } from './agt002-manizales-exercise-decision-review.js';
 import { deriveAgt002GenericDecisionReview } from './agt002-generic-decision-review.js';
 import { deriveAgt002DecisionAnalysis } from './agt002-decision-axis-analysis.js';
+import { canonicalizeTenderDocumentGaps } from './tender-document-gap-canonical.js';
 
 const RULES_PRODUCER = 'siio_rules_v1';
 const RULES_METHOD = 'rules';
@@ -81,7 +82,24 @@ function countCriticalOpenQuestions(result) {
     : 0;
 }
 
-export function buildTenderSnapshotInput(records, companyProfile) {
+/**
+ * Insumo canónico del snapshot documental: los documentos, los HUECOS del
+ * expediente y el perfil, cada uno con su identidad.
+ *
+ * `document_gaps` es parte del hecho inmutable, no una nota al margen: un
+ * expediente al que le falta un documento oficial (tope de selección) o cuya
+ * extracción tipada quedó en `gap` (un ZIP con entradas ilegibles) NO puede
+ * reutilizar la identidad documental del expediente íntegro, porque entonces la
+ * publicación append-only lo daría por ya publicado y el hueco desaparecería.
+ *
+ * Compatibilidad append-only: un expediente SIN huecos conserva exactamente la
+ * identidad ya persistida en psi_tender_document_snapshots —`sha256(documentos
+ * canónicos)`—. Si esa identidad cambiara, todo snapshot histórico dejaría de
+ * casar con sus documentos y `getCurrentTenderAnalysis` marcaría `current:
+ * false` en masa. Solo cuando hay al menos un hueco la identidad pasa a ligar
+ * documentos + huecos.
+ */
+export function buildTenderSnapshotInput(records, companyProfile, documentGaps = []) {
   const documentsById = new Map();
   for (const record of records || []) {
     const document = canonicalDocument(record);
@@ -89,10 +107,12 @@ export function buildTenderSnapshotInput(records, companyProfile) {
   }
   const documents = [...documentsById.values()]
     .sort((left, right) => left.document_id.localeCompare(right.document_id));
+  const gaps = canonicalizeTenderDocumentGaps(documentGaps);
   const profile = stable(companyProfile || {});
   return {
     documents,
-    document_hash: sha256(documents),
+    document_gaps: gaps,
+    document_hash: gaps.length ? sha256({ documents, document_gaps: gaps }) : sha256(documents),
     company_profile: profile,
     profile_hash: sha256(profile),
   };
@@ -103,13 +123,16 @@ export async function registerTenderDocumentSnapshot(database, context) {
   const tenderId = requireId(context?.tender_id, 'La licitación');
   const actorId = requireId(context?.actor_id, 'El actor');
   const refreshToken = requireId(context?.refresh_token, 'El token de actualización documental');
-  const snapshot = buildTenderSnapshotInput(context.documents, context.company_profile);
+  const snapshot = buildTenderSnapshotInput(context.documents, context.company_profile, context.document_gaps);
   const record = unwrapRpc(await database.rpc('psi_record_tender_document_snapshot', {
     p_opportunity_id: opportunityId,
     p_tender_id: tenderId,
     p_document_hash: snapshot.document_hash,
     p_profile_hash: snapshot.profile_hash,
-    p_document_manifest: { documents: snapshot.documents },
+    // El manifiesto gobernado lleva los huecos junto a los documentos: es la
+    // única copia inmutable de lo que faltaba cuando se publicó el expediente, y
+    // de ahí la vuelve a leer AGT-002 (agt002-tender-requirement-gaps.js).
+    p_document_manifest: { documents: snapshot.documents, document_gaps: snapshot.document_gaps },
     p_profile_snapshot: snapshot.company_profile,
     p_actor_id: actorId,
     p_refresh_token: refreshToken,
@@ -127,7 +150,10 @@ export async function registerSiioRulesAnalysis(database, context) {
   }
   const canonicalResult = canonicalRulesResult(result);
 
-  const expectedSnapshot = buildTenderSnapshotInput(context.documents, context.company_profile);
+  // Mismo expediente ⇒ misma identidad, huecos incluidos: un análisis que ignore
+  // los huecos con los que se publicó el snapshot ya no puede hacerse pasar por
+  // el expediente gobernado.
+  const expectedSnapshot = buildTenderSnapshotInput(context.documents, context.company_profile, context.document_gaps);
   let snapshotRecord;
   if (context?.snapshot_record) {
     const providedSnapshotId = requireId(context.snapshot_record.id, 'El snapshot documental');

@@ -1,0 +1,76 @@
+{
+  "_comment": "Fixture determinista de un proceso SECOP II real-como-en-produccion: exactamente 7 documentos oficiales publicados. Solo 3 nombres coinciden con el catalogo de palabras clave que selectPriorityTenderDocuments usa hoy (pliego / anexo / tecnico / matriz / riesgo); los otros 4 -- ANALISIS DEL SECTOR y las tres cotizaciones -- no coinciden con ningun termino y hoy se omiten en silencio. Forma identica a la que devuelve listSecopDocumentsByPortfolio (server/index.js).",
+  "process_id": "CO1.NTC.7770001",
+  "portfolio_id": "PORTAFOLIO-7770001",
+  "notice_uid": "CO1.NTC.7770001",
+  "url_proceso": "https://community.secop.gov.co/Public/Tendering/OpportunityDetail/Index?noticeUID=CO1.NTC.7770001",
+  "keyword_matching_names": [
+    "PLIEGO DE CONDICIONES DEFINITIVO.pdf",
+    "ANEXO TECNICO No 1.pdf",
+    "MATRIZ DE RIESGOS.xlsx"
+  ],
+  "non_keyword_names": [
+    "ANALISIS DEL SECTOR.pdf",
+    "COTIZACION 1 SEGURIDAD ATLAS.pdf",
+    "COTIZACION 2 VIGILANCIA ANDINA.pdf",
+    "COTIZACION 3 PROTECCION NACIONAL.pdf"
+  ],
+  "documents": [
+    {
+      "id_documento": "SECOP-DOC-0001",
+      "nombre_archivo": "PLIEGO DE CONDICIONES DEFINITIVO.pdf",
+      "extensi_n": "pdf",
+      "url_descarga_documento": {
+        "url": "https://community.secop.gov.co/Public/Tendering/Attachment/Download?docUniqueIdentifier=SECOP-DOC-0001&token=t0ken-secreto-0001"
+      }
+    },
+    {
+      "id_documento": "SECOP-DOC-0002",
+      "nombre_archivo": "ANEXO TECNICO No 1.pdf",
+      "extensi_n": "pdf",
+      "url_descarga_documento": {
+        "url": "https://community.secop.gov.co/Public/Tendering/Attachment/Download?docUniqueIdentifier=SECOP-DOC-0002&token=t0ken-secreto-0002"
+      }
+    },
+    {
+      "id_documento": "SECOP-DOC-0003",
+      "nombre_archivo": "MATRIZ DE RIESGOS.xlsx",
+      "extensi_n": "xlsx",
+      "url_descarga_documento": {
+        "url": "https://community.secop.gov.co/Public/Tendering/Attachment/Download?docUniqueIdentifier=SECOP-DOC-0003&token=t0ken-secreto-0003"
+      }
+    },
+    {
+      "id_documento": "SECOP-DOC-0004",
+      "nombre_archivo": "ANALISIS DEL SECTOR.pdf",
+      "extensi_n": "pdf",
+      "url_descarga_documento": {
+        "url": "https://community.secop.gov.co/Public/Tendering/Attachment/Download?docUniqueIdentifier=SECOP-DOC-0004&token=t0ken-secreto-0004"
+      }
+    },
+    {
+      "id_documento": "SECOP-DOC-0005",
+      "nombre_archivo": "COTIZACION 1 SEGURIDAD ATLAS.pdf",
+      "extensi_n": "pdf",
+      "url_descarga_documento": {
+        "url": "https://community.secop.gov.co/Public/Tendering/Attachment/Download?docUniqueIdentifier=SECOP-DOC-0005&token=t0ken-secreto-0005"
+      }
+    },
+    {
+      "id_documento": "SECOP-DOC-0006",
+      "nombre_archivo": "COTIZACION 2 VIGILANCIA ANDINA.pdf",
+      "extensi_n": "pdf",
+      "url_descarga_documento": {
+        "url": "https://community.secop.gov.co/Public/Tendering/Attachment/Download?docUniqueIdentifier=SECOP-DOC-0006&token=t0ken-secreto-0006"
+      }
+    },
+    {
+      "id_documento": "SECOP-DOC-0007",
+      "nombre_archivo": "COTIZACION 3 PROTECCION NACIONAL.pdf",
+      "extensi_n": "pdf",
+      "url_descarga_documento": {
+        "url": "https://community.secop.gov.co/Public/Tendering/Attachment/Download?docUniqueIdentifier=SECOP-DOC-0007&token=t0ken-secreto-0007"
+      }
+    }
+  ]
+}
