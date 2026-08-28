@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { AGT002_RADAR_WORKER_STAGES, createAgt002RadarWorker } from '../agt002-radar-worker.js';
 import { AGT002_RADAR_QUEUE_ERROR_CODES } from '../agt002-radar-preanalysis-worker.js';
+import { computeAgt002RadarSourceRowHash } from '../agt002-radar-gate.js';
 
 const NOW = '2026-08-25T15:00:00.000Z';
 const TENDER = { id: '22222222-2222-4222-8222-222222222222', stable_key: 'k-1', title: 'Vigilancia', description: 'Armada', source: 'SECOP II', entity: 'E', city: 'Bogotá', dept: 'Cundinamarca', category: 'Licitación' };
@@ -245,5 +246,194 @@ assert.doesNotMatch(source, /agt002-radar-pipeline|createAgt002RadarPipeline/);
 const { AGT002_RADAR_PIPELINE_STAGES, createAgt002RadarPipeline } = await import('../agt002-radar-pipeline.js');
 assert.equal(typeof createAgt002RadarPipeline, 'function');
 assert.deepEqual(AGT002_RADAR_PIPELINE_STAGES, ['esu_refresh', 'fetch', 'gate', 'ledger', 'claim', 'learning', 'agt', 'persist']);
+
+// 13. Drenaje gobernado de churn legacy encolado antes de agt002-radar-derived-day-churn.js. La
+//     fila fetched coincide EXACTAMENTE con hash/policy/context del job (el chequeo de §7 pasa) y
+//     existe un canónico de la MISMA licitación, misma policy/context, cuyo hash se reproduce
+//     cambiando sólo raw.days/raw.window a un valor histórico válido. El worker registra el gate de
+//     hoy (ledger) y luego falla el job como stale_input: SIN aprendizaje, SIN modelo, SIN
+//     persistencia y SIN completar. Consulta bulk de un único id (un job por tick, no N+1).
+const RAPIDO_LABEL = 'revisar rápido (8-15 días)';
+const CHURN_TENDER = {
+  id: '66666666-6666-4666-8666-666666666666', stable_key: 'k-churn', title: 'Vigilancia armada',
+  description: 'Vigilancia', source: 'SECOP II', entity: 'E', city: 'Bogotá', dept: 'Cundinamarca',
+  category: 'Licitación', status: 'Convocado', deadline_at: '2026-09-05T00:00:00+00:00',
+  url: 'https://example.gov.co/p/1', raw: { days: 11, window: RAPIDO_LABEL },
+};
+const CHURN_JOB = { jobId: 'jc1', leaseId: 'lc1', tenderId: CHURN_TENDER.id, gateEvaluationId: 'gate-old', attemptKey: 'ac1', sourceRowHash: 'f'.repeat(64), policyVersion: 'p', contextVersion: 'c' };
+const churnEvaluation = { verdict: 'sobreviviente', rule_ids: [], reasons: [], data_gaps: [], tender_id: CHURN_TENDER.id, source_row_hash: CHURN_JOB.sourceRowHash, policy_version: CHURN_JOB.policyVersion, context_version: CHURN_JOB.contextVersion };
+const churnHistoricalHash = (days, window) => computeAgt002RadarSourceRowHash({ ...CHURN_TENDER, raw: { ...CHURN_TENDER.raw, days, window } });
+const churnCanonical = { id: 'run-c1', tender_id: CHURN_TENDER.id, canonical: true, status: 'completed', policy_version: CHURN_JOB.policyVersion, context_version: CHURN_JOB.contextVersion, source_row_hash: churnHistoricalHash(12, RAPIDO_LABEL) };
+{
+  let canonicalCalls = 0, canonicalArgs, failedCode;
+  const touched = [];
+  const worker = createAgt002RadarWorker({
+    database: {}, environment: { AGT002_RADAR_GATE: 'true' }, now: () => NOW,
+    claimJob: async () => CHURN_JOB, fetchTenderRow: async () => CHURN_TENDER, evaluateGate: () => churnEvaluation,
+    recordGateEvaluation: async () => { touched.push('ledger'); return { id: 'gate-fresh' }; },
+    readCanonicalPreanalysis: async (_db, ids) => { canonicalCalls += 1; canonicalArgs = ids; return [churnCanonical]; },
+    projectLearningObservations: async () => { touched.push('learning'); return {}; },
+    buildLearningSignals: () => { touched.push('signals'); return {}; },
+    runPreanalysis: async () => { touched.push('agt'); return {}; },
+    recordPreanalysisRun: async () => { touched.push('persist'); return {}; },
+    completeJob: async () => { touched.push('complete'); },
+    failJob: async (_db, { jobId, leaseId, errorCode }) => { failedCode = errorCode; assert.equal(jobId, CHURN_JOB.jobId); assert.equal(leaseId, CHURN_JOB.leaseId); },
+  });
+  const result = await worker.runOnce();
+  assert.equal(result.status, 'unavailable');
+  assert.equal(result.error_code, 'stale_input');
+  assert.equal(failedCode, 'stale_input');
+  assert.equal(canonicalCalls, 1, 'el lookup canónico se hace exactamente una vez');
+  assert.deepEqual(canonicalArgs, [CHURN_JOB.tenderId], 'consulta bulk con un solo id por tick, nunca N+1');
+  assert.deepEqual(touched, ['ledger'], 'sólo ledger corre: sin aprendizaje, sin modelo, sin persistencia, sin completar');
+  assert.deepEqual(result.stages, ['claim', 'fetch_row', 'gate', 'ledger']);
+}
+
+// 14. Fail-closed: sin canónico -> flujo normal, completa igual que hoy.
+{
+  let canonicalCalls = 0;
+  const touched = [];
+  const worker = createAgt002RadarWorker({
+    database: {}, environment: { AGT002_RADAR_GATE: 'true' }, now: () => NOW,
+    claimJob: async () => CHURN_JOB, fetchTenderRow: async () => CHURN_TENDER, evaluateGate: () => churnEvaluation,
+    recordGateEvaluation: async () => ({ id: 'gate-fresh' }),
+    readCanonicalPreanalysis: async () => { canonicalCalls += 1; return []; },
+    projectLearningObservations: async () => { touched.push('learning'); return {}; },
+    buildLearningSignals: () => { touched.push('signals'); return { version: 'v1', signals: [] }; },
+    runPreanalysis: async () => { touched.push('agt'); return { status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [], usage: {} }; },
+    recordPreanalysisRun: async () => { touched.push('persist'); return { id: 'r-churn' }; },
+    completeJob: async () => { touched.push('complete'); },
+    failJob: hostile,
+  });
+  const result = await worker.runOnce();
+  assert.equal(result.status, 'completed');
+  assert.equal(canonicalCalls, 1);
+  assert.deepEqual(touched, ['learning', 'signals', 'agt', 'persist', 'complete']);
+}
+
+// 15. Fail-closed: canónico con diferencia material (hash no se reproduce con ningún offset
+//     histórico de days/window) -> flujo normal, completa.
+{
+  const materialCanonical = { ...churnCanonical, source_row_hash: computeAgt002RadarSourceRowHash({ ...CHURN_TENDER, raw: { ...CHURN_TENDER.raw, days: 12, window: RAPIDO_LABEL }, title: 'Otro objeto distinto' }) };
+  const touched = [];
+  const worker = createAgt002RadarWorker({
+    database: {}, environment: { AGT002_RADAR_GATE: 'true' }, now: () => NOW,
+    claimJob: async () => CHURN_JOB, fetchTenderRow: async () => CHURN_TENDER, evaluateGate: () => churnEvaluation,
+    recordGateEvaluation: async () => ({ id: 'gate-fresh' }),
+    readCanonicalPreanalysis: async () => [materialCanonical],
+    projectLearningObservations: async () => { touched.push('learning'); return {}; },
+    buildLearningSignals: () => ({ version: 'v1', signals: [] }),
+    runPreanalysis: async () => { touched.push('agt'); return { status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [], usage: {} }; },
+    recordPreanalysisRun: async () => { touched.push('persist'); return { id: 'r-material' }; },
+    completeJob: async () => { touched.push('complete'); },
+    failJob: hostile,
+  });
+  assert.equal((await worker.runOnce()).status, 'completed');
+  assert.deepEqual(touched, ['learning', 'agt', 'persist', 'complete']);
+}
+
+// 15b. Fail-closed: canónico de policy/context distinto (aunque el hash coincidiera) -> normal, completa.
+{
+  const wrongPolicyCanonical = { ...churnCanonical, policy_version: 'p2' };
+  const worker = createAgt002RadarWorker({
+    database: {}, environment: { AGT002_RADAR_GATE: 'true' }, now: () => NOW,
+    claimJob: async () => CHURN_JOB, fetchTenderRow: async () => CHURN_TENDER, evaluateGate: () => churnEvaluation,
+    recordGateEvaluation: async () => ({ id: 'gate-fresh' }),
+    readCanonicalPreanalysis: async () => [wrongPolicyCanonical],
+    projectLearningObservations: async () => ({}),
+    buildLearningSignals: () => ({ version: 'v1', signals: [] }),
+    runPreanalysis: async () => ({ status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [], usage: {} }),
+    recordPreanalysisRun: async () => ({ id: 'r-p2' }),
+    completeJob: async () => {},
+    failJob: hostile,
+  });
+  assert.equal((await worker.runOnce()).status, 'completed');
+}
+
+// 15c. Fail-closed: canónico ausente (tender_id no coincide) o duplicado -> nunca se suprime.
+for (const canonicalRows of [
+  [{ ...churnCanonical, tender_id: 'otra-licitacion' }],
+  [churnCanonical, churnCanonical],
+]) {
+  const worker = createAgt002RadarWorker({
+    database: {}, environment: { AGT002_RADAR_GATE: 'true' }, now: () => NOW,
+    claimJob: async () => CHURN_JOB, fetchTenderRow: async () => CHURN_TENDER, evaluateGate: () => churnEvaluation,
+    recordGateEvaluation: async () => ({ id: 'gate-fresh' }),
+    readCanonicalPreanalysis: async () => canonicalRows,
+    projectLearningObservations: async () => ({}),
+    buildLearningSignals: () => ({ version: 'v1', signals: [] }),
+    runPreanalysis: async () => ({ status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [], usage: {} }),
+    recordPreanalysisRun: async () => ({ id: 'r-dup' }),
+    completeJob: async () => {},
+    failJob: hostile,
+  });
+  assert.equal((await worker.runOnce()).status, 'completed');
+}
+
+// 16. Fail-closed: raw.days/raw.window con forma inválida -> NO consulta canónico, flujo normal.
+for (const raw of [{ days: 11 }, { window: RAPIDO_LABEL }, { days: 11, window: 'urgente (0-7 días)' }, null, undefined]) {
+  const invalidShapeTender = { ...CHURN_TENDER, raw };
+  let canonicalCalls = 0;
+  const touched = [];
+  const worker = createAgt002RadarWorker({
+    database: {}, environment: { AGT002_RADAR_GATE: 'true' }, now: () => NOW,
+    claimJob: async () => CHURN_JOB, fetchTenderRow: async () => invalidShapeTender, evaluateGate: () => churnEvaluation,
+    recordGateEvaluation: async () => ({ id: 'gate-fresh' }),
+    readCanonicalPreanalysis: async () => { canonicalCalls += 1; return [churnCanonical]; },
+    projectLearningObservations: async () => { touched.push('learning'); return {}; },
+    buildLearningSignals: () => ({ version: 'v1', signals: [] }),
+    runPreanalysis: async () => { touched.push('agt'); return { status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [], usage: {} }; },
+    recordPreanalysisRun: async () => { touched.push('persist'); return { id: 'r-invalid' }; },
+    completeJob: async () => { touched.push('complete'); },
+    failJob: hostile,
+  });
+  const result = await worker.runOnce();
+  assert.equal(result.status, 'completed', JSON.stringify(raw));
+  assert.equal(canonicalCalls, 0, `raw ${JSON.stringify(raw)} sin forma derivada no debe consultar canónico`);
+  assert.deepEqual(touched, ['learning', 'agt', 'persist', 'complete']);
+}
+
+// 17. Lookup técnico del canónico lanza -> persistence_failure por el boundary existente, sin
+//     modelo, job se falla según el contrato actual (failJob una vez, sin mensaje crudo expuesto).
+{
+  const touched = [];
+  let failedCode;
+  const worker = createAgt002RadarWorker({
+    database: {}, environment: { AGT002_RADAR_GATE: 'true' }, now: () => NOW,
+    claimJob: async () => CHURN_JOB, fetchTenderRow: async () => CHURN_TENDER, evaluateGate: () => churnEvaluation,
+    recordGateEvaluation: async () => ({ id: 'gate-fresh' }),
+    readCanonicalPreanalysis: async () => { throw Object.assign(new Error('db down'), { runtime_boundary_code: 'AGT002_RADAR_PERSISTENCE_FAILURE' }); },
+    projectLearningObservations: async () => { touched.push('learning'); return {}; },
+    buildLearningSignals: hostile, runPreanalysis: hostile, recordPreanalysisRun: hostile, completeJob: hostile,
+    failJob: async (_db, { jobId, leaseId, errorCode }) => { failedCode = errorCode; assert.equal(jobId, CHURN_JOB.jobId); assert.equal(leaseId, CHURN_JOB.leaseId); },
+  });
+  const result = await worker.runOnce();
+  assert.equal(result.status, 'unavailable');
+  assert.equal(result.error_code, 'persistence_failure');
+  assert.equal(failedCode, 'persistence_failure');
+  assert.deepEqual(touched, []);
+}
+
+// 18. Cola vacía: la ÚNICA operación contra la base sigue siendo claimJob; el lookup de canónicos
+//     ni siquiera se invoca (database y readCanonicalPreanalysis hostiles: cualquier toque lanza).
+{
+  let claimCalls = 0;
+  const worker = createAgt002RadarWorker({
+    database: hostileDatabase, environment: { AGT002_RADAR_GATE: 'true' }, now: () => NOW,
+    claimJob: async () => { claimCalls += 1; return null; },
+    fetchTenderRow: hostile, evaluateGate: hostile, recordGateEvaluation: hostile, readCanonicalPreanalysis: hostile,
+    completeJob: hostile, failJob: hostile, projectLearningObservations: hostile,
+    buildLearningSignals: hostile, runPreanalysis: hostile, recordPreanalysisRun: hostile,
+  });
+  assert.deepEqual(await worker.runOnce(), { status: 'empty', stages: ['claim'] });
+  assert.equal(claimCalls, 1);
+}
+
+// 19. Contrato de superficie: el módulo importa el lector bulk existente y el clasificador nuevo
+//     (no reimplementa el hash ni el RPC), y AGT002_RADAR_WORKER_STAGES no gana ninguna etapa.
+assert.match(source, /readAgt002RadarCanonicalPreanalysis/);
+assert.match(source, /hasAgt002RadarDerivedDayShape/);
+assert.match(source, /isAgt002RadarDerivedDayOnlyChurn/);
+assert.deepEqual(AGT002_RADAR_WORKER_STAGES, ['claim', 'fetch_row', 'gate', 'ledger', 'learning', 'agt', 'persist']);
 
 console.log('AGT-002 Radar claim-first queue worker passed');
