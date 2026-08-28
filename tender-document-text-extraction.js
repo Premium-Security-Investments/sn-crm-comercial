@@ -7,7 +7,7 @@ import { DOMParser } from '@xmldom/xmldom';
 
 // Bumped whenever parsing behavior changes text/metadata shape for a given input,
 // so Phase 1.2 persistence can tell which extractions need reprocessing.
-export const TENDER_DOCUMENT_TEXT_EXTRACTOR_VERSION = 'tender-document-text-extraction@2';
+export const TENDER_DOCUMENT_TEXT_EXTRACTOR_VERSION = 'tender-document-text-extraction@3';
 
 // Archive resource-safety policy: bounds what an OOXML/ZIP package is allowed to
 // declare it will expand to, checked from AdmZip central-directory metadata
@@ -31,6 +31,9 @@ export const TENDER_DOCUMENT_MAX_ERROR_MESSAGE_LENGTH = 200;
 
 const XML_MIME = 'text/xml';
 const ZIP_TEXT_ENTRY_PATTERN = /\.(txt|csv|xml|html?)$/i;
+// Archives nested inside an official package are refused, never traversed:
+// recursing would make the bounded preflight of the outer package meaningless.
+const NESTED_ARCHIVE_ENTRY_PATTERN = /\.(zip|rar|7z|tar|gz|tgz|bz2|xz|iso|cab|arj|lzh)$/i;
 
 class TenderDocumentGapError extends Error {
   constructor(gapReason, message) {
@@ -73,6 +76,106 @@ function enforceArchiveSafety(zip, selectedEntries, policy = TENDER_DOCUMENT_ARC
   if (countGap) throw new TenderDocumentGapError(countGap, `El paquete tiene demasiadas entradas (${totalEntryCount}).`);
   const expansionGap = evaluateSelectedEntriesExpansion(selectedEntries.map(declaredEntry), policy);
   if (expansionGap) throw new TenderDocumentGapError(expansionGap, 'El paquete excede los límites seguros de expansión declarada.');
+}
+
+// --- Raw ZIP central-directory inspection (zip-slip defense) ----------------
+// Entry names are read from the RAW central directory instead of from the
+// reader's decoded view: a decompression library is free to normalize or
+// sanitize a name while decoding it, and a package whose *declared* names
+// escape the package root must never be extracted at all — not even its
+// legitimate entries. Nothing here decompresses anything: it only walks fixed
+// central-directory headers, bounded by the archive's own byte length.
+
+const ZIP_EOCD_SIGNATURE = 0x06054b50;
+const ZIP64_EOCD_SIGNATURE = 0x06064b50;
+const ZIP64_EOCD_LOCATOR_SIGNATURE = 0x07064b50;
+const ZIP_CENTRAL_HEADER_SIGNATURE = 0x02014b50;
+const ZIP_EOCD_LENGTH = 22;
+const ZIP64_EOCD_LOCATOR_LENGTH = 20;
+const ZIP64_EOCD_LENGTH = 56;
+const ZIP_CENTRAL_HEADER_LENGTH = 46;
+const ZIP_MAX_COMMENT_LENGTH = 0xffff;
+
+function archiveDirectoryGap(detail) {
+  return new TenderDocumentGapError('extraction_error', `El directorio central del paquete ZIP es ilegible (${detail}).`);
+}
+
+function findZipEndOfCentralDirectory(buffer) {
+  const limit = Math.max(0, buffer.length - ZIP_EOCD_LENGTH - ZIP_MAX_COMMENT_LENGTH);
+  for (let offset = buffer.length - ZIP_EOCD_LENGTH; offset >= limit; offset -= 1) {
+    if (buffer.readUInt32LE(offset) === ZIP_EOCD_SIGNATURE) return offset;
+  }
+  return -1;
+}
+
+function readZip64CentralDirectory(buffer, eocdOffset) {
+  const locatorOffset = eocdOffset - ZIP64_EOCD_LOCATOR_LENGTH;
+  if (locatorOffset < 0 || buffer.readUInt32LE(locatorOffset) !== ZIP64_EOCD_LOCATOR_SIGNATURE) {
+    throw archiveDirectoryGap('localizador zip64 ausente');
+  }
+  const recordOffset = Number(buffer.readBigUInt64LE(locatorOffset + 8));
+  if (!Number.isSafeInteger(recordOffset) || recordOffset < 0
+    || recordOffset + ZIP64_EOCD_LENGTH > buffer.length
+    || buffer.readUInt32LE(recordOffset) !== ZIP64_EOCD_SIGNATURE) {
+    throw archiveDirectoryGap('registro zip64 inválido');
+  }
+  return {
+    entryCount: Number(buffer.readBigUInt64LE(recordOffset + 32)),
+    offset: Number(buffer.readBigUInt64LE(recordOffset + 48)),
+  };
+}
+
+/** Declared entry count and central-directory offset, from the package itself. */
+function readZipCentralDirectory(buffer) {
+  const eocdOffset = findZipEndOfCentralDirectory(buffer);
+  if (eocdOffset < 0) throw archiveDirectoryGap('fin de directorio central ausente');
+  const entryCount = buffer.readUInt16LE(eocdOffset + 10);
+  const offset = buffer.readUInt32LE(eocdOffset + 16);
+  if (entryCount === 0xffff || offset === 0xffffffff) return readZip64CentralDirectory(buffer, eocdOffset);
+  return { entryCount, offset };
+}
+
+/** Declared names of every central-directory record, verbatim and undecoded. */
+function readZipCentralDirectoryEntryNames(buffer, { entryCount, offset }) {
+  const names = [];
+  let cursor = offset;
+  for (let index = 0; index < entryCount; index += 1) {
+    if (!Number.isSafeInteger(cursor) || cursor < 0
+      || cursor + ZIP_CENTRAL_HEADER_LENGTH > buffer.length
+      || buffer.readUInt32LE(cursor) !== ZIP_CENTRAL_HEADER_SIGNATURE) {
+      throw archiveDirectoryGap(`cabecera central ${index + 1} inválida`);
+    }
+    const nameLength = buffer.readUInt16LE(cursor + 28);
+    const extraLength = buffer.readUInt16LE(cursor + 30);
+    const commentLength = buffer.readUInt16LE(cursor + 32);
+    const nameStart = cursor + ZIP_CENTRAL_HEADER_LENGTH;
+    if (nameStart + nameLength > buffer.length) throw archiveDirectoryGap(`nombre de entrada ${index + 1} truncado`);
+    names.push(buffer.toString('utf8', nameStart, nameStart + nameLength));
+    cursor = nameStart + nameLength + extraLength + commentLength;
+  }
+  return names;
+}
+
+// An entry name is unsafe when it is absolute (POSIX root, Windows drive or UNC
+// share) or when any of its segments escapes the package root. Both separators
+// count: `..\` is traversal wherever backslashes are path separators.
+export function isUnsafeArchiveEntryName(name) {
+  const raw = String(name ?? '');
+  if (!raw.trim() || raw.includes('\0')) return true;
+  const normalized = raw.replace(/\\/g, '/');
+  if (normalized.startsWith('/')) return true;
+  if (/^[A-Za-z]:/.test(normalized)) return true;
+  return normalized.split('/').includes('..');
+}
+
+// Invalidates the WHOLE package on the first unsafe name. The offending name is
+// deliberately not echoed into the gap message.
+function enforceArchiveEntryPathSafety(names) {
+  for (const name of names) {
+    if (isUnsafeArchiveEntryName(name)) {
+      throw new TenderDocumentGapError('unsafe_entry_path', 'El paquete declara una entrada con ruta insegura.');
+    }
+  }
 }
 
 function xmlErrorHandler() {
@@ -291,7 +394,9 @@ function okResult({ text, parser, metadata = {} }) {
   };
 }
 
-function gapResult({ parser, gapReason, error = null }) {
+// `metadata` carries the closed provenance a gap is still able to justify (an
+// archive keeps its per-entry index), always alongside gap_reason/error.
+function gapResult({ parser, gapReason, error = null, metadata = {} }) {
   const text = '';
   return {
     status: 'gap',
@@ -300,7 +405,7 @@ function gapResult({ parser, gapReason, error = null }) {
     parser,
     char_count: 0,
     text_hash: textHash(text),
-    metadata: { gap_reason: gapReason, error: error ?? null },
+    metadata: { ...metadata, gap_reason: gapReason, error: error ?? null },
   };
 }
 
@@ -349,6 +454,185 @@ function finalizeSuccess({ text, parser, metadata = {}, isEmpty }) {
   return okResult({ text, parser, metadata });
 }
 
+// pdf-parse bundles pdf.js 1.10.100, whose `Stream.makeSubStream` rebuilds every
+// indirect-object substream as `new Stream(bytes.buffer, xrefOffset)`: it resolves
+// the offset against the ArrayBuffer origin and silently drops `bytes.byteOffset`.
+// Node serves any Buffer smaller than 4 KiB from a shared pool (and pdf.js's own
+// worker loopback re-copies small inputs back into that pool with
+// `new Buffer(value)`), so a small PDF reaches the parser at a non-zero
+// byteOffset and every object is then read from the wrong origin — a
+// structurally valid document fails as `extraction_error`. Documents at or above
+// 4 KiB own their ArrayBuffer, which is why only small PDFs were affected.
+// Handing pdf.js a plain Uint8Array anchored at offset 0 removes the ambiguity:
+// `new Uint8Array(...)` copies are never pooled, so the offset stays 0 through
+// the loopback clone too. Bytes are never altered, and a buffer that already owns
+// its whole ArrayBuffer is re-viewed instead of copied.
+function pdfBytesAnchoredAtZero(buffer) {
+  if (buffer.byteOffset === 0 && buffer.byteLength === buffer.buffer.byteLength) {
+    return new Uint8Array(buffer.buffer);
+  }
+  return new Uint8Array(buffer);
+}
+
+// The single place where a buffer of a known kind becomes text. Shared by the
+// top-level document path and by every ZIP entry, so an annex delivered INSIDE
+// an official package is read by exactly the same parser — and the same OOXML
+// preflight — as the same file delivered on its own. Returns null for kinds
+// that have no parser.
+async function parseBufferByKind(kind, buffer) {
+  if (kind === 'pdf') {
+    const result = await pdfParse(pdfBytesAnchoredAtZero(buffer));
+    return { text: result?.text || '', parser: 'pdf-parse', metadata: { num_pages: result?.numpages ?? null } };
+  }
+  if (kind === 'docx') {
+    // mammoth decompresses the OOXML package internally, so preflight the
+    // whole archive before handing it the buffer.
+    const docxZip = new AdmZip(buffer);
+    const docxEntries = docxZip.getEntries().filter(entry => !entry.isDirectory);
+    enforceArchiveSafety(docxZip, docxEntries);
+    const result = await mammoth.extractRawText({ buffer });
+    return { text: result?.value || '', parser: 'mammoth-docx', metadata: { warning_count: result?.messages?.length || 0 } };
+  }
+  if (kind === 'txt') {
+    return { text: buffer.toString('utf8'), parser: 'plain-text', metadata: {} };
+  }
+  if (kind === 'xlsx') {
+    const sheets = parseXlsxWorkbook(buffer);
+    const totalCells = sheets.reduce((sum, sheet) => sum + sheet.cells.length, 0);
+    return {
+      text: formatXlsxText(sheets),
+      parser: 'xlsx-ooxml',
+      metadata: {
+        sheets: sheets.map(sheet => ({
+          name: sheet.name,
+          hidden: sheet.hidden,
+          cell_count: sheet.cells.length,
+          formula_count: sheet.cells.filter(cell => cell.formula).length,
+        })),
+      },
+      isEmpty: totalCells === 0,
+    };
+  }
+  return null;
+}
+
+// --- Real per-entry extraction of an official ZIP package -------------------
+
+// Entry kinds are decided by extension alone: a ZIP central directory carries
+// no MIME type, and guessing one from content would be a second, weaker
+// classifier. Nested archives are matched FIRST so `.zip`/`.rar` can never fall
+// through to another branch.
+const ARCHIVE_ENTRY_PARSER_BY_KIND = Object.freeze({
+  pdf: 'pdf-parse',
+  docx: 'mammoth-docx',
+  xlsx: 'xlsx-ooxml',
+  txt: 'plain-text',
+  archive: 'none',
+  unsupported: 'unsupported',
+});
+
+function detectArchiveEntryKind(entryName) {
+  const lower = String(entryName || '').toLowerCase();
+  if (NESTED_ARCHIVE_ENTRY_PATTERN.test(lower)) return 'archive';
+  if (lower.endsWith('.pdf')) return 'pdf';
+  if (lower.endsWith('.docx')) return 'docx';
+  if (lower.endsWith('.xlsx')) return 'xlsx';
+  if (ZIP_TEXT_ENTRY_PATTERN.test(lower)) return 'txt';
+  return 'unsupported';
+}
+
+function declaredByteCount(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.trunc(number) : 0;
+}
+
+// Locale-independent ascending order by entry name, so the same package bytes
+// always produce the same aggregated text and the same text_hash on any host.
+function compareEntryNames(left, right) {
+  if (left === right) return 0;
+  return left < right ? -1 : 1;
+}
+
+/**
+ * Reads ONE archive entry. Returns a closed provenance record — no raw text,
+ * no bytes, no storage path and no parser error string ever enters it — plus
+ * the extracted text, which only the aggregate uses. A nested archive is
+ * refused as a typed gap, never traversed.
+ */
+async function extractArchiveEntry(entry) {
+  const kind = detectArchiveEntryKind(entry.entryName);
+  const base = {
+    entry_name: entry.entryName,
+    kind,
+    parser: ARCHIVE_ENTRY_PARSER_BY_KIND[kind],
+    declared_size_bytes: declaredByteCount(entry.header?.size),
+    compressed_size_bytes: declaredByteCount(entry.header?.compressedSize),
+  };
+  const gapEntry = gapReason => ({
+    record: { ...base, status: 'gap', gap_reason: gapReason, char_count: 0, text_hash: textHash('') },
+    text: null,
+  });
+
+  if (kind === 'archive') return gapEntry('nested_archive_not_supported');
+  if (kind === 'unsupported') return gapEntry('unsupported_type');
+  try {
+    const parsed = await parseBufferByKind(kind, entry.getData());
+    const text = parsed.text;
+    const empty = typeof parsed.isEmpty === 'boolean' ? parsed.isEmpty : !text.trim();
+    if (empty) return gapEntry('empty_extraction');
+    return {
+      record: { ...base, status: 'ok', gap_reason: null, char_count: text.length, text_hash: textHash(text) },
+      text,
+    };
+  } catch (error) {
+    return gapEntry(error instanceof TenderDocumentGapError ? error.gapReason : 'extraction_error');
+  }
+}
+
+/**
+ * Real, bounded extraction of an official ZIP package. Every entry is read with
+ * the parser its type deserves; the aggregated text is emitted in ascending
+ * entry-name order; and ANY entry that could not be read turns the whole
+ * package into a typed gap that enumerates the internal holes one by one — so
+ * no partial text is ever persisted as if it were the complete document.
+ */
+async function extractZipArchive(buffer) {
+  // Bounds first, on declared metadata only: entry count, then declared paths,
+  // then declared expansion. Nothing is decompressed until all three hold for
+  // EVERY entry of the package, whatever its extension.
+  const directory = readZipCentralDirectory(buffer);
+  const countGap = evaluateArchiveEntryCount(directory.entryCount);
+  if (countGap) throw new TenderDocumentGapError(countGap, `El paquete tiene demasiadas entradas (${directory.entryCount}).`);
+  enforceArchiveEntryPathSafety(readZipCentralDirectoryEntryNames(buffer, directory));
+
+  const zip = new AdmZip(buffer);
+  const allEntries = zip.getEntries();
+  enforceArchiveEntryPathSafety(allEntries.map(entry => entry.entryName));
+  const entries = allEntries
+    .filter(entry => !entry.isDirectory)
+    .sort((left, right) => compareEntryNames(left.entryName, right.entryName));
+  enforceArchiveSafety(zip, entries);
+
+  // A failing entry never aborts the package: the readable ones keep their real
+  // provenance and the unreadable ones are enumerated instead of being hidden.
+  const records = [];
+  const parts = [];
+  for (const entry of entries) {
+    const { record, text } = await extractArchiveEntry(entry);
+    records.push(record);
+    if (record.status === 'ok') parts.push(`--- ${record.entry_name} ---\n${text}`);
+  }
+
+  const internalGaps = records
+    .filter(record => record.status === 'gap')
+    .map(record => ({ entry_name: record.entry_name, gap_reason: record.gap_reason }));
+  const metadata = { entry_count: records.length, entries: records, internal_gaps: internalGaps };
+  if (internalGaps.length) {
+    return gapResult({ parser: 'zip-archive', gapReason: 'archive_incomplete_extraction', metadata });
+  }
+  return finalizeSuccess({ text: parts.join('\n\n'), parser: 'zip-archive', metadata });
+}
+
 /**
  * Pure, deterministic text extraction for tender documents. Never silently
  * truncates: unreadable/unsupported/oversized/empty input becomes a typed
@@ -360,49 +644,9 @@ export async function extractTenderDocumentText(buffer, filename, mime = '') {
   }
   const kind = detectKind(filename, mime);
   try {
-    if (kind === 'pdf') {
-      const result = await pdfParse(buffer);
-      return finalizeSuccess({ text: result?.text || '', parser: 'pdf-parse', metadata: { num_pages: result?.numpages ?? null } });
-    }
-    if (kind === 'docx') {
-      // mammoth decompresses the OOXML package internally, so preflight the
-      // whole archive before handing it the buffer.
-      const docxZip = new AdmZip(buffer);
-      const docxEntries = docxZip.getEntries().filter(entry => !entry.isDirectory);
-      enforceArchiveSafety(docxZip, docxEntries);
-      const result = await mammoth.extractRawText({ buffer });
-      return finalizeSuccess({ text: result?.value || '', parser: 'mammoth-docx', metadata: { warning_count: result?.messages?.length || 0 } });
-    }
-    if (kind === 'txt') {
-      return finalizeSuccess({ text: buffer.toString('utf8'), parser: 'plain-text' });
-    }
-    if (kind === 'xlsx') {
-      const sheets = parseXlsxWorkbook(buffer);
-      const text = formatXlsxText(sheets);
-      const totalCells = sheets.reduce((sum, sheet) => sum + sheet.cells.length, 0);
-      const metadata = {
-        sheets: sheets.map(sheet => ({
-          name: sheet.name,
-          hidden: sheet.hidden,
-          cell_count: sheet.cells.length,
-          formula_count: sheet.cells.filter(cell => cell.formula).length,
-        })),
-      };
-      return finalizeSuccess({ text, parser: 'xlsx-ooxml', metadata, isEmpty: totalCells === 0 });
-    }
-    if (kind === 'zip') {
-      const zip = new AdmZip(buffer);
-      const entries = zip.getEntries().filter(entry => !entry.isDirectory);
-      const textEntries = entries.filter(entry => ZIP_TEXT_ENTRY_PATTERN.test(entry.entryName));
-      enforceArchiveSafety(zip, textEntries);
-      const parts = entries.map(entry => {
-        if (ZIP_TEXT_ENTRY_PATTERN.test(entry.entryName)) {
-          return `--- ${entry.entryName} ---\n${entry.getData().toString('utf8')}`;
-        }
-        return `--- ${entry.entryName} ---\nArchivo incluido en ZIP para checklist de formatos.`;
-      });
-      return finalizeSuccess({ text: parts.join('\n\n'), parser: 'zip-manifest', metadata: { entry_count: entries.length } });
-    }
+    if (kind === 'zip') return await extractZipArchive(buffer);
+    const parsed = await parseBufferByKind(kind, buffer);
+    if (parsed) return finalizeSuccess(parsed);
     return gapResult({ parser: 'unsupported', gapReason: 'unsupported_type' });
   } catch (error) {
     const gapReason = error instanceof TenderDocumentGapError ? error.gapReason : 'extraction_error';

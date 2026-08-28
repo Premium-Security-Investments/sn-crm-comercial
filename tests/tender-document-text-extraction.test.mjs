@@ -150,6 +150,24 @@ async function run() {
     assert.equal(result.extractor_version, TENDER_DOCUMENT_TEXT_EXTRACTOR_VERSION);
   }
 
+  // 1b) PDF pequeño (< 4 KiB) se extrae igual que uno grande.
+  //     Node sirve todo Buffer de menos de 4 KiB desde su pool compartido, con
+  //     byteOffset distinto de cero, y `Stream.makeSubStream` de pdf.js 1.10.100
+  //     resuelve los offsets del xref contra el ArrayBuffer completo ignorando ese
+  //     byteOffset. Sin anclar los bytes en offset 0, un pliego corto y válido
+  //     fallaba como `extraction_error`. Los PDF reales de una o dos páginas caen
+  //     justo en ese rango, así que el contrato se fija aquí y no sólo vía ZIP.
+  {
+    const pdfBuffer = buildLongPdfBuffer(20);
+    assert.ok(pdfBuffer.length < 4096, `el fixture debe caer en el rango agrupado, obtuvo ${pdfBuffer.length} bytes`);
+    const result = await extractTenderDocumentText(pdfBuffer, 'pliego-corto.pdf', 'application/pdf');
+    assert.equal(result.status, 'ok');
+    assert.equal(result.parser, 'pdf-parse');
+    assert.ok(result.text.includes('Requisito habilitante XYZ 0123456789'), `esperado el marcador real del PDF, obtuvo ${JSON.stringify(result.text)}`);
+    assert.equal(result.char_count, result.text.length);
+    assert.equal(result.text_hash, sha256(result.text));
+  }
+
   // 2) DOCX de más de 90.000 caracteres no se trunca.
   {
     const docxBuffer = await buildLongDocxBuffer(95000);
