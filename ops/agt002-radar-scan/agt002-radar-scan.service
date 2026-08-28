@@ -1,0 +1,30 @@
+[Unit]
+Description=AGT-002 Radar daily source scan (no claim, no model)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/psi-comercial/agt002-radar-scan.env
+WorkingDirectory=/opt/psi-comercial/app
+ExecStart=/usr/bin/node /opt/psi-comercial/app/ops/agt002-radar-scan/run-agt002-radar-scan.mjs
+User=psi-comercial
+Group=psi-comercial
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+SystemCallArchitectures=native
+TimeoutStartSec=720
+
+[Install]
+WantedBy=multi-user.target

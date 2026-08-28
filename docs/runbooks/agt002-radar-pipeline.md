@@ -1,5 +1,36 @@
 # AGT-002 Radar — gate, preanálisis y visibilidad: runbook operacional
 
+## 0. Separación scan/worker, 2026-08-28
+
+**[Actualizado 2026-08-28]** El productor de 15 minutos descrito en este runbook (una sola
+invocación que hacía `esu_refresh → fetch → gate → ledger → claim → aprendizaje → AGT-002 →
+persistencia`) se dividió en **dos procesos con cadencia propia**, sin flag nuevo y sin cambio de
+esquema. Ver `docs/superpowers/specs/2026-08-28-agt002-daily-scan-queue-design.md` y
+`docs/superpowers/plans/2026-08-28-agt002-daily-scan-queue-implementation.md` para el diseño
+completo.
+
+- **Exploración diaria** (`agt002-radar-scan.js`, `ops/agt002-radar-scan/`): `esu_refresh → fetch →
+  gate → ledger → enqueue`. Corre **una vez al día**, invocada por
+  `ops/agt002-radar-scan/run-agt002-radar-daily-export.sh` justo después de que la exportación de
+  fuente del cron de Hermes persista con éxito (o a mano en QA). Sin `.timer` propio. Nunca reclama
+  un job ni invoca al proveedor.
+- **Drenado de cola cada 15 minutos** (`agt002-radar-worker.js`,
+  `ops/agt002-radar-pipeline/`, mismo `.service`/`.timer` de siempre): **reclama primero** un job de
+  la cola durable y, si no hay ninguno, retorna de inmediato sin refrescar ESU ni leer ninguna
+  página. **Ya no es cierto que "una invocación evalúa una página acotada y reclama como máximo un
+  job"** (frase heredada de la versión anterior de este runbook, corregida abajo): el scan evalúa la
+  página, el worker reclama.
+
+**Tres autorizaciones nuevas**, equivalentes a las cuatro de §3 más abajo, aplicadas al proceso de
+exploración: **instalar** `agt002-radar-scan.service` (sin habilitar: no tiene `.timer`), **desplegar
+el wrapper diario** (`run-agt002-radar-daily-export.sh`, versionado pero no instalado por sí solo en
+ningún cron hasta que un humano lo autorice), y **actualizar el crontab de Hermes** para que llame al
+wrapper en vez de al script de exportación directamente — esta última sólo procede después de la QA
+controlada de la Task 8 del plan de implementación, y el cron viejo se conserva hasta entonces.
+
+El módulo combinado `agt002-radar-pipeline.js` **se conserva en el árbol** como artefacto de
+compatibilidad y rollback; ya no es lo que ejecuta el `.timer` de 15 minutos.
+
 **Alcance:** `docs/superpowers/specs/2026-08-25-agt002-radar-learning-design.md` y
 `docs/superpowers/plans/2026-08-25-agt002-radar-learning-implementation.md`.
 
@@ -28,7 +59,7 @@ y siempre lleva `human_review_required = true`. El descarte sigue siendo el acto
 
 | Flag | Por defecto | Qué habilita |
 |---|---|---|
-| `AGT002_RADAR_GATE` | **OFF** | La cadena productora: `fetch → gate → ledger → claim → aprendizaje → AGT-002 → persistencia`. **No cambia nada de lo que el Radar muestra.** |
+| `AGT002_RADAR_GATE` | **OFF** | La cadena productora, dividida desde 2026-08-28 en dos procesos que comparten el mismo flag (§0): exploración diaria (`fetch → gate → ledger → enqueue`) y drenado de cola cada 15 min (`claim → aprendizaje → AGT-002 → persistencia`). **No cambia nada de lo que el Radar muestra.** |
 | `AGT002_RADAR_VISIBILITY` | **OFF** | El filtro de visibilidad en la lectura del Radar. |
 
 Sólo los literales `'true'` y `'1'` (con `trim`, sin distinción de mayúsculas) encienden un flag;
@@ -241,6 +272,23 @@ clave de intento sean nuevos por el cambio de día—, el encolado devuelve **el
 conservando su identidad de intento original** en vez de conflictuar. Si la entrada difiere en algo
 material, sigue siendo conflicto `55000`: no se conflacionan fuente, política ni contexto. Ese
 rechazo es de esa fila, no de la corrida: el lote continúa y el `claim` se ejecuta igual.
+
+### `rejected`: sólo el conflicto 55000, nunca un fallo de infraestructura
+
+`rejected` en el resultado de `agt002-radar-scan.js` cuenta **exclusivamente** el conflicto
+semántico esperado de `psi_enqueue_agt002_radar_preanalysis_job` —`SQLSTATE 55000` con el mensaje
+fijo "AGT-002 Radar tender already has a different active job"— descrito arriba: una licitación con
+un job activo bajo una entrada semántica distinta. El scan reconoce ese conflicto exacto (código
+**y** mensaje) por fila, incrementa `rejected` y sigue con el resto del lote.
+
+Cualquier otro fallo de encolado —caída de conexión con Supabase, timeout, error genérico de
+PostgREST, cualquier código distinto de `55000` o el mismo `55000` con un mensaje distinto— **no**
+se cuenta como `rejected`: se propaga y aborta la corrida completa con `status:'unavailable'`,
+`error_code:'persistence_failure'`. Contar un fallo de infraestructura como un rechazo silencioso
+por fila disfrazaría una caída real de Supabase/la cola como una corrida diaria exitosa, y ni la
+unidad `systemd` ni el wrapper de Hermes lo detectarían. El texto crudo del error nunca se expone en
+el resultado del scan, precisamente porque `unavailable`/`persistence_failure` ya es la señal
+suficiente para investigar en `journalctl -u agt002-radar-scan.service`.
 
 ### `stale_input`: un job que sobrevivió a su fila
 
