@@ -7,6 +7,7 @@ import {
   computeAgt002RadarSourceRowHash,
   evaluateAgt002RadarGate,
 } from '../agt002-radar-gate.js';
+import { agt002RadarDerivedDayWindowLabel } from '../agt002-radar-derived-day-churn.js';
 
 const NOW = '2026-08-25T15:00:00.000Z';
 const nueva = { id: 't1', stable_key: 'k1', status: 'abierto' };
@@ -109,6 +110,78 @@ assert.deepEqual(
   filterRadarRowsByCanonicalPreanalysis([cierreUtcTardio], { ...realOptions, canonicalByTenderId: cierreUtcCanonical, alwaysVisibleTenderIds: new Set(['g3']), nowIso: '2026-08-26T15:00:00.000Z' }).map(row => row.id),
   ['g3'],
   'una convertida se resuelve antes del gate y sigue siempre visible',
+);
+
+// BLOCKER (derived-day-only churn): un positivo canonico cuya UNICA diferencia de hash es
+// raw.days/raw.window (rollover diario del recolector externo) sigue siendo hash-compatible: se
+// reutiliza `isAgt002RadarDerivedDayOnlyChurn` (agt002-radar-derived-day-churn.js), nunca se
+// duplica el algoritmo. La deriva se prueba con `days` del canonico un dia mayor que hoy: eso es
+// exactamente lo que escribe el recolector diario cuando pasa un dia sin cambio material.
+const derivedDaysToday = 11;
+const derivedWindowToday = agt002RadarDerivedDayWindowLabel(derivedDaysToday);
+const derivedVigente = {
+  ...vigente, id: 'd1', stable_key: 'kd1',
+  raw: { ...vigente.raw, days: derivedDaysToday, window: derivedWindowToday },
+};
+const derivedYesterday = {
+  ...derivedVigente,
+  raw: { ...derivedVigente.raw, days: derivedDaysToday + 1, window: agt002RadarDerivedDayWindowLabel(derivedDaysToday + 1) },
+};
+const derivedOnlyCanonical = new Map([[derivedVigente.id, {
+  visibility_verdict: 'mostrar_en_radar', source_row_hash: computeAgt002RadarSourceRowHash(derivedYesterday),
+  policy_version: AGT002_RADAR_GATE_POLICY_VERSION, context_version: AGT002_RADAR_GATE_CONTEXT_VERSION,
+}]]);
+assert.notEqual(computeAgt002RadarSourceRowHash(derivedVigente), computeAgt002RadarSourceRowHash(derivedYesterday), 'el rollover diario si cambia el hash literal');
+assert.deepEqual(
+  filterRadarRowsByCanonicalPreanalysis([derivedVigente], { ...realOptions, canonicalByTenderId: derivedOnlyCanonical, alwaysVisibleTenderIds: new Set(), nowIso: '2026-08-25T15:00:00.000Z' }).map(row => row.id),
+  ['d1'],
+  'un positivo canonico solo-derivado por raw.days/raw.window sigue visible tras el rollover diario',
+);
+
+// Fail-closed: un cambio MATERIAL, aunque days/window tambien cambien, sigue oculto.
+const derivedMaterialCanonical = new Map([[derivedVigente.id, {
+  visibility_verdict: 'mostrar_en_radar',
+  source_row_hash: computeAgt002RadarSourceRowHash({ ...derivedYesterday, title: 'Otro objeto' }),
+  policy_version: AGT002_RADAR_GATE_POLICY_VERSION, context_version: AGT002_RADAR_GATE_CONTEXT_VERSION,
+}]]);
+assert.deepEqual(
+  filterRadarRowsByCanonicalPreanalysis([derivedVigente], { ...realOptions, canonicalByTenderId: derivedMaterialCanonical, alwaysVisibleTenderIds: new Set(), nowIso: '2026-08-25T15:00:00.000Z' }).map(row => row.id),
+  [],
+  'un cambio material, aunque days/window tambien cambien, sigue oculto',
+);
+
+// Fail-closed: policy/context del canonico distinto de la evaluacion vigente sigue oculto, aunque
+// el hash sea derivado-solo.
+for (const override of [{ policy_version: 'policy-old' }, { context_version: 'context-old' }]) {
+  const staleVersionMap = new Map([[derivedVigente.id, { ...derivedOnlyCanonical.get(derivedVigente.id), ...override }]]);
+  assert.deepEqual(
+    filterRadarRowsByCanonicalPreanalysis([derivedVigente], { ...realOptions, canonicalByTenderId: staleVersionMap, alwaysVisibleTenderIds: new Set(), nowIso: '2026-08-25T15:00:00.000Z' }),
+    [],
+    'policy/context distinto oculta la fila aunque el hash sea derivado-solo',
+  );
+}
+
+// Fail-closed: `raw.window` que no corresponde a `raw.days` no tiene la forma derivada exacta.
+const malformedDerivedVigente = { ...derivedVigente, raw: { ...derivedVigente.raw, window: 'urgente (0-7 días)' } };
+assert.deepEqual(
+  filterRadarRowsByCanonicalPreanalysis([malformedDerivedVigente], { ...realOptions, canonicalByTenderId: derivedOnlyCanonical, alwaysVisibleTenderIds: new Set(), nowIso: '2026-08-25T15:00:00.000Z' }),
+  [],
+  'raw shape invalido no puede clasificarse como derivado-solo',
+);
+
+// Fail-closed: mas alla del offset maximo (60 dias) se reanaliza, no se muestra por inercia.
+const derivedTooFar = {
+  ...derivedVigente,
+  raw: { ...derivedVigente.raw, days: derivedDaysToday + 61, window: agt002RadarDerivedDayWindowLabel(derivedDaysToday + 61) },
+};
+const derivedTooFarCanonical = new Map([[derivedVigente.id, {
+  visibility_verdict: 'mostrar_en_radar', source_row_hash: computeAgt002RadarSourceRowHash(derivedTooFar),
+  policy_version: AGT002_RADAR_GATE_POLICY_VERSION, context_version: AGT002_RADAR_GATE_CONTEXT_VERSION,
+}]]);
+assert.deepEqual(
+  filterRadarRowsByCanonicalPreanalysis([derivedVigente], { ...realOptions, canonicalByTenderId: derivedTooFarCanonical, alwaysVisibleTenderIds: new Set(), nowIso: '2026-08-25T15:00:00.000Z' }),
+  [],
+  'un offset mayor al tope declarado se reanaliza en vez de mostrarse',
 );
 
 // Un unico reloj para toda la pagina: el gate recibe exactamente el mismo `nowIso` en cada fila.

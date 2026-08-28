@@ -1,5 +1,6 @@
 import { evaluateAgt002RadarGate } from './agt002-radar-gate.js';
-import { recordAgt002RadarGateEvaluation, recordAgt002RadarPreanalysisRun, computeAgt002RadarPreanalysisIdempotencyKey } from './agt002-radar-preanalysis-persistence.js';
+import { recordAgt002RadarGateEvaluation, recordAgt002RadarPreanalysisRun, computeAgt002RadarPreanalysisIdempotencyKey, readAgt002RadarCanonicalPreanalysis } from './agt002-radar-preanalysis-persistence.js';
+import { hasAgt002RadarDerivedDayShape, isAgt002RadarDerivedDayOnlyChurn } from './agt002-radar-derived-day-churn.js';
 import { claimAgt002RadarPreanalysisJob, completeAgt002RadarPreanalysisJob, failAgt002RadarPreanalysisJob } from './agt002-radar-preanalysis-jobs.js';
 import { projectAgt002RadarLearningObservations } from './agt002-radar-learning-projection.js';
 import { buildAgt002RadarLearningSignals } from './agt002-radar-learning-retrieval.js';
@@ -29,6 +30,7 @@ async function defaultFetchTenderRow(database,{id}){
 export function createAgt002RadarWorker({
  database,environment=process.env,now,claimJob=claimAgt002RadarPreanalysisJob,fetchTenderRow=defaultFetchTenderRow,
  evaluateGate=evaluateAgt002RadarGate,recordGateEvaluation=recordAgt002RadarGateEvaluation,
+ readCanonicalPreanalysis=readAgt002RadarCanonicalPreanalysis,
  completeJob=completeAgt002RadarPreanalysisJob,failJob=failAgt002RadarPreanalysisJob,
  projectLearningObservations=projectAgt002RadarLearningObservations,buildLearningSignals=buildAgt002RadarLearningSignals,
  runPreanalysis=defaultRunPreanalysis,recordPreanalysisRun=recordAgt002RadarPreanalysisRun,
@@ -69,6 +71,21 @@ export function createAgt002RadarWorker({
    if(evaluation.verdict!=='sobreviviente'||evaluation.source_row_hash!==job.sourceRowHash
     ||evaluation.policy_version!==job.policyVersion||evaluation.context_version!==job.contextVersion)
     throw Object.assign(new Error('claimed job no longer matches a current survivor'),{runtime_boundary_code:'AGT002_RADAR_STALE_INPUT'});
+
+   // Drenaje gobernado de jobs legacy encolados antes de agt002-radar-derived-day-churn.js: un job
+   // puede coincidir exactamente con la fila vigente (chequeo de arriba) y aun así no ser más que el
+   // mismo churn de raw.days/raw.window que el scan ya filtra al encolar. Se consulta el canónico
+   // sólo si la fila trae la forma derivada exacta (un job por tick: la consulta bulk lleva un único
+   // id, nunca N+1) y sólo se clasifica si vuelve exactamente un canónico cuyo tender_id coincide;
+   // cualquier forma ausente/duplicada/extraña sigue al modelo. Un fallo técnico de esta lectura se
+   // propaga tal cual: ya viene envuelto en AGT002_RADAR_PERSISTENCE_FAILURE y el catch de abajo lo
+   // clasifica como persistence_failure, sin encolar ni fallar sobre evidencia que no se pudo leer.
+   if(hasAgt002RadarDerivedDayShape(row)){
+    const canonicalRows=await readCanonicalPreanalysis(database,[job.tenderId]);
+    if(Array.isArray(canonicalRows)&&canonicalRows.length===1&&canonicalRows[0]?.tender_id===job.tenderId
+     &&isAgt002RadarDerivedDayOnlyChurn(row,canonicalRows[0],{policyVersion:evaluation.policy_version,contextVersion:evaluation.context_version}))
+     throw Object.assign(new Error('claimed job is derived-day-only raw.days/raw.window churn already covered by a canonical run'),{runtime_boundary_code:'AGT002_RADAR_STALE_INPUT'});
+   }
 
    stages.push('learning');
    const observations=await projectLearningObservations(database,{limit:1000});

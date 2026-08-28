@@ -7,6 +7,7 @@ const DECISION_PATH_FILES = [
   'agt002-radar-preanalysis-runtime.js', 'agt002-radar-preanalysis-persistence.js',
   'agt002-radar-preanalysis-jobs.js', 'agt002-radar-preanalysis-worker.js',
   'agt002-radar-pipeline.js', 'agt002-radar-scan.js', 'agt002-radar-worker.js',
+  'agt002-radar-derived-day-churn.js',
   'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs',
   'ops/agt002-radar-scan/run-agt002-radar-scan.mjs',
   'supabase/migrations/071_agt002_radar_gate.sql',

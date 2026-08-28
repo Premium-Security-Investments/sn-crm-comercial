@@ -1,3 +1,5 @@
+import { isAgt002RadarDerivedDayOnlyChurn } from './agt002-radar-derived-day-churn.js';
+
 function ledgerUnavailable() {
   const error = new Error('AGT002_RADAR_VISIBILITY_LEDGER_UNAVAILABLE');
   error.code = 'AGT002_RADAR_VISIBILITY_LEDGER_UNAVAILABLE';
@@ -38,9 +40,16 @@ export function filterRadarRowsByCanonicalPreanalysis(rows, {
       const canonical = canonicalByTenderId.get(row?.id);
       if (
         canonical?.visibility_verdict !== 'mostrar_en_radar'
-        || canonical.source_row_hash !== computeSourceRowHash(row)
         || canonical.policy_version !== policyVersion
         || canonical.context_version !== contextVersion
+      ) return false;
+      // Un rollover diario del recolector externo reescribe SÓLO raw.days/raw.window y por eso
+      // cambia el hash literal sin cambiar nada material (agt002-radar-derived-day-churn.js). El
+      // mismo clasificador puro que ya usan el scan y el worker antes de encolar decide aquí si ese
+      // positivo canónico sigue siendo la misma fila; cualquier otra diferencia sigue ocultando.
+      if (
+        canonical.source_row_hash !== computeSourceRowHash(row)
+        && !isAgt002RadarDerivedDayOnlyChurn(row, canonical, { policyVersion, contextVersion })
       ) return false;
       // Un positivo canónico sigue siendo una foto de cuando se produjo. El gate determinista se
       // reevalúa aquí con un único reloj para toda la página, de modo que una fila que ya cruzó su
