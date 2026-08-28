@@ -537,3 +537,103 @@ datos.
 instalar la unidad, encender `AGT002_RADAR_GATE`, habilitar el temporizador y encender
 `AGT002_RADAR_VISIBILITY` siguen siendo **cinco autorizaciones distintas**. Este cierre no concede
 ninguna de ellas.
+
+---
+
+## 15. AGT-002 Radar — rollout productivo, hotfix de churn y QA E2E (2026-08-28)
+
+> **No sustituye a §13.** §13 sigue siendo la sección autoritativa del frente decisional AGT-002.
+> Esta sección **sí sustituye a §14**, exclusivamente para el estado operativo del Radar (gate,
+> ledger, visibilidad, worker y auditoría). §14 queda conservada íntegra como historial local previo
+> al rollout; deja de ser la referencia vigente para el estado del Radar.
+
+### 15.1. Publicación y despliegue
+
+- PR de rollout/hotfix: **#147**.
+- Merge/deploy exacto: **`6a666baa082615d74ba5389925ddd96931dfd555`**.
+- Backup previo al hotfix: **`/root/agt002-radar-backup-20260828T142403Z-hotfix147`**.
+- Spec de referencia: `docs/superpowers/specs/2026-08-28-agt002-radar-derived-day-churn-hotfix.md`.
+- Runbook operacional vigente: `docs/runbooks/agt002-radar-pipeline.md`.
+
+### 15.2. Causa raíz y alcance del hotfix
+
+- El hash literal usado para detectar cambios materiales incluía `raw.days`/`raw.window`
+  **recalculados**, no los valores crudos persistidos; eso producía churn — el mismo expediente
+  cambiaba de hash entre corridas por variación derivada del día/ventana, no por un cambio real del
+  dato fuente.
+- El hotfix **alinea** el scan, el preflight del worker legacy, la visibilidad y la auditoría para
+  que todos midan el mismo criterio de materialidad sobre datos crudos, no derivados.
+- Regla **fail-closed** explícita: ante cualquier diferencia **material o ambigua**, política/contexto
+  **incompatible**, `raw` **inválido**, u **offset > 60**, el sistema falla cerrado (no procesa,
+  no expone).
+- **Sin heurística difusa (no fuzzy)** y **sin autoridad sobre CRM ni sobre la decisión GO/NO-GO**: el
+  Radar sigue siendo estrictamente un mecanismo de detección/cola, no un tomador de decisiones.
+
+### 15.3. QA de código — PASS
+
+- Suite completa: **1052 tests; 1051 PASS, 0 FAIL, 1 SKIP**.
+- `npx tsc --noEmit`: **PASS**.
+- `npm run check:backend-parity`: **PASS**.
+- `npm run build`: **PASS**.
+- Revisión independiente detectó un problema de **visibilidad**; fue corregido y la re-revisión dio
+  **PASS, 0 Critical, 0 Important**.
+
+### 15.4. QA live — scan inicial
+
+- Scan inicial: **250 evaluated, 31 survivors, 13 enqueued**.
+- De los encolados: **13 satisfied exact, 5 satisfied_derived_only, 0 rejected**.
+- Auditoría inicial correspondiente: **total 1302**, **survivors 37**, **missing 6**,
+  **stale_hash 7**, **fresh_mostrar_en_radar 24**, **uncovered 13**.
+
+### 15.5. QA de sync e idempotencia
+
+- Export directo `/root/.hermes/scripts/secop_psi_radar_export.sh`: **exit 0**.
+- Dos scans consecutivos produjeron resultados **idénticos**: `evaluated 250 / survivors 31 /
+  enqueued 11 / satisfied 15 / satisfied_derived_only 5 / rejected 0`.
+- La cola durable permaneció en **16** entre ambos scans. Conclusión: los 11 "enqueued" del segundo
+  scan **no fueron inserciones nuevas**, sino **respuestas idempotentes** sobre jobs ya activos en
+  la cola.
+
+### 15.6. E2E worker — jobs reales
+
+- Dos jobs reales completaron el ciclo completo `claim → fetch_row → gate → ledger → learning → agt
+  → persist`:
+  - `b69175a0-1106-436c-8ce8-d6803e5c0ae8`.
+  - `f8b10458-6bec-4a46-b2cc-4850108a3554`.
+- Primer churn legacy observado, job `b5753f87-245e-4a6b-a74c-06da3f1a52b9`: cerró como
+  `unavailable/stale_input`, con etapas limitadas a `claim → fetch_row → gate → ledger`, **sin**
+  llegar a `learning`, sin invocar modelo y sin `persist`. Comportamiento fail-closed esperado ante
+  un input obsoleto, no un fallo del pipeline.
+
+### 15.7. Estado live tras esa observación
+
+- **15 queued** = **4 derived_only** demostrados (churn legacy, se neutralizan solos) + **11
+  reales/ambiguos** (siguen el modelo normal).
+- `current_job_identity_mismatch`: **0**.
+- Auditoría en ese punto: **missing 5, stale_hash 6, fresh 26, uncovered 11**.
+- `ready_for_visibility_flag`: **false**.
+- Ledger: **available**.
+- `AGT002_RADAR_GATE`: **true**. `AGT002_RADAR_VISIBILITY`: **false**.
+- Temporizador: **active**, `OnUnitActiveSec=15m` + jitter de **90 s**, máximo **1 job por tick**.
+- Cron diario: **activo**, `0 13 * * 1-5`; próxima corrida **2026-08-31T13:00:00Z** (08:00
+  Colombia).
+- **No acelerar ni drenar manualmente la cola.** Los 4 derivados restantes se neutralizan de forma
+  natural en corridas siguientes; los 11 reales siguen el flujo de modelo normal, sin intervención.
+
+### 15.8. Estado honesto — sin visibilidad aún
+
+- El código está desplegado y el hotfix quedó **validado end-to-end** con jobs reales.
+- El backlog gobernado **sigue drenando por temporizador**; no se ha vaciado ni acelerado.
+- Por tanto, el Radar **todavía no está listo para activar `AGT002_RADAR_VISIBILITY`** hasta que la
+  auditoría reporte `uncovered = 0` y exista **revisión humana** de ese resultado.
+- No se afirma "sin pendientes": quedan pendientes activos, gobernados por el temporizador y el cron,
+  bajo seguimiento.
+
+### 15.9. Gates y próximo paso
+
+- Sin push adicional, sin nuevas migraciones, sin cambios de flags productivos más allá de los ya
+  registrados en §15.7.
+- Próximo paso exacto: dejar correr el temporizador y el cron programado (§15.7); tras el drenaje
+  natural del backlog, repetir la auditoría y exigir `uncovered = 0` con revisión humana antes de
+  encender `AGT002_RADAR_VISIBILITY`. Ver `docs/runbooks/agt002-radar-pipeline.md` para el
+  procedimiento operativo detallado.
