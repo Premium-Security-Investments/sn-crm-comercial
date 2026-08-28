@@ -8,7 +8,7 @@ export async function dispatchTenderProcessingAfterConversion({
   runOnce,
   onError = () => undefined,
 } = {}) {
-  if (!enabled || job?.status !== 'created') return { status: 'skipped' };
+  if (!enabled || job?.outcome !== 'created') return { status: 'skipped' };
   if (typeof runOnce !== 'function') throw new Error('dispatchTenderProcessingAfterConversion: runOnce es obligatorio.');
 
   try {

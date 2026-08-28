@@ -6,7 +6,7 @@ async function run() {
     let calls = 0;
     const result = await dispatchTenderProcessingAfterConversion({
       enabled: false,
-      job: { status: 'created', job_id: 'job-1' },
+      job: { outcome: 'created', status: 'queued', job_id: 'job-1' },
       runOnce: async () => { calls += 1; },
     });
     assert.equal(calls, 0);
@@ -16,7 +16,7 @@ async function run() {
     let calls = 0;
     const result = await dispatchTenderProcessingAfterConversion({
       enabled: true,
-      job: { status: 'existing', job_id: 'job-1' },
+      job: { outcome: 'existing', status: 'importing_documents', job_id: 'job-1' },
       runOnce: async () => { calls += 1; },
     });
     assert.equal(calls, 0, 'an idempotent existing job must not be dispatched again by conversion');
@@ -26,7 +26,7 @@ async function run() {
     let calls = 0;
     const result = await dispatchTenderProcessingAfterConversion({
       enabled: true,
-      job: { status: 'created', job_id: 'job-1' },
+      job: { outcome: 'created', status: 'queued', job_id: 'job-1' },
       runOnce: async () => { calls += 1; return { status: 'discovered' }; },
     });
     assert.equal(calls, 1, 'a newly-created durable job is dispatched exactly once');
@@ -37,7 +37,7 @@ async function run() {
     const warnings = [];
     const result = await dispatchTenderProcessingAfterConversion({
       enabled: true,
-      job: { status: 'created', job_id: 'job-1' },
+      job: { outcome: 'created', status: 'queued', job_id: 'job-1' },
       runOnce: async () => { calls += 1; throw Object.assign(new Error('temporary'), { code: 'TEMP' }); },
       onError: event => warnings.push(event),
     });

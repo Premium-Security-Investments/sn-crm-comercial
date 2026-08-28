@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert';
-import { callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
+import { callCreateTenderProcessingJob, callTenderOpportunityConversion, callTenderOpportunityDiscard, callTenderTrackingTransition, callTenderTrackingUpdate } from '../tender-tracking-rpc.js';
 
 const tenderId = '11111111-1111-4111-8111-111111111111';
 const actorId = '22222222-2222-4222-8222-222222222222';
@@ -14,6 +14,34 @@ function fakeRpcDb({ data = { id: tenderId }, error = null } = {}) {
     rpc(name, args) {
       calls.push({ name, args });
       return Promise.resolve({ data, error });
+    },
+  };
+}
+
+function fakeJobCreationDb({ rpcResult, row }) {
+  const calls = [];
+  const reads = [];
+  return {
+    calls,
+    reads,
+    rpc(name, args) {
+      calls.push({ name, args });
+      return Promise.resolve({ data: rpcResult, error: null });
+    },
+    from(table) {
+      assert.equal(table, 'psi_tender_processing_jobs');
+      return {
+        select(columns) {
+          assert.equal(columns, 'status,current_step');
+          return {
+            eq(column, value) {
+              assert.equal(column, 'id');
+              reads.push(value);
+              return { single: () => Promise.resolve({ data: row, error: null }) };
+            },
+          };
+        },
+      };
     },
   };
 }
@@ -163,6 +191,36 @@ await (async function callsAtomicConversionRpcWithPersistedTenderPayloadAndToken
     p_sede: 'REF-1', p_economic_sector: 'Sector público', p_tipo_producto_original: 'Licitación Pública',
     p_observaciones: 'Radar', p_expected_tracking_updated_at: expectedAt,
   });
+})();
+
+await (async function reportsCreationOutcomeSeparatelyFromDurablePipelineStatusForANewJob() {
+  const jobId = '55555555-5555-4555-8555-555555555555';
+  const db = fakeJobCreationDb({
+    rpcResult: { status: 'created', job_id: jobId },
+    row: { status: 'queued', current_step: 'documents' },
+  });
+
+  const job = await callCreateTenderProcessingJob(db, {
+    tenderId, opportunityId, pipelineVersion: 'v1', requestedBy: actorId,
+  });
+
+  assert.deepEqual(job, { job_id: jobId, outcome: 'created', status: 'queued', current_step: 'documents' });
+  assert.equal(db.calls[0].name, 'psi_create_tender_processing_job');
+  assert.deepEqual(db.reads, [jobId]);
+})();
+
+await (async function reportsCreationOutcomeSeparatelyFromDurablePipelineStatusForAnExistingJob() {
+  const jobId = '66666666-6666-4666-8666-666666666666';
+  const db = fakeJobCreationDb({
+    rpcResult: { status: 'existing', job_id: jobId },
+    row: { status: 'importing_documents', current_step: 'documents' },
+  });
+
+  const job = await callCreateTenderProcessingJob(db, {
+    tenderId, opportunityId, pipelineVersion: 'v1', requestedBy: actorId,
+  });
+
+  assert.deepEqual(job, { job_id: jobId, outcome: 'existing', status: 'importing_documents', current_step: 'documents' });
 })();
 
 console.log('tender tracking RPC backend contract passed');

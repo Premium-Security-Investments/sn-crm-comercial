@@ -122,7 +122,10 @@ export async function callTenderOpportunityConversion(database, tenderId, payloa
 }
 
 /** Idempotent: a repeated call for the same tender/opportunity/pipeline version
- * recovers the active job instead of creating a duplicate. */
+ * recovers the active job instead of creating a duplicate. Returns `outcome`
+ * ('created'|'existing', from the RPC) separately from `status`, the job's
+ * durable pipeline status (e.g. 'queued') read back from the row — callers that
+ * gate on newly-created jobs must check `outcome`, not `status`. */
 export async function callCreateTenderProcessingJob(database, { tenderId, opportunityId, pipelineVersion, requestedBy }) {
   const id = requireUuid(tenderId, 'una licitación válida');
   const opportunity = requireUuid(opportunityId, 'una oportunidad válida');
@@ -146,7 +149,7 @@ export async function callCreateTenderProcessingJob(database, { tenderId, opport
     .single();
   if (error) throw error;
 
-  return { job_id: created.job_id, status: job.status, current_step: job.current_step };
+  return { job_id: created.job_id, outcome: created.status, status: job.status, current_step: job.current_step };
 }
 
 export async function callTenderTrackingTransition(database, tenderId, input, currentProfile) {

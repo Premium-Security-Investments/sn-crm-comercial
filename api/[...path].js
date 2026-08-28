@@ -3119,7 +3119,7 @@ async function convertTenderToOpportunity(database, tender, currentProfile) {
       dispatch_status: dispatch.status, worker_status: dispatch.worker_status || null, error_code: dispatch.error_code || null,
       duration_ms: Date.now() - jobCreatedAt,
     });
-    if (job.status === 'created' && dispatch.status === 'dispatched') {
+    if (job.outcome === 'created' && dispatch.status === 'dispatched') {
       // Only measurable on the immediate-dispatch path: creation and this claim happen
       // within the same request. Jobs picked up later by the scheduler have no JS-visible
       // creation timestamp to diff against (would require a schema change, out of scope here).
