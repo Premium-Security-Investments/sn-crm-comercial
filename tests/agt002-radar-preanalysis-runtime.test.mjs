@@ -46,6 +46,17 @@ assert.ok(
   `el lease por defecto (${leaseDefault?.[1]}s) ya no deja 300 s de holgura sobre el techo de timeout`,
 );
 
+// Mismo invariante sobre el worker de cola: es el módulo que gobierna en producción tras el
+// repurpose del runner del timer (Task 4), así que su propio leaseSeconds por defecto debe
+// conservar la misma holgura frente al techo de timeout.
+const workerSource = readFileSync(new URL('../agt002-radar-worker.js', import.meta.url), 'utf8');
+const workerLeaseDefault = workerSource.match(/leaseSeconds\s*=\s*(\d+)/);
+assert.ok(workerLeaseDefault, 'el worker debe declarar un leaseSeconds por defecto');
+assert.ok(
+  Number(workerLeaseDefault[1]) * 1000 - 300_000 >= 300_000,
+  `el lease por defecto del worker (${workerLeaseDefault?.[1]}s) ya no deja 300 s de holgura sobre el techo de timeout`,
+);
+
 const tenderRow = { id:'22222222-2222-4222-8222-222222222222', stable_key:'k1', title:'Vigilancia', description:'Armada', status:'abierto', deadline_at:'2026-12-31' };
 const gateEvaluation = { id:'33333333-3333-4333-8333-333333333333',tender_id:tenderRow.id,verdict:'sobreviviente',rule_ids:[],reasons:[],data_gaps:[],policy_version:AGT002_RADAR_GATE_POLICY_VERSION,context_version:'agt002-radar-context-v1',source_row_hash:'a'.repeat(64) };
 const invalid = createAgt002RadarPreanalysisRuntime({ environment:env, createClient:() => ({run:async () => ({output:{agent_id:'AGT-003'}})}) });

@@ -1,4 +1,14 @@
-function persistenceError(error) { const wrapped=error instanceof Error?error:new Error('AGT-002 Radar queue persistence failed.'); wrapped.runtime_boundary_code='AGT002_RADAR_PERSISTENCE_FAILURE'; return wrapped; }
+const PERSISTENCE_ERROR_CODE_MAX_LENGTH=40;
+const PERSISTENCE_ERROR_MESSAGE_MAX_LENGTH=500;
+function boundedString(value,maxLength){if(typeof value!=='string')return null;const trimmed=value.trim();if(!trimmed)return null;return trimmed.length>maxLength?trimmed.slice(0,maxLength):trimmed;}
+function persistenceError(error) {
+  const sourceCode=boundedString(error?.code,PERSISTENCE_ERROR_CODE_MAX_LENGTH);
+  const sourceMessage=boundedString(error?.message,PERSISTENCE_ERROR_MESSAGE_MAX_LENGTH);
+  const wrapped=error instanceof Error?error:new Error(sourceMessage||'AGT-002 Radar queue persistence failed.');
+  wrapped.runtime_boundary_code='AGT002_RADAR_PERSISTENCE_FAILURE';
+  if(sourceCode)wrapped.database_code=sourceCode;
+  return wrapped;
+}
 async function rpc(database,name,args){
   if(!database||typeof database.rpc!=='function') throw persistenceError(new Error('AGT-002 Radar database client required.'));
   let response; try{response=await database.rpc(name,args);}catch(error){throw persistenceError(error);} if(response?.error) throw persistenceError(response.error); return response?.data??null;

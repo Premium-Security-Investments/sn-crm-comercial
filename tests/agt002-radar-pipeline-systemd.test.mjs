@@ -1,4 +1,39 @@
-import assert from 'node:assert/strict';import {readFileSync,existsSync} from 'node:fs';const base=new URL('../ops/agt002-radar-pipeline/',import.meta.url);const files=['run-agt002-radar-pipeline.mjs','agt002-radar-pipeline.service','agt002-radar-pipeline.timer','env.example','README.md'];for(const file of files)assert.equal(existsSync(new URL(file,base)),true,file);const read=file=>readFileSync(new URL(file,base),'utf8');const runner=read(files[0]),service=read(files[1]),timer=read(files[2]),env=read(files[3]),readme=read(files[4]);assert.match(runner,/createAgt002RadarPipeline/);assert.equal((runner.match(/\bpipeline\.runOnce\(\)/g)||[]).length,1);assert.equal((runner.match(/\brefresher\.runOnce\(\)/g)||[]).length,1);assert.doesNotMatch(runner,/setInterval|setTimeout|while\s*\(|for\s*\(;;\)|fetch\(|https?:\/\//);assert.match(runner,/SUPABASE_SERVICE_ROLE_KEY/);assert.match(runner,/process\.exitCode\s*=\s*1/);assert.match(service,/Type=oneshot/);assert.match(service,/EnvironmentFile=/);assert.match(timer,/OnUnitActiveSec=/);assert.match(timer,/Persistent=false/);assert.doesNotMatch(timer,/RandomizedDelaySec=0\b/);assert.match(env,/^AGT002_RADAR_GATE=false$/m);for(const file of files){assert.equal(read(file).includes('systemctl '),false);assert.equal(read(file).includes('--apply'),false);}assert.match(readme,/autorizaci[oó]n separada/i);
+import assert from 'node:assert/strict';import {readFileSync,existsSync} from 'node:fs';const base=new URL('../ops/agt002-radar-pipeline/',import.meta.url);const files=['run-agt002-radar-pipeline.mjs','agt002-radar-pipeline.service','agt002-radar-pipeline.timer','env.example','README.md'];for(const file of files)assert.equal(existsSync(new URL(file,base)),true,file);const read=file=>readFileSync(new URL(file,base),'utf8');const runner=read(files[0]),service=read(files[1]),timer=read(files[2]),env=read(files[3]),readme=read(files[4]);
+
+// [Phase 2, 2026-08-28] The 15-min timer's ExecStart repurposes to the claim-first queue worker.
+// It must import createAgt002RadarWorker and run exactly one worker.runOnce() -- and it must NOT
+// import or construct the combined pipeline, the ESU refresher, fetchEsuProcesses, or the scan
+// module: those symbols moved to ops/agt002-radar-scan/run-agt002-radar-scan.mjs (Task 3/4).
+assert.match(runner,/createAgt002RadarWorker/);
+assert.match(runner,/from\s+'\.\.\/\.\.\/agt002-radar-worker\.js'/);
+assert.equal((runner.match(/\bworker\.runOnce\(\)/g)||[]).length,1);
+assert.doesNotMatch(runner,/createAgt002RadarPipeline/);
+assert.doesNotMatch(runner,/agt002-radar-pipeline\.js/);
+assert.doesNotMatch(runner,/createAgt002RadarScan/);
+assert.doesNotMatch(runner,/createSupabaseEsuDirectRefresher/);
+assert.doesNotMatch(runner,/fetchEsuProcesses/);
+assert.doesNotMatch(runner,/esu-direct-refresh(\.js)?/);
+assert.doesNotMatch(runner,/esu-direct-crawl(\.js)?/);
+assert.doesNotMatch(runner,/refreshEsuDirect/);
+assert.doesNotMatch(runner,/\brefresher\b/);
+
+assert.doesNotMatch(runner,/setInterval|setTimeout|while\s*\(|for\s*\(;;\)|fetch\(|https?:\/\//);assert.match(runner,/SUPABASE_SERVICE_ROLE_KEY/);assert.match(runner,/process\.exitCode\s*=\s*1/);assert.match(service,/Type=oneshot/);assert.match(service,/EnvironmentFile=/);
+// The .service's own ExecStart never changes: same file path, same identity -- only the file
+// contents that ExecStart already runs change (the "low-risk repurpose", spec 5 A5/6.2).
+assert.match(service,/ExecStart=\/usr\/bin\/node \/opt\/psi-comercial\/app\/ops\/agt002-radar-pipeline\/run-agt002-radar-pipeline\.mjs/);
+assert.match(timer,/OnUnitActiveSec=/);assert.match(timer,/Persistent=false/);assert.doesNotMatch(timer,/RandomizedDelaySec=0\b/);assert.match(env,/^AGT002_RADAR_GATE=false$/m);
+// The worker is the only one of the two processes that still calls the AGT-002 provider, so its
+// environment file keeps the bridge/model credentials -- least privilege means not handing them
+// to the process that doesn't need them (the scan), not stripping them from the one that does.
+assert.match(env,/^AGT002_HETZNER_BRIDGE_HMAC_SECRET=/m);
+assert.match(env,/^AGT002_RADAR_PREANALYSIS_TIMEOUT_MS=/m);
+assert.match(env,/^AGT002_RADAR_PREANALYSIS_MODEL=/m);
+for(const file of files){assert.equal(read(file).includes('systemctl '),false);assert.equal(read(file).includes('--apply'),false);}assert.match(readme,/autorizaci[oó]n separada/i);
+// The README now describes the worker-only role (claim-first, no ESU, no full-page fetch) with a
+// cross-reference to the daily scan that feeds the queue, and where its logs live post-repurpose.
+assert.match(readme,/worker|cola|drenad/i);
+assert.match(readme,/agt002-radar-scan/);
+assert.match(readme,/journalctl -u agt002-radar-pipeline\.service/);
 
 // Hardening baseline: paridad exacta con ops/agt002-reanalysis-worker/agt002-reanalysis-worker.service.
 // Se compara línea completa (no substring) para que `CapabilityBoundingSet=CAP_...` no pase como `CapabilityBoundingSet=`.

@@ -128,12 +128,25 @@ test('unavailable checkpoint still imposes the 6h retry floor 15 minutes later',
   assert.equal(result.status, 'skipped_fresh');
 });
 
-test('durable AGT-002 entrypoint injects the real ESU direct refresher', () => {
-  const source = readFileSync(new URL('../ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs', import.meta.url), 'utf8');
+// [Phase 2, 2026-08-28] The ESU direct-refresh now runs inside the daily scan, not the 15-min
+// queue worker: the scan owns esu_refresh -> fetch -> gate -> ledger -> enqueue, the worker only
+// claims. These two assertions moved from the pipeline runner to the scan runner accordingly; the
+// invariant they protect -- "the durable entrypoint injects the real refresher and asks for
+// historical rows" -- is unchanged, only which file it lives on.
+test('durable AGT-002 scan entrypoint injects the real ESU direct refresher', () => {
+  const source = readFileSync(new URL('../ops/agt002-radar-scan/run-agt002-radar-scan.mjs', import.meta.url), 'utf8');
   assert(source.includes('createSupabaseEsuDirectRefresher'));
   assert(source.includes('fetchEsuProcesses'));
   assert(source.includes('refreshEsuDirect'));
   assert(source.includes('.runOnce()'));
+});
+
+test('durable AGT-002 queue worker entrypoint never imports or references the ESU direct-refresh adapter', () => {
+  const source = readFileSync(new URL('../ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs', import.meta.url), 'utf8');
+  assert.equal(source.includes('createSupabaseEsuDirectRefresher'), false);
+  assert.equal(source.includes('fetchEsuProcesses'), false);
+  assert.equal(source.includes('refreshEsuDirect'), false);
+  assert.doesNotMatch(source, /esu-direct-refresh|esu-direct-crawl/);
 });
 
 // --- Reconcile-existing-only remediation --------------------------------------------------
@@ -306,8 +319,8 @@ test('Supabase ESU adapter preserves existing deadline/status in the id-targeted
     'a blank direct status must not erase the existing authoritative status in the id-targeted patch');
 });
 
-test('durable AGT-002 entrypoint requests historical ESU rows, not just default candidate-discovery mode', () => {
-  const source = readFileSync(new URL('../ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs', import.meta.url), 'utf8');
+test('durable AGT-002 scan entrypoint requests historical ESU rows, not just default candidate-discovery mode', () => {
+  const source = readFileSync(new URL('../ops/agt002-radar-scan/run-agt002-radar-scan.mjs', import.meta.url), 'utf8');
   assert.match(
     source,
     /fetchEsuProcesses\(\s*\{\s*includeHistorical\s*:\s*true/,
