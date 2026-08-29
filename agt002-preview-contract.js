@@ -17,7 +17,6 @@ import {
   AGT002_INTEGRAL_ESCALATION_LEVELS,
   AGT002_INTEGRAL_EVIDENCE_PURPOSES,
   AGT002_INTEGRAL_LEGAL_STATUSES,
-  AGT002_INTEGRAL_MILESTONE_STATUSES,
   AGT002_INTEGRAL_MILESTONE_TYPES,
   AGT002_INTEGRAL_PRESENCE_STATES,
   AGT002_INTEGRAL_REVIEW_STATES,
@@ -370,6 +369,17 @@ function v3NullableString(maxLength = V3_WIRE_ID_MAX_LENGTH) {
   return { anyOf: [v3String(maxLength), { type: 'null' }] };
 }
 
+// OpenAI Structured Outputs documents `format` as a supported string keyword, with
+// `date-time` explicitly listed — this is the one place milestone.at needs an actual
+// date, so it uses the documented format rather than a bespoke pattern/regex.
+function v3DateTimeString(maxLength = V3_WIRE_TEXT_MAX_LENGTH) {
+  return { type: 'string', format: 'date-time', minLength: 1, maxLength };
+}
+
+function v3NullableDateTimeString(maxLength = V3_WIRE_ID_MAX_LENGTH) {
+  return { anyOf: [v3DateTimeString(maxLength), { type: 'null' }] };
+}
+
 const v3EvidenceStateSchema = v3ClosedObject({
   presence: { type: 'string', enum: [...AGT002_INTEGRAL_PRESENCE_STATES] },
   review: { type: 'string', enum: [...AGT002_INTEGRAL_REVIEW_STATES] },
@@ -424,6 +434,63 @@ function buildV3EvidenceRefsSchema(allowlist) {
       purpose: { type: 'string', enum: [...AGT002_INTEGRAL_EVIDENCE_PURPOSES] },
     }),
   };
+}
+
+// AGT-002 milestone wire-contract hotfix: validateMilestone (agt002-integral-analysis-v3.js)
+// enforces a status <-> at/source_ref cross-field invariant — "verified" requires both non-null,
+// "not_identified" requires both null — that a flat, independently-typed object schema cannot
+// express. A provider's structured output could therefore satisfy this wire schema (status
+// "verified" with at/source_ref left null) while always failing validateMilestone downstream with
+// v3_milestone_invariant, so no canonical run ever persisted. This closed three-branch anyOf,
+// discriminated on status, makes that invalid combination structurally unrepresentable on the
+// wire, using the same property-level anyOf-of-closed-objects pattern already proven against the
+// live Codex provider by `evidence_state` below. "unverified" keeps its existing unconstrained
+// at/source_ref semantics (nullable, no cross-field requirement) — validateMilestone imposes none.
+// The semantic validator itself is unchanged and remains the sole authority on these invariants.
+// Residual gap closed here: `at` was a plain string, so a schema-valid but non-date value (e.g.
+// "tbd") could satisfy the wire schema and still fail validateMilestone's Date.parse check
+// downstream. Both the non-null "verified" branch and the non-null side of "unverified"'s
+// nullable branch now use the documented OpenAI Structured Outputs `format: 'date-time'`
+// keyword instead of a plain string, so a non-date value is structurally unrepresentable.
+function buildV3MilestoneSchema(hasGovernedContext, milestoneRefs) {
+  const typeSchema = { type: 'string', enum: [...AGT002_INTEGRAL_MILESTONE_TYPES] };
+  const governedRefs = hasGovernedContext ? governedStringValues(milestoneRefs) : [];
+  const nullableSourceRef = hasGovernedContext
+    ? (governedRefs.length > 0 ? v3GovernedNullableString(milestoneRefs, V3_WIRE_TEXT_MAX_LENGTH) : { type: 'null' })
+    : v3NullableString();
+  const nonNullSourceRef = hasGovernedContext
+    ? (governedRefs.length > 0 ? { type: 'string', enum: governedRefs } : null)
+    : v3String(V3_WIRE_ID_MAX_LENGTH);
+
+  const branches = [
+    v3ClosedObject({
+      status: { type: 'string', const: 'not_identified' },
+      type: typeSchema,
+      at: { type: 'null' },
+      source_ref: { type: 'null' },
+      summary: v3String(),
+    }),
+    v3ClosedObject({
+      status: { type: 'string', const: 'unverified' },
+      type: typeSchema,
+      at: v3NullableDateTimeString(),
+      source_ref: nullableSourceRef,
+      summary: v3String(),
+    }),
+  ];
+  // When no allowlisted reference exists, "verified" is unsatisfiable (validateMilestone would
+  // always reject a null source_ref for it) — drop the branch entirely rather than offer an
+  // empty-enum dead end the provider could still pick.
+  if (nonNullSourceRef !== null) {
+    branches.push(v3ClosedObject({
+      status: { type: 'string', const: 'verified' },
+      type: typeSchema,
+      at: v3DateTimeString(V3_WIRE_ID_MAX_LENGTH),
+      source_ref: nonNullSourceRef,
+      summary: v3String(),
+    }));
+  }
+  return { anyOf: branches };
 }
 
 // Governed units fix: `category` and `evidence_state` are server-owned for a
@@ -523,17 +590,7 @@ function buildV3AnalysisUnitSchema(validationContext) {
       external_side_effect: { type: 'boolean', const: false },
     }),
   },
-  milestone: v3ClosedObject({
-    status: { type: 'string', enum: [...AGT002_INTEGRAL_MILESTONE_STATUSES] },
-    type: { type: 'string', enum: [...AGT002_INTEGRAL_MILESTONE_TYPES] },
-    at: v3NullableString(),
-    source_ref: hasGovernedContext
-      ? (governedStringValues(milestoneRefs).length > 0
-        ? v3GovernedNullableString(milestoneRefs, V3_WIRE_TEXT_MAX_LENGTH)
-        : { type: 'null' })
-      : v3NullableString(),
-    summary: v3String(),
-  }),
+  milestone: buildV3MilestoneSchema(hasGovernedContext, milestoneRefs),
   escalation: v3ClosedObject({
     required: { type: 'boolean' },
     level: { type: 'string', enum: [...AGT002_INTEGRAL_ESCALATION_LEVELS] },
