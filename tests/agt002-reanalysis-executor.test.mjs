@@ -52,6 +52,10 @@ test('reconstructs runtime from frozen non-secret input and invokes the real orc
   assert.equal(runtimeOptions.environment.AGT002_PREVIEW_MODEL, 'model-1');
   assert.equal(runtimeOptions.environment.AGT002_PREVIEW_POLICY_VERSION, 'policy-1');
   assert.equal(runtimeOptions.environment.AGT002_INTEGRAL_CONTRACT_V3, 'true');
+  // AGT-002 root-cause fix: a legacy frozen job (no `engine_identity.effort` — created before
+  // this field existed) must still reconstruct with the current safe default, never crash and
+  // never inherit whatever the worker host's own ambient env happens to have set.
+  assert.equal(runtimeOptions.environment.AGT002_PREVIEW_REASONING_EFFORT, 'low');
   assert.equal(runtimeOptions.contextVersionId, 'context-1');
   assert.equal(runtimeOptions.companyEvidenceRegistryEntries, JOB.frozenEngineInput.integral_v3_governance.companyEvidenceRegistryEntries);
   assert.equal(runtimeOptions.onBridgeInvocationStarted instanceof Function, true);
@@ -172,6 +176,37 @@ test('rejects malformed, over-budget, or identity-mismatched frozen input before
   const overBudget = await executor({ kind: 'db' }, { ...JOB, frozenEngineInput: { ...JOB.frozenEngineInput, engine_identity: { ...JOB.frozenEngineInput.engine_identity, timeout_ms: 480_001 } } });
   assert.deepEqual(mismatch, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false });
   assert.deepEqual(overBudget, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false });
+  assert.equal(calls.claim.length, 0);
+  assert.equal(calls.runtime.length, 0);
+});
+
+// AGT-002 root-cause fix: an explicit, valid frozen effort reconstructs the worker's runtime
+// environment exactly, and an unsupported/corrupted frozen effort is refused fail-closed before
+// any provider claim — exactly like every other malformed engine_identity field above.
+test('forwards an explicit frozen reasoning effort to the reconstructed runtime environment', async () => {
+  const job = {
+    ...JOB,
+    frozenEngineInput: {
+      ...JOB.frozenEngineInput,
+      engine_identity: { ...JOB.frozenEngineInput.engine_identity, effort: 'medium' },
+    },
+  };
+  const { executor, calls } = harness();
+  await executor({ kind: 'db' }, job);
+  assert.equal(calls.runtime[0].environment.AGT002_PREVIEW_REASONING_EFFORT, 'medium');
+});
+
+test('rejects an unsupported frozen reasoning effort before any provider claim', async () => {
+  const job = {
+    ...JOB,
+    frozenEngineInput: {
+      ...JOB.frozenEngineInput,
+      engine_identity: { ...JOB.frozenEngineInput.engine_identity, effort: 'high' },
+    },
+  };
+  const { executor, calls } = harness();
+  const result = await executor({ kind: 'db' }, job);
+  assert.deepEqual(result, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false });
   assert.equal(calls.claim.length, 0);
   assert.equal(calls.runtime.length, 0);
 });

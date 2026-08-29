@@ -1,3 +1,5 @@
+import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
+
 // Safe, structured operational metrics for the AGT-002 / Vig-IA durable
 // pipeline (conversion -> job -> claim -> snapshot -> agent -> run). Every
 // event type below has a closed field allowlist: only fields in that list are
@@ -108,7 +110,7 @@ export const AGT002_OBSERVABILITY_EVENT_FIELDS = Object.freeze({
   // token counts) without ever needing, and therefore never risking, the raw content or the
   // validator's own message text.
   output_rejected: Object.freeze([
-    'stage', 'validation_code', 'content_sha256', 'content_bytes', 'snapshot_id', 'input_tokens', 'output_tokens',
+    'stage', 'validation_code', 'content_sha256', 'content_bytes', 'snapshot_id', 'input_tokens', 'output_tokens', 'effort',
   ]),
   canonical_preview_unavailable: Object.freeze([
     'correlation_id', 'stage', 'error_code', 'bridge_invocation_started', 'duration_ms',
@@ -178,6 +180,8 @@ function sanitizeAgt002FieldValue(eventType, key, value) {
   if (key === 'error_message') return boundAgt002ErrorMessage(value);
   if (key === 'error_code') return boundAgt002ErrorCode(value);
   if (key === 'validation_code') return boundAgt002ValidationCode(value);
+  // Closed allowlist, never free text: only a real AGT-002 reasoning-effort level survives.
+  if (key === 'effort') return isAgt002PreviewReasoningEffort(value) ? value : undefined;
   // content_sha256 is only ever a digest this codebase computed itself (never a raw string
   // handed through as-is): anything that is not already a well-formed 64-hex digest is dropped
   // rather than forwarded, so a coding mistake elsewhere can never smuggle raw content through

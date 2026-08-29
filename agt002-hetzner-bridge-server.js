@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createNonceStore } from './agt002-hetzner-bridge-nonce-store.js';
 import { authenticateBridgeRequest } from './agt002-hetzner-bridge-auth.js';
 import { logBridgeEvent } from './agt002-hetzner-bridge-log.js';
+import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 
 const BRIDGE_PATH = '/v1/agt002-preview/run';
 export const AGT002_BRIDGE_MAX_BODY_BYTES = 1_048_576;
@@ -67,7 +68,7 @@ export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore =
       if (body === null || typeof body !== 'object' || Array.isArray(body)) return sendError(res, 400, 'AGT002_BRIDGE_BAD_REQUEST');
       if (Object.hasOwn(body, 'cwd')) return sendError(res, 400, 'AGT002_BRIDGE_BAD_REQUEST');
 
-      const { model, policy, input, outputSchema, timeoutMs, idempotencyKey } = body;
+      const { model, policy, input, outputSchema, timeoutMs, idempotencyKey, effort } = body;
       if (typeof model !== 'string' || !model.trim() || typeof policy !== 'string' || !policy.trim()) {
         return sendError(res, 400, 'AGT002_BRIDGE_BAD_REQUEST');
       }
@@ -75,6 +76,10 @@ export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore =
         return sendError(res, 422, 'AGT002_CODEX_INVALID_RESPONSE');
       }
       if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) return sendError(res, 400, 'AGT002_BRIDGE_BAD_REQUEST');
+      // Optional at this boundary (older/unrelated callers never sent one), but a value that IS
+      // present must be a real allowlisted reasoning effort before it can ever reach the Codex
+      // subprocess — fail closed, exactly like every other malformed field above.
+      if (effort !== undefined && !isAgt002PreviewReasoningEffort(effort)) return sendError(res, 400, 'AGT002_BRIDGE_BAD_REQUEST');
 
       const startedAt = Date.now();
       const correlationId = randomUUID();
@@ -96,13 +101,14 @@ export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore =
           latency_ms: Date.now() - startedAt,
           provider_status: error?.providerStatus,
           provider_error_code: error?.providerErrorCode,
+          effort,
         });
         sendError(res, status, code);
       };
 
       let runResult;
       try {
-        runResult = codexClient.run({ model, policy, input, outputSchema, timeoutMs, idempotencyKey, signal: controller.signal });
+        runResult = codexClient.run({ model, policy, input, outputSchema, timeoutMs, idempotencyKey, effort, signal: controller.signal });
       } catch (error) {
         handleError(error);
         return;
@@ -110,9 +116,15 @@ export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore =
 
       Promise.resolve(runResult)
         .then(result => {
+          // Log the caller's own already-validated `effort` (checked above, before ever reaching
+          // the Codex subprocess), never `result.effort_ack`. `effort_ack` exists solely so the
+          // bridge *client* can validate the response (agt002-hetzner-bridge-client.js) — it is
+          // downstream-sourced and must never double as a logging input, or a future edit could
+          // silently start logging whatever a stale/misbehaving codex client happens to echo back.
           logBridgeEvent('agt002_bridge_success', {
             correlation_id: correlationId, code: 'OK', latency_ms: Date.now() - startedAt,
             input_tokens: result.usage.input_tokens, output_tokens: result.usage.output_tokens,
+            effort,
           });
           sendJson(res, 200, result);
         })

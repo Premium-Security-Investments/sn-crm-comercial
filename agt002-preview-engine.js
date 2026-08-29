@@ -26,6 +26,7 @@ import {
   AGT002_V3_PROMPT_BUDGET_EXCEEDED_CODE,
   AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS,
 } from './agt002-v3-prompt-budget.js';
+import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 
 // design section 5: fixed version tag for the 17-class company-evidence catalog. The
 // catalog itself is fixed by code (agt002-company-evidence-classes.js), not by a stored
@@ -455,6 +456,10 @@ export function createAgt002PreviewEngine({
   timeoutMs = 30_000,
   maxConcurrent = 2,
   dailyMaxRuns = 20,
+  // AGT-002 root-cause fix: explicit, fail-closed per-turn Codex reasoning effort (never
+  // silently inherited from the CLI/account default). Defaults to the fastest
+  // operationally-validated level; see agt002-preview-reasoning-effort.js.
+  effort = AGT002_PREVIEW_DEFAULT_REASONING_EFFORT,
   countDailyRuns = async () => 0,
   idGenerator = randomUUID,
   contextV2 = false,
@@ -495,7 +500,8 @@ export function createAgt002PreviewEngine({
     || (legalCorpus && (typeof legalEvidenceProvider !== 'function' || !nonEmpty(legalCorpusVersionId) || !nonEmpty(legalCorpusContentSha256)))
     || (integralContractV3 && (!contextV2 || !documentRetrieval || typeof companyEvidenceClassesProvider !== 'function'))
     || (semanticDiscoveryProvider !== null && typeof semanticDiscoveryProvider !== 'function')
-    || !observability || typeof observability.record !== 'function') {
+    || !observability || typeof observability.record !== 'function'
+    || !isAgt002PreviewReasoningEffort(effort)) {
     throw new Error('AGT-002 Preview no está configurado: falta configuración o evidencia jurídica determinística.');
   }
   if (promptBudget && (!Number.isInteger(promptMaxInputTokens) || promptMaxInputTokens <= 0)) {
@@ -557,6 +563,9 @@ export function createAgt002PreviewEngine({
       snapshot_id: snapshotId,
       input_tokens: Number.isInteger(usage?.input_tokens) && usage.input_tokens >= 0 ? usage.input_tokens : undefined,
       output_tokens: Number.isInteger(usage?.output_tokens) && usage.output_tokens >= 0 ? usage.output_tokens : undefined,
+      // Safe, non-secret, already-allowlist-validated at construction: lets a rejection be
+      // correlated with the reasoning effort this run's turns were pinned to.
+      effort,
     });
   }
 
@@ -573,7 +582,7 @@ export function createAgt002PreviewEngine({
       legalCorpus,
       legalCitationIds,
     });
-    const raw = await client.run({ model, policy: policyText, input: previewInput, outputSchema, timeoutMs, idempotencyKey, signal });
+    const raw = await client.run({ model, policy: policyText, input: previewInput, outputSchema, timeoutMs, idempotencyKey, signal, effort });
 
     const rawContent = typeof raw?.content === 'string' ? raw.content : '';
 
@@ -864,7 +873,7 @@ export function createAgt002PreviewEngine({
     }
 
     const raw = await client.run({
-      model, policy: policyText, input: requestInput, outputSchema, timeoutMs, idempotencyKey, signal,
+      model, policy: policyText, input: requestInput, outputSchema, timeoutMs, idempotencyKey, signal, effort,
     });
 
     const rawContent = typeof raw?.content === 'string' ? raw.content : '';
@@ -1021,7 +1030,7 @@ export function createAgt002PreviewEngine({
               let discovery;
               try {
                 discovery = await semanticDiscoveryProvider({
-                  client, model, timeoutMs, idempotencyKey: key, signal,
+                  client, model, timeoutMs, idempotencyKey: key, signal, effort,
                   inventory, documents: (context || {}).documents ?? [],
                 });
               } catch (error) {

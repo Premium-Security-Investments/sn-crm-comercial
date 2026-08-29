@@ -746,7 +746,7 @@ function canonicalizeProposal(parsed, { visible, omitted, inventory, documents, 
 }
 
 export async function discoverTenderSemanticManifest({
-  client, model, timeoutMs, idempotencyKey, signal,
+  client, model, timeoutMs, idempotencyKey, signal, effort,
   inventory, documents = [], maxSourceChars = TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS,
   // Character budget for the literal-label catalog pinned into the output schema. Defaults to the
   // source budget, which is exactly the bound that makes the catalog cost at most as much as the
@@ -821,6 +821,7 @@ export async function discoverTenderSemanticManifest({
     timeoutMs,
     idempotencyKey: `${idempotencyKey}:semantic-discovery`,
     signal,
+    effort,
   });
   if (typeof raw?.content !== 'string' || !raw.content.trim()) {
     throw discoveryError(

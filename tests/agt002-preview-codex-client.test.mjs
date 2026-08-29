@@ -366,6 +366,71 @@ function nonEmpty(value) { return typeof value === 'string' && value.trim().leng
   );
 }
 
+// AGT-002 root-cause fix: turn/start.params.effort must carry the exact reasoning effort the
+// caller requested — this is the actual fix for the production incident (an inherited Codex
+// CLI default effort emitted its final structured response only near the fixed 285_000ms
+// per-turn deadline). Real subprocess (the synthetic fixture), not a mock of this client.
+{
+  const client = realClient({ scenario: 'ok' });
+  const result = await client.run(baseRunOptions({ effort: 'low' }));
+  const parsed = JSON.parse(result.content);
+  assert.equal(parsed.received.effort, 'low');
+  // Review fix: the client must echo back the exact accepted effort so a caller-side bridge
+  // client can prove this code path actually forwarded it, rather than silently dropping it.
+  assert.equal(result.effort_ack, 'low');
+}
+{
+  const client = realClient({ scenario: 'ok' });
+  const result = await client.run(baseRunOptions({ effort: 'medium' }));
+  assert.equal(JSON.parse(result.content).received.effort, 'medium');
+  assert.equal(result.effort_ack, 'medium');
+}
+
+// A caller that never sets `effort` gets no acknowledgement to make (there is nothing pinned).
+{
+  const client = realClient({ scenario: 'ok' });
+  const result = await client.run(baseRunOptions());
+  assert.equal(result.effort_ack, null);
+}
+
+// An unsupported/malformed effort must fail closed BEFORE any subprocess is even spawned.
+{
+  const client = realClient({ scenario: 'ok' });
+  await assert.rejects(() => client.run(baseRunOptions({ effort: 'high' })), /esfuerzo de razonamiento/i);
+}
+
+// A caller that genuinely never sets `effort` is unaffected: the key never reaches the wire.
+{
+  let capturedTurnStartParams = null;
+  function fakeSpawn() {
+    const child = new EventEmitter();
+    child.stdin = { write: (data) => { queueMicrotask(() => onWrite(data)); }, end() {} };
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => { child.killed = true; };
+    function onWrite(data) {
+      const message = JSON.parse(String(data).trim());
+      const respond = result => child.stdout.emit('data', Buffer.from(`${JSON.stringify({ id: message.id, result })}\n`));
+      if (message.method === 'initialize') { respond({ codexHome: '/tmp', platformFamily: 'unix', platformOs: 'linux', userAgent: 'fake/1.0' }); return; }
+      if (message.method === 'account/read') { respond({ account: { type: 'chatgpt', email: null, planType: 'team' }, requiresOpenaiAuth: false }); return; }
+      if (message.method === 'account/rateLimits/read') { respond({ rateLimits: { primary: { usedPercent: 1 } } }); return; }
+      if (message.method === 'thread/start') { respond({ thread: { id: 'thread-fake' }, approvalPolicy: 'never', approvalsReviewer: 'user', cwd: '/tmp', model: 'x', modelProvider: 'openai', sandbox: {} }); return; }
+      if (message.method === 'turn/start') {
+        capturedTurnStartParams = message.params;
+        respond({ turn: { id: 'turn-fake', status: 'inProgress', items: [] } });
+        child.stdout.emit('data', Buffer.from(`${JSON.stringify({ method: 'item/completed', params: { threadId: 'thread-fake', turnId: 'turn-fake', completedAtMs: 0, item: { id: 'i1', type: 'agentMessage', text: JSON.stringify({ ok: true }) } } })}\n`));
+        child.stdout.emit('data', Buffer.from(`${JSON.stringify({ method: 'thread/tokenUsage/updated', params: { threadId: 'thread-fake', turnId: 'turn-fake', tokenUsage: { total: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 2 }, last: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 2 } } } })}\n`));
+        child.stdout.emit('data', Buffer.from(`${JSON.stringify({ method: 'turn/completed', params: { threadId: 'thread-fake', turn: { id: 'turn-fake', status: 'completed', items: [] } } })}\n`));
+        return;
+      }
+    }
+    return child;
+  }
+  const client = createCodexAppServerClient({ spawn: fakeSpawn, command: 'ignored', args: [], timeoutMs: 2000 });
+  await client.run(baseRunOptions());
+  assert.equal(Object.hasOwn(capturedTurnStartParams, 'effort'), false, 'a caller that never set effort must never see the key on the wire');
+}
+
 // --- Separate, human-gated ChatGPT device-code login flow -----------------
 // This flow must never be reachable from the AGT-002 Preview analysis path.
 for (const file of ['../agt002-preview-engine.js', '../agt002-preview-runtime.js', '../server/index.js', '../api/[...path].js']) {

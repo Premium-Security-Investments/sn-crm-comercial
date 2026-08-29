@@ -3,6 +3,7 @@ import { AGT002_PREVIEW_POLICY, AGT002_INTEGRAL_V3_POLICY, createAgt002PreviewEn
 import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
 import { retrieveAgt002LegalEvidence } from './agt002-legal-retrieval.js';
 import { discoverTenderSemanticManifest } from './tender-semantic-discovery.js';
+import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 
 export const AGT002_PREVIEW_ENGINE_ID = 'agt002_codex_preview';
 const REQUIRED_ENV_KEYS = ['AGT002_PREVIEW_MODEL', 'AGT002_HETZNER_BRIDGE_URL', 'AGT002_HETZNER_BRIDGE_HMAC_SECRET'];
@@ -98,6 +99,17 @@ export function getAgt002PreviewRuntimeConfig(environment = process.env) {
   if (!Number.isInteger(timeoutMs) || !Number.isInteger(maxConcurrent) || !Number.isInteger(dailyMaxRuns) || leaseSeconds > 600) {
     throw new Error('AGT-002 Preview no está configurado.');
   }
+  // Fail-closed, explicit per-turn reasoning effort (AGT-002 root cause: an inherited Codex CLI
+  // default effort emitted its final structured response only near the fixed 285_000ms per-turn
+  // deadline). Absence defaults to the fastest operationally-validated level; an explicit but
+  // unsupported/malformed override is rejected exactly like the other numeric overrides above —
+  // never silently coerced or ignored.
+  const effort = nonEmpty(environment.AGT002_PREVIEW_REASONING_EFFORT)
+    ? environment.AGT002_PREVIEW_REASONING_EFFORT.trim()
+    : AGT002_PREVIEW_DEFAULT_REASONING_EFFORT;
+  if (!isAgt002PreviewReasoningEffort(effort)) {
+    throw new Error('AGT-002 Preview no está configurado.');
+  }
   return {
     model: environment.AGT002_PREVIEW_MODEL.trim(),
     policyVersion: nonEmpty(environment.AGT002_PREVIEW_POLICY_VERSION) ? environment.AGT002_PREVIEW_POLICY_VERSION.trim() : AGT002_PREVIEW_DEFAULT_POLICY_VERSION,
@@ -105,6 +117,7 @@ export function getAgt002PreviewRuntimeConfig(environment = process.env) {
     maxConcurrent,
     dailyMaxRuns,
     leaseSeconds,
+    effort,
   };
 }
 
@@ -183,6 +196,7 @@ export function createAgt002PreviewRuntime({
     timeoutMs: config.timeoutMs,
     maxConcurrent: config.maxConcurrent,
     dailyMaxRuns: config.dailyMaxRuns,
+    effort: config.effort,
     contextV2: analysisConfig.AGT002_CONTEXT_V2,
     documentRetrieval: analysisConfig.AGT002_DOCUMENT_RETRIEVAL,
     legalCorpus: analysisConfig.AGT002_LEGAL_CORPUS,
