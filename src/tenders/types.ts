@@ -568,6 +568,13 @@ export type TenderDocumentAnalysis = {
   decision_axis_analysis?: TenderDecisionAxisAnalysis | null;
   [key: string]: unknown;
 };
+// Refleja exactamente lo que publicTenderDocumentProjection deja salir hacia el
+// navegador. Ni `storage_path` (ruta privada del bucket) ni `source_url` (en SECOP,
+// URL de descarga con token) ni `extracted_text` ni ninguna URL firmada viajan: la
+// única vía de descarga es `download_url`, una ruta SAME-ORIGIN que calcula el
+// servidor y que no concede acceso por sí misma —el endpoint al que apunta vuelve a
+// autenticar al usuario y a autorizar la oportunidad antes de firmar nada—. Es
+// `null` cuando el registro no tiene identidad suficiente para construirla.
 export type TenderDocumentRecord = {
   id: string;
   name: string;
@@ -575,11 +582,11 @@ export type TenderDocumentRecord = {
   mime_type?: string | null;
   document_type: string;
   current: boolean;
-  storage_path?: string;
   uploaded_at: string;
   uploaded_by?: string | null;
-  signed_url?: string | null;
-  extracted_text?: string | null;
+  download_url?: string | null;
+  extraction_status?: string | null;
+  extraction_gap_reason?: string | null;
 };
 export type TenderAnalysisAttempt = {
   event_id: string;

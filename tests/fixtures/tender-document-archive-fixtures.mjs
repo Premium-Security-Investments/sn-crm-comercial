@@ -162,6 +162,41 @@ export function buildSupportedEntriesArchive() {
   return zip.toBuffer();
 }
 
+/**
+ * MISMO contenido logico que buildSupportedEntriesArchive(), reempaquetado: las
+ * entradas se escriben en otro orden y el paquete lleva un comentario de archivo.
+ * Ambas cosas son metadata mutable del envoltorio ZIP, no contenido documental,
+ * asi que los bytes del paquete cambian mientras cada entrada interna sigue
+ * siendo byte a byte la misma. Es el caso real de una entidad que regenera su
+ * paquete de formatos sin tocar un solo documento.
+ */
+export function buildRepackagedSupportedEntriesArchive() {
+  const zip = new AdmZip();
+  zip.addFile('anexo-tecnico.docx', ARCHIVE_ENTRY_BUFFERS['anexo-tecnico.docx']);
+  zip.addFile('formato-financiero.xlsx', ARCHIVE_ENTRY_BUFFERS['formato-financiero.xlsx']);
+  zip.addFile('condiciones.txt', ARCHIVE_ENTRY_BUFFERS['condiciones.txt']);
+  zip.addFile('pliego.pdf', ARCHIVE_ENTRY_BUFFERS['pliego.pdf']);
+  zip.addFile('matriz.csv', ARCHIVE_ENTRY_BUFFERS['matriz.csv']);
+  zip.addZipComment('Paquete regenerado por la entidad el 2026-08-28.');
+  return zip.toBuffer();
+}
+
+/**
+ * Mismas entradas que buildSupportedEntriesArchive() salvo `condiciones.txt`,
+ * cuyo TEXTO cambia de verdad: es una adenda real dentro del paquete.
+ */
+export const ARCHIVE_TXT_AMENDED_CONTENT = 'CONDICIONES GENERALES TXT\nEl proponente debera acreditar experiencia y poliza de cumplimiento.';
+
+export function buildAmendedSupportedEntriesArchive() {
+  const zip = new AdmZip();
+  zip.addFile('pliego.pdf', ARCHIVE_ENTRY_BUFFERS['pliego.pdf']);
+  zip.addFile('matriz.csv', ARCHIVE_ENTRY_BUFFERS['matriz.csv']);
+  zip.addFile('condiciones.txt', Buffer.from(ARCHIVE_TXT_AMENDED_CONTENT, 'utf8'));
+  zip.addFile('formato-financiero.xlsx', ARCHIVE_ENTRY_BUFFERS['formato-financiero.xlsx']);
+  zip.addFile('anexo-tecnico.docx', ARCHIVE_ENTRY_BUFFERS['anexo-tecnico.docx']);
+  return zip.toBuffer();
+}
+
 /** ZIP interno (para probar el rechazo de archivos anidados sin recursion). */
 export function buildNestedInnerArchive() {
   const zip = new AdmZip();

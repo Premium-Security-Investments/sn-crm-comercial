@@ -2362,6 +2362,10 @@ const TENDER_PIPELINE_VERSION = 'v1';
 const tenderDocumentBucket = 'tender-documents';
 const RUP_MAX_BYTES = 50 * 1024 * 1024;
 const tenderDocumentTypes = ['pliego','estudios_previos','anexo_tecnico','adenda','formatos','otro'];
+// Vigencia de la capacidad de descarga documental: lo justo para que el navegador
+// siga el 302 recién emitido. No se persiste, no se reutiliza y no viaja jamás en
+// un listado del expediente.
+const TENDER_DOCUMENT_DOWNLOAD_TTL_SECONDS = 120;
 const TENDER_QUESTION_RESPONSE_ATTACHMENT_ALLOWED_MIME_TYPES = [
   'application/pdf',
   'image/png',
@@ -2627,7 +2631,18 @@ function buildTenderDocumentAnalysis(opportunity, documents, companyProfile = {}
     documents: documents.map(d => ({ id: d.id, name: d.name, type: d.document_type, current: d.current }))
   };
 }
-async function getTenderDocumentRecords(database, opportunityId, { includeSignedUrls = true, includeExtractedText = false } = {}) {
+// `includeExtractedText: true` marca una lectura INTERNA (snapshot inmutable,
+// chunking, paquete de análisis); la lectura por defecto es la que responde al
+// navegador y pasa por publicTenderDocumentProjection.
+//
+// Ninguna de las dos acuña URLs firmadas, ni una ni N. Una URL firmada es una
+// CAPACIDAD de descarga, no un campo del expediente: listar el expediente emitía
+// una por documento —para todos, aunque el usuario no fuera a abrir ninguno— y
+// las dejaba en el JSON de la respuesta, en su caché y en el snapshot cuando la
+// lectura era interna. La descarga se pide ahora documento a documento en
+// GET /api/tender-documents/:documentId/download, que autentica, autoriza la
+// oportunidad y solo entonces firma, para ese único documento y por 120 segundos.
+async function getTenderDocumentRecords(database, opportunityId, { includeExtractedText = false } = {}) {
   await requireTenderAnalysisFoundation(database);
   const interactions = await must(database.from('psi_sales_interactions').select('id,notes,occurred_at,created_at,created_by,psi_sales_profiles(full_name)').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true }));
   const typedVersionsResponse = await database.from('psi_tender_document_versions')
@@ -2655,10 +2670,6 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
     if (payload?.kind === 'tender_document_import_error') importErrors.push({ kind: payload.kind, source: payload.source || null, created_at: row.created_at, failure_marker: 'fallo_importacion' });
   }
   const compatibleDocuments = mergeTenderDocumentRecords(typedDocuments, documents);
-  const signed = includeSignedUrls ? await Promise.all(compatibleDocuments.map(async doc => {
-    const { data } = await database.storage.from(tenderDocumentBucket).createSignedUrl(doc.storage_path, 3600);
-    return { ...doc, signed_url: data?.signedUrl || null };
-  })) : compatibleDocuments;
   const canonicalOnly = agt002AnalysisConfig.AGT002_CANONICAL_ONLY === true;
   const currentAnalysis = await getCurrentTenderAnalysis(
     database,
@@ -2670,7 +2681,7 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
   const questionResponses = currentAnalysis?.run_id ? await getTenderQuestionResponses(database, opportunityId, currentAnalysis.run_id) : [];
   const presentedAnalysis = presentCurrentTenderAnalysis(currentAnalysis, questionResponses);
   return {
-    documents: includeExtractedText ? signed : signed.map(publicTenderDocumentProjection),
+    documents: includeExtractedText ? compatibleDocuments : compatibleDocuments.map(document => publicTenderDocumentProjection(document, { opportunityId })),
     analysis: presentedAnalysis,
     analyses,
     question_responses: questionResponses,
@@ -2679,6 +2690,53 @@ async function getTenderDocumentRecords(database, opportunityId, { includeSigned
     import_error: importErrors.at(-1) || null,
     ...(canonicalOnly ? { analysis_attempt: latestAnalysisAttempt } : {}),
   };
+}
+
+// --- Descarga documental autenticada ----------------------------------------
+//
+// Un solo error para "no existe", "no es de esta oportunidad" y "la ruta guardada
+// no es utilizable": desde fuera no se puede distinguir la existencia de un
+// documento ajeno probando identificadores.
+function tenderDocumentDownloadNotFound() {
+  const error = new Error('El documento solicitado no está disponible en esta oportunidad.');
+  error.status = 404;
+  return error;
+}
+
+// La clave del objeto tiene que quedar dentro del prefijo de ESTA oportunidad. Las
+// filas tipadas la guardan con el nombre del bucket delante y las cargas
+// históricas sin él; cualquier otra forma —incluido un `..` heredado de un payload
+// antiguo— no se firma.
+function tenderDocumentObjectKeyForOpportunity(storagePath, opportunityId) {
+  const key = String(storagePath || '').trim();
+  if (!key || key.includes('..') || key.includes('\\')) return '';
+  const accepted = [`${opportunityId}/`, `${tenderDocumentBucket}/${opportunityId}/`];
+  return accepted.some(prefix => key.startsWith(prefix)) ? key : '';
+}
+
+// Resuelve el documento pedido EXCLUSIVAMENTE dentro de la oportunidad ya
+// autorizada, sobre las mismas dos fuentes que alimentan el listado: la versión
+// tipada vigente y la carga histórica de psi_sales_interactions. Nunca hay una
+// consulta por id suelto que pueda cruzar de oportunidad.
+async function findTenderDocumentForDownload(database, opportunityId, documentId) {
+  const typedResponse = await database.from('psi_tender_document_versions')
+    .select('id,name,storage_path')
+    .eq('opportunity_id', opportunityId)
+    .eq('current', true);
+  if (typedResponse.error) throw typedResponse.error;
+  const typed = (typedResponse.data || []).find(row => String(row.id) === documentId);
+  if (typed) return { name: typed.name, storage_path: typed.storage_path };
+  const interactions = await must(database.from('psi_sales_interactions').select('id,notes,created_at').eq('opportunity_id', opportunityId).eq('interaction_type', 'documento').order('created_at', { ascending: true }));
+  let legacy = null;
+  for (const row of interactions) {
+    const payload = parseInteractionJson(row.notes);
+    if (payload?.kind !== 'tender_document_upload') continue;
+    for (const document of payload.documents || []) {
+      // La última carga con ese id es la vigente, igual que en el listado.
+      if (String(document?.id || '') === documentId) legacy = { name: document?.name, storage_path: document?.storage_path };
+    }
+  }
+  return legacy;
 }
 
 function normalizeTenderQuestionResponseAttachment(item, opportunityId, responseId) {
@@ -3551,7 +3609,7 @@ export async function buildTenderOpportunitySummary(database, tender, { opportun
     dossier_error: 'No se pudo cargar el expediente.'
   };
   try {
-    const records = await getTenderDocumentRecords(database, tender.converted_opportunity_id, { includeSignedUrls: false });
+    const records = await getTenderDocumentRecords(database, tender.converted_opportunity_id);
     const preparationRecords = await getTenderOfferPreparationRecords(database, tender.converted_opportunity_id);
     const currentDocuments = records.documents.filter(document => document.current !== false);
     const analysis = records.analysis?.status === 'completed' && records.analysis?.current === true ? records.analysis : null;
@@ -3954,6 +4012,38 @@ app.get('/api/tender-documents', async (req, res) => {
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
+// Descarga documental: única vía por la que sale una capacidad de descarga del
+// expediente. La emite aquí, para UN documento, tras autenticar al usuario y
+// autorizar la oportunidad; vive 120 segundos, viaja solo en el Location de esta
+// respuesta y no se persiste ni se refleja en el JSON del listado ni en ningún
+// snapshot. `opportunity_id` va en query porque un documento legado se identifica
+// únicamente dentro de su oportunidad.
+app.get('/api/tender-documents/:documentId/download', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await requireTenderAnalysisFoundation(database);
+    const opportunityId = String(req.query.opportunity_id || '');
+    if (!opportunityId) throw clientInputError('Debe indicar la oportunidad.');
+    // La autorización de la oportunidad va ANTES de mirar el documento y antes de
+    // firmar nada: sin ella no se llega siquiera a saber si el documento existe.
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const documentId = String(req.params.documentId || '');
+    if (!documentId) throw tenderDocumentDownloadNotFound();
+    const document = await findTenderDocumentForDownload(database, opportunityId, documentId);
+    const objectKey = document ? tenderDocumentObjectKeyForOpportunity(document.storage_path, opportunityId) : '';
+    if (!objectKey) throw tenderDocumentDownloadNotFound();
+    const downloadName = cleanFileName(document.name);
+    const { data, error } = await database.storage.from(tenderDocumentBucket)
+      .createSignedUrl(objectKey, TENDER_DOCUMENT_DOWNLOAD_TTL_SECONDS, { download: downloadName });
+    if (error || !data?.signedUrl) throw new Error('No fue posible preparar la descarga del documento.');
+    // La capacidad viaja solo en el Location de esta respuesta: sin cuerpo, sin
+    // JSON y sin quedarse en ninguna caché, ni compartida ni la del navegador.
+    res.set({ 'Cache-Control': 'private, no-store', Location: data.signedUrl });
+    res.status(302).end();
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
 app.post('/api/tender-documents-upload', async (req, res) => {
   try {
     const { profile: currentProfile } = await getAuthContext(req);
@@ -3981,7 +4071,7 @@ app.post('/api/tender-documents-upload', async (req, res) => {
     if (beginRefresh.error) throw beginRefresh.error;
     const refreshToken = String(beginRefresh.data || '').trim();
     if (!refreshToken) throw new Error('No fue posible abrir la actualización documental manual.');
-    const records = await getTenderDocumentRecords(database, opportunityId, { includeSignedUrls: false, includeExtractedText: true });
+    const records = await getTenderDocumentRecords(database, opportunityId, { includeExtractedText: true });
     await registerTenderDocumentSnapshot(database, {
       opportunity_id: opportunityId,
       tender_id: tenderId,
@@ -4380,7 +4470,7 @@ async function runAgt002FixedSnapshotOperator(req, res) {
         return response.data;
       },
       loadCurrentDocuments: async opportunityId => {
-        const records = await getTenderDocumentRecords(getDatabase(), opportunityId, { includeSignedUrls: false, includeExtractedText: true });
+        const records = await getTenderDocumentRecords(getDatabase(), opportunityId, { includeExtractedText: true });
         return records.documents.filter(document => document.current !== false);
       },
       loadActorProfile: async actorId => {
