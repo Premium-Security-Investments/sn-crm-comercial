@@ -7,6 +7,7 @@ type ProcessingStatusSnapshot = { job_id: string | null; status: string };
 type ProcessingPresentationStatus = {
   job_id: string | null;
   status: string;
+  superseded?: boolean;
   idempotency_key?: string | null;
   analysis_run_id?: string | null;
   updated_at?: string | null;
@@ -92,6 +93,7 @@ export function deriveTenderProcessingPresentation(
   analysis: AnalysisPresentationStatus | null | undefined,
 ): TenderProcessingPresentation {
   if (!processingStatus) return HIDDEN_PRESENTATION;
+  if (processingStatus.superseded === true) return HIDDEN_PRESENTATION;
   const status = String(processingStatus.status || 'no_job');
   if (NO_DURABLE_SIGNAL_STATUSES.has(status)) return HIDDEN_PRESENTATION;
   if (isTenderProcessingSuperseded(processingStatus, analysis)) return HIDDEN_PRESENTATION;
