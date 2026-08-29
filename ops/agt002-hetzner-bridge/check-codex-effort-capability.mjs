@@ -1,15 +1,33 @@
-import { spawnSync } from 'node:child_process';
+import { spawn as defaultSpawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { checkCodexEffortCapability } from '../../agt002-codex-effort-capability.js';
+import { checkCodexEffortCapability, AGT002_CODEX_EFFORT_CAPABILITY_MISSING } from '../../agt002-codex-effort-capability.js';
+import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT } from '../../agt002-preview-reasoning-effort.js';
 
-// Deployment/runbook gate: verify the Codex App Server binary about to be (or already) installed
-// on the Hetzner bridge host actually exposes v2 TurnStartParams.effort, using only the binary's
-// own generated protocol schema — never a live turn. Run this after any Codex CLI/App Server
-// binary update and before routing traffic to it; a non-zero exit must block the deploy.
+// Deployment/runbook gate: verify the installed Codex App Server binary is actually compatible
+// with the reasoning-effort hotfix, using only two separate non-billable, non-turn CLI checks:
+//   A) it exposes v2 TurnStartParams.effort in its own generated protocol schema (turn-level,
+//      defence-in-depth — accepted/echoed by the protocol, but not proof of actual application) —
+//      `generate()`/`checkCodexEffortCapability`, below;
+//   B) it recognizes the real CLI global override this fix actually pins reasoning effort with —
+//      `--strict-config -c 'model_reasoning_effort="low"'` before the `app-server` subcommand — by
+//      starting that exact long-running process and requiring a valid `initialize` response —
+//      `verifyStrictConfigAppServerInitializes`, below.
+// These must stay separate calls to the CLI: the real binary rejects `--strict-config` outright
+// for `generate-json-schema` ("--strict-config is not supported for codex app-server
+// generate-json-schema", exit 1) regardless of whether the config key itself is valid, so it can
+// never be used to validate the override — only the actual `app-server` process can.
+// Run this after any Codex CLI/App Server binary update and before routing traffic to it; a
+// non-zero exit must block the deploy.
 const command = process.env.AGT002_CODEX_APP_SERVER_BIN || 'codex';
+const AGT002_STRICT_CONFIG_INITIALIZE_TIMEOUT_MS = 5000;
+const KILL_GRACE_MS = 200;
+
+function isPlainObject(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
 
 export function listFilesRecursively(dir) {
   const files = [];
@@ -50,6 +68,10 @@ export function readGeneratedBundle(outDir) {
 
 // `command`/`spawn` are overridable purely so tests can exercise the real temp-dir-generate-
 // inspect-cleanup sequence against a fake binary, without ever touching a real Codex install.
+// Never pass --strict-config or a model_reasoning_effort override here: the real CLI rejects
+// --strict-config outright for generate-json-schema (exit 1, "--strict-config is not supported
+// for codex app-server generate-json-schema"), regardless of whether the config key itself is
+// valid — verifying that override is verifyStrictConfigAppServerInitializes's job, below.
 export function generate({ command: commandOverride = command, spawn = spawnSync } = {}) {
   const outDir = mkdtempSync(join(tmpdir(), 'agt002-codex-schema-'));
   try {
@@ -63,9 +85,86 @@ export function generate({ command: commandOverride = command, spawn = spawnSync
   }
 }
 
+/**
+ * Check B: starts the real, long-running `codex --strict-config -c 'model_reasoning_effort="low"'
+ * app-server` process — the exact process-startup shape this fix actually pins reasoning effort
+ * with — and speaks ONLY the app-server `initialize` handshake over stdin. Never starts a thread
+ * or a turn, never any provider generation. Resolves `true` only for a well-formed
+ * JSON-RPC `initialize` result; resolves `false` (never throws/rejects) on a JSON-RPC error
+ * response, a spawn error, a malformed or missing response, a stderr-only exit, or a bounded
+ * timeout — always terminating and cleaning up the child process either way, never leaking a
+ * process or a listener.
+ */
+export function verifyStrictConfigAppServerInitializes({
+  command: commandOverride = command,
+  spawn = defaultSpawn,
+  effort = AGT002_PREVIEW_DEFAULT_REASONING_EFFORT,
+  timeoutMs = AGT002_STRICT_CONFIG_INITIALIZE_TIMEOUT_MS,
+} = {}) {
+  return new Promise(resolve => {
+    let settled = false;
+    let buffer = '';
+    const child = spawn(commandOverride, [
+      '--strict-config',
+      '-c',
+      `model_reasoning_effort="${effort}"`,
+      'app-server',
+    ], { stdio: ['pipe', 'pipe', 'pipe'] });
+
+    const finish = ok => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try { child.stdout?.removeAllListeners?.('data'); } catch { /* best effort */ }
+      try { child.stdin?.end?.(); } catch { /* best effort */ }
+      if (!child.killed) {
+        try { child.kill('SIGTERM'); } catch { /* best effort */ }
+        const killer = setTimeout(() => { try { if (!child.killed) child.kill('SIGKILL'); } catch { /* best effort */ } }, KILL_GRACE_MS);
+        killer.unref?.();
+      }
+      resolve(ok);
+    };
+
+    const timer = setTimeout(() => finish(false), timeoutMs);
+
+    child.on('error', () => finish(false));
+    child.on('exit', () => finish(false));
+    child.stderr?.on?.('data', () => { /* provider/CLI detail is never surfaced to the caller */ });
+
+    child.stdout.on('data', chunk => {
+      buffer += chunk.toString('utf8');
+      let index;
+      while ((index = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, index);
+        buffer = buffer.slice(index + 1);
+        if (settled) return;
+        if (!line.trim()) continue;
+        let message;
+        try { message = JSON.parse(line); } catch { continue; }
+        if (!isPlainObject(message) || message.id !== 1) continue;
+        finish(!message.error && Object.hasOwn(message, 'result'));
+        return;
+      }
+    });
+
+    try {
+      child.stdin.write(`${JSON.stringify({
+        id: 1,
+        method: 'initialize',
+        params: { clientInfo: { name: 'siio-agt002-capability-check', version: '1.0.0' } },
+      })}\n`);
+    } catch {
+      finish(false);
+    }
+  });
+}
+
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
-    const { ok, code } = checkCodexEffortCapability({ generate });
+    const schemaResult = checkCodexEffortCapability({ generate });
+    const strictConfigOk = await verifyStrictConfigAppServerInitializes();
+    const ok = schemaResult.ok && strictConfigOk;
+    const code = schemaResult.ok && !strictConfigOk ? AGT002_CODEX_EFFORT_CAPABILITY_MISSING : schemaResult.code;
     console.log(JSON.stringify({ event: 'agt002_bridge_capability', ok, code }));
     process.exitCode = ok ? 0 : 1;
   } catch {
