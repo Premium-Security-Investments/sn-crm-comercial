@@ -104,12 +104,42 @@ for (const relativePath of ['../api/[...path].js', '../server/index.js']) {
     // non-retrieval behavior.
     assert.match(preClaim, /const analysisDocuments = documentRetrieval\s*\n?\s*\? adaptAgt002RetrievalDocuments\(/);
   }
+  // v0.3.1: governance/evidenceIdentity loads before context registration and idempotency, then
+  // documentRetrieval/inventoryIdentity still resolve before the key that binds them, and the job
+  // is only enqueued once that key exists. The whole function body is captured up to the next
+  // stable top-level marker (not an arbitrary char window, and not a cut on 'const
+  // integralV3Governance' — that string now sits at the very start of the function, which would
+  // make the captured preamble empty and the assertions below vacuously fail to catch a regression).
   const enqueueStart = source.indexOf('async function enqueueAgt002CanonicalReanalysis');
-  const enqueueEnd = source.indexOf('const integralV3Governance', enqueueStart);
-  const enqueuePreamble = source.slice(enqueueStart, enqueueEnd);
-  assert.match(enqueuePreamble, /const documentRetrieval = agt002AnalysisConfig\.AGT002_DOCUMENT_RETRIEVAL === true;/);
-  assert.match(enqueuePreamble, /const inventoryIdentity = documentRetrieval\s*\n?\s*\? tenderRequirementInventoryIdentity\(buildAgt002TenderRequirementInventory\(/);
-  assert.match(enqueuePreamble, /\.\.\.inventoryIdentity/);
+  assert.notEqual(enqueueStart, -1, `${relativePath} must define enqueueAgt002CanonicalReanalysis`);
+  const enqueueBoundary = source.indexOf('function sendError(res, error, status = 500) {', enqueueStart);
+  assert.notEqual(enqueueBoundary, -1, `${relativePath} must keep a stable marker after enqueueAgt002CanonicalReanalysis`);
+  const enqueueBody = source.slice(enqueueStart, enqueueBoundary);
+
+  const governanceLoads = [...enqueueBody.matchAll(/const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled\(database, opportunityId\);/g)];
+  assert.equal(governanceLoads.length, 1, `${relativePath} enqueue path must load integral V3 governance exactly once, never reloaded later in the same flow`);
+  const governanceIndex = governanceLoads[0].index;
+
+  const contextVersionMatch = enqueueBody.match(/const contextVersion = await registerAgt002ContextVersion\(database, \{/);
+  assert.ok(contextVersionMatch, `${relativePath} enqueue path must register the context version`);
+  const documentRetrievalMatch = enqueueBody.match(/const documentRetrieval = agt002AnalysisConfig\.AGT002_DOCUMENT_RETRIEVAL === true;/);
+  assert.ok(documentRetrievalMatch, `${relativePath} enqueue path must derive the documentRetrieval signal`);
+  const analysisDocumentsMatch = enqueueBody.match(/const analysisDocuments = documentRetrieval\s*\n?\s*\? adaptAgt002RetrievalDocuments\(/);
+  assert.ok(analysisDocumentsMatch, `${relativePath} enqueue path must gate the retrieval-shaped document adapter on documentRetrieval`);
+  const inventoryIdentityMatch = enqueueBody.match(/const inventoryIdentity = documentRetrieval\s*\n?\s*\? tenderRequirementInventoryIdentity\(buildAgt002TenderRequirementInventory\(/);
+  assert.ok(inventoryIdentityMatch, `${relativePath} enqueue path must gate inventory identity binding on documentRetrieval`);
+  assert.match(enqueueBody, /\.\.\.inventoryIdentity/, `${relativePath} enqueue path must spread the inventory identity into the idempotency key`);
+  const idempotencyKeyMatch = enqueueBody.match(/const idempotencyKey = computeAgt002PreviewIdempotencyKey\(\{/);
+  assert.ok(idempotencyKeyMatch, `${relativePath} enqueue path must compute the idempotency key`);
+  const enqueueJobMatch = enqueueBody.match(/await createAgt002ReanalysisJob\(database, \{/);
+  assert.ok(enqueueJobMatch, `${relativePath} enqueue path must enqueue the reanalysis job`);
+
+  assert.ok(governanceIndex < contextVersionMatch.index, `${relativePath} must load governance before registering the context version`);
+  assert.ok(contextVersionMatch.index < documentRetrievalMatch.index, `${relativePath} must register the context version before deriving documentRetrieval`);
+  assert.ok(documentRetrievalMatch.index < analysisDocumentsMatch.index, `${relativePath} must derive documentRetrieval before adapting analysis documents`);
+  assert.ok(analysisDocumentsMatch.index < inventoryIdentityMatch.index, `${relativePath} must adapt analysis documents before binding inventory identity`);
+  assert.ok(inventoryIdentityMatch.index < idempotencyKeyMatch.index, `${relativePath} must bind inventory identity before computing the idempotency key`);
+  assert.ok(idempotencyKeyMatch.index < enqueueJobMatch.index, `${relativePath} must compute the idempotency key before enqueueing the reanalysis job`);
 
   // The requirement at the persistence boundary is the SAME signal, never a hardcoded true:
   // a hardcoded true rejects every legitimate retrieval-off run before any RPC.

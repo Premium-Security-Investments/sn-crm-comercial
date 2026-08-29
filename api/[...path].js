@@ -63,6 +63,7 @@ import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } fro
 import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { loadAgt002CompanyEvidenceRegistryEntries } from '../agt002-company-evidence-classes.js';
 import { loadAgt002IntegralGovernanceOverrides } from '../agt002-integral-governance-overrides.js';
+import { buildAgt002CompanyEvidenceIdentity, deriveAgt002CompanyEvidenceAsOf } from '../agt002-company-evidence-identity.js';
 import {
   runAgt002FixedSnapshotReanalysis,
   sanitizeAgt002FixedSnapshotError,
@@ -118,12 +119,44 @@ async function loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId) 
     loadAgt002CompanyEvidenceRegistryEntries(database),
     loadAgt002IntegralGovernanceOverrides(database, opportunityId),
   ]);
+  // F3/F4: the run-binding company evidence identity, re-derived every load from these SAME
+  // registry rows via the real fail-closed builders (never a hand-rolled shadow of them) — so a
+  // corrected/expired evidence row can never silently reuse a stale run's identity. `evidenceAsOf`
+  // is never the wall clock: it is the single deterministic instant these same rows' own
+  // updated_at derive (deriveAgt002CompanyEvidenceAsOf), so a re-run against an unchanged
+  // registry snapshot always derives the identical identity. A registry that cannot even derive
+  // an asOf (table absent, incomplete, malformed) must never fall back to a silent rules_fallback:
+  // it fails closed here with a safe, non-PII runtime boundary code.
+  let evidenceAsOf;
+  let evidenceIdentity;
+  try {
+    evidenceAsOf = deriveAgt002CompanyEvidenceAsOf(companyEvidenceRegistryEntries);
+    evidenceIdentity = buildAgt002CompanyEvidenceIdentity({ registryEntries: companyEvidenceRegistryEntries, asOf: new Date(evidenceAsOf) });
+  } catch {
+    const boundaryError = new Error('AGT-002: el registro de evidencia empresarial no está disponible.');
+    boundaryError.runtime_boundary_code = 'AGT002_RUNTIME_COMPANY_EVIDENCE_INVALID';
+    throw boundaryError;
+  }
   return {
     companyEvidenceRegistryEntries,
     categoryOverrides: governanceOverrides.categoryOverrides,
     evidenceClassLinkByRequirementId: governanceOverrides.evidenceClassLinkByRequirementId,
     governanceProvenance: governanceOverrides.provenance,
+    evidenceAsOf,
+    evidenceIdentity,
   };
+}
+
+// F3: maps the run-binding company evidence identity onto the atomic triple
+// computeAgt002PreviewIdempotencyKey accepts. Reused at all three idempotency-key call sites
+// (one per real analysis flow) so the SAME loaded identity — never a re-derived shadow of it —
+// ever binds a run; absent governance (flag off) maps to no evidence-identity params at all.
+function agt002EvidenceIdentityKeyParams(evidenceIdentity) {
+  return evidenceIdentity ? {
+    evidenceSourceSnapshotHash: evidenceIdentity.source_snapshot_hash,
+    evidencePreviewArtifactHash: evidenceIdentity.preview_artifact_hash,
+    evidenceSourceManifestVersion: evidenceIdentity.source_manifest_version,
+  } : {};
 }
 
 async function enqueueAgt002CanonicalReanalysis(database, {
@@ -132,12 +165,17 @@ async function enqueueAgt002CanonicalReanalysis(database, {
   humanEvidence = [],
 }) {
   const config = getAgt002PreviewRuntimeConfig(process.env);
+  // F3: governance (and the company evidence identity it carries) is loaded once, before the
+  // context version is registered and before the idempotency reservation is computed/found, so
+  // both can bind to it — never after, and never reloaded later in this flow.
+  const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
   const legalCorpusContext = await loadAgt002LegalCorpusContextIfEnabled(database);
   const contextVersion = await registerAgt002ContextVersion(database, {
     opportunity_id: opportunityId,
     tender_id: tenderId,
     snapshot_id: snapshotId,
     actor_id: actorId,
+    company_evidence_identity: integralV3Governance?.evidenceIdentity ?? null,
     context: {
       snapshot_id: snapshotId,
       ...contextV2Sections,
@@ -172,6 +210,7 @@ async function enqueueAgt002CanonicalReanalysis(database, {
     contextVersionId: contextVersion.id,
     legalCorpusVersionId: legalCorpusContext?.legal_corpus_version_id,
     contractVersion: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? AGT002_INTEGRAL_V3_CONTRACT_VERSION : null,
+    ...agt002EvidenceIdentityKeyParams(integralV3Governance?.evidenceIdentity),
     ...inventoryIdentity,
   });
   const existingRun = await findAgt002PreviewRun(database, idempotencyKey, { canonicalOnly: true });
@@ -182,7 +221,6 @@ async function enqueueAgt002CanonicalReanalysis(database, {
     };
   }
 
-  const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
   const manizalesManifestSource = await selectAgt002ManizalesManifestForTender(database, { opportunityId, tenderId });
   const analysisContext = {
     opportunity,
@@ -226,6 +264,10 @@ function sendError(res, error, status = 500) {
   if (error?.runtime_boundary_code === 'AGT002_RADAR_VISIBILITY_LEDGER_UNAVAILABLE') {
     console.warn('agt002_radar_visibility_ledger_unavailable', { event: 'agt002_radar_visibility_ledger_unavailable' });
     return res.status(503).json({ error: 'El ledger de visibilidad del Radar no está disponible.', code: 'AGT002_RADAR_VISIBILITY_LEDGER_UNAVAILABLE' });
+  }
+  if (error?.runtime_boundary_code === 'AGT002_RUNTIME_COMPANY_EVIDENCE_INVALID') {
+    console.warn('agt002_runtime_company_evidence_invalid', { event: 'agt002_runtime_company_evidence_invalid' });
+    return res.status(503).json({ error: 'El registro de evidencia empresarial AGT-002 no está disponible.', code: 'AGT002_RUNTIME_COMPANY_EVIDENCE_INVALID' });
   }
   if (isTenderAnalysisFoundationUnavailable(error)) {
     console.warn('tender_analysis_foundation_unavailable', { event: 'tender_analysis_foundation_unavailable' });
@@ -3514,9 +3556,13 @@ function buildTenderProcessingWorkerDeps(database) {
       let attemptStarted = false;
       try {
         const config = getAgt002PreviewRuntimeConfig(process.env);
+        // F3: same ordering as the enqueue path — governance (and its evidence identity) is
+        // loaded once, before the context version and before the idempotency reservation.
+        const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
         const legalCorpusContext = await loadAgt002LegalCorpusContextIfEnabled(database);
         const contextVersion = canonicalOnly ? await registerAgt002ContextVersion(database, {
           opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, actor_id: actor.requested_by,
+          company_evidence_identity: integralV3Governance?.evidenceIdentity ?? null,
           context: { snapshot_id: snapshotId, ...contextV2Sections, company_dossier: companyDossierV2, human_evidence: [] },
         }) : null;
         const documentRetrieval = agt002AnalysisConfig.AGT002_DOCUMENT_RETRIEVAL === true;
@@ -3543,6 +3589,7 @@ function buildTenderProcessingWorkerDeps(database) {
           contextVersionId: contextVersion?.id,
           legalCorpusVersionId: legalCorpusContext?.legal_corpus_version_id,
           contractVersion: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? AGT002_INTEGRAL_V3_CONTRACT_VERSION : null,
+          ...agt002EvidenceIdentityKeyParams(integralV3Governance?.evidenceIdentity),
           ...inventoryIdentity,
         });
         const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
@@ -3565,7 +3612,8 @@ function buildTenderProcessingWorkerDeps(database) {
           attemptStarted = true;
           await appendAttempt(idempotencyKey, 'running');
         }
-        const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
+        // integralV3Governance was already loaded above, before the context version — never
+        // reread here.
         const engine = createAgt002PreviewRuntime({
           environment: process.env,
           countDailyRuns: () => countAgt002PreviewRunsToday(database),
@@ -3573,6 +3621,7 @@ function buildTenderProcessingWorkerDeps(database) {
           legalCorpusContext,
           ...(integralV3Governance ? {
             companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
+            companyEvidenceAsOf: integralV3Governance.evidenceAsOf,
             categoryOverrides: integralV3Governance.categoryOverrides,
             evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,
             governanceProvenance: integralV3Governance.governanceProvenance,
@@ -3580,7 +3629,7 @@ function buildTenderProcessingWorkerDeps(database) {
           } : {}),
         });
         const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, documentGaps, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
-        const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly, context_version_id: contextVersion?.id, expectedManifestScope: engine.manifestScope ?? null, expectedIdempotencyKey: idempotencyKey, requireTenderRequirementInventory: documentRetrieval, semanticSourceDocuments: analysisDocuments });
+        const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly, context_version_id: contextVersion?.id, expectedManifestScope: engine.manifestScope ?? null, expectedIdempotencyKey: idempotencyKey, requireTenderRequirementInventory: documentRetrieval, semanticSourceDocuments: analysisDocuments, evidenceIdentity: integralV3Governance?.evidenceIdentity ?? null });
         if (canonicalOnly) await appendAttempt(idempotencyKey, 'completed', { analysis_run_id: registeredRun.run_id });
         return { status: 'completed', analysisRunId: registeredRun.run_id };
       } catch (error) {
@@ -4220,6 +4269,10 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
     const bridgeTelemetry = { invocationStarted: false, responseReceived: false };
     try {
       const config = getAgt002PreviewRuntimeConfig(process.env);
+      // F3: same ordering as both canonical flows — governance (and its evidence identity) is
+      // loaded once, before the idempotency reservation. This legacy flow never registers a
+      // context version at all.
+      const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
       const legalCorpusContext = await loadAgt002LegalCorpusContextIfEnabled(database);
       const documentRetrieval = agt002AnalysisConfig.AGT002_DOCUMENT_RETRIEVAL === true;
       const analysisDocuments = documentRetrieval
@@ -4244,6 +4297,7 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
         model: config.model,
         legalCorpusVersionId: legalCorpusContext?.legal_corpus_version_id,
         contractVersion: agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? AGT002_INTEGRAL_V3_CONTRACT_VERSION : null,
+        ...agt002EvidenceIdentityKeyParams(integralV3Governance?.evidenceIdentity),
         ...inventoryIdentity,
       });
       const claim = await claimAgt002PreviewRun(database, { idempotencyKey, dailyMaxRuns: config.dailyMaxRuns, maxConcurrent: config.maxConcurrent, leaseSeconds: config.leaseSeconds });
@@ -4258,7 +4312,8 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
       }
       if (claim.status === 'quota' || claim.status === 'saturated') return useRulesFallback(claim.status);
       claimId = claim.claim_id;
-      const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
+      // integralV3Governance was already loaded above, before the idempotency reservation —
+      // never reread here.
       const engine = createAgt002PreviewRuntime({
           environment: process.env,
           countDailyRuns: () => countAgt002PreviewRunsToday(database),
@@ -4268,6 +4323,7 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
           legalCorpusContext,
           ...(integralV3Governance ? {
             companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
+            companyEvidenceAsOf: integralV3Governance.evidenceAsOf,
             categoryOverrides: integralV3Governance.categoryOverrides,
             evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,
             governanceProvenance: integralV3Governance.governanceProvenance,
@@ -4275,10 +4331,15 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
           } : {}),
         });
       const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, documentGaps, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id, canonicalOnly: false, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
-      const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope, canonicalOnly: false, context_version_id: null, expectedManifestScope: engine.manifestScope ?? null, expectedIdempotencyKey: idempotencyKey, requireTenderRequirementInventory: documentRetrieval, semanticSourceDocuments: analysisDocuments });
+      const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope, canonicalOnly: false, context_version_id: null, expectedManifestScope: engine.manifestScope ?? null, expectedIdempotencyKey: idempotencyKey, requireTenderRequirementInventory: documentRetrieval, semanticSourceDocuments: analysisDocuments, evidenceIdentity: integralV3Governance?.evidenceIdentity ?? null });
       const payload = await getTenderDocumentRecords(database, opportunityId);
       return res.json({ ...payload, analysis: presentCurrentTenderAnalysis(registeredRun), analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, state: 'completed', reused: false, human_review_required: true } });
     } catch (error) {
+      // B: a fail-closed company-evidence boundary must never degrade into a silent
+      // rules_fallback — it propagates as a safe 503, exactly like the durable flows above.
+      if (error?.runtime_boundary_code === 'AGT002_RUNTIME_COMPANY_EVIDENCE_INVALID') {
+        return sendError(res, error);
+      }
       console.warn('agt002_preview_fallback', { event: 'agt002_preview_fallback', reason: 'preview_unavailable' });
       return useRulesFallback('preview_unavailable');
     } finally {

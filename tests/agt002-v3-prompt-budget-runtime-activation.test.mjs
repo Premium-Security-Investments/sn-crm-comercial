@@ -30,6 +30,7 @@ function baseEnv(overrides = {}) {
     }),
     countDailyRuns: async () => 0,
     companyEvidenceRegistryEntries: [],
+    companyEvidenceAsOf: '2026-08-29T00:00:00.000Z',
     createEngine: (options) => { capturedOptions = options; return { analyze: async () => ({}) }; },
   });
   assert.equal(capturedOptions.integralContractV3, true, 'precondition: the V3 contract is active');

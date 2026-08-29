@@ -12,6 +12,7 @@ import { createAgt002PreviewRuntime } from './agt002-preview-runtime.js';
 import { AGT002_MAX_PREVIEW_CLAIM_LEASE_SECONDS, agt002RequiredPreviewClaimLeaseSeconds } from './agt002-reanalysis-input.js';
 import { classifyAgt002ReanalysisWorkerError } from './agt002-reanalysis-worker.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
+import { validateAgt002CompanyEvidenceIdentity, validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
 
 function isObject(value) {
   return value != null && typeof value === 'object' && !Array.isArray(value);
@@ -44,9 +45,32 @@ function validFrozenInput(job) {
     || context.snapshotId !== job.snapshotId
     || context.canonicalOnly !== true
     || flags.AGT002_CANONICAL_ONLY !== true) return null;
-  if (flags.AGT002_INTEGRAL_CONTRACT_V3 === true && !isObject(input.integral_v3_governance)) return null;
+  if (flags.AGT002_INTEGRAL_CONTRACT_V3 === true && !validAgt002FrozenGovernance(input.integral_v3_governance)) return null;
   if (flags.AGT002_LEGAL_CORPUS === true && !isObject(input.legal_corpus_context)) return null;
   return input;
+}
+
+// C: a NEW job (agt002-reanalysis-input.js's buildAgt002FrozenEngineInput) always freezes
+// evidenceIdentity and evidenceAsOf together — re-validated here, shape and all, rather than
+// merely accepted. A job durably queued before evidenceAsOf existed carries neither field at
+// all; that legacy shape is the only accepted exception, so an already-queued pre-F3 job is not
+// rejected before even attempting execution. Either field present without the other can never
+// come from any real builder (current or legacy) and is rejected as a corrupted/hostile frozen
+// input.
+function validAgt002FrozenGovernance(governance) {
+  if (!isObject(governance)) return false;
+  const hasIdentity = governance.evidenceIdentity != null;
+  const hasAsOf = governance.evidenceAsOf != null;
+  if (hasIdentity !== hasAsOf) return false;
+  if (hasIdentity) {
+    try { validateAgt002CompanyEvidenceIdentity(governance.evidenceIdentity); } catch { return false; }
+  }
+  if (hasAsOf) {
+    // Canonical format only — never merely Date-parseable — so a corrupted/hostile frozen
+    // job can never carry an offset, a non-midnight time or a calendar-impossible date.
+    try { validateAgt002CompanyEvidenceAsOf(governance.evidenceAsOf); } catch { return false; }
+  }
+  return true;
 }
 
 function frozenEnvironment(base, input) {
@@ -129,6 +153,10 @@ export function createAgt002ReanalysisExecutor({
         onBridgeResponseReceived: () => { bridgeTelemetry.responseReceived = true; },
         ...(governance ? {
           companyEvidenceRegistryEntries: governance.companyEvidenceRegistryEntries,
+          // F4/A5: the SAME deterministic instant the frozen governance already carries — never
+          // the wall clock, never re-derived here — so the durable engine's classes/identity bind
+          // to it too.
+          companyEvidenceAsOf: governance.evidenceAsOf,
           categoryOverrides: governance.categoryOverrides,
           evidenceClassLinkByRequirementId: governance.evidenceClassLinkByRequirementId,
           governanceProvenance: governance.governanceProvenance,
@@ -147,6 +175,9 @@ export function createAgt002ReanalysisExecutor({
         idempotencyKey: job.idempotencyKey,
         expectedIdempotencyKey: job.idempotencyKey,
         canonicalOnly: true,
+        // F3: the SAME company evidence identity the frozen governance already carries — never
+        // reloaded/re-derived here — so the durable persistence call binds to it too.
+        evidenceIdentity: governance?.evidenceIdentity ?? null,
         // The frozen flags are the run's own governed truth: the enqueue that reserved
         // job.idempotencyKey bound the tender inventory into that identity if and only if
         // AGT002_DOCUMENT_RETRIEVAL was on. Requiring the inventory at persistence with

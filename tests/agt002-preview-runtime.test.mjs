@@ -248,6 +248,7 @@ for (const overrides of [
 const V3_BASE_ENV = {
   AGT002_CANONICAL_ONLY: 'true', AGT002_CONTEXT_V2: 'true', AGT002_DOCUMENT_RETRIEVAL: 'true', AGT002_INTEGRAL_CONTRACT_V3: 'true',
 };
+const SYNTHETIC_EVIDENCE_AS_OF = '2026-08-29T00:00:00.000Z';
 
 // Flag off (default): construction and behavior are exactly as before — no v3 option
 // is ever consulted, and no request/environment parameter besides the flag itself can
@@ -266,13 +267,37 @@ assert.throws(
   'AGT002_INTEGRAL_CONTRACT_V3 must fail closed without an injected company-evidence registry source',
 );
 
+// F4: the flag also requires the deterministic asOf the identity/classes must be derived
+// against — a registry with no asOf must fail closed exactly like a missing registry does,
+// never silently default to the wall clock.
+assert.throws(
+  () => createAgt002PreviewRuntime({
+    environment: baseEnv(V3_BASE_ENV), countDailyRuns: async () => 0, companyEvidenceRegistryEntries: [],
+  }),
+  /no está configurado|companyEvidenceAsOf/i,
+  'AGT002_INTEGRAL_CONTRACT_V3 must fail closed without an injected companyEvidenceAsOf',
+);
+
+// Focal: companyEvidenceAsOf must be exactly the canonical start-of-day UTC form — never
+// merely Date-parseable — so an offset, a non-midnight time or a calendar-impossible date
+// fails closed exactly like a missing asOf does.
+for (const badAsOf of ['2026-08-29T00:00:00.000+00:00', '2026-08-29T08:30:00.000Z', '2026-02-30T00:00:00.000Z']) {
+  assert.throws(
+    () => createAgt002PreviewRuntime({
+      environment: baseEnv(V3_BASE_ENV), countDailyRuns: async () => 0, companyEvidenceRegistryEntries: [], companyEvidenceAsOf: badAsOf,
+    }),
+    /no está configurado|companyEvidenceAsOf/i,
+    `${badAsOf} must fail closed instead of being treated as a valid asOf`,
+  );
+}
+
 // Flag on with an (empty, synthetic) registry supplied: construction succeeds. Category
 // overrides and contextVersionId are constructor-only configuration — never read from
 // the per-request analyze() context, matching every other engine-level flag.
 {
   const runtime = createAgt002PreviewRuntime({
     environment: baseEnv(V3_BASE_ENV), countDailyRuns: async () => 0,
-    companyEvidenceRegistryEntries: [], categoryOverrides: { 'req-1': 'habilitating' },
+    companyEvidenceRegistryEntries: [], companyEvidenceAsOf: SYNTHETIC_EVIDENCE_AS_OF, categoryOverrides: { 'req-1': 'habilitating' },
     governanceProvenance: {
       'category_override:req-1': {
         requirement_id: 'req-1', override_kind: 'category_override', category_value: 'habilitating',
@@ -305,10 +330,12 @@ assert.throws(
   };
   createAgt002PreviewRuntime({
     environment: baseEnv(V3_BASE_ENV), countDailyRuns: async () => 0,
-    companyEvidenceRegistryEntries: [], categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance, manizalesManifestSource,
+    companyEvidenceRegistryEntries: [], companyEvidenceAsOf: SYNTHETIC_EVIDENCE_AS_OF, categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance, manizalesManifestSource,
     contextVersionId: '10101010-1010-4010-8010-101010101010',
     createEngine: spyEngine,
   });
+  // F4: the SAME asOf reaches the engine construction — never re-derived, never the wall clock.
+  assert.equal(capturedOptions.companyEvidenceAsOf, SYNTHETIC_EVIDENCE_AS_OF, 'the runtime must forward companyEvidenceAsOf to the engine verbatim');
   assert.deepEqual(capturedOptions.evidenceClassLinkByRequirementId, evidenceClassLinkByRequirementId, 'the runtime must forward evidenceClassLinkByRequirementId to the engine, exactly like categoryOverrides');
   assert.deepEqual(capturedOptions.categoryOverrides, categoryOverrides);
   assert.equal(capturedOptions.manizalesManifestSource, manizalesManifestSource, 'the runtime must forward the exact server-owned manifest source to the engine');
@@ -340,7 +367,7 @@ assert.throws(
   const spyEngine = (options) => { capturedOptions = options; return { analyze: async () => {} }; };
   createAgt002PreviewRuntime({
     environment: baseEnv(V3_BASE_ENV), countDailyRuns: async () => 0,
-    companyEvidenceRegistryEntries: [], createEngine: spyEngine,
+    companyEvidenceRegistryEntries: [], companyEvidenceAsOf: SYNTHETIC_EVIDENCE_AS_OF, createEngine: spyEngine,
   });
   assert.deepEqual(capturedOptions.evidenceClassLinkByRequirementId, {});
   assert.deepEqual(capturedOptions.categoryOverrides, {});

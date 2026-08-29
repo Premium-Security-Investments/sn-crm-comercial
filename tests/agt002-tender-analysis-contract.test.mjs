@@ -240,4 +240,38 @@ function buildV3Envelope() {
   assert.equal(adapted.recommendation, 'advance_conditionally');
 }
 
+// D: the optional, server-owned run-binding company evidence identity is accepted and
+// re-validated (never trusted verbatim) — orthogonal to manifest_scope/governance_provenance,
+// never an extra/invalid key.
+{
+  const ctx = buildV3IntegralAnalysisValidationContext();
+  const evidenceIdentity = Object.freeze({
+    source_snapshot_hash: 'a'.repeat(64),
+    preview_artifact_hash: 'b'.repeat(64),
+    source_manifest_version: 'v0.3.1-approved-20260829',
+  });
+  const withIdentity = { ...buildV3Envelope(), company_evidence_identity: evidenceIdentity };
+  const validated = validateAgt002TenderAnalysisEnvelopeV3(withIdentity, ctx);
+  assert.deepEqual(validated.company_evidence_identity, evidenceIdentity);
+
+  // An invalid identity (bad hash) must fail closed even though the rest of the envelope is valid.
+  assert.throws(
+    () => validateAgt002TenderAnalysisEnvelopeV3({ ...withIdentity, company_evidence_identity: { ...evidenceIdentity, source_snapshot_hash: 'not-a-hash' } }, ctx),
+    /hash/i,
+  );
+
+  // An identity with an extra key must fail closed, never silently accepted verbatim.
+  assert.throws(
+    () => validateAgt002TenderAnalysisEnvelopeV3({ ...withIdentity, company_evidence_identity: { ...evidenceIdentity, extra: 'no-permitido' } }, ctx),
+    /identidad de evidencia empresarial/i,
+  );
+
+  // An unrelated extra top-level key must still be rejected — this optional key is exactly
+  // `company_evidence_identity`, never a generic escape hatch.
+  assert.throws(
+    () => validateAgt002TenderAnalysisEnvelopeV3({ ...buildV3Envelope(), unexpected_extra_field: true }, ctx),
+    /cerrado/i,
+  );
+}
+
 console.log('AGT-002 tender analysis consumer contract passed');

@@ -27,6 +27,7 @@ import {
   AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS,
 } from './agt002-v3-prompt-budget.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
+import { validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
 
 // design section 5: fixed version tag for the 17-class company-evidence catalog. The
 // catalog itself is fixed by code (agt002-company-evidence-classes.js), not by a stored
@@ -185,6 +186,12 @@ const SAFE_CONCURRENCY = 'AGT-002 Preview está saturado; intente nuevamente en 
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+// Canonical-format check (never merely Date-parseable) for the boundary validation below,
+// which needs a boolean rather than the throwing form validateAgt002CompanyEvidenceAsOf exports.
+function isCanonicalCompanyEvidenceAsOf(value) {
+  try { validateAgt002CompanyEvidenceAsOf(value); return true; } catch { return false; }
 }
 
 // The snapshot identity of a run whose evidence packet cannot be assembled yet (the discovery path
@@ -479,6 +486,15 @@ export function createAgt002PreviewEngine({
   evidenceClassLinkByRequirementId = {},
   governanceProvenance = {},
   companyEvidenceClassesProvider,
+  // F4: the single deterministic instant (ISO string) the company-evidence identity built
+  // alongside this run was derived against (agt002-company-evidence-identity.js's own
+  // deriveAgt002CompanyEvidenceAsOf) — never the wall clock. When provided, buildAgt002CompanyEvidenceClasses
+  // below is built with EXACTLY `new Date(companyEvidenceAsOf)`, so the envelope's own classes
+  // and the run-binding preview_artifact_hash are always derived from the same instant. `undefined`
+  // (the default) is reserved for a direct engine caller (unit tests, canary scripts) that has no
+  // governed evidence identity to bind to — it keeps buildAgt002CompanyEvidenceClasses's own
+  // `new Date()` fallback.
+  companyEvidenceAsOf,
   contextVersionId = null,
   manizalesManifestSource = null,
   observability = createAgt002AnalysisObservability(),
@@ -499,6 +515,7 @@ export function createAgt002PreviewEngine({
     || typeof countDailyRuns !== 'function'
     || (legalCorpus && (typeof legalEvidenceProvider !== 'function' || !nonEmpty(legalCorpusVersionId) || !nonEmpty(legalCorpusContentSha256)))
     || (integralContractV3 && (!contextV2 || !documentRetrieval || typeof companyEvidenceClassesProvider !== 'function'))
+    || (companyEvidenceAsOf !== undefined && !isCanonicalCompanyEvidenceAsOf(companyEvidenceAsOf))
     || (semanticDiscoveryProvider !== null && typeof semanticDiscoveryProvider !== 'function')
     || !observability || typeof observability.record !== 'function'
     || !isAgt002PreviewReasoningEffort(effort)) {
@@ -969,7 +986,10 @@ export function createAgt002PreviewEngine({
       // only the current closed analysis context and performs deterministic offline retrieval.
       const legalEvidencePackage = legalCorpus ? legalEvidenceProvider(context || {}) : undefined;
       const companyEvidenceClasses = integralContractV3
-        ? buildAgt002CompanyEvidenceClasses({ registryEntries: companyEvidenceClassesProvider(context || {}) })
+        ? buildAgt002CompanyEvidenceClasses({
+          registryEntries: companyEvidenceClassesProvider(context || {}),
+          ...(companyEvidenceAsOf !== undefined ? { asOf: new Date(companyEvidenceAsOf) } : {}),
+        })
         : undefined;
       const previewInputOptions = {
         ...(context || {}), contextV2, documentRetrieval, legalCorpus, legalEvidencePackage,

@@ -69,6 +69,99 @@ test('reconstructs runtime from frozen non-secret input and invokes the real orc
   assert.equal(calls.release.length, 0, 'post-bridge orchestrator owns the claimed preview lease');
 });
 
+// F4/A5: the durable executor forwards the SAME deterministic asOf the frozen governance
+// already carries into runtime construction — never the wall clock, never re-derived.
+test('forwards the frozen governance evidenceAsOf verbatim into runtime construction', async () => {
+  const evidenceIdentity = { source_snapshot_hash: 'a'.repeat(64), preview_artifact_hash: 'b'.repeat(64), source_manifest_version: 'v0.3.1-approved-20260829' };
+  const job = {
+    ...JOB,
+    frozenEngineInput: {
+      ...JOB.frozenEngineInput,
+      integral_v3_governance: { ...JOB.frozenEngineInput.integral_v3_governance, evidenceIdentity, evidenceAsOf: '2026-08-29T00:00:00.000Z' },
+    },
+  };
+  const { executor, calls } = harness();
+  await executor({ kind: 'db' }, job);
+  assert.equal(calls.runtime[0].companyEvidenceAsOf, '2026-08-29T00:00:00.000Z');
+});
+
+// C: a NEW job's frozen governance carries evidenceIdentity/evidenceAsOf together; an isolated
+// evidenceAsOf (no evidenceIdentity) can never come from any real builder and must be rejected
+// before any provider claim, exactly like every other malformed frozen input.
+test('rejects a frozen governance carrying evidenceAsOf without evidenceIdentity', async () => {
+  const job = {
+    ...JOB,
+    frozenEngineInput: {
+      ...JOB.frozenEngineInput,
+      integral_v3_governance: { ...JOB.frozenEngineInput.integral_v3_governance, evidenceAsOf: '2026-08-29T00:00:00.000Z' },
+    },
+  };
+  const { executor, calls } = harness();
+  const result = await executor({ kind: 'db' }, job);
+  assert.deepEqual(result, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false });
+  assert.equal(calls.claim.length, 0);
+  assert.equal(calls.runtime.length, 0);
+});
+
+// C: symmetrically, an isolated evidenceIdentity (no evidenceAsOf) can never come from any real
+// builder either — a pre-F3 legacy job carries NEITHER field, never identity alone — and must be
+// rejected before any provider claim, exactly like the evidenceAsOf-only case above.
+test('rejects a frozen governance carrying evidenceIdentity without evidenceAsOf', async () => {
+  const evidenceIdentity = { source_snapshot_hash: 'a'.repeat(64), preview_artifact_hash: 'b'.repeat(64), source_manifest_version: 'v0.3.1-approved-20260829' };
+  const job = {
+    ...JOB,
+    frozenEngineInput: {
+      ...JOB.frozenEngineInput,
+      integral_v3_governance: { ...JOB.frozenEngineInput.integral_v3_governance, evidenceIdentity },
+    },
+  };
+  const { executor, calls } = harness();
+  const result = await executor({ kind: 'db' }, job);
+  assert.deepEqual(result, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false });
+  assert.equal(calls.claim.length, 0);
+  assert.equal(calls.runtime.length, 0);
+});
+
+// C: a malformed evidenceIdentity (invalid hash) must fail closed even though the frozen input
+// is otherwise well-formed — the executor never trusts a durable value verbatim.
+test('rejects a frozen governance carrying a malformed evidenceIdentity', async () => {
+  const job = {
+    ...JOB,
+    frozenEngineInput: {
+      ...JOB.frozenEngineInput,
+      integral_v3_governance: {
+        ...JOB.frozenEngineInput.integral_v3_governance,
+        evidenceIdentity: { source_snapshot_hash: 'not-a-hash', preview_artifact_hash: 'b'.repeat(64), source_manifest_version: 'v0.3.1-approved-20260829' },
+        evidenceAsOf: '2026-08-29T00:00:00.000Z',
+      },
+    },
+  };
+  const { executor, calls } = harness();
+  const result = await executor({ kind: 'db' }, job);
+  assert.deepEqual(result, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false });
+  assert.equal(calls.claim.length, 0);
+});
+
+// Focal: a frozen evidenceAsOf must be exactly the canonical start-of-day UTC form — never
+// merely Date-parseable — so an offset, a non-midnight time or a calendar-impossible date is
+// rejected before any provider claim, exactly like a malformed evidenceIdentity above.
+test('rejects a frozen governance carrying a non-canonical evidenceAsOf', async () => {
+  const evidenceIdentity = { source_snapshot_hash: 'a'.repeat(64), preview_artifact_hash: 'b'.repeat(64), source_manifest_version: 'v0.3.1-approved-20260829' };
+  for (const badAsOf of ['2026-08-29T00:00:00.000+00:00', '2026-08-29T08:30:00.000Z', '2026-02-30T00:00:00.000Z', 'not-a-date']) {
+    const job = {
+      ...JOB,
+      frozenEngineInput: {
+        ...JOB.frozenEngineInput,
+        integral_v3_governance: { ...JOB.frozenEngineInput.integral_v3_governance, evidenceIdentity, evidenceAsOf: badAsOf },
+      },
+    };
+    const { executor, calls } = harness();
+    const result = await executor({ kind: 'db' }, job);
+    assert.deepEqual(result, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false }, `${badAsOf} must be rejected`);
+    assert.equal(calls.claim.length, 0);
+  }
+});
+
 // Blocker: the frozen job's own AGT002_DOCUMENT_RETRIEVAL flag — never a hardcoded true —
 // must gate the persistence-side inventory requirement, or a retrieval-off run (whose
 // envelope legitimately carries no evidence_coverage) pays the provider then fails to persist.

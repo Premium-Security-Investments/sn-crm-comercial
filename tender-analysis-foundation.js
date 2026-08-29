@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { AGT002_CONTEXT_VERSION, buildAgt002ContextV2 } from './agt002-context-v2.js';
+import { validateAgt002CompanyEvidenceIdentity } from './agt002-company-evidence-identity.js';
 import { AGT002_MANIZALES_CHECKED_IN_MANIFEST } from './agt002-manizales-manifest-source.js';
 import {
   deriveAgt002ManizalesManifestScope,
@@ -286,13 +287,31 @@ export async function getCurrentTenderAnalysis(database, opportunityId, currentD
  * its content hash. Every canonical analysis run that consumes this context must
  * reference the returned id so past runs stay reproducible even after new human
  * answers or evidence arrive later.
+ *
+ * `context.company_evidence_identity`, when present, is an optional sibling of
+ * `context.context`: the run-binding company evidence identity (see
+ * agt002-company-evidence-identity.js). It is re-validated and folded into the persisted
+ * context (and therefore its hash/idempotency key) before the RPC call — never merely
+ * accepted and ignored.
  */
 export async function registerAgt002ContextVersion(database, context) {
   const opportunityId = requireId(context?.opportunity_id, 'La oportunidad');
   const tenderId = requireId(context?.tender_id, 'La licitación');
   const snapshotId = requireId(context?.snapshot_id, 'El snapshot documental');
   const actorId = requireId(context?.actor_id, 'El actor');
-  const validatedContext = buildAgt002ContextV2(context?.context);
+  const baseContext = buildAgt002ContextV2(context?.context);
+  const rawCompanyEvidenceIdentity = context?.company_evidence_identity;
+  // Optional, backward-compatible extension: an absent sibling leaves validatedContext
+  // byte-for-byte identical to baseContext (same contextHash/idempotencyKey as before this
+  // field existed); a present sibling is re-validated (never trusted verbatim) and folded in
+  // BEFORE contextHash/idempotencyKey are derived, so persisted context, its hash and the
+  // context-version idempotency key all genuinely depend on which evidence backed this run.
+  const validatedContext = rawCompanyEvidenceIdentity == null
+    ? baseContext
+    : Object.freeze({
+      ...baseContext,
+      company_evidence_identity: validateAgt002CompanyEvidenceIdentity(rawCompanyEvidenceIdentity),
+    });
   const contextHash = sha256(validatedContext);
   const humanEvidenceCount = validatedContext.human_evidence.length;
   const idempotencyKey = sha256({ opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, context_hash: contextHash });

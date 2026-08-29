@@ -63,6 +63,7 @@ if (!existsSync(modulePath)) {
       integration_active: true,
       updated_at: '2026-08-01T10:00:00.000Z',
       created_at: '2026-07-01T10:00:00.000Z',
+      source_manifest_version: 'v0.3.1-approved-20260829',
       // Fields that must never leak into the typed general-layer contract.
       notes: 'Excluir nombres, cédulas, firmas, direcciones.',
       decision_humana: 'aprobado',
@@ -119,7 +120,7 @@ if (!existsSync(modulePath)) {
   // --- Closed shape: exactly the required separate dimensions, nothing else. ---
   const expectedKeys = [
     'entry_id', 'evidence_type', 'presence_status', 'review_status', 'validity_status',
-    'applicability_status', 'compliance_status', 'source', 'last_reconciled_at',
+    'applicability_status', 'compliance_status', 'source', 'last_reconciled_at', 'source_manifest_version',
   ].sort();
   assert.deepEqual(Object.keys(license).sort(), expectedKeys, 'a typed class must expose exactly the required independent dimensions, no more');
 
@@ -141,6 +142,58 @@ if (!existsSync(modulePath)) {
   assert.equal(missingRut.applicability_status, 'pending_case_validation');
   assert.equal(missingRut.compliance_status, 'pending_review');
   assert.equal(missingRut.last_reconciled_at, null, 'a missing class must not invent a reconciliation timestamp');
+
+  // --- F1 (v0.3.1-approved-20260829): source_manifest_version is an additive, optional
+  // extension kept for historical compatibility. When present (own property,
+  // non-null/undefined) it is read verbatim and validated; when absent — as in every
+  // pre-v0.3.1 fixture/histórico and every missing-class placeholder — the key must
+  // never appear in the output at all, so legacy shape/hash/prompt-budget stay
+  // byte-for-byte unchanged. ---
+  assert.match(AGT002_COMPANY_EVIDENCE_CLASS_SELECT, /source_manifest_version/, 'the typed module\'s own SELECT must fetch source_manifest_version');
+  assert.equal(license.source_manifest_version, 'v0.3.1-approved-20260829');
+  assert.equal(rup.source_manifest_version, 'v0.3.1-approved-20260829');
+  assert.ok(!Object.hasOwn(missingRut, 'source_manifest_version'), 'a missing class must never invent a source_manifest_version key');
+
+  // Legacy row: property entirely absent (pre-v0.3.1 fixture/histórico shape) — output
+  // must carry no source_manifest_version key at all, preserving byte-for-byte shape.
+  const legacyEntry = entry();
+  delete legacyEntry.source_manifest_version;
+  const { classes: legacyClasses } = buildAgt002CompanyEvidenceClasses({ registryEntries: [legacyEntry], asOf: ASOF });
+  const legacyLicense = legacyClasses.find(c => c.entry_id === 'supervigilancia_operating_license');
+  assert.ok(!Object.hasOwn(legacyLicense, 'source_manifest_version'), 'a legacy row with no source_manifest_version column must produce output with no such key');
+  assert.deepEqual(
+    Object.keys(legacyLicense).sort(),
+    ['entry_id', 'evidence_type', 'presence_status', 'review_status', 'validity_status', 'applicability_status', 'compliance_status', 'source', 'last_reconciled_at'].sort(),
+    'a legacy row must produce exactly the pre-v0.3.1 shape, with no source_manifest_version key',
+  );
+
+  // Own null/undefined: explicitly present but null/undefined must also be omitted, not
+  // emitted as null.
+  const { classes: nullClasses } = buildAgt002CompanyEvidenceClasses({ registryEntries: [entry({ source_manifest_version: null })], asOf: ASOF });
+  assert.ok(!Object.hasOwn(nullClasses[0], 'source_manifest_version'), 'an own null source_manifest_version must be omitted, never emitted as null');
+  const { classes: undefinedClasses } = buildAgt002CompanyEvidenceClasses({ registryEntries: [entry({ source_manifest_version: undefined })], asOf: ASOF });
+  assert.ok(!Object.hasOwn(undefinedClasses[0], 'source_manifest_version'), 'an own undefined source_manifest_version must be omitted');
+
+  // Empty string / wrong type: still rejected, never silently accepted.
+  assert.throws(
+    () => buildAgt002CompanyEvidenceClasses({ registryEntries: [entry({ source_manifest_version: '' })], asOf: ASOF }),
+    /source_manifest_version/,
+    'an empty source_manifest_version must be rejected, never silently accepted',
+  );
+  assert.throws(
+    () => buildAgt002CompanyEvidenceClasses({ registryEntries: [entry({ source_manifest_version: 123 })], asOf: ASOF }),
+    /source_manifest_version/,
+    'a non-string source_manifest_version must be rejected',
+  );
+
+  // Inherited (prototype-chain) property must never be counted as present.
+  const protoBase = { source_manifest_version: 'v0.3.1-approved-20260829' };
+  const inheritedEntry = Object.assign(Object.create(protoBase), entry());
+  delete inheritedEntry.source_manifest_version; // not an own property; reachable only via the prototype
+  assert.equal(inheritedEntry.source_manifest_version, 'v0.3.1-approved-20260829', 'sanity: the value is reachable via the prototype chain');
+  assert.ok(!Object.hasOwn(inheritedEntry, 'source_manifest_version'), 'sanity: the value is not an own property');
+  const { classes: inheritedClasses } = buildAgt002CompanyEvidenceClasses({ registryEntries: [inheritedEntry], asOf: ASOF });
+  assert.ok(!Object.hasOwn(inheritedClasses[0], 'source_manifest_version'), 'an inherited (non-own) source_manifest_version must never be treated as present');
 
   // --- Source/reference metadata only: no raw content, storage_path or signed URL. ---
   assert.deepEqual(Object.keys(license.source).sort(), ['human_gate', 'label', 'observed_at', 'reference', 'type']);

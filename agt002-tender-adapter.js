@@ -3,6 +3,7 @@ import { validateTenderAnalysisResult } from './tender-analysis-domain.js';
 import { validateAgt002IntegralAnalysisV3 } from './agt002-integral-analysis-v3.js';
 import { projectAgt002IntegralV3ToV2 } from './agt002-v3-compatibility.js';
 import { validateAgt002IntegralGovernanceProvenance } from './agt002-integral-governance-overrides.js';
+import { validateAgt002CompanyEvidenceIdentity } from './agt002-company-evidence-identity.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SHA256 = /^[a-f0-9]{64}$/;
@@ -148,6 +149,13 @@ const ENVELOPE_KEYS_V3_WITH_GOVERNANCE = [...ENVELOPE_KEYS_V3, 'governance_prove
 // payload alone. A manifest-driven run never carries the legacy governance_provenance block, so
 // scope and governance are mutually exclusive closed shapes.
 const ENVELOPE_KEYS_V3_WITH_SCOPE = [...ENVELOPE_KEYS_V3, 'manifest_scope'];
+// F3/D: the optional, server-owned run-binding company evidence identity (agt002-company-
+// evidence-identity.js). Orthogonal to manifest_scope/governance_provenance — a run may carry it
+// alongside either (or neither) of those — so it is offered as an additive variant of each base
+// key set, never folded into a single combined enumeration of every possible combination.
+const ENVELOPE_KEYS_V3_WITH_EVIDENCE_IDENTITY = [...ENVELOPE_KEYS_V3, 'company_evidence_identity'];
+const ENVELOPE_KEYS_V3_WITH_GOVERNANCE_AND_EVIDENCE_IDENTITY = [...ENVELOPE_KEYS_V3_WITH_GOVERNANCE, 'company_evidence_identity'];
+const ENVELOPE_KEYS_V3_WITH_SCOPE_AND_EVIDENCE_IDENTITY = [...ENVELOPE_KEYS_V3_WITH_SCOPE, 'company_evidence_identity'];
 const USAGE_KEYS_V3 = ['provider', 'model', 'input_tokens', 'output_tokens', 'rate_limit'];
 
 // Phase 4: the closed shape of the server-owned `manifest_scope`. Distinguishes the 20
@@ -239,7 +247,7 @@ export function validateAgt002TenderAnalysisEnvelopeV3(value, integralValidation
   // carries governance_provenance, so scope and governance are mutually exclusive shapes here.
   const scopeGoverned = expectedManifestScope !== null && expectedManifestScope !== undefined;
   if (scopeGoverned) {
-    if (!exactKeys(value, ENVELOPE_KEYS_V3_WITH_SCOPE)) {
+    if (!exactKeys(value, ENVELOPE_KEYS_V3_WITH_SCOPE) && !exactKeys(value, ENVELOPE_KEYS_V3_WITH_SCOPE_AND_EVIDENCE_IDENTITY)) {
       throw new Error('El envelope AGT-002 v3 gobernado por manifiesto debe ser cerrado e incluir manifest_scope.');
     }
     const observedScope = validateAgt002ManifestScope(value.manifest_scope);
@@ -250,7 +258,9 @@ export function validateAgt002TenderAnalysisEnvelopeV3(value, integralValidation
       throw new Error('El alcance del manifiesto (manifest_scope) AGT-002 v3 no coincide con el alcance gobernado esperado del servidor.');
     }
   } else if (!exactKeys(value, ENVELOPE_KEYS_V3)
-    && !exactKeys(value, ENVELOPE_KEYS_V3_WITH_GOVERNANCE)) {
+    && !exactKeys(value, ENVELOPE_KEYS_V3_WITH_GOVERNANCE)
+    && !exactKeys(value, ENVELOPE_KEYS_V3_WITH_EVIDENCE_IDENTITY)
+    && !exactKeys(value, ENVELOPE_KEYS_V3_WITH_GOVERNANCE_AND_EVIDENCE_IDENTITY)) {
     throw new Error('El envelope AGT-002 v3 debe ser cerrado.');
   }
   if (value.schema_version !== '3.0.0') throw new Error('La versión de esquema AGT-002 v3 no es compatible.');
@@ -269,6 +279,12 @@ export function validateAgt002TenderAnalysisEnvelopeV3(value, integralValidation
   if (value.human_review_required !== true) throw new Error('La revisión humana es obligatoria.');
   if (value.governance_provenance !== undefined) {
     validateAgt002IntegralGovernanceProvenance(value.governance_provenance);
+  }
+  // F3/D: re-validated through the real fail-closed validator — never trusted verbatim, never
+  // an extra key, never an invalid hash. The same closed shape the context version persists
+  // alongside it (tender-analysis-foundation.js's registerAgt002ContextVersion).
+  if (value.company_evidence_identity !== undefined) {
+    validateAgt002CompanyEvidenceIdentity(value.company_evidence_identity);
   }
   // Defense in depth (design section 9.9/11.9): the carried v2_projection is never trusted
   // as-is — it must equal, field for field, the deterministic projection this same module

@@ -1,5 +1,6 @@
 import { ANALYSIS_FLAG_NAMES } from './agt002-analysis-config.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
+import { validateAgt002CompanyEvidenceIdentity, validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
 
 function object(value) {
   return value != null && typeof value === 'object' && !Array.isArray(value);
@@ -43,6 +44,19 @@ function cloneJson(value, label) {
   }
 }
 
+/** Recursively freezes every array/object reachable from `value` — not only the root. */
+function deepFreezeJson(value) {
+  if (Array.isArray(value)) {
+    for (const item of value) deepFreezeJson(item);
+    return Object.freeze(value);
+  }
+  if (value && typeof value === 'object') {
+    for (const key of Object.keys(value)) deepFreezeJson(value[key]);
+    return Object.freeze(value);
+  }
+  return value;
+}
+
 /** Creates the immutable, non-secret engine input persisted with a queue job. */
 export function buildAgt002FrozenEngineInput({
   runtimeConfig,
@@ -72,8 +86,15 @@ export function buildAgt002FrozenEngineInput({
     || typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) {
     throw new Error('AGT-002 reanalysis frozen input is invalid.');
   }
-  if (analysisConfig.AGT002_INTEGRAL_CONTRACT_V3 === true && !object(integralV3Governance)) {
-    throw new Error('AGT-002 reanalysis frozen governance is required.');
+  if (analysisConfig.AGT002_INTEGRAL_CONTRACT_V3 === true) {
+    if (!object(integralV3Governance)) throw new Error('AGT-002 reanalysis frozen governance is required.');
+    // C: a NEW job always freezes the company-evidence identity AND the deterministic asOf it was
+    // derived against together — re-validated here (never trusted verbatim) rather than merely
+    // accepted, exactly like every other governed value this module freezes.
+    validateAgt002CompanyEvidenceIdentity(integralV3Governance.evidenceIdentity);
+    // Canonical format only — never merely Date-parseable — so a frozen job can never carry an
+    // offset, a non-midnight time or a calendar-impossible date as its governed asOf.
+    validateAgt002CompanyEvidenceAsOf(integralV3Governance.evidenceAsOf);
   }
   if (analysisConfig.AGT002_LEGAL_CORPUS === true && !object(legalCorpusContext)) {
     throw new Error('AGT-002 reanalysis frozen legal corpus is required.');
@@ -81,7 +102,7 @@ export function buildAgt002FrozenEngineInput({
 
   const flags = {};
   for (const name of ANALYSIS_FLAG_NAMES) flags[name] = analysisConfig[name] === true;
-  return Object.freeze(cloneJson({
+  return deepFreezeJson(cloneJson({
     schema_version: 1,
     engine_identity: {
       model: runtimeConfig.model.trim(),

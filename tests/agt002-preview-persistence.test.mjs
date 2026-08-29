@@ -17,6 +17,7 @@ import {
   releaseAgt002PreviewClaim,
 } from '../agt002-preview-persistence.js';
 import { projectAgt002IntegralV3ToV2 } from '../agt002-v3-compatibility.js';
+import { registerAgt002ContextVersion } from '../tender-analysis-foundation.js';
 
 const ids = {
   opportunity: '22222222-2222-4222-8222-222222222222',
@@ -165,6 +166,57 @@ function fakeDatabase({ onRpc } = {}) {
   assert.notEqual(a, v3a, 'v3 must not reuse a v2 run with the same snapshot/policy/model identity');
   assert.match(a, /^[0-9a-f]{64}$/);
   assert.match(v3a, /^[0-9a-f]{64}$/);
+}
+
+// The optional company-evidence identity triple binds the run to WHICH evidence backed it:
+// absent entirely, the key must be byte-for-byte the same as before this triple existed
+// (exact backward compatibility); present, it must be all-or-nothing and change the key.
+{
+  const EVIDENCE_HASH_A = createHash('sha256').update('evidence-snapshot-a').digest('hex');
+  const EVIDENCE_HASH_B = createHash('sha256').update('evidence-preview-a').digest('hex');
+  const EVIDENCE_HASH_A2 = createHash('sha256').update('evidence-snapshot-a2').digest('hex');
+
+  const withoutTriple = computeAgt002PreviewIdempotencyKey({ snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1', contractVersion: 'agt002-integral-analysis-v3' });
+  const compatWithoutTriple = computeAgt002PreviewIdempotencyKey({
+    snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1', contractVersion: 'agt002-integral-analysis-v3',
+    evidenceSourceSnapshotHash: null, evidencePreviewArtifactHash: null, evidenceSourceManifestVersion: null,
+  });
+  assert.equal(withoutTriple, compatWithoutTriple, 'explicit nulls must be identical to omitting the triple entirely');
+
+  const withTriple = computeAgt002PreviewIdempotencyKey({
+    snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1', contractVersion: 'agt002-integral-analysis-v3',
+    evidenceSourceSnapshotHash: EVIDENCE_HASH_A, evidencePreviewArtifactHash: EVIDENCE_HASH_B, evidenceSourceManifestVersion: 'v0.3.1-approved-20260829',
+  });
+  const withTripleAgain = computeAgt002PreviewIdempotencyKey({
+    snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1', contractVersion: 'agt002-integral-analysis-v3',
+    evidenceSourceSnapshotHash: EVIDENCE_HASH_A, evidencePreviewArtifactHash: EVIDENCE_HASH_B, evidenceSourceManifestVersion: 'v0.3.1-approved-20260829',
+  });
+  const withDifferentEvidenceHash = computeAgt002PreviewIdempotencyKey({
+    snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1', contractVersion: 'agt002-integral-analysis-v3',
+    evidenceSourceSnapshotHash: EVIDENCE_HASH_A2, evidencePreviewArtifactHash: EVIDENCE_HASH_B, evidenceSourceManifestVersion: 'v0.3.1-approved-20260829',
+  });
+  const withDifferentManifestVersion = computeAgt002PreviewIdempotencyKey({
+    snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1', contractVersion: 'agt002-integral-analysis-v3',
+    evidenceSourceSnapshotHash: EVIDENCE_HASH_A, evidencePreviewArtifactHash: EVIDENCE_HASH_B, evidenceSourceManifestVersion: 'v0.2-provisional-20260801',
+  });
+  assert.equal(withTriple, withTripleAgain);
+  assert.notEqual(withTriple, withoutTriple, 'supplying the evidence identity must change the key');
+  assert.notEqual(withTriple, withDifferentEvidenceHash, 'a changed evidence hash must change the key');
+  assert.notEqual(withTriple, withDifferentManifestVersion, 'a changed evidence source_manifest_version must change the key');
+  assert.match(withTriple, /^[0-9a-f]{64}$/);
+
+  // Atomic: only some of the triple present, or an invalid hash shape, must fail closed.
+  assert.throws(() => computeAgt002PreviewIdempotencyKey({
+    snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1', evidenceSourceSnapshotHash: EVIDENCE_HASH_A,
+  }), /evidencia empresarial/i);
+  assert.throws(() => computeAgt002PreviewIdempotencyKey({
+    snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1',
+    evidenceSourceSnapshotHash: EVIDENCE_HASH_A, evidencePreviewArtifactHash: EVIDENCE_HASH_B, evidenceSourceManifestVersion: '',
+  }), /evidencia empresarial/i);
+  assert.throws(() => computeAgt002PreviewIdempotencyKey({
+    snapshotId: ids.snapshot, policyVersion: 'v1', model: 'm1',
+    evidenceSourceSnapshotHash: 'not-a-hash', evidencePreviewArtifactHash: EVIDENCE_HASH_B, evidenceSourceManifestVersion: 'v0.3.1-approved-20260829',
+  }), /hashes sha256/i);
 }
 
 // A caller that reserved one identity may never persist an envelope that recomputes to another.
@@ -928,6 +980,120 @@ for (const bad of [
     context_version_id: ids.contextVersion,
   }));
   assert.equal(database.rpcCalls.length, 0, 'a governance_provenance validation failure must never call the RPC');
+}
+
+// ---------------------------------------------------------------------------
+// context.evidenceIdentity: an optional, atomic company-evidence identity that
+// registerAgt002PreviewAnalysis must fold into the recomputed idempotency key AND
+// (D) persist, re-validated, as a server-owned `company_evidence_identity` block inside
+// p_result — the same shape tender-analysis-foundation.js's registerAgt002ContextVersion
+// already persists alongside the context version. A mismatch against a reserved
+// expectedIdempotencyKey must fail before any RPC call.
+// ---------------------------------------------------------------------------
+function evidenceIdentityFixture(overrides = {}) {
+  return {
+    source_snapshot_hash: createHash('sha256').update('evidence-snapshot-fixture').digest('hex'),
+    preview_artifact_hash: createHash('sha256').update('evidence-preview-fixture').digest('hex'),
+    source_manifest_version: 'v0.3.1-approved-20260829',
+    ...overrides,
+  };
+}
+
+{
+  const database = fakeDatabase();
+  const evidenceIdentity = evidenceIdentityFixture();
+  const registered = await registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: envelope(), evidenceIdentity,
+  });
+  const expectedKey = computeAgt002PreviewIdempotencyKey({
+    snapshotId: ids.snapshot, policyVersion: 'agt002-preview-policy-v1', model: 'synthetic-codex-model',
+    evidenceSourceSnapshotHash: evidenceIdentity.source_snapshot_hash,
+    evidencePreviewArtifactHash: evidenceIdentity.preview_artifact_hash,
+    evidenceSourceManifestVersion: evidenceIdentity.source_manifest_version,
+  });
+  assert.equal(database.rpcCalls[0].params.p_idempotency_key, expectedKey, 'registration must fold context.evidenceIdentity into the recomputed key');
+  assert.equal(registered.run_id, ids.run);
+  // D: present, it is persisted as a server-owned block, under its own canonical key name —
+  // never the caller's own `evidenceIdentity`/`evidence_identity` spelling.
+  assert.deepEqual(database.rpcCalls[0].params.p_result.company_evidence_identity, evidenceIdentity);
+  assert.equal(Object.hasOwn(database.rpcCalls[0].params.p_result, 'evidenceIdentity'), false, 'the caller-supplied key name must never leak into the persisted content verbatim');
+  assert.equal(Object.hasOwn(database.rpcCalls[0].params.p_result, 'evidence_identity'), false, 'the persisted key must be exactly company_evidence_identity');
+
+  // An evidence-bound reservation (the caller pre-computed the SAME evidence-aware key)
+  // must be accepted, not just an absent expectedIdempotencyKey.
+  const otherDatabase = fakeDatabase();
+  const matched = await registerAgt002PreviewAnalysis(otherDatabase, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: envelope(), evidenceIdentity, expectedIdempotencyKey: expectedKey,
+  });
+  assert.equal(otherDatabase.rpcCalls[0].params.p_idempotency_key, expectedKey, 'a matching evidence-bound expectedIdempotencyKey must be accepted');
+  assert.equal(matched.run_id, ids.run);
+}
+
+// Changing any single field of the identity must change both the persisted
+// company_evidence_identity block and the recomputed idempotency key — it is atomically
+// bound, not decorative.
+{
+  const base = evidenceIdentityFixture();
+  const baseDatabase = fakeDatabase();
+  await registerAgt002PreviewAnalysis(baseDatabase, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: envelope(), evidenceIdentity: base,
+  });
+  for (const field of Object.keys(base)) {
+    const changedValue = field === 'source_manifest_version' ? 'v0.3.2-other-manifest' : createHash('sha256').update(`changed:${field}`).digest('hex');
+    const changed = { ...base, [field]: changedValue };
+    const changedDatabase = fakeDatabase();
+    await registerAgt002PreviewAnalysis(changedDatabase, {
+      opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+      envelope: envelope(), evidenceIdentity: changed,
+    });
+    assert.deepEqual(changedDatabase.rpcCalls[0].params.p_result.company_evidence_identity, changed, `${field}: the persisted block must reflect the changed value`);
+    assert.notEqual(changedDatabase.rpcCalls[0].params.p_idempotency_key, baseDatabase.rpcCalls[0].params.p_idempotency_key, `${field}: changing it must change the idempotency key`);
+  }
+}
+
+// A reservation made WITHOUT the evidence identity can never be silently consumed by a
+// registration that supplies one (a materially different, evidence-bound identity) — and
+// the reverse must also fail — both before any RPC call.
+{
+  const database = fakeDatabase();
+  const unboundKey = computeAgt002PreviewIdempotencyKey({ snapshotId: ids.snapshot, policyVersion: 'agt002-preview-policy-v1', model: 'synthetic-codex-model' });
+  await assert.rejects(() => registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: envelope(), evidenceIdentity: evidenceIdentityFixture(), expectedIdempotencyKey: unboundKey,
+  }), /idempotencia|reserva|identidad/i);
+  assert.equal(database.rpcCalls.length, 0);
+
+  const evidenceIdentity = evidenceIdentityFixture();
+  const boundKey = computeAgt002PreviewIdempotencyKey({
+    snapshotId: ids.snapshot, policyVersion: 'agt002-preview-policy-v1', model: 'synthetic-codex-model',
+    evidenceSourceSnapshotHash: evidenceIdentity.source_snapshot_hash,
+    evidencePreviewArtifactHash: evidenceIdentity.preview_artifact_hash,
+    evidenceSourceManifestVersion: evidenceIdentity.source_manifest_version,
+  });
+  await assert.rejects(() => registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: envelope(), expectedIdempotencyKey: boundKey,
+  }), /idempotencia|reserva|identidad/i);
+  assert.equal(database.rpcCalls.length, 0);
+}
+
+// The shape must be exact and atomic: a partial/extra-key evidenceIdentity, or an invalid
+// hash inside it, must be rejected before any RPC call.
+for (const bad of [
+  { source_snapshot_hash: evidenceIdentityFixture().source_snapshot_hash },
+  { ...evidenceIdentityFixture(), extra_field: 'unexpected' },
+  { ...evidenceIdentityFixture(), source_snapshot_hash: 'not-a-real-hash' },
+  { ...evidenceIdentityFixture(), source_manifest_version: '' },
+]) {
+  const database = fakeDatabase();
+  await assert.rejects(() => registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot,
+    envelope: envelope(), evidenceIdentity: bad,
+  }), /evidencia empresarial/i);
+  assert.equal(database.rpcCalls.length, 0, 'a malformed evidenceIdentity must never call the RPC');
 }
 
 console.log('AGT-002 Preview persistence (audit, idempotency, no secrets) passed');

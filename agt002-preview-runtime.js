@@ -4,6 +4,7 @@ import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
 import { retrieveAgt002LegalEvidence } from './agt002-legal-retrieval.js';
 import { discoverTenderSemanticManifest } from './tender-semantic-discovery.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
+import { validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
 
 export const AGT002_PREVIEW_ENGINE_ID = 'agt002_codex_preview';
 const REQUIRED_ENV_KEYS = ['AGT002_PREVIEW_MODEL', 'AGT002_HETZNER_BRIDGE_URL', 'AGT002_HETZNER_BRIDGE_HMAC_SECRET'];
@@ -134,7 +135,7 @@ function positiveIntFromEnv(environment, key, fallback) {
  */
 export function createAgt002PreviewRuntime({
   environment = process.env, countDailyRuns, legalCorpusContext,
-  companyEvidenceRegistryEntries, categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance, contextVersionId,
+  companyEvidenceRegistryEntries, companyEvidenceAsOf, categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance, contextVersionId,
   manizalesManifestSource,
   onBridgeInvocationStarted, onBridgeResponseReceived,
   createEngine = createAgt002PreviewEngine,
@@ -159,6 +160,23 @@ export function createAgt002PreviewRuntime({
   withRuntimeBoundaryCode('AGT002_RUNTIME_GOVERNANCE_INVALID', () => {
     if (analysisConfig.AGT002_INTEGRAL_CONTRACT_V3 && !Array.isArray(companyEvidenceRegistryEntries)) {
       throw new Error('AGT-002 Preview no está configurado: AGT002_INTEGRAL_CONTRACT_V3 requiere un registro de evidencia empresarial inyectado explícitamente.');
+    }
+    // F4: a real V3 run must never derive its company-evidence classes/identity from the wall
+    // clock — the deterministic instant (agt002-company-evidence-identity.js's own
+    // deriveAgt002CompanyEvidenceAsOf, run against the SAME registry rows above) is required
+    // alongside the registry, exactly like legalCorpusContext is required alongside legalCorpus.
+    if (analysisConfig.AGT002_INTEGRAL_CONTRACT_V3 && (typeof companyEvidenceAsOf !== 'string' || !companyEvidenceAsOf.trim())) {
+      throw new Error('AGT-002 Preview no está configurado: AGT002_INTEGRAL_CONTRACT_V3 requiere companyEvidenceAsOf inyectado explícitamente.');
+    }
+    // Canonical format only — never merely Date-parseable — so an offset, a non-midnight time
+    // or a calendar-impossible date is rejected here, at engine construction, rather than
+    // silently reaching buildAgt002CompanyEvidenceClasses.
+    if (analysisConfig.AGT002_INTEGRAL_CONTRACT_V3) {
+      try {
+        validateAgt002CompanyEvidenceAsOf(companyEvidenceAsOf);
+      } catch {
+        throw new Error('AGT-002 Preview no está configurado: companyEvidenceAsOf debe tener el formato canónico UTC de inicio de día YYYY-MM-DDT00:00:00.000Z.');
+      }
     }
   });
 
@@ -208,6 +226,7 @@ export function createAgt002PreviewRuntime({
     integralContractV3: analysisConfig.AGT002_INTEGRAL_CONTRACT_V3,
     ...(analysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? {
       companyEvidenceClassesProvider: () => companyEvidenceRegistryEntries,
+      companyEvidenceAsOf,
       // The semantic discovery stage is not behind an env flag: a V3 run built by this runtime is
       // always a production run, and a production run must derive its frontier from the process's
       // own expediente. Direct engine callers (unit tests, canary scripts) leave the provider unset
