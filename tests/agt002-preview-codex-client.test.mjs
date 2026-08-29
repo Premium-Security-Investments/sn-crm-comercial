@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   AGT002_CODEX_CLIENT_NAME,
+  buildAgt002CodexAppServerArgs,
   createCodexAppServerClient,
   requestAgt002CodexDeviceCodeLogin,
 } from '../agt002-preview-codex-client.js';
@@ -30,8 +31,13 @@ const CLOSED_OUTPUT_SCHEMA = Object.freeze({
   },
 });
 
+// The trailing 'app-server' token mirrors the real deployment argv (`args: ['app-server']`, as
+// run-server.mjs configures by default): it is what lets the client pin reasoning effort on the
+// Codex PROCESS argv, and without it a run that requests an effort now fails closed. The synthetic
+// fixture reads its scenario from argv[2] and ignores every later argument, so this is inert for
+// every scenario that never pins an effort.
 function realClient(overrides = {}) {
-  return createCodexAppServerClient({ command: process.execPath, args: [fixture, overrides.scenario || 'ok'], timeoutMs: 2000, ...overrides });
+  return createCodexAppServerClient({ command: process.execPath, args: [fixture, overrides.scenario || 'ok', 'app-server'], timeoutMs: 2000, ...overrides });
 }
 
 function baseRunOptions(overrides = {}) {
@@ -429,6 +435,161 @@ function nonEmpty(value) { return typeof value === 'string' && value.trim().leng
   const client = createCodexAppServerClient({ spawn: fakeSpawn, command: 'ignored', args: [], timeoutMs: 2000 });
   await client.run(baseRunOptions());
   assert.equal(Object.hasOwn(capturedTurnStartParams, 'effort'), false, 'a caller that never set effort must never see the key on the wire');
+}
+
+// --- Hotfix: pin reasoning effort at Codex PROCESS startup, not just turn/start.params ---------
+// Production evidence: turn/start.params.effort='low' was accepted/echoed by the protocol, but
+// Codex's own internal tracing for that exact turn recorded codex.turn.reasoning_effort=medium.
+// turn/start.params.effort alone is therefore not proof the subprocess actually used it. The real
+// fix pins effort at process startup via the CLI's own global override, inserted immediately
+// before the `app-server` subcommand: `codex --strict-config -c 'model_reasoning_effort="low"' app-server`.
+
+// Pure function: no subprocess, no spawn — just the argv-building logic.
+{
+  assert.deepEqual(
+    buildAgt002CodexAppServerArgs(['app-server'], 'low'),
+    ['--strict-config', '-c', 'model_reasoning_effort="low"', 'app-server'],
+  );
+  assert.deepEqual(
+    buildAgt002CodexAppServerArgs(['app-server'], 'medium'),
+    ['--strict-config', '-c', 'model_reasoning_effort="medium"', 'app-server'],
+  );
+}
+
+// Extra args after the subcommand (e.g. AGT002_CODEX_APP_SERVER_ARGS pass-through) are preserved,
+// and the override is still inserted immediately before `app-server`, not at the array's start.
+{
+  assert.deepEqual(
+    buildAgt002CodexAppServerArgs(['--some-flag', 'app-server', '--verbose'], 'low'),
+    ['--some-flag', '--strict-config', '-c', 'model_reasoning_effort="low"', 'app-server', '--verbose'],
+  );
+}
+
+// No allowlisted effort to derive process args from: args must pass through untouched, never
+// silently default to some other override.
+{
+  assert.deepEqual(buildAgt002CodexAppServerArgs(['app-server'], undefined), ['app-server']);
+  assert.deepEqual(buildAgt002CodexAppServerArgs(['app-server'], 'high'), ['app-server']);
+  assert.deepEqual(buildAgt002CodexAppServerArgs(['app-server'], 'low"; rm -rf /'), ['app-server']);
+}
+
+// No `app-server` subcommand token present (e.g. a test double invoking an unrelated executable):
+// nothing to insert the override before, so this pure argv builder passes args through untouched
+// rather than inventing a position for it (the run-level guard right below is what refuses to run
+// that combination at all when a valid effort was actually requested).
+{
+  assert.deepEqual(buildAgt002CodexAppServerArgs(['/path/to/fixture.mjs', 'ok'], 'low'), ['/path/to/fixture.mjs', 'ok']);
+}
+
+// Review blocker: passing through untouched is only safe as long as NOTHING then runs a turn while
+// claiming the effort was pinned. A caller that requested a valid effort against an argv with no
+// `app-server` token has nowhere to insert the process-level override, so the turn would silently
+// inherit the account/CLI default effort and still come back with `effort_ack` — exactly the false
+// assurance this hotfix exists to remove. That must fail closed BEFORE any process is spawned.
+function silentChildDouble() {
+  const child = new EventEmitter();
+  child.stdin = { write() {}, end() {} };
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.kill = () => { child.killed = true; };
+  return child;
+}
+{
+  let spawnCalls = 0;
+  const client = createCodexAppServerClient({
+    spawn: () => { spawnCalls += 1; return silentChildDouble(); },
+    command: 'codex',
+    args: ['/path/to/fixture.mjs', 'ok'],
+    timeoutMs: 1000,
+  });
+  await assert.rejects(
+    () => client.run(baseRunOptions({ effort: 'low', timeoutMs: 1000 })),
+    error => error.code === 'AGT002_CODEX_TRANSPORT_ERROR',
+    'un effort válido que no puede fijarse en el argv del proceso debe fallar cerrado con un código AGT-002 estable',
+  );
+  assert.equal(spawnCalls, 0, 'no debe arrancarse ningún proceso de Codex cuando el effort pedido no puede fijarse en su argv');
+}
+
+// A malformed effort keeps failing closed for the same reason, and still before any spawn.
+{
+  let spawnCalls = 0;
+  const client = createCodexAppServerClient({
+    spawn: () => { spawnCalls += 1; return silentChildDouble(); },
+    command: 'codex',
+    args: ['app-server'],
+    timeoutMs: 1000,
+  });
+  await assert.rejects(() => client.run(baseRunOptions({ effort: 'high', timeoutMs: 1000 })), /esfuerzo de razonamiento/i);
+  assert.equal(spawnCalls, 0, 'un effort mal formado no debe arrancar ningún proceso');
+}
+
+// No effort requested: a test-double/custom argv without `app-server` stays exactly as configured
+// and still runs — there is nothing to pin, so there is nothing to fail closed on.
+{
+  let spawnCalls = 0;
+  const captureArgs = { value: null };
+  const client = createCodexAppServerClient({
+    spawn: (command, spawnArgs) => { spawnCalls += 1; return fakeSpawnCapturingProcessArgs(captureArgs)(command, spawnArgs); },
+    command: 'ignored',
+    args: ['/path/to/fixture.mjs', 'ok'],
+    timeoutMs: 1000,
+  });
+  await client.run(baseRunOptions({ timeoutMs: 1000 }));
+  assert.equal(spawnCalls, 1);
+  assert.deepEqual(captureArgs.value, ['/path/to/fixture.mjs', 'ok']);
+}
+
+// Non-array input fails safe by returning it unchanged rather than throwing.
+{
+  assert.equal(buildAgt002CodexAppServerArgs(undefined, 'low'), undefined);
+}
+
+// End-to-end (fake spawn, capturing the actual command/args passed to spawn): a real deployment
+// shape (`args: ['app-server']`, as run-server.mjs configures by default) must receive the CLI
+// global override before `app-server` when a caller pins `effort`.
+function fakeSpawnCapturingProcessArgs(captureArgs) {
+  return function fakeSpawn(command, args) {
+    captureArgs.value = args;
+    const child = new EventEmitter();
+    child.stdin = { write: (data) => { queueMicrotask(() => onWrite(data)); }, end() {} };
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = () => { child.killed = true; };
+    function onWrite(data) {
+      const message = JSON.parse(String(data).trim());
+      const respond = result => child.stdout.emit('data', Buffer.from(`${JSON.stringify({ id: message.id, result })}\n`));
+      if (message.method === 'initialize') { respond({ codexHome: '/tmp', platformFamily: 'unix', platformOs: 'linux', userAgent: 'fake/1.0' }); return; }
+      if (message.method === 'account/read') { respond({ account: { type: 'chatgpt', email: null, planType: 'team' }, requiresOpenaiAuth: false }); return; }
+      if (message.method === 'account/rateLimits/read') { respond({ rateLimits: { primary: { usedPercent: 1 } } }); return; }
+      if (message.method === 'thread/start') { respond({ thread: { id: 'thread-fake' }, approvalPolicy: 'never', approvalsReviewer: 'user', cwd: '/tmp', model: 'x', modelProvider: 'openai', sandbox: {} }); return; }
+      if (message.method === 'turn/start') {
+        respond({ turn: { id: 'turn-fake', status: 'inProgress', items: [] } });
+        child.stdout.emit('data', Buffer.from(`${JSON.stringify({ method: 'item/completed', params: { threadId: 'thread-fake', turnId: 'turn-fake', completedAtMs: 0, item: { id: 'i1', type: 'agentMessage', text: JSON.stringify({ ok: true }) } } })}\n`));
+        child.stdout.emit('data', Buffer.from(`${JSON.stringify({ method: 'thread/tokenUsage/updated', params: { threadId: 'thread-fake', turnId: 'turn-fake', tokenUsage: { total: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 2 }, last: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 2 } } } })}\n`));
+        child.stdout.emit('data', Buffer.from(`${JSON.stringify({ method: 'turn/completed', params: { threadId: 'thread-fake', turn: { id: 'turn-fake', status: 'completed', items: [] } } })}\n`));
+        return;
+      }
+    }
+    return child;
+  };
+}
+{
+  const captureArgs = { value: null };
+  const client = createCodexAppServerClient({ spawn: fakeSpawnCapturingProcessArgs(captureArgs), command: 'codex', args: ['app-server'], timeoutMs: 2000 });
+  await client.run(baseRunOptions({ effort: 'low' }));
+  assert.deepEqual(captureArgs.value, ['--strict-config', '-c', 'model_reasoning_effort="low"', 'app-server']);
+}
+{
+  const captureArgs = { value: null };
+  const client = createCodexAppServerClient({ spawn: fakeSpawnCapturingProcessArgs(captureArgs), command: 'codex', args: ['app-server'], timeoutMs: 2000 });
+  await client.run(baseRunOptions({ effort: 'medium' }));
+  assert.deepEqual(captureArgs.value, ['--strict-config', '-c', 'model_reasoning_effort="medium"', 'app-server']);
+}
+{
+  const captureArgs = { value: null };
+  const client = createCodexAppServerClient({ spawn: fakeSpawnCapturingProcessArgs(captureArgs), command: 'codex', args: ['app-server'], timeoutMs: 2000 });
+  await client.run(baseRunOptions());
+  assert.deepEqual(captureArgs.value, ['app-server'], 'no effort was pinned, so the process argv must be left exactly as configured');
 }
 
 // --- Separate, human-gated ChatGPT device-code login flow -----------------

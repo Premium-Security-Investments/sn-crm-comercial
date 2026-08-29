@@ -123,6 +123,9 @@ export function createAgt002HetznerBridgeClient({ url = bridgeRunUrl(resolveAgt0
       // never learned about `effort` simply never emits `effort_ack` — and reverting silently to
       // whatever default the account/CLI applies is exactly the failure mode this closes. Missing
       // or mismatched ack fails closed with a stable code, before any model output is accepted.
+      // `effort_ack` acknowledges that the codex client configured the requested effort (both the
+      // Codex process argv and turn/start.params) — it is not, by itself, proof the subprocess
+      // actually applied that effort to the model run.
       if (effort !== undefined && payload.effort_ack !== effort) {
         throw transportError('El puente AGT-002 Preview no confirmó el nivel de esfuerzo de razonamiento solicitado.', 'AGT002_BRIDGE_STALE_EFFORT_ACK');
       }

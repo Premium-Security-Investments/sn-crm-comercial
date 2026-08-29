@@ -17,6 +17,7 @@ export const AGT002_CODEX_CLIENT_NAME = 'siio-agt002-preview';
 export const AGT002_CODEX_CLIENT_VERSION = '1.0.0';
 
 const KILL_GRACE_MS = 200;
+const CODEX_APP_SERVER_SUBCOMMAND = 'app-server';
 
 function transportError(message, code, safeDetails = {}) {
   const error = new Error(message);
@@ -96,6 +97,49 @@ function isPlainObject(value) {
 }
 
 /**
+ * Production evidence: a turn whose turn/start.params.effort carried 'low' was traced internally
+ * by Codex itself as `codex.turn.reasoning_effort=medium` — turn/start.params.effort is
+ * accepted/echoed by the protocol, but that is NOT proof the subprocess actually used it. The real
+ * fix pins reasoning effort at Codex PROCESS startup, via the CLI's own global config override
+ * (`codex --strict-config -c 'model_reasoning_effort="low"' app-server`), inserted immediately
+ * before the `app-server` subcommand token. `--strict-config` makes an unrecognized override key
+ * fail the process closed instead of silently ignoring it. Only ever derives these extra argv
+ * entries from an already-allowlisted `effort` ('low' | 'medium', validated by the caller before
+ * this is reached) — never a shell string, always a plain argv array element, so there is no
+ * injection surface. A caller whose `args` never contains the `app-server` token (e.g. a test
+ * double invoking an unrelated executable) or that never named an `effort` is left untouched —
+ * and when an effort WAS requested, leaving args untouched is never enough on its own: `run()`
+ * below rejects that combination before spawning anything (see canPinAgt002CodexEffort), so a
+ * turn can never proceed on an unpinned process while still reporting `effort_ack`.
+ */
+export function buildAgt002CodexAppServerArgs(args, effort) {
+  if (!Array.isArray(args) || !isAgt002PreviewReasoningEffort(effort)) return args;
+  const subcommandIndex = args.indexOf(CODEX_APP_SERVER_SUBCOMMAND);
+  if (subcommandIndex === -1) return args;
+  return [
+    ...args.slice(0, subcommandIndex),
+    '--strict-config',
+    '-c',
+    `model_reasoning_effort="${effort}"`,
+    ...args.slice(subcommandIndex),
+  ];
+}
+
+/**
+ * True when a requested `effort` can actually be pinned on the Codex PROCESS argv — i.e. there is
+ * an `app-server` subcommand token to insert the CLI global override immediately before. An argv
+ * without it (a test double invoking an unrelated executable, or a misconfigured
+ * AGT002_CODEX_APP_SERVER_ARGS) leaves nowhere to pin the override, so the turn would silently
+ * inherit whatever default effort the account/CLI applies while the response still carried
+ * `effort_ack` — the exact false assurance this hotfix exists to remove. Requesting no effort at
+ * all stays valid: there is nothing to pin, so nothing can be silently lost.
+ */
+function canPinAgt002CodexEffort(args, effort) {
+  if (!isAgt002PreviewReasoningEffort(effort)) return true;
+  return Array.isArray(args) && args.includes(CODEX_APP_SERVER_SUBCOMMAND);
+}
+
+/**
  * Runs one ephemeral, read-only, non-interactive turn against a Codex App
  * Server subprocess and resolves with the model's raw agentMessage content
  * plus token usage / rate-limit telemetry. Fails closed (rejects with a
@@ -126,11 +170,20 @@ export function createCodexAppServerClient({
       if (effort !== undefined && !isAgt002PreviewReasoningEffort(effort)) {
         return Promise.reject(new Error('El nivel de esfuerzo de razonamiento de AGT-002 Preview no es válido.'));
       }
+      // An effort that cannot be pinned on the Codex process argv must fail closed BEFORE any
+      // process is spawned: running the turn anyway would inherit the account/CLI default effort
+      // and still answer with `effort_ack`, which is indistinguishable from a real pin.
+      if (!canPinAgt002CodexEffort(args, effort)) {
+        return Promise.reject(transportError(
+          'El servicio de AGT-002 Preview no está configurado para fijar el esfuerzo de razonamiento del proceso de Codex.',
+          'AGT002_CODEX_TRANSPORT_ERROR',
+        ));
+      }
       if (signal?.aborted) return Promise.reject(transportError('La ejecución de AGT-002 Preview fue cancelada.', 'AGT002_CODEX_CANCELLED'));
       void idempotencyKey; // no wire-level idempotency in the official protocol; caller-side dedup only.
 
       const resolvedCwd = nonEmptyString(turnCwd) ? turnCwd : cwd;
-      const child = spawn(command, args, { cwd: resolvedCwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+      const child = spawn(command, buildAgt002CodexAppServerArgs(args, effort), { cwd: resolvedCwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
 
       return new Promise((resolve, reject) => {
         let settled = false;
@@ -287,11 +340,16 @@ export function createCodexAppServerClient({
               content: lastAgentMessageText,
               usage: { input_tokens: inputTokens, output_tokens: outputTokens },
               rate_limit: rateLimitSnapshot,
-              // Echoes back the exact effort this code path put on turn/start.params (or `null`
-              // when the caller never pinned one). A stale bridge/codex client predating this
-              // fix never emits this field at all, which is exactly the signal the Hetzner
-              // bridge client uses to fail closed instead of silently reverting to whatever
-              // default effort the account/CLI would otherwise apply.
+              // Acknowledges the exact effort THIS CLIENT configured on both the Codex process
+              // argv (buildAgt002CodexAppServerArgs, above) and turn/start.params — or `null`
+              // when the caller never pinned one. This is NOT proof the subprocess actually
+              // applied that effort to the model run: turn/start.params.effort alone is
+              // accepted/echoed by the protocol even when it wasn't (production evidence: Codex's
+              // own internal tracing recorded reasoning_effort=medium for a turn whose turn/start
+              // carried effort='low'). A stale bridge/codex client predating this fix never emits
+              // this field at all, which is exactly the signal the Hetzner bridge client uses to
+              // fail closed instead of silently reverting to whatever default effort the
+              // account/CLI would otherwise apply.
               effort_ack: isAgt002PreviewReasoningEffort(effort) ? effort : null,
             });
           }

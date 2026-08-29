@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { checkCodexEffortCapability, AGT002_CODEX_EFFORT_CAPABILITY_OK, AGT002_CODEX_EFFORT_CAPABILITY_MISSING } from '../agt002-codex-effort-capability.js';
-import { generate, readGeneratedBundle, listFilesRecursively } from '../ops/agt002-hetzner-bridge/check-codex-effort-capability.mjs';
+import {
+  generate,
+  readGeneratedBundle,
+  listFilesRecursively,
+  verifyStrictConfigAppServerInitializes,
+} from '../ops/agt002-hetzner-bridge/check-codex-effort-capability.mjs';
+import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT } from '../agt002-preview-reasoning-effort.js';
 
 // Regression: the real installed `codex app-server generate-json-schema` command does not print
 // JSON to stdout — it requires `--out <DIR>` and writes a bundle of files into that directory.
@@ -150,6 +157,146 @@ function testEndToEndStaleBundleReportsMissing() {
   assert.deepEqual(result, { ok: false, code: AGT002_CODEX_EFFORT_CAPABILITY_MISSING });
 }
 
+// Regression (real binary): `codex --strict-config -c 'model_reasoning_effort="low"' app-server
+// generate-json-schema --out <DIR>` exits 1 with "--strict-config is not supported for codex
+// app-server generate-json-schema" — generate-json-schema itself rejects --strict-config
+// unconditionally, regardless of whether the config key is valid. generate() must therefore never
+// pass --strict-config or the model_reasoning_effort override to generate-json-schema; verifying
+// the CLI recognizes that override is check B's job (verifyStrictConfigAppServerInitializes),
+// against the real long-running app-server process, never generate-json-schema.
+function testGenerateInvokesCliWithoutStrictConfig() {
+  let capturedArgs = null;
+  const spawn = (command, args) => {
+    capturedArgs = args;
+    const outIndex = args.indexOf('--out');
+    const outDir = args[outIndex + 1];
+    writeFileSync(join(outDir, 'TurnStartParams.json'), JSON.stringify({ type: 'object', properties: { effort: { type: 'string' } } }));
+    return { status: 0, error: null };
+  };
+  generate({ command: 'fake-codex', spawn });
+  assert.deepEqual(
+    capturedArgs,
+    ['app-server', 'generate-json-schema', '--out', capturedArgs[capturedArgs.indexOf('--out') + 1]],
+    'schema generation must never carry --strict-config or a model_reasoning_effort override — the real CLI rejects --strict-config outright for generate-json-schema',
+  );
+  assert.doesNotMatch(capturedArgs.join(' '), /--strict-config|model_reasoning_effort/);
+}
+
+// --- Check B: the real long-running `codex --strict-config -c 'model_reasoning_effort="low"'
+// app-server` process, speaking ONLY `initialize` over stdin — never thread/start or turn/start,
+// never a provider generation. Verifies the installed CLI actually accepts the strict-config
+// override at process startup, since generate-json-schema itself cannot be used for that (see
+// testGenerateInvokesCliWithoutStrictConfig above).
+
+function fakeAppServerProcess({ respond = 'ok', exitCode = 0 } = {}) {
+  const child = new EventEmitter();
+  child.stdin = { write: (data) => { queueMicrotask(() => onWrite(data)); }, end() {} };
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.killed = false;
+  child.kill = () => { child.killed = true; return true; };
+  const sentMethods = [];
+  function onWrite(data) {
+    const message = JSON.parse(String(data).trim());
+    sentMethods.push(message.method);
+    if (respond === 'ok') {
+      child.stdout.emit('data', Buffer.from(`${JSON.stringify({ id: message.id, result: { codexHome: '/tmp', platformFamily: 'unix', platformOs: 'linux', userAgent: 'fake/1.0' } })}\n`));
+    } else if (respond === 'error') {
+      child.stdout.emit('data', Buffer.from(`${JSON.stringify({ id: message.id, error: { message: 'unrecognized config key' } })}\n`));
+    } else if (respond === 'malformed') {
+      child.stdout.emit('data', Buffer.from('not json at all\n'));
+      child.emit('exit', exitCode);
+    } else if (respond === 'stderr-only') {
+      child.stderr.emit('data', Buffer.from('fatal: unrecognized configuration key model_reasoning_effort\n'));
+      child.emit('exit', exitCode);
+    } else if (respond === 'silent') {
+      // never responds, never exits — exercised only against a short timeoutMs
+    }
+  }
+  return { child, sentMethods };
+}
+
+async function testVerifyStrictConfigSpawnsWithExactArgvOrdering() {
+  let capturedCommand = null;
+  let capturedArgs = null;
+  let capturedOptions = null;
+  const { child } = fakeAppServerProcess({ respond: 'ok' });
+  const spawn = (command, args, options) => {
+    capturedCommand = command;
+    capturedArgs = args;
+    capturedOptions = options;
+    return child;
+  };
+  const ok = await verifyStrictConfigAppServerInitializes({ command: 'fake-codex', spawn });
+  assert.equal(capturedCommand, 'fake-codex');
+  assert.deepEqual(capturedArgs, ['--strict-config', '-c', `model_reasoning_effort="${AGT002_PREVIEW_DEFAULT_REASONING_EFFORT}"`, 'app-server']);
+  assert.equal(capturedOptions?.stdio?.[0], 'pipe');
+  assert.equal(ok, true);
+}
+
+async function testVerifySendsOnlyInitializeAndNeverThreadOrTurnStart() {
+  const { child, sentMethods } = fakeAppServerProcess({ respond: 'ok' });
+  const spawn = () => child;
+  await verifyStrictConfigAppServerInitializes({ command: 'fake-codex', spawn });
+  assert.deepEqual(sentMethods, ['initialize'], 'the check must send only initialize, never thread/start or turn/start, never a provider generation');
+}
+
+async function testVerifyResolvesTrueAndCleansUpOnAValidInitializeResponse() {
+  const { child } = fakeAppServerProcess({ respond: 'ok' });
+  const spawn = () => child;
+  const ok = await verifyStrictConfigAppServerInitializes({ command: 'fake-codex', spawn });
+  assert.equal(ok, true);
+  assert.equal(child.killed, true, 'the child process must be terminated after a successful initialize handshake, never left running');
+  assert.equal(child.stdout.listenerCount('data'), 0, 'stdout data listeners must be removed on cleanup');
+}
+
+async function testVerifyFailsClosedOnAJsonRpcErrorResponse() {
+  const { child } = fakeAppServerProcess({ respond: 'error' });
+  const spawn = () => child;
+  const ok = await verifyStrictConfigAppServerInitializes({ command: 'fake-codex', spawn });
+  assert.equal(ok, false);
+  assert.equal(child.killed, true);
+}
+
+async function testVerifyFailsClosedOnSpawnError() {
+  const child = new EventEmitter();
+  child.stdin = { write: () => {}, end() {} };
+  child.stdout = new EventEmitter();
+  child.stderr = new EventEmitter();
+  child.killed = false;
+  child.kill = () => { child.killed = true; return true; };
+  const spawn = () => {
+    queueMicrotask(() => child.emit('error', new Error('spawn fake-codex ENOENT')));
+    return child;
+  };
+  const ok = await verifyStrictConfigAppServerInitializes({ command: 'fake-codex', spawn });
+  assert.equal(ok, false);
+}
+
+async function testVerifyFailsClosedOnMalformedResponse() {
+  const { child } = fakeAppServerProcess({ respond: 'malformed', exitCode: 1 });
+  const spawn = () => child;
+  const ok = await verifyStrictConfigAppServerInitializes({ command: 'fake-codex', spawn });
+  assert.equal(ok, false);
+}
+
+async function testVerifyFailsClosedOnStderrOnlyExit() {
+  const { child } = fakeAppServerProcess({ respond: 'stderr-only', exitCode: 1 });
+  const spawn = () => child;
+  const ok = await verifyStrictConfigAppServerInitializes({ command: 'fake-codex', spawn });
+  assert.equal(ok, false);
+}
+
+async function testVerifyFailsClosedOnTimeoutAndKillsTheProcess() {
+  const { child } = fakeAppServerProcess({ respond: 'silent' });
+  const spawn = () => child;
+  const started = Date.now();
+  const ok = await verifyStrictConfigAppServerInitializes({ command: 'fake-codex', spawn, timeoutMs: 50 });
+  assert.equal(ok, false);
+  assert.ok(Date.now() - started < 1000, 'the timeout must be bounded, never wait indefinitely');
+  assert.equal(child.killed, true, 'a timed-out process must still be terminated, never leaked');
+}
+
 testReadGeneratedBundleFromASingleAlreadyBundledFile();
 testReadGeneratedBundleFromASingleUnwrappedTypeFile();
 testReadGeneratedBundleMergesMultipleJsonFilesDeterministically();
@@ -161,4 +308,13 @@ testGenerateCleansUpTempDirEvenWhenTheCommandFails();
 testGenerateCleansUpTempDirEvenWhenSpawnItselfErrors();
 testEndToEndCapableBundleReportsOk();
 testEndToEndStaleBundleReportsMissing();
+testGenerateInvokesCliWithoutStrictConfig();
+await testVerifyStrictConfigSpawnsWithExactArgvOrdering();
+await testVerifySendsOnlyInitializeAndNeverThreadOrTurnStart();
+await testVerifyResolvesTrueAndCleansUpOnAValidInitializeResponse();
+await testVerifyFailsClosedOnAJsonRpcErrorResponse();
+await testVerifyFailsClosedOnSpawnError();
+await testVerifyFailsClosedOnMalformedResponse();
+await testVerifyFailsClosedOnStderrOnlyExit();
+await testVerifyFailsClosedOnTimeoutAndKillsTheProcess();
 console.log('agt002-hetzner-bridge-effort-capability-check.test.mjs OK');

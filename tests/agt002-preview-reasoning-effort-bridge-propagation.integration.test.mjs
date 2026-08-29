@@ -50,9 +50,12 @@ function fakeCodexSpawnCapturingTurnStart(capture) {
   };
 }
 
+// `args: ['app-server']` is the real deployment argv (run-server.mjs's default): the client now
+// refuses to run a turn that requested an effort it cannot pin on the Codex process argv, so a
+// test double must carry the same subcommand token the production process does.
 async function testDefaultLowEffortReachesTurnStartAcrossTheRealBridgeHop() {
   const capture = { turnStartParams: null };
-  const codexClient = createCodexAppServerClient({ spawn: fakeCodexSpawnCapturingTurnStart(capture), command: 'ignored', args: [] });
+  const codexClient = createCodexAppServerClient({ spawn: fakeCodexSpawnCapturingTurnStart(capture), command: 'ignored', args: ['app-server'] });
   const bridge = await startSyntheticAgt002HetznerBridge({ hmacSecret: SECRET, codexClient });
   try {
     const client = createAgt002HetznerBridgeClient({ url: bridge.url, hmacSecret: SECRET });
@@ -65,7 +68,7 @@ async function testDefaultLowEffortReachesTurnStartAcrossTheRealBridgeHop() {
 
 async function testExplicitMediumEffortReachesTurnStart() {
   const capture = { turnStartParams: null };
-  const codexClient = createCodexAppServerClient({ spawn: fakeCodexSpawnCapturingTurnStart(capture), command: 'ignored', args: [] });
+  const codexClient = createCodexAppServerClient({ spawn: fakeCodexSpawnCapturingTurnStart(capture), command: 'ignored', args: ['app-server'] });
   const bridge = await startSyntheticAgt002HetznerBridge({ hmacSecret: SECRET, codexClient });
   try {
     const client = createAgt002HetznerBridgeClient({ url: bridge.url, hmacSecret: SECRET });
