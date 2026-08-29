@@ -150,8 +150,9 @@ test('the optional manifest_scope type is on TenderDocumentAnalysis, never on Te
   const docAnalysis = types.slice(types.indexOf('export type TenderDocumentAnalysis'));
   assert.match(docAnalysis, /manifest_scope\?:\s*TenderManifestScope\s*\|\s*null/, 'TenderDocumentAnalysis must carry the optional manifest_scope');
 
-  const v3Type = types.slice(types.indexOf('export type TenderIntegralAnalysisV3'), types.indexOf('export type TenderDocumentAnalysis'));
-  assert.doesNotMatch(v3Type, /manifest_scope/, 'TenderIntegralAnalysisV3 must never carry manifest_scope');
+  const v3TypeMatch = types.match(/^export type TenderIntegralAnalysisV3 = \{[\s\S]*?^\};$/m);
+  assert.ok(v3TypeMatch, 'TenderIntegralAnalysisV3 declaration must be found');
+  assert.doesNotMatch(v3TypeMatch[0], /manifest_scope/, 'TenderIntegralAnalysisV3 must never carry manifest_scope');
 });
 
 // ---------------------------------------------------------------------------

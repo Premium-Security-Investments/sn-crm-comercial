@@ -6,10 +6,12 @@ import { validateTenderSemanticManifest, toAgt002RequirementManifest } from './t
 import { projectAgt002IntegralV3ToV2, computeAgt002IntegralV3CriticalOpenCount } from './agt002-v3-compatibility.js';
 import { validateAgt002IntegralGovernanceProvenance } from './agt002-integral-governance-overrides.js';
 import { validateAgt002ManifestScope } from './agt002-tender-adapter.js';
+import { validateAgt002CompanyEvidenceIdentity } from './agt002-company-evidence-identity.js';
 
 const CONTENT_KEYS = ['recommendation', 'summary', 'strengths', 'weaknesses', 'blockers', 'questions', 'unverified', 'next_action', 'human_review_required'];
 const AGT002_INTEGRAL_V3_SCHEMA_VERSION = '3.0.0';
 export const AGT002_INTEGRAL_V3_CONTRACT_VERSION = 'agt002-integral-analysis-v3';
+const AGT002_EVIDENCE_IDENTITY_HASH_PATTERN = /^[0-9a-f]{64}$/;
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -150,6 +152,7 @@ function unwrapRpc(response) {
 export function computeAgt002PreviewIdempotencyKey({
   snapshotId, policyVersion, model, contextVersionId = null, legalCorpusVersionId = null, contractVersion = null,
   inventoryVersion = null, inventoryHash = null, snapshotHash = null,
+  evidenceSourceSnapshotHash = null, evidencePreviewArtifactHash = null, evidenceSourceManifestVersion = null,
 }) {
   const base = createHash('sha256').update(`agt002-preview\0${snapshotId}\0${policyVersion}\0${model}`).digest('hex');
   const withContext = contextVersionId
@@ -161,11 +164,29 @@ export function computeAgt002PreviewIdempotencyKey({
   const withContract = contractVersion
     ? createHash('sha256').update(`${withLegalCorpus}\0contract_version\0${contractVersion}`).digest('hex')
     : withLegalCorpus;
-  if (inventoryVersion === null && inventoryHash === null && snapshotHash === null) return withContract;
+  // Optional, atomic triple: binds the run identity to WHICH company evidence snapshot
+  // backed it, so a corrected/expired evidence row can never silently reuse a stale run.
+  // Absent entirely (all three null), the key is byte-for-byte identical to before this
+  // triple existed — this is deliberate backward compatibility, never a behavior change
+  // for callers that never supply it.
+  const evidenceIdentityValues = [evidenceSourceSnapshotHash, evidencePreviewArtifactHash, evidenceSourceManifestVersion];
+  let withEvidenceIdentity = withContract;
+  if (evidenceIdentityValues.some(value => value !== null)) {
+    if (!evidenceIdentityValues.every(value => typeof value === 'string' && value.trim())) {
+      throw new Error('La identidad de idempotencia de evidencia empresarial requiere source_snapshot_hash, preview_artifact_hash y source_manifest_version juntos.');
+    }
+    if (!AGT002_EVIDENCE_IDENTITY_HASH_PATTERN.test(evidenceSourceSnapshotHash) || !AGT002_EVIDENCE_IDENTITY_HASH_PATTERN.test(evidencePreviewArtifactHash)) {
+      throw new Error('La identidad de idempotencia de evidencia empresarial requiere hashes sha256 válidos.');
+    }
+    withEvidenceIdentity = createHash('sha256').update(
+      `${withContract}\0evidence_source_snapshot_hash\0${evidenceSourceSnapshotHash}\0evidence_preview_artifact_hash\0${evidencePreviewArtifactHash}\0evidence_source_manifest_version\0${evidenceSourceManifestVersion}`,
+    ).digest('hex');
+  }
+  if (inventoryVersion === null && inventoryHash === null && snapshotHash === null) return withEvidenceIdentity;
   if (![inventoryVersion, inventoryHash, snapshotHash].every(value => typeof value === 'string' && value.trim())) {
     throw new Error('La identidad de idempotencia del inventario requiere versión, inventory_hash y snapshot_hash juntos.');
   }
-  return createHash('sha256').update(`${withContract}\0inventory_version\0${inventoryVersion}\0inventory_hash\0${inventoryHash}\0snapshot_hash\0${snapshotHash}`).digest('hex');
+  return createHash('sha256').update(`${withEvidenceIdentity}\0inventory_version\0${inventoryVersion}\0inventory_hash\0${inventoryHash}\0snapshot_hash\0${snapshotHash}`).digest('hex');
 }
 
 /** Atomically reserves one cross-request provider slot in PostgreSQL. */
@@ -372,11 +393,28 @@ export async function registerAgt002PreviewAnalysis(database, context) {
       snapshotHash: tenderRequirementInventory.snapshot_hash,
     }
     : {};
+  // Optional, atomic company-evidence identity: re-validated (never trusted verbatim) through
+  // the same real fail-closed validator agt002-company-evidence-identity.js exports — never a
+  // hand-rolled shadow of it. Used both to bind the recomputed idempotency key to the evidence
+  // snapshot the caller says backed this run, AND (below, once `content` exists) as a
+  // server-owned block folded into the persisted result — the same shape the context version
+  // already persists alongside it (tender-analysis-foundation.js's registerAgt002ContextVersion).
+  const rawEvidenceIdentity = context?.evidenceIdentity ?? null;
+  const validatedEvidenceIdentity = rawEvidenceIdentity === null ? null : validateAgt002CompanyEvidenceIdentity(rawEvidenceIdentity);
+  const evidenceIdentityParams = validatedEvidenceIdentity ? {
+    evidenceSourceSnapshotHash: validatedEvidenceIdentity.source_snapshot_hash,
+    evidencePreviewArtifactHash: validatedEvidenceIdentity.preview_artifact_hash,
+    evidenceSourceManifestVersion: validatedEvidenceIdentity.source_manifest_version,
+  } : {};
+  // Never PII, never raw registry rows: validateAgt002CompanyEvidenceIdentity already returns a
+  // frozen clone limited to exactly its three opaque hash/version fields.
+  if (validatedEvidenceIdentity) content.company_evidence_identity = validatedEvidenceIdentity;
   const idempotencyKey = computeAgt002PreviewIdempotencyKey({
     snapshotId, policyVersion, model: usage.model, contextVersionId,
     legalCorpusVersionId: hasLegalCorpusVersionId ? legalCorpusVersionId : null,
     contractVersion: isIntegralV3 ? AGT002_INTEGRAL_V3_CONTRACT_VERSION : null,
     ...inventoryIdentity,
+    ...evidenceIdentityParams,
   });
   if (context?.expectedIdempotencyKey != null) {
     const expectedIdempotencyKey = requireId(context.expectedIdempotencyKey, 'La clave de idempotencia reservada');

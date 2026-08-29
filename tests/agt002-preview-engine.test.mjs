@@ -1239,6 +1239,27 @@ assert.match(AGT002_INTEGRAL_V3_POLICY, /milestone[^.]*status "not_identified"[^
     /no está configurado/i,
     'integralContractV3 must fail closed without companyEvidenceClassesProvider',
   );
+
+  // Focal: companyEvidenceAsOf, when provided, must be exactly the canonical start-of-day
+  // UTC form — never merely Date-parseable — so an offset, a non-midnight time or a
+  // calendar-impossible date fails closed at construction exactly like a missing provider does.
+  for (const badAsOf of ['2026-08-29T00:00:00.000+00:00', '2026-08-29T08:30:00.000Z', '2026-02-30T00:00:00.000Z']) {
+    assert.throws(
+      () => createAgt002PreviewEngine({
+        client: { run: async () => {} }, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+        companyEvidenceClassesProvider: () => [], companyEvidenceAsOf: badAsOf,
+      }),
+      /no está configurado/i,
+      `${badAsOf} must fail closed instead of being treated as a valid companyEvidenceAsOf`,
+    );
+  }
+  assert.doesNotThrow(
+    () => createAgt002PreviewEngine({
+      client: { run: async () => {} }, ...baseEngineOptions(), contextV2: true, documentRetrieval: true, integralContractV3: true,
+      companyEvidenceClassesProvider: () => [], companyEvidenceAsOf: '2026-08-29T00:00:00.000Z',
+    }),
+    'the exact canonical form must be accepted',
+  );
 }
 
 console.log('AGT-002 Preview engine orchestration passed');

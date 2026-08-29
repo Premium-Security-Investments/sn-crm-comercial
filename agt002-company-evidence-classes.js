@@ -54,6 +54,7 @@ const CLASS_CATALOG_BY_ID = new Map(CLASS_CATALOG.map(item => [item.entryId, ite
 export const AGT002_COMPANY_EVIDENCE_CLASS_ALLOWED_COLUMNS = Object.freeze([
   'entry_id', 'document_class', 'existence_status', 'human_review_status', 'applicability_status',
   'source_reference', 'human_gate', 'hash', 'expiry', 'current', 'integration_active', 'updated_at', 'created_at',
+  'source_manifest_version',
 ]);
 
 export function assertAgt002CompanyEvidenceRegistryMinimalExposureSelect(select, allowedColumns) {
@@ -78,7 +79,7 @@ export function assertAgt002CompanyEvidenceRegistryMinimalExposureSelect(select,
 }
 
 export const AGT002_COMPANY_EVIDENCE_CLASS_SELECT = assertAgt002CompanyEvidenceRegistryMinimalExposureSelect(
-  'entry_id,document_class,existence_status,human_review_status,applicability_status,source_reference,human_gate,hash,expiry,current,integration_active,updated_at,created_at',
+  'entry_id,document_class,existence_status,human_review_status,applicability_status,source_reference,human_gate,hash,expiry,current,integration_active,updated_at,created_at,source_manifest_version',
   AGT002_COMPANY_EVIDENCE_CLASS_ALLOWED_COLUMNS,
 );
 
@@ -132,7 +133,7 @@ function buildClass(rawEntry, asOf) {
   const applicabilityStatus = requireEnum(rawEntry.applicability_status, AGT002_COMPANY_EVIDENCE_APPLICABILITY_STATUSES, `${entryId}.applicability_status`);
   if (typeof rawEntry.integration_active !== 'boolean') throw new Error(`${entryId}.integration_active debe ser booleano.`);
 
-  return {
+  const builtClass = {
     entry_id: entryId,
     evidence_type: evidenceType,
     presence_status: presenceStatus,
@@ -143,6 +144,15 @@ function buildClass(rawEntry, asOf) {
     source: buildSource(rawEntry),
     last_reconciled_at: toIso(rawEntry.updated_at),
   };
+
+  // Additive/optional for historical compatibility (pre-v0.3.1 fixtures/históricos never
+  // carried this column): only own, non-null/undefined values are validated and emitted.
+  // Absent (including inherited) stays byte-for-byte identical to the legacy shape.
+  if (Object.hasOwn(rawEntry, 'source_manifest_version') && rawEntry.source_manifest_version != null) {
+    builtClass.source_manifest_version = requireNonEmptyString(rawEntry.source_manifest_version, `${entryId}.source_manifest_version`);
+  }
+
+  return builtClass;
 }
 
 function buildMissingClass({ entryId, evidenceType }) {
@@ -161,6 +171,8 @@ function buildMissingClass({ entryId, evidenceType }) {
       label: evidenceType,
     },
     last_reconciled_at: null,
+    // No row exists to read a real provenance version from — never invented, and the
+    // additive contract omits the key entirely rather than emitting null.
   };
 }
 

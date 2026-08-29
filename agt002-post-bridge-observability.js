@@ -200,6 +200,9 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
     opportunityId, tenderId, snapshotId, contextVersionId, attemptKey,
     correlationId, claimId, idempotencyKey, canonicalOnly = true,
     requireTenderRequirementInventory = true,
+    // F3: the run-binding company evidence identity, handed down verbatim (never re-derived
+    // here) from the caller's already-loaded governance — forwarded as-is to persistence.
+    evidenceIdentity = null,
   } = context;
   const {
     engine, observability = createAgt002AnalysisObservability(), analysisContext,
@@ -274,6 +277,7 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
         // analysed — never from the envelope it produced. Persistence re-derives the anchoring and
         // refuses the run without it; the text itself is never persisted.
         semanticSourceDocuments: analysisContext?.documents ?? null,
+        evidenceIdentity,
       });
       runPersisted = true;
       analysisRunId = registeredRun?.run_id ?? null;

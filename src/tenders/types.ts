@@ -430,6 +430,17 @@ export type TenderManifestScope = {
 // never named. A SIBLING of TenderManifestScope and integral_analysis, never nested inside
 // either. Closed, minimal shape: no citation text/quotes, never a conclusion or compliance
 // claim. UI code must always treat this as optional and never require it.
+// AGT-002 company evidence identity (F3, optional, read-only): the run-binding identity of
+// WHICH company-evidence registry snapshot backed this run (agt002-company-evidence-identity.js).
+// Three opaque sha256 digests / a version string — never the underlying registry rows — so no
+// evidence content (source reference, human_gate, notes, storage paths) can ever reach the front
+// end through this field. A SIBLING of integral_analysis, manifest_scope and
+// manifest_unresolved_entries; UI code must always treat this as optional and never require it.
+export type TenderCompanyEvidenceIdentity = {
+  source_snapshot_hash: string;
+  preview_artifact_hash: string;
+  source_manifest_version: string;
+};
 export type TenderManifestUnresolvedEntry = {
   requirement_id: string;
   label: string;
@@ -564,6 +575,7 @@ export type TenderDocumentAnalysis = {
   integral_analysis?: TenderIntegralAnalysisV3 | null;
   manifest_scope?: TenderManifestScope | null;
   manifest_unresolved_entries?: TenderManifestUnresolvedEntry[] | null;
+  company_evidence_identity?: TenderCompanyEvidenceIdentity | null;
   decision_review?: TenderDecisionReview | null;
   decision_axis_analysis?: TenderDecisionAxisAnalysis | null;
   [key: string]: unknown;
