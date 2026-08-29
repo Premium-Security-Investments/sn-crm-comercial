@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { bridgeRunUrl, resolveAgt002BridgeHost } from './agt002-bridge-host.js';
 import { sha256Hex, buildCanonicalString, signCanonicalString } from './agt002-hetzner-bridge-signing.js';
+import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 
 function transportError(message, code) {
   const error = new Error(message);
@@ -55,15 +56,21 @@ export function createAgt002HetznerBridgeClient({ url = bridgeRunUrl(resolveAgt0
   const path = new URL(url).pathname;
 
   return {
-    async run({ model, policy, input, outputSchema, timeoutMs = 30_000, idempotencyKey = randomUUID(), signal } = {}) {
+    async run({ model, policy, input, outputSchema, timeoutMs = 30_000, idempotencyKey = randomUUID(), signal, effort } = {}) {
       if (typeof model !== 'string' || !model.trim()) throw new Error('AGT-002 Preview requiere un modelo configurado.');
       if (typeof policy !== 'string' || !policy.trim()) throw new Error('AGT-002 Preview requiere una política (baseInstructions) configurada.');
       if (!isPlainObject(input)) throw new Error('AGT-002 Preview requiere una entrada cerrada.');
       if (!isPlainObject(outputSchema)) throw new Error('AGT-002 Preview requiere un outputSchema cerrado.');
       if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new Error('El timeout de AGT-002 Preview no es válido.');
+      // `effort` is optional at this transport layer (older/unrelated direct callers never sent
+      // one), but a value that IS present must be a real allowlisted reasoning effort — fail
+      // closed, never forward a malformed/free-form value toward the signed bridge request.
+      if (effort !== undefined && !isAgt002PreviewReasoningEffort(effort)) {
+        throw new Error('El nivel de esfuerzo de razonamiento de AGT-002 Preview no es válido.');
+      }
       if (signal?.aborted) throw transportError('La ejecución de AGT-002 Preview fue cancelada.', 'AGT002_CODEX_CANCELLED');
 
-      const body = JSON.stringify({ model, policy, input, outputSchema, timeoutMs, idempotencyKey });
+      const body = JSON.stringify({ model, policy, input, outputSchema, timeoutMs, idempotencyKey, effort });
       const timestamp = String(now());
       const nonce = randomNonce();
       const canonical = buildCanonicalString({ method: 'POST', path, bodySha256Hex: sha256Hex(body), timestamp, nonce });
@@ -110,6 +117,14 @@ export function createAgt002HetznerBridgeClient({ url = bridgeRunUrl(resolveAgt0
         || !Number.isInteger(payload.usage?.input_tokens) || payload.usage.input_tokens < 0
         || !Number.isInteger(payload.usage?.output_tokens) || payload.usage.output_tokens < 0) {
         throw transportError('La respuesta de AGT-002 Preview no tiene una estructura segura.', 'AGT002_CODEX_INVALID_RESPONSE');
+      }
+      // Review fix: a caller that pinned a real `effort` must get back an exact acknowledgement
+      // of that same effort. A stale Hetzner bridge (or a stale codex client behind it) that
+      // never learned about `effort` simply never emits `effort_ack` — and reverting silently to
+      // whatever default the account/CLI applies is exactly the failure mode this closes. Missing
+      // or mismatched ack fails closed with a stable code, before any model output is accepted.
+      if (effort !== undefined && payload.effort_ack !== effort) {
+        throw transportError('El puente AGT-002 Preview no confirmó el nivel de esfuerzo de razonamiento solicitado.', 'AGT002_BRIDGE_STALE_EFFORT_ACK');
       }
       return { content: payload.content, usage: payload.usage, rate_limit: payload.rate_limit ?? null };
     },

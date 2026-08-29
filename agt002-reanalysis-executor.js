@@ -11,6 +11,7 @@ import {
 import { createAgt002PreviewRuntime } from './agt002-preview-runtime.js';
 import { AGT002_MAX_PREVIEW_CLAIM_LEASE_SECONDS, agt002RequiredPreviewClaimLeaseSeconds } from './agt002-reanalysis-input.js';
 import { classifyAgt002ReanalysisWorkerError } from './agt002-reanalysis-worker.js';
+import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 
 function isObject(value) {
   return value != null && typeof value === 'object' && !Array.isArray(value);
@@ -27,6 +28,12 @@ function validFrozenInput(job) {
     || !Number.isInteger(identity.timeout_ms) || identity.timeout_ms <= 0 || identity.timeout_ms > 480_000
     || !Number.isInteger(identity.daily_max_runs) || identity.daily_max_runs <= 0
     || !Number.isInteger(identity.max_concurrent) || identity.max_concurrent <= 0) return null;
+  // AGT-002 root-cause fix: `effort` is optional here (never rejected merely for being absent) so
+  // a job frozen before this field existed keeps executing exactly as it did before — see
+  // frozenEnvironment below for the safe default applied at reconstruction. A PRESENT value must
+  // still be a real allowlisted reasoning effort, or a corrupted/hostile frozen input could push
+  // an unsupported value all the way to the provider.
+  if (identity.effort !== undefined && !isAgt002PreviewReasoningEffort(identity.effort)) return null;
   // A timeout whose two-turn lease the reservation ceiling cannot fund is a frozen-config error,
   // not a capacity state: reject it here — before any claim, runtime construction or post-bridge
   // call — exactly like the other pre-claim validation failures. 285_000ms is the largest fundable
@@ -52,6 +59,9 @@ function frozenEnvironment(base, input) {
     AGT002_PREVIEW_TIMEOUT_MS: String(identity.timeout_ms),
     AGT002_PREVIEW_DAILY_MAX_RUNS: String(identity.daily_max_runs),
     AGT002_PREVIEW_MAX_CONCURRENT: String(identity.max_concurrent),
+    // A legacy frozen input (no `effort` field) reconstructs with the current safe default,
+    // never the worker host's own ambient env var — the frozen job's own identity always wins.
+    AGT002_PREVIEW_REASONING_EFFORT: isAgt002PreviewReasoningEffort(identity.effort) ? identity.effort : AGT002_PREVIEW_DEFAULT_REASONING_EFFORT,
   };
   for (const name of ANALYSIS_FLAG_NAMES) {
     if (Object.hasOwn(input.analysis_flags, name)) environment[name] = input.analysis_flags[name] === true ? 'true' : 'false';

@@ -77,7 +77,12 @@ function citationOf(unit) {
     idempotencyKey: 'run-1',
     inventory: INVENTORY,
     documents: DOCUMENTS,
+    effort: 'low',
   });
+
+  // AGT-002 root-cause fix: the discovery turn is a real provider turn and must carry the same
+  // explicit reasoning effort as the analysis turn — never silently inherit a default.
+  assert.equal(captured.effort, 'low');
 
   validateTenderSemanticManifest(result.semanticManifest, { inventory: INVENTORY });
   assert.equal(result.semanticManifest.origin, 'model_proposal');

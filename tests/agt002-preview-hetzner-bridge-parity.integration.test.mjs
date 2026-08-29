@@ -6,7 +6,9 @@ import { createAgt002PreviewEngine, AGT002_PREVIEW_POLICY } from '../agt002-prev
 const SECRET = 'a'.repeat(32);
 
 function syntheticSuccessCodexClient(modelOutput) {
-  return { run: async () => ({ content: JSON.stringify(modelOutput), usage: { input_tokens: 12, output_tokens: 34 }, rate_limit: null }) };
+  // Mirrors the real codex client's effort acknowledgement contract: the engine always pins a
+  // real `effort`, and the bridge client now requires this exact echo before accepting output.
+  return { run: async ({ effort } = {}) => ({ content: JSON.stringify(modelOutput), usage: { input_tokens: 12, output_tokens: 34 }, rate_limit: null, effort_ack: effort ?? null }) };
 }
 
 async function testEngineProducesValidEnvelopeThroughSyntheticBridge() {

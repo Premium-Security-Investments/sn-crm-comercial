@@ -9,6 +9,7 @@ User=agt002-bridge
 Group=agt002-bridge
 EnvironmentFile=/etc/agt002-bridge/agt002-bridge.env
 Environment=CODEX_HOME=/opt/agt002-bridge/.codex
+ExecStartPre=/usr/bin/node /opt/agt002-bridge/ops/agt002-hetzner-bridge/check-codex-effort-capability.mjs
 ExecStart=/usr/bin/node /opt/agt002-bridge/ops/agt002-hetzner-bridge/run-server.mjs
 Restart=on-failure
 RestartSec=5

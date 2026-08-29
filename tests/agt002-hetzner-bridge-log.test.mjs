@@ -59,7 +59,36 @@ function testUnsafeProviderAtomsAreDroppedAtTheLoggingBoundary() {
   assert.equal(emitted.includes('secret detail'), false);
 }
 
+function testAllowlistedEffortIsEmitted() {
+  const originalLog = console.log;
+  let emitted = null;
+  console.log = line => { emitted = line; };
+  try {
+    logBridgeEvent('agt002_bridge_success', { correlation_id: 'corr-4', code: 'OK', effort: 'low' });
+  } finally {
+    console.log = originalLog;
+  }
+  const parsed = JSON.parse(emitted);
+  assert.deepEqual(parsed, { event: 'agt002_bridge_success', correlation_id: 'corr-4', code: 'OK', effort: 'low' });
+}
+
+function testUnsafeEffortIsDroppedAtTheLoggingBoundary() {
+  const originalLog = console.log;
+  let emitted = null;
+  console.log = line => { emitted = line; };
+  try {
+    logBridgeEvent('agt002_bridge_error', { correlation_id: 'corr-5', code: 'AGT002_BRIDGE_BAD_REQUEST', effort: 'high' });
+  } finally {
+    console.log = originalLog;
+  }
+  const parsed = JSON.parse(emitted);
+  assert.deepEqual(parsed, { event: 'agt002_bridge_error', correlation_id: 'corr-5', code: 'AGT002_BRIDGE_BAD_REQUEST' });
+  assert.equal(emitted.includes('high'), false);
+}
+
 testOnlySafeKeysAreEmitted();
 testMissingOptionalFieldsAreOmittedNotNull();
 testUnsafeProviderAtomsAreDroppedAtTheLoggingBoundary();
+testAllowlistedEffortIsEmitted();
+testUnsafeEffortIsDroppedAtTheLoggingBoundary();
 console.log('agt002-hetzner-bridge-log.test.mjs OK');

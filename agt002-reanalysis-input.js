@@ -1,4 +1,5 @@
 import { ANALYSIS_FLAG_NAMES } from './agt002-analysis-config.js';
+import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 
 function object(value) {
   return value != null && typeof value === 'object' && !Array.isArray(value);
@@ -52,12 +53,20 @@ export function buildAgt002FrozenEngineInput({
   manizalesManifestSource = null,
   idempotencyKey,
 } = {}) {
+  // AGT-002 root-cause fix: the reasoning effort a NEW job freezes always resolves to a real,
+  // explicit, allowlisted value — absence defaults to the fastest operationally-validated level
+  // (mirroring getAgt002PreviewRuntimeConfig's own default), an explicit-but-unsupported value
+  // fails closed. This never changes what an already-durable job carries: see
+  // agt002-reanalysis-executor.js's validFrozenInput, which tolerates a legacy frozen input with
+  // no `effort` field at all (a job created before this field existed).
+  const resolvedEffort = runtimeConfig?.effort === undefined ? AGT002_PREVIEW_DEFAULT_REASONING_EFFORT : runtimeConfig.effort;
   if (!object(runtimeConfig)
     || typeof runtimeConfig.model !== 'string' || !runtimeConfig.model.trim()
     || typeof runtimeConfig.policyVersion !== 'string' || !runtimeConfig.policyVersion.trim()
     || !isAgt002QueueableTimeoutMs(runtimeConfig.timeoutMs)
     || !Number.isInteger(runtimeConfig.dailyMaxRuns) || runtimeConfig.dailyMaxRuns <= 0
     || !Number.isInteger(runtimeConfig.maxConcurrent) || runtimeConfig.maxConcurrent <= 0
+    || !isAgt002PreviewReasoningEffort(resolvedEffort)
     || !object(analysisConfig) || analysisConfig.AGT002_CANONICAL_ONLY !== true
     || !object(analysisContext) || analysisContext.canonicalOnly !== true
     || typeof idempotencyKey !== 'string' || !idempotencyKey.trim()) {
@@ -80,6 +89,7 @@ export function buildAgt002FrozenEngineInput({
       timeout_ms: runtimeConfig.timeoutMs,
       daily_max_runs: runtimeConfig.dailyMaxRuns,
       max_concurrent: runtimeConfig.maxConcurrent,
+      effort: resolvedEffort,
       idempotency_key: idempotencyKey.trim(),
     },
     analysis_flags: flags,

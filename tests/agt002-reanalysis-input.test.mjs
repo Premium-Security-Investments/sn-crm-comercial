@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildAgt002FrozenEngineInput } from '../agt002-reanalysis-input.js';
+import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT } from '../agt002-preview-reasoning-effort.js';
 
 const source = {
   runtimeConfig: { model: 'm', policyVersion: 'p', timeoutMs: 165000, dailyMaxRuns: 20, maxConcurrent: 2 },
@@ -27,6 +28,33 @@ test('deep-clones inputs so later request mutations cannot change the queued pay
   const input = buildAgt002FrozenEngineInput(source);
   source.analysisContext.documents[0].id = 'mutated';
   assert.equal(input.analysis_context.documents[0].id, 'doc');
+});
+
+// AGT-002 root-cause fix: an unconfigured caller (runtimeConfig with no `effort`) must still
+// freeze an explicit, auditable value — the fastest operationally-validated level — never leave
+// engine_identity silent about it.
+test('defaults to the fastest operationally-validated reasoning effort when the runtime config omits one', () => {
+  const input = buildAgt002FrozenEngineInput(source);
+  assert.equal(input.engine_identity.effort, AGT002_PREVIEW_DEFAULT_REASONING_EFFORT);
+});
+
+test('freezes an explicit, accepted operational reasoning effort exactly as configured', () => {
+  const input = buildAgt002FrozenEngineInput({
+    ...source,
+    runtimeConfig: { ...source.runtimeConfig, effort: 'medium' },
+  });
+  assert.equal(input.engine_identity.effort, 'medium');
+});
+
+test('rejects an unsupported reasoning effort instead of freezing it', () => {
+  assert.throws(() => buildAgt002FrozenEngineInput({
+    ...source,
+    runtimeConfig: { ...source.runtimeConfig, effort: 'high' },
+  }));
+  assert.throws(() => buildAgt002FrozenEngineInput({
+    ...source,
+    runtimeConfig: { ...source.runtimeConfig, effort: 'Low' },
+  }), /frozen input is invalid/i, 'must be exact-case, never coerced');
 });
 
 test('fails closed when canonical identity/config are incomplete or exceed the worker lease budget', () => {

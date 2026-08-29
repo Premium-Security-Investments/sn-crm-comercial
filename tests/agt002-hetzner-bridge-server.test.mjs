@@ -126,6 +126,124 @@ async function testSuccessResponseShape() {
   });
 }
 
+async function testEffortForwardedToCodexClient() {
+  let captured = null;
+  const client = { run: async (options) => { captured = options; return { content: '{"ok":true}', usage: { input_tokens: 1, output_tokens: 2 }, rate_limit: null }; } };
+  await withServer(client, async (base) => {
+    const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-1', effort: 'low' };
+    const body = JSON.stringify(payload);
+    const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+    assert.equal(response.status, 200);
+  });
+  assert.equal(captured.effort, 'low');
+}
+
+async function testEffortAckFromCodexClientIsForwardedVerbatim() {
+  const client = { run: async () => ({ content: '{"ok":true}', usage: { input_tokens: 1, output_tokens: 2 }, rate_limit: null, effort_ack: 'low' }) };
+  await withServer(client, async (base) => {
+    const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-ack-1', effort: 'low' };
+    const body = JSON.stringify(payload);
+    const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.effort_ack, 'low', 'the bridge server must never strip the codex client\'s effort acknowledgement');
+  });
+}
+
+async function testEffortIsRecordedOnSuccessSafeLog() {
+  const originalLog = console.log;
+  const lines = [];
+  console.log = line => { lines.push(line); };
+  const client = { run: async () => ({ content: '{"ok":true}', usage: { input_tokens: 1, output_tokens: 2 }, rate_limit: null, effort_ack: 'low' }) };
+  try {
+    await withServer(client, async (base) => {
+      const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-log-1', effort: 'low' };
+      const body = JSON.stringify(payload);
+      const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+      assert.equal(response.status, 200);
+    });
+  } finally {
+    console.log = originalLog;
+  }
+  const event = lines.map(line => JSON.parse(line)).find(item => item.code === 'OK');
+  assert.equal(event.effort, 'low');
+  assert.equal(JSON.stringify(event).includes('policy'), false);
+}
+
+// AGT-002 review blocker: the success log's `effort` field must come from the caller's own
+// already-validated request, never from the codex client's `effort_ack`. `effort_ack` exists only
+// so the bridge *client* (agt002-hetzner-bridge-client.js) can validate the response; it must never
+// double as a logging source. A stale/misbehaving codex client that omits (or gets wrong)
+// `effort_ack` must not make the server silently under-report (or leak an unvalidated value for)
+// what was actually requested.
+async function testSuccessLogUsesRequestedEffortNotEffortAck() {
+  const originalLog = console.log;
+  const lines = [];
+  console.log = line => { lines.push(line); };
+  const client = { run: async () => ({ content: '{"ok":true}', usage: { input_tokens: 1, output_tokens: 2 }, rate_limit: null }) };
+  try {
+    await withServer(client, async (base) => {
+      const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-log-3', effort: 'medium' };
+      const body = JSON.stringify(payload);
+      const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+      assert.equal(response.status, 200);
+    });
+  } finally {
+    console.log = originalLog;
+  }
+  const event = lines.map(line => JSON.parse(line)).find(item => item.code === 'OK');
+  assert.equal(event.effort, 'medium', 'a stale codex client that never emits effort_ack must not make the server drop the requested effort from its own log');
+}
+
+async function testSuccessLogNeverLeaksAMismatchedEffortAck() {
+  const originalLog = console.log;
+  const lines = [];
+  console.log = line => { lines.push(line); };
+  const client = { run: async () => ({ content: '{"ok":true}', usage: { input_tokens: 1, output_tokens: 2 }, rate_limit: null, effort_ack: 'high' }) };
+  try {
+    await withServer(client, async (base) => {
+      const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-log-4', effort: 'low' };
+      const body = JSON.stringify(payload);
+      const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+      assert.equal(response.status, 200);
+    });
+  } finally {
+    console.log = originalLog;
+  }
+  const event = lines.map(line => JSON.parse(line)).find(item => item.code === 'OK');
+  assert.equal(event.effort, 'low', 'the safe log must reflect the validated request effort, never a codex client-supplied effort_ack');
+}
+
+async function testEffortIsRecordedOnErrorSafeLog() {
+  const originalLog = console.log;
+  const lines = [];
+  console.log = line => { lines.push(line); };
+  const client = { run: async () => { const error = new Error('provider secret detail'); error.code = 'AGT002_CODEX_PROVIDER_ERROR'; throw error; } };
+  try {
+    await withServer(client, async (base) => {
+      const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-log-2', effort: 'medium' };
+      const body = JSON.stringify(payload);
+      const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+      assert.equal(response.status, 502);
+    });
+  } finally {
+    console.log = originalLog;
+  }
+  const event = lines.map(line => JSON.parse(line)).find(item => item.code === 'AGT002_CODEX_PROVIDER_ERROR');
+  assert.equal(event.effort, 'medium');
+}
+
+async function testUnsupportedEffortRejectedWithBadRequest() {
+  await withServer(fakeSuccessClient, async (base) => {
+    const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-2', effort: 'high' };
+    const body = JSON.stringify(payload);
+    const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+    assert.equal(response.status, 400);
+    const result = await response.json();
+    assert.equal(result.error.code, 'AGT002_BRIDGE_BAD_REQUEST');
+  });
+}
+
 async function testCwdInBodyRejected() {
   await withServer(fakeSuccessClient, async (base) => {
     const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-2', cwd: '/etc' };
@@ -286,6 +404,13 @@ await testIntegralV3SizedBodyAccepted();
 console.log('agt002-hetzner-bridge-server.test.mjs Step 1 OK');
 
 await testSuccessResponseShape();
+await testEffortForwardedToCodexClient();
+await testEffortAckFromCodexClientIsForwardedVerbatim();
+await testEffortIsRecordedOnSuccessSafeLog();
+await testSuccessLogUsesRequestedEffortNotEffortAck();
+await testSuccessLogNeverLeaksAMismatchedEffortAck();
+await testEffortIsRecordedOnErrorSafeLog();
+await testUnsupportedEffortRejectedWithBadRequest();
 await testCwdInBodyRejected();
 await testConcurrentRequestsAreAccepted();
 await testProviderErrorMappedTo502();

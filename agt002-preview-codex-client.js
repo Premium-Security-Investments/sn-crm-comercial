@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { spawn as defaultSpawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
+import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 
 /**
  * Speaks the real Codex App Server JSON-line protocol (initialize,
@@ -114,11 +115,17 @@ export function createCodexAppServerClient({
   }
 
   return {
-    run({ model, policy, input, outputSchema, timeoutMs = 30_000, idempotencyKey = randomUUID(), signal, cwd: turnCwd } = {}) {
+    run({ model, policy, input, outputSchema, timeoutMs = 30_000, idempotencyKey = randomUUID(), signal, cwd: turnCwd, effort } = {}) {
       if (!nonEmptyString(model)) return Promise.reject(new Error('AGT-002 Preview requiere un modelo configurado.'));
       if (!nonEmptyString(policy)) return Promise.reject(new Error('AGT-002 Preview requiere una política (baseInstructions) configurada.'));
       if (!isPlainObject(outputSchema)) return Promise.reject(new Error('AGT-002 Preview requiere un outputSchema cerrado para turn/start.'));
       if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) return Promise.reject(new Error('El timeout de AGT-002 Preview no es válido.'));
+      // Optional at this boundary (a direct/legacy caller may never send one), but a value that
+      // IS present must be a real allowlisted reasoning effort before it can ever reach
+      // turn/start.params.effort — fail closed, never forward a malformed value to the subprocess.
+      if (effort !== undefined && !isAgt002PreviewReasoningEffort(effort)) {
+        return Promise.reject(new Error('El nivel de esfuerzo de razonamiento de AGT-002 Preview no es válido.'));
+      }
       if (signal?.aborted) return Promise.reject(transportError('La ejecución de AGT-002 Preview fue cancelada.', 'AGT002_CODEX_CANCELLED'));
       void idempotencyKey; // no wire-level idempotency in the official protocol; caller-side dedup only.
 
@@ -221,6 +228,12 @@ export function createCodexAppServerClient({
                 threadId,
                 input: [{ type: 'text', text: JSON.stringify(input ?? {}) }],
                 outputSchema: codexCompatibleOutputSchema(outputSchema),
+                // v2 TurnStartParams.effort: overrides reasoning effort for this (and subsequent)
+                // turns — this is the actual root-cause fix, so this key is never optional-away
+                // by accident. `effort` is `undefined` when the caller genuinely never set one
+                // (a direct/legacy caller), in which case JSON.stringify drops the key entirely
+                // and the account/CLI default applies exactly as before this change.
+                effort,
               },
             });
             return;
@@ -274,6 +287,12 @@ export function createCodexAppServerClient({
               content: lastAgentMessageText,
               usage: { input_tokens: inputTokens, output_tokens: outputTokens },
               rate_limit: rateLimitSnapshot,
+              // Echoes back the exact effort this code path put on turn/start.params (or `null`
+              // when the caller never pinned one). A stale bridge/codex client predating this
+              // fix never emits this field at all, which is exactly the signal the Hetzner
+              // bridge client uses to fail closed instead of silently reverting to whatever
+              // default effort the account/CLI would otherwise apply.
+              effort_ack: isAgt002PreviewReasoningEffort(effort) ? effort : null,
             });
           }
         }

@@ -175,9 +175,27 @@ test('record() stamps every event with its own emission time from the injected c
 test('output_rejected declares its closed field allowlist and stage enum', () => {
   assert.deepEqual(
     [...AGT002_OBSERVABILITY_EVENT_FIELDS.output_rejected].sort(),
-    ['content_bytes', 'content_sha256', 'input_tokens', 'output_tokens', 'snapshot_id', 'stage', 'validation_code'].sort(),
+    ['content_bytes', 'content_sha256', 'effort', 'input_tokens', 'output_tokens', 'snapshot_id', 'stage', 'validation_code'].sort(),
   );
   assert.deepEqual(Object.values(AGT002_OUTPUT_REJECTION_STAGES).sort(), ['content_extraction', 'envelope', 'json_parse', 'semantic_validation', 'usage'].sort());
+});
+
+// AGT-002 root-cause fix: correlating a rejected output with the reasoning effort its turn was
+// pinned to is safe (a small allowlisted, already-validated string, never raw content).
+test('output_rejected forwards a real reasoning effort and drops anything outside the allowlist', () => {
+  const emitted = [];
+  const observability = createAgt002AnalysisObservability({ emit: record => emitted.push(record), now: () => 1 });
+  observability.record('output_rejected', {
+    stage: AGT002_OUTPUT_REJECTION_STAGES.JSON_PARSE, validation_code: 'invalid_json', snapshot_id: 'snap-1', effort: 'low',
+  });
+  assert.equal(emitted[0].effort, 'low');
+
+  const emittedInvalid = [];
+  const observabilityInvalid = createAgt002AnalysisObservability({ emit: record => emittedInvalid.push(record), now: () => 1 });
+  observabilityInvalid.record('output_rejected', {
+    stage: AGT002_OUTPUT_REJECTION_STAGES.JSON_PARSE, validation_code: 'invalid_json', snapshot_id: 'snap-1', effort: 'high',
+  });
+  assert.equal(emittedInvalid[0].effort, undefined, 'an unsupported/free-form effort value must never reach the durable event');
 });
 
 test('output_rejected only forwards the allowlisted fields and drops anything raw-content-shaped', () => {

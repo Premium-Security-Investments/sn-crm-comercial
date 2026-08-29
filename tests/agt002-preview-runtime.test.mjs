@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { AGT002_PREVIEW_POLICY, AGT002_INTEGRAL_V3_POLICY } from '../agt002-preview-engine.js';
 import { AGT002_PREVIEW_DEFAULT_POLICY_VERSION, AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
+import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT } from '../agt002-preview-reasoning-effort.js';
 
 function baseEnv(overrides = {}) {
   return {
@@ -107,6 +108,40 @@ assert.throws(
     599,
     'the largest two-turn lease at or under the 600s ceiling stays accepted',
   );
+}
+
+// AGT-002 root-cause fix: reasoning effort is explicit, fail-closed, and defaults to the
+// fastest operationally-validated level instead of silently inheriting the Codex CLI/account
+// default (the production incident: an inherited default effort emitted its final structured
+// response only near the fixed 285_000ms per-turn deadline).
+{
+  assert.equal(getAgt002PreviewRuntimeConfig(baseEnv()).effort, AGT002_PREVIEW_DEFAULT_REASONING_EFFORT);
+  assert.equal(getAgt002PreviewRuntimeConfig(baseEnv({ AGT002_PREVIEW_REASONING_EFFORT: 'medium' })).effort, 'medium');
+  assert.throws(
+    () => getAgt002PreviewRuntimeConfig(baseEnv({ AGT002_PREVIEW_REASONING_EFFORT: 'high' })),
+    /no está configurado/i,
+    'an unsupported reasoning effort must fail closed instead of silently reaching the provider',
+  );
+  assert.throws(
+    () => getAgt002PreviewRuntimeConfig(baseEnv({ AGT002_PREVIEW_REASONING_EFFORT: 'Low' })),
+    /no está configurado/i,
+    'reasoning effort matching must be exact-case, never coerced',
+  );
+}
+
+// The resolved effort reaches the engine exactly like model/timeoutMs/policyVersion do.
+{
+  let capturedOptions = null;
+  const spyEngine = (options) => { capturedOptions = options; return { analyze: async () => {} }; };
+  createAgt002PreviewRuntime({ environment: baseEnv(), countDailyRuns: async () => 0, createEngine: spyEngine });
+  assert.equal(capturedOptions.effort, AGT002_PREVIEW_DEFAULT_REASONING_EFFORT);
+
+  let capturedOptions2 = null;
+  const spyEngine2 = (options) => { capturedOptions2 = options; return { analyze: async () => {} }; };
+  createAgt002PreviewRuntime({
+    environment: baseEnv({ AGT002_PREVIEW_REASONING_EFFORT: 'medium' }), countDailyRuns: async () => 0, createEngine: spyEngine2,
+  });
+  assert.equal(capturedOptions2.effort, 'medium');
 }
 
 // Explicit numeric overrides are honored when valid.
