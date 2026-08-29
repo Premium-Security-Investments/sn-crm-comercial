@@ -13,7 +13,7 @@ for (const source of [server, api]) {
   assert.match(source, /from\('psi_tender_document_extractions'\)/, 'el backend debe consultar las extracciones versionadas');
   assert.match(source, /selectCanonicalExtractionsByDocumentVersion/, 'el backend debe seleccionar una extracción canónica');
   assert.match(source, /mergeCanonicalExtractionIntoDocument/, 'los consumidores internos deben recibir el texto canónico');
-  assert.match(source, /documents: includeExtractedText \? signed : signed\.map\(publicTenderDocumentProjection\)/, 'la respuesta pública debe omitir el texto integral');
+  assert.match(source, /documents: includeExtractedText \? compatibleDocuments : compatibleDocuments\.map\(document => publicTenderDocumentProjection\(document, \{ opportunityId \}\)\)/, 'la respuesta pública debe omitir el texto integral y proyectarse con la oportunidad ya autorizada');
   assert.match(source, /extractText: extractTypedTextFromTenderFile/, 'la importación oficial debe conservar el resultado tipado');
   assert.match(source, /recordExtraction: \(\{ extraction, version \}\)/, 'la importación oficial debe persistir la extracción tras crear la versión');
   assert.match(source, /loadCurrentDocuments:[\s\S]{0,240}includeExtractedText: true/, 'el replay fijo debe cargar texto canónico');

@@ -78,7 +78,27 @@ function extractionRank(row) {
   return row.status === 'ok' ? 1 : 0;
 }
 
+// Generación del extractor que produjo la fila, leída del sufijo `@<n>` de
+// extractor_version (p. ej. 'tender-document-text-extraction@3').
+//
+// Esa versión se sube precisamente cuando cambia el texto/metadatos que el
+// extractor produce para una MISMA entrada, así que es la única señal que dice
+// qué filas quedaron obsoletas. Una versión ausente, deforme o legada vale 0: no
+// puede ganarle a ninguna fila bien formada, pero tampoco rompe la comparación.
+function extractorGeneration(row) {
+  const match = /@(\d+)$/.exec(typeof row?.extractor_version === 'string' ? row.extractor_version : '');
+  if (!match) return 0;
+  const generation = Number(match[1]);
+  return Number.isSafeInteger(generation) && generation > 0 ? generation : 0;
+}
+
 function isBetterExtractionRow(candidate, incumbent) {
+  // La generación del extractor manda por encima del veredicto: un 'gap' del
+  // extractor vigente describe el documento mejor que un 'ok' de un extractor
+  // que ya sabemos que fabricaba texto para ese mismo input.
+  const candidateGeneration = extractorGeneration(candidate);
+  const incumbentGeneration = extractorGeneration(incumbent);
+  if (candidateGeneration !== incumbentGeneration) return candidateGeneration > incumbentGeneration;
   const candidateRank = extractionRank(candidate);
   const incumbentRank = extractionRank(incumbent);
   if (candidateRank !== incumbentRank) return candidateRank > incumbentRank;
@@ -90,11 +110,20 @@ function isBetterExtractionRow(candidate, incumbent) {
 
 /**
  * Deterministically chooses, per document_version_id, the extraction row that should
- * be treated as canonical: the latest 'ok' row (by created_at, then stable id) always
- * wins over any 'gap' row, however recent. A 'gap' row only surfaces when no 'ok' row
- * exists at all for that version. Malformed rows (claiming 'ok' without a trustworthy
- * text/hash/char_count) are skipped entirely — fail closed rather than trusting
- * possibly-corrupt data.
+ * be treated as canonical for a document version.
+ *
+ * Precedence: newest extractor generation first, then 'ok' over 'gap', then created_at,
+ * then a stable id tiebreak. Ordering by status before generation is what let a stale,
+ * superficial extraction outlive its own replacement: the ZIP that an older extractor
+ * resolved as 'ok' with placeholder text kept winning over the current extractor's row
+ * that had already found the package's unreadable entries, so reprocessing wrote the
+ * right answer and nobody ever read it. Within one generation the original semantics
+ * are preserved exactly — an 'ok' still beats a later 'gap', which is the right call for
+ * a retry after a transient failure.
+ *
+ * Malformed rows (claiming 'ok' without a trustworthy text/hash/char_count) are skipped
+ * entirely — fail closed rather than trusting possibly-corrupt data — however new the
+ * extractor that wrote them.
  */
 export function selectCanonicalExtractionsByDocumentVersion(rows) {
   const byVersion = new Map();
@@ -175,13 +204,122 @@ export function deriveTenderDocumentExtractionGaps(documents) {
     }));
 }
 
+// --- Proyección pública del expediente --------------------------------------
+//
+// Última barrera antes de que un registro documental llegue al navegador. Es una
+// lista BLANCA a propósito: un registro documental llega aquí mezclado —fila
+// tipada de psi_tender_document_versions más carga histórica libre de
+// psi_sales_interactions.notes—, así que enumerar lo prohibido siempre dejaría
+// pasar la próxima clave interna que alguien añadiera aguas arriba.
+//
+// Queda fuera, en particular:
+//   * `storage_path`: ruta privada dentro del bucket. La interfaz no la usa.
+//   * `source_url`: en SECOP es la URL de descarga del documento, y viaja con
+//     token firmado. Publicarla sería un enlace directo que salta el control de
+//     acceso del backend.
+//   * `extracted_text` / `metadata` / `error`: contenido íntegro y crudo.
+//   * `signed_url`: una URL firmada es una CAPACIDAD de descarga —quien la tiene
+//     descarga el archivo sin volver a pasar por getAuthContext—, no un campo del
+//     expediente. Listar N documentos acuñaba N capacidades de larga vigencia y
+//     las dejaba en la caché del navegador, en el historial y en cualquier copia
+//     del JSON. La descarga vive ahora en un endpoint autenticado propio.
+//
+// Lo único que sale hacia el navegador para descargar es `download_url`: una ruta
+// SAME-ORIGIN calculada por el servidor (ver tenderDocumentDownloadUrl) que no
+// concede nada por sí misma; la capacidad se emite dentro de esa petición, ya
+// autenticada y autorizada, y solo para el documento pedido.
+const PUBLIC_TENDER_DOCUMENT_FIELDS = Object.freeze([
+  'id', 'name', 'size', 'size_bytes', 'mime_type', 'document_type', 'current',
+  'uploaded_at', 'uploaded_by', 'interaction_id', 'auto_import',
+  'opportunity_id', 'source', 'source_document_id', 'version', 'content_hash',
+  'extraction_status', 'extraction_version', 'extraction_parser',
+  'extraction_char_count', 'extraction_text_hash', 'extraction_gap_reason',
+]);
+
+const normalizeDocumentKey = key => String(key).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+// Claves internas que tampoco pueden viajar ANIDADAS dentro de un valor público.
+// Un documento histórico se serializó con la forma que tuviera el backend de
+// entonces, así que la ruta o la URL con token pueden estar enterradas a
+// cualquier profundidad bajo una clave que hoy sí es pública.
+const INTERNAL_NESTED_DOCUMENT_KEYS = new Set([
+  'storage_path', 'bucket', 'bucket_id', 'path', 'file_path', 'local_path',
+  'object_key', 'key', 'url', 'source_url', 'download_url', 'raw_url', 'signed_url',
+  'extracted_text', 'text', 'metadata', 'error', 'token', 'secret',
+].map(normalizeDocumentKey));
+
+// Claves que nunca se copian a un objeto nuevo: asignarlas alteraría el prototipo
+// del resultado en vez de añadir un campo.
+const UNSAFE_PROTOTYPE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+// Cota dura de profundidad: acota el trabajo por documento y hace que cualquier
+// estructura cíclica termine, en lugar de colgar la respuesta.
+const MAX_PROJECTION_DEPTH = 6;
+
+function scrubInternalDocumentFields(value, depth = 0) {
+  if (Array.isArray(value)) {
+    return depth >= MAX_PROJECTION_DEPTH ? [] : value.map(item => scrubInternalDocumentFields(item, depth + 1));
+  }
+  if (!value || typeof value !== 'object') return value;
+  if (depth >= MAX_PROJECTION_DEPTH) return {};
+  const output = {};
+  for (const [key, nested] of Object.entries(value)) {
+    if (UNSAFE_PROTOTYPE_KEYS.has(key)) continue;
+    if (INTERNAL_NESTED_DOCUMENT_KEYS.has(normalizeDocumentKey(key))) continue;
+    output[key] = scrubInternalDocumentFields(nested, depth + 1);
+  }
+  return output;
+}
+
+// Identificadores admisibles en una ruta de descarga. Cubre las dos identidades
+// vigentes del expediente —el uuid de psi_tender_document_versions y el hash
+// hexadecimal de las cargas históricas— y nada más: un id que no encaje aquí no
+// produce ruta en vez de producir una ruta rara.
+const TENDER_DOCUMENT_PATH_ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
+
+function normalizedPathId(value) {
+  const normalized = String(value ?? '').trim();
+  return TENDER_DOCUMENT_PATH_ID_PATTERN.test(normalized) ? normalized : '';
+}
+
 /**
- * Safe, browser-facing projection of a document record: strips the full extracted
- * text and any raw metadata/error, keeping only bounded/typed extraction summary
- * fields (status, extractor version, parser, char count, hash, gap reason).
+ * Ruta SAME-ORIGIN de descarga del documento, calculada SIEMPRE por el servidor a
+ * partir de los identificadores del documento y de la oportunidad ya validados y
+ * normalizados. Nunca se copia de un payload histórico, nunca lleva token y no
+ * concede acceso por sí misma: el endpoint que la sirve vuelve a autenticar y a
+ * autorizar la oportunidad. Sin identidad utilizable devuelve `null` en lugar de
+ * inventar una ruta.
  */
-export function publicTenderDocumentProjection(document = {}) {
-  const { extracted_text, metadata, error, ...safe } = document || {};
-  if (!safe.extraction_status) safe.extraction_status = 'legacy';
-  return safe;
+export function tenderDocumentDownloadUrl({ opportunityId, documentId } = {}) {
+  const opportunity = normalizedPathId(opportunityId);
+  const document = normalizedPathId(documentId);
+  if (!opportunity || !document) return null;
+  return `/api/tender-documents/${encodeURIComponent(document)}/download?opportunity_id=${encodeURIComponent(opportunity)}`;
+}
+
+/**
+ * Proyección segura de un registro documental hacia el navegador: conserva solo
+ * los campos públicos que la interfaz consume y el resumen tipado y acotado de la
+ * extracción (estado, versión del extractor, parser, conteo, hash, motivo del
+ * hueco). Nunca el texto íntegro, los metadatos crudos, el error del parser, la
+ * ruta de almacenamiento, una URL de origen con token ni una URL firmada.
+ *
+ * `opportunityId` lo aporta el llamador desde la oportunidad ya autorizada, no el
+ * registro: es lo que hace que `download_url` sea siempre server-owned.
+ */
+export function publicTenderDocumentProjection(document = {}, { opportunityId } = {}) {
+  const source = document && typeof document === 'object' && !Array.isArray(document) ? document : {};
+  const projected = {};
+  for (const field of PUBLIC_TENDER_DOCUMENT_FIELDS) {
+    if (!Object.hasOwn(source, field)) continue;
+    const value = source[field];
+    if (value === undefined) continue;
+    projected[field] = scrubInternalDocumentFields(value);
+  }
+  if (!projected.extraction_status) projected.extraction_status = 'legacy';
+  // Se calcula al final y se asigna sobre el objeto ya proyectado: `download_url`
+  // no está en la lista blanca y además se depura anidada, así que ningún valor
+  // heredado del registro puede sobrevivir hasta aquí ni sobrescribir este.
+  projected.download_url = tenderDocumentDownloadUrl({ opportunityId, documentId: source.id });
+  return projected;
 }

@@ -586,7 +586,7 @@ const DOCUMENT_FIXTURE = [{
   current: true,
   uploaded_at: '2026-08-01T10:00:00.000Z',
   uploaded_by: 'Sistema',
-  signed_url: 'https://example.invalid/signed/pliego',
+  download_url: '/api/tender-documents/doc-1/download?opportunity_id=44444444-4444-4444-8444-444444444444',
 }];
 
 function renderDocuments(overrides = {}) {
@@ -619,7 +619,8 @@ test('Documentos agrupa ver/actualizar/cargar con una sola acción primaria y si
 test('Documentos nunca duplica la Fuente oficial única del shell', () => {
   const html = renderDocuments();
   assert.equal(countOf(html, 'Fuente oficial'), 0, 'la fuente oficial vive sólo en TenderDetailNavigation');
-  assert.equal(countOf(html, 'target="_blank"'), 1, 'el único enlace externo es el documento firmado del inventario, no una segunda fuente');
+  assert.equal(countOf(html, 'target="_blank"'), 0, 'el inventario no abre ningún destino externo: la descarga es una ruta same-origin del backend');
+  assert.match(html, /<a href="\/api\/tender-documents\/doc-1\/download\?opportunity_id=[^"]+"/, 'el documento se descarga por la ruta same-origin autenticada');
 });
 
 test('mientras hay trabajo en curso Documentos bloquea actualizar y cargar de forma coherente', () => {

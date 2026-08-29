@@ -29,6 +29,54 @@ export function tenderDocumentContentHash(content) {
   return createHash('sha256').update(buffer).digest('hex');
 }
 
+// --- Identidad canónica de contenido ----------------------------------------
+// El hash de los BYTES identifica el archivo; en un paquete comprimido no
+// identifica el CONTENIDO. Los bytes de un ZIP incluyen el envoltorio —marca de
+// tiempo por entrada, orden de escritura, nivel de compresión, comentario del
+// paquete—, que la entidad regenera cada vez que reempaqueta sus formatos aunque
+// no toque un solo documento interno. Versionar por esos bytes convertía cada
+// reempaquetado en una versión nueva, una subida nueva y un snapshot nuevo de un
+// expediente que no había cambiado.
+//
+// La identidad canónica se deriva de la procedencia por entrada que el extractor
+// ya calcula (tender-document-text-extraction.js): nombre de entrada, veredicto y
+// hash del texto realmente extraído. Es estable frente al envoltorio y sensible al
+// contenido — y también a la COBERTURA, porque una entrada que pasa de legible a
+// ilegible cambia la identidad, que es justo lo que impide que un paquete con
+// huecos reutilice la identidad del paquete íntegro.
+//
+// Cierre seguro: sin procedencia por entrada (documento no comprimido, extractor
+// legado que devuelve un string, o ZIP ilegible a nivel de paquete) no hay
+// contenido del que derivar nada y se conserva la identidad por bytes de siempre.
+// Eso mantiene intactos los datos históricos: una fila antigua identificada por
+// bytes se sigue reconociendo mientras la fuente devuelva esos mismos bytes.
+const TENDER_ARCHIVE_EXTRACTION_PARSER = 'zip-archive';
+const TENDER_ARCHIVE_CONTENT_IDENTITY_VERSION = 'tender-archive-content-identity@1';
+
+function archiveEntryProvenance(extraction) {
+  if (!extraction || typeof extraction !== 'object') return null;
+  if (extraction.parser !== TENDER_ARCHIVE_EXTRACTION_PARSER) return null;
+  const entries = extraction.metadata?.entries;
+  return Array.isArray(entries) && entries.length ? entries : null;
+}
+
+export function tenderDocumentCanonicalContentHash(byteHash, extraction) {
+  const entries = archiveEntryProvenance(extraction);
+  if (!entries) return byteHash;
+  const canonical = entries
+    .map(entry => ({
+      entry_name: String(entry?.entry_name ?? ''),
+      status: String(entry?.status ?? ''),
+      gap_reason: entry?.gap_reason == null ? null : String(entry.gap_reason),
+      text_hash: String(entry?.text_hash ?? ''),
+    }))
+    // Orden propio, independiente del que traiga el paquete o el lector.
+    .sort((left, right) => (left.entry_name < right.entry_name ? -1 : left.entry_name > right.entry_name ? 1 : 0));
+  return createHash('sha256')
+    .update(JSON.stringify({ v: TENDER_ARCHIVE_CONTENT_IDENTITY_VERSION, entries: canonical }))
+    .digest('hex');
+}
+
 export function tenderDocumentVersionPath({ opportunityId, sourceDocumentId, contentHash, name }) {
   return `tender-documents/${pathSegment(opportunityId, 'opportunity')}/${pathSegment(normalizeTenderSourceDocumentId(sourceDocumentId))}/${contentHash}-${pathSegment(name)}`;
 }
@@ -61,10 +109,12 @@ export async function refreshOfficialTenderDocument({
     error.status = 503;
     throw error;
   }
-  const contentHash = tenderDocumentContentHash(buffer);
-  if (currentVersion?.content_hash === contentHash && !currentVersion?.needs_extraction) {
-    return { status: 'unchanged', source_document_id: sourceDocumentId };
-  }
+  const unchanged = () => ({ status: 'unchanged', source_document_id: sourceDocumentId });
+  const byteHash = tenderDocumentContentHash(buffer);
+  // Bytes idénticos ⇒ contenido idéntico: no hace falta reextraer para saberlo.
+  // Este atajo es también el que reconoce una versión histórica identificada por
+  // bytes, y el que evita reextraer todo documento no comprimido.
+  if (currentVersion?.content_hash === byteHash && !currentVersion?.needs_extraction) return unchanged();
   const extractionResult = await extractText(buffer, name, document.mime_type || '');
   const typedExtraction = extractionResult && typeof extractionResult === 'object' ? extractionResult : null;
   const isGap = typedExtraction?.status === 'gap';
@@ -84,6 +134,11 @@ export async function refreshOfficialTenderDocument({
     throw error;
   }
   if (extractedText !== null && Buffer.byteLength(extractedText, 'utf8') > MAX_EXTRACTED_TEXT_BYTES) throw new Error(`El texto extraído supera 10MB: ${name}`);
+  // Identidad del contenido, no del envoltorio. Un paquete reempaquetado sin
+  // cambios internos vuelve aquí con la misma identidad: no se versiona, no se
+  // vuelve a subir y la ruta de almacenamiento tampoco se duplica.
+  const contentHash = tenderDocumentCanonicalContentHash(byteHash, typedExtraction);
+  if (currentVersion?.content_hash === contentHash && !currentVersion?.needs_extraction) return unchanged();
   const storagePath = tenderDocumentVersionPath({ opportunityId, sourceDocumentId, contentHash, name });
   await ensureStorage();
   await upload(storagePath, buffer, document.mime_type || 'application/octet-stream');
