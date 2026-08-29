@@ -34,6 +34,17 @@ assert.match(tenderProcessingLabel('unknown_state'), /unknown_state/);
 const job = (overrides = {}) => ({ job_id: 'job-1', status: 'queued', idempotency_key: 'idem-1', updated_at: '2026-08-05T10:00:00.000Z', ...overrides });
 const canonicalAnalysis = { run_id: 'run-old', status: 'completed', current: true, completed_at: '2026-08-01T00:00:00.000Z' };
 
+{
+  const superseded = deriveTenderProcessingPresentation(job({ status: 'needs_attention', superseded: true }), null);
+  assert.deepEqual(superseded, {
+    visible: false,
+    tone: 'status',
+    message: '',
+    primaryAction: 'normal',
+    showRetry: false,
+  }, 'La señal server-side de job superado debe restaurar el CTA canónico y ocultar Reintentar.');
+}
+
 for (const hidden of ['no_job', 'completed', 'cancelled']) {
   const presentation = deriveTenderProcessingPresentation(job({ status: hidden }), null);
   assert.equal(presentation.visible, false, `${hidden} no debe mostrar una señal durable.`);

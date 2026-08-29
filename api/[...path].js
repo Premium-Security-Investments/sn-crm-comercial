@@ -78,6 +78,7 @@ import { agt002CanonicalEnqueueBlockCode } from '../agt002-canonical-enqueue-gat
 import { createAgt002ReanalysisJob, findLatestAgt002ReanalysisStatusForOpportunity } from '../agt002-reanalysis-jobs.js';
 import { presentAgt002ReanalysisStatus } from '../agt002-reanalysis-api.js';
 import { ESU_FETCH_POLICY, fetchEsuHtml, fetchEsuProcesses, parseEsuProcessDetail, parseEsuProcessId } from '../esu-direct-crawl.js';
+import { isTenderProcessingJobSuperseded } from '../tender-processing-status.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -4330,12 +4331,21 @@ app.get('/api/tender-processing-status', async (req, res) => {
     if (error) throw error;
     if (!data) {
       return res.json({
-        job_id: null, idempotency_key: null, status: 'no_job', current_step: null,
+        job_id: null, superseded: false, idempotency_key: null, status: 'no_job', current_step: null,
         counts: { discovered: 0, processed: 0, imported: 0, unchanged: 0, failed: 0 },
         failed_items: [],
         snapshot_id: null, analysis_run_id: null, last_error_code: null, last_error_message: null, updated_at: null,
       });
     }
+    const { data: latestSnapshot, error: latestSnapshotError } = await database
+      .from('psi_tender_document_snapshots')
+      .select('id')
+      .eq('opportunity_id', opportunityId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestSnapshotError) throw latestSnapshotError;
+    const superseded = isTenderProcessingJobSuperseded(data.snapshot_id, latestSnapshot?.id);
     const { data: failedItems, error: failedItemsError } = await database
       .from('psi_tender_document_import_items')
       .select('id,name,status,last_error_code,last_error_message')
@@ -4345,6 +4355,7 @@ app.get('/api/tender-processing-status', async (req, res) => {
     if (failedItemsError) throw failedItemsError;
     res.json({
       job_id: data.id,
+      superseded,
       idempotency_key: data.idempotency_key,
       status: data.status,
       current_step: data.current_step,
