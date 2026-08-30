@@ -28,6 +28,8 @@ const rollback067Url = new URL('../supabase/rollbacks/067_agt002_integral_v3_per
 const HAS_067 = existsSync(migration067Url) && existsSync(rollback067Url);
 const migration067 = HAS_067 ? strip(readFileSync(migration067Url, 'utf8')) : null;
 const rollback067 = HAS_067 ? strip(readFileSync(rollback067Url, 'utf8')) : null;
+const migration076 = migrationSource('076_agt002_canonical_lock_contention_fix.sql');
+const rollback076 = strip(readFileSync(new URL('../supabase/rollbacks/076_agt002_canonical_lock_contention_fix_rollback.sql', import.meta.url), 'utf8'));
 
 // The exact schema_version the v3 runtime emits (agt002-preview-persistence.js /
 // agt002-preview-contract.js). 067 keys the whole integral gate off this value.
@@ -436,5 +438,36 @@ if (!HAS_067) {
     await pg.close();
   }
 
-  console.log('AGT-002 V3 persistence migration (067) PGlite integration passed');
+  // (9) 076 is additive at the RPC level: apply/re-apply preserves V3 validation,
+  // idempotent replay and canonical supersession; rollback changes no persisted row and
+  // restores 067 while leaving the V3 gate active.
+  {
+    const pg = await createDatabase();
+    await pg.exec(migration076);
+    await pg.exec(migration076);
+
+    const v2 = await promote(pg, { params: { p_idempotency_key: 'v2-under-076', p_schema_version: V2_SCHEMA_VERSION, p_result: v2Content() } });
+    const payload = v3Content();
+    const v3 = await promote(pg, { params: { p_idempotency_key: 'v3-under-076', p_schema_version: V3_SCHEMA_VERSION, p_result: payload } });
+    const replay = await promote(pg, { params: { p_idempotency_key: 'v3-under-076', p_schema_version: V3_SCHEMA_VERSION, p_result: payload } });
+    assert.equal(replay.id, v3.id, '076 must preserve exact idempotent replay');
+    assert.equal(v3.supersedes_run_id, v2.id, '076 must preserve canonical supersession');
+    assert.equal(await canonicalTrueCount(pg), 1);
+    await assert.rejects(
+      promote(pg, { params: { p_idempotency_key: 'v3-truncated-under-076', p_schema_version: V3_SCHEMA_VERSION, p_result: v3Content({ integral: { contract_version: V3_CONTRACT_VERSION, coverage: { legal_corpus_version_id: null } } }) } }),
+      /integral V3|analysis_units/i,
+      '076 must preserve the 067 V3 fail-closed gate',
+    );
+
+    const before = await allRows(pg);
+    await pg.exec(rollback076);
+    const after = await allRows(pg);
+    assert.deepEqual(after, before, '076 rollback must not mutate persisted runs');
+    const afterRollback = await promote(pg, { params: { p_idempotency_key: 'v3-after-076-rollback', p_schema_version: V3_SCHEMA_VERSION, p_result: v3Content({ summary: '067 restored' }) } });
+    assert.equal(afterRollback.supersedes_run_id, v3.id, '076 rollback must restore 067 canonical promotion');
+    assert.equal(await canonicalTrueCount(pg), 1);
+    await pg.close();
+  }
+
+  console.log('AGT-002 V3 persistence migration (067 + 076 lock fix) PGlite integration passed');
 }
