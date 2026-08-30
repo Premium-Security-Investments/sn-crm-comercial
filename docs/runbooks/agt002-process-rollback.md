@@ -23,6 +23,27 @@
 
 **Verificado en esta sesión:** cada archivo listado como "existe" fue leído o confirmado por `ls`/`wc -l` en este worktree. El rollback de 067 fue leído íntegro (155 líneas) y su descripción arriba corresponde exactamente a su comentario de cabecera y cuerpo SQL.
 
+## 2.1 Anexo posterior al corte — migraciones que no cambian el esquema (2026-08-30)
+
+La tabla de §2 se cerró en el corte 061–067 y no se actualiza aquí. Este anexo existe por una razón concreta: `077` **no crea, altera ni elimina ningún objeto de esquema ni ninguna fila**, así que no es visible en un diff de esquema, en `information_schema` ni en una inspección de `pg_proc`/`pg_class`. Su efecto completo son dos entradas de GUC sobre un rol en `pg_db_role_setting`. Sin este anexo, un operador que compare esquemas no vería que existe.
+
+| Migración | Rollback | Qué revierte |
+|---|---|---|
+| `077_agt002_canonical_persistence_statement_timeout.sql` | `077_agt002_canonical_persistence_statement_timeout_rollback.sql` | existe — devuelve `service_role` al comportamiento EFECTIVO previo (`statement_timeout = '8s'`, `lock_timeout = '8s'`) creando entradas explícitas donde antes no había ninguna. No toca esquema, filas, grants, políticas RLS ni el cuerpo de `psi_record_agt002_canonical_analysis_run` |
+
+**Línea base real, previa a 077:** `service_role` no tiene ninguna entrada explícita en `pg_db_role_setting`/`rolconfig`; su presupuesto de statement efectivo de 8s hoy lo aplica PostgREST por herencia, no un valor fijado en el catálogo. `anon` tiene 3s explícitos y `authenticated` tiene 8s explícitos — ninguno de los dos cambia con 077. El rollback de 077 restaura el comportamiento efectivo 8s/8s para `service_role`, **no** la postura exacta del catálogo (que era "sin entradas"), y puede sobreescribir silenciosamente un cambio de `service_role` hecho por fuera de este par migración/rollback entre el apply y el rollback. Un operador debe inspeccionar la fila actual de `service_role` en `pg_db_role_setting` antes de ejecutar el rollback.
+
+Cuatro advertencias operativas propias de una migración de ajustes de rol:
+
+1. **Requiere `notify pgrst, 'reload config'`** — tanto al aplicar como al revertir. PostgREST cachea los ajustes por rol junto con su configuración; sin la notificación la instancia en ejecución sigue aplicando el presupuesto anterior hasta reiniciarse. Ambos archivos la emiten al final de su transacción.
+2. **Revertir 077 reintroduce el incidente**, no lo mitiga: la persistencia canónica de una carga V3 de ~6 MB vuelve a fallar con SQLSTATE 57014 (`persistence_statement_timeout`) en ambos intentos, exactamente como se observó el 2026-08-30. Úsese sólo para deshacer 077.
+3. **`lock_timeout` se queda en 8s en ambas direcciones.** El presupuesto de statement ampliado sólo es seguro porque una espera real de lock sigue muriendo en 8s con 55P03 en vez de colgarse 30s. `tests/agt002-canonical-persistence-statement-timeout-migration-static.test.mjs` falla si alguna de las dos direcciones lo sube.
+4. **El rollback no es una reversión bit a bit del catálogo** — ver "línea base real" arriba. Inspeccione `pg_db_role_setting` antes de revertir.
+
+Ambos archivos verifican su propio resultado dentro de la misma transacción contra `pg_db_role_setting` y abortan (fail-closed) si el par resultante no es exactamente el esperado, o si existe un ajuste `in database` de `statement_timeout`/`lock_timeout` sobre `service_role` que anularía el ajuste a nivel de rol — un ajuste `in database` de otro GUC no relacionado no bloquea ni la migración ni el rollback.
+
+**Prerrequisito de privilegios:** `alter role service_role set ...` exige aplicar la migración con un rol que pueda alterar `service_role` (en Supabase, `postgres`, que tiene `ADMIN OPTION` sobre él — el mismo camino que usa el RPC administrativo `exec_sql`). Si el rol aplicador no lo tiene, la migración falla en su primera sentencia y no commitea nada: es un fallo ruidoso, no un cambio parcial.
+
 ## 3. Migración 062 — por qué no se creó un rollback en esta sesión
 
 `062_siio_f2_security_coherence.sql` reemplaza el grant implícito por defecto de Supabase (`ALL` a `anon`/`authenticated`/`service_role` sobre tablas nuevas) por grants explícitos mínimos: `REVOKE ALL` seguido de `GRANT SELECT` (y `INSERT`/`UPDATE` en 3 tablas) sólo a `service_role`. Un rollback exacto requeriría reproducir bit a bit el estado de grants implícitos previo a la migración — no un simple `GRANT ALL`, que sería una aproximación no probada, no necesariamente idéntica al posture original (depende de privilegios por defecto de Postgres/Supabase en el momento de creación de cada tabla en la migración `014`, no de un estado capturado explícitamente en ningún lugar del repositorio).
