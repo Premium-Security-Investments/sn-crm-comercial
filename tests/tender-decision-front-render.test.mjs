@@ -476,26 +476,20 @@ test('Análisis consume tenderDecisionSurface y no vuelve a proyectar decision_r
 // 9 · Documentos y Análisis son secciones hermanas; un solo id="tender-analysis".
 // ---------------------------------------------------------------------------------------------
 // ---------------------------------------------------------------------------------------------
-// 10 · Task 4 · el respaldo técnico V3 vive en Análisis, detrás del resumen exterior exacto.
+// 10 · Contrato actual: main no monta una segunda lectura técnica ni muestra trazabilidad cruda.
 // ---------------------------------------------------------------------------------------------
-test('el contenedor del respaldo técnico usa exactamente <summary>Ver respaldo técnico del análisis</summary>', () => {
-  assert.match(
-    mainSource,
-    /<details id="tender-technical-analysis" className="tender-integral-analysis-trace"><summary>Ver respaldo técnico del análisis<\/summary><TenderIntegralAnalysisV3View analysis=\{analysis\} \/><\/details>/,
-    'el contenedor exterior debe conservar su id/clase y el texto exacto del contrato',
-  );
-  assert.equal(countOf(mainSource, '<summary>Ver respaldo técnico del análisis</summary>'), 1, 'el resumen exterior existe una sola vez');
-  assert.equal(countOf(mainSource, '<TenderIntegralAnalysisV3View'), 1, 'la vista V3 se monta una sola vez');
+test('main elimina el acordeón y el montaje duplicado de TenderIntegralAnalysisV3View', () => {
+  assert.equal(mainSource.includes('id="tender-technical-analysis"'), false);
+  assert.equal(mainSource.includes('<summary>Ver respaldo técnico del análisis</summary>'), false);
+  assert.equal(mainSource.includes('<TenderIntegralAnalysisV3View'), false);
+  assert.equal(mainSource.includes("import { TenderIntegralAnalysisV3View }"), false);
 });
 
-test('el respaldo técnico permanece dentro de Análisis: nunca en Documentos ni montado desde Decisión', () => {
+test('Documentos, Análisis y Decisión no montan la segunda lectura técnica', () => {
   const analysisIndex = mainSource.indexOf('id="tender-analysis"');
-  const traceIndex = mainSource.indexOf('id="tender-technical-analysis"');
   const documentsIndex = mainSource.indexOf('id="tender-document-review"');
-  assert.ok(traceIndex > analysisIndex, 'el respaldo técnico se declara dentro de la sección Análisis');
-  assert.ok(traceIndex > documentsIndex, 'el respaldo técnico no vive en Documentos');
-  const documentsBlock = mainSource.slice(documentsIndex, analysisIndex);
-  assert.ok(!documentsBlock.includes('TenderIntegralAnalysisV3View'), 'Documentos nunca monta la vista V3');
+  assert.ok(analysisIndex > documentsIndex, 'Análisis permanece después de Documentos');
+  assert.equal(mainSource.slice(documentsIndex, analysisIndex).includes('TenderIntegralAnalysisV3View'), false);
 
   const briefSource = readFileSync(new URL('src/tenders/components/TenderDecisionBrief.tsx', root), 'utf8');
   const goNoGoSource = readFileSync(new URL('src/tenders/components/TenderGoNoGoDecisionPanel.tsx', root), 'utf8');

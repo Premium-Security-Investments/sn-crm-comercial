@@ -359,47 +359,10 @@ test('el respaldo técnico sigue gateando con el mismo selector puro, antes de c
 });
 
 // ---------------------------------------------------------------------------------------------
-// 5 · Contrato estructural/CSS del contenedor exterior «Ver respaldo técnico del análisis»:
-//     tarjeta compacta y accesible, cerrada por defecto, con chevron propio y estados
-//     hover/focus/open, sin marcador nativo, y con comportamiento responsive.
+// 5 · El montaje exterior duplicado y su CSS quedan eliminados de la experiencia de la persona.
+//     La vista histórica aislada conserva sus helpers internos para consumidores no frontales.
 // ---------------------------------------------------------------------------------------------
-test('el contenedor exterior del respaldo técnico está cerrado por defecto y conserva su contrato de marcado', () => {
-  const container = mainSource.match(/<details id="tender-technical-analysis"[^>]*>/);
-  assert.ok(container, 'el contenedor exterior debe existir con su id gobernado');
-  assert.ok(container[0].includes('className="tender-integral-analysis-trace"'), 'el contenedor debe conservar su clase de estilo');
-  assert.doesNotMatch(container[0], /\bopen\b/, 'el respaldo técnico debe estar cerrado por defecto');
-  assert.equal(countOf(mainSource, '<summary>Ver respaldo técnico del análisis</summary>'), 1, 'el resumen exterior existe una sola vez');
-});
-
-// Todas las reglas planas (incluidas las anidadas en @media) que apuntan al contenedor exterior.
-const traceRules = styles.match(/[^{}@]*tender-integral-analysis-trace[^{}]*\{[^{}]*\}/g) ?? [];
-const traceCss = traceRules.join('\n');
-
-test('el contenedor exterior está estilado como tarjeta deliberada, no como <details> nativo', () => {
-  assert.ok(traceRules.length >= 5, `el contenedor debe tener un bloque de estilo propio, no una regla suelta (reglas: ${traceRules.length})`);
-
-  // Marcador nativo removido en los dos motores.
-  assert.match(traceCss, /list-style\s*:\s*none/, 'debe removerse el marcador nativo del summary');
-  assert.match(traceCss, /::-webkit-details-marker\s*\{[^}]*display\s*:\s*none/, 'debe removerse el marcador nativo en WebKit');
-
-  // Chevron propio, dibujado por CSS y girado al abrir.
-  assert.match(traceCss, /summary::(?:after|before)\s*\{/, 'el summary debe dibujar su propio chevron');
-  assert.match(traceCss, /\[open\][^{]*summary::(?:after|before)\s*\{[^}]*rotate/, 'el chevron debe cambiar de estado al abrir');
-
-  // Tarjeta compacta: superficie propia con borde y radio.
-  assert.match(traceCss, /border-radius\s*:/, 'la tarjeta debe tener radio propio');
-  assert.match(traceCss, /border\s*:\s*1px solid/, 'la tarjeta debe tener borde propio');
-
-  // Accesible: foco visible propio (no el anillo nativo) y objetivo pulsable.
-  assert.match(traceCss, /summary:focus-visible\s*\{[^}]*outline\s*:/, 'el foco de teclado debe ser visible y deliberado');
-  assert.match(traceCss, /summary:hover\s*\{/, 'debe existir estado hover explícito');
-  assert.match(traceCss, /\[open\]\s*>\s*summary\s*\{/, 'debe existir estado abierto explícito');
-  assert.match(traceCss, /cursor\s*:\s*pointer/, 'el summary debe leerse como control');
-});
-
-test('el contenedor exterior conserva comportamiento responsive', () => {
-  const responsive = styles
-    .split('\n')
-    .filter(line => line.trimStart().startsWith('@media') && line.includes('tender-integral-analysis-trace'));
-  assert.ok(responsive.length > 0, 'el contenedor exterior debe tener al menos una regla responsive');
+test('main y styles no conservan el montaje ni el CSS obsoleto del respaldo técnico exterior', () => {
+  assert.doesNotMatch(mainSource, /tender-technical-analysis|TenderIntegralAnalysisV3View|Ver respaldo técnico del análisis/);
+  assert.doesNotMatch(styles, /tender-integral-analysis-trace|Ver respaldo técnico del análisis/);
 });

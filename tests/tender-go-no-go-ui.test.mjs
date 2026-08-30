@@ -28,6 +28,7 @@ assert.match(panel, /analysis_run_id:\s*analysis\?\.run_id \|\| null/, 'Debe con
 assert.match(panel, /await onChanged\s*\(\)/, 'Al guardar debe notificar al detalle para recargar expediente.');
 for (const warning of ['recomendación contraria', 'preguntas críticas', 'obsoleto', 'falló', 'no está disponible']) assert.match(panel, new RegExp(warning, 'i'), `La UI debe advertir: ${warning}.`);
 assert.doesNotMatch(gateSource, /analysis\?\.status\s*===\s*'completed'|critical_open_count[\s\S]*?<=\s*0/, 'El estado del análisis y las preguntas críticas no pueden convertirse en gates humanos.');
+assert.match(gateSource, /critical_open_count/, 'El conteo real canónico debe conservarse como información, nunca como gate.');
 assert.match(panel, /history/, 'La UI debe mostrar el historial inmutable.');
 assert.doesNotMatch(panel, /tender-go-no-go-risks|Riesgos y hallazgos relevantes/, 'El cierre humano no debe repetir la lista de riesgos ya documentada en el brief.');
 assert.doesNotMatch(panel, /analysis\?\.summary/, 'El cierre humano no debe repetir el resumen completo del brief documental.');

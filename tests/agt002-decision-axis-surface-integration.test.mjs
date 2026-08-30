@@ -198,4 +198,6 @@ test('E4.5 — el montaje único queda encapsulado en TenderDecisionExperience y
   assert.equal(count(experience, '<TenderGoNoGoDecisionPanel'), 1, 'fallback off: un solo punto legado');
   assert.equal(count(surface, '<TenderGoNoGoDecisionPanel'), 1, 'flag on: un solo punto embebido');
   assert.ok(experience.includes('if (decisionAxisSurfaceEnabled)'));
+  assert.equal(main.includes('TenderIntegralAnalysisV3View'), false, 'main no debe montar una segunda lectura técnica');
+  assert.equal(main.includes('Ver respaldo técnico del análisis'), false, 'la encargada no debe recibir un acordeón técnico duplicado');
 });

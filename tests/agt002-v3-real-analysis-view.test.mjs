@@ -547,12 +547,10 @@ test('the obsolete synthetic hidden-route preview is fully removed', () => {
   assert.doesNotMatch(tendersModuleSource, /TenderAnalysisV3Preview/);
 });
 
-test('the real view is wired into the actual tender dossier behind the exact governed summary', () => {
+test('the isolated historical view is not mounted as a competing reading in the actual tender dossier', () => {
   const mainSource = readFileSync(new URL('src/main.tsx', root), 'utf8');
-  const integralViewIndex = mainSource.indexOf('<TenderIntegralAnalysisV3View');
   const analysisSectionIndex = mainSource.indexOf('<TenderAnalysisSection');
-  assert.ok(analysisSectionIndex >= 0 && integralViewIndex > analysisSectionIndex, 'the executive question and action surface must render before the technical V3 trace');
-  assert.match(mainSource, /<TenderIntegralAnalysisV3View analysis=\{analysis\}/);
-  assert.match(mainSource, /<summary>Ver respaldo técnico del análisis<\/summary>/);
+  assert.ok(analysisSectionIndex >= 0, 'the analysis controls remain mounted in the dossier');
+  assert.doesNotMatch(mainSource, /TenderIntegralAnalysisV3View|Ver respaldo técnico del análisis|tender-technical-analysis/);
   assert.doesNotMatch(mainSource, /Ver análisis técnico completo/);
 });

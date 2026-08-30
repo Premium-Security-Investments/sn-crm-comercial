@@ -165,7 +165,7 @@ test('E4.2 — flag on monta una sola superficie, un solo panel formal y ningún
   assert.match(experienceSource, /if \(decisionAxisSurfaceEnabled\)[\s\S]*<TenderDecisionAxisSurface/);
 });
 
-test('E4.3 — decisionSurfaceElsewhere suprime la lectura competidora y conserva corrida, procesamiento y respaldo V3', () => {
+test('E4.3 — decisionSurfaceElsewhere suprime la lectura competidora y el montaje técnico duplicado, conservando controles', () => {
   const legacy = renderReactComponent(TenderAnalysisSection, { ...analysisSectionProps, decisionSurfaceElsewhere: false });
   assert.ok(legacy.includes('Condiciones pendientes de validar'), 'con el flag apagado la sección conserva la lectura de hoy');
   assert.ok(legacy.includes('Aspectos favorables y capacidad'));
@@ -185,9 +185,9 @@ test('E4.3 — decisionSurfaceElsewhere suprime la lectura competidora y conserv
   assert.ok(suppressed.includes('tender-analysis-primary-cta'));
   // Por defecto es false: el render con el flag apagado es idéntico al de hoy.
   assert.match(analysisSectionSource, /decisionSurfaceElsewhere = false/);
-  // El respaldo técnico V3 vive fuera de la sección y no se toca.
-  assert.ok(main.includes('id="tender-technical-analysis"'));
-  assert.ok(main.includes('<TenderIntegralAnalysisV3View analysis={analysis} />'));
+  // La lectura V3 duplicada ya no se monta en main: la superficie para decidir es única.
+  assert.equal(main.includes('id="tender-technical-analysis"'), false);
+  assert.equal(main.includes('<TenderIntegralAnalysisV3View'), false);
 });
 
 test('E4.4 — el panel documental propaga el literal y el saver sin duplicar las acciones de respuesta', () => {
