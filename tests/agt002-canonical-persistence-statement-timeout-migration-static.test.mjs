@@ -5,11 +5,14 @@
 // re-applies, rolls back, re-rolls-back and re-applies the migration against a real PostgreSQL and
 // asserts the observable pg_db_role_setting state at every step.
 //
-// The two regressions this file exists to make impossible:
+// The three regressions this file exists to make impossible:
 //   1. Raising lock_timeout along with statement_timeout. A 30s statement budget is only safe
 //      because a lock wait still dies at 8s with 55P03 instead of hanging for 30s.
 //   2. Turning a role-settings migration into a grant/privilege migration. 077 must never grant,
 //      revoke, or touch a role attribute, a schema object or a row.
+//   3. The rollback SETting a literal value (even one matching today's inherited default) instead
+//      of RESETting the managed pair — that would leave an explicit catalog entry where the
+//      verified production baseline before 077 had none at all.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
@@ -18,9 +21,9 @@ const migration = readFileSync(new URL('../supabase/migrations/077_agt002_canoni
 const rollback = readFileSync(new URL('../supabase/rollbacks/077_agt002_canonical_persistence_statement_timeout_rollback.sql', import.meta.url), 'utf8');
 
 // The budget 077 is allowed to grant, and the lock budget it must never widen. Changing either
-// value is a deliberate act that has to change this line too.
+// value is a deliberate act that has to change this line too. The rollback does not SET a value at
+// all — it RESETs both, so there is no "after rollback" literal to pin here.
 const STATEMENT_TIMEOUT_AFTER_APPLY = '30s';
-const STATEMENT_TIMEOUT_AFTER_ROLLBACK = '8s';
 const LOCK_TIMEOUT = '8s';
 const MAX_ALLOWED_STATEMENT_TIMEOUT_SECONDS = 30;
 const MANAGED_SETTINGS = ['statement_timeout', 'lock_timeout'];
@@ -32,9 +35,12 @@ const executable = (sql) => sql.replace(/--[^\n]*/g, '');
 const migrationCode = executable(migration);
 const rollbackCode = executable(rollback);
 
-const FILES = [['migration 077', migration, migrationCode], ['rollback 077', rollback, rollbackCode]];
+const FILES = [
+  ['migration 077', migration, migrationCode, 'migration'],
+  ['rollback 077', rollback, rollbackCode, 'rollback'],
+];
 
-for (const [label, sql, code] of FILES) {
+for (const [label, sql, code, kind] of FILES) {
   assert.match(sql, /^--/, `${label}: must open with the explanatory header comment`);
   assert.match(sql, /\nbegin;\n/, `${label}: must be wrapped in a single top-level transaction`);
   assert.match(sql, /commit;\s*$/i, `${label}: must end with commit;`);
@@ -52,35 +58,52 @@ for (const [label, sql, code] of FILES) {
   assert.doesNotMatch(code, /\b(anon|authenticated|authenticator|postgres|public)\b/i,
     `${label}: must not touch any role other than service_role — human-facing roles keep their own budget`);
 
-  // --- ALTER ROLE targets exactly one role, sets exactly the two managed GUCs, and never a role attribute. ---
+  // --- ALTER ROLE targets exactly one role, and never a role attribute. ---
   const targets = [...code.matchAll(/\balter\s+role\s+([a-z_][a-z0-9_]*)/gi)].map((m) => m[1].toLowerCase());
   assert.ok(targets.length > 0, `${label}: must contain at least one alter role statement`);
   assert.deepEqual([...new Set(targets)], ['service_role'], `${label}: every alter role must target service_role only`);
-
-  const settings = [...code.matchAll(/\balter\s+role\s+service_role\s+set\s+([a-z_]+)\s*=\s*'([^']*)'\s*;/gi)]
-    .map((m) => [m[1].toLowerCase(), m[2]]);
-  assert.equal(settings.length, targets.length,
-    `${label}: every alter role statement must be a plain \`set <guc> = '<literal>'\` — no RESET, no WITH, no attribute form`);
-  assert.deepEqual([...new Set(settings.map(([name]) => name))].sort(), [...MANAGED_SETTINGS].sort(),
-    `${label}: may set statement_timeout and lock_timeout, and nothing else`);
   assert.doesNotMatch(code, /\b(superuser|nosuperuser|createrole|createdb|bypassrls|replication|nologin|login|password|inherit|valid\s+until|connection\s+limit)\b/i,
     `${label}: must never change a role attribute`);
 
-  // --- lock_timeout is pinned, never widened, in every occurrence. ---
-  const lockValues = settings.filter(([name]) => name === 'lock_timeout').map(([, value]) => value);
-  assert.ok(lockValues.length > 0, `${label}: must pin lock_timeout explicitly rather than leave it inherited`);
-  for (const value of lockValues) {
-    assert.equal(value, LOCK_TIMEOUT, `${label}: lock_timeout must stay at ${LOCK_TIMEOUT} — a wider statement budget must never become a wider lock budget`);
-  }
+  if (kind === 'migration') {
+    // --- Migration sets exactly the two managed GUCs, as plain `set <guc> = '<literal>'`. ---
+    const settings = [...code.matchAll(/\balter\s+role\s+service_role\s+set\s+([a-z_]+)\s*=\s*'([^']*)'\s*;/gi)]
+      .map((m) => [m[1].toLowerCase(), m[2]]);
+    assert.equal(settings.length, targets.length,
+      `${label}: every alter role statement must be a plain \`set <guc> = '<literal>'\` — no RESET, no WITH, no attribute form`);
+    assert.equal(settings.length, MANAGED_SETTINGS.length,
+      `${label}: must set each managed GUC exactly once`);
+    assert.deepEqual([...new Set(settings.map(([name]) => name))].sort(), [...MANAGED_SETTINGS].sort(),
+      `${label}: may set statement_timeout and lock_timeout, and nothing else`);
 
-  // --- statement_timeout is bounded. ---
-  const statementValues = settings.filter(([name]) => name === 'statement_timeout').map(([, value]) => value);
-  assert.ok(statementValues.length > 0, `${label}: must set statement_timeout explicitly`);
-  for (const value of statementValues) {
-    const seconds = /^(\d+)s$/.exec(value);
-    assert.ok(seconds, `${label}: statement_timeout must be written as a whole number of seconds, got ${value}`);
-    assert.ok(Number(seconds[1]) <= MAX_ALLOWED_STATEMENT_TIMEOUT_SECONDS,
-      `${label}: statement_timeout must stay bounded at ${MAX_ALLOWED_STATEMENT_TIMEOUT_SECONDS}s or less, got ${value}`);
+    // --- lock_timeout is pinned, never widened. ---
+    const lockValues = settings.filter(([name]) => name === 'lock_timeout').map(([, value]) => value);
+    assert.ok(lockValues.length > 0, `${label}: must pin lock_timeout explicitly rather than leave it inherited`);
+    for (const value of lockValues) {
+      assert.equal(value, LOCK_TIMEOUT, `${label}: lock_timeout must stay at ${LOCK_TIMEOUT} — a wider statement budget must never become a wider lock budget`);
+    }
+
+    // --- statement_timeout is bounded. ---
+    const statementValues = settings.filter(([name]) => name === 'statement_timeout').map(([, value]) => value);
+    assert.ok(statementValues.length > 0, `${label}: must set statement_timeout explicitly`);
+    for (const value of statementValues) {
+      const seconds = /^(\d+)s$/.exec(value);
+      assert.ok(seconds, `${label}: statement_timeout must be written as a whole number of seconds, got ${value}`);
+      assert.ok(Number(seconds[1]) <= MAX_ALLOWED_STATEMENT_TIMEOUT_SECONDS,
+        `${label}: statement_timeout must stay bounded at ${MAX_ALLOWED_STATEMENT_TIMEOUT_SECONDS}s or less, got ${value}`);
+    }
+  } else {
+    // --- Rollback RESETs exactly the two managed GUCs — never SETs a literal value. ---
+    assert.doesNotMatch(code, /\balter\s+role\s+service_role\s+set\b/i,
+      `${label}: must never SET statement_timeout/lock_timeout to a literal — it must RESET them to restore the exact pre-077 absence`);
+    const resets = [...code.matchAll(/\balter\s+role\s+service_role\s+reset\s+([a-z_]+)\s*;/gi)]
+      .map((m) => m[1].toLowerCase());
+    assert.equal(resets.length, targets.length,
+      `${label}: every alter role statement must be a plain \`reset <guc>\` — no SET, no WITH, no attribute form`);
+    assert.equal(resets.length, MANAGED_SETTINGS.length,
+      `${label}: must reset each managed GUC exactly once`);
+    assert.deepEqual([...new Set(resets)].sort(), [...MANAGED_SETTINGS].sort(),
+      `${label}: must reset exactly statement_timeout and lock_timeout, and nothing else`);
   }
 
   // --- Fail-closed self-verification and the PostgREST config reload. ---
@@ -98,11 +121,10 @@ assert.deepEqual(
   [STATEMENT_TIMEOUT_AFTER_APPLY],
   'migration 077 must set statement_timeout to exactly 30s, once',
 );
-assert.deepEqual(
-  [...rollbackCode.matchAll(/statement_timeout\s*=\s*'([^']*)'/gi)].map((m) => m[1]),
-  [STATEMENT_TIMEOUT_AFTER_ROLLBACK],
-  'rollback 077 must restore statement_timeout to exactly 8s, once',
-);
+assert.doesNotMatch(rollbackCode, /statement_timeout\s*=\s*'[^']*'/i,
+  'rollback 077 must never SET statement_timeout to a literal value — it must RESET to restore the exact pre-077 absence');
+assert.doesNotMatch(rollbackCode, /lock_timeout\s*=\s*'[^']*'/i,
+  'rollback 077 must never SET lock_timeout to a literal value — it must RESET to restore the exact pre-077 absence');
 
 // --- Structural lifecycle against a real PostgreSQL (PGlite). ---
 
@@ -145,6 +167,10 @@ async function roleAttributes(pg) {
 async function assertNoServiceRoleSettings(pg, label) {
   assert.deepEqual(await clusterSettings(pg, 'service_role'), [],
     `${label}: service_role must have no explicit cluster-wide pg_db_role_setting entries`);
+  for (const role of OTHER_ROLES) {
+    assert.deepEqual(await clusterSettings(pg, role), [],
+      `${label}: ${role} must keep its inherited budget — 077's rollback must never touch a human-facing role`);
+  }
 }
 
 async function assertBudget(pg, label, statementTimeout) {
@@ -174,16 +200,32 @@ async function expectRejection(pg, sql, pattern, message) {
   await assertBudget(pg, 'after 077 apply/apply (idempotent)', STATEMENT_TIMEOUT_AFTER_APPLY);
 
   await pg.exec(rollback);
-  await assertBudget(pg, 'after 077 rollback', STATEMENT_TIMEOUT_AFTER_ROLLBACK);
+  await assertNoServiceRoleSettings(pg, 'after 077 rollback: RESET must remove both managed GUCs, restoring the exact pre-077 absence');
 
   await pg.exec(rollback);
-  await assertBudget(pg, 'after 077 rollback/rollback (idempotent)', STATEMENT_TIMEOUT_AFTER_ROLLBACK);
+  await assertNoServiceRoleSettings(pg, 'after 077 rollback/rollback (idempotent)');
 
   await pg.exec(migration);
   await assertBudget(pg, 'after 077 reapply', STATEMENT_TIMEOUT_AFTER_APPLY);
 
   assert.deepEqual(await roleAttributes(pg), attributesBefore,
     'no role attribute (superuser, bypassrls, createrole, login, connection limit, ...) may change across the whole 077 lifecycle');
+}
+
+// Rollback RESETs exactly the two managed GUCs: an unrelated role-level GUC already present on
+// service_role must survive the rollback untouched, while statement_timeout/lock_timeout vanish.
+{
+  const pg = await freshDatabase();
+  await pg.exec(`alter role service_role set work_mem = '16MB';`);
+
+  await pg.exec(migration);
+  assert.deepEqual(await clusterSettings(pg, 'service_role'),
+    [['lock_timeout', LOCK_TIMEOUT], ['statement_timeout', STATEMENT_TIMEOUT_AFTER_APPLY], ['work_mem', '16MB']],
+    'after 077 apply with unrelated role-level GUC: service_role must hold the managed pair plus the untouched unrelated GUC');
+
+  await pg.exec(rollback);
+  assert.deepEqual(await clusterSettings(pg, 'service_role'), [['work_mem', '16MB']],
+    'after 077 rollback with unrelated role-level GUC: RESET must remove exactly the two managed GUCs and leave the unrelated one intact');
 }
 
 // Fail-closed: a per-database statement_timeout/lock_timeout override would silently win over the
@@ -212,7 +254,7 @@ async function expectRejection(pg, sql, pattern, message) {
   await assertBudget(pg, 'after 077 apply with unrelated per-database GUC on service_role', STATEMENT_TIMEOUT_AFTER_APPLY);
 
   await pg.exec(rollback);
-  await assertBudget(pg, 'after 077 rollback with unrelated per-database GUC on service_role', STATEMENT_TIMEOUT_AFTER_ROLLBACK);
+  await assertNoServiceRoleSettings(pg, 'after 077 rollback with unrelated per-database GUC on service_role');
 }
 
 // Fail-closed: no service_role means no backend role to widen; 077 must abort, not create one.

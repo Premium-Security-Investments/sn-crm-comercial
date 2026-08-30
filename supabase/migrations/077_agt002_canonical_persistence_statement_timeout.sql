@@ -53,11 +53,12 @@
 -- schema object and no row: its entire effect is two GUC entries on one role.
 --
 -- Rollback: supabase/rollbacks/077_agt002_canonical_persistence_statement_timeout_rollback.sql
--- restores the EFFECTIVE pre-077 behaviour (statement_timeout=8s, lock_timeout=8s) by creating
--- explicit pg_db_role_setting entries for service_role where none existed before. It does not — and
--- cannot — restore the exact pre-077 catalog posture (no entries at all), and if something else pins
--- a different service_role timeout between apply and rollback, the rollback will silently overwrite
--- it. Inspect the current service_role role settings before running the rollback.
+-- RESETs both managed GUCs, restoring the EXACT pre-077 catalog posture: no explicit
+-- pg_db_role_setting entry for statement_timeout or lock_timeout on service_role at all. Effective
+-- behaviour returns to whichever budget PostgREST/the authenticator session applies by
+-- inheritance — today that is 8s/8s, but the rollback deliberately does not pin that value, so a
+-- future change to the inherited default is followed rather than silently overwritten back to 8s.
+-- Any OTHER, unrelated role-level GUC on service_role is left untouched by the RESETs.
 begin;
 
 alter role service_role set statement_timeout = '30s';
