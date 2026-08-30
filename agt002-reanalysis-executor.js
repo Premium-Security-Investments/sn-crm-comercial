@@ -102,12 +102,20 @@ function mapPostBridgeOutcomeCode(value) {
 }
 
 /**
+ * Wall-clock reserve at the tail of the claim lease that a bounded persistence retry may never
+ * eat into: the durable 'unavailable'/'completed' attempt write, the claim release and the queue's
+ * own terminal transition all still have to happen after persistence returns.
+ */
+export const AGT002_PERSISTENCE_RETRY_LEASE_RESERVE_MS = 10_000;
+
+/**
  * Builds the direct-host executor. The legacy preview claim is acquired only
  * immediately before engine construction. runAgt002PostBridgeAnalysis owns
  * that claim once invoked; any earlier failure releases it exactly once.
  */
 export function createAgt002ReanalysisExecutor({
   environment = process.env,
+  now = Date.now,
   claimPreviewRun = claimAgt002PreviewRun,
   findPreviewRun = findAgt002PreviewRun,
   releasePreviewClaim = releaseAgt002PreviewClaim,
@@ -125,6 +133,10 @@ export function createAgt002ReanalysisExecutor({
     // Never clamped — validFrozenInput already rejected anything the ceiling cannot fund.
     const leaseSeconds = agt002RequiredPreviewClaimLeaseSeconds(identity.timeout_ms);
     let previewClaimId = null;
+    // Stamped BEFORE the claim RPC (never after), so the derived deadline can only ever be
+    // earlier than the real lease start — a bounded persistence retry must be conservative about
+    // the lease it is spending, never optimistic.
+    const leaseStartedAt = now();
     try {
       const claim = await claimPreviewRun(database, {
         idempotencyKey: job.idempotencyKey,
@@ -189,6 +201,14 @@ export function createAgt002ReanalysisExecutor({
         analysisContext: input.analysis_context,
         bridgeTelemetry,
         integralContractV3: input.analysis_flags.AGT002_INTEGRAL_CONTRACT_V3 === true,
+        // Hard lease guard for the bounded in-memory persistence retry: no re-attempt may START
+        // after this instant. The reserve keeps the durable attempt write, the claim release and
+        // the queue's own terminal transition inside the very lease this claim funded, so a retry
+        // can never be the reason a run is reclaimed mid-flight.
+        persistenceRetry: {
+          deadlineAt: leaseStartedAt + (leaseSeconds * 1000) - AGT002_PERSISTENCE_RETRY_LEASE_RESERVE_MS,
+          now,
+        },
       });
       previewClaimId = null;
       if (typeof outcome?.analysis_run_id === 'string' && outcome.analysis_run_id) {

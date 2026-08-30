@@ -9,8 +9,13 @@
 // correct, not that any particular historical cause is now understood or fixed.
 //
 // Design: runAgt002PostBridgeAnalysis is a thin orchestrator around the REAL engine
-// (agt002-preview-engine.js) and REAL persistence (agt002-preview-persistence.js). It never
-// retries and never falls back to a second engine/client. The only two boundaries a caller
+// (agt002-preview-engine.js) and REAL persistence (agt002-preview-persistence.js). The engine —
+// and therefore the bridge and the provider — is invoked EXACTLY ONCE, always: `engine.analyze`
+// sits outside every loop in this module and its result is produced before any persistence attempt
+// exists. The one bounded exception to "never retries" is PERSISTENCE, and only against the tight
+// transient allowlist in agt002-persistence-retry.js: the same, already-validated envelope object
+// is handed to registerAgt002PreviewAnalysis again, in memory, within the caller's lease budget.
+// It never falls back to a second engine/client. The only two boundaries a caller
 // supplies are the already-constructed `engine` (whose own client boundary is out of this
 // module's control) and the Supabase-shaped `database`. Stage/error_code are always drawn from
 // the closed catalogs in agt002-analysis-observability.js — re-exported here — and the single
@@ -29,6 +34,14 @@ import {
   releaseAgt002PreviewClaim,
 } from './agt002-preview-persistence.js';
 import { AGT002_V3_SAFE_VALIDATION_CODES } from './agt002-preview-engine.js';
+import {
+  agt002PersistenceRetryDelayMs,
+  agt002PersistenceRetrySleep,
+  classifyAgt002PersistenceError,
+  resolveAgt002PersistenceRetryPolicy,
+  safeAgt002PersistenceSubcode,
+  shouldRetryAgt002Persistence,
+} from './agt002-persistence-retry.js';
 
 const AGT002_V3_SAFE_VALIDATION_CODE_SET = new Set(AGT002_V3_SAFE_VALIDATION_CODES);
 
@@ -88,16 +101,24 @@ function safeAgt002V3ValidationSubcode(error) {
 
 /**
  * Builds the durable psi_agt002_analysis_attempt_events error_message. Base is always the fixed,
- * generic, identity-stable message for the closed errorCode (never raw text). The allowlisted
- * closed V3 validation subcode is appended ONLY for an INTEGRAL_V3_INVALID failure and ONLY when
- * present — so the exact governed invariant is diagnosable from the durable row while the fixed
- * generic public message is preserved verbatim and unknown/hostile values never reach the column.
+ * generic, identity-stable message for the closed errorCode (never raw text). An allowlisted
+ * closed subcode is appended ONLY for the one failure family it belongs to and ONLY when present —
+ * so the exact governed invariant (V3) or SQLSTATE category (persistence) is diagnosable from the
+ * durable row while the fixed generic public message is preserved verbatim and unknown/hostile
+ * values never reach the column.
  */
-function agt002PostBridgeAttemptErrorMessage(errorCode, validationSubcode) {
+function agt002PostBridgeAttemptErrorMessage(errorCode, { validationSubcode = null, persistenceSubcode = null } = {}) {
   const base = AGT002_POST_BRIDGE_ATTEMPT_ERROR_MESSAGES[errorCode]
     || AGT002_POST_BRIDGE_ATTEMPT_ERROR_MESSAGES[AGT002_POST_BRIDGE_ERROR_CODES.UNEXPECTED_ERROR];
   if (errorCode === AGT002_POST_BRIDGE_ERROR_CODES.INTEGRAL_V3_INVALID && validationSubcode) {
     return `${base} [${validationSubcode}]`;
+  }
+  // Re-gated against the closed persistence catalog for exactly the same reason
+  // safeAgt002V3ValidationSubcode re-gates the engine's: the durable column must be unreachable
+  // from any raw DB string, however it got attached upstream.
+  if (errorCode === AGT002_POST_BRIDGE_ERROR_CODES.PERSISTENCE_FAILED) {
+    const safe = safeAgt002PersistenceSubcode(persistenceSubcode);
+    if (safe) return `${base} [${safe}]`;
   }
   return base;
 }
@@ -184,8 +205,9 @@ async function safeAppendAttempt(database, params) {
  * unavailable, persisted durably via the existing psi_agt002_analysis_attempt_events
  * infrastructure, with exactly one closed-catalog observability event and exactly one claim
  * release — regardless of outcome, and regardless of whether observability/attempt-write
- * themselves fail. Zero retry: `engine.analyze` is called exactly once. Zero fallback: no
- * second engine/client is ever constructed or reached for.
+ * themselves fail. `engine.analyze` is called exactly once, unconditionally — a persistence retry
+ * re-uses the envelope that single call already produced and can never reach back to it. Zero
+ * fallback: no second engine/client is ever constructed or reached for.
  *
  * @param {object} database Supabase-shaped `.rpc()` client (real or a verifiable double).
  * @param {{opportunityId:string, tenderId:string, snapshotId:string, contextVersionId:string,
@@ -193,7 +215,9 @@ async function safeAppendAttempt(database, params) {
  *   canonicalOnly?:boolean}} context
  * @param {{engine:{analyze:Function}, observability?:{record:Function}, analysisContext:object,
  *   bridgeTelemetry?:{invocationStarted?:boolean, responseReceived?:boolean},
- *   integralContractV3?:boolean, presentAnalysis?:Function}} deps
+ *   integralContractV3?:boolean, presentAnalysis?:Function,
+ *   persistenceRetry?:{maxAttempts?:number, baseDelayMs?:number, maxDelayMs?:number,
+ *     budgetMs?:number, deadlineAt?:number, now?:Function, sleep?:Function}}} deps
  */
 export async function runAgt002PostBridgeAnalysis(database, context = {}, deps = {}) {
   const {
@@ -207,7 +231,14 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
   const {
     engine, observability = createAgt002AnalysisObservability(), analysisContext,
     bridgeTelemetry, integralContractV3 = false, presentAnalysis,
+    // Bounded in-memory persistence retry knobs; every field is optional and independently
+    // clamped by resolveAgt002PersistenceRetryPolicy. A caller that knows the real claim/queue
+    // lease (agt002-reanalysis-executor.js) supplies `deadlineAt` so no re-attempt can ever start
+    // outside that lease. `now`/`sleep` exist so tests never spend real wall clock.
+    persistenceRetry = null,
   } = deps;
+  const nowMs = typeof persistenceRetry?.now === 'function' ? persistenceRetry.now : Date.now;
+  const sleepMs = typeof persistenceRetry?.sleep === 'function' ? persistenceRetry.sleep : agt002PersistenceRetrySleep;
   // Read fresh every time, never cached before engine.analyze() runs: `bridgeTelemetry` is a
   // mutable object the caller's own client wrapper flips to true only once the bridge call has
   // actually resolved, so reading it too early would always observe `false`.
@@ -239,6 +270,14 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
   // attribute an INTEGRAL_V3_INVALID failure to the exact invariant; re-gated against the engine
   // allowlist so a hostile/unknown value can never reach the durable row.
   let validationSubcode = null;
+  // The closed AGT002_PERSISTENCE_SUBCODES member naming the SQLSTATE/transport CATEGORY of the
+  // last persistence failure (null for every other failure, and cleared once a run persists).
+  // Never the raw DB message, details or hint — those never leave the thrown Error's `.message`.
+  let persistenceSubcode = null;
+  // How many times the ALREADY-VALIDATED envelope was handed to persistence. Always 1 unless a
+  // truly transient frontier was re-attempted; the engine/provider is invoked exactly once
+  // regardless, because `envelope` below is produced before this counter ever moves.
+  let persistenceAttempts = 0;
 
   let envelope = null;
   let engineFailed = false;
@@ -259,34 +298,81 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
 
   let registeredRun = null;
   if (!engineFailed) {
-    let runRpcAttempted = false;
-    const trackedDatabase = wrapDatabaseForRunRpcTracking(database, () => { runRpcAttempted = true; });
-    try {
-      registeredRun = await registerAgt002PreviewAnalysis(trackedDatabase, {
-        opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId,
-        envelope, canonicalOnly, context_version_id: contextVersionId,
-        // Phase 4: the server-owned expected manifest scope comes from the engine that produced
-        // this envelope (deriveAgt002ManizalesManifestScope of the selected pilot manifest), never
-        // from a request body — so persistence can deep-compare it before the RPC. Null for a
-        // non-manifest run, leaving persistence's scope check inert.
-        expectedManifestScope: engine?.manifestScope ?? null,
-        expectedIdempotencyKey: context.expectedIdempotencyKey,
-        requireTenderRequirementInventory,
-        // The independent source text a model-proposed label must be literally anchored in, taken
-        // from the very same (frozen, for the durable worker) analysis context this run's engine
-        // analysed — never from the envelope it produced. Persistence re-derives the anchoring and
-        // refuses the run without it; the text itself is never persisted.
-        semanticSourceDocuments: analysisContext?.documents ?? null,
-        evidenceIdentity,
-      });
-      runPersisted = true;
-      analysisRunId = registeredRun?.run_id ?? null;
-    } catch (error) {
-      const classification = classifyAgt002PostBridgeFailure({
-        phase: runRpcAttempted ? 'persistence' : 'envelope_build', error, integralContractV3,
-      });
-      stage = classification.stage;
-      errorCode = classification.error_code;
+    // The SAME already-validated envelope object for every attempt, built exactly once above.
+    // Nothing in here can reach the engine, the bridge or the provider: `engine` is only read for
+    // its already-computed `manifestScope`.
+    const persistenceParams = {
+      opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId,
+      envelope, canonicalOnly, context_version_id: contextVersionId,
+      // Phase 4: the server-owned expected manifest scope comes from the engine that produced
+      // this envelope (deriveAgt002ManizalesManifestScope of the selected pilot manifest), never
+      // from a request body — so persistence can deep-compare it before the RPC. Null for a
+      // non-manifest run, leaving persistence's scope check inert.
+      expectedManifestScope: engine?.manifestScope ?? null,
+      expectedIdempotencyKey: context.expectedIdempotencyKey,
+      requireTenderRequirementInventory,
+      // The independent source text a model-proposed label must be literally anchored in, taken
+      // from the very same (frozen, for the durable worker) analysis context this run's engine
+      // analysed — never from the envelope it produced. Persistence re-derives the anchoring and
+      // refuses the run without it; the text itself is never persisted.
+      semanticSourceDocuments: analysisContext?.documents ?? null,
+      evidenceIdentity,
+    };
+    const retryPolicy = resolveAgt002PersistenceRetryPolicy(persistenceRetry);
+    // Retry window is measured from the FIRST failure, never from the first attempt's start: a
+    // slow first attempt (the observed frontier took ~19s end to end) must not consume the budget
+    // that exists to fund the re-attempt.
+    let retryWindowStartedAt = null;
+    for (;;) {
+      persistenceAttempts += 1;
+      let runRpcAttempted = false;
+      const trackedDatabase = wrapDatabaseForRunRpcTracking(database, () => { runRpcAttempted = true; });
+      try {
+        registeredRun = await registerAgt002PreviewAnalysis(trackedDatabase, persistenceParams);
+        runPersisted = true;
+        analysisRunId = registeredRun?.run_id ?? null;
+        persistenceSubcode = null;
+        break;
+      } catch (error) {
+        const classification = classifyAgt002PostBridgeFailure({
+          phase: runRpcAttempted ? 'persistence' : 'envelope_build', error, integralContractV3,
+        });
+        stage = classification.stage;
+        errorCode = classification.error_code;
+        // Only a failure that actually REACHED the run RPC can be a transient database frontier.
+        // A rejection raised before the RPC is this module's own deterministic envelope/semantic
+        // validation: re-running it would reject identically, so it is never retried and never
+        // even classified as a persistence subcode.
+        const persistence = runRpcAttempted
+          ? classifyAgt002PersistenceError(error)
+          : { subcode: null, retryable: false };
+        persistenceSubcode = persistence.subcode;
+        if (retryWindowStartedAt === null) retryWindowStartedAt = nowMs();
+        const delayMs = agt002PersistenceRetryDelayMs(persistenceAttempts - 1, retryPolicy);
+        if (!shouldRetryAgt002Persistence({
+          attempt: persistenceAttempts, retryable: persistence.retryable, policy: retryPolicy,
+          elapsedMs: nowMs() - retryWindowStartedAt, delayMs, now: nowMs(),
+        })) break;
+        try {
+          observability.record('retry_scheduled', {
+            tender_id: tenderId, stage: AGT002_POST_BRIDGE_STAGES.PERSISTENCE,
+            attempt_count: persistenceAttempts, persistence_subcode: persistence.subcode,
+          });
+        } catch {
+          // A broken observability sink must never change whether the retry happens.
+        }
+        await sleepMs(delayMs);
+        // Fail-closed post-sleep gate: `sleepMs` can overrun its requested delay (an event-loop
+        // pause, GC, a slow fake clock in a test), so the pre-sleep budget/deadline check above is
+        // stale by the time we get here. Re-run the SAME decision point with the delay already
+        // spent (delayMs: 0) against a freshly read clock — if the deadline or retry-window budget
+        // is now exhausted, stop with the persistence failure already classified above rather than
+        // starting another persistence RPC.
+        if (!shouldRetryAgt002Persistence({
+          attempt: persistenceAttempts, retryable: true, policy: retryPolicy,
+          elapsedMs: nowMs() - retryWindowStartedAt, delayMs: 0, now: nowMs(),
+        })) break;
+      }
     }
   }
 
@@ -323,7 +409,7 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
     state: attemptState,
     ...(attemptState === 'unavailable' ? {
       error_code: errorCode,
-      error_message: agt002PostBridgeAttemptErrorMessage(errorCode, validationSubcode),
+      error_message: agt002PostBridgeAttemptErrorMessage(errorCode, { validationSubcode, persistenceSubcode }),
     } : {}),
     ...(attemptState === 'completed' ? { analysis_run_id: analysisRunId } : {}),
   });
@@ -333,6 +419,11 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
       correlation_id: correlationId,
       stage,
       error_code: status === 'unavailable' ? errorCode : null,
+      // Only ever set for a real persistence rejection, and only as a closed catalog member.
+      persistence_subcode: errorCode === AGT002_POST_BRIDGE_ERROR_CODES.PERSISTENCE_FAILED
+        ? safeAgt002PersistenceSubcode(persistenceSubcode)
+        : null,
+      persistence_attempts: persistenceAttempts,
       bridge_invocation_started: bridgeTelemetry?.invocationStarted === true,
       bridge_response_received: readBridgeResponseReceived(),
       context_version_id: contextVersionId,

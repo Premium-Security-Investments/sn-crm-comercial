@@ -1,4 +1,5 @@
 import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
+import { safeAgt002PersistenceSubcode } from './agt002-persistence-retry.js';
 
 // Safe, structured operational metrics for the AGT-002 / Vig-IA durable
 // pipeline (conversion -> job -> claim -> snapshot -> agent -> run). Every
@@ -101,7 +102,12 @@ export const AGT002_OBSERVABILITY_EVENT_FIELDS = Object.freeze({
   model_unavailable: Object.freeze(['job_id', 'tender_id', 'opportunity_id', 'reason']),
   canonical_run_recorded: Object.freeze(['job_id', 'tender_id', 'opportunity_id', 'analysis_run_id', 'reused']),
   reanalysis_triggered: Object.freeze(['opportunity_id', 'tender_id', 'analysis_run_id', 'context_version_id', 'status']),
-  retry_scheduled: Object.freeze(['job_id', 'tender_id', 'stage', 'attempt_count', 'count', 'reason']),
+  // `persistence_subcode` is the ONLY way a persistence retry's transient category may ever be
+  // attributed here: a member of the closed AGT002_PERSISTENCE_SUBCODES catalog, sanitized the
+  // same way as reanalysis_post_bridge_outcome's field below. Non-persistence callers (e.g. the
+  // tender-processing-worker's request_agt002 retries) keep using the free-form `reason` string;
+  // a persistence retry must never put its subcode there instead.
+  retry_scheduled: Object.freeze(['job_id', 'tender_id', 'stage', 'attempt_count', 'count', 'reason', 'persistence_subcode']),
   outcome_recorded: Object.freeze(['job_id', 'tender_id', 'stage', 'outcome', 'error_code', 'error_message']),
   stage_duration: Object.freeze(['job_id', 'tender_id', 'stage', 'outcome', 'duration_ms']),
   // AGT-002 Preview (E5): a model output was rejected. Deliberately excludes error_code /
@@ -121,9 +127,14 @@ export const AGT002_OBSERVABILITY_EVENT_FIELDS = Object.freeze({
   // run, whether it completes or ends unavailable. `stage`/`error_code` are restricted below to
   // AGT002_POST_BRIDGE_STAGES/AGT002_POST_BRIDGE_ERROR_CODES members only — never prompt, raw
   // model output, documents/evidence, headers, secrets, a stack, or an arbitrary message.
+  // `persistence_subcode` is the ONLY extra attribution a persistence failure ever carries here:
+  // a member of the closed AGT002_PERSISTENCE_SUBCODES catalog naming the SQLSTATE CATEGORY
+  // (statement timeout / lock timeout / serialization / deadlock / connection / constraint /
+  // idempotency conflict / …), never the SQLSTATE-bearing error's own raw message, details or hint.
   reanalysis_post_bridge_outcome: Object.freeze([
-    'correlation_id', 'stage', 'error_code', 'bridge_invocation_started', 'bridge_response_received',
-    'context_version_id', 'opportunity_id', 'tender_id', 'snapshot_id', 'duration_ms',
+    'correlation_id', 'stage', 'error_code', 'persistence_subcode', 'bridge_invocation_started',
+    'bridge_response_received', 'context_version_id', 'opportunity_id', 'tender_id', 'snapshot_id',
+    'duration_ms', 'persistence_attempts',
   ]),
 });
 
@@ -177,6 +188,10 @@ function sanitizeAgt002FieldValue(eventType, key, value) {
   if (eventType === 'reanalysis_post_bridge_outcome' && key === 'error_code') {
     return AGT002_POST_BRIDGE_ERROR_CODE_VALUES.has(value) ? value : AGT002_POST_BRIDGE_ERROR_CODES.UNEXPECTED_ERROR;
   }
+  // Closed catalog only, dropped otherwise — never a SQLSTATE-bearing raw message and never a
+  // free-form string a call site happened to build.
+  if (key === 'persistence_subcode') return safeAgt002PersistenceSubcode(value) ?? undefined;
+  if (key === 'persistence_attempts') return Number.isInteger(value) && value >= 0 ? value : undefined;
   if (key === 'error_message') return boundAgt002ErrorMessage(value);
   if (key === 'error_code') return boundAgt002ErrorCode(value);
   if (key === 'validation_code') return boundAgt002ValidationCode(value);
