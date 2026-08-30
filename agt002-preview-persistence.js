@@ -137,8 +137,35 @@ function countCriticalOpenQuestions(content) {
   return Array.isArray(content?.questions) ? content.questions.filter(question => question?.critical === true).length : 0;
 }
 
-function unwrapRpc(response) {
-  if (response?.error) throw new Error(response.error.message || String(response.error));
+// A Supabase/PostgREST error's `code` is a SQLSTATE-shaped category ('57014', '23505', '40P01',
+// or a 'PGRST…' transport-layer code) — a fixed, closed, non-secret label, never message text,
+// payload, PII or a raw DB string. Anything longer/shorter or containing punctuation is not a
+// SQLSTATE and is dropped rather than forwarded.
+const AGT002_RPC_SQLSTATE_PATTERN = /^[A-Za-z0-9]{5,10}$/;
+
+/**
+ * Unwraps a Supabase-shaped `{data, error}` RPC response.
+ *
+ * The thrown Error's `.message` is exactly what it always was (the raw DB text), and it is still
+ * the ONLY place that text ever lives — no caller persists or logs it. What changed is that the
+ * error's STRUCTURAL metadata is no longer destroyed on the way out: `rpc_sqlstate` (the SQLSTATE
+ * category) and `rpc_name` are attached so a caller can tell a transient database frontier
+ * (statement timeout, lock timeout, serialization failure, deadlock, connection loss) apart from a
+ * permanent rejection (constraint, idempotency conflict, invalid input) WITHOUT parsing — and
+ * therefore without ever having to touch — that raw message. See agt002-persistence-retry.js.
+ *
+ * Deliberately NOT written to `.code`: `.code` is already the engine/bridge boundary's own
+ * vocabulary (AGT002_CODEX_*), and several classifiers substring-match it. A dedicated field
+ * cannot collide with any of them.
+ */
+function unwrapRpc(response, rpcName = null) {
+  if (response?.error) {
+    const error = new Error(response.error.message || String(response.error));
+    const sqlstate = response.error.code;
+    if (typeof sqlstate === 'string' && AGT002_RPC_SQLSTATE_PATTERN.test(sqlstate)) error.rpc_sqlstate = sqlstate;
+    if (typeof rpcName === 'string' && rpcName) error.rpc_name = rpcName;
+    throw error;
+  }
   if (!response || response.data == null) throw new Error('La RPC de AGT-002 Preview no devolvió un resultado.');
   return response.data;
 }
@@ -200,7 +227,7 @@ export async function claimAgt002PreviewRun(database, { idempotencyKey, dailyMax
     p_daily_max_runs: dailyMaxRuns,
     p_max_concurrent: maxConcurrent,
     p_lease_seconds: leaseSeconds,
-  }));
+  }), 'psi_claim_agt002_preview_run');
   const status = result?.status;
   if (!['claimed', 'existing', 'in_progress', 'quota', 'saturated'].includes(status)) {
     throw new Error('La reserva AGT-002 Preview devolvió un estado inválido.');
@@ -218,7 +245,7 @@ export async function releaseAgt002PreviewClaim(database, { idempotencyKey, clai
   const released = unwrapRpc(await database.rpc('psi_release_agt002_preview_claim', {
     p_idempotency_key: key,
     p_claim_id: claim,
-  }));
+  }), 'psi_release_agt002_preview_claim');
   if (released !== true) throw new Error('No fue posible liberar la reserva AGT-002 Preview.');
   return true;
 }
@@ -437,10 +464,11 @@ export async function registerAgt002PreviewAnalysis(database, context) {
     ...(canonicalOnly && contextVersionId ? { p_context_version_id: contextVersionId } : {}),
     ...(canonicalOnly && hasLegalCorpusVersionId ? { p_legal_corpus_version_id: legalCorpusVersionId } : {}),
   };
+  const runRpcName = canonicalOnly ? 'psi_record_agt002_canonical_analysis_run' : 'psi_record_tender_analysis_run';
   const runRecord = unwrapRpc(await database.rpc(
-    canonicalOnly ? 'psi_record_agt002_canonical_analysis_run' : 'psi_record_tender_analysis_run',
+    runRpcName,
     canonicalOnly ? commonParams : { ...commonParams, p_producer: 'AGT-002', p_method: 'agent_ai', p_status: 'completed' },
-  ));
+  ), runRpcName);
   const runId = requireId(runRecord.id, 'La ejecución de AGT-002 Preview');
   const canonical = canonicalOnly ? runRecord.canonical === true : false;
   return {
@@ -480,7 +508,7 @@ export async function appendAgt002AnalysisAttempt(database, context, { eventKeyG
     p_error_code: context?.error_code || null,
     p_error_message: context?.error_message || null,
     p_analysis_run_id: context?.analysis_run_id || null,
-  }));
+  }), 'psi_append_agt002_analysis_attempt');
 }
 
 /** Returns the latest safe lifecycle projection; raw provider error messages never leave persistence. */

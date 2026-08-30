@@ -150,9 +150,21 @@ assert.match(executor, /evidenceIdentity: governance\?\.evidenceIdentity \?\? nu
 // registry rows — never re-derived, never the wall clock.
 assert.match(executor, /companyEvidenceAsOf: governance\.evidenceAsOf,/);
 
-// The post-bridge orchestrator forwards it, verbatim, into the durable registration call.
+// The post-bridge orchestrator forwards it, verbatim, into the durable registration call. The
+// safe retry wiring builds `persistenceParams` exactly once — carrying evidenceIdentity — and
+// reuses that SAME object on every in-memory persistence retry, rather than rebuilding it per
+// attempt.
 assert.match(postBridge, /evidenceIdentity = null,\s*\n\s*\} = context;/);
-assert.match(postBridge, /semanticSourceDocuments: analysisContext\?\.documents \?\? null,\s*\n\s*evidenceIdentity,\s*\n\s*\}\);/);
+assert.match(
+  postBridge,
+  /const persistenceParams = \{[\s\S]*?semanticSourceDocuments: analysisContext\?\.documents \?\? null,\s*\n\s*evidenceIdentity,\s*\n\s*\};/,
+  'persistenceParams must be built once, carrying evidenceIdentity',
+);
+assert.match(
+  postBridge,
+  /registerAgt002PreviewAnalysis\(trackedDatabase, persistenceParams\)/,
+  'the registration call must reuse the SAME persistenceParams object on every retry',
+);
 
 // B: the legacy non-canonical preview flow (flow3) must check the fail-closed boundary code
 // BEFORE ever falling back to rules_fallback — a degraded evidence registry must never
