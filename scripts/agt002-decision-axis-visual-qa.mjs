@@ -87,6 +87,33 @@ function axisBucket(axis, state = 'No evaluado', findings = []) {
   };
 }
 
+const OPEN_GROUPS = ['discard', 'habilitating', 'technical', 'financial_execution', 'strategic', 'technical'];
+
+function operationalUnit(group, index) {
+  const number = index + 1;
+  return {
+    unit_id: `internal-unit-${number}`,
+    unit_kind: 'tender_requirement',
+    requirement_id: `internal-requirement-${number}`,
+    category: group,
+    sequence: number,
+    title: `Requisito pendiente ${number}`,
+    assessment_mode: 'abstained',
+    conclusion: { status: 'insufficient_evidence', summary: `Hecho documental disponible ${number}.`, confidence: 'unavailable' },
+    blocking: { effect: 'undetermined', curability: 'unknown', reason: 'Pendiente de revisión.' },
+    evidence_state: { presence: 'unknown', review: 'not_reviewed', validity: 'unknown', applicability: 'unknown', compliance: 'unknown' },
+    evidence_refs: number === 1 ? [{ ref: 'internal-technical-reference', source_type: 'tender_document', purpose: 'requirement_basis' }] : [],
+    missing_evidence: number === 6 ? [] : [{ missing_id: `internal-missing-${number}`, evidence_class_id: null, needed_source_type: 'company_evidence', reason: `Confirmación o soporte pendiente ${number}.`, critical: true }],
+    commercial_impact: { level: 'unknown', summary: `Impacto documentado ${number}.`, dimension: 'unknown' },
+    legal_assessment: { status: 'not_verified', basis_refs: [], summary: 'Pendiente.', human_legal_review_required: true },
+    actions: number === 6 ? [] : [{ action_id: `internal-action-${number}`, action_type: 'review', summary: `Gestionar pendiente ${number}.`, basis_unit_id: `internal-unit-${number}`, suggested_role: 'authorized_human', priority: 'high', external_side_effect: false }],
+    milestone: { status: 'not_identified', type: 'none', at: null, source_ref: null, summary: 'Sin hito.' },
+    escalation: { required: false, level: 'none', reason: 'Pendiente.' },
+    closure: { status: 'open', condition: 'Pendiente de cierre humano.', evidence_required: [] },
+    human_validation: { required: true, status: 'pending', reason: 'Revisión humana pendiente.' },
+  };
+}
+
 function analysisFixture(mode) {
   const paused = mode === 'paused';
   const total = paused ? 11345 : 5;
@@ -148,7 +175,15 @@ function analysisFixture(mode) {
     method: 'agent_ai',
     status: 'completed',
     current: true,
-    critical_open_count: 0,
+    critical_open_count: paused ? OPEN_GROUPS.length : 0,
+    integral_analysis: paused ? {
+      contract_version: 'agt002-integral-analysis-v3',
+      coverage: {
+        analyzed_requirement_ids: OPEN_GROUPS.map((_, index) => `internal-requirement-${index + 1}`),
+        expected_requirement_ids: OPEN_GROUPS.map((_, index) => `internal-requirement-${index + 1}`),
+      },
+      analysis_units: OPEN_GROUPS.map(operationalUnit),
+    } : undefined,
     recommendation: paused ? 'hold' : 'conditional',
     summary: paused ? 'Cobertura parcial: el análisis no está listo para decidir.' : 'Lectura material disponible para revisión humana.',
     evidence_coverage: evidenceCoverage,
@@ -220,8 +255,8 @@ const scenarios = [
     },
   },
   {
-    id: 'paused-bogota',
-    title: 'Flag activo · cobertura parcial Bogotá',
+    id: 'paused-operational',
+    title: 'Flag activo · seis pendientes documentales',
     props: {
       ...commonProps,
       decisionAxisSurfaceEnabled: true,
@@ -286,6 +321,8 @@ function locateChromium() {
 
 const chromium = locateChromium();
 const rendered = new Map();
+const desktopDom = new Map();
+const mobileDom = new Map();
 const evidenceLines = [
   'AGT-002 — QA visual determinista de Análisis para decidir',
   '',
@@ -297,7 +334,7 @@ const evidenceLines = [
 for (const scenario of scenarios) {
   const markup = renderToStaticMarkup(createElement(TenderDecisionExperience, scenario.props));
   rendered.set(scenario.id, markup);
-  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${scenario.title}</title><style>${globalCss}\n${componentCss}\n${shellCss}</style></head><body><main><header class="qa-context"><strong>${scenario.title}</strong><small>Fixture local determinista · no autenticado · sin persistencia</small></header>${markup}</main></body></html>`;
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${scenario.title}</title><style>${globalCss}\n${componentCss}\n${shellCss}</style></head><body><main><header class="qa-context"><strong>${scenario.title}</strong><small>Fixture local determinista · no autenticado · sin persistencia</small></header>${markup}</main><script>(()=>{const rgb=value=>(value.match(/[\\d.]+/g)||[]).slice(0,3).map(Number);const luminance=values=>{const linear=values.map(value=>{const channel=value/255;return channel<=.04045?channel/12.92:Math.pow((channel+.055)/1.055,2.4)});return .2126*linear[0]+.7152*linear[1]+.0722*linear[2]};const contrast=(a,b)=>{const first=luminance(a),second=luminance(b);return (Math.max(first,second)+.05)/(Math.min(first,second)+.05)};document.body.setAttribute('data-qa-overflow',String(document.documentElement.scrollWidth>document.documentElement.clientWidth));const labels=[...document.querySelectorAll('.tender-decision-axis-surface .eyebrow,.tender-decision-operational-card dt,.tender-decision-operational-label')];const ratios=labels.map(label=>contrast(rgb(getComputedStyle(label).color),[255,255,255]));document.body.setAttribute('data-qa-label-count',String(labels.length));document.body.setAttribute('data-qa-min-label-contrast',ratios.length?Math.min(...ratios).toFixed(2):'0');})();</script></body></html>`;
   const htmlPath = resolve(outDir, `agt002-decision-axis-${scenario.id}.html`);
   const pngPath = resolve(outDir, `agt002-decision-axis-${scenario.id}.png`);
   writeFileSync(htmlPath, html, 'utf8');
@@ -305,24 +342,34 @@ for (const scenario of scenarios) {
     '--headless', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1',
     '--window-size=1440,2600', `--screenshot=${pngPath}`, `file://${htmlPath}`,
   ], { stdio: 'ignore' });
+  desktopDom.set(scenario.id, execFileSync(chromium, [
+    '--headless', '--no-sandbox', '--disable-gpu', '--force-device-scale-factor=1', '--window-size=1440,2600',
+    '--dump-dom', `file://${htmlPath}`,
+  ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
   evidenceLines.push(`${scenario.id}: HTML+PNG · sha256 ${createHash('sha256').update(markup).digest('hex')}`);
 }
 
-// Extra mobile capture of the ready state to exercise the <=640px layout.
-const readyHtmlPath = resolve(outDir, 'agt002-decision-axis-ready.html');
-const mobilePngPath = resolve(outDir, 'agt002-decision-axis-ready-mobile.png');
-execFileSync(chromium, [
-  '--headless', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1',
-  '--window-size=390,2800', `--screenshot=${mobilePngPath}`, `file://${readyHtmlPath}`,
-], { stdio: 'ignore' });
-evidenceLines.push('ready-mobile: PNG 390px · regla <=640px ejercitada');
+// Capturas móviles de la proyección operativa y del estado con ejes reales (<=640px).
+for (const id of ['paused-operational', 'ready']) {
+  const htmlPath = resolve(outDir, `agt002-decision-axis-${id}.html`);
+  const mobilePngPath = resolve(outDir, `agt002-decision-axis-${id}-mobile.png`);
+  execFileSync(chromium, [
+    '--headless', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--force-device-scale-factor=1',
+    '--window-size=390,7200', `--screenshot=${mobilePngPath}`, `file://${htmlPath}`,
+  ], { stdio: 'ignore' });
+  mobileDom.set(id, execFileSync(chromium, [
+    '--headless', '--no-sandbox', '--disable-gpu', '--force-device-scale-factor=1', '--window-size=390,7200',
+    '--dump-dom', `file://${htmlPath}`,
+  ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
+  evidenceLines.push(`${id}-mobile: PNG 390px · regla <=640px ejercitada`);
+}
 
 // Deterministic scratch bundle only; the QA deliverables already live under docs/verification/screenshots.
 rmSync(qaDir, { recursive: true, force: true });
 
 const failures = [];
 const off = rendered.get('flag-off');
-const paused = rendered.get('paused-bogota');
+const paused = rendered.get('paused-operational');
 const ready = rendered.get('ready');
 const postGo = rendered.get('post-go');
 const flagOn = [paused, ready, postGo].join('\n');
@@ -331,24 +378,43 @@ requireCheck(off.includes('Brief de decisión'), 'flag off: falta el brief vigen
 requireCheck(!off.includes('tender-decision-axis-surface'), 'flag off: apareció la superficie nueva', failures);
 requireCheck(count(off, 'Decisión GO / NO GO') === 1, 'flag off: el panel formal no aparece exactamente una vez', failures);
 
-for (const [id, markup] of [['paused-bogota', paused], ['ready', ready], ['post-go', postGo]]) {
+for (const [id, markup] of [['paused-operational', paused], ['ready', ready], ['post-go', postGo]]) {
   requireCheck(count(markup, 'class="tender-decision-axis-surface"') === 1, `${id}: superficie no única`, failures);
   requireCheck(count(markup, 'class="tender-decision-axis-cta"') === 1, `${id}: CTA primaria no única`, failures);
   requireCheck(count(markup, 'Decisión GO / NO GO') === 1, `${id}: panel formal no único`, failures);
   requireCheck(!markup.includes('Brief de decisión'), `${id}: apareció brief competidor`, failures);
 }
-requireCheck(paused.includes('Análisis pausado — cobertura parcial (8 de 11.345 resueltas; 11.337 sin resolver)'), 'Bogotá: copy 8/11.345 incorrecto', failures);
-requireCheck(count(paused, 'No evaluado · 0') === 5, 'Bogotá: no hay cinco ejes No evaluado', failures);
-requireCheck(!paused.includes('Favorable con evidencia'), 'Bogotá: apareció Favorable con evidencia', failures);
+requireCheck(paused.includes('Lectura documental incompleta'), 'operativa: falta el estado humano incompleto', failures);
+requireCheck(paused.includes('6 pendientes accionables'), 'operativa: el conteo no refleja seis pendientes', failures);
+requireCheck(count(paused, 'class="tender-decision-operational-card"') === 6, 'operativa: no hay seis tarjetas', failures);
+requireCheck(!paused.includes('No evaluado · 0'), 'operativa: se filtraron los cinco ejes vacíos', failures);
+requireCheck(!paused.includes('Cobertura: LISTA'), 'operativa: proclamó análisis listo', failures);
 const pausedPrimaryCta = paused.match(/<button[^>]*class="tender-decision-axis-cta"[^>]*>[\s\S]*?<\/button>/)?.[0] || '';
-requireCheck(pausedPrimaryCta.includes('Ver el respaldo técnico del análisis'), 'Bogotá: la CTA primaria no lleva al respaldo técnico', failures);
-requireCheck(!/Registrar\s+GO|Registrar decisión/i.test(pausedPrimaryCta), 'Bogotá: apareció una CTA GO/decisoria principal', failures);
+requireCheck(pausedPrimaryCta.includes('Resolver pendientes documentales'), 'operativa: CTA no prioriza resolver pendientes', failures);
+requireCheck(!/Registrar\s+GO|Registrar decisión/i.test(pausedPrimaryCta), 'operativa: apareció una CTA GO/decisoria principal', failures);
+for (const field of ['Requisito', 'Qué sabemos', 'Qué falta por confirmar o aportar', 'Por qué importa', 'Siguiente acción', 'Referencias']) {
+  requireCheck(paused.includes(field), `operativa: falta el campo ${field}`, failures);
+}
+requireCheck(count(paused, 'Lectura documental incompleta') === 1, 'operativa: el estado se repite', failures);
+requireCheck(count(paused, '6 pendientes accionables') === 1, 'operativa: el conteo se repite', failures);
+requireCheck(count(paused, 'Requisito pendiente 1') === 1, 'operativa: el título del requisito se repite en su tarjeta', failures);
+for (const forbidden of ['Ver trazabilidad técnica', 'Ver respaldo técnico del análisis', 'internal-unit-', 'internal-requirement-', 'internal-technical-reference', 'financial_execution', '6 de 6.809']) {
+  requireCheck(!paused.includes(forbidden), `operativa: se filtró contenido técnico ${forbidden}`, failures);
+}
 requireCheck(ready.includes('pregunta material pendiente'), 'ready: decision_question no usa el rótulo pendiente', failures);
 requireCheck(!/Capital de trabajo mínimo[\s\S]{0,600}impedimento/i.test(ready), 'ready: decision_question fue rotulado impedimento', failures);
 requireCheck(postGo.includes('GO humano registrado'), 'post_go: falta autoridad humana explícita', failures);
 requireCheck(postGo.includes('Abrir Mesa de ayuda'), 'post_go: falta CTA a Mesa de ayuda', failures);
 for (const state of ['Favorable con evidencia', 'Impedimento material', 'Por confirmar', 'No evaluado']) {
   requireCheck(flagOn.includes(state), `falta el rótulo cerrado: ${state}`, failures);
+}
+for (const [viewport, domEntries] of [['desktop', desktopDom], ['móvil', mobileDom]]) {
+  for (const [id, dom] of domEntries) {
+    requireCheck(dom.includes('data-qa-overflow="false"'), `${id} ${viewport}: overflow horizontal`, failures);
+    const labelCount = Number(dom.match(/data-qa-label-count="(\d+)"/)?.[1] ?? 0);
+    const contrast = Number(dom.match(/data-qa-min-label-contrast="([\d.]+)"/)?.[1] ?? 0);
+    requireCheck(labelCount === 0 || contrast >= 4.5, `${id} ${viewport}: contraste mínimo de labels ${contrast}:1`, failures);
+  }
 }
 requireCheck(!flagOn.includes('Sin impedimentos'), 'copy prohibido: Sin impedimentos', failures);
 requireCheck(flagOn.includes('la decisión GO / NO GO permanece humana'), 'falta copy de autoridad humana', failures);
@@ -361,10 +427,11 @@ if (failures.length) {
 evidenceLines.push('', 'Checks:');
 evidenceLines.push('- fallback flag off sin superficie nueva; brief + panel formal únicos');
 evidenceLines.push('- flag on: una superficie, una CTA primaria y un panel formal por escenario');
-evidenceLines.push('- Bogotá HOLD: 8/11.345, 11.337 sin resolver, cinco ejes No evaluado, cero favorable y CTA primaria sólo a respaldo técnico');
-evidenceLines.push('- cuatro estados cerrados presentes; decision_question rotulada pregunta material pendiente');
+evidenceLines.push('- seis unidades V3 abiertas: seis tarjetas humanas, sin cinco ejes vacíos ni trazabilidad cruda');
+evidenceLines.push('- tarjetas separan requisito, conocimiento, faltante, impacto, acción y referencias');
+evidenceLines.push('- estado con ejes materiales reales conserva los cuatro rótulos cerrados');
 evidenceLines.push('- post_go reafirma autoridad humana y enlaza Mesa de ayuda');
-evidenceLines.push('- copy prohibido "Sin impedimentos" ausente');
+evidenceLines.push('- Chromium desktop y móvil: sin overflow horizontal; contraste mínimo computado de eyebrows/labels >= 4.5:1 sobre fondo claro');
 evidenceLines.push('', 'Resultado: PASS', '');
 const evidence = evidenceLines.join('\n');
 writeFileSync(resolve(outDir, 'agt002-decision-axis-qa.txt'), evidence, 'utf8');

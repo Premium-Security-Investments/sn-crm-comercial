@@ -63,8 +63,17 @@ export function tenderExecutiveProjectionAvailable(analysis: TenderDocumentAnaly
 export function tenderExecutiveOpenIssueCount(analysis: TenderDocumentAnalysis | null | undefined): number {
   const review = analysis?.decision_review;
   if (review) return Number(review.counts?.blockers || 0) + Number(review.counts?.decision_questions || 0);
-  if (!tenderExecutiveProjectionAvailable(analysis)) return 0;
-  return Number(analysis?.critical_open_count || 0);
+
+  // La clasificación material puede no estar disponible todavía, pero eso no borra un conteo
+  // canónico real. Es información para la persona, nunca un gate de GO/NO-GO.
+  const canonicalCount = Number(analysis?.critical_open_count || 0);
+  if (Number.isFinite(canonicalCount) && canonicalCount > 0) return canonicalCount;
+
+  // Respaldo seguro cuando el conteo canónico falta: sólo el enum estructural de cierre define qué
+  // unidades V3 siguen abiertas. Valores futuros permanecen abiertos (fail-closed).
+  return (analysis?.integral_analysis?.analysis_units ?? [])
+    .filter(unit => unit.closure?.status !== 'evidence_satisfied')
+    .length;
 }
 
 export function tenderDecisionGate(_analysis: TenderDocumentAnalysis | null | undefined): { canGo: boolean; canNoGo: boolean } {

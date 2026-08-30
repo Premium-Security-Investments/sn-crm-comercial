@@ -38,6 +38,79 @@
   color: var(--axis-muted);
 }
 
+/* Etiquetas sobre fondos claros: contraste AA y jerarquía consistente en hero, eje y fallback. */
+.tender-decision-axis-surface .eyebrow {
+  color: #334f49;
+  font-weight: 800;
+}
+
+.tender-decision-operational {
+  min-width: 0;
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1rem, 2.2vw, 1.5rem);
+  border: 1px solid var(--axis-line);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 14px 38px rgba(18, 52, 46, .07);
+}
+
+.tender-decision-operational > header,
+.tender-decision-operational-group > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.tender-decision-operational > header h3,
+.tender-decision-operational-group h4,
+.tender-decision-operational-card h5 { margin: .2rem 0 .7rem; }
+.tender-decision-operational > header p { max-width: 70ch; margin: 0; color: #4c625d; }
+.tender-decision-operational > header > strong,
+.tender-decision-operational-group > header span {
+  flex: 0 0 auto;
+  padding: .4rem .65rem;
+  border-radius: 999px;
+  background: #fff2d5;
+  color: #6c470f;
+  font-size: .82rem;
+  font-weight: 800;
+}
+
+.tender-decision-operational-groups { display: grid; gap: 1rem; min-width: 0; }
+.tender-decision-operational-group {
+  min-width: 0;
+  display: grid;
+  gap: .75rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--axis-line);
+}
+.tender-decision-operational-group > header h4 { color: #173f35; }
+.tender-decision-operational-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; min-width: 0; }
+.tender-decision-operational-card {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid #d7e3df;
+  border-radius: 14px;
+  background: var(--axis-paper);
+}
+.tender-decision-operational-card > h5 { color: #153d33; font-size: 1rem; overflow-wrap: anywhere; }
+.tender-decision-operational-card dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .7rem; margin: 0; }
+.tender-decision-operational-cards > .tender-decision-operational-card:only-child { grid-column: 1 / -1; }
+.tender-decision-operational-card dl > div { min-width: 0; }
+.tender-decision-operational-card dt,
+.tender-decision-operational-label {
+  color: #334f49;
+  font-size: .75rem;
+  font-weight: 850;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+}
+.tender-decision-operational-label { display: block; }
+.tender-decision-operational-card dd { margin: .16rem 0 0; color: #263f3a; overflow-wrap: anywhere; }
+.tender-decision-operational-card ul { margin: .2rem 0 0; padding-left: 1.1rem; }
+
 .tender-decision-axis-help {
   flex: 0 0 auto;
   border: 1px solid var(--axis-line);
@@ -271,13 +344,17 @@
 @media (max-width: 820px) {
   .tender-decision-axis-rail { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tender-decision-axis-hero,
-  .tender-decision-axis-banner { flex-direction: column; align-items: stretch; }
+  .tender-decision-axis-banner,
+  .tender-decision-operational > header,
+  .tender-decision-operational-group > header { flex-direction: column; align-items: stretch; }
   .tender-decision-axis-help,
   .tender-decision-axis-cta { width: 100%; }
 }
 
 @media (max-width: 640px) {
   .tender-decision-axis-rail { grid-template-columns: minmax(0, 1fr); }
+  .tender-decision-operational-cards,
+  .tender-decision-operational-card dl { grid-template-columns: minmax(0, 1fr); }
   .tender-decision-axis-body > header { flex-direction: column; }
   .tender-decision-axis-drawer { width: 100%; }
   /* Móvil (§14): una sola columna en las tarjetas y CTA primaria fija al pie, sin sacarla del

@@ -17,13 +17,14 @@ import type {
 // decision-review condition exclusively by explicit `requirement_id` equality — never by text.
 
 const UNKNOWN_ENUM_LABEL = 'Por revisar';
+const UNKNOWN_CATEGORY_LABEL = 'Pendientes por clasificar';
 
 const CATEGORY_LABELS: Record<string, string> = {
-  discard: 'Descarte',
-  habilitating: 'Habilitantes',
-  technical: 'Técnico',
-  financial_execution: 'Financiero / ejecución',
-  strategic: 'Estratégico',
+  discard: 'Presentación y causales de rechazo',
+  habilitating: 'Requisitos habilitantes',
+  technical: 'Capacidad y obligaciones técnicas',
+  financial_execution: 'Capacidad financiera y económica',
+  strategic: 'Condiciones estratégicas y contractuales',
 };
 
 const CONCLUSION_LABELS: Record<string, string> = {
@@ -107,7 +108,8 @@ function translateEnum(dictionary: Record<string, string>, value: string | null 
 }
 
 export function tenderIntegralCategoryLabel(category: string | null | undefined): string {
-  return translateEnum(CATEGORY_LABELS, category);
+  if (!category) return UNKNOWN_CATEGORY_LABEL;
+  return CATEGORY_LABELS[category] ?? UNKNOWN_CATEGORY_LABEL;
 }
 
 export const TENDER_REQUIREMENT_INVENTORY_VERSION = 'tender_requirement_inventory.v1';
@@ -241,7 +243,7 @@ export function tenderIntegralUnitPresentation(unit: TenderIntegralAnalysisUnit)
   return {
     key: unit.unit_id,
     title: unit.title,
-    categoryLabel: translateEnum(CATEGORY_LABELS, unit.category),
+    categoryLabel: tenderIntegralCategoryLabel(unit.category),
     conclusionLabel: translateEnum(CONCLUSION_LABELS, unit.conclusion.status),
     conclusionSummary: unit.conclusion.summary,
     commercialImpactLabel: translateEnum(COMMERCIAL_IMPACT_LABELS, unit.commercial_impact.level),
@@ -314,6 +316,44 @@ export function tenderIntegralUnitsPresentation(
   v3: TenderIntegralAnalysisV3 | null | undefined,
 ): TenderIntegralUnitPresentation[] {
   return (v3?.analysis_units ?? []).map(tenderIntegralUnitPresentation);
+}
+
+/**
+ * Unidades que todavía requieren cierre humano. El selector sólo consulta el estado estructural de
+ * cierre: nunca infiere apertura desde títulos, conclusiones, faltantes o acciones. Un valor futuro
+ * de cierre permanece visible; únicamente `evidence_satisfied` expresa cierre satisfecho. Las
+ * unidades sin el bloque `closure` obligatorio del contrato V3 se omiten de esta vista para no
+ * fabricar una tarjeta con datos estructurales incompletos.
+ */
+export function tenderIntegralOpenUnitsPresentation(
+  v3: TenderIntegralAnalysisV3 | null | undefined,
+): TenderIntegralUnitPresentation[] {
+  return (v3?.analysis_units ?? [])
+    .filter(unit => Boolean(unit.closure) && unit.closure.status !== 'evidence_satisfied')
+    .map(tenderIntegralUnitPresentation);
+}
+
+export type TenderIntegralOperationalGroup = {
+  key: string;
+  label: string;
+  units: TenderIntegralUnitPresentation[];
+};
+
+/** Agrupación operativa cerrada, sin fases vacías y sin heurísticas textuales. */
+export function tenderIntegralOperationalGroups(
+  v3: TenderIntegralAnalysisV3 | null | undefined,
+): TenderIntegralOperationalGroup[] {
+  const orderedKeys = TENDER_INTEGRAL_PHASES.map(phase => phase.key as string);
+  const openUnits = tenderIntegralOpenUnitsPresentation(v3);
+  const grouped = orderedKeys.map(key => ({
+    key,
+    label: tenderIntegralCategoryLabel(key),
+    units: openUnits.filter(unit => unit.technical.category === key),
+  })).filter(group => group.units.length > 0);
+  const unknownUnits = openUnits.filter(unit => !orderedKeys.includes(unit.technical.category));
+  return unknownUnits.length > 0
+    ? [...grouped, { key: TENDER_INTEGRAL_UNKNOWN_PHASE_KEY, label: UNKNOWN_CATEGORY_LABEL, units: unknownUnits }]
+    : grouped;
 }
 
 export type TenderIntegralAnalysisCounts = {

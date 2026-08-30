@@ -40,6 +40,33 @@ function finding(reviewedStatus = 'decision_question') {
   };
 }
 
+const OPEN_CATEGORIES = ['discard', 'habilitating', 'technical', 'financial_execution', 'strategic', 'technical'];
+
+function openIntegralUnit(index, category) {
+  const number = index + 1;
+  return {
+    unit_id: `UNIT-INTERNAL-${number}`,
+    unit_kind: 'tender_requirement',
+    requirement_id: `REQ-INTERNAL-${number}`,
+    category,
+    sequence: number,
+    title: `Requisito operativo ${number}`,
+    assessment_mode: 'abstained',
+    conclusion: { status: 'insufficient_evidence', summary: `Conocimiento documental ${number}.`, confidence: 'unavailable' },
+    blocking: { effect: 'undetermined', curability: 'unknown', reason: 'Pendiente.' },
+    evidence_state: { presence: 'unknown', review: 'not_reviewed', validity: 'unknown', applicability: 'unknown', compliance: 'unknown' },
+    evidence_refs: number === 1 ? [{ ref: 'HASH-OFFSET-INTERNAL', source_type: 'tender_document', purpose: 'requirement_basis' }] : [],
+    missing_evidence: number === 6 ? [] : [{ missing_id: `MISS-INTERNAL-${number}`, evidence_class_id: null, needed_source_type: 'company_evidence', reason: `Faltante documental ${number}.`, critical: true }],
+    commercial_impact: { level: 'unknown', summary: `Impacto comercial ${number}.`, dimension: 'unknown' },
+    legal_assessment: { status: 'not_verified', basis_refs: [], summary: 'Pendiente.', human_legal_review_required: true },
+    actions: number === 6 ? [] : [{ action_id: `ACTION-INTERNAL-${number}`, action_type: 'review', summary: `Acción humana ${number}.`, basis_unit_id: `UNIT-INTERNAL-${number}`, suggested_role: 'authorized_human', priority: 'high', external_side_effect: false }],
+    milestone: { status: 'not_identified', type: 'none', at: null, source_ref: null, summary: 'Sin hito.' },
+    escalation: { required: false, level: 'none', reason: 'Pendiente.' },
+    closure: { status: 'open', condition: 'Pendiente de cierre humano.', evidence_required: [] },
+    human_validation: { required: true, status: 'pending', reason: 'Revisión humana pendiente.' },
+  };
+}
+
 function analysisFixture({ paused = false } = {}) {
   const axes = Object.fromEntries(AXES.map(axis => [axis, {
     axis,
@@ -81,6 +108,14 @@ function analysisFixture({ paused = false } = {}) {
     status: 'completed',
     current: true,
     critical_open_count: 0,
+    integral_analysis: paused ? {
+      contract_version: 'agt002-integral-analysis-v3',
+      coverage: {
+        analyzed_requirement_ids: OPEN_CATEGORIES.map((_, index) => `REQ-INTERNAL-${index + 1}`),
+        expected_requirement_ids: OPEN_CATEGORIES.map((_, index) => `REQ-INTERNAL-${index + 1}`),
+      },
+      analysis_units: OPEN_CATEGORIES.map((category, index) => openIntegralUnit(index, category)),
+    } : undefined,
     evidence_coverage: evidenceCoverage,
     decision_review: { review_findings: [], blockers: [], decision_questions: [], supported: [], preparation: [], not_applicable: [] },
     decision_axis_analysis: {
@@ -151,16 +186,34 @@ test('D1.4-D1.5 — tabla y dl conservan cinco campos y el banner usa aria-live 
   assert.ok(html.includes('aria-live="polite"'));
 });
 
-test('D1.6 — Bogotá parcial muestra copy exacto, cinco No evaluado y ningún favorable', () => {
+test('D1.6 — cinco ejes vacíos con seis unidades V3 abiertas se sustituyen por seis pendientes operativos humanos', () => {
   const html = render(analysisFixture({ paused: true }));
-  assert.ok(html.includes('Análisis pausado — cobertura parcial (8 de 11.345 resueltas; 11.337 sin resolver)'));
-  assert.equal(count(html, 'No evaluado · 0'), 5, 'los cinco chips deben permanecer No evaluado');
+  assert.ok(html.includes('Lectura documental incompleta'));
+  assert.ok(html.includes('6 pendientes accionables'));
+  assert.equal(count(html, 'class="tender-decision-operational-card"'), 6);
+  assert.equal(count(html, 'No evaluado · 0'), 0, 'los chips vacíos deben ceder su lugar a la proyección V3');
   assert.equal(html.includes('Favorable con evidencia'), false);
   assert.equal(html.includes('Sin impedimentos'), false);
-  assert.ok(html.includes('Análisis integral pausado'));
-  const primaryCta = html.match(/<button[^>]*class="tender-decision-axis-cta"[^>]*>[\s\S]*?<\/button>/)?.[0] || '';
-  assert.ok(primaryCta.includes('Ver el respaldo técnico del análisis'));
-  assert.equal(/Registrar\s+GO|Registrar decisión/i.test(primaryCta), false, 'Bogotá pausada no puede tener una CTA GO/decisoria principal');
+  for (const category of [
+    'Presentación y causales de rechazo',
+    'Requisitos habilitantes',
+    'Capacidad y obligaciones técnicas',
+    'Capacidad financiera y económica',
+    'Condiciones estratégicas y contractuales',
+  ]) assert.ok(html.includes(category), `falta categoría humana ${category}`);
+  assert.equal(count(html, 'class="tender-decision-operational-label"'), 6, 'cada tarjeta rotula su título una vez como requisito');
+  for (const field of ['Qué sabemos', 'Qué falta por confirmar o aportar', 'Por qué importa', 'Siguiente acción', 'Referencias']) {
+    assert.ok(html.includes(`<dt>${field}</dt>`), `falta campo separado ${field}`);
+  }
+  assert.equal(count(html, 'Requisito operativo 1'), 1, 'el título/requisito no debe repetirse dentro de la tarjeta');
+  assert.equal(count(html, 'Lectura documental incompleta'), 1, 'el estado operativo se anuncia una sola vez');
+  assert.equal(count(html, '6 pendientes accionables'), 1, 'el conteo operativo se anuncia una sola vez');
+  for (const literal of ['Requisito operativo 1', 'Conocimiento documental 1.', 'Faltante documental 1.', 'Impacto comercial 1.', 'Acción humana 1.']) assert.ok(html.includes(literal));
+  assert.ok(html.includes('No hay un faltante específico registrado; la validación humana continúa pendiente.'));
+  assert.ok(html.includes('No hay una siguiente acción específica registrada; asignar revisión humana.'));
+  for (const forbidden of ['Ver trazabilidad técnica', 'Ver respaldo técnico del análisis', 'UNIT-INTERNAL', 'REQ-INTERNAL', 'HASH-OFFSET-INTERNAL', 'financial_execution', '6 de 6.809', 'Cobertura: LISTA']) {
+    assert.equal(html.includes(forbidden), false, `se filtró contenido técnico/prohibido: ${forbidden}`);
+  }
 });
 
 test('D1.7-D1.8 — la pregunta usa copy pendiente y la barra integra Mesa de ayuda + control formal', () => {
@@ -254,7 +307,7 @@ test('D6 — fuera de post_go se conserva el botón secundario Mesa de ayuda jun
   const pausedHtml = render(analysisFixture({ paused: true }));
   assert.equal(count(pausedHtml, 'class="tender-decision-axis-help"'), 1);
   assert.equal(count(pausedHtml, 'class="tender-decision-axis-cta"'), 1);
-  assert.ok(pausedHtml.includes('Ver el respaldo técnico del análisis'));
+  assert.ok(pausedHtml.includes('Resolver pendientes documentales'));
 });
 
 test('D6 — el harness visual usa únicamente categorías del catálogo material gobernado', () => {

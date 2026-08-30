@@ -27,6 +27,8 @@ const {
   tenderIntegralCategoryLabel,
   tenderIntegralUnitPrimaryConditionKey,
   tenderIntegralUnitConditionAnchor,
+  tenderIntegralOpenUnitsPresentation,
+  tenderIntegralOperationalGroups,
   TENDER_INTEGRAL_PHASES,
 } = await import(presentationUrl);
 
@@ -163,9 +165,28 @@ test('unrecognized V3 enum values translate to the closed fallback label "Por re
 test('known V3 enum values translate through the closed dictionary', () => {
   const v3 = buildSecondV3();
   const supportedCard = tenderIntegralUnitPresentation(v3.analysis_units[0]);
-  assert.equal(supportedCard.categoryLabel, 'Habilitantes');
+  assert.equal(supportedCard.categoryLabel, 'Requisitos habilitantes');
   assert.equal(supportedCard.conclusionLabel, 'Sustentado con evidencia');
   assert.equal(supportedCard.commercialImpactLabel, 'Alto');
+});
+
+test('la proyección operativa filtra por cierre estructural y agrupa con el diccionario humano cerrado', () => {
+  const v3 = buildSecondV3();
+  v3.analysis_units[0].closure.status = 'evidence_satisfied';
+  const open = tenderIntegralOpenUnitsPresentation(v3);
+  assert.deepEqual(open.map(card => card.key), ['second-unit-2', 'second-unit-3']);
+  const groups = tenderIntegralOperationalGroups(v3);
+  assert.deepEqual(groups.map(group => group.label), [
+    'Capacidad y obligaciones técnicas',
+    'Condiciones estratégicas y contractuales',
+  ]);
+  assert.equal(groups.flatMap(group => group.units).length, open.length);
+  assert.equal(tenderIntegralCategoryLabel('discard'), 'Presentación y causales de rechazo');
+  assert.equal(tenderIntegralCategoryLabel('habilitating'), 'Requisitos habilitantes');
+  assert.equal(tenderIntegralCategoryLabel('technical'), 'Capacidad y obligaciones técnicas');
+  assert.equal(tenderIntegralCategoryLabel('financial_execution'), 'Capacidad financiera y económica');
+  assert.equal(tenderIntegralCategoryLabel('strategic'), 'Condiciones estratégicas y contractuales');
+  assert.equal(tenderIntegralCategoryLabel('future_category'), 'Pendientes por clasificar');
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -289,9 +310,9 @@ test('tenderIntegralPhaseGroups agrupa por las cinco categorías institucionales
   const labels = groups.map(group => group.label);
   assert.deepEqual(labels.slice(0, TENDER_INTEGRAL_PHASES.length), TENDER_INTEGRAL_PHASES.map(phase => phase.label));
   assert.ok(labels.includes('Por revisar'), 'una categoría desconocida abre un grupo de respaldo cerrado');
-  assert.equal(tenderIntegralCategoryLabel('categoria_no_reconocida'), 'Por revisar');
-  assert.equal(tenderIntegralCategoryLabel(null), 'Por revisar');
-  assert.equal(tenderIntegralCategoryLabel('strategic'), 'Estratégico');
+  assert.equal(tenderIntegralCategoryLabel('categoria_no_reconocida'), 'Pendientes por clasificar');
+  assert.equal(tenderIntegralCategoryLabel(null), 'Pendientes por clasificar');
+  assert.equal(tenderIntegralCategoryLabel('strategic'), 'Condiciones estratégicas y contractuales');
 });
 
 test('tenderIntegralPhaseGroups conserva TODAS las unidades exactamente una vez y expone los pendientes de la fase', () => {
@@ -339,7 +360,7 @@ test('tenderIntegralUnitPresentation expone soporte, acción principal y trazabi
   assert.equal(card.technical.legalStatus, unit.legal_assessment.status);
 
   const unknown = tenderIntegralUnitPresentation(DYNAMIC_V3.analysis_units[5]);
-  assert.equal(unknown.categoryLabel, 'Por revisar');
+  assert.equal(unknown.categoryLabel, 'Pendientes por clasificar');
   assert.equal(unknown.conclusionLabel, 'Por revisar');
   assert.equal(unknown.commercialImpactLabel, 'Por revisar');
   assert.equal(unknown.technical.category, 'categoria_no_reconocida');

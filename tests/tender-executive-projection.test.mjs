@@ -29,7 +29,18 @@ assert.equal(tenderExecutiveRecommendation(fallback), 'pause');
 assert.equal(tenderExecutiveOpenIssueCount(fallback), 20);
 const unclassifiedV3 = { ...fallback, integral_analysis: { analysis_units: [{ unit_id: 'technical-1' }] } };
 assert.equal(tenderExecutiveProjectionAvailable(unclassifiedV3), false);
-assert.equal(tenderExecutiveOpenIssueCount(unclassifiedV3), 0, 'Unclassified V3 technical questions must never be presented as material executive alerts.');
+assert.equal(tenderExecutiveOpenIssueCount(unclassifiedV3), 20, 'A real canonical critical_open_count must remain visible even without axis projection.');
+const openUnitsFallback = {
+  ...fallback,
+  critical_open_count: 0,
+  integral_analysis: { analysis_units: [
+    { unit_id: 'u1', closure: { status: 'open' } },
+    { unit_id: 'u2', closure: { status: 'human_confirmation_required' } },
+    { unit_id: 'u3', closure: { status: 'evidence_satisfied' } },
+  ] },
+};
+assert.equal(tenderExecutiveOpenIssueCount(openUnitsFallback), 2, 'Missing canonical count falls back safely to open V3 units.');
+assert.equal(tenderExecutiveOpenIssueCount({ ...openUnitsFallback, decision_review: { counts: { blockers: 0, decision_questions: 0 } } }), 0, 'decision_review has strict precedence, including authoritative zero.');
 
 const analysisSection = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8');
 const decisionBrief = readFileSync(new URL('../src/tenders/components/TenderDecisionBrief.tsx', import.meta.url), 'utf8');
@@ -48,9 +59,7 @@ assert.match(goPanel, /tenderExecutiveOpenIssueCount\(analysis\)/);
 assert.doesNotMatch(goPanel, /analysis\.critical_open_count/);
 
 const executiveIndex = main.indexOf('<TenderAnalysisSection');
-const traceIndex = main.indexOf('<TenderIntegralAnalysisV3View');
-assert.ok(executiveIndex > -1 && traceIndex > executiveIndex, 'Executive radar must render before technical requirement trace.');
-// Task 4 · el resumen exterior del contenedor es exactamente «Ver respaldo técnico del análisis».
-assert.match(main, /<details id="tender-technical-analysis" className="tender-integral-analysis-trace">[\s\S]*Ver respaldo técnico del análisis[\s\S]*<TenderIntegralAnalysisV3View/);
+assert.ok(executiveIndex > -1, 'Executive analysis controls remain mounted.');
+assert.doesNotMatch(main, /TenderIntegralAnalysisV3View|Ver respaldo técnico del análisis/, 'The duplicate technical projection must not be mounted in main.');
 
 console.log('tender executive projection and hierarchy checks passed');
