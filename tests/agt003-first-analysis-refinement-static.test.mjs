@@ -23,7 +23,7 @@ assert.ok(banner > 0 && banner < priority && priority < followUp && followUp < v
   'orden: Banner → Estado seguimiento → Seguimiento comercial → VIG-IA → Más información');
 
 // --- 2) compactación y uso responsable del ancho --------------------------------------------------
-assert.match(main, /className=\{o\.service_type_code === 'licitacion_publica' \? 'stack' : 'stack opportunity-ficha detail-page-shell'\}/,
+assert.match(main, /className=\{o\.service_type_code === 'licitacion_publica' \? 'stack tender-opportunity-detail' : 'stack opportunity-ficha detail-page-shell'\}/,
   'el shell amplio se aplica sólo a la ficha comercial, nunca a la ruta de licitaciones');
 assert.doesNotMatch(css, /\.detail-page-shell\{[^}]*1180/, 'el cuello de botella de 1180px no puede volver al shell de detalle');
 assert.match(css, /\.detail-page-shell\{[^}]*width:100%[^}]*max-width:1680px/,
