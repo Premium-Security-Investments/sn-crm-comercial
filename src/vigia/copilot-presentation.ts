@@ -4,6 +4,7 @@
 // el modelo no debería haber devuelto (lenguaje técnico/interno) sin tocar persistencia ni logs.
 
 import { VIGIA_VISIBLE_NAMES } from './agentIdentity';
+import type { CommercialAlert } from './opportunity-preflight-presentation';
 
 const TECHNICAL_PATTERNS = [
   /input no confiable/i,
@@ -105,4 +106,31 @@ export function normalizeCopilotErrorMessage(message: string | null | undefined)
   const text = String(message ?? '').trim();
   if (!text) return 'No fue posible preparar la propuesta.';
   return text.replace(COMMERCIAL_AGENT_LABEL, VIGIA_VISIBLE_NAMES.commercial);
+}
+
+const MAX_NEXT_STEP_LENGTH = 240;
+const MAX_WHY_BULLET_LENGTH = 180;
+const MAX_WHY_BULLETS = 2;
+
+function normalizeForComparison(text: string): string { return text.trim().toLowerCase().replace(/\s+/g, ' '); }
+function truncate(text: string, maxLength: number): string {
+  return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+export type CompactCopilotSummary = { nextStep: string | null; whyBullets: string[] };
+
+export function presentCompactCopilotSummary(presented: PresentedCopilotBrief, activeAlerts: CommercialAlert[]): CompactCopilotSummary {
+  const candidate = String(presented?.contactPlanSteps?.[0] ?? '').trim();
+  const normalizedCandidate = normalizeForComparison(candidate);
+  const repeatsAlert = (activeAlerts ?? []).some(a => normalizeForComparison(String(a?.risk_text ?? '')) === normalizedCandidate);
+  const isFallback = normalizedCandidate === normalizeForComparison(COMMERCIAL_TEXT_FALLBACKS.strategy);
+  const nextStepAbstains = !candidate || repeatsAlert || isFallback;
+
+  if (nextStepAbstains) return { nextStep: null, whyBullets: [] };
+
+  const bulletSource = [...(presented?.facts ?? []), ...(presented?.inferences ?? [])]
+    .map(entry => String(entry?.text ?? '').trim()).filter(Boolean);
+  const whyBullets = bulletSource.slice(0, MAX_WHY_BULLETS).map(t => truncate(t, MAX_WHY_BULLET_LENGTH));
+
+  return { nextStep: truncate(candidate, MAX_NEXT_STEP_LENGTH), whyBullets };
 }
