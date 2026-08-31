@@ -93,6 +93,35 @@ const analysisProps = {
   questionResponses: [],
 };
 
+const operationalAnalysis = {
+  ...analysis,
+  integral_analysis: {
+    contract_version: 'agt002-integral-analysis-v3',
+    coverage: { analyzed_requirement_ids: ['req-1'], expected_requirement_ids: ['req-1'] },
+    analysis_units: [{
+      unit_id: 'unit-1',
+      unit_kind: 'tender_requirement',
+      requirement_id: 'req-1',
+      category: 'technical',
+      sequence: 1,
+      title: 'Capacidad técnica por confirmar',
+      assessment_mode: 'abstained',
+      conclusion: { status: 'insufficient_evidence', summary: 'La capacidad requiere soporte vigente.', confidence: 'unavailable' },
+      blocking: { effect: 'undetermined', curability: 'unknown', reason: 'Pendiente.' },
+      evidence_state: { presence: 'unknown', review: 'not_reviewed', validity: 'unknown', applicability: 'unknown', compliance: 'unknown' },
+      evidence_refs: [],
+      missing_evidence: [{ missing_id: 'missing-1', evidence_class_id: null, needed_source_type: 'company_evidence', reason: 'Falta certificado vigente.', critical: true }],
+      commercial_impact: { level: 'unknown', summary: 'Puede afectar la habilitación.', dimension: 'unknown' },
+      legal_assessment: { status: 'not_verified', basis_refs: [], summary: 'Pendiente.', human_legal_review_required: true },
+      actions: [{ action_id: 'action-1', action_type: 'review', summary: 'Solicitar certificado a Operaciones.', basis_unit_id: 'unit-1', suggested_role: 'authorized_human', priority: 'high', external_side_effect: false }],
+      milestone: { status: 'not_identified', type: 'none', at: null, source_ref: null, summary: 'Sin hito.' },
+      escalation: { required: false, level: 'none', reason: 'Pendiente.' },
+      closure: { status: 'open', condition: 'Pendiente de cierre humano.', evidence_required: [] },
+      human_validation: { required: true, status: 'pending', reason: 'Revisión humana pendiente.' },
+    }],
+  },
+};
+
 test('E1/E3 — el payload proyecta únicamente el literal server-owned en ambos backends byte-idénticos', () => {
   const server = read('server/index.js');
   const api = read('api/[...path].js');
@@ -144,6 +173,29 @@ test('E4.3 — decisionSurfaceElsewhere suprime toda lectura competidora y conse
     assert.equal(historicalUnified.includes(forbidden), false, `el brief histórico tampoco debe competir: ${forbidden}`);
   }
   assert.ok(historicalUnified.includes('Actualizar con'));
+});
+
+test('E4.3 — la lista V3 completa vive en Análisis y Decisión conserva sólo el puntero', () => {
+  const analysisHtml = renderReactComponent(TenderAnalysisSection, {
+    ...analysisProps,
+    analysis: operationalAnalysis,
+    decisionSurfaceElsewhere: true,
+  });
+  assert.ok(analysisHtml.includes('Lectura documental incompleta'));
+  assert.ok(analysisHtml.includes('1 pendiente accionable'));
+  assert.ok(analysisHtml.includes('Capacidad técnica por confirmar'));
+  assert.equal(count(analysisHtml, 'class="tender-decision-operational-card"'), 1);
+  assert.ok(analysisHtml.includes('id="tender-analysis-operational-pending"'));
+
+  const decisionHtml = renderReactComponent(TenderDecisionExperience, {
+    ...decisionProps,
+    analysis: operationalAnalysis,
+    decisionAxisSurfaceEnabled: true,
+  });
+  assert.equal(count(decisionHtml, 'class="tender-decision-operational-card"'), 0);
+  assert.ok(decisionHtml.includes('Pendientes documentales en Análisis'));
+  assert.match(decisionHtml, /href="#tender-analysis"/);
+  assert.equal(decisionHtml.includes('id="tender-decision-operational-pending"'), false);
 });
 
 test('E4.3 — cobertura parcial se comunica sólo en la superficie única, no también en Análisis', () => {

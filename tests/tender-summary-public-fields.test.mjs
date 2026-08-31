@@ -14,7 +14,7 @@ const privateBranchEnd = main.indexOf('</section>}', privateBranchStart) + '</se
 const privateBlock = main.slice(privateBranchStart, privateBranchEnd);
 
 // Public data is intentionally consolidated to avoid four oversized, repetitive groups.
-assert.match(publicBlock, /<Panel title="Resumen de la oportunidad">/, 'Debe existir el resumen público consolidado.');
+assert.match(publicBlock, /<Panel title="Resumen de la oportunidad" className="tender-opportunity-summary-panel">/, 'Debe existir el resumen público consolidado y compacto.');
 for (const duplicatedGroup of ['Proceso oficial', 'Cronograma y cuantía', 'Gestión interna', 'Expediente y análisis']) {
   assert.doesNotMatch(publicBlock, new RegExp(`<Panel title="${duplicatedGroup}"`), `No debe reaparecer el grupo redundante "${duplicatedGroup}".`);
 }

@@ -15,6 +15,9 @@ const detail = main.match(/function OpportunityDetail[\s\S]*?\n}\nconst tenderDo
 const coordinator = main.match(/function TenderDocumentReviewPanel[\s\S]*?\n}\nfunction TenderOfferPreparationPanel/)?.[0] || '';
 
 for (const text of ['Actualizar documentos', 'Cargar complementarios', 'Buscar documentos', 'Tipo de documento', 'Última actualización', 'nuevos', 'actualizados', 'sin cambios', 'fallidos']) assert.match(documents, new RegExp(text, 'i'), `Documentos debe incluir ${text}.`);
+for (const intent of ['consult', 'refresh', 'upload']) assert.match(documents, new RegExp(`tender-document-action-${intent}`), `Documentos debe distinguir la acción ${intent}.`);
+for (const label of ['Consultar', 'Actualizar', 'Cargar']) assert.match(documents, new RegExp(`tender-document-action-kicker[^>]*>${label}<`), `Debe comunicar la intención ${label}.`);
+assert.match(documents, /role="group"[^>]*aria-label="Gestión documental"/, 'Las acciones relacionadas deben exponerse como grupo accesible.');
 assert.match(documents, /<details/);
 assert.match(documents, /documentsByType|groupedDocuments/);
 assert.doesNotMatch(documents, /<details[^>]*\sopen(?:=|>)/, 'Listado/uploader deben iniciar cerrados.');
@@ -41,5 +44,6 @@ assert.match(analysis, /statusText\s*&&[\s\S]*role=\{statusTone === 'error' \? '
 assert.doesNotMatch(main, /Importando documentos oficiales desde SECOP\/ESU y generando análisis/, 'Actualizar documentos no debe prometer ni disparar análisis.');
 assert.match(styles, /\.tender-document-section/);
 assert.match(styles, /\.tender-analysis-section/);
+assert.match(styles, /\.tender-document-action:focus-visible/);
 
 console.log('tender guided workspace UI passed');

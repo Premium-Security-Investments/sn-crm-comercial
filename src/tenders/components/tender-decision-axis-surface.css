@@ -278,6 +278,32 @@
   padding-top: .25rem;
 }
 
+.tender-decision-axis-formal .tender-go-no-go-panel {
+  gap: .75rem;
+  padding: 1rem 1.125rem;
+  box-shadow: 0 8px 22px rgba(18, 52, 46, .06);
+}
+
+.tender-decision-axis-formal-primary { border-top: 0; padding-top: 0; }
+.tender-decision-axis-surface.is-formal-primary .tender-decision-axis-hero { padding: 1rem 1.125rem; }
+.tender-decision-analysis-pointer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: .85rem 1rem;
+  border: 1px solid #c7d9d4;
+  border-left: 4px solid #2d7b68;
+  border-radius: 14px;
+  background: #f5faf8;
+}
+.tender-decision-analysis-pointer h3 { margin: .15rem 0 .25rem; font-size: 1rem; }
+.tender-decision-analysis-pointer p { margin: 0; color: var(--axis-muted); }
+.tender-decision-analysis-pointer-action { display: grid; justify-items: end; gap: .35rem; flex: 0 0 auto; }
+.tender-decision-analysis-pointer-action strong { color: #315b51; font-size: .84rem; }
+.tender-decision-analysis-pointer-action a { color: #174f83; font-weight: 850; }
+.tender-decision-analysis-pointer-action a:focus-visible { outline: 3px solid #1d5987; outline-offset: 3px; }
+
 .tender-decision-axis-final-bar {
   display: flex;
   align-items: center;
@@ -346,12 +372,15 @@
   .tender-decision-axis-hero,
   .tender-decision-axis-banner,
   .tender-decision-operational > header,
-  .tender-decision-operational-group > header { flex-direction: column; align-items: stretch; }
+  .tender-decision-operational-group > header,
+  .tender-decision-analysis-pointer { flex-direction: column; align-items: stretch; }
+  .tender-decision-analysis-pointer-action { justify-items: start; }
   .tender-decision-axis-help,
   .tender-decision-axis-cta { width: 100%; }
 }
 
 @media (max-width: 640px) {
+  .tender-decision-axis-formal .tender-go-no-go-panel { padding: .875rem; }
   .tender-decision-axis-rail { grid-template-columns: minmax(0, 1fr); }
   .tender-decision-operational-cards,
   .tender-decision-operational-card dl { grid-template-columns: minmax(0, 1fr); }

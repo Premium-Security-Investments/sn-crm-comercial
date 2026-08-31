@@ -52,10 +52,7 @@ export function TenderDossierWorkspacePanel({ opportunityId, request, profiles, 
     }
   };
 
-  if (!enabled) return <section className="panel tender-dossier-panel" id="tender-dossier">
-    <div className="tender-dossier-header"><div><small>Preparación post-GO</small><h2>Expediente de oferta</h2></div></div>
-    <p className="muted">El expediente operativo se habilita cuando existe una decisión GO vigente.</p>
-  </section>;
+  if (!enabled) return null;
 
   const readiness = workspace?.readiness;
   const emptyWorkspace = workspace && workspace.checklist.length === 0 && workspace.artifacts.length === 0;

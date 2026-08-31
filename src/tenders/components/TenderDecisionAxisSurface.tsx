@@ -1,13 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { VIGIA_VISIBLE_NAMES } from '../../vigia/agentIdentity';
 import { focusTenderDetailSection } from './TenderDetailNavigation';
+import { shouldShowTenderOperationalPendingProjection } from './TenderOperationalPendingProjection';
 import type { TenderPanelState } from '../detailNavigationState';
-import {
-  tenderIntegralOpenUnitsPresentation,
-  tenderIntegralOperationalGroups,
-  type TenderIntegralOperationalGroup,
-  type TenderIntegralUnitPresentation,
-} from '../tenderIntegralAnalysisPresentation';
+import { tenderIntegralOpenUnitsPresentation } from '../tenderIntegralAnalysisPresentation';
 import {
   AGT002_DECISION_AXES,
   tenderDecisionAxisViews,
@@ -106,46 +102,6 @@ function FindingTable({ axis, onOpen, readOnly }: { axis: TenderDecisionAxisView
       <button type="button" className="secondary" onClick={event => onOpen(finding, event.currentTarget)}>{readOnly ? 'Ver detalle' : 'Ver detalle / Responder'}</button>
     </article>) : <p className="muted">{EMPTY_AXIS_COPY}</p>}</div>
   </>;
-}
-
-function OperationalPendingCard({ card, headingId }: { card: TenderIntegralUnitPresentation; headingId: string }) {
-  const title = card.title?.trim() || 'Requisito sin título registrado.';
-  const known = card.conclusionSummary?.trim() || 'No hay una conclusión documental registrada.';
-  const impact = card.commercialImpactSummary?.trim() || 'No hay impacto comercial documentado.';
-  const missing = card.missingEvidenceReasons.filter(reason => reason.trim().length > 0);
-  const actions = card.actionSummaries.filter(action => action.trim().length > 0);
-  const references = card.citedEvidenceCount > 0
-    ? `${card.citedEvidenceCount} referencia${card.citedEvidenceCount === 1 ? '' : 's'} documental${card.citedEvidenceCount === 1 ? '' : 'es'}: ${card.evidenceSourceLabels.length > 0 ? card.evidenceSourceLabels.join(' · ') : 'fuente documental registrada'}`
-    : 'Sin referencias documentales legibles asociadas.';
-
-  return <article className="tender-decision-operational-card" aria-labelledby={headingId}>
-    <span className="tender-decision-operational-label">Requisito</span>
-    <h5 id={headingId}>{title}</h5>
-    <dl>
-      <div><dt>Qué sabemos</dt><dd>{known}</dd></div>
-      <div><dt>Qué falta por confirmar o aportar</dt><dd>{missing.length > 0
-        ? <ul>{missing.map((reason, index) => <li key={`${card.key}-missing-${index}`}>{reason}</li>)}</ul>
-        : 'No hay un faltante específico registrado; la validación humana continúa pendiente.'}</dd></div>
-      <div><dt>Por qué importa</dt><dd>{impact}</dd></div>
-      <div><dt>Siguiente acción</dt><dd>{actions.length > 0
-        ? <ul>{actions.map((action, index) => <li key={`${card.key}-action-${index}`}>{action}</li>)}</ul>
-        : 'No hay una siguiente acción específica registrada; asignar revisión humana.'}</dd></div>
-      <div><dt>Referencias</dt><dd>{references}</dd></div>
-    </dl>
-  </article>;
-}
-
-function OperationalPendingProjection({ groups, count }: { groups: TenderIntegralOperationalGroup[]; count: number }) {
-  return <section id="tender-decision-operational-pending" className="tender-decision-operational" aria-labelledby="tender-decision-operational-title" tabIndex={-1}>
-    <header>
-      <div><span className="eyebrow">Pendientes para revisión humana</span><h3 id="tender-decision-operational-title">Lectura documental incompleta</h3><p>Priorice confirmar o aportar la información pendiente. Esta lectura organiza el trabajo y no equivale a cumplimiento ni decide GO / NO GO.</p></div>
-      <strong aria-live="polite">{count} pendiente{count === 1 ? '' : 's'} accionable{count === 1 ? '' : 's'}</strong>
-    </header>
-    <div className="tender-decision-operational-groups">{groups.map((group, groupIndex) => <section className="tender-decision-operational-group" key={group.key} aria-labelledby={`tender-decision-operational-group-${groupIndex + 1}`}>
-      <header><h4 id={`tender-decision-operational-group-${groupIndex + 1}`}>{group.label}</h4><span>{group.units.length} pendiente{group.units.length === 1 ? '' : 's'}</span></header>
-      <div className="tender-decision-operational-cards">{group.units.map((card, cardIndex) => <OperationalPendingCard key={card.key} card={card} headingId={`tender-decision-operational-card-${groupIndex + 1}-${cardIndex + 1}`} />)}</div>
-    </section>)}</div>
-  </section>;
 }
 
 function FindingDrawer({
@@ -249,13 +205,7 @@ export function TenderDecisionAxisSurface(props: TenderDecisionAxisSurfaceProps)
     () => tenderIntegralOpenUnitsPresentation(analysis?.integral_analysis),
     [analysis?.integral_analysis],
   );
-  const operationalGroups = useMemo(
-    () => tenderIntegralOperationalGroups(analysis?.integral_analysis),
-    [analysis?.integral_analysis],
-  );
-  const useOperationalProjection = axes.length === AGT002_DECISION_AXES.length
-    && axes.every(axis => axis.state === 'No evaluado' && axis.findings.length === 0)
-    && openIntegralUnits.length > 0;
+  const useOperationalProjection = shouldShowTenderOperationalPendingProjection(axes, openIntegralUnits);
   const surfaceState = tenderDecisionSurfaceState(analysis, decision);
   const drawerReadOnly = decisionStateUnresolved || surfaceState.readOnly;
   const primaryCta = tenderDecisionPrimaryCta(surfaceState, axes);
@@ -289,14 +239,8 @@ export function TenderDecisionAxisSurface(props: TenderDecisionAxisSurfaceProps)
     target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     target?.focus({ preventScroll: true });
   };
-  const focusOperationalPending = () => {
-    const target = document.getElementById('tender-decision-operational-pending');
-    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    target?.focus({ preventScroll: true });
-  };
   const focusDocumentAnalysis = () => {
-    const target = document.getElementById('tender-analysis');
-    if (target) focusTenderDetailSection(target);
+    focusTenderDetailSection(document.getElementById('tender-analysis'));
   };
   const resolvePrimaryQuestion = (findingId: string, trigger: HTMLButtonElement) => {
     const owner = axes.find(axis => axis.findings.some(finding => finding.key === findingId));
@@ -317,10 +261,21 @@ export function TenderDecisionAxisSurface(props: TenderDecisionAxisSurfaceProps)
         ? 'NO GO humano registrado'
         : 'Análisis para decidir';
 
-  return <section className="tender-decision-axis-surface" aria-labelledby="tender-decision-axis-title">
+  const formalDecisionPanel = <TenderGoNoGoDecisionPanel
+    opportunityId={opportunityId}
+    opportunityName={opportunityName}
+    analysis={analysis}
+    currentProfile={currentProfile}
+    request={request}
+    questionResponses={questionResponses}
+    onChanged={onDecisionChanged}
+    onNavigationStateChanged={onDecisionNavigationStateChanged}
+  />;
+
+  return <section className={`tender-decision-axis-surface${useOperationalProjection ? ' is-formal-primary' : ''}`} aria-labelledby="tender-decision-axis-title">
     <header className="tender-decision-axis-hero">
-      <div><span className="eyebrow">{useOperationalProjection ? 'Lectura para una decisión humana' : 'Cinco señales para una decisión humana'}</span><h2 id="tender-decision-axis-title">Análisis para decidir</h2><p>{useOperationalProjection
-        ? 'Organiza los pendientes documentales existentes para que la persona responsable pueda resolverlos sin convertirlos en una decisión automática.'
+      <div><span className="eyebrow">{useOperationalProjection ? 'Control formal humano' : 'Cinco señales para una decisión humana'}</span><h2 id="tender-decision-axis-title">{useOperationalProjection ? 'Decisión GO / NO GO' : 'Análisis para decidir'}</h2><p>{useOperationalProjection
+        ? 'La persona autorizada puede registrar su decisión. Los pendientes documentales completos permanecen disponibles en Análisis como apoyo, sin bloquear este control.'
         : 'Contrasta exigencia, evidencia, cruce, efecto y acción sin convertir el análisis en una decisión automática.'}</p></div>
       {!useOperationalProjection && <strong className={`tender-decision-axis-coverage ${surfaceState.state === 'paused' ? 'is-paused' : 'is-ready'}`}>{`Cobertura: ${surfaceState.state === 'paused' ? 'PAUSADA' : 'LISTA'}`}</strong>}
     </header>
@@ -336,7 +291,15 @@ export function TenderDecisionAxisSurface(props: TenderDecisionAxisSurfaceProps)
     </div>}
 
     {useOperationalProjection
-      ? <OperationalPendingProjection groups={operationalGroups} count={openIntegralUnits.length} />
+      ? <>
+        <div className="tender-decision-axis-formal tender-decision-axis-formal-primary">
+          {formalDecisionPanel}
+        </div>
+        <aside className="tender-decision-analysis-pointer" aria-labelledby="tender-decision-analysis-pointer-title">
+          <div><span className="eyebrow">Apoyo documental</span><h3 id="tender-decision-analysis-pointer-title">Pendientes documentales en Análisis</h3><p>La lista completa está en Análisis para evitar duplicidades en el expediente.</p></div>
+          <div className="tender-decision-analysis-pointer-action"><strong aria-live="polite">{openIntegralUnits.length} pendiente{openIntegralUnits.length === 1 ? '' : 's'} por revisar</strong><a href="#tender-analysis" onClick={event => { event.preventDefault(); focusDocumentAnalysis(); }}>Revisar pendientes en Análisis</a></div>
+        </aside>
+      </>
       : <>
         <nav className="tender-decision-axis-rail" aria-label="Ejes del análisis para decidir">{axes.map(axis => <button
           type="button"
@@ -365,25 +328,18 @@ export function TenderDecisionAxisSurface(props: TenderDecisionAxisSurfaceProps)
         no interceptar la lectura de los cinco ejes. GO y NO GO viven dentro del panel embebido;
         nunca son dos CTAs primarias compitiendo aquí. */}
     <footer className="tender-decision-axis-final">
-      <div className="tender-decision-axis-formal">
-        <TenderGoNoGoDecisionPanel
-          opportunityId={opportunityId}
-          opportunityName={opportunityName}
-          analysis={analysis}
-          currentProfile={currentProfile}
-          request={request}
-          questionResponses={questionResponses}
-          onChanged={onDecisionChanged}
-          onNavigationStateChanged={onDecisionNavigationStateChanged}
-        />
-      </div>
+      {!useOperationalProjection && <div className="tender-decision-axis-formal">
+        {formalDecisionPanel}
+      </div>}
       <div className="tender-decision-axis-final-bar">
         <p>{VIGIA_VISIBLE_NAMES.tenders} analiza y agrupa; la decisión GO / NO GO permanece humana.</p>
         {/* Cuando la CTA primaria ya es "Abrir Mesa de ayuda" (post_go), el botón secundario al
             mismo destino queda oculto: evita dos controles duplicados hacia la misma acción y
             conserva una única CTA primaria al final del orden tabulable. */}
         {primaryCta.id !== 'open_help_desk' && <button type="button" className="tender-decision-axis-help" onClick={onOpenHelpDesk}>Mesa de ayuda</button>}
-        {primaryCta.id === 'coverage' && <button type="button" className="tender-decision-axis-cta" onClick={useOperationalProjection ? focusOperationalPending : focusDocumentAnalysis}>{useOperationalProjection ? 'Resolver pendientes documentales' : 'Revisar documentos pendientes'}</button>}
+        {primaryCta.id === 'coverage' && (useOperationalProjection
+          ? <button type="button" className="tender-decision-axis-cta" disabled={decisionStateUnresolved} onClick={focusFormalDecision}>Registrar decisión humana</button>
+          : <button type="button" className="tender-decision-axis-cta" onClick={focusDocumentAnalysis}>Revisar documentos pendientes</button>)}
         {primaryCta.id === 'resolve_question' && <button type="button" className="tender-decision-axis-cta" disabled={decisionStateUnresolved} onClick={event => resolvePrimaryQuestion(primaryCta.findingId, event.currentTarget)}>Resolver la pregunta prioritaria</button>}
         {primaryCta.id === 'record_decision' && <button type="button" className="tender-decision-axis-cta" disabled={decisionStateUnresolved} onClick={focusFormalDecision}>Registrar decisión humana</button>}
         {primaryCta.id === 'open_help_desk' && <button type="button" className="tender-decision-axis-cta" onClick={onOpenHelpDesk}>Abrir Mesa de ayuda</button>}
