@@ -13,8 +13,8 @@ assert.ok(
 assert.equal(component.includes('copiloto comercial</span>'), false, 'eyebrow no debe incluir el sufijo "· copiloto comercial"');
 assert.ok(component.includes('>Próximo seguimiento<'), 'título debe ser exactamente "Próximo seguimiento"');
 assert.ok(
-  component.includes(">{ready ? 'Actualizar propuesta con el contexto actual' : 'Generar propuesta con el contexto actual'}<"),
-  'botón debe distinguir generar/actualizar y declarar que usa el contexto actual',
+  component.includes(">{ready ? 'Actualizar borrador' : 'Preparar próximo seguimiento'}<"),
+  'botón debe distinguir generar/actualizar con una única CTA de preparación de seguimiento',
 );
 assert.ok(
   component.includes('>Analiza el contexto y propone un siguiente paso de seguimiento</p>'),
