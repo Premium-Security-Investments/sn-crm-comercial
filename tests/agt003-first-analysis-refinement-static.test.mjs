@@ -84,9 +84,9 @@ assert.ok(timeline.includes('{i.notes}') === false, 'el contenido se muestra ya 
 assert.match(timeline, /entry\.migrated && <span className="badge followup-migrated-badge">\{entry\.authorLabel\}<\/span>/);
 assert.match(css, /\.followup-migrated-badge\{/);
 
-// --- 6) VIG-IA: estado vacío compacto y CTA híbrido de generación ----------------------------------------
-assert.match(copilot, />\{ready \? 'Actualizar propuesta con el contexto actual' : 'Generar propuesta con el contexto actual'\}</,
-  'el CTA de generación distingue crear de actualizar y conserva el contexto actual');
+// --- 6) VIG-IA: estado vacío compacto y CTA único de generación ----------------------------------------
+assert.match(copilot, />\{ready \? 'Actualizar borrador' : 'Preparar próximo seguimiento'\}</,
+  'el CTA de generación distingue crear de actualizar con un único control');
 assert.ok(copilot.includes('vigia-copilot-empty'), 'el estado vacío tiene su propio contenedor compacto');
 assert.match(css, /\.vigia-copilot-empty\{/);
 assert.equal(copilot.includes('>Útil<'), false);
@@ -94,9 +94,21 @@ assert.equal(copilot.includes('Necesita cambios'), false);
 assert.equal(copilot.includes('/api/vigia/copilot/feedback'), false, 'esta UI ya no emite feedback; la API histórica se conserva');
 assert.ok(copilot.includes("'/api/vigia/copilot/generate'"), 'la generación no cambia de endpoint');
 assert.ok(copilot.includes('export function VigiaCopilotProposal('), 'la propuesta es un componente presentacional testeable');
-assert.ok(copilot.includes('normalizeCopilotErrorMessage'), 'los mensajes de error visibles se normalizan en el frontend');
+assert.ok(copilot.includes('No se pudo preparar el seguimiento. Puede continuar registrándolo manualmente.'),
+  'el mensaje de error visible es fijo y no bloqueante, sin exponer el detalle técnico original');
+assert.ok(copilot.includes('vigia-copilot-error'), 'el error usa su propia superficie compacta, no la clase genérica .error');
+assert.match(copilot, /className="vigia-copilot-error" role="alert"/, 'el error se anuncia con role="alert"');
+assert.match(copilot, />Reintentar</, 'el error ofrece exactamente un control secundario de reintento');
 assert.match(css, /\.vigia-copilot-draft input,\.vigia-copilot-draft textarea\{[^}]*font-weight:400/,
   'el editor usa tipografía normal, no la del label');
+assert.equal(copilot.includes('/api/vigia/copilot/preflight'), false, 'no queda ningún call-site activo hacia el preflight retirado');
+assert.equal(copilot.includes('Analizar cómo fortalecer el seguimiento'), false, 'el botón de preanálisis se retira');
+assert.equal(copilot.includes('Actualizar análisis'), false, 'el botón de reanálisis se retira');
+for (const oldCta of ['Actualizar propuesta con el contexto actual', 'Generar propuesta con el contexto actual']) {
+  assert.equal(copilot.includes(oldCta), false, `el CTA híbrido de dos etiquetas desaparece: ${oldCta}`);
+}
+assert.equal(copilot.includes('Entiendo que no se ejecutó el análisis inteligente antes de generar.'), false,
+  'la casilla de reconocimiento del preanálisis se retira');
 
 // --- 7) acordeón `Más información` --------------------------------------------------------------------------
 assert.match(main, /\{o\.service_type_code !== 'licitacion_publica' && <details className="opportunity-more-info">/);
@@ -116,8 +128,10 @@ assert.match(css, /\.opportunity-more-info-group\{/);
 
 // --- marca ---------------------------------------------------------------------------------------------------
 assert.ok(!/VIG-IA/.test(main), 'en main.tsx la identidad visible se interpola, nunca se escribe literal');
-assert.ok(copilot.includes('Vig-IA no encontró acciones adicionales fuera de las alertas comerciales.'),
-  'el único copy abreviado aprobado se conserva para el resultado vacío del preanálisis');
+assert.ok(copilot.includes('Prepara un borrador editable de seguimiento, separado del registro original.'),
+  'el copy idle aprobado reemplaza el mensaje vacío del preanálisis retirado');
+assert.equal(copilot.includes('Vig-IA no encontró acciones adicionales fuera de las alertas comerciales.'), false,
+  'el copy del resultado vacío del preanálisis retirado ya no aparece');
 assert.equal(/VIG-IA/.test(copilot), false, 'el panel nunca escribe la variante antigua `VIG-IA`');
 
 console.log('AGT-003 first analysis refinement static checks passed');

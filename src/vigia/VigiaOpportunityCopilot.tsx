@@ -22,7 +22,6 @@ type Props = {
   opportunityId: string;
   request: Request;
   preflight: CommercialPreflightInput;
-  contextVersion: string;
 };
 
 type ProposalDraft = { subject: string; body: string };
@@ -77,7 +76,7 @@ export function VigiaCopilotProposal({ brief, draft, alerts, onDraftChange, onCo
   </div>;
 }
 
-export function VigiaOpportunityCopilot({ opportunityId, request, preflight, contextVersion }: Props) {
+export function VigiaOpportunityCopilot({ opportunityId, request, preflight }: Props) {
   const [state, setState] = useState(() => createOpportunityCopilotState(opportunityId));
   const [notice, setNotice] = useState('');
   const requestSequenceRef = useRef(0);

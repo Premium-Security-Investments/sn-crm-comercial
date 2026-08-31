@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 
 const component = readFileSync(new URL('../src/vigia/VigiaOpportunityCopilot.tsx', import.meta.url), 'utf8');
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
@@ -44,7 +44,6 @@ for (const marker of [
   "import { VigiaOpportunityCopilot } from './vigia/VigiaOpportunityCopilot';",
   'canRenderOpportunityCopilot(data.currentProfile, o.service_type_code)',
   'preflight={{ nextAction: priorityNextAction, expectedClose: priorityClose, decisionMaker: priorityDecisionMaker }}',
-  'contextVersion={`${o.updated_at}|${o.last_interaction_at ?? \'\'}`}',
 ]) assert.ok(main.includes(marker), `OpportunityDetail missing Vig-IA integration marker: ${marker}`);
 
 for (const marker of [
@@ -52,5 +51,15 @@ for (const marker of [
   '.vigia-preflight-alerts', '.vigia-copilot-generate', '.vigia-copilot-plan ol',
   '.vigia-copilot-summary', '.vigia-copilot-error',
 ]) assert.ok(css.includes(marker), `styles missing Vig-IA panel marker: ${marker}`);
+
+assert.equal(existsSync(new URL('../src/vigia/opportunity-preflight-state.ts', import.meta.url)), false, 'opportunity-preflight-state.ts debe eliminarse');
+
+const preflightPresentation = readFileSync(new URL('../src/vigia/opportunity-preflight-presentation.ts', import.meta.url), 'utf8');
+for (const removed of ['PreflightAction', 'ConsolidatedPreflightAction', 'BaseCommercialAlert', 'PreflightMergeResult', 'KNOWN_PREFLIGHT_ISSUE_CODES', 'PREFLIGHT_ANALYSIS_UNAVAILABLE_MESSAGE', 'TECHNICAL_PREFLIGHT_ERROR_PATTERNS', 'normalizePreflightErrorMessage', 'consolidatePreflightActions', 'mergeCommercialAlertsWithPreflight']) {
+  assert.equal(preflightPresentation.includes(removed), false, `opportunity-preflight-presentation.ts no debe contener ${removed}`);
+}
+
+assert.equal(component.includes('contextVersion'), false, 'VigiaOpportunityCopilot.tsx no debe contener contextVersion');
+assert.equal(main.includes('contextVersion'), false, 'main.tsx no debe contener contextVersion');
 
 console.log('Vig-IA opportunity copilot UI static contract passed');
