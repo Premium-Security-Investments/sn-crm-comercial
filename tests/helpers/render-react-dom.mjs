@@ -38,10 +38,21 @@ export function mountWithJsdom(Component, initialProps) {
       await act(async () => { el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
     },
     async flush() { await act(async () => { await Promise.resolve(); }); },
-    unmount() {
-      act(() => root.unmount());
-      for (const key of GLOBAL_KEYS) restoreGlobal(key, previousDescriptors[key]);
-      restoreGlobal('IS_REACT_ACT_ENVIRONMENT', previousActEnvDescriptor);
+    async unmount() {
+      try {
+        await act(async () => { root.unmount(); });
+        // Drain one jsdom event-loop turn so React's deferred post-unmount
+        // callbacks run while window/document globals are still installed,
+        // instead of firing later against a torn-down global scope.
+        await new Promise((resolve) => { dom.window.setTimeout(resolve, 0); });
+      } finally {
+        try {
+          dom.window.close();
+        } finally {
+          for (const key of GLOBAL_KEYS) restoreGlobal(key, previousDescriptors[key]);
+          restoreGlobal('IS_REACT_ACT_ENVIRONMENT', previousActEnvDescriptor);
+        }
+      }
     },
   };
 }

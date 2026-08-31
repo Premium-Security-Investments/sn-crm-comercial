@@ -4,7 +4,6 @@
 // el modelo no debería haber devuelto (lenguaje técnico/interno) sin tocar persistencia ni logs.
 
 import { VIGIA_VISIBLE_NAMES } from './agentIdentity';
-import type { CommercialAlert } from './opportunity-preflight-presentation';
 
 const TECHNICAL_PATTERNS = [
   /input no confiable/i,
@@ -119,7 +118,7 @@ function truncate(text: string, maxLength: number): string {
 
 export type CompactCopilotSummary = { nextStep: string | null; whyBullets: string[] };
 
-export function presentCompactCopilotSummary(presented: PresentedCopilotBrief, activeAlerts: CommercialAlert[]): CompactCopilotSummary {
+export function presentCompactCopilotSummary(presented: PresentedCopilotBrief, activeAlerts: readonly { risk_text: string }[]): CompactCopilotSummary {
   const candidate = String(presented?.contactPlanSteps?.[0] ?? '').trim();
   const normalizedCandidate = normalizeForComparison(candidate);
   const repeatsAlert = (activeAlerts ?? []).some(a => normalizeForComparison(String(a?.risk_text ?? '')) === normalizedCandidate);

@@ -20,25 +20,25 @@ const brief = {
 };
 const draft = { subject: 'Seguimiento a la propuesta', body: 'Buen día, retomo el contacto…' };
 const noop = () => {};
-const html = renderReactComponent(VigiaCopilotProposal, { brief, draft, onDraftChange: noop, onCopy: noop, onDiscard: noop });
+const html = renderReactComponent(VigiaCopilotProposal, { brief, draft, alerts: [], onDraftChange: noop, onCopy: noop, onDiscard: noop });
 
 const at = needle => {
   const index = html.indexOf(needle);
   assert.notEqual(index, -1, `la propuesta debe renderizar "${needle}"`);
   return index;
 };
-const plan = at('vigia-copilot-plan');
-const planTitle = at('Plan de contacto');
 const editor = at('vigia-copilot-draft');
 const actions = at('vigia-copilot-actions');
 const review = at('vigia-human-warning');
 const context = at('vigia-copilot-context');
-assert.ok(plan <= planTitle && planTitle < editor, 'el plan numerado abre la propuesta antes del correo');
 assert.ok(editor < actions, 'las acciones siguen al correo editable');
 assert.ok(actions < review && review < context, 'la revisión humana queda junto a las acciones y antes del contexto');
 
-const planBlock = /<section class="vigia-copilot-plan">([\s\S]*?)<\/section>/.exec(html);
-assert.ok(planBlock, 'Plan de contacto usa una sección propia');
+const detailsMatch = /<details class="vigia-copilot-context">([\s\S]*?)<\/details>/.exec(html);
+assert.ok(detailsMatch, '`Ver contexto analizado` debe ser plegable');
+
+const planBlock = /<section class="vigia-copilot-plan">([\s\S]*?)<\/section>/.exec(detailsMatch[1]);
+assert.ok(planBlock, 'Plan de contacto usa una sección propia dentro del contexto plegable');
 assert.match(planBlock[1], /<ol>/);
 assert.equal((planBlock[1].match(/<li>/g) ?? []).length, 3, 'cada paso saneado es un ítem ordenado');
 for (const step of ['Primero confirme el decisor.', 'Segundo acuerde una reunión.', 'Tercero documente el resultado.']) {
@@ -53,9 +53,7 @@ assert.equal(html.includes('Alertas comerciales'), false, 'la propuesta no dupli
 assert.equal(html.includes('Correo del contacto decisor'), false, 'missing_information ya no se presenta');
 assert.equal(html.includes('No hay contacto decisor verificado'), false, 'warnings ya no se presentan');
 
-const detailsMatch = /<details class="vigia-copilot-context">([\s\S]*?)<\/details>/.exec(html);
-assert.ok(detailsMatch, '`Contexto analizado` debe ser plegable');
-assert.match(detailsMatch[1], /<summary[^>]*>[\s\S]*Contexto analizado/);
+assert.match(detailsMatch[1], /<summary[^>]*>[\s\S]*Ver contexto analizado/);
 assert.ok(detailsMatch[1].includes(brief.summary));
 assert.ok(detailsMatch[1].includes('Objetivo de contacto'));
 assert.ok(detailsMatch[1].includes(brief.contact_objective));
@@ -72,9 +70,23 @@ assert.ok(html.includes('Puede editar esta propuesta sin modificar el historial 
 
 const withAssets = renderReactComponent(VigiaCopilotProposal, {
   brief: { ...brief, recommended_asset_ids: ['asset-approved-001'] },
-  draft, onDraftChange: noop, onCopy: noop, onDiscard: noop,
+  draft, alerts: [], onDraftChange: noop, onCopy: noop, onDiscard: noop,
 });
 assert.ok(withAssets.includes('Adjuntos sugeridos'));
 assert.ok(withAssets.includes('asset-approved-001'));
+
+// Criterio 8/9: el resumen compacto se abstiene si repite una alerta activa; el plan sólo vive en <details>.
+const redundantAlerts = [{ key: 'next_action:overdue', category: 'next_action', risk_text: 'La próxima gestión está vencida hace 4 días.' }];
+const redundantHtml = renderReactComponent(VigiaCopilotProposal, { brief: { ...brief, strategy: redundantAlerts[0].risk_text }, draft, alerts: redundantAlerts, onDraftChange: noop, onCopy: noop, onDiscard: noop });
+assert.equal(redundantHtml.includes('vigia-copilot-summary'), false, 'sin recomendación distinta, no hay bloque compacto');
+assert.ok(redundantHtml.includes('vigia-copilot-draft') && redundantHtml.includes('vigia-copilot-context'));
+
+const genuineHtml = renderReactComponent(VigiaCopilotProposal, { brief, draft, alerts: [], onDraftChange: noop, onCopy: noop, onDiscard: noop });
+assert.match(genuineHtml, /<h4[^>]*>Siguiente paso sugerido<\/h4>/);
+assert.ok(genuineHtml.includes('vigia-copilot-why'));
+assert.equal(genuineHtml.slice(0, genuineHtml.indexOf('<details')).includes('vigia-copilot-plan'), false, '"Plan de contacto" no vive fuera de "Ver contexto analizado"');
+const genuineDetails = /<details class="vigia-copilot-context">([\s\S]*?)<\/details>/.exec(genuineHtml)[1];
+assert.ok(genuineDetails.includes('vigia-copilot-plan'));
+assert.match(genuineDetails, /<summary[^>]*>Ver contexto analizado<\/summary>/);
 
 console.log('AGT-003 copilot proposal render checks passed');

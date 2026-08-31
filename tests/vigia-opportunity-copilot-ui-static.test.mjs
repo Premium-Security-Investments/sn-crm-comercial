@@ -50,6 +50,7 @@ for (const marker of [
 for (const marker of [
   '.vigia-opportunity-copilot', '.vigia-copilot-draft', '.vigia-copilot-actions',
   '.vigia-preflight-alerts', '.vigia-copilot-generate', '.vigia-copilot-plan ol',
+  '.vigia-copilot-summary', '.vigia-copilot-error',
 ]) assert.ok(css.includes(marker), `styles missing Vig-IA panel marker: ${marker}`);
 
 console.log('Vig-IA opportunity copilot UI static contract passed');

@@ -23,7 +23,7 @@ const okResult = subject => ({
   assert.deepEqual(calls, ['/api/vigia/copilot/generate']);
   assert.ok(view.container.querySelector('.vigia-copilot-generate button[disabled]'));
   assert.match(view.container.querySelector('[role="status"]').textContent, /está preparando un borrador acotado/);
-  resolveGenerate(); await view.flush(); view.unmount();
+  resolveGenerate(); await view.flush(); await view.unmount();
 }
 
 { // Criterio 5/6: alertas persisten en error; error compacto, no bloqueante, único control.
@@ -40,7 +40,7 @@ const okResult = subject => ({
   assert.match(errorBlock.textContent, /No se pudo preparar el seguimiento\. Puede continuar registrándolo manualmente\./);
   assert.equal(errorBlock.querySelectorAll('button').length, 1);
   assert.equal(view.container.querySelector('.vigia-copilot-result'), null, 'sin propuesta sintética');
-  view.unmount();
+  await view.unmount();
 }
 
 console.log('AGT-003 single-action DOM behavior checks passed');

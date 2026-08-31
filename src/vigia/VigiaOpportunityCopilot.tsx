@@ -15,7 +15,7 @@ import {
   COMMERCIAL_PREFLIGHT_EXPLANATION,
   type CommercialPreflightInput,
 } from './opportunity-preflight-presentation';
-import { presentCopilotBrief, type CopilotPresentationBrief } from './copilot-presentation';
+import { presentCopilotBrief, presentCompactCopilotSummary, type CopilotPresentationBrief } from './copilot-presentation';
 
 type Request = <T>(url: string, options?: RequestInit) => Promise<T>;
 type Props = {
@@ -29,6 +29,7 @@ type ProposalDraft = { subject: string; body: string };
 type ProposalProps = {
   brief: CopilotPresentationBrief;
   draft: ProposalDraft;
+  alerts: ReturnType<typeof buildCommercialAlerts>;
   onDraftChange: (patch: Partial<ProposalDraft>) => void;
   onCopy: () => void;
   onDiscard: () => void;
@@ -50,14 +51,23 @@ export function VigiaCommercialAlerts({ alerts }: { alerts: ReturnType<typeof bu
 
 // La propuesta final no repite riesgos ni faltantes: abre con un plan numerado, mantiene el correo
 // editable y deja el contexto plegado al final. La revisión humana queda junto a las acciones.
-export function VigiaCopilotProposal({ brief, draft, onDraftChange, onCopy, onDiscard }: ProposalProps) {
+export function VigiaCopilotProposal({ brief, draft, alerts, onDraftChange, onCopy, onDiscard }: ProposalProps) {
   const presented = presentCopilotBrief(brief);
-  return <div className="vigia-copilot-result">
-    <section className="vigia-copilot-plan"><h4>Plan de contacto</h4><ol>{presented.contactPlanSteps.map((step, index) => <li key={`${index}-${step}`}>{step}</li>)}</ol></section>
+  const compact = presentCompactCopilotSummary(presented, alerts);
+  const resultRef = useRef<HTMLDivElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { (headingRef.current ?? resultRef.current)?.focus(); }, []);
+  return <div className="vigia-copilot-result" ref={resultRef} tabIndex={-1}>
+    {compact.nextStep && <section className="vigia-copilot-summary">
+      <h4 ref={headingRef} tabIndex={-1}>Siguiente paso sugerido</h4>
+      <p>{compact.nextStep}</p>
+      {compact.whyBullets.length > 0 && <ul className="vigia-copilot-why">{compact.whyBullets.map((bullet, index) => <li key={`${index}-${bullet}`}>{bullet}</li>)}</ul>}
+    </section>}
     <div className="vigia-copilot-draft"><label>Asunto<input value={draft.subject} maxLength={300} onChange={event => onDraftChange({ subject: event.target.value })}/></label><label>Cuerpo<textarea value={draft.body} maxLength={8000} rows={10} onChange={event => onDraftChange({ body: event.target.value })}/></label></div>
     <div className="vigia-copilot-actions"><button type="button" onClick={onCopy}>Copiar correo</button><button type="button" className="secondary" onClick={onDiscard}>Descartar</button></div>
     <div className="vigia-human-warning"><strong>Revisión humana</strong><span>Puede editar esta propuesta sin modificar el historial de la oportunidad. Verifique nombres, fechas, compromisos y tono antes de copiar el mensaje.</span></div>
-    <details className="vigia-copilot-context"><summary>Contexto analizado</summary>
+    <details className="vigia-copilot-context"><summary>Ver contexto analizado</summary>
+      <section className="vigia-copilot-plan"><h4>Plan de contacto</h4><ol>{presented.contactPlanSteps.map((step, index) => <li key={`${index}-${step}`}>{step}</li>)}</ol></section>
       <p>{presented.summary}</p>
       <div><small>Objetivo de contacto</small><p>{presented.contactObjective}</p></div>
       <section><h5>Hechos observados</h5>{presented.facts.length ? <ul>{presented.facts.map((fact, index) => <li key={`${fact.text}-${index}`}>{fact.text}</li>)}</ul> : <p className="muted">Sin hechos adicionales.</p>}</section>
@@ -117,8 +127,10 @@ export function VigiaOpportunityCopilot({ opportunityId, request, preflight, con
       <button type="button" className="secondary" onClick={generate}>Reintentar</button>
     </div>}
     {ready && brief && <VigiaCopilotProposal
+      key={ready.requestId}
       brief={brief}
       draft={ready.draft}
+      alerts={alerts}
       onDraftChange={patch => setState(current => editCopilotDraft(current, patch))}
       onCopy={() => void copyDraft()}
       onDiscard={() => { setState(current => discardCopilotDraft(current)); setNotice('Borrador descartado localmente.'); }}
