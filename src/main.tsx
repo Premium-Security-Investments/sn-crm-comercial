@@ -889,7 +889,6 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
       opportunityId={o.id}
       request={api}
       preflight={{ nextAction: priorityNextAction, expectedClose: priorityClose, decisionMaker: priorityDecisionMaker }}
-      contextVersion={`${o.updated_at}|${o.last_interaction_at ?? ''}`}
     />}
     {o.service_type_code !== 'licitacion_publica' && <details className="opportunity-more-info">
       <summary>Más información</summary>

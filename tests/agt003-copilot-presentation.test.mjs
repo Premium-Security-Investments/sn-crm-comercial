@@ -8,6 +8,7 @@ const {
   COMMERCIAL_TEXT_FALLBACKS,
   isTechnicalCopilotText,
   normalizeCopilotErrorMessage,
+  presentCompactCopilotSummary,
   presentCopilotBrief,
   splitContactPlanSteps,
 } = await import(moduleUrl);
@@ -112,5 +113,39 @@ for (const [raw, expected] of [
 for (const empty of [null, undefined, '', '    ']) {
   assert.equal(normalizeCopilotErrorMessage(empty), 'No fue posible preparar la propuesta.');
 }
+
+const distinctPresented = Object.freeze({
+  summary: 'Resumen', contactObjective: 'Objetivo',
+  contactPlanSteps: Object.freeze(['Proponga una reunión de 20 minutos con el decisor financiero.']),
+  facts: Object.freeze([{ text: 'El valor registrado es COP 125.000.000.', evidence_refs: [] }]),
+  inferences: Object.freeze([{ text: 'El cliente sigue evaluando alternativas.', evidence_refs: [], confidence: 'medium' }]),
+  recommendedAssetIds: [], hasApprovedAssets: false,
+});
+const baseAlerts = Object.freeze([{ key: 'next_action:overdue', category: 'next_action', risk_text: 'La próxima gestión está vencida hace 4 días.' }]);
+const snap = [JSON.stringify(distinctPresented), JSON.stringify(baseAlerts)];
+const compact = presentCompactCopilotSummary(distinctPresented, baseAlerts);
+assert.equal(compact.nextStep, distinctPresented.contactPlanSteps[0]);
+assert.deepEqual(compact.whyBullets, ['El valor registrado es COP 125.000.000.', 'El cliente sigue evaluando alternativas.']);
+assert.deepEqual([JSON.stringify(distinctPresented), JSON.stringify(baseAlerts)], snap, 'no muta sus argumentos');
+
+const longStep = 'Paso siguiente muy detallado. '.repeat(12).trim();
+const longFact = 'Hecho relevante muy extenso repetido. '.repeat(8).trim();
+const truncated = presentCompactCopilotSummary({ ...distinctPresented, contactPlanSteps: [longStep], facts: [{ text: longFact, evidence_refs: [] }], inferences: [] }, []);
+assert.ok(longStep.length > 240 && truncated.nextStep.length <= 240);
+assert.ok(longFact.length > 180 && truncated.whyBullets.every(b => b.length <= 180));
+
+for (const [label, override, alerts] of [
+  ['repite una alerta activa', { contactPlanSteps: ['  LA PRÓXIMA GESTIÓN   está vencida HACE 4 días.  '] }, baseAlerts],
+  ['iguala el resguardo de estrategia', { contactPlanSteps: [COMMERCIAL_TEXT_FALLBACKS.strategy] }, []],
+]) assert.deepEqual(presentCompactCopilotSummary({ ...distinctPresented, ...override }, alerts), { nextStep: null, whyBullets: [] }, label);
+
+const noEvidence = presentCompactCopilotSummary({ ...distinctPresented, facts: [], inferences: [] }, []);
+assert.equal(noEvidence.nextStep, distinctPresented.contactPlanSteps[0]);
+assert.deepEqual(noEvidence.whyBullets, []);
+
+assert.deepEqual(
+  presentCompactCopilotSummary({ summary: '', contactObjective: '', contactPlanSteps: [], facts: [], inferences: [], recommendedAssetIds: [], hasApprovedAssets: false }, []),
+  { nextStep: null, whyBullets: [] }, 'brief mínimo nunca lanza',
+);
 
 console.log('AGT-003 copilot presentation checks passed');

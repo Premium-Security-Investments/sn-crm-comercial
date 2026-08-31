@@ -1,11 +1,7 @@
 import assert from 'node:assert/strict';
 import { loadReactComponent, renderReactComponent } from './helpers/bundle-react-component.mjs';
 
-const [VigiaCommercialAlerts, VigiaPreflightAnalysis] = await Promise.all([
-  loadReactComponent('src/vigia/VigiaOpportunityCopilot.tsx', 'VigiaCommercialAlerts'),
-  loadReactComponent('src/vigia/VigiaOpportunityCopilot.tsx', 'VigiaPreflightAnalysis'),
-]);
-const noop = () => {};
+const VigiaCommercialAlerts = await loadReactComponent('src/vigia/VigiaOpportunityCopilot.tsx', 'VigiaCommercialAlerts');
 
 const emptyAlerts = renderReactComponent(VigiaCommercialAlerts, { alerts: [] });
 assert.match(emptyAlerts, /<section[^>]*class="notice vigia-preflight-alerts"[^>]*aria-labelledby="vigia-preflight-title"/);
@@ -18,107 +14,16 @@ const countOccurrences = (haystack, needle) => haystack.split(needle).length - 1
 
 const explanationCopy = 'Señales para tener en cuenta durante el seguimiento. No impiden continuar.';
 const riskText = 'La próxima gestión está vencida hace 4 días.';
-const contextualDescription = 'Retome la llamada del 14 de agosto con la gerente de compras.';
 
-const preContextualHtml = renderReactComponent(VigiaCommercialAlerts, {
-  alerts: [{
-    key: 'next_action:overdue',
-    category: 'next_action',
-    risk_text: riskText,
-    contextualAction: null,
-  }],
+const alertsHtml = renderReactComponent(VigiaCommercialAlerts, {
+  alerts: [{ key: 'next_action:overdue', category: 'next_action', risk_text: riskText }],
 });
-assert.ok(preContextualHtml.includes(explanationCopy), 'usa la explicación coherente antes del análisis contextual');
-assert.equal(countOccurrences(preContextualHtml, riskText), 1, 'cada riesgo se renderiza una sola vez');
-assert.equal(preContextualHtml.includes('Acciones para mejorar la propuesta'), false, 'no existe un encabezado de acciones genérico');
-assert.equal(preContextualHtml.includes('<ol>'), false, 'no existe una lista genérica de acciones');
-assert.equal(preContextualHtml.includes('requieren actualización'), false, 'las alertas no se presentan como instrucciones obligatorias');
-assert.equal(preContextualHtml.includes('antes de generar'), false, 'las alertas no se presentan como prerrequisitos para generar la propuesta');
+assert.ok(alertsHtml.includes(explanationCopy), 'usa la explicación coherente de las alertas');
+assert.equal(countOccurrences(alertsHtml, riskText), 1, 'cada riesgo se renderiza una sola vez');
+assert.equal(alertsHtml.includes('Acciones para mejorar la propuesta'), false, 'no existe un encabezado de acciones genérico');
+assert.equal(alertsHtml.includes('<ol>'), false, 'no existe una lista genérica de acciones');
+assert.equal(alertsHtml.includes('requieren actualización'), false, 'las alertas no se presentan como instrucciones obligatorias');
+assert.equal(alertsHtml.includes('antes de generar'), false, 'las alertas no se presentan como prerrequisitos para generar la propuesta');
+assert.equal(alertsHtml.includes('Sugerencia contextual:'), false, 'no existe sugerencia contextual: la etapa de preanálisis se retiró');
 
-const contextualHtml = renderReactComponent(VigiaCommercialAlerts, {
-  alerts: [{
-    key: 'next_action:overdue',
-    category: 'next_action',
-    risk_text: riskText,
-    contextualAction: {
-      issue_code: 'next_action', title: 'Retomar conversación', description: contextualDescription,
-      evidence_refs: ['evidence:interaction:1'],
-    },
-  }],
-});
-assert.ok(contextualHtml.includes(explanationCopy), 'usa la explicación coherente tras el análisis contextual');
-assert.equal(countOccurrences(contextualHtml, riskText), 1, 'cada riesgo se renderiza una sola vez');
-assert.equal(countOccurrences(contextualHtml, contextualDescription), 1, 'la descripción contextual se renderiza una sola vez, como apoyo bajo la alerta correspondiente');
-assert.equal(contextualHtml.includes('Acciones para mejorar la propuesta'), false, 'no existe un encabezado de acciones genérico');
-assert.equal(contextualHtml.includes('<ol>'), false, 'no existe una lista genérica de acciones');
-assert.equal(contextualHtml.includes('evidence:interaction:1'), false, 'evidence_refs nunca se renderiza');
-assert.equal(countOccurrences(contextualHtml, 'Sugerencia contextual:'), 1, 'la acción contextual lleva una etiqueta explícita de sugerencia, no de instrucción');
-{
-  const labelIndex = contextualHtml.indexOf('Sugerencia contextual:');
-  const descriptionIndex = contextualHtml.indexOf(contextualDescription);
-  const between = contextualHtml.slice(labelIndex + 'Sugerencia contextual:'.length, descriptionIndex);
-  assert.ok(labelIndex >= 0 && descriptionIndex > labelIndex, 'la etiqueta "Sugerencia contextual:" precede a la descripción contextual');
-  assert.ok(/^[\s\S]{0,40}$/.test(between) && !/<(h\d|p|li|div|section)[ >]/.test(between), 'la etiqueta "Sugerencia contextual:" está asociada de forma inmediata a la descripción contextual, sin otro bloque entre ambas');
-}
-
-const idle = renderReactComponent(VigiaPreflightAnalysis, {
-  phase: 'idle', standaloneActions: [], onAnalyze: noop, onRetry: noop, errorMessage: null,
-});
-assert.match(idle, /<section[^>]*class="vigia-preflight-analysis"[^>]*aria-labelledby="vigia-preflight-analysis-title"/);
-assert.ok(idle.includes('<h4 id="vigia-preflight-analysis-title">Análisis inteligente del seguimiento</h4>'));
-assert.ok(idle.includes('>Analizar cómo fortalecer el seguimiento</button>'));
-
-const loading = renderReactComponent(VigiaPreflightAnalysis, {
-  phase: 'loading', standaloneActions: [], onAnalyze: noop, onRetry: noop, errorMessage: null,
-});
-assert.match(loading, /role="status"/);
-assert.ok(loading.includes('Vig-IA Comercial está revisando el historial de la oportunidad…'));
-assert.equal(loading.includes('>Analizar cómo fortalecer el seguimiento</button>'), false);
-
-const error = renderReactComponent(VigiaPreflightAnalysis, {
-  phase: 'error', standaloneActions: [], onAnalyze: noop, onRetry: noop, errorMessage: 'Puente temporalmente ocupado',
-});
-assert.match(error, /role="alert"/);
-assert.ok(error.includes('No fue posible analizar el historial.'));
-assert.ok(error.includes('Puente temporalmente ocupado'));
-assert.ok(error.includes('>Reintentar</button>'));
-
-const internalError = renderReactComponent(VigiaPreflightAnalysis, {
-  phase: 'error', standaloneActions: [], onAnalyze: noop, onRetry: noop,
-  errorMessage: 'getAgt003PreflightRuntimeConfig is not defined',
-});
-assert.match(internalError, /role="alert"/);
-assert.ok(
-  internalError.includes('El análisis no está disponible temporalmente. Puede reintentar.'),
-  'los errores internos se traducen a un mensaje seguro en español',
-);
-assert.equal(
-  internalError.includes('getAgt003PreflightRuntimeConfig is not defined'),
-  false,
-  'el identificador interno o el mensaje crudo nunca se renderiza',
-);
-assert.ok(internalError.includes('>Reintentar</button>'));
-
-const readyEmpty = renderReactComponent(VigiaPreflightAnalysis, {
-  phase: 'ready', standaloneActions: [], onAnalyze: noop, onRetry: noop, errorMessage: null,
-});
-assert.ok(readyEmpty.includes('Vig-IA no encontró acciones adicionales fuera de las alertas comerciales.'));
-assert.ok(readyEmpty.includes('>Actualizar análisis</button>'));
-
-const ready = renderReactComponent(VigiaPreflightAnalysis, {
-  phase: 'ready',
-  standaloneActions: [{
-    issue_code: 'pending_terms', title: 'Aclarar términos', description: 'Valide el plazo de pago pendiente.',
-    evidence_refs: ['evidence:interaction:2'],
-  }],
-  onAnalyze: noop,
-  onRetry: noop,
-  errorMessage: null,
-});
-assert.match(ready, /<ul class="vigia-preflight-standalone">/);
-assert.ok(ready.includes('<strong>Aclarar términos</strong>'));
-assert.ok(ready.includes('Valide el plazo de pago pendiente.'));
-assert.equal(ready.includes('evidence:interaction:2'), false);
-assert.ok(ready.includes('>Actualizar análisis</button>'));
-
-console.log('AGT-003 preflight alert and analysis render checks passed');
+console.log('AGT-003 preflight alert render checks passed');
