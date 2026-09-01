@@ -69,7 +69,7 @@ export type PresentedCopilotBrief = {
   hasApprovedAssets: boolean;
 };
 
-const SENTENCE_BOUNDARY = /(?<=[.;:])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/;
+const SENTENCE_BOUNDARY = /(?<=[.?!])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/;
 const MAX_CONTACT_PLAN_STEPS = 8;
 
 export function splitContactPlanSteps(text: string): string[] {

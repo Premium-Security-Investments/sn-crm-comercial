@@ -34,13 +34,22 @@ assert.deepEqual(splitContactPlanSteps('Primero confirme el decisor.\n\nSegundo 
 ]);
 assert.deepEqual(splitContactPlanSteps('Primero confirme el decisor. Luego acuerde la fecha; Después documente el resultado.'), [
   'Primero confirme el decisor.',
-  'Luego acuerde la fecha;',
-  'Después documente el resultado.',
+  'Luego acuerde la fecha; Después documente el resultado.',
 ]);
 assert.deepEqual(splitContactPlanSteps('Confirme el siguiente paso con el cliente'), ['Confirme el siguiente paso con el cliente']);
 assert.deepEqual(splitContactPlanSteps(''), [''], 'la función pura conserva un único fragmento incluso para texto vacío; presentCopilotBrief aporta el fallback no vacío');
 const pathological = Array.from({ length: 9 }, (_, index) => `Paso ${index + 1}.`).join(' ');
 assert.deepEqual(splitContactPlanSteps(pathological), [pathological], 'más de ocho fragmentos vuelven al bloque único');
+
+// Regresión (review AGT-003): ':' y ';' no son fin de oración. Una acción como "Solicitar a
+// Daniela: Confirmar quién lidera la revisión; Así podremos resolver el bloqueador." debe
+// permanecer como un único paso completo; solo '.', '?' o '!' deben partir el plan.
+const colonSemicolonStrategy = 'Solicitar a Daniela: Confirmar quién lidera la revisión; Así podremos resolver el bloqueador.';
+assert.deepEqual(
+  splitContactPlanSteps(colonSemicolonStrategy),
+  [colonSemicolonStrategy],
+  'los dos puntos y el punto y coma no deben partir una acción en curso en varios pasos',
+);
 
 const brief = Object.freeze({
   summary: 'Oportunidad por COP 125.000.000 en etapa Propuesta.',
@@ -139,6 +148,18 @@ assert.equal(untruncated.nextStep, longStep, 'nextStep se renderiza completo, si
 assert.deepEqual(untruncated.whyBullets, [longFact], 'whyBullets se renderiza completo, sin truncar');
 assert.equal(untruncated.nextStep.includes('…'), false, 'nextStep nunca agrega una elipsis');
 assert.ok(untruncated.whyBullets.every(bullet => !bullet.includes('…')), 'whyBullets nunca agrega una elipsis');
+
+// La misma acción con ':' y ';' internos debe llegar completa a compact.nextStep, no solo al
+// paso crudo de splitContactPlanSteps: el resumen compacto no debe reintroducir el truncado.
+const compactColonSemicolon = presentCompactCopilotSummary(
+  { ...distinctPresented, contactPlanSteps: [colonSemicolonStrategy] },
+  [],
+);
+assert.equal(
+  compactColonSemicolon.nextStep,
+  colonSemicolonStrategy,
+  'compact.nextStep conserva la acción completa sin truncar en los dos puntos/punto y coma',
+);
 
 for (const [label, override, alerts] of [
   ['repite una alerta activa', { contactPlanSteps: ['  LA PRÓXIMA GESTIÓN   está vencida HACE 4 días.  '] }, baseAlerts],

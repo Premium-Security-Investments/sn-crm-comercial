@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
+  AGT003_COPILOT_DEFAULT_POLICY_VERSION,
   createAgt003CopilotRuntime,
   getAgt003CopilotRuntimeConfig,
   isAgt003CopilotConfigured,
@@ -48,7 +49,11 @@ assert.throws(() => getAgt003CopilotRuntimeConfig(env({ AGT003_COPILOT_TIMEOUT_M
 // que el puente rechaza con `AGT003_BRIDGE_BUSY`.
 assert.equal(getAgt003CopilotRuntimeConfig(env()).maxConcurrent, 1, 'el default de concurrencia del runtime coincide con el techo del puente');
 const config = getAgt003CopilotRuntimeConfig(env({ AGT003_COPILOT_TIMEOUT_MS: '5000', AGT003_COPILOT_MAX_CONCURRENT: '1', AGT003_COPILOT_DAILY_MAX_RUNS: '4' }));
-assert.deepEqual(config, { model: 'synthetic-model', policyVersion: '2026-09-01.v2', timeoutMs: 5000, maxConcurrent: 1, dailyMaxRuns: 4, leaseSeconds: 20, wireProtocol: 'agt003' });
+// AGT-003 actionable next-step prompt: la política de producción cambia (reglas nuevas sobre
+// `strategy`), así que el policy_version por defecto debe subir de v2 a v3 para que las respuestas
+// generadas con la v2 no se reutilicen bajo el nuevo contrato de comportamiento.
+assert.equal(AGT003_COPILOT_DEFAULT_POLICY_VERSION, '2026-09-01.v3', 'el policy_version por defecto debe subir a v3 junto con las nuevas reglas de strategy');
+assert.deepEqual(config, { model: 'synthetic-model', policyVersion: '2026-09-01.v3', timeoutMs: 5000, maxConcurrent: 1, dailyMaxRuns: 4, leaseSeconds: 20, wireProtocol: 'agt003' });
 assert.equal(getAgt003CopilotRuntimeConfig(env({ AGT003_COPILOT_WIRE_PROTOCOL: 'agt002' })).wireProtocol, 'agt002');
 assert.throws(() => createAgt003CopilotRuntime({ environment: env({ AGT003_COPILOT_WIRE_PROTOCOL: 'legacy' }), countDailyRuns: async () => 0 }), /no está configurado/i);
 const runtime = createAgt003CopilotRuntime({ environment: env(), countDailyRuns: async () => 0 });

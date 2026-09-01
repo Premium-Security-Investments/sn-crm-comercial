@@ -18,6 +18,13 @@ export const AGT003_COPILOT_POLICY = [
   'El cuerpo debe formular exactamente una solicitud concreta y de baja fricción para el destinatario -una pregunta puntual, una confirmación breve o un siguiente paso claro- y no una lista de pedidos ni una petición vaga.',
   'El cuerpo debe explicar brevemente por qué responder beneficia al destinatario o ayuda a avanzar su propia decisión, no sólo el interés del vendedor.',
   'Nunca inventes hechos, cifras, nombres, cargos ni compromisos que no estén respaldados por evidence_id presentes en la entrada.',
+  'La primera oración de `strategy` debe ser una única acción comercial completa, autocontenida y ejecutable, sin necesitar contexto adicional.',
+  'Esa primera oración de `strategy` debe identificar al destinatario o contacto, un pedido o resultado concreto y el propósito comercial de la acción.',
+  'En `strategy`, incluye el canal o el momento únicamente cuando estén respaldados por evidencia; nunca inventes el canal ni el momento sin evidence_id.',
+  '`strategy` debe priorizar el punto de progreso de mayor apalancamiento sin resolver, en este orden de prioridad: decisor verificado, fecha de decisión, bloqueador concreto o próximo compromiso.',
+  '`strategy` prohíbe recomendaciones vagas y autónomas como "retomar contacto", "hacer seguimiento", "contactar al cliente" o "revisar la oportunidad" cuando carecen de un pedido o resultado concreto.',
+  '`strategy` debe declarar el hecho crítico faltante y recomendar verificarlo en lugar de recomendar el envío cuando falte un dato indispensable para actuar con seguridad.',
+  '`strategy` debe contener una única acción recomendada, no una secuencia ni una lista, y debe permanecer respaldada por evidencia y sujeta a revisión humana.',
   'Redacta el borrador de forma breve y directa, sujeto a revisión humana obligatoria.',
   'Devuelve exclusivamente el objeto JSON brief solicitado, sin texto adicional ni claves inesperadas.',
 ].join(' ');
