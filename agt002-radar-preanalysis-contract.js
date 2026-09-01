@@ -51,7 +51,11 @@ const usageSchema = Object.freeze({
     model: stringField,
     input_tokens: Object.freeze({ type: 'number', minimum: 0 }),
     output_tokens: Object.freeze({ type: 'number', minimum: 0 }),
-    cost_usd: Object.freeze({ type: 'number', minimum: 0 }),
+    // `cost_usd` es expansión aditiva de tipo (issue #136): además del número >= 0 de siempre,
+    // admite `null` para "el puente no midió costo". Las filas históricas, todas numéricas
+    // (incluido el 0 que antes se usaba por ausencia de medición), siguen siendo válidas contra
+    // este schema tal cual están persistidas; no se reescriben ni se migran.
+    cost_usd: Object.freeze({ type: ['number', 'null'], minimum: 0 }),
   }),
 });
 
@@ -144,6 +148,10 @@ export function validateAgt002RadarPreanalysis(value, { expectedLearningSignalId
   if (value.visibility_verdict === 'no_mostrar_en_radar' && !value.evidence.some(item => item.evidence_type !== 'learning_signal')) contractError('no_mostrar requires own evidence');
   exactKeys(value.usage, USAGE_KEYS, 'usage');
   nonempty(value.usage.provider, 'usage.provider'); nonempty(value.usage.model, 'usage.model');
-  for (const key of ['input_tokens','output_tokens','cost_usd']) if (typeof value.usage[key] !== 'number' || !Number.isFinite(value.usage[key]) || value.usage[key] < 0) contractError(`usage.${key}`);
+  for (const key of ['input_tokens','output_tokens']) if (typeof value.usage[key] !== 'number' || !Number.isFinite(value.usage[key]) || value.usage[key] < 0) contractError(`usage.${key}`);
+  // `cost_usd` es null cuando el puente no midió costo, o un número finito >= 0 cuando sí lo
+  // hizo (incluido el histórico numérico de filas persistidas antes de aceptar null).
+  const cost = value.usage.cost_usd;
+  if (cost !== null && (typeof cost !== 'number' || !Number.isFinite(cost) || cost < 0)) contractError('usage.cost_usd');
   return value;
 }

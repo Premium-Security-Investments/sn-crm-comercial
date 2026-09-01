@@ -1,6 +1,6 @@
-# CURRENT — AGT-002 Decision Front Consolidation — CHECKPOINT AUTORITATIVO (§13: PUBLICADO / QA PROD PASS)
+# CURRENT — AGT-002 Decision Front Consolidation — CHECKPOINT AUTORITATIVO (§16: Cierre AGT-002 y continuidad)
 
-> Estado vigente al 2026-08-21: **AGT-002 está PUBLICADO / QA PROD PASS, sin pendientes**. La sección autoritativa vigente es la **§13**, que sustituye expresamente a §1–§12 únicamente para el estado final de publicación, QA de producción, limpieza y próximos pasos. Las secciones §1–§12 se conservan intactas como historial. El cierre documental no modifica la aplicación ni requiere redeploy.
+> Estado vigente al 2026-09-01: la sección autoritativa vigente es la **§16 — Cierre AGT-002 y continuidad**. §13 sigue siendo la referencia histórica autoritativa para publicación/QA de producción del frente decisional tal como quedó el 2026-08-21, y §15 sigue siendo la referencia histórica autoritativa para el estado operativo del Radar tal como quedó el 2026-08-28; ninguna de las dos fue reescrita. §16 añade el corte de cierre de AGT-002 y continuidad hacia la próxima licitación, sin modificar lo ya registrado en §1–§15.
 
 ## 1. Estado y alcance autoritativo
 
@@ -637,3 +637,79 @@ ninguna de ellas.
   natural del backlog, repetir la auditoría y exigir `uncovered = 0` con revisión humana antes de
   encender `AGT002_RADAR_VISIBILITY`. Ver `docs/runbooks/agt002-radar-pipeline.md` para el
   procedimiento operativo detallado.
+
+---
+
+## 16. Cierre AGT-002 y continuidad (2026-09-01)
+
+> Esta sección es la autoritativa vigente para el estado general y la continuidad de AGT-002 al
+> 2026-09-01. **No sustituye** a §13 (cierre de publicación del frente decisional, 2026-08-21) ni a
+> §15 (rollout operativo del Radar, 2026-08-28) para sus dominios respectivos: ambas siguen siendo la
+> referencia histórica autoritativa de lo que describen. Esta sección añade el corte de cierre y
+> continuidad sobre el trabajo hecho en la rama actual, que **aún no está publicado**.
+
+### 16.1. Fuente de verdad separada de producción
+
+- `origin/main` estaba en `00e22eaf7af4cc9712b58e1ef4896728a96f369a` antes de esta rama.
+- Producción fue confirmada sana por HTTP: SPA responde `200`; API protegida responde `401` como se
+  espera de una ruta que exige autenticación.
+- Último deploy previamente verificado: `dpl_HmQdynLwUK4Ai7m2sMn5vZTW3kz4`.
+- La rama actual, `fix/agt002-closeout-20260901`, **aún no ha sido publicada** (sin push).
+
+### 16.2. Live/cerrado — decisiones humanas ya ejecutadas
+
+- PR #167: revisión colaborativa.
+- PR #168: polish y navegación.
+- PR #169: contraste.
+- Manizales y Bogotá quedan **archivados** por decisión humana **NO GO**, con sus expedientes
+  preservados intactos; ambos quedan fuera de las licitaciones activas.
+
+### 16.3. En rama — no afirmar live
+
+Lo siguiente existe únicamente en `fix/agt002-closeout-20260901` y **no debe presentarse como
+desplegado**:
+
+- Corrección del issue #136 (medición de `usage` autoritativa desde el bridge; ver
+  `agt002-radar-preanalysis-usage.js`); el issue **sigue sin cerrarse**, pendiente de integración.
+- `npm test` ejecutado en la rama.
+- Reparación robusta de dos pruebas históricamente frágiles.
+- Code splitting del bundle.
+
+### 16.3.1. Evidencia final ejecutada (2026-09-01)
+
+- Baseline antes de cambios: 1189 tests, 1186 PASS, 2 FAIL históricos
+  (`agt002-v3-open-questions-visibility`, `tender-opportunity-exit-ui`), 1 SKIP.
+- Focal final usage/contract/runtime/persistence/pipeline/worker: **7/7 PASS**.
+- Suite completa final mediante `npm test`: **1191 tests, 1190 PASS, 0 FAIL, 1 SKIP**.
+- `npm run check:backend-parity`: **PASS**.
+- `npm run build`: **PASS**. Antes: un JS de 829.39 kB (gzip 221.82 kB) con warning de chunk
+  >500 kB. Después: chunk máximo `tenders` 404.55 kB (gzip 105.18 kB), sin warning;
+  `chunkSizeWarningLimit` no fue modificado.
+- `npm audit --audit-level=high`: **0 vulnerabilidades**.
+- `git diff --check`: **PASS**.
+- Escaneo de secretos: **20 archivos, 0 hits**.
+- Revisión independiente inicial halló ambigüedad de costo 0/no medido; corregida a
+  `cost_usd: null` cuando el bridge no lo entrega y al valor explícito sólo cuando sí lo entrega.
+  Re-revisión focal: **APPROVE, sin hallazgos**.
+- Producción, verificación predeploy: SPA responde `200`, API protegida responde `401`.
+- Evidencia detallada: `docs/verification/2026-09-01-agt002-closeout.md`.
+
+### 16.4. Clasificación de pendientes
+
+- **Migración 062:** sin rollback exacto demostrable. Es un **gap aceptado y documentado**, no un
+  defecto a resolver fabricando una inversión que no existe.
+- **QA UI autenticada:** no se reabre como *blocker* técnico de este cierre.
+- **Presupuesto real del modelo:** debe medirse únicamente antes del próximo canary, no antes.
+- **PR #112:** obsoleto/superseded, ya **cerrado**.
+- **PR #10 / PR #12:** pertenecen a SIIO, no a AGT-002; quedan fuera de este cierre, no tocados.
+
+### 16.5. Próximo gate
+
+1. PR → CI → merge → deploy → smoke productivo de esta rama.
+2. Luego, Juan elige **una** licitación real (Pereira **o** Procuraduría, una a la vez) para
+   atravesar el gate de onboarding (`docs/runbooks/agt002-process-onboarding-gate.md`) **sin copiar**
+   Manizales ni Bogotá.
+3. El humano decide y registra la decisión; AGT-002 no decide por sí mismo.
+
+Documento de continuidad y aprendizaje para Juan:
+`docs/operations/2026-09-01-agt002-mentoria-y-proximos-pasos.md`.

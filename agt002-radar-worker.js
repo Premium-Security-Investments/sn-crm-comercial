@@ -5,6 +5,7 @@ import { claimAgt002RadarPreanalysisJob, completeAgt002RadarPreanalysisJob, fail
 import { projectAgt002RadarLearningObservations } from './agt002-radar-learning-projection.js';
 import { buildAgt002RadarLearningSignals } from './agt002-radar-learning-retrieval.js';
 import { createAgt002RadarPreanalysisRuntime } from './agt002-radar-preanalysis-runtime.js';
+import { assertAgt002RadarPreanalysisMeasuredUsage } from './agt002-radar-preanalysis-usage.js';
 import { classifyAgt002RadarPreanalysisError } from './agt002-radar-preanalysis-worker.js';
 import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
 import { extractTenderCoreServiceTerms } from './tender-relevance-terms.js';
@@ -95,8 +96,13 @@ export function createAgt002RadarWorker({
    stages.push('agt');
    const output=await runPreanalysis(database,{environment,tenderRow:row,gateEvaluation,learningSignals,idempotencyKey:job.attemptKey});
 
+   // Issue #136: mismo cierre que el pipeline. `usage` es la medición del puente que el runtime
+   // fijó en el envelope; el worker no la reconstruye desde el entorno ni completa una declaración
+   // incompleta. Sin medición confiable no se persiste. 0/0 es una medición válida.
+   const usage=assertAgt002RadarPreanalysisMeasuredUsage(output?.usage);
+
    stages.push('persist');
-   const persisted=await recordPreanalysisRun(database,{tenderId:job.tenderId,gateEvaluationId:job.gateEvaluationId,visibilityVerdict:output.visibility_verdict,status:output.status,result:output,evidence:output.evidence,policyVersion:evaluation.policy_version,contextVersion:evaluation.context_version,learningSignalsVersion:learningSignals?.version||null,learningSignalsCount:learningSignals?.signals.length||0,model:output.usage?.model||environment.AGT002_RADAR_PREANALYSIS_MODEL||null,usage:output.usage||{},idempotencyKey:computeAgt002RadarPreanalysisIdempotencyKey({kind:'run',attempt_key:job.attemptKey})});
+   const persisted=await recordPreanalysisRun(database,{tenderId:job.tenderId,gateEvaluationId:job.gateEvaluationId,visibilityVerdict:output.visibility_verdict,status:output.status,result:output,evidence:output.evidence,policyVersion:evaluation.policy_version,contextVersion:evaluation.context_version,learningSignalsVersion:learningSignals?.version||null,learningSignalsCount:learningSignals?.signals.length||0,model:usage.model,usage,idempotencyKey:computeAgt002RadarPreanalysisIdempotencyKey({kind:'run',attempt_key:job.attemptKey})});
 
    await completeJob(database,{jobId:job.jobId,leaseId:job.leaseId,preanalysisRunId:persisted.id});
    return{status:'completed',stages,job_id:job.jobId,preanalysis_run_id:persisted.id};

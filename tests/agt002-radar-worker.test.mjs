@@ -9,6 +9,10 @@ const TENDER = { id: '22222222-2222-4222-8222-222222222222', stable_key: 'k-1', 
 const JOB = { jobId: 'j1', leaseId: 'l1', tenderId: TENDER.id, gateEvaluationId: 'gate-old', attemptKey: 'a1', sourceRowHash: 'a'.repeat(64), policyVersion: 'p', contextVersion: 'c' };
 const hostileDatabase = new Proxy({}, { get() { throw new Error('database must not be touched'); } });
 const hostile = () => { throw new Error('must not run'); };
+// Medición del puente tal como el runtime la fija en el envelope (issue #136). El worker no puede
+// completarla desde el entorno, así que un `usage` vacío ya no es una entrada válida de los caminos
+// que persisten; la autoridad y el fail-closed se prueban en agt002-radar-preanalysis-usage-authority.
+const MEASURED_USAGE = { provider: 'hetzner_bridge', model: 'm1', input_tokens: 10, output_tokens: 5, cost_usd: 0 };
 
 // 1. Flag apagado: no-op total, ni siquiera intenta reclamar.
 for (const environment of [{}, { AGT002_RADAR_GATE: 'false' }]) {
@@ -67,7 +71,7 @@ const happy = createAgt002RadarWorker({
   recordGateEvaluation: track('ledger', { id: 'gate-fresh' }),
   projectLearningObservations: track('learning', { precedents: [] }),
   buildLearningSignals: track('signals', ({ candidate, maxSignals }) => { assert.equal(candidate.tender_id, TENDER.id); assert.equal(maxSignals, 10); return { version: 'agt002-radar-learning-v1', candidate_id: TENDER.id, max_signals: 10, considered: 0, signals: [] }; }),
-  runPreanalysis: track('agt', { status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [{ evidence_id: 'e' }], usage: {} }),
+  runPreanalysis: track('agt', { status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [{ evidence_id: 'e' }], usage: MEASURED_USAGE }),
   recordPreanalysisRun: track('persist', { id: 'r1', canonical: true }),
   completeJob: track('complete', { status: 'completed' }),
   failJob: hostile,
@@ -164,7 +168,7 @@ const baseHappyDeps = {
   recordGateEvaluation: async () => ({ id: 'gate-fresh' }),
   projectLearningObservations: async () => ({ precedents: [] }),
   buildLearningSignals: () => ({ version: 'v1', signals: [] }),
-  runPreanalysis: async () => ({ status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [{ evidence_id: 'e' }], usage: {} }),
+  runPreanalysis: async () => ({ status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [{ evidence_id: 'e' }], usage: MEASURED_USAGE }),
   recordPreanalysisRun: async () => ({ id: 'r1' }),
   completeJob: async () => ({ status: 'completed' }),
 };
@@ -300,7 +304,7 @@ const churnCanonical = { id: 'run-c1', tender_id: CHURN_TENDER.id, canonical: tr
     readCanonicalPreanalysis: async () => { canonicalCalls += 1; return []; },
     projectLearningObservations: async () => { touched.push('learning'); return {}; },
     buildLearningSignals: () => { touched.push('signals'); return { version: 'v1', signals: [] }; },
-    runPreanalysis: async () => { touched.push('agt'); return { status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [], usage: {} }; },
+    runPreanalysis: async () => { touched.push('agt'); return { status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [], usage: MEASURED_USAGE }; },
     recordPreanalysisRun: async () => { touched.push('persist'); return { id: 'r-churn' }; },
     completeJob: async () => { touched.push('complete'); },
     failJob: hostile,
@@ -323,7 +327,7 @@ const churnCanonical = { id: 'run-c1', tender_id: CHURN_TENDER.id, canonical: tr
     readCanonicalPreanalysis: async () => [materialCanonical],
     projectLearningObservations: async () => { touched.push('learning'); return {}; },
     buildLearningSignals: () => ({ version: 'v1', signals: [] }),
-    runPreanalysis: async () => { touched.push('agt'); return { status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [], usage: {} }; },
+    runPreanalysis: async () => { touched.push('agt'); return { status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [], usage: MEASURED_USAGE }; },
     recordPreanalysisRun: async () => { touched.push('persist'); return { id: 'r-material' }; },
     completeJob: async () => { touched.push('complete'); },
     failJob: hostile,
@@ -342,7 +346,7 @@ const churnCanonical = { id: 'run-c1', tender_id: CHURN_TENDER.id, canonical: tr
     readCanonicalPreanalysis: async () => [wrongPolicyCanonical],
     projectLearningObservations: async () => ({}),
     buildLearningSignals: () => ({ version: 'v1', signals: [] }),
-    runPreanalysis: async () => ({ status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [], usage: {} }),
+    runPreanalysis: async () => ({ status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [], usage: MEASURED_USAGE }),
     recordPreanalysisRun: async () => ({ id: 'r-p2' }),
     completeJob: async () => {},
     failJob: hostile,
@@ -362,7 +366,7 @@ for (const canonicalRows of [
     readCanonicalPreanalysis: async () => canonicalRows,
     projectLearningObservations: async () => ({}),
     buildLearningSignals: () => ({ version: 'v1', signals: [] }),
-    runPreanalysis: async () => ({ status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [], usage: {} }),
+    runPreanalysis: async () => ({ status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [], usage: MEASURED_USAGE }),
     recordPreanalysisRun: async () => ({ id: 'r-dup' }),
     completeJob: async () => {},
     failJob: hostile,
@@ -382,7 +386,7 @@ for (const raw of [{ days: 11 }, { window: RAPIDO_LABEL }, { days: 11, window: '
     readCanonicalPreanalysis: async () => { canonicalCalls += 1; return [churnCanonical]; },
     projectLearningObservations: async () => { touched.push('learning'); return {}; },
     buildLearningSignals: () => ({ version: 'v1', signals: [] }),
-    runPreanalysis: async () => { touched.push('agt'); return { status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [], usage: {} }; },
+    runPreanalysis: async () => { touched.push('agt'); return { status: 'completed', visibility_verdict: 'mostrar_en_radar', evidence: [], usage: MEASURED_USAGE }; },
     recordPreanalysisRun: async () => { touched.push('persist'); return { id: 'r-invalid' }; },
     completeJob: async () => { touched.push('complete'); },
     failJob: hostile,
