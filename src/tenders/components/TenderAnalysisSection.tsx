@@ -4,9 +4,11 @@ import { tenderRecommendationLabel } from '../tenderDecisionGate';
 import { deriveTenderProcessingPresentation } from '../processingStatus';
 import { tenderBriefUnavailableCopy } from '../tenderDecisionBriefModel';
 import { tenderDecisionBlockers, tenderDecisionConditionAnchor, tenderDecisionConditions, tenderDecisionPreparationActions, tenderDecisionSupportedAspects } from '../tenderDecisionSurface';
-import { tenderAnalysisCoverageReady } from '../tenderIntegralAnalysisPresentation';
+import { tenderDecisionAxisViews } from '../tenderDecisionAxisSurface';
+import { tenderAnalysisCoverageReady, tenderIntegralOpenUnitsPresentation, tenderIntegralOperationalGroups } from '../tenderIntegralAnalysisPresentation';
 import type { TenderAnalysisFinding, TenderDocumentAnalysis, TenderDocumentRecord, TenderDocumentsPayload, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput } from '../types';
 import { QuestionResponseCard, type NormalizedQuestion } from './TenderQuestionResponseCard';
+import { shouldShowTenderOperationalPendingProjection, TenderOperationalPendingProjection } from './TenderOperationalPendingProjection';
 
 type TenderAnalysisSectionProps = {
   analysis: TenderDocumentAnalysis | null;
@@ -22,12 +24,11 @@ type TenderAnalysisSectionProps = {
   onSaveQuestionResponse?: (input: TenderQuestionResponseInput, files: File[]) => Promise<void>;
   processingStatus?: TenderProcessingStatus | null;
   onRetryProcessing?: () => void;
-  // Con la superficie única "Análisis para decidir" activa (flag AGT002_DECISION_AXIS_SURFACE),
-  // la lectura de condiciones/impedimentos/preguntas/aspectos/preparación vive una sola vez, en
-  // #tender-decision. Análisis conserva los controles de corrida, el estado de procesamiento y el
-  // respaldo técnico V3, pero deja de renderizar esas vistas como pestaña competidora
-  // (§10 y AC14 de docs/superpowers/specs/2026-08-25-agt002-analisis-para-decidir.md).
-  // Por defecto `false`: con el flag apagado el render es idéntico al de hoy.
+  // Con la superficie única activa (flag AGT002_DECISION_AXIS_SURFACE), Análisis conserva los
+  // controles de corrida y alberga la proyección operativa V3 completa cuando todavía no existe
+  // lectura material por ejes. Decisión consume el mismo gate presentacional, pero sólo enlaza a
+  // esta lista; cuando sí hay lectura material, la superficie de cinco ejes sigue viviendo allí.
+  // Por defecto `false`: con el flag apagado se conserva el flujo legado.
   decisionSurfaceElsewhere?: boolean;
 };
 
@@ -58,9 +59,14 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
   // decisión la superficie ejecutiva completa permanece pausada.
   const coveragePaused = hasIntegralV3Payload && !tenderAnalysisCoverageReady(analysis?.evidence_coverage);
   const hasIntegralV3 = hasIntegralV3Payload && !coveragePaused;
-  // Análisis es la única superficie completa de condiciones e impedimentos: cada entrada gobernada
-  // se proyecta una sola vez a través de los selectores puros (Task 2). El componente no vuelve a
-  // proyectar `decision_review` ni transporta rationale/ids/evidencia técnica a la capa visible.
+  const operationalUnits = tenderIntegralOpenUnitsPresentation(analysis?.integral_analysis);
+  const operationalGroups = tenderIntegralOperationalGroups(analysis?.integral_analysis);
+  const decisionAxes = tenderDecisionAxisViews(analysis, questionResponses);
+  const showOperationalProjection = decisionSurfaceElsewhere
+    && shouldShowTenderOperationalPendingProjection(decisionAxes, operationalUnits);
+  // El modo operativo V3 se decide con el mismo selector puro que usa Decisión. Sólo esa lista
+  // completa se proyecta aquí; `decision_review` continúa en el flujo legado cuando el flag está
+  // apagado y los cinco ejes materiales continúan en la superficie única cuando están disponibles.
   const conditionCards = tenderDecisionConditions(analysis?.decision_review, questionResponses);
   const impedimentCards = tenderDecisionBlockers(analysis?.decision_review, questionResponses);
   const supportedCards = tenderDecisionSupportedAspects(analysis?.decision_review);
@@ -92,6 +98,7 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
     </div>}
     {failed && <div className="error" role="alert"><strong>Análisis fallido.</strong> El último intento no produjo una conclusión utilizable. Puede intentarlo nuevamente sin afectar la decisión humana.</div>}
     {stale && <div className="notice" role="status"><strong>Análisis desactualizado.</strong> El contenido histórico se conserva para trazabilidad, pero los documentos vigentes cambiaron.</div>}
+    {showOperationalProjection && <TenderOperationalPendingProjection groups={operationalGroups} count={operationalUnits.length} />}
     {coveragePaused && !decisionSurfaceElsewhere && <section className="tender-v3-questions tender-executive-pending" aria-labelledby="tender-inventory-paused-title">
       <header><div><span className="eyebrow">Cobertura del expediente</span><h3 id="tender-inventory-paused-title">Análisis integral pausado</h3><p>Este análisis no tiene todavía una cobertura de evidencia lista para decisión de este expediente: la frontera semántica no está finalizada, o falta un inventario verificable de sus requisitos. No se cita ninguna cifra suya: el análisis anterior se conserva sólo como trazabilidad y no representa cobertura integral de esta licitación.</p></div><strong>Cobertura pendiente</strong></header>
       <p className="notice" role="status">No hay recomendación integral disponible. Revise o actualice el análisis cuando la cobertura de requisitos de este expediente esté completa. El respaldo técnico histórico de esta licitación se conserva más abajo, sólo como trazabilidad.</p>

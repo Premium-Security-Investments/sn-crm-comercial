@@ -4,6 +4,7 @@ const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
 const preparation = readFileSync(new URL('../tender-offer-preparation.js', import.meta.url), 'utf8');
 const src = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+const dossierPanel = readFileSync(new URL('../src/tenders/components/TenderDossierWorkspacePanel.tsx', import.meta.url), 'utf8');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -42,5 +43,7 @@ assert(src.includes('Nota interna de preparación'), 'UI debe tener espacio de n
 assert(src.includes('/api/tender-offer-preparation-note'), 'UI debe permitir guardar notas del asistente.');
 assert(/const authorizedPreparation\s*=\s*preparation\s*&&\s*payload\.decision\?\.decision\s*===\s*'go'/.test(src), 'Todo el expediente debe quedar oculto si GO ya no es la decisión vigente.');
 assert(/authorizedPreparation\s*\?\s*<div className="tender-document-panel">/.test(src), 'Encabezado, carpeta, notas y formulario solo deben montarse con preparación autorizada.');
+assert(/if \(!enabled\) return null;/.test(dossierPanel), 'El workspace duplicado no debe renderizar ningún empty-state antes de GO.');
+assert(!/if \(!enabled\) return <section/.test(dossierPanel), 'Pre-GO debe dejar un solo estado compacto en TenderOfferPreparationPanel.');
 
 console.log('tender offer preparation static checks passed');

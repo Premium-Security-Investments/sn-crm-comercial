@@ -186,34 +186,25 @@ test('D1.4-D1.5 — tabla y dl conservan cinco campos y el banner usa aria-live 
   assert.ok(html.includes('aria-live="polite"'));
 });
 
-test('D1.6 — cinco ejes vacíos con seis unidades V3 abiertas se sustituyen por seis pendientes operativos humanos', () => {
+test('D1.6 — Decisión no duplica seis pendientes V3 y dirige a la lista completa en Análisis', () => {
   const html = render(analysisFixture({ paused: true }));
-  assert.ok(html.includes('Lectura documental incompleta'));
-  assert.ok(html.includes('6 pendientes accionables'));
-  assert.equal(count(html, 'class="tender-decision-operational-card"'), 6);
-  assert.equal(count(html, 'No evaluado · 0'), 0, 'los chips vacíos deben ceder su lugar a la proyección V3');
+  assert.ok(html.includes('Pendientes documentales en Análisis'));
+  assert.ok(html.includes('6 pendientes por revisar'));
+  assert.equal(count(html, 'class="tender-decision-operational-card"'), 0, 'Decisión no debe repetir las tarjetas completas');
+  assert.match(html, /href="#tender-analysis"/);
+  assert.ok(html.includes('Revisar pendientes en Análisis'));
+  assert.equal(count(html, 'No evaluado · 0'), 0, 'los chips vacíos deben ceder su lugar al puntero de Análisis');
   assert.equal(html.includes('Favorable con evidencia'), false);
   assert.equal(html.includes('Sin impedimentos'), false);
-  for (const category of [
-    'Presentación y causales de rechazo',
-    'Requisitos habilitantes',
-    'Capacidad y obligaciones técnicas',
-    'Capacidad financiera y económica',
-    'Condiciones estratégicas y contractuales',
-  ]) assert.ok(html.includes(category), `falta categoría humana ${category}`);
-  assert.equal(count(html, 'class="tender-decision-operational-label"'), 6, 'cada tarjeta rotula su título una vez como requisito');
-  for (const field of ['Qué sabemos', 'Qué falta por confirmar o aportar', 'Por qué importa', 'Siguiente acción', 'Referencias']) {
-    assert.ok(html.includes(`<dt>${field}</dt>`), `falta campo separado ${field}`);
+  for (const duplicated of ['Presentación y causales de rechazo', 'Requisito operativo 1', 'Conocimiento documental 1.', 'Faltante documental 1.', 'Impacto comercial 1.', 'Acción humana 1.']) {
+    assert.equal(html.includes(duplicated), false, `Decisión no debe repetir contenido completo de Análisis: ${duplicated}`);
   }
-  assert.equal(count(html, 'Requisito operativo 1'), 1, 'el título/requisito no debe repetirse dentro de la tarjeta');
-  assert.equal(count(html, 'Lectura documental incompleta'), 1, 'el estado operativo se anuncia una sola vez');
-  assert.equal(count(html, '6 pendientes accionables'), 1, 'el conteo operativo se anuncia una sola vez');
-  for (const literal of ['Requisito operativo 1', 'Conocimiento documental 1.', 'Faltante documental 1.', 'Impacto comercial 1.', 'Acción humana 1.']) assert.ok(html.includes(literal));
-  assert.ok(html.includes('No hay un faltante específico registrado; la validación humana continúa pendiente.'));
-  assert.ok(html.includes('No hay una siguiente acción específica registrada; asignar revisión humana.'));
   for (const forbidden of ['Ver trazabilidad técnica', 'Ver respaldo técnico del análisis', 'UNIT-INTERNAL', 'REQ-INTERNAL', 'HASH-OFFSET-INTERNAL', 'financial_execution', '6 de 6.809', 'Cobertura: LISTA']) {
     assert.equal(html.includes(forbidden), false, `se filtró contenido técnico/prohibido: ${forbidden}`);
   }
+  const formalIndex = html.indexOf('Decisión GO / NO GO');
+  const pointerIndex = html.indexOf('Pendientes documentales en Análisis');
+  assert.ok(formalIndex >= 0 && pointerIndex > formalIndex, 'el control formal debe preceder al puntero secundario');
 });
 
 test('D1.7-D1.8 — la pregunta usa copy pendiente y la barra integra Mesa de ayuda + control formal', () => {
@@ -307,7 +298,7 @@ test('D6 — fuera de post_go se conserva el botón secundario Mesa de ayuda jun
   const pausedHtml = render(analysisFixture({ paused: true }));
   assert.equal(count(pausedHtml, 'class="tender-decision-axis-help"'), 1);
   assert.equal(count(pausedHtml, 'class="tender-decision-axis-cta"'), 1);
-  assert.ok(pausedHtml.includes('Resolver pendientes documentales'));
+  assert.ok(pausedHtml.includes('Revisar pendientes en Análisis'));
 });
 
 test('D6 — el harness visual usa únicamente categorías del catálogo material gobernado', () => {

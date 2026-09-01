@@ -829,15 +829,15 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
     window.alert(destination === 'radar' ? 'La licitación salió de oportunidades y volvió al Radar.' : 'La licitación pasó a Seguimiento.');
     go(destination === 'seguimiento' ? '#/tenders?view=seguimiento' : '#/tenders?view=radar');
   };
-  return <section className={o.service_type_code === 'licitacion_publica' ? 'stack' : 'stack opportunity-ficha detail-page-shell'}>
-    <div id="tender-summary" className="tender-detail-anchor" tabIndex={-1}>
+  return <section className={o.service_type_code === 'licitacion_publica' ? 'stack tender-opportunity-detail' : 'stack opportunity-ficha detail-page-shell'}>
+    <div id="tender-summary" className="tender-summary-anchor tender-detail-anchor" tabIndex={-1}>
       <div className="hero"><div><Badge>{o.stage_name}</Badge><h2>{o.company_name}</h2><p>{o.owner_name || 'Sin comercial'} · {o.regional_nombre || 'Sin regional'} · {fmtMoney(o.offer_value)}</p>{o.service_type_code !== 'licitacion_publica' && <div className="hero-chip-row"><Badge>Servicio: {o.service_type_name || o.tipo_producto_original || 'Sin servicio'}</Badge><Badge>Tipo de cliente: {customerSegmentLabel(o.customer_segment)}</Badge>{locationChip && <Badge>Ubicación: {locationChip}</Badge>}</div>}</div><div className="row-actions"><button onClick={() => go(`#/edit/${o.id}`)}>Editar</button>{o.service_type_code === 'licitacion_publica' && o.stage_code !== 'descartado' && <><button type="button" className="secondary" disabled={Boolean(exitingTender)} onClick={() => void exitTender('seguimiento')}>Pasar a Seguimiento</button><button type="button" className="danger" disabled={Boolean(exitingTender)} onClick={() => void exitTender('radar')}>Sacar de oportunidad</button></>}</div></div>
       {exitFeedback && <div className="error" role="alert">{exitFeedback}</div>}
     </div>
     {o.service_type_code === 'licitacion_publica' && <TenderModuleNavigation active="oportunidades" navigate={go} currentProfile={data.currentProfile} />}
     {o.service_type_code === 'licitacion_publica' && <TenderDetailNavigation entity={o.company_name} sourceUrl={o.source_url} observations={o.observaciones} expectedCloseDate={o.expected_close_date} statusSnapshot={tenderNavigationSnapshot} onBack={() => go('#/tenders?view=oportunidades')} />}
     {o.service_type_code === 'licitacion_publica' ? <>
-      <Panel title="Resumen de la oportunidad">
+      <Panel title="Resumen de la oportunidad" className="tender-opportunity-summary-panel">
         <div className="tender-opportunity-summary-grid">
           <Info label="Entidad" value={o.company_name}/><Info label="Servicio" value={o.service_type_name || o.tipo_producto_original}/><Info label="Sector" value={o.economic_sector}/><Info label="Ciudad" value={o.quote_city || 'Ciudad por confirmar'}/>
           <Info label="Cuantía" value={fmtMoney(o.offer_value)}/><Info label="Cierre oficial" value={fmtDateOnly(o.expected_close_date)}/><Info label="Responsable" value={o.owner_name || 'Sin comercial'}/>
@@ -1255,20 +1255,11 @@ const businessEventLabels: Record<string, string> = {
   offer_preparation_started: 'Preparación de oferta iniciada', offer_submitted: 'Oferta presentada', awarded: 'Oferta adjudicada',
   not_awarded: 'Oferta no adjudicada', cancelled: 'Proceso cancelado', deserted: 'Proceso desierto',
 };
-const technicalEventLabels: Record<string, string> = {
-  detected: 'Proceso detectado', pipeline_queued: 'Procesamiento en cola', document_discovery_started: 'Búsqueda documental iniciada',
-  document_import_progress: 'Importación documental en curso', document_import_completed: 'Importación documental completada',
-  document_import_partial: 'Importación documental parcial', document_import_failed: 'Importación documental fallida',
-  snapshot_published: 'Versión documental consolidada', analysis_queued: 'Análisis en cola', analysis_started: 'Análisis iniciado',
-  analysis_completed: 'Análisis completado', analysis_failed: 'Análisis fallido', analysis_rules_fallback_shown: 'Análisis alternativo mostrado',
-};
 const offerStatusLabels: Record<string, string> = { en_preparacion: 'En preparación', lista_para_presentar: 'Lista para presentar', presentada: 'Presentada', adjudicada: 'Adjudicada', no_adjudicada: 'No adjudicada', cerrada_no_go: 'Cerrada NO GO' };
 function publicActuationLabel(value: string) { return businessEventLabels[value] || 'Hito del proceso'; }
-function technicalActuationLabel(value: string) { return technicalEventLabels[value] || 'Evento técnico'; }
 type TenderProcessHistoryItem = { id: string; title: string; createdAt: string; actor: string; note?: string | null; sourceUrl?: string | null };
 function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { opportunity: Opportunity; profiles: Profile[]; currentProfile: Profile }) {
   const [events, setEvents] = useState<TenderTrackingEvent[]>([]);
-  const [technicalEvents, setTechnicalEvents] = useState<TenderTrackingEvent[]>([]);
   const [decisions, setDecisions] = useState<TenderGoNoGoDecision[]>([]);
   const [offerHistory, setOfferHistory] = useState<TenderOfferStatusTransition[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -1283,19 +1274,17 @@ function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { oppor
       setEvents(current => cursor ? [...current, ...page.events] : page.events);
       setNextCursor(page.next_cursor);
       if (!cursor) {
-        const [technical, decisionPayload, statusPayload] = await Promise.all([
-          loadTrackingEvents(api, opportunity.id, null, 'technical'),
+        const [decisionPayload, statusPayload] = await Promise.all([
           loadTenderGoNoGoDecision(api, opportunity.id),
           loadTenderOfferStatus(api, opportunity.id),
         ]);
-        setTechnicalEvents(technical.events);
         setDecisions(decisionPayload.history || []);
         setOfferHistory(statusPayload.history || []);
       }
     } finally { setLoading(false); }
   };
   useEffect(() => {
-    setEvents([]); setTechnicalEvents([]); setDecisions([]); setOfferHistory([]); setNextCursor(null); setStatus('');
+    setEvents([]); setDecisions([]); setOfferHistory([]); setNextCursor(null); setStatus('');
     void loadPage(null).catch(error => setStatus(error instanceof Error ? error.message : String(error)));
   }, [opportunity.id]);
   const save = async (event: React.FormEvent) => {
@@ -1318,9 +1307,8 @@ function PublicTenderFollowUp({ opportunity, profiles, currentProfile }: { oppor
     ...offerHistory.map(event => ({ id: `offer-${event.id}`, title: `${offerStatusLabels[event.from_status] || event.from_status} → ${offerStatusLabels[event.to_status] || event.to_status}`, createdAt: event.changed_at, actor: event.psi_sales_profiles?.full_name || event.actor_id || 'Persona autorizada', note: event.note })),
   ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()), [events, decisions, offerHistory, profiles]);
   return <div className="stack">
-    <Panel title="Registrar actuación o novedad"><form onSubmit={save} className="form"><label htmlFor="tender-follow-up-actuation-type">Tipo de actuación</label><Select id="tender-follow-up-actuation-type" value={type} onChange={setType} options={publicActuationOptions} empty="Tipo de actuación"/><label htmlFor="tender-follow-up-note">Descripción de la actuación o novedad</label><textarea id="tender-follow-up-note" required placeholder="Describe la actuación o novedad del proceso" value={note} onChange={event => setNote(event.target.value)}/><small>Registrado por: {currentProfile.full_name}</small><button disabled={!note.trim()}>Guardar actuación</button>{status && <small>{status}</small>}</form></Panel>
-    <Panel title="Historial del proceso"><p className="muted">Decisiones, cambios de estado y actuaciones que explican la evolución comercial de la oportunidad.</p><div className="timeline">{processHistory.length ? processHistory.map(item => <div className="event" key={item.id}><strong>{item.title}</strong><span>{fmtDate(item.createdAt)} · {item.actor}</span>{item.note && <p>{item.note}</p>}{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Ver fuente asociada</a>}</div>) : <p className="muted">{loading ? 'Cargando historial…' : 'Sin hitos comerciales registrados.'}</p>}</div>{nextCursor && <button className="secondary" disabled={loading} onClick={() => void loadPage(nextCursor).catch(error => setStatus(error instanceof Error ? error.message : String(error)))}>{loading ? 'Cargando…' : 'Cargar más'}</button>}</Panel>
-    <details className="tender-technical-audit"><summary>Auditoría técnica de {VIGIA_VISIBLE_NAMES.tenders}</summary><p className="muted">Procesamiento documental, análisis y fallas técnicas. No representa el avance comercial.</p><div className="timeline">{technicalEvents.length ? technicalEvents.map(event => <div className="event" key={event.id}><strong>{technicalActuationLabel(event.event_type)}</strong><span>{fmtDate(event.created_at)} · {actorLabel(event)}</span>{event.note && <p>{event.note}</p>}</div>) : <p className="muted">Sin eventos técnicos registrados.</p>}</div></details>
+    <Panel title="Registrar actuación o novedad"><form onSubmit={save} className="form"><label htmlFor="tender-follow-up-actuation-type">Tipo de actuación</label><Select id="tender-follow-up-actuation-type" value={type} onChange={setType} options={publicActuationOptions} empty="Tipo de actuación"/><label htmlFor="tender-follow-up-note">Descripción de la actuación o novedad</label><textarea id="tender-follow-up-note" required aria-describedby={!note.trim() ? 'tender-follow-up-note-help' : undefined} placeholder="Describe la actuación o novedad del proceso" value={note} onChange={event => setNote(event.target.value)}/>{!note.trim() && <small id="tender-follow-up-note-help" className="form-helper">Escriba una descripción para habilitar Guardar actuación.</small>}<small>Registrado por: {currentProfile.full_name}</small><button disabled={!note.trim()}>Guardar actuación</button>{status && <small>{status}</small>}</form></Panel>
+    <Panel title="Historial del proceso"><p className="muted">Decisiones, cambios de estado y actuaciones que explican la evolución comercial de la oportunidad.</p><div className="timeline tender-business-timeline">{processHistory.length ? processHistory.map(item => <div className="event" key={item.id}><strong>{item.title}</strong><span>{fmtDate(item.createdAt)} · {item.actor}</span>{item.note && <p>{item.note}</p>}{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer">Ver fuente asociada</a>}</div>) : <p className="muted">{loading ? 'Cargando historial…' : 'Sin hitos comerciales registrados.'}</p>}</div>{nextCursor && <button className="secondary" disabled={loading} onClick={() => void loadPage(nextCursor).catch(error => setStatus(error instanceof Error ? error.message : String(error)))}>{loading ? 'Cargando…' : 'Cargar más'}</button>}</Panel>
   </div>;
 }
 function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; refresh: () => Promise<void> }) {
