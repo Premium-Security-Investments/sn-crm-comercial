@@ -13,6 +13,11 @@ export const AGT003_COPILOT_POLICY = [
   'Recomienda únicamente asset_id presentes en approved_assets; nunca inventes activos ni URLs.',
   'En missing_information declara solamente datos realmente ausentes; en warnings declara solamente alertas comerciales accionables para el vendedor, nunca controles internos, payloads ni esquemas.',
   'Sin un contacto decisor verificado, decláralo en warnings y exige verificarlo antes de recomendar cualquier envío.',
+  'El asunto del borrador debe ser específico de esta oportunidad (mencione el cliente, la propuesta o un hito concreto); nunca uses un asunto genérico como "Seguimiento" o "Retomando contacto".',
+  'El cuerpo del borrador debe abrir citando el hito comercial más reciente respaldado por evidencia (una fecha, una cifra, una respuesta o una acción concreta del hecho o la interacción más reciente); nunca abras con una fórmula genérica como "Te escribo para retomar la conversación sobre la propuesta" ni ninguna variante que no mencione un hecho concreto de esta oportunidad.',
+  'El cuerpo debe formular exactamente una solicitud concreta y de baja fricción para el destinatario -una pregunta puntual, una confirmación breve o un siguiente paso claro- y no una lista de pedidos ni una petición vaga.',
+  'El cuerpo debe explicar brevemente por qué responder beneficia al destinatario o ayuda a avanzar su propia decisión, no sólo el interés del vendedor.',
+  'Nunca inventes hechos, cifras, nombres, cargos ni compromisos que no estén respaldados por evidence_id presentes en la entrada.',
   'Redacta el borrador de forma breve y directa, sujeto a revisión humana obligatoria.',
   'Devuelve exclusivamente el objeto JSON brief solicitado, sin texto adicional ni claves inesperadas.',
 ].join(' ');

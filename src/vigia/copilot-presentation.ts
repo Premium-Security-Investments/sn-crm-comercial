@@ -107,14 +107,9 @@ export function normalizeCopilotErrorMessage(message: string | null | undefined)
   return text.replace(COMMERCIAL_AGENT_LABEL, VIGIA_VISIBLE_NAMES.commercial);
 }
 
-const MAX_NEXT_STEP_LENGTH = 240;
-const MAX_WHY_BULLET_LENGTH = 180;
 const MAX_WHY_BULLETS = 2;
 
 function normalizeForComparison(text: string): string { return text.trim().toLowerCase().replace(/\s+/g, ' '); }
-function truncate(text: string, maxLength: number): string {
-  return text.length <= maxLength ? text : `${text.slice(0, maxLength - 1).trimEnd()}…`;
-}
 
 export type CompactCopilotSummary = { nextStep: string | null; whyBullets: string[] };
 
@@ -132,7 +127,7 @@ export function presentCompactCopilotSummary(presented: PresentedCopilotBrief, a
     .map(entry => String(entry?.text ?? '').trim())
     .filter(Boolean)
     .filter(text => !alertTexts.has(normalizeForComparison(text)));
-  const whyBullets = bulletSource.slice(0, MAX_WHY_BULLETS).map(t => truncate(t, MAX_WHY_BULLET_LENGTH));
+  const whyBullets = bulletSource.slice(0, MAX_WHY_BULLETS);
 
-  return { nextStep: truncate(candidate, MAX_NEXT_STEP_LENGTH), whyBullets };
+  return { nextStep: candidate, whyBullets };
 }

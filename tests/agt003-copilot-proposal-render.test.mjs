@@ -89,4 +89,14 @@ const genuineDetails = /<details class="vigia-copilot-context">([\s\S]*?)<\/deta
 assert.ok(genuineDetails.includes('vigia-copilot-plan'));
 assert.match(genuineDetails, /<summary[^>]*>Ver contexto analizado<\/summary>/);
 
+// AGT-003 hotfix: un "Siguiente paso sugerido" largo se renderiza completo en el HTML real, sin
+// elipsis ni recorte — la evidencia debe verse íntegra, no sólo en el adaptador puro.
+const longStrategy = ('Confirme con el cliente la fecha exacta de ' + 'la reunión de seguimiento propuesta sigue pendiente de confirmación final '.repeat(4)).trim();
+const longHtml = renderReactComponent(VigiaCopilotProposal, { brief: { ...brief, strategy: longStrategy }, draft, alerts: [], onDraftChange: noop, onCopy: noop, onDiscard: noop });
+assert.ok(longStrategy.length > 240, 'el texto de prueba debe superar el antiguo límite de 240 caracteres');
+const longSummaryMatch = /<section class="vigia-copilot-summary">([\s\S]*?)<\/section>/.exec(longHtml);
+assert.ok(longSummaryMatch, 'el bloque "Siguiente paso sugerido" debe existir para una recomendación genuina');
+assert.ok(longSummaryMatch[1].includes(longStrategy), 'el paso sugerido largo se renderiza íntegro dentro del bloque compacto');
+assert.equal(longSummaryMatch[1].includes('…'), false, 'el bloque compacto no contiene ninguna elipsis de truncado');
+
 console.log('AGT-003 copilot proposal render checks passed');

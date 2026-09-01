@@ -121,7 +121,7 @@ export function VigiaOpportunityCopilot({ opportunityId, request, preflight }: P
     <header><div><span className="eyebrow">{VIGIA_VISIBLE_NAMES.commercial}</span><h3 id="vigia-copilot-title">Próximo seguimiento</h3><p>Analiza el contexto y propone un siguiente paso de seguimiento</p></div></header>
     <VigiaCommercialAlerts alerts={alerts} />
     {state.phase !== 'error' && <div className="vigia-copilot-generate">
-      <button type="button" disabled={state.phase === 'loading'} onClick={generate}>{ready ? 'Actualizar borrador' : 'Preparar próximo seguimiento'}</button>
+      <button type="button" className={ready ? 'secondary' : undefined} disabled={state.phase === 'loading'} onClick={generate}>{ready ? 'Actualizar borrador' : 'Preparar próximo seguimiento'}</button>
     </div>}
     {state.phase === 'idle' && <div className="vigia-copilot-empty"><p className="muted">Prepara un borrador editable de seguimiento, separado del registro original.</p></div>}
     {state.phase === 'loading' && <div className="notice" role="status">{VIGIA_VISIBLE_NAMES.commercial} está preparando un borrador acotado…</div>}

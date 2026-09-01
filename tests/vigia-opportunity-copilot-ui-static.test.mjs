@@ -62,4 +62,22 @@ for (const removed of ['PreflightAction', 'ConsolidatedPreflightAction', 'BaseCo
 assert.equal(component.includes('contextVersion'), false, 'VigiaOpportunityCopilot.tsx no debe contener contextVersion');
 assert.equal(main.includes('contextVersion'), false, 'main.tsx no debe contener contextVersion');
 
+// AGT-003 hotfix: el CTA primario no debe estirarse a lo ancho del panel — un botón de ancho
+// completo dentro de un contenedor `display:grid` produce un anillo de foco nativo del navegador
+// que envuelve todo el contenedor en vez de ceñirse al control. `justify-items:start` mantiene el
+// botón (y su anillo de foco) del tamaño de su contenido.
+assert.match(
+  css,
+  /\.vigia-copilot-generate\{[^}]*justify-items:start[^}]*\}/,
+  '.vigia-copilot-generate debe fijar justify-items:start para un foco compacto en el CTA primario',
+);
+
+// Tras generar un borrador, "Actualizar borrador" pasa a ser visualmente secundario frente a la
+// acción primaria de completar el flujo (Copiar correo).
+assert.match(
+  component,
+  /<button type="button" className=\{ready \? 'secondary' : undefined\}[^>]*onClick=\{generate\}>/,
+  'el botón de generación debe volverse "secondary" una vez que existe un borrador (ready)',
+);
+
 console.log('Vig-IA opportunity copilot UI static contract passed');
