@@ -108,8 +108,9 @@ function TenderOperationalPendingCard({
   const impact = card.commercialImpactSummary?.trim() || 'No hay impacto comercial documentado.';
   const missing = card.missingEvidenceReasons.filter(reason => reason.trim().length > 0);
   const actions = card.actionSummaries.filter(action => action.trim().length > 0);
+  const sourceCount = Math.max(card.evidenceSourceLabels.length, 1);
   const references = card.citedEvidenceCount > 0
-    ? `${card.citedEvidenceCount} referencia${card.citedEvidenceCount === 1 ? '' : 's'} documental${card.citedEvidenceCount === 1 ? '' : 'es'}: ${card.evidenceSourceLabels.length > 0 ? card.evidenceSourceLabels.join(' · ') : 'fuente documental registrada'}`
+    ? `${card.citedEvidenceCount} cita${card.citedEvidenceCount === 1 ? '' : 's'} en ${sourceCount} documento${sourceCount === 1 ? '' : 's'}: ${card.evidenceSourceLabels.length > 0 ? card.evidenceSourceLabels.join(' · ') : 'fuente documental registrada'}`
     : 'Sin referencias documentales legibles asociadas.';
   const view = projectPendingCardReview(card, review, isHuman);
   // Id estable derivado del `unit_id` estructural (§8/§18): Decisión reutiliza el mismo helper

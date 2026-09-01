@@ -348,9 +348,13 @@ export function TenderDecisionAxisSurface(props: TenderDecisionAxisSurfaceProps)
     onNavigationStateChanged={onDecisionNavigationStateChanged}
   />;
 
-  return <section className={`tender-decision-axis-surface${useOperationalProjection ? ' is-formal-primary' : ''}`} aria-labelledby="tender-decision-axis-title">
+  return <section className={`tender-decision-axis-surface${useOperationalProjection ? ' is-formal-primary' : ''}`} aria-labelledby={useOperationalProjection ? 'tender-go-no-go-heading' : 'tender-decision-axis-title'}>
     <header className="tender-decision-axis-hero">
-      <div><span className="eyebrow">{useOperationalProjection ? 'Control formal humano' : 'Cinco señales para una decisión humana'}</span><h2 id="tender-decision-axis-title">{useOperationalProjection ? 'Decisión GO / NO GO' : 'Análisis para decidir'}</h2><p>{useOperationalProjection
+      {/* En formal-primary el panel embebido más abajo ya trae su propio encabezado "Decisión
+          GO / NO GO" (id="tender-go-no-go-heading"): repetirlo aquí duplicaría el título, por eso
+          este hero no vuelve a declarar un <h2>, y la sección se etiqueta directamente con el id
+          real del panel embebido. */}
+      <div><span className="eyebrow">{useOperationalProjection ? 'Control formal humano' : 'Cinco señales para una decisión humana'}</span>{!useOperationalProjection && <h2 id="tender-decision-axis-title">Análisis para decidir</h2>}<p>{useOperationalProjection
         ? 'La persona autorizada puede registrar su decisión. Los pendientes documentales completos permanecen disponibles en Análisis como apoyo, sin bloquear este control.'
         : 'Contrasta exigencia, evidencia, cruce, efecto y acción sin convertir el análisis en una decisión automática.'}</p></div>
       {!useOperationalProjection && <strong className={`tender-decision-axis-coverage ${surfaceState.state === 'paused' ? 'is-paused' : 'is-ready'}`}>{`Cobertura: ${surfaceState.state === 'paused' ? 'PAUSADA' : 'LISTA'}`}</strong>}

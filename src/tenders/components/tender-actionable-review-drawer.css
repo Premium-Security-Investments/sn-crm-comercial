@@ -33,8 +33,10 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+  padding-top: .2rem;
   padding-bottom: .8rem;
   background: #fff;
+  box-shadow: 0 1px 0 var(--review-line);
 }
 
 .tender-actionable-review-drawer-header h2 { margin: .2rem 0 0; letter-spacing: -.02em; }
@@ -172,6 +174,18 @@
 
 .tender-actionable-review-drawer textarea { min-height: 88px; resize: vertical; }
 
+.tender-actionable-review-drawer input[type="file"]::file-selector-button {
+  margin-right: .6rem;
+  padding: .45rem .75rem;
+  border: 1px solid var(--review-line);
+  border-radius: 8px;
+  background: #eef0ef;
+  color: var(--review-ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .tender-actionable-review-drawer fieldset {
   display: grid;
   gap: .45rem;
@@ -186,9 +200,12 @@
 .tender-actionable-review-drawer-checkbox {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: .5rem;
+  width: 100%;
   min-height: 44px;
   font-weight: 600;
+  text-align: left;
 }
 
 .tender-actionable-review-drawer-attachment-list {
@@ -219,6 +236,10 @@
 .tender-actionable-review-drawer button {
   min-height: 44px;
   min-width: 44px;
+}
+
+.tender-actionable-review-drawer button:disabled {
+  color: #5f6f6b;
 }
 
 /* Foco visible propio en todos los controles: nunca depende del outline por defecto del

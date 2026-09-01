@@ -42,7 +42,18 @@ assert.ok(radarUtils.includes('deduplicateTenders') && radarUtils.includes('sort
 
 assert.ok(tracking.includes('loadTracking<PublicTender[]>') && tenderApi.includes("'/api/tender-tracking'") && tracking.includes('expected_tracking_updated_at'), 'Seguimiento debe usar la cola y concurrencia optimista.');
 assert.ok(tracking.includes('Abrir oportunidad') && tracking.includes('document_import_status'), 'Seguimiento debe confirmar estado documental antes de navegar.');
-assert.ok(opportunities.includes("'/api/tender-documents-import'") && opportunities.includes('focus=documents'), 'Oportunidades debe reutilizar importación protegida y abrir el foco documental.');
+assert.ok(opportunities.includes("'/api/tender-documents-import'"), 'Oportunidades debe reutilizar importación protegida.');
+assert.match(
+  opportunities,
+  /import \{[^}]*tenderDetailSectionHref[^}]*\} from ['"]\.\/detailNavigationState['"]/s,
+  'Abrir expediente debe reutilizar el helper canónico compartido de enlace de sección, no armar el hash a mano.',
+);
+assert.match(
+  opportunities,
+  /tenderDetailSectionHref\(dossier\.opportunity_id,\s*'tender-document-review'\)/,
+  'Abrir expediente debe enlazar la sección canónica de Documentos usando el helper compartido.',
+);
+assert.doesNotMatch(opportunities, /focus=documents/, 'el enlace de Abrir expediente ya no debe emitir el parámetro legado focus=documents.');
 assert.ok(configuration.includes('loadCompanyProfile') && !configuration.includes("'/api/tenders'"), 'Configuración no debe cargar el Radar.');
 assert.doesNotMatch(configuration, /tender-search-profiles|profileRadarHash/, 'Configuración no debe gestionar perfiles de búsqueda.');
 assert.ok(radar.includes('TenderSavedSearches') && viewUtils.includes('view=radar&profile=${encodeURIComponent(profileId)}'), 'Un perfil guardado debe aplicarse mediante URL codificada al Radar.');

@@ -373,4 +373,97 @@ test('el CSS de la tarjeta operativa declara estados de la tarjeta compacta (bad
   assert.match(css, /\.tender-decision-operational-card-badge/, 'debe existir una clase dedicada al badge de estado de la tarjeta compacta');
 });
 
+// --- AGT-002 visual QA · dos citas provenientes de una sola fuente documental deben presentarse
+// con el copy exacto "N citas en M documento(s): <fuentes>", no la redacción genérica anterior de
+// "referencia(s) documental(es)". -----------------------------------------------------------------
+test('la tarjeta operativa presenta el copy exacto de citas cuando dos referencias provienen de una sola fuente documental', async () => {
+  const TenderOperationalPendingProjection = await loadReactComponent(
+    'src/tenders/components/TenderOperationalPendingProjection.tsx',
+    'TenderOperationalPendingProjection',
+  );
+  const groups = [{
+    key: 'grupo-tecnico',
+    label: 'Técnico',
+    units: [unitPresentation('unit-citas', {
+      technical: { unitId: 'unit-citas' },
+      citedEvidenceCount: 2,
+      evidenceSourceLabels: ['Documento del pliego'],
+      hasCitedEvidence: true,
+    })],
+  }];
+  const view = mountWithJsdom(TenderOperationalPendingProjection, {
+    groups,
+    count: 1,
+    opportunityId: 'opportunity-1',
+    analysisRunId: 'run-1',
+    currentProfile: { id: 'profile-1', full_name: 'Revisora', role: 'comercial', identity_type: 'human' },
+    request: async () => ({ analysis_run_id: 'run-1', items: [], summary: { open_count: 0, confirmed_risk_count: 0 }, history_available: false }),
+    apiDownload: async () => new Blob(),
+  });
+  try {
+    await view.flush();
+    assert.match(
+      view.container.textContent || '',
+      /2 citas en 1 documento: Documento del pliego/,
+      'dos citas provenientes de una sola fuente deben presentarse exactamente como "2 citas en 1 documento: Documento del pliego"',
+    );
+  } finally {
+    await view.unmount();
+  }
+});
+
+// --- AGT-002 visual QA · el encabezado sticky del drawer necesita espacio propio y una
+// separación visible para no aparentar solaparse con el contenido que se desplaza debajo. --------
+test('el encabezado sticky del drawer reserva espacio simétrico y una separación visible frente al contenido que se desplaza debajo', () => {
+  const css = read('src/tenders/components/tender-actionable-review-drawer.css');
+  const headerRuleMatch = css.match(/\.tender-actionable-review-drawer-header\s*\{([^}]*)\}/);
+  assert.ok(headerRuleMatch, 'debe existir la regla del encabezado sticky del drawer');
+  const headerRule = headerRuleMatch[1];
+  assert.match(headerRule, /padding-top\s*:/, 'el encabezado sticky necesita espacio superior propio, no sólo el padding heredado del contenedor con scroll');
+  assert.match(
+    headerRule,
+    /box-shadow\s*:|border-bottom\s*:/,
+    'el encabezado sticky necesita una separación visible (box-shadow o border-bottom) para no aparentar solaparse con el contenido que se desplaza debajo',
+  );
+});
+
+// --- AGT-002 visual QA · las filas de resultado (radio) del drawer deben ocupar el ancho
+// completo del formulario y alinear su contenido a la izquierda de forma explícita. --------------
+test('las filas de resultado (radio) del drawer ocupan el ancho completo y alinean el texto a la izquierda', () => {
+  const css = read('src/tenders/components/tender-actionable-review-drawer.css');
+  const outcomeRuleMatch = css.match(/\.tender-actionable-review-drawer-outcome-option\s*,\s*\.tender-actionable-review-drawer-checkbox\s*\{([^}]*)\}/);
+  assert.ok(outcomeRuleMatch, 'debe existir la regla compartida de las filas de resultado y checkbox');
+  const outcomeRule = outcomeRuleMatch[1];
+  assert.match(outcomeRule, /width\s*:\s*100%/, 'cada fila de resultado debe declarar ancho completo explícito, no depender de un contenedor que podría encogerla');
+  assert.match(
+    outcomeRule,
+    /justify-content\s*:\s*flex-start|text-align\s*:\s*left/,
+    'cada fila de resultado debe alinear su contenido a la izquierda de forma explícita',
+  );
+});
+
+// --- AGT-002 visual QA · el input de archivo del drawer no puede dejar el botón nativo del
+// selector de archivo con el estilo por defecto del navegador. -----------------------------------
+test('el input de archivo del drawer estiliza el botón nativo ::file-selector-button', () => {
+  const css = read('src/tenders/components/tender-actionable-review-drawer.css');
+  assert.match(
+    css,
+    /\.tender-actionable-review-drawer\s+input\[type="file"\]::file-selector-button\s*\{[^}]*\}/,
+    'debe existir una regla dedicada a ::file-selector-button para que el botón nativo de selección de archivo no se muestre con el estilo por defecto del navegador',
+  );
+});
+
+// --- AGT-002 visual QA · los botones deshabilitados del drawer necesitan un color de texto
+// legible propio: la regla global de sólo opacidad reduce el contraste por debajo de lo legible.
+test('los botones deshabilitados del drawer declaran un color de texto legible propio', () => {
+  const css = read('src/tenders/components/tender-actionable-review-drawer.css');
+  const disabledRuleMatch = css.match(/\.tender-actionable-review-drawer\s+button:disabled\s*\{([^}]*)\}/);
+  assert.ok(disabledRuleMatch, 'debe existir una regla propia para botones deshabilitados del drawer');
+  assert.match(
+    disabledRuleMatch[1],
+    /color\s*:/,
+    'la regla debe fijar un color de texto explícito, para no depender únicamente de la opacidad global que reduce el contraste',
+  );
+});
+
 console.log('AGT-002 actionable review frontend UI contract (RED — production artifacts missing) checked');
