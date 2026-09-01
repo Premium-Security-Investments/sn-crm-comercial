@@ -121,14 +121,17 @@ export type CompactCopilotSummary = { nextStep: string | null; whyBullets: strin
 export function presentCompactCopilotSummary(presented: PresentedCopilotBrief, activeAlerts: readonly { risk_text: string }[]): CompactCopilotSummary {
   const candidate = String(presented?.contactPlanSteps?.[0] ?? '').trim();
   const normalizedCandidate = normalizeForComparison(candidate);
-  const repeatsAlert = (activeAlerts ?? []).some(a => normalizeForComparison(String(a?.risk_text ?? '')) === normalizedCandidate);
+  const alertTexts = new Set((activeAlerts ?? []).map(a => normalizeForComparison(String(a?.risk_text ?? ''))));
+  const repeatsAlert = alertTexts.has(normalizedCandidate);
   const isFallback = normalizedCandidate === normalizeForComparison(COMMERCIAL_TEXT_FALLBACKS.strategy);
   const nextStepAbstains = !candidate || repeatsAlert || isFallback;
 
   if (nextStepAbstains) return { nextStep: null, whyBullets: [] };
 
   const bulletSource = [...(presented?.facts ?? []), ...(presented?.inferences ?? [])]
-    .map(entry => String(entry?.text ?? '').trim()).filter(Boolean);
+    .map(entry => String(entry?.text ?? '').trim())
+    .filter(Boolean)
+    .filter(text => !alertTexts.has(normalizeForComparison(text)));
   const whyBullets = bulletSource.slice(0, MAX_WHY_BULLETS).map(t => truncate(t, MAX_WHY_BULLET_LENGTH));
 
   return { nextStep: truncate(candidate, MAX_NEXT_STEP_LENGTH), whyBullets };

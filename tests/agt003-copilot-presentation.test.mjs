@@ -143,6 +143,34 @@ const noEvidence = presentCompactCopilotSummary({ ...distinctPresented, facts: [
 assert.equal(noEvidence.nextStep, distinctPresented.contactPlanSteps[0]);
 assert.deepEqual(noEvidence.whyBullets, []);
 
+// Deduplicación de razones: nextStep es válido y distinto de las alertas, pero uno de los
+// facts repite (tras normalizar espacios/mayúsculas) el risk_text de una alerta activa. Esa
+// señal no debe aparecer en whyBullets; las razones no duplicadas sí quedan, hasta un máximo de 2,
+// preservando el orden facts→inferences.
+const dedupeAlerts = Object.freeze([
+  { key: 'next_action:overdue', category: 'next_action', risk_text: 'La próxima gestión está vencida hace 4 días.' },
+]);
+const dedupePresented = Object.freeze({
+  summary: 'Resumen', contactObjective: 'Objetivo',
+  contactPlanSteps: Object.freeze(['Proponga una reunión de 20 minutos con el decisor financiero.']),
+  facts: Object.freeze([
+    Object.freeze({ text: '  LA PRÓXIMA GESTIÓN   está vencida HACE 4 días.  ', evidence_refs: [] }),
+    Object.freeze({ text: 'El valor registrado es COP 125.000.000.', evidence_refs: [] }),
+  ]),
+  inferences: Object.freeze([
+    Object.freeze({ text: 'El cliente sigue evaluando alternativas.', evidence_refs: [], confidence: 'medium' }),
+  ]),
+  recommendedAssetIds: [], hasApprovedAssets: false,
+});
+const dedupeSnap = [JSON.stringify(dedupePresented), JSON.stringify(dedupeAlerts)];
+const dedupeResult = presentCompactCopilotSummary(dedupePresented, dedupeAlerts);
+assert.equal(dedupeResult.nextStep, dedupePresented.contactPlanSteps[0], 'nextStep sigue siendo la recomendación genuina, no repetida');
+assert.deepEqual(dedupeResult.whyBullets, [
+  'El valor registrado es COP 125.000.000.',
+  'El cliente sigue evaluando alternativas.',
+], 'la razón que duplica (normalizada) el risk_text de una alerta activa se filtra; quedan las 2 razones no duplicadas en orden facts→inferences');
+assert.deepEqual([JSON.stringify(dedupePresented), JSON.stringify(dedupeAlerts)], dedupeSnap, 'no muta sus argumentos');
+
 assert.deepEqual(
   presentCompactCopilotSummary({ summary: '', contactObjective: '', contactPlanSteps: [], facts: [], inferences: [], recommendedAssetIds: [], hasApprovedAssets: false }, []),
   { nextStep: null, whyBullets: [] }, 'brief mínimo nunca lanza',
