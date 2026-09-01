@@ -1,7 +1,7 @@
 # Plan de implementación — correcciones visuales del expediente de licitación
 
-**Fecha:** 2026-08-31  
-**Rama:** `fix/agt002-pereira-visual-fixes-20260831`  
+**Fecha:** 2026-08-31
+**Rama:** `fix/agt002-pereira-visual-fixes-20260831`
 **Alcance:** frontend, estilos, pruebas semánticas y este plan. No incluye migraciones, API, lógica de negocio del servidor, datos, ejecuciones de AGT-002, decisiones GO/NO-GO, `CURRENT.md`, push, PR ni deploy.
 
 ## Objetivo
