@@ -78,9 +78,19 @@ Detalle exacto: `docs/operations/2026-08-17-agt002-branch-worktree-inventory.md`
 
 **Fase 9 técnicamente cerrada en la rama local y lista para publicación Git.** No se ejecutó deploy ni se modificaron datos productivos durante esta fase. La publicación de la rama no activa nuevos procesos porque todos los rieles futuros permanecen fail-closed y Manizales ya era el único piloto autorizado.
 
-## Nota posterior (2026-09-01) — sin cerrar todavía
+## Nota posterior (2026-09-01) — issue #136 cerrado; §6.1 sigue abierto
 
-El gap durable post-bridge señalado en §6.1 está siendo abordado por el issue #136 en la rama actual
-`fix/agt002-closeout-20260901`, todavía pendiente de PR, CI, merge y deploy. Este corte histórico de
-Fase 9 sigue intacto y no se marca como cerrado por esta nota; el estado de §6.1 se actualizará
-formalmente cuando el issue #136 esté publicado y verificado en producción.
+El issue #136 quedó resuelto en la rama `fix/agt002-closeout-20260901`, integrada a `main` vía
+PR #170 (squash `b78981510b61d411450b6e046ccce5c10a9260da`) y desplegada en
+`dpl_Dk3j9CmZVuhV3yr9z8ZFWZawoKR6`, con smoke postdeploy en PASS. El issue #136 resolvió la
+autoridad de `usage` del PREANÁLISIS RADAR (`agt002-radar-preanalysis-usage.js`).
+
+**Ese es un gap distinto del descrito en §6.1.** El gap "Worker durable post-bridge" de §6.1
+(diagnóstico de la etapa post-bridge en el path legado `server/index.js::requestAgt002`, sin hooks
+ni classifier y con error genérico) **permanece OPEN**: no fue cerrado por el issue #136 ni por
+PR #170. Ver `docs/architecture/agt002-phase9-runtime-open-gaps.md` §OPEN ("Durable worker
+post-bridge stage diagnostics"). Ese gap no bloquea el cierre productivo actual, pero debe
+cerrarse por TDD, preservando retry/claim, antes del próximo canary o activación real del worker.
+
+Este corte histórico de Fase 9 sigue intacto; ver `docs/verification/2026-09-01-agt002-closeout.md`
+para la evidencia completa del cierre del issue #136.

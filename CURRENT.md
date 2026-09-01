@@ -646,15 +646,22 @@ ninguna de ellas.
 > 2026-09-01. **No sustituye** a §13 (cierre de publicación del frente decisional, 2026-08-21) ni a
 > §15 (rollout operativo del Radar, 2026-08-28) para sus dominios respectivos: ambas siguen siendo la
 > referencia histórica autoritativa de lo que describen. Esta sección añade el corte de cierre y
-> continuidad sobre el trabajo hecho en la rama actual, que **aún no está publicado**.
+> continuidad sobre el trabajo hecho en la rama de cierre, que **ya fue integrado a `main` y
+> publicado en producción** (ver §16.1/§16.3).
 
-### 16.1. Fuente de verdad separada de producción
+### 16.1. Fuente de verdad — integrada a producción
 
-- `origin/main` estaba en `00e22eaf7af4cc9712b58e1ef4896728a96f369a` antes de esta rama.
-- Producción fue confirmada sana por HTTP: SPA responde `200`; API protegida responde `401` como se
-  espera de una ruta que exige autenticación.
-- Último deploy previamente verificado: `dpl_HmQdynLwUK4Ai7m2sMn5vZTW3kz4`.
-- La rama actual, `fix/agt002-closeout-20260901`, **aún no ha sido publicada** (sin push).
+- `origin/main` estaba en `00e22eaf7af4cc9712b58e1ef4896728a96f369a` antes de esta rama; tras el
+  merge de PR #170 (2026-09-01T23:20:12Z), `origin/main` está en el squash
+  `b78981510b61d411450b6e046ccce5c10a9260da`.
+- Deploy manual del árbol exacto igual a `origin/main`: `dpl_Dk3j9CmZVuhV3yr9z8ZFWZawoKR6`,
+  **Production Ready**, alias `https://seguridad-nacional-crm.vercel.app`.
+- Deploy previamente verificado (predeploy, ya superado): `dpl_HmQdynLwUK4Ai7m2sMn5vZTW3kz4`.
+- Smoke postdeploy: SPA canónica `200`; los 9 assets JS/CSS listados en el HTML responden todos
+  `200`; API protegida `/api/tender-opportunities` responde `401` con "Debe iniciar sesión.";
+  pantalla de login visible; consola del navegador sin errores.
+- **No hay GitHub Actions/checks/branch protection configurados** en este repositorio; el merge se
+  sustentó en gates locales más revisión independiente APPROVE, no en CI automatizado.
 
 ### 16.2. Live/cerrado — decisiones humanas ya ejecutadas
 
@@ -664,16 +671,20 @@ ninguna de ellas.
 - Manizales y Bogotá quedan **archivados** por decisión humana **NO GO**, con sus expedientes
   preservados intactos; ambos quedan fuera de las licitaciones activas.
 
-### 16.3. En rama — no afirmar live
+### 16.3. Integrado y productivo
 
-Lo siguiente existe únicamente en `fix/agt002-closeout-20260901` y **no debe presentarse como
-desplegado**:
+Lo siguiente fue integrado a `main` vía PR #170 y está desplegado en producción; **ya no debe
+presentarse como pendiente de publicación**:
 
 - Corrección del issue #136 (medición de `usage` autoritativa desde el bridge; ver
-  `agt002-radar-preanalysis-usage.js`); el issue **sigue sin cerrarse**, pendiente de integración.
-- `npm test` ejecutado en la rama.
+  `agt002-radar-preanalysis-usage.js`); **issue #136 CLOSED** (2026-09-01T23:20:13Z).
+- `npm test` ejecutado en la rama, ahora integrado en `main`.
 - Reparación robusta de dos pruebas históricamente frágiles.
-- Code splitting del bundle.
+- Code splitting del bundle, en producción.
+- Integración: **PR #170 MERGED** 2026-09-01T23:20:12Z, squash
+  `b78981510b61d411450b6e046ccce5c10a9260da`.
+- Publicación: deploy `dpl_Dk3j9CmZVuhV3yr9z8ZFWZawoKR6` (Production Ready) con smoke postdeploy
+  en PASS (detalle en §16.1).
 
 ### 16.3.1. Evidencia final ejecutada (2026-09-01)
 
@@ -702,13 +713,22 @@ desplegado**:
 - **Presupuesto real del modelo:** debe medirse únicamente antes del próximo canary, no antes.
 - **PR #112:** obsoleto/superseded, ya **cerrado**.
 - **PR #10 / PR #12:** pertenecen a SIIO, no a AGT-002; quedan fuera de este cierre, no tocados.
+- **Worker durable post-bridge — diagnóstico OPEN:** el issue #136 (CLOSED, ver §16.3) resolvió la
+  autoridad de `usage` del PREANÁLISIS RADAR (`agt002-radar-preanalysis-usage.js`), pero **no**
+  cerró el gap distinto de `docs/architecture/agt002-phase9-runtime-open-gaps.md` §OPEN ("Durable
+  worker post-bridge stage diagnostics"): el path legado `server/index.js::requestAgt002` sigue sin
+  hooks ni classifier y conserva error genérico. No bloquea este cierre productivo ni la producción
+  live; debe cerrarse por TDD, preservando retry/claim, antes del próximo canary o activación real
+  del worker.
 
 ### 16.5. Próximo gate
 
-1. PR → CI → merge → deploy → smoke productivo de esta rama.
-2. Luego, Juan elige **una** licitación real (Pereira **o** Procuraduría, una a la vez) para
-   atravesar el gate de onboarding (`docs/runbooks/agt002-process-onboarding-gate.md`) **sin copiar**
-   Manizales ni Bogotá.
+1. Juan elige **una** licitación real (Pereira **o** Procuraduría, una a la vez) para atravesar el
+   gate de onboarding (`docs/runbooks/agt002-process-onboarding-gate.md`) **sin copiar** Manizales
+   ni Bogotá.
+2. **Antes de ejecutar el canary o el bridge para esa licitación**, cerrar el diagnóstico del worker
+   durable post-bridge (§16.4) por TDD preservando retry/claim, y medir el presupuesto real del
+   modelo.
 3. El humano decide y registra la decisión; AGT-002 no decide por sí mismo.
 
 Documento de continuidad y aprendizaje para Juan:
