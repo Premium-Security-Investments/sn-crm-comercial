@@ -239,7 +239,10 @@
 }
 
 .tender-actionable-review-drawer button:disabled {
-  color: #5f6f6b;
+  opacity: 1;
+  background: #eef0ef;
+  color: #526173;
+  box-shadow: none;
 }
 
 /* Foco visible propio en todos los controles: nunca depende del outline por defecto del
