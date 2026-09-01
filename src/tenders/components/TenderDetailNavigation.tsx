@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { TENDER_DETAIL_SECTIONS, resolveTenderDetailIndicators } from '../detailNavigationState';
+import { TENDER_DETAIL_SECTIONS, resolveTenderDetailIndicators, tenderDetailHashWithSection } from '../detailNavigationState';
 import type { TenderDetailSectionId, TenderDetailStatusSnapshot } from '../detailNavigationState';
 import { safePublicTenderSourceUrl } from '../tenderUiState';
 
@@ -46,6 +46,7 @@ export type TenderDetailNavigationTargets = {
 export type TenderDetailNavigationIntentDependencies = TenderDetailNavigationTargets & {
   focusSection?: (element: FocusableScrollTarget | null) => void;
   realignSection?: (element: FocusableScrollTarget | null) => void;
+  syncSectionUrl?: (id: TenderDetailSectionId) => void;
 };
 
 export type TenderDetailNavigationIntent = {
@@ -72,8 +73,12 @@ export function resolveTenderValidity(expectedCloseDate?: string | null): Tender
 }
 
 export function resolveInitialTenderDetailSection(hash: string): TenderDetailSectionId {
-  const requested = new URLSearchParams(hash.split('?')[1] || '').get('section');
-  return TENDER_DETAIL_SECTIONS.find(section => section.id === requested)?.id || 'tender-summary';
+  const params = new URLSearchParams(hash.split('?')[1] || '');
+  const requested = params.get('section');
+  const explicit = TENDER_DETAIL_SECTIONS.find(section => section.id === requested)?.id;
+  if (explicit) return explicit;
+  if (params.get('focus') === 'documents') return 'tender-document-review';
+  return 'tender-summary';
 }
 
 export function resolveMostVisibleTenderSection(
@@ -107,6 +112,7 @@ export function createTenderDetailNavigationIntent({
   setActiveSection,
   focusSection = focusTenderDetailSection,
   realignSection = realignTenderDetailSection,
+  syncSectionUrl,
 }: TenderDetailNavigationIntentDependencies): TenderDetailNavigationIntent {
   let intendedSection: TenderDetailSectionId | null = null;
 
@@ -115,9 +121,13 @@ export function createTenderDetailNavigationIntent({
       intendedSection = id;
       setActiveSection(id);
       focusSection(resolveElement(id));
+      syncSectionUrl?.(id);
     },
     onObservedSection(id) {
-      if (!intendedSection) setActiveSection(id);
+      if (!intendedSection) {
+        setActiveSection(id);
+        syncSectionUrl?.(id);
+      }
     },
     onLayoutChanged() {
       if (intendedSection) realignSection(resolveElement(intendedSection));
@@ -183,6 +193,10 @@ export function TenderDetailNavigation({ entity, sourceUrl, observations, expect
     navigationIntentRef.current = createTenderDetailNavigationIntent({
       resolveElement: id => document.getElementById(id),
       setActiveSection,
+      syncSectionUrl: id => {
+        if (typeof window === 'undefined') return;
+        window.history.replaceState(null, '', tenderDetailHashWithSection(window.location.hash, id));
+      },
     });
   }
   const navigationIntent = navigationIntentRef.current;

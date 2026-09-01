@@ -428,7 +428,7 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .tender-module-navigation .tender-module-tabs.module-segmented-nav{display:inline-grid;grid-template-columns:repeat(3,minmax(112px,1fr));width:auto;max-width:100%;flex-direction:row}
 .tender-module-navigation .tender-configuration-link{flex:0 0 auto;min-height:36px;padding:7px 10px}
 .link-button{min-height:auto;padding:0;border:0;background:transparent;color:#174174;text-decoration:underline;box-shadow:none}
-.tender-detail-navigation{position:sticky;top:8px;z-index:12;display:grid;grid-template-columns:auto minmax(88px,.25fr) minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 12px;border:1px solid #dbe7f5;border-radius:16px;background:rgba(255,255,255,.97);box-shadow:0 10px 30px rgba(15,35,65,.1);backdrop-filter:blur(10px)}
+.tender-detail-navigation{position:sticky;top:8px;z-index:12;display:grid;grid-template-columns:auto minmax(112px,.25fr) minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 12px;border:1px solid #dbe7f5;border-radius:16px;background:rgba(255,255,255,.97);box-shadow:0 10px 30px rgba(15,35,65,.1);backdrop-filter:blur(10px)}
 .tender-detail-back{white-space:nowrap;font-weight:850;text-decoration:none}
 .tender-detail-entity-group{display:flex;align-items:center;gap:6px;min-width:0}
 .tender-detail-entity{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#10213d;font-size:13px}
@@ -442,7 +442,7 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .tender-detail-indicator.tone-ready{background:#16a34a}.tender-detail-indicator.tone-attention{background:#d97706}.tender-detail-indicator.tone-error{background:#dc2626}.tender-detail-indicator.tone-unknown{background:#94a3b8}
 .tender-detail-section[aria-current="location"] .tender-detail-indicator{border-color:rgba(255,255,255,.8);box-shadow:0 0 0 2px rgba(255,255,255,.25)}
 .tender-detail-source{display:inline-flex;align-items:center;gap:4px;min-height:36px;padding:0 2px;color:#174174;font-size:12px;font-weight:850;text-decoration:none;white-space:nowrap}
-.tender-detail-anchor,#tender-document-review,#tender-analysis{scroll-margin-top:96px}
+.tender-detail-anchor,#tender-document-review,#tender-analysis{scroll-margin-top:112px}
 /* La navegación enfoca el contenedor de la sección (tabIndex=-1), nunca un control interno: el
    destino debe quedar visible para quien navega con teclado. */
 .tender-detail-anchor:focus-visible,#tender-document-review:focus-visible,#tender-analysis:focus-visible,#tender-decision:focus-visible{outline:3px solid #60a5fa;outline-offset:4px;border-radius:14px}
@@ -454,7 +454,7 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
   .tender-detail-back,.tender-detail-source{min-height:44px}
   .tender-detail-sections{grid-column:1/-1;flex-direction:row}
   .tender-detail-section{min-height:44px}
-  .tender-detail-anchor,#tender-document-review,#tender-analysis{scroll-margin-top:142px}
+  .tender-detail-anchor,#tender-document-review,#tender-analysis{scroll-margin-top:160px}
 }
 
 /* Vig-IA Comercial — copiloto en detalle de oportunidad */

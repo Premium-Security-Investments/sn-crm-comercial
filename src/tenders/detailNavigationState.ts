@@ -50,6 +50,20 @@ export const TENDER_DETAIL_SECTIONS: ReadonlyArray<{
   { id: 'tender-follow-up', label: 'Seguimiento', accessibleLabel: 'Seguimiento comercial' },
 ];
 
+export function tenderDetailSectionHref(opportunityId: string, sectionId: TenderDetailSectionId): string {
+  return `#/detail/${opportunityId}?section=${sectionId}`;
+}
+
+export function tenderDetailHashWithSection(hash: string, sectionId: TenderDetailSectionId): string {
+  const [path, query = ''] = hash.split('?');
+  const params = new URLSearchParams(query);
+  if (params.get('focus') === 'documents') params.delete('focus');
+  if (params.has('section')) params.set('section', sectionId);
+  else params.append('section', sectionId);
+  const rebuiltQuery = params.toString();
+  return rebuiltQuery ? `${path}?${rebuiltQuery}` : path;
+}
+
 function fromPanelError<T>(state: TenderPanelState<T>): TenderDetailIndicator | null {
   if (state.phase === 'error') return { tone: 'error', label: state.message || 'Error al cargar' };
   if (state.phase === 'pending') return { tone: 'attention', label: state.label };

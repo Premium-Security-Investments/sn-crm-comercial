@@ -192,7 +192,7 @@ const {
   createTenderDetailNavigationIntent,
   openTenderDetailSection,
 } = await loadComponent('src/tenders/components/TenderDetailNavigation.tsx', 'TenderDetailNavigation.mjs');
-const { TENDER_DETAIL_SECTIONS } = await loadComponent('src/tenders/detailNavigationState.ts', 'detailNavigationState.mjs');
+const { TENDER_DETAIL_SECTIONS, tenderDetailSectionHref, tenderDetailHashWithSection } = await loadComponent('src/tenders/detailNavigationState.ts', 'detailNavigationState.mjs');
 const { TenderDocumentSection } = await loadComponent('src/tenders/components/TenderDocumentSection.tsx', 'TenderDocumentSection.mjs');
 
 const CANONICAL_SECTION_IDS = [
@@ -636,4 +636,196 @@ test('mientras hay trabajo en curso Documentos bloquea actualizar y cargar de fo
   assert.match(busyButtonHtml, /<button[^>]*\bdisabled\b[^>]*>/, 'la acción primaria se deshabilita mientras hay trabajo en curso');
   assert.match(busyButtonHtml, /<strong>Actualizando…<\/strong>/, 'la acción primaria refleja el trabajo en curso');
   assert.match(html, /<input[^>]*type="file"[^>]*disabled/, 'la carga complementaria se bloquea junto con la actualización');
+});
+
+// ---------------------------------------------------------------------------------------------
+// AGT-002 QA visual · el legado ?focus=documents debe seguir abriendo Documentos, pero a través
+// de la sección canónica; existe un único helper compartido para construir el enlace de sección.
+// ---------------------------------------------------------------------------------------------
+test('resolveInitialTenderDetailSection mapea el legado ?focus=documents a la sección canónica tender-document-review', () => {
+  assert.equal(
+    resolveInitialTenderDetailSection('#/tenders/detail/abc?focus=documents'),
+    'tender-document-review',
+    'el enlace legado ?focus=documents debe seguir abriendo Documentos a través de la sección canónica',
+  );
+  assert.equal(
+    resolveInitialTenderDetailSection('#/tenders/detail/abc?section=tender-analysis&focus=documents'),
+    'tender-analysis',
+    'un ?section= explícito debe ganar sobre el parámetro legado focus=documents',
+  );
+  assert.equal(
+    resolveInitialTenderDetailSection('#/tenders/detail/abc?focus=otra-cosa'),
+    'tender-summary',
+    'un valor de focus distinto a documents no debe activar el mapeo legado',
+  );
+});
+
+test('tenderDetailSectionHref construye el único enlace canónico ?section= reutilizable en todo el expediente', () => {
+  assert.equal(
+    typeof tenderDetailSectionHref,
+    'function',
+    'debe existir un helper puro y compartido para construir enlaces canónicos hacia una sección del expediente',
+  );
+  assert.equal(
+    tenderDetailSectionHref('44444444-4444-4444-8444-444444444444', 'tender-document-review'),
+    '#/detail/44444444-4444-4444-8444-444444444444?section=tender-document-review',
+    'el helper debe producir el hash canónico exacto con el parámetro ?section=',
+  );
+});
+
+test('la navegación explícita sincroniza el parámetro canónico ?section= de la URL', () => {
+  const syncCalls = [];
+  const controller = createTenderDetailNavigationIntent({
+    resolveElement: () => ({ id: 'target', scrollIntoView: () => {}, focus: () => {} }),
+    setActiveSection: () => {},
+    syncSectionUrl: id => syncCalls.push(id),
+  });
+  controller.navigate('tender-decision');
+  assert.deepEqual(
+    syncCalls,
+    ['tender-decision'],
+    'un clic explícito debe sincronizar la URL con la sección de destino para que el enlace sea compartible',
+  );
+});
+
+test('el observer sincroniza ?section= sólo mientras no hay una intención explícita fijada', () => {
+  const syncCalls = [];
+  const controller = createTenderDetailNavigationIntent({
+    resolveElement: () => ({ id: 'target', scrollIntoView: () => {}, focus: () => {} }),
+    setActiveSection: () => {},
+    syncSectionUrl: id => syncCalls.push(id),
+  });
+  controller.onObservedSection('tender-analysis');
+  assert.deepEqual(
+    syncCalls,
+    ['tender-analysis'],
+    'sin intención explícita, el observer debe sincronizar la URL con la sección visible',
+  );
+
+  controller.navigate('tender-decision');
+  controller.onObservedSection('tender-summary');
+  assert.deepEqual(
+    syncCalls,
+    ['tender-analysis', 'tender-decision'],
+    'con una intención explícita fijada, el observer no debe sobreescribir la URL sincronizada por el clic',
+  );
+});
+
+// ---------------------------------------------------------------------------------------------
+// AGT-002 QA visual · las seis anclas deben reservar más espacio del que ocupan la barra sticky y
+// su sombra: el valor exacto anterior (96px escritorio / 142px móvil) resultó insuficiente y
+// producía solape visual al navegar.
+// ---------------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------------
+// Review · gap de spec: createTenderDetailNavigationIntent acepta y llama syncSectionUrl, pero
+// TenderDetailNavigation lo crea sin proveerlo (líneas ~192-196), así que la URL del navegador
+// nunca cambia. tenderDetailHashWithSection es el helper puro que falta: reemplaza/agrega la
+// sección canónica en un hash existente, sin duplicar el parámetro ni perder el resto del hash.
+// ---------------------------------------------------------------------------------------------
+test('tenderDetailHashWithSection agrega ?section= cuando el hash no tiene sección previa', () => {
+  assert.equal(
+    typeof tenderDetailHashWithSection,
+    'function',
+    'debe existir un helper puro para escribir la sección canónica dentro de un hash existente',
+  );
+  assert.equal(
+    tenderDetailHashWithSection('#/detail/44444444-4444-4444-8444-444444444444', 'tender-decision'),
+    '#/detail/44444444-4444-4444-8444-444444444444?section=tender-decision',
+    'sin query previa, debe anexar ?section= al path del hash',
+  );
+});
+
+test('tenderDetailHashWithSection reemplaza canónicamente una sección existente sin duplicar el parámetro', () => {
+  assert.equal(
+    tenderDetailHashWithSection('#/detail/44444444-4444-4444-8444-444444444444?section=tender-summary', 'tender-decision'),
+    '#/detail/44444444-4444-4444-8444-444444444444?section=tender-decision',
+    'debe sustituir el valor de ?section= existente, no anexar uno nuevo',
+  );
+  assert.equal(
+    tenderDetailHashWithSection('#/detail/44444444-4444-4444-8444-444444444444?a=1&section=tender-summary&b=2', 'tender-decision'),
+    '#/detail/44444444-4444-4444-8444-444444444444?a=1&section=tender-decision&b=2',
+    'al reemplazar debe conservar la posición original del parámetro dentro de la query',
+  );
+});
+
+test('tenderDetailHashWithSection elimina el parámetro legado focus=documents al fijar la sección canónica', () => {
+  assert.equal(
+    tenderDetailHashWithSection('#/detail/44444444-4444-4444-8444-444444444444?focus=documents', 'tender-document-review'),
+    '#/detail/44444444-4444-4444-8444-444444444444?section=tender-document-review',
+    'focus=documents es un parámetro legado: debe desaparecer, no coexistir con ?section=',
+  );
+});
+
+test('tenderDetailHashWithSection preserva parámetros de consulta y ruta no relacionados con la sección', () => {
+  assert.equal(
+    tenderDetailHashWithSection('#/detail/44444444-4444-4444-8444-444444444444?tab=x&focus=documents&utm_source=y', 'tender-preparation'),
+    '#/detail/44444444-4444-4444-8444-444444444444?tab=x&utm_source=y&section=tender-preparation',
+    'parámetros ajenos a section/focus deben sobrevivir intactos y en su orden relativo',
+  );
+});
+
+// ---------------------------------------------------------------------------------------------
+// Review · el manual review encontró que el shell real nunca provee syncSectionUrl al crear el
+// intent (líneas ~192-196 de TenderDetailNavigation.tsx), así que la URL nunca refleja la sección
+// activa. Estas pruebas fijan el cableado esperado: syncSectionUrl debe existir, usar
+// window.history.replaceState (no pushState, para no ensuciar el historial) construido con
+// tenderDetailHashWithSection sobre window.location.hash, y no debe escuchar 'hashchange' (eso
+// crearía un bucle entre la sincronización de URL y el propio disparador de navegación).
+// ---------------------------------------------------------------------------------------------
+test('TenderDetailNavigation provee syncSectionUrl real al crear el intent de navegación', () => {
+  const intentCreationStart = component.indexOf('navigationIntentRef.current = createTenderDetailNavigationIntent({');
+  assert.ok(intentCreationStart >= 0, 'debe existir la creación real del intent de navegación en el shell');
+  const intentCreationEnd = component.indexOf('});', intentCreationStart);
+  assert.ok(intentCreationEnd > intentCreationStart, 'la creación del intent debe cerrar con el objeto de dependencias');
+  const intentCreationBlock = component.slice(intentCreationStart, intentCreationEnd);
+  assert.match(
+    intentCreationBlock,
+    /syncSectionUrl:/,
+    'el shell real debe proveer syncSectionUrl; sin esto la URL del navegador nunca cambia al navegar',
+  );
+});
+
+test('syncSectionUrl usa replaceState con el helper canónico sobre el hash actual, sin pushState ni listener de hashchange', () => {
+  assert.match(
+    component,
+    /tenderDetailHashWithSection/,
+    'el shell debe importar y usar el helper canónico para construir el hash con la sección activa',
+  );
+  assert.match(
+    component,
+    /window\.history\.replaceState\([^)]*tenderDetailHashWithSection\(window\.location\.hash,\s*[A-Za-z_$][\w$]*\)[^)]*\)/,
+    'debe llamar replaceState con el hash canónico calculado a partir del window.location.hash vigente',
+  );
+  assert.doesNotMatch(
+    component,
+    /window\.history\.pushState/,
+    'nunca debe usar pushState: cada scroll/click crearía una entrada nueva de historial (spam de historial)',
+  );
+  assert.doesNotMatch(
+    component,
+    /addEventListener\(\s*['"]hashchange['"]/,
+    'no debe escuchar hashchange: reaccionar a su propio replaceState crearía un bucle de sincronización',
+  );
+});
+
+test('las seis anclas del expediente reservan más de 96px (escritorio) y 142px (móvil) de scroll-margin-top', () => {
+  const scrollMarginPattern = /\.tender-detail-anchor,#tender-document-review,#tender-analysis\{scroll-margin-top:(\d+)px\}/g;
+  const matches = [...styles.matchAll(scrollMarginPattern)];
+  assert.equal(matches.length, 2, 'deben existir exactamente dos reglas de scroll-margin-top para las seis anclas: escritorio y móvil');
+  const [desktopMatch, mobileMatch] = matches;
+  const betweenRules = styles.slice(desktopMatch.index, mobileMatch.index);
+  assert.match(betweenRules, /@media\(max-width:640px\)\{/, 'la segunda regla debe vivir dentro de un bloque responsive <=640px, después de la de escritorio');
+  assert.ok(Number(desktopMatch[1]) > 96, `scroll-margin-top de escritorio debe ser mayor a 96px (actual: ${desktopMatch[1]}px)`);
+  assert.ok(Number(mobileMatch[1]) > 142, `scroll-margin-top móvil debe ser mayor a 142px (actual: ${mobileMatch[1]}px)`);
+});
+
+// ---------------------------------------------------------------------------------------------
+// AGT-002 QA visual · la columna de entidad de la barra del expediente resultaba demasiado
+// angosta en escritorio (mínimo exacto de 88px); debe crecer conservando el tooltip accesible.
+// ---------------------------------------------------------------------------------------------
+test('la columna de entidad reserva más de 88px en escritorio y conserva el tooltip accesible', () => {
+  const gridMatch = styles.match(/\.tender-detail-navigation\{[^}]*grid-template-columns:auto minmax\((\d+)px,\s*\.25fr\)/);
+  assert.ok(gridMatch, 'debe existir la columna de entidad definida con minmax(<px>, .25fr) en la rejilla de navegación de escritorio');
+  assert.ok(Number(gridMatch[1]) > 88, `el ancho mínimo de la columna de entidad debe ser mayor a 88px (actual: ${gridMatch[1]}px)`);
+  assert.match(component, /title=\{entity \|\| 'Expediente'\}/, 'el nombre completo de la entidad debe seguir disponible como tooltip accesible aunque la columna crezca');
 });
