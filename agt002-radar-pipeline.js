@@ -4,6 +4,7 @@ import { enqueueAgt002RadarPreanalysisJob,claimAgt002RadarPreanalysisJob,complet
 import { projectAgt002RadarLearningObservations } from './agt002-radar-learning-projection.js';
 import { buildAgt002RadarLearningSignals } from './agt002-radar-learning-retrieval.js';
 import { createAgt002RadarPreanalysisRuntime } from './agt002-radar-preanalysis-runtime.js';
+import { assertAgt002RadarPreanalysisMeasuredUsage } from './agt002-radar-preanalysis-usage.js';
 import { classifyAgt002RadarPreanalysisError } from './agt002-radar-preanalysis-worker.js';
 import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
 import { extractTenderCoreServiceTerms } from './tender-relevance-terms.js';
@@ -62,7 +63,11 @@ export function createAgt002RadarPipeline({
     throw Object.assign(new Error('claimed job no longer matches a current survivor'),{runtime_boundary_code:'AGT002_RADAR_STALE_INPUT'});
    stages.push('learning');const observations=await projectLearningObservations(database,{limit:1000});const derived=buildLearningSignals({candidate:candidate(matched.row),observations,maxSignals:maxLearningSignals});const learningSignals=derived.signals.length?derived:null;
    stages.push('agt');const output=await runPreanalysis(database,{environment,tenderRow:matched.row,gateEvaluation:matched.gateEvaluation,learningSignals,idempotencyKey:job.attemptKey});
-   stages.push('persist');const persisted=await recordPreanalysisRun(database,{tenderId:job.tenderId,gateEvaluationId:job.gateEvaluationId,visibilityVerdict:output.visibility_verdict,status:output.status,result:output,evidence:output.evidence,policyVersion:matched.evaluation.policy_version,contextVersion:matched.evaluation.context_version,learningSignalsVersion:learningSignals?.version||null,learningSignalsCount:learningSignals?.signals.length||0,model:output.usage?.model||environment.AGT002_RADAR_PREANALYSIS_MODEL||null,usage:output.usage||{},idempotencyKey:computeAgt002RadarPreanalysisIdempotencyKey({kind:'run',attempt_key:job.attemptKey})});await completeJob(database,{jobId:job.jobId,leaseId:job.leaseId,preanalysisRunId:persisted.id});return{status:'completed',stages,...base,job_id:job.jobId,preanalysis_run_id:persisted.id};
+   // Issue #136: `usage` es la medición del puente que el runtime fijó en el envelope. El pipeline
+   // no la reconstruye desde el entorno ni completa una declaración incompleta: sin medición
+   // confiable no se persiste la corrida. 0/0 sí es una medición válida y se conserva tal cual.
+   const usage=assertAgt002RadarPreanalysisMeasuredUsage(output?.usage);
+   stages.push('persist');const persisted=await recordPreanalysisRun(database,{tenderId:job.tenderId,gateEvaluationId:job.gateEvaluationId,visibilityVerdict:output.visibility_verdict,status:output.status,result:output,evidence:output.evidence,policyVersion:matched.evaluation.policy_version,contextVersion:matched.evaluation.context_version,learningSignalsVersion:learningSignals?.version||null,learningSignalsCount:learningSignals?.signals.length||0,model:usage.model,usage,idempotencyKey:computeAgt002RadarPreanalysisIdempotencyKey({kind:'run',attempt_key:job.attemptKey})});await completeJob(database,{jobId:job.jobId,leaseId:job.leaseId,preanalysisRunId:persisted.id});return{status:'completed',stages,...base,job_id:job.jobId,preanalysis_run_id:persisted.id};
   }catch(error){const errorCode=classifyAgt002RadarPreanalysisError(error);try{await failJob(database,{jobId:job.jobId,leaseId:job.leaseId,errorCode});}catch{return{status:'unavailable',stages,...base,job_id:job.jobId,error_code:'persistence_failure'};}return{status:'unavailable',stages,esu_refresh:esuRefresh,job_id:job.jobId,error_code:errorCode};}
  }});
 }

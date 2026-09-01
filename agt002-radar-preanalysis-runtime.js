@@ -2,6 +2,7 @@ import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.
 import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
 import { AGT002_RADAR_PREANALYSIS_OUTPUT_SCHEMA, AGT002_RADAR_PREANALYSIS_POLICY_VERSION, validateAgt002RadarPreanalysis } from './agt002-radar-preanalysis-contract.js';
 import { buildAgt002RadarPreanalysisInput } from './agt002-radar-preanalysis-input.js';
+import { AGT002_RADAR_PREANALYSIS_UNTRUSTED_USAGE_CODE, measureAgt002RadarPreanalysisUsage } from './agt002-radar-preanalysis-usage.js';
 
 const REQUIRED=['AGT002_RADAR_PREANALYSIS_MODEL','AGT002_HETZNER_BRIDGE_URL','AGT002_HETZNER_BRIDGE_HMAC_SECRET'];
 const DEFAULT_TIMEOUT_MS=30_000;
@@ -33,8 +34,16 @@ export function createAgt002RadarPreanalysisRuntime({environment=process.env,cre
       let input; try{input=buildAgt002RadarPreanalysisInput({tenderRow,gateEvaluation,learningSignals});}catch(error){throw boundary(error,'AGT002_RADAR_PREANALYSIS_INPUT_INVALID');}
       let response; try{response=await client.run({model:config.model,policy:POLICY,input,outputSchema:AGT002_RADAR_PREANALYSIS_OUTPUT_SCHEMA,timeoutMs:config.timeoutMs,idempotencyKey,signal});}
       catch(error){const raw=String(error?.code||'').toUpperCase();throw boundary(error,raw.includes('TIMEOUT')?'AGT002_RADAR_PREANALYSIS_TIMEOUT':'AGT002_RADAR_PREANALYSIS_PROVIDER_ERROR');}
+      // Issue #136: la medición del puente es la única fuente autoritativa de tokens/modelo/costo y
+      // se exige ANTES de mirar el JSON del modelo. Una medición que el puente no debería haber
+      // aceptado cierra la corrida sin producir envelope.
+      let measured; try{measured=measureAgt002RadarPreanalysisUsage({requestedModel:config.model,bridgeUsage:response?.usage});}
+      catch(error){throw boundary(error,AGT002_RADAR_PREANALYSIS_UNTRUSTED_USAGE_CODE);}
       try{
-        const output=response?.output??JSON.parse(response?.content);
+        // El `usage` que trae el JSON del modelo es auto-reportado y se descarta aquí: el envelope
+        // que se valida, se devuelve y se persiste lleva siempre la medición del puente, con el
+        // modelo resuelto por el puente (o el solicitado, si el puente no informa otro).
+        const output={...(response?.output??JSON.parse(response?.content)),usage:measured.usage};
         const expectedLearningSignalIds=learningSignals?.signals?.map(item=>item.signal_id)||[];
         validateAgt002RadarPreanalysis(output,{expectedLearningSignalIds});
         if(output.tender_id!==tenderRow.id||output.gate_evaluation_id!==gateEvaluation.id||output.policy_version!==AGT002_RADAR_PREANALYSIS_POLICY_VERSION||output.context_version!==gateEvaluation.context_version) throw new Error('output provenance mismatch');

@@ -12,7 +12,16 @@ assert.match(clientFn, /api\s*\(\s*['"]\/api\/tender-opportunity-exit['"]/, 'Deb
 assert.match(clientFn, /method\s*:\s*['"]POST['"]/, 'Debe usar POST.');
 assert.match(clientFn, /JSON\.stringify\s*\(\s*\{\s*opportunity_id:\s*opportunityId\s*,\s*destination\s*,\s*reason\s*}\s*\)/, 'Debe enviar oportunidad, destino y razón.');
 
-assert.match(app, /import\s+\{\s*api\s*,\s*exitTenderOpportunity\s*,\s*setApiAccessToken\s*}\s+from\s+['"]\.\/apiClient['"]/, 'La UI debe usar el cliente compartido.');
+// La UI debe consumir `exitTenderOpportunity` del cliente compartido `./apiClient`, junto al
+// resto del cliente. Lo que importa es qué se importa de ahí, no en qué orden ni cuántos otros
+// nombres acompañen: exigir la lista exacta convertía cualquier import nuevo legítimo (por
+// ejemplo `apiDownload`) en un fallo de este contrato.
+const apiClientImport = app.match(/import\s*\{([^}]*)}\s*from\s*['"]\.\/apiClient['"]/);
+assert.ok(apiClientImport, 'La UI debe importar el cliente compartido desde ./apiClient.');
+const importedFromApiClient = apiClientImport[1].split(',').map(name => name.trim().split(/\s+as\s+/)[0].trim()).filter(Boolean);
+for (const name of ['api', 'exitTenderOpportunity', 'setApiAccessToken']) {
+  assert.ok(importedFromApiClient.includes(name), `La UI debe importar ${name} desde ./apiClient (importados: ${importedFromApiClient.join(', ')}).`);
+}
 assert.doesNotMatch(app, /\/api\/tender-opportunity-discard/, 'La UI no debe usar la ruta ambigua heredada.');
 assert.match(app, />Sacar de oportunidad<\//, 'Debe conservar la salida explícita Sacar de oportunidad.');
 assert.match(app, />Pasar a Seguimiento<\//, 'Debe ofrecer Pasar a Seguimiento.');

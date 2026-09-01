@@ -6,6 +6,7 @@ const DECISION_PATH_FILES = [
   'agt002-radar-preanalysis-contract.js', 'agt002-radar-preanalysis-input.js',
   'agt002-radar-preanalysis-runtime.js', 'agt002-radar-preanalysis-persistence.js',
   'agt002-radar-preanalysis-jobs.js', 'agt002-radar-preanalysis-worker.js',
+  'agt002-radar-preanalysis-usage.js',
   'agt002-radar-pipeline.js', 'agt002-radar-scan.js', 'agt002-radar-worker.js',
   'agt002-radar-derived-day-churn.js',
   'ops/agt002-radar-pipeline/run-agt002-radar-pipeline.mjs',

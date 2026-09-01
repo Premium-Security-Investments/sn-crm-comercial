@@ -13,6 +13,20 @@ export default defineConfig(({ mode }) => {
       proxy: {
         '/api': 'http://localhost:4173'
       }
-    }
+    },
+    build: {
+      rolldownOptions: {
+        output: {
+          codeSplitting: {
+            groups: [
+              { name: 'vendor', test: /[\\/]node_modules[\\/]/, priority: 0 },
+              { name: 'tenders', test: /[\\/]src[\\/]tenders[\\/]/, priority: 1 },
+              { name: 'siio', test: /[\\/]src[\\/]siio[\\/]/, priority: 1 },
+              { name: 'vigia', test: /[\\/]src[\\/]vigia[\\/]/, priority: 1 },
+            ],
+          },
+        },
+      },
+    },
   };
 });
