@@ -50,6 +50,11 @@ export const ACTIONS = Object.freeze({
   MODULE_OPPORTUNITIES_VIEW: 'module.opportunities.view',
   MODULE_GOALS_VIEW: 'module.goals.view',
   MODULE_USERS_VIEW: 'module.users.view',
+  LICITACIONES_ACTIONABLE_REVIEW_CONTRIBUTE: 'licitaciones.actionable_review.contribute',
+  LICITACIONES_ACTIONABLE_REVIEW_RESOLVE: 'licitaciones.actionable_review.resolve',
+  LICITACIONES_KNOWLEDGE_PROPOSE: 'licitaciones.knowledge.propose',
+  LICITACIONES_KNOWLEDGE_REVIEW: 'licitaciones.knowledge.review',
+  LICITACIONES_KNOWLEDGE_PUBLISH: 'licitaciones.knowledge.publish',
 });
 
 const KNOWN_ACTIONS = new Set(Object.values(ACTIONS));
@@ -61,6 +66,7 @@ const PRIVILEGED_ROLES = new Set(['admin', 'gerencia']);
 const EXPLICIT_SCOPE_ROLES = new Set(['director', 'comercial', 'colaborador']);
 const DIRECTOR_ROLE = new Set(['director']);
 const COMMERCIAL_ROLES = new Set(['comercial']);
+const COLLABORATOR_ROLES = new Set(['colaborador']);
 const COMMERCIAL_OR_COLLABORATOR_ROLES = new Set(['comercial', 'colaborador']);
 const ADMIN_ROLE = new Set(['admin']);
 const BOARD_ROLE = new Set(['junta']);
@@ -207,6 +213,26 @@ function canTenderCompanyProfileAction(profile) {
   return isHuman(profile)
     && hasPermission(profile, TENDER_PERMISSION)
     && (hasPermission(profile, TENDER_COMPANY_PERMISSION) || hasPermission(profile, TENDER_CUSTODY_PERMISSION));
+}
+
+// Design §7.1/§7.2: the five actionable-review/knowledge actions never fall back to
+// LICITACIONES_WORKBENCH_USE and always require the base `licitaciones` permission, on top
+// of the role/scope/ownership/assignment matrix below. `resource` is server-owned: area/
+// subarea scope the opportunity's Licitaciones subarea, `owner_id` is the opportunity owner
+// and `assigned_profile_id` is the existing assignment relation for the resource.
+function canActionableReviewContributeOrPropose(profile, resource) {
+  if (!hasPermission(profile, TENDER_PERMISSION)) return false;
+  if (hasHumanRole(profile, PRIVILEGED_ROLES)) return true;
+  if (canDirectorCommercialResource(profile, resource)) return true;
+  if (hasHumanRole(profile, COMMERCIAL_ROLES)) return ownsResource(profile, resource, 'owner_id');
+  if (hasHumanRole(profile, COLLABORATOR_ROLES)) return ownsResource(profile, resource, 'assigned_profile_id');
+  return false;
+}
+
+function canActionableReviewResolveOrKnowledgeGovern(profile, resource) {
+  if (!hasPermission(profile, TENDER_PERMISSION)) return false;
+  if (hasHumanRole(profile, PRIVILEGED_ROLES)) return true;
+  return canDirectorCommercialResource(profile, resource);
 }
 
 function canSiioAssignedAction(profile, resource) {
@@ -359,6 +385,14 @@ export function can(profile, action, resource = {}) {
       // role; AGT-002 never authorizes GO/NO GO, which stays a separate human
       // decision gated below.
       return canTenderCustodyAction(profile);
+
+    case ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_CONTRIBUTE:
+    case ACTIONS.LICITACIONES_KNOWLEDGE_PROPOSE:
+      return canActionableReviewContributeOrPropose(profile, resource);
+    case ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_RESOLVE:
+    case ACTIONS.LICITACIONES_KNOWLEDGE_REVIEW:
+    case ACTIONS.LICITACIONES_KNOWLEDGE_PUBLISH:
+      return canActionableReviewResolveOrKnowledgeGovern(profile, resource);
     default:
       return false;
   }

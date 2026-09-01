@@ -78,8 +78,13 @@ assert.deepEqual(ACTIONS, {
   MODULE_OPPORTUNITIES_VIEW: 'module.opportunities.view',
   MODULE_GOALS_VIEW: 'module.goals.view',
   MODULE_USERS_VIEW: 'module.users.view',
-}, 'ACTIONS debe coincidir exactamente con el contrato estable de 40 acciones');
-assert.equal(actionValues.length, 40, 'ACTIONS debe exponer exactamente 40 códigos estables');
+  LICITACIONES_ACTIONABLE_REVIEW_CONTRIBUTE: 'licitaciones.actionable_review.contribute',
+  LICITACIONES_ACTIONABLE_REVIEW_RESOLVE: 'licitaciones.actionable_review.resolve',
+  LICITACIONES_KNOWLEDGE_PROPOSE: 'licitaciones.knowledge.propose',
+  LICITACIONES_KNOWLEDGE_REVIEW: 'licitaciones.knowledge.review',
+  LICITACIONES_KNOWLEDGE_PUBLISH: 'licitaciones.knowledge.publish',
+}, 'ACTIONS debe coincidir exactamente con el contrato estable de 45 acciones');
+assert.equal(actionValues.length, 45, 'ACTIONS debe exponer exactamente 45 códigos estables');
 assert.equal(new Set(actionValues).size, actionValues.length, 'todos los códigos de acción deben ser únicos');
 assert.ok(actionValues.every((value) => typeof value === 'string' && value.length > 0), 'todos los códigos de acción deben ser strings no vacíos');
 const originalUsersManageAction = ACTIONS.USERS_MANAGE;

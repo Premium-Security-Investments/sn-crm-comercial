@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { VIGIA_VISIBLE_NAMES } from '../../vigia/agentIdentity';
 import { focusTenderDetailSection } from './TenderDetailNavigation';
-import { shouldShowTenderOperationalPendingProjection } from './TenderOperationalPendingProjection';
+import { resolvesEligibleForNewDrawer } from '../tenderActionableReviewProjection';
 import type { TenderPanelState } from '../detailNavigationState';
-import { tenderIntegralOpenUnitsPresentation } from '../tenderIntegralAnalysisPresentation';
+import {
+  tenderIntegralOpenUnitsByRequirementId,
+  tenderIntegralOpenUnitsPresentation,
+  tenderOperationalPendingCardDomId,
+  type TenderIntegralUnitPresentation,
+} from '../tenderIntegralAnalysisPresentation';
 import {
   AGT002_DECISION_AXES,
   tenderDecisionAxisViews,
@@ -73,7 +78,42 @@ const EMPTY_AXIS_COPY = 'Este eje no tiene hallazgos materiales leídos. La ause
 const MISSING_CROSSCHECK_COPY = 'Cruce material pendiente de documentar.';
 const MISSING_ACTION_COPY = 'Sin acción específica registrada.';
 
-function FindingTable({ axis, onOpen, readOnly }: { axis: TenderDecisionAxisView; onOpen: (finding: TenderDecisionAxisFindingView, trigger: HTMLButtonElement) => void; readOnly: boolean }) {
+// Exclusión mutua Decisión/Análisis (§8.7, §19.6): un hallazgo cuyo `requirement_id` coincide con
+// una unidad V3 abierta de la corrida vigente nunca abre el editor legado, sin importar el modo de
+// sólo lectura. En su lugar apunta a la tarjeta real en Análisis con `Revisar en Análisis`. Un
+// hallazgo histórico o sin unidad V3 elegible conserva exactamente el botón legado existente.
+function FindingActionButton({
+  finding,
+  eligibleUnit,
+  onOpen,
+  onFocusAnalysisCard,
+  readOnly,
+}: {
+  finding: TenderDecisionAxisFindingView;
+  eligibleUnit: TenderIntegralUnitPresentation | null;
+  onOpen: (finding: TenderDecisionAxisFindingView, trigger: HTMLButtonElement) => void;
+  onFocusAnalysisCard: (unit: TenderIntegralUnitPresentation) => void;
+  readOnly: boolean;
+}) {
+  if (eligibleUnit) {
+    return <button type="button" className="secondary tender-decision-axis-pointer-cta" onClick={() => onFocusAnalysisCard(eligibleUnit)}>Revisar en Análisis</button>;
+  }
+  return <button type="button" className="secondary" onClick={event => onOpen(finding, event.currentTarget)}>{readOnly ? 'Ver detalle' : 'Respuesta histórica (reanaliza)'}</button>;
+}
+
+function FindingTable({
+  axis,
+  onOpen,
+  onFocusAnalysisCard,
+  eligibleUnitOf,
+  readOnly,
+}: {
+  axis: TenderDecisionAxisView;
+  onOpen: (finding: TenderDecisionAxisFindingView, trigger: HTMLButtonElement) => void;
+  onFocusAnalysisCard: (unit: TenderIntegralUnitPresentation) => void;
+  eligibleUnitOf: (finding: TenderDecisionAxisFindingView) => TenderIntegralUnitPresentation | null;
+  readOnly: boolean;
+}) {
   return <>
     <div className="tender-decision-axis-table-wrap">
       <table className="tender-decision-axis-table">
@@ -84,9 +124,9 @@ function FindingTable({ axis, onOpen, readOnly }: { axis: TenderDecisionAxisView
           <td>{evidenceCopy(finding)}</td>
           <td>{finding.summary || MISSING_CROSSCHECK_COPY}</td>
           <td>{finding.effectLabel}</td>
-          {/* Una sola acción por hallazgo: la acción gobernada en texto y el mismo punto de entrada
-              al detalle. Nunca dos rutas compitiendo ni una acción inventada por la vista. */}
-          <td><span className="tender-decision-axis-action-copy">{finding.actionRequired || MISSING_ACTION_COPY}</span><button type="button" className="secondary" onClick={event => onOpen(finding, event.currentTarget)}>{readOnly ? 'Ver detalle' : 'Ver detalle / Responder'}</button></td>
+          {/* Una sola acción por hallazgo: la acción gobernada en texto y un único punto de entrada,
+              nunca dos rutas compitiendo ni una acción inventada por la vista. */}
+          <td><span className="tender-decision-axis-action-copy">{finding.actionRequired || MISSING_ACTION_COPY}</span><FindingActionButton finding={finding} eligibleUnit={eligibleUnitOf(finding)} onOpen={onOpen} onFocusAnalysisCard={onFocusAnalysisCard} readOnly={readOnly} /></td>
         </tr>) : <tr><td colSpan={5}>{EMPTY_AXIS_COPY}</td></tr>}</tbody>
       </table>
     </div>
@@ -99,7 +139,7 @@ function FindingTable({ axis, onOpen, readOnly }: { axis: TenderDecisionAxisView
         <div><dt>Efecto</dt><dd>{finding.effectLabel}</dd></div>
         <div><dt>Acción</dt><dd>{finding.actionRequired || MISSING_ACTION_COPY}</dd></div>
       </dl>
-      <button type="button" className="secondary" onClick={event => onOpen(finding, event.currentTarget)}>{readOnly ? 'Ver detalle' : 'Ver detalle / Responder'}</button>
+      <FindingActionButton finding={finding} eligibleUnit={eligibleUnitOf(finding)} onOpen={onOpen} onFocusAnalysisCard={onFocusAnalysisCard} readOnly={readOnly} />
     </article>) : <p className="muted">{EMPTY_AXIS_COPY}</p>}</div>
   </>;
 }
@@ -161,6 +201,7 @@ function FindingDrawer({
     <aside className="tender-decision-axis-drawer" role="dialog" aria-modal="true" aria-labelledby="tender-decision-axis-drawer-title" ref={dialogRef} onMouseDown={event => event.stopPropagation()}>
       <header><div><span className="eyebrow">Hallazgo material</span><h3 id="tender-decision-axis-drawer-title" ref={headingRef} tabIndex={-1}>{finding.title}</h3></div><button type="button" className="secondary" onClick={onClose} aria-label="Cerrar detalle">Cerrar</button></header>
       {finding.summary && <p>{finding.summary}</p>}
+      <p className="tender-decision-axis-legacy-warning" role="alert">Este mecanismo legado crea una nueva corrida; no registra una revisión del pendiente actual.</p>
       <QuestionResponseCard
         question={question}
         analysisRunId={analysis.run_id}
@@ -205,7 +246,30 @@ export function TenderDecisionAxisSurface(props: TenderDecisionAxisSurfaceProps)
     () => tenderIntegralOpenUnitsPresentation(analysis?.integral_analysis),
     [analysis?.integral_analysis],
   );
-  const useOperationalProjection = shouldShowTenderOperationalPendingProjection(axes, openIntegralUnits);
+  // Unidades V3 abiertas de la corrida vigente indexadas por `requirement_id` único (§8.7/§18):
+  // única fuente de verdad para decidir, hallazgo por hallazgo, si el editor legado debe ceder el
+  // paso al puntero hacia la tarjeta real en Análisis.
+  const eligibleUnitsByRequirementId = useMemo(
+    () => tenderIntegralOpenUnitsByRequirementId(analysis?.integral_analysis),
+    [analysis?.integral_analysis],
+  );
+  const isCurrentRun = Boolean(analysis?.current);
+  const eligibleUnitForFinding = (finding: TenderDecisionAxisFindingView): TenderIntegralUnitPresentation | null => {
+    const requirementId = finding.finding.requirement_id;
+    const unit = requirementId ? eligibleUnitsByRequirementId.get(requirementId) ?? null : null;
+    const eligible = resolvesEligibleForNewDrawer({
+      source_kind: unit ? 'integral_unit' : null,
+      source_id: unit ? unit.technical.unitId : null,
+      is_historical_run: !isCurrentRun,
+    });
+    return eligible ? unit : null;
+  };
+  // Este interruptor de superficie completa sigue exigiendo los cinco ejes vacíos (§8.1): cuando
+  // hay lectura material por eje, la tabla de hallazgos se conserva y la exclusión mutua vive por
+  // hallazgo (`eligibleUnitForFinding`), nunca reemplazando la lectura completa de Decisión.
+  const useOperationalProjection = axes.length === AGT002_DECISION_AXES.length
+    && axes.every(axis => axis.state === 'No evaluado' && axis.findings.length === 0)
+    && openIntegralUnits.length > 0;
   const surfaceState = tenderDecisionSurfaceState(analysis, decision);
   const drawerReadOnly = decisionStateUnresolved || surfaceState.readOnly;
   const primaryCta = tenderDecisionPrimaryCta(surfaceState, axes);
@@ -225,6 +289,9 @@ export function TenderDecisionAxisSurface(props: TenderDecisionAxisSurfaceProps)
     : null;
 
   const openFinding = (finding: TenderDecisionAxisFindingView, trigger: HTMLButtonElement) => {
+    // Backstop de exclusión mutua (§8.7/§19.6): ningún hallazgo V3 elegible de la corrida vigente
+    // puede montar el drawer legado, sin importar qué punto de entrada llamó a esta función.
+    if (eligibleUnitForFinding(finding)) return;
     previouslyFocusedRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : trigger;
     setSelectedFindingKey(finding.key);
   };
@@ -242,10 +309,19 @@ export function TenderDecisionAxisSurface(props: TenderDecisionAxisSurfaceProps)
   const focusDocumentAnalysis = () => {
     focusTenderDetailSection(document.getElementById('tender-analysis'));
   };
+  // Enfoca la tarjeta real de Análisis con el mismo id estable que produce la tarjeta (§8/§18):
+  // nunca arma un selector CSS a mano, sólo consulta el id literal con `getElementById`.
+  const focusOperationalPendingCard = (unit: TenderIntegralUnitPresentation) => {
+    focusTenderDetailSection(document.getElementById(tenderOperationalPendingCardDomId(unit.technical.unitId)));
+  };
   const resolvePrimaryQuestion = (findingId: string, trigger: HTMLButtonElement) => {
     const owner = axes.find(axis => axis.findings.some(finding => finding.key === findingId));
     const match = owner?.findings.find(finding => finding.key === findingId);
     if (!owner || !match) return;
+    // La CTA primaria comparte la misma exclusión mutua que la tabla (§8.7/§19.6): una pregunta
+    // prioritaria elegible para V3 nunca abre el drawer legado, sólo enfoca la tarjeta real.
+    const eligibleUnit = eligibleUnitForFinding(match);
+    if (eligibleUnit) { focusOperationalPendingCard(eligibleUnit); return; }
     // La CTA lleva a la pregunta prioritaria: deja el eje que la contiene a la vista, no sólo el
     // drawer, para que al cerrarlo la lectura continúe donde corresponde.
     setPinnedAxisId(owner.axis);
@@ -311,7 +387,7 @@ export function TenderDecisionAxisSurface(props: TenderDecisionAxisSurfaceProps)
 
         <section className="tender-decision-axis-body" aria-labelledby={`tender-decision-axis-${selectedAxis.axis}`}>
           <header><div><span className="eyebrow">Eje seleccionado</span><h3 id={`tender-decision-axis-${selectedAxis.axis}`}>{selectedAxis.label}</h3></div><strong className={stateClass(selectedAxis.state)}>{selectedAxis.state}</strong></header>
-          <FindingTable axis={selectedAxis} onOpen={openFinding} readOnly={drawerReadOnly} />
+          <FindingTable axis={selectedAxis} onOpen={openFinding} onFocusAnalysisCard={focusOperationalPendingCard} eligibleUnitOf={eligibleUnitForFinding} readOnly={drawerReadOnly} />
         </section>
       </>}
 
@@ -346,6 +422,8 @@ export function TenderDecisionAxisSurface(props: TenderDecisionAxisSurfaceProps)
       </div>
     </footer>
 
-    {selectedFinding && analysis && <FindingDrawer analysis={analysis} finding={selectedFinding} canAnswer={canAnswerQuestions} readOnly={drawerReadOnly} onClose={closeFinding} onSave={onSaveQuestionResponse} />}
+    {/* Guarda explícita en el punto de montaje (§8.7/§19.6), redundante con `openFinding`: ningún
+        hallazgo V3 elegible de la corrida vigente monta el drawer legado ni su QuestionResponseCard. */}
+    {selectedFinding && analysis && !eligibleUnitForFinding(selectedFinding) && <FindingDrawer analysis={analysis} finding={selectedFinding} canAnswer={canAnswerQuestions} readOnly={drawerReadOnly} onClose={closeFinding} onSave={onSaveQuestionResponse} />}
   </section>;
 }

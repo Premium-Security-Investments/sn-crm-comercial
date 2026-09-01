@@ -39,7 +39,7 @@ import { createAgt003PreflightApi } from '../agt003-preflight-api.js';
 import { createAgt003PreflightRuntime, getAgt003PreflightRuntimeConfig, isAgt003PreflightConfigured } from '../agt003-preflight-runtime.js';
 import { claimAgt003CopilotRun, computeAgt003CopilotHash, findAgt003CopilotRunById, findAgt003CopilotRunByKey, recordAgt003CopilotFeedback, recordAgt003CopilotFailure, recordAgt003CopilotRun, releaseAgt003CopilotClaim } from '../agt003-copilot-persistence.js';
 import { agt003PreparationDate } from '../agt003-copilot-input.js';
-import { loadVigiaApprovedAssets } from '../vigia-approved-assets.js';
+import { selectVigiaApprovedAssets } from '../vigia-approved-assets.js';
 import { listCompanyProcurementDocuments, recordCompanyProcurementDocument } from '../company-procurement-documents.js';
 import { deterministicDocumentFallbackId, mergeTenderDocumentRecords, normalizeTenderSourceDocumentId, refreshOfficialTenderDocument, refreshTenderDocumentBatch, runOptionalTenderAnalysis, summarizeTenderDocumentRefresh } from '../tender-document-versioning.js';
 import { canonicalizeTenderDocuments } from '../tender-document-canonicalizer.js';
@@ -80,6 +80,56 @@ import { createAgt002ReanalysisJob, findLatestAgt002ReanalysisStatusForOpportuni
 import { presentAgt002ReanalysisStatus } from '../agt002-reanalysis-api.js';
 import { ESU_FETCH_POLICY, fetchEsuHtml, fetchEsuProcesses, parseEsuProcessDetail, parseEsuProcessId } from '../esu-direct-crawl.js';
 import { isTenderProcessingJobSuperseded } from '../tender-processing-status.js';
+import {
+  ACTIONABLE_REVIEW_ATTACHMENT_DOWNLOAD_TTL_SECONDS,
+  actionableReviewForbiddenError,
+  actionableReviewItemNotFoundError,
+  actionableReviewResource,
+  attachmentContentInvalidError,
+  attachmentTicketInvalidError,
+  buildActionableReviewAttachmentCompleteRequestHash,
+  buildActionableReviewAttachmentTicketPayloadHash,
+  buildActionableReviewAttachmentUploadRequestHash,
+  deriveActionableReviewItemLifecycle,
+  generateActionableReviewUploadTicketNonce,
+  hashActionableReviewUploadTicketNonce,
+  invalidActionableReviewInputError,
+  knowledgeGeneratorUnavailableError,
+  knowledgeSanitizationFailedError,
+  knowledgeStateConflictError,
+  mapActionableReviewAttachmentRpcError,
+  mapActionableReviewRpcError,
+  mapEnsureActionableReviewItemRpcError,
+  mapTenderKnowledgeRpcError,
+  projectActionableReviewList,
+  projectEnsuredActionableReviewItem,
+  requireHumanActionableReviewIdentity,
+  resolveActionableReviewIntegralUnitSource,
+  sharepointPublicationConflictError,
+  sharepointPublicationUnavailableError,
+  TENDER_KNOWLEDGE_STATUS_BY_EVENT_TYPE,
+  validateActionableReviewAttachmentCompleteInput,
+  validateActionableReviewAttachmentUploadInput,
+  validateActionableReviewCommentInput,
+  validateActionableReviewOutcomeInput,
+  validateActionableReviewReopenInput,
+  validateEnsureActionableReviewItemInput,
+  validateTenderKnowledgeApproveInput,
+  validateTenderKnowledgeCandidateGenerateInput,
+  validateTenderKnowledgePublishInput,
+  validateTenderKnowledgeRejectInput,
+  validateTenderKnowledgeSubmitInput,
+  validateTenderKnowledgeVersionInput,
+} from '../agt002-actionable-review-http.js';
+import {
+  isActionableReviewAttachmentStoragePath,
+  validateActionableReviewAttachmentBytes,
+} from '../agt002-actionable-review-attachment-validation.js';
+import { hashActionableReviewJson } from '../agt002-actionable-review-canonical.js';
+import { generateTenderKnowledgeCandidate } from '../agt002-knowledge-candidate-generator.js';
+import { publishTenderKnowledgeVersion } from '../agt002-knowledge-sharepoint.js';
+import { createTenderKnowledgeSharePointGraphAdapter } from '../agt002-knowledge-sharepoint-graph-adapter.js';
+import { createAgt003ClaudeClient } from '../agt003-claude-client.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -679,6 +729,105 @@ export async function getAuthContext(req) {
 function sendAuthError(res, error) {
   sendError(res, error, error?.status || 500);
 }
+function sendActionableReviewError(res, error) {
+  const status = error?.status || 500;
+  if (status >= 500) console.error(error);
+  res.status(status).json({ error: error?.message || String(error), code: error?.code || 'review_internal_error' });
+}
+// §12.1: una sola consulta autorizadora resuelve item -> oportunidad desde el
+// ID opaco antes de evaluar §7; nunca confía en opportunity_id del cliente.
+async function loadActionableReviewItemContext(database, itemId) {
+  if (!isValidUuid(itemId)) return null;
+  const items = await must(database.from('psi_tender_actionable_review_items').select('id,opportunity_id,tender_id,analysis_run_id,requirement_id,created_at').eq('id', itemId));
+  const item = items[0];
+  if (!item) return null;
+  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id').eq('id', item.opportunity_id).single());
+  return { item, opportunity };
+}
+
+// AGT-002 conocimiento — GREEN 4C: resolución server-side de la cadena
+// knowledge item/version -> resolución fuente -> pendiente -> oportunidad
+// (design §12.1). Nunca confía en un opportunity_id ni review_item_id
+// enviado por el cliente para estas rutas: todo se deriva del ID opaco.
+async function loadTenderKnowledgeItemContext(database, knowledgeItemId) {
+  if (!isValidUuid(knowledgeItemId)) return null;
+  const items = await must(database.from('psi_tender_knowledge_items')
+    .select('id,source_review_item_id,source_resolution_event_id,scope_type,scope_value,created_at')
+    .eq('id', knowledgeItemId));
+  const knowledgeItem = items[0];
+  if (!knowledgeItem) return null;
+  const reviewContext = await loadActionableReviewItemContext(database, knowledgeItem.source_review_item_id);
+  if (!reviewContext) return null;
+  return { knowledgeItem, ...reviewContext };
+}
+async function loadTenderKnowledgeVersionContext(database, knowledgeVersionId) {
+  if (!isValidUuid(knowledgeVersionId)) return null;
+  const versions = await must(database.from('psi_tender_knowledge_versions')
+    .select('id,knowledge_item_id,version,reusable_summary,valid_from,valid_until,review_on,tags,confidentiality,agent_reuse_allowed,responsible_profile_id,sanitization_attestation,created_at')
+    .eq('id', knowledgeVersionId));
+  const version = versions[0];
+  if (!version) return null;
+  const itemContext = await loadTenderKnowledgeItemContext(database, version.knowledge_item_id);
+  if (!itemContext) return null;
+  return { version, ...itemContext };
+}
+// §10.1: la resolución vigente es el último `outcome_recorded` cerrado no
+// invalidado por una `reopened` posterior; espejo de
+// `psi_agt002_review_resolution_is_vigente` en SQL, usado aquí sólo para
+// derivar server-side el `resolution_event_id` que el cliente nunca envía.
+const CLOSED_ACTIONABLE_REVIEW_OUTCOMES = new Set(['aclarado_con_soporte', 'riesgo_confirmado', 'no_aplica']);
+async function loadVigenteActionableReviewResolutionEventId(database, reviewItemId) {
+  const events = await must(database.from('psi_tender_actionable_review_events')
+    .select('id,sequence,event_type,outcome')
+    .eq('review_item_id', reviewItemId)
+    .order('sequence', { ascending: false }));
+  for (const event of events) {
+    if (event.event_type === 'reopened') return null;
+    if (event.event_type === 'outcome_recorded' && CLOSED_ACTIONABLE_REVIEW_OUTCOMES.has(event.outcome)) return event.id;
+  }
+  return null;
+}
+
+// §16/Fase 4: el adaptador SharePoint real sólo se construye cuando todas las
+// credenciales/objetivos de Graph están configurados; si falta cualquiera, la
+// ruta de publicación trata SharePoint como no disponible y falla cerrado
+// (§16.4). `__setTenderKnowledgeSharePointAdapterForTests` sigue el mismo
+// patrón de inyección de prueba que `__setAgt002WorkbenchWorkerTestBridgeClient`.
+let tenderKnowledgeSharePointAdapterOverride;
+export function __setTenderKnowledgeSharePointAdapterForTests(adapter) { tenderKnowledgeSharePointAdapterOverride = adapter; }
+function resolveTenderKnowledgeSharePointAdapter() {
+  if (tenderKnowledgeSharePointAdapterOverride !== undefined) return tenderKnowledgeSharePointAdapterOverride;
+  const baseUrl = process.env.TENDER_KNOWLEDGE_SHAREPOINT_GRAPH_BASE_URL;
+  const siteId = process.env.TENDER_KNOWLEDGE_SHAREPOINT_SITE_ID;
+  const driveId = process.env.TENDER_KNOWLEDGE_SHAREPOINT_DRIVE_ID;
+  const accessToken = process.env.TENDER_KNOWLEDGE_SHAREPOINT_ACCESS_TOKEN;
+  if (!baseUrl || !siteId || !driveId || !accessToken) return null;
+  return createTenderKnowledgeSharePointGraphAdapter({ baseUrl, siteId, driveId, accessToken });
+}
+
+// §14/Fase 3: el generador de candidatos sólo se activa cuando hay un modelo
+// configurado; sin él, la ruta responde 503 `knowledge_generator_unavailable`
+// en vez de invocar un cliente a medio configurar.
+let tenderKnowledgeCandidateResponderOverride;
+export function __setTenderKnowledgeCandidateResponderForTests(responder) { tenderKnowledgeCandidateResponderOverride = responder; }
+function resolveTenderKnowledgeCandidateResponder() {
+  if (tenderKnowledgeCandidateResponderOverride !== undefined) return tenderKnowledgeCandidateResponderOverride;
+  const model = process.env.TENDER_KNOWLEDGE_CANDIDATE_MODEL;
+  if (!model) return null;
+  const client = createAgt003ClaudeClient();
+  return Object.freeze({
+    async respond(input) {
+      const raw = await client.run({
+        model,
+        policy: input.system,
+        input: { resolution: input.resolution, scope: input.scope, reference_date: input.reference_date, evidence: input.evidence },
+        outputSchema: input.output_schema,
+      });
+      return raw.content;
+    },
+  });
+}
+
 function getPublicAppUrl(req) {
   const configured = process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
   if (configured) return configured.startsWith('http') ? configured : `https://${configured}`;
@@ -2279,13 +2428,33 @@ async function loadAgt003OpportunityContext(database, opportunityId, now = () =>
   };
 }
 
+// §16.3 fail-closed adapter: never surface raw RPC error details (may include
+// query/connection internals) to callers, and never fall back to a partial
+// asset list on failure.
+function createVigiaKnowledgeAssetsDbAdapter(database) {
+  return {
+    async queryEligiblePublishedKnowledgeAssets({ asOf }) {
+      const { data, error } = await database.rpc('psi_select_tender_knowledge_assets', { p_as_of: asOf });
+      if (error) {
+        console.error('psi_select_tender_knowledge_assets RPC failed', error);
+        throw new Error('No fue posible consultar los activos de conocimiento aprobados.');
+      }
+      return Array.isArray(data) ? data : [];
+    },
+  };
+}
+
 function createBackendAgt003CopilotApi(database) {
   return createAgt003CopilotApi({
     isConfigured: () => isAgt003CopilotConfigured(process.env),
     getConfig: () => getAgt003CopilotRuntimeConfig(process.env),
     resolveOpportunityResource: (opportunityId, profile) => resolveAgt003OpportunityResource(database, opportunityId, profile),
     loadOpportunityContext: opportunityId => loadAgt003OpportunityContext(database, opportunityId),
-    loadApprovedAssets: () => loadVigiaApprovedAssets({ path: VIGIA_APPROVED_ASSETS_PATH }),
+    loadApprovedAssets: () => selectVigiaApprovedAssets({
+      db: createVigiaKnowledgeAssetsDbAdapter(database),
+      asOf: new Date().toISOString(),
+      jsonPath: VIGIA_APPROVED_ASSETS_PATH,
+    }),
     claimRun: options => claimAgt003CopilotRun(database, options),
     findRunByKey: idempotencyKey => findAgt003CopilotRunByKey(database, idempotencyKey),
     findRunById: runId => findAgt003CopilotRunById(database, runId),
@@ -4983,6 +5152,681 @@ app.patch('/api/users', async (req, res) => {
     const authResult = await ensureProfileAuthAfterCommit(database, { targetProfileId: row.id, email: microsoft_email, password, userMetadata, active, sendInvite: send_invite, req });
     res.json({ ...row, ...access, invited: authResult.invited, access_link: authResult.accessLink, auth_warning: authResult.authWarning });
   } catch (error) { sendAuthError(res, error); }
+});
+
+// AGT-002 revisión accionable — GREEN 3A1: list/comment/outcome/reopen (design
+// §§7.1, 12.1-12.2, 17-18). Auth-before-lookup: getAuthContext runs first, an
+// agent/technical identity is rejected outright, then the item -> opportunity
+// chain is resolved server-side before §7 is evaluated; a foreign item and a
+// nonexistent one answer the identical 404. No route here ever ensures a new
+// review item, refreshes documents or touches GO/NO-GO/Mesa/reanalysis.
+app.get('/api/tender-actionable-reviews', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    const database = requireDb();
+    const opportunityId = String(req.query.opportunity_id || '');
+    const analysisRunId = String(req.query.analysis_run_id || '');
+    if (!isValidUuid(opportunityId) || !isValidUuid(analysisRunId)) {
+      throw invalidActionableReviewInputError('Debe indicar la oportunidad y la corrida de análisis.');
+    }
+    const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id').eq('id', opportunityId).single());
+    const resource = actionableReviewResource(opportunity.owner_id);
+    const canContribute = can(profile, ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_CONTRIBUTE, resource);
+    const canResolve = can(profile, ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_RESOLVE, resource);
+    const canRead = canContribute
+      || canResolve
+      || can(profile, ACTIONS.LICITACIONES_KNOWLEDGE_PROPOSE, resource)
+      || can(profile, ACTIONS.LICITACIONES_KNOWLEDGE_REVIEW, resource)
+      || can(profile, ACTIONS.LICITACIONES_KNOWLEDGE_PUBLISH, resource)
+      || (can(profile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW, crmResource(opportunity.owner_id)) && can(profile, ACTIONS.LICITACIONES_WORKBENCH_USE, {}));
+    if (!canRead) throw actionableReviewItemNotFoundError();
+    const items = await must(database.from('psi_tender_actionable_review_items')
+      .select('id,requirement_id,created_at')
+      .eq('opportunity_id', opportunityId)
+      .eq('analysis_run_id', analysisRunId));
+    const itemIds = items.map(item => item.id);
+    const [events, attachments] = await Promise.all([
+      itemIds.length
+        ? must(database.from('psi_tender_actionable_review_events')
+          .select('id,review_item_id,sequence,event_type,outcome,note,reusable_requested,attachment_id,actor_id,created_at')
+          .in('review_item_id', itemIds))
+        : [],
+      itemIds.length
+        ? must(database.from('psi_tender_actionable_review_attachments')
+          .select('id,review_item_id,logical_attachment_id,version,name,declared_mime_type,size_bytes,uploaded_at')
+          .in('review_item_id', itemIds))
+        : [],
+    ]);
+    const eventsByItemId = new Map();
+    for (const event of events) {
+      if (!eventsByItemId.has(event.review_item_id)) eventsByItemId.set(event.review_item_id, []);
+      eventsByItemId.get(event.review_item_id).push(event);
+    }
+    const attachmentsByItemId = new Map();
+    for (const attachment of attachments) {
+      if (!attachmentsByItemId.has(attachment.review_item_id)) attachmentsByItemId.set(attachment.review_item_id, []);
+      attachmentsByItemId.get(attachment.review_item_id).push(attachment);
+    }
+    const resolutionEventIds = new Set();
+    for (const item of items) {
+      const eventsAscending = (eventsByItemId.get(item.id) || []).slice().sort((a, b) => a.sequence - b.sequence);
+      const { resolutionEventId } = deriveActionableReviewItemLifecycle(eventsAscending);
+      if (resolutionEventId != null) resolutionEventIds.add(resolutionEventId);
+    }
+    const supportRows = resolutionEventIds.size
+      ? await must(database.from('psi_tender_actionable_review_resolution_supports').select('resolution_event_id').in('resolution_event_id', [...resolutionEventIds]))
+      : [];
+    const supportsCountByResolutionEventId = new Map();
+    for (const row of supportRows) {
+      supportsCountByResolutionEventId.set(row.resolution_event_id, (supportsCountByResolutionEventId.get(row.resolution_event_id) || 0) + 1);
+    }
+    const actorIds = [...new Set(events.map(event => event.actor_id))];
+    const profiles = actorIds.length
+      ? await must(database.from('psi_sales_profiles').select('id,full_name').in('id', actorIds))
+      : [];
+    const profileNameById = new Map(profiles.map(row => [row.id, row.full_name]));
+    const projected = projectActionableReviewList({
+      items, eventsByItemId, attachmentsByItemId, supportsCountByResolutionEventId, profileNameById, canContribute, canResolve,
+    });
+    res.set('Cache-Control', 'private, no-store');
+    res.json({ analysis_run_id: analysisRunId, items: projected.items, summary: projected.summary, history_available: false });
+  } catch (error) { sendActionableReviewError(res, error); }
+});
+
+// AGT-002 revisión accionable — GREEN 5C1: puente de "primera acción" (design
+// §§6.1-6.4, 11, 12.1). Es el ÚNICO camino que materializa la identidad
+// estable de un pendiente, y sólo para unidades integrales V3. Autentica
+// primero, rechaza identidad no humana, valida el cuerpo cerrado y recién
+// entonces carga server-side la oportunidad y la corrida canónica exacta: de
+// ahí salen el `tender_id` y el `result` inmutable. La unidad se vuelve a
+// localizar por su `unit_id` estructural dentro de ese resultado y su
+// proyección/hash §6.4 se calculan con el módulo canónico; el navegador no
+// aporta tender_id, source_hash ni payload alguno. Una corrida ajena a la
+// oportunidad, un source_id forjado y una oportunidad no visible responden el
+// mismo 404. No reanaliza, no refresca documentos y no escribe decisiones.
+app.post('/api/tender-actionable-reviews/ensure', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireHumanActionableReviewIdentity(profile);
+    const { opportunityId, analysisRunId, sourceKind, sourceId } = validateEnsureActionableReviewItemInput(req.body);
+    const database = requireDb();
+    const opportunities = await must(database.from('psi_sales_opportunities').select('id,owner_id').eq('id', opportunityId));
+    const opportunity = opportunities[0];
+    if (!opportunity) throw actionableReviewItemNotFoundError();
+    const resource = actionableReviewResource(opportunity.owner_id);
+    if (!can(profile, ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_CONTRIBUTE, resource)
+      && !can(profile, ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_RESOLVE, resource)) throw actionableReviewItemNotFoundError();
+    const runs = await must(database.from('psi_tender_analysis_runs').select('id,opportunity_id,tender_id,result').eq('id', analysisRunId));
+    const run = runs[0];
+    if (!run || run.opportunity_id !== opportunity.id || !isValidUuid(run.tender_id)) throw actionableReviewItemNotFoundError();
+    const source = resolveActionableReviewIntegralUnitSource(run.result, sourceId);
+    const existing = await must(database.from('psi_tender_actionable_review_items').select('id')
+      .eq('analysis_run_id', run.id).eq('source_kind', sourceKind).eq('source_id', source.sourceId));
+    const { data, error } = await database.rpc('psi_ensure_tender_actionable_review_item', {
+      p_opportunity_id: opportunity.id,
+      p_tender_id: run.tender_id,
+      p_analysis_run_id: run.id,
+      p_source_kind: source.sourceKind,
+      p_source_id: source.sourceId,
+      p_requirement_id: source.requirementId,
+      p_source_hash: source.sourceHash,
+      p_actor_id: profile.id,
+    });
+    if (error || !data?.id) throw mapEnsureActionableReviewItemRpcError(error || {});
+    res.set('Cache-Control', 'private, no-store');
+    res.status(existing.length ? 200 : 201).json(projectEnsuredActionableReviewItem(data));
+  } catch (error) { sendActionableReviewError(res, error); }
+});
+
+app.post('/api/tender-actionable-reviews/:itemId/comments', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireHumanActionableReviewIdentity(profile);
+    const database = requireDb();
+    const context = await loadActionableReviewItemContext(database, req.params.itemId);
+    if (!context) throw actionableReviewItemNotFoundError();
+    const resource = actionableReviewResource(context.opportunity.owner_id);
+    if (!can(profile, ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_CONTRIBUTE, resource)) throw actionableReviewItemNotFoundError();
+    const { comment, idempotencyKey, requestHash } = validateActionableReviewCommentInput(req.body);
+    const { data, error } = await database.rpc('psi_record_tender_actionable_review_comment', {
+      p_review_item_id: context.item.id,
+      p_actor_id: profile.id,
+      p_comment: comment,
+      p_idempotency_key: idempotencyKey,
+      p_request_hash: requestHash,
+    });
+    if (error) throw mapActionableReviewRpcError(error);
+    res.status(201).json(data);
+  } catch (error) { sendActionableReviewError(res, error); }
+});
+
+app.post('/api/tender-actionable-reviews/:itemId/outcomes', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireHumanActionableReviewIdentity(profile);
+    const database = requireDb();
+    const context = await loadActionableReviewItemContext(database, req.params.itemId);
+    if (!context) throw actionableReviewItemNotFoundError();
+    const resource = actionableReviewResource(context.opportunity.owner_id);
+    if (!can(profile, ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_RESOLVE, resource)) throw actionableReviewItemNotFoundError();
+    const { outcome, note, reusableRequested, idempotencyKey, requestHash } = validateActionableReviewOutcomeInput(req.body);
+    const { data, error } = await database.rpc('psi_record_tender_actionable_review_outcome', {
+      p_review_item_id: context.item.id,
+      p_actor_id: profile.id,
+      p_outcome: outcome,
+      p_note: note,
+      p_reusable_requested: reusableRequested,
+      p_idempotency_key: idempotencyKey,
+      p_request_hash: requestHash,
+    });
+    if (error) throw mapActionableReviewRpcError(error);
+    res.status(200).json(data);
+  } catch (error) { sendActionableReviewError(res, error); }
+});
+
+app.post('/api/tender-actionable-reviews/:itemId/reopen', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireHumanActionableReviewIdentity(profile);
+    const database = requireDb();
+    const context = await loadActionableReviewItemContext(database, req.params.itemId);
+    if (!context) throw actionableReviewItemNotFoundError();
+    const resource = actionableReviewResource(context.opportunity.owner_id);
+    if (!can(profile, ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_RESOLVE, resource)) throw actionableReviewItemNotFoundError();
+    const { note, idempotencyKey, requestHash } = validateActionableReviewReopenInput(req.body);
+    const { data, error } = await database.rpc('psi_reopen_tender_actionable_review', {
+      p_review_item_id: context.item.id,
+      p_actor_id: profile.id,
+      p_note: note,
+      p_idempotency_key: idempotencyKey,
+      p_request_hash: requestHash,
+    });
+    if (error) throw mapActionableReviewRpcError(error);
+    res.status(200).json(data);
+  } catch (error) { sendActionableReviewError(res, error); }
+});
+
+// AGT-002 revisión accionable — GREEN 3A2: upload-url/complete/download de
+// adjuntos de soporte (design §§9.3-9.5, 12-13). Mismo patrón auth-before-
+// lookup que 3A1; upload-url valida allowlist/tamaño/traversal/hash ANTES de
+// firmar nada y calcula bajo consulta la próxima versión del adjunto lógico;
+// complete nunca confía en metadata declarada por el navegador para invocar
+// la RPC — relee el ticket server-owned recién emitido y pasa esos valores
+// como "detectados", de forma que sólo un ticket_id+nonce genuinos (no
+// forjados, no expirados, no ya consumidos) puede completar; cualquier
+// discrepancia de ticket es el mismo 409 genérico `attachment_ticket_invalid`
+// (nunca distingue causa). download exige la misma autorización de lectura
+// que el listado y jamás sirve los bytes: sólo un 302 con URL firmada de 120s
+// en Location, sin cuerpo y `private, no-store`. Ningún camino aquí toca el
+// prefijo de documentos oficiales ni el de question-responses (§13.3).
+app.post('/api/tender-actionable-reviews/:itemId/attachments/upload-url', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireHumanActionableReviewIdentity(profile);
+    const database = requireDb();
+    const context = await loadActionableReviewItemContext(database, req.params.itemId);
+    if (!context) throw actionableReviewItemNotFoundError();
+    const resource = actionableReviewResource(context.opportunity.owner_id);
+    if (!can(profile, ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_CONTRIBUTE, resource)) throw actionableReviewItemNotFoundError();
+    const { name, extension, mimeType, sizeBytes, sha256, logicalAttachmentId } = validateActionableReviewAttachmentUploadInput(req.body);
+    const existingVersions = await must(database.from('psi_tender_actionable_review_attachments')
+      .select('version').eq('logical_attachment_id', logicalAttachmentId).order('version', { ascending: false }).limit(1));
+    const version = (existingVersions[0]?.version || 0) + 1;
+    const requestHash = buildActionableReviewAttachmentUploadRequestHash({ logicalAttachmentId, version, name, extension, mimeType, sizeBytes, sha256 });
+    const nonce = generateActionableReviewUploadTicketNonce();
+    const nonceHash = hashActionableReviewUploadTicketNonce(nonce);
+    const payloadHash = buildActionableReviewAttachmentTicketPayloadHash({
+      reviewItemId: context.item.id, opportunityId: context.opportunity.id, actorId: profile.id,
+      logicalAttachmentId, version, name, extension, mimeType, sizeBytes, sha256,
+    });
+    const { data: ticket, error } = await database.rpc('psi_issue_tender_actionable_review_upload_ticket', {
+      p_review_item_id: context.item.id,
+      p_opportunity_id: context.opportunity.id,
+      p_actor_id: profile.id,
+      p_logical_attachment_id: logicalAttachmentId,
+      p_version: version,
+      p_name: name,
+      p_extension: extension,
+      p_declared_mime_type: mimeType,
+      p_declared_size_bytes: sizeBytes,
+      p_declared_content_hash: sha256,
+      p_payload_hash: payloadHash,
+      p_idempotency_key: randomUUID(),
+      p_request_hash: requestHash,
+      p_nonce_hash: nonceHash,
+    });
+    if (error) throw mapActionableReviewAttachmentRpcError(error);
+    const { data: signedUpload, error: signError } = await database.storage.from(tenderDocumentBucket).createSignedUploadUrl(ticket.storage_path);
+    if (signError || !signedUpload?.token) throw new Error('No fue posible preparar la carga del adjunto.');
+    res.set('Cache-Control', 'private, no-store');
+    res.status(200).json({
+      ticket_id: ticket.id,
+      nonce,
+      storage_path: ticket.storage_path,
+      upload_token: signedUpload.token,
+      expires_at: ticket.expires_at,
+    });
+  } catch (error) { sendActionableReviewError(res, error); }
+});
+
+// §13.2 pasos 4-5: descarga el objeto EXACTO del ticket desde el bucket privado
+// y valida sus bytes con el módulo puro compartido. El tipo que anuncien el Blob
+// o el almacenamiento se ignora por completo: sólo cuentan los bytes. Ante
+// cualquier fallo intenta borrar ese mismo objeto en best-effort — un borrado
+// fallido nunca puede convertirse en un alta válida — y devuelve siempre el
+// mismo resultado cerrado, con el motivo sólo en observabilidad.
+async function validateActionableReviewAttachmentObject(database, ticket) {
+  let result;
+  try {
+    const { data, error } = await database.storage.from(tenderDocumentBucket).download(ticket.storage_path);
+    result = error || !data
+      ? { ok: false, reason: 'unreadable_object' }
+      : validateActionableReviewAttachmentBytes(ticket, Buffer.from(await data.arrayBuffer()));
+  } catch {
+    result = { ok: false, reason: 'unreadable_object' };
+  }
+  if (!result.ok) {
+    console.warn('agt002_actionable_review_attachment_rejected', { event: 'agt002_actionable_review_attachment_rejected', reason: result.reason });
+    try {
+      const { error: removeError } = await database.storage.from(tenderDocumentBucket).remove([ticket.storage_path]);
+      if (removeError) throw removeError;
+    } catch (cleanupError) {
+      console.warn('agt002_actionable_review_attachment_cleanup_failed', { event: 'agt002_actionable_review_attachment_cleanup_failed', message: cleanupError?.message });
+    }
+  }
+  return result;
+}
+
+// GREEN 3A3 (§§13.1-13.2, 19.4): `complete` no vuelve a publicar como
+// "detectado" lo que el navegador declaró al pedir el ticket — valida los BYTES
+// REALES antes de crear ningún hecho de negocio. Tras auth/ownership y la
+// relectura del ticket server-owned se exige que su `storage_path` esté
+// exactamente en el espacio de nombres aprobado de esta oportunidad/ítem (nunca
+// el expediente oficial ni `question-responses`, §13.3); un path fuera de él no
+// habilita descarga NI borrado, porque borrar una ruta arbitraria sería la
+// vulnerabilidad misma. Recién entonces se descargan los bytes y se recalculan
+// tamaño, SHA-256, MIME por magic bytes y estructura OOXML: a la RPC viajan los
+// valores DETECTADOS. Si algo falla se responde un único código genérico que no
+// distingue causa ni existencia del ticket, no se llama la RPC (el ticket no se
+// consume), y no se inserta ningún evento.
+app.post('/api/tender-actionable-reviews/:itemId/attachments/complete', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireHumanActionableReviewIdentity(profile);
+    const database = requireDb();
+    const context = await loadActionableReviewItemContext(database, req.params.itemId);
+    if (!context) throw actionableReviewItemNotFoundError();
+    const resource = actionableReviewResource(context.opportunity.owner_id);
+    if (!can(profile, ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_CONTRIBUTE, resource)) throw actionableReviewItemNotFoundError();
+    const { ticketId, nonce } = validateActionableReviewAttachmentCompleteInput(req.body);
+    const tickets = await must(database.from('psi_tender_actionable_review_upload_tickets')
+      .select('id,review_item_id,storage_path,name,extension,version,declared_mime_type,declared_size_bytes,declared_content_hash')
+      .eq('id', ticketId));
+    const ticket = tickets[0];
+    if (!ticket || ticket.review_item_id !== context.item.id) throw attachmentTicketInvalidError();
+    const storagePathIsApproved = isActionableReviewAttachmentStoragePath(ticket.storage_path, {
+      opportunityId: context.opportunity.id,
+      reviewItemId: context.item.id,
+      version: ticket.version,
+      declaredContentHash: ticket.declared_content_hash,
+    });
+    if (!storagePathIsApproved) throw attachmentContentInvalidError();
+    const validated = await validateActionableReviewAttachmentObject(database, ticket);
+    if (!validated.ok) throw attachmentContentInvalidError();
+    const requestHash = buildActionableReviewAttachmentCompleteRequestHash({ ticketId, nonce });
+    const nonceHash = hashActionableReviewUploadTicketNonce(nonce);
+    const { data, error } = await database.rpc('psi_complete_tender_actionable_review_attachment', {
+      p_ticket_id: ticketId,
+      p_nonce_hash: nonceHash,
+      p_actor_id: profile.id,
+      p_detected_mime_type: validated.detectedMimeType,
+      p_size_bytes: validated.sizeBytes,
+      p_content_hash: validated.contentHash,
+      p_storage_path: ticket.storage_path,
+      p_idempotency_key: randomUUID(),
+      p_request_hash: requestHash,
+    });
+    if (error) throw mapActionableReviewAttachmentRpcError(error);
+    res.set('Cache-Control', 'private, no-store');
+    res.status(201).json(data);
+  } catch (error) { sendActionableReviewError(res, error); }
+});
+
+app.get('/api/tender-actionable-review-attachments/:attachmentId/download', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    const database = requireDb();
+    const attachmentId = String(req.params.attachmentId || '');
+    if (!isValidUuid(attachmentId)) throw actionableReviewItemNotFoundError();
+    const attachments = await must(database.from('psi_tender_actionable_review_attachments').select('id,review_item_id,storage_path,name').eq('id', attachmentId));
+    const attachment = attachments[0];
+    if (!attachment) throw actionableReviewItemNotFoundError();
+    const context = await loadActionableReviewItemContext(database, attachment.review_item_id);
+    if (!context) throw actionableReviewItemNotFoundError();
+    const requestedOpportunityId = String(req.query.opportunity_id || '');
+    if (requestedOpportunityId && requestedOpportunityId !== context.opportunity.id) throw actionableReviewItemNotFoundError();
+    const resource = actionableReviewResource(context.opportunity.owner_id);
+    const canDownload = can(profile, ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_CONTRIBUTE, resource)
+      || can(profile, ACTIONS.LICITACIONES_ACTIONABLE_REVIEW_RESOLVE, resource)
+      || can(profile, ACTIONS.LICITACIONES_KNOWLEDGE_PROPOSE, resource)
+      || can(profile, ACTIONS.LICITACIONES_KNOWLEDGE_REVIEW, resource)
+      || can(profile, ACTIONS.LICITACIONES_KNOWLEDGE_PUBLISH, resource)
+      || (can(profile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW, crmResource(context.opportunity.owner_id)) && can(profile, ACTIONS.LICITACIONES_WORKBENCH_USE, {}));
+    if (!canDownload) throw actionableReviewItemNotFoundError();
+    const { data, error } = await database.storage.from(tenderDocumentBucket)
+      .createSignedUrl(attachment.storage_path, ACTIONABLE_REVIEW_ATTACHMENT_DOWNLOAD_TTL_SECONDS, { download: attachment.name });
+    if (error || !data?.signedUrl) throw new Error('No fue posible preparar la descarga del adjunto.');
+    res.set({ 'Cache-Control': 'private, no-store', Location: data.signedUrl });
+    res.status(302).end();
+  } catch (error) { sendActionableReviewError(res, error); }
+});
+
+// AGT-002 conocimiento — GREEN 4C1: las siete rutas de conocimiento reutilizable
+// (design §§7.1, 9.6-9.10, 12.1-12.2, 14-16, 18). Mismo patrón auth-before-lookup
+// que la revisión accionable: getAuthContext primero, identidad no humana
+// rechazada, luego la cadena item/versión -> ítem de conocimiento -> pendiente ->
+// oportunidad se resuelve enteramente server-side antes de evaluar §7; un recurso
+// ajeno y uno inexistente responden el mismo 404. `propose` (crear ficha/versión,
+// generar candidato) reutiliza el 404 uniforme de la revisión accionable porque
+// oculta existencia a quien no tiene alcance sobre la oportunidad; `review`/
+// `publish` devuelven 403 explícito porque quien intenta aprobar/publicar su
+// propia propuesta ya conoce el recurso (lo creó) y sólo le falta el rol de
+// gobierno. Ninguna ruta aquí reanaliza, refresca documentos oficiales ni toca
+// GO/NO-GO o Mesa Vig-IA.
+app.post('/api/tender-actionable-reviews/:itemId/knowledge-candidates/generate', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireHumanActionableReviewIdentity(profile);
+    const database = requireDb();
+    const context = await loadActionableReviewItemContext(database, req.params.itemId);
+    if (!context) throw actionableReviewItemNotFoundError();
+    const resource = actionableReviewResource(context.opportunity.owner_id);
+    if (!can(profile, ACTIONS.LICITACIONES_KNOWLEDGE_PROPOSE, resource)) throw actionableReviewItemNotFoundError();
+    const { scopeType, scopeValue, idempotencyKey } = validateTenderKnowledgeCandidateGenerateInput(req.body);
+    const responder = resolveTenderKnowledgeCandidateResponder();
+    if (!responder) throw knowledgeGeneratorUnavailableError();
+    const resolutionEventId = await loadVigenteActionableReviewResolutionEventId(database, context.item.id);
+    if (!resolutionEventId) throw knowledgeStateConflictError('No hay una resolución cerrada vigente para generar una ficha de conocimiento.');
+    const resolutionEvents = await must(database.from('psi_tender_actionable_review_events').select('id,outcome,note').eq('id', resolutionEventId));
+    const resolutionEvent = resolutionEvents[0];
+    if (!resolutionEvent) throw actionableReviewItemNotFoundError();
+    const supportRows = await must(database.from('psi_tender_actionable_review_resolution_supports').select('attachment_id').eq('resolution_event_id', resolutionEventId));
+    if (!supportRows.length) throw invalidActionableReviewInputError('Debe seleccionar al menos un soporte aprobado antes de generar una ficha de conocimiento.');
+    const attachments = await must(database.from('psi_tender_actionable_review_attachments')
+      .select('id,storage_path,name,detected_mime_type')
+      .in('id', supportRows.map(row => row.attachment_id))
+      .eq('review_item_id', context.item.id));
+    const supports = [];
+    for (const attachment of attachments) {
+      const { data: fileData, error: downloadError } = await database.storage.from(tenderDocumentBucket).download(attachment.storage_path);
+      if (downloadError || !fileData) throw new Error('No fue posible leer un soporte aprobado para generar la ficha.');
+      const buffer = Buffer.from(await fileData.arrayBuffer());
+      const text = await extractTextFromTenderFile(buffer, attachment.name, attachment.detected_mime_type);
+      supports.push({ attachment_id: attachment.id, fragment_index: 0, text });
+    }
+    const referenceDate = new Date().toISOString().slice(0, 10);
+    let candidate;
+    try {
+      candidate = await generateTenderKnowledgeCandidate({
+        resolution: { outcome: resolutionEvent.outcome, note: resolutionEvent.note },
+        supports, scopeType, scopeValue, referenceDate, responder,
+      });
+    } catch (error) {
+      const message = error?.message || '';
+      if (message.startsWith('knowledge_sanitization_failed')) throw knowledgeSanitizationFailedError(message);
+      throw invalidActionableReviewInputError(message);
+    }
+    res.set('Cache-Control', 'private, no-store');
+    if (candidate.abstained) {
+      return res.status(200).json({ abstained: true, abstention_reason: candidate.abstention_reason });
+    }
+    const findings = candidate.sanitization_findings.length
+      ? `Hallazgos de saneamiento del generador: ${candidate.sanitization_findings.join('; ')}`.slice(0, 2000)
+      : 'El generador no reportó hallazgos de saneamiento; la persona debe validar el resumen antes de someterlo.';
+    const requestHash = hashActionableReviewJson({ kind: 'tender_knowledge_candidate', ...candidate });
+    const { data, error } = await database.rpc('psi_create_tender_knowledge_candidate', {
+      p_review_item_id: context.item.id,
+      p_resolution_event_id: resolutionEventId,
+      p_actor_id: profile.id,
+      p_scope_type: candidate.scope_type,
+      p_scope_value: candidate.scope_value,
+      p_reusable_summary: candidate.reusable_summary,
+      p_valid_from: candidate.valid_from,
+      p_valid_until: candidate.valid_until,
+      p_review_on: candidate.review_on,
+      p_tags: candidate.tags,
+      p_confidentiality: candidate.confidentiality,
+      p_agent_reuse_allowed: false,
+      p_responsible_profile_id: candidate.responsible_profile_id,
+      p_sanitization_attestation: findings,
+      p_idempotency_key: idempotencyKey,
+      p_request_hash: requestHash,
+    });
+    if (error) throw mapTenderKnowledgeRpcError(error);
+    res.status(201).json({ ...data, abstained: false });
+  } catch (error) { sendActionableReviewError(res, error); }
+});
+
+app.get('/api/tender-knowledge-items/:knowledgeItemId', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    const database = requireDb();
+    const context = await loadTenderKnowledgeItemContext(database, req.params.knowledgeItemId);
+    if (!context) throw actionableReviewItemNotFoundError();
+    const resource = actionableReviewResource(context.opportunity.owner_id);
+    const canRead = can(profile, ACTIONS.LICITACIONES_KNOWLEDGE_PROPOSE, resource)
+      || can(profile, ACTIONS.LICITACIONES_KNOWLEDGE_REVIEW, resource)
+      || can(profile, ACTIONS.LICITACIONES_KNOWLEDGE_PUBLISH, resource)
+      || (can(profile, ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW, crmResource(context.opportunity.owner_id)) && can(profile, ACTIONS.LICITACIONES_WORKBENCH_USE, {}));
+    if (!canRead) throw actionableReviewItemNotFoundError();
+    const versions = await must(database.from('psi_tender_knowledge_versions')
+      .select('id,version,reusable_summary,valid_from,valid_until,review_on,tags,confidentiality,agent_reuse_allowed,responsible_profile_id,created_at')
+      .eq('knowledge_item_id', context.knowledgeItem.id)
+      .order('version', { ascending: true }));
+    const versionIds = versions.map(version => version.id);
+    const events = versionIds.length
+      ? await must(database.from('psi_tender_knowledge_events').select('knowledge_version_id,event_type,sequence').in('knowledge_version_id', versionIds))
+      : [];
+    const latestEventByVersion = new Map();
+    for (const event of events) {
+      const current = latestEventByVersion.get(event.knowledge_version_id);
+      if (!current || event.sequence > current.sequence) latestEventByVersion.set(event.knowledge_version_id, event);
+    }
+    const projectedVersions = versions.map(version => ({
+      ...version,
+      status: TENDER_KNOWLEDGE_STATUS_BY_EVENT_TYPE[latestEventByVersion.get(version.id)?.event_type] || null,
+    }));
+    res.set('Cache-Control', 'private, no-store');
+    res.status(200).json({
+      id: context.knowledgeItem.id,
+      scope_type: context.knowledgeItem.scope_type,
+      scope_value: context.knowledgeItem.scope_value,
+      source_review_item_id: context.knowledgeItem.source_review_item_id,
+      created_at: context.knowledgeItem.created_at,
+      versions: projectedVersions,
+    });
+  } catch (error) { sendActionableReviewError(res, error); }
+});
+
+app.post('/api/tender-knowledge-items/:knowledgeItemId/versions', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireHumanActionableReviewIdentity(profile);
+    const database = requireDb();
+    const context = await loadTenderKnowledgeItemContext(database, req.params.knowledgeItemId);
+    if (!context) throw actionableReviewItemNotFoundError();
+    const resource = actionableReviewResource(context.opportunity.owner_id);
+    if (!can(profile, ACTIONS.LICITACIONES_KNOWLEDGE_PROPOSE, resource)) throw actionableReviewItemNotFoundError();
+    const resolutionEventId = await loadVigenteActionableReviewResolutionEventId(database, context.item.id);
+    if (!resolutionEventId) throw knowledgeStateConflictError('La resolución de origen ya no está vigente; no se puede crear una nueva versión.');
+    const { reusableSummary, validFrom, validUntil, reviewOn, tags, confidentiality, agentReuseAllowed, responsibleProfileId, sanitizationAttestation, idempotencyKey, requestHash } = validateTenderKnowledgeVersionInput(req.body);
+    const { data, error } = await database.rpc('psi_add_tender_knowledge_version', {
+      p_knowledge_item_id: context.knowledgeItem.id,
+      p_resolution_event_id: resolutionEventId,
+      p_actor_id: profile.id,
+      p_reusable_summary: reusableSummary,
+      p_valid_from: validFrom,
+      p_valid_until: validUntil,
+      p_review_on: reviewOn,
+      p_tags: tags,
+      p_confidentiality: confidentiality,
+      p_agent_reuse_allowed: agentReuseAllowed,
+      p_responsible_profile_id: responsibleProfileId,
+      p_sanitization_attestation: sanitizationAttestation,
+      p_idempotency_key: idempotencyKey,
+      p_request_hash: requestHash,
+    });
+    if (error) throw mapTenderKnowledgeRpcError(error);
+    res.set('Cache-Control', 'private, no-store');
+    res.status(201).json(data);
+  } catch (error) { sendActionableReviewError(res, error); }
+});
+
+app.post('/api/tender-knowledge-versions/:knowledgeVersionId/submit', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireHumanActionableReviewIdentity(profile);
+    const database = requireDb();
+    const context = await loadTenderKnowledgeVersionContext(database, req.params.knowledgeVersionId);
+    if (!context) throw actionableReviewItemNotFoundError();
+    const resource = actionableReviewResource(context.opportunity.owner_id);
+    if (!can(profile, ACTIONS.LICITACIONES_KNOWLEDGE_PROPOSE, resource)) throw actionableReviewItemNotFoundError();
+    const { idempotencyKey, requestHash } = validateTenderKnowledgeSubmitInput(req.body);
+    const { data, error } = await database.rpc('psi_submit_tender_knowledge_version', {
+      p_knowledge_version_id: context.version.id,
+      p_actor_id: profile.id,
+      p_idempotency_key: idempotencyKey,
+      p_request_hash: requestHash,
+    });
+    if (error) throw mapTenderKnowledgeRpcError(error);
+    res.set('Cache-Control', 'private, no-store');
+    res.status(200).json(data);
+  } catch (error) { sendActionableReviewError(res, error); }
+});
+
+app.post('/api/tender-knowledge-versions/:knowledgeVersionId/approve', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireHumanActionableReviewIdentity(profile);
+    const database = requireDb();
+    const context = await loadTenderKnowledgeVersionContext(database, req.params.knowledgeVersionId);
+    if (!context) throw actionableReviewItemNotFoundError();
+    const resource = actionableReviewResource(context.opportunity.owner_id);
+    if (!can(profile, ACTIONS.LICITACIONES_KNOWLEDGE_REVIEW, resource)) throw actionableReviewForbiddenError();
+    const { idempotencyKey, requestHash } = validateTenderKnowledgeApproveInput(req.body);
+    const { data, error } = await database.rpc('psi_approve_tender_knowledge_version', {
+      p_knowledge_version_id: context.version.id,
+      p_actor_id: profile.id,
+      p_idempotency_key: idempotencyKey,
+      p_request_hash: requestHash,
+    });
+    if (error) throw mapTenderKnowledgeRpcError(error);
+    res.set('Cache-Control', 'private, no-store');
+    res.status(200).json(data);
+  } catch (error) { sendActionableReviewError(res, error); }
+});
+
+app.post('/api/tender-knowledge-versions/:knowledgeVersionId/reject', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireHumanActionableReviewIdentity(profile);
+    const database = requireDb();
+    const context = await loadTenderKnowledgeVersionContext(database, req.params.knowledgeVersionId);
+    if (!context) throw actionableReviewItemNotFoundError();
+    const resource = actionableReviewResource(context.opportunity.owner_id);
+    if (!can(profile, ACTIONS.LICITACIONES_KNOWLEDGE_REVIEW, resource)) throw actionableReviewForbiddenError();
+    const { note, idempotencyKey, requestHash } = validateTenderKnowledgeRejectInput(req.body);
+    const { data, error } = await database.rpc('psi_reject_tender_knowledge_version', {
+      p_knowledge_version_id: context.version.id,
+      p_actor_id: profile.id,
+      p_note: note,
+      p_idempotency_key: idempotencyKey,
+      p_request_hash: requestHash,
+    });
+    if (error) throw mapTenderKnowledgeRpcError(error);
+    res.set('Cache-Control', 'private, no-store');
+    res.status(200).json(data);
+  } catch (error) { sendActionableReviewError(res, error); }
+});
+
+app.post('/api/tender-knowledge-versions/:knowledgeVersionId/publish', async (req, res) => {
+  try {
+    const { profile } = await getAuthContext(req);
+    requireHumanActionableReviewIdentity(profile);
+    const database = requireDb();
+    const context = await loadTenderKnowledgeVersionContext(database, req.params.knowledgeVersionId);
+    if (!context) throw actionableReviewItemNotFoundError();
+    const resource = actionableReviewResource(context.opportunity.owner_id);
+    if (!can(profile, ACTIONS.LICITACIONES_KNOWLEDGE_PUBLISH, resource)) throw actionableReviewForbiddenError();
+    const { idempotencyKey, requestHash } = validateTenderKnowledgePublishInput(req.body);
+
+    const versionRows = await must(database.from('psi_tender_knowledge_versions').select('content_hash').eq('id', context.version.id));
+    const contentHash = versionRows[0]?.content_hash;
+    if (!contentHash) throw actionableReviewItemNotFoundError();
+    const versionEvents = await must(database.from('psi_tender_knowledge_events')
+      .select('event_type,sequence').eq('knowledge_version_id', context.version.id).order('sequence', { ascending: false }));
+    const status = TENDER_KNOWLEDGE_STATUS_BY_EVENT_TYPE[versionEvents[0]?.event_type] || null;
+    const hasApprovedEvent = versionEvents.some(event => event.event_type === 'approved');
+    if (status !== 'pendiente_aprobacion' || !hasApprovedEvent) {
+      throw knowledgeStateConflictError(`knowledge_state_conflict: sólo una versión aprobada puede publicarse (estado actual: ${status || 'desconocido'}).`);
+    }
+
+    const responsibleRows = await must(database.from('psi_sales_profiles').select('full_name').eq('id', context.version.responsible_profile_id));
+    const responsibleProfileName = responsibleRows[0]?.full_name || 'Responsable no disponible';
+    const priorPublications = await must(database.from('psi_tender_knowledge_publications').select('e_tag,knowledge_version_id').eq('knowledge_item_id', context.knowledgeItem.id));
+    const priorPublication = priorPublications.find(publication => publication.knowledge_version_id !== context.version.id);
+
+    const adapter = resolveTenderKnowledgeSharePointAdapter();
+    if (!adapter) throw sharepointPublicationUnavailableError();
+
+    const title = String(context.version.reusable_summary || '').split('\n')[0].slice(0, 120) || 'Ficha de conocimiento reutilizable';
+    let publicationRecord;
+    try {
+      publicationRecord = await publishTenderKnowledgeVersion({
+        adapter,
+        knowledgeItemId: context.knowledgeItem.id,
+        knowledgeVersionId: context.version.id,
+        title,
+        reusableSummary: context.version.reusable_summary,
+        validFrom: context.version.valid_from,
+        validUntil: context.version.valid_until,
+        reviewOn: context.version.review_on,
+        tags: context.version.tags,
+        confidentiality: context.version.confidentiality,
+        responsibleProfileName,
+        contentHash,
+        actorId: profile.id,
+        scopeType: context.knowledgeItem.scope_type,
+        scopeValue: context.knowledgeItem.scope_value,
+        previousETag: priorPublication?.e_tag,
+      });
+    } catch (error) {
+      const message = error?.message || '';
+      if (message.startsWith('sharepoint_publication_unavailable')) throw sharepointPublicationUnavailableError();
+      if (message.startsWith('sharepoint_publication_conflict')) throw sharepointPublicationConflictError();
+      if (message.startsWith('invalid_review_input')) throw invalidActionableReviewInputError(message);
+      throw error;
+    }
+
+    const { data, error } = await database.rpc('psi_record_tender_knowledge_publication', {
+      p_knowledge_version_id: context.version.id,
+      p_library_root: publicationRecord.library_root,
+      p_relative_path: publicationRecord.relative_path,
+      p_site_id: adapter.siteId,
+      p_drive_id: adapter.driveId,
+      p_drive_item_id: publicationRecord.drive_item_id,
+      p_web_url: publicationRecord.web_url,
+      p_e_tag: publicationRecord.e_tag,
+      p_sharepoint_version: publicationRecord.sharepoint_version,
+      p_content_hash: publicationRecord.content_hash,
+      p_published_by: profile.id,
+      p_idempotency_key: idempotencyKey,
+      p_request_hash: requestHash,
+    });
+    if (error) throw mapTenderKnowledgeRpcError(error);
+    res.set('Cache-Control', 'private, no-store');
+    res.status(200).json({ ...data, status: 'publicado' });
+  } catch (error) { sendActionableReviewError(res, error); }
 });
 
 const distPath = path.join(__dirname, '..', 'dist');

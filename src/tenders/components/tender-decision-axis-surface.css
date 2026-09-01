@@ -111,6 +111,75 @@
 .tender-decision-operational-card dd { margin: .16rem 0 0; color: #263f3a; overflow-wrap: anywhere; }
 .tender-decision-operational-card ul { margin: .2rem 0 0; padding-left: 1.1rem; }
 
+/* Estado de la revisión accionable (§8.2/§18): badge + conteos compactos antes del cuerpo de la
+   tarjeta, y el único CTA que abre el drawer nuevo (o inicia `ensure` si aún no hay pendiente
+   persistido), siempre al pie de la tarjeta. */
+.tender-decision-operational-card-review {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin: 0 0 .75rem;
+}
+
+.tender-decision-operational-card-badge {
+  padding: .3rem .6rem;
+  border-radius: 999px;
+  background: #eef0ef;
+  color: #596461;
+  font-size: .78rem;
+  font-weight: 800;
+}
+
+.tender-decision-operational-card-counts {
+  color: var(--axis-muted);
+  font-size: .78rem;
+}
+
+.tender-decision-operational-card-review-cta {
+  margin-top: .85rem;
+  min-height: 44px;
+  padding: .6rem .85rem;
+  border: 1px solid #174a3d;
+  border-radius: 10px;
+  background: #174a3d;
+  color: #fff;
+  font-weight: 750;
+}
+
+.tender-decision-operational-card-review-cta:disabled {
+  opacity: .65;
+  cursor: not-allowed;
+}
+
+.tender-decision-operational-card-error {
+  margin: .5rem 0 0;
+  color: #a12622;
+  font-size: .82rem;
+}
+
+.tender-decision-operational-status,
+.tender-decision-operational-alert {
+  padding: .7rem .9rem;
+  border: 1px solid var(--axis-line);
+  border-radius: 12px;
+}
+
+.tender-decision-operational-status { background: #f0f8f3; color: #17634e; }
+
+.tender-decision-operational-alert {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .6rem;
+  justify-content: space-between;
+  border-color: #d99b98;
+  background: #fff7f7;
+  color: #a12622;
+}
+
+.tender-decision-operational-alert p { margin: 0; }
+
 .tender-decision-axis-help {
   flex: 0 0 auto;
   border: 1px solid var(--axis-line);
@@ -384,6 +453,8 @@
   .tender-decision-axis-rail { grid-template-columns: minmax(0, 1fr); }
   .tender-decision-operational-cards,
   .tender-decision-operational-card dl { grid-template-columns: minmax(0, 1fr); }
+  .tender-decision-operational-card-review { flex-direction: column; align-items: flex-start; }
+  .tender-decision-operational-card-review-cta { width: 100%; }
   .tender-decision-axis-body > header { flex-direction: column; }
   .tender-decision-axis-drawer { width: 100%; }
   /* Móvil (§14): una sola columna en las tarjetas y CTA primaria fija al pie, sin sacarla del

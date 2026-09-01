@@ -6,7 +6,7 @@ import { tenderBriefUnavailableCopy } from '../tenderDecisionBriefModel';
 import { tenderDecisionBlockers, tenderDecisionConditionAnchor, tenderDecisionConditions, tenderDecisionPreparationActions, tenderDecisionSupportedAspects } from '../tenderDecisionSurface';
 import { tenderDecisionAxisViews } from '../tenderDecisionAxisSurface';
 import { tenderAnalysisCoverageReady, tenderIntegralOpenUnitsPresentation, tenderIntegralOperationalGroups } from '../tenderIntegralAnalysisPresentation';
-import type { TenderAnalysisFinding, TenderDocumentAnalysis, TenderDocumentRecord, TenderDocumentsPayload, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput } from '../types';
+import type { TenderAnalysisFinding, TenderCurrentProfile, TenderDocumentAnalysis, TenderDocumentRecord, TenderDocumentsPayload, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput, TenderRequest } from '../types';
 import { QuestionResponseCard, type NormalizedQuestion } from './TenderQuestionResponseCard';
 import { shouldShowTenderOperationalPendingProjection, TenderOperationalPendingProjection } from './TenderOperationalPendingProjection';
 
@@ -30,6 +30,13 @@ type TenderAnalysisSectionProps = {
   // esta lista; cuando sí hay lectura material, la superficie de cinco ejes sigue viviendo allí.
   // Por defecto `false`: con el flag apagado se conserva el flujo legado.
   decisionSurfaceElsewhere?: boolean;
+  // Identidad/canal same-origin que la proyección operativa necesita para montar el drawer de
+  // revisión accionable nuevo (§8, §18 de la spec): nunca AGT/reanálisis ni GO/NO-GO.
+  opportunityId: string;
+  currentProfile?: TenderCurrentProfile | null;
+  request: TenderRequest;
+  apiDownload: (url: string) => Promise<Blob>;
+  uploadToSignedUrl?: (path: string, token: string, file: Blob) => Promise<{ error: unknown | null }>;
 };
 
 function EvidenceList({ items, empty }: { items: unknown; empty: string }) {
@@ -47,7 +54,7 @@ function normalizeQuestion(item: TenderAnalysisFinding, index: number): Normaliz
   };
 }
 
-export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview, onAnalyzePreview, statusText = '', statusTone = 'status', analysisEngine, questionResponses = [], canAnswerQuestions = false, onSaveQuestionResponse, processingStatus = null, onRetryProcessing, decisionSurfaceElsewhere = false }: TenderAnalysisSectionProps) {
+export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview, onAnalyzePreview, statusText = '', statusTone = 'status', analysisEngine, questionResponses = [], canAnswerQuestions = false, onSaveQuestionResponse, processingStatus = null, onRetryProcessing, decisionSurfaceElsewhere = false, opportunityId, currentProfile, request, apiDownload, uploadToSignedUrl }: TenderAnalysisSectionProps) {
   const strengths = analysis?.strengths ?? analysis?.commercial_fit?.positives ?? [];
   const weaknesses = analysis?.weaknesses ?? analysis?.blockers ?? analysis?.commercial_fit?.concerns ?? [];
   const questions = (analysis?.questions ?? []).map(normalizeQuestion);
@@ -64,9 +71,11 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
   const decisionAxes = tenderDecisionAxisViews(analysis, questionResponses);
   const showOperationalProjection = decisionSurfaceElsewhere
     && shouldShowTenderOperationalPendingProjection(decisionAxes, operationalUnits);
-  // El modo operativo V3 se decide con el mismo selector puro que usa Decisión. Sólo esa lista
-  // completa se proyecta aquí; `decision_review` continúa en el flujo legado cuando el flag está
-  // apagado y los cinco ejes materiales continúan en la superficie única cuando están disponibles.
+  // Toda unidad V3 abierta de la corrida vigente se proyecta aquí en cuanto exista al menos una
+  // (§8.7 de la spec): que los cinco ejes de Decisión ya tengan lectura material no suprime esta
+  // lista, porque ambas lecturas son complementarias, no excluyentes. `decision_review` continúa
+  // en el flujo legado cuando el flag está apagado y los cinco ejes materiales continúan en la
+  // superficie única cuando están disponibles.
   const conditionCards = tenderDecisionConditions(analysis?.decision_review, questionResponses);
   const impedimentCards = tenderDecisionBlockers(analysis?.decision_review, questionResponses);
   const supportedCards = tenderDecisionSupportedAspects(analysis?.decision_review);
@@ -98,7 +107,16 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
     </div>}
     {failed && <div className="error" role="alert"><strong>Análisis fallido.</strong> El último intento no produjo una conclusión utilizable. Puede intentarlo nuevamente sin afectar la decisión humana.</div>}
     {stale && <div className="notice" role="status"><strong>Análisis desactualizado.</strong> El contenido histórico se conserva para trazabilidad, pero los documentos vigentes cambiaron.</div>}
-    {showOperationalProjection && <TenderOperationalPendingProjection groups={operationalGroups} count={operationalUnits.length} />}
+    {showOperationalProjection && <TenderOperationalPendingProjection
+      groups={operationalGroups}
+      count={operationalUnits.length}
+      opportunityId={opportunityId}
+      analysisRunId={analysis?.run_id ?? ''}
+      currentProfile={currentProfile}
+      request={request}
+      apiDownload={apiDownload}
+      uploadToSignedUrl={uploadToSignedUrl}
+    />}
     {coveragePaused && !decisionSurfaceElsewhere && <section className="tender-v3-questions tender-executive-pending" aria-labelledby="tender-inventory-paused-title">
       <header><div><span className="eyebrow">Cobertura del expediente</span><h3 id="tender-inventory-paused-title">Análisis integral pausado</h3><p>Este análisis no tiene todavía una cobertura de evidencia lista para decisión de este expediente: la frontera semántica no está finalizada, o falta un inventario verificable de sus requisitos. No se cita ninguna cifra suya: el análisis anterior se conserva sólo como trazabilidad y no representa cobertura integral de esta licitación.</p></div><strong>Cobertura pendiente</strong></header>
       <p className="notice" role="status">No hay recomendación integral disponible. Revise o actualice el análisis cuando la cobertura de requisitos de este expediente esté completa. El respaldo técnico histórico de esta licitación se conserva más abajo, sólo como trazabilidad.</p>

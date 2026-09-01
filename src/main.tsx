@@ -6,7 +6,7 @@ import './styles.css';
 import { formatDateOnly } from './dateOnly';
 import { bogotaToday, followUpDateToIso } from './followUpDate';
 import { canAccessRoute, canManageUsers as navCanManageUsers, canViewTenders as navCanViewTenders, getVisibleNavGroups, isInitialAppHash, isManagementRole as navIsManagementRole, preferredLandingRoute } from './navPermissions';
-import { api, exitTenderOpportunity, setApiAccessToken } from './apiClient';
+import { api, apiDownload, exitTenderOpportunity, setApiAccessToken } from './apiClient';
 import { CAPABILITY_PERMISSION_CODES, CAPABILITY_PERMISSIONS, MODULE_PERMISSION_CODES, MODULE_PERMISSIONS, eligibleModulePermissions, isModulePermissionEligible } from '../module-access.js';
 import { SiioDashboard } from './siio/SiioDashboard';
 import { TendersModule } from './tenders/TendersModule';
@@ -1164,7 +1164,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
       <TenderDocumentSection documents={documents} busy={busy} statusText={statusText} refreshResult={refreshResult} onRefresh={() => void importOfficialDocuments()} onUpload={event => void addFiles(event)} documentTypeLabel={tenderDocumentTypeLabel} />
     </div>
     <div id="tender-analysis" className="tender-guided-review" tabIndex={-1}>
-      <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} decisionSurfaceElsewhere={payload.decision_axis_surface_enabled === true} />
+      <TenderAnalysisSection analysis={analysis} documents={documents} busy={busy || Boolean(activeReanalysisJobId)} canRunPreview={can(currentProfile, ACTIONS.AI_ANALYSIS_RUN)} onAnalyzePreview={() => void analyzeDocumentsWithAgt002()} statusText={analysisStatus.message} statusTone={analysisStatus.tone} analysisEngine={payload.analysis_engine} questionResponses={payload.question_responses || []} canAnswerQuestions={currentProfile.identity_type == null || currentProfile.identity_type === 'human'} onSaveQuestionResponse={saveQuestionResponse} processingStatus={processingStatus} onRetryProcessing={() => void retryDurableProcessing()} decisionSurfaceElsewhere={payload.decision_axis_surface_enabled === true} opportunityId={opportunity.id} currentProfile={currentProfile} request={api} apiDownload={apiDownload} uploadToSignedUrl={(path, token, file) => supabaseBrowser.storage.from('tender-documents').uploadToSignedUrl(path, token, file)} />
     </div>
   </>;
 }
