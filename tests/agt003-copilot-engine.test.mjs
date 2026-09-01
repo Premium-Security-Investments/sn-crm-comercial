@@ -25,6 +25,16 @@ assert.match(AGT003_COPILOT_POLICY, /no envíes/i);
 assert.match(AGT003_COPILOT_POLICY, /evidence_id/i);
 assert.match(AGT003_COPILOT_POLICY, /asset_id/i);
 
+// AGT-003 hotfix: la política prohíbe explícitamente las aperturas genéricas y exige que el
+// borrador arranque desde el hito comercial más reciente respaldado por evidencia, con una única
+// solicitud concreta de baja fricción y una razón centrada en el destinatario.
+assert.match(AGT003_COPILOT_POLICY, /asunto[^.]*específic/i, 'la política exige un asunto específico de la oportunidad');
+assert.match(AGT003_COPILOT_POLICY, /hito comercial más reciente/i, 'la política exige anclar la apertura en el último hito comercial respaldado por evidencia');
+assert.match(AGT003_COPILOT_POLICY, /Te escribo para retomar la conversación sobre la propuesta/, 'la política nombra explícitamente la apertura genérica prohibida');
+assert.match(AGT003_COPILOT_POLICY, /una solicitud concreta y de baja fricción/i, 'la política exige exactamente una solicitud concreta de baja fricción');
+assert.match(AGT003_COPILOT_POLICY, /por qué responder beneficia al destinatario/i, 'la política exige justificar el beneficio para el destinatario');
+assert.match(AGT003_COPILOT_POLICY, /Nunca inventes hechos, cifras, nombres/i, 'la política prohíbe inventar hechos no respaldados por evidencia');
+
 const client = fakeClient();
 const engine = createAgt003CopilotEngine({ client, model: response.model, policyVersion: response.policy_version, now: () => '2030-02-01T10:01:00.000Z', countDailyRuns: async () => 0 });
 const generated = await engine.draft(request);

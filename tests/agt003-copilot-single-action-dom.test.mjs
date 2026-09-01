@@ -19,11 +19,23 @@ const okResult = subject => ({
   const calls = []; let resolveGenerate;
   const request = url => { calls.push(url); return new Promise(r => { resolveGenerate = () => r(okResult('Asunto')); }); };
   const view = mountWithJsdom(VigiaOpportunityCopilot, { opportunityId: 'op-1', request, preflight, contextVersion: 'v1' });
+  const idleButton = view.container.querySelector('.vigia-copilot-generate button');
+  assert.equal(idleButton.className.includes('secondary'), false, 'en idle el CTA de preparación es primario, no secundario');
   await view.click('.vigia-copilot-generate button');
   assert.deepEqual(calls, ['/api/vigia/copilot/generate']);
   assert.ok(view.container.querySelector('.vigia-copilot-generate button[disabled]'));
+  assert.equal(view.container.querySelector('.vigia-copilot-generate button').className.includes('secondary'), false, 'en loading el CTA sigue siendo primario');
   assert.match(view.container.querySelector('[role="status"]').textContent, /está preparando un borrador acotado/);
-  resolveGenerate(); await view.flush(); await view.unmount();
+  resolveGenerate(); await view.flush();
+  // AGT-003 hotfix: una vez existe un borrador (ready), "Actualizar borrador" pasa a ser
+  // visualmente secundario frente a la acción primaria de completar el flujo (Copiar correo).
+  const regenerateButton = view.container.querySelector('.vigia-copilot-generate button');
+  assert.equal(regenerateButton.textContent, 'Actualizar borrador');
+  assert.ok(regenerateButton.className.includes('secondary'), 'tras generar, "Actualizar borrador" debe ser visualmente secundario');
+  const copyButton = [...view.container.querySelectorAll('.vigia-copilot-actions button')].find(b => b.textContent === 'Copiar correo');
+  assert.ok(copyButton, 'debe existir el botón primario "Copiar correo"');
+  assert.equal(copyButton.className.includes('secondary'), false, '"Copiar correo" sigue siendo la acción primaria');
+  await view.unmount();
 }
 
 { // Criterio 5/6: alertas persisten en error; error compacto, no bloqueante, único control.

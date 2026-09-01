@@ -128,11 +128,17 @@ assert.equal(compact.nextStep, distinctPresented.contactPlanSteps[0]);
 assert.deepEqual(compact.whyBullets, ['El valor registrado es COP 125.000.000.', 'El cliente sigue evaluando alternativas.']);
 assert.deepEqual([JSON.stringify(distinctPresented), JSON.stringify(baseAlerts)], snap, 'no muta sus argumentos');
 
-const longStep = 'Paso siguiente muy detallado. '.repeat(12).trim();
-const longFact = 'Hecho relevante muy extenso repetido. '.repeat(8).trim();
-const truncated = presentCompactCopilotSummary({ ...distinctPresented, contactPlanSteps: [longStep], facts: [{ text: longFact, evidence_refs: [] }], inferences: [] }, []);
-assert.ok(longStep.length > 240 && truncated.nextStep.length <= 240);
-assert.ok(longFact.length > 180 && truncated.whyBullets.every(b => b.length <= 180));
+// AGT-003 hotfix: "Siguiente paso sugerido"/"Por qué" deben renderizarse completos, sin ningún
+// truncado ni elipsis en JS que oculte parte del texto (la UI, no el adaptador, decide envolver).
+const longStep = 'Paso siguiente muy detallado con contexto extenso que documenta cada acuerdo alcanzado hasta ahora. '.repeat(4).trim();
+const longFact = 'Hecho relevante muy extenso repetido con múltiples cláusulas y referencias específicas de la oportunidad. '.repeat(3).trim();
+const untruncated = presentCompactCopilotSummary({ ...distinctPresented, contactPlanSteps: [longStep], facts: [{ text: longFact, evidence_refs: [] }], inferences: [] }, []);
+assert.ok(longStep.length > 240, 'el texto de prueba debe superar el antiguo límite de 240 caracteres');
+assert.ok(longFact.length > 180, 'el texto de prueba debe superar el antiguo límite de 180 caracteres');
+assert.equal(untruncated.nextStep, longStep, 'nextStep se renderiza completo, sin truncar');
+assert.deepEqual(untruncated.whyBullets, [longFact], 'whyBullets se renderiza completo, sin truncar');
+assert.equal(untruncated.nextStep.includes('…'), false, 'nextStep nunca agrega una elipsis');
+assert.ok(untruncated.whyBullets.every(bullet => !bullet.includes('…')), 'whyBullets nunca agrega una elipsis');
 
 for (const [label, override, alerts] of [
   ['repite una alerta activa', { contactPlanSteps: ['  LA PRÓXIMA GESTIÓN   está vencida HACE 4 días.  '] }, baseAlerts],
