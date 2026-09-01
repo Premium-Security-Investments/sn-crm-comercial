@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import { AGT002_PRE_GO_MATERIAL_IMPEDIMENT_CATEGORIES } from '../agt002-pre-go-analysis.js';
 import { loadReactComponent, renderReactComponent } from './helpers/bundle-react-component.mjs';
+import { mountWithJsdom } from './helpers/render-react-dom.mjs';
 
 const TenderDecisionAxisSurface = await loadReactComponent(
   'src/tenders/components/TenderDecisionAxisSurface.tsx',
@@ -210,7 +211,7 @@ test('D1.6 — Decisión no duplica seis pendientes V3 y dirige a la lista compl
 test('D1.7-D1.8 — la pregunta usa copy pendiente y la barra integra Mesa de ayuda + control formal', () => {
   const html = render(analysisFixture());
   assert.ok(html.includes('pregunta material pendiente'));
-  const questionRow = html.match(/Capital de trabajo mínimo[\s\S]*?Ver detalle \/ Responder/)?.[0] || '';
+  const questionRow = html.match(/Capital de trabajo mínimo[\s\S]*?Respuesta histórica \(reanaliza\)/)?.[0] || '';
   assert.ok(questionRow);
   assert.equal(/impediment/i.test(questionRow), false);
   assert.ok(html.includes('Mesa de ayuda'));
@@ -225,7 +226,7 @@ test('D1.8 — estado formal aún no resuelto bloquea la CTA y deja cualquier dr
     /<button[^>]*class="tender-decision-axis-cta"[^>]*disabled=""[^>]*>/,
     'la CTA primaria no puede actuar antes de conocer la decisión humana vigente',
   );
-  assert.equal(html.includes('Ver detalle / Responder'), false, 'un estado bloqueado no debe prometer edición');
+  assert.equal(html.includes('Respuesta histórica (reanaliza)'), false, 'un estado bloqueado no debe prometer edición ni mostrar el CTA legado de escritura');
   assert.ok(html.includes('Ver detalle'));
   const source = readFileSync(new URL('../src/tenders/components/TenderDecisionAxisSurface.tsx', import.meta.url), 'utf8');
   assert.match(source, /const decisionStateUnresolved = decisionState\.phase !== 'ready'/);
@@ -299,6 +300,103 @@ test('D6 — fuera de post_go se conserva el botón secundario Mesa de ayuda jun
   assert.equal(count(pausedHtml, 'class="tender-decision-axis-help"'), 1);
   assert.equal(count(pausedHtml, 'class="tender-decision-axis-cta"'), 1);
   assert.ok(pausedHtml.includes('Revisar pendientes en Análisis'));
+});
+
+// Un eje con lectura material (findings poblados) y, a la vez, una unidad V3 abierta de la misma
+// corrida vigente: el bug que este fixture reproduce era que ambas condiciones nunca convivían, así
+// que la tabla de hallazgos jamás necesitaba resolver por hallazgo cuál CTA mostrar. Ambos
+// hallazgos viven en el MISMO eje (la tabla sólo renderiza el eje seleccionado) para poder
+// comparar sus botones en la misma tabla: uno comparte `requirement_id` con la única unidad V3
+// abierta y es elegible; el otro conserva un `requirement_id` que ninguna unidad V3 abierta trae,
+// así que sigue siendo histórico/no elegible.
+function analysisFixtureWithEligibleFinding() {
+  const eligibleUnit = openIntegralUnit(0, 'financial_execution');
+  const analysis = analysisFixture();
+  analysis.decision_axis_analysis.axes.experiencia_financiera = {
+    axis: 'experiencia_financiera',
+    state: 'Por confirmar',
+    findings: [
+      {
+        ...finding(),
+        id: 'finding-eligible-1',
+        requirement_id: eligibleUnit.requirement_id,
+        presentation: {
+          title: 'Hallazgo elegible V3',
+          summary: 'La capacidad debe validarse con evidencia vigente.',
+          missing: 'Validación financiera vigente.',
+          action_required: 'Revisar el soporte con la persona responsable.',
+        },
+      },
+      {
+        ...finding(),
+        id: 'finding-historico-1',
+        requirement_id: 'requirement-sin-unidad-v3-abierta',
+        presentation: {
+          title: 'Hallazgo histórico no elegible',
+          summary: 'La capacidad debe validarse con evidencia vigente.',
+          missing: 'Validación financiera vigente.',
+          action_required: 'Revisar el soporte con la persona responsable.',
+        },
+      },
+    ],
+    counts: { blocker: 0, decision_question: 2, supported: 0 },
+  };
+  analysis.decision_axis_analysis.counts = { material_findings: 3, ordinary_reclassified: 0 };
+  analysis.integral_analysis = {
+    contract_version: 'agt002-integral-analysis-v3',
+    coverage: { analyzed_requirement_ids: [eligibleUnit.requirement_id], expected_requirement_ids: [eligibleUnit.requirement_id] },
+    analysis_units: [eligibleUnit],
+  };
+  return analysis;
+}
+
+test('D9 — un eje con lectura material no suprime el pendiente V3 abierto: el hallazgo elegible usa "Revisar en Análisis" y el histórico conserva el CTA legado exacto', () => {
+  const html = render(analysisFixtureWithEligibleFinding());
+  const eligibleRow = html.match(/Hallazgo elegible V3[\s\S]*?<\/tr>/)?.[0] || '';
+  assert.match(eligibleRow, /Revisar en Análisis/, 'el hallazgo elegible debe apuntar a la tarjeta real en Análisis');
+  assert.doesNotMatch(eligibleRow, /Respuesta histórica \(reanaliza\)/, 'un hallazgo elegible nunca conserva el CTA legado de escritura');
+  const historicalRow = html.match(/Hallazgo histórico no elegible[\s\S]*?<\/tr>/)?.[0] || '';
+  assert.match(historicalRow, /Respuesta histórica \(reanaliza\)/, 'el hallazgo histórico/no elegible conserva exactamente el CTA legado');
+  assert.doesNotMatch(historicalRow, /Revisar en Análisis/, 'un hallazgo no elegible nunca recibe el puntero nuevo');
+  // Tabla y tarjeta responsive repiten el mismo botón por hallazgo (§ patrón ya establecido para
+  // "Respuesta histórica (reanaliza)"): dos apariciones por hallazgo, nunca una tercera ruta.
+  assert.equal(count(html, 'Revisar en Análisis'), 2);
+  assert.equal(count(html, 'Respuesta histórica (reanaliza)'), 2);
+});
+
+test('D9 — un hallazgo histórico (corrida no vigente) nunca usa el puntero nuevo aunque su requirement_id coincida con una unidad V3 abierta', () => {
+  const analysis = { ...analysisFixtureWithEligibleFinding(), current: false };
+  const html = render(analysis);
+  assert.equal(html.includes('Revisar en Análisis'), false, 'una corrida histórica nunca es elegible para el drawer/puntero nuevo');
+  assert.equal(count(html, 'Respuesta histórica (reanaliza)'), 2, 'ambos hallazgos vuelven al flujo legado cuando la corrida no es la vigente');
+});
+
+test('D9 — clic en "Revisar en Análisis" enfoca la tarjeta real de Análisis y nunca monta el drawer legado', async () => {
+  const analysis = analysisFixtureWithEligibleFinding();
+  const view = mountWithJsdom(TenderDecisionAxisSurface, { ...commonProps, analysis });
+  try {
+    await view.flush();
+    await view.click('.tender-decision-axis-pointer-cta');
+    await view.flush();
+    assert.equal(view.container.querySelector('.tender-decision-axis-drawer'), null, 'el puntero nuevo nunca monta el drawer legado ni su QuestionResponseCard');
+    assert.equal(view.container.querySelector('[role="dialog"]'), null);
+  } finally {
+    await view.unmount();
+  }
+});
+
+test('D9 — la CTA primaria sobre una pregunta prioritaria elegible tampoco abre el drawer legado', async () => {
+  const analysis = analysisFixtureWithEligibleFinding();
+  const view = mountWithJsdom(TenderDecisionAxisSurface, { ...commonProps, analysis });
+  try {
+    await view.flush();
+    assert.ok(view.container.textContent.includes('Resolver la pregunta prioritaria'), 'la pregunta elegible sigue siendo la CTA primaria');
+    await view.click('.tender-decision-axis-cta');
+    await view.flush();
+    assert.equal(view.container.querySelector('.tender-decision-axis-drawer'), null, 'la CTA primaria sobre un hallazgo elegible nunca abre el drawer legado');
+  } finally {
+    await view.unmount();
+  }
 });
 
 test('D6 — el harness visual usa únicamente categorías del catálogo material gobernado', () => {
