@@ -53,8 +53,10 @@ const briefUpdated = {
 }
 
 // Escenario B: abstención compacta total — cuando el único paso propuesto repite literalmente
-// una alerta comercial activa, no debe renderizarse `.vigia-copilot-summary` y el foco debe
-// recaer en el contenedor `.vigia-copilot-result` (fallback enfocable), no en <body>.
+// una alerta comercial activa, no debe renderizarse `.vigia-copilot-summary`; el foco debe
+// recaer en un encabezado semántico enfocable "Borrador editable" (no en el div genérico
+// `.vigia-copilot-result`), y debe existir un anuncio breve de éxito con role="status" que no
+// duplique el texto del heading.
 {
   const abstainPreflight = {
     nextAction: { code: 'overdue', label: 'Vencida', detail: 'Vencida hace 4 días', tone: 'critical', className: 'is-critical' },
@@ -75,10 +77,19 @@ const briefUpdated = {
     resolveAbstain({ run_id: 'r-abstain', status: 'completed', human_review_required: true, output: { brief: abstainBrief } });
     await view.flush();
     assert.equal(view.container.querySelector('.vigia-copilot-summary'), null, 'la abstención compacta no debe renderizar el resumen');
+    const heading = view.container.querySelector('.vigia-copilot-result h4');
+    assert.ok(heading, 'debe existir un encabezado semántico enfocable en la abstención');
+    assert.match(heading.textContent, /Borrador editable/);
     const resultContainer = view.container.querySelector('.vigia-copilot-result');
-    assert.ok(resultContainer, 'debe existir el contenedor de resultado enfocable');
-    assert.equal(view.window.document.activeElement, resultContainer, 'el foco debe recaer en el contenedor .vigia-copilot-result de respaldo');
+    assert.notEqual(view.window.document.activeElement, resultContainer, 'no debe enfocar el div genérico .vigia-copilot-result');
+    assert.equal(view.window.document.activeElement, heading, 'el foco debe recaer en el heading "Borrador editable"');
     assert.notEqual(view.window.document.activeElement, view.window.document.body);
+    const status = view.container.querySelector('.vigia-copilot-result [role="status"]');
+    assert.ok(status, 'debe existir un anuncio breve de éxito con role="status"');
+    assert.match(status.textContent, /Borrador preparado para revisión\./);
+    assert.notEqual(status.textContent.trim(), heading.textContent.trim(), 'el anuncio de éxito no debe duplicar el texto del heading');
+    assert.ok(view.container.querySelector('.vigia-copilot-draft'), 'el borrador editable sigue disponible en la abstención');
+    assert.ok(view.container.querySelector('.vigia-copilot-actions'), 'las acciones siguen disponibles en la abstención');
   } finally {
     await view.unmount();
   }

@@ -53,15 +53,19 @@ export function VigiaCommercialAlerts({ alerts }: { alerts: ReturnType<typeof bu
 export function VigiaCopilotProposal({ brief, draft, alerts, onDraftChange, onCopy, onDiscard }: ProposalProps) {
   const presented = presentCopilotBrief(brief);
   const compact = presentCompactCopilotSummary(presented, alerts);
-  const resultRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
-  useEffect(() => { (headingRef.current ?? resultRef.current)?.focus(); }, []);
-  return <div className="vigia-copilot-result" ref={resultRef} tabIndex={-1}>
-    {compact.nextStep && <section className="vigia-copilot-summary">
-      <h4 ref={headingRef} tabIndex={-1}>Siguiente paso sugerido</h4>
-      <p>{compact.nextStep}</p>
-      {compact.whyBullets.length > 0 && <ul className="vigia-copilot-why">{compact.whyBullets.map((bullet, index) => <li key={`${index}-${bullet}`}>{bullet}</li>)}</ul>}
-    </section>}
+  useEffect(() => { headingRef.current?.focus(); }, []);
+  return <div className="vigia-copilot-result">
+    {compact.nextStep
+      ? <section className="vigia-copilot-summary">
+          <h4 ref={headingRef} tabIndex={-1}>Siguiente paso sugerido</h4>
+          <p>{compact.nextStep}</p>
+          {compact.whyBullets.length > 0 && <ul className="vigia-copilot-why">{compact.whyBullets.map((bullet, index) => <li key={`${index}-${bullet}`}>{bullet}</li>)}</ul>}
+        </section>
+      : <>
+          <h4 ref={headingRef} tabIndex={-1}>Borrador editable</h4>
+          <p role="status" className="sr-only">Borrador preparado para revisión.</p>
+        </>}
     <div className="vigia-copilot-draft"><label>Asunto<input value={draft.subject} maxLength={300} onChange={event => onDraftChange({ subject: event.target.value })}/></label><label>Cuerpo<textarea value={draft.body} maxLength={8000} rows={10} onChange={event => onDraftChange({ body: event.target.value })}/></label></div>
     <div className="vigia-copilot-actions"><button type="button" onClick={onCopy}>Copiar correo</button><button type="button" className="secondary" onClick={onDiscard}>Descartar</button></div>
     <div className="vigia-human-warning"><strong>Revisión humana</strong><span>Puede editar esta propuesta sin modificar el historial de la oportunidad. Verifique nombres, fechas, compromisos y tono antes de copiar el mensaje.</span></div>
