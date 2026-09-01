@@ -1,0 +1,251 @@
+.tender-actionable-review-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1300;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(8, 25, 22, .42);
+}
+
+.tender-actionable-review-drawer {
+  --review-ink: #16342f;
+  --review-muted: #5f6f6b;
+  --review-line: color-mix(in srgb, #16342f 18%, transparent);
+  --review-paper: #fbfcf8;
+  width: min(560px, 100%);
+  height: 100%;
+  min-width: 0;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: 1.1rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  background: #fff;
+  color: var(--review-ink);
+  box-shadow: -18px 0 54px rgba(6, 25, 21, .22);
+}
+
+.tender-actionable-review-drawer-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: .8rem;
+  background: #fff;
+}
+
+.tender-actionable-review-drawer-header h2 { margin: .2rem 0 0; letter-spacing: -.02em; }
+.tender-actionable-review-drawer .eyebrow { color: #334f49; font-weight: 800; }
+
+.tender-actionable-review-drawer-status,
+.tender-actionable-review-drawer-alert {
+  padding: .75rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--review-line);
+}
+
+.tender-actionable-review-drawer-status {
+  background: #f0f8f3;
+  color: #17634e;
+}
+
+.tender-actionable-review-drawer-alert {
+  display: grid;
+  gap: .6rem;
+  justify-items: start;
+  border-color: #d99b98;
+  background: #fff7f7;
+  color: #a12622;
+}
+
+.tender-actionable-review-drawer-summary,
+.tender-actionable-review-drawer-timeline,
+.tender-actionable-review-drawer-comments,
+.tender-actionable-review-drawer-attachments,
+.tender-actionable-review-drawer-resolve,
+.tender-actionable-review-drawer-reopen {
+  min-width: 0;
+  display: grid;
+  gap: .65rem;
+  padding: 1rem;
+  border: 1px solid var(--review-line);
+  border-radius: 14px;
+  background: var(--review-paper);
+}
+
+.tender-actionable-review-drawer h3 { margin: 0; font-size: 1rem; color: #173f35; }
+
+.tender-actionable-review-drawer-summary p { margin: 0; overflow-wrap: anywhere; }
+
+.tender-actionable-review-drawer-state { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+
+.tender-actionable-review-drawer-badge {
+  padding: .35rem .65rem;
+  border-radius: 999px;
+  background: #eef0ef;
+  color: #596461;
+  font-size: .82rem;
+  font-weight: 800;
+}
+
+.tender-actionable-review-drawer-badge.is-pendiente,
+.tender-actionable-review-drawer-badge.is-en_revision { background: #fff2d5; color: #7a5315; }
+.tender-actionable-review-drawer-badge.is-resuelto { background: #e3f3eb; color: #17634e; }
+.tender-actionable-review-drawer-badge.is-reabierto { background: #fbe9e6; color: #8e3029; }
+
+.tender-actionable-review-drawer-outcome {
+  padding: .3rem .55rem;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid var(--review-line);
+  color: var(--review-muted);
+  font-size: .8rem;
+}
+
+.tender-actionable-review-drawer-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tender-actionable-review-drawer-counts li {
+  padding: .3rem .6rem;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid var(--review-line);
+  color: var(--review-muted);
+  font-size: .78rem;
+}
+
+.tender-actionable-review-drawer-timeline ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: .6rem;
+}
+
+.tender-actionable-review-drawer-timeline li {
+  display: grid;
+  gap: .2rem;
+  padding: .65rem .75rem;
+  border: 1px solid var(--review-line);
+  border-radius: 10px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+
+.tender-actionable-review-drawer-timeline li.is-empty,
+.tender-actionable-review-drawer-attachment-list li.is-empty {
+  border-style: dashed;
+  color: var(--review-muted);
+}
+
+.tender-actionable-review-timeline-actor { font-weight: 800; }
+.tender-actionable-review-timeline-date { color: var(--review-muted); font-size: .78rem; }
+.tender-actionable-review-timeline-event { font-size: .86rem; }
+
+.tender-actionable-review-drawer form {
+  display: grid;
+  gap: .55rem;
+}
+
+.tender-actionable-review-drawer label { font-size: .85rem; font-weight: 700; color: #334f49; }
+
+.tender-actionable-review-drawer textarea,
+.tender-actionable-review-drawer input[type="file"],
+.tender-actionable-review-drawer input[type="text"] {
+  min-height: 44px;
+  padding: .6rem .7rem;
+  border: 1px solid var(--review-line);
+  border-radius: 10px;
+  font: inherit;
+  color: var(--review-ink);
+  background: #fff;
+}
+
+.tender-actionable-review-drawer textarea { min-height: 88px; resize: vertical; }
+
+.tender-actionable-review-drawer fieldset {
+  display: grid;
+  gap: .45rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.tender-actionable-review-drawer legend { font-weight: 800; color: #173f35; padding: 0 0 .3rem; }
+
+.tender-actionable-review-drawer-outcome-option,
+.tender-actionable-review-drawer-checkbox {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  min-height: 44px;
+  font-weight: 600;
+}
+
+.tender-actionable-review-drawer-attachment-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: .5rem;
+}
+
+.tender-actionable-review-drawer-attachment-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem;
+  flex-wrap: wrap;
+  padding: .55rem .7rem;
+  border: 1px solid var(--review-line);
+  border-radius: 10px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+
+.tender-actionable-review-drawer-attachment-name { font-weight: 700; overflow-wrap: anywhere; }
+.tender-actionable-review-drawer-attachment-date { color: var(--review-muted); font-size: .78rem; }
+.tender-actionable-review-drawer-pending-file { margin: 0; color: var(--review-muted); overflow-wrap: anywhere; }
+
+.tender-actionable-review-drawer button {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Foco visible propio en todos los controles: nunca depende del outline por defecto del
+   navegador, enterrado bajo los bordes de color de las tarjetas y del estado del drawer. */
+.tender-actionable-review-drawer :is(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 3px solid #174a3d;
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+@media (max-width: 640px) {
+  .tender-actionable-review-drawer-backdrop { justify-content: stretch; }
+  .tender-actionable-review-drawer {
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    border-radius: 0;
+  }
+  .tender-actionable-review-drawer-state { flex-direction: column; align-items: flex-start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tender-actionable-review-drawer,
+  .tender-actionable-review-drawer * {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -333,6 +333,44 @@ export function tenderIntegralOpenUnitsPresentation(
     .map(tenderIntegralUnitPresentation);
 }
 
+const OPERATIONAL_CARD_DOM_ID_PREFIX = 'tender-analysis-operational-card';
+
+/**
+ * DOM id estable y seguro de la tarjeta operativa de Análisis derivado de `unit.unit_id` (§8/§18).
+ * Único punto de generación: Análisis lo usa para marcar la tarjeta y Decisión lo reutiliza para
+ * enfocarla con `document.getElementById`, así que nunca se interpola el `unit_id` crudo en un
+ * selector CSS. Cualquier carácter fuera de `[A-Za-z0-9_-]` se sustituye por un guion para que el
+ * resultado sea siempre un id HTML válido.
+ */
+export function tenderOperationalPendingCardDomId(unitId: string): string {
+  return `${OPERATIONAL_CARD_DOM_ID_PREFIX}-${unitId.replace(/[^A-Za-z0-9_-]/g, '-')}`;
+}
+
+/**
+ * Unidades V3 abiertas indexadas por `requirementId` único (§8.7/§18), para que Decisión pueda
+ * resolver, por igualdad explícita de `requirement_id`, cuál hallazgo del eje corresponde a un
+ * pendiente operativo abierto en Análisis. Un `requirementId` compartido por más de una unidad
+ * abierta es una colisión que ninguna vista puede resolver sin ambigüedad, así que ninguna de las
+ * dos queda indexada — la misma regla de colisión que ya rige la unión de pendientes persistidos
+ * con tarjetas.
+ */
+export function tenderIntegralOpenUnitsByRequirementId(
+  v3: TenderIntegralAnalysisV3 | null | undefined,
+): Map<string, TenderIntegralUnitPresentation> {
+  const units = tenderIntegralOpenUnitsPresentation(v3);
+  const counts = new Map<string, number>();
+  for (const unit of units) {
+    if (!unit.requirementId) continue;
+    counts.set(unit.requirementId, (counts.get(unit.requirementId) ?? 0) + 1);
+  }
+  const byRequirementId = new Map<string, TenderIntegralUnitPresentation>();
+  for (const unit of units) {
+    if (!unit.requirementId || counts.get(unit.requirementId) !== 1) continue;
+    byRequirementId.set(unit.requirementId, unit);
+  }
+  return byRequirementId;
+}
+
 export type TenderIntegralOperationalGroup = {
   key: string;
   label: string;
