@@ -466,4 +466,78 @@ test('los botones deshabilitados del drawer declaran un color de texto legible p
   );
 });
 
+// --- AGT-002 post-review a11y hotfix · the global `button:disabled,input:disabled{opacity:.58}`
+// rule (src/styles.css) crushes contrast on the drawer's disabled buttons. Disabled controls are
+// exempt from WCAG 1.4.3, but this project still holds them to an internal readability/design
+// target: the drawer's own `button:disabled` rule must neutralize that opacity (opacity:1),
+// declare its own light background and a readable foreground, and the declared hex pair must
+// clear this project's internal target of >= 4.5:1 for normal text. Computed statically from the
+// declared hex values — no browser rendering involved, so this stays deterministic in Node. -----
+function expandHex(hex) {
+  const body = hex.replace('#', '');
+  const full = body.length === 3 ? body.split('').map(ch => ch + ch).join('') : body.slice(0, 6);
+  return full;
+}
+
+function hexToRgb(hex) {
+  const full = expandHex(hex);
+  return {
+    r: parseInt(full.slice(0, 2), 16),
+    g: parseInt(full.slice(2, 4), 16),
+    b: parseInt(full.slice(4, 6), 16),
+  };
+}
+
+function srgbChannelToLinear(channel) {
+  const c = channel / 255;
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+}
+
+function relativeLuminance(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  const [R, G, B] = [r, g, b].map(srgbChannelToLinear);
+  return 0.2126 * R + 0.7152 * G + 0.0722 * B;
+}
+
+function contrastRatio(hexA, hexB) {
+  const lA = relativeLuminance(hexA);
+  const lB = relativeLuminance(hexB);
+  const lighter = Math.max(lA, lB);
+  const darker = Math.min(lA, lB);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+test('el botón deshabilitado del drawer neutraliza la opacidad global y mantiene el objetivo interno de legibilidad (>= 4.5:1)', () => {
+  const globalCss = read('src/styles.css');
+  assert.match(
+    globalCss,
+    /button:disabled\s*,\s*input:disabled\s*\{[^}]*opacity\s*:\s*\.58/,
+    'precondición: la regla global debe seguir reduciendo la opacidad a .58 (si esto cambia, este hotfix debe revisarse)',
+  );
+
+  const css = read('src/tenders/components/tender-actionable-review-drawer.css');
+  const disabledRuleMatch = css.match(/\.tender-actionable-review-drawer\s+button:disabled\s*\{([^}]*)\}/);
+  assert.ok(disabledRuleMatch, 'debe existir una regla propia para botones deshabilitados del drawer');
+  const decl = disabledRuleMatch[1];
+
+  const opacityMatch = decl.match(/opacity\s*:\s*([\d.]+)\s*(?:!important)?\s*;?/);
+  assert.ok(opacityMatch, 'la regla debe fijar opacity explícita para neutralizar la opacidad global .58 heredada de src/styles.css');
+  assert.equal(Number(opacityMatch[1]), 1, 'opacity debe ser 1 para anular por completo la reducción global de opacidad (.58)');
+
+  const backgroundMatch = decl.match(/background(?:-color)?\s*:\s*(#[0-9a-fA-F]{3,8})/);
+  assert.ok(backgroundMatch, 'la regla debe declarar un fondo claro propio para el estado deshabilitado, no depender del fondo heredado');
+  const backgroundHex = backgroundMatch[1];
+  assert.ok(relativeLuminance(backgroundHex) > 0.5, 'el fondo declarado para el estado deshabilitado debe ser claro');
+
+  const colorMatch = decl.match(/(?<!background-)(?<!-)\bcolor\s*:\s*(#[0-9a-fA-F]{3,8})/);
+  assert.ok(colorMatch, 'la regla debe fijar un color de texto explícito y legible');
+  const foregroundHex = colorMatch[1];
+
+  const ratio = contrastRatio(foregroundHex, backgroundHex);
+  assert.ok(
+    ratio >= 4.5,
+    `el contraste entre el color declarado (${foregroundHex}) y el fondo declarado (${backgroundHex}) es ${ratio.toFixed(2)}:1, por debajo del objetivo interno de legibilidad/diseño de este proyecto de 4.5:1`,
+  );
+});
+
 console.log('AGT-002 actionable review frontend UI contract (RED — production artifacts missing) checked');
