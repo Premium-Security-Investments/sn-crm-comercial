@@ -368,7 +368,7 @@ test('D9 — un hallazgo histórico (corrida no vigente) nunca usa el puntero nu
   const analysis = { ...analysisFixtureWithEligibleFinding(), current: false };
   const html = render(analysis);
   assert.equal(html.includes('Revisar en Análisis'), false, 'una corrida histórica nunca es elegible para el drawer/puntero nuevo');
-  assert.equal(count(html, 'Respuesta histórica (reanaliza)'), 2, 'ambos hallazgos vuelven al flujo legado cuando la corrida no es la vigente');
+  assert.equal(count(html, 'Respuesta histórica (reanaliza)'), 4, 'ambos hallazgos vuelven al flujo legado cuando la corrida no es la vigente, con dos representaciones responsive (tabla y tarjeta) por cada uno de los dos hallazgos');
 });
 
 test('D9 — clic en "Revisar en Análisis" enfoca la tarjeta real de Análisis y nunca monta el drawer legado', async () => {
