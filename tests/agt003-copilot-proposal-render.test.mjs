@@ -37,7 +37,7 @@ const draftSection = at('vigia-copilot-draft');
 const review = at('vigia-human-warning');
 const actions = at('vigia-copilot-actions');
 const context = at('vigia-copilot-context');
-assert.ok(header < briefSection && briefSection < draftSection, 'orden: cabecera, luego Qué pasó/Falta/Objetivo, luego el borrador editable');
+assert.ok(header < briefSection && briefSection < draftSection, 'orden: cabecera, luego Situación actual/Información por confirmar/Objetivo del próximo contacto, luego el borrador editable');
 assert.ok(draftSection < review && review < actions, 'Revisión humana aparece antes de Copiar correo/Descartar');
 assert.ok(actions < context, 'Contexto y evidencia va al final, plegado');
 
@@ -47,18 +47,18 @@ assert.ok(headerMatch, 'debe existir <header class="vigia-copilot-proposal-heade
 assert.match(headerMatch[1], /<h4>Propuesta de seguimiento<\/h4>/);
 assert.match(headerMatch[1], /<button type="button" class="secondary">Actualizar propuesta<\/button>/);
 
-// Qué pasó / Falta / Objetivo, en ese orden, con rótulo visible.
+// Situación actual / Información por confirmar / Objetivo del próximo contacto, en ese orden, con rótulo visible.
 const briefMatch = /<section class="vigia-copilot-brief">([\s\S]*?)<\/section>/.exec(html);
 assert.ok(briefMatch);
 const rows = [...briefMatch[1].matchAll(/<div class="vigia-copilot-brief-row"><strong>([^<]+)<\/strong><p>([^<]*)<\/p><\/div>/g)];
-assert.deepEqual(rows.map(r => r[1]), ['Qué pasó', 'Falta', 'Objetivo']);
+assert.deepEqual(rows.map(r => r[1]), ['Situación actual', 'Información por confirmar', 'Objetivo del próximo contacto']);
 assert.equal(rows[0][2], brief.summary);
 assert.equal(rows[1][2], 'Correo del contacto decisor');
 assert.equal(rows[2][2], brief.contact_objective);
 
 // Siguiente paso destacado, sólo cuando la recomendación no se abstiene.
 assert.match(html, /<div class="vigia-copilot-next-step"><strong>Siguiente paso:<\/strong> <span>Primero confirme el decisor\.<\/span><\/div>/);
-assert.equal(html.includes('vigia-copilot-why'), false, 'whyBullets ya no se renderiza (duplicaría Qué pasó)');
+assert.equal(html.includes('vigia-copilot-why'), false, 'whyBullets ya no se renderiza (duplicaría Situación actual)');
 
 // Contexto y evidencia: cerrado por defecto, con conteo, sin duplicar resumen/objetivo/plan.
 assert.equal(/<details[^>]*\sopen(=|\s|>)/.test(html), false, 'el contexto arranca plegado');
@@ -127,5 +127,20 @@ assert.ok(
   ruleHasMinHeight44('.vigia-copilot-actions button'),
   'los controles del resultado deben cumplir target táctil mínimo de 44px: falta min-height:44px en .vigia-copilot-actions button',
 );
+
+// Jerarquía visual de los tres rótulos: tamaño, peso, separación, línea lateral y fondo por fila.
+assert.match(css, /\.vigia-copilot-brief-row\{display:grid;gap:5px;padding:5px 10px 5px 12px;border-left:3px solid #cbd5e1;border-radius:0 6px 6px 0;background:#f8fafc\}/, 'falta el tratamiento de fila (gap/padding/border-left/border-radius/background)');
+assert.match(css, /\.vigia-copilot-brief-row strong\{font-size:14px;font-weight:700;text-transform:none;letter-spacing:normal;color:#17345b\}/, 'falta el rótulo en 14px/700/sin mayúsculas');
+assert.match(css, /\.vigia-copilot-brief-row p\{margin:0;color:#17345b\}/, 'el párrafo de contenido no debe cambiar');
+assert.match(css, /\.vigia-copilot-brief-row:nth-child\(1\)\{border-left-color:#1b64f2;background:#f5f8ff\}/, 'falta el acento de la fila 1 (azul primario)');
+assert.match(css, /\.vigia-copilot-brief-row:nth-child\(2\)\{border-left-color:#64748b;background:#f8fafc\}/, 'falta el acento de la fila 2 (gris/slate)');
+assert.match(css, /\.vigia-copilot-brief-row:nth-child\(3\)\{border-left-color:#4f46e5;background:#f7f6ff\}/, 'falta el acento de la fila 3 (índigo)');
+for (const alarmColor of ['#dc2626', '#f59e0b', '#fbbf24', '#16a34a']) {
+  assert.equal(
+    new RegExp(`\\.vigia-copilot-brief-row:nth-child\\([1-3]\\)\\{border-left-color:${alarmColor}`).test(css),
+    false,
+    `ninguna fila puede usar el color de alarma ${alarmColor}`,
+  );
+}
 
 console.log('AGT-003 copilot proposal render checks passed');

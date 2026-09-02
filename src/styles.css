@@ -493,9 +493,12 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .vigia-copilot-proposal-header h4{margin:0;color:#10213d}
 .vigia-copilot-proposal-header .secondary,.vigia-copilot-actions button{min-height:44px}
 .vigia-copilot-brief{display:grid;gap:10px;padding:14px;border-radius:14px;background:#f8fbff;border:1px solid #e2eaf5}
-.vigia-copilot-brief-row{display:grid;gap:2px}
-.vigia-copilot-brief-row strong{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#527099}
+.vigia-copilot-brief-row{display:grid;gap:5px;padding:5px 10px 5px 12px;border-left:3px solid #cbd5e1;border-radius:0 6px 6px 0;background:#f8fafc}
+.vigia-copilot-brief-row strong{font-size:14px;font-weight:700;text-transform:none;letter-spacing:normal;color:#17345b}
 .vigia-copilot-brief-row p{margin:0;color:#17345b}
+.vigia-copilot-brief-row:nth-child(1){border-left-color:#1b64f2;background:#f5f8ff}
+.vigia-copilot-brief-row:nth-child(2){border-left-color:#64748b;background:#f8fafc}
+.vigia-copilot-brief-row:nth-child(3){border-left-color:#4f46e5;background:#f7f6ff}
 .vigia-copilot-next-step{margin:0;padding:12px 14px;border-radius:12px;background:#eff6ff;border:1px solid #bfdbfe;color:#124174}
 .vigia-copilot-next-step strong{color:#0b2f61}
 .vigia-copilot-confidence{display:inline-flex;padding:3px 8px;border-radius:999px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.04em;margin-left:6px}

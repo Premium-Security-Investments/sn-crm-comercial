@@ -61,9 +61,9 @@ export function VigiaCopilotProposal({ brief, draft, alerts, onDraftChange, onCo
       <button type="button" className="secondary" onClick={onRegenerate}>Actualizar propuesta</button>
     </header>
     <section className="vigia-copilot-brief">
-      <div className="vigia-copilot-brief-row"><strong>Qué pasó</strong><p>{presented.summary}</p></div>
-      <div className="vigia-copilot-brief-row"><strong>Falta</strong><p>{presented.missingSummary}</p></div>
-      <div className="vigia-copilot-brief-row"><strong>Objetivo</strong><p>{presented.contactObjective}</p></div>
+      <div className="vigia-copilot-brief-row"><strong>Situación actual</strong><p>{presented.summary}</p></div>
+      <div className="vigia-copilot-brief-row"><strong>Información por confirmar</strong><p>{presented.missingSummary}</p></div>
+      <div className="vigia-copilot-brief-row"><strong>Objetivo del próximo contacto</strong><p>{presented.contactObjective}</p></div>
     </section>
     {compact.nextStep && <div className="vigia-copilot-next-step">
       <strong>Siguiente paso:</strong> <span>{compact.nextStep}</span>
