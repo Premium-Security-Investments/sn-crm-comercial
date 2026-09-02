@@ -1,0 +1,25 @@
+{
+  "fixture_version": "agt002-v7-procuraduria-canary-fixture.v1",
+  "description": "Fully local, sanitized AGT-002 V7 multi-batch canary fixture for a Procuraduria-labelled process. Metadata is production-scale but sanitized: no internal opportunity UUID, no real document names, paths, URLs or content. All document text is generated deterministically by the runner from the unit_count specs below, never copied from real source material.",
+  "target_label": "Procuraduria canary",
+  "public_process_ref": "CO1.REQ.10873217",
+  "snapshot_id": "00000000-0000-4000-8000-000000000001",
+  "expected_document_count": 13,
+  "expected_source_unit_count": 2335,
+  "semantic_source_budget_chars": 40000,
+  "documents": [
+    { "document_id": "agt002-canary-doc-01", "document_version_id": "agt002-canary-doc-01-v1", "unit_count": 180 },
+    { "document_id": "agt002-canary-doc-02", "document_version_id": "agt002-canary-doc-02-v1", "unit_count": 180 },
+    { "document_id": "agt002-canary-doc-03", "document_version_id": "agt002-canary-doc-03-v1", "unit_count": 180 },
+    { "document_id": "agt002-canary-doc-04", "document_version_id": "agt002-canary-doc-04-v1", "unit_count": 180 },
+    { "document_id": "agt002-canary-doc-05", "document_version_id": "agt002-canary-doc-05-v1", "unit_count": 180 },
+    { "document_id": "agt002-canary-doc-06", "document_version_id": "agt002-canary-doc-06-v1", "unit_count": 180 },
+    { "document_id": "agt002-canary-doc-07", "document_version_id": "agt002-canary-doc-07-v1", "unit_count": 180 },
+    { "document_id": "agt002-canary-doc-08", "document_version_id": "agt002-canary-doc-08-v1", "unit_count": 180 },
+    { "document_id": "agt002-canary-doc-09", "document_version_id": "agt002-canary-doc-09-v1", "unit_count": 180 },
+    { "document_id": "agt002-canary-doc-10", "document_version_id": "agt002-canary-doc-10-v1", "unit_count": 180 },
+    { "document_id": "agt002-canary-doc-11", "document_version_id": "agt002-canary-doc-11-v1", "unit_count": 180 },
+    { "document_id": "agt002-canary-doc-12", "document_version_id": "agt002-canary-doc-12-v1", "unit_count": 180 },
+    { "document_id": "agt002-canary-doc-13", "document_version_id": "agt002-canary-doc-13-v1", "unit_count": 175 }
+  ]
+}
