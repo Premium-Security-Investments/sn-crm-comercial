@@ -48,9 +48,18 @@ const CONSERVATIVE_BYTES_PER_TOKEN = 2;
 // the model is KNOWN to have admitted. Because the estimator over-counts relative to the provider
 // tokenizer, enforcing estimate <= 81284 keeps the real token count comfortably below that
 // proven-safe level — deliberately strict. This default is a safe floor, NOT a measured context
-// window: it MUST be reconfirmed (and may be raised) against the real gpt-5.3-codex-spark window
-// before the separate, human-authorized real-retry decision. Server-owned and overridable only via
-// engine configuration, never by a caller/browser.
+// window.
+//
+// It has since been reconfirmed too low for real V3 runs: an authorized real Procuraduria run
+// completed 18 semantic-discovery provider turns and then failed closed BEFORE final analysis with
+// validation_code `v3_prompt_budget_exceeded`, under this same floor. The Codex model cache for the
+// actual pilot model (gpt-5.6-luna) separately reports context_window=272000 / effective
+// context=258400, and the bridge has accepted a 156226-input-token request from it — both well
+// above this floor. Rather than bump this constant ahead of a fully reconfirmed operational value,
+// the cap is raised via the server-owned env override AGT002_PREVIEW_PROMPT_MAX_INPUT_TOKENS
+// (parsed in agt002-preview-runtime.js's getAgt002PreviewRuntimeConfig, forwarded to the engine as
+// promptMaxInputTokens only on the V3 path) — never by a caller/browser value, and this constant
+// stays the default when the override is absent.
 export const AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS = 81_284;
 
 // Closed, privacy-safe code for the pre-provider fail-closed rejection.

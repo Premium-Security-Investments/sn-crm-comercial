@@ -5,6 +5,7 @@ import { AGT002_PREVIEW_DEFAULT_POLICY_VERSION, AGT002_INTEGRAL_V3_POLICY_VERSIO
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT } from '../agt002-preview-reasoning-effort.js';
 import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
 import { AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION } from '../agt002-company-evidence-sharepoint-catalog.js';
+import { AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS } from '../agt002-v3-prompt-budget.js';
 
 function baseEnv(overrides = {}) {
   return {
@@ -66,6 +67,30 @@ assert.throws(
   () => createAgt002PreviewRuntime({ environment: baseEnv({ AGT002_PREVIEW_MAX_CONCURRENT: '0' }), countDailyRuns: async () => 0 }),
   /no está configurado/i,
 );
+
+// AGT002_PREVIEW_PROMPT_MAX_INPUT_TOKENS: server-owned override of the V3 prompt-budget cap
+// (agt002-v3-prompt-budget.js). Absent -> the safe-floor constant; a valid positive integer
+// override is honored verbatim; malformed/zero/negative must fail closed exactly like every
+// other numeric override above (AGT002_PREVIEW_TIMEOUT_MS, AGT002_PREVIEW_MAX_CONCURRENT, ...).
+{
+  assert.equal(
+    getAgt002PreviewRuntimeConfig(baseEnv()).promptMaxInputTokens,
+    AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS,
+    'absent override must default to the safe-floor constant',
+  );
+  assert.equal(
+    getAgt002PreviewRuntimeConfig(baseEnv({ AGT002_PREVIEW_PROMPT_MAX_INPUT_TOKENS: '180000' })).promptMaxInputTokens,
+    180000,
+    'a valid override must be honored verbatim',
+  );
+  for (const badValue of ['not-a-number', '0', '-5']) {
+    assert.throws(
+      () => getAgt002PreviewRuntimeConfig(baseEnv({ AGT002_PREVIEW_PROMPT_MAX_INPUT_TOKENS: badValue })),
+      /no está configurado/i,
+      `${badValue} must fail closed instead of silently coercing to an unsafe default`,
+    );
+  }
+}
 
 // Release blocker: the semantic V3 path makes TWO sequential provider turns (semantic
 // discovery, then analysis) inside a single claimed run, and AGT002_PREVIEW_TIMEOUT_MS

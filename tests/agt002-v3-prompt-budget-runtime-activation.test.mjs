@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { createAgt002PreviewRuntime } from '../agt002-preview-runtime.js';
 import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
 import { AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION } from '../agt002-company-evidence-sharepoint-catalog.js';
+import { AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS } from '../agt002-v3-prompt-budget.js';
 
 // Phase 9 (T7/D): the deterministic prompt budget must be ACTIVE for every appropriate V3 runtime
 // construction — it was wired into the engine (runOnceV3) but left dormant (default-off), reachable
@@ -73,6 +74,53 @@ const SYNTHETIC_COMPANY_EVIDENCE_INVENTORY_SNAPSHOT = Object.freeze({
   });
   assert.equal(capturedOptions.integralContractV3, false, 'precondition: the legacy path is not V3');
   assert.notEqual(capturedOptions.promptBudget, true, 'the legacy runtime must not silently enable the V3 prompt budget');
+  assert.equal(capturedOptions.promptMaxInputTokens, undefined, 'the legacy runtime must never forward promptMaxInputTokens (constructor-only, V3-scoped)');
+}
+
+// -----------------------------------------------------------------------------
+// V3 runtime: promptMaxInputTokens is forwarded to the engine alongside promptBudget:true,
+// defaulting to the safe-floor constant and honoring the server-owned env override
+// (AGT002_PREVIEW_PROMPT_MAX_INPUT_TOKENS — never a caller/browser value).
+// -----------------------------------------------------------------------------
+{
+  let capturedOptions = null;
+  createAgt002PreviewRuntime({
+    environment: baseEnv({
+      AGT002_CANONICAL_ONLY: 'true', AGT002_CONTEXT_V2: 'true',
+      AGT002_DOCUMENT_RETRIEVAL: 'true', AGT002_INTEGRAL_CONTRACT_V3: 'true',
+    }),
+    countDailyRuns: async () => 0,
+    companyEvidenceRegistryEntries: [],
+    companyEvidenceAsOf: '2026-08-29T00:00:00.000Z',
+    companyEvidenceInventorySnapshot: SYNTHETIC_COMPANY_EVIDENCE_INVENTORY_SNAPSHOT,
+    createEngine: (options) => { capturedOptions = options; return { analyze: async () => ({}) }; },
+  });
+  assert.equal(
+    capturedOptions.promptMaxInputTokens,
+    AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS,
+    'the default V3 runtime must forward the safe-floor constant unchanged',
+  );
+}
+
+{
+  let capturedOptions = null;
+  createAgt002PreviewRuntime({
+    environment: baseEnv({
+      AGT002_CANONICAL_ONLY: 'true', AGT002_CONTEXT_V2: 'true',
+      AGT002_DOCUMENT_RETRIEVAL: 'true', AGT002_INTEGRAL_CONTRACT_V3: 'true',
+      AGT002_PREVIEW_PROMPT_MAX_INPUT_TOKENS: '180000',
+    }),
+    countDailyRuns: async () => 0,
+    companyEvidenceRegistryEntries: [],
+    companyEvidenceAsOf: '2026-08-29T00:00:00.000Z',
+    companyEvidenceInventorySnapshot: SYNTHETIC_COMPANY_EVIDENCE_INVENTORY_SNAPSHOT,
+    createEngine: (options) => { capturedOptions = options; return { analyze: async () => ({}) }; },
+  });
+  assert.equal(
+    capturedOptions.promptMaxInputTokens,
+    180000,
+    'a valid server-owned override must reach the engine verbatim',
+  );
 }
 
 // -----------------------------------------------------------------------------

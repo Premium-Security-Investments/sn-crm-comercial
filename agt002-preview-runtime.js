@@ -1,6 +1,7 @@
 import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.js';
 import { AGT002_PREVIEW_POLICY, AGT002_INTEGRAL_V3_POLICY, createAgt002PreviewEngine } from './agt002-preview-engine.js';
 import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
+import { AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS } from './agt002-v3-prompt-budget.js';
 import { retrieveAgt002LegalEvidence } from './agt002-legal-retrieval.js';
 import { discoverTenderSemanticManifest } from './tender-semantic-discovery.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
@@ -93,13 +94,25 @@ export function getAgt002PreviewRuntimeConfig(environment = process.env) {
   const timeoutMs = positiveIntFromEnv(environment, 'AGT002_PREVIEW_TIMEOUT_MS', DEFAULT_TIMEOUT_MS);
   const maxConcurrent = positiveIntFromEnv(environment, 'AGT002_PREVIEW_MAX_CONCURRENT', DEFAULT_MAX_CONCURRENT);
   const dailyMaxRuns = positiveIntFromEnv(environment, 'AGT002_PREVIEW_DAILY_MAX_RUNS', DEFAULT_DAILY_MAX_RUNS);
+  // AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS (agt002-v3-prompt-budget.js) is a safe FLOOR —
+  // 81284 was the largest prompt a non-V3 run is KNOWN to have been admitted at, not a measured
+  // window. A real V3 canary (18 semantic-discovery provider turns) later failed closed under
+  // that floor with `v3_prompt_budget_exceeded`. The Codex model cache for the actual pilot
+  // model (gpt-5.6-luna) reports context_window=272000 / effective context=258400, and the
+  // bridge separately accepted a 156226-input-token request — both comfortably above the floor.
+  // Rather than hardcode a new constant ahead of a fully reconfirmed number, this override lets
+  // the operator raise the cap from server-owned configuration only (never a caller/browser
+  // value), exactly like every other AGT002_PREVIEW_* numeric override above/below. Absent, it
+  // defaults to the unchanged safe floor, so behavior is byte-identical to before this override
+  // existed.
+  const promptMaxInputTokens = positiveIntFromEnv(environment, 'AGT002_PREVIEW_PROMPT_MAX_INPUT_TOKENS', AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS);
   // A V3 run spends TWO sequential provider turns under one reservation — semantic discovery
   // (discoverTenderSemanticManifest) and then the analysis turn — and `timeoutMs` bounds EACH
   // turn independently, so each turn is rounded up to whole seconds on its own before they are
   // summed, plus a 15s buffer. A lease sized for a single turn expires while the analysis turn
   // is still in flight and the run gets reclaimed underneath itself.
   const leaseSeconds = 2 * Math.ceil(timeoutMs / 1000) + 15;
-  if (!Number.isInteger(timeoutMs) || !Number.isInteger(maxConcurrent) || !Number.isInteger(dailyMaxRuns) || leaseSeconds > 600) {
+  if (!Number.isInteger(timeoutMs) || !Number.isInteger(maxConcurrent) || !Number.isInteger(dailyMaxRuns) || !Number.isInteger(promptMaxInputTokens) || leaseSeconds > 600) {
     throw new Error('AGT-002 Preview no está configurado.');
   }
   // Fail-closed, explicit per-turn reasoning effort (AGT-002 root cause: an inherited Codex CLI
@@ -121,6 +134,7 @@ export function getAgt002PreviewRuntimeConfig(environment = process.env) {
     dailyMaxRuns,
     leaseSeconds,
     effort,
+    promptMaxInputTokens,
   };
 }
 
@@ -297,10 +311,19 @@ export function createAgt002PreviewRuntime({
       // *before* any provider call — strictly safer than shipping an over-window prompt and getting
       // a non-deterministic context_window_exceeded from the model. A request already under budget is
       // byte-identical (the engine returns the same input reference), so non-oversized runs are
-      // unchanged. The engine's default cap (AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS = 81_284) is a
-      // conservative floor anchored to the observed prod plateau, NOT a measured model window; it must
-      // be reconfirmed/raised against the real model context window before any authorized live run.
+      // unchanged.
       promptBudget: true,
+      // config.promptMaxInputTokens (getAgt002PreviewRuntimeConfig above) defaults to the safe-floor
+      // constant AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS = 81_284, which is anchored to the
+      // observed prod plateau, NOT a measured model window — a real V3 canary (18 semantic-discovery
+      // provider turns) later failed closed under exactly that floor with `v3_prompt_budget_exceeded`,
+      // even though the Codex model cache for the pilot model (gpt-5.6-luna) reports
+      // context_window=272000 / effective context=258400, and the bridge separately accepted a
+      // 156226-input-token request. The cap is raised only via the server-owned
+      // AGT002_PREVIEW_PROMPT_MAX_INPUT_TOKENS env override — never from request/caller input — and
+      // scoped here to the V3 path exactly like promptBudget itself; a legacy (non-V3) runtime never
+      // forwards it. Absent, this is byte-identical to before the override existed.
+      promptMaxInputTokens: config.promptMaxInputTokens,
     } : {}),
     ...(countDailyRuns ? { countDailyRuns } : {}),
   }));
