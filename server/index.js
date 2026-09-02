@@ -1602,6 +1602,24 @@ function radarVisibilityLedgerUnavailable() {
   error.status = 503;
   return error;
 }
+// NO-GO is a business decision on the linked opportunity, never on the tender row itself: it is
+// archival (the expediente, analysis and decision history all stay queryable elsewhere), not
+// deletion, and it must not be conflated with expiry or with other "closed" outcomes like
+// adjudicada/no_adjudicada. `tender_offer_status` is the single column psi_record_tender_go_no_go
+// (migration 022) keeps authoritative on every decision write, including reversals, so reading it
+// here avoids re-deriving the supersession chain.
+async function readNoGoOpportunityIds(database, rows) {
+  const opportunityIds = Array.from(new Set(rows.filter(isConvertedTenderRecord).map(row => row.converted_opportunity_id).filter(Boolean)));
+  if (!opportunityIds.length) return new Set();
+  let opportunities;
+  try {
+    opportunities = await must(database.from('psi_sales_opportunities').select('id,tender_offer_status').in('id', opportunityIds));
+  } catch {
+    console.warn('tender_radar_no_go_lookup_failed', { event: 'tender_radar_no_go_lookup_failed' });
+    return new Set();
+  }
+  return new Set((opportunities || []).filter(opportunity => opportunity.tender_offer_status === 'cerrada_no_go').map(opportunity => opportunity.id));
+}
 async function readPersistedTenderRadar(database) {
   const latestRunResult = await database.from('psi_tender_radar_runs').select('run_at,mode').order('run_at', { ascending: false }).limit(1).maybeSingle();
   if (latestRunResult.error && !isMissingTenderTable(latestRunResult.error)) throw latestRunResult.error;
@@ -1651,7 +1669,10 @@ async function readPersistedTenderRadar(database) {
       enabled: true,
     });
   }
-  const rows = visibleRows.map(dbTenderToPublic).filter(t => isConvertedTenderRecord(t) || !['SECOP I','SECOP II'].includes(t.source) || hasTenderServiceSignal(t)).sort((a,b) => {
+  const noGoOpportunityIds = await readNoGoOpportunityIds(database, visibleRows);
+  const rows = visibleRows
+    .filter(row => !isConvertedTenderRecord(row) || !noGoOpportunityIds.has(row.converted_opportunity_id))
+    .map(dbTenderToPublic).filter(t => isConvertedTenderRecord(t) || !['SECOP I','SECOP II'].includes(t.source) || hasTenderServiceSignal(t)).sort((a,b) => {
     const statusOrder = { nueva: 0, en_revision: 1, convertida_oportunidad: 2, descartada: 3 };
     const sectionOrder = { hacer: 0, revisar: 1, prioridad_baja: 2 };
     return (statusOrder[a.internal_status] ?? 9) - (statusOrder[b.internal_status] ?? 9) || sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score;

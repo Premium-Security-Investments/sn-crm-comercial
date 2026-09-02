@@ -120,6 +120,11 @@ const fakeSupabase = http.createServer((req, res) => {
     const convertedOnly = statusFilter === 'eq.convertida_oportunidad';
     return json(res, 200, convertedOnly ? [oldConvertedRow] : activeRows);
   }
+  if (url.pathname === '/rest/v1/psi_sales_opportunities') {
+    const idFilter = decodeURIComponent(url.searchParams.get('id') || '');
+    const requested = idFilter.startsWith('in.(') ? idFilter.slice(4, -1).split(',') : [];
+    return json(res, 200, requested.map(id => ({ id, tender_offer_status: 'en_preparacion' })));
+  }
   return json(res, 404, { message: `Unhandled fake Supabase path ${url.pathname}` });
 });
 
