@@ -32,6 +32,7 @@ type ProposalProps = {
   onDraftChange: (patch: Partial<ProposalDraft>) => void;
   onCopy: () => void;
   onDiscard: () => void;
+  onRegenerate: () => void;
 };
 
 export function VigiaCommercialAlerts({ alerts }: { alerts: ReturnType<typeof buildCommercialAlerts> }) {
@@ -48,33 +49,33 @@ export function VigiaCommercialAlerts({ alerts }: { alerts: ReturnType<typeof bu
   </section>;
 }
 
-// La propuesta final no repite riesgos ni faltantes: abre con un plan numerado, mantiene el correo
-// editable y deja el contexto plegado al final. La revisión humana queda junto a las acciones.
-export function VigiaCopilotProposal({ brief, draft, alerts, onDraftChange, onCopy, onDiscard }: ProposalProps) {
+const CONFIDENCE_LABEL: Record<'low' | 'medium' | 'high', string> = { low: 'Baja', medium: 'Media', high: 'Alta' };
+
+export function VigiaCopilotProposal({ brief, draft, alerts, onDraftChange, onCopy, onDiscard, onRegenerate }: ProposalProps) {
   const presented = presentCopilotBrief(brief);
   const compact = presentCompactCopilotSummary(presented, alerts);
-  const headingRef = useRef<HTMLHeadingElement>(null);
-  useEffect(() => { headingRef.current?.focus(); }, []);
   return <div className="vigia-copilot-result">
-    {compact.nextStep
-      ? <section className="vigia-copilot-summary">
-          <h4 ref={headingRef} tabIndex={-1}>Siguiente paso sugerido</h4>
-          <p>{compact.nextStep}</p>
-          {compact.whyBullets.length > 0 && <ul className="vigia-copilot-why">{compact.whyBullets.map((bullet, index) => <li key={`${index}-${bullet}`}>{bullet}</li>)}</ul>}
-        </section>
-      : <>
-          <h4 ref={headingRef} tabIndex={-1}>Borrador editable</h4>
-          <p role="status" className="sr-only">Borrador preparado para revisión.</p>
-        </>}
+    <p role="status" className="sr-only">Propuesta preparada para revisión.</p>
+    <header className="vigia-copilot-proposal-header">
+      <h4>Propuesta de seguimiento</h4>
+      <button type="button" className="secondary" onClick={onRegenerate}>Actualizar propuesta</button>
+    </header>
+    <section className="vigia-copilot-brief">
+      <div className="vigia-copilot-brief-row"><strong>Qué pasó</strong><p>{presented.summary}</p></div>
+      <div className="vigia-copilot-brief-row"><strong>Falta</strong><p>{presented.missingSummary}</p></div>
+      <div className="vigia-copilot-brief-row"><strong>Objetivo</strong><p>{presented.contactObjective}</p></div>
+    </section>
+    {compact.nextStep && <div className="vigia-copilot-next-step">
+      <strong>Siguiente paso:</strong> <span>{compact.nextStep}</span>
+    </div>}
     <div className="vigia-copilot-draft"><label>Asunto<input value={draft.subject} maxLength={300} onChange={event => onDraftChange({ subject: event.target.value })}/></label><label>Cuerpo<textarea value={draft.body} maxLength={8000} rows={10} onChange={event => onDraftChange({ body: event.target.value })}/></label></div>
-    <div className="vigia-copilot-actions"><button type="button" onClick={onCopy}>Copiar correo</button><button type="button" className="secondary" onClick={onDiscard}>Descartar</button></div>
     <div className="vigia-human-warning"><strong>Revisión humana</strong><span>Puede editar esta propuesta sin modificar el historial de la oportunidad. Verifique nombres, fechas, compromisos y tono antes de copiar el mensaje.</span></div>
-    <details className="vigia-copilot-context"><summary>Ver contexto analizado</summary>
-      <section className="vigia-copilot-plan"><h4>Plan de contacto</h4><ol>{presented.contactPlanSteps.map((step, index) => <li key={`${index}-${step}`}>{step}</li>)}</ol></section>
-      <p>{presented.summary}</p>
-      <div><small>Objetivo de contacto</small><p>{presented.contactObjective}</p></div>
-      <section><h5>Hechos observados</h5>{presented.facts.length ? <ul>{presented.facts.map((fact, index) => <li key={`${fact.text}-${index}`}>{fact.text}</li>)}</ul> : <p className="muted">Sin hechos adicionales.</p>}</section>
-      <section><h5>Inferencias</h5>{presented.inferences.length ? <ul>{presented.inferences.map((item, index) => <li key={`${item.text}-${index}`}>{item.text} <small>Confianza {item.confidence}</small></li>)}</ul> : <p className="muted">Sin inferencias.</p>}</section>
+    <div className="vigia-copilot-actions"><button type="button" onClick={onCopy}>Copiar correo</button><button type="button" className="secondary" onClick={onDiscard}>Descartar</button></div>
+    <details className="vigia-copilot-context">
+      <summary>Contexto y evidencia · {presented.facts.length} datos · {presented.inferences.length} inferencias · {presented.missingInformation.length} pendientes</summary>
+      <section><h5>Datos utilizados</h5>{presented.facts.length ? <ul>{presented.facts.map((fact, index) => <li key={`${fact.text}-${index}`}>{fact.text}</li>)}</ul> : <p className="muted">Sin datos adicionales.</p>}</section>
+      <section><h5>Inferencias de Vig-IA · por confirmar</h5>{presented.inferences.length ? <ul>{presented.inferences.map((item, index) => <li key={`${item.text}-${index}`}>{item.text} <span className={`vigia-copilot-confidence confidence-${item.confidence}`}>{CONFIDENCE_LABEL[item.confidence]}</span></li>)}</ul> : <p className="muted">Sin inferencias.</p>}</section>
+      <section><h5>Información no verificada</h5>{presented.missingInformation.length ? <ul>{presented.missingInformation.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <p className="muted">Sin brechas de información registradas.</p>}</section>
       {presented.hasApprovedAssets && <section><h5>Adjuntos sugeridos</h5><ul>{presented.recommendedAssetIds.map(id => <li key={id}>{id}</li>)}</ul></section>}
     </details>
   </div>;
@@ -120,8 +121,8 @@ export function VigiaOpportunityCopilot({ opportunityId, request, preflight }: P
   return <section className="vigia-opportunity-copilot" aria-labelledby="vigia-copilot-title">
     <header><div><span className="eyebrow">{VIGIA_VISIBLE_NAMES.commercial}</span><h3 id="vigia-copilot-title">Próximo seguimiento</h3><p>Analiza el contexto y propone un siguiente paso de seguimiento</p></div></header>
     <VigiaCommercialAlerts alerts={alerts} />
-    {state.phase !== 'error' && <div className="vigia-copilot-generate">
-      <button type="button" className={ready ? 'secondary' : undefined} disabled={state.phase === 'loading'} onClick={generate}>{ready ? 'Actualizar borrador' : 'Preparar próximo seguimiento'}</button>
+    {state.phase !== 'error' && !ready && <div className="vigia-copilot-generate">
+      <button type="button" disabled={state.phase === 'loading'} onClick={generate}>Preparar próximo seguimiento</button>
     </div>}
     {state.phase === 'idle' && <div className="vigia-copilot-empty"><p className="muted">Prepara un borrador editable de seguimiento, separado del registro original.</p></div>}
     {state.phase === 'loading' && <div className="notice" role="status">{VIGIA_VISIBLE_NAMES.commercial} está preparando un borrador acotado…</div>}
@@ -137,6 +138,7 @@ export function VigiaOpportunityCopilot({ opportunityId, request, preflight }: P
       onDraftChange={patch => setState(current => editCopilotDraft(current, patch))}
       onCopy={() => void copyDraft()}
       onDiscard={() => { setState(current => discardCopilotDraft(current)); setNotice('Borrador descartado localmente.'); }}
+      onRegenerate={generate}
     />}
     {notice && <div className="notice" role="status">{notice}</div>}
   </section>;

@@ -489,10 +489,22 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .vigia-preflight-alerts ul,.vigia-preflight-alerts ol{margin:0;padding-left:20px;display:grid;gap:4px}
 .vigia-preflight-context{margin:2px 0 0;font-size:13px;color:#52647d}
 .vigia-copilot-generate{display:grid;gap:6px;margin-top:8px;justify-items:start}
-.vigia-copilot-plan ol{margin:0;padding-left:20px;display:grid;gap:6px}
-.vigia-copilot-summary{display:grid;gap:6px;margin-bottom:8px}
-.vigia-copilot-summary h4{margin:0;color:#124174}
-.vigia-copilot-summary .vigia-copilot-why{margin:0;padding-left:20px;display:grid;gap:4px;font-size:13px;color:#374151}
+.vigia-copilot-proposal-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.vigia-copilot-proposal-header h4{margin:0;color:#10213d}
+.vigia-copilot-brief{display:grid;gap:10px;padding:14px;border-radius:14px;background:#f8fbff;border:1px solid #e2eaf5}
+.vigia-copilot-brief-row{display:grid;gap:2px}
+.vigia-copilot-brief-row strong{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#527099}
+.vigia-copilot-brief-row p{margin:0;color:#17345b}
+.vigia-copilot-next-step{margin:0;padding:12px 14px;border-radius:12px;background:#eff6ff;border:1px solid #bfdbfe;color:#124174}
+.vigia-copilot-next-step strong{color:#0b2f61}
+.vigia-copilot-confidence{display:inline-flex;padding:3px 8px;border-radius:999px;font-size:10px;font-weight:900;text-transform:uppercase;letter-spacing:.04em;margin-left:6px}
+.vigia-copilot-confidence.confidence-high{background:#dbeafe;color:#1d4ed8}
+.vigia-copilot-confidence.confidence-medium{background:#fef3c7;color:#92400e}
+.vigia-copilot-confidence.confidence-low{background:#f1f5f9;color:#64748b}
+.vigia-copilot-context>summary{display:flex;align-items:center;gap:7px;list-style:none;cursor:pointer;color:#17345b}
+.vigia-copilot-context>summary::-webkit-details-marker{display:none}
+.vigia-copilot-context>summary:before{content:"▸";display:inline-block;font-size:11px;color:#527099;transition:transform .15s ease}
+.vigia-copilot-context[open]>summary:before{transform:rotate(90deg)}
 .vigia-copilot-error{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:6px;background:#fffbeb;border:1px solid #fbbf24;color:#78350f;font-size:13px}
 .vigia-copilot-error .secondary{margin-left:auto;flex-shrink:0}
 @media(max-width:720px){.vigia-opportunity-copilot>header{align-items:stretch;flex-direction:column}.vigia-opportunity-copilot>header button{width:100%}.vigia-copilot-evidence{grid-template-columns:1fr}.vigia-copilot-actions button{flex:1 1 45%}.vigia-copilot-error{flex-direction:column;align-items:flex-start}.vigia-copilot-error .secondary{margin-left:0;width:100%}}

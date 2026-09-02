@@ -8,15 +8,14 @@ const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 for (const marker of [
   'VIGIA_VISIBLE_NAMES.commercial',
   'Alertas comerciales',
-  'Plan de contacto',
   '/api/vigia/copilot/generate',
   'buildCommercialAlerts',
-  'contactPlanSteps',
   'navigator.clipboard.writeText',
   'export function VigiaCommercialAlerts(',
   'export function VigiaCopilotProposal(',
   'Preparar próximo seguimiento',
-  'Actualizar borrador',
+  'Actualizar propuesta',
+  'onRegenerate',
   'No se pudo preparar el seguimiento. Puede continuar registrándolo manualmente.',
   'vigia-copilot-error',
 ]) assert.ok(component.includes(marker), `panel Vig-IA missing marker: ${marker}`);
@@ -29,6 +28,7 @@ for (const forbidden of [
   'Análisis inteligente del seguimiento', 'Analizar cómo fortalecer el seguimiento', 'Actualizar análisis',
   'Entiendo que no se ejecutó el análisis inteligente antes de generar.', 'Sugerencia contextual',
   '/api/vigia/copilot/preflight', 'VigiaPreflightAnalysis',
+  'Plan de contacto', 'Actualizar borrador', 'Ver contexto analizado', 'Siguiente paso sugerido', 'Borrador editable',
 ]) assert.equal(component.includes(forbidden), false, `panel Vig-IA contains forbidden capability/copy: ${forbidden}`);
 
 const header = component.indexOf('<header>');
@@ -48,9 +48,14 @@ for (const marker of [
 
 for (const marker of [
   '.vigia-opportunity-copilot', '.vigia-copilot-draft', '.vigia-copilot-actions',
-  '.vigia-preflight-alerts', '.vigia-copilot-generate', '.vigia-copilot-plan ol',
-  '.vigia-copilot-summary', '.vigia-copilot-error',
+  '.vigia-preflight-alerts', '.vigia-copilot-generate', '.vigia-copilot-error',
+  '.vigia-copilot-proposal-header', '.vigia-copilot-brief', '.vigia-copilot-next-step',
+  '.vigia-copilot-confidence', '.vigia-copilot-context>summary',
 ]) assert.ok(css.includes(marker), `styles missing Vig-IA panel marker: ${marker}`);
+
+for (const removedMarker of ['.vigia-copilot-plan ol', '.vigia-copilot-summary']) {
+  assert.ok(!css.includes(removedMarker), `styles.css debe retirar el selector huérfano: ${removedMarker}`);
+}
 
 assert.equal(existsSync(new URL('../src/vigia/opportunity-preflight-state.ts', import.meta.url)), false, 'opportunity-preflight-state.ts debe eliminarse');
 
@@ -72,12 +77,18 @@ assert.match(
   '.vigia-copilot-generate debe fijar justify-items:start para un foco compacto en el CTA primario',
 );
 
-// Tras generar un borrador, "Actualizar borrador" pasa a ser visualmente secundario frente a la
-// acción primaria de completar el flujo (Copiar correo).
+// El botón de generación externo sólo existe mientras no hay propuesta lista: una vez generada,
+// el refresco vive en la cabecera de la propuesta ("Actualizar propuesta"), nunca huérfano.
 assert.match(
   component,
-  /<button type="button" className=\{ready \? 'secondary' : undefined\}[^>]*onClick=\{generate\}>/,
-  'el botón de generación debe volverse "secondary" una vez que existe un borrador (ready)',
+  /\{state\.phase !== 'error' && !ready && <div className="vigia-copilot-generate">/,
+  'el botón de generación externo sólo debe renderizarse mientras no hay propuesta lista (!ready)',
 );
+assert.equal(
+  component.includes("className={ready ? 'secondary' : undefined}"),
+  false,
+  'el botón de generación externo ya no alterna a "secondary": ese slot deja de existir una vez lista la propuesta',
+);
+assert.match(component, /onRegenerate=\{generate\}/, 'VigiaCopilotProposal debe recibir onRegenerate para refrescar desde su propia cabecera');
 
 console.log('Vig-IA opportunity copilot UI static contract passed');
