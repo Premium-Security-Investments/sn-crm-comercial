@@ -13,9 +13,12 @@ assert.ok(
 assert.equal(component.includes('copiloto comercial</span>'), false, 'eyebrow no debe incluir el sufijo "· copiloto comercial"');
 assert.ok(component.includes('>Próximo seguimiento<'), 'título debe ser exactamente "Próximo seguimiento"');
 assert.ok(
-  component.includes(">{ready ? 'Actualizar borrador' : 'Preparar próximo seguimiento'}<"),
-  'botón debe distinguir generar/actualizar con una única CTA de preparación de seguimiento',
+  component.includes("state.phase !== 'error' && !ready && <div className=\"vigia-copilot-generate\">"),
+  'el CTA externo de preparación sólo se renderiza fuera de error y antes de tener un borrador (ready)',
 );
+assert.ok(component.includes('>Preparar próximo seguimiento<'), 'el CTA externo conserva el texto de preparación inicial');
+assert.ok(component.includes('onRegenerate={generate}'), 'en ready la propuesta reutiliza la misma función generate para regenerar');
+assert.ok(component.includes('>Actualizar propuesta<'), 'la propuesta ofrece su propio control de actualización');
 assert.ok(
   component.includes('>Analiza el contexto y propone un siguiente paso de seguimiento</p>'),
   'texto de ayuda debe ser exactamente "Analiza el contexto y propone un siguiente paso de seguimiento" (sin punto final)',

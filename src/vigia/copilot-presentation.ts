@@ -4,6 +4,9 @@
 // el modelo no debería haber devuelto (lenguaje técnico/interno) sin tocar persistencia ni logs.
 
 import { VIGIA_VISIBLE_NAMES } from './agentIdentity';
+import { humanizeVigiaText } from './text-sanitizer';
+
+export const humanizePresentedText = humanizeVigiaText;
 
 const TECHNICAL_PATTERNS = [
   /input no confiable/i,
@@ -17,6 +20,7 @@ const TECHNICAL_PATTERNS = [
   /snapshot_id/i,
   /evidence_refs/i,
   /revisi[oó]n humana/i,
+  /\bwarnings\s*:/i,
 ];
 
 export function isTechnicalCopilotText(text: string | null | undefined): boolean {
@@ -45,6 +49,35 @@ function filterCommercialEntries<T extends { text?: string | null }>(entries: re
   return result;
 }
 
+function filterCommercialTextList(items: readonly string[] | null | undefined): string[] {
+  const result: string[] = [];
+  for (const item of items ?? []) {
+    const text = typeof item === 'string' ? item.trim() : '';
+    if (!text || isTechnicalCopilotText(text)) continue;
+    result.push(text);
+  }
+  return result;
+}
+
+const MIGRATED_FACT_MARKER = /seguimiento migrado:/i;
+
+function partitionMigratedFacts(facts: readonly CopilotPresentationFact[]): { facts: CopilotPresentationFact[]; migrated: string[] } {
+  const kept: CopilotPresentationFact[] = [];
+  const migrated: string[] = [];
+  for (const fact of facts) {
+    if (MIGRATED_FACT_MARKER.test(fact.text)) migrated.push(fact.text);
+    else kept.push(fact);
+  }
+  return { facts: kept, migrated };
+}
+
+export function summarizeMissingInformation(items: readonly string[] | null | undefined): string {
+  const list = (items ?? []).map(item => String(item ?? '').trim()).filter(Boolean);
+  if (list.length === 0) return 'Sin brechas de información pendientes según el registro.';
+  if (list.length === 1) return list[0];
+  return `${list[0]} (+${list.length - 1} más)`;
+}
+
 export type CopilotPresentationFact = { text: string; evidence_refs: string[] };
 export type CopilotPresentationInference = { text: string; evidence_refs: string[]; confidence: 'low' | 'medium' | 'high' };
 export type CopilotPresentationBrief = {
@@ -67,6 +100,8 @@ export type PresentedCopilotBrief = {
   contactPlanSteps: string[];
   recommendedAssetIds: string[];
   hasApprovedAssets: boolean;
+  missingInformation: string[];
+  missingSummary: string;
 };
 
 const SENTENCE_BOUNDARY = /(?<=[.?!])\s+(?=[A-ZÁÉÍÓÚÑ¿¡])/;
@@ -88,14 +123,25 @@ export function splitContactPlanSteps(text: string): string[] {
 export function presentCopilotBrief(brief: CopilotPresentationBrief): PresentedCopilotBrief {
   const recommendedAssetIds = brief.recommended_asset_ids ?? [];
   const strategy = presentCommercialText(brief.strategy, COMMERCIAL_TEXT_FALLBACKS.strategy);
+
+  const humanizedFacts = filterCommercialEntries(brief.facts).map(fact => ({ ...fact, text: humanizePresentedText(fact.text) }));
+  const { facts, migrated } = partitionMigratedFacts(humanizedFacts);
+  const inferences = filterCommercialEntries(brief.inferences).map(inference => ({ ...inference, text: humanizePresentedText(inference.text) }));
+  const missingInformation = [
+    ...filterCommercialTextList(brief.missing_information).map(item => humanizePresentedText(item)),
+    ...migrated,
+  ];
+
   return {
-    summary: presentCommercialText(brief.summary, COMMERCIAL_TEXT_FALLBACKS.summary),
-    facts: filterCommercialEntries(brief.facts),
-    inferences: filterCommercialEntries(brief.inferences),
-    contactObjective: presentCommercialText(brief.contact_objective, COMMERCIAL_TEXT_FALLBACKS.contactObjective),
-    contactPlanSteps: splitContactPlanSteps(strategy),
+    summary: humanizePresentedText(presentCommercialText(brief.summary, COMMERCIAL_TEXT_FALLBACKS.summary)),
+    facts,
+    inferences,
+    contactObjective: humanizePresentedText(presentCommercialText(brief.contact_objective, COMMERCIAL_TEXT_FALLBACKS.contactObjective)),
+    contactPlanSteps: splitContactPlanSteps(humanizePresentedText(strategy)),
     recommendedAssetIds,
     hasApprovedAssets: recommendedAssetIds.length > 0,
+    missingInformation,
+    missingSummary: summarizeMissingInformation(missingInformation),
   };
 }
 

@@ -3,6 +3,7 @@ import { api } from '../apiClient';
 import { formatDateOnly } from '../dateOnly';
 import { VIGIA_VISIBLE_NAMES } from './agentIdentity';
 import { filtersFromAlertsHash, filterCommercialPriorities, priorityContextSummary, priorityHashFiltersAreValid, summarizeCommercialPriorities } from './priority-filters.js';
+import { humanizeVigiaText, DB_KEY_LABEL } from './text-sanitizer';
 
 type VigiaLevel = 'alto' | 'medio' | 'bajo' | 'sin_prioridad';
 type VigiaSignal = { code: string; label: string; points: number; evidence: string };
@@ -37,7 +38,7 @@ type OperationalCategory = '' | 'risk' | 'missing' | 'overdue' | 'managed' | 'cl
 type PriorityCategory = OperationalCategory | '__invalid__';
 const PRIORITY_INBOX_LIMIT = 20;
 const money = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
-const date = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
+const date = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeZone: 'America/Bogota' });
 const levelLabel: Record<VigiaLevel, string> = { alto: 'Alto', medio: 'Medio', bajo: 'Bajo', sin_prioridad: 'Sin prioridad' };
 const customerSegmentOptions = [['cliente_nuevo', 'Cliente Nuevo'], ['cliente_actual', 'Cliente Actual']] as const;
 
@@ -48,6 +49,10 @@ function displayDate(value: string | null) {
 }
 
 function displayDateOnly(value: string | null) { return formatDateOnly(value, 'Sin datos'); }
+
+function activityBasisLabel(basis: string): string {
+  return DB_KEY_LABEL[basis] || (basis === 'missing' ? 'sin actividad registrada' : 'sin dato de origen');
+}
 
 function uniqueOptions(rows: VigiaPriority[], value: (row: VigiaPriority) => string | null, label: (row: VigiaPriority) => string | null) {
   const options = new Map<string, string>();
@@ -182,10 +187,10 @@ export function VigiaCommercial({ canOpenOpportunity }: { canOpenOpportunity: bo
     <section className="vigia-priority-grid">
       {visible.map(priority => <article className={`vigia-priority-card level-${priority.level}`} key={priority.id}>
         <header><div><span className={`vigia-level level-${priority.level}`}>{levelLabel[priority.level]}</span><h3>{priority.company_name}</h3><p>{priority.owner_name || 'Sin comercial'} · {priority.stage_name} · {priority.regional_nombre || 'Regional pendiente'}</p></div><div className="vigia-score"><small>Score</small><strong>{priority.score}</strong></div></header>
-        <div className="vigia-card-value"><small>Valor registrado</small><strong>{Number(priority.offer_value) > 0 ? money.format(priority.offer_value) : 'Valor no registrado'}</strong></div>
-        <ul className="vigia-signal-list">{priority.signals.map(signal => <li key={signal.code}><div><strong>{signal.label}</strong><span>{signal.evidence}</span></div><b>{signal.points > 0 ? `+${signal.points}` : 'Dato'}</b></li>)}</ul>
+        <div className="vigia-card-value"><small>Valor registrado</small><strong>{Number(priority.offer_value) > 0 ? `${money.format(priority.offer_value)} COP` : 'Valor no registrado'}</strong></div>
+        <ul className="vigia-signal-list">{priority.signals.map(signal => <li key={signal.code}><div><strong>{signal.label}</strong><span>{humanizeVigiaText(signal.evidence)}</span></div><b>{signal.points > 0 ? `+${signal.points}` : 'Dato'}</b></li>)}</ul>
         <div className="vigia-recommendation"><small>Acción sugerida</small><strong>{priority.recommendation}</strong><p>{priority.explanation}</p></div>
-        <div className="vigia-evidence"><span>Actividad: {displayDate(priority.evidence.activity_at)} ({priority.evidence.activity_basis})</span><span>Próxima acción: {displayDate(priority.evidence.next_action_at)}</span><span>Cierre esperado: {displayDateOnly(priority.evidence.expected_close_date)}</span></div>
+        <div className="vigia-evidence"><span>Actividad: {displayDate(priority.evidence.activity_at)} ({activityBasisLabel(priority.evidence.activity_basis)})</span><span>Próxima acción: {displayDate(priority.evidence.next_action_at)}</span><span>Cierre esperado: {displayDateOnly(priority.evidence.expected_close_date)}</span></div>
         <footer>{canOpenOpportunity && <div className="vigia-card-actions"><a className="button" href={`#/detail/${priority.id}?focus=interaction`}>Registrar seguimiento</a><a className="button secondary" href={`#/detail/${priority.id}`}>Ver oportunidad</a></div>}</footer>
       </article>)}
     </section>

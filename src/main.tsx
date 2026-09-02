@@ -750,7 +750,7 @@ function MyDayGroup({ title, alerts, total, tone, empty }: { title: string; aler
     {alerts.length
       ? <div className="my-day-list">{alerts.map(a => <article className="my-day-card" key={a.id}>
           <strong>{a.companyName}</strong>
-          <p>{a.fact}</p>
+          <p className="my-day-fact"><em>Qué pasó:</em> {a.fact}</p>
           <p className="my-day-gap"><em>Falta:</em> {a.gap}</p>
           <p className="my-day-goal"><em>Objetivo:</em> {a.goal}</p>
           <a className="button" href={a.ctaHref}>Preparar seguimiento</a>
@@ -2384,6 +2384,20 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
       <Panel title="Mi avance contra meta"><GoalVsActualDashboard rows={personalGoalRows} /></Panel>
       <Panel title="Mis oportunidades críticas">{personalCriticalRows.length ? <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Valor" sortKey="value" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Prioridad" sortKey="priority" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/></tr></thead><tbody>{sortedPersonalCriticalRows.map(row => <tr key={row.opportunity.id} className="clickable" onClick={() => go(`#/detail/${row.opportunity.id}`)}><td><strong>{row.opportunity.company_name}</strong></td><td><Badge tone={stageTone(row.opportunity.stage_code)}>{row.opportunity.stage_name}</Badge></td><td>{fmtMoneyCompact(row.opportunity.offer_value)}</td><td>{row.opportunity.next_action_at ? fmtDate(row.opportunity.next_action_at) : 'Sin agenda'}</td><td><Badge tone={row.action.tone}>{row.action.label}</Badge></td></tr>)}</tbody></table></div> : <EmptyState title="Sin críticas inmediatas" text="No hay vencidas, sin agenda ni gestiones urgentes con tus filtros actuales." />}</Panel>
     </div>}
+    {!personal && <section className="commercial-followup-banner my-day-manager-banner" aria-label={`Prioridades de hoy de ${ownerName}`}>
+      <div className="commercial-followup-copy">
+        <span className="eyebrow">Prioridades de hoy</span>
+        <h3>Prioridades de hoy de {ownerName}</h3>
+        <p>{(myDay.hacerHoy.length || myDay.preparar.length || myDay.depurarCrm.length) ? `Resumen de las gestiones más urgentes de ${ownerName} para hoy, con el mismo criterio de priorización que Mi día.` : `${ownerName} no tiene gestiones vencidas, sin agenda ni decisores pendientes por confirmar hoy.`}</p>
+      </div>
+      <div className="my-day">
+        <MyDayGroup title="Hacer hoy" alerts={myDay.hacerHoy} total={myDay.hacerHoyTotal} tone="primary" empty={`${ownerName} no tiene próximas gestiones vencidas o sin agendar.`} />
+        {(myDay.preparar.length > 0) && <MyDayGroup title="Preparar" alerts={myDay.preparar} total={myDay.prepararTotal} tone="secondary" empty="" />}
+        {(myDay.depurarCrm.length > 0) && <details className="my-day-hygiene"><summary>Depurar CRM ({myDay.depurarCrmTotal})</summary>
+          <MyDayGroup title="" alerts={myDay.depurarCrm} total={myDay.depurarCrmTotal} tone="muted" empty="" />
+        </details>}
+      </div>
+    </section>}
 
     <div className="grid kpis manager-kpis consultant-kpis">
       <Kpi icon="Σ" tone="blue" label="Total oportunidades" value={String(opportunities.length)} hint={`${totals.active} activas`} meta="Asignadas al consultor" />
