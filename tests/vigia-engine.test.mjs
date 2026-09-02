@@ -70,4 +70,27 @@ const sorted = prioritizeVigiaOpportunities([
 ], { now });
 assert.deepEqual(sorted.map(row => row.id), ['high', 'low']);
 
+// Huso horario: dayStart debe anclarse a America/Bogota, no a UTC ni al huso local del runtime.
+// 2026-09-02T23:30:00-05:00 == 2026-09-03T04:30:00Z: son las 11:30pm en Bogotá, sigue siendo "hoy" 2 de sept.
+// expected_close_date es una columna `date` (día calendario literal, sin componente horario); estas
+// dos filas también verifican que dayStart preserve ese literal en vez de reinterpretarlo como un
+// instante UTC y correrlo un día hacia atrás al formatearlo en America/Bogota.
+const [bogotaNight] = prioritizeVigiaOpportunities([{
+  ...base, id: 'row-bogota-night', expected_close_date: '2026-09-02',
+  next_action_at: null, offer_value: 1, regional_nombre: 'Bogotá', updated_at: '2026-09-02T10:00:00Z',
+}], { now: '2026-09-02T23:30:00-05:00' });
+assert.ok(
+  !bogotaNight.signal_codes.includes('close_overdue'),
+  'un cierre "hoy" en Bogotá no debe verse como vencido por culpa del reloj UTC',
+);
+
+const [bogotaPast] = prioritizeVigiaOpportunities([{
+  ...base, id: 'row-bogota-past', expected_close_date: '2026-09-01',
+  next_action_at: null, offer_value: 1, regional_nombre: 'Bogotá', updated_at: '2026-09-01T10:00:00Z',
+}], { now: '2026-09-02T23:30:00-05:00' });
+assert.ok(
+  bogotaPast.signal_codes.includes('close_overdue'),
+  'un cierre de ayer en Bogotá sigue vencido, el fix no debe volverlo permisivo',
+);
+
 console.log('vigia deterministic engine contract passed');
