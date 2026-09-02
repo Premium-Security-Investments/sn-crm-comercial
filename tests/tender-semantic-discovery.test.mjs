@@ -93,7 +93,9 @@ function citationOf(unit) {
   assert.deepEqual(Object.values(result.categoryOverrides).sort(), ['financial_execution', 'technical']);
   assert.equal(result.usage.input_tokens, 100);
   assert.equal(result.usage.output_tokens, 30);
-  assert.equal(captured.idempotencyKey, 'run-1:semantic-discovery');
+  // v7: the idempotency key is now per-batch — base run key, batch index, then a 16 lowercase hex
+  // char prefix of that batch's own stable content hash — not the whole-run key alone.
+  assert.match(captured.idempotencyKey, /^run-1:semantic-discovery:0:[0-9a-f]{16}$/);
   assert.deepEqual(captured.outputSchema.properties.requirements.items.properties.category.enum,
     ['discard', 'habilitating', 'technical', 'financial_execution']);
   // The model is never even offered a place to put a source id: the requirement item declares the

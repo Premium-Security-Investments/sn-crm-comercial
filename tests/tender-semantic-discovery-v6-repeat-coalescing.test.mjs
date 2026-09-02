@@ -159,8 +159,10 @@ async function assertRejection(promiseFactory, { code, message }) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v6',
-    'coalescing an exact repetition changes how a provider answer is canonicalized, so the policy version must move',
+    'tender-semantic-discovery.v7',
+    'coalescing an exact repetition changes how a provider answer is canonicalized, and v7\'s '
+    + 'multi-batch input is a further material change to what the model is asked, so the policy '
+    + 'version must move',
   );
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,

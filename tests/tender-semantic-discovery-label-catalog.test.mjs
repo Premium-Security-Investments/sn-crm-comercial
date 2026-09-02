@@ -109,12 +109,14 @@ function proposalWith(requirements, derivedOwnerIds) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v6',
-    'the wire contract this catalog feeds is v6: the label enum is pinned, a requirement carries no '
+    'tender-semantic-discovery.v7',
+    'the wire contract this catalog feeds is v7: the label enum is pinned, a requirement carries no '
     + 'model-provided source id (the server derives front_evidence/citations from this same catalog), '
     + 'an undispositioned source unit is completed into unresolved instead of rejecting the turn, the '
-    + 'disposition lists themselves are optional, and an exact repetition of one catalog label is '
-    + 'canonicalized once — each a material model-facing change that must bump the policy version',
+    + 'disposition lists themselves are optional, an exact repetition of one catalog label is '
+    + 'canonicalized once, and the input is now one of possibly several batches (batch index/count) '
+    + 'instead of a single request — each a material model-facing change that must bump the policy '
+    + 'version',
   );
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
@@ -186,8 +188,8 @@ let capturedRequest;
   // Output object keys are preserved exactly.
   assert.deepEqual(
     Object.keys(result).sort(),
-    ['categoryOverrides', 'semanticManifest', 'usage'],
-    'the discoverer must keep returning exactly {semanticManifest, categoryOverrides, usage}',
+    ['categoryOverrides', 'discoveryLedger', 'semanticManifest', 'usage'],
+    'the discoverer must keep returning exactly {semanticManifest, categoryOverrides, usage, discoveryLedger}',
   );
 
   const labelSchema = labelSchemaOf(capturedRequest);
