@@ -2386,12 +2386,12 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
     </div>}
     {!personal && <section className="commercial-followup-banner my-day-manager-banner" aria-label={`Prioridades de hoy de ${ownerName}`}>
       <div className="commercial-followup-copy">
-        <span className="eyebrow">Mi día</span>
+        <span className="eyebrow">Prioridades de hoy</span>
         <h3>Prioridades de hoy de {ownerName}</h3>
-        <p>{personalFollowUpRows.length ? `${ownerName} tiene ${personalFollowUpRows.length} oportunidades que requieren atención hoy.` : `La agenda comercial de ${ownerName} está al día.`}</p>
+        <p>{(myDay.hacerHoy.length || myDay.preparar.length || myDay.depurarCrm.length) ? `Resumen de las gestiones más urgentes de ${ownerName} para hoy, con el mismo criterio de priorización que Mi día.` : `${ownerName} no tiene gestiones vencidas, sin agenda ni decisores pendientes por confirmar hoy.`}</p>
       </div>
       <div className="my-day">
-        <MyDayGroup title="Hacer hoy" alerts={myDay.hacerHoy} total={myDay.hacerHoyTotal} tone="primary" empty="Sin próximas gestiones vencidas o sin agendar." />
+        <MyDayGroup title="Hacer hoy" alerts={myDay.hacerHoy} total={myDay.hacerHoyTotal} tone="primary" empty={`${ownerName} no tiene próximas gestiones vencidas o sin agendar.`} />
         {(myDay.preparar.length > 0) && <MyDayGroup title="Preparar" alerts={myDay.preparar} total={myDay.prepararTotal} tone="secondary" empty="" />}
         {(myDay.depurarCrm.length > 0) && <details className="my-day-hygiene"><summary>Depurar CRM ({myDay.depurarCrmTotal})</summary>
           <MyDayGroup title="" alerts={myDay.depurarCrm} total={myDay.depurarCrmTotal} tone="muted" empty="" />

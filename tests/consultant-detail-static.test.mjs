@@ -27,6 +27,56 @@ assert.match(source, /personalFollowUpCards/, 'El banner debe resumir vencidas, 
 assert.match(source, /focusFollowUpFilter/, 'El banner debe permitir enfocar la tabla por tipo de alerta');
 assert.ok(!source.includes('commercial-followup-list'), 'la lista plana reemplazada por Mi día no debe sobrevivir');
 
+// Hallazgo IMPORTANTE: el párrafo resumen del banner gerencial debe decidirse con la
+// misma cola myDay que se renderiza (hacerHoy/preparar/depurarCrm), no con
+// personalFollowUpRows.length, que es la cola de "Mi día" personal, no la del consultor
+// que se está viendo en modo gerente.
+const consultantDetailStart = source.indexOf('function ConsultantDetail');
+assert.ok(consultantDetailStart !== -1, 'debe existir la función ConsultantDetail');
+const managerBannerMarker = 'aria-label={`Prioridades de hoy de ${ownerName}`}>';
+const managerBannerStart = source.indexOf(managerBannerMarker, consultantDetailStart);
+assert.ok(managerBannerStart !== -1, 'debe existir el banner gerencial "Prioridades de hoy de {ownerName}"');
+const managerBannerEnd = source.indexOf('</section>}', managerBannerStart);
+assert.ok(managerBannerEnd !== -1, 'debe poder delimitarse el cierre del banner gerencial');
+const managerBannerSection = source.slice(managerBannerStart, managerBannerEnd);
+const managerBannerScope = source.slice(consultantDetailStart, managerBannerEnd);
+
+const managerParagraphMatch = managerBannerSection.match(/<h3>Prioridades de hoy de \{ownerName\}<\/h3>\s*<p>([\s\S]*?)<\/p>/);
+assert.ok(managerParagraphMatch, 'el banner gerencial debe tener un <h3> seguido de un <p> con el resumen');
+const managerParagraph = managerParagraphMatch[1];
+
+assert.ok(
+  !managerParagraph.includes('personalFollowUpRows.length'),
+  'el párrafo resumen del banner gerencial NO debe decidirse con personalFollowUpRows.length (esa es la cola de Mi día personal, no la del consultor visto en modo gerente)',
+);
+
+const derivedBoolDecl = managerBannerScope.match(/const\s+(\w+)\s*=\s*[^;]*myDay\.hacerHoy\.length[^;]*myDay\.preparar\.length[^;]*myDay\.depurarCrm\.length[^;]*;/);
+const inlineDerivedBool = /myDay\.hacerHoy\.length[\s\S]{0,120}myDay\.preparar\.length[\s\S]{0,120}myDay\.depurarCrm\.length/.test(managerParagraph);
+const usesDeclaredBool = Boolean(derivedBoolDecl && managerParagraph.includes(derivedBoolDecl[1]));
+assert.ok(
+  inlineDerivedBool || usesDeclaredBool,
+  'el párrafo resumen del banner gerencial debe decidirse con myDay.hacerHoy.length, myDay.preparar.length y myDay.depurarCrm.length (inline o vía una constante booleana derivada de las tres)',
+);
+
+assert.match(
+  managerBannerSection,
+  /<MyDayGroup title="Hacer hoy" alerts=\{myDay\.hacerHoy\} total=\{myDay\.hacerHoyTotal\} tone="primary" empty=\{`\$\{ownerName\} no tiene próximas gestiones vencidas o sin agendar\.`\} \/>/,
+  'el empty copy de MyDayGroup "Hacer hoy" en el banner gerencial debe ser exactamente `${ownerName} no tiene próximas gestiones vencidas o sin agendar.` en tercera persona',
+);
+
+// Hallazgo IMPORTANTE: el banner gerencial reutilizó el eyebrow "Mi día" del tablero
+// personal. En modo gerente (viendo a otro consultor) el eyebrow debe leerse en tercera
+// persona como el resto del banner ("Prioridades de hoy"), no "Mi día".
+assert.match(
+  managerBannerSection,
+  /<span className="eyebrow">Prioridades de hoy<\/span>/,
+  'el eyebrow del banner gerencial debe ser exactamente <span className="eyebrow">Prioridades de hoy</span>',
+);
+assert.ok(
+  !managerBannerSection.includes('<span className="eyebrow">Mi día</span>'),
+  'el banner gerencial no debe conservar el eyebrow personal "Mi día" (ese texto es solo para el tablero propio del consultor)',
+);
+
 const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 assert.match(css, /\.my-day\{/, 'styles.css debe incluir la regla .my-day');
 assert.match(css, /\.my-day-card\{/, 'styles.css debe incluir la regla .my-day-card');

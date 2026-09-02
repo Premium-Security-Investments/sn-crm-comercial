@@ -20,6 +20,7 @@ const TECHNICAL_PATTERNS = [
   /snapshot_id/i,
   /evidence_refs/i,
   /revisi[oó]n humana/i,
+  /\bwarnings\s*:/i,
 ];
 
 export function isTechnicalCopilotText(text: string | null | undefined): boolean {

@@ -120,6 +120,45 @@ assert.equal(
   'con más de un elemento, el resumen "Falta" muestra el primero y cuenta el resto',
 );
 
+// Hallazgo IMPORTANTE: claves técnicas internas inyectadas como texto libre ("warnings: ...")
+// deben filtrarse en las tres superficies de presentCopilotBrief (facts, inferences,
+// missing_information), igual que el resto de lenguaje técnico. Prosa comercial legítima que
+// solo menciona la palabra "warnings" sin dos puntos debe seguir visible.
+const warningsInjectionBrief = {
+  ...brief,
+  facts: [
+    ...brief.facts,
+    { text: 'warnings: revisar antes de enviar el correo al cliente.', evidence_refs: [] },
+    { text: 'El cliente menciona warnings comerciales en inglés.', evidence_refs: [] },
+  ],
+  inferences: [
+    ...brief.inferences,
+    { text: 'warnings: el cliente no confirmó presupuesto.', evidence_refs: [], confidence: 'low' },
+  ],
+  missing_information: [
+    ...brief.missing_information,
+    'warnings: falta autorización legal para enviar la propuesta.',
+  ],
+};
+const warningsInjectionPresented = presentCopilotBrief(warningsInjectionBrief);
+
+assert.ok(
+  !warningsInjectionPresented.facts.some(fact => fact.text.toLowerCase().includes('warnings:')),
+  'un fact con la clave técnica "warnings:" inyectada como texto no debe llegar a Datos utilizados',
+);
+assert.ok(
+  warningsInjectionPresented.facts.some(fact => fact.text === 'El cliente menciona warnings comerciales en inglés.'),
+  'la prosa comercial legítima que solo menciona "warnings" sin dos puntos debe seguir visible en Datos utilizados',
+);
+assert.ok(
+  !warningsInjectionPresented.inferences.some(inference => inference.text.toLowerCase().includes('warnings:')),
+  'una inferencia con la clave técnica "warnings:" inyectada como texto no debe llegar a Interpretación',
+);
+assert.ok(
+  !warningsInjectionPresented.missingInformation.some(item => item.toLowerCase().includes('warnings:')),
+  'un elemento de missing_information con la clave técnica "warnings:" inyectada no debe llegar a Información no verificada',
+);
+
 assert.equal(summarizeMissingInformation([]), 'Sin brechas de información pendientes según el registro.', 'sin brechas, el resumen debe ser el mensaje explícito, nunca una cadena vacía');
 
 const BOGOTA_DATETIME_LABEL = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Bogota' });
