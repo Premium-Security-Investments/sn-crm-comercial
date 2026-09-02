@@ -218,16 +218,17 @@ a.clickable-card{color:inherit;text-decoration:none;display:block;cursor:pointer
 .my-day-card{display:grid;gap:5px;padding:12px 14px;border-radius:16px;border:1px solid rgba(219,234,254,.4);background:rgba(255,255,255,.1);color:#fff}
 .my-day-card strong{font-size:15px}
 .my-day-card p{margin:0;font-size:12.5px;line-height:1.35;color:#d8e7fb}
-.my-day-card .my-day-gap em,.my-day-card .my-day-goal em{font-style:normal;color:#bfdbfe;font-weight:800}
-.my-day-card .button{display:inline-flex;align-items:center;justify-content:center;gap:6px;margin-top:4px;justify-self:start;padding:10px 16px;min-height:40px;border-radius:11px;background:#1b64f2;color:#fff;font-weight:800;font-size:13px;text-decoration:none;line-height:1.1;transition:background .16s ease,box-shadow .16s ease}
+.my-day-card .my-day-fact em,.my-day-card .my-day-gap em,.my-day-card .my-day-goal em{font-style:normal;color:#bfdbfe;font-weight:800}
+.my-day-card .button{display:inline-flex;align-items:center;justify-content:center;gap:6px;margin-top:4px;justify-self:start;padding:10px 16px;min-height:44px;border-radius:11px;background:#1b64f2;color:#fff;font-weight:800;font-size:13px;text-decoration:none;line-height:1.1;transition:background .16s ease,box-shadow .16s ease}
 .my-day-card .button:hover{background:#123f8e}
 .my-day-card .button:focus-visible{outline:3px solid #93c5fd;outline-offset:2px}
 .my-day-empty{margin:0;color:#d8e7fb;font-size:13px}
 .my-day-secondary .my-day-card,.my-day-muted .my-day-card{background:#f8fbff;color:#10213d;border-color:#e2eaf5}
 .my-day-secondary .my-day-card p,.my-day-muted .my-day-card p{color:#40516b}
-.my-day-secondary .my-day-card .my-day-gap em,.my-day-secondary .my-day-card .my-day-goal em,.my-day-muted .my-day-card .my-day-gap em,.my-day-muted .my-day-card .my-day-goal em{color:#1d4ed8}
+.my-day-secondary .my-day-card .my-day-fact em,.my-day-secondary .my-day-card .my-day-gap em,.my-day-secondary .my-day-card .my-day-goal em,.my-day-muted .my-day-card .my-day-fact em,.my-day-muted .my-day-card .my-day-gap em,.my-day-muted .my-day-card .my-day-goal em{color:#1d4ed8}
 .my-day-hygiene{margin-top:4px}
 .my-day-hygiene>summary{cursor:pointer;font-weight:800;color:#dbeafe;padding:4px 0}
+.my-day-manager-banner{grid-template-columns:1fr}
 @media(max-width:640px){.my-day-primary .my-day-list{grid-template-columns:1fr}.my-day-card .button{width:100%;justify-self:center}}
 
 /* Dashboard Gerencial 2 — segunda pasada UX ejecutiva */

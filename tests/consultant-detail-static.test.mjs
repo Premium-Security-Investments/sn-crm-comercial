@@ -14,6 +14,14 @@ assert.match(source, /Mi día/, 'El perfil comercial debe mostrar el banner "Mi 
 assert.ok(!source.includes('Gestión comercial de hoy'), 'el banner anterior "Gestión comercial de hoy" debe quedar retirado');
 assert.match(source, /function MyDayGroup\(/, 'Debe existir el componente MyDayGroup');
 assert.match(source, /Preparar seguimiento/, 'Cada tarjeta de Mi día debe llevar un único CTA "Preparar seguimiento"');
+assert.match(source, /<p className="my-day-fact"><em>Qué pasó:<\/em> \{a\.fact\}<\/p>/, 'MyDayGroup debe rotular el primer dato de cada tarjeta con "Qué pasó:"');
+assert.match(
+  source,
+  /<section className="commercial-followup-banner my-day-manager-banner" aria-label=\{`Prioridades de hoy de \$\{ownerName\}`\}>/,
+  'un gerente en el detalle de un consultor específico debe ver "Prioridades de hoy de {ownerName}"',
+);
+assert.match(source, /<h3>Prioridades de hoy de \{ownerName\}<\/h3>/, 'el título del banner gerencial debe nombrar al consultor');
+assert.match(source, /\{!personal && <section className="commercial-followup-banner my-day-manager-banner"/, 'el banner gerencial debe ser mutuamente excluyente con el tablero personal');
 assert.match(source, /className="my-day-hygiene"/, 'Depurar CRM debe vivir en un <details> colapsado y subordinado');
 assert.match(source, /personalFollowUpCards/, 'El banner debe resumir vencidas, hoy, sin agenda y valor en riesgo');
 assert.match(source, /focusFollowUpFilter/, 'El banner debe permitir enfocar la tabla por tipo de alerta');
@@ -24,18 +32,18 @@ assert.match(css, /\.my-day\{/, 'styles.css debe incluir la regla .my-day');
 assert.match(css, /\.my-day-card\{/, 'styles.css debe incluir la regla .my-day-card');
 assert.ok(!css.includes('.commercial-followup-list{'), 'la regla sin selector debe retirarse junto con el JSX que la usaba');
 
+assert.match(css, /\.my-day-card \.my-day-fact em,\.my-day-card \.my-day-gap em,\.my-day-card \.my-day-goal em\{font-style:normal;color:#bfdbfe;font-weight:800\}/, '.my-day-fact em debe compartir el estilo de énfasis claro sobre fondo oscuro');
+assert.match(
+  css,
+  /\.my-day-secondary \.my-day-card \.my-day-fact em,\.my-day-secondary \.my-day-card \.my-day-gap em,\.my-day-secondary \.my-day-card \.my-day-goal em,\.my-day-muted \.my-day-card \.my-day-fact em,\.my-day-muted \.my-day-card \.my-day-gap em,\.my-day-muted \.my-day-card \.my-day-goal em\{color:#1d4ed8\}/,
+  '.my-day-fact em en tarjetas secondary/muted debe llevar el mismo override azul oscuro que .my-day-gap/.my-day-goal',
+);
+assert.match(css, /\.my-day-manager-banner\{grid-template-columns:1fr\}/, 'el banner gerencial debe forzar una sola columna (sin segunda columna de tarjetas de resumen)');
+
 // Contraste: título de grupo y summary de "Depurar CRM" deben usar un color claro
 // legible sobre el fondo oscuro de .commercial-followup-banner, no el navy oscuro heredado.
 assert.match(css, /\.my-day-group h4\{[^}]*color:#dbeafe/, '.my-day-group h4 debe usar un color claro (#dbeafe) legible sobre el banner oscuro');
 assert.match(css, /\.my-day-hygiene>summary\{[^}]*color:#dbeafe/, '.my-day-hygiene>summary debe usar un color claro (#dbeafe) legible sobre el banner oscuro');
-
-// Contraste: los <em> de Falta/Objetivo dentro de tarjetas blancas (secondary/muted) deben
-// llevar un override azul oscuro explícito, no heredar el #bfdbfe pensado para fondo oscuro.
-assert.match(
-  css,
-  /\.my-day-secondary \.my-day-card \.my-day-gap em,\.my-day-secondary \.my-day-card \.my-day-goal em,\.my-day-muted \.my-day-card \.my-day-gap em,\.my-day-muted \.my-day-card \.my-day-goal em\{color:#1d4ed8/,
-  'los <em> de .my-day-gap/.my-day-goal en tarjetas secondary/muted deben tener override azul oscuro (#1d4ed8)'
-);
 
 // CTA "Preparar seguimiento": .my-day-card .button es un <a>, no un <button>, y no hay
 // regla global .button; debe recibir estilo completo de botón con estados accesibles.
@@ -47,7 +55,7 @@ assert.match(css, /\.my-day-card \.button\{[^}]*text-decoration:none/, '.my-day-
 assert.match(css, /\.my-day-card \.button\{[^}]*padding:/, '.my-day-card .button debe tener padding');
 assert.match(css, /\.my-day-card \.button\{[^}]*border-radius:/, '.my-day-card .button debe tener border-radius');
 assert.match(css, /\.my-day-card \.button\{[^}]*font-weight:/, '.my-day-card .button debe tener font-weight');
-assert.match(css, /\.my-day-card \.button\{[^}]*min-height:40px/, '.my-day-card .button debe tener un min-height de touch target razonable');
+assert.match(css, /\.my-day-card \.button\{[^}]*min-height:44px/, '.my-day-card .button debe tener un objetivo táctil de 44px (paquete de QA visual consolidado)');
 assert.match(css, /\.my-day-card \.button\{[^}]*margin-top:4px/, '.my-day-card .button debe conservar margin-top:4px');
 assert.match(css, /\.my-day-card \.button\{[^}]*justify-self:start/, '.my-day-card .button debe conservar justify-self:start');
 assert.match(css, /\.my-day-card \.button:hover\{[^}]*background:/, '.my-day-card .button debe tener estado :hover');
