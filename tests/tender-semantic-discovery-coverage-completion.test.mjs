@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { resolveTenderInventorySourceTexts } from '../tender-requirement-inventory.js';
 import {
   discoverTenderSemanticManifest,
+  TENDER_SEMANTIC_DISCOVERY_NO_REQUIREMENTS_CODE,
   TENDER_SEMANTIC_DISCOVERY_POLICY,
   TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
   TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES,
@@ -167,12 +168,12 @@ async function assertRejection(promiseFactory, { code, message }) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v7',
+    'tender-semantic-discovery.v8',
     'the model-facing coverage contract changed again in v5 (dispositions became optional), v6 '
-    + 'changed how a repeated obligation is canonicalized, and v7 replaced the single request with a '
-    + 'multi-batch input (batch index/count, no more omitted_source_unit_ids), each a material change '
-    + 'to what the model is asked for and to how its answer is canonicalized, so the policy version '
-    + 'must move',
+    + 'changed how a repeated obligation is canonicalized, v7 replaced the single request with a '
+    + 'multi-batch input (batch index/count, no more omitted_source_unit_ids), and v8 retracts a '
+    + 'self-contradicting claim instead of rejecting the whole batch, each a material change to what '
+    + 'the model is asked for and to how its answer is canonicalized, so the policy version must move',
   );
 
   // The exhaustive-enumeration demand is GONE, and no equivalent survives anywhere in the policy.
@@ -507,44 +508,85 @@ function permutationsOf(items) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// 4. Completing an omission is NOT repairing a claim: every explicit overlap, duplicate and foreign
-//    reference is still rejected fail-closed, exactly as under v3.
+// 4. Completing an omission is NOT repairing a claim. Every CORRUPTION reference (foreign/
+//    hallucinated id, unanchored label) is still rejected fail-closed, exactly as under v3. A
+//    self-CONTRADICTION (v8) is no longer one of those rejections: it is retracted, and its units
+//    fall to the very same completion pass this file otherwise pins — see
+//    tests/tender-semantic-discovery-v8-contradiction-retraction.test.mjs for the whole contract.
 // ---------------------------------------------------------------------------------------------
 {
   // Overlap with a DERIVED citation — the model dispositioned a unit its own label already claims.
+  // v8: retracted, not rejected. The derived citation is never moved, and the retracted disposition
+  // leaves no trace in either list.
   for (const [field, entry] of [
     ['excluded', { source_unit_id: unitIdByParagraph[0], reason: 'duplicate_source_unit' }],
     ['unresolved', { source_unit_id: unitIdByParagraph[0], reason: 'obligation_not_classifiable' }],
   ]) {
-    await assertRejection(
-      () => run({ ...baseProposal(), [field]: [entry] }),
-      { code: 'v4_discovery_uniqueness_invariant', message: /disposición duplicada/ },
+    const proposal = baseProposal();
+    proposal[field] = [...proposal[field], entry];
+    const overlapping = await run(proposal);
+    assert.deepEqual(
+      overlapping.semanticManifest.requirements[0].citations.map(citation => citation.source_unit_id),
+      [unitIdByParagraph[0]],
+      `${field}: the derived citation must survive the contradictory disposition untouched`,
+    );
+    assert.equal(
+      overlapping.semanticManifest.excluded.some(item => item.source_unit_id === unitIdByParagraph[0]), false,
+      `${field}: the retracted disposition must leave no trace in excluded`,
+    );
+    assert.equal(
+      overlapping.semanticManifest.unresolved.some(item => item.source_unit_id === unitIdByParagraph[0]), false,
+      `${field}: the retracted disposition must leave no trace in unresolved`,
+    );
+    assert.deepEqual(
+      overlapping.semanticManifest.excluded.map(item => item.source_unit_id),
+      [unitIdByParagraph[1]],
+      `${field}: the unrelated, valid exclusion of paragraph 1 must survive untouched`,
+    );
+    assert.equal(overlapping.discoveryLedger.batches[0].retracted_disposition_units, 1);
+    assert.deepEqual(
+      overlapping.discoveryLedger.retractions,
+      { conflicting_obligation_keys: 0, retracted_requirement_occurrences: 0 },
+      `${field}: a disposition retraction is not an obligation retraction`,
     );
   }
 
-  // The same unit dispositioned twice, within one list and across both.
-  await assertRejection(
-    () => run({
-      requirements: [requirement()],
+  // The same unit dispositioned twice, within one list and across both. v8: both claims are
+  // retracted and the unit falls to the completion — `excluded` never wins over `unresolved`.
+  for (const dispositions of [
+    {
       excluded: [
         { source_unit_id: unitIdByParagraph[1], reason: 'descriptive_or_contextual' },
         { source_unit_id: unitIdByParagraph[1], reason: 'not_an_obligation' },
       ],
       unresolved: [],
-    }),
-    { code: 'v4_discovery_uniqueness_invariant', message: /disposición duplicada/ },
-  );
-  await assertRejection(
-    () => run({
-      requirements: [requirement()],
+    },
+    {
       excluded: [{ source_unit_id: unitIdByParagraph[1], reason: 'descriptive_or_contextual' }],
       unresolved: [{ source_unit_id: unitIdByParagraph[1], reason: 'obligation_not_classifiable' }],
-    }),
-    { code: 'v4_discovery_uniqueness_invariant', message: /disposición duplicada/ },
-  );
+    },
+  ]) {
+    const result = await run({ requirements: [requirement()], ...dispositions });
+    assert.equal(
+      result.semanticManifest.excluded.some(item => item.source_unit_id === unitIdByParagraph[1]), false,
+      'a contradicted unit must never be filed as an exclusion',
+    );
+    assert.deepEqual(
+      result.semanticManifest.unresolved.find(item => item.source_unit_id === unitIdByParagraph[1]),
+      {
+        source_unit_id: unitIdByParagraph[1],
+        unit_hash: unitHashById.get(unitIdByParagraph[1]),
+        origin: 'semantic',
+        reason: 'source_unit_not_dispositioned',
+      },
+      'a contradicted unit must fall to the completion with the closed reason, never with either claimed reason',
+    );
+    assert.equal(result.discoveryLedger.batches[0].retracted_disposition_units, 1);
+  }
 
-  // The same obligation proposed twice with a CONFLICTING explicit field. Nothing is merged and
-  // nothing is completed around it: this module never picks which of two categories was meant.
+  // The same obligation proposed twice with a CONFLICTING explicit field. v8: retracted, not
+  // rejected — but it is the ONLY obligation this proposal states, so the merged frontier resolves
+  // nothing and the run is still rejected fail-closed, at the v5 zero-requirements boundary instead.
   // (An EXACT repetition is a different case entirely — see
   // tests/tender-semantic-discovery-v6-repeat-coalescing.test.mjs.)
   await assertRejection(
@@ -552,7 +594,7 @@ function permutationsOf(items) {
       ...baseProposal(),
       requirements: [requirement(), { ...requirement(), category: 'habilitating' }],
     }),
-    { code: 'v4_discovery_uniqueness_invariant', message: /obligación vacía o duplicada/ },
+    { code: TENDER_SEMANTIC_DISCOVERY_NO_REQUIREMENTS_CODE, message: /no identificó ninguna obligación propia/ },
   );
 
   // A hallucinated id, and an id belonging to another snapshot's inventory.

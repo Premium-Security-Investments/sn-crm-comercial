@@ -152,9 +152,30 @@ await rejectsProposal(proposal => { proposal.requirements[0].category = 'strateg
 // A legacy or hostile answer cannot smuggle a citation back in: a source id inside a requirement is
 // an invalid key, rejected on shape before any id is read.
 await rejectsProposal(proposal => { proposal.requirements[0].source_unit_ids = [liquidity.source_unit_id]; }, /clave|inválid|propuesta/i);
-// The liquidity unit is already cited by the derived binding, so disposing of it again is an
-// overlap, not a second opinion.
-await rejectsProposal(proposal => { proposal.excluded.push({ source_unit_id: liquidity.source_unit_id, reason: 'not_an_obligation' }); }, /disposici|duplicad|unidad/i);
+
+// The liquidity unit is already cited by the derived binding, so disposing of it again is a
+// self-contradiction. v8: it is retracted rather than rejecting the whole run — the citation is
+// never moved, and the contradictory disposition leaves no trace.
+{
+  const proposal = validProposal();
+  proposal.excluded.push({ source_unit_id: liquidity.source_unit_id, reason: 'not_an_obligation' });
+  const result = await discoverTenderSemanticManifest({
+    client: { run: async () => ({ content: JSON.stringify(proposal), usage: { input_tokens: 1, output_tokens: 1 } }) },
+    model: 'test-model', timeoutMs: 1000, idempotencyKey: 'overlap-retraction', inventory: INVENTORY, documents: DOCUMENTS,
+  });
+  const financial = result.semanticManifest.requirements.find(requirement => requirement.front === 'financial');
+  assert.deepEqual(financial.citations, [citationOf(liquidity)], 'the derived citation must survive the contradiction untouched');
+  assert.equal(
+    result.semanticManifest.excluded.some(entry => entry.source_unit_id === liquidity.source_unit_id), false,
+    'the contradictory disposition over the cited unit must leave no trace',
+  );
+  assert.deepEqual(
+    result.semanticManifest.excluded.map(entry => entry.source_unit_id).sort(),
+    [financialHeading.source_unit_id, technicalHeading.source_unit_id].sort(),
+    'the two unrelated, valid exclusions must survive untouched',
+  );
+  assert.equal(result.discoveryLedger.batches[0].retracted_disposition_units, 1);
+}
 
 // v4: dropping a requirement leaves the monitoring clause unlisted. That is an omission, not a
 // wrong claim, so it no longer rejects the turn: the obligation the proposal DID state survives and

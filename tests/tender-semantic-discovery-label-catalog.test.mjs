@@ -109,14 +109,14 @@ function proposalWith(requirements, derivedOwnerIds) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v7',
-    'the wire contract this catalog feeds is v7: the label enum is pinned, a requirement carries no '
+    'tender-semantic-discovery.v8',
+    'the wire contract this catalog feeds is v8: the label enum is pinned, a requirement carries no '
     + 'model-provided source id (the server derives front_evidence/citations from this same catalog), '
     + 'an undispositioned source unit is completed into unresolved instead of rejecting the turn, the '
     + 'disposition lists themselves are optional, an exact repetition of one catalog label is '
-    + 'canonicalized once, and the input is now one of possibly several batches (batch index/count) '
-    + 'instead of a single request — each a material model-facing change that must bump the policy '
-    + 'version',
+    + 'canonicalized once, the input is now one of possibly several batches (batch index/count) '
+    + 'instead of a single request, and a self-contradicting claim is retracted instead of rejecting '
+    + 'the whole batch — each a material model-facing change that must bump the policy version',
   );
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
@@ -323,8 +323,9 @@ let capturedRequest;
 
 // The enum is global to the request, so it still cannot express "this excerpt belongs to unit X".
 // Under v3 that is no longer a relation the model can get wrong: it names no unit, and the catalog
-// itself decides. A candidate exclusive to the anchor unit is bound to THAT unit, and a proposal
-// that disposes of the derived owner elsewhere is rejected fail-closed rather than reconciled.
+// itself decides. A candidate exclusive to the anchor unit is bound to THAT unit, and under v8 a
+// proposal that disposes of the derived owner elsewhere is retracted rather than reconciled OR
+// rejected — the citation is never moved.
 {
   const otherUnitIds = inventory.source_units
     .map(unit => unit.source_unit_id)
@@ -344,12 +345,19 @@ let capturedRequest;
   );
 
   // The same proposal, with the anchor unit dispositioned as if some other unit owned the label:
-  // the server does not move the citation, it rejects the whole proposal.
-  await assert.rejects(
-    () => run(capturingClient(proposalWith([requirement], [otherUnitIds[0]]))),
-    /disposición duplicada/,
-    'a unit the catalog binds to a label may not also be dispositioned by the model',
+  // v8 retracts the contradictory disposition instead of rejecting the whole proposal, and the
+  // server still does not move the citation.
+  const contradicted = await run(capturingClient(proposalWith([requirement], [otherUnitIds[0]])));
+  assert.deepEqual(
+    contradicted.semanticManifest.requirements[0].citations.map(citation => citation.source_unit_id),
+    [anchorUnit.source_unit_id],
+    'a unit the catalog binds to a label keeps that citation even when the model also dispositions it',
   );
+  assert.equal(
+    contradicted.semanticManifest.excluded.some(item => item.source_unit_id === anchorUnit.source_unit_id), false,
+    'the contradictory disposition over the anchor unit must leave no trace',
+  );
+  assert.equal(contradicted.discoveryLedger.batches[0].retracted_disposition_units, 1);
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -201,7 +201,82 @@ import {
 // the closed literal-label enum, server-derived citations, the four wire fields, the optional/
 // secondary disposition lists, the zero-requirements boundary and the v4/v5/v6 canonicalization rules
 // — is unchanged; only the batching context is new, so the version moves for that reason alone.
-export const TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION = 'tender-semantic-discovery.v7';
+//
+// v8 (AGT-002 V3 intra-batch contradiction retraction, after the real Procuraduria run
+// bb7876bb-297e-4d0d-baf3-d79a5151a973). That job reached the bridge, which answered in ~120 s over a
+// 13-document snapshot; the FIRST batch's answer was then rejected here at semantic_validation under
+// `v4_discovery_uniqueness_invariant`. Because any per-batch failure fails the whole discovery closed
+// (deliberately — see the catch below), that single sentence of the first batch destroyed the entire
+// run: every later batch was never even requested, no analysis_run existed, nothing was persisted,
+// and the job ended unavailable/invalid_output with the previous canonical preserved. No raw output
+// is stored and there is no wire-level replay, so the exact offending claim is unrecoverable — but it
+// does not need to be, because BOTH gates that mint that code named the same structural fact: the
+// model contradicted itself inside one batch, either about one obligation (the same catalog label
+// with a different kind/front/category) or about one unit (two dispositions, or a disposition over a
+// unit its own label already binds).
+//
+// The root cause is an asymmetry this module already knew how to resolve. `mergeBatchProposals` has
+// always handled the IDENTICAL contradiction across batches without burning anything: a key whose
+// occurrences disagree on any explicit field is retracted in full, and every unit it would have cited
+// falls through to the coverage completion as an explicit `source_unit_not_dispositioned` gap. The
+// same contradiction one batch earlier — inside a single answer — was fatal for the whole expediente.
+// Two identical facts, two opposite outcomes, decided only by which request the sentence landed in.
+//
+// v8 removes the asymmetry in the direction the merge already proved safe:
+//
+//   - a conflicting restatement of an obligation is no longer thrown. Each distinct occurrence is
+//     emitted as its own entry, and `mergeBatchProposals` retracts the whole obligation key exactly
+//     as it already retracts a cross-batch conflict. Nothing is chosen: no category, front or kind is
+//     preferred, no occurrence "wins", and the units those occurrences would have cited are left
+//     undispositioned so the one completion pass turns them into visible `unresolved` holes;
+//   - a unit carrying two DIFFERENT explicit dispositions (twice in one list, or once in each) is no
+//     longer thrown either, and this module still refuses to pick `excluded` over `unresolved`: ALL
+//     of that unit's dispositions are retracted and it falls to the same completion, ending as
+//     `unresolved`/`source_unit_not_dispositioned` rather than as either claim;
+//   - a disposition over a unit that any proposed label of the same batch binds is retracted for the
+//     same reason — it contradicts a server-derived citation the model cannot see. The citation is
+//     never moved or dropped to accommodate it.
+//
+// What v8 deliberately does NOT relax, because none of it is a contradiction the server can resolve
+// without inventing something: an EXACT repetition still coalesces and nothing else does; a foreign
+// or hallucinated source_unit_id, a reason or front/kind/category outside its closed vocabulary, a
+// label outside this batch's own literal catalog, a requirement smuggling a source id, a malformed
+// shape and an unusable/empty provider answer all still reject the whole run fail-closed with the
+// codes they always had. Corruption is still corruption; only self-contradiction became survivable.
+//
+// The safety of that trade rests entirely on where a retraction lands. A retracted obligation is not
+// silently dropped in favour of a guess — it produces MORE unresolved units, never fewer, so
+// `discovery_coverage.status` stays 'partial', `decision_ready` stays false, `recommendation` stays
+// 'pause' and the analysis packet still raises `material_omissions`. A contradicted expediente is
+// therefore strictly less decidable than a coherent one, exactly as it should be, and the run that
+// found the contradiction survives to report every OTHER obligation it correctly identified instead
+// of being thrown away whole.
+//
+// Traceability moves with it, without ever touching content: the retraction is not merely inferable
+// from a bigger `unresolved` list. Each completed batch's ledger entry now carries
+// `retracted_disposition_units` (a count), and the merged ledger carries
+// `retractions: {conflicting_obligation_keys, retracted_requirement_occurrences}` — counts only, no
+// id, no label, no reason, no fragment of the expediente, exactly like every other ledger field. No
+// new validation code is minted, because after this change neither contradiction rejects anything:
+// splitting a code nobody can reach any more would add a name, not a diagnosis.
+//
+// `v4_discovery_uniqueness_invariant` is deliberately KEPT in the closed code catalog and keeps every
+// classifier arm it had. Its live producers are gone (only the unreachable empty-obligation-key
+// defence still throws that message), but a persisted `output_rejected` row from run
+// bb7876bb-297e-4d0d-baf3-d79a5151a973 — or any other closed under v1..v7 — must keep classifying to
+// the same code it was recorded under instead of degrading to the generic fallback.
+//
+// This changes how a provider answer is canonicalized AND what the policy truthfully tells the model
+// about the cost of contradicting itself, so the version moves with it. Correcting the v5 note above:
+// since v7 the provider idempotency key IS derived from this string, through the per-batch hash
+// (`computeTenderSemanticDiscoveryBatchHash` mixes in `policy_version`), so this bump re-keys every
+// batch request of a fresh run. That is the intended behaviour and not a regression: a response
+// reserved under the v7 contract must never be replayed for a v8 request that asks for something
+// different. Nothing already persisted is re-keyed — the analysis identities
+// (AGT002_INTEGRAL_V3_POLICY_VERSION, AGT002_PREVIEW_DEFAULT_POLICY_VERSION) are untouched, as is the
+// manifest assembler and its own hashes — and the same snapshot still re-derives byte-identical
+// requests on every re-run under v8.
+export const TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION = 'tender-semantic-discovery.v8';
 export const TENDER_SEMANTIC_CATEGORIES = Object.freeze([
   'discard', 'habilitating', 'technical', 'financial_execution',
 ]);
@@ -253,6 +328,18 @@ export const TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS = 40_000;
 // which nonetheless resolved no obligation of this expediente at all — and it is deliberately
 // distinct from every v4_* member above, all of which classify a WRONG claim. This one classifies
 // an EMPTY answer, whose only honest outcome is a paused run (see NO_REQUIREMENTS_MESSAGE).
+//
+// v8: 'v4_discovery_uniqueness_invariant' joins 'v4_discovery_coverage_invariant' in the same
+// position, and for the same reason. Its two live producers are gone — a conflicting restatement of
+// one obligation and a duplicated/overlapping disposition are now RETRACTED rather than rejected
+// (canonicalizeBatchProposal/mergeBatchProposals) — so normal canonicalization no longer emits it;
+// the only throw left carrying that message is the unreachable empty-obligation-key defence. The
+// member and both classifier arms are deliberately KEPT so a message from an already-closed
+// historical diagnostic — the persisted `output_rejected` row of the real Procuraduria run, a
+// replayed job payload, an existing consumer's stored attribution — still classifies to exactly the
+// code it classified to under v1..v7 instead of degrading to the generic fallback. No new member is
+// added by v8: the retraction is not a rejection, it is reported as safe COUNTS on the discovery
+// ledger, and minting a code for a gate that can no longer fire would name nothing.
 export const TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES = Object.freeze([
   'v4_discovery_missing_content',
   'v4_discovery_invalid_json',
@@ -331,6 +418,13 @@ function discoveryError(message, stage, code) {
  * NO_REQUIREMENTS_MESSAGE wording this module owns. It is checked first because it is the one
  * rejection that is not a wrong claim, and it is the only arm returning a v5_ code — every other
  * arm keeps the exact v4_ code it has always returned, so no existing attribution changes meaning.
+ *
+ * v8: the two 'disposición duplicada' / 'obligación vacía o duplicada' arms are retained on exactly
+ * the same historical footing as the 'sin disponer' one. A conflicting obligation and a duplicated
+ * or overlapping disposition are no longer thrown at all — they are retracted, and their units fall
+ * to the coverage completion — so the only live path to the second arm is the unreachable
+ * empty-obligation-key defence. Both arms stay so a diagnostic closed under v1..v7 keeps classifying
+ * to 'v4_discovery_uniqueness_invariant'.
  */
 function classifySemanticDiscoveryInvariant(message) {
   const text = String(message || '');
@@ -365,13 +459,16 @@ const DISPOSITION_KEYS = Object.freeze(['source_unit_id', 'reason']);
 // tender-semantic-label-catalog.js credits a candidate by containment rather than by which unit
 // generated it.
 //
-// The uniqueness sentences (one requirement per obligation key, one disposition per unit) still
-// state model-facing what canonicalizeProposal has always rejected locally under
-// 'v4_discovery_uniqueness_invariant'. They remain policy text ONLY: nothing is repaired here, and
-// a real run that repeats an obligation key with any conflicting field, or repeats a disposition, is
-// still rejected fail-closed exactly as before. v6 adds one sentence beside them, stating the single
-// narrow case canonicalizeProposal now canonicalizes instead of rejecting: an EXACT repetition of
-// the same label with identical explicit fields, which is a restatement rather than a second claim.
+// The uniqueness sentences (one requirement per obligation key, one disposition per unit) are
+// unchanged in what they ASK for. They remain policy text ONLY: nothing is repaired, merged or
+// guessed here. v6 added one sentence beside them for the single narrow case that canonicalizes
+// instead of rejecting — an EXACT repetition of the same label with identical explicit fields, a
+// restatement rather than a second claim — and v8 states truthfully what a CONTRADICTION now costs
+// instead of threatening a rejection that no longer happens: the server retracts every conflicting
+// occurrence (of the obligation, or of the unit's disposition) and the affected units stay
+// unresolved, which loses the obligation and keeps the run paused. The sentences deliberately keep
+// asking for one claim per obligation and one disposition per unit, because retraction is a strictly
+// worse outcome for the expediente than a coherent answer, not a permission.
 //
 // v5: the exhaustive-enumeration duty is GONE from the policy, because under v4 it was both
 // impossible to satisfy honestly at scale and unnecessary. "Dispón todas las source_units
@@ -417,10 +514,10 @@ export const TENDER_SEMANTIC_DISCOVERY_POLICY = [
   'Las listas "excluded" y "unresolved" son opcionales y secundarias: no tienes que enumerar en ellas todas las unidades restantes, y no debes rellenarlas por cobertura. Inclúyelas sólo cuando tengas alta confianza en la disposición: en "excluded", una unidad que claramente no sustenta ninguna obligación de este expediente; en "unresolved", una unidad que sí parece relevante pero que el texto recibido no te permite resolver.',
   'Puedes dejar sin listar cualquier unidad que no sustente un requisito: el servidor la conservará por su cuenta como unidad sin resolver con la razón "source_unit_not_dispositioned". Una omisión nunca se convierte en exclusión ni se da por analizada, no rechaza tu propuesta, y queda registrada como un vacío del expediente que mantiene el análisis en pausa, sin disponibilidad para decidir. Por eso no gastes la respuesta enumerando unidades: gástala en identificar bien las obligaciones.',
   'No inventes requisitos para llenar la lista. Si el texto recibido realmente no contiene ninguna obligación, devuelve "requirements" vacío: es una respuesta permitida por el esquema, y el servidor detendrá el análisis por falta de frontera propia en lugar de analizar este proceso contra obligaciones ajenas.',
-  'No incluyas en "excluded" ni en "unresolved" ninguna unidad cuyo texto contenga literalmente un fragmento que hayas elegido como "label": esa unidad ya queda citada por el servidor, y una disposición adicional sobre ella hace que se rechace toda la propuesta. Dispón allí, si acaso, sólo unidades restantes.',
+  'No incluyas en "excluded" ni en "unresolved" ninguna unidad cuyo texto contenga literalmente un fragmento que hayas elegido como "label": esa unidad ya queda citada por el servidor, y una disposición adicional sobre ella se retira sin alterar la cita. Dispón allí, si acaso, sólo unidades restantes.',
   'Propón cada obligación semántica una sola vez: dos requisitos no pueden usar etiquetas que deriven la misma clave de obligación normalizada (la etiqueta plegada a minúsculas, sin tildes y con todo signo no alfanumérico tratado como separador). Si varias unidades sustentan la misma obligación, propón un único requisito con un solo fragmento: el servidor consolida por sí mismo todas las unidades que contienen ese fragmento en ese único requisito. El enumerado de requirements.items.properties.label.enum ya es único por esa misma clave de obligación normalizada en todo el expediente, entre todas las unidades visibles: nunca contiene dos fragmentos, de la misma unidad o de unidades distintas, que pleguen a la misma clave, así que esta regla nunca te exige elegir entre dos candidatos del enumerado para una sola obligación.',
-  'Si repites una obligación con exactamente el mismo "label", "kind", "front" y "category", el servidor la canoniza una sola vez sin contarla dos veces; pero si repites esa etiqueta u obligación con algún campo distinto, se rechaza toda la propuesta.',
-  'Las disposiciones tampoco se repiten: ningún source_unit_id puede aparecer dos veces en "excluded", dos veces en "unresolved", ni en ambas listas, ni figurar en alguna de ellas si ya está citado por un requisito. Ninguna unidad puede recibir más de una disposición.',
+  'Si repites una obligación con exactamente el mismo "label", "kind", "front" y "category", el servidor la canoniza una sola vez sin contarla dos veces; pero si repites esa etiqueta u obligación con algún campo distinto, el servidor no elige entre las versiones en conflicto: retira todas sus ocurrencias, esa obligación se pierde para este expediente y las unidades que la sustentaban quedan sin resolver, con el análisis en pausa.',
+  'Las disposiciones tampoco se repiten: ningún source_unit_id puede aparecer dos veces en "excluded", dos veces en "unresolved", ni en ambas listas, ni figurar en alguna de ellas si ya está citado por un requisito. Ninguna unidad puede recibir más de una disposición. Si una unidad recibe disposiciones distintas, el servidor tampoco elige entre ellas: las retira todas y esa unidad queda sin resolver.',
   'Usa exclusivamente source_unit_id recibidos, y sólo dentro de "excluded" y "unresolved". Nunca inventes identificadores, hashes, documentos ni evidencia.',
   'Antes de responder, revisa cada "label": debe ser, carácter por carácter, uno de los fragmentos del enumerado, y por lo tanto una subcadena exacta y literal del texto de alguna unidad fuente de este expediente. Si algún label no lo es, elige del mismo enumerado otro fragmento; si no existe uno adecuado, retira el requisito y dispón esa unidad como exclusión explícita o como unidad sin resolver, o simplemente déjala sin listar. Nunca escribas un fragmento fuera del enumerado.',
   'Devuelve exclusivamente el JSON del esquema solicitado, sin texto adicional.',
@@ -606,13 +703,24 @@ function resolveCatalogLabel(value, labelCandidates) {
 
 /**
  * Canonicalizes ONE batch's provider answer against ONLY that batch's own units, catalog and owner
- * index — every fail-closed gate this module has always applied (exact keys, closed vocabularies,
- * literal catalog membership, derived citations, literal anchor, duplicate obligation/disposition)
- * is unchanged, just scoped to the batch. What it does NOT do, unlike the pre-v7 single-request
- * `canonicalizeProposal`, is complete coverage for units the batch left undispositioned, or assemble
- * a manifest: both happen exactly once, over the FULL corpus, in `mergeBatchProposals` below — so a
- * unit whose citing requirement is later retracted at merge time (a cross-batch obligation conflict)
- * is never wrongly counted as already covered here.
+ * index. Every fail-closed gate over a CORRUPT answer is unchanged, just scoped to the batch: exact
+ * keys, closed vocabularies, literal catalog membership, derived citations, the literal anchor and
+ * every foreign/unknown source id still reject the whole run.
+ *
+ * What it does NOT do, unlike the pre-v7 single-request `canonicalizeProposal`, is complete coverage
+ * for units the batch left undispositioned, or assemble a manifest: both happen exactly once, over
+ * the FULL corpus, in `mergeBatchProposals` below — so a unit whose citing requirement is later
+ * retracted at merge time is never wrongly counted as already covered here.
+ *
+ * v8: it also no longer REJECTS a self-contradiction. `requirements` is canonicalized into one entry
+ * per distinct claim (an exact repetition still coalescing into the first), so an obligation key
+ * claimed twice with conflicting explicit fields reaches `mergeBatchProposals` as two entries and is
+ * retracted there by the same rule that has always retracted a cross-batch conflict. Dispositions
+ * are canonicalized here, where the batch's own derived bindings are known: a unit carrying two
+ * DIFFERENT dispositions, or one over a unit any proposed label of this batch binds, has ALL of its
+ * dispositions retracted — this module never picks `excluded` over `unresolved`, and never moves or
+ * drops a server-derived citation to accommodate one. Every retracted unit simply stays
+ * undispositioned and is picked up by the single completion pass as an explicit `unresolved` hole.
  */
 function canonicalizeBatchProposal(parsed, { units, labelCandidates, labelOwners }) {
   exactKeys(parsed, TOP_LEVEL_KEYS, 'La propuesta semántica');
@@ -621,13 +729,20 @@ function canonicalizeBatchProposal(parsed, { units, labelCandidates, labelOwners
   }
 
   const visibleById = new Map(units.map(unit => [unit.source_unit_id, unit]));
-  const dispositioned = new Set();
-  const canonicalRequirements = [];
-  const categoryByObligationKey = new Map();
-  // v6: obligation key -> the stable fingerprint of the explicit semantic fields the accepted
-  // requirement was built from, so a later occurrence of the same key can be told apart as an exact
-  // repetition (coalesced) or a conflicting restatement (rejected).
-  const semanticFieldsByObligationKey = new Map();
+  // Every unit that ANY proposed requirement of this batch binds through its label — including the
+  // occurrences of an obligation the merge will later retract. A disposition over one of them
+  // contradicts a citation the server derived and the model cannot see, so it is retracted below;
+  // the citation itself is never touched.
+  const boundUnitIds = new Set();
+  // One entry per DISTINCT claim, in the order the batch stated them:
+  // {obligation_key, category, fields, requirement}. Grouping and conflict resolution belong to
+  // `mergeBatchProposals`, so intra-batch and cross-batch contradictions travel exactly one code path.
+  const canonicalProposals = [];
+  // v6/v8: obligation key -> the set of stable fingerprints of the explicit semantic fields already
+  // claimed for it in THIS batch. A fingerprint already present is an exact repetition and adds
+  // nothing; a new one is a second, conflicting claim about the same obligation and is emitted as its
+  // own entry so the merge can retract the whole key without this module ever choosing between them.
+  const fingerprintsByObligationKey = new Map();
 
   for (const [index, proposed] of parsed.requirements.entries()) {
     const label = `requirements[${index}]`;
@@ -682,75 +797,120 @@ function canonicalizeBatchProposal(parsed, { units, labelCandidates, labelOwners
     if (!obligationKey) {
       throw new Error(`${label}: obligación vacía o duplicada en la propuesta semántica.`);
     }
-    // v6 exact-repeat coalescing, placed BEFORE the uniqueness rejection and therefore before the
-    // manifest is assembled. The fingerprint is the WHOLE model-decided object with the model's
-    // rendering of the label replaced by the server-owned catalog member, so two proposals coalesce
-    // only when they resolve to the identical catalogLabel AND every explicit semantic field
+    // v6 exact-repeat coalescing, unchanged. The fingerprint is the WHOLE model-decided object with
+    // the model's rendering of the label replaced by the server-owned catalog member, so two claims
+    // coalesce only when they resolve to the identical catalogLabel AND every explicit semantic field
     // matches — and a wire field added later is compared without this line changing.
     const semanticFields = stableJson({ ...proposed, label: catalogLabel });
-    const alreadyProposed = semanticFieldsByObligationKey.get(obligationKey);
-    if (alreadyProposed !== undefined) {
-      // A conflicting restatement of the same obligation is still a duplicate, fail-closed under
-      // the unchanged code: this module never picks which of two categories/fronts/kinds is meant.
-      if (alreadyProposed !== semanticFields) {
-        throw new Error(`${label}: obligación vacía o duplicada en la propuesta semántica.`);
-      }
-      // An identical repetition adds nothing: the canonical requirement already emitted for this
-      // obligation keeps its server-derived citations, and this occurrence dispositions no unit the
-      // first one did not already claim (same label => same owners).
-      continue;
+    let fingerprints = fingerprintsByObligationKey.get(obligationKey);
+    if (fingerprints === undefined) {
+      fingerprints = new Set();
+      fingerprintsByObligationKey.set(obligationKey, fingerprints);
     }
-    semanticFieldsByObligationKey.set(obligationKey, semanticFields);
-    categoryByObligationKey.set(obligationKey, proposed.category);
-    // Every owner unit is dispositioned by this requirement, so a model that ALSO excluded or
-    // left one of them unresolved is rejected below under 'disposición duplicada'.
-    for (const unit of citationUnits) dispositioned.add(unit.source_unit_id);
-    canonicalRequirements.push({
-      kind: proposed.kind,
-      // The catalog member itself, not the model's rendering of it: the server owns the label bytes
-      // exactly as it owns the ids and hashes.
-      label: catalogLabel,
-      front: proposed.front,
-      front_evidence: { source_unit_id: frontUnit.source_unit_id, unit_hash: frontUnit.unit_hash },
-      citations: citationUnits.map(unit => ({ source_unit_id: unit.source_unit_id, unit_hash: unit.unit_hash })),
+    // Recorded for EVERY occurrence, before the coalescing check: whether this claim survives the
+    // merge or not, the model did choose a label these units literally state, so its own contrary
+    // disposition over one of them is a contradiction either way.
+    for (const unit of citationUnits) boundUnitIds.add(unit.source_unit_id);
+    // An identical repetition adds nothing: the entry already emitted for this obligation keeps its
+    // server-derived citations, and this occurrence binds no unit the first one did not (same label
+    // => same owners).
+    if (fingerprints.has(semanticFields)) continue;
+    // v8: a CONFLICTING restatement is emitted as its own entry instead of throwing. It is not
+    // accepted — `mergeBatchProposals` retracts every occurrence of an obligation key whose claims
+    // disagree — it is merely resolved in the one place that already resolved the identical
+    // cross-batch case, and without this module ever deciding which category/front/kind was meant.
+    fingerprints.add(semanticFields);
+    canonicalProposals.push({
+      obligation_key: obligationKey,
+      category: proposed.category,
+      fields: semanticFields,
+      requirement: {
+        kind: proposed.kind,
+        // The catalog member itself, not the model's rendering of it: the server owns the label bytes
+        // exactly as it owns the ids and hashes.
+        label: catalogLabel,
+        front: proposed.front,
+        front_evidence: { source_unit_id: frontUnit.source_unit_id, unit_hash: frontUnit.unit_hash },
+        citations: citationUnits.map(unit => ({ source_unit_id: unit.source_unit_id, unit_hash: unit.unit_hash })),
+      },
     });
   }
 
-  function canonicalDispositions(entries, reasons, field) {
-    const canonical = [];
-    for (const [index, entry] of entries.entries()) {
+  // Shape, closed vocabulary and inventory membership are UNCHANGED and still fail-closed: an entry
+  // with unexpected keys, a reason outside its closed vocabulary, or a source_unit_id this batch
+  // never received still rejects the whole run. Only the RELATION between two otherwise-valid
+  // dispositions of one unit is resolved differently below.
+  function declaredDispositions(entries, reasons, field) {
+    return entries.map((entry, index) => {
       exactKeys(entry, DISPOSITION_KEYS, `${field}[${index}]`);
       const unit = visibleById.get(entry.source_unit_id);
       if (!unit) throw new Error(`${field}[${index}] refiere una source_unit no permitida para este snapshot.`);
       if (!reasons.includes(entry.reason)) throw new Error(`${field}[${index}] tiene una razón no permitida.`);
-      if (dispositioned.has(unit.source_unit_id)) throw new Error(`La unidad ${unit.source_unit_id} tiene una disposición duplicada en la propuesta semántica.`);
-      dispositioned.add(unit.source_unit_id);
-      canonical.push({ source_unit_id: unit.source_unit_id, reason: entry.reason });
-    }
-    return canonical;
+      return { field, source_unit_id: unit.source_unit_id, reason: entry.reason };
+    });
   }
 
-  const excluded = canonicalDispositions(parsed.excluded, TENDER_SEMANTIC_EXCLUSION_REASONS, 'excluded');
-  const unresolved = canonicalDispositions(parsed.unresolved, TENDER_SEMANTIC_UNRESOLVED_REASONS, 'unresolved');
+  const declared = [
+    ...declaredDispositions(parsed.excluded, TENDER_SEMANTIC_EXCLUSION_REASONS, 'excluded'),
+    ...declaredDispositions(parsed.unresolved, TENDER_SEMANTIC_UNRESOLVED_REASONS, 'unresolved'),
+  ];
+  // A unit's disposition is a single claim: the list it was filed under plus its closed reason. Two
+  // entries carrying the identical claim are one restatement (coalesced, exactly like an exact
+  // requirement repeat); two entries carrying DIFFERENT claims are a contradiction.
+  const claimsByUnit = new Map();
+  for (const entry of declared) {
+    if (!claimsByUnit.has(entry.source_unit_id)) claimsByUnit.set(entry.source_unit_id, new Set());
+    claimsByUnit.get(entry.source_unit_id).add(`${entry.field}:${entry.reason}`);
+  }
+  const retractedUnitIds = new Set();
+  for (const [sourceUnitId, claims] of claimsByUnit) {
+    // Retracted in full, never arbitrated: this module does not choose between `excluded` and
+    // `unresolved` for a unit the model dispositioned twice, and does not let a disposition displace
+    // a citation the server derived from the model's own label.
+    if (claims.size > 1 || boundUnitIds.has(sourceUnitId)) retractedUnitIds.add(sourceUnitId);
+  }
 
-  return { requirements: canonicalRequirements, excluded, unresolved, categoryByObligationKey, semanticFieldsByObligationKey };
+  const excluded = [];
+  const unresolved = [];
+  const keptUnitIds = new Set();
+  for (const entry of declared) {
+    if (retractedUnitIds.has(entry.source_unit_id) || keptUnitIds.has(entry.source_unit_id)) continue;
+    keptUnitIds.add(entry.source_unit_id);
+    (entry.field === 'excluded' ? excluded : unresolved).push({
+      source_unit_id: entry.source_unit_id, reason: entry.reason,
+    });
+  }
+
+  return {
+    requirements: canonicalProposals,
+    excluded,
+    unresolved,
+    // Safe count only — never an id, a reason or a label — so a caller can tell a batch that
+    // contradicted itself apart from one that simply said less (see `discoveryLedger`).
+    retracted_disposition_units: retractedUnitIds.size,
+  };
 }
 
 /**
  * Merges every batch's canonicalized answer into ONE semantic manifest over the FULL corpus, and is
  * the only place `assembleTenderSemanticManifest` and the v5 zero-requirements boundary now run.
  *
- * Requirements are grouped by `obligation_key` across batches (a batch can propose at most one
- * requirement per key, `canonicalizeBatchProposal` already guarantees that): a key seen in only one
- * batch is kept as-is; a key whose every occurrence carries the IDENTICAL explicit semantic
- * fingerprint (same server-owned catalog label, kind, front, category — v6's own coalescing rule,
- * just applied across batches instead of within one) is kept once, with citations UNIONED across
- * batches (each batch's own label-owner index only ever derives citations from that batch's own
- * units, so — unlike within-batch coalescing — the first occurrence alone does not already carry
- * every citing unit); a key whose occurrences disagree on any explicit field is a genuine conflict
- * this module never resolves — EVERY occurrence is retracted, and every unit it would have cited
- * falls through to the coverage completion below as an explicit, visible gap instead of the server
- * silently picking one claim over another.
+ * Requirements are grouped by `obligation_key` over every batch's canonical claims: a key claimed
+ * only once is kept as-is; a key whose every claim carries the IDENTICAL explicit semantic
+ * fingerprint (same server-owned catalog label, kind, front, category — v6's own coalescing rule)
+ * is kept once, with citations UNIONED (each batch's own label-owner index only ever derives
+ * citations from that batch's own units, so the first claim alone does not already carry every citing
+ * unit); a key whose claims disagree on any explicit field is a genuine conflict this module never
+ * resolves — EVERY occurrence is retracted, and every unit it would have cited falls through to the
+ * coverage completion below as an explicit, visible gap instead of the server silently picking one
+ * claim over another.
+ *
+ * v8: that grouping is now the ONLY conflict resolution in the module, so it covers the intra-batch
+ * contradiction as well. `canonicalizeBatchProposal` emits one entry per distinct claim rather than
+ * rejecting the second one, which means a self-contradicting batch is resolved by exactly the rule
+ * that already resolved the identical contradiction spread across two batches — and a key
+ * contradicted anywhere is retracted everywhere, so a coherent claim in another batch never
+ * resurrects an obligation this expediente also stated incoherently.
  *
  * `excluded`/`unresolved` are a plain union: a source unit belongs to exactly one batch, so no
  * cross-batch duplicate disposition can arise (each batch already rejects an overlap with its own
@@ -769,15 +929,9 @@ function mergeBatchProposals({ batchOutputs, orderedUnits, inventory, documents 
   const explicitUnresolved = [];
 
   for (const output of batchOutputs) {
-    for (const requirement of output.requirements) {
-      const obligationKey = tenderSemanticObligationKey(requirement.label);
-      const entry = {
-        requirement,
-        category: output.categoryByObligationKey.get(obligationKey),
-        fields: output.semanticFieldsByObligationKey.get(obligationKey),
-      };
-      if (!groups.has(obligationKey)) groups.set(obligationKey, []);
-      groups.get(obligationKey).push(entry);
+    for (const proposal of output.requirements) {
+      if (!groups.has(proposal.obligation_key)) groups.set(proposal.obligation_key, []);
+      groups.get(proposal.obligation_key).push(proposal);
     }
     explicitExcluded.push(...output.excluded);
     explicitUnresolved.push(...output.unresolved);
@@ -785,12 +939,17 @@ function mergeBatchProposals({ batchOutputs, orderedUnits, inventory, documents 
 
   const canonicalRequirements = [];
   const categoryByObligationKey = new Map();
+  let conflictingObligationKeys = 0;
+  let retractedRequirementOccurrences = 0;
   for (const [obligationKey, entries] of groups) {
     const conflicting = entries.some(entry => entry.fields !== entries[0].fields);
     if (conflicting) {
       // Retracted entirely: this module never chooses between two categories/fronts/kinds — or two
       // different literal forms — for what claims to be the same obligation. Every citing unit of
-      // every occurrence is left undispositioned here and is picked up by the completion pass below.
+      // every occurrence is left undispositioned here and is picked up by the completion pass below,
+      // so a contradiction always produces MORE visible holes, never a silently preferred claim.
+      conflictingObligationKeys += 1;
+      retractedRequirementOccurrences += entries.length;
       continue;
     }
     canonicalRequirements.push({
@@ -839,7 +998,17 @@ function mergeBatchProposals({ batchOutputs, orderedUnits, inventory, documents 
     requirement.requirement_id,
     categoryByObligationKey.get(requirement.obligation_key),
   ]));
-  return { semanticManifest, categoryOverrides };
+  return {
+    semanticManifest,
+    categoryOverrides,
+    // Safe counts only, for the ledger: how many obligations this expediente stated incoherently and
+    // how many occurrences that cost. Never an obligation key, a label, a category or a unit id — the
+    // units themselves are already visible, by id, as `unresolved` entries of the manifest.
+    retractions: {
+      conflicting_obligation_keys: conflictingObligationKeys,
+      retracted_requirement_occurrences: retractedRequirementOccurrences,
+    },
+  };
 }
 
 export async function discoverTenderSemanticManifest({
@@ -995,6 +1164,11 @@ export async function discoverTenderSemanticManifest({
         ...plainLedgerBatchEntry(batch, 'completed'),
         // Safe usage only — tokens and cost, never source text or model content.
         usage: { input_tokens: batchUsage.input_tokens, output_tokens: batchUsage.output_tokens, cost_usd: batchUsage.cost_usd },
+        // v8: how many units of this batch had every explicit disposition retracted for
+        // contradicting another disposition or a server-derived citation. A COUNT, never an id or a
+        // reason, so a batch that contradicted itself is diagnosable without the raw answer — which
+        // is never stored — and without the ledger carrying anything it did not already carry.
+        retracted_disposition_units: canonicalBatch.retracted_disposition_units,
       });
     } catch (error) {
       // FAIL-CLOSED: no partial semantic manifest is ever returned for a per-batch failure. What the
@@ -1053,10 +1227,17 @@ export async function discoverTenderSemanticManifest({
   };
 
   try {
+    const { retractions, ...merged } = mergeBatchProposals({
+      batchOutputs, orderedUnits: ordered, inventory: validatedInventory, documents,
+    });
     return {
-      ...mergeBatchProposals({ batchOutputs, orderedUnits: ordered, inventory: validatedInventory, documents }),
+      ...merged,
       usage,
-      discoveryLedger,
+      // `retractions` is attached ONLY here, on the merged ledger, because obligation-level
+      // retraction is decided exactly once, at the merge, over every batch's claims at the same time.
+      // The failure ledger built in the catch above deliberately omits it rather than reporting a
+      // zero the run never computed; its per-batch `retracted_disposition_units` are real either way.
+      discoveryLedger: { ...discoveryLedger, retractions },
     };
   } catch (error) {
     throw discoveryError(

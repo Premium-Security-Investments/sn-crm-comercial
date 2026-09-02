@@ -162,12 +162,13 @@ async function assertRejection(promiseFactory, { stage, code, message }) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v7',
+    'tender-semantic-discovery.v8',
     'removing the requirement source-id fields (v3), making coverage fail-safe (v4), making the '
-    + 'dispositions themselves optional (v5), coalescing an exact obligation repetition (v6) and '
-    + 'replacing the single request with a multi-batch input (v7) are all material changes to what '
-    + 'the model is asked for and to how the answer is canonicalized, so the policy version must '
-    + 'move with them',
+    + 'dispositions themselves optional (v5), coalescing an exact obligation repetition (v6), '
+    + 'replacing the single request with a multi-batch input (v7) and retracting a self-'
+    + 'contradicting claim instead of rejecting the whole batch (v8) are all material changes to '
+    + 'what the model is asked for and to how the answer is canonicalized, so the policy version '
+    + 'must move with them',
   );
 }
 
@@ -334,9 +335,10 @@ for (const smuggled of [
 }
 
 // ---------------------------------------------------------------------------------------------
-// 5. excluded/unresolved overlapping a DERIVED owner is rejected fail-closed. The model cannot see
-//    the mapping it is contradicting, which is exactly why the policy tells it the rule; nothing
-//    here silently drops the disposition or the citation.
+// 5. excluded/unresolved overlapping a DERIVED owner is retracted, not rejected (v8). The model
+//    cannot see the mapping it is contradicting, which is exactly why the policy tells it the rule;
+//    but the server no longer destroys the whole turn over it — it never moves or drops the
+//    citation, and simply discards the contradictory disposition.
 // ---------------------------------------------------------------------------------------------
 {
   const ownerA = unitIdByParagraph[2];
@@ -345,18 +347,25 @@ for (const smuggled of [
     ['excluded', { source_unit_id: ownerB, reason: 'duplicate_source_unit' }],
     ['unresolved', { source_unit_id: ownerB, reason: 'obligation_not_classifiable' }],
   ]) {
-    await assertRejection(
-      () => run(capturingClient(proposalFor(
-        [requirement(sharedCandidate)],
-        [ownerA, ownerB],
-        { [field]: [entry] },
-      ))),
-      {
-        stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION,
-        code: 'v4_discovery_uniqueness_invariant',
-        message: /disposición duplicada/,
-      },
+    const result = await run(capturingClient(proposalFor(
+      [requirement(sharedCandidate)],
+      [ownerA, ownerB],
+      { [field]: [entry] },
+    )));
+    assert.deepEqual(
+      result.semanticManifest.requirements[0].citations.map(citation => citation.source_unit_id).sort(),
+      [ownerA, ownerB].sort(),
+      `${field}: the derived citation to both owners must survive the contradiction untouched`,
     );
+    assert.equal(
+      result.semanticManifest.excluded.some(item => item.source_unit_id === ownerB), false,
+      `${field}: the contradictory disposition must leave no trace in excluded`,
+    );
+    assert.equal(
+      result.semanticManifest.unresolved.some(item => item.source_unit_id === ownerB), false,
+      `${field}: the contradictory disposition must leave no trace in unresolved`,
+    );
+    assert.equal(result.discoveryLedger.batches[0].retracted_disposition_units, 1);
   }
 }
 

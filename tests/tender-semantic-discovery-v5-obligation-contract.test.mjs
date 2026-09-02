@@ -158,10 +158,11 @@ function run(client) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v7',
+    'tender-semantic-discovery.v8',
     'the model-facing task and the disposition duty both changed in v5, v6 changed how a repeated '
-    + 'obligation is canonicalized, and v7 replaced the single request with a multi-batch input, so '
-    + 'the policy version must move with each',
+    + 'obligation is canonicalized, v7 replaced the single request with a multi-batch input, and v8 '
+    + 'retracts a self-contradicting claim instead of rejecting the whole batch, so the policy '
+    + 'version must move with each',
   );
 
   assert.match(
