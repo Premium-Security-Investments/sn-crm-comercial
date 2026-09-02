@@ -11,6 +11,8 @@ const {
   presentCompactCopilotSummary,
   presentCopilotBrief,
   splitContactPlanSteps,
+  humanizePresentedText,
+  summarizeMissingInformation,
 } = await import(moduleUrl);
 
 for (const technical of [
@@ -52,9 +54,9 @@ assert.deepEqual(
 );
 
 const brief = Object.freeze({
-  summary: 'Oportunidad por COP 125.000.000 en etapa Propuesta.',
+  summary: 'La oportunidad está valorada en COP 125.000.000 dentro de la etapa Propuesta.',
   facts: Object.freeze([
-    Object.freeze({ text: 'El valor registrado es COP 125.000.000.', evidence_refs: Object.freeze(['e1']) }),
+    Object.freeze({ text: 'El valor registrado alcanza COP 125.000.000 según el CRM.', evidence_refs: Object.freeze(['e1']) }),
     Object.freeze({ text: 'El payload devuelto respeta el schema acordado.', evidence_refs: Object.freeze(['e2']) }),
   ]),
   inferences: Object.freeze([
@@ -69,6 +71,11 @@ const brief = Object.freeze({
   warnings: Object.freeze(['No hay contacto decisor verificado.']),
   human_review_required: true,
 });
+
+const COP_GROUPING = new Intl.NumberFormat('es-CO');
+const expectedSummary = `La oportunidad está valorada en $${COP_GROUPING.format(125000000)} COP dentro de la etapa Propuesta.`;
+const expectedFactText = `El valor registrado alcanza $${COP_GROUPING.format(125000000)} COP según el CRM.`;
+
 const snapshot = JSON.stringify(brief);
 const presented = presentCopilotBrief(brief);
 
@@ -77,16 +84,52 @@ assert.deepEqual(presented.contactPlanSteps, [
   'Luego proponga una reunión de 20 minutos.',
 ]);
 assert.equal(presented.contactObjective, brief.contact_objective);
-assert.equal(presented.summary, brief.summary);
-assert.deepEqual(presented.facts, [brief.facts[0]]);
+assert.equal(presented.summary, expectedSummary, 'el resumen debe pasar por el sanitizador compartido antes de presentarse');
+assert.deepEqual(presented.facts, [{ text: expectedFactText, evidence_refs: brief.facts[0].evidence_refs }], 'cada fact debe humanizarse con el mismo sanitizador que la evidencia de Prioridades Comerciales');
 assert.deepEqual(presented.inferences, [brief.inferences[0]]);
 assert.deepEqual(presented.recommendedAssetIds, []);
 assert.equal(presented.hasApprovedAssets, false);
-for (const removed of ['missingInformation', 'strategy', 'warnings']) {
+assert.deepEqual(presented.missingInformation, ['Correo del contacto decisor']);
+assert.equal(presented.missingSummary, 'Correo del contacto decisor');
+for (const removed of ['strategy', 'warnings']) {
   assert.equal(removed in presented, false, `${removed} ya no forma parte de la presentación`);
 }
 assert.equal('draft' in presented, false, 'el borrador editable no se reencuadra en presentación');
 assert.equal(JSON.stringify(brief), snapshot, 'presentCopilotBrief no muta el brief persistido');
+
+// Degradación conservadora por marcador explícito: un fact "Seguimiento migrado:" nunca aparece
+// en Datos utilizados — se mueve, sin reescribir su texto, a Información no verificada.
+const migratedBrief = {
+  ...brief,
+  facts: [...brief.facts, { text: 'Seguimiento migrado: Llamada. 4 24 horas', evidence_refs: [] }],
+};
+const migratedPresented = presentCopilotBrief(migratedBrief);
+assert.deepEqual(
+  migratedPresented.facts,
+  [{ text: expectedFactText, evidence_refs: brief.facts[0].evidence_refs }],
+  'el fact con el marcador de migración no debe aparecer en Datos utilizados',
+);
+assert.ok(
+  migratedPresented.missingInformation.includes('Seguimiento migrado: Llamada. 4 24 horas'),
+  'el fact migrado se degrada a Información no verificada, con su texto intacto (no calza ningún patrón de fecha/monto)',
+);
+assert.equal(migratedPresented.missingInformation.length, 2, 'la lista de no verificados suma el original más el fact migrado');
+assert.equal(
+  migratedPresented.missingSummary,
+  `${migratedPresented.missingInformation[0]} (+1 más)`,
+  'con más de un elemento, el resumen "Falta" muestra el primero y cuenta el resto',
+);
+
+assert.equal(summarizeMissingInformation([]), 'Sin brechas de información pendientes según el registro.', 'sin brechas, el resumen debe ser el mensaje explícito, nunca una cadena vacía');
+
+const BOGOTA_DATETIME_LABEL = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Bogota' });
+const isoText = 'Próxima gestión vencida: 2026-07-21T14:29:00+00:00.';
+assert.equal(
+  humanizePresentedText(isoText),
+  `Próxima gestión vencida: ${BOGOTA_DATETIME_LABEL.format(new Date('2026-07-21T14:29:00+00:00'))}.`,
+  'humanizePresentedText debe ser un alias directo del sanitizador compartido',
+);
+assert.equal(humanizePresentedText('4 24 horas'), '4 24 horas', 'texto no reconocido por el sanitizador debe quedar intacto');
 
 const hostile = presentCopilotBrief({
   ...brief,
