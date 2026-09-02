@@ -851,11 +851,18 @@ export async function discoverTenderSemanticManifest({
   // text), so the request can never more than double. Lowering it is allowed but fails closed —
   // never silently — if it would leave a visible unit with no literal excerpt at all.
   maxLabelCatalogChars = null,
+  // Deterministic stage-boundary heartbeat: awaited immediately before EACH batch's provider call,
+  // never on a timer. A rejection prevents that batch's provider call entirely and fails the whole
+  // discovery closed, exactly like any other per-batch failure (see the try/catch below) — the
+  // deterministic, safe discoveryLedger is still attached. `null` (the default) keeps every
+  // existing caller's behaviour byte-identical: no extra call of any kind.
+  beforeProviderCall = null,
 } = {}) {
   if (!client || typeof client.run !== 'function' || typeof model !== 'string' || !model.trim()
     || !Number.isInteger(timeoutMs) || timeoutMs <= 0 || typeof idempotencyKey !== 'string' || !idempotencyKey.trim()
     || !Number.isInteger(maxSourceChars) || maxSourceChars <= 0
-    || (maxLabelCatalogChars !== null && (!Number.isInteger(maxLabelCatalogChars) || maxLabelCatalogChars <= 0))) {
+    || (maxLabelCatalogChars !== null && (!Number.isInteger(maxLabelCatalogChars) || maxLabelCatalogChars <= 0))
+    || (beforeProviderCall !== null && typeof beforeProviderCall !== 'function')) {
     throw new Error('El descubridor semántico AGT-002 no está configurado.');
   }
   const validatedInventory = validateTenderRequirementInventory(inventory);
@@ -941,6 +948,9 @@ export async function discoverTenderSemanticManifest({
       };
       // Batches are deliberately sequential (not Promise.all): the request order itself must be
       // deterministic and reproducible, matching the batch_index each idempotency key already encodes.
+      // The heartbeat renews immediately before this call, never after: a rejection here must stop
+      // this batch's provider call from ever happening.
+      if (beforeProviderCall) await beforeProviderCall();
       const raw = await client.run({
         model,
         policy: TENDER_SEMANTIC_DISCOVERY_POLICY,

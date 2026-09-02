@@ -154,7 +154,16 @@ assert.match(executor, /companyEvidenceAsOf: governance\.evidenceAsOf,/);
 // safe retry wiring builds `persistenceParams` exactly once — carrying evidenceIdentity — and
 // reuses that SAME object on every in-memory persistence retry, rather than rebuilding it per
 // attempt.
-assert.match(postBridge, /evidenceIdentity = null,\s*\n\s*\} = context;/);
+assert.match(
+  postBridge,
+  /evidenceIdentity = null,[\s\S]*?\} = context;/,
+  'postBridge context destructuring must default evidenceIdentity to null',
+);
+assert.match(
+  postBridge,
+  /leaseSeconds = null,[\s\S]*?\} = context;/,
+  'postBridge context destructuring must default leaseSeconds to null (heartbeat frontier)',
+);
 assert.match(
   postBridge,
   /const persistenceParams = \{[\s\S]*?semanticSourceDocuments: analysisContext\?\.documents \?\? null,\s*\n\s*evidenceIdentity,\s*\n\s*\};/,

@@ -5,6 +5,7 @@ import { retrieveAgt002LegalEvidence } from './agt002-legal-retrieval.js';
 import { discoverTenderSemanticManifest } from './tender-semantic-discovery.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
+import { renewAgt002PreviewClaim } from './agt002-preview-persistence.js';
 
 export const AGT002_PREVIEW_ENGINE_ID = 'agt002_codex_preview';
 const REQUIRED_ENV_KEYS = ['AGT002_PREVIEW_MODEL', 'AGT002_HETZNER_BRIDGE_URL', 'AGT002_HETZNER_BRIDGE_HMAC_SECRET'];
@@ -138,12 +139,42 @@ export function createAgt002PreviewRuntime({
   companyEvidenceRegistryEntries, companyEvidenceAsOf, categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance, contextVersionId,
   manizalesManifestSource,
   onBridgeInvocationStarted, onBridgeResponseReceived,
+  // Deterministic stage-boundary heartbeat: given the claim (migration 028's
+  // psi_agt002_preview_claims + its claim_id fencing token) this run is executing under, the
+  // runtime builds ONE renewal hook fenced by THIS run's own idempotencyKey+claimId and hands it
+  // to the engine as `beforeProviderCall` — so a V7 run whose N provider turns outlive a
+  // two-turn-sized lease renews at each stage boundary instead of being reclaimed underneath
+  // itself. `previewClaim` absent (every existing caller) keeps the engine options exactly what
+  // they are today: the heartbeat is never fabricated.
+  database, previewClaim,
+  // An already-fenced heartbeat from an OUTER lease this run also lives inside (e.g. the durable
+  // reanalysis worker's own job/lease_id renewal) — composed with the claim renewal above, never
+  // replacing it, so both live leases renew at every provider boundary. `undefined` (every direct
+  // caller) leaves the claim renewal, if any, exactly as it is on its own.
+  beforeProviderCall: outerBeforeProviderCall,
   createEngine = createAgt002PreviewEngine,
 } = {}) {
   const { config, analysisConfig } = withRuntimeBoundaryCode('AGT002_RUNTIME_CONFIG_INVALID', () => ({
     config: getAgt002PreviewRuntimeConfig(environment),
     analysisConfig: buildAgt002AnalysisConfig(environment),
   }));
+  const hasPreviewClaim = previewClaim && typeof previewClaim === 'object'
+    && typeof previewClaim.idempotencyKey === 'string' && previewClaim.idempotencyKey
+    && typeof previewClaim.claimId === 'string' && previewClaim.claimId;
+  const claimRenewalHook = hasPreviewClaim
+    ? () => renewAgt002PreviewClaim(database, {
+      idempotencyKey: previewClaim.idempotencyKey,
+      claimId: previewClaim.claimId,
+      leaseSeconds: config.leaseSeconds,
+    })
+    : null;
+  const hasOuterHook = typeof outerBeforeProviderCall === 'function';
+  const beforeProviderCall = (hasOuterHook || claimRenewalHook)
+    ? async () => {
+      if (hasOuterHook) await outerBeforeProviderCall();
+      if (claimRenewalHook) await claimRenewalHook();
+    }
+    : undefined;
   const { loadedLegalCorpus, legalEvidenceProvider } = withRuntimeBoundaryCode('AGT002_RUNTIME_LEGAL_CORPUS_INVALID', () => {
     const corpus = analysisConfig.AGT002_LEGAL_CORPUS ? requireLegalCorpusContext(legalCorpusContext) : null;
     return {
@@ -223,6 +254,7 @@ export function createAgt002PreviewRuntime({
       legalCorpusVersionId: loadedLegalCorpus.legal_corpus_version_id,
       legalCorpusContentSha256: loadedLegalCorpus.content_sha256,
     } : {}),
+    ...(beforeProviderCall ? { beforeProviderCall } : {}),
     integralContractV3: analysisConfig.AGT002_INTEGRAL_CONTRACT_V3,
     ...(analysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? {
       companyEvidenceClassesProvider: () => companyEvidenceRegistryEntries,

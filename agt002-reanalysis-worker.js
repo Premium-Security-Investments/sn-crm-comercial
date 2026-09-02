@@ -2,6 +2,7 @@ import {
   claimAgt002ReanalysisJob,
   completeAgt002ReanalysisJob,
   failAgt002ReanalysisJob,
+  renewAgt002ReanalysisJobLease,
 } from './agt002-reanalysis-jobs.js';
 
 export const AGT002_REANALYSIS_QUEUE_ERROR_CODES = Object.freeze([
@@ -52,13 +53,35 @@ export function createAgt002ReanalysisWorker({
       const job = await claimJob(database, { leaseSeconds });
       if (!job) return { status: 'empty' };
 
+      // Deterministic stage-boundary heartbeat: fenced by THIS job's own jobId+leaseId, renewing
+      // for the worker's own configured lease window. The executor decides when (and whether) to
+      // call it — zero, one or N times, one per provider turn it actually takes — never a timer.
+      // A lost lease is remembered here (`leaseLost`), independent of whether the executor's own
+      // error handling swallows the rejection: once the fenced renewal reports the lease lost,
+      // another worker may already own this job, so it can never be completed afterward, whatever
+      // the executor goes on to return.
+      let leaseLost = false;
+      const beforeProviderCall = async () => {
+        try {
+          return await renewAgt002ReanalysisJobLease(database, { jobId: job.jobId, leaseId: job.leaseId, leaseSeconds });
+        } catch (error) {
+          leaseLost = true;
+          throw error;
+        }
+      };
+
       let outcome;
       try {
-        outcome = await executeJob(database, job);
+        outcome = await executeJob(database, job, { beforeProviderCall });
       } catch (error) {
-        const errorCode = classifyAgt002ReanalysisWorkerError(error);
+        const errorCode = leaseLost ? 'lease_lost' : classifyAgt002ReanalysisWorkerError(error);
         await failJob(database, { jobId: job.jobId, leaseId: job.leaseId, errorCode });
         return { status: 'unavailable', jobId: job.jobId, errorCode };
+      }
+
+      if (leaseLost) {
+        await failJob(database, { jobId: job.jobId, leaseId: job.leaseId, errorCode: 'lease_lost' });
+        return { status: 'unavailable', jobId: job.jobId, errorCode: 'lease_lost' };
       }
 
       const analysisRunId = typeof outcome?.analysis_run_id === 'string' && outcome.analysis_run_id.trim()

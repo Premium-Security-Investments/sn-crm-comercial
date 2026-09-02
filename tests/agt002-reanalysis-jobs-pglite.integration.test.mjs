@@ -5,6 +5,8 @@ import { PGlite } from '@electric-sql/pglite';
 const strip = value => value.replace(/^\s*begin;\s*$/im, '').replace(/^\s*commit;\s*$/im, '');
 const migration = strip(readFileSync(new URL('../supabase/migrations/068_agt002_reanalysis_jobs.sql', import.meta.url), 'utf8'));
 const rollback = strip(readFileSync(new URL('../supabase/rollbacks/068_agt002_reanalysis_jobs_rollback.sql', import.meta.url), 'utf8'));
+const heartbeatMigration = strip(readFileSync(new URL('../supabase/migrations/079_agt002_lease_heartbeat.sql', import.meta.url), 'utf8'));
+const heartbeatRollback = strip(readFileSync(new URL('../supabase/rollbacks/079_agt002_lease_heartbeat_rollback.sql', import.meta.url), 'utf8'));
 
 const O = '11111111-1111-4111-8111-111111111111';
 const T = '22222222-2222-4222-8222-222222222222';
@@ -38,7 +40,27 @@ async function freshDb() {
     insert into public.psi_agt002_context_versions values ('${CV2}','${O}','${T}','${S2}');
   `);
   await pg.exec(migration);
+  // Fixture-only counterpart of 028's public.psi_agt002_preview_claims, NOT a production
+  // schema substitute: 079 also defines psi_renew_agt002_preview_claim, whose `%rowtype`
+  // declaration is resolved at CREATE FUNCTION time, so this isolated reanalysis-only
+  // fixture needs the minimal columns that RPC references for 079 to compile here.
+  // Production applies migrations sequentially and already has the real table from 028.
+  await pg.exec(`
+    create table public.psi_agt002_preview_claims (
+      idempotency_key text,
+      claim_id uuid,
+      lease_expires_at timestamptz
+    );
+  `);
+  await pg.exec(heartbeatMigration);
   return pg;
+}
+
+async function renewLease(pg, jobId, leaseId, leaseSeconds) {
+  return (await pg.query(
+    `select public.psi_renew_agt002_reanalysis_job_lease($1::uuid,$2::uuid,$3::int) r`,
+    [jobId, leaseId, leaseSeconds],
+  )).rows[0].r;
 }
 
 function frozenInput(tag = 'v1') {
@@ -234,6 +256,58 @@ async function run() {
   assert.equal(sameIdentityRows.find(row => row.id === explicitRetry.job_id)?.status, 'queued');
   const retryClaim = (await pg.query(`select public.psi_claim_agt002_reanalysis_job(60) r`)).rows[0].r;
   assert.equal(retryClaim.job_id, explicitRetry.job_id);
+
+  // --- AGT-002 lease heartbeat (migration 079) ---
+
+  // The active running current job+lease renews and returns a parseable, bounded lease_expires_at.
+  const beforeRenew = Date.now();
+  const renewed = await renewLease(pg, explicitRetry.job_id, retryClaim.lease_id, 90);
+  assert.equal(renewed.status, 'renewed');
+  const renewedExpiry = Date.parse(renewed.lease_expires_at);
+  assert.ok(Number.isFinite(renewedExpiry), 'lease_expires_at must be a parseable timestamp');
+  assert.ok(renewedExpiry > beforeRenew && renewedExpiry - beforeRenew <= 91_000, 'renewed lease must be bounded to ~90s from now');
+
+  // A stale/random lease_id is fenced off: it never renews and never alters the active token.
+  const rowBeforeStaleRenew = (await pg.query(`select lease_expires_at from public.psi_agt002_reanalysis_jobs where id='${explicitRetry.job_id}'`)).rows[0];
+  const staleRenew = await renewLease(pg, explicitRetry.job_id, '99999999-9999-4999-8999-999999999999', 90);
+  assert.equal(staleRenew.status, 'lost');
+  const rowAfterStaleRenew = (await pg.query(`select lease_expires_at from public.psi_agt002_reanalysis_jobs where id='${explicitRetry.job_id}'`)).rows[0];
+  assert.equal(new Date(rowAfterStaleRenew.lease_expires_at).getTime(), new Date(rowBeforeStaleRenew.lease_expires_at).getTime());
+
+  // A terminal/non-running job (the completed job from earlier) can never be renewed.
+  const terminalRenew = await renewLease(pg, jobId, '88888888-8888-4888-8888-888888888888', 90);
+  assert.equal(terminalRenew.status, 'lost');
+
+  // null/0/601 lease seconds fail closed.
+  await assert.rejects(() => renewLease(pg, explicitRetry.job_id, retryClaim.lease_id, null), /no es válida/i);
+  await assert.rejects(() => renewLease(pg, explicitRetry.job_id, retryClaim.lease_id, 0), /no es válida/i);
+  await assert.rejects(() => renewLease(pg, explicitRetry.job_id, retryClaim.lease_id, 601), /no es válida/i);
+
+  // An expired current lease returns lost and is never resurrected; the normal expiry
+  // sweep on the next claim call still closes it out exactly as it does without heartbeats.
+  await pg.exec(`update public.psi_agt002_reanalysis_jobs set lease_expires_at = now() - interval '1 hour' where id='${explicitRetry.job_id}'`);
+  assert.equal((await renewLease(pg, explicitRetry.job_id, retryClaim.lease_id, 90)).status, 'lost');
+  const sweepAfterExpiredRenew = (await pg.query(`select public.psi_claim_agt002_reanalysis_job(60) r`)).rows[0].r;
+  assert.equal(sweepAfterExpiredRenew.status, 'empty', 'the sweep still closes the expired job out; renew never resurrects it');
+  const sweptExplicitRetryRow = (await pg.query(
+    `select status, error_code, error_message, lease_id, lease_expires_at from public.psi_agt002_reanalysis_jobs where id='${explicitRetry.job_id}'`,
+  )).rows[0];
+  assert.equal(sweptExplicitRetryRow.status, 'unavailable');
+  assert.equal(sweptExplicitRetryRow.error_code, 'lease_lost');
+  assert.ok(sweptExplicitRetryRow.error_message && sweptExplicitRetryRow.error_message.length > 0);
+  assert.equal(sweptExplicitRetryRow.lease_id, null);
+  assert.equal(sweptExplicitRetryRow.lease_expires_at, null);
+
+  // Rollback ordering: 079 rolls back before 068's own rollback. Only the renewal RPC
+  // disappears; the base reanalysis-jobs table and its RPCs remain until their existing rollback.
+  await pg.exec(heartbeatRollback);
+  await assert.rejects(
+    () => renewLease(pg, explicitRetry.job_id, retryClaim.lease_id, 90),
+    /psi_renew_agt002_reanalysis_job_lease[\s\S]*does not exist/i,
+  );
+  assert.ok((await pg.query(`select to_regclass('public.psi_agt002_reanalysis_jobs') as t`)).rows[0].t, 'base reanalysis-jobs table must still exist after only the 079 rollback');
+  const claimAfterHeartbeatRollback = (await pg.query(`select public.psi_claim_agt002_reanalysis_job(60) r`)).rows[0].r;
+  assert.equal(claimAfterHeartbeatRollback.status, 'empty', 'base claim RPC still works after 079 rollback; no queued job remains at this point');
 
   // Rollback fails closed while any row (including terminal history) exists.
   await assert.rejects(pg.exec(rollback), /bloque|histor/i);

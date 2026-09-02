@@ -125,7 +125,7 @@ export function createAgt002ReanalysisExecutor({
   createCorrelationId = randomUUID,
   observability = createAgt002AnalysisObservability(),
 } = {}) {
-  return async function executeAgt002Reanalysis(database, job) {
+  return async function executeAgt002Reanalysis(database, job, { beforeProviderCall: jobLeaseHeartbeat } = {}) {
     const input = validFrozenInput(job);
     if (!input) return { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false };
 
@@ -163,6 +163,12 @@ export function createAgt002ReanalysisExecutor({
         manizalesManifestSource: input.manizales_manifest_source,
         onBridgeInvocationStarted: () => { bridgeTelemetry.invocationStarted = true; },
         onBridgeResponseReceived: () => { bridgeTelemetry.responseReceived = true; },
+        // Both live leases renew at every provider boundary: the runtime's own preview-claim
+        // renewal (fenced by job.idempotencyKey + this claim) composes with the durable worker's
+        // outer job-lease renewal (fenced by job.jobId + job.leaseId), never skipping either.
+        database,
+        previewClaim: { idempotencyKey: job.idempotencyKey, claimId: previewClaimId },
+        ...(jobLeaseHeartbeat ? { beforeProviderCall: jobLeaseHeartbeat } : {}),
         ...(governance ? {
           companyEvidenceRegistryEntries: governance.companyEvidenceRegistryEntries,
           // F4/A5: the SAME deterministic instant the frozen governance already carries — never
@@ -186,6 +192,9 @@ export function createAgt002ReanalysisExecutor({
         claimId: previewClaimId,
         idempotencyKey: job.idempotencyKey,
         expectedIdempotencyKey: job.idempotencyKey,
+        // Persistence is its own stage boundary (agt002-post-bridge-observability.js): the SAME
+        // preview claim renews once more, fenced, immediately before the canonical persistence RPC.
+        leaseSeconds,
         canonicalOnly: true,
         // F3: the SAME company evidence identity the frozen governance already carries — never
         // reloaded/re-derived here — so the durable persistence call binds to it too.

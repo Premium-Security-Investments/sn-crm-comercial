@@ -506,6 +506,12 @@ export function createAgt002PreviewEngine({
   promptBudget = false,
   promptMaxInputTokens = AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS,
   onPromptBudget,
+  // Deterministic stage-boundary heartbeat: awaited immediately before EVERY provider turn this
+  // engine itself takes (the legacy/v2 turn in runOnce, the v3 analysis turn in runOnceV3) and
+  // forwarded to an injected semanticDiscoveryProvider so its own per-batch turns renew too. A
+  // rejection stops the guarded provider call from happening at all. `undefined` (the default)
+  // keeps every existing caller's behaviour byte-identical: no extra call of any kind.
+  beforeProviderCall,
 } = {}) {
   if (!client || typeof client.run !== 'function'
     || !nonEmpty(model) || !nonEmpty(policyVersion) || !nonEmpty(policyText)
@@ -517,6 +523,7 @@ export function createAgt002PreviewEngine({
     || (integralContractV3 && (!contextV2 || !documentRetrieval || typeof companyEvidenceClassesProvider !== 'function'))
     || (companyEvidenceAsOf !== undefined && !isCanonicalCompanyEvidenceAsOf(companyEvidenceAsOf))
     || (semanticDiscoveryProvider !== null && typeof semanticDiscoveryProvider !== 'function')
+    || (beforeProviderCall !== undefined && typeof beforeProviderCall !== 'function')
     || !observability || typeof observability.record !== 'function'
     || !isAgt002PreviewReasoningEffort(effort)) {
     throw new Error('AGT-002 Preview no está configurado: falta configuración o evidencia jurídica determinística.');
@@ -599,6 +606,7 @@ export function createAgt002PreviewEngine({
       legalCorpus,
       legalCitationIds,
     });
+    if (beforeProviderCall) await beforeProviderCall();
     const raw = await client.run({ model, policy: policyText, input: previewInput, outputSchema, timeoutMs, idempotencyKey, signal, effort });
 
     const rawContent = typeof raw?.content === 'string' ? raw.content : '';
@@ -889,6 +897,7 @@ export function createAgt002PreviewEngine({
       requestInput = budgeted.input;
     }
 
+    if (beforeProviderCall) await beforeProviderCall();
     const raw = await client.run({
       model, policy: policyText, input: requestInput, outputSchema, timeoutMs, idempotencyKey, signal, effort,
     });
@@ -1052,6 +1061,7 @@ export function createAgt002PreviewEngine({
                 discovery = await semanticDiscoveryProvider({
                   client, model, timeoutMs, idempotencyKey: key, signal, effort,
                   inventory, documents: (context || {}).documents ?? [],
+                  ...(beforeProviderCall ? { beforeProviderCall } : {}),
                 });
               } catch (error) {
                 // tender-semantic-discovery.js tags its OWN post-response rejections (the bridge

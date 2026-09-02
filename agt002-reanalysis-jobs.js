@@ -73,6 +73,37 @@ export async function completeAgt002ReanalysisJob(database, { jobId, leaseId, an
   return { status: result.status, jobId: result.job_id, analysisRunId: result.analysis_run_id };
 }
 
+function requireLeaseSeconds(value) {
+  if (!Number.isInteger(value) || value < 1 || value > 600) {
+    throw new Error('La duración de renovación de la reserva del job de reanálisis AGT-002 no es válida.');
+  }
+  return value;
+}
+
+/**
+ * Deterministic stage-boundary heartbeat: renews an already-claimed job's lease, fenced by BOTH
+ * jobId and leaseId in one DB predicate, and only while the job is still 'running'. `status:
+ * 'lost'` fails closed with a stable, non-secret lease code so the existing worker classifier
+ * (classifyAgt002ReanalysisWorkerError) maps it to the existing closed 'lease_lost' code — never
+ * a re-renew, never a follow-up call.
+ */
+export async function renewAgt002ReanalysisJobLease(database, { jobId, leaseId, leaseSeconds } = {}) {
+  const result = await rpc(database, 'psi_renew_agt002_reanalysis_job_lease', {
+    p_job_id: requireId(jobId, 'El job'),
+    p_lease_id: requireId(leaseId, 'La reserva'),
+    p_lease_seconds: requireLeaseSeconds(leaseSeconds),
+  });
+  if (result?.status === 'lost') {
+    const error = new Error('El trabajo de reanálisis AGT-002 perdió su reserva antes de renovarse.');
+    error.code = 'AGT002_REANALYSIS_LEASE_LOST';
+    throw error;
+  }
+  if (result?.status !== 'renewed' || typeof result.lease_expires_at !== 'string' || !result.lease_expires_at.trim()) {
+    throw new Error('La renovación de la reserva del job de reanálisis AGT-002 no devolvió un resultado válido.');
+  }
+  return { status: 'renewed', leaseExpiresAt: result.lease_expires_at };
+}
+
 /**
  * Closes a claimed job as unavailable using one of a fixed set of error codes; the
  * database derives the closed error message from the code, so no raw provider/model/DB

@@ -32,6 +32,7 @@ import {
   appendAgt002AnalysisAttempt,
   registerAgt002PreviewAnalysis,
   releaseAgt002PreviewClaim,
+  renewAgt002PreviewClaim,
 } from './agt002-preview-persistence.js';
 import { AGT002_V3_SAFE_VALIDATION_CODES } from './agt002-preview-engine.js';
 import {
@@ -227,6 +228,11 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
     // F3: the run-binding company evidence identity, handed down verbatim (never re-derived
     // here) from the caller's already-loaded governance — forwarded as-is to persistence.
     evidenceIdentity = null,
+    // Deterministic stage-boundary heartbeat: when supplied alongside claimId/idempotencyKey, the
+    // SAME preview claim this run holds is renewed exactly once, immediately before the canonical
+    // persistence RPC is attempted, fenced by both tokens. `null` (every caller that predates this
+    // field) keeps this frontier byte-identical to before: no renewal, no behaviour change.
+    leaseSeconds = null,
   } = context;
   const {
     engine, observability = createAgt002AnalysisObservability(), analysisContext,
@@ -297,7 +303,24 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
   }
 
   let registeredRun = null;
-  if (!engineFailed) {
+  // Persistence is its own stage boundary: the SAME claim this run holds is renewed exactly once,
+  // immediately before the canonical persistence RPC is even attempted — never on a timer, never
+  // per retry attempt — fenced by both idempotencyKey and claimId. A lost lease means another
+  // worker may already own this reservation, so persistence must never be attempted against it;
+  // the claim is still released exactly once below, in the existing best-effort release.
+  const hasFencedLease = Boolean(claimId) && Boolean(idempotencyKey) && Number.isInteger(leaseSeconds) && leaseSeconds > 0;
+  let leaseLost = false;
+  if (!engineFailed && hasFencedLease) {
+    try {
+      await renewAgt002PreviewClaim(database, { idempotencyKey, claimId, leaseSeconds });
+    } catch (error) {
+      leaseLost = true;
+      const classification = classifyAgt002PostBridgeFailure({ phase: 'persistence', error, integralContractV3 });
+      stage = classification.stage;
+      errorCode = classification.error_code;
+    }
+  }
+  if (!engineFailed && !leaseLost) {
     // The SAME already-validated envelope object for every attempt, built exactly once above.
     // Nothing in here can reach the engine, the bridge or the provider: `engine` is only read for
     // its already-computed `manifestScope`.
