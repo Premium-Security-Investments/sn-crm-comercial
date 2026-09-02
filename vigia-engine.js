@@ -47,9 +47,25 @@ function validDate(value) {
   return dateState(value).date;
 }
 
+const BOGOTA_DATE = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+// `expected_close_date` es una columna `date` de Postgres: un día calendario literal, sin instante
+// que convertir. `new Date('2026-09-02')` la ancla en medianoche UTC, y formatear esa medianoche en
+// America/Bogota (UTC-5) la retrocede a las 19:00 del día anterior — Un valor date-only nunca debe
+// pasar por el formateador de zona horaria; se extrae directo de los dígitos, igual que `parseDateOnly`
+// en `src/dateOnly.ts`. Los demás campos (`next_action_at`, `last_interaction_at`, etc.) sí son
+// timestamptz reales y sí deben anclarse a Bogotá como instantes.
+const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
 function dayStart(value) {
+  if (typeof value === 'string') {
+    const match = DATE_ONLY.exec(value.trim());
+    if (match) return Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  }
   const date = validDate(value) || new Date();
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  const [y, m, d] = BOGOTA_DATE.format(date).split('-').map(Number);
+  return Date.UTC(y, m - 1, d);
 }
 
 function daysBetween(earlier, later) {
@@ -109,9 +125,9 @@ export function prioritizeVigiaOpportunities(rows, options = {}) {
     if (VIGIA_CONFIG.criticalStages.includes(row.stage_code)) signals.push({ code: 'critical_stage', label: 'Etapa crítica', points: 15, evidence: `Etapa actual: ${row.stage_name || row.stage_code}.` });
 
     if (expectedCloseState.invalid) signals.push({ code: 'invalid_expected_close', label: 'Cierre esperado inválido', points: 0, evidence: 'La fecha esperada de cierre tiene un formato inválido y requiere corrección.' });
-    else if (expectedClose && dayStart(expectedClose) < today) signals.push({ code: 'close_overdue', label: 'Cierre esperado vencido', points: 25, evidence: `Cierre esperado vencido: ${row.expected_close_date}.` });
+    else if (expectedClose && dayStart(row.expected_close_date) < today) signals.push({ code: 'close_overdue', label: 'Cierre esperado vencido', points: 25, evidence: `Cierre esperado vencido: ${row.expected_close_date}.` });
     else if (expectedClose) {
-      const closeDays = Math.floor((dayStart(expectedClose) - today) / DAY_MS);
+      const closeDays = Math.floor((dayStart(row.expected_close_date) - today) / DAY_MS);
       if (closeDays >= 0 && closeDays <= VIGIA_CONFIG.closeSoonDays) signals.push({ code: 'close_soon', label: 'Cierre cercano', points: 10, evidence: `Cierre esperado en ${closeDays} día(s).` });
     }
 
