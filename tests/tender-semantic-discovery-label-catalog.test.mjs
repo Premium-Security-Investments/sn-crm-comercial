@@ -784,6 +784,85 @@ for (const [variant, textA, winner, textB] of [
   }
 }
 
+// ---------------------------------------------------------------------------------------------
+// AGT-002 V7 regression: global count-cap starvation. The round-major allocation used to add a
+// SECOND (extra-granularity) candidate for units that already own one before it ever revisited a
+// unit whose FIRST candidate lost the global obligation-key collision. Once the global count cap
+// (`max(unitCount, TENDER_SEMANTIC_LABEL_CANDIDATES_TOTAL_FLOOR)`) is exhausted by those extra
+// candidates before the traversal circles back, a unit with a perfectly good, non-colliding SECOND
+// candidate is reported as a BUDGET loss (`units_dropped_by_budget`) even though it is really a
+// coverage-ordering bug: raising `maxCatalogChars` cannot fix it, because the binding constraint is
+// the COUNT cap, not characters. Real preflight symptom: 18 batches of ~600 visible units each,
+// batch index 10 failing closed with `units_dropped_by_budget.length === 2`. Fixed synthetic
+// analogue below: 620 units (over the 600 floor, so the floor is the binding cap), two independent
+// obligation-key collisions whose losers each own a genuine, non-colliding second candidate.
+// ---------------------------------------------------------------------------------------------
+{
+  const FILLER_COUNT = 616;
+  const fillerUnit = index => {
+    const text = `El proveedor numero ${index} debera entregar el documento tecnico especial identificado con el codigo ALFA${index} antes del vencimiento del plazo estipulado en el pliego de condiciones correspondiente.`;
+    return { source_unit_id: `unit:filler-${index}`, text, source_text: text };
+  };
+  const fillers = Array.from({ length: FILLER_COUNT }, (_, index) => fillerUnit(index));
+
+  // Two independent obligation-key collisions. Each loser's ROUND-0 candidate (its whole text)
+  // collides with its winner's, but each loser also owns a genuinely distinct, non-colliding
+  // candidate at round 1 (a word-window sub-span of its own text) — exactly the "genuinely
+  // recoverable, not a real budget loss" case this bug must not misclassify.
+  const collisionPair = (name, winnerText, loserText) => {
+    assert.notEqual(winnerText, loserText, `fixture sanity (${name}): literal forms must differ`);
+    assert.equal(
+      tenderSemanticObligationKey(winnerText), tenderSemanticObligationKey(loserText),
+      `fixture sanity (${name}): forms must fold to the same obligation key`,
+    );
+    return [
+      { source_unit_id: `unit:${name}-winner`, text: winnerText, source_text: winnerText },
+      { source_unit_id: `unit:${name}-loser`, text: loserText, source_text: loserText },
+    ];
+  };
+  const [pair1Winner, pair1Loser] = collisionPair(
+    'pair1',
+    'Vigilancia hospitalaria permanente las veinticuatro horas del dia en todas las sedes asignadas por la entidad contratante durante todo el periodo contractual vigente.',
+    'vigilancia hospitalaria permanente las veinticuatro horas del dia en todas las sedes asignadas por la entidad contratante durante todo el periodo contractual vigente',
+  );
+  const [pair2Winner, pair2Loser] = collisionPair(
+    'pair2',
+    'Mantenimiento preventivo mensual de todos los equipos biomedicos instalados en la sede principal del hospital durante la vigencia del contrato suscrito.',
+    'mantenimiento preventivo mensual de todos los equipos biomedicos instalados en la sede principal del hospital durante la vigencia del contrato suscrito',
+  );
+
+  const units = [...fillers, pair1Winner, pair1Loser, pair2Winner, pair2Loser];
+  const totalCap = Math.max(units.length, TENDER_SEMANTIC_LABEL_CANDIDATES_TOTAL_FLOOR);
+  assert.equal(
+    totalCap, units.length,
+    'fixture sanity: the count-cap floor must be the binding constraint, at exactly the unit count',
+  );
+
+  // A generous character budget in isolation: this pins that raising `maxCatalogChars` alone cannot
+  // fix the bug, since the binding constraint is the COUNT cap, not characters.
+  const catalog = buildTenderSemanticLabelCatalog({ units, maxCatalogChars: 300_000 });
+
+  assert.deepEqual(
+    catalog.units_dropped_by_budget, [],
+    'a unit with a genuinely non-colliding own candidate must not be starved by extra-granularity '
+    + 'candidates the allocation added for already-covered units first',
+  );
+  assert.deepEqual(
+    catalog.units_dropped_by_semantic_collision, [],
+    'both collision losers own a real, non-colliding alternative candidate, so neither is a true semantic-collision loss',
+  );
+  for (const loserId of [pair1Loser.source_unit_id, pair2Loser.source_unit_id]) {
+    const owned = catalog.candidates_by_unit_id.get(loserId);
+    assert.ok(owned && owned.length > 0, `${loserId} must keep owning its own non-colliding alternative candidate`);
+  }
+
+  const obligationKeys = catalog.candidates.map(candidate => tenderSemanticObligationKey(candidate));
+  assert.equal(
+    new Set(obligationKeys).size, obligationKeys.length,
+    'coverage-first allocation must not reintroduce a global obligation-key collision',
+  );
+}
+
 // Existing per-unit candidate behavior is untouched by the global dedup: a unit whose several own
 // candidates fold to DISTINCT obligation keys keeps every one of them, none discarded.
 {
