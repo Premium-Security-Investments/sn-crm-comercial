@@ -21,6 +21,7 @@ import {
   AGT002_COMPANY_EVIDENCE_APPLICABILITY_STATUSES,
   buildAgt002CompanyEvidenceClasses,
 } from './agt002-company-evidence-classes.js';
+import { validateAgt002CompanyEvidenceInventorySnapshot } from './agt002-company-evidence-sharepoint-catalog.js';
 
 const HASH_PATTERN = /^[0-9a-f]{64}$/;
 const EXPECTED_CLASS_COUNT = AGT002_COMPANY_EVIDENCE_CLASS_IDS.length;
@@ -202,13 +203,18 @@ export function deriveAgt002CompanyEvidenceAsOf(registryEntries) {
  * status/hash, or rows whose source_manifest_version disagrees with one another (e.g. a
  * registry snapshot mixing the v0.2 and v0.3.1 manifests).
  *
- * `source_snapshot_hash` is a canonical hash of the rows themselves (order-independent,
- * safe columns only); `preview_artifact_hash` is a canonical hash of the typed
+ * `source_snapshot_hash`: in the legacy shape (no `inventorySnapshot`), a canonical hash of the
+ * registry rows alone (order-independent, safe columns only) — the raw registry-only
+ * fingerprint. When an `inventorySnapshot` IS supplied, it is instead a canonical hash of BOTH
+ * the registry rows and the complete validated inventory snapshot together, so a governed
+ * catalog revision is real input to the run's identity, never a cosmetic annotation the raw
+ * fingerprint is allowed to ignore. `preview_artifact_hash` is a canonical hash of the typed
  * {classes, coverage} artifact this same input actually projects to via
  * buildAgt002CompanyEvidenceClasses — so it changes whenever the real projection would,
- * including through `asOf`.
+ * including through `asOf` and through an attached `inventorySnapshot` (re-validated here,
+ * never trusted verbatim, and never persisted anywhere but this opaque digest).
  */
-export function buildAgt002CompanyEvidenceIdentity({ registryEntries, asOf = new Date() } = {}) {
+export function buildAgt002CompanyEvidenceIdentity({ registryEntries, inventorySnapshot = null, asOf = new Date() } = {}) {
   if (!Array.isArray(registryEntries)) fail('registryEntries debe ser una lista');
   if (registryEntries.length !== EXPECTED_CLASS_COUNT) {
     fail(`se requieren exactamente ${EXPECTED_CLASS_COUNT} filas current del catálogo cerrado, hay ${registryEntries.length}`);
@@ -228,12 +234,24 @@ export function buildAgt002CompanyEvidenceIdentity({ registryEntries, asOf = new
   const [sourceManifestVersion] = manifestVersions;
 
   const canonicalRows = [...rows].sort((a, b) => (a.entry_id < b.entry_id ? -1 : a.entry_id > b.entry_id ? 1 : 0));
-  const sourceSnapshotHash = computeAgt002CompanyEvidenceCanonicalHash(canonicalRows);
+
+  const validatedSnapshot = inventorySnapshot != null ? validateAgt002CompanyEvidenceInventorySnapshot(inventorySnapshot) : null;
+
+  // Legacy shape (no inventorySnapshot): byte-compatible with the original registry-only
+  // fingerprint. With an inventorySnapshot: bound to BOTH the registry rows and the complete
+  // validated safe snapshot (never the raw caller-supplied one), so this identity changes
+  // whenever the actual inventory would.
+  const sourceSnapshotHash = validatedSnapshot
+    ? computeAgt002CompanyEvidenceCanonicalHash({ registryRows: canonicalRows, inventorySnapshot: validatedSnapshot })
+    : computeAgt002CompanyEvidenceCanonicalHash(canonicalRows);
 
   // Re-derived through the real runtime builder — never a hand-rolled shadow of it — so
-  // this identity changes whenever the actual projection (coverage/validity) would.
-  const { classes, coverage } = buildAgt002CompanyEvidenceClasses({ registryEntries, asOf });
-  const previewArtifactHash = computeAgt002CompanyEvidenceCanonicalHash({ classes, coverage });
+  // this identity changes whenever the actual projection (coverage/validity/inventory
+  // summaries) would.
+  const { classes, coverage } = buildAgt002CompanyEvidenceClasses({ registryEntries, inventorySnapshot: validatedSnapshot, asOf });
+  const previewArtifactHash = validatedSnapshot
+    ? computeAgt002CompanyEvidenceCanonicalHash({ classes, coverage, catalog_snapshot_hash: validatedSnapshot.catalog_snapshot_hash })
+    : computeAgt002CompanyEvidenceCanonicalHash({ classes, coverage });
 
   return validateAgt002CompanyEvidenceIdentity({
     source_snapshot_hash: sourceSnapshotHash,

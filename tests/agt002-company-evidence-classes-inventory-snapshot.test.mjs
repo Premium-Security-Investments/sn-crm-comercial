@@ -2,7 +2,7 @@
 //
 // RED reason: `buildAgt002CompanyEvidenceClasses` (agt002-company-evidence-classes.js) does
 // not yet accept/consume an `inventorySnapshot` option, so every assertion below that expects
-// a per-class `inventory_summary` (or a fail-closed rejection of a malformed snapshot) fails
+// a per-class `inventory` (or a fail-closed rejection of a malformed snapshot) fails
 // against the current production behavior, which silently ignores the extra option.
 //
 // This file never imports agt002-company-evidence-sharepoint-catalog.js: the governed
@@ -12,7 +12,7 @@
 //
 // What this file pins for the future contract:
 //   - legacy call (no inventorySnapshot) stays byte-compatible with today's shape;
-//   - with an inventorySnapshot, every class gains exactly one additive `inventory_summary`
+//   - with an inventorySnapshot, every class gains exactly one additive `inventory`
 //     field, built from that class's own entry in the snapshot;
 //   - inventory data can NEVER promote presence/validity/applicability/compliance — those
 //     stay derived exclusively from the registry row, exactly as today;
@@ -95,12 +95,12 @@ const LEGACY_CLASS_KEYS = [
 {
   const { classes } = buildAgt002CompanyEvidenceClasses({ registryEntries: [registryEntry('rup')], asOf: ASOF });
   const rup = classes.find(cls => cls.entry_id === 'rup');
-  assert.deepEqual(Object.keys(rup).sort(), LEGACY_CLASS_KEYS, 'omitting inventorySnapshot must keep the exact legacy shape, with no inventory_summary key');
-  assert.ok(!Object.hasOwn(rup, 'inventory_summary'), 'no inventorySnapshot was supplied: inventory_summary must not appear at all');
+  assert.deepEqual(Object.keys(rup).sort(), LEGACY_CLASS_KEYS, 'omitting inventorySnapshot must keep the exact legacy shape, with no inventory key');
+  assert.ok(!Object.hasOwn(rup, 'inventory'), 'no inventorySnapshot was supplied: inventory must not appear at all');
 }
 
 // ---------------------------------------------------------------------------
-// With inventorySnapshot: every class gains exactly one additive inventory_summary field,
+// With inventorySnapshot: every class gains exactly one additive inventory field,
 // built from that class's own entry — never invented, never cross-wired to another class.
 // ---------------------------------------------------------------------------
 {
@@ -122,26 +122,26 @@ const LEGACY_CLASS_KEYS = [
 
   assert.deepEqual(
     Object.keys(rup).sort(),
-    [...LEGACY_CLASS_KEYS, 'inventory_summary'].sort(),
-    'with inventorySnapshot supplied, every class must gain exactly one additive inventory_summary key',
+    [...LEGACY_CLASS_KEYS, 'inventory'].sort(),
+    'with inventorySnapshot supplied, every class must gain exactly one additive inventory key',
   );
   assert.deepEqual(
-    Object.keys(rup.inventory_summary).sort(),
+    Object.keys(rup.inventory).sort(),
     ['effective_state', 'last_reconciled_at', 'source_file_count', 'state_counts'].sort(),
-    'inventory_summary must carry exactly the four safe per-class inventory fields (entry_id is already the class\'s own field)',
+    'inventory must carry exactly the four safe per-class inventory fields (entry_id is already the class\'s own field)',
   );
-  assert.equal(rup.inventory_summary.source_file_count, 3);
-  assert.deepEqual(rup.inventory_summary.state_counts, { ...zeroCounts(), historical_update_required: 2, reported_unverified: 1 });
-  assert.equal(rup.inventory_summary.effective_state, 'historical_update_required');
+  assert.equal(rup.inventory.source_file_count, 3);
+  assert.deepEqual(rup.inventory.state_counts, { ...zeroCounts(), historical_update_required: 2, reported_unverified: 1 });
+  assert.equal(rup.inventory.effective_state, 'historical_update_required');
 
-  assert.equal(rut.inventory_summary.source_file_count, 0);
-  assert.equal(rut.inventory_summary.effective_state, 'absent_unknown');
-  assert.equal(rut.inventory_summary.last_reconciled_at, null);
+  assert.equal(rut.inventory.source_file_count, 0);
+  assert.equal(rut.inventory.effective_state, 'absent_unknown');
+  assert.equal(rut.inventory.last_reconciled_at, null);
 
   // A class with no registry row at all (a "missing" placeholder class) must still receive
-  // its own inventory_summary — inventory is independent of whether the registry has a row.
-  assert.ok(Object.hasOwn(license, 'inventory_summary'), 'a missing-registry-row placeholder class must still carry its own inventory_summary');
-  assert.equal(license.inventory_summary.source_file_count, 1, 'a reported_unverified:1 default must be reflected for every un-overridden class');
+  // its own inventory — inventory is independent of whether the registry has a row.
+  assert.ok(Object.hasOwn(license, 'inventory'), 'a missing-registry-row placeholder class must still carry its own inventory');
+  assert.equal(license.inventory.source_file_count, 1, 'a reported_unverified:1 default must be reflected for every un-overridden class');
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +153,8 @@ const LEGACY_CLASS_KEYS = [
     overridesByEntryId: { rup: { ...zeroCounts(), current_valid: 5 } },
   });
   const plainEntry = registryEntry('rup'); // existence_status=reported, pending review, pending_case_validation, no expiry
-  const withoutInventory = buildAgt002CompanyEvidenceClasses({ registryEntries: [plainEntry], asOf: ASOF }).classes[0];
+  const withoutInventory = buildAgt002CompanyEvidenceClasses({ registryEntries: [plainEntry], asOf: ASOF })
+    .classes.find(cls => cls.entry_id === 'rup');
   const withInventory = buildAgt002CompanyEvidenceClasses({
     registryEntries: [plainEntry], asOf: ASOF, inventorySnapshot: favorableSnapshot,
   }).classes.find(cls => cls.entry_id === 'rup');
@@ -162,7 +163,7 @@ const LEGACY_CLASS_KEYS = [
   assert.equal(withInventory.validity_status, 'unknown', 'a favorable current_valid inventory summary must never promote validity_status');
   assert.equal(withInventory.applicability_status, 'pending_case_validation', 'inventory must never promote applicability_status');
   assert.equal(withInventory.compliance_status, 'pending_review', 'inventory must never promote compliance_status — it has no write path');
-  assert.equal(withInventory.inventory_summary.effective_state, 'current_valid', 'sanity: the favorable inventory summary really is current_valid');
+  assert.equal(withInventory.inventory.effective_state, 'current_valid', 'sanity: the favorable inventory summary really is current_valid');
 }
 
 // ---------------------------------------------------------------------------

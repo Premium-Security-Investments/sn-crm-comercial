@@ -59,7 +59,7 @@ assert.match(server, /import \{ buildAgt002CompanyEvidenceIdentity, deriveAgt002
 assert.match(server, /evidenceAsOf = deriveAgt002CompanyEvidenceAsOf\(companyEvidenceRegistryEntries\);/);
 assert.match(
   server,
-  /evidenceIdentity = buildAgt002CompanyEvidenceIdentity\(\{ registryEntries: companyEvidenceRegistryEntries, asOf: new Date\(evidenceAsOf\) \}\);/,
+  /evidenceIdentity = buildAgt002CompanyEvidenceIdentity\(\{ registryEntries: companyEvidenceRegistryEntries, inventorySnapshot: companyEvidenceInventorySnapshot, asOf: new Date\(evidenceAsOf\) \}\);/,
 );
 assert.doesNotMatch(server, /evidenceIdentity: buildAgt002CompanyEvidenceIdentity\(\{[^}]*asOf: new Date\(\) *\}\)/, 'production must never derive the company-evidence identity from the wall clock');
 

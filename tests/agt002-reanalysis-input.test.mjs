@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildAgt002FrozenEngineInput } from '../agt002-reanalysis-input.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT } from '../agt002-preview-reasoning-effort.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
+import { AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION } from '../agt002-company-evidence-sharepoint-catalog.js';
 
 const FIXTURE_EVIDENCE_IDENTITY = Object.freeze({
   source_snapshot_hash: 'a'.repeat(64),
@@ -9,6 +11,26 @@ const FIXTURE_EVIDENCE_IDENTITY = Object.freeze({
   source_manifest_version: 'v0.3.1-approved-20260829',
 });
 const FIXTURE_EVIDENCE_AS_OF = '2026-08-29T00:00:00.000Z';
+// Synthetic, privacy-safe valid 17-class inventory snapshot matching the real validator shape
+// (agt002-company-evidence-sharepoint-catalog.js) — no real names, paths, URLs or raw ids.
+const FIXTURE_INVENTORY_SNAPSHOT = Object.freeze({
+  inventory_version: AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION,
+  catalog_snapshot_hash: 'c'.repeat(64),
+  source_file_count: 18,
+  excluded_non_evidence_count: 1,
+  state_counts: {
+    current_valid: 0, historical_update_required: 0, reported_unverified: 17, absent_unknown: 0, process_specific_template: 0,
+  },
+  classes: AGT002_COMPANY_EVIDENCE_CLASS_IDS.map(entryId => ({
+    entry_id: entryId,
+    source_file_count: 1,
+    state_counts: {
+      current_valid: 0, historical_update_required: 0, reported_unverified: 1, absent_unknown: 0, process_specific_template: 0,
+    },
+    effective_state: 'reported_unverified',
+    last_reconciled_at: '2026-08-29T00:00:00.000Z',
+  })),
+});
 
 // Factory, never a shared object: each test gets its own fresh, unfrozen fixture tree, so a
 // test that mutates its copy (e.g. the deep-clone test below) can never leak that mutation into
@@ -22,6 +44,7 @@ function createSource() {
     integralV3Governance: {
       companyEvidenceRegistryEntries: [], categoryOverrides: {}, evidenceClassLinkByRequirementId: {}, governanceProvenance: {},
       evidenceIdentity: FIXTURE_EVIDENCE_IDENTITY, evidenceAsOf: FIXTURE_EVIDENCE_AS_OF,
+      companyEvidenceInventorySnapshot: FIXTURE_INVENTORY_SNAPSHOT,
     },
     manizalesManifestSource: { pilot: true },
     idempotencyKey: 'key',
@@ -102,6 +125,9 @@ test('deep-freezes every array/object reachable from the frozen engine input, no
   assert.ok(Object.isFrozen(input.analysis_context.documents[0]));
   assert.ok(Object.isFrozen(input.integral_v3_governance));
   assert.ok(Object.isFrozen(input.integral_v3_governance.evidenceIdentity));
+  assert.ok(Object.isFrozen(input.integral_v3_governance.companyEvidenceInventorySnapshot));
+  assert.ok(Object.isFrozen(input.integral_v3_governance.companyEvidenceInventorySnapshot.classes));
+  assert.ok(Object.isFrozen(input.integral_v3_governance.companyEvidenceInventorySnapshot.classes[0]));
   assert.ok(Object.isFrozen(input.manizales_manifest_source));
 
   assert.throws(() => { input.analysis_context.documents[0].id = 'mutated'; }, TypeError);

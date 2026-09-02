@@ -495,6 +495,11 @@ export function createAgt002PreviewEngine({
   // governed evidence identity to bind to — it keeps buildAgt002CompanyEvidenceClasses's own
   // `new Date()` fallback.
   companyEvidenceAsOf,
+  // F4: the governed SharePoint company-evidence inventory snapshot the run's own identity was
+  // computed from (agt002-company-evidence-sharepoint-catalog.js) — projected through the real
+  // buildAgt002CompanyEvidenceClasses builder below, never re-derived here. `undefined` (the
+  // default, every direct engine caller) keeps the builder's own inventory-less projection.
+  companyEvidenceInventorySnapshot,
   contextVersionId = null,
   manizalesManifestSource = null,
   observability = createAgt002AnalysisObservability(),
@@ -997,6 +1002,7 @@ export function createAgt002PreviewEngine({
       const companyEvidenceClasses = integralContractV3
         ? buildAgt002CompanyEvidenceClasses({
           registryEntries: companyEvidenceClassesProvider(context || {}),
+          inventorySnapshot: companyEvidenceInventorySnapshot,
           ...(companyEvidenceAsOf !== undefined ? { asOf: new Date(companyEvidenceAsOf) } : {}),
         })
         : undefined;

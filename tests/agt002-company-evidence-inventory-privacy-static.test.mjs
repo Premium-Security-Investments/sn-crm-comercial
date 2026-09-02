@@ -22,7 +22,10 @@ import {
 import { buildAgt002CompanyEvidenceIdentity } from '../agt002-company-evidence-identity.js';
 
 const catalogModulePath = new URL('../agt002-company-evidence-sharepoint-catalog.js', import.meta.url);
-const { buildAgt002CompanyEvidenceInventorySnapshot } = await import(catalogModulePath.href);
+const {
+  buildAgt002CompanyEvidenceInventorySnapshot,
+  AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION,
+} = await import(catalogModulePath.href);
 
 const catalogSource = readFileSync(catalogModulePath, 'utf8');
 const engineSource = readFileSync(new URL('../agt002-preview-engine.js', import.meta.url), 'utf8');
@@ -63,7 +66,10 @@ function assertSafe(artifact, label, { allowKeys = new Set() } = {}) {
     }
     if (typeof value === 'string') {
       const lowered = value.toLowerCase();
+      // "sharepoint" is forbidden everywhere EXCEPT as the exact required inventory_version literal.
+      const isRequiredInventoryVersion = value === AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION;
       for (const forbidden of ['http://', 'https://', 'sharepoint', '/sites/', '/drives/', ':/root:', '.pdf', '.docx', '.xlsx', '.zip']) {
+        if (forbidden === 'sharepoint' && isRequiredInventoryVersion) continue;
         assert.ok(!lowered.includes(forbidden), `${label}: forbidden value fragment "${forbidden}" at ${path}`);
       }
       assert.doesNotMatch(value, UUID_ANYWHERE, `${label}: a row-identity uuid must never appear at ${path}`);

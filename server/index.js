@@ -62,6 +62,7 @@ import { runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { loadAgt002CompanyEvidenceRegistryEntries } from '../agt002-company-evidence-classes.js';
+import { loadAgt002CompanyEvidenceInventorySnapshot } from '../agt002-company-evidence-sharepoint-catalog.js';
 import { loadAgt002IntegralGovernanceOverrides } from '../agt002-integral-governance-overrides.js';
 import { buildAgt002CompanyEvidenceIdentity, deriveAgt002CompanyEvidenceAsOf } from '../agt002-company-evidence-identity.js';
 import {
@@ -165,8 +166,9 @@ async function loadAgt002LegalCorpusContextIfEnabled(database) {
 // on any malformed curated row.
 async function loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId) {
   if (!agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3) return null;
-  const [companyEvidenceRegistryEntries, governanceOverrides] = await Promise.all([
+  const [companyEvidenceRegistryEntries, companyEvidenceInventorySnapshot, governanceOverrides] = await Promise.all([
     loadAgt002CompanyEvidenceRegistryEntries(database),
+    loadAgt002CompanyEvidenceInventorySnapshot(database),
     loadAgt002IntegralGovernanceOverrides(database, opportunityId),
   ]);
   // F3/F4: the run-binding company evidence identity, re-derived every load from these SAME
@@ -181,7 +183,7 @@ async function loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId) 
   let evidenceIdentity;
   try {
     evidenceAsOf = deriveAgt002CompanyEvidenceAsOf(companyEvidenceRegistryEntries);
-    evidenceIdentity = buildAgt002CompanyEvidenceIdentity({ registryEntries: companyEvidenceRegistryEntries, asOf: new Date(evidenceAsOf) });
+    evidenceIdentity = buildAgt002CompanyEvidenceIdentity({ registryEntries: companyEvidenceRegistryEntries, inventorySnapshot: companyEvidenceInventorySnapshot, asOf: new Date(evidenceAsOf) });
   } catch {
     const boundaryError = new Error('AGT-002: el registro de evidencia empresarial no está disponible.');
     boundaryError.runtime_boundary_code = 'AGT002_RUNTIME_COMPANY_EVIDENCE_INVALID';
@@ -189,6 +191,7 @@ async function loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId) 
   }
   return {
     companyEvidenceRegistryEntries,
+    companyEvidenceInventorySnapshot,
     categoryOverrides: governanceOverrides.categoryOverrides,
     evidenceClassLinkByRequirementId: governanceOverrides.evidenceClassLinkByRequirementId,
     governanceProvenance: governanceOverrides.provenance,
@@ -3792,6 +3795,7 @@ function buildTenderProcessingWorkerDeps(database) {
           legalCorpusContext,
           ...(integralV3Governance ? {
             companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
+            companyEvidenceInventorySnapshot: integralV3Governance.companyEvidenceInventorySnapshot,
             companyEvidenceAsOf: integralV3Governance.evidenceAsOf,
             categoryOverrides: integralV3Governance.categoryOverrides,
             evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,
@@ -4497,6 +4501,7 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
           legalCorpusContext,
           ...(integralV3Governance ? {
             companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
+            companyEvidenceInventorySnapshot: integralV3Governance.companyEvidenceInventorySnapshot,
             companyEvidenceAsOf: integralV3Governance.evidenceAsOf,
             categoryOverrides: integralV3Governance.categoryOverrides,
             evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,

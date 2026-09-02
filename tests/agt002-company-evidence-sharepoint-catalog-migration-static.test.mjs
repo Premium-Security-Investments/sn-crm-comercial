@@ -10,6 +10,8 @@
 // is proven against a real Postgres in the PGlite integration test alongside this one.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
+import { validateAgt002CompanyEvidenceInventorySnapshot } from '../agt002-company-evidence-sharepoint-catalog.js';
 
 const migration = readFileSync(
   new URL('../supabase/migrations/080_agt002_company_evidence_sharepoint_catalog.sql', import.meta.url), 'utf8',
@@ -209,6 +211,26 @@ assert.doesNotMatch(
 
   assert.equal(fixture.classes.length, 17);
   assert.equal(new Set(fixture.classes.map(cls => cls.entry_id)).size, 17, 'all 17 technical classes must be represented, uniquely');
+
+  // The fixture must already be in the canonical JS closed-catalog order (as declared by
+  // AGT002_COMPANY_EVIDENCE_CLASS_IDS, starting at supervigilancia_operating_license) — never
+  // alphabetical by entry_id. This is a positional check: assert.deepEqual on an array compares
+  // element order, so an alphabetically-ordered fixture fails this even though it carries the
+  // same 17 classes.
+  assert.deepEqual(
+    fixture.classes.map(cls => cls.entry_id),
+    [...AGT002_COMPANY_EVIDENCE_CLASS_IDS],
+    'the reviewed fixture must list classes in the exact canonical JS order, not alphabetically by entry_id',
+  );
+
+  // Re-validating the fixture through the real JS validator must be a no-op: the fixture is
+  // already canonical, so validate(fixture) must deep-equal fixture itself — not merely be
+  // equivalent to it after the validator's own internal reordering.
+  assert.deepEqual(
+    validateAgt002CompanyEvidenceInventorySnapshot(fixture),
+    fixture,
+    'validating the reviewed fixture must return it unchanged: it must already be canonical, never require reordering',
+  );
   for (const cls of fixture.classes) {
     assert.deepEqual(
       Object.keys(cls).sort(),
@@ -227,9 +249,14 @@ assert.doesNotMatch(
   }
 
   // Metadata only: never a name, a path, a URL, an eTag, a raw fingerprint or PII.
+  // "sharepoint" is scanned against a clone with inventory_version blanked, since the pinned
+  // literal 'agt002-company-evidence-sharepoint-catalog-v1' (asserted above) legitimately
+  // contains that fragment — every other term still scans the full serialized fixture.
   const lowered = fixtureText.toLowerCase();
+  const loweredWithoutInventoryVersion = JSON.stringify({ ...fixture, inventory_version: '' }).toLowerCase();
   for (const forbidden of ['http', 'sharepoint', '/sites/', '/drives/', 'web_url', 'etag', 'item_id', 'path', 'file_name', '.pdf', '.docx', '.zip', 'cedula', 'cédula']) {
-    assert.ok(!lowered.includes(forbidden), `the reviewed fixture must never carry "${forbidden}"`);
+    const haystack = forbidden === 'sharepoint' ? loweredWithoutInventoryVersion : lowered;
+    assert.ok(!haystack.includes(forbidden), `the reviewed fixture must never carry "${forbidden}"`);
   }
 }
 

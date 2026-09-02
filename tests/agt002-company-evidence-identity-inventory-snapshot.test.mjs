@@ -1,10 +1,11 @@
 // AGT-002 — buildAgt002CompanyEvidenceIdentity: optional `inventorySnapshot` input.
 //
-// RED reason: `buildAgt002CompanyEvidenceIdentity` (agt002-company-evidence-identity.js) does
-// not yet accept/consume an `inventorySnapshot` option, so the assertions below that expect
-// preview_artifact_hash to react to the governed SharePoint inventory (while
-// source_snapshot_hash and the identity's own key shape stay untouched) fail against current
-// production behavior, which silently ignores the extra option.
+// This mirrors the safer contract already required by the companion projection test
+// (agt002-company-evidence-inventory-projection.test.mjs): attaching a governed SharePoint
+// inventory snapshot must bind BOTH identity hashes — source_snapshot_hash (the run's raw
+// fingerprint) and preview_artifact_hash (the projected artifact) — never just one. A catalog
+// revision is real input to what the run identifies, so the raw fingerprint may not silently
+// ignore it. source_manifest_version and the identity's own 3-key public shape stay untouched.
 //
 // Like the companion classes-builder RED file, this file reconstructs the governed inventory
 // snapshot shape by hand rather than importing agt002-company-evidence-sharepoint-catalog.js,
@@ -86,11 +87,17 @@ function validRows() {
 }
 
 // ---------------------------------------------------------------------------
-// Legacy call (no inventorySnapshot): public identity keeps exactly its 3 keys.
+// Legacy call (no inventorySnapshot): public identity keeps exactly its 3 keys, and an
+// explicit `inventorySnapshot: null` must be byte-identical to omitting it altogether — the
+// legacy no-snapshot identity behavior stays untouched.
 // ---------------------------------------------------------------------------
 {
-  const identity = buildAgt002CompanyEvidenceIdentity({ registryEntries: validRows(), asOf: ASOF });
-  assert.deepEqual(Object.keys(identity).sort(), [...IDENTITY_KEYS].sort());
+  const rows = validRows();
+  const omitted = buildAgt002CompanyEvidenceIdentity({ registryEntries: rows, asOf: ASOF });
+  assert.deepEqual(Object.keys(omitted).sort(), [...IDENTITY_KEYS].sort());
+
+  const explicitNull = buildAgt002CompanyEvidenceIdentity({ registryEntries: rows, asOf: ASOF, inventorySnapshot: null });
+  assert.deepEqual(explicitNull, omitted, 'an explicit null snapshot must produce the exact legacy identity');
 }
 
 // ---------------------------------------------------------------------------
@@ -107,23 +114,27 @@ function validRows() {
 }
 
 // ---------------------------------------------------------------------------
-// inventorySnapshot affects preview_artifact_hash (it flows into the real projected
-// artifact) but must NEVER affect source_snapshot_hash (the raw registry-only fingerprint) —
-// exactly the same asymmetry already proven for human_gate.
+// Supplying an inventorySnapshot binds BOTH hashes: source_snapshot_hash (the run's raw
+// fingerprint) and preview_artifact_hash (the projected artifact) must both react — a
+// governed catalog revision is real input to what the run identifies, not a cosmetic
+// annotation the raw fingerprint is allowed to ignore. source_manifest_version and the public
+// 3-key shape stay unchanged.
 // ---------------------------------------------------------------------------
 {
   const rows = validRows();
   const withoutInventory = buildAgt002CompanyEvidenceIdentity({ registryEntries: rows, asOf: ASOF });
   const withInventory = buildAgt002CompanyEvidenceIdentity({ registryEntries: rows, asOf: ASOF, inventorySnapshot: buildInventorySnapshot() });
 
-  assert.equal(withInventory.source_snapshot_hash, withoutInventory.source_snapshot_hash, 'inventorySnapshot must never enter the raw source_snapshot_hash');
+  assert.notEqual(withInventory.source_snapshot_hash, withoutInventory.source_snapshot_hash, 'inventorySnapshot must bind source_snapshot_hash too, not just preview_artifact_hash');
   assert.notEqual(withInventory.preview_artifact_hash, withoutInventory.preview_artifact_hash, 'attaching an inventory snapshot must change the projected preview_artifact_hash');
+  assert.equal(withInventory.source_manifest_version, withoutInventory.source_manifest_version, 'source_manifest_version stays the registry\'s, untouched by the catalog');
+  assert.deepEqual(Object.keys(withInventory).sort(), [...IDENTITY_KEYS].sort(), 'the public identity shape stays the same exact 3 keys');
 }
 
 // ---------------------------------------------------------------------------
-// Changing catalog_snapshot_hash / a state count / a class's source_file_count inside the
-// inventorySnapshot must change the identity (via preview_artifact_hash), never be absorbed
-// as a no-op.
+// Changing catalog_snapshot_hash / a governed state count / a class's source_file_count
+// inside the inventorySnapshot — while the registry rows stay unchanged — must change BOTH
+// hashes, never be absorbed as a no-op by either one.
 // ---------------------------------------------------------------------------
 {
   const rows = validRows();
@@ -136,19 +147,21 @@ function validRows() {
     inventorySnapshot: buildInventorySnapshot({ catalogSnapshotHash: fixtureHash('inventory-changed') }),
   });
   assert.notEqual(changedHash.preview_artifact_hash, base.preview_artifact_hash, 'a changed catalog_snapshot_hash must change the identity');
-  assert.equal(changedHash.source_snapshot_hash, base.source_snapshot_hash, 'precondition: the registry rows themselves did not change');
+  assert.notEqual(changedHash.source_snapshot_hash, base.source_snapshot_hash, 'a changed catalog_snapshot_hash must change source_snapshot_hash too, even though the registry rows themselves did not change');
 
   const changedState = buildAgt002CompanyEvidenceIdentity({
     registryEntries: rows, asOf: ASOF,
     inventorySnapshot: buildInventorySnapshot({ overridesByEntryId: { rup: { ...zeroCounts(), historical_update_required: 1 } } }),
   });
   assert.notEqual(changedState.preview_artifact_hash, base.preview_artifact_hash, 'a changed governed state for one class must change the identity');
+  assert.notEqual(changedState.source_snapshot_hash, base.source_snapshot_hash, 'a changed governed state for one class must change source_snapshot_hash too');
 
   const changedCount = buildAgt002CompanyEvidenceIdentity({
     registryEntries: rows, asOf: ASOF,
     inventorySnapshot: buildInventorySnapshot({ overridesByEntryId: { rup: { ...zeroCounts(), reported_unverified: 4 } } }),
   });
   assert.notEqual(changedCount.preview_artifact_hash, base.preview_artifact_hash, 'a changed per-class source_file_count must change the identity');
+  assert.notEqual(changedCount.source_snapshot_hash, base.source_snapshot_hash, 'a changed per-class source_file_count must change source_snapshot_hash too');
 }
 
 // ---------------------------------------------------------------------------

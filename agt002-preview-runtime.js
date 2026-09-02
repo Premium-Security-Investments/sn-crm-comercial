@@ -5,6 +5,7 @@ import { retrieveAgt002LegalEvidence } from './agt002-legal-retrieval.js';
 import { discoverTenderSemanticManifest } from './tender-semantic-discovery.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
+import { validateAgt002CompanyEvidenceInventorySnapshot } from './agt002-company-evidence-sharepoint-catalog.js';
 import { renewAgt002PreviewClaim } from './agt002-preview-persistence.js';
 
 export const AGT002_PREVIEW_ENGINE_ID = 'agt002_codex_preview';
@@ -136,7 +137,7 @@ function positiveIntFromEnv(environment, key, fallback) {
  */
 export function createAgt002PreviewRuntime({
   environment = process.env, countDailyRuns, legalCorpusContext,
-  companyEvidenceRegistryEntries, companyEvidenceAsOf, categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance, contextVersionId,
+  companyEvidenceRegistryEntries, companyEvidenceAsOf, companyEvidenceInventorySnapshot, categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance, contextVersionId,
   manizalesManifestSource,
   onBridgeInvocationStarted, onBridgeResponseReceived,
   // Deterministic stage-boundary heartbeat: given the claim (migration 028's
@@ -209,6 +210,19 @@ export function createAgt002PreviewRuntime({
         throw new Error('AGT-002 Preview no está configurado: companyEvidenceAsOf debe tener el formato canónico UTC de inicio de día YYYY-MM-DDT00:00:00.000Z.');
       }
     }
+    // F4: mirrors the registry/asOf requirement above — a real V3 run must never analyze
+    // against no company-evidence inventory at all (that reads as "no historical evidence
+    // exists", the opposite of the truth). The server layer loads it once, alongside the
+    // registry, and injects it here; this runtime never queries the catalog itself.
+    if (analysisConfig.AGT002_INTEGRAL_CONTRACT_V3) {
+      if (companyEvidenceInventorySnapshot === undefined) {
+        throw new Error('AGT-002 Preview no está configurado: AGT002_INTEGRAL_CONTRACT_V3 requiere un inventario SharePoint de evidencia empresarial inyectado explícitamente.');
+      }
+      // Re-validated here (never trusted verbatim), exactly like every other governed value
+      // this boundary checks — a malformed snapshot fails closed at construction, never
+      // reaching the engine's class builder mid-run.
+      validateAgt002CompanyEvidenceInventorySnapshot(companyEvidenceInventorySnapshot);
+    }
   });
 
   const bridgeClient = withRuntimeBoundaryCode('AGT002_RUNTIME_BRIDGE_CLIENT_INVALID', () => createAgt002HetznerBridgeClient({
@@ -259,6 +273,7 @@ export function createAgt002PreviewRuntime({
     ...(analysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? {
       companyEvidenceClassesProvider: () => companyEvidenceRegistryEntries,
       companyEvidenceAsOf,
+      companyEvidenceInventorySnapshot,
       // The semantic discovery stage is not behind an env flag: a V3 run built by this runtime is
       // always a production run, and a production run must derive its frontier from the process's
       // own expediente. Direct engine callers (unit tests, canary scripts) leave the provider unset

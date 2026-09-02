@@ -14,6 +14,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
 
 const migration061 = readFileSync(new URL('../supabase/migrations/061_agt002_company_evidence_registry.sql', import.meta.url), 'utf8');
 const migration075 = readFileSync(new URL('../supabase/migrations/075_agt002_company_evidence_manifest_v031.sql', import.meta.url), 'utf8');
@@ -169,6 +170,11 @@ async function snapshotOf(pg) {
   assert.equal(snapshot.excluded_non_evidence_count, 1);
   assert.deepEqual(snapshot.state_counts, expectedStates);
   assert.equal(snapshot.classes.length, 17);
+  assert.deepEqual(
+    snapshot.classes.map(cls => cls.entry_id),
+    [...AGT002_COMPANY_EVIDENCE_CLASS_IDS],
+    'the RPC must emit classes in the canonical JS closed-catalog order, not alphabetically by entry_id',
+  );
   for (const cls of snapshot.classes) {
     assert.deepEqual(
       Object.keys(cls).sort(),
@@ -182,7 +188,12 @@ async function snapshotOf(pg) {
   // Nothing identifying may ride along: no row id, no locator, no free text.
   const serialized = JSON.stringify(snapshot);
   assert.doesNotMatch(serialized, UUID_ANYWHERE, 'the snapshot must never carry a source-file row id');
-  assert.doesNotMatch(serialized, /https?:\/\/|sharepoint|\/sites\/|\.pdf|\.docx|\.zip/i);
+  assert.doesNotMatch(serialized, /https?:\/\/|\/sites\/|\.pdf|\.docx|\.zip/i);
+  // "sharepoint" is scanned against a clone with inventory_version blanked, since the pinned
+  // literal 'agt002-company-evidence-sharepoint-catalog-v1' (asserted above) legitimately
+  // contains that fragment — every other locator/extension term still scans the full snapshot.
+  const serializedWithoutInventoryVersion = JSON.stringify({ ...snapshot, inventory_version: '' });
+  assert.doesNotMatch(serializedWithoutInventoryVersion, /sharepoint/i);
 
   // --- Fixture and seed are the same reviewed catalog, hash included. ---
   assert.deepEqual(

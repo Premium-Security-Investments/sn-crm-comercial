@@ -171,6 +171,9 @@ export function createAgt002ReanalysisExecutor({
         ...(jobLeaseHeartbeat ? { beforeProviderCall: jobLeaseHeartbeat } : {}),
         ...(governance ? {
           companyEvidenceRegistryEntries: governance.companyEvidenceRegistryEntries,
+          // F4: the SAME frozen catalog snapshot the run identity was computed from — never
+          // re-loaded or re-derived here.
+          companyEvidenceInventorySnapshot: governance.companyEvidenceInventorySnapshot,
           // F4/A5: the SAME deterministic instant the frozen governance already carries — never
           // the wall clock, never re-derived here — so the durable engine's classes/identity bind
           // to it too.

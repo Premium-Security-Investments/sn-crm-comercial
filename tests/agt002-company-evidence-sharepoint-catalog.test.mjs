@@ -353,13 +353,20 @@ for (const data of [null, undefined, {}, [], 'snapshot', { inventory_version: AG
 // Nothing sensitive can ever ride along, whatever the caller passed in.
 // ---------------------------------------------------------------------------
 {
-  const serialized = JSON.stringify(buildBase());
+  const built = buildBase();
+  const serialized = JSON.stringify(built);
   for (const forbidden of [
     'item_id', 'name', 'path', 'url', 'etag', 'e_tag', 'fingerprint', 'drive', 'site',
-    'sharepoint', 'https://', 'cédula', 'cedula', '.pdf', '.docx', '.zip',
+    'https://', 'cédula', 'cedula', '.pdf', '.docx', '.zip',
   ]) {
     assert.ok(!serialized.toLowerCase().includes(forbidden.toLowerCase()), `the safe snapshot must never carry "${forbidden}"`);
   }
+  // "sharepoint" is forbidden everywhere EXCEPT as the exact required inventory_version literal.
+  const serializedWithoutInventoryVersion = JSON.stringify({ ...built, inventory_version: null });
+  assert.ok(
+    !serializedWithoutInventoryVersion.toLowerCase().includes('sharepoint'),
+    'the safe snapshot must never carry "sharepoint" anywhere other than the required inventory_version literal',
+  );
 }
 
 console.log('AGT-002 governed SharePoint company-evidence catalog (inventory snapshot) contract passed');
