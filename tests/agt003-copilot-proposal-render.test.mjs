@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { loadReactComponent, renderReactComponent } from './helpers/bundle-react-component.mjs';
 
 const VigiaCopilotProposal = await loadReactComponent('src/vigia/VigiaOpportunityCopilot.tsx', 'VigiaCopilotProposal');
@@ -106,5 +107,25 @@ const longNextStepMatch = /<div class="vigia-copilot-next-step">([\s\S]*?)<\/div
 assert.ok(longNextStepMatch, 'el bloque "Siguiente paso" debe existir para una recomendación genuina');
 assert.ok(longNextStepMatch[1].includes(longStrategy), 'el paso sugerido largo se renderiza íntegro');
 assert.equal(longNextStepMatch[1].includes('…'), false, 'el bloque no contiene ninguna elipsis de truncado');
+
+// Target táctil responsive: los controles del resultado deben cumplir min-height:44px (WCAG 2.5.5).
+const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+const ruleHasMinHeight44 = selector => {
+  const ruleRegex = /([^{}]+)\{([^{}]*)\}/g;
+  let match;
+  while ((match = ruleRegex.exec(css))) {
+    const selectors = match[1].split(',').map(s => s.trim());
+    if (selectors.includes(selector) && /min-height:\s*44px\b/.test(match[2])) return true;
+  }
+  return false;
+};
+assert.ok(
+  ruleHasMinHeight44('.vigia-copilot-proposal-header .secondary'),
+  'los controles del resultado deben cumplir target táctil mínimo de 44px: falta min-height:44px en .vigia-copilot-proposal-header .secondary',
+);
+assert.ok(
+  ruleHasMinHeight44('.vigia-copilot-actions button'),
+  'los controles del resultado deben cumplir target táctil mínimo de 44px: falta min-height:44px en .vigia-copilot-actions button',
+);
 
 console.log('AGT-003 copilot proposal render checks passed');
