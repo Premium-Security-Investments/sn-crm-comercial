@@ -24,6 +24,7 @@ assert.doesNotMatch(tenderWorkbench, /['"]Vig-IA['"]/);
 
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 const approvedCommercialCopilotEmptyCopy = 'Vig-IA no encontró acciones adicionales fuera de las alertas comerciales.';
+const approvedCommercialCopilotInferencesCopy = 'Inferencias de Vig-IA · por confirmar';
 assert.match(main, /VIGIA_VISIBLE_NAMES\.tenders/);
 for (const legacyTenderLabel of [
   'Radar de Vig-IA',
@@ -42,7 +43,7 @@ for (const path of [
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
   assert.match(source, /VIGIA_VISIBLE_NAMES\.commercial/);
   const identitySurface = path.endsWith('VigiaOpportunityCopilot.tsx')
-    ? source.replace(approvedCommercialCopilotEmptyCopy, '')
+    ? source.replace(approvedCommercialCopilotEmptyCopy, '').replace(approvedCommercialCopilotInferencesCopy, '')
     : source;
   assert.doesNotMatch(identitySurface, /Vig-IA(?! Comercial)/);
 }
@@ -62,7 +63,7 @@ for (const [label, source] of [
   ['tender analysis section', readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8')],
 ]) {
   const identitySurface = label === 'commercial copilot'
-    ? source.replace(approvedCommercialCopilotEmptyCopy, '')
+    ? source.replace(approvedCommercialCopilotEmptyCopy, '').replace(approvedCommercialCopilotInferencesCopy, '')
     : source;
   assert.doesNotMatch(identitySurface, /Vig-IA(?! (?:Gerencial|Licitaciones|Comercial))/, `${label} contains a bare Vig-IA label outside the approved empty-preflight copy`);
   assert.doesNotMatch(source, /VIG-IA/, `${label} contains the obsolete uppercase label`);

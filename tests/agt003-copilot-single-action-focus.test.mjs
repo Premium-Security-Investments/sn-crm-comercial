@@ -19,8 +19,11 @@ const briefUpdated = {
   draft: { subject: 'Asunto actualizado', body: 'Cuerpo actualizado' }, recommended_asset_ids: [], warnings: [], human_review_required: true,
 };
 
-// Escenario A: dos ciclos de generación controlados — verifica que el foco se repita en el
-// nuevo heading "Siguiente paso sugerido" para un requestId nuevo (r2), no solo en el primero.
+// Escenario A: dos ciclos de generación controlados. Contrato aprobado: no hay traslado
+// programático de foco; tras cada generación el foco permanece en <body> y el estado se anuncia
+// con un `role="status"` sr-only. El segundo ciclo se dispara desde el botón secundario del
+// header de la propuesta (`.vigia-copilot-proposal-header button`), ya que el CTA externo
+// `.vigia-copilot-generate` desaparece una vez existe un borrador (ready).
 {
   const resolvers = [];
   const request = () => new Promise((resolve) => { resolvers.push(resolve); });
@@ -32,31 +35,34 @@ const briefUpdated = {
     assert.equal(resolvers.length, 1, 'el primer ciclo debe encolar exactamente un resolver');
     resolvers[0]({ run_id: 'r1', status: 'completed', human_review_required: true, output: { brief } });
     await view.flush();
-    const heading = view.window.document.activeElement;
-    assert.notEqual(heading, view.window.document.body, 'el foco se movió fuera del <body>');
-    assert.match(heading.textContent, /Siguiente paso sugerido/);
+    assert.equal(view.window.document.activeElement, view.window.document.body,
+      'el contrato aprobado no traslada el foco programáticamente tras generar');
+    const status = view.container.querySelector('.vigia-copilot-result [role="status"]');
+    assert.ok(status, 'debe existir un anuncio sr-only con role="status" en la propuesta');
+    assert.equal(status.textContent.trim(), 'Propuesta preparada para revisión.');
 
-    const generateButton = view.container.querySelector('.vigia-copilot-generate button');
-    assert.match(generateButton.textContent, /Actualizar borrador/);
-    await view.click('.vigia-copilot-generate button');
+    const regenerateButton = view.container.querySelector('.vigia-copilot-proposal-header button');
+    assert.ok(regenerateButton, 'el segundo ciclo se dispara desde el botón del header de la propuesta');
+    assert.equal(regenerateButton.textContent, 'Actualizar propuesta');
+    await view.click('.vigia-copilot-proposal-header button');
     assert.match(view.container.querySelector('[role="status"]').textContent, /está preparando un borrador acotado/);
     assert.equal(resolvers.length, 2, 'el segundo ciclo debe encolar un nuevo resolver (r2)');
     resolvers[1]({ run_id: 'r2', status: 'completed', human_review_required: true, output: { brief: briefUpdated } });
     await view.flush();
-    const secondHeading = view.window.document.activeElement;
-    assert.notEqual(secondHeading, view.window.document.body, 'el foco se movió fuera del <body> en el segundo ciclo');
-    assert.match(secondHeading.textContent, /Siguiente paso sugerido/);
-    assert.notEqual(secondHeading, heading, 'el foco debe moverse a un heading nuevo para el requestId r2');
+    assert.equal(view.window.document.activeElement, view.window.document.body,
+      'el contrato aprobado no traslada el foco programáticamente en el segundo ciclo');
+    const secondStatus = view.container.querySelector('.vigia-copilot-result [role="status"]');
+    assert.ok(secondStatus, 'debe existir el anuncio sr-only también en el segundo ciclo');
+    assert.equal(secondStatus.textContent.trim(), 'Propuesta preparada para revisión.');
   } finally {
     await view.unmount();
   }
 }
 
-// Escenario B: abstención compacta total — cuando el único paso propuesto repite literalmente
-// una alerta comercial activa, no debe renderizarse `.vigia-copilot-summary`; el foco debe
-// recaer en un encabezado semántico enfocable "Borrador editable" (no en el div genérico
-// `.vigia-copilot-result`), y debe existir un anuncio breve de éxito con role="status" que no
-// duplique el texto del heading.
+// Escenario B: cuando el único paso propuesto repite literalmente una alerta comercial activa,
+// el contrato aprobado sigue renderizando la propuesta unificada: heading visible "Propuesta de
+// seguimiento" (sin exigencia de que sea programáticamente enfocable), foco en <body>, el mismo
+// anuncio sr-only exacto, y el borrador/acciones disponibles.
 {
   const abstainPreflight = {
     nextAction: { code: 'overdue', label: 'Vencida', detail: 'Vencida hace 4 días', tone: 'critical', className: 'is-critical' },
@@ -76,18 +82,14 @@ const briefUpdated = {
     assert.match(view.container.querySelector('[role="status"]').textContent, /está preparando un borrador acotado/);
     resolveAbstain({ run_id: 'r-abstain', status: 'completed', human_review_required: true, output: { brief: abstainBrief } });
     await view.flush();
-    assert.equal(view.container.querySelector('.vigia-copilot-summary'), null, 'la abstención compacta no debe renderizar el resumen');
     const heading = view.container.querySelector('.vigia-copilot-result h4');
-    assert.ok(heading, 'debe existir un encabezado semántico enfocable en la abstención');
-    assert.match(heading.textContent, /Borrador editable/);
-    const resultContainer = view.container.querySelector('.vigia-copilot-result');
-    assert.notEqual(view.window.document.activeElement, resultContainer, 'no debe enfocar el div genérico .vigia-copilot-result');
-    assert.equal(view.window.document.activeElement, heading, 'el foco debe recaer en el heading "Borrador editable"');
-    assert.notEqual(view.window.document.activeElement, view.window.document.body);
+    assert.ok(heading, 'debe existir el heading visible de la propuesta');
+    assert.equal(heading.textContent, 'Propuesta de seguimiento');
+    assert.equal(view.window.document.activeElement, view.window.document.body,
+      'el contrato aprobado no traslada el foco programáticamente en la abstención');
     const status = view.container.querySelector('.vigia-copilot-result [role="status"]');
-    assert.ok(status, 'debe existir un anuncio breve de éxito con role="status"');
-    assert.match(status.textContent, /Borrador preparado para revisión\./);
-    assert.notEqual(status.textContent.trim(), heading.textContent.trim(), 'el anuncio de éxito no debe duplicar el texto del heading');
+    assert.ok(status, 'debe existir el anuncio sr-only de éxito con role="status"');
+    assert.equal(status.textContent.trim(), 'Propuesta preparada para revisión.');
     assert.ok(view.container.querySelector('.vigia-copilot-draft'), 'el borrador editable sigue disponible en la abstención');
     assert.ok(view.container.querySelector('.vigia-copilot-actions'), 'las acciones siguen disponibles en la abstención');
   } finally {

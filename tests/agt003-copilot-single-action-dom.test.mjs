@@ -27,11 +27,12 @@ const okResult = subject => ({
   assert.equal(view.container.querySelector('.vigia-copilot-generate button').className.includes('secondary'), false, 'en loading el CTA sigue siendo primario');
   assert.match(view.container.querySelector('[role="status"]').textContent, /está preparando un borrador acotado/);
   resolveGenerate(); await view.flush();
-  // AGT-003 hotfix: una vez existe un borrador (ready), "Actualizar borrador" pasa a ser
-  // visualmente secundario frente a la acción primaria de completar el flujo (Copiar correo).
-  const regenerateButton = view.container.querySelector('.vigia-copilot-generate button');
-  assert.equal(regenerateButton.textContent, 'Actualizar borrador');
-  assert.ok(regenerateButton.className.includes('secondary'), 'tras generar, "Actualizar borrador" debe ser visualmente secundario');
+  // Contrato aprobado: en ready el CTA externo de preparación desaparece; la regeneración
+  // se dispara únicamente desde el botón secundario dentro del header de la propuesta.
+  assert.equal(view.container.querySelector('.vigia-copilot-generate'), null, 'en ready no debe existir el CTA externo de preparación');
+  const regenerateButton = view.container.querySelector('.vigia-copilot-proposal-header button');
+  assert.equal(regenerateButton.textContent, 'Actualizar propuesta');
+  assert.ok(regenerateButton.className.includes('secondary'), 'tras generar, "Actualizar propuesta" debe ser visualmente secundario');
   const copyButton = [...view.container.querySelectorAll('.vigia-copilot-actions button')].find(b => b.textContent === 'Copiar correo');
   assert.ok(copyButton, 'debe existir el botón primario "Copiar correo"');
   assert.equal(copyButton.className.includes('secondary'), false, '"Copiar correo" sigue siendo la acción primaria');
