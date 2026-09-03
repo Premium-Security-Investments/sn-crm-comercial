@@ -198,6 +198,18 @@ test('no renewal parameter can carry free text or raw provider data', () => {
   assert.doesNotMatch(migration, /\bp_[a-z_]+\s+jsonb\b/i, 'no renewal parameter may be a jsonb payload');
 });
 
+test('AGT-002 durable batched analysis (081, docs/plans/2026-09-03-agt002-durable-batched-analysis.md Task 1), if present, must never redefine or drop these fenced renewal RPCs: the heartbeat must stay identical and fenced for both legacy single_turn_v1 and durable_batched_v1 jobs', () => {
+  const laterMigrationUrl = new URL('../supabase/migrations/081_agt002_durable_batched_analysis.sql', import.meta.url);
+  if (!existsSync(laterMigrationUrl)) return; // nothing to cross-check until 081 exists
+  const laterMigration = readFileSync(laterMigrationUrl, 'utf8');
+  for (const fn of [PREVIEW_FN, REANALYSIS_FN]) {
+    assert.doesNotMatch(
+      laterMigration, new RegExp(String.raw`(create\s+or\s+replace|drop)\s+function\s+(if\s+exists\s+)?public\.${fn}\b`, 'i'),
+      `migration 081 must leave public.${fn} exactly as 079 defined it, even while it additively extends psi_agt002_reanalysis_jobs (execution_mode, phase, progress counters, resume_count) for durable-batched jobs`,
+    );
+  }
+});
+
 test('the rollback removes only the two new renewal RPCs', () => {
   const rollback = withoutComments(readSql(ROLLBACK_URL, 'supabase/rollbacks/079_agt002_lease_heartbeat_rollback.sql'));
   assert.match(rollback, new RegExp(String.raw`drop\s+function\s+if\s+exists\s+public\.${PREVIEW_FN}`, 'i'));
