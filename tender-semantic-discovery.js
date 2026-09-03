@@ -321,6 +321,16 @@ export const TENDER_SEMANTIC_CATEGORIES = Object.freeze([
 // measurements this default was chosen from).
 export const TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS = 20_000;
 
+// Bounded per-batch retry for AGT-002 `AGT002_CODEX_TIMEOUT`, after a real 20k-char v9
+// Procuraduria run succeeded five batches (latencies 19.6-57.6s) and then batch 6 hit exactly that
+// transport code at 285002ms — a transient/stalled provider turn, not an oversized request. Retrying
+// the SAME request up to this many total client.run attempts trades a fixed, small number of extra
+// provider turns for surviving a stalled one, without ever increasing the timeout or shrinking the
+// input. Every other client.run rejection (a different provider error, cancellation/abort, or any
+// post-response validation failure) still fails the batch — and therefore the whole run — closed on
+// the very first attempt, exactly as before this constant existed.
+export const TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS = 3;
+
 // Closed, privacy-safe internal codes for a rejection that happens AFTER a real bridge response
 // (schema-valid or not) reaches this module: the provider answered, but the answer failed one of
 // this module's own local semantic gates — citation anchoring, source_unit uniqueness, or a
@@ -1115,6 +1125,11 @@ export async function discoverTenderSemanticManifest({
   const batchOutputs = [];
   const completedLedgerEntries = [];
   for (const batch of batches) {
+    // Number of client.run attempts actually made for THIS batch, visible to both the success path
+    // (completedLedgerEntries) and the failure path (the catch below) so `attempt_count` can be
+    // attached only when it is more than one — a catalog/preflight failure before the first
+    // client.run leaves this at 0 and never carries the field.
+    let clientAttemptCount = 0;
     try {
       // Built BEFORE this batch's provider call, from only this batch's own units, so a batch this
       // module cannot represent honestly costs zero provider turns and the enum stays bounded per call.
@@ -1156,10 +1171,14 @@ export async function discoverTenderSemanticManifest({
       };
       // Batches are deliberately sequential (not Promise.all): the request order itself must be
       // deterministic and reproducible, matching the batch_index each idempotency key already encodes.
-      // The heartbeat renews immediately before this call, never after: a rejection here must stop
-      // this batch's provider call from ever happening.
-      if (beforeProviderCall) await beforeProviderCall();
-      const raw = await client.run({
+      // The heartbeat renews immediately before EVERY attempt at this batch's call, never after: a
+      // rejection here must stop that attempt's provider call from ever happening, and must never
+      // itself be retried as though it were a provider failure.
+      //
+      // `request` is built exactly once and reused, by the same object reference, on every attempt —
+      // including the same `idempotencyKey` — so a retry can never diverge from the request the batch
+      // plan committed to, byte-for-byte.
+      const request = {
         model,
         policy: TENDER_SEMANTIC_DISCOVERY_POLICY,
         input,
@@ -1168,7 +1187,26 @@ export async function discoverTenderSemanticManifest({
         idempotencyKey: tenderSemanticDiscoveryBatchIdempotencyKey({ idempotencyKey, batchIndex: batch.batch_index, batchHash }),
         signal,
         effort,
-      });
+      };
+      let raw;
+      for (let attempt = 1; attempt <= TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS; attempt += 1) {
+        if (beforeProviderCall) await beforeProviderCall();
+        clientAttemptCount += 1;
+        try {
+          raw = await client.run(request);
+          break;
+        } catch (runError) {
+          // The ONLY retryable failure: the bridge's own exact transport-timeout code, which the real
+          // Procuraduria v9 run showed can be transient/stalled rather than a symptom of an oversized
+          // request. Every other client.run rejection — a different provider error, cancellation/
+          // abort, or anything else — still fails this batch (and therefore the whole run) closed on
+          // the very first attempt, exactly as before this loop existed.
+          if (runError?.code === 'AGT002_CODEX_TIMEOUT' && attempt < TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS) {
+            continue;
+          }
+          throw runError;
+        }
+      }
       if (typeof raw?.content !== 'string' || !raw.content.trim()) {
         throw discoveryError(
           'El proveedor no devolvió una propuesta semántica utilizable.',
@@ -1201,13 +1239,18 @@ export async function discoverTenderSemanticManifest({
       batchOutputs.push({ batchIndex: batch.batch_index, usage: batchUsage, ...canonicalBatch });
       completedLedgerEntries.push({
         ...plainLedgerBatchEntry(batch, 'completed'),
-        // Safe usage only — tokens and cost, never source text or model content.
+        // Safe usage only — tokens and cost, never source text or model content — and always derived
+        // from `raw`, i.e. the one ACCEPTED response: a timed-out attempt never reaches `raw` at all,
+        // so a retried batch's usage is never inflated by its failed attempts.
         usage: { input_tokens: batchUsage.input_tokens, output_tokens: batchUsage.output_tokens, cost_usd: batchUsage.cost_usd },
         // v8: how many units of this batch had every explicit disposition retracted for
         // contradicting another disposition or a server-derived citation. A COUNT, never an id or a
         // reason, so a batch that contradicted itself is diagnosable without the raw answer — which
         // is never stored — and without the ledger carrying anything it did not already carry.
         retracted_disposition_units: canonicalBatch.retracted_disposition_units,
+        // Only present when this batch needed more than one client.run attempt to succeed, so an
+        // ordinary one-attempt batch's ledger shape is byte-identical to before this retry existed.
+        ...(clientAttemptCount > 1 ? { attempt_count: clientAttemptCount } : {}),
       });
     } catch (error) {
       // FAIL-CLOSED: no partial semantic manifest is ever returned for a per-batch failure. What the
@@ -1234,7 +1277,20 @@ export async function discoverTenderSemanticManifest({
         total_source_units: plannerLedger.total_source_units,
         assigned_source_units: plannerLedger.assigned_source_units,
         failed_source_units: plannerLedger.failed_source_units,
-        batches: [...completedLedgerEntries, { ...plainLedgerBatchEntry(batch, 'failed'), stage, code }, ...pendingEntries],
+        batches: [
+          ...completedLedgerEntries,
+          {
+            ...plainLedgerBatchEntry(batch, 'failed'),
+            stage,
+            code,
+            // Same rule as the completed shape above: only present when client.run was actually
+            // attempted more than once for this batch, so a preflight/catalog failure (0 attempts)
+            // or an ordinary single-attempt failure (1 attempt) keep the exact ledger shape they had
+            // before this retry existed.
+            ...(clientAttemptCount > 1 ? { attempt_count: clientAttemptCount } : {}),
+          },
+          ...pendingEntries,
+        ],
       };
       throw error;
     }
