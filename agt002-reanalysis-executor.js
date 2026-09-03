@@ -13,6 +13,7 @@ import { AGT002_MAX_PREVIEW_CLAIM_LEASE_SECONDS, agt002RequiredPreviewClaimLease
 import { classifyAgt002ReanalysisWorkerError } from './agt002-reanalysis-worker.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { validateAgt002CompanyEvidenceIdentity, validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
+import { createAgt002AnalysisCheckpointAdapter } from './agt002-analysis-checkpoints.js';
 
 function isObject(value) {
   return value != null && typeof value === 'object' && !Array.isArray(value);
@@ -172,6 +173,11 @@ export function createAgt002ReanalysisExecutor({
   runPostBridgeAnalysis = runAgt002PostBridgeAnalysis,
   createCorrelationId = randomUUID,
   observability = createAgt002AnalysisObservability(),
+  // AGT-002 durable batched analysis, Task 2: constructed ONLY for a claimed job whose own
+  // executionMode is exactly 'durable_batched_v1' — never for a missing mode, 'single_turn_v1',
+  // or any direct/Manizales/legacy path. Kept as an injectable seam (defaulting to the real
+  // Supabase RPC adapter) purely so this dependency never touches a database in unit tests.
+  createCheckpointAdapter = createAgt002AnalysisCheckpointAdapter,
 } = {}) {
   return async function executeAgt002Reanalysis(database, job, { beforeProviderCall: jobLeaseHeartbeat } = {}) {
     const input = validFrozenInput(job);
@@ -210,6 +216,14 @@ export function createAgt002ReanalysisExecutor({
       // > responseCount` means, and only means, "a bridge call is in flight right now".
       const bridgeTelemetry = { invocationStarted: false, responseReceived: false, invocationCount: 0, responseCount: 0 };
       const governance = input.integral_v3_governance;
+      // Durable batched checkpoint hooks: constructed exactly once, only for a claimed job whose
+      // own executionMode is exactly 'durable_batched_v1', fenced by this claimed job's own
+      // jobId/leaseId/idempotencyKey. A missing executionMode (every existing legacy/direct/
+      // Manizales job) or an explicit 'single_turn_v1' never constructs an adapter, so
+      // createRuntime never receives a checkpointHooks key at all on those paths.
+      const checkpointHooks = job.executionMode === 'durable_batched_v1'
+        ? createCheckpointAdapter(database, { jobId: job.jobId, leaseId: job.leaseId, idempotencyKey: job.idempotencyKey })
+        : null;
       const engine = createRuntime({
         environment: frozenEnvironment(environment, input),
         countDailyRuns: () => countDailyRuns(database),
@@ -223,6 +237,7 @@ export function createAgt002ReanalysisExecutor({
         database,
         previewClaim: { idempotencyKey: job.idempotencyKey, claimId: previewClaimId },
         ...(jobLeaseHeartbeat ? { beforeProviderCall: jobLeaseHeartbeat } : {}),
+        ...(checkpointHooks ? { checkpointHooks } : {}),
         ...(governance ? {
           companyEvidenceRegistryEntries: governance.companyEvidenceRegistryEntries,
           // F4: the SAME frozen catalog snapshot the run identity was computed from — never

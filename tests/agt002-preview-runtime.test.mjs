@@ -551,4 +551,27 @@ testRuntimeBuildsHetznerBridgeClientNotLocalSpawn();
   );
 }
 
+// ---------------------------------------------------------------------------------------------
+// AGT-002 durable batched analysis, Task 2 (RED — docs/plans/2026-09-03-agt002-durable-batched-
+// analysis.md): the runtime accepts an optional, already-built `checkpointHooks` object
+// (agt002-reanalysis-executor.js constructs it via agt002-analysis-checkpoints.js's
+// createAgt002AnalysisCheckpointAdapter only for a claimed durable_batched_v1 job — see
+// tests/agt002-reanalysis-executor.test.mjs) and forwards it to engine construction verbatim.
+// Absent (every non-durable/direct/Manizales caller today), engine construction must carry no
+// checkpointHooks key at all — byte-identical to before this option existed.
+// ---------------------------------------------------------------------------------------------
+{
+  let capturedOptions = null;
+  const spyEngine = (options) => { capturedOptions = options; return { analyze: async () => {} }; };
+  createAgt002PreviewRuntime({ environment: baseEnv(), countDailyRuns: async () => 0, createEngine: spyEngine });
+  assert.equal(Object.hasOwn(capturedOptions, 'checkpointHooks'), false, 'without an injected checkpoint adapter, engine construction must never carry a checkpointHooks key');
+}
+{
+  let capturedOptions = null;
+  const spyEngine = (options) => { capturedOptions = options; return { analyze: async () => {} }; };
+  const checkpointHooks = Object.freeze({ loadCheckpoint: async () => ({ hit: false }), storeCheckpoint: async () => ({ status: 'created', checkpointId: 'cp-1' }) });
+  createAgt002PreviewRuntime({ environment: baseEnv(), countDailyRuns: async () => 0, createEngine: spyEngine, checkpointHooks });
+  assert.equal(capturedOptions.checkpointHooks, checkpointHooks, 'an injected checkpoint adapter must reach engine construction verbatim');
+}
+
 console.log('AGT-002 Preview runtime factory (fail-closed environment wiring) passed');

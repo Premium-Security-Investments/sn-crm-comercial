@@ -16,7 +16,12 @@ const JOB = Object.freeze({
   },
 });
 
-function harness({ previewClaim = { status: 'claimed', claim_id: 'preview-lease-1' }, postOutcome = { status: 'completed', analysis_run_id: 'run-1', error_code: null }, runtimeError = null } = {}) {
+function harness({
+  previewClaim = { status: 'claimed', claim_id: 'preview-lease-1' },
+  postOutcome = { status: 'completed', analysis_run_id: 'run-1', error_code: null },
+  runtimeError = null,
+  createCheckpointAdapter = undefined,
+} = {}) {
   const calls = { claim: [], find: [], release: [], runtime: [], post: [], count: [] };
   const executor = createAgt002ReanalysisExecutor({
     environment: { AGT002_HETZNER_BRIDGE_URL: 'https://bridge.invalid', AGT002_HETZNER_BRIDGE_HMAC_SECRET: 'not-observed' },
@@ -28,6 +33,7 @@ function harness({ previewClaim = { status: 'claimed', claim_id: 'preview-lease-
     runPostBridgeAnalysis: async (...args) => { calls.post.push(args); return postOutcome; },
     createCorrelationId: () => 'correlation-1',
     observability: { record() {} },
+    ...(createCheckpointAdapter ? { createCheckpointAdapter } : {}),
   });
   return { executor, calls };
 }
@@ -308,4 +314,91 @@ test('a persisted canonical run wins even if presentation later reports unavaila
   const { executor } = harness({ postOutcome: { status: 'unavailable', analysis_run_id: 'run-persisted', error_code: 'response_serialization_failed' } });
   const result = await executor({ kind: 'db' }, JOB);
   assert.deepEqual(result, { status: 'completed', analysis_run_id: 'run-persisted', error_code: null, reused: false });
+});
+
+// ---------------------------------------------------------------------------------------------
+// AGT-002 durable batched analysis, Task 2 (RED — docs/plans/2026-09-03-agt002-durable-batched-
+// analysis.md): checkpoint hooks (agt002-analysis-checkpoints.js's
+// createAgt002AnalysisCheckpointAdapter, see tests/agt002-analysis-checkpoints.test.mjs) are
+// injected into runtime construction ONLY for a claimed job whose executionMode is exactly
+// 'durable_batched_v1'. Every legacy shape — no executionMode at all (every job fixture above),
+// or an explicit 'single_turn_v1' — must construct zero checkpoint adapters and reach
+// createRuntime with no checkpointHooks key at all, so direct/Manizales/legacy paths stay
+// byte-equivalent to today.
+// ---------------------------------------------------------------------------------------------
+
+test('a durable_batched_v1 job constructs exactly one checkpoint adapter, fenced by its own job/lease identity, and forwards its hooks into runtime construction', async () => {
+  const checkpointHooks = Object.freeze({ loadCheckpoint: async () => ({ hit: false }), storeCheckpoint: async () => ({ status: 'created', checkpointId: 'cp-1' }) });
+  const adapterCalls = [];
+  const createCheckpointAdapter = (...args) => { adapterCalls.push(args); return checkpointHooks; };
+  const durableJob = { ...JOB, executionMode: 'durable_batched_v1' };
+
+  const { executor, calls } = harness({ createCheckpointAdapter });
+  const database = { kind: 'db' };
+  await executor(database, durableJob);
+
+  assert.equal(adapterCalls.length, 1, 'a durable_batched_v1 job must construct exactly one checkpoint adapter');
+  assert.equal(adapterCalls[0][0], database, 'the adapter must be built against the same database handle the executor was given');
+  assert.equal(adapterCalls[0][1].jobId, 'job-1');
+  assert.equal(adapterCalls[0][1].leaseId, 'lease-1');
+  assert.equal(adapterCalls[0][1].idempotencyKey, 'key-1', 'the adapter must be fenced by the job\'s own canonical idempotency key, never a rehashed one');
+  assert.equal(calls.runtime[0].checkpointHooks, checkpointHooks, 'the adapter hooks must reach runtime construction verbatim');
+});
+
+test('a job with no executionMode (every legacy/direct/Manizales shape today) never constructs a checkpoint adapter, and runtime construction never carries a checkpointHooks key', async () => {
+  const adapterCalls = [];
+  const createCheckpointAdapter = (...args) => { adapterCalls.push(args); return {}; };
+  const { executor, calls } = harness({ createCheckpointAdapter });
+  await executor({ kind: 'db' }, JOB);
+  assert.equal(adapterCalls.length, 0, 'a job with no executionMode must never construct a checkpoint adapter');
+  assert.equal(Object.hasOwn(calls.runtime[0], 'checkpointHooks'), false, 'runtime options must never carry a checkpointHooks key when no adapter was built, so byte-identical construction is preserved');
+});
+
+test('an explicit single_turn_v1 job never constructs a checkpoint adapter either', async () => {
+  const adapterCalls = [];
+  const createCheckpointAdapter = (...args) => { adapterCalls.push(args); return {}; };
+  const singleTurnJob = { ...JOB, executionMode: 'single_turn_v1' };
+  const { executor, calls } = harness({ createCheckpointAdapter });
+  await executor({ kind: 'db' }, singleTurnJob);
+  assert.equal(adapterCalls.length, 0, 'an explicit single_turn_v1 job must never construct a checkpoint adapter');
+  assert.equal(Object.hasOwn(calls.runtime[0], 'checkpointHooks'), false);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Task 2 remediation (RED — docs/plans/2026-09-03-agt002-durable-batched-analysis.md): every
+// test above injects a mocked `createCheckpointAdapter`, so it never exercises the real default
+// from agt002-analysis-checkpoints.js. This executor calls that real default with
+// `{ jobId, leaseId, idempotencyKey }` (no worksetId — see the `checkpointHooks` construction
+// above), but the real `createAgt002AnalysisCheckpointAdapter` currently requires a known
+// `worksetId` and throws synchronously without one. Against the REAL default adapter (no
+// override here) and a mocked database, a durable_batched_v1 job must no longer throw merely
+// during adapter/runtime construction, and the database must stay untouched (zero RPC calls)
+// for the whole run, because nothing in this harness's mocked runtime/post-bridge orchestrator
+// ever invokes a checkpoint hook.
+// ---------------------------------------------------------------------------------------------
+
+test('a durable_batched_v1 job constructs the REAL default checkpoint adapter (idempotencyKey-based) without throwing during construction, and the database stays untouched until a hook is invoked', async () => {
+  const rpcCalls = [];
+  const database = {
+    async rpc(name, params) {
+      rpcCalls.push({ name, params });
+      throw new Error(`must never be called: no checkpoint hook is invoked in this run (got RPC ${name})`);
+    },
+  };
+  const durableJob = { ...JOB, executionMode: 'durable_batched_v1' };
+  // No createCheckpointAdapter override: the executor's own real default
+  // (createAgt002AnalysisCheckpointAdapter from agt002-analysis-checkpoints.js) is exercised.
+  const { executor, calls } = harness();
+
+  const result = await executor(database, durableJob);
+
+  assert.deepEqual(
+    result,
+    { status: 'completed', analysis_run_id: 'run-1', error_code: null, reused: false },
+    'the real default adapter must not make this durable_batched_v1 job fail merely during construction',
+  );
+  assert.equal(rpcCalls.length, 0, 'the real default checkpoint adapter must make zero database calls when no load/store hook is ever invoked');
+  assert.equal(calls.runtime.length, 1);
+  assert.equal(typeof calls.runtime[0].checkpointHooks?.loadCheckpoint, 'function', 'runtime construction must still receive real, callable checkpoint hooks');
+  assert.equal(typeof calls.runtime[0].checkpointHooks?.storeCheckpoint, 'function');
 });

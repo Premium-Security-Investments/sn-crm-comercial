@@ -167,6 +167,11 @@ export function createAgt002PreviewRuntime({
   // replacing it, so both live leases renew at every provider boundary. `undefined` (every direct
   // caller) leaves the claim renewal, if any, exactly as it is on its own.
   beforeProviderCall: outerBeforeProviderCall,
+  // AGT-002 durable batched analysis, Task 2: the already-built `{ loadCheckpoint, storeCheckpoint }`
+  // hooks (agt002-reanalysis-executor.js constructs them via agt002-analysis-checkpoints.js, only
+  // for a claimed durable_batched_v1 job). Absent (every non-durable/direct/Manizales caller today),
+  // forwarded nowhere — engine construction stays byte-identical to before this option existed.
+  checkpointHooks,
   createEngine = createAgt002PreviewEngine,
 } = {}) {
   const { config, analysisConfig } = withRuntimeBoundaryCode('AGT002_RUNTIME_CONFIG_INVALID', () => ({
@@ -326,5 +331,6 @@ export function createAgt002PreviewRuntime({
       promptMaxInputTokens: config.promptMaxInputTokens,
     } : {}),
     ...(countDailyRuns ? { countDailyRuns } : {}),
+    ...(checkpointHooks ? { checkpointHooks } : {}),
   }));
 }
