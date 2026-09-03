@@ -3,12 +3,14 @@ import { validateTenderRequirementInventory, resolveTenderInventorySourceTexts }
 import {
   assembleTenderSemanticManifest,
   tenderSemanticObligationKey,
+  validateTenderSemanticManifest,
   TENDER_SEMANTIC_EXCLUSION_REASONS,
   TENDER_SEMANTIC_FRONTS,
   TENDER_SEMANTIC_KINDS,
   TENDER_SEMANTIC_UNRESOLVED_REASONS,
 } from './tender-semantic-manifest.js';
 import { AGT002_OUTPUT_REJECTION_STAGES } from './agt002-analysis-observability.js';
+import { AGT002_CHECKPOINT_ERROR_CODES } from './agt002-analysis-checkpoints.js';
 import {
   buildTenderSemanticLabelCatalog,
   buildTenderSemanticLabelOwnerIndex,
@@ -1060,6 +1062,107 @@ function mergeBatchProposals({ batchOutputs, orderedUnits, inventory, documents 
   };
 }
 
+/**
+ * AGT-002 durable batched analysis (Task 3 of
+ * docs/plans/2026-09-03-agt002-durable-batched-analysis.md). Reconstructs a batch's CANONICAL
+ * structured checkpoint output back into the plain-proposal shape `canonicalizeBatchProposal`
+ * accepts from a raw provider answer ({kind, label, front, category} requirements, plain
+ * {source_unit_id, reason} dispositions), so a loaded checkpoint is revalidated through the exact
+ * SAME current parse/allowlist/anchor/coverage pipeline as a fresh provider answer — never a
+ * separate, divergent check. Only `kind`/`label`/`front`/`category` are read back off the stored
+ * requirement; every derived field (front_evidence, citations, obligation_key, fields) is
+ * recomputed by canonicalizeBatchProposal itself against the CURRENT batch catalog/owner index, so
+ * a stale or corrupted stored derivation can never be trusted directly — a corrupted label/kind/
+ * front/category or a dangling disposition source_unit_id fails the same gates a fresh answer
+ * would, and the checkpoint becomes a miss rather than a silently-trusted hit.
+ */
+function reconstructCheckpointedBatchProposal(output) {
+  if (!isRecord(output) || !Array.isArray(output.requirements) || !Array.isArray(output.excluded) || !Array.isArray(output.unresolved)) {
+    throw new Error('El checkpoint del lote de descubrimiento semántico tiene forma inválida.');
+  }
+  return {
+    requirements: output.requirements.map(entry => {
+      if (!isRecord(entry) || !isRecord(entry.requirement)) {
+        throw new Error('El checkpoint del lote de descubrimiento semántico tiene un requisito con forma inválida.');
+      }
+      return { kind: entry.requirement.kind, label: entry.requirement.label, front: entry.requirement.front, category: entry.category };
+    }),
+    excluded: output.excluded,
+    unresolved: output.unresolved,
+  };
+}
+
+/**
+ * Deterministic identity of the merged `semantic_manifest` checkpoint: every planned batch's own
+ * stable content hash (already mixing planner/policy/snapshot/inventory identity — see
+ * computeTenderSemanticDiscoveryBatchHash) plus this module's own planner/policy version strings.
+ * Deliberately independent of the caller's `idempotencyKey` — exactly like a per-batch request hash
+ * already is — because checkpoint identity is bound to WHAT is being asked (this corpus, under this
+ * exact batch plan and policy), never to which run key happened to ask it; the caller's own adapter
+ * already scopes storage to one workset/idempotencyKey.
+ */
+function semanticManifestCheckpointRequestHash({ inventory, batchHashes }) {
+  return sha256(stableJson({
+    planner_version: TENDER_SEMANTIC_DISCOVERY_BATCH_PLANNER_VERSION,
+    policy_version: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
+    snapshot_hash: inventory.snapshot_hash,
+    inventory_hash: inventory.inventory_hash,
+    batch_hashes: batchHashes,
+  }));
+}
+
+/**
+ * Re-runs the CURRENT full-manifest validator/canonicalizer over an untrusted stored merged
+ * checkpoint before it may ever be trusted directly: `validateTenderSemanticManifest` re-derives
+ * and re-anchors every requirement/citation/hash against the CURRENT inventory and the snapshot's
+ * own documents (never merely replays what was stored), and `categoryOverrides`/`discoveryLedger`
+ * are independently cross-checked against the manifest it just re-validated and against the
+ * CURRENT batch plan. A corrupted or stale row fails one of these checks and becomes a miss, and
+ * the caller falls back to the normal per-batch checkpoint path — it is never trusted directly.
+ */
+function validateCheckpointedSemanticManifest(output, { inventory, documents, batches, plannerLedger }) {
+  if (!isRecord(output)) throw new Error('El checkpoint del manifiesto semántico combinado tiene forma inválida.');
+  const canonicalManifest = validateTenderSemanticManifest(output.semanticManifest, { inventory, documents });
+
+  const categoryOverrides = output.categoryOverrides;
+  if (!isRecord(categoryOverrides)) throw new Error('El checkpoint del manifiesto semántico combinado tiene categoryOverrides inválido.');
+  const requirementIds = new Set(canonicalManifest.requirements.map(requirement => requirement.requirement_id));
+  const overrideEntries = Object.entries(categoryOverrides);
+  if (overrideEntries.length !== requirementIds.size
+    || !overrideEntries.every(([requirementId, category]) => requirementIds.has(requirementId) && TENDER_SEMANTIC_CATEGORIES.includes(category))) {
+    throw new Error('El checkpoint del manifiesto semántico combinado tiene categoryOverrides inconsistente con sus requisitos.');
+  }
+
+  const discoveryLedger = output.discoveryLedger;
+  if (!isRecord(discoveryLedger)
+    || discoveryLedger.planner_version !== TENDER_SEMANTIC_DISCOVERY_BATCH_PLANNER_VERSION
+    || discoveryLedger.policy_version !== TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION
+    || discoveryLedger.status !== 'completed'
+    || discoveryLedger.batch_count !== batches.length
+    || discoveryLedger.batch_count !== plannerLedger.batch_count
+    || discoveryLedger.total_source_units !== plannerLedger.total_source_units
+    || discoveryLedger.assigned_source_units !== plannerLedger.assigned_source_units
+    || !Array.isArray(discoveryLedger.failed_source_units)
+    || stableJson(discoveryLedger.failed_source_units) !== stableJson(plannerLedger.failed_source_units)
+    || !Array.isArray(discoveryLedger.batches)
+    || discoveryLedger.batches.length !== batches.length
+    || !isRecord(discoveryLedger.retractions)
+    || !Number.isInteger(discoveryLedger.retractions.conflicting_obligation_keys)
+    || !Number.isInteger(discoveryLedger.retractions.retracted_requirement_occurrences)) {
+    throw new Error('El checkpoint del manifiesto semántico combinado tiene un ledger inconsistente con el plan actual de lotes.');
+  }
+
+  return { semanticManifest: canonicalManifest, categoryOverrides, discoveryLedger };
+}
+
+// Requirement 10: the closed set of agt002-analysis-checkpoints.js's own AGT002_CHECKPOINT_*
+// error codes, imported rather than re-derived, so the per-batch catch below can tell a checkpoint
+// adapter's own infrastructure/fencing failure (persistence conflict, lease loss, malformed
+// resolver response, ...) apart from a genuine model/semantic-content rejection by exact
+// membership in this closed set -- never by pattern-matching `error.code`'s text, which could
+// misclassify an unrelated code that merely happens to share a prefix.
+const AGT002_CHECKPOINT_ERROR_CODE_SET = new Set(Object.values(AGT002_CHECKPOINT_ERROR_CODES));
+
 export async function discoverTenderSemanticManifest({
   client, model, timeoutMs, idempotencyKey, signal, effort,
   inventory, documents = [], maxSourceChars = TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS,
@@ -1075,14 +1178,26 @@ export async function discoverTenderSemanticManifest({
   // deterministic, safe discoveryLedger is still attached. `null` (the default) keeps every
   // existing caller's behaviour byte-identical: no extra call of any kind.
   beforeProviderCall = null,
+  // AGT-002 durable batched analysis (Task 3): optional `{loadCheckpoint, storeCheckpoint}` pair —
+  // see agt002-analysis-checkpoints.js's loadAgt002AnalysisCheckpoint/storeAgt002AnalysisCheckpoint
+  // for the exact contract this module is wired against. `null` (the default, and what an omitted
+  // or explicitly `undefined` option normalizes to) keeps every existing caller's behaviour
+  // byte-identical: no checkpoint lookup or store of any kind, ever.
+  checkpointHooks = null,
 } = {}) {
   if (!client || typeof client.run !== 'function' || typeof model !== 'string' || !model.trim()
     || !Number.isInteger(timeoutMs) || timeoutMs <= 0 || typeof idempotencyKey !== 'string' || !idempotencyKey.trim()
     || !Number.isInteger(maxSourceChars) || maxSourceChars <= 0
     || (maxLabelCatalogChars !== null && (!Number.isInteger(maxLabelCatalogChars) || maxLabelCatalogChars <= 0))
-    || (beforeProviderCall !== null && typeof beforeProviderCall !== 'function')) {
+    || (beforeProviderCall !== null && typeof beforeProviderCall !== 'function')
+    || (checkpointHooks !== null && (
+      typeof checkpointHooks !== 'object'
+      || typeof checkpointHooks.loadCheckpoint !== 'function'
+      || typeof checkpointHooks.storeCheckpoint !== 'function'
+    ))) {
     throw new Error('El descubridor semántico AGT-002 no está configurado.');
   }
+  const hooksEnabled = checkpointHooks !== null;
   const validatedInventory = validateTenderRequirementInventory(inventory);
   const ordered = orderedSourceUnits({ inventory: validatedInventory, documents });
   if (!ordered.length) throw new Error('El expediente no contiene source_units visibles para descubrimiento semántico.');
@@ -1122,6 +1237,33 @@ export async function discoverTenderSemanticManifest({
     };
   }
 
+  // AGT-002 durable batched analysis (Task 3): a validated merged `semantic_manifest` checkpoint
+  // skips EVERY per-batch checkpoint lookup and provider call, not just the batches — so it is
+  // attempted BEFORE the per-batch loop begins, from only the same frozen inputs (this corpus's own
+  // deterministic batch plan) and this module's own current policy/planner versions. An invalid or
+  // absent hit falls straight through to the unchanged per-batch loop below.
+  const manifestRequestHash = hooksEnabled
+    ? semanticManifestCheckpointRequestHash({ inventory: validatedInventory, batchHashes })
+    : null;
+  if (hooksEnabled) {
+    const manifestHit = await checkpointHooks.loadCheckpoint({
+      stage: 'semantic_manifest',
+      batchIndex: 0,
+      expectedRequestHash: manifestRequestHash,
+      validate: output => validateCheckpointedSemanticManifest(output, {
+        inventory: validatedInventory, documents, batches, plannerLedger,
+      }),
+    });
+    if (manifestHit.hit) {
+      return {
+        semanticManifest: manifestHit.output.semanticManifest,
+        categoryOverrides: manifestHit.output.categoryOverrides,
+        usage: manifestHit.usage,
+        discoveryLedger: manifestHit.output.discoveryLedger,
+      };
+    }
+  }
+
   const batchOutputs = [];
   const completedLedgerEntries = [];
   for (const batch of batches) {
@@ -1157,82 +1299,119 @@ export async function discoverTenderSemanticManifest({
         candidatesByUnitId: labelCatalog.candidates_by_unit_id,
       });
       const labelCandidates = new Set(labelCatalog.candidates);
-
       const batchHash = batchHashes[batch.batch_index];
-      const input = {
-        discovery_policy_version: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-        snapshot_id: validatedInventory.snapshot_id,
-        snapshot_hash: validatedInventory.snapshot_hash,
-        inventory_hash: validatedInventory.inventory_hash,
-        batch: { index: batch.batch_index, count: batches.length },
-        // `source_text` (the unredacted text) is stripped here alongside the internal ordering index:
-        // the provider only ever sees the redacted `text`, exactly as before this change.
-        source_units: batch.units.map(({ index: _index, source_text: _sourceText, ...unit }) => unit),
-      };
-      // Batches are deliberately sequential (not Promise.all): the request order itself must be
-      // deterministic and reproducible, matching the batch_index each idempotency key already encodes.
-      // The heartbeat renews immediately before EVERY attempt at this batch's call, never after: a
-      // rejection here must stop that attempt's provider call from ever happening, and must never
-      // itself be retried as though it were a provider failure.
-      //
-      // `request` is built exactly once and reused, by the same object reference, on every attempt —
-      // including the same `idempotencyKey` — so a retry can never diverge from the request the batch
-      // plan committed to, byte-for-byte.
-      const request = {
-        model,
-        policy: TENDER_SEMANTIC_DISCOVERY_POLICY,
-        input,
-        outputSchema: outputSchema(batch.units.map(unit => unit.source_unit_id), labelCatalog.candidates),
-        timeoutMs,
-        idempotencyKey: tenderSemanticDiscoveryBatchIdempotencyKey({ idempotencyKey, batchIndex: batch.batch_index, batchHash }),
-        signal,
-        effort,
-      };
-      let raw;
-      for (let attempt = 1; attempt <= TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS; attempt += 1) {
-        if (beforeProviderCall) await beforeProviderCall();
-        clientAttemptCount += 1;
-        try {
-          raw = await client.run(request);
-          break;
-        } catch (runError) {
-          // The ONLY retryable failure: the bridge's own exact transport-timeout code, which the real
-          // Procuraduria v9 run showed can be transient/stalled rather than a symptom of an oversized
-          // request. Every other client.run rejection — a different provider error, cancellation/
-          // abort, or anything else — still fails this batch (and therefore the whole run) closed on
-          // the very first attempt, exactly as before this loop existed.
-          if (runError?.code === 'AGT002_CODEX_TIMEOUT' && attempt < TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS) {
-            continue;
-          }
-          throw runError;
-        }
-      }
-      if (typeof raw?.content !== 'string' || !raw.content.trim()) {
-        throw discoveryError(
-          'El proveedor no devolvió una propuesta semántica utilizable.',
-          AGT002_OUTPUT_REJECTION_STAGES.CONTENT_EXTRACTION, 'v4_discovery_missing_content',
-        );
-      }
-      let parsed;
-      try { parsed = JSON.parse(raw.content); } catch {
-        throw discoveryError(
-          'El proveedor devolvió una propuesta semántica que no es JSON válido.',
-          AGT002_OUTPUT_REJECTION_STAGES.JSON_PARSE, 'v4_discovery_invalid_json',
-        );
-      }
-      let batchUsage;
-      try {
-        batchUsage = requireUsage(raw);
-      } catch (error) {
-        throw discoveryError(error.message, AGT002_OUTPUT_REJECTION_STAGES.USAGE, 'v4_discovery_invalid_usage');
-      }
+
+      // AGT-002 durable batched analysis (Task 3): attempted BEFORE this batch's request is even
+      // built, using this module's own already-computed batch hash as the checkpoint identity. A
+      // valid hit skips the request/retry machinery and the provider call entirely; the loaded
+      // output is untrusted until `validate` reruns it through the CURRENT
+      // parse/allowlist/anchor/coverage canonicalization, exactly as a fresh provider answer would be.
+      const checkpointHit = hooksEnabled
+        ? await checkpointHooks.loadCheckpoint({
+          stage: 'semantic_discovery_batch',
+          batchIndex: batch.batch_index,
+          expectedRequestHash: batchHash,
+          validate: output => canonicalizeBatchProposal(
+            reconstructCheckpointedBatchProposal(output), { units: batch.units, labelCandidates, labelOwners },
+          ),
+        })
+        : null;
+
       let canonicalBatch;
-      try {
-        canonicalBatch = canonicalizeBatchProposal(parsed, { units: batch.units, labelCandidates, labelOwners });
-      } catch (error) {
-        throw discoveryError(
-          error.message, AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, classifySemanticDiscoveryInvariant(error.message),
-        );
+      let batchUsage;
+      if (checkpointHit && checkpointHit.hit) {
+        canonicalBatch = checkpointHit.output;
+        batchUsage = checkpointHit.usage;
+      } else {
+        const input = {
+          discovery_policy_version: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
+          snapshot_id: validatedInventory.snapshot_id,
+          snapshot_hash: validatedInventory.snapshot_hash,
+          inventory_hash: validatedInventory.inventory_hash,
+          batch: { index: batch.batch_index, count: batches.length },
+          // `source_text` (the unredacted text) is stripped here alongside the internal ordering index:
+          // the provider only ever sees the redacted `text`, exactly as before this change.
+          source_units: batch.units.map(({ index: _index, source_text: _sourceText, ...unit }) => unit),
+        };
+        // Batches are deliberately sequential (not Promise.all): the request order itself must be
+        // deterministic and reproducible, matching the batch_index each idempotency key already encodes.
+        // The heartbeat renews immediately before EVERY attempt at this batch's call, never after: a
+        // rejection here must stop that attempt's provider call from ever happening, and must never
+        // itself be retried as though it were a provider failure.
+        //
+        // `request` is built exactly once and reused, by the same object reference, on every attempt —
+        // including the same `idempotencyKey` — so a retry can never diverge from the request the batch
+        // plan committed to, byte-for-byte.
+        const request = {
+          model,
+          policy: TENDER_SEMANTIC_DISCOVERY_POLICY,
+          input,
+          outputSchema: outputSchema(batch.units.map(unit => unit.source_unit_id), labelCatalog.candidates),
+          timeoutMs,
+          idempotencyKey: tenderSemanticDiscoveryBatchIdempotencyKey({ idempotencyKey, batchIndex: batch.batch_index, batchHash }),
+          signal,
+          effort,
+        };
+        let raw;
+        for (let attempt = 1; attempt <= TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS; attempt += 1) {
+          if (beforeProviderCall) await beforeProviderCall();
+          clientAttemptCount += 1;
+          try {
+            raw = await client.run(request);
+            break;
+          } catch (runError) {
+            // The ONLY retryable failure: the bridge's own exact transport-timeout code, which the real
+            // Procuraduria v9 run showed can be transient/stalled rather than a symptom of an oversized
+            // request. Every other client.run rejection — a different provider error, cancellation/
+            // abort, or anything else — still fails this batch (and therefore the whole run) closed on
+            // the very first attempt, exactly as before this loop existed.
+            if (runError?.code === 'AGT002_CODEX_TIMEOUT' && attempt < TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS) {
+              continue;
+            }
+            throw runError;
+          }
+        }
+        if (typeof raw?.content !== 'string' || !raw.content.trim()) {
+          throw discoveryError(
+            'El proveedor no devolvió una propuesta semántica utilizable.',
+            AGT002_OUTPUT_REJECTION_STAGES.CONTENT_EXTRACTION, 'v4_discovery_missing_content',
+          );
+        }
+        let parsed;
+        try { parsed = JSON.parse(raw.content); } catch {
+          throw discoveryError(
+            'El proveedor devolvió una propuesta semántica que no es JSON válido.',
+            AGT002_OUTPUT_REJECTION_STAGES.JSON_PARSE, 'v4_discovery_invalid_json',
+          );
+        }
+        try {
+          batchUsage = requireUsage(raw);
+        } catch (error) {
+          throw discoveryError(error.message, AGT002_OUTPUT_REJECTION_STAGES.USAGE, 'v4_discovery_invalid_usage');
+        }
+        try {
+          canonicalBatch = canonicalizeBatchProposal(parsed, { units: batch.units, labelCandidates, labelOwners });
+        } catch (error) {
+          throw discoveryError(
+            error.message, AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, classifySemanticDiscoveryInvariant(error.message),
+          );
+        }
+        if (hooksEnabled) {
+          // Stored ONLY after parse + current validation + canonicalization succeed: the canonical
+          // structured output this module itself derived (ids/hashes/labels), a deterministic sha256
+          // of it, this batch's own safe normalized usage and its own provider idempotency key —
+          // never the raw prompt, the raw provider response or the source document text.
+          await checkpointHooks.storeCheckpoint({
+            stage: 'semantic_discovery_batch',
+            batchIndex: batch.batch_index,
+            requestHash: batchHash,
+            stageContractVersion: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
+            output: canonicalBatch,
+            outputSha256: sha256(stableJson(canonicalBatch)),
+            usage: batchUsage,
+            providerIdempotencyKey: request.idempotencyKey,
+          });
+        }
       }
       // Any batch failure above throws and fails the WHOLE discovery closed — this module never
       // continues into a merged, decision-relevant manifest built from only some of the batches.
@@ -1263,8 +1442,16 @@ export async function discoverTenderSemanticManifest({
       // classifySemanticDiscoveryInvariant already uses for an unrecognized message, rather than
       // leaving the ledger entry empty or copying anything arbitrary — the error object thrown to the
       // caller is otherwise untouched, so its own `.message`/`.stage`/`.code` behave exactly as before.
-      const stage = error.stage ?? AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION;
-      const code = error.code ?? 'v4_discovery_invariant_violation';
+      // Requirement 10: a checkpoint adapter's own closed AGT002_CHECKPOINT_* code (persistence
+      // conflict, lease loss, malformed resolver response, ...) names an infrastructure/fencing
+      // failure, never a model/semantic-content rejection -- so it must never fall through to the
+      // semantic_validation default below, and must never be written into the ledger `code` field
+      // reserved for TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES. Exact membership in the imported
+      // closed set is the only test: an unrelated error whose code merely shares the prefix by
+      // coincidence is not in the set and is classified exactly as before.
+      const isCheckpointPersistenceError = typeof error.code === 'string' && AGT002_CHECKPOINT_ERROR_CODE_SET.has(error.code);
+      const stage = isCheckpointPersistenceError ? 'checkpoint_persistence' : (error.stage ?? AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION);
+      const code = isCheckpointPersistenceError ? undefined : (error.code ?? 'v4_discovery_invariant_violation');
       const pendingEntries = batches
         .filter(other => other.batch_index > batch.batch_index)
         .map(other => plainLedgerBatchEntry(other, 'pending'));
@@ -1282,7 +1469,11 @@ export async function discoverTenderSemanticManifest({
           {
             ...plainLedgerBatchEntry(batch, 'failed'),
             stage,
-            code,
+            ...(code !== undefined ? { code } : {}),
+            // The adapter's own closed code, preserved unchanged and only here -- never merged into
+            // `code` above, so a checkpoint-store failure stays distinguishable from a semantic one
+            // without ever overloading the semantic-validation catalog with a foreign value.
+            ...(isCheckpointPersistenceError ? { checkpoint_code: error.code } : {}),
             // Same rule as the completed shape above: only present when client.run was actually
             // attempted more than once for this batch, so a preflight/catalog failure (0 attempts)
             // or an ordinary single-attempt failure (1 attempt) keep the exact ledger shape they had
@@ -1321,22 +1512,41 @@ export async function discoverTenderSemanticManifest({
     batches: completedLedgerEntries,
   };
 
+  let merged;
   try {
-    const { retractions, ...merged } = mergeBatchProposals({
-      batchOutputs, orderedUnits: ordered, inventory: validatedInventory, documents,
-    });
-    return {
-      ...merged,
-      usage,
-      // `retractions` is attached ONLY here, on the merged ledger, because obligation-level
-      // retraction is decided exactly once, at the merge, over every batch's claims at the same time.
-      // The failure ledger built in the catch above deliberately omits it rather than reporting a
-      // zero the run never computed; its per-batch `retracted_disposition_units` are real either way.
-      discoveryLedger: { ...discoveryLedger, retractions },
-    };
+    merged = mergeBatchProposals({ batchOutputs, orderedUnits: ordered, inventory: validatedInventory, documents });
   } catch (error) {
     throw discoveryError(
       error.message, AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, classifySemanticDiscoveryInvariant(error.message),
     );
   }
+  const { retractions, ...mergedRest } = merged;
+  const result = {
+    ...mergedRest,
+    usage,
+    // `retractions` is attached ONLY here, on the merged ledger, because obligation-level
+    // retraction is decided exactly once, at the merge, over every batch's claims at the same time.
+    // The failure ledger built in the catch above deliberately omits it rather than reporting a
+    // zero the run never computed; its per-batch `retracted_disposition_units` are real either way.
+    discoveryLedger: { ...discoveryLedger, retractions },
+  };
+  if (hooksEnabled) {
+    // Stored exactly once, LAST, only after the full merge/revalidate above succeeded — a per-batch
+    // failure throws long before this line is ever reached, so a partial run never stores this
+    // checkpoint — and carries the AGGREGATE usage of every batch counted exactly once, whether
+    // loaded from a checkpoint hit or freshly computed. A store conflict/lease loss here propagates
+    // unchanged (fail closed, no merged return), exactly like a per-batch store failure.
+    const manifestOutput = { semanticManifest: result.semanticManifest, categoryOverrides: result.categoryOverrides, discoveryLedger: result.discoveryLedger };
+    await checkpointHooks.storeCheckpoint({
+      stage: 'semantic_manifest',
+      batchIndex: 0,
+      requestHash: manifestRequestHash,
+      stageContractVersion: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
+      output: manifestOutput,
+      outputSha256: sha256(stableJson(manifestOutput)),
+      usage,
+      providerIdempotencyKey: `${idempotencyKey}:semantic-discovery:semantic-manifest:${manifestRequestHash.slice(0, 16)}`,
+    });
+  }
+  return result;
 }
