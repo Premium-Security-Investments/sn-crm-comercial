@@ -47,6 +47,13 @@ export function readCanaryFixture(fixturePath = DEFAULT_FIXTURE_PATH) {
   if (totalUnits !== fixture.expected_source_unit_count) {
     throw new Error('El fixture del canario AGT-002 V7 no suma el total esperado de unidades fuente.');
   }
+  if (fixture.semantic_source_budget_chars !== TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS) {
+    throw new Error(
+      'El fixture del canario AGT-002 V7 declara un semantic_source_budget_chars '
+      + `(${fixture.semantic_source_budget_chars}) distinto del presupuesto real de producción `
+      + `(${TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS}).`,
+    );
+  }
   return fixture;
 }
 

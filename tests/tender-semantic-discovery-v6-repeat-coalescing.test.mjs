@@ -160,10 +160,11 @@ async function assertRejection(promiseFactory, { code, message }) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v8',
+    'tender-semantic-discovery.v9',
     'coalescing an exact repetition changes how a provider answer is canonicalized, v7\'s '
-    + 'multi-batch input is a further material change to what the model is asked, and v8 retracts a '
-    + 'CONFLICTING repetition instead of rejecting the whole proposal, so the policy version must move',
+    + 'multi-batch input is a further material change to what the model is asked, v8 retracts a '
+    + 'CONFLICTING repetition instead of rejecting the whole proposal, and v9 lowers the per-batch '
+    + 'source-char budget (changing the batch plan itself), so the policy version must move',
   );
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,

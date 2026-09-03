@@ -168,11 +168,12 @@ async function assertRejection(promiseFactory, { code, message }) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v8',
+    'tender-semantic-discovery.v9',
     'the model-facing coverage contract changed again in v5 (dispositions became optional), v6 '
     + 'changed how a repeated obligation is canonicalized, v7 replaced the single request with a '
-    + 'multi-batch input (batch index/count, no more omitted_source_unit_ids), and v8 retracts a '
-    + 'self-contradicting claim instead of rejecting the whole batch, each a material change to what '
+    + 'multi-batch input (batch index/count, no more omitted_source_unit_ids), v8 retracts a '
+    + 'self-contradicting claim instead of rejecting the whole batch, and v9 lowers the per-batch '
+    + 'source-char budget (changing the batch plan itself), each a material change to what '
     + 'the model is asked for and to how its answer is canonicalized, so the policy version must move',
   );
 

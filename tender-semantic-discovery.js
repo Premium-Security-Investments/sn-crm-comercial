@@ -276,11 +276,50 @@ import {
 // (AGT002_INTEGRAL_V3_POLICY_VERSION, AGT002_PREVIEW_DEFAULT_POLICY_VERSION) are untouched, as is the
 // manifest assembler and its own hashes — and the same snapshot still re-derives byte-identical
 // requests on every re-run under v8.
-export const TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION = 'tender-semantic-discovery.v8';
+//
+// v9 (AGT-002 V3 batch-size remediation, after two observed real Procuraduria attempts kept
+// timing out). Offline replay of the exact frozen 13-document snapshot from those attempts
+// through the official batch planner showed the timeouts were not evenly distributed: batch 0
+// (serialized request chars 140201) succeeded around 41s and batch 1 (262979 chars) succeeded in
+// 51-64s, but batch 2 (320041 chars, out of a 353001-char maximum across the plan) timed out at
+// exactly 285002ms on both observed attempts — the batches this module was asking the provider to
+// answer in one turn grew large enough, at the previous default of 40_000 source chars per batch,
+// to push serialized request size past whatever the provider needs to answer inside the bridge
+// timeout. The same offline replay with a 20_000-char default plans more, smaller batches over the
+// same snapshot (35 instead of 18) and brings the maximum serialized request down to 199057 chars.
+//
+// So v9 lowers `TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS` from 40_000 to 20_000. Nothing about
+// WHAT is asked for changes — no source unit is ever omitted, `planTenderSemanticDiscoveryBatches`
+// still assigns every unit to a batch or an explicit failure reason before any provider call, and a
+// single unit larger than the per-batch budget still gets its own oversized-singleton batch rather
+// than being dropped or truncated (tender-semantic-discovery-batches.js). This is a size remediation,
+// not a coverage or correctness change: it only shrinks how many units are asked about in one
+// provider turn, which is why the version moves with it even though the requirement shape, the
+// disposition rules, the derived citations, the coverage completion and every v4..v8
+// canonicalization rule are all unchanged. It deliberately does NOT claim that every arbitrary
+// oversized singleton input now sits below any particular token ceiling — a single source unit whose
+// own text alone exceeds 20_000 chars still forms a batch of one at whatever size that unit actually
+// is, exactly as it did under every prior default, and can still be large enough to time out on its
+// own; lowering the default only shrinks the common multi-unit case this remediation was measured
+// against.
+//
+// Since v7 the provider idempotency key is derived from this policy version string through the
+// per-batch hash (`computeTenderSemanticDiscoveryBatchHash`), and the batch PLAN itself is now also
+// different for the same snapshot (35 batches instead of 18, at different boundaries), so both the
+// per-batch idempotency identity and the model-facing batch plan change under v9. That is the
+// intended behaviour: a response reserved under the v8 contract, at v8's batch boundaries, must never
+// be replayed for a v9 request that asks a differently-shaped question. Nothing already persisted is
+// re-keyed, and the analysis identities (AGT002_INTEGRAL_V3_POLICY_VERSION,
+// AGT002_PREVIEW_DEFAULT_POLICY_VERSION), the manifest assembler and its own hashes stay untouched,
+// exactly as under v8.
+export const TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION = 'tender-semantic-discovery.v9';
 export const TENDER_SEMANTIC_CATEGORIES = Object.freeze([
   'discard', 'habilitating', 'technical', 'financial_execution',
 ]);
-export const TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS = 40_000;
+// v9: lowered from 40_000 to 20_000 to shrink per-batch serialized request size and remediate the
+// real AGT-002 Procuraduria batch-2 bridge timeouts (see the v9 note above for the offline
+// measurements this default was chosen from).
+export const TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS = 20_000;
 
 // Closed, privacy-safe internal codes for a rejection that happens AFTER a real bridge response
 // (schema-valid or not) reaches this module: the provider answered, but the answer failed one of

@@ -6,7 +6,10 @@ import {
   runZeroRequirementsNegativeCheck,
   runAgt002V7ProcuraduriaCanary,
 } from '../scripts/agt002-v7-procuraduria-canary.mjs';
-import { TENDER_SEMANTIC_DISCOVERY_NO_REQUIREMENTS_CODE } from '../tender-semantic-discovery.js';
+import {
+  TENDER_SEMANTIC_DISCOVERY_NO_REQUIREMENTS_CODE,
+  TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS,
+} from '../tender-semantic-discovery.js';
 import { AGT002_OUTPUT_REJECTION_STAGES } from '../agt002-analysis-observability.js';
 
 // AGT-002 V7 multi-batch canary — fully local, sanitized, MECHANICAL integration test.
@@ -34,7 +37,7 @@ assert.equal(
 );
 assert.equal(fixture.expected_document_count, 13);
 assert.equal(fixture.expected_source_unit_count, 2335);
-assert.equal(fixture.semantic_source_budget_chars, 40_000);
+assert.equal(fixture.semantic_source_budget_chars, TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS);
 assert.equal(fixture.public_process_ref, 'CO1.REQ.10873217');
 assert.equal(fixture.target_label, 'Procuraduria canary');
 // No internal opportunity UUID: the synthetic snapshot id is an obviously-fake, all-zero UUID.
@@ -68,7 +71,10 @@ assert.equal(inventory.source_units.length, 2335);
 assert.equal(inventory.source_units.filter(unit => unit.disposition === 'analyzable').length, 2335);
 
 const totalChars = documents.reduce((sum, doc) => sum + doc.extracted_text.length, 0);
-assert.ok(totalChars > 40_000, 'el texto sintético agregado debe superar el presupuesto de 40000 caracteres por lote');
+assert.ok(
+  totalChars > TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS,
+  `el texto sintético agregado debe superar el presupuesto de ${TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS} caracteres por lote`,
+);
 
 // ---------------------------------------------------------------------------------------------
 // 3. Full canary: real V7 planner/discovery + in-process fake client, executed twice.

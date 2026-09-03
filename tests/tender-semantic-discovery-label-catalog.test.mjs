@@ -109,14 +109,15 @@ function proposalWith(requirements, derivedOwnerIds) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v8',
-    'the wire contract this catalog feeds is v8: the label enum is pinned, a requirement carries no '
+    'tender-semantic-discovery.v9',
+    'the wire contract this catalog feeds is v9: the label enum is pinned, a requirement carries no '
     + 'model-provided source id (the server derives front_evidence/citations from this same catalog), '
     + 'an undispositioned source unit is completed into unresolved instead of rejecting the turn, the '
     + 'disposition lists themselves are optional, an exact repetition of one catalog label is '
     + 'canonicalized once, the input is now one of possibly several batches (batch index/count) '
-    + 'instead of a single request, and a self-contradicting claim is retracted instead of rejecting '
-    + 'the whole batch — each a material model-facing change that must bump the policy version',
+    + 'instead of a single request, a self-contradicting claim is retracted instead of rejecting '
+    + 'the whole batch, and the per-batch source-char budget (and therefore the batch plan itself) '
+    + 'was lowered — each a material model-facing change that must bump the policy version',
   );
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
@@ -385,6 +386,11 @@ let capturedRequest;
     idempotencyKey: 'idem-label-catalog-noisy',
     inventory: noisyInventory,
     documents: noisyDocuments,
+    // Deliberately pinned above the production default (see
+    // tender-semantic-discovery-v9-batch-size-default.test.mjs, which pins that default at
+    // 20_000): this scenario is stressing the catalog's own independent global candidate/count/
+    // character bounds, which need >100 units in the first batch to bite at all.
+    maxSourceChars: 40_000,
     // v5 rejects this empty proposal at the discovery boundary (`v5_discovery_no_requirements`)
     // AFTER the provider call; the catch keeps the captured request — the actual subject here — as
     // what the assertions read, exactly as it did when v4 completed the same proposal instead.

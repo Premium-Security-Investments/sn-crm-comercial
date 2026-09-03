@@ -6,7 +6,7 @@
   "snapshot_id": "00000000-0000-4000-8000-000000000001",
   "expected_document_count": 13,
   "expected_source_unit_count": 2335,
-  "semantic_source_budget_chars": 40000,
+  "semantic_source_budget_chars": 20000,
   "documents": [
     { "document_id": "agt002-canary-doc-01", "document_version_id": "agt002-canary-doc-01-v1", "unit_count": 180 },
     { "document_id": "agt002-canary-doc-02", "document_version_id": "agt002-canary-doc-02-v1", "unit_count": 180 },
