@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ANALYSIS_FLAG_NAMES } from './agt002-analysis-config.js';
 import { createAgt002AnalysisObservability } from './agt002-analysis-observability.js';
-import { runAgt002PostBridgeAnalysis } from './agt002-post-bridge-observability.js';
+import { AGT002_POST_BRIDGE_ERROR_CODES, runAgt002PostBridgeAnalysis } from './agt002-post-bridge-observability.js';
 import {
   claimAgt002PreviewRun,
   countAgt002PreviewRunsToday,
@@ -93,12 +93,60 @@ function frozenEnvironment(base, input) {
   return environment;
 }
 
+/**
+ * Explicit, exhaustive, closed projection of the post-bridge error catalog
+ * (AGT002_POST_BRIDGE_ERROR_CODES) onto the queue's own closed catalog
+ * (AGT002_REANALYSIS_QUEUE_ERROR_CODES, enforced by migration 068's CHECK constraint and by
+ * psi_fail_agt002_reanalysis_job — so no new queue code may be minted here without a migration).
+ *
+ * This used to be substring matching with `provider_error` as the DEFAULT arm, which is how the real
+ * Procuraduria reanalysis reported provider_error after 18 successful semantic-discovery bridge
+ * turns (timeout_ms=285000, max observed turn latency ~89s, no 19th bridge call) and then ended
+ * unavailable with no analysis_run. The durable evidence for that run proves only: stage=unexpected,
+ * bridge_response_received latched true, persistence_attempts=0. It does NOT prove which local,
+ * pre-provider-call frontier actually failed — a lost preview lease at the analysis-turn boundary is
+ * one hypothesis consistent with that signature (and the one this module now classifies correctly,
+ * see AGT002_POST_BRIDGE_ERROR_CODES.LEASE_LOST below), but so is any other untagged local failure
+ * between the discovery turns and the analysis bridge call (e.g. discovered-input assembly or
+ * validation-context construction — see agt002-preview-engine.js). Whatever the real cause,
+ * AGT002_UNEXPECTED_ERROR contains none of the matched substrings, so it fell through to the default
+ * and blamed a provider that was never even called. Three distinct closed codes (UNEXPECTED_ERROR,
+ * ATTEMPT_UPDATE_FAILED, RESPONSE_SERIALIZATION_FAILED) collapsed the same way.
+ *
+ * Every entry below is now deliberate, and `provider_error` is reachable from EXACTLY ONE code —
+ * AGT002_PROVIDER_ERROR, which is only ever minted when the bridge call itself failed and the
+ * provider reported the failure. An unknown/absent code is NOT the provider's fault either: it fails
+ * closed onto `invalid_output`, the same fail-closed bucket the worker's own closedOutcomeCode
+ * already uses for an unrecognized value.
+ */
+const POST_BRIDGE_TO_QUEUE_ERROR_CODE = new Map([
+  // The bridge never produced a usable response (timeout, cancel, transport, session). `timeout` is
+  // the queue's closest member and the code this frontier has always mapped to.
+  [AGT002_POST_BRIDGE_ERROR_CODES.TRANSPORT_ERROR, 'timeout'],
+  // The one and only source of provider_error.
+  [AGT002_POST_BRIDGE_ERROR_CODES.PROVIDER_ERROR, 'provider_error'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.CONTENT_EXTRACTION_FAILED, 'invalid_output'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.JSON_PARSE_FAILED, 'invalid_output'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.MODEL_OUTPUT_INVALID, 'invalid_output'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.ENVELOPE_INVALID, 'invalid_output'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.INTEGRAL_V3_INVALID, 'invalid_output'],
+  // The run's fenced lease was already gone at a stage boundary: the queue has always had a code
+  // for exactly this, it was simply unreachable through the post-bridge path.
+  [AGT002_POST_BRIDGE_ERROR_CODES.LEASE_LOST, 'lease_lost'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.PERSISTENCE_FAILED, 'persistence_failure'],
+  // Failing to write the durable attempt row is a persistence failure, not a provider failure.
+  [AGT002_POST_BRIDGE_ERROR_CODES.ATTEMPT_UPDATE_FAILED, 'persistence_failure'],
+  // The run persisted but could not be shaped into a presentable payload: a server-side output
+  // problem, never the provider's.
+  [AGT002_POST_BRIDGE_ERROR_CODES.RESPONSE_SERIALIZATION_FAILED, 'invalid_output'],
+  // Genuinely unknown. Not attributable to the provider, so it must not say provider_error; the
+  // durable attempt event and the reanalysis_post_bridge_outcome event still carry the real
+  // 'unexpected' stage, which is where an operator reads WHERE it stopped.
+  [AGT002_POST_BRIDGE_ERROR_CODES.UNEXPECTED_ERROR, 'invalid_output'],
+]);
+
 function mapPostBridgeOutcomeCode(value) {
-  const code = String(value || '').toUpperCase();
-  if (code.includes('TRANSPORT') || code.includes('TIMEOUT')) return 'timeout';
-  if (code.includes('PERSIST')) return 'persistence_failure';
-  if (code.includes('CONTENT') || code.includes('JSON') || code.includes('INVALID') || code.includes('VALIDATION') || code.includes('ENVELOPE')) return 'invalid_output';
-  return 'provider_error';
+  return POST_BRIDGE_TO_QUEUE_ERROR_CODE.get(value) ?? 'invalid_output';
 }
 
 /**
@@ -154,15 +202,21 @@ export function createAgt002ReanalysisExecutor({
       }
       previewClaimId = claim.claim_id;
 
-      const bridgeTelemetry = { invocationStarted: false, responseReceived: false };
+      // The two booleans are the historical, latched run-level signals (kept verbatim: the
+      // observability event still emits exactly them). The two counters are what make the signal
+      // usable on the V7/V8 discovered-frontier path, where semantic discovery takes N provider
+      // turns before the analysis turn: once any batch answers, `responseReceived` is permanently
+      // true and can no longer tell an outstanding call apart from a finished one. `invocationCount
+      // > responseCount` means, and only means, "a bridge call is in flight right now".
+      const bridgeTelemetry = { invocationStarted: false, responseReceived: false, invocationCount: 0, responseCount: 0 };
       const governance = input.integral_v3_governance;
       const engine = createRuntime({
         environment: frozenEnvironment(environment, input),
         countDailyRuns: () => countDailyRuns(database),
         legalCorpusContext: input.legal_corpus_context,
         manizalesManifestSource: input.manizales_manifest_source,
-        onBridgeInvocationStarted: () => { bridgeTelemetry.invocationStarted = true; },
-        onBridgeResponseReceived: () => { bridgeTelemetry.responseReceived = true; },
+        onBridgeInvocationStarted: () => { bridgeTelemetry.invocationStarted = true; bridgeTelemetry.invocationCount += 1; },
+        onBridgeResponseReceived: () => { bridgeTelemetry.responseReceived = true; bridgeTelemetry.responseCount += 1; },
         // Both live leases renew at every provider boundary: the runtime's own preview-claim
         // renewal (fenced by job.idempotencyKey + this claim) composes with the durable worker's
         // outer job-lease renewal (fenced by job.jobId + job.leaseId), never skipping either.

@@ -55,6 +55,23 @@ export { AGT002_POST_BRIDGE_STAGES, AGT002_POST_BRIDGE_ERROR_CODES };
 // Any code not in this set — known-provider or unknown/future — also falls through to
 // PROVIDER_ERROR, never TRANSPORT_ERROR, so an unrecognized code can never be mistaken for "the
 // bridge itself is unreachable".
+// Closed set of the two fenced-lease codes this codebase mints for a heartbeat that found the lease
+// already gone: agt002-preview-persistence.js's renewAgt002PreviewClaim and
+// agt002-reanalysis-jobs.js's renewAgt002ReanalysisJobLease. Both travel as a plain `.code` on an
+// otherwise untagged Error, and agt002-preview-engine.js's own safe wrapper deliberately preserves
+// exactly that `.code` (never the message). Recognizing them here is what lets a lost lease be
+// attributed to the lease frontier instead of falling through to the telemetry heuristic below.
+export const AGT002_LEASE_LOST_CODES = Object.freeze([
+  'AGT002_PREVIEW_LEASE_LOST',
+  'AGT002_REANALYSIS_LEASE_LOST',
+]);
+const AGT002_LEASE_LOST_CODE_SET = new Set(AGT002_LEASE_LOST_CODES);
+
+/** True only for the closed lease codes above — never a prefix/substring match on an arbitrary code. */
+export function isAgt002LeaseLostError(error) {
+  return typeof error?.code === 'string' && AGT002_LEASE_LOST_CODE_SET.has(error.code);
+}
+
 const TRANSPORT_CODES = new Set([
   'AGT002_CODEX_TIMEOUT',
   'AGT002_CODEX_TRANSPORT_ERROR',
@@ -82,6 +99,7 @@ const AGT002_POST_BRIDGE_ATTEMPT_ERROR_MESSAGES = Object.freeze({
   [AGT002_POST_BRIDGE_ERROR_CODES.MODEL_OUTPUT_INVALID]: 'Vig-IA no completó el análisis: la salida no superó la validación.',
   [AGT002_POST_BRIDGE_ERROR_CODES.ENVELOPE_INVALID]: 'Vig-IA no completó el análisis: el resultado ensamblado no es válido.',
   [AGT002_POST_BRIDGE_ERROR_CODES.INTEGRAL_V3_INVALID]: 'Vig-IA no completó el análisis: la salida integral v3 no superó la validación.',
+  [AGT002_POST_BRIDGE_ERROR_CODES.LEASE_LOST]: 'Vig-IA no completó el análisis: la reserva del trabajo se perdió antes de continuar.',
   [AGT002_POST_BRIDGE_ERROR_CODES.PERSISTENCE_FAILED]: 'Vig-IA no completó el análisis: la persistencia rechazó el resultado.',
   [AGT002_POST_BRIDGE_ERROR_CODES.ATTEMPT_UPDATE_FAILED]: 'Vig-IA no completó el análisis: no fue posible registrar el intento.',
   [AGT002_POST_BRIDGE_ERROR_CODES.RESPONSE_SERIALIZATION_FAILED]: 'Vig-IA no completó el análisis: no fue posible preparar la respuesta.',
@@ -142,6 +160,11 @@ export function classifyAgt002PostBridgeFailure({ phase, error, integralContract
         error_code: isTransport ? AGT002_POST_BRIDGE_ERROR_CODES.TRANSPORT_ERROR : AGT002_POST_BRIDGE_ERROR_CODES.PROVIDER_ERROR,
       });
     }
+    // A fenced heartbeat found the lease already gone. The guarded operation (a provider turn, or
+    // the canonical persistence RPC) was therefore never attempted, so this is neither a transport
+    // failure, nor a persistence rejection, nor an unknown internal error.
+    case 'lease_renewal':
+      return Object.freeze({ stage: AGT002_POST_BRIDGE_STAGES.LEASE_RENEWAL, error_code: AGT002_POST_BRIDGE_ERROR_CODES.LEASE_LOST });
     case 'content_extraction':
       return Object.freeze({ stage: AGT002_POST_BRIDGE_STAGES.CONTENT_EXTRACTION, error_code: AGT002_POST_BRIDGE_ERROR_CODES.CONTENT_EXTRACTION_FAILED });
     case 'json_parse':
@@ -168,12 +191,29 @@ export function classifyAgt002PostBridgeFailure({ phase, error, integralContract
 // `.message` contract is unchanged) onto this module's phase vocabulary. An untagged rejection
 // is transport/provider only when telemetry proves the bridge invocation started and no response
 // was received. Untagged failures before invocation or after a received response are unexpected.
-function classifyEnginePhase(error, { bridgeInvocationStarted = false, bridgeResponseReceived = false } = {}) {
+function classifyEnginePhase(error, {
+  bridgeInvocationStarted = false, bridgeResponseReceived = false,
+  bridgeInvocationCount = null, bridgeResponseCount = null,
+} = {}) {
   const stage = error?.stage;
   if (stage === AGT002_OUTPUT_REJECTION_STAGES.CONTENT_EXTRACTION) return 'content_extraction';
   if (stage === AGT002_OUTPUT_REJECTION_STAGES.JSON_PARSE) return 'json_parse';
   if (stage === AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION || stage === AGT002_OUTPUT_REJECTION_STAGES.USAGE) return 'model_output_validation';
   if (stage === AGT002_OUTPUT_REJECTION_STAGES.ENVELOPE) return 'envelope_build';
+  // A closed lease code is positive, unambiguous evidence of WHERE the run stopped, and it beats
+  // every telemetry heuristic below: the heartbeat runs before the operation it guards, so nothing
+  // about the bridge, the answer or the database is implied by it.
+  if (isAgt002LeaseLostError(error)) return 'lease_renewal';
+  // Multi-turn attribution. `bridgeResponseReceived` is a LATCHED, run-level boolean: on the V7/V8
+  // discovered-frontier path the semantic-discovery stage takes N provider turns before the
+  // analysis turn, so after the first batch answers it is permanently true and can no longer tell
+  // "the bridge answered THIS call" from "the bridge answered SOME earlier call". The counters say
+  // what the booleans cannot: a call is outstanding only while an invocation has started and its
+  // response has not arrived. With no counters supplied (every pre-existing caller) the original
+  // boolean rule is used verbatim, so single-turn behaviour is byte-identical.
+  if (Number.isInteger(bridgeInvocationCount) && Number.isInteger(bridgeResponseCount)) {
+    return bridgeInvocationCount > bridgeResponseCount ? 'transport' : 'unexpected';
+  }
   if (bridgeResponseReceived) return 'unexpected';
   return bridgeInvocationStarted ? 'transport' : 'unexpected';
 }
@@ -295,6 +335,11 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
       phase: classifyEnginePhase(error, {
         bridgeInvocationStarted: bridgeTelemetry?.invocationStarted === true,
         bridgeResponseReceived: readBridgeResponseReceived(),
+        // Read fresh here for the same reason the booleans are: the caller's client wrapper
+        // increments them as turns actually start/resolve. Absent (a caller that only keeps the
+        // two booleans) they stay null and classifyEnginePhase falls back to the boolean rule.
+        bridgeInvocationCount: Number.isInteger(bridgeTelemetry?.invocationCount) ? bridgeTelemetry.invocationCount : null,
+        bridgeResponseCount: Number.isInteger(bridgeTelemetry?.responseCount) ? bridgeTelemetry.responseCount : null,
       }), error, integralContractV3,
     });
     stage = classification.stage;
@@ -315,7 +360,10 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
       await renewAgt002PreviewClaim(database, { idempotencyKey, claimId, leaseSeconds });
     } catch (error) {
       leaseLost = true;
-      const classification = classifyAgt002PostBridgeFailure({ phase: 'persistence', error, integralContractV3 });
+      // The lease frontier, not the persistence frontier: the canonical RPC was never attempted, so
+      // reporting this as PERSISTENCE_FAILED told an operator the database rejected a result that
+      // was never sent. `persistence_subcode` stays null for exactly the same reason.
+      const classification = classifyAgt002PostBridgeFailure({ phase: 'lease_renewal', error, integralContractV3 });
       stage = classification.stage;
       errorCode = classification.error_code;
     }

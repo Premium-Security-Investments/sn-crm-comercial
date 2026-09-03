@@ -52,6 +52,20 @@ export const AGT002_CANONICAL_PREVIEW_STAGES = Object.freeze({
 export const AGT002_POST_BRIDGE_STAGES = Object.freeze({
   TRANSPORT: 'transport',
   RESPONSE_RECEIVED: 'response_received',
+  // The fenced stage-boundary lease heartbeat itself (agt002-preview-persistence.js's
+  // renewAgt002PreviewClaim / agt002-reanalysis-jobs.js's renewAgt002ReanalysisJobLease). It is a
+  // frontier of its own, and specifically NOT 'transport', 'persistence' or 'unexpected': the
+  // renewal runs BEFORE the guarded operation, so a lost lease means the operation never happened
+  // at all and nothing about the provider, the model output or the database rejection is implied.
+  // Added after the real Procuraduria reanalysis that completed 18 semantic-discovery bridge turns
+  // and then ended unavailable with no analysis_run. The durable evidence for that run proves only
+  // stage=unexpected, a latched bridge_response_received, and persistence_attempts=0 — NOT that a
+  // lost preview claim at the analysis-turn boundary was the actual cause; that is one hypothesis
+  // consistent with the signature, not a confirmed root cause. What is certain is that with no stage
+  // of its own, a lost lease (like any other untagged local failure in the same window) could only
+  // classify as 'unexpected', which the queue mapper turned into provider_error — this stage closes
+  // that gap regardless of which local frontier actually failed.
+  LEASE_RENEWAL: 'lease_renewal',
   CONTENT_EXTRACTION: 'content_extraction',
   JSON_PARSE: 'json_parse',
   MODEL_OUTPUT_VALIDATION: 'model_output_validation',
@@ -68,6 +82,10 @@ export const AGT002_POST_BRIDGE_STAGES = Object.freeze({
 export const AGT002_POST_BRIDGE_ERROR_CODES = Object.freeze({
   TRANSPORT_ERROR: 'AGT002_TRANSPORT_ERROR',
   PROVIDER_ERROR: 'AGT002_PROVIDER_ERROR',
+  // The run's fenced lease was already lost when a stage boundary tried to renew it, so the
+  // operation that boundary guards was never attempted. Maps onto the queue's already-existing
+  // closed 'lease_lost' code (migration 068), so no new durable vocabulary is introduced.
+  LEASE_LOST: 'AGT002_LEASE_LOST',
   CONTENT_EXTRACTION_FAILED: 'AGT002_CONTENT_EXTRACTION_FAILED',
   JSON_PARSE_FAILED: 'AGT002_JSON_PARSE_FAILED',
   MODEL_OUTPUT_INVALID: 'AGT002_MODEL_OUTPUT_INVALID',

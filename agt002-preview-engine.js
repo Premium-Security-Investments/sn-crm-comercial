@@ -1087,17 +1087,46 @@ export function createAgt002PreviewEngine({
               // the manifest is re-validated inside the builder against the inventory the packet
               // itself carries, so what the model sees and what the envelope persists were both
               // checked against this snapshot's own source units.
-              const discoveredInput = buildAgt002PreviewInput({
-                ...previewInputOptions,
-                semanticManifest: discovery.semanticManifest,
-              });
-              const validationContext = buildIntegralV3ValidationContext(discoveredInput, companyEvidenceClasses, {
-                // The discovered requirements are this run's own: their categories come from the
-                // discovery turn, and no curated requirement_id -> evidence_class link exists for
-                // them yet, so every axis abstains to the safe-unknown state.
-                categoryOverrides: discovery.categoryOverrides,
-                evidenceClassLinks: {},
-              });
+              //
+              // Both steps below are LOCAL, synchronous, pre-provider-call assembly: no bridge
+              // invocation is in flight while either runs. An untagged throw here would fall through
+              // to the generic catch at the bottom of this function, which preserves only `.code`
+              // (never a stage) — exactly the gap that let a local, pre-provider failure collapse
+              // into 'unexpected'/provider_error for the real Procuraduria run (see the header
+              // comment on AGT002_POST_BRIDGE_STAGES in agt002-analysis-observability.js). Tagged
+              // with ENVELOPE — the same closed, already-recognized pre-provider stage the prompt
+              // budget check below uses — so classifyEnginePhase maps it to envelope_build ->
+              // AGT002_ENVELOPE_INVALID -> the worker's invalid_output, deterministically, never by
+              // falling back to the bridge-telemetry heuristic.
+              let discoveredInput;
+              try {
+                discoveredInput = buildAgt002PreviewInput({
+                  ...previewInputOptions,
+                  semanticManifest: discovery.semanticManifest,
+                });
+              } catch {
+                recordOutputRejected({
+                  stage: AGT002_OUTPUT_REJECTION_STAGES.ENVELOPE, validationCode: 'v4_discovered_input_assembly_failed',
+                  content: '', snapshotId, usage: undefined,
+                });
+                throw safe(SAFE_INVALID, { stage: AGT002_OUTPUT_REJECTION_STAGES.ENVELOPE });
+              }
+              let validationContext;
+              try {
+                validationContext = buildIntegralV3ValidationContext(discoveredInput, companyEvidenceClasses, {
+                  // The discovered requirements are this run's own: their categories come from the
+                  // discovery turn, and no curated requirement_id -> evidence_class link exists for
+                  // them yet, so every axis abstains to the safe-unknown state.
+                  categoryOverrides: discovery.categoryOverrides,
+                  evidenceClassLinks: {},
+                });
+              } catch {
+                recordOutputRejected({
+                  stage: AGT002_OUTPUT_REJECTION_STAGES.ENVELOPE, validationCode: 'v4_validation_context_construction_failed',
+                  content: '', snapshotId, usage: undefined,
+                });
+                throw safe(SAFE_INVALID, { stage: AGT002_OUTPUT_REJECTION_STAGES.ENVELOPE });
+              }
               return await runOnceV3(discoveredInput, key, signal, validationContext, {
                 priorUsage: discovery.usage,
                 // The curated governance-provenance records describe the construction-time maps,
