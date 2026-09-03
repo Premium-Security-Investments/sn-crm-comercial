@@ -181,6 +181,21 @@ test('the lease frontier has a closed stage and code of its own, distinct from t
   assert.doesNotMatch(JSON.stringify(result), /perdió|reserva/, 'no raw rejection text may travel with the classification');
 });
 
+test('a lease_renewal error with no code is never treated as lease_lost', () => {
+  const result = classifyAgt002PostBridgeFailure({ phase: 'lease_renewal', error: new Error('renewAgt002PreviewClaim rejected: db unreachable') });
+  assert.equal(result.stage, AGT002_POST_BRIDGE_STAGES.PERSISTENCE);
+  assert.equal(result.error_code, AGT002_POST_BRIDGE_ERROR_CODES.PERSISTENCE_FAILED);
+  assert.notEqual(result.error_code, AGT002_POST_BRIDGE_ERROR_CODES.LEASE_LOST);
+});
+
+test('a lease_renewal error with an unknown/future code is never treated as lease_lost', () => {
+  const error = Object.assign(new Error('renewAgt002PreviewClaim rejected: unexpected shape'), { code: 'AGT002_SOMETHING_FROM_THE_FUTURE' });
+  const result = classifyAgt002PostBridgeFailure({ phase: 'lease_renewal', error });
+  assert.equal(result.stage, AGT002_POST_BRIDGE_STAGES.PERSISTENCE);
+  assert.equal(result.error_code, AGT002_POST_BRIDGE_ERROR_CODES.PERSISTENCE_FAILED);
+  assert.notEqual(result.error_code, AGT002_POST_BRIDGE_ERROR_CODES.LEASE_LOST);
+});
+
 test('a lost lease after N successful discovery turns is attributed to the lease frontier, not to the provider', async () => {
   const database = fakeDb({
     rpcResults: {
@@ -221,6 +236,47 @@ test('a lost lease after N successful discovery turns is attributed to the lease
   assert.equal(durableAttempt.args.p_state, 'unavailable');
   assert.equal(durableAttempt.args.p_error_code, AGT002_POST_BRIDGE_ERROR_CODES.LEASE_LOST);
   assert.match(durableAttempt.args.p_error_message, /reserva del trabajo se perdió/, 'the durable row carries the fixed generic message for this closed code');
+});
+
+test('a non-lease renewal RPC failure (no code) never becomes lease_lost or provider_error, and the canonical run RPC is never attempted', async () => {
+  const database = fakeDb({
+    rpcResults: {
+      [ATTEMPT_RPC]: { data: { id: '00000000-0000-4000-8000-0000000000e5' }, error: null },
+      [RELEASE_RPC]: { data: true, error: null },
+    },
+  });
+  const records = [];
+  const result = await runAgt002PostBridgeAnalysis(database, postBridgeContext({ attemptKey: 'attempt-lease-4', leaseSeconds: 600 }), {
+    engine: { analyze: async () => ({ envelope: 'synthetic' }) },
+    observability: { record: (event, fields) => { records.push({ event, fields }); } },
+    analysisContext: { documents: [] },
+    bridgeTelemetry: telemetryAfterDiscovery(),
+    integralContractV3: true,
+  });
+  // renewAgt002PreviewClaim is invoked internally by the real persistence module against
+  // `database`; this fake db has no `psi_renew_agt002_preview_claim` result configured, so the
+  // renewal rejects with whatever un-coded/unknown-shaped error the real RPC wrapper throws for a
+  // missing/errored result — never a lease-lost code.
+
+  assert.equal(result.status, 'unavailable');
+  assert.equal(result.analysis_run_id, null, 'no run may be fabricated for a renewal that failed');
+  assert.equal(
+    result.error_code, AGT002_POST_BRIDGE_ERROR_CODES.PERSISTENCE_FAILED,
+    'a renewal failure with no lease-lost code must classify as a persistence-layer failure, never lease_lost',
+  );
+  assert.notEqual(result.error_code, AGT002_POST_BRIDGE_ERROR_CODES.LEASE_LOST);
+  assert.notEqual(result.error_code, AGT002_POST_BRIDGE_ERROR_CODES.PROVIDER_ERROR);
+
+  const outcome = records.find(record => record.event === 'reanalysis_post_bridge_outcome');
+  assert.ok(outcome, 'exactly one outcome event is still emitted');
+  assert.equal(outcome.fields.stage, AGT002_POST_BRIDGE_STAGES.PERSISTENCE);
+
+  assert.equal(database.names().includes(RUN_RPC), false, 'the canonical run RPC must never be attempted when the fenced renewal itself failed');
+  assert.equal(database.names().includes(LEGACY_RUN_RPC), false, 'no legacy run RPC either');
+
+  const { executor: mappingExecutor } = executorFor({ status: result.status, analysis_run_id: result.analysis_run_id, error_code: result.error_code });
+  const mapped = await mappingExecutor({ kind: 'db' }, JOB);
+  assert.equal(mapped.error_code, 'persistence_failure', 'the queue mapping for this failure must never be lease_lost or provider_error');
 });
 
 test('a real transport failure on the analysis turn is still transport, even after N discovery turns answered', async () => {

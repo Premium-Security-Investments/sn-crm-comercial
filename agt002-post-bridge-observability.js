@@ -160,11 +160,19 @@ export function classifyAgt002PostBridgeFailure({ phase, error, integralContract
         error_code: isTransport ? AGT002_POST_BRIDGE_ERROR_CODES.TRANSPORT_ERROR : AGT002_POST_BRIDGE_ERROR_CODES.PROVIDER_ERROR,
       });
     }
-    // A fenced heartbeat found the lease already gone. The guarded operation (a provider turn, or
-    // the canonical persistence RPC) was therefore never attempted, so this is neither a transport
-    // failure, nor a persistence rejection, nor an unknown internal error.
+    // A fenced heartbeat tried to renew the preview claim. Only the exact codes in
+    // AGT002_LEASE_LOST_CODES mean the lease was already gone — the guarded operation (the
+    // canonical persistence RPC) was therefore never attempted, so THAT case is neither a
+    // transport failure, nor a persistence rejection, nor an unknown internal error. Any other
+    // renewal failure (an un-coded or unknown-coded DB RPC/transport error, an invalid response,
+    // invalid params — renewAgt002PreviewClaim can throw all of these) is not positive evidence of
+    // a lost lease, so it falls through to PERSISTENCE/PERSISTENCE_FAILED instead: the renewal
+    // itself is a database persistence-layer operation, even though the canonical run persistence
+    // RPC was never reached.
     case 'lease_renewal':
-      return Object.freeze({ stage: AGT002_POST_BRIDGE_STAGES.LEASE_RENEWAL, error_code: AGT002_POST_BRIDGE_ERROR_CODES.LEASE_LOST });
+      return isAgt002LeaseLostError(error)
+        ? Object.freeze({ stage: AGT002_POST_BRIDGE_STAGES.LEASE_RENEWAL, error_code: AGT002_POST_BRIDGE_ERROR_CODES.LEASE_LOST })
+        : Object.freeze({ stage: AGT002_POST_BRIDGE_STAGES.PERSISTENCE, error_code: AGT002_POST_BRIDGE_ERROR_CODES.PERSISTENCE_FAILED });
     case 'content_extraction':
       return Object.freeze({ stage: AGT002_POST_BRIDGE_STAGES.CONTENT_EXTRACTION, error_code: AGT002_POST_BRIDGE_ERROR_CODES.CONTENT_EXTRACTION_FAILED });
     case 'json_parse':
@@ -354,21 +362,26 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
   // worker may already own this reservation, so persistence must never be attempted against it;
   // the claim is still released exactly once below, in the existing best-effort release.
   const hasFencedLease = Boolean(claimId) && Boolean(idempotencyKey) && Number.isInteger(leaseSeconds) && leaseSeconds > 0;
-  let leaseLost = false;
+  let renewalFailed = false;
   if (!engineFailed && hasFencedLease) {
     try {
       await renewAgt002PreviewClaim(database, { idempotencyKey, claimId, leaseSeconds });
     } catch (error) {
-      leaseLost = true;
-      // The lease frontier, not the persistence frontier: the canonical RPC was never attempted, so
-      // reporting this as PERSISTENCE_FAILED told an operator the database rejected a result that
-      // was never sent. `persistence_subcode` stays null for exactly the same reason.
+      renewalFailed = true;
+      // Whatever the cause, the fenced renewal itself failed, so the canonical run RPC must never
+      // be attempted against a claim that may no longer be held — see the `!renewalFailed` gate
+      // below, which skips persistence regardless of which failure this turns out to be. Only the exact
+      // AGT002_LEASE_LOST_CODES mean the lease was actually confirmed gone; any other renewal
+      // failure (un-coded/unknown-coded DB RPC or transport error, invalid response, invalid
+      // params) is classified PERSISTENCE/PERSISTENCE_FAILED instead — never lease_lost, and never
+      // left to fall through to provider_error. `persistence_subcode` stays null either way: this
+      // never reached the canonical run RPC that subcode is derived from.
       const classification = classifyAgt002PostBridgeFailure({ phase: 'lease_renewal', error, integralContractV3 });
       stage = classification.stage;
       errorCode = classification.error_code;
     }
   }
-  if (!engineFailed && !leaseLost) {
+  if (!engineFailed && !renewalFailed) {
     // The SAME already-validated envelope object for every attempt, built exactly once above.
     // Nothing in here can reach the engine, the bridge or the provider: `engine` is only read for
     // its already-computed `manifestScope`.
