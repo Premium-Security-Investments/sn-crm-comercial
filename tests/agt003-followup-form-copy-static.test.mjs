@@ -77,4 +77,12 @@ for (const field of ['interaction_type:', 'notes:', 'occurred_at:', 'next_action
 }
 assert.doesNotMatch(followUp, /created_by\s*:/, 'FollowUpForm payload must never include created_by');
 
+// 9) guardar sin próxima acción advierte, sin bloquear el envío ni completar la fecha automáticamente.
+assert.match(
+  followUp,
+  /setStatus\(form\.next_action_at \? 'Seguimiento registrado\.' : 'Seguimiento registrado\. Falta agendar la próxima gestión\.'\)/,
+  'guardar sin próxima acción debe mostrar una advertencia breve, sin bloquear el guardado',
+);
+assert.doesNotMatch(followUp, /next_action_at:\s*form\.next_action_at \|\| new Date/, 'nunca se debe inventar ni completar automáticamente la próxima acción');
+
 console.log('follow-up form copy static checks passed');

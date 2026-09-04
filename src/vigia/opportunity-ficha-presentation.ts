@@ -35,26 +35,32 @@ function state(code: string, label: string, detail: string, tone: FichaCardTone)
   return { code, label, detail, tone, className: TONE_CLASS[tone] };
 }
 
+const BOGOTA_DAY = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit',
+});
+function bogotaDayUtcMs(date: Date): number {
+  const [y, m, d] = BOGOTA_DAY.format(date).split('-').map(Number);
+  return Date.UTC(y, m - 1, d);
+}
+
 // Una columna `date` de Postgres (expected_close_date) es un día de calendario literal; un
-// `timestamptz` es un instante y su día de calendario es el local, igual que lo imprime `fmtDate`.
-function startOfCalendarDay(value?: string | null): Date | null {
+// `timestamptz` es un instante y su día de calendario se ancla a America/Bogota (ver `bogotaDayUtcMs`).
+function startOfCalendarDay(value?: string | null): number | null {
   if (typeof value !== 'string' || !value.trim()) return null;
   const trimmed = value.trim();
   if (DATE_ONLY.test(trimmed)) {
     const parts = parseDateOnly(trimmed);
-    return parts ? new Date(parts.year, parts.month - 1, parts.day) : null;
+    return parts ? Date.UTC(parts.year, parts.month - 1, parts.day) : null;
   }
   const parsed = new Date(trimmed);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  return Number.isNaN(parsed.getTime()) ? null : bogotaDayUtcMs(parsed);
 }
 
-/** Días de calendario transcurridos desde `value` hasta `now`. Positivo = pasado. */
+/** Días de calendario transcurridos desde `value` hasta `now`, en America/Bogota. Positivo = pasado. */
 export function calendarDaysBetween(value?: string | null, now: Date = new Date()): number | null {
   const from = startOfCalendarDay(value);
-  if (!from) return null;
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return Math.round((today.getTime() - from.getTime()) / DAY_MS);
+  if (from === null) return null;
+  return Math.round((bogotaDayUtcMs(now) - from) / DAY_MS);
 }
 
 /** `1 día` / `N días`. Nunca `día(s)`. */

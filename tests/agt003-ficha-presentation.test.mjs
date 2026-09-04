@@ -145,4 +145,11 @@ const anonymous = presentFollowUpEntry({ id: 'int-2', interaction_type: 'nota', 
 assert.equal(anonymous.authorLabel, 'Migrado / sistema');
 assert.equal(anonymous.migrated, false, 'un registro sin autor no es, por sí solo, un registro migrado');
 
+// --- 5. huso horario America/Bogota (frontera nocturna) --------------------------------------
+// 2026-09-02T23:30:00-05:00 == 2026-09-03T04:30:00Z: son las 11:30pm en Bogotá, sigue siendo "hoy" 2 de sept.
+const bogotaNight = new Date('2026-09-02T23:30:00-05:00');
+const bogotaNightState = nextActionCardState({ stage_code: 'prospecto', next_action_at: '2026-09-02T15:00:00-05:00' }, bogotaNight);
+assert.equal(bogotaNightState.code, 'today', 'una gestión agendada hoy en Bogotá no debe verse como vencida por el reloj UTC');
+assert.equal(calendarDaysBetween('2026-09-02', bogotaNight), 0, 'calendarDaysBetween debe calcular el día calendario en America/Bogota, no en el huso del runtime');
+
 console.log('AGT-003 ficha comercial presentation checks passed');

@@ -34,6 +34,7 @@ import { PSI_AGENT_ROUTER_NAME, VIGIA_VISIBLE_NAMES } from './vigia/agentIdentit
 import { canRenderOpportunityCopilot } from './vigia/opportunity-copilot-state';
 import { buildFollowUpHistory } from './opportunity-followup-presentation.js';
 import { decisionMakerCardState, expectedCloseCardState, followUpAgeLabel, nextActionCardState, presentFollowUpEntry } from './vigia/opportunity-ficha-presentation';
+import { buildMyDayQueue, type MyDayAlert } from './vigia/my-day-presentation';
 import { parseVigiaDashboardFilters } from './vigia/dashboard-link-filters.js';
 import { prioritiesHashFromDashboard } from './vigia/priority-filters.js';
 import { ACTIONS, can } from '../access-control.js';
@@ -743,6 +744,20 @@ function Select({ id, value, onChange, options, empty, disabled = false }: { id?
   return <select id={id} value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>{empty ? <option value="">{empty}</option> : null}{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>;
 }
 function Badge({ children, tone }: { children: React.ReactNode; tone?: string }) { return <span className={`badge ${tone ? `badge-${tone}` : ''}`}>{children}</span>; }
+function MyDayGroup({ title, alerts, total, tone, empty }: { title: string; alerts: MyDayAlert[]; total: number; tone: string; empty: string }) {
+  return <div className={`my-day-group my-day-${tone}`}>
+    {title && <h4>{title}{total > alerts.length ? ` · mostrando ${alerts.length} de ${total}` : ''}</h4>}
+    {alerts.length
+      ? <div className="my-day-list">{alerts.map(a => <article className="my-day-card" key={a.id}>
+          <strong>{a.companyName}</strong>
+          <p className="my-day-fact"><em>Qué pasó:</em> {a.fact}</p>
+          <p className="my-day-gap"><em>Falta:</em> {a.gap}</p>
+          <p className="my-day-goal"><em>Objetivo:</em> {a.goal}</p>
+          <a className="button" href={a.ctaHref}>Preparar seguimiento</a>
+        </article>)}</div>
+      : (empty && <p className="my-day-empty">{empty}</p>)}
+  </div>;
+}
 function Pagination({ page, pageSize, total, onChange, label }: { page: number; pageSize: number; total: number; onChange: (page: number) => void; label?: string }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize)); const current = Math.min(Math.max(1, page), totalPages);
   return <nav className="pagination" aria-label={label || 'Paginación'}><button type="button" className="secondary" onClick={() => onChange(current - 1)} disabled={current <= 1}>Anterior</button><span className="pagination-status">Página {current} de {totalPages}</span><button type="button" className="secondary" onClick={() => onChange(current + 1)} disabled={current >= totalPages}>Siguiente</button></nav>;
@@ -1242,7 +1257,7 @@ const FOLLOW_UP_NOTES_PLACEHOLDER = 'Resultado de la gestión\nAcuerdos o compro
 function FollowUpForm({ opportunityId, currentProfile, onSaved }: { opportunityId: string; currentProfile: Profile; onSaved: () => Promise<void> }) {
   const [form, setForm] = useState({ interaction_type: 'nota', notes: '', occurred_at: bogotaToday(), next_action_at: '' }); const [status, setStatus] = useState('');
   const interactionTypeLabels: Record<string, string> = { llamada:'Llamada', correo:'Correo', reunion:'Reunión', whatsapp:'WhatsApp', nota:'Nota', cambio_estado:'Cambio de estado', documento:'Documento' };
-  const save = async (e: React.FormEvent) => { e.preventDefault(); setStatus('Guardando…'); try { await api(`/api/opportunity-interactions?id=${encodeURIComponent(opportunityId)}`, { method:'POST', body: JSON.stringify({ interaction_type: form.interaction_type, notes: form.notes, occurred_at: followUpDateToIso(form.occurred_at), next_action_at: form.next_action_at ? new Date(form.next_action_at).toISOString() : null }) }); setForm({...form, notes:''}); setStatus('Seguimiento registrado.'); await onSaved(); } catch(err) { setStatus(err instanceof Error ? err.message : String(err)); } };
+  const save = async (e: React.FormEvent) => { e.preventDefault(); setStatus('Guardando…'); try { await api(`/api/opportunity-interactions?id=${encodeURIComponent(opportunityId)}`, { method:'POST', body: JSON.stringify({ interaction_type: form.interaction_type, notes: form.notes, occurred_at: followUpDateToIso(form.occurred_at), next_action_at: form.next_action_at ? new Date(form.next_action_at).toISOString() : null }) }); setForm({...form, notes:''}); setStatus(form.next_action_at ? 'Seguimiento registrado.' : 'Seguimiento registrado. Falta agendar la próxima gestión.'); await onSaved(); } catch(err) { setStatus(err instanceof Error ? err.message : String(err)); } };
   return <Panel title="Registrar seguimiento"><p className="followup-form-hint">Este registro alimenta el historial comercial y las recomendaciones de {VIGIA_VISIBLE_NAMES.commercial}. Describa hechos, acuerdos, responsables y el siguiente paso.</p><form onSubmit={save} className="form followup-form followup-form-compact"><label>Tipo de seguimiento<Select value={form.interaction_type} onChange={v=>setForm({...form, interaction_type:v})} options={interactionTypes.map(t=>[t, interactionTypeLabels[t]])} empty=""/></label><label>Registrado por<input value={currentProfile.full_name} readOnly/></label><label>Fecha del seguimiento<input type="date" value={form.occurred_at} onChange={e=>setForm({...form, occurred_at:e.target.value})}/></label><label>Próxima gestión (opcional)<input type="datetime-local" value={form.next_action_at} onChange={e=>setForm({...form, next_action_at:e.target.value})}/></label><label>Detalle del seguimiento<textarea required placeholder={FOLLOW_UP_NOTES_PLACEHOLDER} value={form.notes} onChange={e=>setForm({...form, notes:e.target.value})}/></label><button>Guardar seguimiento</button>{status && <small>{status}</small>}</form></Panel>;
 }
 const publicActuationOptions = [['requirement_pending','Requerimiento pendiente'],['information_requested','Información solicitada'],['addendum_reviewed','Adenda revisada'],['observation_recorded','Observación registrada'],['internal_meeting','Reunión interna'],['case_note','Nota del caso']];
@@ -2241,6 +2256,7 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
   const opportunities = useMemo(() => data.opportunities
     .filter(o => ownerKey(o) === ownerId)
     .sort((a,b) => a.stage_order - b.stage_order || Number(b.offer_value || 0) - Number(a.offer_value || 0)), [data.opportunities, ownerId]);
+  const myDay = useMemo(() => buildMyDayQueue(opportunities, new Date()), [opportunities]);
   const ownerName = opportunities[0]?.owner_name || data.profiles.find(p => p.id === ownerId)?.full_name || 'Sin comercial';
   const monthly = data.monthlyKpis.filter(k => (k.owner_name || 'Sin comercial') === ownerName);
   const sortedConsultantMonthlyRows = [...monthly].sort((a,b) => {
@@ -2345,9 +2361,9 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
     </section>
     <div className="actions-row">{!personal && <button className="secondary" onClick={() => go('#/dashboard')}>← Dashboard comercial</button>}<button onClick={() => go(`#/opportunities`)}>Ver mis oportunidades</button><button className="secondary" onClick={() => go('#/goals')}>Ver mis metas</button></div>
     {personal && <div className="personal-dashboard">
-      <section className="commercial-followup-banner" aria-label="Gestión comercial de hoy">
+      <section className="commercial-followup-banner" aria-label="Mi día">
         <div className="commercial-followup-copy">
-          <span className="eyebrow">Gestión comercial de hoy</span>
+          <span className="eyebrow">Mi día</span>
           <h3>{personalFollowUpRows.length ? `Tienes ${personalFollowUpRows.length} oportunidades que requieren atención` : 'Tu agenda comercial está al día'}</h3>
           <p>{personalFollowUpRows.length ? 'Este es el mismo resumen que luego puede salir por correo: vencidas, gestiones de hoy, oportunidades sin agenda y casos sin seguimiento reciente.' : 'No hay vencidas, sin agenda ni alertas de seguimiento reciente en tus oportunidades activas.'}</p>
         </div>
@@ -2356,17 +2372,32 @@ function ConsultantDetail({ data, ownerId, personal = false }: { data: Bootstrap
             <small>{card.label}</small><strong className="numeric-value">{card.value}</strong><span>{card.detail}</span>
           </button>)}
         </div>
-        <div className="commercial-followup-list">
-          {personalFollowUpRows.length ? personalFollowUpRows.map(row => <a className={`commercial-followup-row ${row.action.tone}`} key={row.opportunity.id} href={`#/detail/${row.opportunity.id}`}>
-            <div><strong>{row.opportunity.company_name}</strong><small>{row.opportunity.stage_name} · {fmtMoneyCompact(row.opportunity.offer_value)} · {row.opportunity.next_action_at ? fmtDate(row.opportunity.next_action_at) : 'Sin agenda'}</small></div>
-            <span><Badge tone={row.action.tone}>{row.action.label}</Badge><em>Registrar seguimiento →</em></span>
-          </a>) : <div className="commercial-followup-empty"><strong>Sin alertas inmediatas</strong><span>Mantén actualizada la próxima acción después de cada llamada, correo o reunión.</span></div>}
+        <div className="my-day">
+          <MyDayGroup title="Hacer hoy" alerts={myDay.hacerHoy} total={myDay.hacerHoyTotal} tone="primary" empty="Sin próximas gestiones vencidas o sin agendar." />
+          {(myDay.preparar.length > 0) && <MyDayGroup title="Preparar" alerts={myDay.preparar} total={myDay.prepararTotal} tone="secondary" empty="" />}
+          {(myDay.depurarCrm.length > 0) && <details className="my-day-hygiene"><summary>Depurar CRM ({myDay.depurarCrmTotal})</summary>
+            <MyDayGroup title="" alerts={myDay.depurarCrm} total={myDay.depurarCrmTotal} tone="muted" empty="" />
+          </details>}
         </div>
       </section>
       <Panel title="Mi prioridad de hoy"><div className="personal-priority-grid"><div><small>Acción recomendada</small><strong>{personalPriorityText}</strong></div><div><small>Gestión pendiente</small><strong>{totals.overdue} vencidas · {totals.missingAgenda} sin agenda</strong></div></div></Panel>
       <Panel title="Mi avance contra meta"><GoalVsActualDashboard rows={personalGoalRows} /></Panel>
       <Panel title="Mis oportunidades críticas">{personalCriticalRows.length ? <div className="tablewrap"><table><thead><tr><SortableTh label="Cliente" sortKey="client" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Etapa" sortKey="stage" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Valor" sortKey="value" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Próxima acción" sortKey="next" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/><SortableTh label="Prioridad" sortKey="priority" sortConfig={personalCriticalSortConfig} onSort={sortPersonalCriticalBy}/></tr></thead><tbody>{sortedPersonalCriticalRows.map(row => <tr key={row.opportunity.id} className="clickable" onClick={() => go(`#/detail/${row.opportunity.id}`)}><td><strong>{row.opportunity.company_name}</strong></td><td><Badge tone={stageTone(row.opportunity.stage_code)}>{row.opportunity.stage_name}</Badge></td><td>{fmtMoneyCompact(row.opportunity.offer_value)}</td><td>{row.opportunity.next_action_at ? fmtDate(row.opportunity.next_action_at) : 'Sin agenda'}</td><td><Badge tone={row.action.tone}>{row.action.label}</Badge></td></tr>)}</tbody></table></div> : <EmptyState title="Sin críticas inmediatas" text="No hay vencidas, sin agenda ni gestiones urgentes con tus filtros actuales." />}</Panel>
     </div>}
+    {!personal && <section className="commercial-followup-banner my-day-manager-banner" aria-label={`Prioridades de hoy de ${ownerName}`}>
+      <div className="commercial-followup-copy">
+        <span className="eyebrow">Prioridades de hoy</span>
+        <h3>Prioridades de hoy de {ownerName}</h3>
+        <p>{(myDay.hacerHoy.length || myDay.preparar.length || myDay.depurarCrm.length) ? `Resumen de las gestiones más urgentes de ${ownerName} para hoy, con el mismo criterio de priorización que Mi día.` : `${ownerName} no tiene gestiones vencidas, sin agenda ni decisores pendientes por confirmar hoy.`}</p>
+      </div>
+      <div className="my-day">
+        <MyDayGroup title="Hacer hoy" alerts={myDay.hacerHoy} total={myDay.hacerHoyTotal} tone="primary" empty={`${ownerName} no tiene próximas gestiones vencidas o sin agendar.`} />
+        {(myDay.preparar.length > 0) && <MyDayGroup title="Preparar" alerts={myDay.preparar} total={myDay.prepararTotal} tone="secondary" empty="" />}
+        {(myDay.depurarCrm.length > 0) && <details className="my-day-hygiene"><summary>Depurar CRM ({myDay.depurarCrmTotal})</summary>
+          <MyDayGroup title="" alerts={myDay.depurarCrm} total={myDay.depurarCrmTotal} tone="muted" empty="" />
+        </details>}
+      </div>
+    </section>}
 
     <div className="grid kpis manager-kpis consultant-kpis">
       <Kpi icon="Σ" tone="blue" label="Total oportunidades" value={String(opportunities.length)} hint={`${totals.active} activas`} meta="Asignadas al consultor" />
