@@ -1157,6 +1157,20 @@ export function buildAgt002IntegralAnalysisV3BatchOutputJsonSchema(validationCon
 // unsliced governed manifest (never re-based per batch); `category`/`evidence_state` come
 // from the same governed maps the single-turn assembler
 // (`assembleAgt002GovernedIntegralAnalysisV3Units`) already uses.
+//
+// The assembled unit is then run through the EXISTING, unchanged `normalizeAgt002ActionsUnit`
+// — the same conservative action normalization the single-turn assembler already applies —
+// before the shared validator sees it (production `v3_action_invariant` rejections on
+// durable_batched_v1). This is a parity fix, not a relaxation: the batch wire contract
+// removes `unit_id` from the unit key set entirely, so the deterministic `UNIT-<requirement_id>`
+// that `actions[].basis_unit_id` must equal is structurally invisible to the model on a batch
+// turn — it is a server-owned identity the model cannot govern, exactly like the duplicate
+// `action_id`, the mandatory `authorized_human` role for a `human_decision`, and the
+// always-false `external_side_effect`. Normalization must run AFTER `unit_id` exists (the
+// normalizer no-ops without it) and BEFORE the unweakened `validateAgt002IntegralAnalysisV3Unit`,
+// which stays the sole authority over every enum, bound and shape — an invalid `action_type`,
+// `priority` or `suggested_role`, or a malformed action object, is never repaired here and
+// still fails closed.
 function assembleAgt002IntegralAnalysisV3BatchUnit(wireUnit, requirementId, validationContext) {
   const ctx = isRecord(validationContext) ? validationContext : {};
   const requirementManifest = Array.isArray(ctx.requirementManifest) ? ctx.requirementManifest : [];
@@ -1165,13 +1179,13 @@ function assembleAgt002IntegralAnalysisV3BatchUnit(wireUnit, requirementId, vali
   const evidenceStateManifest = Array.isArray(ctx.evidenceStateManifest) ? ctx.evidenceStateManifest : [];
   const evidenceStateEntry = evidenceStateManifest.find(entry => entry?.requirement_id === requirementId);
   const governedEvidenceState = evidenceStateEntry?.evidence_state;
-  return {
+  return normalizeAgt002ActionsUnit({
     ...wireUnit,
     unit_id: `UNIT-${requirementId}`,
     sequence: manifestIndex + 1,
     category: manifestEntry?.category ?? null,
     evidence_state: isRecord(governedEvidenceState) ? { ...governedEvidenceState } : (governedEvidenceState ?? null),
-  };
+  });
 }
 
 /**
