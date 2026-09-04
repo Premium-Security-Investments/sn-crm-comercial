@@ -5,6 +5,7 @@ import {
   renewAgt002ReanalysisJobLease,
 } from './agt002-reanalysis-jobs.js';
 import { AGT002_CHECKPOINT_ERROR_CODES } from './agt002-analysis-checkpoints.js';
+import { AGT002_V3_SAFE_VALIDATION_CODES } from './agt002-preview-engine.js';
 
 export const AGT002_REANALYSIS_QUEUE_ERROR_CODES = Object.freeze([
   'timeout',
@@ -43,11 +44,21 @@ const PERSISTENCE_FAILURE_ERROR_CODES = new Set([
   AGT002_CHECKPOINT_ERROR_CODES.PERSISTENCE_FAILED,
 ]);
 
+// The engine's own closed V3 semantic-invariant catalog, matched EXACTLY (never by substring):
+// agt002-preview-engine.js attaches one of these lowercase subcodes verbatim as the `.code` of a
+// V3 semantic-validation rejection — both on the one-turn path and, now, on the durable batched
+// one. They name a rejected MODEL OUTPUT, so they are invalid_output; without this exact-match
+// gate most of them (e.g. `v3_coverage_manifest_version_mismatch`) carry none of the substrings
+// the heuristic below looks for and would be misattributed to the provider.
+const V3_SAFE_VALIDATION_CODE_SET = new Set(AGT002_V3_SAFE_VALIDATION_CODES);
+
 export function classifyAgt002ReanalysisWorkerError(error) {
-  const code = String(error?.runtime_boundary_code || error?.code || '').toUpperCase();
+  const rawCode = error?.runtime_boundary_code || error?.code || '';
+  const code = String(rawCode).toUpperCase();
   if (code.includes('TIMEOUT')) return 'timeout';
   if (PERSISTENCE_FAILURE_ERROR_CODES.has(code) || error?.stage === 'persistence') return 'persistence_failure';
   if (LEASE_LOST_ERROR_CODES.has(code)) return 'lease_lost';
+  if (typeof rawCode === 'string' && V3_SAFE_VALIDATION_CODE_SET.has(rawCode)) return 'invalid_output';
   if (code.includes('CAPACITY') || code.includes('SATURAT') || code.includes('QUOTA')) return 'capacity_unavailable';
   if (code.includes('INVALID') || code.includes('VALIDATION') || code.includes('JSON') || code.includes('CONTENT') || code.includes('ENVELOPE')) return 'invalid_output';
   return 'provider_error';

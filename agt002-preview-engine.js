@@ -1280,6 +1280,10 @@ export function createAgt002PreviewEngine({
                     const fields = agt002BatchProgressObservabilityFields(event, snapshotId);
                     if (fields) observability.record('analysis_batch_progress', fields);
                   },
+                  // This engine's OWN output_rejected choke point — the same one runOnce/runOnceV3
+                  // use — so a batched semantic-validation rejection is as diagnosable as a
+                  // one-turn one, through the identical sanitizer. No new event type, no new field.
+                  recordOutputRejected,
                 });
               }
               return await runOnceV3(discoveredInput, key, signal, validationContext, {
@@ -1405,9 +1409,23 @@ function agt002BatchedV3Error(code, stage) {
 // points (content_extraction/json_parse/semantic_validation/usage) — or `envelope` — is preserved
 // alone, recoded onto a single closed invalid-output code; anything else collapses to the generic
 // closed BATCH_FAILED with no stage, never an arbitrary one copied from upstream.
+//
+// The ONE exception, and it is not a widening: a semantic-validation rejection whose code is an
+// AGT002_V3_SAFE_VALIDATION_CODES member is forwarded byte-for-byte, exactly as the one-turn
+// runOnceV3 path already forwards it (see its own allowlist gate above). executeBatch is the only
+// producer of that shape and it gates the code against the same closed catalog before attaching
+// it, so nothing arbitrary can arrive here; a non-allowlisted code never reaches this branch and
+// stays the generic closed VALIDATION_INVALID it has always been. This is what lets the durable
+// post-bridge runner append `[subcode]` to its existing generic AGT002_INTEGRAL_V3_INVALID message.
 function classifyAgt002BatchedV3ExecuteBatchFailure(error) {
   if (error?.code === 'AGT002_CODEX_TIMEOUT') {
     return agt002BatchedV3Error('AGT002_CODEX_TIMEOUT', 'transport');
+  }
+  if (
+    error?.stage === AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION
+    && AGT002_V3_SAFE_VALIDATION_CODE_SET.has(error?.code)
+  ) {
+    return agt002BatchedV3Error(error.code, AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION);
   }
   if (AGT002_OUTPUT_REJECTION_STAGE_VALUES.has(error?.stage)) {
     return agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.VALIDATION_INVALID, error.stage);
@@ -1765,6 +1783,12 @@ export async function runAgt002BatchedV3Analysis({
   maxInputTokens = AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS,
   maxRequirementsPerBatch = AGT002_BATCHED_V3_DEFAULT_MAX_REQUIREMENTS_PER_BATCH,
   recordProgress = () => {},
+  // The engine's own single output_rejected choke point (createAgt002PreviewEngine's
+  // recordOutputRejected), handed down so a batch's semantic-validation rejection emits the SAME
+  // sanitized diagnostic event the one-turn V3 path already emits — stage, a closed validation
+  // code, a content hash/size, token counts; never the content, the prompt or a validator message.
+  // Defaults to a no-op, so a standalone caller that never wired observability is unchanged.
+  recordOutputRejected = () => {},
 } = {}) {
   if (
     !client || typeof client.run !== 'function'
@@ -1779,6 +1803,7 @@ export async function runAgt002BatchedV3Analysis({
     || typeof idGenerator !== 'function'
     || !isPositiveInteger(maxInputTokens) || !isPositiveInteger(maxRequirementsPerBatch)
     || typeof recordProgress !== 'function'
+    || typeof recordOutputRejected !== 'function'
   ) {
     throw safe(SAFE_BATCHED_V3_CONFIG_INVALID, { code: AGT002_BATCHED_V3_CODES.CONFIG_INVALID });
   }
@@ -1886,8 +1911,24 @@ export async function runAgt002BatchedV3Analysis({
     let validated;
     try {
       validated = validateAgt002PreviewModelOutputV3Batch(parsed, { validationContext, batch });
-    } catch {
-      throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.BATCH_FAILED, AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION);
+    } catch (error) {
+      // Same closed allowlist gate runOnceV3 applies to its own single-turn V3 rejection: ONLY an
+      // AGT002_V3_SAFE_VALIDATION_CODES member ever survives, so a raw/unknown/future validator
+      // code (the batch contract's own v3_batch_* codes included) collapses to the generic closed
+      // diagnostic value and to the generic closed batch code. The validator's `.message` is never
+      // read at all — not here, not in the event below, not on the thrown error.
+      const isAllowlistedValidationCode = AGT002_V3_SAFE_VALIDATION_CODE_SET.has(error?.code);
+      recordOutputRejected({
+        stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION,
+        validationCode: isAllowlistedValidationCode ? error.code : 'v3_invariant_violation',
+        content: raw.content,
+        snapshotId: previewInput.snapshot_id,
+        usage: raw.usage,
+      });
+      throw agt002BatchedV3Error(
+        isAllowlistedValidationCode ? error.code : AGT002_BATCHED_V3_CODES.BATCH_FAILED,
+        AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION,
+      );
     }
 
     // A provider request id is surfaced ONLY from an explicit short-string response metadata
