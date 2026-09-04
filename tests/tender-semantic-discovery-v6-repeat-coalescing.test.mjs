@@ -35,8 +35,9 @@ import { buildAgt002TenderRequirementInventory } from '../agt002-preview-input.j
 //   2. an exact identical repetition yields exactly ONE manifest requirement with the same
 //      server-derived citations/front evidence as the un-repeated proposal, and does not
 //      double-count anywhere (requirement count, coverage ledger, canonical proposal hash);
-//   3. a repeat with ANY conflicting explicit field (category, front, kind) is still rejected
-//      fail-closed as `v4_discovery_uniqueness_invariant`, and the message exposes no label;
+//   3. a repeat with ANY conflicting explicit field (category, front, kind) is retracted, not
+//      rejected (v8): no category/front/kind is ever chosen, the obligation is lost, and its unit
+//      falls to the coverage completion — the OTHER obligations of the same proposal are untouched;
 //   4. two DIFFERENT labels are never merged, no matter how similar;
 //   5. source anchoring, the persisted projection and the coverage completion all stay valid.
 //
@@ -159,8 +160,11 @@ async function assertRejection(promiseFactory, { code, message }) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v6',
-    'coalescing an exact repetition changes how a provider answer is canonicalized, so the policy version must move',
+    'tender-semantic-discovery.v9',
+    'coalescing an exact repetition changes how a provider answer is canonicalized, v7\'s '
+    + 'multi-batch input is a further material change to what the model is asked, v8 retracts a '
+    + 'CONFLICTING repetition instead of rejecting the whole proposal, and v9 lowers the per-batch '
+    + 'source-char budget (changing the batch plan itself), so the policy version must move',
   );
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
@@ -169,8 +173,8 @@ async function assertRejection(promiseFactory, { code, message }) {
   );
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
-    /si repites esa etiqueta u obligación con algún campo distinto, se rechaza toda la propuesta/,
-    'the policy must state that a conflicting repetition still rejects the whole proposal',
+    /si repites esa etiqueta u obligación con algún campo distinto, el servidor no elige entre las versiones en conflicto: retira todas sus ocurrencias/,
+    'the policy must state that a conflicting repetition is retracted in full, never arbitrated (v8)',
   );
   // The unchanged one-obligation-once rule is NOT withdrawn by the new sentence.
   assert.match(
@@ -282,9 +286,13 @@ for (const repeats of [2, 3]) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// 3. A repeat with ANY conflicting explicit field is still rejected fail-closed, under the
-//    established closed code. Choosing between two categories/fronts/kinds for one obligation is
-//    an inference this module never makes.
+// 3. A repeat with ANY conflicting explicit field is RETRACTED, not rejected (v8): no
+//    category/front/kind is ever chosen for the contradicted obligation, it is lost for this
+//    expediente, and its unit falls to the coverage completion as a visible hole — the OTHER
+//    obligation of the same proposal is untouched. Choosing between two categories/fronts/kinds for
+//    one obligation is an inference this module never makes; it is now resolved by retraction
+//    instead of by rejecting the whole proposal (full contract:
+//    tests/tender-semantic-discovery-v8-contradiction-retraction.test.mjs).
 // ---------------------------------------------------------------------------------------------
 for (const conflicting of [
   { category: 'habilitating' },
@@ -295,31 +303,60 @@ for (const conflicting of [
   { kind: 'restriction' },
   { kind: 'condition', front: 'legal', category: 'financial_execution' },
 ]) {
-  const caught = await assertRejection(
-    () => run({
-      requirements: [requirement(LABEL_A), requirement(LABEL_A, conflicting)],
-      excluded: [{ source_unit_id: unitIdByParagraph[1], reason: 'descriptive_or_contextual' }],
-      unresolved: [],
-    }),
-    { code: 'v4_discovery_uniqueness_invariant', message: /obligación vacía o duplicada/ },
+  const result = await run({
+    requirements: [requirement(LABEL_A), requirement(LABEL_A, conflicting), requirement(LABEL_B)],
+    excluded: [],
+    unresolved: [],
+  });
+  assert.equal(
+    result.semanticManifest.requirements.some(entry => entry.label === LABEL_A), false,
+    'the conflicting obligation must be retracted entirely, never resolved to either variant',
   );
-  // Privacy: the established safe message names the index only — never the label, never a
-  // source_unit id, never a fragment of the expediente.
-  for (const secret of [LABEL_A, LABEL_B, ...PARAGRAPHS, ...unitIdByParagraph]) {
-    assert.ok(!caught.message.includes(secret), 'the rejection message must never expose a label, an id or source text');
-  }
+  assert.deepEqual(
+    result.semanticManifest.requirements.map(entry => entry.label),
+    [LABEL_B],
+    'the OTHER obligation of the same proposal must survive the conflict untouched',
+  );
+  assert.deepEqual(
+    result.semanticManifest.unresolved.find(entry => entry.source_unit_id === unitIdByParagraph[0]),
+    {
+      source_unit_id: unitIdByParagraph[0],
+      unit_hash: unitHashById.get(unitIdByParagraph[0]),
+      origin: 'semantic',
+      reason: 'source_unit_not_dispositioned',
+    },
+    'the retracted obligation\'s unit must fall to the completion pass as a visible hole',
+  );
+  assert.equal(result.semanticManifest.decision_ready, false);
+  assert.deepEqual(
+    result.discoveryLedger.retractions,
+    { conflicting_obligation_keys: 1, retracted_requirement_occurrences: 2 },
+    'the ledger must count exactly one retracted obligation over its two conflicting occurrences',
+  );
 }
 
 // The order of the conflict does not matter either: the SECOND field wins nothing, and a conflict
-// discovered after an already-coalesced identical repeat still rejects the whole proposal.
-await assertRejection(
-  () => run({
-    requirements: [requirement(LABEL_A), requirement(LABEL_A), requirement(LABEL_A, { category: 'habilitating' })],
-    excluded: [{ source_unit_id: unitIdByParagraph[1], reason: 'descriptive_or_contextual' }],
+// discovered after an already-coalesced identical repeat still retracts the whole obligation.
+{
+  const result = await run({
+    requirements: [
+      requirement(LABEL_A), requirement(LABEL_A), requirement(LABEL_A, { category: 'habilitating' }),
+      requirement(LABEL_B),
+    ],
+    excluded: [],
     unresolved: [],
-  }),
-  { code: 'v4_discovery_uniqueness_invariant', message: /obligación vacía o duplicada/ },
-);
+  });
+  assert.deepEqual(
+    result.semanticManifest.requirements.map(entry => entry.label),
+    [LABEL_B],
+    'an exact repeat coalesced first is still retracted in full once a conflicting occurrence appears',
+  );
+  assert.deepEqual(
+    result.discoveryLedger.retractions,
+    { conflicting_obligation_keys: 1, retracted_requirement_occurrences: 2 },
+    'the coalesced pair and the conflicting occurrence canonicalize to exactly two conflicting entries',
+  );
+}
 
 // ---------------------------------------------------------------------------------------------
 // 4. Two DIFFERENT labels are never merged — coalescing is exact-identity only, never similarity.

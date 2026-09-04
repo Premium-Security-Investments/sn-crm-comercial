@@ -59,7 +59,7 @@ assert.match(server, /import \{ buildAgt002CompanyEvidenceIdentity, deriveAgt002
 assert.match(server, /evidenceAsOf = deriveAgt002CompanyEvidenceAsOf\(companyEvidenceRegistryEntries\);/);
 assert.match(
   server,
-  /evidenceIdentity = buildAgt002CompanyEvidenceIdentity\(\{ registryEntries: companyEvidenceRegistryEntries, asOf: new Date\(evidenceAsOf\) \}\);/,
+  /evidenceIdentity = buildAgt002CompanyEvidenceIdentity\(\{ registryEntries: companyEvidenceRegistryEntries, inventorySnapshot: companyEvidenceInventorySnapshot, asOf: new Date\(evidenceAsOf\) \}\);/,
 );
 assert.doesNotMatch(server, /evidenceIdentity: buildAgt002CompanyEvidenceIdentity\(\{[^}]*asOf: new Date\(\) *\}\)/, 'production must never derive the company-evidence identity from the wall clock');
 
@@ -150,20 +150,38 @@ assert.match(executor, /evidenceIdentity: governance\?\.evidenceIdentity \?\? nu
 // registry rows — never re-derived, never the wall clock.
 assert.match(executor, /companyEvidenceAsOf: governance\.evidenceAsOf,/);
 
-// The post-bridge orchestrator forwards it, verbatim, into the durable registration call. The
-// safe retry wiring builds `persistenceParams` exactly once — carrying evidenceIdentity — and
-// reuses that SAME object on every in-memory persistence retry, rather than rebuilding it per
-// attempt.
-assert.match(postBridge, /evidenceIdentity = null,\s*\n\s*\} = context;/);
+// The post-bridge orchestrator forwards it, verbatim, into the durable registration call. That
+// call now goes through the injectable `persistAnalysis` seam (never a hardcoded call), so
+// durable finalize can swap in an atomic RPC — but every existing caller (which never supplies
+// the seam) must still get registerAgt002PreviewAnalysis, byte-identical to before the seam
+// existed. The safe retry wiring builds `persistenceParams` exactly once — carrying
+// evidenceIdentity — and reuses that SAME object on every in-memory persistence retry, rather
+// than rebuilding it per attempt.
+assert.match(
+  postBridge,
+  /evidenceIdentity = null,[\s\S]*?\} = context;/,
+  'postBridge context destructuring must default evidenceIdentity to null',
+);
+assert.match(
+  postBridge,
+  /leaseSeconds = null,[\s\S]*?\} = context;/,
+  'postBridge context destructuring must default leaseSeconds to null (heartbeat frontier)',
+);
+assert.match(
+  postBridge,
+  /persistAnalysis = registerAgt002PreviewAnalysis,/,
+  'the injected persistAnalysis seam must default to registerAgt002PreviewAnalysis, preserving legacy behavior',
+);
 assert.match(
   postBridge,
   /const persistenceParams = \{[\s\S]*?semanticSourceDocuments: analysisContext\?\.documents \?\? null,\s*\n\s*evidenceIdentity,\s*\n\s*\};/,
   'persistenceParams must be built once, carrying evidenceIdentity',
 );
+assert.equal(count(postBridge, 'const persistenceParams = {'), 1, 'persistenceParams must be built exactly once, never rebuilt per retry attempt');
 assert.match(
   postBridge,
-  /registerAgt002PreviewAnalysis\(trackedDatabase, persistenceParams\)/,
-  'the registration call must reuse the SAME persistenceParams object on every retry',
+  /await persistAnalysis\(trackedDatabase, persistenceParams\)/,
+  'the registration call must go through the injected persistAnalysis seam and reuse the SAME persistenceParams object on every retry',
 );
 
 // B: the legacy non-canonical preview flow (flow3) must check the fail-closed boundary code

@@ -10,6 +10,16 @@
 // present" structurally incapable of implying "it is current", "it applies to this
 // case" or "it is sufficient". recurring_documents is left untouched: this is an
 // additive, separate read surface for v3 foundations, not a replacement.
+//
+// F4: an optional `inventorySnapshot` (the governed SharePoint inventory from
+// agt002-company-evidence-sharepoint-catalog.js) may additionally be supplied. When present,
+// it is re-validated (never trusted verbatim) and each class gains exactly one additive
+// `inventory` field built from that class's own entry — never invented, never
+// cross-wired to another class, and never able to promote presence/review/validity/
+// applicability/compliance, which stay exclusively derived from the registry row. Omitting it
+// (or passing null) keeps the legacy shape byte-for-byte identical.
+
+import { validateAgt002CompanyEvidenceInventorySnapshot } from './agt002-company-evidence-sharepoint-catalog.js';
 
 export const AGT002_COMPANY_EVIDENCE_PRESENCE_STATUSES = Object.freeze(['verified', 'reported', 'not_verified']);
 export const AGT002_COMPANY_EVIDENCE_REVIEW_STATUSES = Object.freeze(['pending_human_review', 'approved', 'rejected']);
@@ -202,7 +212,20 @@ function buildCoverage(classes, entriesById) {
   return coverage;
 }
 
-export function buildAgt002CompanyEvidenceClasses({ registryEntries = [], asOf = new Date() } = {}) {
+// Reads only the four safe per-class fields off an already-validated snapshot class — never
+// its entry_id (the caller's own class already has it) and never anything from the snapshot's
+// own top-level fields (e.g. its catalog hash, which is run identity, not model input).
+function buildInventorySummary(snapshotClassesById, entryId) {
+  const snapshotClass = snapshotClassesById.get(entryId);
+  return {
+    source_file_count: snapshotClass.source_file_count,
+    state_counts: snapshotClass.state_counts,
+    effective_state: snapshotClass.effective_state,
+    last_reconciled_at: snapshotClass.last_reconciled_at,
+  };
+}
+
+export function buildAgt002CompanyEvidenceClasses({ registryEntries = [], inventorySnapshot = null, asOf = new Date() } = {}) {
   if (!Array.isArray(registryEntries)) throw new Error('registryEntries debe ser una lista.');
   if (!(asOf instanceof Date) || Number.isNaN(asOf.getTime())) throw new Error('asOf debe ser una fecha válida.');
 
@@ -219,6 +242,14 @@ export function buildAgt002CompanyEvidenceClasses({ registryEntries = [], asOf =
     const rawEntry = entriesById.get(catalogEntry.entryId);
     return rawEntry ? buildClass(rawEntry, asOf) : buildMissingClass(catalogEntry);
   });
+
+  if (inventorySnapshot != null) {
+    const validatedSnapshot = validateAgt002CompanyEvidenceInventorySnapshot(inventorySnapshot);
+    const snapshotClassesById = new Map(validatedSnapshot.classes.map(cls => [cls.entry_id, cls]));
+    for (const cls of classes) {
+      cls.inventory = buildInventorySummary(snapshotClassesById, cls.entry_id);
+    }
+  }
 
   return { classes, coverage: buildCoverage(classes, entriesById) };
 }

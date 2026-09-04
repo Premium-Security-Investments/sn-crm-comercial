@@ -162,11 +162,14 @@ async function assertRejection(promiseFactory, { stage, code, message }) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v6',
+    'tender-semantic-discovery.v9',
     'removing the requirement source-id fields (v3), making coverage fail-safe (v4), making the '
-    + 'dispositions themselves optional (v5) and coalescing an exact obligation repetition (v6) are '
-    + 'all material changes to what the model is asked for and to how the answer is canonicalized, '
-    + 'so the policy version must move with them',
+    + 'dispositions themselves optional (v5), coalescing an exact obligation repetition (v6), '
+    + 'replacing the single request with a multi-batch input (v7), retracting a self-'
+    + 'contradicting claim instead of rejecting the whole batch (v8), and lowering the per-batch '
+    + 'source-char budget (v9) are all material changes to '
+    + 'what the model is asked for and to how the answer is canonicalized, so the policy version '
+    + 'must move with them',
   );
 }
 
@@ -268,7 +271,7 @@ let capturedRequest;
   );
 
   // Output object shape is unchanged for every existing caller.
-  assert.deepEqual(Object.keys(result).sort(), ['categoryOverrides', 'semanticManifest', 'usage']);
+  assert.deepEqual(Object.keys(result).sort(), ['categoryOverrides', 'discoveryLedger', 'semanticManifest', 'usage']);
   // And the canonical requirement shape is unchanged: {kind,label,front,front_evidence,citations}
   // plus the server-owned identity fields the assembler has always added.
   assert.deepEqual(
@@ -333,9 +336,10 @@ for (const smuggled of [
 }
 
 // ---------------------------------------------------------------------------------------------
-// 5. excluded/unresolved overlapping a DERIVED owner is rejected fail-closed. The model cannot see
-//    the mapping it is contradicting, which is exactly why the policy tells it the rule; nothing
-//    here silently drops the disposition or the citation.
+// 5. excluded/unresolved overlapping a DERIVED owner is retracted, not rejected (v8). The model
+//    cannot see the mapping it is contradicting, which is exactly why the policy tells it the rule;
+//    but the server no longer destroys the whole turn over it — it never moves or drops the
+//    citation, and simply discards the contradictory disposition.
 // ---------------------------------------------------------------------------------------------
 {
   const ownerA = unitIdByParagraph[2];
@@ -344,18 +348,25 @@ for (const smuggled of [
     ['excluded', { source_unit_id: ownerB, reason: 'duplicate_source_unit' }],
     ['unresolved', { source_unit_id: ownerB, reason: 'obligation_not_classifiable' }],
   ]) {
-    await assertRejection(
-      () => run(capturingClient(proposalFor(
-        [requirement(sharedCandidate)],
-        [ownerA, ownerB],
-        { [field]: [entry] },
-      ))),
-      {
-        stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION,
-        code: 'v4_discovery_uniqueness_invariant',
-        message: /disposición duplicada/,
-      },
+    const result = await run(capturingClient(proposalFor(
+      [requirement(sharedCandidate)],
+      [ownerA, ownerB],
+      { [field]: [entry] },
+    )));
+    assert.deepEqual(
+      result.semanticManifest.requirements[0].citations.map(citation => citation.source_unit_id).sort(),
+      [ownerA, ownerB].sort(),
+      `${field}: the derived citation to both owners must survive the contradiction untouched`,
     );
+    assert.equal(
+      result.semanticManifest.excluded.some(item => item.source_unit_id === ownerB), false,
+      `${field}: the contradictory disposition must leave no trace in excluded`,
+    );
+    assert.equal(
+      result.semanticManifest.unresolved.some(item => item.source_unit_id === ownerB), false,
+      `${field}: the contradictory disposition must leave no trace in unresolved`,
+    );
+    assert.equal(result.discoveryLedger.batches[0].retracted_disposition_units, 1);
   }
 }
 
@@ -388,35 +399,66 @@ for (const smuggled of [
   assert.equal(completed.semanticManifest.decision_ready, false);
   assert.equal(completed.semanticManifest.recommendation, 'pause');
 
-  // A source budget that only fits the first paragraph. The label catalog keeps its own (ample)
-  // budget, so this exercises omission, not the catalog's fail-closed coverage gate.
-  const client = capturingClient({
-    requirements: [requirement(soloCandidate)],
-    excluded: [],
-    unresolved: [],
-  });
+  // A small source budget forces one paragraph per batch (v7). A dynamic, batch-aware client
+  // builds its proposal from THAT request's own literal label enum, proposing the target
+  // requirement only in the batch whose catalog actually contains its label and an empty proposal
+  // otherwise — never reusing a label in a batch whose enum does not include it, since a v7
+  // request no longer declares an `omitted_source_unit_ids` field to reason about at all.
+  const requests = [];
+  const client = {
+    run: async request => {
+      requests.push(request);
+      const enumLabels = request.outputSchema.properties.requirements.items.properties.label.enum;
+      const proposal = enumLabels.includes(soloCandidate)
+        ? { requirements: [requirement(soloCandidate)], excluded: [], unresolved: [] }
+        : { requirements: [], excluded: [], unresolved: [] };
+      return { content: JSON.stringify(proposal), usage: { input_tokens: 2, output_tokens: 3 } };
+    },
+  };
   const result = await run(client, { maxSourceChars: PARAGRAPHS[0].length, maxLabelCatalogChars: 40_000 });
 
+  assert.ok(requests.length > 1, 'a small source budget must split the corpus into more than one provider request');
+
+  const allSentIds = requests.flatMap(request => request.input.source_units.map(unit => unit.source_unit_id));
   assert.deepEqual(
-    client.captured.request.input.source_units.map(unit => unit.source_unit_id),
-    [unitIdByParagraph[0]],
-    'only the first paragraph fits the source budget',
+    [...allSentIds].sort(),
+    [...unitIdByParagraph].sort(),
+    'every source unit must be sent to the provider exactly once across all batch requests',
   );
-  assert.deepEqual(
-    [...client.captured.request.input.omitted_source_unit_ids].sort(),
-    unitIdByParagraph.slice(1).sort(),
-    'the remaining paragraphs are declared omitted to the model',
-  );
-  const unresolvedById = new Map(result.semanticManifest.unresolved.map(entry => [entry.source_unit_id, entry]));
-  for (const omittedId of unitIdByParagraph.slice(1)) {
-    assert.equal(
-      unresolvedById.get(omittedId)?.reason,
-      'source_unit_not_dispositioned',
-      'an omitted unit must stay visibly unresolved, never silently absent',
+  assert.equal(new Set(allSentIds).size, allSentIds.length, 'no source unit may be sent twice');
+  requests.forEach((request, index) => {
+    assert.deepEqual(
+      request.input.batch,
+      { index, count: requests.length },
+      'each request must carry its own deterministic batch index and the total batch count',
     );
-  }
-  assert.equal(result.semanticManifest.requirements[0].citations.length, 1, 'only visible units can own a label');
+    assert.equal(
+      Object.hasOwn(request.input, 'omitted_source_unit_ids'), false,
+      'v7 no longer declares an omitted_source_unit_ids field on the wire',
+    );
+  });
+
+  assert.equal(result.semanticManifest.requirements.length, 1, 'the requirement whose batch could honestly answer it must survive');
+  assert.deepEqual(
+    result.semanticManifest.requirements[0].citations.map(citation => citation.source_unit_id),
+    [unitIdByParagraph[0]],
+    'the surviving requirement must be cited only from the batch/catalog where its exact label is valid',
+  );
+  const unresolvedIds = result.semanticManifest.unresolved.map(entry => entry.source_unit_id);
+  assert.deepEqual(
+    [...unresolvedIds].sort(),
+    unitIdByParagraph.slice(1).sort(),
+    'every unit absent from the surviving requirement must be preserved as unresolved',
+  );
+  assert.equal(
+    result.semanticManifest.unresolved.every(entry => entry.reason === 'source_unit_not_dispositioned'),
+    true,
+  );
   assert.equal(result.semanticManifest.coverage_ledger.every_source_unit_disposed, true);
+  assert.equal(
+    result.semanticManifest.decision_ready, false,
+    'a batch-aware client that only answers what it can honestly see per batch must still leave the run non-decision-ready',
+  );
 }
 
 // ---------------------------------------------------------------------------------------------

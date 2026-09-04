@@ -1,10 +1,13 @@
 import { createAgt002HetznerBridgeClient } from './agt002-hetzner-bridge-client.js';
 import { AGT002_PREVIEW_POLICY, AGT002_INTEGRAL_V3_POLICY, createAgt002PreviewEngine } from './agt002-preview-engine.js';
 import { buildAgt002AnalysisConfig } from './agt002-analysis-config.js';
+import { AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS } from './agt002-v3-prompt-budget.js';
 import { retrieveAgt002LegalEvidence } from './agt002-legal-retrieval.js';
 import { discoverTenderSemanticManifest } from './tender-semantic-discovery.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
+import { validateAgt002CompanyEvidenceInventorySnapshot } from './agt002-company-evidence-sharepoint-catalog.js';
+import { renewAgt002PreviewClaim } from './agt002-preview-persistence.js';
 
 export const AGT002_PREVIEW_ENGINE_ID = 'agt002_codex_preview';
 const REQUIRED_ENV_KEYS = ['AGT002_PREVIEW_MODEL', 'AGT002_HETZNER_BRIDGE_URL', 'AGT002_HETZNER_BRIDGE_HMAC_SECRET'];
@@ -91,13 +94,25 @@ export function getAgt002PreviewRuntimeConfig(environment = process.env) {
   const timeoutMs = positiveIntFromEnv(environment, 'AGT002_PREVIEW_TIMEOUT_MS', DEFAULT_TIMEOUT_MS);
   const maxConcurrent = positiveIntFromEnv(environment, 'AGT002_PREVIEW_MAX_CONCURRENT', DEFAULT_MAX_CONCURRENT);
   const dailyMaxRuns = positiveIntFromEnv(environment, 'AGT002_PREVIEW_DAILY_MAX_RUNS', DEFAULT_DAILY_MAX_RUNS);
+  // AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS (agt002-v3-prompt-budget.js) is a safe FLOOR —
+  // 81284 was the largest prompt a non-V3 run is KNOWN to have been admitted at, not a measured
+  // window. A real V3 canary (18 semantic-discovery provider turns) later failed closed under
+  // that floor with `v3_prompt_budget_exceeded`. The Codex model cache for the actual pilot
+  // model (gpt-5.6-luna) reports context_window=272000 / effective context=258400, and the
+  // bridge separately accepted a 156226-input-token request — both comfortably above the floor.
+  // Rather than hardcode a new constant ahead of a fully reconfirmed number, this override lets
+  // the operator raise the cap from server-owned configuration only (never a caller/browser
+  // value), exactly like every other AGT002_PREVIEW_* numeric override above/below. Absent, it
+  // defaults to the unchanged safe floor, so behavior is byte-identical to before this override
+  // existed.
+  const promptMaxInputTokens = positiveIntFromEnv(environment, 'AGT002_PREVIEW_PROMPT_MAX_INPUT_TOKENS', AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS);
   // A V3 run spends TWO sequential provider turns under one reservation — semantic discovery
   // (discoverTenderSemanticManifest) and then the analysis turn — and `timeoutMs` bounds EACH
   // turn independently, so each turn is rounded up to whole seconds on its own before they are
   // summed, plus a 15s buffer. A lease sized for a single turn expires while the analysis turn
   // is still in flight and the run gets reclaimed underneath itself.
   const leaseSeconds = 2 * Math.ceil(timeoutMs / 1000) + 15;
-  if (!Number.isInteger(timeoutMs) || !Number.isInteger(maxConcurrent) || !Number.isInteger(dailyMaxRuns) || leaseSeconds > 600) {
+  if (!Number.isInteger(timeoutMs) || !Number.isInteger(maxConcurrent) || !Number.isInteger(dailyMaxRuns) || !Number.isInteger(promptMaxInputTokens) || leaseSeconds > 600) {
     throw new Error('AGT-002 Preview no está configurado.');
   }
   // Fail-closed, explicit per-turn reasoning effort (AGT-002 root cause: an inherited Codex CLI
@@ -119,6 +134,7 @@ export function getAgt002PreviewRuntimeConfig(environment = process.env) {
     dailyMaxRuns,
     leaseSeconds,
     effort,
+    promptMaxInputTokens,
   };
 }
 
@@ -135,15 +151,50 @@ function positiveIntFromEnv(environment, key, fallback) {
  */
 export function createAgt002PreviewRuntime({
   environment = process.env, countDailyRuns, legalCorpusContext,
-  companyEvidenceRegistryEntries, companyEvidenceAsOf, categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance, contextVersionId,
+  companyEvidenceRegistryEntries, companyEvidenceAsOf, companyEvidenceInventorySnapshot, categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance, contextVersionId,
   manizalesManifestSource,
   onBridgeInvocationStarted, onBridgeResponseReceived,
+  // Deterministic stage-boundary heartbeat: given the claim (migration 028's
+  // psi_agt002_preview_claims + its claim_id fencing token) this run is executing under, the
+  // runtime builds ONE renewal hook fenced by THIS run's own idempotencyKey+claimId and hands it
+  // to the engine as `beforeProviderCall` — so a V7 run whose N provider turns outlive a
+  // two-turn-sized lease renews at each stage boundary instead of being reclaimed underneath
+  // itself. `previewClaim` absent (every existing caller) keeps the engine options exactly what
+  // they are today: the heartbeat is never fabricated.
+  database, previewClaim,
+  // An already-fenced heartbeat from an OUTER lease this run also lives inside (e.g. the durable
+  // reanalysis worker's own job/lease_id renewal) — composed with the claim renewal above, never
+  // replacing it, so both live leases renew at every provider boundary. `undefined` (every direct
+  // caller) leaves the claim renewal, if any, exactly as it is on its own.
+  beforeProviderCall: outerBeforeProviderCall,
+  // AGT-002 durable batched analysis, Task 2: the already-built `{ loadCheckpoint, storeCheckpoint }`
+  // hooks (agt002-reanalysis-executor.js constructs them via agt002-analysis-checkpoints.js, only
+  // for a claimed durable_batched_v1 job). Absent (every non-durable/direct/Manizales caller today),
+  // forwarded nowhere — engine construction stays byte-identical to before this option existed.
+  checkpointHooks,
   createEngine = createAgt002PreviewEngine,
 } = {}) {
   const { config, analysisConfig } = withRuntimeBoundaryCode('AGT002_RUNTIME_CONFIG_INVALID', () => ({
     config: getAgt002PreviewRuntimeConfig(environment),
     analysisConfig: buildAgt002AnalysisConfig(environment),
   }));
+  const hasPreviewClaim = previewClaim && typeof previewClaim === 'object'
+    && typeof previewClaim.idempotencyKey === 'string' && previewClaim.idempotencyKey
+    && typeof previewClaim.claimId === 'string' && previewClaim.claimId;
+  const claimRenewalHook = hasPreviewClaim
+    ? () => renewAgt002PreviewClaim(database, {
+      idempotencyKey: previewClaim.idempotencyKey,
+      claimId: previewClaim.claimId,
+      leaseSeconds: config.leaseSeconds,
+    })
+    : null;
+  const hasOuterHook = typeof outerBeforeProviderCall === 'function';
+  const beforeProviderCall = (hasOuterHook || claimRenewalHook)
+    ? async () => {
+      if (hasOuterHook) await outerBeforeProviderCall();
+      if (claimRenewalHook) await claimRenewalHook();
+    }
+    : undefined;
   const { loadedLegalCorpus, legalEvidenceProvider } = withRuntimeBoundaryCode('AGT002_RUNTIME_LEGAL_CORPUS_INVALID', () => {
     const corpus = analysisConfig.AGT002_LEGAL_CORPUS ? requireLegalCorpusContext(legalCorpusContext) : null;
     return {
@@ -177,6 +228,19 @@ export function createAgt002PreviewRuntime({
       } catch {
         throw new Error('AGT-002 Preview no está configurado: companyEvidenceAsOf debe tener el formato canónico UTC de inicio de día YYYY-MM-DDT00:00:00.000Z.');
       }
+    }
+    // F4: mirrors the registry/asOf requirement above — a real V3 run must never analyze
+    // against no company-evidence inventory at all (that reads as "no historical evidence
+    // exists", the opposite of the truth). The server layer loads it once, alongside the
+    // registry, and injects it here; this runtime never queries the catalog itself.
+    if (analysisConfig.AGT002_INTEGRAL_CONTRACT_V3) {
+      if (companyEvidenceInventorySnapshot === undefined) {
+        throw new Error('AGT-002 Preview no está configurado: AGT002_INTEGRAL_CONTRACT_V3 requiere un inventario SharePoint de evidencia empresarial inyectado explícitamente.');
+      }
+      // Re-validated here (never trusted verbatim), exactly like every other governed value
+      // this boundary checks — a malformed snapshot fails closed at construction, never
+      // reaching the engine's class builder mid-run.
+      validateAgt002CompanyEvidenceInventorySnapshot(companyEvidenceInventorySnapshot);
     }
   });
 
@@ -223,10 +287,12 @@ export function createAgt002PreviewRuntime({
       legalCorpusVersionId: loadedLegalCorpus.legal_corpus_version_id,
       legalCorpusContentSha256: loadedLegalCorpus.content_sha256,
     } : {}),
+    ...(beforeProviderCall ? { beforeProviderCall } : {}),
     integralContractV3: analysisConfig.AGT002_INTEGRAL_CONTRACT_V3,
     ...(analysisConfig.AGT002_INTEGRAL_CONTRACT_V3 ? {
       companyEvidenceClassesProvider: () => companyEvidenceRegistryEntries,
       companyEvidenceAsOf,
+      companyEvidenceInventorySnapshot,
       // The semantic discovery stage is not behind an env flag: a V3 run built by this runtime is
       // always a production run, and a production run must derive its frontier from the process's
       // own expediente. Direct engine callers (unit tests, canary scripts) leave the provider unset
@@ -250,11 +316,21 @@ export function createAgt002PreviewRuntime({
       // *before* any provider call — strictly safer than shipping an over-window prompt and getting
       // a non-deterministic context_window_exceeded from the model. A request already under budget is
       // byte-identical (the engine returns the same input reference), so non-oversized runs are
-      // unchanged. The engine's default cap (AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS = 81_284) is a
-      // conservative floor anchored to the observed prod plateau, NOT a measured model window; it must
-      // be reconfirmed/raised against the real model context window before any authorized live run.
+      // unchanged.
       promptBudget: true,
+      // config.promptMaxInputTokens (getAgt002PreviewRuntimeConfig above) defaults to the safe-floor
+      // constant AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS = 81_284, which is anchored to the
+      // observed prod plateau, NOT a measured model window — a real V3 canary (18 semantic-discovery
+      // provider turns) later failed closed under exactly that floor with `v3_prompt_budget_exceeded`,
+      // even though the Codex model cache for the pilot model (gpt-5.6-luna) reports
+      // context_window=272000 / effective context=258400, and the bridge separately accepted a
+      // 156226-input-token request. The cap is raised only via the server-owned
+      // AGT002_PREVIEW_PROMPT_MAX_INPUT_TOKENS env override — never from request/caller input — and
+      // scoped here to the V3 path exactly like promptBudget itself; a legacy (non-V3) runtime never
+      // forwards it. Absent, this is byte-identical to before the override existed.
+      promptMaxInputTokens: config.promptMaxInputTokens,
     } : {}),
     ...(countDailyRuns ? { countDailyRuns } : {}),
+    ...(checkpointHooks ? { checkpointHooks } : {}),
   }));
 }

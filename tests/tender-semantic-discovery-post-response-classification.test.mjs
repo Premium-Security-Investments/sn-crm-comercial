@@ -20,8 +20,13 @@ import { AGT002_OUTPUT_REJECTION_STAGES } from '../agt002-analysis-observability
 //
 // Policy v4 changes exactly one of these fixtures, and only because it was never a wrong claim: a
 // proposal that omits a visible source_unit asserted nothing about it, so it is completed into
-// `unresolved` rather than rejected (see the coverage block below). Every other rejection here is
-// untouched.
+// `unresolved` rather than rejected (see the coverage block below).
+//
+// Policy v8 changes one more: a disposition contradicting a DERIVED citation is a self-
+// contradiction, not a corrupt answer, so it is retracted (the citation is never moved) instead of
+// rejecting the whole turn — see the uniqueness-gate block below. Every other rejection here, over
+// an actual CORRUPT answer (missing/invalid content, unanchored label, smuggled id, foreign id,
+// closed-vocabulary violation), is untouched.
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const document = ({ id, version, text }) => ({
@@ -184,18 +189,34 @@ for (const smuggled of [
   );
 }
 
-// Uniqueness gate: a unit the derived citation already claims may not also be dispositioned.
-await assertRejection(
-  () => run(semanticProposal({
+// Uniqueness gate, retraction (v8): a unit the derived citation already claims may also be
+// dispositioned by the model — the contradiction is retracted rather than rejecting the whole
+// turn, and the derived citation is never moved to accommodate it.
+{
+  const result = await run(semanticProposal({
     requirements: [baseRequirement()],
     excluded: [
       { source_unit_id: unitA.source_unit_id, reason: 'duplicate_source_unit' },
       { source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' },
     ],
     unresolved: [],
-  })),
-  { stage: AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, code: 'v4_discovery_uniqueness_invariant' },
-);
+  }));
+  assert.deepEqual(
+    result.semanticManifest.requirements[0].citations.map(citation => citation.source_unit_id),
+    [unitA.source_unit_id],
+    'the derived citation to unitA must survive the contradictory disposition untouched',
+  );
+  assert.equal(
+    result.semanticManifest.excluded.some(entry => entry.source_unit_id === unitA.source_unit_id), false,
+    'the contradictory exclusion over unitA must leave no trace',
+  );
+  assert.deepEqual(
+    result.semanticManifest.excluded.map(entry => entry.source_unit_id),
+    [unitB.source_unit_id],
+    'the unrelated, valid exclusion of unitB must survive untouched',
+  );
+  assert.equal(result.discoveryLedger.batches[0].retracted_disposition_units, 1);
+}
 
 // Coverage: a visible source_unit the proposal never disposed of at all (dropped unitB) is NOT a
 // post-response rejection under policy v4. An omission is not a wrong claim — nothing was asserted

@@ -52,6 +52,20 @@ export const AGT002_CANONICAL_PREVIEW_STAGES = Object.freeze({
 export const AGT002_POST_BRIDGE_STAGES = Object.freeze({
   TRANSPORT: 'transport',
   RESPONSE_RECEIVED: 'response_received',
+  // The fenced stage-boundary lease heartbeat itself (agt002-preview-persistence.js's
+  // renewAgt002PreviewClaim / agt002-reanalysis-jobs.js's renewAgt002ReanalysisJobLease). It is a
+  // frontier of its own, and specifically NOT 'transport', 'persistence' or 'unexpected': the
+  // renewal runs BEFORE the guarded operation, so a lost lease means the operation never happened
+  // at all and nothing about the provider, the model output or the database rejection is implied.
+  // Added after the real Procuraduria reanalysis that completed 18 semantic-discovery bridge turns
+  // and then ended unavailable with no analysis_run. The durable evidence for that run proves only
+  // stage=unexpected, a latched bridge_response_received, and persistence_attempts=0 — NOT that a
+  // lost preview claim at the analysis-turn boundary was the actual cause; that is one hypothesis
+  // consistent with the signature, not a confirmed root cause. What is certain is that with no stage
+  // of its own, a lost lease (like any other untagged local failure in the same window) could only
+  // classify as 'unexpected', which the queue mapper turned into provider_error — this stage closes
+  // that gap regardless of which local frontier actually failed.
+  LEASE_RENEWAL: 'lease_renewal',
   CONTENT_EXTRACTION: 'content_extraction',
   JSON_PARSE: 'json_parse',
   MODEL_OUTPUT_VALIDATION: 'model_output_validation',
@@ -68,6 +82,10 @@ export const AGT002_POST_BRIDGE_STAGES = Object.freeze({
 export const AGT002_POST_BRIDGE_ERROR_CODES = Object.freeze({
   TRANSPORT_ERROR: 'AGT002_TRANSPORT_ERROR',
   PROVIDER_ERROR: 'AGT002_PROVIDER_ERROR',
+  // The run's fenced lease was already lost when a stage boundary tried to renew it, so the
+  // operation that boundary guards was never attempted. Maps onto the queue's already-existing
+  // closed 'lease_lost' code (migration 068), so no new durable vocabulary is introduced.
+  LEASE_LOST: 'AGT002_LEASE_LOST',
   CONTENT_EXTRACTION_FAILED: 'AGT002_CONTENT_EXTRACTION_FAILED',
   JSON_PARSE_FAILED: 'AGT002_JSON_PARSE_FAILED',
   MODEL_OUTPUT_INVALID: 'AGT002_MODEL_OUTPUT_INVALID',
@@ -81,6 +99,17 @@ export const AGT002_POST_BRIDGE_ERROR_CODES = Object.freeze({
 
 const CONTENT_SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const VALIDATION_CODE_PATTERN = /^[a-z0-9_]+$/;
+const REQUEST_HASH_PATTERN = /^[0-9a-f]{64}$/;
+
+// AGT-002 Task 6B1: the single closed stage for the integral analysis batching pipeline's
+// per-batch progress event. Never a free-form stage string from a call site.
+const AGT002_ANALYSIS_BATCH_STAGE = 'integral_analysis_batch';
+
+// Closed lifecycle outcomes for analysis_batch_progress: every point where a batch's status can
+// be attributed unambiguously, from dispatch through final merge.
+const ANALYSIS_BATCH_PROGRESS_OUTCOME_VALUES = new Set([
+  'started', 'checkpoint_reused', 'retry_scheduled', 'completed', 'failed', 'merged', 'finalized',
+]);
 
 export const AGT002_OBSERVABILITY_EVENT_FIELDS = Object.freeze({
   conversion_dispatched: Object.freeze([
@@ -135,6 +164,16 @@ export const AGT002_OBSERVABILITY_EVENT_FIELDS = Object.freeze({
     'correlation_id', 'stage', 'error_code', 'persistence_subcode', 'bridge_invocation_started',
     'bridge_response_received', 'context_version_id', 'opportunity_id', 'tender_id', 'snapshot_id',
     'duration_ms', 'persistence_attempts',
+  ]),
+  // AGT-002 Task 6B1: the per-batch progress/outcome event for the integral analysis batching
+  // pipeline. `stage` is restricted to AGT002_ANALYSIS_BATCH_STAGE and `outcome` to
+  // ANALYSIS_BATCH_PROGRESS_OUTCOME_VALUES below — never a free-form string. No
+  // prompt/raw_response/source_text/document_text/policy/output/usage/error_message/
+  // credential-shaped field is ever part of it.
+  analysis_batch_progress: Object.freeze([
+    'job_id', 'tender_id', 'snapshot_id', 'stage', 'batch_index', 'batch_count', 'attempt', 'retry_count',
+    'duration_ms', 'input_tokens', 'output_tokens', 'request_hash', 'provider_request_id', 'checkpoint_reused',
+    'outcome', 'error_code',
   ]),
 });
 
@@ -192,6 +231,33 @@ function sanitizeAgt002FieldValue(eventType, key, value) {
   // free-form string a call site happened to build.
   if (key === 'persistence_subcode') return safeAgt002PersistenceSubcode(value) ?? undefined;
   if (key === 'persistence_attempts') return Number.isInteger(value) && value >= 0 ? value : undefined;
+  // Closed to the single AGT-002 batching stage; any mismatch is dropped rather than forwarded.
+  if (eventType === 'analysis_batch_progress' && key === 'stage') {
+    return value === AGT002_ANALYSIS_BATCH_STAGE ? value : undefined;
+  }
+  // Closed to the batching lifecycle outcomes; any mismatch is dropped rather than forwarded.
+  if (eventType === 'analysis_batch_progress' && key === 'outcome') {
+    return ANALYSIS_BATCH_PROGRESS_OUTCOME_VALUES.has(value) ? value : undefined;
+  }
+  // Scoped to analysis_batch_progress only: other event types keep duration_ms's existing
+  // generic-number semantics below.
+  if (eventType === 'analysis_batch_progress' && key === 'duration_ms') {
+    return Number.isInteger(value) && value >= 0 ? value : undefined;
+  }
+  if (key === 'batch_index' || key === 'batch_count' || key === 'attempt' || key === 'retry_count') {
+    return Number.isInteger(value) && value >= 0 ? value : undefined;
+  }
+  if (key === 'checkpoint_reused') return typeof value === 'boolean' ? value : undefined;
+  // request_hash is only ever a digest this codebase computed itself: anything that is not
+  // already a well-formed 64-lowercase-hex digest is dropped rather than forwarded.
+  if (key === 'request_hash') return typeof value === 'string' && REQUEST_HASH_PATTERN.test(value) ? value : undefined;
+  // Only a primitive string survives (never an object/array), opaque tokens redacted the same
+  // way a raw error message would be, and hard-capped so a leaked key can never ride through
+  // under a short-looking field name. Normal short IDs (e.g. "req_abcdef123456") pass unchanged.
+  if (key === 'provider_request_id') {
+    if (typeof value !== 'string') return undefined;
+    return value.replace(OPAQUE_TOKEN_PATTERN, '[redactado]').slice(0, MAX_STRING_LENGTH);
+  }
   if (key === 'error_message') return boundAgt002ErrorMessage(value);
   if (key === 'error_code') return boundAgt002ErrorCode(value);
   if (key === 'validation_code') return boundAgt002ValidationCode(value);

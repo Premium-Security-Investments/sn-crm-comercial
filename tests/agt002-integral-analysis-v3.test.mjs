@@ -3,6 +3,14 @@ import {
   AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION,
   validateAgt002IntegralAnalysisV3,
 } from '../agt002-integral-analysis-v3.js';
+// Namespace import (rather than adding to the named import above): Task 5 of
+// docs/plans/2026-09-03-agt002-durable-batched-analysis.md introduces
+// validateAgt002IntegralAnalysisV3Unit as a NEW export extracted from the existing per-unit
+// pass inside validateAgt002IntegralAnalysisV3, for reuse by the batch wire contract
+// (agt002-preview-contract.js / tests/agt002-integral-analysis-batch-contract.test.mjs). Until
+// it exists, a namespace import keeps the failure an ordinary diagnostic `assert` failure below
+// instead of a module-link SyntaxError that would abort every other test in this file.
+import * as Agt002IntegralAnalysisV3 from '../agt002-integral-analysis-v3.js';
 import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
 import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-manifest.js';
 
@@ -801,4 +809,63 @@ function run() {
   console.log('agt002-integral-analysis-v3 structural contract passed');
 }
 
+// ---------------------------------------------------------------------------
+// Task 5 (docs/plans/2026-09-03-agt002-durable-batched-analysis.md §7) — reusable-validator
+// compatibility. validateAgt002IntegralAnalysisV3Unit is the SAME per-unit shape/invariant/
+// governed-evidence-state check validateAgt002IntegralAnalysisV3 already runs per unit, now also
+// exposed as its own public entry point so the batch wire contract can reuse it without
+// duplicating a single rule. This must be byte-identical in behavior/diagnostics to the
+// already-proven per-unit checks above — extraction must never weaken them.
+// ---------------------------------------------------------------------------
+function runReusableUnitValidatorCompatibility() {
+  assert.equal(
+    typeof Agt002IntegralAnalysisV3.validateAgt002IntegralAnalysisV3Unit,
+    'function',
+    'agt002-integral-analysis-v3.js must export validateAgt002IntegralAnalysisV3Unit(unit, validationContext, { allowedRequirementIds })',
+  );
+
+  // A single governed, individually valid unit, checked directly (outside any full-document
+  // call), must be accepted and returned unchanged — exactly as it already is when reached via
+  // validateAgt002IntegralAnalysisV3's per-unit pass.
+  {
+    const { integralAnalysis, validationContext } = buildFixture();
+    const unit = integralAnalysis.analysis_units[0]; // REQ-DISCARD-1, a well-formed tender_requirement unit
+    const result = Agt002IntegralAnalysisV3.validateAgt002IntegralAnalysisV3Unit(unit, validationContext);
+    assert.equal(result, unit, 'must return the same object, unmutated, exactly like the full-document per-unit pass');
+  }
+
+  // The exact same defect already proven to fail full-document validation with a fixed code
+  // must fail identically when checked directly through the extracted single-unit entry point —
+  // proving the extraction preserved the exact diagnostic, not a looser or stricter copy.
+  {
+    const { integralAnalysis, validationContext } = buildFixture();
+    const unit = integralAnalysis.analysis_units[0];
+    unit.evidence_refs = []; // material compliance without any evidence reference
+    assert.throws(
+      () => Agt002IntegralAnalysisV3.validateAgt002IntegralAnalysisV3Unit(unit, validationContext),
+      error => error?.code === 'v3_evidence_abstention_invariant' || error?.code === 'v3_evidence_state_invariant',
+      'must fail with the same closed diagnostic code the full-document pass already uses for this defect',
+    );
+  }
+
+  // allowedRequirementIds (new, batch-only parameter): omitted entirely, behavior is unchanged
+  // from today (any requirement_id allowlisted in the full governed manifest is accepted); when
+  // supplied, it additionally restricts acceptance to that narrower set — the batch-local
+  // allowlist primitive the new batch wire contract needs.
+  {
+    const { integralAnalysis, validationContext } = buildFixture();
+    const unit = integralAnalysis.analysis_units[0]; // REQ-DISCARD-1
+    assert.doesNotThrow(() => Agt002IntegralAnalysisV3.validateAgt002IntegralAnalysisV3Unit(unit, validationContext));
+    assert.doesNotThrow(() => Agt002IntegralAnalysisV3.validateAgt002IntegralAnalysisV3Unit(unit, validationContext, { allowedRequirementIds: ['REQ-DISCARD-1', 'REQ-HAB-1'] }));
+    assert.throws(
+      () => Agt002IntegralAnalysisV3.validateAgt002IntegralAnalysisV3Unit(unit, validationContext, { allowedRequirementIds: ['REQ-HAB-1'] }),
+      /requirement_id|allowlist|manifiesto/i,
+      'a requirement_id excluded from an explicit allowedRequirementIds must be rejected even though it is allowlisted in the full governed manifest',
+    );
+  }
+
+  console.log('agt002-integral-analysis-v3 reusable single-unit validator compatibility passed');
+}
+
 run();
+runReusableUnitValidatorCompatibility();

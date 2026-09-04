@@ -960,3 +960,185 @@ test('reanalyzeAgt002AfterHumanAnswer delegates provider execution to the durabl
   assert.match(executor, /runPostBridgeAnalysis\(database,/);
   assert.match(executor, /mapPostBridgeOutcomeCode/);
 });
+
+// ===========================================================================================
+// Optional deps.persistAnalysis: a not-yet-existing production persistence seam. Today
+// runAgt002PostBridgeAnalysis always persists a successful envelope through the module's own
+// registerAgt002PreviewAnalysis (agt002-preview-persistence.js) — there is no way for a caller to
+// substitute an alternative persistence path. These tests pin the not-yet-implemented contract:
+// deps.persistAnalysis, when supplied, REPLACES that default registration call (never runs
+// alongside it), receives the same tracked database and the exact already-built persistence
+// params/envelope this module always assembles, and is folded into the SAME bounded persistence
+// retry loop already used for the default path (agt002-persistence-retry.js) — so a transient
+// failure that reached an RPC is retried in place, a deterministic pre-RPC rejection is not, and
+// the engine/bridge is still invoked exactly once regardless. Absent, behavior is byte-identical
+// to today. RED expected: deps.persistAnalysis does not exist in
+// agt002-post-bridge-observability.js yet.
+// ===========================================================================================
+
+/** Records every (database, persistenceParams) pair a fake persistAnalysis was invoked with. */
+function fakePersistAnalysisRecorder(handler) {
+  const calls = [];
+  return {
+    calls,
+    persistAnalysis: async (db, params) => {
+      calls.push({ db, params });
+      return handler(db, params, calls.length);
+    },
+  };
+}
+
+/** Wraps a real engine to also capture the exact envelope object it returns, so a persisted
+ * params.envelope can be checked for referential identity against the one true build. */
+function envelopeCapturingEngine(realEngine) {
+  const captured = { envelope: null };
+  return {
+    captured,
+    engine: {
+      analyze: async (...args) => {
+        captured.envelope = await realEngine.analyze(...args);
+        return captured.envelope;
+      },
+    },
+  };
+}
+
+test('deps.persistAnalysis absent: the default registerAgt002PreviewAnalysis registration path is exactly unchanged', async () => {
+  const rawOutput = validModelOutput();
+  const { client, calls: clientCalls, telemetry } = trackedClient(async () => ({ content: JSON.stringify(rawOutput), usage: { input_tokens: 5, output_tokens: 3 } }));
+  const engine = createAgt002PreviewEngine({ client, ...engineOptions() });
+  const observability = spyObservability();
+  const persistedRunId = '00000000-0000-4000-8000-00000000000c';
+  const database = fakeDatabase({
+    onRecordRun: params => ({
+      data: {
+        id: persistedRunId, snapshot_id: params.p_snapshot_id, producer: 'AGT-002', method: 'agent_ai',
+        status: 'completed', canonical: true, critical_open_count: 0, context_version_id: params.p_context_version_id,
+      },
+      error: null,
+    }),
+  });
+
+  const result = await runAgt002PostBridgeAnalysis(database, { ...requestContext(), requireTenderRequirementInventory: false }, {
+    engine, observability, analysisContext, bridgeTelemetry: telemetry,
+    // No persistAnalysis supplied on purpose: this must behave exactly as every pre-existing test
+    // above already pins (see the Requirement 7 test), unaffected by this new optional seam.
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.equal(result.analysis_run_id, persistedRunId);
+  assert.equal(clientCalls.length, 1);
+  assert.equal(recordRunCallCount(database), 1, 'the real registerAgt002PreviewAnalysis RPC must still be reached when no persistAnalysis override is supplied');
+  assert.deepEqual(attemptStates(database), ['queued', 'running', 'completed']);
+  assert.equal(releaseClaimCallCount(database), 1);
+});
+
+test('deps.persistAnalysis, when supplied, is called instead of the default registration, exactly once, with the tracked database and the exact already-built persistence params/envelope, and a successful run yields a normal completed outcome/attempt/observability with no extra provider call', async () => {
+  const rawOutput = validModelOutput();
+  const { client, calls: clientCalls, telemetry } = trackedClient(async () => ({ content: JSON.stringify(rawOutput), usage: { input_tokens: 5, output_tokens: 3 } }));
+  const realEngine = createAgt002PreviewEngine({ client, ...engineOptions() });
+  const { engine, captured } = envelopeCapturingEngine(realEngine);
+  const observability = spyObservability();
+  const persistedRunId = '00000000-0000-4000-8000-00000000000d';
+  const { calls: persistCalls, persistAnalysis } = fakePersistAnalysisRecorder((db, params) => ({ run_id: persistedRunId }));
+  const database = fakeDatabase();
+  const ctx = { ...requestContext(), requireTenderRequirementInventory: false };
+
+  const result = await runAgt002PostBridgeAnalysis(database, ctx, {
+    engine, observability, analysisContext, bridgeTelemetry: telemetry, persistAnalysis,
+  });
+
+  assert.equal(result.status, 'completed', 'a successful supplied persist must still complete normally');
+  assert.equal(result.analysis_run_id, persistedRunId);
+  assert.equal(clientCalls.length, 1, 'no extra provider call: the bridge/engine is invoked exactly once');
+  assert.equal(persistCalls.length, 1, 'the supplied persistAnalysis must be called exactly once');
+  assert.equal(
+    recordRunCallCount(database), 0,
+    'the module default registration RPC must never be reached once a persistAnalysis override is supplied',
+  );
+
+  const [{ db: seenDb, params: seenParams }] = persistCalls;
+  assert.equal(typeof seenDb.rpc, 'function', 'persistAnalysis must receive a database-shaped object it can call .rpc on');
+  assert.equal(seenParams.envelope, captured.envelope, 'persistAnalysis must receive the exact same already-built envelope object, not a rebuilt one');
+  assert.equal(seenParams.opportunity_id, ctx.opportunityId);
+  assert.equal(seenParams.tender_id, ctx.tenderId);
+  assert.equal(seenParams.snapshot_id, ctx.snapshotId);
+  assert.equal(seenParams.context_version_id, ctx.contextVersionId);
+  assert.equal(seenParams.canonicalOnly, ctx.canonicalOnly);
+  assert.equal(seenParams.requireTenderRequirementInventory, false);
+  assert.deepEqual(seenParams.semanticSourceDocuments, analysisContext.documents);
+
+  assert.deepEqual(attemptStates(database), ['queued', 'running', 'completed']);
+  const completedAttempt = database.calls.find(call => call.name === 'psi_append_agt002_analysis_attempt' && call.params.p_state === 'completed');
+  assert.equal(completedAttempt.params.p_analysis_run_id, persistedRunId);
+  assert.equal(releaseClaimCallCount(database), 1);
+
+  assert.equal(observability.records[0].fields.stage, 'response_received');
+  assert.equal(observability.records[0].fields.error_code, null);
+});
+
+test('a transient error thrown by the supplied persistAnalysis after it reaches an RPC is classified/retried by the existing bounded persistence retry, against the same envelope, with no second engine call', async () => {
+  const rawOutput = validModelOutput();
+  const { client, calls: clientCalls, telemetry } = trackedClient(async () => ({ content: JSON.stringify(rawOutput), usage: { input_tokens: 5, output_tokens: 3 } }));
+  const realEngine = createAgt002PreviewEngine({ client, ...engineOptions() });
+  const { engine, captured } = envelopeCapturingEngine(realEngine);
+  const observability = spyObservability();
+  const persistedRunId = '00000000-0000-4000-8000-00000000000e';
+  const database = fakeDatabase();
+
+  const { calls: persistCalls, persistAnalysis } = fakePersistAnalysisRecorder(async (db, params, attemptNumber) => {
+    // Reaches an RPC on every attempt (marks the module's own run-RPC tracking), exactly the
+    // structural signal the existing retry classifier keys off of to tell "reached the RPC and it
+    // was transient" apart from "rejected before any RPC".
+    await db.rpc('psi_record_agt002_canonical_analysis_run', { p_attempt: attemptNumber });
+    if (attemptNumber === 1) {
+      const error = new Error('transient database blip');
+      error.rpc_sqlstate = '57014'; // statement_timeout: a member of the existing retryable allowlist
+      throw error;
+    }
+    return { run_id: persistedRunId };
+  });
+
+  const result = await runAgt002PostBridgeAnalysis(database, { ...requestContext(), requireTenderRequirementInventory: false }, {
+    engine, observability, analysisContext, bridgeTelemetry: telemetry, persistAnalysis,
+    persistenceRetry: { sleep: async () => {} },
+  });
+
+  assert.equal(result.status, 'completed', 'the bounded retry must recover a genuinely transient failure');
+  assert.equal(result.analysis_run_id, persistedRunId);
+  assert.equal(clientCalls.length, 1, 'no second engine call: the retry re-uses the same already-built envelope');
+  assert.equal(persistCalls.length, 2, 'exactly one bounded retry: two total persistAnalysis attempts');
+  assert.equal(persistCalls[0].params.envelope, captured.envelope);
+  assert.equal(persistCalls[1].params.envelope, captured.envelope, 'the retry must hand the SAME envelope object back, never a rebuilt one');
+  assert.equal(recordRunCallCount(database), 2, 'both attempts reached the tracked run-persistence RPC');
+  assert.deepEqual(attemptStates(database), ['queued', 'running', 'completed']);
+  assert.equal(releaseClaimCallCount(database), 1);
+});
+
+test('a deterministic pre-RPC rejection from the supplied persistAnalysis classifies as envelope_build and is never retried', async () => {
+  const rawOutput = validModelOutput();
+  const { client, calls: clientCalls, telemetry } = trackedClient(async () => ({ content: JSON.stringify(rawOutput), usage: { input_tokens: 5, output_tokens: 3 } }));
+  const engine = createAgt002PreviewEngine({ client, ...engineOptions() });
+  const observability = spyObservability();
+  const database = fakeDatabase();
+
+  const { calls: persistCalls, persistAnalysis } = fakePersistAnalysisRecorder((db, params) => {
+    // Throws BEFORE calling db.rpc at all: a deterministic, pre-RPC rejection (mirrors
+    // registerAgt002PreviewAnalysis's own JS validation throws, which never reach the RPC either).
+    throw new Error('deterministic pre-rpc envelope rejection');
+  });
+
+  const result = await runAgt002PostBridgeAnalysis(database, { ...requestContext(), requireTenderRequirementInventory: false }, {
+    engine, observability, analysisContext, bridgeTelemetry: telemetry, persistAnalysis,
+    persistenceRetry: { sleep: async () => {} },
+  });
+
+  assert.equal(result.status, 'unavailable');
+  assert.equal(result.analysis_run_id, null);
+  assert.equal(clientCalls.length, 1, 'no second engine call');
+  assert.equal(persistCalls.length, 1, 'a deterministic pre-RPC rejection must never be retried');
+  assert.equal(recordRunCallCount(database), 0, 'no RPC was ever reached');
+  assert.deepEqual(attemptStates(database), ['queued', 'running', 'unavailable']);
+  assert.equal(releaseClaimCallCount(database), 1);
+  assert.equal(observability.records[0].fields.stage, 'envelope_build');
+});

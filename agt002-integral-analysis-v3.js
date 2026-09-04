@@ -859,6 +859,61 @@ function validateUnitsOrdering(units, ctx) {
 }
 
 // ---------------------------------------------------------------------------
+// Reusable single-unit validator (docs/plans/2026-09-03-agt002-durable-batched-analysis.md
+// §7 Task 5A): the exact per-unit shape/invariant/governed-evidence-state pass that
+// validateAgt002IntegralAnalysisV3 already runs for each unit, factored out so the batch wire
+// contract can validate one unit at a time without duplicating a weaker copy of these rules.
+// validateUnitAgainstGovernedContext is the single implementation both entry points below
+// share; it takes an already-normalized ctx so the full-document validator (which normalizes
+// validationContext once for the whole document) never pays to re-normalize it per unit.
+// ---------------------------------------------------------------------------
+
+// `allowedRequirementIds`, when supplied, must be a nonempty iterable/array/Set of
+// non-empty id strings — a caller error here is a shape defect, not a semantic one, so it
+// uses the same unrouted `fail` as the other validationContext/option shape checks above.
+function normalizeAllowedRequirementIds(allowedRequirementIds) {
+  const isIterable = allowedRequirementIds !== null && typeof allowedRequirementIds === 'object'
+    && typeof allowedRequirementIds[Symbol.iterator] === 'function';
+  if (!isIterable) {
+    fail('allowedRequirementIds debe ser un iterable no vacío (arreglo o Set) de identificadores.');
+  }
+  const ids = Array.from(allowedRequirementIds);
+  if (ids.length === 0 || !ids.every(id => typeof id === 'string' && id.trim().length > 0)) {
+    fail('allowedRequirementIds debe ser un iterable no vacío (arreglo o Set) de identificadores.');
+  }
+  return new Set(ids);
+}
+
+// `allowedRequirementIdsSet`, when non-null, is an ADDITIONAL local restriction on top of
+// the governed full manifest already enforced inside validateUnitShape (via
+// ctx.requirementManifestById) — never a replacement for it, and never applied to a
+// strategic_consideration unit (requirement_id null is out of scope for this restriction).
+// The rejection message deliberately never echoes unit.requirement_id or the allowlist
+// contents, only the already-validated unit_id.
+function validateUnitAgainstGovernedContext(unit, ctx, allowedRequirementIdsSet) {
+  validateUnitShape(unit, ctx);
+  if (allowedRequirementIdsSet && unit.requirement_id !== null && !allowedRequirementIdsSet.has(unit.requirement_id)) {
+    failUnitIdentity(`analysis_units[${unit.unit_id}]: requirement_id no está permitido en el conjunto local vigente para este lote.`);
+  }
+  return unit;
+}
+
+/**
+ * Validates a single model-shaped analysis unit against the closed AGT-002 v3 per-unit
+ * contract and the governed validationContext — the same exact check
+ * validateAgt002IntegralAnalysisV3 runs for each unit, exposed standalone for batch/wire-level
+ * reuse. Throws on any violation; on success returns the SAME object (never normalized,
+ * never mutated). `allowedRequirementIds`, when supplied, additionally restricts acceptance
+ * to that local set of requirement ids (on top of, never instead of, the full governed
+ * manifest); it is optional and never required for legacy/full-document validation.
+ */
+export function validateAgt002IntegralAnalysisV3Unit(unit, validationContext, { allowedRequirementIds } = {}) {
+  const ctx = normalizeValidationContext(validationContext);
+  const allowedRequirementIdsSet = allowedRequirementIds === undefined ? null : normalizeAllowedRequirementIds(allowedRequirementIds);
+  return validateUnitAgainstGovernedContext(unit, ctx, allowedRequirementIdsSet);
+}
+
+// ---------------------------------------------------------------------------
 // Public entry point.
 // ---------------------------------------------------------------------------
 
@@ -880,7 +935,7 @@ export function validateAgt002IntegralAnalysisV3(value, validationContext) {
   if (!Array.isArray(value.analysis_units) || value.analysis_units.length === 0) {
     fail('analysis_units debe ser un arreglo no vacío.', 'v3_analysis_units_empty');
   }
-  for (const unit of value.analysis_units) validateUnitShape(unit, ctx);
+  for (const unit of value.analysis_units) validateUnitAgainstGovernedContext(unit, ctx, null);
   validateUnitsOrdering(value.analysis_units, ctx);
   validateMaterialOmissionsInvariant(value, ctx);
 

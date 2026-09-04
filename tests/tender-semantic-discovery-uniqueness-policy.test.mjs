@@ -34,9 +34,15 @@ import { tenderSemanticObligationKey } from '../tender-semantic-manifest.js';
 //   * "one disposition per unit" survives and now also governs the DERIVED citations: a unit the
 //     server binds to some label may not additionally appear in excluded/unresolved.
 //
-// Nothing here deduplicates, merges or repairs a model answer, and no gate is relaxed: this file
-// pins (a) that the v3 rules are actually stated to the model, and (b) that the local gates still
-// reject every duplicate shape fail-closed.
+// Nothing here deduplicates, merges or repairs a model answer. Policy v8 changed how a
+// self-CONTRADICTION over these very rules is handled: a conflicting repeat of one obligation, or a
+// unit given two different dispositions (or one that overlaps a derived citation), is now RETRACTED
+// — never arbitrated, never rejecting the whole turn — instead of thrown as
+// `v4_discovery_uniqueness_invariant`. This file pins (a) that the v3 rules are actually stated to
+// the model, and (b) that the local gates still reject every CORRUPT shape (a smuggled id, a
+// hallucinated reference) fail-closed, while a self-contradiction over an otherwise-valid answer is
+// retracted rather than rejected (full contract:
+// tests/tender-semantic-discovery-v8-contradiction-retraction.test.mjs).
 
 // ---------------------------------------------------------------------------------------------
 // (a) The policy states the v3 rules.
@@ -189,6 +195,17 @@ const documents = [document({
 
 const inventory = buildTenderRequirementInventory({ snapshotId: 'snap-uniqueness-policy', documents, documentGaps: [] });
 assert.equal(inventory.source_units.length, 2, 'fixture must produce exactly two analyzable source units');
+const unitHashById = new Map(inventory.source_units.map(unit => [unit.source_unit_id, unit.unit_hash]));
+
+/** The unresolved entry the completion pass owes a unit nobody validly dispositioned (v8 retraction). */
+function completionHole(sourceUnitId) {
+  return {
+    source_unit_id: sourceUnitId,
+    unit_hash: unitHashById.get(sourceUnitId),
+    origin: 'semantic',
+    reason: 'source_unit_not_dispositioned',
+  };
+}
 
 // source_units are keyed by content hash, not paragraph order, so each unit is resolved by its own
 // text. `index` is the paragraph order the discovery source packet itself sorts by, and therefore
@@ -341,13 +358,15 @@ for (const smuggled of [
 }
 
 // Rule 2 — two requirements deriving the SAME normalized obligation key with any CONFLICTING
-// explicit field are still rejected. The catalog itself now guarantees at most one enum member per
-// obligation key (proved above), so a model can only reach this key twice by repeating the very same
-// catalog label across two requirements — there is no second, differently-spelled enum member left
-// to pick instead. This proves the obligation-key gate is still live as defence in depth, not merely
-// reachable via a catalog collision that can no longer occur. Nothing merges a conflict: the whole
-// proposal is rejected. (v6 coalesces the EXACT repetition, and only that — see
-// tests/tender-semantic-discovery-v6-repeat-coalescing.test.mjs.)
+// explicit field are RETRACTED (v8), not rejected on their own: the catalog itself still guarantees
+// at most one enum member per obligation key (proved above), so a model can only reach this key
+// twice by repeating the very same catalog label across two requirements — there is no second,
+// differently-spelled enum member left to pick instead. Nothing merges or arbitrates a conflict:
+// every occurrence is retracted, the obligation is lost, and — being the ONLY obligation this
+// proposal states — the merged frontier resolves nothing, so the run is still rejected fail-closed,
+// at the v5 zero-requirements boundary instead. (v6 coalesces the EXACT repetition, and only that;
+// the full retraction contract lives in
+// tests/tender-semantic-discovery-v8-contradiction-retraction.test.mjs.)
 for (const conflicting of [{ category: 'habilitating' }, { front: 'legal' }, { kind: 'deliverable' }]) {
   await assert.rejects(
     () => run({
@@ -355,8 +374,8 @@ for (const conflicting of [{ category: 'habilitating' }, { front: 'legal' }, { k
       excluded: [{ source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' }],
       unresolved: [],
     }),
-    /obligación vacía o duplicada/,
-    'repeating the same catalog label with a conflicting explicit field must still be rejected fail-closed',
+    /no identificó ninguna obligación propia/,
+    'a conflicting repetition must retract the obligation and, being the only one, reject at the empty-frontier boundary',
   );
 }
 
@@ -383,73 +402,102 @@ for (const conflicting of [{ category: 'habilitating' }, { front: 'legal' }, { k
   assert.equal(result.semanticManifest.coverage_ledger.every_source_unit_disposed, true);
 }
 
-// Rule 3 — the same unit excluded twice is still rejected.
-await assert.rejects(
-  () => run({
+// Rule 3 — the same unit excluded twice is RETRACTED (v8), not rejected: `excluded` never wins over
+// `unresolved`, and neither claimed reason survives — the unit falls to the completion pass instead.
+{
+  const result = await run({
     requirements: [requirement(obligationOnA)],
     excluded: [
       { source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' },
       { source_unit_id: unitB.source_unit_id, reason: 'not_an_obligation' },
     ],
     unresolved: [],
-  }),
-  /disposición duplicada/,
-  'a source_unit excluded twice must still be rejected fail-closed',
-);
+  });
+  assert.equal(result.semanticManifest.excluded.some(entry => entry.source_unit_id === unitB.source_unit_id), false);
+  assert.deepEqual(
+    result.semanticManifest.unresolved.find(entry => entry.source_unit_id === unitB.source_unit_id),
+    completionHole(unitB.source_unit_id),
+    'a source_unit excluded twice with conflicting reasons must fall to the completion, never to either claim',
+  );
+}
 
-// Rule 3 — the same unit in both disposition lists is still rejected.
-await assert.rejects(
-  () => run({
+// Rule 3 — the same unit in both disposition lists is RETRACTED, not rejected.
+{
+  const result = await run({
     requirements: [requirement(obligationOnA)],
     excluded: [{ source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' }],
     unresolved: [{ source_unit_id: unitB.source_unit_id, reason: 'obligation_not_classifiable' }],
-  }),
-  /disposición duplicada/,
-  'a source_unit appearing in both excluded and unresolved must still be rejected fail-closed',
-);
+  });
+  assert.equal(result.semanticManifest.excluded.some(entry => entry.source_unit_id === unitB.source_unit_id), false);
+  assert.deepEqual(
+    result.semanticManifest.unresolved.find(entry => entry.source_unit_id === unitB.source_unit_id),
+    completionHole(unitB.source_unit_id),
+    'a source_unit appearing in both excluded and unresolved must fall to the completion, never to either claim',
+  );
+}
 
-// Rule 3 — a unit the server DERIVED as a citation may not also be dispositioned. The model cannot
-// see the mapping it is contradicting, which is exactly why the policy states the rule in terms of
-// the fragment it did choose; nothing here silently drops the disposition or the citation.
-await assert.rejects(
-  () => run({
+// Rule 3 — a unit the server DERIVED as a citation may also be dispositioned by the model: the
+// contradiction is retracted (v8), never arbitrated. The model cannot see the mapping it is
+// contradicting, which is exactly why the policy states the rule in terms of the fragment it did
+// choose; nothing here moves or drops the citation.
+{
+  const result = await run({
     requirements: [requirement(obligationOnA)],
     excluded: [
       { source_unit_id: unitA.source_unit_id, reason: 'duplicate_source_unit' },
       { source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' },
     ],
     unresolved: [],
-  }),
-  /disposición duplicada/,
-  'a derived-cited source_unit must not also be excluded',
-);
+  });
+  assert.deepEqual(
+    result.semanticManifest.requirements[0].citations.map(citation => citation.source_unit_id),
+    [unitA.source_unit_id],
+    'a derived-cited source_unit must keep its citation even when also excluded',
+  );
+  assert.equal(result.semanticManifest.excluded.some(entry => entry.source_unit_id === unitA.source_unit_id), false);
+  assert.deepEqual(
+    result.semanticManifest.excluded.map(entry => entry.source_unit_id),
+    [unitB.source_unit_id],
+    'the unrelated, valid exclusion of unitB must survive untouched',
+  );
+}
 
-await assert.rejects(
-  () => run({
+{
+  const result = await run({
     requirements: [requirement(obligationOnA)],
     excluded: [{ source_unit_id: unitB.source_unit_id, reason: 'descriptive_or_contextual' }],
     unresolved: [{ source_unit_id: unitA.source_unit_id, reason: 'obligation_not_classifiable' }],
-  }),
-  /disposición duplicada/,
-  'a derived-cited source_unit must not also be reported unresolved',
-);
+  });
+  assert.deepEqual(
+    result.semanticManifest.requirements[0].citations.map(citation => citation.source_unit_id),
+    [unitA.source_unit_id],
+    'a derived-cited source_unit must keep its citation even when also reported unresolved',
+  );
+  assert.equal(result.semanticManifest.unresolved.some(entry => entry.source_unit_id === unitA.source_unit_id), false);
+}
 
-// Rule 3, over a CO-OWNED label: the second unit the server binds is just as undisposable as the
-// first, even though the model never named either of them.
+// Rule 3, over a CO-OWNED label: the second unit the server binds is just as retraction-prone as
+// the first, even though the model never named either of them — the citation still keeps both.
 for (const [field, entry] of [
   ['excluded', { source_unit_id: unitB.source_unit_id, reason: 'duplicate_source_unit' }],
   ['unresolved', { source_unit_id: unitB.source_unit_id, reason: 'obligation_not_classifiable' }],
 ]) {
-  await assert.rejects(
-    () => run({
-      requirements: [requirement(sharedCandidate)],
-      excluded: [],
-      unresolved: [],
-      [field]: [entry],
-    }),
-    /disposición duplicada/,
-    `a co-owned derived citation must not also appear in ${field}`,
+  const result = await run({
+    requirements: [requirement(sharedCandidate)],
+    excluded: [],
+    unresolved: [],
+    [field]: [entry],
+  });
+  assert.deepEqual(
+    result.semanticManifest.requirements[0].citations.map(citation => citation.source_unit_id).sort(),
+    [unitA.source_unit_id, unitB.source_unit_id].sort(),
+    `${field}: a co-owned derived citation must survive the contradictory disposition untouched`,
   );
+  assert.equal(
+    result.semanticManifest[field].some(item => item.source_unit_id === unitB.source_unit_id), false,
+    `a co-owned derived citation must leave no trace in ${field}`,
+  );
+  assert.equal(result.discoveryLedger.batches[0].retracted_disposition_units, 1);
 }
 
 console.log('tests/tender-semantic-discovery-uniqueness-policy.test.mjs OK');

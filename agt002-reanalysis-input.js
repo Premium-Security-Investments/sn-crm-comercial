@@ -1,6 +1,7 @@
 import { ANALYSIS_FLAG_NAMES } from './agt002-analysis-config.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { validateAgt002CompanyEvidenceIdentity, validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
+import { validateAgt002CompanyEvidenceInventorySnapshot } from './agt002-company-evidence-sharepoint-catalog.js';
 
 function object(value) {
   return value != null && typeof value === 'object' && !Array.isArray(value);
@@ -95,6 +96,10 @@ export function buildAgt002FrozenEngineInput({
     // Canonical format only — never merely Date-parseable — so a frozen job can never carry an
     // offset, a non-midnight time or a calendar-impossible date as its governed asOf.
     validateAgt002CompanyEvidenceAsOf(integralV3Governance.evidenceAsOf);
+    // F4: a NEW job always re-validates the governed SharePoint inventory snapshot it freezes —
+    // never trusted verbatim — so a corrupted/hostile snapshot is rejected at freeze time, not
+    // discovered by the worker hours later.
+    validateAgt002CompanyEvidenceInventorySnapshot(integralV3Governance.companyEvidenceInventorySnapshot);
   }
   if (analysisConfig.AGT002_LEGAL_CORPUS === true && !object(legalCorpusContext)) {
     throw new Error('AGT-002 reanalysis frozen legal corpus is required.');
@@ -103,7 +108,7 @@ export function buildAgt002FrozenEngineInput({
   const flags = {};
   for (const name of ANALYSIS_FLAG_NAMES) flags[name] = analysisConfig[name] === true;
   return deepFreezeJson(cloneJson({
-    schema_version: 1,
+    schema_version: 2,
     engine_identity: {
       model: runtimeConfig.model.trim(),
       policy_version: runtimeConfig.policyVersion.trim(),

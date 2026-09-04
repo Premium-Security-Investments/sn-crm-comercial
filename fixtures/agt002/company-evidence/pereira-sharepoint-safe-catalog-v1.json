@@ -1,0 +1,236 @@
+{
+  "inventory_version": "agt002-company-evidence-sharepoint-catalog-v1",
+  "catalog_snapshot_hash": "ba6cc6e439fc427c7766467370fd6067d1d76dca8e15051182e7b004690ec236",
+  "source_file_count": 93,
+  "excluded_non_evidence_count": 1,
+  "state_counts": {
+    "current_valid": 0,
+    "historical_update_required": 25,
+    "reported_unverified": 50,
+    "absent_unknown": 0,
+    "process_specific_template": 17
+  },
+  "classes": [
+    {
+      "entry_id": "supervigilancia_operating_license",
+      "source_file_count": 3,
+      "state_counts": {
+        "current_valid": 0,
+        "historical_update_required": 3,
+        "reported_unverified": 0,
+        "absent_unknown": 0,
+        "process_specific_template": 0
+      },
+      "effective_state": "historical_update_required",
+      "last_reconciled_at": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "entry_id": "rup",
+      "source_file_count": 5,
+      "state_counts": {
+        "current_valid": 0,
+        "historical_update_required": 5,
+        "reported_unverified": 0,
+        "absent_unknown": 0,
+        "process_specific_template": 0
+      },
+      "effective_state": "historical_update_required",
+      "last_reconciled_at": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "entry_id": "rut",
+      "source_file_count": 2,
+      "state_counts": {
+        "current_valid": 0,
+        "historical_update_required": 2,
+        "reported_unverified": 0,
+        "absent_unknown": 0,
+        "process_specific_template": 0
+      },
+      "effective_state": "historical_update_required",
+      "last_reconciled_at": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "entry_id": "communications_license",
+      "source_file_count": 2,
+      "state_counts": {
+        "current_valid": 0,
+        "historical_update_required": 2,
+        "reported_unverified": 0,
+        "absent_unknown": 0,
+        "process_specific_template": 0
+      },
+      "effective_state": "historical_update_required",
+      "last_reconciled_at": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "entry_id": "uniforms_resolution",
+      "source_file_count": 1,
+      "state_counts": {
+        "current_valid": 0,
+        "historical_update_required": 1,
+        "reported_unverified": 0,
+        "absent_unknown": 0,
+        "process_specific_template": 0
+      },
+      "effective_state": "historical_update_required",
+      "last_reconciled_at": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "entry_id": "no_fines_sanctions_certificate",
+      "source_file_count": 2,
+      "state_counts": {
+        "current_valid": 0,
+        "historical_update_required": 2,
+        "reported_unverified": 0,
+        "absent_unknown": 0,
+        "process_specific_template": 0
+      },
+      "effective_state": "historical_update_required",
+      "last_reconciled_at": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "entry_id": "authorized_weapons_list",
+      "source_file_count": 2,
+      "state_counts": {
+        "current_valid": 0,
+        "historical_update_required": 2,
+        "reported_unverified": 0,
+        "absent_unknown": 0,
+        "process_specific_template": 0
+      },
+      "effective_state": "historical_update_required",
+      "last_reconciled_at": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "entry_id": "rce_policy",
+      "source_file_count": 1,
+      "state_counts": {
+        "current_valid": 0,
+        "historical_update_required": 1,
+        "reported_unverified": 0,
+        "absent_unknown": 0,
+        "process_specific_template": 0
+      },
+      "effective_state": "historical_update_required",
+      "last_reconciled_at": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "entry_id": "collective_life_policy",
+      "source_file_count": 1,
+      "state_counts": {
+        "current_valid": 0,
+        "historical_update_required": 1,
+        "reported_unverified": 0,
+        "absent_unknown": 0,
+        "process_specific_template": 0
+      },
+      "effective_state": "historical_update_required",
+      "last_reconciled_at": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "entry_id": "accredited_experience",
+      "source_file_count": 1,
+      "state_counts": {
+        "current_valid": 0,
+        "historical_update_required": 1,
+        "reported_unverified": 0,
+        "absent_unknown": 0,
+        "process_specific_template": 0
+      },
+      "effective_state": "historical_update_required",
+      "last_reconciled_at": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "entry_id": "financial_and_tax_pack",
+      "source_file_count": 2,
+      "state_counts": {
+        "current_valid": 0,
+        "historical_update_required": 2,
+        "reported_unverified": 0,
+        "absent_unknown": 0,
+        "process_specific_template": 0
+      },
+      "effective_state": "historical_update_required",
+      "last_reconciled_at": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "entry_id": "bank_certificate",
+      "source_file_count": 3,
+      "state_counts": {
+        "current_valid": 0,
+        "historical_update_required": 3,
+        "reported_unverified": 0,
+        "absent_unknown": 0,
+        "process_specific_template": 0
+      },
+      "effective_state": "historical_update_required",
+      "last_reconciled_at": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "entry_id": "overtime_authorization",
+      "source_file_count": 1,
+      "state_counts": {
+        "current_valid": 0,
+        "historical_update_required": 1,
+        "reported_unverified": 0,
+        "absent_unknown": 0,
+        "process_specific_template": 0
+      },
+      "effective_state": "historical_update_required",
+      "last_reconciled_at": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "entry_id": "corporate_background_checks",
+      "source_file_count": 3,
+      "state_counts": {
+        "current_valid": 0,
+        "historical_update_required": 0,
+        "reported_unverified": 3,
+        "absent_unknown": 0,
+        "process_specific_template": 0
+      },
+      "effective_state": "reported_unverified",
+      "last_reconciled_at": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "entry_id": "legal_representative_vault",
+      "source_file_count": 10,
+      "state_counts": {
+        "current_valid": 0,
+        "historical_update_required": 0,
+        "reported_unverified": 10,
+        "absent_unknown": 0,
+        "process_specific_template": 0
+      },
+      "effective_state": "reported_unverified",
+      "last_reconciled_at": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "entry_id": "personnel_credentials_vault",
+      "source_file_count": 37,
+      "state_counts": {
+        "current_valid": 0,
+        "historical_update_required": 0,
+        "reported_unverified": 37,
+        "absent_unknown": 0,
+        "process_specific_template": 0
+      },
+      "effective_state": "reported_unverified",
+      "last_reconciled_at": "2026-09-02T00:00:00.000Z"
+    },
+    {
+      "entry_id": "differential_scoring_support",
+      "source_file_count": 17,
+      "state_counts": {
+        "current_valid": 0,
+        "historical_update_required": 0,
+        "reported_unverified": 0,
+        "absent_unknown": 0,
+        "process_specific_template": 17
+      },
+      "effective_state": "process_specific_template",
+      "last_reconciled_at": "2026-09-02T00:00:00.000Z"
+    }
+  ]
+}

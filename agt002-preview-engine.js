@@ -7,12 +7,19 @@ import {
   AGT002_LEGAL_HUMAN_REVIEW_STATEMENT,
   buildAgt002PreviewOutputJsonSchema,
   buildAgt002IntegralAnalysisV3OutputJsonSchema,
+  buildAgt002IntegralAnalysisV3BatchOutputJsonSchema,
   collectAgt002PreviewEvidenceIds,
   collectAgt002PreviewLegalCitationIds,
   completeAgt002PreviewLegalAbstention,
   validateAgt002PreviewModelOutput,
   validateAgt002PreviewModelOutputV3,
+  validateAgt002PreviewModelOutputV3Batch,
+  mergeAgt002IntegralAnalysisV3Batches,
 } from './agt002-preview-contract.js';
+import {
+  planAgt002IntegralAnalysisBatches,
+  projectAgt002IntegralAnalysisBatch,
+} from './agt002-integral-analysis-batches.js';
 import { projectAgt002IntegralV3ToV2 } from './agt002-v3-compatibility.js';
 import { deriveAgt002IntegralCategoryManifest } from './agt002-integral-category-manifest.js';
 import { buildAgt002EvidenceStateManifest } from './agt002-evidence-state-manifest.js';
@@ -28,6 +35,7 @@ import {
 } from './agt002-v3-prompt-budget.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
+import { AGT002_CHECKPOINT_STAGES } from './agt002-analysis-checkpoints.js';
 
 // design section 5: fixed version tag for the 17-class company-evidence catalog. The
 // catalog itself is fixed by code (agt002-company-evidence-classes.js), not by a stored
@@ -455,6 +463,71 @@ function selectBoundGovernanceProvenance(provenance, categoryOverridesMap, evide
   return Object.fromEntries(sortedKeys.map(key => [key, bound[key]]));
 }
 
+// Provider-input integration (fail-closed guidance, not trust): every requirement entry
+// the model sees also carries the SAME governed category and evidence_state_governed the
+// validator will enforce afterward, so the model has a real chance to reproduce it
+// exactly. This never weakens validation — validateAgt002IntegralAnalysisV3 still
+// rejects any unit whose evidence_state does not match the governed map byte for byte,
+// regardless of what was offered here. Module-level (not closured) so both runOnceV3 below
+// and the standalone runAgt002BatchedV3Analysis (bottom of this file) reuse this exact function.
+function withRequirementGovernedFields(previewInput, requirementManifestWithCategory, evidenceStateManifestForInput) {
+  const rawRequirementById = new Map(
+    previewInput.document_evidence.requirement_manifest.map(entry => [entry.requirement_id, entry]),
+  );
+  const evidenceStateById = new Map(evidenceStateManifestForInput.map(entry => [entry.requirement_id, entry.evidence_state]));
+  return {
+    ...previewInput,
+    document_evidence: {
+      ...previewInput.document_evidence,
+      requirement_manifest: requirementManifestWithCategory.map(({ requirement_id: requirementId, category }) => ({
+        ...rawRequirementById.get(requirementId),
+        category,
+        evidence_state_governed: evidenceStateById.get(requirementId),
+      })),
+    },
+  };
+}
+
+// Task 6B3: closed map from a runAgt002BatchedV3Orchestration progress event's own kind to the
+// single allowlisted analysis_batch_progress outcome it represents. `type` is accepted alongside
+// `kind` so any injected batchedV3Orchestrator (test double or otherwise) reporting progress under
+// either name is still recognized; any kind/type not listed here is unknown and is ignored
+// entirely, never forwarded as a free-form outcome.
+const AGT002_BATCH_PROGRESS_OUTCOME_BY_KIND = Object.freeze({
+  batch_checkpoint_hit: 'checkpoint_reused',
+  batch_attempt_retry: 'retry_scheduled',
+  batch_completed: 'completed',
+  batches_merged: 'merged',
+  batch_merged: 'merged',
+  batches_finalized: 'finalized',
+  batch_finalized: 'finalized',
+});
+
+// Explicit pick/rename only — never a spread of the internal event, never a nested object — from a
+// batchedV3Orchestrator progress event to the exact snake_case fields analysis_batch_progress
+// accepts. `stage`/`snapshot_id` come from this run's own context, never from the event itself.
+// Final scalar/hash/enum enforcement is the centralized observability sanitizer's job, not this
+// mapper's.
+function agt002BatchProgressObservabilityFields(event, snapshotId) {
+  const kind = event && (event.kind ?? event.type);
+  const outcome = AGT002_BATCH_PROGRESS_OUTCOME_BY_KIND[kind];
+  if (!outcome) return null;
+  const fields = { stage: 'integral_analysis_batch', snapshot_id: snapshotId, outcome };
+  const pick = (key, value) => { if (value !== undefined) fields[key] = value; };
+  pick('batch_index', event.batchIndex);
+  pick('batch_count', event.batchCount);
+  pick('attempt', event.attempt);
+  pick('retry_count', event.retryCount);
+  pick('duration_ms', event.durationMs);
+  pick('input_tokens', event.inputTokens);
+  pick('output_tokens', event.outputTokens);
+  pick('request_hash', event.requestHash);
+  pick('provider_request_id', event.providerRequestId);
+  pick('checkpoint_reused', event.checkpointReused);
+  pick('error_code', event.errorCode);
+  return fields;
+}
+
 export function createAgt002PreviewEngine({
   client,
   model,
@@ -495,6 +568,11 @@ export function createAgt002PreviewEngine({
   // governed evidence identity to bind to — it keeps buildAgt002CompanyEvidenceClasses's own
   // `new Date()` fallback.
   companyEvidenceAsOf,
+  // F4: the governed SharePoint company-evidence inventory snapshot the run's own identity was
+  // computed from (agt002-company-evidence-sharepoint-catalog.js) — projected through the real
+  // buildAgt002CompanyEvidenceClasses builder below, never re-derived here. `undefined` (the
+  // default, every direct engine caller) keeps the builder's own inventory-less projection.
+  companyEvidenceInventorySnapshot,
   contextVersionId = null,
   manizalesManifestSource = null,
   observability = createAgt002AnalysisObservability(),
@@ -506,6 +584,27 @@ export function createAgt002PreviewEngine({
   promptBudget = false,
   promptMaxInputTokens = AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS,
   onPromptBudget,
+  // Deterministic stage-boundary heartbeat: awaited immediately before EVERY provider turn this
+  // engine itself takes (the legacy/v2 turn in runOnce, the v3 analysis turn in runOnceV3) and
+  // forwarded to an injected semanticDiscoveryProvider so its own per-batch turns renew too. A
+  // rejection stops the guarded provider call from happening at all. `undefined` (the default)
+  // keeps every existing caller's behaviour byte-identical: no extra call of any kind.
+  beforeProviderCall,
+  // Task 6A2/6A3: the durable-batched V3 orchestration boundary. Defaults to the real
+  // runAgt002BatchedV3Analysis (this file, below) — never a null/no-op — so a discovered-frontier
+  // run that supplies per-run `analysisCheckpointHooks` gets real durable batching out of the box;
+  // only ever consulted for such a run — see `usesSemanticDiscovery` below. A caller may still
+  // inject its own orchestrator (e.g. a test double) to override this default.
+  batchedV3Orchestrator = runAgt002BatchedV3Analysis,
+  // Task 6A4: a CONSTRUCTOR-level durable-batching checkpoint-hooks binding — the same shape
+  // `analyze()` already accepts per-run — so a caller (the production runtime) can bind hooks
+  // once for the engine's lifetime instead of threading them through every `analyze()` call.
+  // `undefined` (the default, omitted) means absent: no binding, byte-identical to every
+  // existing caller. Any other value — including an explicit `null` — must already be a
+  // well-formed `{ loadCheckpoint, storeCheckpoint }` object or construction fails closed, exactly
+  // like every other optional dependency this engine validates. A per-run `analysisCheckpointHooks`
+  // still overrides this binding for that invocation.
+  checkpointHooks,
 } = {}) {
   if (!client || typeof client.run !== 'function'
     || !nonEmpty(model) || !nonEmpty(policyVersion) || !nonEmpty(policyText)
@@ -517,6 +616,13 @@ export function createAgt002PreviewEngine({
     || (integralContractV3 && (!contextV2 || !documentRetrieval || typeof companyEvidenceClassesProvider !== 'function'))
     || (companyEvidenceAsOf !== undefined && !isCanonicalCompanyEvidenceAsOf(companyEvidenceAsOf))
     || (semanticDiscoveryProvider !== null && typeof semanticDiscoveryProvider !== 'function')
+    || (beforeProviderCall !== undefined && typeof beforeProviderCall !== 'function')
+    || (batchedV3Orchestrator !== null && typeof batchedV3Orchestrator !== 'function')
+    || (checkpointHooks !== undefined && (
+      !checkpointHooks || typeof checkpointHooks !== 'object' || Array.isArray(checkpointHooks)
+      || typeof checkpointHooks.loadCheckpoint !== 'function'
+      || typeof checkpointHooks.storeCheckpoint !== 'function'
+    ))
     || !observability || typeof observability.record !== 'function'
     || !isAgt002PreviewReasoningEffort(effort)) {
     throw new Error('AGT-002 Preview no está configurado: falta configuración o evidencia jurídica determinística.');
@@ -599,6 +705,7 @@ export function createAgt002PreviewEngine({
       legalCorpus,
       legalCitationIds,
     });
+    if (beforeProviderCall) await beforeProviderCall();
     const raw = await client.run({ model, policy: policyText, input: previewInput, outputSchema, timeoutMs, idempotencyKey, signal, effort });
 
     const rawContent = typeof raw?.content === 'string' ? raw.content : '';
@@ -805,30 +912,6 @@ export function createAgt002PreviewEngine({
     };
   }
 
-  // Provider-input integration (fail-closed guidance, not trust): every requirement entry
-  // the model sees also carries the SAME governed category and evidence_state_governed the
-  // validator will enforce afterward, so the model has a real chance to reproduce it
-  // exactly. This never weakens validation — validateAgt002IntegralAnalysisV3 still
-  // rejects any unit whose evidence_state does not match the governed map byte for byte,
-  // regardless of what was offered here.
-  function withRequirementGovernedFields(previewInput, requirementManifestWithCategory, evidenceStateManifestForInput) {
-    const rawRequirementById = new Map(
-      previewInput.document_evidence.requirement_manifest.map(entry => [entry.requirement_id, entry]),
-    );
-    const evidenceStateById = new Map(evidenceStateManifestForInput.map(entry => [entry.requirement_id, entry.evidence_state]));
-    return {
-      ...previewInput,
-      document_evidence: {
-        ...previewInput.document_evidence,
-        requirement_manifest: requirementManifestWithCategory.map(({ requirement_id: requirementId, category }) => ({
-          ...rawRequirementById.get(requirementId),
-          category,
-          evidence_state_governed: evidenceStateById.get(requirementId),
-        })),
-      },
-    };
-  }
-
   // `priorUsage` accounts for server-owned model turns taken BEFORE this analysis turn (today: the
   // semantic discovery turn), so the envelope's usage reports what the run actually cost rather
   // than only its last call. `governanceProvenanceForRun` defaults to the constructor-bound block,
@@ -889,6 +972,7 @@ export function createAgt002PreviewEngine({
       requestInput = budgeted.input;
     }
 
+    if (beforeProviderCall) await beforeProviderCall();
     const raw = await client.run({
       model, policy: policyText, input: requestInput, outputSchema, timeoutMs, idempotencyKey, signal, effort,
     });
@@ -980,7 +1064,22 @@ export function createAgt002PreviewEngine({
     // Phase 4: the governed expected scope for this run (null for a non-manifest run), so an
     // internal persistence call site can supply it as the server-owned comparison target.
     manifestScope,
-    analyze(context, { idempotencyKey, signal } = {}) {
+    analyze(context, { idempotencyKey, signal, analysisCheckpointHooks = checkpointHooks ?? undefined } = {}) {
+      // Task 6A2/6A4: an optional PER-RUN durable-batching dependency, never engine-level
+      // configuration by itself — a caller opts a specific run into batching by supplying it
+      // here, or relies on the constructor-level `checkpointHooks` binding (Task 6A4) when no
+      // per-run value is supplied. Validated fail-closed only when actually supplied/resolved,
+      // exactly like every other optional hook this engine accepts; `undefined` (the default,
+      // every caller with no per-run value and no bound hooks) is untouched and must never
+      // perturb the idempotency key computed below. An explicit per-run value — valid or
+      // malformed — always overrides the bound hooks; it is never silently replaced by them.
+      if (analysisCheckpointHooks !== undefined && (
+        !analysisCheckpointHooks || typeof analysisCheckpointHooks !== 'object'
+        || typeof analysisCheckpointHooks.loadCheckpoint !== 'function'
+        || typeof analysisCheckpointHooks.storeCheckpoint !== 'function'
+      )) {
+        throw new Error('AGT-002 Preview: analysisCheckpointHooks, si se provee, debe incluir loadCheckpoint y storeCheckpoint como funciones.');
+      }
       // Feature flags are engine-level configuration, not caller-supplied: they always win
       // over anything a caller's context object might carry. The legal provider receives
       // only the current closed analysis context and performs deterministic offline retrieval.
@@ -988,6 +1087,7 @@ export function createAgt002PreviewEngine({
       const companyEvidenceClasses = integralContractV3
         ? buildAgt002CompanyEvidenceClasses({
           registryEntries: companyEvidenceClassesProvider(context || {}),
+          inventorySnapshot: companyEvidenceInventorySnapshot,
           ...(companyEvidenceAsOf !== undefined ? { asOf: new Date(companyEvidenceAsOf) } : {}),
         })
         : undefined;
@@ -1052,6 +1152,12 @@ export function createAgt002PreviewEngine({
                 discovery = await semanticDiscoveryProvider({
                   client, model, timeoutMs, idempotencyKey: key, signal, effort,
                   inventory, documents: (context || {}).documents ?? [],
+                  ...(beforeProviderCall ? { beforeProviderCall } : {}),
+                  // Same resolved, already-validated analysisCheckpointHooks that governs the
+                  // integral analysis checkpoint below also governs the discovery checkpoint here;
+                  // omitted (not forwarded as undefined) when absent, so legacy/non-durable runs
+                  // stay byte-compatible.
+                  ...(analysisCheckpointHooks ? { checkpointHooks: analysisCheckpointHooks } : {}),
                 });
               } catch (error) {
                 // tender-semantic-discovery.js tags its OWN post-response rejections (the bridge
@@ -1071,17 +1177,85 @@ export function createAgt002PreviewEngine({
               // the manifest is re-validated inside the builder against the inventory the packet
               // itself carries, so what the model sees and what the envelope persists were both
               // checked against this snapshot's own source units.
-              const discoveredInput = buildAgt002PreviewInput({
-                ...previewInputOptions,
-                semanticManifest: discovery.semanticManifest,
-              });
-              const validationContext = buildIntegralV3ValidationContext(discoveredInput, companyEvidenceClasses, {
-                // The discovered requirements are this run's own: their categories come from the
-                // discovery turn, and no curated requirement_id -> evidence_class link exists for
-                // them yet, so every axis abstains to the safe-unknown state.
-                categoryOverrides: discovery.categoryOverrides,
-                evidenceClassLinks: {},
-              });
+              //
+              // Both steps below are LOCAL, synchronous, pre-provider-call assembly: no bridge
+              // invocation is in flight while either runs. An untagged throw here would fall through
+              // to the generic catch at the bottom of this function, which preserves only `.code`
+              // (never a stage) — exactly the gap that let a local, pre-provider failure collapse
+              // into 'unexpected'/provider_error for the real Procuraduria run (see the header
+              // comment on AGT002_POST_BRIDGE_STAGES in agt002-analysis-observability.js). Tagged
+              // with ENVELOPE — the same closed, already-recognized pre-provider stage the prompt
+              // budget check below uses — so classifyEnginePhase maps it to envelope_build ->
+              // AGT002_ENVELOPE_INVALID -> the worker's invalid_output, deterministically, never by
+              // falling back to the bridge-telemetry heuristic.
+              let discoveredInput;
+              try {
+                discoveredInput = buildAgt002PreviewInput({
+                  ...previewInputOptions,
+                  semanticManifest: discovery.semanticManifest,
+                });
+              } catch {
+                recordOutputRejected({
+                  stage: AGT002_OUTPUT_REJECTION_STAGES.ENVELOPE, validationCode: 'v4_discovered_input_assembly_failed',
+                  content: '', snapshotId, usage: undefined,
+                });
+                throw safe(SAFE_INVALID, { stage: AGT002_OUTPUT_REJECTION_STAGES.ENVELOPE });
+              }
+              let validationContext;
+              try {
+                validationContext = buildIntegralV3ValidationContext(discoveredInput, companyEvidenceClasses, {
+                  // The discovered requirements are this run's own: their categories come from the
+                  // discovery turn, and no curated requirement_id -> evidence_class link exists for
+                  // them yet, so every axis abstains to the safe-unknown state.
+                  categoryOverrides: discovery.categoryOverrides,
+                  evidenceClassLinks: {},
+                });
+              } catch {
+                recordOutputRejected({
+                  stage: AGT002_OUTPUT_REJECTION_STAGES.ENVELOPE, validationCode: 'v4_validation_context_construction_failed',
+                  content: '', snapshotId, usage: undefined,
+                });
+                throw safe(SAFE_INVALID, { stage: AGT002_OUTPUT_REJECTION_STAGES.ENVELOPE });
+              }
+              // Task 6A2: a discovered frontier whose caller asked for durable batching (per-run
+              // analysisCheckpointHooks) routes its analysis turn to the injected orchestrator
+              // instead of this engine's own one-turn runOnceV3 — the orchestrator then owns
+              // every batch's provider call. Gated literally on usesSemanticDiscovery (already
+              // computed, already true here) so neither the Manizales/fixed-manifest package nor
+              // a legacy/non-V3 engine can ever be switched to batching by supplying hooks.
+              if (usesSemanticDiscovery && analysisCheckpointHooks) {
+                if (typeof batchedV3Orchestrator !== 'function') {
+                  // No default batching implementation is wired yet: fail closed rather than
+                  // silently falling back to the one-turn runOnceV3 path a caller explicitly
+                  // asked to avoid by supplying analysisCheckpointHooks.
+                  throw safe(SAFE_BATCHED_V3_CONFIG_INVALID, { code: AGT002_BATCHED_V3_CODES.CONFIG_INVALID });
+                }
+                return await batchedV3Orchestrator({
+                  previewInput: discoveredInput,
+                  validationContext,
+                  priorUsage: discovery.usage,
+                  model,
+                  policy: policyText,
+                  policyVersion,
+                  timeoutMs,
+                  signal,
+                  effort,
+                  checkpointHooks: analysisCheckpointHooks,
+                  beforeProviderCall,
+                  idempotencyKey: key,
+                  client,
+                  idGenerator,
+                  contextVersionId,
+                  // Discovery path ONLY: no manifest_scope (non-manifest run) and no
+                  // construction-time governance provenance (see the equivalent runOnceV3 call
+                  // above for why — none of it governed a per-run discovered frontier).
+                  legalCorpusVersionId: legalCorpus ? legalCorpusVersionId : null,
+                  recordProgress: event => {
+                    const fields = agt002BatchProgressObservabilityFields(event, snapshotId);
+                    if (fields) observability.record('analysis_batch_progress', fields);
+                  },
+                });
+              }
               return await runOnceV3(discoveredInput, key, signal, validationContext, {
                 priorUsage: discovery.usage,
                 // The curated governance-provenance records describe the construction-time maps,
@@ -1116,4 +1290,602 @@ export function createAgt002PreviewEngine({
       return promise;
     },
   };
+}
+
+// --------------------------------------------------------------------------------
+// AGT-002 durable batched V3 orchestration (Task 6A1). A small, dependency-injected helper
+// that drives one durable-batched V3 analysis run across a Task-4 `{plan,batches}` plan, using
+// the real-shaped Task-2 checkpoint hooks and the bounded per-boundary retry precedent already
+// proven for semantic discovery (tender-semantic-discovery.js). It never calls a provider, a
+// store or a database itself — every boundary is either an injected hook or guarded by an
+// injected `beforeBoundary` heartbeat. Wired into createAgt002PreviewEngine above only for the
+// durable discovered-frontier path when checkpoint hooks are present; the no-hooks and
+// fixed-manifest paths remain one-turn.
+// --------------------------------------------------------------------------------
+
+const AGT002_BATCHED_V3_STAGE = 'integral_analysis_batch';
+if (!AGT002_CHECKPOINT_STAGES.includes(AGT002_BATCHED_V3_STAGE)) {
+  throw new Error('AGT-002 Preview: la etapa de checkpoint de lotes V3 no es válida.');
+}
+
+const SAFE_BATCHED_V3_CONFIG_INVALID = 'AGT-002 Preview: la orquestación de lotes V3 no está configurada correctamente.';
+const SAFE_BATCHED_V3_PLAN_INCOHERENT = 'AGT-002 Preview: el plan de lotes V3 no es coherente con sus lotes.';
+const SAFE_BATCHED_V3_FAILED = 'AGT-002 Preview: la orquestación de lotes V3 no pudo completarse.';
+
+const AGT002_BATCHED_V3_CODES = Object.freeze({
+  CONFIG_INVALID: 'AGT002_BATCHED_V3_CONFIG_INVALID',
+  PLAN_INCOHERENT: 'AGT002_BATCHED_V3_PLAN_INCOHERENT',
+  BOUNDARY_FAILED: 'AGT002_BATCHED_V3_BOUNDARY_FAILED',
+  BATCH_FAILED: 'AGT002_BATCHED_V3_BATCH_FAILED',
+  CHECKPOINT_FAILED: 'AGT002_BATCHED_V3_CHECKPOINT_FAILED',
+  VALIDATION_INVALID: 'AGT002_BATCHED_V3_VALIDATION_INVALID',
+  USAGE_INVALID: 'AGT002_BATCHED_V3_USAGE_INVALID',
+  ABORTED: 'AGT002_BATCHED_V3_ABORTED',
+  MERGE_FAILED: 'AGT002_BATCHED_V3_MERGE_FAILED',
+  FINALIZE_FAILED: 'AGT002_BATCHED_V3_FINALIZE_FAILED',
+});
+
+// Task 6C1: the ONLY upstream error codes this orchestrator ever recognizes and forwards
+// byte-for-byte (never a copy of an arbitrary upstream code/message). Both name the exact same
+// frontier — a stage-boundary lease renewal lost before the guarded operation ran — one from
+// agt002-preview-persistence.js's renewAgt002PreviewClaim, the other from
+// agt002-reanalysis-jobs.js's renewAgt002ReanalysisJobLease. Deliberately a local, closed Set —
+// never an import from agt002-post-bridge-observability.js or tender-semantic-discovery.js's own
+// classification helpers — to avoid a module cycle with this file.
+const AGT002_BATCHED_V3_LEASE_LOST_CODES = new Set(['AGT002_PREVIEW_LEASE_LOST', 'AGT002_REANALYSIS_LEASE_LOST']);
+
+function isPlainRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isPositiveInteger(value) {
+  return Number.isInteger(value) && value > 0;
+}
+
+// Every orchestration-thrown error uses this single fixed-text/closed-code shape — never the
+// upstream error's own message — so a caught provider/boundary/store failure can never leak
+// raw content through this helper's own rejection. `stage`, when given, is always one of this
+// module's own closed stage literals (AGT002_OUTPUT_REJECTION_STAGES or the local lease_renewal/
+// transport/persistence literals below) — never a free-form value passed through from upstream.
+function agt002BatchedV3Error(code, stage) {
+  return safe(SAFE_BATCHED_V3_FAILED, stage ? { code, stage } : { code });
+}
+
+// Task 6C1: classifies an executeBatch rejection that has exhausted retries (or was never
+// retryable) into this orchestrator's own closed code/stage — never the upstream error's message,
+// cause or arbitrary code/stage. The bridge's own exact transport-timeout code is preserved
+// byte-for-byte (stage `transport`) because downstream classifiers already recognize its closed
+// form; a stage this engine itself already attaches at one of its four fixed output-rejection
+// points (content_extraction/json_parse/semantic_validation/usage) — or `envelope` — is preserved
+// alone, recoded onto a single closed invalid-output code; anything else collapses to the generic
+// closed BATCH_FAILED with no stage, never an arbitrary one copied from upstream.
+function classifyAgt002BatchedV3ExecuteBatchFailure(error) {
+  if (error?.code === 'AGT002_CODEX_TIMEOUT') {
+    return agt002BatchedV3Error('AGT002_CODEX_TIMEOUT', 'transport');
+  }
+  if (AGT002_OUTPUT_REJECTION_STAGE_VALUES.has(error?.stage)) {
+    return agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.VALIDATION_INVALID, error.stage);
+  }
+  return agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.BATCH_FAILED);
+}
+
+// Only a short, nonempty scalar string survives — never an object/array/number — so a
+// provider-supplied request id can reach a progress event without risking a copied raw response.
+function safeAgt002BatchedV3ProviderRequestId(value) {
+  return typeof value === 'string' && value.length > 0 && value.length <= 200 ? value : undefined;
+}
+
+function agt002BatchedV3StableForHash(value) {
+  if (Array.isArray(value)) return value.map(agt002BatchedV3StableForHash);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map(key => [key, agt002BatchedV3StableForHash(value[key])]));
+  }
+  return value;
+}
+
+// Mirrors agt002-analysis-checkpoints.js's own canonical sha256 convention exactly (recursively
+// sorted object keys, array order preserved), so a stored checkpoint's outputSha256 stays
+// reproducible regardless of caller-side key insertion order.
+function agt002BatchedV3CanonicalSha256(value) {
+  return createHash('sha256').update(JSON.stringify(agt002BatchedV3StableForHash(value)), 'utf8').digest('hex');
+}
+
+// Stable per-batch provider idempotency key: a pure function of the base run key, the batch
+// index and the batch's own request hash — never random, never provider/attempt state — so
+// every retry of the same batch reuses byte-identical identity.
+function agt002BatchedV3ProviderIdempotencyKey({ idempotencyKey, batchIndex, requestHash }) {
+  const digest = createHash('sha256').update(String(requestHash), 'utf8').digest('hex').slice(0, 16);
+  return `${idempotencyKey}:integral_analysis_batch:${batchIndex}:${digest}`;
+}
+
+/**
+ * Validates full Task-4 `{plan,batches}` coherence — closed planner/contract metadata, positive
+ * counts, matching lengths, contiguous zero-based batch indices, a common batch_count, matching
+ * requirement counts/first/last requirement ids and nonempty request hashes per batch — BEFORE
+ * any checkpoint/provider interaction. Pure and read-only: never mutates `plan` or `batches`.
+ * Returns the ordered `[{ planBatch, runtimeBatch }]` pairing this run will process.
+ */
+function validateAgt002BatchedV3Plan(plan, batches) {
+  const invalid = () => { throw safe(SAFE_BATCHED_V3_PLAN_INCOHERENT, { code: AGT002_BATCHED_V3_CODES.PLAN_INCOHERENT }); };
+
+  if (!isPlainRecord(plan)) invalid();
+  if (!nonEmpty(plan.planner_version) || !nonEmpty(plan.contract_version) || !nonEmpty(plan.requirement_manifest_version)) invalid();
+  if (!nonEmpty(plan.snapshot_id) || !nonEmpty(plan.snapshot_hash) || !nonEmpty(plan.inventory_hash) || !nonEmpty(plan.model)) invalid();
+  if (!isPositiveInteger(plan.max_input_tokens) || !isPositiveInteger(plan.max_requirements_per_batch)) invalid();
+  if (!isPositiveInteger(plan.batch_count) || !isPositiveInteger(plan.requirement_count)) invalid();
+  if (!Array.isArray(plan.batches) || plan.batches.length !== plan.batch_count) invalid();
+  if (!Array.isArray(batches) || batches.length !== plan.batch_count) invalid();
+
+  const pairs = [];
+  let requirementTotal = 0;
+  for (let index = 0; index < plan.batch_count; index += 1) {
+    const planBatch = plan.batches[index];
+    const runtimeBatch = batches[index];
+    if (!isPlainRecord(planBatch) || !isPlainRecord(runtimeBatch)) invalid();
+    if (planBatch.batch_index !== index || runtimeBatch.batch_index !== index) invalid();
+    if (planBatch.batch_count !== plan.batch_count || runtimeBatch.batch_count !== plan.batch_count) invalid();
+    if (!isPositiveInteger(planBatch.requirement_count) || !isPositiveInteger(planBatch.estimated_input_tokens)) invalid();
+    if (!nonEmpty(planBatch.request_hash)) invalid();
+    if (!Array.isArray(runtimeBatch.requirement_ids) || runtimeBatch.requirement_ids.length !== planBatch.requirement_count) invalid();
+    if (!runtimeBatch.requirement_ids.every(nonEmpty)) invalid();
+    if (planBatch.first_requirement_id !== runtimeBatch.requirement_ids[0]) invalid();
+    if (planBatch.last_requirement_id !== runtimeBatch.requirement_ids[runtimeBatch.requirement_ids.length - 1]) invalid();
+    requirementTotal += planBatch.requirement_count;
+    pairs.push({ planBatch, runtimeBatch });
+  }
+  if (requirementTotal !== plan.requirement_count) invalid();
+
+  return pairs;
+}
+
+// Nonnegative-integer usage shape, validated fail-closed; `allowMissing` normalizes an absent
+// priorUsage to zero rather than rejecting a run that took no turn before this one.
+function extractAgt002BatchedV3UsageCounts(usage, { allowMissing = false } = {}) {
+  if (usage === null || usage === undefined) {
+    if (allowMissing) return { input_tokens: 0, output_tokens: 0 };
+    throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.USAGE_INVALID);
+  }
+  if (!isPlainRecord(usage) || !Number.isInteger(usage.input_tokens) || usage.input_tokens < 0
+    || !Number.isInteger(usage.output_tokens) || usage.output_tokens < 0) {
+    throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.USAGE_INVALID);
+  }
+  return { input_tokens: usage.input_tokens, output_tokens: usage.output_tokens };
+}
+
+/**
+ * Task 6A1: drives one durable-batched V3 analysis run across the Task-4 batch plan. For each
+ * batch in order: a checkpoint load (revalidated through the caller's own `validateCheckpoint`)
+ * either reuses a canonical prior output or executes bounded provider attempts, each guarded by
+ * an awaited `beforeBoundary` heartbeat and a stable per-batch provider idempotency key; a fresh
+ * result is written through a second heartbeat-guarded checkpoint store. Only after every batch
+ * is accounted for are `mergeBatches` and `finalizeEnvelope` called, exactly once each, in that
+ * order. Any failure anywhere — config, plan coherence, a boundary, an exhausted/non-retryable
+ * batch, a checkpoint hook — stops the run immediately with zero merge/finalize and rejects with
+ * this helper's own fixed safe text and closed code, never the upstream error's text.
+ */
+export async function runAgt002BatchedV3Orchestration({
+  plan,
+  batches,
+  priorUsage = null,
+  idempotencyKey,
+  signal,
+  checkpointHooks,
+  beforeBoundary,
+  executeBatch,
+  validateCheckpoint,
+  mergeBatches,
+  finalizeEnvelope,
+  recordProgress,
+  maxBatchAttempts = 3,
+  isRetryableError,
+  now = () => Date.now(),
+} = {}) {
+  if (
+    !nonEmpty(idempotencyKey)
+    || !checkpointHooks || typeof checkpointHooks.loadCheckpoint !== 'function' || typeof checkpointHooks.storeCheckpoint !== 'function'
+    || typeof beforeBoundary !== 'function'
+    || typeof executeBatch !== 'function'
+    || typeof validateCheckpoint !== 'function'
+    || typeof mergeBatches !== 'function'
+    || typeof finalizeEnvelope !== 'function'
+    || typeof recordProgress !== 'function'
+    || typeof isRetryableError !== 'function'
+    || !isPositiveInteger(maxBatchAttempts)
+    || typeof now !== 'function'
+  ) {
+    throw safe(SAFE_BATCHED_V3_CONFIG_INVALID, { code: AGT002_BATCHED_V3_CODES.CONFIG_INVALID });
+  }
+
+  const pairs = validateAgt002BatchedV3Plan(plan, batches);
+
+  if (signal && typeof signal === 'object' && signal.aborted === true) {
+    throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.ABORTED);
+  }
+
+  const priorCounts = extractAgt002BatchedV3UsageCounts(priorUsage, { allowMissing: true });
+  let inputTokens = priorCounts.input_tokens;
+  let outputTokens = priorCounts.output_tokens;
+  const outputs = [];
+
+  async function crossBoundary(boundary, batchIndex) {
+    try {
+      await beforeBoundary({ boundary, batchIndex });
+    } catch (error) {
+      // Only the exact, closed lease-lost codes are ever recognized and forwarded byte-for-byte
+      // (never a copy of an arbitrary upstream code): a lost stage-boundary lease means the
+      // guarded operation never happened at all, distinct from every other heartbeat/RPC failure
+      // at this same boundary, which stays the generic closed BOUNDARY_FAILED below.
+      if (AGT002_BATCHED_V3_LEASE_LOST_CODES.has(error?.code)) {
+        throw agt002BatchedV3Error(error.code, 'lease_renewal');
+      }
+      throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.BOUNDARY_FAILED, 'persistence');
+    }
+  }
+
+  for (const { planBatch, runtimeBatch } of pairs) {
+    const batchIndex = planBatch.batch_index;
+
+    let checkpointHit;
+    try {
+      checkpointHit = await checkpointHooks.loadCheckpoint({
+        stage: AGT002_BATCHED_V3_STAGE,
+        batchIndex,
+        expectedRequestHash: planBatch.request_hash,
+        // Batch-specific revalidation: a stored checkpoint's canonical output is only ever a hit
+        // when it passes THIS batch's own contract, never a generic single-arg check with no
+        // batch context (see runAgt002BatchedV3Analysis's own validateCheckpoint below for why).
+        validate: output => validateCheckpoint(output, { batch: runtimeBatch, planBatch, batchIndex }),
+      });
+    } catch {
+      throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.CHECKPOINT_FAILED, 'persistence');
+    }
+
+    if (checkpointHit && checkpointHit.hit) {
+      // A corrupted checkpoint's usage is a checkpoint/persistence defect, never a provider
+      // output defect — it must never be classified as if the provider itself sent bad usage.
+      let usage;
+      try {
+        usage = extractAgt002BatchedV3UsageCounts(checkpointHit.usage);
+      } catch {
+        throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.CHECKPOINT_FAILED, 'persistence');
+      }
+      inputTokens += usage.input_tokens;
+      outputTokens += usage.output_tokens;
+      outputs.push(checkpointHit.output);
+      recordProgress({
+        kind: 'batch_checkpoint_hit',
+        batchIndex,
+        batchCount: plan.batch_count,
+        requestHash: planBatch.request_hash,
+        checkpointReused: true,
+        inputTokens: usage.input_tokens,
+        outputTokens: usage.output_tokens,
+      });
+      continue;
+    }
+
+    const providerIdempotencyKey = agt002BatchedV3ProviderIdempotencyKey({
+      idempotencyKey, batchIndex, requestHash: planBatch.request_hash,
+    });
+
+    // Deterministic per-batch start, sampled through the caller's own injected `now` (never
+    // Date.now() directly) so batch_completed's durationMs stays reproducible under test.
+    const batchStartedAt = now();
+    let fresh = null;
+    for (let attempt = 1; attempt <= maxBatchAttempts; attempt += 1) {
+      await crossBoundary('provider_call', batchIndex);
+      try {
+        fresh = await executeBatch({
+          batch: runtimeBatch, planBatch, providerIdempotencyKey, priorUsage, signal, attempt,
+        });
+        break;
+      } catch (batchError) {
+        let retryable = false;
+        try { retryable = isRetryableError(batchError) === true; } catch { retryable = false; }
+        if (attempt < maxBatchAttempts && retryable) {
+          recordProgress({
+            kind: 'batch_attempt_retry',
+            batchIndex,
+            batchCount: plan.batch_count,
+            requestHash: planBatch.request_hash,
+            attempt,
+            retryCount: attempt,
+          });
+          continue;
+        }
+        throw classifyAgt002BatchedV3ExecuteBatchFailure(batchError);
+      }
+    }
+    if (!isPlainRecord(fresh) || !isPlainRecord(fresh.output)) {
+      throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.BATCH_FAILED);
+    }
+
+    await crossBoundary('checkpoint_write', batchIndex);
+    const outputSha256 = agt002BatchedV3CanonicalSha256(fresh.output);
+    try {
+      await checkpointHooks.storeCheckpoint({
+        stage: AGT002_BATCHED_V3_STAGE,
+        batchIndex,
+        requestHash: planBatch.request_hash,
+        stageContractVersion: plan.contract_version,
+        output: fresh.output,
+        outputSha256,
+        usage: fresh.usage,
+        providerIdempotencyKey,
+        progressPhase: 'integral_analysis',
+        completedBatchCount: batchIndex + 1,
+        totalBatchCount: plan.batches.length,
+      });
+    } catch {
+      throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.CHECKPOINT_FAILED, 'persistence');
+    }
+
+    // A fresh batch's own usage counts, straight from the just-completed provider turn: a shape
+    // defect here is a provider-output defect, tagged the same closed `usage` stage runOnce/
+    // runOnceV3 already attach to a malformed usage block.
+    let usage;
+    try {
+      usage = extractAgt002BatchedV3UsageCounts(fresh.usage);
+    } catch {
+      throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.VALIDATION_INVALID, AGT002_OUTPUT_REJECTION_STAGES.USAGE);
+    }
+    inputTokens += usage.input_tokens;
+    outputTokens += usage.output_tokens;
+    outputs.push(fresh.output);
+    const durationMs = Math.max(0, Math.round(now() - batchStartedAt));
+    const providerRequestId = safeAgt002BatchedV3ProviderRequestId(fresh.providerRequestId);
+    recordProgress({
+      kind: 'batch_completed',
+      batchIndex,
+      batchCount: plan.batch_count,
+      requestHash: planBatch.request_hash,
+      checkpointReused: false,
+      inputTokens: usage.input_tokens,
+      outputTokens: usage.output_tokens,
+      durationMs,
+      ...(providerRequestId !== undefined ? { providerRequestId } : {}),
+    });
+  }
+
+  let merged;
+  try {
+    merged = await mergeBatches(outputs);
+  } catch {
+    throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.MERGE_FAILED, 'envelope');
+  }
+  recordProgress({ kind: 'batches_merged' });
+
+  const usage = { input_tokens: inputTokens, output_tokens: outputTokens };
+  try {
+    const result = await finalizeEnvelope({ merged, usage });
+    recordProgress({ kind: 'batches_finalized' });
+    return result;
+  } catch {
+    throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.FINALIZE_FAILED, 'envelope');
+  }
+}
+
+// --------------------------------------------------------------------------------
+// AGT-002 durable batched V3 analysis (Task 6A3): the real `batchedV3Orchestrator` default
+// createAgt002PreviewEngine's constructor now wires in (see above). Assembles ONE durable-batched
+// V3 run — planning (Task 4's real planAgt002IntegralAnalysisBatches/projectAgt002IntegralAnalysisBatch),
+// per-batch provider turns projected/validated through the exact Task-5 batch contract
+// (buildAgt002IntegralAnalysisV3BatchOutputJsonSchema/validateAgt002PreviewModelOutputV3Batch) and a
+// final merge (mergeAgt002IntegralAnalysisV3Batches) into the standard completed V3 envelope — by
+// driving the generic runAgt002BatchedV3Orchestration above. Never touches a database or any other
+// persistence layer directly: every durable boundary is the caller's own injected `checkpointHooks`,
+// exactly as runAgt002BatchedV3Orchestration already requires; never issues an independent retry loop
+// of its own either — every provider attempt is one single executeBatch call, and
+// runAgt002BatchedV3Orchestration alone decides whether/when to call it again.
+// --------------------------------------------------------------------------------
+
+// The ONLY retryable executeBatch failure: the bridge's own exact transport-timeout code — the
+// same precedent tender-semantic-discovery.js's per-batch retry loop already established (see its
+// TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS usage). A semantically invalid model turn (missing/
+// non-JSON content, a rejected batch contract) is never retried: retrying it would just repeat the
+// same wrong answer, never fix it.
+function isAgt002BatchedV3RetryableTransportError(error) {
+  return error?.code === 'AGT002_CODEX_TIMEOUT';
+}
+
+export async function runAgt002BatchedV3Analysis({
+  previewInput,
+  validationContext,
+  priorUsage = null,
+  model,
+  policy,
+  policyVersion,
+  timeoutMs,
+  signal,
+  effort,
+  checkpointHooks,
+  beforeProviderCall,
+  idempotencyKey,
+  client,
+  idGenerator = randomUUID,
+  contextVersionId = null,
+  legalCorpusVersionId = null,
+  governanceProvenanceForRun = {},
+  manifestScope = null,
+  maxInputTokens = AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS,
+  maxRequirementsPerBatch = 12,
+  recordProgress = () => {},
+} = {}) {
+  if (
+    !client || typeof client.run !== 'function'
+    || !isPlainRecord(previewInput) || !isPlainRecord(previewInput.document_evidence)
+    || !isPlainRecord(validationContext)
+    || !Array.isArray(validationContext.requirementManifest) || !Array.isArray(validationContext.evidenceStateManifest)
+    || !nonEmpty(model) || !nonEmpty(policy) || !nonEmpty(policyVersion)
+    || !Number.isInteger(timeoutMs) || timeoutMs <= 0
+    || !isAgt002PreviewReasoningEffort(effort)
+    || !checkpointHooks || typeof checkpointHooks.loadCheckpoint !== 'function' || typeof checkpointHooks.storeCheckpoint !== 'function'
+    || !nonEmpty(idempotencyKey)
+    || typeof idGenerator !== 'function'
+    || !isPositiveInteger(maxInputTokens) || !isPositiveInteger(maxRequirementsPerBatch)
+    || typeof recordProgress !== 'function'
+  ) {
+    throw safe(SAFE_BATCHED_V3_CONFIG_INVALID, { code: AGT002_BATCHED_V3_CODES.CONFIG_INVALID });
+  }
+
+  // The SAME governed input every provider turn of this run is projected from: built once, from
+  // the FULL previewInput (never a batch/summary projection — the planner needs the complete
+  // requirement/inventory ledgers to decide how to split them), via the existing
+  // withRequirementGovernedFields also used by runOnceV3 above.
+  const governedInput = withRequirementGovernedFields(previewInput, validationContext.requirementManifest, validationContext.evidenceStateManifest);
+  // A conservative stand-in for token estimation only: the real, narrower per-batch schema
+  // (buildAgt002IntegralAnalysisV3BatchOutputJsonSchema) cannot exist yet — no batch exists until
+  // planning decides one — so the wider full-turn schema is used, which never under-counts a
+  // batch's eventual real request size.
+  const planningSchema = buildAgt002IntegralAnalysisV3OutputJsonSchema(validationContext);
+
+  let plan;
+  let batches;
+  try {
+    ({ plan, batches } = planAgt002IntegralAnalysisBatches({
+      previewInput: governedInput,
+      validationContext,
+      model,
+      policy,
+      outputSchema: planningSchema,
+      maxInputTokens,
+      maxRequirementsPerBatch,
+    }));
+  } catch {
+    throw safe(SAFE_BATCHED_V3_PLAN_INCOHERENT, { code: AGT002_BATCHED_V3_CODES.PLAN_INCOHERENT });
+  }
+
+  // Each batch's own projected `citation_allowlist` (governed, batch-scoped) is derived once, up
+  // front, from the SAME real Task-4 projector executeBatch uses below — never invented here — so
+  // a checkpoint-hit revalidation (which never calls executeBatch) still has the exact allowlist
+  // its stored output was originally validated against.
+  const runtimeBatches = batches.map(batch => ({
+    ...batch,
+    citation_allowlist: projectAgt002IntegralAnalysisBatch({ previewInput: governedInput, batch }).document_evidence.citation_allowlist,
+  }));
+
+  async function executeBatch({ batch, providerIdempotencyKey, signal: batchSignal }) {
+    const projectedInput = projectAgt002IntegralAnalysisBatch({ previewInput: governedInput, batch });
+    // The only place this projection is ever enabled for a batch turn: the durable envelope
+    // (finalizeEnvelope below, built from the ORIGINAL previewInput) keeps the two per-source-unit
+    // audit ledgers in full; the provider receives only their server-derived structural summary —
+    // exactly as the single-turn discovered path (runOnceV3's projectSemanticFrontierSummary) does.
+    const modelInput = projectAgt002DiscoveredModelInput(projectedInput);
+    const batchOutputSchema = buildAgt002IntegralAnalysisV3BatchOutputJsonSchema(validationContext, batch);
+
+    if (beforeProviderCall) await beforeProviderCall();
+    const raw = await client.run({
+      model, policy, input: modelInput, outputSchema: batchOutputSchema,
+      timeoutMs, idempotencyKey: providerIdempotencyKey, signal: batchSignal, effort,
+    });
+
+    // Same content_extraction/json_parse/semantic_validation/usage discipline as runOnce/runOnceV3
+    // above, each tagged with the SAME closed AGT002_OUTPUT_REJECTION_STAGES literal: this helper's
+    // caller (runAgt002BatchedV3Orchestration's classifyAgt002BatchedV3ExecuteBatchFailure) recodes
+    // any of these onto its own closed invalid-output code, preserving only the stage — never the
+    // upstream message/cause — so a rejection stays attributable to content/JSON/semantic/usage
+    // without ever risking a leak. Only isRetryableError ever inspects a thrown error's `.code`
+    // before that, and it recognizes exactly one narrow transport code, never any of these.
+    if (typeof raw?.content !== 'string' || !raw.content.trim()) {
+      throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.BATCH_FAILED, AGT002_OUTPUT_REJECTION_STAGES.CONTENT_EXTRACTION);
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(raw.content);
+    } catch {
+      throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.BATCH_FAILED, AGT002_OUTPUT_REJECTION_STAGES.JSON_PARSE);
+    }
+
+    let validated;
+    try {
+      validated = validateAgt002PreviewModelOutputV3Batch(parsed, { validationContext, batch });
+    } catch {
+      throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.BATCH_FAILED, AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION);
+    }
+
+    // A provider request id is surfaced ONLY from an explicit short-string response metadata
+    // field — never guessed from response content — and is simply absent when the provider
+    // doesn't supply one; the caller (runAgt002BatchedV3Orchestration) already treats it as optional.
+    const providerRequestId = safeAgt002BatchedV3ProviderRequestId(raw.provider_request_id ?? raw.request_id);
+    let freshUsage;
+    try {
+      freshUsage = extractAgt002BatchedV3UsageCounts(raw.usage);
+    } catch {
+      throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.USAGE_INVALID, AGT002_OUTPUT_REJECTION_STAGES.USAGE);
+    }
+    return {
+      output: validated,
+      usage: freshUsage,
+      ...(providerRequestId !== undefined ? { providerRequestId } : {}),
+    };
+  }
+
+  // Batch-specific checkpoint revalidation (never the single-arg `validateCheckpoint(output)` a
+  // generic helper might otherwise assume): runAgt002BatchedV3Orchestration passes this batch's
+  // own `{ batch, planBatch, batchIndex }` alongside the stored output, so a checkpoint hit is
+  // revalidated against the SAME Task-5 batch contract (allowlist/coverage/shape) its fresh
+  // execution would be, never a looser or stale one.
+  function validateCheckpoint(output, { batch }) {
+    return validateAgt002PreviewModelOutputV3Batch(output, { validationContext, batch });
+  }
+
+  function mergeBatches(outputs) {
+    return mergeAgt002IntegralAnalysisV3Batches(outputs, validationContext);
+  }
+
+  // The single heartbeat this run has, renewed before EVERY boundary (both the provider call and
+  // the checkpoint write) — exactly like beforeProviderCall already renews before every provider
+  // turn this engine itself takes elsewhere (runOnce/runOnceV3 above). `undefined` (no hook
+  // configured) means no heartbeat is awaited, matching every other call site in this file.
+  async function beforeBoundary() {
+    if (beforeProviderCall) await beforeProviderCall();
+  }
+
+  // Built only after mergeBatches — never per-batch — from the merged analysis, assembling the
+  // same standard completed-V3 envelope fields runOnceV3 assembles above.
+  function finalizeEnvelope({ merged, usage }) {
+    return {
+      schema_version: AGT002_INTEGRAL_ENVELOPE_SCHEMA_VERSION,
+      agent_id: 'AGT-002',
+      run_id: idGenerator(),
+      policy_version: policyVersion,
+      snapshot_id: previewInput.snapshot_id,
+      context_version_id: contextVersionId,
+      status: 'completed',
+      method: 'agent_ai',
+      integral_analysis: merged,
+      ...(manifestScope ? { manifest_scope: manifestScope } : {}),
+      // The ORIGINAL, complete previewInput — never the batched/summary-projected requests the
+      // provider actually saw — so the durable coverage/manifest this envelope persists is built
+      // from the full expediente, exactly like the single-turn discovered path already does.
+      evidence_coverage: buildEvidenceCoverage(previewInput, merged),
+      legal_corpus_version_id: legalCorpusVersionId,
+      human_review_required: true,
+      v2_projection: projectAgt002IntegralV3ToV2(merged),
+      ...(Object.keys(governanceProvenanceForRun).length ? { governance_provenance: governanceProvenanceForRun } : {}),
+      usage: {
+        provider: 'codex_app_server',
+        model,
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        rate_limit: null,
+      },
+    };
+  }
+
+  return runAgt002BatchedV3Orchestration({
+    plan,
+    batches: runtimeBatches,
+    priorUsage,
+    idempotencyKey,
+    signal,
+    checkpointHooks,
+    beforeBoundary,
+    executeBatch,
+    validateCheckpoint,
+    mergeBatches,
+    finalizeEnvelope,
+    recordProgress,
+    isRetryableError: isAgt002BatchedV3RetryableTransportError,
+  });
 }

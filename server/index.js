@@ -47,7 +47,7 @@ import { isCriticalTenderDocument } from '../tender-critical-documents.js';
 import { selectTenderOfficialDocuments, tenderOfficialCoverageGaps } from '../tender-official-document-coverage.js';
 import { safeOfficialFetch, validateOfficialHttpsUrl } from '../safe-official-fetch.js';
 import { AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
-import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, appendAgt002AnalysisAttempt, claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, getLatestAgt002AnalysisAttempt, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim } from '../agt002-preview-persistence.js';
+import { AGT002_INTEGRAL_V3_CONTRACT_VERSION, appendAgt002AnalysisAttempt, claimAgt002PreviewRun, computeAgt002PreviewIdempotencyKey, countAgt002PreviewRunsToday, findAgt002PreviewRun, getLatestAgt002AnalysisAttempt, registerAgt002PreviewAnalysis, releaseAgt002PreviewClaim, renewAgt002PreviewClaim } from '../agt002-preview-persistence.js';
 import { getAgt002WorkbenchApi, postAgt002LearningReviewApi, postAgt002MessageApi, postAgt002RetryApi } from '../agt002-workbench-api.js';
 import { isAgt002WorkbenchApiEnabled, isAgt002WorkbenchDrainEnabled, createAgt002WorkbenchDrain } from '../agt002-workbench-runtime.js';
 import { isTenderTrackableStatus, normalizeTenderStatusText, officialTenderStatus } from '../tender-source-status.js';
@@ -62,6 +62,7 @@ import { runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability
 import { AGT002_OPPORTUNITY_CONTEXT_SELECT, loadAgt002OpportunityContextV2 } from '../agt002-opportunity-context-v2.js';
 import { loadAgt002CompanyDossier } from '../agt002-company-dossier.js';
 import { loadAgt002CompanyEvidenceRegistryEntries } from '../agt002-company-evidence-classes.js';
+import { loadAgt002CompanyEvidenceInventorySnapshot } from '../agt002-company-evidence-sharepoint-catalog.js';
 import { loadAgt002IntegralGovernanceOverrides } from '../agt002-integral-governance-overrides.js';
 import { buildAgt002CompanyEvidenceIdentity, deriveAgt002CompanyEvidenceAsOf } from '../agt002-company-evidence-identity.js';
 import {
@@ -165,8 +166,9 @@ async function loadAgt002LegalCorpusContextIfEnabled(database) {
 // on any malformed curated row.
 async function loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId) {
   if (!agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3) return null;
-  const [companyEvidenceRegistryEntries, governanceOverrides] = await Promise.all([
+  const [companyEvidenceRegistryEntries, companyEvidenceInventorySnapshot, governanceOverrides] = await Promise.all([
     loadAgt002CompanyEvidenceRegistryEntries(database),
+    loadAgt002CompanyEvidenceInventorySnapshot(database),
     loadAgt002IntegralGovernanceOverrides(database, opportunityId),
   ]);
   // F3/F4: the run-binding company evidence identity, re-derived every load from these SAME
@@ -181,7 +183,7 @@ async function loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId) 
   let evidenceIdentity;
   try {
     evidenceAsOf = deriveAgt002CompanyEvidenceAsOf(companyEvidenceRegistryEntries);
-    evidenceIdentity = buildAgt002CompanyEvidenceIdentity({ registryEntries: companyEvidenceRegistryEntries, asOf: new Date(evidenceAsOf) });
+    evidenceIdentity = buildAgt002CompanyEvidenceIdentity({ registryEntries: companyEvidenceRegistryEntries, inventorySnapshot: companyEvidenceInventorySnapshot, asOf: new Date(evidenceAsOf) });
   } catch {
     const boundaryError = new Error('AGT-002: el registro de evidencia empresarial no está disponible.');
     boundaryError.runtime_boundary_code = 'AGT002_RUNTIME_COMPANY_EVIDENCE_INVALID';
@@ -189,6 +191,7 @@ async function loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId) 
   }
   return {
     companyEvidenceRegistryEntries,
+    companyEvidenceInventorySnapshot,
     categoryOverrides: governanceOverrides.categoryOverrides,
     evidenceClassLinkByRequirementId: governanceOverrides.evidenceClassLinkByRequirementId,
     governanceProvenance: governanceOverrides.provenance,
@@ -1599,6 +1602,24 @@ function radarVisibilityLedgerUnavailable() {
   error.status = 503;
   return error;
 }
+// NO-GO is a business decision on the linked opportunity, never on the tender row itself: it is
+// archival (the expediente, analysis and decision history all stay queryable elsewhere), not
+// deletion, and it must not be conflated with expiry or with other "closed" outcomes like
+// adjudicada/no_adjudicada. `tender_offer_status` is the single column psi_record_tender_go_no_go
+// (migration 022) keeps authoritative on every decision write, including reversals, so reading it
+// here avoids re-deriving the supersession chain.
+async function readNoGoOpportunityIds(database, rows) {
+  const opportunityIds = Array.from(new Set(rows.filter(isConvertedTenderRecord).map(row => row.converted_opportunity_id).filter(Boolean)));
+  if (!opportunityIds.length) return new Set();
+  let opportunities;
+  try {
+    opportunities = await must(database.from('psi_sales_opportunities').select('id,tender_offer_status').in('id', opportunityIds));
+  } catch {
+    console.warn('tender_radar_no_go_lookup_failed', { event: 'tender_radar_no_go_lookup_failed' });
+    return new Set();
+  }
+  return new Set((opportunities || []).filter(opportunity => opportunity.tender_offer_status === 'cerrada_no_go').map(opportunity => opportunity.id));
+}
 async function readPersistedTenderRadar(database) {
   const latestRunResult = await database.from('psi_tender_radar_runs').select('run_at,mode').order('run_at', { ascending: false }).limit(1).maybeSingle();
   if (latestRunResult.error && !isMissingTenderTable(latestRunResult.error)) throw latestRunResult.error;
@@ -1648,7 +1669,10 @@ async function readPersistedTenderRadar(database) {
       enabled: true,
     });
   }
-  const rows = visibleRows.map(dbTenderToPublic).filter(t => isConvertedTenderRecord(t) || !['SECOP I','SECOP II'].includes(t.source) || hasTenderServiceSignal(t)).sort((a,b) => {
+  const noGoOpportunityIds = await readNoGoOpportunityIds(database, visibleRows);
+  const rows = visibleRows
+    .filter(row => !isConvertedTenderRecord(row) || !noGoOpportunityIds.has(row.converted_opportunity_id))
+    .map(dbTenderToPublic).filter(t => isConvertedTenderRecord(t) || !['SECOP I','SECOP II'].includes(t.source) || hasTenderServiceSignal(t)).sort((a,b) => {
     const statusOrder = { nueva: 0, en_revision: 1, convertida_oportunidad: 2, descartada: 3 };
     const sectionOrder = { hacer: 0, revisar: 1, prioridad_baja: 2 };
     return (statusOrder[a.internal_status] ?? 9) - (statusOrder[b.internal_status] ?? 9) || sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score;
@@ -3787,9 +3811,12 @@ function buildTenderProcessingWorkerDeps(database) {
           environment: process.env,
           countDailyRuns: () => countAgt002PreviewRunsToday(database),
           manizalesManifestSource: await selectAgt002ManizalesManifestForTender(database, { opportunityId, tenderId }),
+          database,
+          previewClaim: { idempotencyKey, claimId, leaseSeconds: config.leaseSeconds },
           legalCorpusContext,
           ...(integralV3Governance ? {
             companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
+            companyEvidenceInventorySnapshot: integralV3Governance.companyEvidenceInventorySnapshot,
             companyEvidenceAsOf: integralV3Governance.evidenceAsOf,
             categoryOverrides: integralV3Governance.categoryOverrides,
             evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,
@@ -3798,6 +3825,7 @@ function buildTenderProcessingWorkerDeps(database) {
           } : {}),
         });
         const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, documentGaps, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
+        await renewAgt002PreviewClaim(database, { idempotencyKey, claimId, leaseSeconds: config.leaseSeconds });
         const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly, context_version_id: contextVersion?.id, expectedManifestScope: engine.manifestScope ?? null, expectedIdempotencyKey: idempotencyKey, requireTenderRequirementInventory: documentRetrieval, semanticSourceDocuments: analysisDocuments, evidenceIdentity: integralV3Governance?.evidenceIdentity ?? null });
         if (canonicalOnly) await appendAttempt(idempotencyKey, 'completed', { analysis_run_id: registeredRun.run_id });
         return { status: 'completed', analysisRunId: registeredRun.run_id };
@@ -4489,9 +4517,12 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
           manizalesManifestSource: await selectAgt002ManizalesManifestForTender(database, { opportunityId, tenderId }),
           onBridgeInvocationStarted: () => { bridgeTelemetry.invocationStarted = true; },
           onBridgeResponseReceived: () => { bridgeTelemetry.responseReceived = true; },
+          database,
+          previewClaim: { idempotencyKey, claimId, leaseSeconds: config.leaseSeconds },
           legalCorpusContext,
           ...(integralV3Governance ? {
             companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,
+            companyEvidenceInventorySnapshot: integralV3Governance.companyEvidenceInventorySnapshot,
             companyEvidenceAsOf: integralV3Governance.evidenceAsOf,
             categoryOverrides: integralV3Governance.categoryOverrides,
             evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,
@@ -4500,6 +4531,7 @@ app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {
           } : {}),
         });
       const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, documentGaps, companyProfile, deepAnalysis, snapshotId: registeredSnapshot.id, canonicalOnly: false, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
+      await renewAgt002PreviewClaim(database, { idempotencyKey, claimId, leaseSeconds: config.leaseSeconds });
       const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: registeredSnapshot.id, envelope, canonicalOnly: false, context_version_id: null, expectedManifestScope: engine.manifestScope ?? null, expectedIdempotencyKey: idempotencyKey, requireTenderRequirementInventory: documentRetrieval, semanticSourceDocuments: analysisDocuments, evidenceIdentity: integralV3Governance?.evidenceIdentity ?? null });
       const payload = await getTenderDocumentRecords(database, opportunityId);
       return res.json({ ...payload, analysis: presentCurrentTenderAnalysis(registeredRun), analysis_engine: { requested: 'AGT-002', used: 'AGT-002', fallback: false, state: 'completed', reused: false, human_review_required: true } });

@@ -109,12 +109,15 @@ function proposalWith(requirements, derivedOwnerIds) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v6',
-    'the wire contract this catalog feeds is v6: the label enum is pinned, a requirement carries no '
+    'tender-semantic-discovery.v9',
+    'the wire contract this catalog feeds is v9: the label enum is pinned, a requirement carries no '
     + 'model-provided source id (the server derives front_evidence/citations from this same catalog), '
     + 'an undispositioned source unit is completed into unresolved instead of rejecting the turn, the '
-    + 'disposition lists themselves are optional, and an exact repetition of one catalog label is '
-    + 'canonicalized once — each a material model-facing change that must bump the policy version',
+    + 'disposition lists themselves are optional, an exact repetition of one catalog label is '
+    + 'canonicalized once, the input is now one of possibly several batches (batch index/count) '
+    + 'instead of a single request, a self-contradicting claim is retracted instead of rejecting '
+    + 'the whole batch, and the per-batch source-char budget (and therefore the batch plan itself) '
+    + 'was lowered — each a material model-facing change that must bump the policy version',
   );
   assert.match(
     TENDER_SEMANTIC_DISCOVERY_POLICY,
@@ -186,8 +189,8 @@ let capturedRequest;
   // Output object keys are preserved exactly.
   assert.deepEqual(
     Object.keys(result).sort(),
-    ['categoryOverrides', 'semanticManifest', 'usage'],
-    'the discoverer must keep returning exactly {semanticManifest, categoryOverrides, usage}',
+    ['categoryOverrides', 'discoveryLedger', 'semanticManifest', 'usage'],
+    'the discoverer must keep returning exactly {semanticManifest, categoryOverrides, usage, discoveryLedger}',
   );
 
   const labelSchema = labelSchemaOf(capturedRequest);
@@ -321,8 +324,9 @@ let capturedRequest;
 
 // The enum is global to the request, so it still cannot express "this excerpt belongs to unit X".
 // Under v3 that is no longer a relation the model can get wrong: it names no unit, and the catalog
-// itself decides. A candidate exclusive to the anchor unit is bound to THAT unit, and a proposal
-// that disposes of the derived owner elsewhere is rejected fail-closed rather than reconciled.
+// itself decides. A candidate exclusive to the anchor unit is bound to THAT unit, and under v8 a
+// proposal that disposes of the derived owner elsewhere is retracted rather than reconciled OR
+// rejected — the citation is never moved.
 {
   const otherUnitIds = inventory.source_units
     .map(unit => unit.source_unit_id)
@@ -342,12 +346,19 @@ let capturedRequest;
   );
 
   // The same proposal, with the anchor unit dispositioned as if some other unit owned the label:
-  // the server does not move the citation, it rejects the whole proposal.
-  await assert.rejects(
-    () => run(capturingClient(proposalWith([requirement], [otherUnitIds[0]]))),
-    /disposición duplicada/,
-    'a unit the catalog binds to a label may not also be dispositioned by the model',
+  // v8 retracts the contradictory disposition instead of rejecting the whole proposal, and the
+  // server still does not move the citation.
+  const contradicted = await run(capturingClient(proposalWith([requirement], [otherUnitIds[0]])));
+  assert.deepEqual(
+    contradicted.semanticManifest.requirements[0].citations.map(citation => citation.source_unit_id),
+    [anchorUnit.source_unit_id],
+    'a unit the catalog binds to a label keeps that citation even when the model also dispositions it',
   );
+  assert.equal(
+    contradicted.semanticManifest.excluded.some(item => item.source_unit_id === anchorUnit.source_unit_id), false,
+    'the contradictory disposition over the anchor unit must leave no trace',
+  );
+  assert.equal(contradicted.discoveryLedger.batches[0].retracted_disposition_units, 1);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -375,6 +386,11 @@ let capturedRequest;
     idempotencyKey: 'idem-label-catalog-noisy',
     inventory: noisyInventory,
     documents: noisyDocuments,
+    // Deliberately pinned above the production default (see
+    // tender-semantic-discovery-v9-batch-size-default.test.mjs, which pins that default at
+    // 20_000): this scenario is stressing the catalog's own independent global candidate/count/
+    // character bounds, which need >100 units in the first batch to bite at all.
+    maxSourceChars: 40_000,
     // v5 rejects this empty proposal at the discovery boundary (`v5_discovery_no_requirements`)
     // AFTER the provider call; the catch keeps the captured request — the actual subject here — as
     // what the assertions read, exactly as it did when v4 completed the same proposal instead.
@@ -780,6 +796,85 @@ for (const [variant, textA, winner, textB] of [
     );
     assert.deepEqual([...owners], [ordinaryId], 'only the ordinary unit may own anything in this fixture');
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// AGT-002 V7 regression: global count-cap starvation. The round-major allocation used to add a
+// SECOND (extra-granularity) candidate for units that already own one before it ever revisited a
+// unit whose FIRST candidate lost the global obligation-key collision. Once the global count cap
+// (`max(unitCount, TENDER_SEMANTIC_LABEL_CANDIDATES_TOTAL_FLOOR)`) is exhausted by those extra
+// candidates before the traversal circles back, a unit with a perfectly good, non-colliding SECOND
+// candidate is reported as a BUDGET loss (`units_dropped_by_budget`) even though it is really a
+// coverage-ordering bug: raising `maxCatalogChars` cannot fix it, because the binding constraint is
+// the COUNT cap, not characters. Real preflight symptom: 18 batches of ~600 visible units each,
+// batch index 10 failing closed with `units_dropped_by_budget.length === 2`. Fixed synthetic
+// analogue below: 620 units (over the 600 floor, so the floor is the binding cap), two independent
+// obligation-key collisions whose losers each own a genuine, non-colliding second candidate.
+// ---------------------------------------------------------------------------------------------
+{
+  const FILLER_COUNT = 616;
+  const fillerUnit = index => {
+    const text = `El proveedor numero ${index} debera entregar el documento tecnico especial identificado con el codigo ALFA${index} antes del vencimiento del plazo estipulado en el pliego de condiciones correspondiente.`;
+    return { source_unit_id: `unit:filler-${index}`, text, source_text: text };
+  };
+  const fillers = Array.from({ length: FILLER_COUNT }, (_, index) => fillerUnit(index));
+
+  // Two independent obligation-key collisions. Each loser's ROUND-0 candidate (its whole text)
+  // collides with its winner's, but each loser also owns a genuinely distinct, non-colliding
+  // candidate at round 1 (a word-window sub-span of its own text) — exactly the "genuinely
+  // recoverable, not a real budget loss" case this bug must not misclassify.
+  const collisionPair = (name, winnerText, loserText) => {
+    assert.notEqual(winnerText, loserText, `fixture sanity (${name}): literal forms must differ`);
+    assert.equal(
+      tenderSemanticObligationKey(winnerText), tenderSemanticObligationKey(loserText),
+      `fixture sanity (${name}): forms must fold to the same obligation key`,
+    );
+    return [
+      { source_unit_id: `unit:${name}-winner`, text: winnerText, source_text: winnerText },
+      { source_unit_id: `unit:${name}-loser`, text: loserText, source_text: loserText },
+    ];
+  };
+  const [pair1Winner, pair1Loser] = collisionPair(
+    'pair1',
+    'Vigilancia hospitalaria permanente las veinticuatro horas del dia en todas las sedes asignadas por la entidad contratante durante todo el periodo contractual vigente.',
+    'vigilancia hospitalaria permanente las veinticuatro horas del dia en todas las sedes asignadas por la entidad contratante durante todo el periodo contractual vigente',
+  );
+  const [pair2Winner, pair2Loser] = collisionPair(
+    'pair2',
+    'Mantenimiento preventivo mensual de todos los equipos biomedicos instalados en la sede principal del hospital durante la vigencia del contrato suscrito.',
+    'mantenimiento preventivo mensual de todos los equipos biomedicos instalados en la sede principal del hospital durante la vigencia del contrato suscrito',
+  );
+
+  const units = [...fillers, pair1Winner, pair1Loser, pair2Winner, pair2Loser];
+  const totalCap = Math.max(units.length, TENDER_SEMANTIC_LABEL_CANDIDATES_TOTAL_FLOOR);
+  assert.equal(
+    totalCap, units.length,
+    'fixture sanity: the count-cap floor must be the binding constraint, at exactly the unit count',
+  );
+
+  // A generous character budget in isolation: this pins that raising `maxCatalogChars` alone cannot
+  // fix the bug, since the binding constraint is the COUNT cap, not characters.
+  const catalog = buildTenderSemanticLabelCatalog({ units, maxCatalogChars: 300_000 });
+
+  assert.deepEqual(
+    catalog.units_dropped_by_budget, [],
+    'a unit with a genuinely non-colliding own candidate must not be starved by extra-granularity '
+    + 'candidates the allocation added for already-covered units first',
+  );
+  assert.deepEqual(
+    catalog.units_dropped_by_semantic_collision, [],
+    'both collision losers own a real, non-colliding alternative candidate, so neither is a true semantic-collision loss',
+  );
+  for (const loserId of [pair1Loser.source_unit_id, pair2Loser.source_unit_id]) {
+    const owned = catalog.candidates_by_unit_id.get(loserId);
+    assert.ok(owned && owned.length > 0, `${loserId} must keep owning its own non-colliding alternative candidate`);
+  }
+
+  const obligationKeys = catalog.candidates.map(candidate => tenderSemanticObligationKey(candidate));
+  assert.equal(
+    new Set(obligationKeys).size, obligationKeys.length,
+    'coverage-first allocation must not reintroduce a global obligation-key collision',
+  );
 }
 
 // Existing per-unit candidate behavior is untouched by the global dedup: a unit whose several own

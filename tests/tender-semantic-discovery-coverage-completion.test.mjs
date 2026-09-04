@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { resolveTenderInventorySourceTexts } from '../tender-requirement-inventory.js';
 import {
   discoverTenderSemanticManifest,
+  TENDER_SEMANTIC_DISCOVERY_NO_REQUIREMENTS_CODE,
   TENDER_SEMANTIC_DISCOVERY_POLICY,
   TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
   TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES,
@@ -167,10 +168,13 @@ async function assertRejection(promiseFactory, { code, message }) {
 {
   assert.equal(
     TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-    'tender-semantic-discovery.v6',
-    'the model-facing coverage contract changed again in v5 (dispositions became optional) and v6 '
-    + 'changed how a repeated obligation is canonicalized, each a material change to what the model '
-    + 'is asked for and to how its answer is canonicalized, so the policy version must move',
+    'tender-semantic-discovery.v9',
+    'the model-facing coverage contract changed again in v5 (dispositions became optional), v6 '
+    + 'changed how a repeated obligation is canonicalized, v7 replaced the single request with a '
+    + 'multi-batch input (batch index/count, no more omitted_source_unit_ids), v8 retracts a '
+    + 'self-contradicting claim instead of rejecting the whole batch, and v9 lowers the per-batch '
+    + 'source-char budget (changing the batch plan itself), each a material change to what '
+    + 'the model is asked for and to how its answer is canonicalized, so the policy version must move',
   );
 
   // The exhaustive-enumeration demand is GONE, and no equivalent survives anywhere in the policy.
@@ -391,13 +395,29 @@ function permutationsOf(items) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// 5. An omitted-by-budget unit is completed exactly once, after the visible ones, never duplicated.
+// 5. A small source budget forces multiple provider requests (v7 batching): every source unit is
+//    sent exactly once across all of them, each request carries its own deterministic batch
+//    index/count and no `omitted_source_unit_ids` field, and the final manifest still preserves
+//    every unit exactly once. The label catalog keeps its own ample budget, so this exercises
+//    batching and not the catalog's fail-closed coverage gate.
 // ---------------------------------------------------------------------------------------------
 {
-  // A source budget that fits exactly the first three paragraphs. The label catalog keeps its own
-  // ample budget, so this exercises omission and not the catalog's fail-closed coverage gate.
   const maxSourceChars = PARAGRAPHS.slice(0, 3).reduce((total, paragraph) => total + paragraph.length, 0);
-  const client = fakeClient(baseProposal());
+  // A dynamic, batch-aware client: it builds its proposal from THAT request's own literal label
+  // enum, returning the target requirement only in the batch whose catalog actually contains it,
+  // and an empty proposal otherwise — the only way to answer honestly per batch, since a v7
+  // request no longer declares which units belong to some other batch.
+  const requests = [];
+  const client = {
+    run: async request => {
+      requests.push(request);
+      const enumLabels = request.outputSchema.properties.requirements.items.properties.label.enum;
+      const proposal = enumLabels.includes(LABEL)
+        ? { requirements: [requirement()], excluded: [], unresolved: [] }
+        : { requirements: [], excluded: [], unresolved: [] };
+      return { content: JSON.stringify(proposal), usage: { input_tokens: 2, output_tokens: 3 } };
+    },
+  };
   const budgeted = await discoverTenderSemanticManifest({
     client,
     model: 'test-model',
@@ -409,93 +429,165 @@ function permutationsOf(items) {
     maxLabelCatalogChars: 40_000,
   });
 
-  assert.deepEqual(
-    client.captured.request.input.source_units.map(unit => unit.source_unit_id),
-    unitIdByParagraph.slice(0, 3),
-    'only the first three paragraphs may fit the source budget',
-  );
-  assert.deepEqual(
-    client.captured.request.input.omitted_source_unit_ids,
-    unitIdByParagraph.slice(3),
-    'the remaining paragraphs are declared omitted to the model',
-  );
+  assert.ok(requests.length > 1, 'a small source budget must split the corpus into more than one provider request');
 
-  // Paragraph 2 was visible and unlisted; paragraphs 3/4 were never shown at all. All three are
-  // completed, under the same closed reason, and each appears exactly once.
-  const unresolvedIds = budgeted.semanticManifest.unresolved.map(entry => entry.source_unit_id);
-  assert.equal(new Set(unresolvedIds).size, unresolvedIds.length, 'no unit may be completed twice');
+  const allSentIds = requests.flatMap(request => request.input.source_units.map(unit => unit.source_unit_id));
   assert.deepEqual(
-    [...unresolvedIds].sort(),
-    [...unitIdByParagraph.slice(2)].sort(),
-    'the unlisted visible unit and both omitted units must each be preserved once',
+    [...allSentIds].sort(),
+    [...unitIdByParagraph].sort(),
+    'every source unit must be sent to the provider exactly once across all batch requests',
+  );
+  assert.equal(new Set(allSentIds).size, allSentIds.length, 'no source unit may be sent twice');
+  requests.forEach((request, index) => {
+    assert.deepEqual(
+      request.input.batch,
+      { index, count: requests.length },
+      'each request must carry its own deterministic batch index and the total batch count',
+    );
+    assert.equal(
+      Object.hasOwn(request.input, 'omitted_source_unit_ids'), false,
+      'v7 no longer declares an omitted_source_unit_ids field on the wire',
+    );
+  });
+
+  const requirementCitedIds = new Set(budgeted.semanticManifest.requirements.flatMap(entry => [
+    entry.front_evidence.source_unit_id,
+    ...entry.citations.map(citation => citation.source_unit_id),
+  ]));
+  const excludedIds = new Set(budgeted.semanticManifest.excluded.map(entry => entry.source_unit_id));
+  const unresolvedIds = budgeted.semanticManifest.unresolved.map(entry => entry.source_unit_id);
+  const disposedOnce = [...requirementCitedIds, ...excludedIds, ...unresolvedIds];
+  assert.equal(new Set(disposedOnce).size, disposedOnce.length, 'no unit may be disposed twice in the merged manifest');
+  assert.deepEqual(
+    [...disposedOnce].sort(),
+    [...unitIdByParagraph].sort(),
+    'every unit must be preserved exactly once, whether as a requirement citation, an exclusion or an unresolved entry',
   );
   assert.equal(
     budgeted.semanticManifest.unresolved.every(entry => entry.reason === 'source_unit_not_dispositioned'),
     true,
   );
-  // Visible-then-omitted, each group in packet order — pinned through the canonical proposal hash.
-  assert.equal(
-    budgeted.semanticManifest.proposal_hash,
-    proposalHashForUnresolvedOrder(unitIdByParagraph.slice(2)),
-    'the completion must append the unlisted visible unit before the omitted ones',
-  );
+  assert.equal(requirementCitedIds.has(unitIdByParagraph[0]), true, 'the requirement whose batch could honestly answer it must survive');
   assert.equal(budgeted.semanticManifest.coverage_ledger.every_source_unit_disposed, true);
-  assert.equal(budgeted.semanticManifest.decision_ready, false);
+  assert.equal(
+    budgeted.semanticManifest.decision_ready, false,
+    'the fake client intentionally leaves every other unit unresolved, so the run must stay non-decision-ready',
+  );
 
-  // An omitted unit is not a visible unit, so naming one is still an inventory violation — there is
-  // no path by which a model-supplied entry and the completion could ever both land on it.
+  // A batch response that names a source unit belonging to a DIFFERENT batch is still rejected
+  // fail-closed under the same inventory invariant: each batch's own schema enum only ever admits
+  // that batch's own units, never another batch's.
+  const foreignBatchClient = {
+    run: async request => {
+      const enumLabels = request.outputSchema.properties.requirements.items.properties.label.enum;
+      if (!enumLabels.includes(LABEL)) {
+        return { content: JSON.stringify({ requirements: [], excluded: [], unresolved: [] }), usage: { input_tokens: 2, output_tokens: 3 } };
+      }
+      return {
+        content: JSON.stringify({
+          requirements: [requirement()],
+          excluded: [],
+          unresolved: [{ source_unit_id: unitIdByParagraph[unitIdByParagraph.length - 1], reason: 'obligation_not_classifiable' }],
+        }),
+        usage: { input_tokens: 2, output_tokens: 3 },
+      };
+    },
+  };
   await assertRejection(
-    () => run(
-      {
-        requirements: [requirement()],
-        excluded: [{ source_unit_id: unitIdByParagraph[1], reason: 'descriptive_or_contextual' }],
-        unresolved: [{ source_unit_id: unitIdByParagraph[3], reason: 'obligation_not_classifiable' }],
-      },
-      { maxSourceChars, maxLabelCatalogChars: 40_000 },
-    ),
+    () => discoverTenderSemanticManifest({
+      client: foreignBatchClient,
+      model: 'test-model',
+      timeoutMs: 1000,
+      idempotencyKey: 'idem-coverage-completion-budget-foreign',
+      inventory,
+      documents,
+      maxSourceChars,
+      maxLabelCatalogChars: 40_000,
+    }),
     { code: 'v4_discovery_inventory_invariant', message: /source_unit no permitida/ },
   );
 }
 
 // ---------------------------------------------------------------------------------------------
-// 4. Completing an omission is NOT repairing a claim: every explicit overlap, duplicate and foreign
-//    reference is still rejected fail-closed, exactly as under v3.
+// 4. Completing an omission is NOT repairing a claim. Every CORRUPTION reference (foreign/
+//    hallucinated id, unanchored label) is still rejected fail-closed, exactly as under v3. A
+//    self-CONTRADICTION (v8) is no longer one of those rejections: it is retracted, and its units
+//    fall to the very same completion pass this file otherwise pins — see
+//    tests/tender-semantic-discovery-v8-contradiction-retraction.test.mjs for the whole contract.
 // ---------------------------------------------------------------------------------------------
 {
   // Overlap with a DERIVED citation — the model dispositioned a unit its own label already claims.
+  // v8: retracted, not rejected. The derived citation is never moved, and the retracted disposition
+  // leaves no trace in either list.
   for (const [field, entry] of [
     ['excluded', { source_unit_id: unitIdByParagraph[0], reason: 'duplicate_source_unit' }],
     ['unresolved', { source_unit_id: unitIdByParagraph[0], reason: 'obligation_not_classifiable' }],
   ]) {
-    await assertRejection(
-      () => run({ ...baseProposal(), [field]: [entry] }),
-      { code: 'v4_discovery_uniqueness_invariant', message: /disposición duplicada/ },
+    const proposal = baseProposal();
+    proposal[field] = [...proposal[field], entry];
+    const overlapping = await run(proposal);
+    assert.deepEqual(
+      overlapping.semanticManifest.requirements[0].citations.map(citation => citation.source_unit_id),
+      [unitIdByParagraph[0]],
+      `${field}: the derived citation must survive the contradictory disposition untouched`,
+    );
+    assert.equal(
+      overlapping.semanticManifest.excluded.some(item => item.source_unit_id === unitIdByParagraph[0]), false,
+      `${field}: the retracted disposition must leave no trace in excluded`,
+    );
+    assert.equal(
+      overlapping.semanticManifest.unresolved.some(item => item.source_unit_id === unitIdByParagraph[0]), false,
+      `${field}: the retracted disposition must leave no trace in unresolved`,
+    );
+    assert.deepEqual(
+      overlapping.semanticManifest.excluded.map(item => item.source_unit_id),
+      [unitIdByParagraph[1]],
+      `${field}: the unrelated, valid exclusion of paragraph 1 must survive untouched`,
+    );
+    assert.equal(overlapping.discoveryLedger.batches[0].retracted_disposition_units, 1);
+    assert.deepEqual(
+      overlapping.discoveryLedger.retractions,
+      { conflicting_obligation_keys: 0, retracted_requirement_occurrences: 0 },
+      `${field}: a disposition retraction is not an obligation retraction`,
     );
   }
 
-  // The same unit dispositioned twice, within one list and across both.
-  await assertRejection(
-    () => run({
-      requirements: [requirement()],
+  // The same unit dispositioned twice, within one list and across both. v8: both claims are
+  // retracted and the unit falls to the completion — `excluded` never wins over `unresolved`.
+  for (const dispositions of [
+    {
       excluded: [
         { source_unit_id: unitIdByParagraph[1], reason: 'descriptive_or_contextual' },
         { source_unit_id: unitIdByParagraph[1], reason: 'not_an_obligation' },
       ],
       unresolved: [],
-    }),
-    { code: 'v4_discovery_uniqueness_invariant', message: /disposición duplicada/ },
-  );
-  await assertRejection(
-    () => run({
-      requirements: [requirement()],
+    },
+    {
       excluded: [{ source_unit_id: unitIdByParagraph[1], reason: 'descriptive_or_contextual' }],
       unresolved: [{ source_unit_id: unitIdByParagraph[1], reason: 'obligation_not_classifiable' }],
-    }),
-    { code: 'v4_discovery_uniqueness_invariant', message: /disposición duplicada/ },
-  );
+    },
+  ]) {
+    const result = await run({ requirements: [requirement()], ...dispositions });
+    assert.equal(
+      result.semanticManifest.excluded.some(item => item.source_unit_id === unitIdByParagraph[1]), false,
+      'a contradicted unit must never be filed as an exclusion',
+    );
+    assert.deepEqual(
+      result.semanticManifest.unresolved.find(item => item.source_unit_id === unitIdByParagraph[1]),
+      {
+        source_unit_id: unitIdByParagraph[1],
+        unit_hash: unitHashById.get(unitIdByParagraph[1]),
+        origin: 'semantic',
+        reason: 'source_unit_not_dispositioned',
+      },
+      'a contradicted unit must fall to the completion with the closed reason, never with either claimed reason',
+    );
+    assert.equal(result.discoveryLedger.batches[0].retracted_disposition_units, 1);
+  }
 
-  // The same obligation proposed twice with a CONFLICTING explicit field. Nothing is merged and
-  // nothing is completed around it: this module never picks which of two categories was meant.
+  // The same obligation proposed twice with a CONFLICTING explicit field. v8: retracted, not
+  // rejected — but it is the ONLY obligation this proposal states, so the merged frontier resolves
+  // nothing and the run is still rejected fail-closed, at the v5 zero-requirements boundary instead.
   // (An EXACT repetition is a different case entirely — see
   // tests/tender-semantic-discovery-v6-repeat-coalescing.test.mjs.)
   await assertRejection(
@@ -503,7 +595,7 @@ function permutationsOf(items) {
       ...baseProposal(),
       requirements: [requirement(), { ...requirement(), category: 'habilitating' }],
     }),
-    { code: 'v4_discovery_uniqueness_invariant', message: /obligación vacía o duplicada/ },
+    { code: TENDER_SEMANTIC_DISCOVERY_NO_REQUIREMENTS_CODE, message: /no identificó ninguna obligación propia/ },
   );
 
   // A hallucinated id, and an id belonging to another snapshot's inventory.

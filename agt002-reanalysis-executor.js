@@ -1,11 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { ANALYSIS_FLAG_NAMES } from './agt002-analysis-config.js';
 import { createAgt002AnalysisObservability } from './agt002-analysis-observability.js';
-import { runAgt002PostBridgeAnalysis } from './agt002-post-bridge-observability.js';
+import { AGT002_POST_BRIDGE_ERROR_CODES, runAgt002PostBridgeAnalysis } from './agt002-post-bridge-observability.js';
 import {
   claimAgt002PreviewRun,
   countAgt002PreviewRunsToday,
   findAgt002PreviewRun,
+  registerAgt002PreviewAnalysis,
   releaseAgt002PreviewClaim,
 } from './agt002-preview-persistence.js';
 import { createAgt002PreviewRuntime } from './agt002-preview-runtime.js';
@@ -13,9 +14,29 @@ import { AGT002_MAX_PREVIEW_CLAIM_LEASE_SECONDS, agt002RequiredPreviewClaimLease
 import { classifyAgt002ReanalysisWorkerError } from './agt002-reanalysis-worker.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { validateAgt002CompanyEvidenceIdentity, validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
+import {
+  createAgt002AnalysisCheckpointAdapter,
+  computeAgt002FrozenEngineInputHash,
+  deriveAgt002AnalysisWorksetIdentity,
+  getOrCreateAgt002AnalysisWorkset,
+  finalizeAgt002DurableBatchedAnalysis,
+} from './agt002-analysis-checkpoints.js';
+import { TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION } from './tender-semantic-discovery.js';
+import { TENDER_SEMANTIC_DISCOVERY_BATCH_PLANNER_VERSION } from './tender-semantic-discovery-batches.js';
+import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from './agt002-integral-analysis-v3.js';
+import { AGT002_INTEGRAL_ANALYSIS_BATCH_PLANNER_VERSION } from './agt002-integral-analysis-batches.js';
 
 function isObject(value) {
   return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isNonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/** The frozen job's own identity always wins; a legacy input with no `effort` gets the current safe default. */
+function resolveAgt002FrozenEffort(identity) {
+  return isAgt002PreviewReasoningEffort(identity.effort) ? identity.effort : AGT002_PREVIEW_DEFAULT_REASONING_EFFORT;
 }
 
 function validFrozenInput(job) {
@@ -23,7 +44,7 @@ function validFrozenInput(job) {
   const identity = input?.engine_identity;
   const flags = input?.analysis_flags;
   const context = input?.analysis_context;
-  if (!isObject(input) || input.schema_version !== 1 || !isObject(identity) || !isObject(flags) || !isObject(context)) return null;
+  if (!isObject(input) || (input.schema_version !== 1 && input.schema_version !== 2) || !isObject(identity) || !isObject(flags) || !isObject(context)) return null;
   if (typeof identity.model !== 'string' || !identity.model.trim()
     || typeof identity.policy_version !== 'string' || !identity.policy_version.trim()
     || !Number.isInteger(identity.timeout_ms) || identity.timeout_ms <= 0 || identity.timeout_ms > 480_000
@@ -85,7 +106,7 @@ function frozenEnvironment(base, input) {
     AGT002_PREVIEW_MAX_CONCURRENT: String(identity.max_concurrent),
     // A legacy frozen input (no `effort` field) reconstructs with the current safe default,
     // never the worker host's own ambient env var — the frozen job's own identity always wins.
-    AGT002_PREVIEW_REASONING_EFFORT: isAgt002PreviewReasoningEffort(identity.effort) ? identity.effort : AGT002_PREVIEW_DEFAULT_REASONING_EFFORT,
+    AGT002_PREVIEW_REASONING_EFFORT: resolveAgt002FrozenEffort(identity),
   };
   for (const name of ANALYSIS_FLAG_NAMES) {
     if (Object.hasOwn(input.analysis_flags, name)) environment[name] = input.analysis_flags[name] === true ? 'true' : 'false';
@@ -93,12 +114,60 @@ function frozenEnvironment(base, input) {
   return environment;
 }
 
+/**
+ * Explicit, exhaustive, closed projection of the post-bridge error catalog
+ * (AGT002_POST_BRIDGE_ERROR_CODES) onto the queue's own closed catalog
+ * (AGT002_REANALYSIS_QUEUE_ERROR_CODES, enforced by migration 068's CHECK constraint and by
+ * psi_fail_agt002_reanalysis_job — so no new queue code may be minted here without a migration).
+ *
+ * This used to be substring matching with `provider_error` as the DEFAULT arm, which is how the real
+ * Procuraduria reanalysis reported provider_error after 18 successful semantic-discovery bridge
+ * turns (timeout_ms=285000, max observed turn latency ~89s, no 19th bridge call) and then ended
+ * unavailable with no analysis_run. The durable evidence for that run proves only: stage=unexpected,
+ * bridge_response_received latched true, persistence_attempts=0. It does NOT prove which local,
+ * pre-provider-call frontier actually failed — a lost preview lease at the analysis-turn boundary is
+ * one hypothesis consistent with that signature (and the one this module now classifies correctly,
+ * see AGT002_POST_BRIDGE_ERROR_CODES.LEASE_LOST below), but so is any other untagged local failure
+ * between the discovery turns and the analysis bridge call (e.g. discovered-input assembly or
+ * validation-context construction — see agt002-preview-engine.js). Whatever the real cause,
+ * AGT002_UNEXPECTED_ERROR contains none of the matched substrings, so it fell through to the default
+ * and blamed a provider that was never even called. Three distinct closed codes (UNEXPECTED_ERROR,
+ * ATTEMPT_UPDATE_FAILED, RESPONSE_SERIALIZATION_FAILED) collapsed the same way.
+ *
+ * Every entry below is now deliberate, and `provider_error` is reachable from EXACTLY ONE code —
+ * AGT002_PROVIDER_ERROR, which is only ever minted when the bridge call itself failed and the
+ * provider reported the failure. An unknown/absent code is NOT the provider's fault either: it fails
+ * closed onto `invalid_output`, the same fail-closed bucket the worker's own closedOutcomeCode
+ * already uses for an unrecognized value.
+ */
+const POST_BRIDGE_TO_QUEUE_ERROR_CODE = new Map([
+  // The bridge never produced a usable response (timeout, cancel, transport, session). `timeout` is
+  // the queue's closest member and the code this frontier has always mapped to.
+  [AGT002_POST_BRIDGE_ERROR_CODES.TRANSPORT_ERROR, 'timeout'],
+  // The one and only source of provider_error.
+  [AGT002_POST_BRIDGE_ERROR_CODES.PROVIDER_ERROR, 'provider_error'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.CONTENT_EXTRACTION_FAILED, 'invalid_output'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.JSON_PARSE_FAILED, 'invalid_output'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.MODEL_OUTPUT_INVALID, 'invalid_output'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.ENVELOPE_INVALID, 'invalid_output'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.INTEGRAL_V3_INVALID, 'invalid_output'],
+  // The run's fenced lease was already gone at a stage boundary: the queue has always had a code
+  // for exactly this, it was simply unreachable through the post-bridge path.
+  [AGT002_POST_BRIDGE_ERROR_CODES.LEASE_LOST, 'lease_lost'],
+  [AGT002_POST_BRIDGE_ERROR_CODES.PERSISTENCE_FAILED, 'persistence_failure'],
+  // Failing to write the durable attempt row is a persistence failure, not a provider failure.
+  [AGT002_POST_BRIDGE_ERROR_CODES.ATTEMPT_UPDATE_FAILED, 'persistence_failure'],
+  // The run persisted but could not be shaped into a presentable payload: a server-side output
+  // problem, never the provider's.
+  [AGT002_POST_BRIDGE_ERROR_CODES.RESPONSE_SERIALIZATION_FAILED, 'invalid_output'],
+  // Genuinely unknown. Not attributable to the provider, so it must not say provider_error; the
+  // durable attempt event and the reanalysis_post_bridge_outcome event still carry the real
+  // 'unexpected' stage, which is where an operator reads WHERE it stopped.
+  [AGT002_POST_BRIDGE_ERROR_CODES.UNEXPECTED_ERROR, 'invalid_output'],
+]);
+
 function mapPostBridgeOutcomeCode(value) {
-  const code = String(value || '').toUpperCase();
-  if (code.includes('TRANSPORT') || code.includes('TIMEOUT')) return 'timeout';
-  if (code.includes('PERSIST')) return 'persistence_failure';
-  if (code.includes('CONTENT') || code.includes('JSON') || code.includes('INVALID') || code.includes('VALIDATION') || code.includes('ENVELOPE')) return 'invalid_output';
-  return 'provider_error';
+  return POST_BRIDGE_TO_QUEUE_ERROR_CODE.get(value) ?? 'invalid_output';
 }
 
 /**
@@ -107,6 +176,110 @@ function mapPostBridgeOutcomeCode(value) {
  * own terminal transition all still have to happen after persistence returns.
  */
 export const AGT002_PERSISTENCE_RETRY_LEASE_RESERVE_MS = 10_000;
+
+/**
+ * Canonical derivation input for a durable_batched_v1 job's stable workset identity: the job's
+ * own opportunity/tender/snapshot/context/idempotency, the frozen engine's own model/effort/
+ * policy, and the CURRENT production semantic-discovery and integral-analysis-batch constants —
+ * never a duplicated literal version string. Per design, the semantic policy version doubles as
+ * the semantic schema/stage-contract identity, the integral contract version is the integral
+ * batch schema identity, and the frozen engine's own policyVersion is the integral batch policy
+ * identity. Company evidence / legal corpus identity and the inventory/snapshot hash pair are
+ * included only when safely present in the frozen input; otherwise they stay null.
+ */
+function buildAgt002DurableWorksetDerivationInput({ job, input, frozenEngineInputHash }) {
+  const identity = input.engine_identity;
+  const governance = input.integral_v3_governance;
+  const legalCorpusContext = input.legal_corpus_context;
+  const inventory = isObject(input.analysis_context) && isObject(input.analysis_context.document_evidence)
+    ? input.analysis_context.document_evidence.tender_requirement_inventory
+    : null;
+  const hasInventoryHashPair = isObject(inventory)
+    && typeof inventory.inventory_hash === 'string'
+    && typeof inventory.snapshot_hash === 'string';
+  return {
+    opportunityId: job.opportunityId,
+    tenderId: job.tenderId,
+    snapshotId: job.snapshotId,
+    contextVersionId: job.contextVersionId,
+    idempotencyKey: job.idempotencyKey,
+    model: identity.model,
+    effort: resolveAgt002FrozenEffort(identity),
+    policyVersion: identity.policy_version,
+    semanticDiscoveryPolicyVersion: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
+    semanticDiscoverySchemaVersion: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
+    semanticDiscoveryPlannerVersion: TENDER_SEMANTIC_DISCOVERY_BATCH_PLANNER_VERSION,
+    integralAnalysisBatchPolicyVersion: identity.policy_version,
+    integralAnalysisBatchSchemaVersion: AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION,
+    integralAnalysisBatchPlannerVersion: AGT002_INTEGRAL_ANALYSIS_BATCH_PLANNER_VERSION,
+    frozenEngineInputHash,
+    companyEvidenceIdentity: governance?.evidenceIdentity ?? null,
+    legalCorpusIdentity: isObject(legalCorpusContext)
+      ? { legal_corpus_version_id: legalCorpusContext.legal_corpus_version_id, content_sha256: legalCorpusContext.content_sha256 }
+      : null,
+    inventoryHash: hasInventoryHashPair ? inventory.inventory_hash : null,
+    snapshotHash: hasInventoryHashPair ? inventory.snapshot_hash : null,
+  };
+}
+
+/**
+ * Builds the `persistAnalysis` function the durable_batched_v1 path hands to
+ * runPostBridgeAnalysis. It calls the injected `registerPreviewAnalysis` unchanged — every
+ * existing envelope/idempotency validation it performs still runs — against a proxy database
+ * that intercepts ONLY the legacy canonical-run RPC name and replaces it with exactly one atomic
+ * `finalizeDurableAnalysis` call, fenced by this claimed job's own {jobId, leaseId, worksetId}.
+ * Any other RPC reaches the real, supplied database untouched. The finalizer's response is
+ * validated (nonempty analysisRunId, matching worksetId/jobId) before being reshaped into the
+ * Supabase-shaped `{data, error}` row `registerPreviewAnalysis` expects back.
+ */
+function createAgt002DurablePersistAnalysis({ database, job, worksetId, finalizeDurableAnalysis, registerPreviewAnalysis, jobLeaseHeartbeat }) {
+  const proxyDatabase = {
+    ...database,
+    async rpc(name, params) {
+      if (name !== 'psi_record_agt002_canonical_analysis_run') return database.rpc(name, params);
+      if (jobLeaseHeartbeat) await jobLeaseHeartbeat({ stage: 'final_persistence' });
+      const finalized = await finalizeDurableAnalysis(database, {
+        jobId: job.jobId,
+        leaseId: job.leaseId,
+        worksetId,
+        snapshotId: params.p_snapshot_id,
+        opportunityId: params.p_opportunity_id,
+        tenderId: params.p_tender_id,
+        result: params.p_result,
+        criticalOpenCount: params.p_critical_open_count,
+        idempotencyKey: params.p_idempotency_key,
+        schemaVersion: params.p_schema_version,
+        policyVersion: params.p_policy_version,
+        model: params.p_model,
+        usage: params.p_usage,
+        contextVersionId: params.p_context_version_id,
+        legalCorpusVersionId: params.p_legal_corpus_version_id ?? null,
+      });
+      if (!isNonEmptyString(finalized?.analysisRunId) || finalized.worksetId !== worksetId || finalized.jobId !== job.jobId) {
+        throw new Error('AGT-002 durable batched analysis: respuesta de finalización inválida.');
+      }
+      return {
+        data: {
+          id: finalized.analysisRunId,
+          snapshot_id: params.p_snapshot_id,
+          canonical: true,
+          producer: 'AGT-002',
+          method: 'agent_ai',
+          status: 'completed',
+          critical_open_count: params.p_critical_open_count,
+          context_version_id: params.p_context_version_id ?? null,
+          legal_corpus_version_id: params.p_legal_corpus_version_id ?? null,
+        },
+        error: null,
+      };
+    },
+  };
+  // runAgt002PostBridgeAnalysis invokes persistAnalysis as (trackedDatabase, persistenceParams);
+  // trackedDatabase is intentionally ignored — the durable wrapper must force proxyDatabase (the
+  // one that intercepts the canonical RPC and routes it through atomic finalize), never whatever
+  // database instance the post-bridge caller happens to be tracking.
+  return (trackedDatabase, persistenceParams) => registerPreviewAnalysis(proxyDatabase, persistenceParams);
+}
 
 /**
  * Builds the direct-host executor. The legacy preview claim is acquired only
@@ -124,8 +297,22 @@ export function createAgt002ReanalysisExecutor({
   runPostBridgeAnalysis = runAgt002PostBridgeAnalysis,
   createCorrelationId = randomUUID,
   observability = createAgt002AnalysisObservability(),
+  // AGT-002 durable batched analysis, Task 2: constructed ONLY for a claimed job whose own
+  // executionMode is exactly 'durable_batched_v1' — never for a missing mode, 'single_turn_v1',
+  // or any direct/Manizales/legacy path. Kept as an injectable seam (defaulting to the real
+  // Supabase RPC adapter) purely so this dependency never touches a database in unit tests.
+  createCheckpointAdapter = createAgt002AnalysisCheckpointAdapter,
+  // HIGH remediation 1+2: stable workset identity + persistence-boundary seams. Constructed/
+  // invoked ONLY for a claimed job whose own executionMode is exactly 'durable_batched_v1' —
+  // defaulting to the real hash/derive/get-or-create/finalize/register functions so no unit test
+  // ever touches a database.
+  computeFrozenInputHash = computeAgt002FrozenEngineInputHash,
+  deriveWorksetIdentity = deriveAgt002AnalysisWorksetIdentity,
+  getOrCreateWorkset = getOrCreateAgt002AnalysisWorkset,
+  finalizeDurableAnalysis = finalizeAgt002DurableBatchedAnalysis,
+  registerPreviewAnalysis = registerAgt002PreviewAnalysis,
 } = {}) {
-  return async function executeAgt002Reanalysis(database, job) {
+  return async function executeAgt002Reanalysis(database, job, { beforeProviderCall: jobLeaseHeartbeat } = {}) {
     const input = validFrozenInput(job);
     if (!input) return { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false };
 
@@ -154,17 +341,53 @@ export function createAgt002ReanalysisExecutor({
       }
       previewClaimId = claim.claim_id;
 
-      const bridgeTelemetry = { invocationStarted: false, responseReceived: false };
+      // The two booleans are the historical, latched run-level signals (kept verbatim: the
+      // observability event still emits exactly them). The two counters are what make the signal
+      // usable on the V7/V8 discovered-frontier path, where semantic discovery takes N provider
+      // turns before the analysis turn: once any batch answers, `responseReceived` is permanently
+      // true and can no longer tell an outstanding call apart from a finished one. `invocationCount
+      // > responseCount` means, and only means, "a bridge call is in flight right now".
+      const bridgeTelemetry = { invocationStarted: false, responseReceived: false, invocationCount: 0, responseCount: 0 };
       const governance = input.integral_v3_governance;
+      // Durable batched checkpoint hooks + persistence wiring: constructed exactly once, only for
+      // a claimed job whose own executionMode is exactly 'durable_batched_v1'. A missing
+      // executionMode (every existing legacy/direct/Manizales job) or an explicit 'single_turn_v1'
+      // never derives a workset, never constructs an adapter, and never builds persistAnalysis, so
+      // createRuntime/runPostBridgeAnalysis stay byte-identical to today on those paths.
+      const isDurableBatched = job.executionMode === 'durable_batched_v1';
+      let checkpointHooks = null;
+      let persistAnalysis;
+      if (isDurableBatched) {
+        const frozenEngineInputHash = computeFrozenInputHash(job.frozenEngineInput);
+        const derivedIdentity = deriveWorksetIdentity(buildAgt002DurableWorksetDerivationInput({ job, input, frozenEngineInputHash }));
+        const worksetResult = await getOrCreateWorkset(database, derivedIdentity);
+        if (!isNonEmptyString(worksetResult?.worksetId)) {
+          return { status: 'unavailable', analysis_run_id: null, error_code: 'persistence_failure', reused: false };
+        }
+        const worksetId = worksetResult.worksetId;
+        // Fenced by the CONCRETE, get-or-created workset id — never the job's raw idempotencyKey.
+        checkpointHooks = createCheckpointAdapter(database, { jobId: job.jobId, leaseId: job.leaseId, worksetId });
+        persistAnalysis = createAgt002DurablePersistAnalysis({ database, job, worksetId, finalizeDurableAnalysis, registerPreviewAnalysis, jobLeaseHeartbeat });
+      }
       const engine = createRuntime({
         environment: frozenEnvironment(environment, input),
         countDailyRuns: () => countDailyRuns(database),
         legalCorpusContext: input.legal_corpus_context,
         manizalesManifestSource: input.manizales_manifest_source,
-        onBridgeInvocationStarted: () => { bridgeTelemetry.invocationStarted = true; },
-        onBridgeResponseReceived: () => { bridgeTelemetry.responseReceived = true; },
+        onBridgeInvocationStarted: () => { bridgeTelemetry.invocationStarted = true; bridgeTelemetry.invocationCount += 1; },
+        onBridgeResponseReceived: () => { bridgeTelemetry.responseReceived = true; bridgeTelemetry.responseCount += 1; },
+        // Both live leases renew at every provider boundary: the runtime's own preview-claim
+        // renewal (fenced by job.idempotencyKey + this claim) composes with the durable worker's
+        // outer job-lease renewal (fenced by job.jobId + job.leaseId), never skipping either.
+        database,
+        previewClaim: { idempotencyKey: job.idempotencyKey, claimId: previewClaimId },
+        ...(jobLeaseHeartbeat ? { beforeProviderCall: jobLeaseHeartbeat } : {}),
+        ...(checkpointHooks ? { checkpointHooks } : {}),
         ...(governance ? {
           companyEvidenceRegistryEntries: governance.companyEvidenceRegistryEntries,
+          // F4: the SAME frozen catalog snapshot the run identity was computed from — never
+          // re-loaded or re-derived here.
+          companyEvidenceInventorySnapshot: governance.companyEvidenceInventorySnapshot,
           // F4/A5: the SAME deterministic instant the frozen governance already carries — never
           // the wall clock, never re-derived here — so the durable engine's classes/identity bind
           // to it too.
@@ -186,6 +409,9 @@ export function createAgt002ReanalysisExecutor({
         claimId: previewClaimId,
         idempotencyKey: job.idempotencyKey,
         expectedIdempotencyKey: job.idempotencyKey,
+        // Persistence is its own stage boundary (agt002-post-bridge-observability.js): the SAME
+        // preview claim renews once more, fenced, immediately before the canonical persistence RPC.
+        leaseSeconds,
         canonicalOnly: true,
         // F3: the SAME company evidence identity the frozen governance already carries — never
         // reloaded/re-derived here — so the durable persistence call binds to it too.
@@ -204,15 +430,26 @@ export function createAgt002ReanalysisExecutor({
         // Hard lease guard for the bounded in-memory persistence retry: no re-attempt may START
         // after this instant. The reserve keeps the durable attempt write, the claim release and
         // the queue's own terminal transition inside the very lease this claim funded, so a retry
-        // can never be the reason a run is reclaimed mid-flight.
+        // can never be the reason a run is reclaimed mid-flight. A durable_batched_v1 job omits
+        // this stale, pre-claim absolute deadline: each final-persistence attempt is instead
+        // lease-gated by the outer queue heartbeat immediately before its atomic finalize write.
         persistenceRetry: {
-          deadlineAt: leaseStartedAt + (leaseSeconds * 1000) - AGT002_PERSISTENCE_RETRY_LEASE_RESERVE_MS,
+          ...(isDurableBatched ? {} : { deadlineAt: leaseStartedAt + (leaseSeconds * 1000) - AGT002_PERSISTENCE_RETRY_LEASE_RESERVE_MS }),
           now,
         },
+        // Durable-only persistence boundary: routes the canonical persistence RPC through the
+        // atomic finalizer instead of the legacy standalone canonical-run RPC.
+        ...(isDurableBatched ? { persistAnalysis } : {}),
       });
       previewClaimId = null;
       if (typeof outcome?.analysis_run_id === 'string' && outcome.analysis_run_id) {
-        return { status: 'completed', analysis_run_id: outcome.analysis_run_id, error_code: null, reused: false };
+        return {
+          status: 'completed', analysis_run_id: outcome.analysis_run_id, error_code: null, reused: false,
+          // Tells the worker the queue job is already terminally completed by the atomic
+          // finalizer, so it can skip its own legacy completion RPC. Never set for a failure,
+          // a reused run, or a legacy/single_turn outcome.
+          ...(isDurableBatched ? { queue_finalized: true } : {}),
+        };
       }
       return {
         status: 'unavailable',

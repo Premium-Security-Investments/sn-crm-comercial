@@ -21,9 +21,9 @@ for (const [label, source] of [['server/index.js', server], ['api/[...path].js',
   assert.doesNotMatch(canonical, /runAgt002PostBridgeAnalysis|engine\.analyze|claimAgt002PreviewRun|registerAgt002PreviewAnalysis/);
 }
 
-assert.match(executor, /const bridgeTelemetry = \{ invocationStarted: false, responseReceived: false \};/);
-assert.match(executor, /onBridgeInvocationStarted: \(\) => \{ bridgeTelemetry\.invocationStarted = true; \}/);
-assert.match(executor, /onBridgeResponseReceived: \(\) => \{ bridgeTelemetry\.responseReceived = true; \}/);
+assert.match(executor, /const bridgeTelemetry = \{ invocationStarted: false, responseReceived: false, invocationCount: 0, responseCount: 0 \};/);
+assert.match(executor, /onBridgeInvocationStarted: \(\) => \{ bridgeTelemetry\.invocationStarted = true; bridgeTelemetry\.invocationCount \+= 1; \}/);
+assert.match(executor, /onBridgeResponseReceived: \(\) => \{ bridgeTelemetry\.responseReceived = true; bridgeTelemetry\.responseCount \+= 1; \}/);
 assert.match(executor, /const outcome = await runPostBridgeAnalysis\(database,/);
 assert.equal((executor.match(/await runPostBridgeAnalysis\(/g) || []).length, 1, 'executor invokes the real post-bridge orchestrator exactly once');
 assert.match(executor, /contextVersionId: job\.contextVersionId/);

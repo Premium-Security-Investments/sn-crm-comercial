@@ -19,10 +19,21 @@ import {
 
 // Requirement 1: closed catalog of stages. Every literal below must exist, and nothing else
 // may leak through classifyAgt002PostBridgeFailure's output (checked further down).
+//
+// 'lease_renewal' joined the catalog after the real Procuraduria reanalysis that completed 18
+// semantic-discovery bridge turns and then ended unavailable with no analysis_run. The durable
+// evidence for that run proves only stage=unexpected, a latched bridge_response_received, and
+// persistence_attempts=0 — a lost fenced preview claim at the analysis-turn boundary is ONE
+// hypothesis consistent with that signature, not a confirmed cause. What matters for this catalog
+// entry is the general case it closes: a lost lease means the guarded operation never happened,
+// which is not 'transport' (nothing was sent), not 'persistence' (no RPC was attempted) and, when
+// the lease code is actually present, no longer 'unexpected' either. Widening a closed catalog
+// never withdraws a member: every stage below is unchanged. See
+// tests/agt002-post-bridge-lease-stage-classification.test.mjs.
 const REQUIRED_STAGES = [
   'transport', 'response_received', 'content_extraction', 'json_parse',
   'model_output_validation', 'envelope_build', 'integral_v3_validation',
-  'persistence', 'attempt_update', 'response_serialization', 'unexpected',
+  'lease_renewal', 'persistence', 'attempt_update', 'response_serialization', 'unexpected',
 ];
 
 test('AGT002_POST_BRIDGE_STAGES is a closed catalog containing exactly the required stages', () => {

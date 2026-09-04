@@ -1,4 +1,7 @@
 const CLOSED_ERROR_CODES = new Set(['timeout', 'provider_error', 'invalid_output', 'persistence_failure', 'lease_lost', 'capacity_unavailable']);
+const CLOSED_EXECUTION_MODES = new Set(['single_turn_v1', 'durable_batched_v1']);
+const CLOSED_JOB_PROGRESS_PHASES = new Set(['semantic_discovery', 'integral_analysis', 'merge', 'finalize']);
+const MODERN_CLAIM_FIELDS = ['execution_mode', 'phase', 'completed_batch_count', 'total_batch_count', 'resume_count'];
 
 async function rpc(database, name, args) {
   const { data, error } = await database.rpc(name, args);
@@ -33,6 +36,33 @@ export async function createAgt002ReanalysisJob(database, { opportunityId, tende
   return { status: result.status, jobId: result.job_id };
 }
 
+function isClosedNonNegativeInteger(value) {
+  return Number.isInteger(value) && value >= 0;
+}
+
+/**
+ * Fail-closed extraction of modern batched-execution claim metadata. Legacy claims
+ * carrying none of the five modern fields map to null unchanged. If any modern field
+ * is present, all five must be own properties and pass their closed validations, or
+ * the claim is treated as malformed.
+ */
+function extractModernClaimFields(claim) {
+  const present = MODERN_CLAIM_FIELDS.filter(field => Object.hasOwn(claim, field));
+  if (present.length === 0) return null;
+  if (present.length !== MODERN_CLAIM_FIELDS.length) return undefined;
+  const { execution_mode: executionMode, phase, completed_batch_count: completedBatchCount, total_batch_count: totalBatchCount, resume_count: resumeCount } = claim;
+  if (!CLOSED_EXECUTION_MODES.has(executionMode)
+      || (phase !== null && !CLOSED_JOB_PROGRESS_PHASES.has(phase))
+      || !isClosedNonNegativeInteger(completedBatchCount)
+      || !isClosedNonNegativeInteger(totalBatchCount)
+      || !isClosedNonNegativeInteger(resumeCount)
+      || completedBatchCount > totalBatchCount
+      || resumeCount > 5) {
+    return undefined;
+  }
+  return { executionMode, phase, completedBatchCount, totalBatchCount, resumeCount };
+}
+
 /** Claims at most one queued job with a bounded lease; null when nothing is claimable. */
 export async function claimAgt002ReanalysisJob(database, { leaseSeconds = 90 } = {}) {
   const claim = await rpc(database, 'psi_claim_agt002_reanalysis_job', { p_lease_seconds: leaseSeconds });
@@ -46,6 +76,10 @@ export async function claimAgt002ReanalysisJob(database, { leaseSeconds = 90 } =
       || !claim.frozen_engine_input || typeof claim.frozen_engine_input !== 'object') {
     throw new Error('El reclamo del job de reanálisis AGT-002 no devolvió un resultado válido.');
   }
+  const modernFields = extractModernClaimFields(claim);
+  if (modernFields === undefined) {
+    throw new Error('El reclamo del job de reanálisis AGT-002 no devolvió un resultado válido.');
+  }
   return {
     jobId: claim.job_id,
     leaseId: claim.lease_id,
@@ -57,6 +91,7 @@ export async function claimAgt002ReanalysisJob(database, { leaseSeconds = 90 } =
     idempotencyKey: claim.idempotency_key,
     frozenEngineInput: claim.frozen_engine_input,
     requestedBy: claim.requested_by,
+    ...(modernFields ? modernFields : {}),
   };
 }
 
@@ -71,6 +106,37 @@ export async function completeAgt002ReanalysisJob(database, { jobId, leaseId, an
     throw new Error('La finalización del job de reanálisis AGT-002 no devolvió un resultado válido.');
   }
   return { status: result.status, jobId: result.job_id, analysisRunId: result.analysis_run_id };
+}
+
+function requireLeaseSeconds(value) {
+  if (!Number.isInteger(value) || value < 1 || value > 600) {
+    throw new Error('La duración de renovación de la reserva del job de reanálisis AGT-002 no es válida.');
+  }
+  return value;
+}
+
+/**
+ * Deterministic stage-boundary heartbeat: renews an already-claimed job's lease, fenced by BOTH
+ * jobId and leaseId in one DB predicate, and only while the job is still 'running'. `status:
+ * 'lost'` fails closed with a stable, non-secret lease code so the existing worker classifier
+ * (classifyAgt002ReanalysisWorkerError) maps it to the existing closed 'lease_lost' code — never
+ * a re-renew, never a follow-up call.
+ */
+export async function renewAgt002ReanalysisJobLease(database, { jobId, leaseId, leaseSeconds } = {}) {
+  const result = await rpc(database, 'psi_renew_agt002_reanalysis_job_lease', {
+    p_job_id: requireId(jobId, 'El job'),
+    p_lease_id: requireId(leaseId, 'La reserva'),
+    p_lease_seconds: requireLeaseSeconds(leaseSeconds),
+  });
+  if (result?.status === 'lost') {
+    const error = new Error('El trabajo de reanálisis AGT-002 perdió su reserva antes de renovarse.');
+    error.code = 'AGT002_REANALYSIS_LEASE_LOST';
+    throw error;
+  }
+  if (result?.status !== 'renewed' || typeof result.lease_expires_at !== 'string' || !result.lease_expires_at.trim()) {
+    throw new Error('La renovación de la reserva del job de reanálisis AGT-002 no devolvió un resultado válido.');
+  }
+  return { status: 'renewed', leaseExpiresAt: result.lease_expires_at };
 }
 
 /**

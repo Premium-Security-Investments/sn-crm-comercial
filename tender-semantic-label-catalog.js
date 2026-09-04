@@ -243,22 +243,34 @@ function selectSpread(values, limit) {
 /**
  * Builds the deterministic, bounded literal-excerpt catalog for one discovery request.
  *
- * Allocation is ROUND-MAJOR across units (every unit contributes its first candidate before any
- * unit contributes its second), so a global bound degrades granularity, never coverage. The first
- * round is provably within both bounds — each unit's first candidate is no longer than that unit's
- * own text, and the count cap is floored at the unit count — so a healthy expediente never loses a
- * unit here. If it ever did (an operator-lowered `maxCatalogChars`), the affected units are
- * reported in `units_dropped_by_budget` and the caller fails closed rather than shipping a schema
- * that silently makes part of the expediente unlabelable.
+ * Allocation happens in two passes, both in caller order, so a global bound degrades granularity,
+ * never coverage:
  *
- * The same traversal also enforces a GLOBAL obligation-key uniqueness invariant on `chosen`: at
- * most one candidate per normalized `tenderSemanticObligationKey` ever reaches the enum, across
- * every visible unit, not merely within one. The first candidate to reach a given key in
- * round-major order wins it; every later candidate — same unit or different — that folds to the
- * same key is left out of `chosen` entirely and is never credited to any unit's owner list. A unit
- * whose own candidates are ALL discarded this way (never a budget cap) is reported separately in
- * `units_dropped_by_semantic_collision`, not `units_dropped_by_budget`: its obligation is still in
- * the catalog, verbatim, in the winning unit's own literal form, so nothing here was lost to a
+ *   1. COVERAGE pass: each unit, in turn, is given its first candidate (own order) that is not a
+ *      global obligation-key collision and fits the remaining budget. A unit whose first candidate
+ *      collides keeps searching its OWN remaining candidates, right there, before the pass moves on
+ *      to the next unit — so a unit is never starved of the coverage slot it is entitled to by
+ *      another unit's later, purely cosmetic extra-granularity candidate (AGT-002 V7: the count cap
+ *      is a FLOOR on unit count, not candidate count, and a batch with many collisions used to
+ *      exhaust it on second/third candidates of already-covered units before ever revisiting a
+ *      collision loser).
+ *   2. GRANULARITY pass: round-major (round, then unit, in caller order) over whatever each unit has
+ *      left, exactly as before, now that every recoverable unit already holds its coverage slot.
+ *
+ * The first round of the coverage pass is provably within both bounds — each unit's first candidate
+ * is no longer than that unit's own text, and the count cap is floored at the unit count — so a
+ * healthy expediente never loses a unit here. If it ever did (an operator-lowered `maxCatalogChars`),
+ * the affected units are reported in `units_dropped_by_budget` and the caller fails closed rather
+ * than shipping a schema that silently makes part of the expediente unlabelable.
+ *
+ * The same two-pass traversal also enforces a GLOBAL obligation-key uniqueness invariant on
+ * `chosen`: at most one candidate per normalized `tenderSemanticObligationKey` ever reaches the
+ * enum, across every visible unit, not merely within one. The first candidate to reach a given key
+ * — in the order above — wins it; every later candidate — same unit or different — that folds to
+ * the same key is left out of `chosen` entirely and is never credited to any unit's owner list. A
+ * unit whose own candidates are ALL discarded this way (never a budget cap) is reported separately
+ * in `units_dropped_by_semantic_collision`, not `units_dropped_by_budget`: its obligation is still
+ * in the catalog, verbatim, in the winning unit's own literal form, so nothing here was lost to a
  * budget the caller controls — see the v4 header comment above for why this is not a repair.
  *
  * @param {object} args
@@ -288,7 +300,7 @@ export function buildTenderSemanticLabelCatalog({ units = [], maxCatalogChars } 
   const totalCap = Math.max(perUnit.length, TENDER_SEMANTIC_LABEL_CANDIDATES_TOTAL_FLOOR);
   const chosen = [];
   const chosenSet = new Set();
-  // Global cross-unit obligation-key uniqueness (v4): the same round-major traversal that decides
+  // Global cross-unit obligation-key uniqueness (v4): the same deterministic traversal that decides
   // `chosen`'s order also decides which literal form of a given obligation wins it. Every candidate
   // in `entry.available` already carries a derivable, non-empty obligation key (unitLabelCandidates
   // filters out any that don't), so this set only ever gains real keys.
@@ -297,31 +309,61 @@ export function buildTenderSemanticLabelCatalog({ units = [], maxCatalogChars } 
   // accounting can tell a semantic collision apart from a real budget loss.
   const collisionDroppedCandidates = new Set();
   let totalChars = 0;
-  for (let round = 0; round < TENDER_SEMANTIC_LABEL_CANDIDATES_PER_UNIT; round += 1) {
-    for (const entry of perUnit) {
-      const candidate = entry.available[round];
-      // An exact duplicate of a candidate another unit already contributed is not re-added: it is
-      // the SAME literal string, so it still anchors in this unit too (identical paragraphs are the
-      // only way this happens) and `candidates_by_unit_id` below still credits it to both.
-      if (candidate === undefined || chosenSet.has(candidate)) continue;
-      // Budget caps are checked BEFORE the obligation-key check: a candidate that would not have
-      // fit the catalog anyway is a budget loss regardless of what its key is, never a collision.
-      if (chosen.length >= totalCap || totalChars + candidate.length > maxCatalogChars) continue;
-      const obligationKey = tenderSemanticObligationKey(candidate);
-      if (obligationKey && chosenObligationKeys.has(obligationKey)) {
-        // A DIFFERENT literal string than the one already chosen (an exact duplicate was already
-        // filtered above) that folds to the SAME normalized obligation key: some other unit's form
-        // of this exact obligation already claimed the enum slot. Never emitted — see the v4 header
-        // comment for why the wire enum must not offer two labels the model could legally choose
-        // between for what is, semantically, one obligation.
-        collisionDroppedCandidates.add(candidate);
-        continue;
-      }
-      chosenSet.add(candidate);
-      chosen.push(candidate);
-      totalChars += candidate.length;
-      if (obligationKey) chosenObligationKeys.add(obligationKey);
+  // How many of each unit's own candidates the traversal below has already resolved (added, folded
+  // into an exact duplicate, or dropped as a collision) — shared by both passes so neither ever
+  // reconsiders a candidate the other already settled.
+  for (const entry of perUnit) entry.cursor = 0;
+
+  // Resolves entry.available[entry.cursor] and advances the cursor past it (candidates are never
+  // revisited). Returns 'covered' if this unit now owns something at that slot — just added, or an
+  // exact duplicate of a candidate already chosen — 'collision' if the slot lost the global
+  // obligation-key dedup, 'budget' if it lost a budget cap, or 'exhausted' if there is no candidate
+  // left (cursor left unchanged in that case, since there is nothing to advance past).
+  const resolveNext = entry => {
+    const candidate = entry.available[entry.cursor];
+    if (candidate === undefined) return 'exhausted';
+    entry.cursor += 1;
+    // An exact duplicate of a candidate another unit already contributed is not re-added: it is the
+    // SAME literal string, so it still anchors in this unit too (identical paragraphs are the only
+    // way this happens) and `candidates_by_unit_id` below still credits it to both.
+    if (chosenSet.has(candidate)) return 'covered';
+    // Budget caps are checked BEFORE the obligation-key check: a candidate that would not have fit
+    // the catalog anyway is a budget loss regardless of what its key is, never a collision.
+    if (chosen.length >= totalCap || totalChars + candidate.length > maxCatalogChars) return 'budget';
+    const obligationKey = tenderSemanticObligationKey(candidate);
+    if (obligationKey && chosenObligationKeys.has(obligationKey)) {
+      // A DIFFERENT literal string than the one already chosen (an exact duplicate was already
+      // handled above) that folds to the SAME normalized obligation key: some other unit's form of
+      // this exact obligation already claimed the enum slot. Never emitted — see the v4 header
+      // comment for why the wire enum must not offer two labels the model could legally choose
+      // between for what is, semantically, one obligation.
+      collisionDroppedCandidates.add(candidate);
+      return 'collision';
     }
+    chosenSet.add(candidate);
+    chosen.push(candidate);
+    totalChars += candidate.length;
+    if (obligationKey) chosenObligationKeys.add(obligationKey);
+    return 'covered';
+  };
+
+  // Coverage pass (AGT-002 V7): every unit, in caller order, keeps trying its OWN next candidate —
+  // right here, before any other unit's extra-granularity candidate is even considered — until it
+  // either lands a non-colliding, budget-fitting one or runs out. This is what guarantees a
+  // collision loser with a genuine alternative recovers it, instead of losing the count-cap race to
+  // second/third candidates the granularity pass would otherwise have handed out first.
+  for (const entry of perUnit) {
+    let outcome;
+    do {
+      outcome = resolveNext(entry);
+    } while (outcome === 'collision');
+  }
+
+  // Granularity pass: round-major (round, then unit, in caller order) over whatever each unit has
+  // left. TENDER_SEMANTIC_LABEL_CANDIDATES_PER_UNIT rounds is always enough to drain any unit's
+  // remaining candidates, however far the coverage pass above already advanced its cursor.
+  for (let round = 0; round < TENDER_SEMANTIC_LABEL_CANDIDATES_PER_UNIT; round += 1) {
+    for (const entry of perUnit) resolveNext(entry);
   }
 
   const candidatesByUnitId = new Map();

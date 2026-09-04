@@ -238,6 +238,40 @@ export async function claimAgt002PreviewRun(database, { idempotencyKey, dailyMax
   return status === 'claimed' ? { status, claim_id: result.claim_id } : { status };
 }
 
+function requireLeaseSeconds(value) {
+  if (!Number.isInteger(value) || value < 1 || value > 600) {
+    throw new Error('La duración de renovación de la reserva AGT-002 Preview no es válida.');
+  }
+  return value;
+}
+
+/**
+ * Deterministic stage-boundary heartbeat: renews an already-claimed preview run's lease, fenced
+ * by BOTH idempotencyKey and claimId in one DB predicate, so a stale worker holding a superseded
+ * claim can never extend the lease of the claim that replaced it. `status: 'lost'` (the lease
+ * already expired or was reclaimed) fails closed with a stable, non-secret lease code instead of
+ * ever being mistaken for a successful renewal — never a re-renew, never a follow-up call.
+ */
+export async function renewAgt002PreviewClaim(database, { idempotencyKey, claimId, leaseSeconds } = {}) {
+  const key = requireId(idempotencyKey, 'La clave de idempotencia');
+  const claim = requireId(claimId, 'La reserva');
+  const seconds = requireLeaseSeconds(leaseSeconds);
+  const result = unwrapRpc(await database.rpc('psi_renew_agt002_preview_claim', {
+    p_idempotency_key: key,
+    p_claim_id: claim,
+    p_lease_seconds: seconds,
+  }), 'psi_renew_agt002_preview_claim');
+  if (result?.status === 'lost') {
+    const error = new Error('La reserva AGT-002 Preview se perdió antes de renovarse.');
+    error.code = 'AGT002_PREVIEW_LEASE_LOST';
+    throw error;
+  }
+  if (result?.status !== 'renewed' || typeof result.lease_expires_at !== 'string' || !result.lease_expires_at.trim()) {
+    throw new Error('La renovación de la reserva AGT-002 Preview no devolvió un resultado válido.');
+  }
+  return { status: 'renewed', leaseExpiresAt: result.lease_expires_at };
+}
+
 /** Releases a provider slot after persistence or a failed attempt; stale leases also expire in DB. */
 export async function releaseAgt002PreviewClaim(database, { idempotencyKey, claimId }) {
   const key = requireId(idempotencyKey, 'La clave de idempotencia');

@@ -3,6 +3,9 @@ import { readFileSync } from 'node:fs';
 import { AGT002_PREVIEW_POLICY, AGT002_INTEGRAL_V3_POLICY } from '../agt002-preview-engine.js';
 import { AGT002_PREVIEW_DEFAULT_POLICY_VERSION, AGT002_INTEGRAL_V3_POLICY_VERSION, createAgt002PreviewRuntime, getAgt002PreviewRuntimeConfig, isAgt002PreviewConfigured } from '../agt002-preview-runtime.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT } from '../agt002-preview-reasoning-effort.js';
+import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
+import { AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION } from '../agt002-company-evidence-sharepoint-catalog.js';
+import { AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS } from '../agt002-v3-prompt-budget.js';
 
 function baseEnv(overrides = {}) {
   return {
@@ -64,6 +67,30 @@ assert.throws(
   () => createAgt002PreviewRuntime({ environment: baseEnv({ AGT002_PREVIEW_MAX_CONCURRENT: '0' }), countDailyRuns: async () => 0 }),
   /no está configurado/i,
 );
+
+// AGT002_PREVIEW_PROMPT_MAX_INPUT_TOKENS: server-owned override of the V3 prompt-budget cap
+// (agt002-v3-prompt-budget.js). Absent -> the safe-floor constant; a valid positive integer
+// override is honored verbatim; malformed/zero/negative must fail closed exactly like every
+// other numeric override above (AGT002_PREVIEW_TIMEOUT_MS, AGT002_PREVIEW_MAX_CONCURRENT, ...).
+{
+  assert.equal(
+    getAgt002PreviewRuntimeConfig(baseEnv()).promptMaxInputTokens,
+    AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS,
+    'absent override must default to the safe-floor constant',
+  );
+  assert.equal(
+    getAgt002PreviewRuntimeConfig(baseEnv({ AGT002_PREVIEW_PROMPT_MAX_INPUT_TOKENS: '180000' })).promptMaxInputTokens,
+    180000,
+    'a valid override must be honored verbatim',
+  );
+  for (const badValue of ['not-a-number', '0', '-5']) {
+    assert.throws(
+      () => getAgt002PreviewRuntimeConfig(baseEnv({ AGT002_PREVIEW_PROMPT_MAX_INPUT_TOKENS: badValue })),
+      /no está configurado/i,
+      `${badValue} must fail closed instead of silently coercing to an unsafe default`,
+    );
+  }
+}
 
 // Release blocker: the semantic V3 path makes TWO sequential provider turns (semantic
 // discovery, then analysis) inside a single claimed run, and AGT002_PREVIEW_TIMEOUT_MS
@@ -250,6 +277,27 @@ const V3_BASE_ENV = {
 };
 const SYNTHETIC_EVIDENCE_AS_OF = '2026-08-29T00:00:00.000Z';
 
+// Synthetic, privacy-safe valid 17-class inventory snapshot matching the real validator shape
+// (agt002-company-evidence-sharepoint-catalog.js) — no real names, paths, URLs or raw ids.
+const SYNTHETIC_COMPANY_EVIDENCE_INVENTORY_SNAPSHOT = Object.freeze({
+  inventory_version: AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION,
+  catalog_snapshot_hash: 'c'.repeat(64),
+  source_file_count: 18,
+  excluded_non_evidence_count: 1,
+  state_counts: {
+    current_valid: 0, historical_update_required: 0, reported_unverified: 17, absent_unknown: 0, process_specific_template: 0,
+  },
+  classes: AGT002_COMPANY_EVIDENCE_CLASS_IDS.map(entryId => ({
+    entry_id: entryId,
+    source_file_count: 1,
+    state_counts: {
+      current_valid: 0, historical_update_required: 0, reported_unverified: 1, absent_unknown: 0, process_specific_template: 0,
+    },
+    effective_state: 'reported_unverified',
+    last_reconciled_at: '2026-08-29T00:00:00.000Z',
+  })),
+});
+
 // Flag off (default): construction and behavior are exactly as before — no v3 option
 // is ever consulted, and no request/environment parameter besides the flag itself can
 // turn v3 on.
@@ -297,7 +345,7 @@ for (const badAsOf of ['2026-08-29T00:00:00.000+00:00', '2026-08-29T08:30:00.000
 {
   const runtime = createAgt002PreviewRuntime({
     environment: baseEnv(V3_BASE_ENV), countDailyRuns: async () => 0,
-    companyEvidenceRegistryEntries: [], companyEvidenceAsOf: SYNTHETIC_EVIDENCE_AS_OF, categoryOverrides: { 'req-1': 'habilitating' },
+    companyEvidenceRegistryEntries: [], companyEvidenceAsOf: SYNTHETIC_EVIDENCE_AS_OF, companyEvidenceInventorySnapshot: SYNTHETIC_COMPANY_EVIDENCE_INVENTORY_SNAPSHOT, categoryOverrides: { 'req-1': 'habilitating' },
     governanceProvenance: {
       'category_override:req-1': {
         requirement_id: 'req-1', override_kind: 'category_override', category_value: 'habilitating',
@@ -330,7 +378,7 @@ for (const badAsOf of ['2026-08-29T00:00:00.000+00:00', '2026-08-29T08:30:00.000
   };
   createAgt002PreviewRuntime({
     environment: baseEnv(V3_BASE_ENV), countDailyRuns: async () => 0,
-    companyEvidenceRegistryEntries: [], companyEvidenceAsOf: SYNTHETIC_EVIDENCE_AS_OF, categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance, manizalesManifestSource,
+    companyEvidenceRegistryEntries: [], companyEvidenceAsOf: SYNTHETIC_EVIDENCE_AS_OF, companyEvidenceInventorySnapshot: SYNTHETIC_COMPANY_EVIDENCE_INVENTORY_SNAPSHOT, categoryOverrides, evidenceClassLinkByRequirementId, governanceProvenance, manizalesManifestSource,
     contextVersionId: '10101010-1010-4010-8010-101010101010',
     createEngine: spyEngine,
   });
@@ -367,7 +415,7 @@ for (const badAsOf of ['2026-08-29T00:00:00.000+00:00', '2026-08-29T08:30:00.000
   const spyEngine = (options) => { capturedOptions = options; return { analyze: async () => {} }; };
   createAgt002PreviewRuntime({
     environment: baseEnv(V3_BASE_ENV), countDailyRuns: async () => 0,
-    companyEvidenceRegistryEntries: [], companyEvidenceAsOf: SYNTHETIC_EVIDENCE_AS_OF, createEngine: spyEngine,
+    companyEvidenceRegistryEntries: [], companyEvidenceAsOf: SYNTHETIC_EVIDENCE_AS_OF, companyEvidenceInventorySnapshot: SYNTHETIC_COMPANY_EVIDENCE_INVENTORY_SNAPSHOT, createEngine: spyEngine,
   });
   assert.deepEqual(capturedOptions.evidenceClassLinkByRequirementId, {});
   assert.deepEqual(capturedOptions.categoryOverrides, {});
@@ -501,6 +549,29 @@ testRuntimeBuildsHetznerBridgeClientNotLocalSpawn();
       && error.cause === frozenCause,
     'non-extensible failures must use a generic safe wrapper and preserve the cause',
   );
+}
+
+// ---------------------------------------------------------------------------------------------
+// AGT-002 durable batched analysis, Task 2 (RED — docs/plans/2026-09-03-agt002-durable-batched-
+// analysis.md): the runtime accepts an optional, already-built `checkpointHooks` object
+// (agt002-reanalysis-executor.js constructs it via agt002-analysis-checkpoints.js's
+// createAgt002AnalysisCheckpointAdapter only for a claimed durable_batched_v1 job — see
+// tests/agt002-reanalysis-executor.test.mjs) and forwards it to engine construction verbatim.
+// Absent (every non-durable/direct/Manizales caller today), engine construction must carry no
+// checkpointHooks key at all — byte-identical to before this option existed.
+// ---------------------------------------------------------------------------------------------
+{
+  let capturedOptions = null;
+  const spyEngine = (options) => { capturedOptions = options; return { analyze: async () => {} }; };
+  createAgt002PreviewRuntime({ environment: baseEnv(), countDailyRuns: async () => 0, createEngine: spyEngine });
+  assert.equal(Object.hasOwn(capturedOptions, 'checkpointHooks'), false, 'without an injected checkpoint adapter, engine construction must never carry a checkpointHooks key');
+}
+{
+  let capturedOptions = null;
+  const spyEngine = (options) => { capturedOptions = options; return { analyze: async () => {} }; };
+  const checkpointHooks = Object.freeze({ loadCheckpoint: async () => ({ hit: false }), storeCheckpoint: async () => ({ status: 'created', checkpointId: 'cp-1' }) });
+  createAgt002PreviewRuntime({ environment: baseEnv(), countDailyRuns: async () => 0, createEngine: spyEngine, checkpointHooks });
+  assert.equal(capturedOptions.checkpointHooks, checkpointHooks, 'an injected checkpoint adapter must reach engine construction verbatim');
 }
 
 console.log('AGT-002 Preview runtime factory (fail-closed environment wiring) passed');
