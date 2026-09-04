@@ -178,13 +178,15 @@ function failClosed(report) {
 /**
  * Budgets the assembled integral-V3 provider request.
  *
- * @returns {{ input: object, applied: boolean, report: object }} — the (possibly reduced) input to
- *   send, whether reduction was applied, and a sanitized metadata-only report. Under budget → the
- *   SAME input reference is returned unchanged (byte-identical). Over budget after maximal reduction
- *   → THROWS an error carrying `.code = AGT002_V3_PROMPT_BUDGET_EXCEEDED` and a `.report`, before
- *   any provider call.
+ * NEVER throws for an oversized request (only for a malformed `maxInputTokens`).
+ *
+ * @returns {{ input: object, fits: boolean, applied: boolean, report: object }} — the (possibly
+ *   reduced) input to send, whether it fits `maxInputTokens`, whether reduction was applied, and a
+ *   sanitized metadata-only report. Under budget → the SAME input reference is returned unchanged
+ *   (byte-identical). Over budget after maximal reduction → `fits: false` alongside that maximal
+ *   reduction; see budgetAgt002V3PromptRequest below for the fail-closed wrapper.
  */
-export function budgetAgt002V3PromptRequest({ model, policy, input, outputSchema, maxInputTokens }) {
+export function reduceAgt002V3PromptRequestInput({ model, policy, input, outputSchema, maxInputTokens }) {
   if (!Number.isInteger(maxInputTokens) || maxInputTokens <= 0) {
     throw new Error('AGT-002 Preview v3: el presupuesto de prompt requiere maxInputTokens como entero positivo.');
   }
@@ -200,6 +202,7 @@ export function budgetAgt002V3PromptRequest({ model, policy, input, outputSchema
     const truncatedCount = selectedChunksOf(candidate).filter((chunk) => chunk?.text_budgeted === true).length;
     return {
       input: candidate,
+      fits: true,
       applied: candidate !== input,
       report: {
         ...base,
@@ -238,18 +241,28 @@ export function budgetAgt002V3PromptRequest({ model, policy, input, outputSchema
   const emptied = applyChunkTextCap(working, 0);
   if (chunks.length === 0 || measure(emptied) > maxInputTokens) {
     const emptiedBytes = measureAgt002V3RequestBytes(requestOf(emptied));
-    throw failClosed({
-      ...base,
+    // The maximally-reduced request STILL does not fit. `reduceAgt002V3PromptRequestInput` never
+    // throws: it reports `fits: false` alongside that maximal reduction so a caller that measures
+    // fit itself (the batch planner, which must decide "split" vs "refuse" per candidate batch)
+    // can do so without an exception per trial. budgetAgt002V3PromptRequest below turns exactly
+    // this into the unchanged fail-closed AGT002_V3_PROMPT_BUDGET_EXCEEDED throw.
+    return {
+      input: emptied,
+      fits: false,
       applied: false,
-      estimated_input_tokens_after: measure(emptied),
-      serialized_bytes_after: emptiedBytes,
-      omitted_chunks_summarized: omittedSummarized,
-      omitted_chunk_count_after: omittedChunksOf(emptied).length,
-      truncated_chunk_count: chunks.length,
-      chunk_chars_after: 0,
-      per_chunk_cap_chars: 0,
-      exceeded: true,
-    });
+      report: {
+        ...base,
+        applied: false,
+        estimated_input_tokens_after: measure(emptied),
+        serialized_bytes_after: emptiedBytes,
+        omitted_chunks_summarized: omittedSummarized,
+        omitted_chunk_count_after: omittedChunksOf(emptied).length,
+        truncated_chunk_count: chunks.length,
+        chunk_chars_after: 0,
+        per_chunk_cap_chars: 0,
+        exceeded: true,
+      },
+    };
   }
 
   // Binary-search a common per-chunk char cap whose request fits the budget. Request size increases
@@ -273,4 +286,18 @@ export function budgetAgt002V3PromptRequest({ model, policy, input, outputSchema
     }
   }
   return finish(applyChunkTextCap(working, bestCap), { omittedSummarized, perChunkCap: bestCap });
+}
+
+/**
+ * The unchanged fail-closed wrapper around the reduction ladder above: same arguments, same
+ * `{ input, applied, report }` result, same AGT002_V3_PROMPT_BUDGET_EXCEEDED throw (with the same
+ * `.report`) when even the maximal reduction does not fit. The ladder itself now lives in
+ * `reduceAgt002V3PromptRequestInput` so the batch planner can reuse it per candidate batch —
+ * byte-for-byte the same reduction the request that is finally SENT goes through — without an
+ * exception being the only way to learn that a candidate does not fit.
+ */
+export function budgetAgt002V3PromptRequest({ model, policy, input, outputSchema, maxInputTokens }) {
+  const reduced = reduceAgt002V3PromptRequestInput({ model, policy, input, outputSchema, maxInputTokens });
+  if (!reduced.fits) throw failClosed(reduced.report);
+  return { input: reduced.input, applied: reduced.applied, report: reduced.report };
 }

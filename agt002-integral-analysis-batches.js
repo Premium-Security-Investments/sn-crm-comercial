@@ -15,8 +15,17 @@
 
 import { createHash } from 'node:crypto';
 import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from './agt002-integral-analysis-v3.js';
-import { estimateAgt002V3RequestTokens } from './agt002-v3-prompt-budget.js';
+import { reduceAgt002V3PromptRequestInput } from './agt002-v3-prompt-budget.js';
 
+// Deliberately kept at v1, even though this change makes sizing measure the request as it is
+// actually SENT (projectRequestInput plus the same deterministic budget-reduction ladder
+// executeBatch applies before client.run) instead of the raw un-reduced projected shape. Live
+// production evidence for this deployment: there are ZERO integral_analysis_batch checkpoints in
+// any workset — the only in-flight/failed rollout workset has 35 semantic-batch checkpoints + 1
+// semantic_manifest checkpoint, none from this planner. With no existing integral batch
+// checkpoints to collide with, bumping this version would only force a new workset identity and
+// abandon that workset's reusable semantic checkpoints, for no safety benefit. Do not bump this
+// without first re-checking that invariant against current data.
 export const AGT002_INTEGRAL_ANALYSIS_BATCH_PLANNER_VERSION = 'agt002-integral-analysis-batch-planner-v1';
 
 // Conservative initial cap per docs/plans/2026-09-03-agt002-durable-batched-analysis.md §5.
@@ -206,6 +215,16 @@ export function projectAgt002IntegralAnalysisBatch({ previewInput, batch }) {
 
 export function planAgt002IntegralAnalysisBatches({
   previewInput, validationContext, model, policy, outputSchema, maxInputTokens, maxRequirementsPerBatch,
+  // The caller's own model-facing projection — the LAST transformation it applies to a projected
+  // batch before handing it to the provider (for the durable batched V3 route:
+  // projectAgt002DiscoveredModelInput, which replaces the two full per-source-unit audit ledgers
+  // with one small server-derived summary). Sizing must measure the request that is actually SENT:
+  // estimating the un-projected batch instead counts ledgers the provider never receives, which on
+  // a discovered frontier with thousands of source units dominates the estimate, splits every batch
+  // down to a single requirement and then fails closed as "a lone requirement does not fit" —
+  // burning CPU on repeated whole-ledger serialization without ever calling the provider. Omitted
+  // (the default identity) keeps every existing caller byte-identical.
+  projectRequestInput,
 }) {
   if (!isPlainObject(previewInput) || !isPlainObject(previewInput.document_evidence)) {
     fail('previewInput.document_evidence debe ser un objeto.');
@@ -215,6 +234,9 @@ export function planAgt002IntegralAnalysisBatches({
   if (!isNonEmptyString(policy)) fail('policy debe ser texto no vacío.');
   if (!isPlainObject(outputSchema)) fail('outputSchema debe ser un objeto.');
   if (!Number.isInteger(maxInputTokens) || maxInputTokens <= 0) fail('maxInputTokens debe ser un entero positivo.');
+  if (projectRequestInput !== undefined && typeof projectRequestInput !== 'function') {
+    fail('projectRequestInput, si se provee, debe ser una función.');
+  }
   if (
     !Number.isInteger(maxRequirementsPerBatch)
     || maxRequirementsPerBatch <= 0
@@ -224,6 +246,28 @@ export function planAgt002IntegralAnalysisBatches({
   }
 
   const documentEvidence = previewInput.document_evidence;
+
+  // The single sizing choke point: every estimate below measures the request as the caller will
+  // actually send it (see projectRequestInput above), never a shape the provider never sees. It also
+  // runs the SAME deterministic budget-reduction ladder executeBatch applies before client.run
+  // (agt002-v3-prompt-budget.js: summarize omitted_chunks, then water-fill truncate selected_chunks
+  // text) — never just the raw projected estimate. Without it, a batch-INVARIANT oversized payload
+  // (e.g. a null-requirement omitted_chunks list, kept in every batch by the projector because it
+  // belongs to no single requirement) could never be sized correctly: no split shrinks it, so every
+  // candidate — down to a lone requirement — would "exceed" the cap even though the reduction ladder
+  // that executeBatch always applies would have rescued it. The projection's RESULT is validated on
+  // every call, not just its type at entry: a projection that returns null/undefined/a non-object
+  // would silently under-count (an undefined `input` serializes to nothing), letting a request the
+  // provider cannot accept be planned as if it fit. That is exactly the failure mode this parameter
+  // exists to prevent, so it fails closed instead.
+  const estimateBatchRequestTokens = (projectedInput) => {
+    let input = projectedInput;
+    if (projectRequestInput) {
+      input = projectRequestInput(projectedInput);
+      if (!isPlainObject(input)) fail('projectRequestInput debe devolver un objeto.');
+    }
+    return reduceAgt002V3PromptRequestInput({ model, policy, input, outputSchema, maxInputTokens }).report.estimated_input_tokens_after;
+  };
 
   if (!isNonEmptyString(validationContext.requirementManifestVersion)) {
     fail('validationContext.requirementManifestVersion debe ser texto no vacío.');
@@ -268,7 +312,7 @@ export function planAgt002IntegralAnalysisBatches({
         const trialInput = projectAgt002IntegralAnalysisBatch({
           previewInput, batch: { batch_index: 0, batch_count: 1, requirement_ids: slice },
         });
-        const trialEstimate = estimateAgt002V3RequestTokens({ model, policy, input: trialInput, outputSchema });
+        const trialEstimate = estimateBatchRequestTokens(trialInput);
         if (trialEstimate <= maxInputTokens) break;
         size -= 1;
         slice = governedIds.slice(cursor, cursor + size);
@@ -299,7 +343,7 @@ export function planAgt002IntegralAnalysisBatches({
       const projectedInput = projectAgt002IntegralAnalysisBatch({
         previewInput, batch: { batch_index: index, batch_count: candidateBatchCount, requirement_ids: idBatches[index] },
       });
-      const estimatedInputTokens = estimateAgt002V3RequestTokens({ model, policy, input: projectedInput, outputSchema });
+      const estimatedInputTokens = estimateBatchRequestTokens(projectedInput);
       if (estimatedInputTokens > maxInputTokens) {
         overflowIndex = index;
         overflowEstimate = estimatedInputTokens;
@@ -337,7 +381,7 @@ export function planAgt002IntegralAnalysisBatches({
 
   const planBatches = batches.map((batch) => {
     const projectedInput = projectAgt002IntegralAnalysisBatch({ previewInput, batch });
-    const estimatedInputTokens = estimateAgt002V3RequestTokens({ model, policy, input: projectedInput, outputSchema });
+    const estimatedInputTokens = estimateBatchRequestTokens(projectedInput);
     const requestHash = computeAgt002IntegralAnalysisBatchHash({
       plannerVersion: AGT002_INTEGRAL_ANALYSIS_BATCH_PLANNER_VERSION,
       contractVersion: AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION,
