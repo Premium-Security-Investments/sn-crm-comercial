@@ -105,6 +105,7 @@ function validStoreParams(overrides = {}) {
     requestHash: 'h'.repeat(64), stageContractVersion: 'agt002-integral-analysis-batch-contract.v1',
     usage: { input_tokens: 10, output_tokens: 5 },
     providerIdempotencyKey: 'prov-key-1',
+    progressPhase: 'integral_analysis', completedBatchCount: 1, totalBatchCount: 1,
     ...overrides,
     output, outputSha256,
   };
@@ -402,8 +403,80 @@ test('storeAgt002AnalysisCheckpoint maps to the exact RPC name and snake_case pa
     p_stage: params.stage, p_batch_index: params.batchIndex, p_request_hash: params.requestHash,
     p_stage_contract_version: params.stageContractVersion, p_output: params.output,
     p_output_sha256: params.outputSha256, p_usage: params.usage, p_provider_idempotency_key: params.providerIdempotencyKey,
+    p_progress_phase: params.progressPhase, p_completed_batch_count: params.completedBatchCount,
+    p_total_batch_count: params.totalBatchCount,
   });
   assert.deepEqual(result, { status: 'created', checkpointId: 'cp-1' });
+});
+
+test('storeAgt002AnalysisCheckpoint rejects missing or partial progress metadata before any RPC call', async () => {
+  for (const field of ['progressPhase', 'completedBatchCount', 'totalBatchCount']) {
+    await assert.rejects(
+      () => storeAgt002AnalysisCheckpoint(neverCalledDatabase(), validStoreParams({ [field]: undefined })),
+      error => error.code === AGT002_CHECKPOINT_ERROR_CODES.CHECKPOINT_INVALID,
+      `${field} must be required before any RPC call`,
+    );
+  }
+});
+
+test('storeAgt002AnalysisCheckpoint rejects an unrecognized progressPhase before any RPC call', async () => {
+  await assert.rejects(
+    () => storeAgt002AnalysisCheckpoint(neverCalledDatabase(), validStoreParams({ progressPhase: 'bogus_phase' })),
+    error => error.code === AGT002_CHECKPOINT_ERROR_CODES.CHECKPOINT_INVALID,
+  );
+});
+
+test('storeAgt002AnalysisCheckpoint rejects a non-positive-integer completedBatchCount before any RPC call', async () => {
+  for (const completedBatchCount of [0, -1, 1.5, '1', null]) {
+    await assert.rejects(
+      () => storeAgt002AnalysisCheckpoint(neverCalledDatabase(), validStoreParams({ completedBatchCount })),
+      error => error.code === AGT002_CHECKPOINT_ERROR_CODES.CHECKPOINT_INVALID,
+      `completedBatchCount=${JSON.stringify(completedBatchCount)} must be rejected`,
+    );
+  }
+});
+
+test('storeAgt002AnalysisCheckpoint rejects a non-integer or negative totalBatchCount before any RPC call', async () => {
+  for (const totalBatchCount of [0.5, '2', null, -1]) {
+    await assert.rejects(
+      () => storeAgt002AnalysisCheckpoint(neverCalledDatabase(), validStoreParams({ totalBatchCount })),
+      error => error.code === AGT002_CHECKPOINT_ERROR_CODES.CHECKPOINT_INVALID,
+      `totalBatchCount=${JSON.stringify(totalBatchCount)} must be rejected`,
+    );
+  }
+});
+
+test('storeAgt002AnalysisCheckpoint rejects completedBatchCount greater than totalBatchCount before any RPC call', async () => {
+  await assert.rejects(
+    () => storeAgt002AnalysisCheckpoint(neverCalledDatabase(), validStoreParams({ completedBatchCount: 2, totalBatchCount: 1 })),
+    error => error.code === AGT002_CHECKPOINT_ERROR_CODES.CHECKPOINT_INVALID,
+  );
+});
+
+test('storeAgt002AnalysisCheckpoint enforces stage/phase pairing: semantic_discovery_batch and semantic_manifest only pair with semantic_discovery; integral_analysis_batch only pairs with integral_analysis', async () => {
+  const validPairs = [
+    ['semantic_discovery_batch', 'semantic_discovery'],
+    ['semantic_manifest', 'semantic_discovery'],
+    ['integral_analysis_batch', 'integral_analysis'],
+  ];
+  for (const [stage, progressPhase] of validPairs) {
+    const database = { async rpc() { return { data: { status: 'created', checkpoint_id: 'cp-1' }, error: null }; } };
+    const result = await storeAgt002AnalysisCheckpoint(database, validStoreParams({ stage, progressPhase }));
+    assert.deepEqual(result, { status: 'created', checkpointId: 'cp-1' }, `${stage}/${progressPhase} must be accepted`);
+  }
+
+  const invalidPairs = [
+    ['semantic_discovery_batch', 'integral_analysis'],
+    ['semantic_manifest', 'integral_analysis'],
+    ['integral_analysis_batch', 'semantic_discovery'],
+  ];
+  for (const [stage, progressPhase] of invalidPairs) {
+    await assert.rejects(
+      () => storeAgt002AnalysisCheckpoint(neverCalledDatabase(), validStoreParams({ stage, progressPhase })),
+      error => error.code === AGT002_CHECKPOINT_ERROR_CODES.CHECKPOINT_INVALID,
+      `${stage}/${progressPhase} must be rejected before any RPC call`,
+    );
+  }
 });
 
 test('storeAgt002AnalysisCheckpoint rejects incomplete lease/workset/checkpoint identity before any RPC call', async () => {
@@ -657,6 +730,7 @@ test('createAgt002AnalysisCheckpointAdapter builds loadCheckpoint/storeCheckpoin
   const storeResult = await adapter.storeCheckpoint({
     stage: 'integral_analysis_batch', batchIndex: 0, requestHash: 'h'.repeat(64),
     stageContractVersion: 'agt002-integral-analysis-batch-contract.v1', output, outputSha256, usage: null, providerIdempotencyKey: 'prov-1',
+    progressPhase: 'integral_analysis', completedBatchCount: 1, totalBatchCount: 2,
   });
   assert.deepEqual(storeResult, { status: 'created', checkpointId: 'cp-1' });
   assert.deepEqual(calls[1].params, {
@@ -664,7 +738,8 @@ test('createAgt002AnalysisCheckpointAdapter builds loadCheckpoint/storeCheckpoin
     p_stage: 'integral_analysis_batch', p_batch_index: 0, p_request_hash: 'h'.repeat(64),
     p_stage_contract_version: 'agt002-integral-analysis-batch-contract.v1', p_output: output, p_output_sha256: outputSha256,
     p_usage: null, p_provider_idempotency_key: 'prov-1',
-  });
+    p_progress_phase: 'integral_analysis', p_completed_batch_count: 1, p_total_batch_count: 2,
+  }, 'the adapter must pass progress metadata through unchanged, still fenced by the given job/lease/workset identity');
 });
 
 // ---------------------------------------------------------------------------------------------

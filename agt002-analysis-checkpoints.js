@@ -23,6 +23,15 @@ export const AGT002_CHECKPOINT_STAGES = Object.freeze([
 ]);
 const AGT002_CHECKPOINT_STAGE_SET = new Set(AGT002_CHECKPOINT_STAGES);
 
+export const AGT002_CHECKPOINT_PROGRESS_PHASES = Object.freeze(['semantic_discovery', 'integral_analysis']);
+const AGT002_CHECKPOINT_PROGRESS_PHASE_SET = new Set(AGT002_CHECKPOINT_PROGRESS_PHASES);
+const AGT002_CHECKPOINT_STAGE_PROGRESS_PHASE = Object.freeze({
+  semantic_discovery_batch: 'semantic_discovery',
+  semantic_manifest: 'semantic_discovery',
+  integral_analysis_plan: 'integral_analysis',
+  integral_analysis_batch: 'integral_analysis',
+});
+
 export const AGT002_CHECKPOINT_ERROR_CODES = Object.freeze({
   IDENTITY_INVALID: 'AGT002_CHECKPOINT_IDENTITY_INVALID',
   WORKSET_RESPONSE_INVALID: 'AGT002_CHECKPOINT_WORKSET_RESPONSE_INVALID',
@@ -343,6 +352,10 @@ export async function storeAgt002AnalysisCheckpoint(database, params) {
   if (!isPlainObject(value.output)) invalid('output');
   if (value.usage !== null && value.usage !== undefined && !isPlainObject(value.usage)) invalid('usage');
   if (!isNonEmptyString(value.providerIdempotencyKey)) invalid('providerIdempotencyKey');
+  if (!AGT002_CHECKPOINT_PROGRESS_PHASE_SET.has(value.progressPhase)) invalid('progressPhase');
+  if (!Number.isInteger(value.completedBatchCount) || value.completedBatchCount < 1) invalid('completedBatchCount');
+  if (!Number.isInteger(value.totalBatchCount) || value.totalBatchCount < value.completedBatchCount) invalid('totalBatchCount');
+  if (AGT002_CHECKPOINT_STAGE_PROGRESS_PHASE[value.stage] !== value.progressPhase) invalid('stage/progressPhase pairing');
 
   if (canonicalSha256(value.output) !== value.outputSha256) {
     invalid('outputSha256 no coincide con el hash canónico recalculado de output');
@@ -365,6 +378,9 @@ export async function storeAgt002AnalysisCheckpoint(database, params) {
     p_output_sha256: value.outputSha256,
     p_usage: usage,
     p_provider_idempotency_key: value.providerIdempotencyKey,
+    p_progress_phase: value.progressPhase,
+    p_completed_batch_count: value.completedBatchCount,
+    p_total_batch_count: value.totalBatchCount,
   }, { conflictCode: AGT002_CHECKPOINT_ERROR_CODES.CHECKPOINT_PERSISTENCE_CONFLICT });
 
   if (!isPlainObject(data) || !['created', 'existing'].includes(data.status) || !isNonEmptyString(data.checkpoint_id)) {
@@ -488,10 +504,11 @@ export function createAgt002AnalysisCheckpointAdapter(database, { jobId, leaseId
       const resolvedWorksetIdValue = await resolveWorksetId();
       return loadAgt002AnalysisCheckpoint(database, { worksetId: resolvedWorksetIdValue, stage, batchIndex, expectedRequestHash }, { validate });
     },
-    async storeCheckpoint({ stage, batchIndex, requestHash, stageContractVersion, output, outputSha256, usage, providerIdempotencyKey }) {
+    async storeCheckpoint({ stage, batchIndex, requestHash, stageContractVersion, output, outputSha256, usage, providerIdempotencyKey, progressPhase, completedBatchCount, totalBatchCount }) {
       const resolvedWorksetIdValue = await resolveWorksetId();
       return storeAgt002AnalysisCheckpoint(database, {
         jobId, leaseId, worksetId: resolvedWorksetIdValue, stage, batchIndex, requestHash, stageContractVersion, output, outputSha256, usage, providerIdempotencyKey,
+        progressPhase, completedBatchCount, totalBatchCount,
       });
     },
   });

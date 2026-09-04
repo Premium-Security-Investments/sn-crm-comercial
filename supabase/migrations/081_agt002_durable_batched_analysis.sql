@@ -165,7 +165,7 @@ alter table public.psi_agt002_reanalysis_jobs
     check (execution_mode in ('single_turn_v1', 'durable_batched_v1')),
   add column if not exists phase text
     check (phase is null or phase in (
-      'semantic_discovery_batch', 'semantic_manifest', 'integral_analysis_plan', 'integral_analysis_batch'
+      'semantic_discovery', 'integral_analysis', 'merge', 'finalize'
     )),
   add column if not exists completed_batch_count integer not null default 0
     check (completed_batch_count >= 0),
@@ -328,7 +328,11 @@ $$;
 -- any content mismatch under the same identity fails closed. Lease-fenced by BOTH job_id
 -- and lease_id against a running, unexpired job whose frozen idempotency_key equals the
 -- workset's. Never touches psi_tender_analysis_runs: a checkpoint is durable acceptance,
--- never a publication.
+-- never a publication. The trailing p_progress_phase/p_completed_batch_count/
+-- p_total_batch_count triplet lets this SAME call also advance the fenced running job's
+-- phase/progress counters in one transaction: no separate, unfenced "update progress" RPC
+-- ever exists. Progress may never regress within a phase, and the only legal phase
+-- transition is semantic_discovery -> integral_analysis.
 -- ---------------------------------------------------------------------------------------
 create or replace function public.psi_record_agt002_analysis_checkpoint(
   p_job_id uuid,
@@ -341,7 +345,10 @@ create or replace function public.psi_record_agt002_analysis_checkpoint(
   p_output jsonb,
   p_output_sha256 text,
   p_usage jsonb,
-  p_provider_idempotency_key text
+  p_provider_idempotency_key text,
+  p_progress_phase text,
+  p_completed_batch_count integer,
+  p_total_batch_count integer
 ) returns jsonb
 language plpgsql
 security definer
@@ -352,6 +359,8 @@ declare
   v_workset public.psi_agt002_analysis_worksets%rowtype;
   v_checkpoint public.psi_agt002_analysis_checkpoints%rowtype;
   v_new_id uuid;
+  v_result jsonb;
+  v_row_count integer;
 begin
   select * into v_job from public.psi_agt002_reanalysis_jobs where id = p_job_id for share;
   if not found then
@@ -395,6 +404,36 @@ begin
     raise exception 'Los metadatos del checkpoint son obligatorios.' using errcode = '22023';
   end if;
 
+  if p_progress_phase is null or p_progress_phase not in ('semantic_discovery', 'integral_analysis') then
+    raise exception 'La fase de progreso del checkpoint no es válida.' using errcode = '22023';
+  end if;
+  if p_completed_batch_count is null or not (p_completed_batch_count > 0) then
+    raise exception 'El conteo de lotes completados debe ser al menos 1.' using errcode = '22023';
+  end if;
+  if p_total_batch_count is null or p_total_batch_count < p_completed_batch_count then
+    raise exception 'El total de lotes no puede ser menor que los lotes completados.' using errcode = '22023';
+  end if;
+  if p_stage in ('semantic_discovery_batch', 'semantic_manifest') and p_progress_phase is distinct from 'semantic_discovery' then
+    raise exception 'La etapa % requiere la fase de progreso semantic_discovery.', p_stage using errcode = '22023';
+  end if;
+  if p_stage in ('integral_analysis_plan', 'integral_analysis_batch') and p_progress_phase is distinct from 'integral_analysis' then
+    raise exception 'La etapa % requiere la fase de progreso integral_analysis.', p_stage using errcode = '22023';
+  end if;
+
+  -- No progress regression, fenced against the same running job locked above: the same
+  -- phase can never lower its completed/total counts, and the only legal phase transition
+  -- is semantic_discovery -> integral_analysis (a null job phase, i.e. not yet started,
+  -- accepts either phase).
+  if v_job.phase is not null then
+    if v_job.phase = p_progress_phase then
+      if p_completed_batch_count < v_job.completed_batch_count or p_total_batch_count < v_job.total_batch_count then
+        raise exception 'psi_record_agt002_analysis_checkpoint: el progreso del job % no puede retroceder', p_job_id using errcode = '55000';
+      end if;
+    elsif v_job.phase = 'integral_analysis' and p_progress_phase = 'semantic_discovery' then
+      raise exception 'psi_record_agt002_analysis_checkpoint: el job % no puede retroceder de integral_analysis a semantic_discovery', p_job_id using errcode = '55000';
+    end if;
+  end if;
+
   select * into v_checkpoint from public.psi_agt002_analysis_checkpoints
     where workset_id = p_workset_id and stage = p_stage and batch_index = p_batch_index
     for share;
@@ -407,17 +446,32 @@ begin
        or v_checkpoint.provider_idempotency_key is distinct from p_provider_idempotency_key then
       raise exception 'psi_record_agt002_analysis_checkpoint: (workset_id, stage, batch_index) ya tiene un checkpoint distinto.' using errcode = '23505';
     end if;
-    return jsonb_build_object('status', 'existing', 'checkpoint_id', v_checkpoint.id);
+    v_result := jsonb_build_object('status', 'existing', 'checkpoint_id', v_checkpoint.id);
+  else
+    v_new_id := gen_random_uuid();
+    insert into public.psi_agt002_analysis_checkpoints (
+      id, workset_id, stage, batch_index, request_hash, stage_contract_version, output, output_sha256, usage, provider_idempotency_key
+    ) values (
+      v_new_id, p_workset_id, p_stage, p_batch_index, p_request_hash, p_stage_contract_version, p_output, p_output_sha256, p_usage, p_provider_idempotency_key
+    );
+    v_result := jsonb_build_object('status', 'created', 'checkpoint_id', v_new_id);
   end if;
 
-  v_new_id := gen_random_uuid();
-  insert into public.psi_agt002_analysis_checkpoints (
-    id, workset_id, stage, batch_index, request_hash, stage_contract_version, output, output_sha256, usage, provider_idempotency_key
-  ) values (
-    v_new_id, p_workset_id, p_stage, p_batch_index, p_request_hash, p_stage_contract_version, p_output, p_output_sha256, p_usage, p_provider_idempotency_key
-  );
+  -- The SAME fenced running job the checkpoint identity/lease checks above already locked:
+  -- advance its phase/progress counters in this same transaction, failing closed unless
+  -- exactly one row (still running, still under this lease) actually updated.
+  update public.psi_agt002_reanalysis_jobs
+  set phase = p_progress_phase,
+      completed_batch_count = p_completed_batch_count,
+      total_batch_count = p_total_batch_count,
+      updated_at = now()
+  where id = p_job_id and lease_id = p_lease_id and status = 'running';
+  get diagnostics v_row_count = row_count;
+  if v_row_count <> 1 then
+    raise exception 'psi_record_agt002_analysis_checkpoint: no se pudo actualizar el progreso del job % (reserva perdida o job no en ejecución)', p_job_id using errcode = '55000';
+  end if;
 
-  return jsonb_build_object('status', 'created', 'checkpoint_id', v_new_id);
+  return v_result;
 end;
 $$;
 
@@ -659,7 +713,12 @@ begin
     'context_version_id', v_job.context_version_id,
     'idempotency_key', v_job.idempotency_key,
     'frozen_engine_input', v_job.frozen_engine_input,
-    'requested_by', v_job.requested_by
+    'requested_by', v_job.requested_by,
+    'execution_mode', v_job.execution_mode,
+    'phase', v_job.phase,
+    'completed_batch_count', v_job.completed_batch_count,
+    'total_batch_count', v_job.total_batch_count,
+    'resume_count', v_job.resume_count
   );
 end;
 $$;
@@ -850,8 +909,8 @@ grant execute on function public.psi_get_agt002_analysis_workset(text) to servic
 revoke all on function public.psi_list_agt002_analysis_checkpoints(uuid) from public, authenticated, anon, service_role;
 grant execute on function public.psi_list_agt002_analysis_checkpoints(uuid) to service_role;
 
-revoke all on function public.psi_record_agt002_analysis_checkpoint(uuid, uuid, uuid, text, integer, text, text, jsonb, text, jsonb, text) from public, authenticated, anon, service_role;
-grant execute on function public.psi_record_agt002_analysis_checkpoint(uuid, uuid, uuid, text, integer, text, text, jsonb, text, jsonb, text) to service_role;
+revoke all on function public.psi_record_agt002_analysis_checkpoint(uuid, uuid, uuid, text, integer, text, text, jsonb, text, jsonb, text, text, integer, integer) from public, authenticated, anon, service_role;
+grant execute on function public.psi_record_agt002_analysis_checkpoint(uuid, uuid, uuid, text, integer, text, text, jsonb, text, jsonb, text, text, integer, integer) to service_role;
 
 revoke all on function public.psi_mark_agt002_analysis_workset_published(uuid, uuid, uuid, uuid) from public, authenticated, anon, service_role;
 grant execute on function public.psi_mark_agt002_analysis_workset_published(uuid, uuid, uuid, uuid) to service_role;

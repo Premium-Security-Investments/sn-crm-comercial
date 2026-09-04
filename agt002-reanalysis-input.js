@@ -108,7 +108,7 @@ export function buildAgt002FrozenEngineInput({
   const flags = {};
   for (const name of ANALYSIS_FLAG_NAMES) flags[name] = analysisConfig[name] === true;
   return deepFreezeJson(cloneJson({
-    schema_version: 1,
+    schema_version: 2,
     engine_identity: {
       model: runtimeConfig.model.trim(),
       policy_version: runtimeConfig.policyVersion.trim(),

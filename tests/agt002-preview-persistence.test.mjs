@@ -16,7 +16,7 @@ import {
   registerAgt002PreviewAnalysis,
   releaseAgt002PreviewClaim,
 } from '../agt002-preview-persistence.js';
-import { projectAgt002IntegralV3ToV2 } from '../agt002-v3-compatibility.js';
+import { computeAgt002IntegralV3CriticalOpenCount, projectAgt002IntegralV3ToV2 } from '../agt002-v3-compatibility.js';
 import { registerAgt002ContextVersion } from '../tender-analysis-foundation.js';
 
 const ids = {
@@ -933,6 +933,134 @@ for (const bad of [v3Envelope({ integral_analysis: { contract_version: 'wrong' }
     context_version_id: ids.contextVersion,
   });
   assert.equal(registered.result.legal_corpus_version_id, LEGAL_CORPUS_VERSION_ID);
+}
+
+// ---------------------------------------------------------------------------
+// Task 8 (characterization coverage — Task 6/7's engine and this persistence layer
+// already satisfy this; nothing here forces a production change): a deterministic
+// MERGE of two batches / two distinct governed requirement units, in institutional
+// sequence, must still persist as ONE complete integral_analysis through the exact same
+// single canonical RPC call — no workset/checkpoint/job/progress/finalizer surface
+// growing its params — and the full V2 projection / critical_open_count must visibly
+// depend on the SECOND batch's unit (the first alone is noncritical/advance-compatible),
+// never merely on the first batch.
+// ---------------------------------------------------------------------------
+function v3MergedIntegralAnalysis() {
+  const firstBatchUnit = v3IntegralAnalysis().analysis_units[0]; // req-1: noncritical/advance-compatible.
+  const secondBatchUnit = {
+    unit_id: 'UNIT-2', unit_kind: 'tender_requirement', requirement_id: 'req-2', category: 'habilitating', sequence: 2,
+    title: 'Certificado RUP', assessment_mode: 'assessed',
+    conclusion: { status: 'gap_evidenced', summary: 'Falta certificado RUP vigente.', confidence: 'medium' },
+    blocking: { effect: 'blocker', curability: 'curable', reason: 'Pendiente de aportar certificado RUP.' },
+    evidence_state: { presence: 'absent', review: 'partially_reviewed', validity: 'not_applicable', applicability: 'applicable', compliance: 'gap_evidenced_pending_human_review' },
+    evidence_refs: [{ ref: 'chunk:1', source_type: 'tender_document', purpose: 'gap_basis' }],
+    missing_evidence: [], commercial_impact: { level: 'high', summary: 'Riesgo de rechazo por falta de RUP.', dimension: 'eligibility' },
+    legal_assessment: { status: 'not_applicable', basis_refs: [], summary: 'No aplica.', human_legal_review_required: false },
+    actions: [{
+      action_id: 'ACT-2', action_type: 'remediate_gap', summary: 'Aportar certificado RUP vigente antes del cierre.',
+      basis_unit_id: 'UNIT-2', suggested_role: 'financial', priority: 'high', external_side_effect: false,
+    }],
+    milestone: { status: 'not_identified', type: 'none', at: null, source_ref: null, summary: 'Sin hito.' },
+    escalation: { required: false, level: 'none', reason: 'Sin condición crítica adicional.' },
+    // Genuinely critical AND unresolved: an open (not evidence_satisfied) blocker, so
+    // isUnresolvedBlocker/isCriticalOpenUnit both hold for this second-batch unit alone.
+    closure: { status: 'open', condition: 'Persona aporta RUP.', evidence_required: ['tender_document'] },
+    human_validation: { required: true, status: 'pending', reason: 'Confirmar RUP.' },
+  };
+  return {
+    contract_version: 'agt002-integral-analysis-v3',
+    coverage: {
+      manifest_version: 'agt002-deep-analysis-v1',
+      // Merge of two batches / two governed requirement units, each exactly once, in
+      // institutional sequence, with no omissions.
+      expected_requirement_ids: ['req-1', 'req-2'], analyzed_requirement_ids: ['req-1', 'req-2'],
+      material_omissions: false, omission_reasons: [], company_evidence_manifest_version: 'agt002-company-evidence-classes-v1',
+      company_evidence_class_ids: [], legal_corpus_version_id: null,
+    },
+    analysis_units: [firstBatchUnit, secondBatchUnit],
+  };
+}
+
+function v3MergedEnvelope(overrides = {}) {
+  const integral_analysis = v3MergedIntegralAnalysis();
+  return {
+    schema_version: '3.0.0',
+    agent_id: 'AGT-002',
+    run_id: '77777777-7777-4777-8777-777777777777',
+    policy_version: 'agt002-integral-v3-policy-1',
+    snapshot_id: ids.snapshot,
+    context_version_id: ids.contextVersion,
+    status: 'completed',
+    method: 'agent_ai',
+    integral_analysis,
+    evidence_coverage: envelope().evidence_coverage,
+    legal_corpus_version_id: null,
+    human_review_required: true,
+    // Computed from the COMPLETE merged analysis, never hand-typed — exactly what a real
+    // engine would hand registerAgt002PreviewAnalysis after merging both batches.
+    v2_projection: projectAgt002IntegralV3ToV2(integral_analysis),
+    usage: { provider: 'codex_app_server', model: 'synthetic-codex-model', input_tokens: 5, output_tokens: 5, rate_limit: null },
+    ...overrides,
+  };
+}
+
+{
+  const database = fakeDatabase();
+  const mergedEnvelope = v3MergedEnvelope();
+  const merged = mergedEnvelope.integral_analysis;
+  const registered = await registerAgt002PreviewAnalysis(database, {
+    opportunity_id: ids.opportunity, tender_id: ids.tender, snapshot_id: ids.snapshot, envelope: mergedEnvelope, canonicalOnly: true,
+    context_version_id: ids.contextVersion,
+  });
+
+  // Exactly one RPC call, to the exact existing canonical RPC name.
+  assert.equal(database.rpcCalls.length, 1, 'a multi-batch-merged v3 registration must still be a single atomic RPC call');
+  const call = database.rpcCalls[0];
+  assert.equal(call.name, 'psi_record_agt002_canonical_analysis_run');
+
+  // No workset/checkpoint/job/progress/finalizer surface was added to the canonical RPC's
+  // signature/params — merging batches is a pure input concern, never an orchestration one.
+  const forbiddenParamPattern = /workset|checkpoint|job|progress|finaliz/i;
+  for (const key of Object.keys(call.params)) {
+    assert.doesNotMatch(key, forbiddenParamPattern, `canonical RPC params must not grow a batching-orchestration key: ${key}`);
+  }
+  assert.doesNotMatch(JSON.stringify(call.params.p_result), forbiddenParamPattern, 'the stored result must not carry batching-orchestration state either');
+
+  // Both complete governed units are stored once each, in order, with no omissions.
+  assert.deepEqual(call.params.p_result.integral_analysis.coverage.expected_requirement_ids, ['req-1', 'req-2']);
+  assert.deepEqual(call.params.p_result.integral_analysis.coverage.analyzed_requirement_ids, ['req-1', 'req-2']);
+  assert.deepEqual(
+    call.params.p_result.integral_analysis.analysis_units.map(unit => unit.requirement_id),
+    ['req-1', 'req-2'],
+  );
+  assert.deepEqual(call.params.p_result.integral_analysis, merged);
+
+  // The stored V2-shaped fields visibly carry the SECOND batch's blocker/question: the
+  // deterministic recommendation is 'pause' only because of it, never the first unit alone
+  // (whose own single-unit projection is 'advance', per the pre-existing happy-path fixture).
+  assert.equal(call.params.p_result.recommendation, 'pause');
+  assert.ok(call.params.p_result.blockers.some(finding => finding.id === 'UNIT-2::blocker'), 'the second-batch blocker must survive into the stored V2 projection');
+  assert.ok(
+    call.params.p_result.questions.some(finding => finding.id === 'UNIT-2::question' && finding.critical === true),
+    'the second-batch critical question must survive into the stored V2 projection',
+  );
+
+  // critical_open_count is the deterministic count over the FULL merge (1), never the
+  // first batch alone (0).
+  assert.equal(call.params.p_critical_open_count, 1);
+  assert.equal(computeAgt002IntegralV3CriticalOpenCount(merged), 1);
+  assert.equal(
+    computeAgt002IntegralV3CriticalOpenCount({ ...merged, analysis_units: [merged.analysis_units[0]] }),
+    0,
+    'sanity: the first batch alone is noncritical/advance-compatible',
+  );
+
+  // The returned registered result matches these complete merged semantics exactly.
+  assert.equal(registered.critical_open_count, 1);
+  assert.deepEqual(registered.result.integral_analysis, merged);
+  assert.equal(registered.result.recommendation, 'pause');
+  assert.ok(registered.result.blockers.some(finding => finding.id === 'UNIT-2::blocker'));
+  assert.ok(registered.result.questions.some(finding => finding.id === 'UNIT-2::question' && finding.critical === true));
 }
 
 // ---------------------------------------------------------------------------

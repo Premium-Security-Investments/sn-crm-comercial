@@ -708,4 +708,111 @@ function fakeDatabase() {
   }
 }
 
+// =============================================================================================
+// 8. Per-run analysisCheckpointHooks must reach the discovery turn's OWN options, not only the
+//    orchestrator's args: a caller who opted a run into durable batching gets a discovery stage
+//    that can be checkpointed like every other stage, not one left outside the hooks' reach.
+// =============================================================================================
+{
+  const hooks = {
+    loadCheckpoint: async () => ({ hit: false }),
+    storeCheckpoint: async () => ({ status: 'created', checkpointId: 'sentinel-checkpoint' }),
+  };
+
+  let discoveryOptions;
+  const semanticDiscoveryProvider = async options => {
+    discoveryOptions = options;
+    return structuralDiscovery(options);
+  };
+
+  let orchestratorArgs;
+  const batchedV3Orchestrator = async args => {
+    orchestratorArgs = args;
+    return { status: 'completed', analysis_run_id: FIXED_RUN_ID };
+  };
+
+  const client = fakeClient(() => {
+    throw new Error('the provider client analysis turn must never be called directly: the orchestrator stub owns it');
+  });
+
+  const engine = discoveryEngine(client, { semanticDiscoveryProvider, batchedV3Orchestrator });
+
+  await engine.analyze({
+    snapshotId: SNAPSHOT_ID, documents: smallDocuments, documentGaps: [],
+    deepAnalysis: {}, contextV2Sections: contextV2Sections(),
+  }, { analysisCheckpointHooks: hooks });
+
+  assert.equal(client.calls.length, 0,
+    'the provider client analysis turn is never called directly: the orchestrator stub owns it');
+  assert.ok(discoveryOptions, 'the discovery provider must have been invoked');
+  assert.equal(discoveryOptions.checkpointHooks, hooks,
+    'the discovery options must carry the exact per-run checkpoint hooks object');
+  assert.ok(orchestratorArgs, 'the orchestrator must have been invoked');
+  assert.equal(orchestratorArgs.checkpointHooks, hooks,
+    'the orchestrator args must carry the exact same per-run checkpoint hooks object');
+}
+
+// =============================================================================================
+// 9. Constructor-bound checkpointHooks (Task 6A4) reach the discovery turn's own options exactly
+//    like the orchestrator's args, and a distinct per-run analysisCheckpointHooks always overrides
+//    the bound hooks in BOTH places — never a silent merge, never a fallback to the binding.
+// =============================================================================================
+{
+  const boundHooks = {
+    loadCheckpoint: async () => ({ hit: false }),
+    storeCheckpoint: async () => ({ status: 'created', checkpointId: 'sentinel-checkpoint-bound' }),
+  };
+  const overrideHooks = {
+    loadCheckpoint: async () => ({ hit: false }),
+    storeCheckpoint: async () => ({ status: 'created', checkpointId: 'sentinel-checkpoint-override' }),
+  };
+
+  let discoveryOptions;
+  const semanticDiscoveryProvider = async options => {
+    discoveryOptions = options;
+    return structuralDiscovery(options);
+  };
+
+  let orchestratorArgs;
+  const batchedV3Orchestrator = async args => {
+    orchestratorArgs = args;
+    return { status: 'completed', analysis_run_id: FIXED_RUN_ID };
+  };
+
+  const client = fakeClient(() => {
+    throw new Error('the provider client analysis turn must never be called directly: the orchestrator stub owns it');
+  });
+
+  const engine = discoveryEngine(client, {
+    semanticDiscoveryProvider, batchedV3Orchestrator, checkpointHooks: boundHooks,
+  });
+
+  // (9a) No per-run hooks supplied: both the discovery options and the orchestrator args fall
+  // back to the constructor-bound hooks.
+  await engine.analyze({
+    snapshotId: SNAPSHOT_ID, documents: smallDocuments, documentGaps: [],
+    deepAnalysis: {}, contextV2Sections: contextV2Sections(),
+  });
+  assert.equal(discoveryOptions.checkpointHooks, boundHooks,
+    'with no per-run hooks, the discovery options must carry the constructor-bound checkpoint hooks');
+  assert.equal(orchestratorArgs.checkpointHooks, boundHooks,
+    'with no per-run hooks, the orchestrator args must carry the constructor-bound checkpoint hooks');
+
+  // (9b) A distinct, valid per-run analysisCheckpointHooks overrides the binding everywhere.
+  discoveryOptions = undefined;
+  orchestratorArgs = undefined;
+  await engine.analyze({
+    snapshotId: SNAPSHOT_ID, documents: smallDocuments, documentGaps: [],
+    deepAnalysis: {}, contextV2Sections: contextV2Sections(),
+  }, { analysisCheckpointHooks: overrideHooks });
+  assert.equal(discoveryOptions.checkpointHooks, overrideHooks,
+    'a per-run override must reach the discovery options');
+  assert.notEqual(discoveryOptions.checkpointHooks, boundHooks,
+    'a per-run override must replace, never merge with, the constructor-bound hooks in the discovery options');
+  assert.equal(orchestratorArgs.checkpointHooks, overrideHooks,
+    'a per-run override must reach the orchestrator args');
+  assert.notEqual(orchestratorArgs.checkpointHooks, boundHooks,
+    'a per-run override must replace, never merge with, the constructor-bound hooks in the orchestrator args');
+}
+
 console.log('tests/agt002-preview-engine-discovery-frontier-projection.test.mjs OK');

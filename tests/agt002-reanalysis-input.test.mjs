@@ -54,13 +54,24 @@ function createSource() {
 test('builds a JSON-safe frozen engine input with no bridge or database secrets', () => {
   const source = createSource();
   const input = buildAgt002FrozenEngineInput(source);
-  assert.equal(input.schema_version, 1);
+  assert.equal(input.schema_version, 2);
   assert.equal(input.engine_identity.idempotency_key, 'key');
   assert.equal(input.analysis_context.snapshotId, 'snap');
   assert.deepEqual(input.integral_v3_governance, source.integralV3Governance);
   const serialized = JSON.stringify(input);
   assert.doesNotMatch(serialized, /HMAC|SERVICE_ROLE|bridge_url|secret/i);
   assert.doesNotThrow(() => structuredClone(input));
+});
+
+// C: execution mode is server-owned queue state decided by the worker/executor at claim time,
+// never a value the caller can freeze into the enqueued JSON — so it must be absent everywhere,
+// not merely unset/false, on both the root and engine_identity.
+test('never freezes execution_mode/executionMode into the root or engine_identity: it is server-owned queue state', () => {
+  const input = buildAgt002FrozenEngineInput(createSource());
+  assert.ok(!Object.prototype.hasOwnProperty.call(input, 'execution_mode'));
+  assert.ok(!Object.prototype.hasOwnProperty.call(input, 'executionMode'));
+  assert.ok(!Object.prototype.hasOwnProperty.call(input.engine_identity, 'execution_mode'));
+  assert.ok(!Object.prototype.hasOwnProperty.call(input.engine_identity, 'executionMode'));
 });
 
 test('deep-clones inputs so later request mutations cannot change the queued payload', () => {

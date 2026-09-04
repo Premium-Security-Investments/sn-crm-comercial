@@ -1,4 +1,7 @@
 const CLOSED_ERROR_CODES = new Set(['timeout', 'provider_error', 'invalid_output', 'persistence_failure', 'lease_lost', 'capacity_unavailable']);
+const CLOSED_EXECUTION_MODES = new Set(['single_turn_v1', 'durable_batched_v1']);
+const CLOSED_JOB_PROGRESS_PHASES = new Set(['semantic_discovery', 'integral_analysis', 'merge', 'finalize']);
+const MODERN_CLAIM_FIELDS = ['execution_mode', 'phase', 'completed_batch_count', 'total_batch_count', 'resume_count'];
 
 async function rpc(database, name, args) {
   const { data, error } = await database.rpc(name, args);
@@ -33,6 +36,33 @@ export async function createAgt002ReanalysisJob(database, { opportunityId, tende
   return { status: result.status, jobId: result.job_id };
 }
 
+function isClosedNonNegativeInteger(value) {
+  return Number.isInteger(value) && value >= 0;
+}
+
+/**
+ * Fail-closed extraction of modern batched-execution claim metadata. Legacy claims
+ * carrying none of the five modern fields map to null unchanged. If any modern field
+ * is present, all five must be own properties and pass their closed validations, or
+ * the claim is treated as malformed.
+ */
+function extractModernClaimFields(claim) {
+  const present = MODERN_CLAIM_FIELDS.filter(field => Object.hasOwn(claim, field));
+  if (present.length === 0) return null;
+  if (present.length !== MODERN_CLAIM_FIELDS.length) return undefined;
+  const { execution_mode: executionMode, phase, completed_batch_count: completedBatchCount, total_batch_count: totalBatchCount, resume_count: resumeCount } = claim;
+  if (!CLOSED_EXECUTION_MODES.has(executionMode)
+      || (phase !== null && !CLOSED_JOB_PROGRESS_PHASES.has(phase))
+      || !isClosedNonNegativeInteger(completedBatchCount)
+      || !isClosedNonNegativeInteger(totalBatchCount)
+      || !isClosedNonNegativeInteger(resumeCount)
+      || completedBatchCount > totalBatchCount
+      || resumeCount > 5) {
+    return undefined;
+  }
+  return { executionMode, phase, completedBatchCount, totalBatchCount, resumeCount };
+}
+
 /** Claims at most one queued job with a bounded lease; null when nothing is claimable. */
 export async function claimAgt002ReanalysisJob(database, { leaseSeconds = 90 } = {}) {
   const claim = await rpc(database, 'psi_claim_agt002_reanalysis_job', { p_lease_seconds: leaseSeconds });
@@ -46,6 +76,10 @@ export async function claimAgt002ReanalysisJob(database, { leaseSeconds = 90 } =
       || !claim.frozen_engine_input || typeof claim.frozen_engine_input !== 'object') {
     throw new Error('El reclamo del job de reanálisis AGT-002 no devolvió un resultado válido.');
   }
+  const modernFields = extractModernClaimFields(claim);
+  if (modernFields === undefined) {
+    throw new Error('El reclamo del job de reanálisis AGT-002 no devolvió un resultado válido.');
+  }
   return {
     jobId: claim.job_id,
     leaseId: claim.lease_id,
@@ -57,6 +91,7 @@ export async function claimAgt002ReanalysisJob(database, { leaseSeconds = 90 } =
     idempotencyKey: claim.idempotency_key,
     frozenEngineInput: claim.frozen_engine_input,
     requestedBy: claim.requested_by,
+    ...(modernFields ? modernFields : {}),
   };
 }
 

@@ -90,6 +90,310 @@ async function claimMapsClaimedShapeToCamelCase() {
   });
 }
 
+function claimedLegacyBase() {
+  return {
+    status: 'claimed', job_id: 'job-1', lease_id: 'lease-1', lease_expires_at: '2026-08-17T00:00:00Z',
+    opportunity_id: 'o-1', tender_id: 't-1', snapshot_id: 's-1', context_version_id: 'cv-1', idempotency_key: 'key-1',
+    frozen_engine_input: { manifest: 'v1' }, requested_by: 'u-1',
+  };
+}
+
+async function claimMapsModernBatchedShapeToCamelCase() {
+  const db = fakeDb({
+    rpcResults: {
+      psi_claim_agt002_reanalysis_job: {
+        data: {
+          ...claimedLegacyBase(),
+          execution_mode: 'durable_batched_v1',
+          phase: 'integral_analysis',
+          completed_batch_count: 2,
+          total_batch_count: 5,
+          resume_count: 1,
+        },
+        error: null,
+      },
+    },
+  });
+  const claim = await claimAgt002ReanalysisJob(db);
+  assert.deepEqual(claim, {
+    jobId: 'job-1', leaseId: 'lease-1', leaseExpiresAt: '2026-08-17T00:00:00Z',
+    opportunityId: 'o-1', tenderId: 't-1', snapshotId: 's-1', contextVersionId: 'cv-1', idempotencyKey: 'key-1',
+    frozenEngineInput: { manifest: 'v1' }, requestedBy: 'u-1',
+    executionMode: 'durable_batched_v1', phase: 'integral_analysis',
+    completedBatchCount: 2, totalBatchCount: 5, resumeCount: 1,
+  });
+}
+
+// Migration 081's `phase` column is a closed-DB *operational* phase vocabulary
+// ('semantic_discovery', 'integral_analysis', 'merge', 'finalize'), entirely distinct from
+// the checkpoint `p_stage` names ('semantic_discovery_batch', 'semantic_manifest',
+// 'integral_analysis_plan', 'integral_analysis_batch'). A claim for a job still in its
+// first (semantic discovery) phase must map successfully to camelCase.
+async function claimMapsModernPhaseSemanticDiscoveryToCamelCase() {
+  const db = fakeDb({
+    rpcResults: {
+      psi_claim_agt002_reanalysis_job: {
+        data: {
+          ...claimedLegacyBase(),
+          execution_mode: 'durable_batched_v1',
+          phase: 'semantic_discovery',
+          completed_batch_count: 1,
+          total_batch_count: 3,
+          resume_count: 0,
+        },
+        error: null,
+      },
+    },
+  });
+  const claim = await claimAgt002ReanalysisJob(db);
+  assert.deepEqual(claim, {
+    jobId: 'job-1', leaseId: 'lease-1', leaseExpiresAt: '2026-08-17T00:00:00Z',
+    opportunityId: 'o-1', tenderId: 't-1', snapshotId: 's-1', contextVersionId: 'cv-1', idempotencyKey: 'key-1',
+    frozenEngineInput: { manifest: 'v1' }, requestedBy: 'u-1',
+    executionMode: 'durable_batched_v1', phase: 'semantic_discovery',
+    completedBatchCount: 1, totalBatchCount: 3, resumeCount: 0,
+  });
+}
+
+// A reclaim of an expired durable job (bounded automatic resume, migration 081) is
+// returned through the same psi_claim_agt002_reanalysis_job RPC with a nonzero
+// resume_count and whatever operational phase/counters the earlier checkpoint left behind.
+async function claimMapsModernReclaimIntegralAnalysisToCamelCase() {
+  const db = fakeDb({
+    rpcResults: {
+      psi_claim_agt002_reanalysis_job: {
+        data: {
+          ...claimedLegacyBase(),
+          execution_mode: 'durable_batched_v1',
+          phase: 'integral_analysis',
+          completed_batch_count: 3,
+          total_batch_count: 5,
+          resume_count: 2,
+        },
+        error: null,
+      },
+    },
+  });
+  const claim = await claimAgt002ReanalysisJob(db);
+  assert.deepEqual(claim, {
+    jobId: 'job-1', leaseId: 'lease-1', leaseExpiresAt: '2026-08-17T00:00:00Z',
+    opportunityId: 'o-1', tenderId: 't-1', snapshotId: 's-1', contextVersionId: 'cv-1', idempotencyKey: 'key-1',
+    frozenEngineInput: { manifest: 'v1' }, requestedBy: 'u-1',
+    executionMode: 'durable_batched_v1', phase: 'integral_analysis',
+    completedBatchCount: 3, totalBatchCount: 5, resumeCount: 2,
+  });
+}
+
+// 'merge' and 'finalize' are the two remaining phases in migration 081's closed DB phase
+// vocabulary and must be accepted exactly like 'semantic_discovery'/'integral_analysis'.
+async function claimAcceptsMergeAndFinalizePhases() {
+  for (const phase of ['merge', 'finalize']) {
+    const db = fakeDb({
+      rpcResults: {
+        psi_claim_agt002_reanalysis_job: {
+          data: {
+            ...claimedLegacyBase(),
+            execution_mode: 'durable_batched_v1', phase,
+            completed_batch_count: 4, total_batch_count: 5, resume_count: 1,
+          },
+          error: null,
+        },
+      },
+    });
+    const claim = await claimAgt002ReanalysisJob(db);
+    assert.equal(claim.phase, phase, `phase "${phase}" from the closed DB vocabulary must be accepted`);
+    assert.equal(claim.completedBatchCount, 4);
+    assert.equal(claim.totalBatchCount, 5);
+    assert.equal(claim.resumeCount, 1);
+  }
+}
+
+// Checkpoint p_stage names are a distinct closed vocabulary (migration 081) from the job's
+// phase column and must never be accepted as a claim's operational phase.
+async function claimRejectsCheckpointStageNamesAsMalformedClaimPhase() {
+  const checkpointStageNames = [
+    'semantic_discovery_batch', 'semantic_manifest', 'integral_analysis_plan', 'integral_analysis_batch',
+  ];
+  for (const phase of checkpointStageNames) {
+    const db = fakeDb({
+      rpcResults: {
+        psi_claim_agt002_reanalysis_job: {
+          data: {
+            ...claimedLegacyBase(),
+            execution_mode: 'durable_batched_v1', phase,
+            completed_batch_count: 2, total_batch_count: 5, resume_count: 1,
+          },
+          error: null,
+        },
+      },
+    });
+    await assert.rejects(
+      claimAgt002ReanalysisJob(db),
+      `checkpoint stage name "${phase}" must never be accepted as a claim phase`,
+    );
+  }
+}
+
+async function claimAcceptsNullPhaseInModernShape() {
+  const db = fakeDb({
+    rpcResults: {
+      psi_claim_agt002_reanalysis_job: {
+        data: {
+          ...claimedLegacyBase(),
+          execution_mode: 'durable_batched_v1', phase: null,
+          completed_batch_count: 2, total_batch_count: 5, resume_count: 1,
+        },
+        error: null,
+      },
+    },
+  });
+  const claim = await claimAgt002ReanalysisJob(db);
+  assert.equal(claim.phase, null, 'a null phase is an allowed value, not malformed metadata');
+  assert.equal(claim.executionMode, 'durable_batched_v1');
+  assert.equal(claim.completedBatchCount, 2);
+  assert.equal(claim.totalBatchCount, 5);
+  assert.equal(claim.resumeCount, 1);
+}
+
+async function claimNeverDerivesIdempotencyKeyFromIdentityFields() {
+  const db = fakeDb({
+    rpcResults: {
+      psi_claim_agt002_reanalysis_job: {
+        data: {
+          ...claimedLegacyBase(),
+          idempotency_key: 'opaque-server-key-unrelated-to-identity-fields',
+          execution_mode: 'durable_batched_v1', phase: 'integral_analysis',
+          completed_batch_count: 2, total_batch_count: 5, resume_count: 1,
+        },
+        error: null,
+      },
+    },
+  });
+  const claim = await claimAgt002ReanalysisJob(db);
+  assert.equal(
+    claim.idempotencyKey,
+    'opaque-server-key-unrelated-to-identity-fields',
+    'the adapter must pass idempotency_key through verbatim and never derive/recompute it',
+  );
+}
+
+async function claimRejectsUnknownExecutionMode() {
+  const db = fakeDb({
+    rpcResults: {
+      psi_claim_agt002_reanalysis_job: {
+        data: {
+          ...claimedLegacyBase(),
+          execution_mode: 'bogus_mode', phase: 'integral_analysis_batch',
+          completed_batch_count: 2, total_batch_count: 5, resume_count: 1,
+        },
+        error: null,
+      },
+    },
+  });
+  await assert.rejects(claimAgt002ReanalysisJob(db), 'an unrecognized execution_mode must fail closed');
+}
+
+async function claimRejectsUnknownPhase() {
+  const db = fakeDb({
+    rpcResults: {
+      psi_claim_agt002_reanalysis_job: {
+        data: {
+          ...claimedLegacyBase(),
+          execution_mode: 'durable_batched_v1', phase: 'bogus_phase',
+          completed_batch_count: 2, total_batch_count: 5, resume_count: 1,
+        },
+        error: null,
+      },
+    },
+  });
+  await assert.rejects(claimAgt002ReanalysisJob(db), 'an unrecognized phase must fail closed');
+}
+
+async function claimRejectsNegativeOrNonIntegerCounters() {
+  const overridesCases = [
+    { completed_batch_count: -1, total_batch_count: 5, resume_count: 1 },
+    { completed_batch_count: 2, total_batch_count: -5, resume_count: 1 },
+    { completed_batch_count: 2, total_batch_count: 5, resume_count: -1 },
+    { completed_batch_count: 1.5, total_batch_count: 5, resume_count: 1 },
+    { completed_batch_count: 2, total_batch_count: 5.5, resume_count: 1 },
+    { completed_batch_count: 2, total_batch_count: 5, resume_count: 1.5 },
+  ];
+  for (const overrides of overridesCases) {
+    const db = fakeDb({
+      rpcResults: {
+        psi_claim_agt002_reanalysis_job: {
+          data: {
+            ...claimedLegacyBase(),
+            execution_mode: 'durable_batched_v1', phase: 'integral_analysis_batch',
+            ...overrides,
+          },
+          error: null,
+        },
+      },
+    });
+    await assert.rejects(
+      claimAgt002ReanalysisJob(db),
+      `negative/non-integer batch counters must fail closed: ${JSON.stringify(overrides)}`,
+    );
+  }
+}
+
+async function claimRejectsCompletedBatchCountAboveTotal() {
+  const db = fakeDb({
+    rpcResults: {
+      psi_claim_agt002_reanalysis_job: {
+        data: {
+          ...claimedLegacyBase(),
+          execution_mode: 'durable_batched_v1', phase: 'integral_analysis_batch',
+          completed_batch_count: 6, total_batch_count: 5, resume_count: 1,
+        },
+        error: null,
+      },
+    },
+  });
+  await assert.rejects(claimAgt002ReanalysisJob(db), 'completed_batch_count exceeding total_batch_count must fail closed');
+}
+
+async function claimRejectsResumeCountAboveClosedCap() {
+  const db = fakeDb({
+    rpcResults: {
+      psi_claim_agt002_reanalysis_job: {
+        data: {
+          ...claimedLegacyBase(),
+          execution_mode: 'durable_batched_v1', phase: 'integral_analysis_batch',
+          completed_batch_count: 2, total_batch_count: 5, resume_count: 6,
+        },
+        error: null,
+      },
+    },
+  });
+  await assert.rejects(claimAgt002ReanalysisJob(db), 'resume_count above the closed cap of 5 must fail closed');
+}
+
+async function claimRejectsPartialModernMetadata() {
+  const fullOverrides = {
+    execution_mode: 'durable_batched_v1', phase: 'integral_analysis_batch',
+    completed_batch_count: 2, total_batch_count: 5, resume_count: 1,
+  };
+  const requiredProgressFields = ['phase', 'completed_batch_count', 'total_batch_count', 'resume_count'];
+  for (const field of requiredProgressFields) {
+    const overrides = { ...fullOverrides };
+    delete overrides[field];
+    const db = fakeDb({
+      rpcResults: {
+        psi_claim_agt002_reanalysis_job: {
+          data: { ...claimedLegacyBase(), ...overrides },
+          error: null,
+        },
+      },
+    });
+    await assert.rejects(
+      claimAgt002ReanalysisJob(db),
+      `execution_mode present without "${field}" must fail closed, never partially applied`,
+    );
+  }
+}
+
 async function claimReturnsNullOnlyForEmptyStatusNotForOtherNonClaimedStatuses() {
   const dbEmpty = fakeDb({ rpcResults: { psi_claim_agt002_reanalysis_job: { data: { status: 'empty' }, error: null } } });
   assert.equal(await claimAgt002ReanalysisJob(dbEmpty), null);
@@ -152,6 +456,19 @@ async function run() {
   await createPreservesRpcErrorIdentityForClosedConflictHandling();
   await claimReturnsNullWhenEmpty();
   await claimMapsClaimedShapeToCamelCase();
+  await claimMapsModernBatchedShapeToCamelCase();
+  await claimMapsModernPhaseSemanticDiscoveryToCamelCase();
+  await claimMapsModernReclaimIntegralAnalysisToCamelCase();
+  await claimAcceptsMergeAndFinalizePhases();
+  await claimRejectsCheckpointStageNamesAsMalformedClaimPhase();
+  await claimAcceptsNullPhaseInModernShape();
+  await claimNeverDerivesIdempotencyKeyFromIdentityFields();
+  await claimRejectsUnknownExecutionMode();
+  await claimRejectsUnknownPhase();
+  await claimRejectsNegativeOrNonIntegerCounters();
+  await claimRejectsCompletedBatchCountAboveTotal();
+  await claimRejectsResumeCountAboveClosedCap();
+  await claimRejectsPartialModernMetadata();
   await claimReturnsNullOnlyForEmptyStatusNotForOtherNonClaimedStatuses();
   await claimThrowsOnMalformedClaimedResponse();
   await completeMapsParamsAndReturnsCamelCase();

@@ -161,16 +161,31 @@ async function claimJob(pg, leaseSeconds = 600) {
   return callRpc(pg, 'psi_claim_agt002_reanalysis_job', { p_lease_seconds: leaseSeconds });
 }
 
+/** Every checkpoint stage belongs to exactly one coarser progress phase: the two
+ * semantic_discovery_* stages report into phase 'semantic_discovery', the two
+ * integral_analysis_* stages report into phase 'integral_analysis'. */
+function phaseForStage(stage) {
+  if (stage === 'semantic_discovery_batch' || stage === 'semantic_manifest') return 'semantic_discovery';
+  if (stage === 'integral_analysis_plan' || stage === 'integral_analysis_batch') return 'integral_analysis';
+  throw new Error(`phaseForStage: unrecognized checkpoint stage '${stage}'`);
+}
+
 function checkpointArgs(overrides = {}) {
+  const stage = overrides.stage ?? 'semantic_discovery_batch';
+  const batchIndex = overrides.batchIndex ?? 0;
+  const phase = overrides.phase ?? phaseForStage(stage);
+  const phaseCompletedCount = overrides.phaseCompletedCount ?? batchIndex + 1;
+  const phaseTotalCount = overrides.phaseTotalCount ?? phaseCompletedCount;
   return {
     p_job_id: overrides.jobId, p_lease_id: overrides.leaseId, p_workset_id: overrides.worksetId,
-    p_stage: overrides.stage ?? 'semantic_discovery_batch', p_batch_index: overrides.batchIndex ?? 0,
+    p_stage: stage, p_batch_index: batchIndex,
     p_request_hash: overrides.requestHash ?? 'd'.repeat(64),
     p_stage_contract_version: overrides.stageContractVersion ?? 'discovery-batch-contract-v1',
-    p_output: overrides.output ?? { batch_index: overrides.batchIndex ?? 0, units: [] },
+    p_output: overrides.output ?? { batch_index: batchIndex, units: [] },
     p_output_sha256: overrides.outputSha256 ?? 'e'.repeat(64),
     p_usage: overrides.usage ?? { input_tokens: 100, output_tokens: 20 },
     p_provider_idempotency_key: overrides.providerIdempotencyKey ?? 'provider-key-1',
+    p_progress_phase: phase, p_completed_batch_count: phaseCompletedCount, p_total_batch_count: phaseTotalCount,
   };
 }
 
@@ -196,6 +211,17 @@ function extractResumeCap(sql) {
 
 async function expireLease(pg, jobId) {
   await pg.exec(`update public.psi_agt002_reanalysis_jobs set lease_expires_at = now() - interval '1 hour' where id = '${jobId}'`);
+}
+
+async function jobProgressRow(pg, jobId) {
+  return (await pg.query(
+    `select phase, completed_batch_count, total_batch_count from public.psi_agt002_reanalysis_jobs where id = '${jobId}'`,
+  )).rows[0];
+}
+
+async function checkpointCount(pg, worksetId) {
+  const list = await callRpc(pg, 'psi_list_agt002_analysis_checkpoints', { p_workset_id: worksetId });
+  return list.checkpoints.length;
 }
 
 function integralAnalysis(overrides = {}) {
@@ -585,8 +611,29 @@ if (!HAS_081) {
     assert.equal((await dbB.query(`select to_regclass('public.psi_agt002_analysis_checkpoints') as t`)).rows[0].t, null);
     // 068's reanalysis jobs table and RPCs must survive the 081 rollback untouched.
     assert.ok((await dbB.query(`select to_regclass('public.psi_agt002_reanalysis_jobs') as t`)).rows[0].t, 'the 081 rollback must never remove the preexisting reanalysis jobs table');
-    const stillClaimable = await callRpc(dbB, 'psi_claim_agt002_reanalysis_job', { p_lease_seconds: 60 });
-    assert.equal(stillClaimable.status, 'empty', 'the base claim RPC must still work after only the 081 rollback');
+
+    // Rollback must restore a WORKING pre-081 queue path, not merely an empty claim: a new
+    // job created and claimed after rollback must behave exactly like a legacy (pre-081)
+    // job, through the unchanged 068 create/claim signatures.
+    const postRollbackJob = await createJob(dbB, { idempotencyKey: 'post-rollback-key-1' });
+    assert.equal(postRollbackJob.status, 'created');
+    const postRollbackJobRow = (await dbB.query(
+      `select execution_mode from public.psi_agt002_reanalysis_jobs where id = '${postRollbackJob.job_id}'`,
+    )).rows[0];
+    assert.equal(
+      postRollbackJobRow.execution_mode, 'single_turn_v1',
+      'new work created after the 081 rollback must be legacy single_turn_v1, never server-stamped durable_batched_v1',
+    );
+
+    const postRollbackClaim = await callRpc(dbB, 'psi_claim_agt002_reanalysis_job', { p_lease_seconds: 60 });
+    assert.equal(postRollbackClaim.status, 'claimed', 'the base claim RPC must still work after only the 081 rollback');
+    assert.equal(postRollbackClaim.job_id, postRollbackJob.job_id);
+    for (const modernField of ['execution_mode', 'phase', 'completed_batch_count', 'total_batch_count', 'resume_count']) {
+      assert.equal(
+        Object.prototype.hasOwnProperty.call(postRollbackClaim, modernField), false,
+        `the restored pre-081 claim contract must not expose 081's '${modernField}' field`,
+      );
+    }
     await dbB.close();
   }
 
@@ -682,6 +729,14 @@ test('a freshly enqueued job is server-owned durable_batched_v1 with resume_coun
     const row = (await pg.query(`select execution_mode, resume_count from public.psi_agt002_reanalysis_jobs where id = '${job.job_id}'`)).rows[0];
     assert.equal(row.execution_mode, 'durable_batched_v1', 'a freshly enqueued job must be server-owned durable_batched_v1');
     assert.equal(row.resume_count, 0);
+
+    const claim = await claimJob(pg);
+    assert.equal(claim.job_id, job.job_id, 'claim must return the same job identity that was enqueued');
+    assert.equal(claim.execution_mode, 'durable_batched_v1', 'the claim response must surface the server-owned execution_mode');
+    assert.equal(claim.phase, null, 'a freshly claimed job must report no phase yet');
+    assert.equal(claim.completed_batch_count, 0);
+    assert.equal(claim.total_batch_count, 0);
+    assert.equal(claim.resume_count, 0);
   } finally {
     await pg.close();
   }
@@ -700,6 +755,11 @@ test('a job enqueued BEFORE 081 keeps the legacy single_turn_v1 execution mode a
 
     const claim = await claimJob(pg);
     assert.equal(claim.job_id, legacyJob.job_id);
+    assert.equal(claim.execution_mode, 'single_turn_v1', 'a pre-081 row claimed after migration must keep reporting its legacy execution_mode');
+    assert.equal(claim.phase, null, 'a legacy row has no durable-batched phase');
+    assert.equal(claim.completed_batch_count, 0, 'a legacy row has safe default progress counters');
+    assert.equal(claim.total_batch_count, 0);
+    assert.equal(claim.resume_count, 0, 'a legacy row never accrues resume_count');
     const legacyRun = await callRpc(pg, 'psi_record_agt002_canonical_analysis_run', {
       p_snapshot_id: S, p_opportunity_id: O, p_tender_id: T, p_result: v3Result({ summary: 'legacy pre-081' }),
       p_critical_open_count: 0, p_idempotency_key: 'pre-081-key', p_schema_version: V3_SCHEMA_VERSION,
@@ -750,16 +810,29 @@ test('claim reclaims an expired running durable job below the resume cap, increm
     const workset = await getOrCreateWorkset(pg);
     const job = await createJob(pg);
     const claim = await claimJob(pg);
-    await recordCheckpoint(pg, { jobId: job.job_id, leaseId: claim.lease_id, worksetId: workset.workset_id, stage: 'semantic_discovery_batch', batchIndex: 0 });
+    await recordCheckpoint(pg, {
+      jobId: job.job_id, leaseId: claim.lease_id, worksetId: workset.workset_id,
+      stage: 'semantic_discovery_batch', batchIndex: 0, phaseCompletedCount: 2, phaseTotalCount: 5,
+    });
 
     await expireLease(pg, job.job_id);
     const reclaimed = await claimJob(pg);
     assert.equal(reclaimed.job_id, job.job_id, 'a durable job below the resume cap must be reclaimed and reissued, not terminated');
 
-    const afterReclaim = (await pg.query(`select status, resume_count, lease_id from public.psi_agt002_reanalysis_jobs where id = '${job.job_id}'`)).rows[0];
+    const afterReclaim = (await pg.query(`select status, resume_count, lease_id, phase, completed_batch_count, total_batch_count from public.psi_agt002_reanalysis_jobs where id = '${job.job_id}'`)).rows[0];
     assert.equal(afterReclaim.status, 'running');
     assert.equal(afterReclaim.resume_count, 1);
     assert.notEqual(afterReclaim.lease_id, claim.lease_id, 'a reclaim must issue a fresh lease token');
+    assert.equal(afterReclaim.phase, 'semantic_discovery', 'a reclaim must persist the phase set by the checkpoint recorded under the earlier lease');
+    assert.equal(afterReclaim.completed_batch_count, 2, 'a reclaim must persist the exact completed count set by the earlier checkpoint');
+    assert.equal(afterReclaim.total_batch_count, 5, 'a reclaim must persist the exact total count set by the earlier checkpoint');
+
+    assert.equal(reclaimed.execution_mode, 'durable_batched_v1', 'the reclaim response must still report the durable_batched_v1 execution_mode');
+    assert.equal(reclaimed.resume_count, 1, 'the reclaim response must surface the incremented resume_count');
+    assert.equal(reclaimed.phase, afterReclaim.phase, 'the reclaim response phase must match the retained row');
+    assert.equal(reclaimed.completed_batch_count, afterReclaim.completed_batch_count, 'the reclaim response progress counters must match the retained row');
+    assert.equal(reclaimed.total_batch_count, afterReclaim.total_batch_count, 'the reclaim response progress counters must match the retained row');
+    assert.equal(reclaimed.idempotency_key, 'workset-key-1', 'the reclaim response idempotency_key must exactly equal the original canonical key');
 
     const checkpoints = await callRpc(pg, 'psi_list_agt002_analysis_checkpoints', { p_workset_id: workset.workset_id });
     assert.equal(checkpoints.checkpoints.length, 1, 'a reclaim must never drop an already-accepted checkpoint');
@@ -775,8 +848,24 @@ test('claim terminally fails a durable job once it reaches the resume cap, so au
     const cap = extractResumeCap(migration081);
     assert.ok(Number.isInteger(cap) && cap > 0, 'migration 081 must define a positive, extractable resume_count upper bound (resume_count <= N)');
 
+    const workset = await getOrCreateWorkset(pg);
     const job = await createJob(pg);
-    await claimJob(pg);
+    const claim = await claimJob(pg);
+    const checkpoint = await recordCheckpoint(pg, { jobId: job.job_id, leaseId: claim.lease_id, worksetId: workset.workset_id, stage: 'semantic_discovery_batch', batchIndex: 0 });
+    assert.equal(checkpoint.status, 'created');
+    const checkpointBefore = (await pg.query(`select id, workset_id, stage, batch_index, output, output_sha256, request_hash, usage, provider_idempotency_key from public.psi_agt002_analysis_checkpoints where id = '${checkpoint.checkpoint_id}'`)).rows[0];
+
+    // A prior canonical completed run for the SAME opportunity/snapshot must survive the
+    // reclaim/terminal-failure sweep untouched — reclaim only ever concerns the queue job.
+    const priorOutcome = await callRpc(pg, 'psi_record_agt002_canonical_analysis_run', {
+      p_snapshot_id: S, p_opportunity_id: O, p_tender_id: T, p_result: v3Result({ summary: 'previo al cap' }),
+      p_critical_open_count: 0, p_idempotency_key: 'prior-canonical-key-resume-cap', p_schema_version: V3_SCHEMA_VERSION,
+      p_policy_version: 'policy-0', p_model: 'model-0', p_usage: { model: 'model-0', input_tokens: 1, output_tokens: 1 },
+      p_context_version_id: pg.contextVersionId, p_legal_corpus_version_id: null,
+    });
+    assert.equal(priorOutcome.canonical, true);
+    const canonicalCountBefore = (await pg.query(`select count(*)::int n from public.psi_tender_analysis_runs`)).rows[0].n;
+
     for (let i = 0; i < cap; i += 1) {
       await expireLease(pg, job.job_id);
       const reclaim = await claimJob(pg);
@@ -792,6 +881,19 @@ test('claim terminally fails a durable job once it reaches the resume cap, so au
     const overCap = (await pg.query(`select status, error_code from public.psi_agt002_reanalysis_jobs where id = '${job.job_id}'`)).rows[0];
     assert.equal(overCap.status, 'unavailable', 'a durable job at/over the resume cap must become terminally unavailable, never reclaimed again');
     assert.equal(overCap.error_code, 'lease_lost');
+
+    // The reclaim/terminal-failure sweep must never touch checkpoint or canonical-run history.
+    const checkpointAfter = (await pg.query(`select id, workset_id, stage, batch_index, output, output_sha256, request_hash, usage, provider_idempotency_key from public.psi_agt002_analysis_checkpoints where id = '${checkpoint.checkpoint_id}'`)).rows[0];
+    assert.deepEqual(checkpointAfter, checkpointBefore, 'the checkpoint recorded under the initial lease must still exist, unchanged, for the workset after terminal cap closure');
+    assert.equal(checkpointAfter.workset_id, workset.workset_id);
+
+    const stillCanonical = (await pg.query(`select id, canonical, status from public.psi_tender_analysis_runs where idempotency_key = 'prior-canonical-key-resume-cap'`)).rows[0];
+    assert.equal(stillCanonical.id, priorOutcome.id, 'the prior canonical run must keep the exact same id after terminal cap closure');
+    assert.equal(stillCanonical.canonical, true, 'the prior canonical run must remain canonical after terminal cap closure');
+    assert.equal(stillCanonical.status, 'completed', 'the prior canonical run must remain completed after terminal cap closure');
+
+    const canonicalCountAfter = (await pg.query(`select count(*)::int n from public.psi_tender_analysis_runs`)).rows[0].n;
+    assert.equal(canonicalCountAfter, canonicalCountBefore, 'reclaim/terminal failure must never create a new analysis run');
   } finally {
     await pg.close();
   }
@@ -920,7 +1022,7 @@ test('081 runtime authorization: anon/authenticated are denied all table access,
       ['psi_get_or_create_agt002_analysis_workset', '(uuid,uuid,uuid,uuid,text,jsonb)', `('${ZERO}'::uuid, '${ZERO}'::uuid, '${ZERO}'::uuid, '${ZERO}'::uuid, 'k', '{}'::jsonb)`],
       ['psi_get_agt002_analysis_workset', '(text)', `('k')`],
       ['psi_list_agt002_analysis_checkpoints', '(uuid)', `('${ZERO}'::uuid)`],
-      ['psi_record_agt002_analysis_checkpoint', '(uuid,uuid,uuid,text,integer,text,text,jsonb,text,jsonb,text)', `('${ZERO}'::uuid, '${ZERO}'::uuid, '${ZERO}'::uuid, 'semantic_discovery_batch', 0, '${HASH}', 'v1', '{}'::jsonb, '${HASH}', null, 'k')`],
+      ['psi_record_agt002_analysis_checkpoint', '(uuid,uuid,uuid,text,integer,text,text,jsonb,text,jsonb,text,text,integer,integer)', `('${ZERO}'::uuid, '${ZERO}'::uuid, '${ZERO}'::uuid, 'semantic_discovery_batch', 0, '${HASH}', 'v1', '{}'::jsonb, '${HASH}', null, 'k', 'semantic_discovery', 1, 1)`],
       ['psi_mark_agt002_analysis_workset_published', '(uuid,uuid,uuid,uuid)', `('${ZERO}'::uuid, '${ZERO}'::uuid, '${ZERO}'::uuid, '${ZERO}'::uuid)`],
       ['psi_finalize_agt002_durable_batched_analysis', '(uuid,uuid,uuid,uuid,uuid,uuid,jsonb,integer,text,text,text,text,jsonb,uuid,uuid)', `('${ZERO}'::uuid, '${ZERO}'::uuid, '${ZERO}'::uuid, '${ZERO}'::uuid, '${ZERO}'::uuid, '${ZERO}'::uuid, '{}'::jsonb, 0, 'k', 'v', 'p', 'm', null, '${ZERO}'::uuid, null)`],
       ['psi_archive_agt002_analysis_workset', '(uuid,uuid)', `('${ZERO}'::uuid, '${ZERO}'::uuid)`],
@@ -999,6 +1101,241 @@ test('081 runtime authorization: anon/authenticated are denied all table access,
     } finally {
       await pg.exec('reset role');
     }
+  } finally {
+    await pg.close();
+  }
+});
+
+// -------------------------------------------------------------------------------------------
+// RED: SQL progress integration (psi_record_agt002_analysis_checkpoint's new progress params).
+// Every checkpoint call now carries p_progress_phase/p_completed_batch_count/p_total_batch_count
+// (see checkpointArgs above); the current migration 081 RPC does not accept or act on them
+// yet, so this whole block — and every other successful checkpoint call in this file — is
+// expected to go RED until 081 is extended.
+// -------------------------------------------------------------------------------------------
+
+test('a fresh semantic_discovery checkpoint atomically sets the running job phase to semantic_discovery and its exact plan counts', async (t) => {
+  if (!HAS_081) { t.skip('081 not present yet'); return; }
+  const pg = await createDatabase();
+  try {
+    const workset = await getOrCreateWorkset(pg);
+    const job = await createJob(pg);
+    const claim = await claimJob(pg);
+
+    const checkpoint = await recordCheckpoint(pg, {
+      jobId: job.job_id, leaseId: claim.lease_id, worksetId: workset.workset_id,
+      stage: 'semantic_discovery_batch', batchIndex: 0, phaseCompletedCount: 1, phaseTotalCount: 4,
+    });
+    assert.equal(checkpoint.status, 'created');
+
+    const jobRow = (await pg.query(`select status, lease_id, phase, completed_batch_count, total_batch_count from public.psi_agt002_reanalysis_jobs where id = '${job.job_id}'`)).rows[0];
+    assert.equal(jobRow.status, 'running', 'the same call that accepts the checkpoint must leave the job running (atomic, not a separate publish step)');
+    assert.equal(jobRow.lease_id, claim.lease_id);
+    assert.equal(jobRow.phase, 'semantic_discovery', "a fresh semantic_discovery_batch checkpoint must set the job's phase to semantic_discovery");
+    assert.equal(jobRow.completed_batch_count, 1);
+    assert.equal(jobRow.total_batch_count, 4);
+  } finally {
+    await pg.close();
+  }
+});
+
+test("a later semantic_discovery checkpoint advances the job's progress counts monotonically forward", async (t) => {
+  if (!HAS_081) { t.skip('081 not present yet'); return; }
+  const pg = await createDatabase();
+  try {
+    const workset = await getOrCreateWorkset(pg);
+    const job = await createJob(pg);
+    const claim = await claimJob(pg);
+
+    await recordCheckpoint(pg, {
+      jobId: job.job_id, leaseId: claim.lease_id, worksetId: workset.workset_id,
+      stage: 'semantic_discovery_batch', batchIndex: 0, phaseCompletedCount: 1, phaseTotalCount: 4,
+    });
+    const later = await recordCheckpoint(pg, {
+      jobId: job.job_id, leaseId: claim.lease_id, worksetId: workset.workset_id,
+      stage: 'semantic_manifest', batchIndex: 0, phaseCompletedCount: 2, phaseTotalCount: 4,
+    });
+    assert.equal(later.status, 'created');
+
+    const jobRow = await jobProgressRow(pg, job.job_id);
+    assert.equal(jobRow.phase, 'semantic_discovery');
+    assert.equal(jobRow.completed_batch_count, 2, 'a later same-phase checkpoint must advance completed_batch_count forward');
+    assert.equal(jobRow.total_batch_count, 4);
+  } finally {
+    await pg.close();
+  }
+});
+
+test('a checkpoint reporting a lower completed/total count within the same phase is rejected, leaving the job row and checkpoints unchanged', async (t) => {
+  if (!HAS_081) { t.skip('081 not present yet'); return; }
+  const pg = await createDatabase();
+  try {
+    const workset = await getOrCreateWorkset(pg);
+    const job = await createJob(pg);
+    const claim = await claimJob(pg);
+
+    await recordCheckpoint(pg, {
+      jobId: job.job_id, leaseId: claim.lease_id, worksetId: workset.workset_id,
+      stage: 'semantic_discovery_batch', batchIndex: 0, phaseCompletedCount: 3, phaseTotalCount: 5,
+    });
+    const before = await jobProgressRow(pg, job.job_id);
+    const countBefore = await checkpointCount(pg, workset.workset_id);
+
+    await assert.rejects(
+      recordCheckpoint(pg, {
+        jobId: job.job_id, leaseId: claim.lease_id, worksetId: workset.workset_id,
+        stage: 'semantic_manifest', batchIndex: 0, phaseCompletedCount: 1, phaseTotalCount: 5,
+      }),
+      /./,
+      'a completed count lower than the already-persisted count for the same phase must be rejected',
+    );
+
+    assert.deepEqual(await jobProgressRow(pg, job.job_id), before, 'a rejected regression must leave the job row exactly as it was');
+    assert.equal(await checkpointCount(pg, workset.workset_id), countBefore, 'a rejected checkpoint call must never insert a checkpoint row');
+  } finally {
+    await pg.close();
+  }
+});
+
+test('a checkpoint attempting to move the job phase backward from integral_analysis to semantic_discovery is rejected, leaving the job row and checkpoints unchanged', async (t) => {
+  if (!HAS_081) { t.skip('081 not present yet'); return; }
+  const pg = await createDatabase();
+  try {
+    const workset = await getOrCreateWorkset(pg);
+    const job = await createJob(pg);
+    const claim = await claimJob(pg);
+
+    await recordCheckpoint(pg, {
+      jobId: job.job_id, leaseId: claim.lease_id, worksetId: workset.workset_id,
+      stage: 'integral_analysis_plan', batchIndex: 0, phaseCompletedCount: 1, phaseTotalCount: 2,
+    });
+    const before = await jobProgressRow(pg, job.job_id);
+    assert.equal(before.phase, 'integral_analysis', 'setup check: the job must already be in the integral_analysis phase');
+    const countBefore = await checkpointCount(pg, workset.workset_id);
+
+    await assert.rejects(
+      recordCheckpoint(pg, {
+        jobId: job.job_id, leaseId: claim.lease_id, worksetId: workset.workset_id,
+        stage: 'semantic_manifest', batchIndex: 0, phaseCompletedCount: 1, phaseTotalCount: 1,
+      }),
+      /./,
+      'a job already in the integral_analysis phase must never move back to semantic_discovery',
+    );
+
+    assert.deepEqual(await jobProgressRow(pg, job.job_id), before);
+    assert.equal(await checkpointCount(pg, workset.workset_id), countBefore);
+  } finally {
+    await pg.close();
+  }
+});
+
+test("a checkpoint whose declared phase does not match its stage's phase group is rejected, leaving the job row and checkpoints unchanged", async (t) => {
+  if (!HAS_081) { t.skip('081 not present yet'); return; }
+  const pg = await createDatabase();
+  try {
+    const workset = await getOrCreateWorkset(pg);
+    const job = await createJob(pg);
+    const claim = await claimJob(pg);
+
+    const before = await jobProgressRow(pg, job.job_id);
+    const countBefore = await checkpointCount(pg, workset.workset_id);
+
+    await assert.rejects(
+      recordCheckpoint(pg, {
+        jobId: job.job_id, leaseId: claim.lease_id, worksetId: workset.workset_id,
+        stage: 'semantic_discovery_batch', batchIndex: 0, phase: 'integral_analysis', phaseCompletedCount: 1, phaseTotalCount: 1,
+      }),
+      /./,
+      "a semantic_discovery_batch stage declared under phase 'integral_analysis' must be rejected",
+    );
+
+    assert.deepEqual(await jobProgressRow(pg, job.job_id), before, 'a rejected stage/phase mismatch must leave the job row exactly as it was (still no phase set)');
+    assert.equal(await checkpointCount(pg, workset.workset_id), countBefore);
+  } finally {
+    await pg.close();
+  }
+});
+
+test('a checkpoint carrying otherwise-valid progress params under a stale lease is rejected, leaving the job row and checkpoints unchanged', async (t) => {
+  if (!HAS_081) { t.skip('081 not present yet'); return; }
+  const pg = await createDatabase();
+  try {
+    const workset = await getOrCreateWorkset(pg);
+    const job = await createJob(pg);
+    const claim = await claimJob(pg);
+
+    await recordCheckpoint(pg, {
+      jobId: job.job_id, leaseId: claim.lease_id, worksetId: workset.workset_id,
+      stage: 'semantic_discovery_batch', batchIndex: 0, phaseCompletedCount: 1, phaseTotalCount: 3,
+    });
+    const before = await jobProgressRow(pg, job.job_id);
+    const countBefore = await checkpointCount(pg, workset.workset_id);
+
+    await assert.rejects(
+      recordCheckpoint(pg, {
+        jobId: job.job_id, leaseId: '99999999-9999-4999-8999-999999999999', worksetId: workset.workset_id,
+        stage: 'semantic_manifest', batchIndex: 0, phaseCompletedCount: 2, phaseTotalCount: 3,
+      }),
+      /lease|reserva/i,
+      'a stale/wrong lease_id must never be able to advance job progress, even with otherwise-valid progress params',
+    );
+
+    assert.deepEqual(await jobProgressRow(pg, job.job_id), before);
+    assert.equal(await checkpointCount(pg, workset.workset_id), countBefore);
+  } finally {
+    await pg.close();
+  }
+});
+
+test("a checkpoint transitioning the job phase from semantic_discovery to integral_analysis succeeds and replaces the progress counts with that phase's plan counts", async (t) => {
+  if (!HAS_081) { t.skip('081 not present yet'); return; }
+  const pg = await createDatabase();
+  try {
+    const workset = await getOrCreateWorkset(pg);
+    const job = await createJob(pg);
+    const claim = await claimJob(pg);
+
+    await recordCheckpoint(pg, {
+      jobId: job.job_id, leaseId: claim.lease_id, worksetId: workset.workset_id,
+      stage: 'semantic_discovery_batch', batchIndex: 0, phaseCompletedCount: 4, phaseTotalCount: 4,
+    });
+    const transition = await recordCheckpoint(pg, {
+      jobId: job.job_id, leaseId: claim.lease_id, worksetId: workset.workset_id,
+      stage: 'integral_analysis_plan', batchIndex: 0, phaseCompletedCount: 1, phaseTotalCount: 2,
+    });
+    assert.equal(transition.status, 'created');
+
+    const jobRow = await jobProgressRow(pg, job.job_id);
+    assert.equal(jobRow.phase, 'integral_analysis', 'the phase must move forward from semantic_discovery to integral_analysis');
+    assert.equal(jobRow.completed_batch_count, 1, "the transition must replace, not accumulate with, the prior phase's counts");
+    assert.equal(jobRow.total_batch_count, 2);
+  } finally {
+    await pg.close();
+  }
+});
+
+test('an exact checkpoint replay may safely reassert the same progress without being treated as a regression', async (t) => {
+  if (!HAS_081) { t.skip('081 not present yet'); return; }
+  const pg = await createDatabase();
+  try {
+    const workset = await getOrCreateWorkset(pg);
+    const job = await createJob(pg);
+    const claim = await claimJob(pg);
+
+    const args = {
+      jobId: job.job_id, leaseId: claim.lease_id, worksetId: workset.workset_id,
+      stage: 'semantic_discovery_batch', batchIndex: 0, phaseCompletedCount: 2, phaseTotalCount: 4,
+    };
+    const first = await recordCheckpoint(pg, args);
+    assert.equal(first.status, 'created');
+    const replay = await recordCheckpoint(pg, args);
+    assert.equal(replay.status, 'existing');
+    assert.equal(replay.checkpoint_id, first.checkpoint_id);
+
+    const jobRow = await jobProgressRow(pg, job.job_id);
+    assert.equal(jobRow.phase, 'semantic_discovery');
+    assert.equal(jobRow.completed_batch_count, 2, 'a safe replay must never double-advance progress');
+    assert.equal(jobRow.total_batch_count, 4);
   } finally {
     await pg.close();
   }

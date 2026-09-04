@@ -1410,6 +1410,9 @@ export async function discoverTenderSemanticManifest({
             outputSha256: sha256(stableJson(canonicalBatch)),
             usage: batchUsage,
             providerIdempotencyKey: request.idempotencyKey,
+            progressPhase: 'semantic_discovery',
+            completedBatchCount: batch.batch_index + 1,
+            totalBatchCount: batches.length + 1,
           });
         }
       }
@@ -1546,6 +1549,9 @@ export async function discoverTenderSemanticManifest({
       outputSha256: sha256(stableJson(manifestOutput)),
       usage,
       providerIdempotencyKey: `${idempotencyKey}:semantic-discovery:semantic-manifest:${manifestRequestHash.slice(0, 16)}`,
+      progressPhase: 'semantic_discovery',
+      completedBatchCount: batches.length + 1,
+      totalBatchCount: batches.length + 1,
     });
   }
   return result;

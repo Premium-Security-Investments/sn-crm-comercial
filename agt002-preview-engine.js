@@ -1153,6 +1153,11 @@ export function createAgt002PreviewEngine({
                   client, model, timeoutMs, idempotencyKey: key, signal, effort,
                   inventory, documents: (context || {}).documents ?? [],
                   ...(beforeProviderCall ? { beforeProviderCall } : {}),
+                  // Same resolved, already-validated analysisCheckpointHooks that governs the
+                  // integral analysis checkpoint below also governs the discovery checkpoint here;
+                  // omitted (not forwarded as undefined) when absent, so legacy/non-durable runs
+                  // stay byte-compatible.
+                  ...(analysisCheckpointHooks ? { checkpointHooks: analysisCheckpointHooks } : {}),
                 });
               } catch (error) {
                 // tender-semantic-discovery.js tags its OWN post-response rejections (the bridge
@@ -1607,6 +1612,9 @@ export async function runAgt002BatchedV3Orchestration({
         outputSha256,
         usage: fresh.usage,
         providerIdempotencyKey,
+        progressPhase: 'integral_analysis',
+        completedBatchCount: batchIndex + 1,
+        totalBatchCount: plan.batches.length,
       });
     } catch {
       throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.CHECKPOINT_FAILED, 'persistence');

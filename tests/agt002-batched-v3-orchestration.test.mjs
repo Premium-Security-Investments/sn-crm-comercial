@@ -202,6 +202,20 @@ function scriptedExecuteBatch(events, scriptByBatchIndex) {
   };
 }
 
+// Every successful (freshly-executed, non-checkpoint-hit) storeCheckpoint call must carry the
+// batch's absolute position within the whole plan — not a count relative to whatever subset of
+// batches actually executed during *this* run/restart. `completedBatchCount` is batchIndex+1 and
+// `totalBatchCount` is plan.batches.length, regardless of how many earlier batches were
+// checkpoint-hits skipped without a fresh store this run.
+function assertCheckpointProgressFields(storeCalls, plan) {
+  assert.ok(storeCalls.length > 0, 'test bug: expected at least one storeCheckpoint call to assert progress fields on');
+  for (const call of storeCalls) {
+    assert.equal(call.progressPhase, 'integral_analysis', `storeCheckpoint call for batch ${call.batchIndex} must carry progressPhase 'integral_analysis'`);
+    assert.equal(call.completedBatchCount, call.batchIndex + 1, `storeCheckpoint call for batch ${call.batchIndex} must carry completedBatchCount = batchIndex+1 (absolute plan position), not a restart-relative count`);
+    assert.equal(call.totalBatchCount, plan.batches.length, `storeCheckpoint call for batch ${call.batchIndex} must carry totalBatchCount = plan.batches.length (absolute plan total), not a restart-relative remaining count`);
+  }
+}
+
 function trackedMerge(events) {
   const calls = [];
   return {
@@ -298,6 +312,7 @@ test('two-batch happy path: exact order, stable idempotency keys, boundary heart
     assert.match(call.outputSha256, /^[0-9a-f]{64}$/, 'outputSha256 must be a real sha256 hex digest');
     assert.ok(call.output && typeof call.output === 'object' && 'batchToken' in call.output);
   }
+  assertCheckpointProgressFields(checkpoints.storeCalls, plan);
 
   // stable per-batch provider idempotency keys: forwarded identically to executeBatch and storeCheckpoint,
   // and distinct across batches
@@ -372,11 +387,78 @@ test('resume: batch 0 checkpoint hit is revalidated and reused (no provider/stor
   assert.equal(exec.calls.filter(call => call.batchIndex === 0).length, 0, 'no provider call for the checkpointed batch');
   assert.equal(checkpoints.storeCalls.filter(call => call.batchIndex === 0).length, 0, 'no re-store for the checkpointed batch');
 
+  // batch 1's fresh store must carry its *absolute* plan position (completedBatchCount 2 of 2),
+  // not a restart-relative count (which would be 1 of 1, since batch 0 was a checkpoint hit and
+  // never freshly executed this run).
+  assertCheckpointProgressFields(checkpoints.storeCalls, plan);
+  assert.equal(checkpoints.storeCalls[0].batchIndex, 1);
+  assert.equal(checkpoints.storeCalls[0].completedBatchCount, 2);
+  assert.equal(checkpoints.storeCalls[0].totalBatchCount, 2);
+
   assert.equal(merge.calls.length, 1);
   assert.deepEqual(merge.calls[0], [{ batchToken: 'b0' }, { batchToken: 'b1' }]);
 
   assert.equal(finalize.calls.length, 1);
   assert.deepEqual(finalize.calls[0].usage, { input_tokens: 5 + 7 + 20, output_tokens: 2 + 1 + 4 });
+});
+
+// ---------------------------------------------------------------------------------------------
+test('resume with multiple leading checkpoint hits: the one fresh trailing store carries absolute plan-wide counts, never a restart-relative count of only the batches actually executed this run', async () => {
+  const events = [];
+  const plan = makePlan(3);
+  const batches = makeBatches(3);
+  const seed = new Map([
+    [0, {
+      stage: STAGE,
+      requestHash: plan.batches[0].request_hash,
+      stageContractVersion: plan.contract_version,
+      output: { batchToken: 'b0' },
+      usage: { input_tokens: 7, output_tokens: 1 },
+      providerIdempotencyKey: 'sentinel-preexisting-key-0',
+    }],
+    [1, {
+      stage: STAGE,
+      requestHash: plan.batches[1].request_hash,
+      stageContractVersion: plan.contract_version,
+      output: { batchToken: 'b1' },
+      usage: { input_tokens: 8, output_tokens: 2 },
+      providerIdempotencyKey: 'sentinel-preexisting-key-1',
+    }],
+  ]);
+  const checkpoints = makeCheckpointStore(events, seed);
+  const beforeBoundary = boundaryTracker(events);
+  const exec = scriptedExecuteBatch(events, {
+    2: [{ type: 'success', output: { batchToken: 'b2' }, usage: { input_tokens: 30, output_tokens: 6 } }],
+  });
+  const merge = trackedMerge(events);
+  const finalize = trackedFinalize(events);
+
+  const input = buildInput({
+    plan, batches, batchCount: 3,
+    checkpointHooks: { loadCheckpoint: checkpoints.loadCheckpoint, storeCheckpoint: checkpoints.storeCheckpoint },
+    beforeBoundary,
+    executeBatch: exec.executeBatch,
+    mergeBatches: merge.mergeBatches,
+    finalizeEnvelope: finalize.finalizeEnvelope,
+  });
+
+  await Agt002PreviewEngine.runAgt002BatchedV3Orchestration(input);
+
+  assert.equal(exec.calls.length, 1, 'only batch 2 is fresh; batches 0 and 1 are checkpoint hits');
+  assert.equal(checkpoints.storeCalls.length, 1, 'only one fresh store, for batch 2');
+
+  const [store2] = checkpoints.storeCalls;
+  assert.equal(store2.batchIndex, 2);
+  assert.equal(store2.progressPhase, 'integral_analysis');
+  // Absolute plan position: batch 2 is the 3rd of 3 planned batches — NOT "1st of 1" as a
+  // restart-relative scheme (counting only batches freshly executed since this resume) would say.
+  assert.equal(store2.completedBatchCount, 3, 'must be batchIndex+1 = 3 (absolute), not 1 (restart-relative: only 1 batch executed this run)');
+  assert.equal(store2.totalBatchCount, 3, 'must be plan.batches.length = 3 (absolute), not 1 (restart-relative: only 1 batch remained to execute)');
+  assertCheckpointProgressFields(checkpoints.storeCalls, plan);
+
+  assert.equal(merge.calls.length, 1);
+  assert.deepEqual(merge.calls[0], [{ batchToken: 'b0' }, { batchToken: 'b1' }, { batchToken: 'b2' }]);
+  assert.equal(finalize.calls.length, 1);
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -560,6 +642,7 @@ test('partial failure in batch 1: bounded retry on the injected retryable timeou
   assert.equal(checkpoints.storeCalls.length, 1);
   assert.equal(checkpoints.storeCalls[0].batchIndex, 0);
   assert.ok(checkpoints.store.has(0));
+  assertCheckpointProgressFields(checkpoints.storeCalls, plan);
 
   const errorStringProps = Object.entries(caughtError || {}).filter(([, value]) => typeof value === 'string');
   assertNoRawLeak(progressEvents, caughtError?.message, errorStringProps);

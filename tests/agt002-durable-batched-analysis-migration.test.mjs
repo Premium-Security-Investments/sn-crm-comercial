@@ -12,7 +12,10 @@
 //   * psi_get_or_create_agt002_analysis_workset(uuid,uuid,uuid,uuid,text,jsonb)
 //   * psi_get_agt002_analysis_workset(text)
 //   * psi_list_agt002_analysis_checkpoints(uuid)
-//   * psi_record_agt002_analysis_checkpoint(uuid,uuid,uuid,text,integer,text,text,jsonb,text,jsonb,text)
+//   * psi_record_agt002_analysis_checkpoint(uuid,uuid,uuid,text,integer,text,text,jsonb,text,jsonb,text,
+//     text,integer,integer) — the trailing p_progress_phase/p_completed_batch_count/p_total_batch_count
+//     triplet lets the SAME call that durably records a batch also advance the fenced running job's
+//     phase/progress in one transaction: no separate, unfenced "update progress" RPC ever exists.
 //   * psi_mark_agt002_analysis_workset_published(uuid,uuid,uuid,uuid)
 //   * psi_finalize_agt002_durable_batched_analysis(uuid,uuid,uuid,uuid,uuid,uuid,jsonb,integer,text,text,text,text,jsonb,uuid,uuid)
 //     — the one atomic, lease-fenced RPC that calls the existing, untouched
@@ -46,7 +49,14 @@ const GET_WORKSET_ARGS = String.raw`\(\s*text\s*\)`;
 const LIST_CHECKPOINTS_FN = 'psi_list_agt002_analysis_checkpoints';
 const LIST_CHECKPOINTS_ARGS = String.raw`\(\s*uuid\s*\)`;
 const RECORD_CHECKPOINT_FN = 'psi_record_agt002_analysis_checkpoint';
-const RECORD_CHECKPOINT_ARGS = String.raw`\(\s*uuid\s*,\s*uuid\s*,\s*uuid\s*,\s*text\s*,\s*integer\s*,\s*text\s*,\s*text\s*,\s*jsonb\s*,\s*text\s*,\s*jsonb\s*,\s*text\s*\)`;
+const RECORD_CHECKPOINT_ARGS = String.raw`\(\s*uuid\s*,\s*uuid\s*,\s*uuid\s*,\s*text\s*,\s*integer\s*,\s*text\s*,\s*text\s*,\s*jsonb\s*,\s*text\s*,\s*jsonb\s*,\s*text\s*,\s*text\s*,\s*integer\s*,\s*integer\s*\)`;
+// The types-only RECORD_CHECKPOINT_ARGS above matches positional-type signatures (REVOKE/GRANT,
+// DROP FUNCTION IF EXISTS), which never carry parameter names. The CREATE FUNCTION declaration
+// itself names every parameter, so asserting its exact signature needs the named form below.
+const RECORD_CHECKPOINT_NAMED_ARGS = String.raw`\(\s*p_job_id\s+uuid\s*,\s*p_lease_id\s+uuid\s*,\s*p_workset_id\s+uuid\s*,\s*p_stage\s+text\s*,\s*p_batch_index\s+integer\s*,\s*p_request_hash\s+text\s*,\s*p_stage_contract_version\s+text\s*,\s*p_output\s+jsonb\s*,\s*p_output_sha256\s+text\s*,\s*p_usage\s+jsonb\s*,\s*p_provider_idempotency_key\s+text\s*,\s*p_progress_phase\s+text\s*,\s*p_completed_batch_count\s+integer\s*,\s*p_total_batch_count\s+integer\s*\)`;
+// The old, pre-progress 11-argument overload: after 081 lands, this exact signature must never
+// appear in either the migration (as a second overload) or a rollback DROP FUNCTION target.
+const RECORD_CHECKPOINT_OLD_ARGS = String.raw`\(\s*uuid\s*,\s*uuid\s*,\s*uuid\s*,\s*text\s*,\s*integer\s*,\s*text\s*,\s*text\s*,\s*jsonb\s*,\s*text\s*,\s*jsonb\s*,\s*text\s*\)`;
 const MARK_PUBLISHED_FN = 'psi_mark_agt002_analysis_workset_published';
 const MARK_PUBLISHED_ARGS = String.raw`\(\s*uuid\s*,\s*uuid\s*,\s*uuid\s*,\s*uuid\s*\)`;
 const FINALIZE_FN = 'psi_finalize_agt002_durable_batched_analysis';
@@ -581,6 +591,28 @@ test('psi_claim_agt002_reanalysis_job reclaims an expired durable job below the 
   assert.match(block, /status\s*=\s*'unavailable'/i, 'a legacy job, or a durable job at/over the resume cap, must still be closed terminally exactly as 068 already does');
 });
 
+test('psi_claim_agt002_reanalysis_job returns the durable resume/progress fields the worker needs to resume a claimed job', () => {
+  const migration = migrationSql();
+  const block = functionBlock(migration, CLAIM_JOB_FN);
+  const fieldsFromClaimedRow = [
+    ['execution_mode', 'v_job.execution_mode'],
+    ['phase', 'v_job.phase'],
+    ['completed_batch_count', 'v_job.completed_batch_count'],
+    ['total_batch_count', 'v_job.total_batch_count'],
+    ['resume_count', 'v_job.resume_count'],
+  ];
+  for (const [key, sourceExpr] of fieldsFromClaimedRow) {
+    const pattern = new RegExp(
+      String.raw`'${key}'\s*,\s*${sourceExpr.replace('.', String.raw`\s*\.\s*`)}\b`,
+      'i',
+    );
+    assert.match(
+      block, pattern,
+      `the claimed-job jsonb response must include '${key}' sourced from ${sourceExpr}, so a resumed durable job can pick up where it left off`,
+    );
+  }
+});
+
 test("migration 081 leaves the 079 fenced heartbeat renewal RPCs untouched: heartbeat stays fenced and compatible for every execution_mode", () => {
   const migration = migrationSql();
   for (const fn of HEARTBEAT_RPCS_TO_PRESERVE) {
@@ -681,5 +713,171 @@ test('the rollback allows dropping 081 artifacts once every workset is explicitl
     rollback,
     /status\s+in\s*\(\s*'queued'\s*,\s*'running'\s*\)|status\s*=\s*'queued'\s+or\s+status\s*=\s*'running'/i,
     'the rollback guard must also refuse while an active (queued/running) job still references a workset identity, even once that workset row is archived',
+  );
+});
+
+// ---------------------------------------------------------------------------------------------
+// RED expansion: psi_record_agt002_analysis_checkpoint also carries the SQL progress contract —
+// a closed progress phase, non-regressing completed/total batch counts, stage<->phase pairing,
+// and the SAME fenced running-job update (id=p_job_id AND lease_id=p_lease_id), fail-closed
+// unless exactly one row updates. No separate/unfenced "update progress" RPC may ever exist.
+// ---------------------------------------------------------------------------------------------
+
+test('psi_record_agt002_analysis_checkpoint signature carries p_progress_phase, p_completed_batch_count and p_total_batch_count', () => {
+  const migration = migrationSql();
+  const block = functionBlock(migration, RECORD_CHECKPOINT_FN);
+  const signature = block.slice(0, block.indexOf(')') + 1);
+  assert.match(signature, /p_progress_phase\s+text\b/i, 'the signature must name a p_progress_phase text parameter');
+  assert.match(signature, /p_completed_batch_count\s+integer\b/i, 'the signature must name a p_completed_batch_count integer parameter');
+  assert.match(signature, /p_total_batch_count\s+integer\b/i, 'the signature must name a p_total_batch_count integer parameter');
+  assert.match(
+    signature, new RegExp(RECORD_CHECKPOINT_NAMED_ARGS, 'i'),
+    'the full signature must match the exact new 14 named parameters/types, in order, trailing (..., p_progress_phase text, p_completed_batch_count integer, p_total_batch_count integer)',
+  );
+});
+
+test('migration 081 defines psi_record_agt002_analysis_checkpoint exactly once, with only the new progress-aware signature (no old/new overload pair)', () => {
+  const migration = migrationSql();
+  const defineCount = [...migration.matchAll(new RegExp(String.raw`create\s+or\s+replace\s+function\s+public\.${RECORD_CHECKPOINT_FN}\s*\(`, 'gi'))].length;
+  assert.equal(defineCount, 1, 'psi_record_agt002_analysis_checkpoint must be defined exactly once');
+  assert.doesNotMatch(
+    migration,
+    new RegExp(String.raw`create\s+or\s+replace\s+function\s+public\.${RECORD_CHECKPOINT_FN}\s*${RECORD_CHECKPOINT_OLD_ARGS}`, 'i'),
+    'the old 11-argument (pre-progress) signature must never be (re)defined alongside the new one',
+  );
+});
+
+test('psi_record_agt002_analysis_checkpoint validates a closed progress-phase vocabulary, fail-closed on anything outside semantic_discovery/integral_analysis', () => {
+  const migration = migrationSql();
+  const block = functionBlock(migration, RECORD_CHECKPOINT_FN);
+  assert.match(
+    block,
+    /p_progress_phase\s+(not\s+)?in\s*\(\s*'semantic_discovery'\s*,\s*'integral_analysis'\s*\)|p_progress_phase\s+(not\s+)?in\s*\(\s*'integral_analysis'\s*,\s*'semantic_discovery'\s*\)/i,
+    'p_progress_phase must be checked against the exact closed vocabulary (semantic_discovery, integral_analysis), no more, no fewer',
+  );
+});
+
+test('psi_record_agt002_analysis_checkpoint requires a positive p_completed_batch_count and total_batch_count >= completed_batch_count', () => {
+  const migration = migrationSql();
+  const block = functionBlock(migration, RECORD_CHECKPOINT_FN);
+  assert.match(
+    block,
+    /p_completed_batch_count\s*<=\s*0|p_completed_batch_count\s*<\s*1|not\s*\(\s*p_completed_batch_count\s*>\s*0\s*\)/i,
+    'a non-positive p_completed_batch_count (zero or negative) must fail closed: a checkpoint always records at least one completed batch',
+  );
+  assert.match(
+    block,
+    /p_total_batch_count\s*<\s*p_completed_batch_count/i,
+    'p_total_batch_count must never be less than p_completed_batch_count within the same call',
+  );
+});
+
+test('psi_record_agt002_analysis_checkpoint enforces stage<->progress_phase pairing (semantic_* stages require semantic_discovery, integral_* stages require integral_analysis)', () => {
+  const migration = migrationSql();
+  const block = functionBlock(migration, RECORD_CHECKPOINT_FN);
+  assert.match(
+    block,
+    /(semantic_discovery_batch|semantic_manifest)[\s\S]{0,300}p_progress_phase[\s\S]{0,80}'semantic_discovery'|p_progress_phase[\s\S]{0,80}'semantic_discovery'[\s\S]{0,300}(semantic_discovery_batch|semantic_manifest)/i,
+    'a semantic_discovery_batch/semantic_manifest checkpoint stage must require p_progress_phase = semantic_discovery',
+  );
+  assert.match(
+    block,
+    /(integral_analysis_batch|integral_analysis_plan)[\s\S]{0,300}p_progress_phase[\s\S]{0,80}'integral_analysis'|p_progress_phase[\s\S]{0,80}'integral_analysis'[\s\S]{0,300}(integral_analysis_batch|integral_analysis_plan)/i,
+    'an integral_analysis_batch/integral_analysis_plan checkpoint stage must require p_progress_phase = integral_analysis',
+  );
+  assert.match(block, /raise\s+exception/i, 'a mismatched stage<->phase pairing must fail closed');
+});
+
+test('psi_record_agt002_analysis_checkpoint rejects progress regression within the same phase, and any phase transition other than semantic_discovery -> integral_analysis', () => {
+  const migration = migrationSql();
+  const block = functionBlock(migration, RECORD_CHECKPOINT_FN);
+  assert.match(
+    block,
+    /p_completed_batch_count\s*<\s*v_job\.completed_batch_count|v_job\.completed_batch_count\s*>\s*p_completed_batch_count/i,
+    'a lower p_completed_batch_count than the job already has recorded must be rejected: progress may never move backwards',
+  );
+  assert.match(
+    block,
+    /p_total_batch_count\s*<\s*v_job\.total_batch_count|v_job\.total_batch_count\s*>\s*p_total_batch_count/i,
+    'a lower p_total_batch_count than the job already has recorded must be rejected: the total may never shrink',
+  );
+  assert.match(
+    block,
+    /v_job\.phase\s*=\s*'integral_analysis'[\s\S]{0,200}p_progress_phase\s*=\s*'semantic_discovery'|p_progress_phase\s*=\s*'semantic_discovery'[\s\S]{0,200}v_job\.phase\s*=\s*'integral_analysis'/i,
+    'a reverse phase transition (already integral_analysis, incoming semantic_discovery) must be rejected; only semantic_discovery -> integral_analysis is a legal forward transition',
+  );
+});
+
+test('psi_record_agt002_analysis_checkpoint updates the SAME fenced running job (id=p_job_id AND lease_id=p_lease_id) with the new phase and counts, after the immutable checkpoint insert/replay validation', () => {
+  const migration = migrationSql();
+  const block = functionBlock(migration, RECORD_CHECKPOINT_FN);
+
+  const insertIdx = block.search(/insert\s+into\s+public\.psi_agt002_analysis_checkpoints/i);
+  assert.notEqual(insertIdx, -1, 'the checkpoint insert-or-compare must still exist');
+  const updateIdx = block.search(/update\s+public\.psi_agt002_reanalysis_jobs\s+set[^;]*phase\s*=\s*p_progress_phase/is);
+  assert.notEqual(updateIdx, -1, 'the function must update public.psi_agt002_reanalysis_jobs, setting phase = p_progress_phase');
+  assert.ok(
+    updateIdx > insertIdx,
+    'the fenced job update must happen after the immutable checkpoint insert/exact-replay validation, in the same function body',
+  );
+
+  assert.match(
+    block,
+    /update\s+public\.psi_agt002_reanalysis_jobs\s+set[^;]*completed_batch_count\s*=\s*p_completed_batch_count[^;]*;/is,
+    'the update must set completed_batch_count = p_completed_batch_count',
+  );
+  assert.match(
+    block,
+    /update\s+public\.psi_agt002_reanalysis_jobs\s+set[^;]*total_batch_count\s*=\s*p_total_batch_count[^;]*;/is,
+    'the update must set total_batch_count = p_total_batch_count',
+  );
+
+  const updateStmtMatch = block.match(/update\s+public\.psi_agt002_reanalysis_jobs\s+set[\s\S]*?where[^;]*;/i);
+  assert.ok(updateStmtMatch, 'the job update must carry a WHERE clause');
+  assert.match(updateStmtMatch[0], /\bid\s*=\s*p_job_id\b/i, 'the job update must be fenced by id = p_job_id');
+  assert.match(updateStmtMatch[0], /lease_id\s*=\s*p_lease_id\b/i, 'the job update must be fenced by lease_id = p_lease_id, not id alone');
+  assert.match(updateStmtMatch[0], /status\s*=\s*'running'/i, 'the job update must require the job still be running');
+
+  assert.match(
+    block,
+    /get\s+diagnostics\s+\S+\s*=\s*row_count/i,
+    'the function must capture ROW_COUNT from the fenced job update so it can fail closed unless exactly one row updated',
+  );
+  assert.match(
+    block,
+    /(<>|!=|is\s+distinct\s+from)\s*1\b[\s\S]{0,200}raise\s+exception|raise\s+exception[\s\S]{0,200}(<>|!=|is\s+distinct\s+from)\s*1\b/i,
+    'the function must raise an exception if the fenced job update did not affect exactly one row (stale/lost lease, job no longer running, or a wrong job/lease id)',
+  );
+});
+
+test('no other RPC in migration 081 writes phase, completed_batch_count or total_batch_count: those columns are owned exclusively by psi_record_agt002_analysis_checkpoint', () => {
+  const migration = migrationSql();
+  const recordBlock = functionBlock(migration, RECORD_CHECKPOINT_FN);
+  const recordStart = migration.indexOf(recordBlock);
+  const migrationWithoutRecordBlock = migration.slice(0, recordStart) + migration.slice(recordStart + recordBlock.length);
+
+  assert.doesNotMatch(
+    migrationWithoutRecordBlock,
+    /update\s+public\.psi_agt002_reanalysis_jobs\s+set[^;]*(completed_batch_count|total_batch_count)\s*=/is,
+    'no RPC other than psi_record_agt002_analysis_checkpoint may ever write completed_batch_count/total_batch_count: a second writer would be an unfenced, duplicate progress-update surface',
+  );
+  assert.doesNotMatch(
+    migrationWithoutRecordBlock,
+    /update\s+public\.psi_agt002_reanalysis_jobs\s+set[^;]*\bphase\s*=\s*p_progress_phase\b/is,
+    'no RPC other than psi_record_agt002_analysis_checkpoint may ever write phase from a caller-supplied progress phase',
+  );
+});
+
+test('the rollback drops psi_record_agt002_analysis_checkpoint by its exact new signature, never a bare or old-overload DROP FUNCTION', () => {
+  const rollback = rollbackSql();
+  assert.match(
+    rollback,
+    new RegExp(String.raw`drop\s+function\s+if\s+exists\s+public\.${RECORD_CHECKPOINT_FN}\s*${RECORD_CHECKPOINT_ARGS}\s*;`, 'i'),
+    'the rollback must drop psi_record_agt002_analysis_checkpoint by its exact, fully-typed new 14-argument signature',
+  );
+  assert.doesNotMatch(
+    rollback,
+    new RegExp(String.raw`drop\s+function\s+if\s+exists\s+public\.${RECORD_CHECKPOINT_FN}\s*${RECORD_CHECKPOINT_OLD_ARGS}\s*;`, 'i'),
+    'the rollback must never target the old pre-progress 11-argument overload: migration 081 replaces that signature entirely rather than leaving a second overload behind',
   );
 });

@@ -81,11 +81,16 @@ const TRANSPORT_CODES = new Set([
   'AGT002_CODEX_INVALID_RESPONSE',
 ]);
 
-// Both possible RPC names agt002-preview-persistence.js's registerAgt002PreviewAnalysis can
-// call, depending on canonicalOnly — tracked (never re-implemented) purely to tell "the RPC was
+// The RPC names the injected `persistAnalysis` seam (default: agt002-preview-persistence.js's
+// registerAgt002PreviewAnalysis) can call — the two depending on canonicalOnly, plus the atomic
+// durable-batched finalizer — tracked (never re-implemented) purely to tell "the RPC was
 // attempted and it rejected" (persistence) apart from "the envelope failed its own shape check
 // before any RPC" (envelope_build).
-const RUN_PERSISTENCE_RPC_NAMES = new Set(['psi_record_agt002_canonical_analysis_run', 'psi_record_tender_analysis_run']);
+const RUN_PERSISTENCE_RPC_NAMES = new Set([
+  'psi_record_agt002_canonical_analysis_run',
+  'psi_record_tender_analysis_run',
+  'psi_finalize_agt002_durable_batched_analysis',
+]);
 
 // Fixed, generic, identity-stable messages — one per closed code, never the real error text —
 // for the durable psi_agt002_analysis_attempt_events row. The RPC has no dedicated stage
@@ -266,7 +271,11 @@ async function safeAppendAttempt(database, params) {
  *   bridgeTelemetry?:{invocationStarted?:boolean, responseReceived?:boolean},
  *   integralContractV3?:boolean, presentAnalysis?:Function,
  *   persistenceRetry?:{maxAttempts?:number, baseDelayMs?:number, maxDelayMs?:number,
- *     budgetMs?:number, deadlineAt?:number, now?:Function, sleep?:Function}}} deps
+ *     budgetMs?:number, deadlineAt?:number, now?:Function, sleep?:Function},
+ *   persistAnalysis?:Function}} deps `persistAnalysis` is the injectable persistence seam
+ *   (same signature as registerAgt002PreviewAnalysis: `(trackedDatabase, persistenceParams) =>
+ *   Promise<{run_id}>`), defaulting to registerAgt002PreviewAnalysis so every existing caller is
+ *   byte-identical.
  */
 export async function runAgt002PostBridgeAnalysis(database, context = {}, deps = {}) {
   const {
@@ -290,6 +299,9 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
     // lease (agt002-reanalysis-executor.js) supplies `deadlineAt` so no re-attempt can ever start
     // outside that lease. `now`/`sleep` exist so tests never spend real wall clock.
     persistenceRetry = null,
+    // Injectable persistence seam: every existing caller (which never supplies this) gets exactly
+    // registerAgt002PreviewAnalysis, so this default is byte-identical to before it existed.
+    persistAnalysis = registerAgt002PreviewAnalysis,
   } = deps;
   const nowMs = typeof persistenceRetry?.now === 'function' ? persistenceRetry.now : Date.now;
   const sleepMs = typeof persistenceRetry?.sleep === 'function' ? persistenceRetry.sleep : agt002PersistenceRetrySleep;
@@ -412,7 +424,7 @@ export async function runAgt002PostBridgeAnalysis(database, context = {}, deps =
       let runRpcAttempted = false;
       const trackedDatabase = wrapDatabaseForRunRpcTracking(database, () => { runRpcAttempted = true; });
       try {
-        registeredRun = await registerAgt002PreviewAnalysis(trackedDatabase, persistenceParams);
+        registeredRun = await persistAnalysis(trackedDatabase, persistenceParams);
         runPersisted = true;
         analysisRunId = registeredRun?.run_id ?? null;
         persistenceSubcode = null;
