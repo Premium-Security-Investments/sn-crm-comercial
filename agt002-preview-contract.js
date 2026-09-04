@@ -1159,8 +1159,9 @@ export function buildAgt002IntegralAnalysisV3BatchOutputJsonSchema(validationCon
 // (`assembleAgt002GovernedIntegralAnalysisV3Units`) already uses.
 //
 // The assembled unit is then run through the EXISTING, unchanged `normalizeAgt002ActionsUnit`
-// — the same conservative action normalization the single-turn assembler already applies —
-// before the shared validator sees it (production `v3_action_invariant` rejections on
+// and `normalizeAgt002CriticalEscalationUnit` — the same conservative normalizations the
+// single-turn assembler already applies, in the same order — before the shared validator sees
+// it (production `v3_action_invariant` and `v3_escalation_invariant` rejections on
 // durable_batched_v1). This is a parity fix, not a relaxation: the batch wire contract
 // removes `unit_id` from the unit key set entirely, so the deterministic `UNIT-<requirement_id>`
 // that `actions[].basis_unit_id` must equal is structurally invisible to the model on a batch
@@ -1171,6 +1172,27 @@ export function buildAgt002IntegralAnalysisV3BatchOutputJsonSchema(validationCon
 // which stays the sole authority over every enum, bound and shape — an invalid `action_type`,
 // `priority` or `suggested_role`, or a malformed action object, is never repaired here and
 // still fails closed.
+//
+// `normalizeAgt002CriticalEscalationUnit` is the same story for invariant 7.11 (production
+// `v3_escalation_invariant` on durable_batched_v1): a defined critical condition — a not-curable
+// blocker, material legal uncertainty (`legal_assessment.status` "not_verified" with
+// `human_legal_review_required` true), or critical commercial exposure — demands
+// `escalation.required=true` with a level other than "none", and that is a deterministic
+// consequence of fields already present in the unit, not a judgement the model gets to make.
+// The normalizer runs OUTERMOST, exactly as in the single-turn assembler, and reproduces that
+// path's deterministic `required`/`level` correspondence input for input — this is a parity
+// move, not a new rule. Concretely: `required` becomes true for a governed critical condition,
+// and a model-declared `required=true` is never dropped; on an escalation that ends up required,
+// a "none" level is lifted to the minimum named `role_review` while any other named level the
+// model chose is preserved as-is. It is NOT a monotonic "only ever raises" transform: when no
+// critical condition holds and the model did not declare `required=true`, the contradictory
+// {required:false, <named level>} pair the validator forbids is resolved by collapsing the level
+// to "none" — the only value consistent with the `required=false` the model itself declared, and
+// exactly the lowering the single-turn path already performs on the same input. `reason` is
+// never touched. Everything else stays with the unweakened validator: a malformed `escalation`
+// object, an invalid `escalation.level` enum on an escalation that is in fact required, an
+// unevidenced critical condition, the legal-assessment invariant and the human-validation gate
+// are never repaired here and still fail closed.
 function assembleAgt002IntegralAnalysisV3BatchUnit(wireUnit, requirementId, validationContext) {
   const ctx = isRecord(validationContext) ? validationContext : {};
   const requirementManifest = Array.isArray(ctx.requirementManifest) ? ctx.requirementManifest : [];
@@ -1179,13 +1201,15 @@ function assembleAgt002IntegralAnalysisV3BatchUnit(wireUnit, requirementId, vali
   const evidenceStateManifest = Array.isArray(ctx.evidenceStateManifest) ? ctx.evidenceStateManifest : [];
   const evidenceStateEntry = evidenceStateManifest.find(entry => entry?.requirement_id === requirementId);
   const governedEvidenceState = evidenceStateEntry?.evidence_state;
-  return normalizeAgt002ActionsUnit({
-    ...wireUnit,
-    unit_id: `UNIT-${requirementId}`,
-    sequence: manifestIndex + 1,
-    category: manifestEntry?.category ?? null,
-    evidence_state: isRecord(governedEvidenceState) ? { ...governedEvidenceState } : (governedEvidenceState ?? null),
-  });
+  return normalizeAgt002CriticalEscalationUnit(
+    normalizeAgt002ActionsUnit({
+      ...wireUnit,
+      unit_id: `UNIT-${requirementId}`,
+      sequence: manifestIndex + 1,
+      category: manifestEntry?.category ?? null,
+      evidence_state: isRecord(governedEvidenceState) ? { ...governedEvidenceState } : (governedEvidenceState ?? null),
+    }),
+  );
 }
 
 /**
