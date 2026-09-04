@@ -157,6 +157,23 @@ const AGT002_V3_SAFE_VALIDATION_CODE_SET = new Set(AGT002_V3_SAFE_VALIDATION_COD
 // this same codebase, because the provider is an injected dependency, not this engine's own code.
 const AGT002_OUTPUT_REJECTION_STAGE_VALUES = new Set(Object.values(AGT002_OUTPUT_REJECTION_STAGES));
 
+// The single DURABLE-BOUNDARY stage the batched orchestration below attaches (a checkpoint load/
+// store rejection, or a stage-boundary heartbeat failure that was NOT a confirmed lost lease). It
+// is deliberately not a member of AGT002_OUTPUT_REJECTION_STAGES: nothing about the model output is
+// implied by it — the provider may never have been asked at all.
+const AGT002_BATCHED_V3_PERSISTENCE_STAGE = 'persistence';
+
+// A SECOND, separate closed allowlist — never merged into AGT002_OUTPUT_REJECTION_STAGE_VALUES,
+// never widened to "any stage the orchestration attaches" — naming the stages analyze()'s generic
+// catch forwards from the durable-batched orchestration. Exactly one member today: `persistence`,
+// so a checkpoint/boundary failure reaches the post-bridge classifier as
+// AGT002_PERSISTENCE_FAILED -> the queue's persistence_failure instead of collapsing to
+// unexpected/invalid_output. The orchestration's other two stages are deliberately EXCLUDED and
+// keep classifying exactly as they already do, from their own closed codes: `lease_renewal` (whose
+// AGT002_*_LEASE_LOST code the post-bridge classifier already recognizes on its own) and
+// `transport` (whose AGT002_CODEX_TIMEOUT code the queue already maps to `timeout`).
+const AGT002_ENGINE_FORWARDED_DURABLE_STAGES = new Set([AGT002_BATCHED_V3_PERSISTENCE_STAGE]);
+
 // A discovery-provider validation code is only ever trusted onto a durable/observable field when
 // it matches this shape — never an arbitrary string the provider (or a future bug in it) might
 // attach. Deliberately a shape check, not an imported allowlist Set: this engine treats
@@ -1242,6 +1259,15 @@ export function createAgt002PreviewEngine({
                   effort,
                   checkpointHooks: analysisCheckpointHooks,
                   beforeProviderCall,
+                  // The SAME server-owned prompt input cap the one-turn runOnceV3 path budgets
+                  // against (createAgt002PreviewRuntime resolves it from
+                  // AGT002_PREVIEW_PROMPT_MAX_INPUT_TOKENS — never from a request/caller body — and
+                  // wires it alongside promptBudget: true, so every production V3 engine already
+                  // validated it at construction). Without it the orchestrator silently fell back to
+                  // its own default floor, so the batched plan was split — and could fail closed —
+                  // against a cap the server never configured. runAgt002BatchedV3Analysis still
+                  // re-checks it fail-closed for any caller that skipped that construction guard.
+                  maxInputTokens: promptMaxInputTokens,
                   idempotencyKey: key,
                   client,
                   idGenerator,
@@ -1280,7 +1306,21 @@ export function createAgt002PreviewEngine({
           // engine can still tell a transport/provider failure apart from any other unavailable
           // cause without this engine's public message contract changing.
           const upstreamCode = typeof error?.code === 'string' && error.code ? error.code : undefined;
-          throw safe(SAFE_UNAVAILABLE, { code: upstreamCode });
+          // A stage survives ONLY when it is a member of one of this engine's own two CLOSED
+          // catalogs — never an arbitrary value copied from upstream: AGT002_OUTPUT_REJECTION_STAGES
+          // (the output-rejection frontier) or AGT002_ENGINE_FORWARDED_DURABLE_STAGES (today exactly
+          // `persistence`). Without this, every batched-orchestration rejection lost its stage here
+          // and could only be classified by the post-bridge bridge-telemetry heuristic, collapsing a
+          // purely local, deterministic failure into 'unexpected': the pre-provider planning refusal
+          // tagged ENVELOPE below (-> invalid_output, unchanged) and a checkpoint/boundary failure
+          // tagged `persistence` (-> AGT002_PERSISTENCE_FAILED -> the queue's persistence_failure,
+          // which is what a durable-boundary failure has always meant everywhere else). The public
+          // `.message` contract is unchanged.
+          const upstreamStage = AGT002_OUTPUT_REJECTION_STAGE_VALUES.has(error?.stage)
+            || AGT002_ENGINE_FORWARDED_DURABLE_STAGES.has(error?.stage)
+            ? error.stage
+            : undefined;
+          throw safe(SAFE_UNAVAILABLE, { code: upstreamCode, stage: upstreamStage });
         } finally {
           active -= 1;
         }
@@ -1311,6 +1351,12 @@ if (!AGT002_CHECKPOINT_STAGES.includes(AGT002_BATCHED_V3_STAGE)) {
 const SAFE_BATCHED_V3_CONFIG_INVALID = 'AGT-002 Preview: la orquestación de lotes V3 no está configurada correctamente.';
 const SAFE_BATCHED_V3_PLAN_INCOHERENT = 'AGT-002 Preview: el plan de lotes V3 no es coherente con sus lotes.';
 const SAFE_BATCHED_V3_FAILED = 'AGT-002 Preview: la orquestación de lotes V3 no pudo completarse.';
+
+// The batched route's own per-batch requirement cap, unchanged from the value
+// runAgt002BatchedV3Analysis has always defaulted to. Exported so a caller that must bind this
+// value into a durable workset's frozen identity (agt002-reanalysis-executor.js) — or a test that
+// pins it — never hardcodes a second copy of this literal.
+export const AGT002_BATCHED_V3_DEFAULT_MAX_REQUIREMENTS_PER_BATCH = 12;
 
 const AGT002_BATCHED_V3_CODES = Object.freeze({
   CONFIG_INVALID: 'AGT002_BATCHED_V3_CONFIG_INVALID',
@@ -1406,7 +1452,16 @@ function agt002BatchedV3ProviderIdempotencyKey({ idempotencyKey, batchIndex, req
  * Returns the ordered `[{ planBatch, runtimeBatch }]` pairing this run will process.
  */
 function validateAgt002BatchedV3Plan(plan, batches) {
-  const invalid = () => { throw safe(SAFE_BATCHED_V3_PLAN_INCOHERENT, { code: AGT002_BATCHED_V3_CODES.PLAN_INCOHERENT }); };
+  // Tagged with the SAME closed pre-provider ENVELOPE stage runAgt002BatchedV3Analysis's own
+  // planning refusal uses (see below): this validation is local, synchronous and strictly
+  // pre-provider too, so an untagged rejection here must not fall back to the bridge-telemetry
+  // heuristic and collapse to 'unexpected'.
+  const invalid = () => {
+    throw safe(SAFE_BATCHED_V3_PLAN_INCOHERENT, {
+      code: AGT002_BATCHED_V3_CODES.PLAN_INCOHERENT,
+      stage: AGT002_OUTPUT_REJECTION_STAGES.ENVELOPE,
+    });
+  };
 
   if (!isPlainRecord(plan)) invalid();
   if (!nonEmpty(plan.planner_version) || !nonEmpty(plan.contract_version) || !nonEmpty(plan.requirement_manifest_version)) invalid();
@@ -1518,7 +1573,7 @@ export async function runAgt002BatchedV3Orchestration({
       if (AGT002_BATCHED_V3_LEASE_LOST_CODES.has(error?.code)) {
         throw agt002BatchedV3Error(error.code, 'lease_renewal');
       }
-      throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.BOUNDARY_FAILED, 'persistence');
+      throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.BOUNDARY_FAILED, AGT002_BATCHED_V3_PERSISTENCE_STAGE);
     }
   }
 
@@ -1537,7 +1592,7 @@ export async function runAgt002BatchedV3Orchestration({
         validate: output => validateCheckpoint(output, { batch: runtimeBatch, planBatch, batchIndex }),
       });
     } catch {
-      throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.CHECKPOINT_FAILED, 'persistence');
+      throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.CHECKPOINT_FAILED, AGT002_BATCHED_V3_PERSISTENCE_STAGE);
     }
 
     if (checkpointHit && checkpointHit.hit) {
@@ -1547,7 +1602,7 @@ export async function runAgt002BatchedV3Orchestration({
       try {
         usage = extractAgt002BatchedV3UsageCounts(checkpointHit.usage);
       } catch {
-        throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.CHECKPOINT_FAILED, 'persistence');
+        throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.CHECKPOINT_FAILED, AGT002_BATCHED_V3_PERSISTENCE_STAGE);
       }
       inputTokens += usage.input_tokens;
       outputTokens += usage.output_tokens;
@@ -1617,7 +1672,7 @@ export async function runAgt002BatchedV3Orchestration({
         totalBatchCount: plan.batches.length,
       });
     } catch {
-      throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.CHECKPOINT_FAILED, 'persistence');
+      throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.CHECKPOINT_FAILED, AGT002_BATCHED_V3_PERSISTENCE_STAGE);
     }
 
     // A fresh batch's own usage counts, straight from the just-completed provider turn: a shape
@@ -1708,7 +1763,7 @@ export async function runAgt002BatchedV3Analysis({
   governanceProvenanceForRun = {},
   manifestScope = null,
   maxInputTokens = AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS,
-  maxRequirementsPerBatch = 12,
+  maxRequirementsPerBatch = AGT002_BATCHED_V3_DEFAULT_MAX_REQUIREMENTS_PER_BATCH,
   recordProgress = () => {},
 } = {}) {
   if (
@@ -1729,8 +1784,9 @@ export async function runAgt002BatchedV3Analysis({
   }
 
   // The SAME governed input every provider turn of this run is projected from: built once, from
-  // the FULL previewInput (never a batch/summary projection — the planner needs the complete
-  // requirement/inventory ledgers to decide how to split them), via the existing
+  // the FULL previewInput (never a batch/summary projection — the planner validates the complete
+  // requirement/inventory ledgers before deciding how to split them; the model-facing projection is
+  // applied per batch, and for sizing only, via projectRequestInput below), via the existing
   // withRequirementGovernedFields also used by runOnceV3 above.
   const governedInput = withRequirementGovernedFields(previewInput, validationContext.requirementManifest, validationContext.evidenceStateManifest);
   // A conservative stand-in for token estimation only: the real, narrower per-batch schema
@@ -1750,9 +1806,25 @@ export async function runAgt002BatchedV3Analysis({
       outputSchema: planningSchema,
       maxInputTokens,
       maxRequirementsPerBatch,
+      // The EXACT last transformation executeBatch applies below before client.run: the planner
+      // must size the request the provider really receives. Without it, planning counted the two
+      // full per-source-unit audit ledgers that executeBatch provably strips, so on a discovered
+      // frontier with thousands of source units every batch — even a lone requirement — "exceeded"
+      // the cap and the run failed closed after re-serializing those ledgers on every split.
+      projectRequestInput: projectAgt002DiscoveredModelInput,
     }));
   } catch {
-    throw safe(SAFE_BATCHED_V3_PLAN_INCOHERENT, { code: AGT002_BATCHED_V3_CODES.PLAN_INCOHERENT });
+    // Planning is LOCAL, synchronous and strictly pre-provider: no bridge invocation is in flight
+    // and no batch/checkpoint exists yet. Tagged with the SAME closed pre-provider ENVELOPE stage
+    // the discovered-frontier assembly and the prompt-budget refusal already use, so the post-bridge
+    // classifier maps it to envelope_build -> AGT002_ENVELOPE_INVALID -> the worker's invalid_output
+    // deterministically, instead of falling back to the bridge-telemetry heuristic and collapsing to
+    // 'unexpected'. The closed code, the fixed message and the non-transient queue outcome are
+    // unchanged; only the attribution stops blaming an unknown frontier.
+    throw safe(SAFE_BATCHED_V3_PLAN_INCOHERENT, {
+      code: AGT002_BATCHED_V3_CODES.PLAN_INCOHERENT,
+      stage: AGT002_OUTPUT_REJECTION_STAGES.ENVELOPE,
+    });
   }
 
   // Each batch's own projected `citation_allowlist` (governed, batch-scoped) is derived once, up
@@ -1773,9 +1845,24 @@ export async function runAgt002BatchedV3Analysis({
     const modelInput = projectAgt002DiscoveredModelInput(projectedInput);
     const batchOutputSchema = buildAgt002IntegralAnalysisV3BatchOutputJsonSchema(validationContext, batch);
 
+    // The SAME deterministic budget-reduction ladder the planner already ran against this exact
+    // batch (agt002-integral-analysis-batches.js's estimateBatchRequestTokens), with the SAME
+    // model/policy/maxInputTokens, applied one more time here against the real, narrower per-batch
+    // schema — so what is SENT is never a different shape than what was SIZED. The planner's own
+    // schema stand-in (buildAgt002IntegralAnalysisV3OutputJsonSchema, always at least as wide as this
+    // batch's real schema) never under-counts relative to this, so a batch the planner accepted
+    // always still fits here; failing closed regardless is cheaper than ever risking an
+    // under-reduced request reaching the provider.
+    let budgeted;
+    try {
+      budgeted = budgetAgt002V3PromptRequest({ model, policy, input: modelInput, outputSchema: batchOutputSchema, maxInputTokens });
+    } catch {
+      throw agt002BatchedV3Error(AGT002_BATCHED_V3_CODES.VALIDATION_INVALID, AGT002_OUTPUT_REJECTION_STAGES.ENVELOPE);
+    }
+
     if (beforeProviderCall) await beforeProviderCall();
     const raw = await client.run({
-      model, policy, input: modelInput, outputSchema: batchOutputSchema,
+      model, policy, input: budgeted.input, outputSchema: batchOutputSchema,
       timeoutMs, idempotencyKey: providerIdempotencyKey, signal: batchSignal, effort,
     });
 

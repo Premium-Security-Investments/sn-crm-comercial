@@ -217,6 +217,13 @@ function classifyEnginePhase(error, {
   // every telemetry heuristic below: the heartbeat runs before the operation it guards, so nothing
   // about the bridge, the answer or the database is implied by it.
   if (isAgt002LeaseLostError(error)) return 'lease_renewal';
+  // The engine's durable-boundary stage (a durable-batched checkpoint load/store rejection, or a
+  // stage-boundary heartbeat failure that was NOT a confirmed lost lease). Deliberately checked
+  // AFTER the lease codes above, so a confirmed lost lease is never reattributed here, and before
+  // the telemetry heuristic below, which would otherwise collapse a purely local persistence
+  // failure into 'unexpected' — see the engine's own AGT002_ENGINE_FORWARDED_DURABLE_STAGES, the
+  // closed allowlist that lets this stage reach here at all.
+  if (stage === AGT002_POST_BRIDGE_STAGES.PERSISTENCE) return 'persistence';
   // Multi-turn attribution. `bridgeResponseReceived` is a LATCHED, run-level boolean: on the V7/V8
   // discovered-frontier path the semantic-discovery stage takes N provider turns before the
   // analysis turn, so after the first batch answers it is permanently true and can no longer tell
