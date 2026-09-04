@@ -55,6 +55,7 @@ import {
   AGT002_MANIZALES_CHECKED_IN_MANIFEST,
   selectAgt002ManizalesManifestSource,
 } from '../agt002-manizales-manifest-source.js';
+import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT } from '../agt002-preview-reasoning-effort.js';
 
 const hash = value => createHash('sha256').update(value).digest('hex');
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -891,6 +892,445 @@ const createTestEngine = ({ client, semanticDiscoveryProvider }) => createAgt002
   assert.equal(persisted.analyzed_coverage.status, 'partial');
   assert.equal(persisted.decision_ready, false);
   assert.equal(persisted.recommendation, 'pause');
+}
+
+// ===========================================================================
+// 10. Task 6A2 (docs/plans/2026-09-03-agt002-durable-batched-analysis.md,
+//     "Task 6: Engine orchestration") — public engine routing/wiring, RED. On
+//     a non-pilot semantic-discovery V3 run, supplying `analysisCheckpointHooks`
+//     to `analyze()` must route the analysis turn through an injected
+//     `batchedV3Orchestrator` constructor dependency instead of the engine's
+//     own single-turn `runOnceV3` call: the discovery turn still runs exactly
+//     as it does today, but the orchestrator — not the engine — owns every
+//     batch's provider call from there. Neither `batchedV3Orchestrator` nor
+//     `analysisCheckpointHooks` exist yet, so this section is expected to fail
+//     on the routing assertions below (an ordinary missing-wiring assertion
+//     failure), never on a load/type error.
+//
+// RED command: node tests/agt002-tender-native-semantic-manifest-integration.test.mjs
+// ===========================================================================
+{
+  // The real-shaped Task-2 checkpoint hooks (see
+  // createAgt002AnalysisCheckpointAdapter in agt002-analysis-checkpoints.js): a per-run object
+  // this section only proves the ENGINE forwards unchanged — the orchestrator itself, exercised
+  // separately by tests/agt002-batched-v3-orchestration.test.mjs, is the only thing that ever
+  // calls these.
+  const checkpointHooksSentinel = Object.freeze({
+    loadCheckpoint: async ({ stage, batchIndex, expectedRequestHash, validate }) => {
+      void stage; void batchIndex; void expectedRequestHash; void validate;
+      return { hit: false };
+    },
+    storeCheckpoint: async ({ stage, batchIndex, requestHash, stageContractVersion, output, outputSha256, usage, providerIdempotencyKey }) => {
+      void stage; void batchIndex; void requestHash; void stageContractVersion;
+      void output; void outputSha256; void usage; void providerIdempotencyKey;
+    },
+  });
+
+  // 10a. The routing itself: discovery runs, then the analysis turn is handed to the injected
+  // orchestrator with exactly the arguments a durable batched run needs, and its returned
+  // envelope reaches the caller unchanged.
+  {
+    const BATCHED_COMPLETED_ENVELOPE_SENTINEL = Object.freeze({ status: 'completed', sentinel: 'agt002-batched-v3-envelope' });
+
+    const runCalls = [];
+    const client = {
+      run: async (options) => {
+        runCalls.push(options);
+        return {
+          content: JSON.stringify({ integral_analysis: { analysis_units: buildV3AbstainedUnits(options.input) } }),
+          usage: { input_tokens: 7, output_tokens: 7 },
+        };
+      },
+    };
+    const beforeProviderCallCalls = [];
+    const beforeProviderCall = async () => { beforeProviderCallCalls.push(true); };
+    const orchestratorCalls = [];
+    const batchedV3Orchestrator = async (options) => {
+      orchestratorCalls.push(options);
+      return BATCHED_COMPLETED_ENVELOPE_SENTINEL;
+    };
+
+    // Same non-pilot semantic-discovery V3 wiring as createTestEngine, plus the two constructor
+    // dependencies this section is about.
+    const engine = createAgt002PreviewEngine({
+      client,
+      model: 'synthetic-codex-model',
+      policyVersion: 'agt002-integral-v3-policy-test',
+      policyText: 'POLÍTICA V3 SINTÉTICA',
+      timeoutMs: 2000,
+      maxConcurrent: 2,
+      dailyMaxRuns: 5,
+      countDailyRuns: async () => 0,
+      idGenerator: () => '99999999-9999-4999-8999-999999999999',
+      contextV2: true,
+      documentRetrieval: true,
+      integralContractV3: true,
+      companyEvidenceClassesProvider: () => [],
+      semanticDiscoveryProvider: structuralDiscovery,
+      beforeProviderCall,
+      batchedV3Orchestrator,
+    });
+
+    const signal = { sentinel: 'agt002-6a2-signal' };
+    const result = await engine.analyze(
+      { snapshotId: SNAPSHOT_ID, documents, documentGaps: [], deepAnalysis: historicalDeepAnalysis, contextV2Sections: contextV2Sections() },
+      { idempotencyKey: 'durable-key', signal, analysisCheckpointHooks: checkpointHooksSentinel },
+    );
+
+    assert.equal(orchestratorCalls.length, 1,
+      'a discovered frontier with analysisCheckpointHooks must route its analysis turn through the injected batchedV3Orchestrator exactly once');
+    const call = orchestratorCalls[0];
+
+    assert.deepEqual(
+      call.previewInput?.document_evidence?.requirement_manifest.map(entry => entry.requirement_id).sort(),
+      expectedIds,
+      'the orchestrator must receive the discovered previewInput, assembled from this snapshot\'s own frontier',
+    );
+    assert.ok(call.validationContext, 'the orchestrator must receive the discovered validationContext');
+    assert.deepEqual(call.priorUsage, { input_tokens: 11, output_tokens: 5 },
+      'the discovery turn\'s usage must reach the orchestrator as priorUsage, exactly as it reaches runOnceV3 today');
+    assert.equal(call.model, 'synthetic-codex-model');
+    assert.equal(call.policy, 'POLÍTICA V3 SINTÉTICA', 'the orchestrator must receive the same policy text client.run is given today');
+    assert.equal(call.timeoutMs, 2000);
+    assert.equal(call.signal, signal);
+    assert.equal(call.effort, AGT002_PREVIEW_DEFAULT_REASONING_EFFORT);
+    assert.equal(call.checkpointHooks, checkpointHooksSentinel,
+      'the exact per-run checkpoint hooks passed to analyze() must reach the orchestrator unchanged, never rewrapped');
+    assert.equal(call.beforeProviderCall, beforeProviderCall,
+      'a configured beforeProviderCall boundary hook must reach the orchestrator too, exactly as it reaches runOnceV3 today');
+    assert.equal(call.idempotencyKey, 'durable-key', 'the base run idempotency key must reach the orchestrator unsuffixed');
+
+    assert.equal(result, BATCHED_COMPLETED_ENVELOPE_SENTINEL,
+      'the engine must return the orchestrator\'s completed envelope unchanged, not a re-wrapped or re-derived one');
+    assert.equal(runCalls.length, 0,
+      'once analysisCheckpointHooks route the run to the orchestrator, the engine must never call the analysis client directly — the injected orchestrator owns every batch\'s provider call');
+  }
+
+  // 10b. Negative: a legacy/non-V3 engine keeps its existing one-turn behavior even when a
+  // caller supplies analysisCheckpointHooks — there is no discovered frontier to batch.
+  {
+    const orchestratorCalls = [];
+    const client = { run: async () => ({ content: 'no-json', usage: { input_tokens: 3, output_tokens: 3 } }) };
+    const legacyEngine = createAgt002PreviewEngine({
+      client,
+      model: 'synthetic-codex-model',
+      policyVersion: 'agt002-legacy-policy-test',
+      policyText: 'POLÍTICA LEGACY SINTÉTICA',
+      timeoutMs: 2000,
+      maxConcurrent: 2,
+      dailyMaxRuns: 5,
+      countDailyRuns: async () => 0,
+      idGenerator: () => '99999999-9999-4999-8999-999999999999',
+      // integralContractV3 stays false (default): the legacy/v2 one-turn path.
+      batchedV3Orchestrator: async (options) => { orchestratorCalls.push(options); return {}; },
+    });
+
+    await assert.rejects(
+      () => legacyEngine.analyze(
+        { snapshotId: SNAPSHOT_ID, documents, documentGaps: [], deepAnalysis: historicalDeepAnalysis, contextV2Sections: contextV2Sections() },
+        { idempotencyKey: 'durable-key', analysisCheckpointHooks: checkpointHooksSentinel },
+      ),
+      /no produjo una respuesta válida/i,
+      'a legacy/non-V3 engine must still take its existing one-turn runOnce path; analysisCheckpointHooks must never switch it to batching',
+    );
+    assert.equal(orchestratorCalls.length, 0, 'the legacy/non-V3 path must never invoke an injected batchedV3Orchestrator');
+  }
+
+  // 10c. Negative: the exact Manizales/fixed-manifest package already takes no discovery turn
+  // at all (usesSemanticDiscovery is false whenever manifestWiring is set — see its definition
+  // in agt002-preview-engine.js). Building a full checked-in Manizales fixture here would just
+  // duplicate section 4's fixture wholesale for no extra routing coverage, so this pins the
+  // routing guard itself at the source level — the durable-batching route must be conditioned on
+  // usesSemanticDiscovery, which already excludes both the Manizales pilot and any non-V3 engine
+  // — and leans on section 4 above (and 10b above) for the actual one-turn behavioral proof.
+  {
+    const engineSource = readFileSync(new URL('../agt002-preview-engine.js', import.meta.url), 'utf8');
+    assert.match(
+      engineSource,
+      /usesSemanticDiscovery\s*&&\s*(?:\w+\s*&&\s*)*analysisCheckpointHooks|analysisCheckpointHooks\s*&&\s*(?:\w+\s*&&\s*)*usesSemanticDiscovery/,
+      'the durable-batching route must be gated on usesSemanticDiscovery, so a supplied analysisCheckpointHooks can never switch the exact Manizales package or a legacy/non-V3 engine to batching',
+    );
+  }
+
+  // 10d. Task 6A4: a CONSTRUCTOR-level `checkpointHooks` binding — the exact option
+  // `createAgt002PreviewRuntime` has forwarded to `createAgt002PreviewEngine` since Task 2 (see
+  // agt002-preview-runtime.js) — must itself be enough to route a discovered-frontier run's
+  // analysis turn through the injected `batchedV3Orchestrator`, even when the specific `analyze()`
+  // call supplies no per-run `analysisCheckpointHooks` at all.
+  {
+    const boundHooks = Object.freeze({
+      loadCheckpoint: async () => ({ hit: false }),
+      storeCheckpoint: async () => {},
+    });
+    const BATCHED_COMPLETED_ENVELOPE_SENTINEL = Object.freeze({ status: 'completed', sentinel: 'agt002-6a4-bound-hooks-envelope' });
+    const runCalls = [];
+    const client = {
+      run: async (options) => {
+        runCalls.push(options);
+        return {
+          content: JSON.stringify({ integral_analysis: { analysis_units: buildV3AbstainedUnits(options.input) } }),
+          usage: { input_tokens: 7, output_tokens: 7 },
+        };
+      },
+    };
+    const orchestratorCalls = [];
+    const batchedV3Orchestrator = async (options) => {
+      orchestratorCalls.push(options);
+      return BATCHED_COMPLETED_ENVELOPE_SENTINEL;
+    };
+
+    const engine = createAgt002PreviewEngine({
+      client,
+      model: 'synthetic-codex-model',
+      policyVersion: 'agt002-integral-v3-policy-test',
+      policyText: 'POLÍTICA V3 SINTÉTICA',
+      timeoutMs: 2000,
+      maxConcurrent: 2,
+      dailyMaxRuns: 5,
+      countDailyRuns: async () => 0,
+      idGenerator: () => '99999999-9999-4999-8999-999999999999',
+      contextV2: true,
+      documentRetrieval: true,
+      integralContractV3: true,
+      companyEvidenceClassesProvider: () => [],
+      semanticDiscoveryProvider: structuralDiscovery,
+      batchedV3Orchestrator,
+      checkpointHooks: boundHooks,
+    });
+
+    const result = await engine.analyze(
+      { snapshotId: SNAPSHOT_ID, documents, documentGaps: [], deepAnalysis: historicalDeepAnalysis, contextV2Sections: contextV2Sections() },
+      { idempotencyKey: 'durable-key' },
+    );
+
+    assert.equal(orchestratorCalls.length, 1,
+      'a constructor-level checkpointHooks binding must route a discovered-frontier analysis turn through the injected batchedV3Orchestrator with no per-run hooks supplied');
+    assert.equal(orchestratorCalls[0].checkpointHooks, boundHooks,
+      'the orchestrator must receive the constructor-bound checkpointHooks unchanged when no per-run override is supplied');
+    assert.equal(result, BATCHED_COMPLETED_ENVELOPE_SENTINEL,
+      'the engine must return the orchestrator\'s completed envelope unchanged');
+    assert.equal(runCalls.length, 0,
+      'a constructor-bound checkpointHooks binding must route to the orchestrator exactly like a per-run one — the engine must never call the analysis client directly');
+  }
+
+  // 10e. A valid per-run `analysisCheckpointHooks` overrides the constructor-level binding, for
+  // that invocation only.
+  {
+    const boundHooks = Object.freeze({
+      loadCheckpoint: async () => ({ hit: false }),
+      storeCheckpoint: async () => {},
+    });
+    const client = {
+      run: async (options) => ({
+        content: JSON.stringify({ integral_analysis: { analysis_units: buildV3AbstainedUnits(options.input) } }),
+        usage: { input_tokens: 7, output_tokens: 7 },
+      }),
+    };
+    const orchestratorCalls = [];
+    const batchedV3Orchestrator = async (options) => {
+      orchestratorCalls.push(options);
+      return { status: 'completed' };
+    };
+
+    const engine = createAgt002PreviewEngine({
+      client,
+      model: 'synthetic-codex-model',
+      policyVersion: 'agt002-integral-v3-policy-test',
+      policyText: 'POLÍTICA V3 SINTÉTICA',
+      timeoutMs: 2000,
+      maxConcurrent: 2,
+      dailyMaxRuns: 5,
+      countDailyRuns: async () => 0,
+      idGenerator: () => '99999999-9999-4999-8999-999999999999',
+      contextV2: true,
+      documentRetrieval: true,
+      integralContractV3: true,
+      companyEvidenceClassesProvider: () => [],
+      semanticDiscoveryProvider: structuralDiscovery,
+      batchedV3Orchestrator,
+      checkpointHooks: boundHooks,
+    });
+
+    await engine.analyze(
+      { snapshotId: SNAPSHOT_ID, documents, documentGaps: [], deepAnalysis: historicalDeepAnalysis, contextV2Sections: contextV2Sections() },
+      { idempotencyKey: 'durable-key', analysisCheckpointHooks: checkpointHooksSentinel },
+    );
+
+    assert.equal(orchestratorCalls.length, 1);
+    assert.equal(orchestratorCalls[0].checkpointHooks, checkpointHooksSentinel,
+      'a valid per-run analysisCheckpointHooks must override the constructor-level checkpointHooks binding for that invocation');
+    assert.notEqual(orchestratorCalls[0].checkpointHooks, boundHooks,
+      'the overridden invocation must never fall back to the constructor-bound hooks');
+  }
+
+  // 10f. Fail closed. A malformed constructor-level checkpointHooks must be rejected at engine
+  // construction — before any run is attempted, exactly like every other malformed constructor
+  // dependency this engine validates. A malformed per-run analysisCheckpointHooks must keep
+  // failing before semantic discovery, the analysis client, or the orchestrator are ever reached.
+  {
+    for (const malformed of [{}, { loadCheckpoint: async () => ({}) }, { loadCheckpoint: 'nope', storeCheckpoint: async () => {} }, null, 'hooks']) {
+      assert.throws(
+        () => createAgt002PreviewEngine({
+          client: { run: async () => ({ content: 'no-json', usage: { input_tokens: 1, output_tokens: 1 } }) },
+          model: 'synthetic-codex-model',
+          policyVersion: 'agt002-integral-v3-policy-test',
+          policyText: 'POLÍTICA V3 SINTÉTICA',
+          timeoutMs: 2000,
+          maxConcurrent: 2,
+          dailyMaxRuns: 5,
+          countDailyRuns: async () => 0,
+          idGenerator: () => '99999999-9999-4999-8999-999999999999',
+          contextV2: true,
+          documentRetrieval: true,
+          integralContractV3: true,
+          companyEvidenceClassesProvider: () => [],
+          semanticDiscoveryProvider: structuralDiscovery,
+          checkpointHooks: malformed,
+        }),
+        /AGT-002 Preview/,
+        `a malformed constructor-level checkpointHooks (${JSON.stringify(malformed)}) must fail closed at construction, never at run time`,
+      );
+    }
+
+    const discoveryCalls = [];
+    const runCalls = [];
+    const orchestratorCalls = [];
+    const engine = createAgt002PreviewEngine({
+      client: { run: async (options) => { runCalls.push(options); return { content: 'no-json', usage: { input_tokens: 1, output_tokens: 1 } }; } },
+      model: 'synthetic-codex-model',
+      policyVersion: 'agt002-integral-v3-policy-test',
+      policyText: 'POLÍTICA V3 SINTÉTICA',
+      timeoutMs: 2000,
+      maxConcurrent: 2,
+      dailyMaxRuns: 5,
+      countDailyRuns: async () => 0,
+      idGenerator: () => '99999999-9999-4999-8999-999999999999',
+      contextV2: true,
+      documentRetrieval: true,
+      integralContractV3: true,
+      companyEvidenceClassesProvider: () => [],
+      semanticDiscoveryProvider: async (options) => { discoveryCalls.push(options); return structuralDiscovery(options); },
+      batchedV3Orchestrator: async (options) => { orchestratorCalls.push(options); return { status: 'completed' }; },
+    });
+
+    for (const malformedPerRun of [{}, { loadCheckpoint: async () => ({}) }, null, 'hooks']) {
+      assert.throws(
+        () => engine.analyze(
+          { snapshotId: SNAPSHOT_ID, documents, documentGaps: [], deepAnalysis: historicalDeepAnalysis, contextV2Sections: contextV2Sections() },
+          { idempotencyKey: 'durable-key', analysisCheckpointHooks: malformedPerRun },
+        ),
+        /analysisCheckpointHooks/,
+        `a malformed per-run analysisCheckpointHooks (${JSON.stringify(malformedPerRun)}) must fail before semantic discovery, the client, or the orchestrator are ever reached`,
+      );
+    }
+    assert.equal(discoveryCalls.length, 0, 'a malformed per-run analysisCheckpointHooks must fail before the discovery turn is ever attempted');
+    assert.equal(runCalls.length, 0, 'a malformed per-run analysisCheckpointHooks must fail before the analysis client is ever called');
+    assert.equal(orchestratorCalls.length, 0, 'a malformed per-run analysisCheckpointHooks must fail before the orchestrator is ever reached');
+  }
+
+  // 10g. Task 6B3 (docs/plans/2026-09-03-agt002-durable-batched-analysis.md, "Task 6: Engine
+  // orchestration") — observability plumbing, RED. The engine must hand the injected
+  // batchedV3Orchestrator a `recordProgress` function that maps every internal progress event to
+  // exactly one `observability.record('analysis_batch_progress', fields)` call, with `fields`
+  // restricted to a snake_case allowlist (never a raw internal event, prompt, response, or other
+  // payload). This mapping does not exist yet — the engine passes no `recordProgress` to the
+  // orchestrator at all — so this section is expected to fail on the assertions below (an
+  // ordinary missing-wiring assertion failure), never on a load/type error.
+  {
+    const observabilityCalls = [];
+    const observability = {
+      record: (eventType, fields) => { observabilityCalls.push({ eventType, fields }); },
+    };
+
+    const REQUEST_HASH = 'a'.repeat(64);
+    let capturedRecordProgress = null;
+    const batchedV3Orchestrator = async (options) => {
+      capturedRecordProgress = options.recordProgress;
+      if (typeof capturedRecordProgress === 'function') {
+        const base = { batchIndex: 0, batchCount: 1, requestHash: REQUEST_HASH, durationMs: 150, inputTokens: 40, outputTokens: 20, providerRequestId: 'req-6b3', checkpointReused: false };
+        capturedRecordProgress({ type: 'batch_attempt_retry', ...base, attempt: 1, retryCount: 1 });
+        capturedRecordProgress({ type: 'batch_completed', ...base, attempt: 2, retryCount: 1, checkpointReused: true });
+        capturedRecordProgress({ type: 'batch_merged', ...base, attempt: 2, retryCount: 1 });
+        capturedRecordProgress({ type: 'batch_finalized', ...base, attempt: 2, retryCount: 1 });
+      }
+      return { status: 'completed' };
+    };
+
+    const boundHooks = Object.freeze({
+      loadCheckpoint: async () => ({ hit: false }),
+      storeCheckpoint: async () => {},
+    });
+
+    const engine = createAgt002PreviewEngine({
+      client: {
+        run: async (options) => ({
+          content: JSON.stringify({ integral_analysis: { analysis_units: buildV3AbstainedUnits(options.input) } }),
+          usage: { input_tokens: 7, output_tokens: 7 },
+        }),
+      },
+      model: 'synthetic-codex-model',
+      policyVersion: 'agt002-integral-v3-policy-test',
+      policyText: 'POLÍTICA V3 SINTÉTICA',
+      timeoutMs: 2000,
+      maxConcurrent: 2,
+      dailyMaxRuns: 5,
+      countDailyRuns: async () => 0,
+      idGenerator: () => '99999999-9999-4999-8999-999999999999',
+      contextV2: true,
+      documentRetrieval: true,
+      integralContractV3: true,
+      companyEvidenceClassesProvider: () => [],
+      semanticDiscoveryProvider: structuralDiscovery,
+      batchedV3Orchestrator,
+      checkpointHooks: boundHooks,
+      observability,
+    });
+
+    // No per-run analysisCheckpointHooks: the constructor-level checkpointHooks binding alone
+    // must be enough to route through the orchestrator (see 10d above).
+    await engine.analyze(
+      { snapshotId: SNAPSHOT_ID, documents, documentGaps: [], deepAnalysis: historicalDeepAnalysis, contextV2Sections: contextV2Sections() },
+      { idempotencyKey: 'durable-key' },
+    );
+
+    assert.equal(typeof capturedRecordProgress, 'function',
+      'the injected batchedV3Orchestrator must receive a recordProgress function from the engine, even with no per-run analysisCheckpointHooks supplied');
+    assert.equal(observabilityCalls.length, 4,
+      'the engine must forward exactly one observability.record call per internal recordProgress call');
+
+    const allowedKeys = ['stage', 'snapshot_id', 'batch_index', 'batch_count', 'attempt', 'retry_count', 'duration_ms', 'input_tokens', 'output_tokens', 'request_hash', 'provider_request_id', 'checkpoint_reused', 'outcome'];
+    const forbiddenKeys = ['prompt', 'response', 'source', 'content', 'output', 'error', 'event', 'rawEvent'];
+    for (const call of observabilityCalls) {
+      assert.equal(call.eventType, 'analysis_batch_progress',
+        'every batch-progress observability call must use the exact event type analysis_batch_progress');
+      assert.equal(call.fields.stage, 'integral_analysis_batch');
+      assert.equal(call.fields.snapshot_id, SNAPSHOT_ID, 'snapshot_id must come from the run context, not the internal event');
+      assert.equal(call.fields.batch_index, 0);
+      assert.equal(call.fields.batch_count, 1);
+      assert.equal(call.fields.duration_ms, 150);
+      assert.equal(call.fields.input_tokens, 40);
+      assert.equal(call.fields.output_tokens, 20);
+      assert.equal(call.fields.request_hash, REQUEST_HASH);
+      assert.equal(call.fields.provider_request_id, 'req-6b3');
+      assert.equal(typeof call.fields.checkpoint_reused, 'boolean');
+      assert.equal(typeof call.fields.attempt, 'number');
+      assert.equal(typeof call.fields.retry_count, 'number');
+
+      for (const key of Object.keys(call.fields)) {
+        assert.ok(allowedKeys.includes(key),
+          `observability fields must be restricted to the snake_case allowlist; unexpected key "${key}"`);
+        assert.ok(call.fields[key] === null || typeof call.fields[key] !== 'object',
+          `observability fields must be flat primitives, never a nested raw payload (key "${key}")`);
+      }
+      for (const forbidden of forbiddenKeys) {
+        assert.ok(!(forbidden in call.fields), `observability fields must never carry a raw payload key "${forbidden}"`);
+      }
+    }
+
+    assert.deepEqual(observabilityCalls.map(call => call.fields.outcome),
+      ['retry_scheduled', 'completed', 'merged', 'finalized'],
+      'each internal progress event type must map to its own closed, allowlisted outcome string');
+  }
 }
 
 console.log('AGT-002 tender-native semantic manifest preview integration passed');

@@ -35,6 +35,20 @@ const REQUIRED_EVENT_TYPES = [
   'stage_duration',
   'output_rejected',
   'canonical_preview_unavailable',
+  'analysis_batch_progress',
+];
+
+// AGT-002 Task 6B1: the per-batch progress/outcome event for the integral analysis batching
+// pipeline. Closed field allowlist and enums only — no prompt/raw_response/source_text/
+// document_text/policy/output/usage/error_message/credential-shaped field is ever part of it.
+const ANALYSIS_BATCH_PROGRESS_FIELDS = [
+  'job_id', 'tender_id', 'snapshot_id', 'stage', 'batch_index', 'batch_count', 'attempt', 'retry_count',
+  'duration_ms', 'input_tokens', 'output_tokens', 'request_hash', 'provider_request_id', 'checkpoint_reused',
+  'outcome', 'error_code',
+];
+
+const ANALYSIS_BATCH_PROGRESS_OUTCOMES = [
+  'started', 'checkpoint_reused', 'retry_scheduled', 'completed', 'failed', 'merged', 'finalized',
 ];
 
 test('every structured event category required by the observability program is defined', () => {
@@ -341,4 +355,233 @@ test('canonical_preview_unavailable drops a stage outside its closed enum', () =
     correlation_id: '2f9580cf-d2cf-49ea-b411-f6f86cf499cb',
     error_code: 'PGRST205',
   }]);
+});
+
+test('analysis_batch_progress declares its closed field allowlist', () => {
+  assert.deepEqual(
+    [...AGT002_OBSERVABILITY_EVENT_FIELDS.analysis_batch_progress].sort(),
+    [...ANALYSIS_BATCH_PROGRESS_FIELDS].sort(),
+  );
+});
+
+test('analysis_batch_progress records every allowed field for a valid event and drops every forbidden one', () => {
+  const emitted = [];
+  const observability = createAgt002AnalysisObservability({ emit: record => emitted.push(record), now: () => 500 });
+  observability.record('analysis_batch_progress', {
+    job_id: 'job-1',
+    tender_id: 'tender-1',
+    snapshot_id: 'snap-1',
+    stage: 'integral_analysis_batch',
+    batch_index: 2,
+    batch_count: 5,
+    attempt: 1,
+    retry_count: 0,
+    duration_ms: 340,
+    input_tokens: 1200,
+    output_tokens: 300,
+    request_hash: 'a'.repeat(64),
+    provider_request_id: 'req_abcdef123456',
+    checkpoint_reused: false,
+    outcome: 'completed',
+    error_code: 'AGT002_BATCH_FAILED',
+    // Forbidden: none of these belong to any AGT-002 event and must never survive.
+    prompt: 'system prompt completo',
+    raw_response: 'respuesta cruda del proveedor',
+    source_text: 'texto fuente del pliego',
+    document_text: 'contenido extraído del pliego',
+    policy: 'política interna confidencial',
+    output: 'salida completa del modelo',
+    usage: { input_tokens: 1200, output_tokens: 300 },
+    error_message: 'mensaje detallado con datos sensibles',
+    credential: 'sk-do-not-leak',
+  });
+
+  assert.equal(emitted.length, 1);
+  const [record] = emitted;
+  assert.equal(record.event, 'analysis_batch_progress');
+  assert.equal(record.at, 500);
+  assert.equal(record.job_id, 'job-1');
+  assert.equal(record.tender_id, 'tender-1');
+  assert.equal(record.snapshot_id, 'snap-1');
+  assert.equal(record.stage, 'integral_analysis_batch');
+  assert.equal(record.batch_index, 2);
+  assert.equal(record.batch_count, 5);
+  assert.equal(record.attempt, 1);
+  assert.equal(record.retry_count, 0);
+  assert.equal(record.duration_ms, 340);
+  assert.equal(record.input_tokens, 1200);
+  assert.equal(record.output_tokens, 300);
+  assert.equal(record.request_hash, 'a'.repeat(64));
+  assert.equal(record.provider_request_id, 'req_abcdef123456');
+  assert.equal(record.checkpoint_reused, false);
+  assert.equal(record.outcome, 'completed');
+  assert.equal(record.error_code, 'AGT002_BATCH_FAILED');
+
+  for (const forbiddenKey of ['prompt', 'raw_response', 'source_text', 'document_text', 'policy', 'output', 'usage', 'error_message', 'credential']) {
+    assert.equal(record[forbiddenKey], undefined, `forbidden field leaked: ${forbiddenKey}`);
+  }
+});
+
+test('analysis_batch_progress stage is closed to integral_analysis_batch; anything else never survives raw', () => {
+  const emitted = [];
+  const observability = createAgt002AnalysisObservability({ emit: record => emitted.push(record), now: () => 1 });
+  observability.record('analysis_batch_progress', { job_id: 'job-1', stage: 'free_form_stage_leak' });
+  const [record] = emitted;
+  assert.notEqual(record.stage, 'free_form_stage_leak');
+  assert.ok(record.stage === undefined || record.stage === 'integral_analysis_batch');
+
+  const emittedValid = [];
+  const observabilityValid = createAgt002AnalysisObservability({ emit: record => emittedValid.push(record), now: () => 1 });
+  observabilityValid.record('analysis_batch_progress', { job_id: 'job-1', stage: 'integral_analysis_batch' });
+  assert.equal(emittedValid[0].stage, 'integral_analysis_batch');
+});
+
+test('analysis_batch_progress outcome is closed to the defined lifecycle values', () => {
+  for (const outcome of ANALYSIS_BATCH_PROGRESS_OUTCOMES) {
+    const emitted = [];
+    const observability = createAgt002AnalysisObservability({ emit: record => emitted.push(record), now: () => 1 });
+    observability.record('analysis_batch_progress', { job_id: 'job-1', outcome });
+    assert.equal(emitted[0].outcome, outcome, `expected outcome "${outcome}" to survive unchanged`);
+  }
+
+  const emitted = [];
+  const observability = createAgt002AnalysisObservability({ emit: record => emitted.push(record), now: () => 1 });
+  observability.record('analysis_batch_progress', { job_id: 'job-1', outcome: 'free_form_outcome_leak' });
+  const [record] = emitted;
+  assert.notEqual(record.outcome, 'free_form_outcome_leak');
+  assert.ok(record.outcome === undefined || ANALYSIS_BATCH_PROGRESS_OUTCOMES.includes(record.outcome));
+});
+
+test('analysis_batch_progress request_hash must be a 64-lowercase-hex digest or it is dropped, never forwarded as free text', () => {
+  const emittedUpper = [];
+  const observabilityUpper = createAgt002AnalysisObservability({ emit: record => emittedUpper.push(record), now: () => 1 });
+  observabilityUpper.record('analysis_batch_progress', { job_id: 'job-1', request_hash: 'A'.repeat(64) });
+  assert.equal(emittedUpper[0].request_hash, undefined, 'uppercase hex is not the accepted contract');
+
+  const emittedFreeText = [];
+  const observabilityFreeText = createAgt002AnalysisObservability({ emit: record => emittedFreeText.push(record), now: () => 1 });
+  observabilityFreeText.record('analysis_batch_progress', {
+    job_id: 'job-1',
+    request_hash: 'not-a-real-hash-this-looks-like-leaked-content',
+  });
+  assert.equal(emittedFreeText[0].request_hash, undefined);
+
+  const emittedValid = [];
+  const observabilityValid = createAgt002AnalysisObservability({ emit: record => emittedValid.push(record), now: () => 1 });
+  observabilityValid.record('analysis_batch_progress', { job_id: 'job-1', request_hash: 'c'.repeat(64) });
+  assert.equal(emittedValid[0].request_hash, 'c'.repeat(64));
+});
+
+test('analysis_batch_progress batch_index/batch_count/attempt/retry_count/duration_ms/input_tokens/output_tokens only accept non-negative integers', () => {
+  const emitted = [];
+  const observability = createAgt002AnalysisObservability({ emit: record => emitted.push(record), now: () => 1 });
+  observability.record('analysis_batch_progress', {
+    job_id: 'job-1',
+    batch_index: -1,
+    batch_count: 2.5,
+    attempt: 'one',
+    retry_count: null,
+    duration_ms: -5,
+    input_tokens: 'many',
+    output_tokens: { count: 3 },
+  });
+  const [record] = emitted;
+  for (const key of ['batch_index', 'batch_count', 'attempt', 'retry_count', 'duration_ms', 'input_tokens', 'output_tokens']) {
+    assert.equal(record[key], undefined, `malformed ${key} must never survive`);
+  }
+
+  const emittedValid = [];
+  const observabilityValid = createAgt002AnalysisObservability({ emit: record => emittedValid.push(record), now: () => 1 });
+  observabilityValid.record('analysis_batch_progress', {
+    job_id: 'job-1', batch_index: 0, batch_count: 3, attempt: 1, retry_count: 0, duration_ms: 0, input_tokens: 0, output_tokens: 0,
+  });
+  const [validRecord] = emittedValid;
+  const expectedValues = {
+    batch_index: 0,
+    batch_count: 3,
+    attempt: 1,
+    retry_count: 0,
+    duration_ms: 0,
+    input_tokens: 0,
+    output_tokens: 0,
+  };
+  for (const [key, expected] of Object.entries(expectedValues)) {
+    assert.equal(validRecord[key], expected, `valid non-negative integer ${key} must survive`);
+  }
+});
+
+test('analysis_batch_progress checkpoint_reused only accepts a real boolean', () => {
+  const emitted = [];
+  const observability = createAgt002AnalysisObservability({ emit: record => emitted.push(record), now: () => 1 });
+  observability.record('analysis_batch_progress', { job_id: 'job-1', checkpoint_reused: 'yes' });
+  assert.equal(emitted[0].checkpoint_reused, undefined);
+
+  const emittedNumeric = [];
+  const observabilityNumeric = createAgt002AnalysisObservability({ emit: record => emittedNumeric.push(record), now: () => 1 });
+  observabilityNumeric.record('analysis_batch_progress', { job_id: 'job-1', checkpoint_reused: 1 });
+  assert.equal(emittedNumeric[0].checkpoint_reused, undefined);
+
+  const emittedValid = [];
+  const observabilityValid = createAgt002AnalysisObservability({ emit: record => emittedValid.push(record), now: () => 1 });
+  observabilityValid.record('analysis_batch_progress', { job_id: 'job-1', checkpoint_reused: true });
+  assert.equal(emittedValid[0].checkpoint_reused, true);
+
+  const emittedFalse = [];
+  const observabilityFalse = createAgt002AnalysisObservability({ emit: record => emittedFalse.push(record), now: () => 1 });
+  observabilityFalse.record('analysis_batch_progress', { job_id: 'job-1', checkpoint_reused: false });
+  assert.equal(emittedFalse[0].checkpoint_reused, false);
+});
+
+test('analysis_batch_progress provider_request_id is a sanitized bounded scalar, never an object/array, and never unbounded', () => {
+  const emitted = [];
+  const observability = createAgt002AnalysisObservability({ emit: record => emitted.push(record), now: () => 1 });
+  observability.record('analysis_batch_progress', { job_id: 'job-1', provider_request_id: { nested: 'leak' } });
+  assert.equal(emitted[0].provider_request_id, undefined);
+
+  const emittedArray = [];
+  const observabilityArray = createAgt002AnalysisObservability({ emit: record => emittedArray.push(record), now: () => 1 });
+  observabilityArray.record('analysis_batch_progress', { job_id: 'job-1', provider_request_id: ['leak'] });
+  assert.equal(emittedArray[0].provider_request_id, undefined);
+
+  const emittedLong = [];
+  const observabilityLong = createAgt002AnalysisObservability({ emit: record => emittedLong.push(record), now: () => 1 });
+  observabilityLong.record('analysis_batch_progress', { job_id: 'job-1', provider_request_id: `req_${'x'.repeat(500)}` });
+  const longValue = emittedLong[0].provider_request_id;
+  assert.ok(longValue === undefined || typeof longValue === 'string');
+  if (typeof longValue === 'string') assert.ok(longValue.length <= 200);
+});
+
+test('analysis_batch_progress error_code reuses the existing safe uppercase/underscore contract', () => {
+  const emitted = [];
+  const observability = createAgt002AnalysisObservability({ emit: record => emitted.push(record), now: () => 1 });
+  observability.record('analysis_batch_progress', { job_id: 'job-1', error_code: 'lowercase not allowed' });
+  assert.equal(emitted[0].error_code, boundAgt002ErrorCode('lowercase not allowed'));
+  assert.notEqual(emitted[0].error_code, 'lowercase not allowed');
+
+  const emittedValid = [];
+  const observabilityValid = createAgt002AnalysisObservability({ emit: record => emittedValid.push(record), now: () => 1 });
+  observabilityValid.record('analysis_batch_progress', { job_id: 'job-1', error_code: 'AGT002_BATCH_FAILED' });
+  assert.equal(emittedValid[0].error_code, 'AGT002_BATCH_FAILED');
+});
+
+test('analysis_batch_progress never lets an allowed field carry a nested array/object or an unbounded opaque token', () => {
+  const emitted = [];
+  const observability = createAgt002AnalysisObservability({ emit: record => emitted.push(record), now: () => 1 });
+  observability.record('analysis_batch_progress', {
+    job_id: { nested: 'object-must-never-pass-through' },
+    tender_id: ['array', 'must', 'never', 'pass', 'through'],
+    snapshot_id: 'snap-1',
+    stage: 'integral_analysis_batch',
+    batch_index: 0,
+    batch_count: 3,
+    attempt: 1,
+    provider_request_id: `sk-live-${'a'.repeat(60)}`,
+  });
+  const [record] = emitted;
+  assert.equal(record.job_id, undefined);
+  assert.equal(record.tender_id, undefined);
+  assert.equal(record.snapshot_id, 'snap-1');
+  for (const value of Object.values(record)) {
+    assert.notEqual(typeof value, 'object', 'no field on a sanitized record may ever be an array or object');
+  }
 });
