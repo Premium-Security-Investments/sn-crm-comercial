@@ -25,6 +25,7 @@ import {
   AGT002_INTEGRAL_UNIT_KINDS,
   AGT002_INTEGRAL_VALIDITY_STATES,
   validateAgt002IntegralAnalysisV3,
+  validateAgt002IntegralAnalysisV3Unit,
 } from './agt002-integral-analysis-v3.js';
 
 export const AGT002_PREVIEW_SCHEMA_VERSION = '2.0-preview.1';
@@ -1081,6 +1082,226 @@ export function validateAgt002PreviewModelOutputByVersion(version, value, option
   if (version === 'v2') return validateAgt002PreviewModelOutput(value, options);
   if (version === 'v3') return validateAgt002PreviewModelOutputV3(value, options.v3ValidationContext);
   throw new Error(`Versión de contrato AGT-002 Preview desconocida o no soportada: ${String(version)}.`);
+}
+
+// ---------------------------------------------------------------------------
+// Durable batched analysis — dedicated batch wire contract (Task 5B,
+// docs/plans/2026-09-03-agt002-durable-batched-analysis.md §7). A batch turn offers the
+// model ONLY the `tender_requirement` units assigned to one contiguous planner slice
+// (agt002-integral-analysis-batches.js): `unit_id`/`sequence`/`category`/`evidence_state`
+// are never offered on the wire (structurally absent, not merely forced to null as in the
+// single-turn contract above), `requirement_id` is restricted to that batch's own assigned
+// ids, and `strategic_consideration` never exists as an option. The server assembles the
+// four governed fields, validates each unit with the SAME unweakened
+// `validateAgt002IntegralAnalysisV3Unit`, and only the final merge re-runs the unchanged
+// full `validateAgt002IntegralAnalysisV3` as sole authority over global ordering/coverage.
+// ---------------------------------------------------------------------------
+
+// Every existing v3 model-fillable unit key except the four server-owned ones
+// (unit_id, sequence, category, evidence_state) — the single source of truth for both the
+// batch wire schema below and the batch runtime validator's structural key check.
+export const AGT002_INTEGRAL_ANALYSIS_BATCH_UNIT_KEYS = Object.freeze([
+  'unit_kind', 'requirement_id', 'title', 'assessment_mode', 'conclusion', 'blocking',
+  'evidence_refs', 'missing_evidence', 'commercial_impact', 'legal_assessment', 'actions',
+  'milestone', 'escalation', 'closure', 'human_validation',
+]);
+
+// A batch turn narrows only the `tender_document` bucket of the governed allowlist to this
+// batch's projected `citation_allowlist` (design §6/§7: "keep company evidence and legal
+// evidence... as governed context"). Every other source-type bucket stays exactly the full,
+// unsliced `validationContext.allowlist` the single-turn contract already uses.
+function buildAgt002IntegralAnalysisV3BatchScopedContext(validationContext, batch) {
+  const ctx = isRecord(validationContext) ? validationContext : {};
+  const citationAllowlist = Array.isArray(batch?.citation_allowlist) ? batch.citation_allowlist : [];
+  const allowlist = isRecord(ctx.allowlist)
+    ? { ...ctx.allowlist, tender_document: citationAllowlist }
+    : { tender_document: citationAllowlist };
+  return { ...ctx, allowlist };
+}
+
+/**
+ * Closed JSON Schema for ONE batch's model turn (Task 5B). Reuses the existing
+ * `buildV3AnalysisUnitSchema` field-by-field definitions (governed allowlists, enums,
+ * bounds) against a batch-scoped context — requirement manifest narrowed to
+ * `batch.requirement_ids` (so `requirement_id` and `unit_kind` are governed exactly like the
+ * single-turn contract already governs them) and the tender_document allowlist narrowed to
+ * `batch.citation_allowlist` — then keeps only the model-fillable keys in
+ * `AGT002_INTEGRAL_ANALYSIS_BATCH_UNIT_KEYS`. `contract_version`/`coverage` are never
+ * offered on a batch turn: they are assembled once, only at merge time.
+ */
+export function buildAgt002IntegralAnalysisV3BatchOutputJsonSchema(validationContext, batch) {
+  const ctx = isRecord(validationContext) ? validationContext : {};
+  const requirementIds = Array.isArray(batch?.requirement_ids) ? batch.requirement_ids : [];
+  const scopedRequirementManifest = Array.isArray(ctx.requirementManifest)
+    ? ctx.requirementManifest.filter(entry => requirementIds.includes(entry?.requirement_id))
+    : [];
+  const scopedValidationContext = {
+    ...buildAgt002IntegralAnalysisV3BatchScopedContext(validationContext, batch),
+    requirementManifest: scopedRequirementManifest,
+  };
+
+  const fullUnitSchema = buildV3AnalysisUnitSchema(scopedValidationContext);
+  const unitProperties = {};
+  for (const key of AGT002_INTEGRAL_ANALYSIS_BATCH_UNIT_KEYS) unitProperties[key] = fullUnitSchema.properties[key];
+  const unitSchema = v3ClosedObject(unitProperties);
+
+  return v3ClosedObject({
+    integral_analysis: v3ClosedObject({
+      analysis_units: { type: 'array', minItems: requirementIds.length, maxItems: requirementIds.length, items: unitSchema },
+    }),
+  });
+}
+
+// Server-owned assembly (design §7): `unit_id` is the deterministic `UNIT-<requirement_id>`
+// construction; `sequence` is the requirement's GLOBAL 1-based position in the full,
+// unsliced governed manifest (never re-based per batch); `category`/`evidence_state` come
+// from the same governed maps the single-turn assembler
+// (`assembleAgt002GovernedIntegralAnalysisV3Units`) already uses.
+function assembleAgt002IntegralAnalysisV3BatchUnit(wireUnit, requirementId, validationContext) {
+  const ctx = isRecord(validationContext) ? validationContext : {};
+  const requirementManifest = Array.isArray(ctx.requirementManifest) ? ctx.requirementManifest : [];
+  const manifestIndex = requirementManifest.findIndex(entry => entry?.requirement_id === requirementId);
+  const manifestEntry = manifestIndex === -1 ? undefined : requirementManifest[manifestIndex];
+  const evidenceStateManifest = Array.isArray(ctx.evidenceStateManifest) ? ctx.evidenceStateManifest : [];
+  const evidenceStateEntry = evidenceStateManifest.find(entry => entry?.requirement_id === requirementId);
+  const governedEvidenceState = evidenceStateEntry?.evidence_state;
+  return {
+    ...wireUnit,
+    unit_id: `UNIT-${requirementId}`,
+    sequence: manifestIndex + 1,
+    category: manifestEntry?.category ?? null,
+    evidence_state: isRecord(governedEvidenceState) ? { ...governedEvidenceState } : (governedEvidenceState ?? null),
+  };
+}
+
+/**
+ * Runtime validator + assembler for one batch's raw model turn (Task 5B). Rejects any of
+ * the four server-owned unit keys if present at all (the batch unit key set is exact, so an
+ * extra key fails the structural check below), any non-`tender_requirement` unit, any
+ * coverage other than the exact assigned `requirement_ids` once each in assigned order, any
+ * `tender_document` evidence ref outside `batch.citation_allowlist`, and any unit that
+ * remains non-abstained while the governed context observed material omissions. Every unit
+ * is then validated with the extracted, unweakened `validateAgt002IntegralAnalysisV3Unit`.
+ * Returns `{ analysis_units }` only — batch-local, fully governed units ready for merge;
+ * never a full envelope (no `contract_version`/`coverage` at this stage).
+ */
+export function validateAgt002PreviewModelOutputV3Batch(value, { validationContext, batch } = {}) {
+  if (!isRecord(value) || !exactKeys(value, INTEGRAL_MODEL_OUTPUT_KEYS)) {
+    throw new Error('La salida de un lote de AGT-002 Preview v3 debe exponer únicamente la clave integral_analysis.');
+  }
+  if (!exactKeys(value.integral_analysis, INTEGRAL_ANALYSIS_MODEL_OUTPUT_KEYS)) {
+    const error = new Error(
+      'La salida de un lote de AGT-002 Preview v3 (integral_analysis) debe exponer únicamente la clave analysis_units; '
+      + 'contract_version y coverage son gobernados por el servidor y nunca se aceptan de un turno de lote.',
+    );
+    error.code = 'v3_batch_model_output_shape_mismatch';
+    throw error;
+  }
+  if (!isRecord(batch) || !Array.isArray(batch.requirement_ids) || batch.requirement_ids.length === 0) {
+    throw new Error('batch.requirement_ids debe ser un arreglo no vacío para validar un lote de AGT-002 Preview v3.');
+  }
+  const expectedRequirementIds = batch.requirement_ids;
+  const analysisUnits = value.integral_analysis.analysis_units;
+  if (!Array.isArray(analysisUnits)) {
+    throw new Error('La salida de un lote de AGT-002 Preview v3 (analysis_units) debe ser un arreglo.');
+  }
+
+  const scopedContext = buildAgt002IntegralAnalysisV3BatchScopedContext(validationContext, batch);
+  const materialOmissionsObserved = isRecord(validationContext) && validationContext.materialOmissionsObserved === true;
+
+  const assembledUnits = analysisUnits.map((wireUnit, index) => {
+    if (!isRecord(wireUnit) || !exactKeys(wireUnit, AGT002_INTEGRAL_ANALYSIS_BATCH_UNIT_KEYS)) {
+      const error = new Error(
+        `analysis_units[${index}] de un lote de AGT-002 Preview v3 tiene claves no permitidas o incompletas `
+        + '(contrato cerrado del lote); unit_id/sequence/category/evidence_state son gobernados por el servidor '
+        + 'y nunca se aceptan de un turno de lote.',
+      );
+      error.code = 'v3_batch_unit_shape_mismatch';
+      throw error;
+    }
+    if (wireUnit.unit_kind !== 'tender_requirement') {
+      const error = new Error(
+        `analysis_units[${index}]: un turno de lote de AGT-002 Preview v3 solo admite unit_kind "tender_requirement"; `
+        + 'strategic_consideration nunca se ofrece ni se acepta en el contrato de lote.',
+      );
+      error.code = 'v3_batch_unit_kind_invariant';
+      throw error;
+    }
+    if (materialOmissionsObserved && wireUnit.assessment_mode !== 'abstained') {
+      const error = new Error(
+        `analysis_units[${index}]: el contexto gobernado observó omisiones materiales; toda unidad del lote debe `
+        + 'usar assessment_mode "abstained".',
+      );
+      error.code = 'v3_material_omissions_abstention_required';
+      throw error;
+    }
+    return assembleAgt002IntegralAnalysisV3BatchUnit(wireUnit, wireUnit.requirement_id, scopedContext);
+  });
+
+  const actualRequirementIds = assembledUnits.map(unit => unit.requirement_id);
+  const coverageMatches = actualRequirementIds.length === expectedRequirementIds.length
+    && actualRequirementIds.every((id, index) => id === expectedRequirementIds[index]);
+  if (!coverageMatches) {
+    const error = new Error(
+      'La cobertura local del lote de AGT-002 Preview v3 no coincide exactamente, en el orden asignado, con los '
+      + 'requirement_id asignados a este lote (sin faltantes, duplicados ni reordenamiento).',
+    );
+    error.code = 'v3_batch_coverage_mismatch';
+    throw error;
+  }
+
+  const validatedUnits = assembledUnits.map(unit => (
+    validateAgt002IntegralAnalysisV3Unit(unit, scopedContext, { allowedRequirementIds: expectedRequirementIds })
+  ));
+
+  return { analysis_units: validatedUnits };
+}
+
+/**
+ * Deterministically concatenates already-validated `{ analysis_units }` batch results, in
+ * the exact order given (Task 5B). Fails closed on any cross-batch `unit_id`/
+ * `requirement_id` collision, builds `contract_version` plus the governed `coverage` block
+ * via the EXISTING unchanged `buildAgt002GovernedIntegralAnalysisV3Coverage`, and runs the
+ * EXISTING unchanged `validateAgt002IntegralAnalysisV3` over the merged object as the sole
+ * final authority over global ordering, duplicate ids, exact coverage, legal/evidence
+ * allowlists, omission abstention and every cross-field invariant.
+ */
+export function mergeAgt002IntegralAnalysisV3Batches(validatedBatchResults, validationContext) {
+  if (!Array.isArray(validatedBatchResults) || validatedBatchResults.length === 0) {
+    throw new Error('mergeAgt002IntegralAnalysisV3Batches requiere un arreglo no vacío de resultados de lote ya validados.');
+  }
+  const mergedUnits = [];
+  const seenUnitIds = new Set();
+  const seenRequirementIds = new Set();
+  for (const [batchIndex, result] of validatedBatchResults.entries()) {
+    if (!isRecord(result) || !Array.isArray(result.analysis_units)) {
+      throw new Error(`mergeAgt002IntegralAnalysisV3Batches: el resultado del lote ${batchIndex} no tiene analysis_units.`);
+    }
+    for (const unit of result.analysis_units) {
+      if (!isRecord(unit) || typeof unit.unit_id !== 'string' || typeof unit.requirement_id !== 'string') {
+        throw new Error(`mergeAgt002IntegralAnalysisV3Batches: el lote ${batchIndex} tiene una unidad sin unit_id/requirement_id válido.`);
+      }
+      if (seenUnitIds.has(unit.unit_id) || seenRequirementIds.has(unit.requirement_id)) {
+        const error = new Error(
+          `mergeAgt002IntegralAnalysisV3Batches: colisión entre lotes para el requirement_id "${unit.requirement_id}" `
+          + '— cada requisito gobernado debe aparecer exactamente una vez en toda la fusión.',
+        );
+        error.code = 'v3_batch_merge_collision';
+        throw error;
+      }
+      seenUnitIds.add(unit.unit_id);
+      seenRequirementIds.add(unit.requirement_id);
+      mergedUnits.push(unit);
+    }
+  }
+
+  const merged = {
+    contract_version: AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION,
+    coverage: buildAgt002GovernedIntegralAnalysisV3Coverage(validationContext),
+    analysis_units: mergedUnits,
+  };
+
+  return validateAgt002IntegralAnalysisV3(merged, validationContext);
 }
 
 /**
