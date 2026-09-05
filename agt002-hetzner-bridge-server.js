@@ -6,6 +6,8 @@ import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effor
 
 const BRIDGE_PATH = '/v1/agt002-preview/run';
 export const AGT002_BRIDGE_MAX_BODY_BYTES = 1_048_576;
+/** El puente decide qué modelos existen: nada fuera de la lista llega al argv del proveedor. */
+export const AGT002_BRIDGE_ALLOWED_MODELS = Object.freeze(['sonnet']);
 
 const CODE_TO_STATUS = {
   AGT002_CODEX_TIMEOUT: 504,
@@ -14,6 +16,22 @@ const CODE_TO_STATUS = {
   AGT002_CODEX_PROVIDER_ERROR: 502,
   AGT002_CODEX_TRANSPORT_ERROR: 502,
   AGT002_CODEX_INVALID_RESPONSE: 422,
+};
+
+// AGT-002 cambió su proveedor de Codex a Claude Sonnet, pero el wire hacia el
+// motor/cliente/observabilidad sigue siendo AGT002_CODEX_*: el cliente
+// inyectado (agt002-claude-client.js) lanza sus propios códigos nativos
+// AGT002_CLAUDE_*, y aquí se traducen a los códigos de wire ya existentes
+// para que CODE_TO_STATUS, el backoff y la observabilidad no cambien.
+const CLAUDE_TO_CODEX_CODE = {
+  AGT002_CLAUDE_TIMEOUT: 'AGT002_CODEX_TIMEOUT',
+  AGT002_CLAUDE_LOGIN_REQUIRED: 'AGT002_CODEX_LOGIN_REQUIRED',
+  AGT002_CLAUDE_PROVIDER_ERROR: 'AGT002_CODEX_PROVIDER_ERROR',
+  AGT002_CLAUDE_TRANSPORT_ERROR: 'AGT002_CODEX_TRANSPORT_ERROR',
+  AGT002_CLAUDE_INVALID_RESPONSE: 'AGT002_CODEX_INVALID_RESPONSE',
+  // AGT-002 wire has no dedicated session-limit code; a temporary Claude
+  // session limit is reported the same way as any other provider error.
+  AGT002_CLAUDE_SESSION_LIMIT: 'AGT002_CODEX_PROVIDER_ERROR',
 };
 
 function sendJson(res, status, payload) {
@@ -26,9 +44,22 @@ function sendError(res, status, code, correlationId = randomUUID()) {
   sendJson(res, status, { error: { code, message: 'AGT-002 bridge rejected the request.' }, correlation_id: correlationId });
 }
 
-export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore = createNonceStore(), now = () => Math.floor(Date.now() / 1000), maxBodyBytes = AGT002_BRIDGE_MAX_BODY_BYTES }) {
+export function createAgt002BridgeServer({
+  hmacSecret,
+  codexClient,
+  nonceStore = createNonceStore(),
+  now = () => Math.floor(Date.now() / 1000),
+  maxBodyBytes = AGT002_BRIDGE_MAX_BODY_BYTES,
+  allowedModels = AGT002_BRIDGE_ALLOWED_MODELS,
+}) {
   if (typeof hmacSecret !== 'string' || hmacSecret.length < 32) throw new Error('El puente AGT-002 requiere un secreto HMAC de al menos 32 bytes.');
-  if (!codexClient || typeof codexClient.run !== 'function') throw new Error('El puente AGT-002 requiere un cliente Codex inyectado.');
+  if (!codexClient || typeof codexClient.run !== 'function') throw new Error('El puente AGT-002 requiere un cliente inyectado con un método run().');
+  if (!Array.isArray(allowedModels) || allowedModels.length === 0
+    || !allowedModels.every(entry => typeof entry === 'string' && entry.trim().length > 0)) {
+    throw new Error('El puente AGT-002 requiere una allowlist de modelos no vacía de cadenas.');
+  }
+  // Coincidencia exacta: ni recorte de espacios ni normalización de mayúsculas.
+  const allowedModelSet = new Set(allowedModels);
 
   return function requestListener(req, res) {
     if (req.method !== 'POST') return sendError(res, 405, 'AGT002_BRIDGE_METHOD_NOT_ALLOWED');
@@ -69,7 +100,9 @@ export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore =
       if (Object.hasOwn(body, 'cwd')) return sendError(res, 400, 'AGT002_BRIDGE_BAD_REQUEST');
 
       const { model, policy, input, outputSchema, timeoutMs, idempotencyKey, effort } = body;
-      if (typeof model !== 'string' || !model.trim() || typeof policy !== 'string' || !policy.trim()) {
+      // El modelo lo propone el cuerpo firmado, pero lo decide el puente: sólo
+      // un alias exacto de la allowlist puede llegar al argv del proveedor.
+      if (typeof model !== 'string' || !allowedModelSet.has(model) || typeof policy !== 'string' || !policy.trim()) {
         return sendError(res, 400, 'AGT002_BRIDGE_BAD_REQUEST');
       }
       if (input === null || typeof input !== 'object' || Array.isArray(input) || outputSchema === null || typeof outputSchema !== 'object' || Array.isArray(outputSchema)) {
@@ -93,7 +126,12 @@ export function createAgt002BridgeServer({ hmacSecret, codexClient, nonceStore =
       res.on('close', () => { if (!res.writableFinished) controller.abort(); });
 
       const handleError = error => {
-        const code = error?.code || 'AGT002_BRIDGE_INTERNAL';
+        // Un cliente Claude nativo (agt002-claude-client.js) lanza sus propios
+        // códigos AGT002_CLAUDE_*; se traducen aquí al código de wire
+        // AGT002_CODEX_* equivalente. Un código que ya viene en formato de
+        // wire (fakes de prueba, u otro cliente inyectado) pasa sin tocar.
+        const rawCode = error?.code || 'AGT002_BRIDGE_INTERNAL';
+        const code = CLAUDE_TO_CODEX_CODE[rawCode] || rawCode;
         const status = CODE_TO_STATUS[code] || 500;
         logBridgeEvent('agt002_bridge_error', {
           correlation_id: correlationId,
