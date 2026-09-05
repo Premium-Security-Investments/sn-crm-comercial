@@ -16,8 +16,7 @@ const BRIDGE_RUNTIME_FILES = [
   'agt002-hetzner-bridge-log.js',
   'agt002-hetzner-bridge-auth.js',
   'agt002-hetzner-bridge-server.js',
-  'agt002-preview-codex-client.js',
-  'agt002-codex-effort-capability.js',
+  'agt002-claude-client.js',
 ];
 
 function dockerfileCopiedRootFiles() {

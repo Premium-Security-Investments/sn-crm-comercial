@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { createAgt002BridgeServer, AGT002_BRIDGE_MAX_BODY_BYTES } from '../agt002-hetzner-bridge-server.js';
+import { createAgt002BridgeServer, AGT002_BRIDGE_MAX_BODY_BYTES, AGT002_BRIDGE_ALLOWED_MODELS } from '../agt002-hetzner-bridge-server.js';
 import { sha256Hex, buildCanonicalString, signCanonicalString } from '../agt002-hetzner-bridge-signing.js';
 
 const SECRET = 'a'.repeat(32);
 const PATH = '/v1/agt002-preview/run';
+const MODEL = 'sonnet';
 
 function signedHeaders(body, { timestamp = String(Math.floor(Date.now() / 1000)), nonce = 'n'.repeat(16), secret = SECRET } = {}) {
   const canonical = buildCanonicalString({ method: 'POST', path: PATH, bodySha256Hex: sha256Hex(body), timestamp, nonce });
@@ -16,8 +17,8 @@ function signedHeaders(body, { timestamp = String(Math.floor(Date.now() / 1000))
   };
 }
 
-async function withServer(codexClient, fn) {
-  const server = createServer(createAgt002BridgeServer({ hmacSecret: SECRET, codexClient }));
+async function withServer(codexClient, fn, options = {}) {
+  const server = createServer(createAgt002BridgeServer({ hmacSecret: SECRET, codexClient, ...options }));
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address();
   try {
@@ -101,7 +102,7 @@ async function testIntegralV3SizedBodyAccepted() {
   };
   await withServer(client, async (base) => {
     const payload = {
-      model: 'gpt-x', policy: 'policy text', input: { evidence: 'x'.repeat(300_000) },
+      model: MODEL, policy: 'policy text', input: { evidence: 'x'.repeat(300_000) },
       outputSchema: { type: 'object' }, timeoutMs: 5000, idempotencyKey: 'idem-v3-sized',
     };
     const body = JSON.stringify(payload);
@@ -117,7 +118,7 @@ function neverResolvingClient() {
 
 async function testSuccessResponseShape() {
   await withServer(fakeSuccessClient, async (base) => {
-    const payload = { model: 'gpt-x', policy: 'policy text', input: { a: 1 }, outputSchema: { type: 'object' }, timeoutMs: 5000, idempotencyKey: 'idem-1' };
+    const payload = { model: MODEL, policy: 'policy text', input: { a: 1 }, outputSchema: { type: 'object' }, timeoutMs: 5000, idempotencyKey: 'idem-1' };
     const body = JSON.stringify(payload);
     const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
     assert.equal(response.status, 200);
@@ -130,7 +131,7 @@ async function testEffortForwardedToCodexClient() {
   let captured = null;
   const client = { run: async (options) => { captured = options; return { content: '{"ok":true}', usage: { input_tokens: 1, output_tokens: 2 }, rate_limit: null }; } };
   await withServer(client, async (base) => {
-    const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-1', effort: 'low' };
+    const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-1', effort: 'low' };
     const body = JSON.stringify(payload);
     const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
     assert.equal(response.status, 200);
@@ -141,7 +142,7 @@ async function testEffortForwardedToCodexClient() {
 async function testEffortAckFromCodexClientIsForwardedVerbatim() {
   const client = { run: async () => ({ content: '{"ok":true}', usage: { input_tokens: 1, output_tokens: 2 }, rate_limit: null, effort_ack: 'low' }) };
   await withServer(client, async (base) => {
-    const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-ack-1', effort: 'low' };
+    const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-ack-1', effort: 'low' };
     const body = JSON.stringify(payload);
     const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
     assert.equal(response.status, 200);
@@ -157,7 +158,7 @@ async function testEffortIsRecordedOnSuccessSafeLog() {
   const client = { run: async () => ({ content: '{"ok":true}', usage: { input_tokens: 1, output_tokens: 2 }, rate_limit: null, effort_ack: 'low' }) };
   try {
     await withServer(client, async (base) => {
-      const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-log-1', effort: 'low' };
+      const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-log-1', effort: 'low' };
       const body = JSON.stringify(payload);
       const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
       assert.equal(response.status, 200);
@@ -183,7 +184,7 @@ async function testSuccessLogUsesRequestedEffortNotEffortAck() {
   const client = { run: async () => ({ content: '{"ok":true}', usage: { input_tokens: 1, output_tokens: 2 }, rate_limit: null }) };
   try {
     await withServer(client, async (base) => {
-      const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-log-3', effort: 'medium' };
+      const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-log-3', effort: 'medium' };
       const body = JSON.stringify(payload);
       const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
       assert.equal(response.status, 200);
@@ -202,7 +203,7 @@ async function testSuccessLogNeverLeaksAMismatchedEffortAck() {
   const client = { run: async () => ({ content: '{"ok":true}', usage: { input_tokens: 1, output_tokens: 2 }, rate_limit: null, effort_ack: 'high' }) };
   try {
     await withServer(client, async (base) => {
-      const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-log-4', effort: 'low' };
+      const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-log-4', effort: 'low' };
       const body = JSON.stringify(payload);
       const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
       assert.equal(response.status, 200);
@@ -221,7 +222,7 @@ async function testEffortIsRecordedOnErrorSafeLog() {
   const client = { run: async () => { const error = new Error('provider secret detail'); error.code = 'AGT002_CODEX_PROVIDER_ERROR'; throw error; } };
   try {
     await withServer(client, async (base) => {
-      const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-log-2', effort: 'medium' };
+      const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-log-2', effort: 'medium' };
       const body = JSON.stringify(payload);
       const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
       assert.equal(response.status, 502);
@@ -235,7 +236,7 @@ async function testEffortIsRecordedOnErrorSafeLog() {
 
 async function testUnsupportedEffortRejectedWithBadRequest() {
   await withServer(fakeSuccessClient, async (base) => {
-    const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-2', effort: 'high' };
+    const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-effort-2', effort: 'high' };
     const body = JSON.stringify(payload);
     const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
     assert.equal(response.status, 400);
@@ -244,9 +245,55 @@ async function testUnsupportedEffortRejectedWithBadRequest() {
   });
 }
 
+async function testUnsupportedModelRejectedByDefaultAllowlist() {
+  await withServer(fakeSuccessClient, async (base) => {
+    const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-model-1' };
+    const body = JSON.stringify(payload);
+    const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+    assert.equal(response.status, 400);
+    const result = await response.json();
+    assert.equal(result.error.code, 'AGT002_BRIDGE_BAD_REQUEST');
+  });
+}
+
+function testDefaultAllowedModelsIsSonnetOnly() {
+  assert.deepEqual(AGT002_BRIDGE_ALLOWED_MODELS, ['sonnet']);
+}
+
+async function testInjectedAllowedModelsOverridesTheDefault() {
+  await withServer(fakeSuccessClient, async (base) => {
+    const payload = { model: 'custom-alias', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-model-2' };
+    const body = JSON.stringify(payload);
+    const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+    assert.equal(response.status, 200, 'una allowlist inyectada debe poder aceptar otros alias de modelo');
+  }, { allowedModels: ['custom-alias'] });
+}
+
+async function testClaudeErrorCodesMapOntoExistingCodexWireCodes() {
+  const cases = [
+    ['AGT002_CLAUDE_TIMEOUT', 504, 'AGT002_CODEX_TIMEOUT'],
+    ['AGT002_CLAUDE_LOGIN_REQUIRED', 503, 'AGT002_CODEX_LOGIN_REQUIRED'],
+    ['AGT002_CLAUDE_PROVIDER_ERROR', 502, 'AGT002_CODEX_PROVIDER_ERROR'],
+    ['AGT002_CLAUDE_TRANSPORT_ERROR', 502, 'AGT002_CODEX_TRANSPORT_ERROR'],
+    ['AGT002_CLAUDE_INVALID_RESPONSE', 422, 'AGT002_CODEX_INVALID_RESPONSE'],
+    ['AGT002_CLAUDE_SESSION_LIMIT', 502, 'AGT002_CODEX_PROVIDER_ERROR'],
+  ];
+  for (const [claudeCode, expectedStatus, expectedWireCode] of cases) {
+    const client = { run: async () => { const error = new Error('claude detail'); error.code = claudeCode; throw error; } };
+    await withServer(client, async (base) => {
+      const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: `idem-map-${claudeCode}` };
+      const body = JSON.stringify(payload);
+      const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+      assert.equal(response.status, expectedStatus, claudeCode);
+      const result = await response.json();
+      assert.equal(result.error.code, expectedWireCode, claudeCode);
+    });
+  }
+}
+
 async function testCwdInBodyRejected() {
   await withServer(fakeSuccessClient, async (base) => {
-    const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-2', cwd: '/etc' };
+    const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-2', cwd: '/etc' };
     const body = JSON.stringify(payload);
     const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
     assert.equal(response.status, 400);
@@ -268,7 +315,7 @@ async function testConcurrentRequestsAreAccepted() {
     },
   };
   await withServer(client, async (base) => {
-    const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-3' };
+    const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-3' };
     const firstBody = JSON.stringify(payload);
     const secondBody = JSON.stringify({ ...payload, idempotencyKey: 'idem-4' });
     const [first, second] = await Promise.all([
@@ -288,7 +335,7 @@ async function testProviderErrorMappedTo502() {
   const client = { run: async () => { const error = new Error('provider secret detail'); error.code = 'AGT002_CODEX_PROVIDER_ERROR'; error.providerStatus = 'failed'; error.providerErrorCode = 'rate_limited'; throw error; } };
   try {
     await withServer(client, async (base) => {
-      const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-5' };
+      const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-5' };
       const body = JSON.stringify(payload);
       const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
       assert.equal(response.status, 502);
@@ -307,7 +354,7 @@ async function testProviderErrorMappedTo502() {
 async function testSynchronousThrowInCodexClientReleasesBusyAndFailsClosed() {
   const client = { run: () => { throw new Error('sync boom, must never leak to the caller'); } };
   await withServer(client, async (base) => {
-    const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-sync-1' };
+    const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-sync-1' };
     const firstBody = JSON.stringify(payload);
     const first = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(firstBody, { nonce: 'q'.repeat(16) }), body: firstBody });
     assert.equal(first.status, 500, 'Un throw síncrono debe responder fail-closed, no dejar la petición colgada.');
@@ -345,7 +392,7 @@ function abortAwareClient() {
 
 async function testCompletedRequestBodyDoesNotCancelRun() {
   await withServer(abortAwareClient(), async (base) => {
-    const payload = { model: 'gpt-x', policy: 'p', input: { a: 1 }, outputSchema: { type: 'object' }, timeoutMs: 5000, idempotencyKey: 'idem-close-1' };
+    const payload = { model: MODEL, policy: 'p', input: { a: 1 }, outputSchema: { type: 'object' }, timeoutMs: 5000, idempotencyKey: 'idem-close-1' };
     const body = JSON.stringify(payload);
     const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
     const result = await response.json();
@@ -369,7 +416,7 @@ async function testClientDisconnectStillCancelsRun() {
   };
   await withServer(client, async (base) => {
     const controller = new AbortController();
-    const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-disc-1' };
+    const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-disc-1' };
     const body = JSON.stringify(payload);
     const pending = fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body, signal: controller.signal });
     pending.catch(() => {});
@@ -386,7 +433,7 @@ async function testClientDisconnectStillCancelsRun() {
 async function testLoginRequiredMappedTo503() {
   const client = { run: async () => { const error = new Error('login'); error.code = 'AGT002_CODEX_LOGIN_REQUIRED'; throw error; } };
   await withServer(client, async (base) => {
-    const payload = { model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-6' };
+    const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-6' };
     const body = JSON.stringify(payload);
     const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
     assert.equal(response.status, 503);
@@ -411,6 +458,10 @@ await testSuccessLogUsesRequestedEffortNotEffortAck();
 await testSuccessLogNeverLeaksAMismatchedEffortAck();
 await testEffortIsRecordedOnErrorSafeLog();
 await testUnsupportedEffortRejectedWithBadRequest();
+testDefaultAllowedModelsIsSonnetOnly();
+await testUnsupportedModelRejectedByDefaultAllowlist();
+await testInjectedAllowedModelsOverridesTheDefault();
+await testClaudeErrorCodesMapOntoExistingCodexWireCodes();
 await testCwdInBodyRejected();
 await testConcurrentRequestsAreAccepted();
 await testProviderErrorMappedTo502();

@@ -38,7 +38,7 @@ async function testClientMarginTimeoutAbortsSlowProviderRequest() {
   try {
     const client = createAgt002HetznerBridgeClient({ url, hmacSecret: SECRET });
     await assert.rejects(
-      () => client.run({ model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 200, idempotencyKey: 'idem-timeout' }),
+      () => client.run({ model: 'sonnet', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 200, idempotencyKey: 'idem-timeout' }),
       () => true,
     );
   } finally {
@@ -56,7 +56,7 @@ async function testClientAbortTriggersServerInterruptAndNoOrphanProcess() {
   try {
     const client = createAgt002HetznerBridgeClient({ url, hmacSecret: SECRET });
     const controller = new AbortController();
-    const runPromise = client.run({ model: 'gpt-x', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 30_000, idempotencyKey: 'idem-abort', signal: controller.signal });
+    const runPromise = client.run({ model: 'sonnet', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 30_000, idempotencyKey: 'idem-abort', signal: controller.signal });
     setTimeout(() => controller.abort(), 50);
     await assert.rejects(() => runPromise, () => true);
     await new Promise(resolve => setTimeout(resolve, 100));

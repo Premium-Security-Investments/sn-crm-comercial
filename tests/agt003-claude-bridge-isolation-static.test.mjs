@@ -33,14 +33,28 @@ const AGT002_INVARIANTS = [
   ]],
   ['ops/agt002-hetzner-bridge/agt002-bridge.service', [
     'User=agt002-bridge',
-    'Environment=CODEX_HOME=/opt/agt002-bridge/.codex',
+    'Environment=CLAUDE_CONFIG_DIR=/opt/agt002-bridge/.claude',
+    'Environment=HOME=/opt/agt002-bridge',
     'ExecStart=/usr/bin/node /opt/agt002-bridge/ops/agt002-hetzner-bridge/run-server.mjs',
   ]],
   ['ops/agt002-hetzner-bridge/run-server.mjs', [
     "requireEnv('AGT002_BRIDGE_HMAC_SECRET')",
     "requireEnv('AGT002_BRIDGE_LISTEN_PORT')",
+    'createAgt002ClaudeClient',
   ]],
 ];
+
+// Archivos AGT-002 que legítimamente pasaron a nombrar a Claude como su propio
+// proveedor tras el corte de Codex a Claude Sonnet. Ninguno de ellos puede
+// mencionar AGT-003 ni su puerto dedicado (comprobado más abajo igual que el
+// resto), pero sí pueden decir "claude".
+const AGT002_CLAUDE_OWNING_FILES = new Set([
+  'agt002-claude-client.js',
+  'agt002-hetzner-bridge-server.js',
+  'ops/agt002-hetzner-bridge/run-server.mjs',
+  'ops/agt002-hetzner-bridge/agt002-bridge.service',
+  'ops/agt002-hetzner-bridge/env.example',
+]);
 
 function testAgt002ContractsAreIntact() {
   for (const [path, needles] of AGT002_INVARIANTS) {
@@ -51,7 +65,10 @@ function testAgt002ContractsAreIntact() {
   }
 }
 
-// AGT-002 no debe adquirir ninguna dependencia, ruta ni proveedor de AGT-003.
+// AGT-002 no debe adquirir ninguna dependencia ni ruta de AGT-003, ni compartir
+// su puerto dedicado. Puede, en cambio, nombrar a Claude como SU PROPIO
+// proveedor (tras el corte de Codex a Claude Sonnet) en los archivos que ahora
+// lo poseen — nunca en el resto.
 function testAgt002NeverReferencesAgt003OrClaude() {
   const files = [
     ...AGT002_INVARIANTS.map(([path]) => path),
@@ -59,13 +76,36 @@ function testAgt002NeverReferencesAgt003OrClaude() {
     'agt002-hetzner-bridge-log.js',
     'agt002-hetzner-bridge-nonce-store.js',
     'agt002-hetzner-bridge-client.js',
+    'agt002-claude-client.js',
+    'ops/agt002-hetzner-bridge/env.example',
   ];
   for (const path of files) {
     const source = read(path).toLowerCase();
     assert.equal(source.includes('agt003'), false, `${path} nunca debe referenciar AGT-003`);
-    assert.equal(source.includes('claude'), false, `${path} nunca debe referenciar el proveedor de AGT-003`);
     assert.equal(source.includes('8788'), false, `${path} nunca debe usar el puerto dedicado de AGT-003`);
+    if (!AGT002_CLAUDE_OWNING_FILES.has(path)) {
+      assert.equal(source.includes('claude'), false, `${path} nunca debe referenciar el proveedor de AGT-003`);
+    }
   }
+}
+
+// El nuevo cliente de AGT-002 nunca debe compartir identidad de proceso con
+// AGT-003 (usuario, config dir), aunque ambos hablen con el mismo CLI.
+function testAgt002ClaudeClientNeverSharesAgt003Identity() {
+  const source = read('agt002-claude-client.js');
+  assert.equal(source.includes('agt003-bridge'), false, 'el cliente de AGT-002 nunca debe nombrar al usuario del sistema de AGT-003');
+  assert.equal(source.includes('/opt/agt003-bridge'), false, 'el cliente de AGT-002 nunca debe nombrar el HOME/CLAUDE_CONFIG_DIR de AGT-003');
+}
+
+// El servidor de ejecución de AGT-002 debe construir el cliente Claude propio
+// de AGT-002 y no debe seguir invocando el App Server de Codex.
+function testAgt002RunServerUsesItsOwnClaudeClientNotCodex() {
+  const source = read('ops/agt002-hetzner-bridge/run-server.mjs');
+  assert.ok(source.includes("from '../../agt002-claude-client.js'"), 'run-server debe importar el cliente Claude de AGT-002');
+  assert.equal(source.includes('createCodexAppServerClient'), false, 'run-server no debe seguir construyendo el cliente de Codex App Server');
+  assert.equal(source.includes('agt002-preview-codex-client.js'), false, 'run-server no debe seguir importando el cliente de Codex');
+  assert.equal(source.includes('AGT002_CODEX_APP_SERVER_BIN'), false, 'run-server no debe leer variables de configuración de Codex');
+  assert.equal(source.includes('AGT002_CODEX_APP_SERVER_ARGS'), false, 'run-server no debe leer variables de configuración de Codex');
 }
 
 // ---------------------------------------------------------------------------
@@ -144,6 +184,8 @@ async function testVercelClientAndBridgeShareTheCanonicalFormat() {
 
 testAgt002ContractsAreIntact();
 testAgt002NeverReferencesAgt003OrClaude();
+testAgt002ClaudeClientNeverSharesAgt003Identity();
+testAgt002RunServerUsesItsOwnClaudeClientNotCodex();
 testAgt003ModulesNeverBorrowTheAgt002Namespace();
 testAgt003ResponsesUseTheirOwnCodes();
 testVercelSideStillSupportsTheDedicatedWireProtocol();

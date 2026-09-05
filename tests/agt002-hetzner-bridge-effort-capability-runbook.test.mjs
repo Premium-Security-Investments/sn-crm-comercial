@@ -1,23 +1,26 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-// Regression: ExecStartPre (agt002-bridge.service) makes a missing file on /opt/agt002-bridge fail
-// the *entire* service start, not just the capability gate. The runbook must enumerate every file
-// this hotfix touches or adds, so an operator copying artifacts before a restart cannot miss one.
+// Regression: after the Codex -> Claude Sonnet cutover, `run-server.mjs` (ExecStart) imports
+// `agt002-claude-client.js` instead of the Codex App Server client, and the unit has no
+// ExecStartPre. The runbook must enumerate every file this entrypoint needs to boot, so an
+// operator copying artifacts before a restart cannot miss one.
 const runbook = readFileSync(new URL('../docs/runbooks/agt002-hetzner-bridge-effort-capability.md', import.meta.url), 'utf8');
 
 const REQUIRED_DEPLOYED_FILES = [
-  'agt002-codex-effort-capability.js',
-  'ops/agt002-hetzner-bridge/check-codex-effort-capability.mjs',
+  'agt002-claude-client.js',
   'agt002-hetzner-bridge-server.js',
+  'agt002-hetzner-bridge-auth.js',
+  'agt002-hetzner-bridge-signing.js',
+  'agt002-hetzner-bridge-nonce-store.js',
   'agt002-hetzner-bridge-log.js',
-  'agt002-preview-codex-client.js',
   'agt002-preview-reasoning-effort.js',
+  'agt002-bridge-host.js',
   'ops/agt002-hetzner-bridge/run-server.mjs',
   'ops/agt002-hetzner-bridge/agt002-bridge.service',
 ];
 
-function testRunbookListsEveryFileTheHotfixTouches() {
+function testRunbookListsEveryFileTheCutoverTouches() {
   for (const file of REQUIRED_DEPLOYED_FILES) {
     assert.ok(runbook.includes(file), `el runbook debe listar '${file}' como requerido en /opt/agt002-bridge antes de reiniciar`);
   }
@@ -25,7 +28,7 @@ function testRunbookListsEveryFileTheHotfixTouches() {
 
 // Regression: `run-server.mjs` is the unit's ExecStart entrypoint and imports repo-root modules with
 // '../../'. Every one of those must be in the manifest too — a missing one is not a degraded feature
-// but an unresolvable import, so ExecStart dies at boot exactly like a missing ExecStartPre file.
+// but an unresolvable import, so ExecStart dies at boot.
 function testRunbookListsEveryRootImportOfTheExecStartEntrypoint() {
   const entrypoint = readFileSync(new URL('../ops/agt002-hetzner-bridge/run-server.mjs', import.meta.url), 'utf8');
   const imported = [...entrypoint.matchAll(/from\s+'\.\.\/\.\.\/([\w-]+\.js)'/g)].map(match => match[1]);
@@ -35,27 +38,40 @@ function testRunbookListsEveryRootImportOfTheExecStartEntrypoint() {
   }
 }
 
-// Regression: the manual pre-deploy gate is only meaningful if it runs in the SAME context systemd
-// gives ExecStartPre — the agt002-bridge service user, CODEX_HOME=/opt/agt002-bridge/.codex and the
-// Codex binary actually installed for that user. Run as the operator/root with their own CODEX_HOME
-// it validates a different Codex install and a different session, so it can pass while the real
-// service start still fails (or the reverse).
-function testRunbookManualCommandRunsInTheRealServiceContext() {
-  const flattened = runbook.replace(/\\\n\s*/g, ' ');
-  const manual = flattened.match(/^sudo -u agt002-bridge env [^\n]*check-codex-effort-capability\.mjs\s*$/m);
-  assert.ok(manual, 'el runbook debe ejecutar el gate manual como el usuario del servicio (sudo -u agt002-bridge env ...)');
-  assert.match(manual[0], /CODEX_HOME=\/opt\/agt002-bridge\/\.codex/, 'el comando manual debe fijar el CODEX_HOME real del servicio, no el del operador/root');
-  assert.match(manual[0], /AGT002_CODEX_APP_SERVER_BIN=\/opt\/agt002-bridge\/\.local\/node_modules\/\.bin\/codex/, 'el comando manual debe apuntar al binario real de Codex instalado para el servicio');
-  assert.match(manual[0], /\/opt\/agt002-bridge\/ops\/agt002-hetzner-bridge\/check-codex-effort-capability\.mjs/, 'el comando manual debe usar la ruta desplegada del script, no una ruta relativa al checkout');
-  assert.doesNotMatch(
-    runbook,
-    /^\s*node ops\/agt002-hetzner-bridge\/check-codex-effort-capability\.mjs\s*$/m,
-    'el runbook no debe ofrecer la invocación relativa que corre con el CODEX_HOME del operador/root',
-  );
+function testRunbookStatesProviderIsClaudeSonnet() {
+  assert.match(runbook, /Claude Sonnet/, 'el runbook debe declarar que el proceso Hetzner es Claude Sonnet');
+  assert.ok(runbook.includes('agt002-claude-client.js'), 'el runbook debe nombrar agt002-claude-client.js como cliente del proveedor');
 }
 
-function testRunbookMentionsExecStartPreBlocksTheWholeService() {
-  assert.match(runbook, /ExecStartPre/, 'el runbook debe explicar que ExecStartPre bloquea el arranque completo del servicio');
+// Regression: the unit no longer declares ExecStartPre, so a runbook that still treats it as the
+// authoritative pre-start gate describes a service that does not exist on disk. The runbook must say
+// so explicitly, and the unit file itself must have none, as a live cross-check.
+function testRunbookHasNoExecStartPreGate() {
+  const service = readFileSync(new URL('../ops/agt002-hetzner-bridge/agt002-bridge.service', import.meta.url), 'utf8');
+  assert.doesNotMatch(service, /ExecStartPre/, 'la unidad no debe declarar ExecStartPre (regresión: verificación viva contra el archivo real)');
+  assert.match(runbook, /no (hay|declara|tiene) .*ExecStartPre/i, 'el runbook debe documentar explícitamente que la unidad ya no declara ExecStartPre');
+  assert.doesNotMatch(runbook, /CODEX_HOME/, 'el runbook no debe seguir mencionando CODEX_HOME: el proveedor ya no es Codex');
+  assert.doesNotMatch(runbook, /check-codex-effort-capability\.mjs/, 'el runbook no debe invocar un script de capacidad de Codex que la unidad ya no ejecuta');
+  assert.doesNotMatch(runbook, /generate-json-schema/, 'el runbook no debe seguir describiendo el chequeo de esquema del App Server de Codex');
+  assert.match(runbook, /CLAUDE_CONFIG_DIR=\/opt\/agt002-bridge\/\.claude/, 'el runbook debe nombrar el CLAUDE_CONFIG_DIR real de la unidad');
+}
+
+// Regression: the manual pre-restart check must match what actually boots the service: the
+// agt002-bridge user, CLAUDE_CONFIG_DIR/HOME the unit declares, and the claude CLI the service
+// user can actually run — never an invented Codex capability script.
+function testRunbookDocumentsRealPreRestartCheck() {
+  assert.match(runbook, /User=agt002-bridge/, 'el runbook debe confirmar el User= real de la unidad en el chequeo previo al reinicio');
+  assert.match(runbook, /HOME=\/opt\/agt002-bridge/, 'el runbook debe confirmar el HOME= real de la unidad');
+  assert.match(runbook, /AGT002_CLAUDE_CLI_BIN/, 'el runbook debe mencionar la variable que permite fijar el binario de claude');
+}
+
+// Regression: the Vercel client still requires effort_ack or it throws AGT002_BRIDGE_STALE_EFFORT_ACK,
+// but the Claude CLI print mode ignores `effort` entirely — the runbook must document both facts so an
+// operator does not conclude effort is applied to the model.
+function testRunbookDocumentsEffortAckWithoutApplication() {
+  assert.match(runbook, /effort_ack/, 'el runbook debe documentar que la respuesta sigue trayendo effort_ack');
+  assert.match(runbook, /AGT002_BRIDGE_STALE_EFFORT_ACK/, 'el runbook debe explicar por qué effort_ack se sigue emitiendo (evitar AGT002_BRIDGE_STALE_EFFORT_ACK)');
+  assert.match(runbook, /ignora\s+`effort`|no aplica\s+`effort`/, 'el runbook debe aclarar que `effort` no se aplica al CLI de Claude');
 }
 
 function testRunbookClarifiesBridgeClientIsNotDeployedToTheHost() {
@@ -63,25 +79,16 @@ function testRunbookClarifiesBridgeClientIsNotDeployedToTheHost() {
   assert.ok(runbook.includes('no se copia a `/opt/agt002-bridge`'), 'el runbook debe aclarar que agt002-hetzner-bridge-client.js corre del lado del llamador, no en el host Hetzner');
 }
 
-// Regression: the real `codex --strict-config ... app-server generate-json-schema` call fails
-// unconditionally (exit 1, "--strict-config is not supported for codex app-server
-// generate-json-schema"). The runbook must document that this is two SEPARATE checks — schema
-// generation without --strict-config, and a separate real app-server initialize handshake with
-// --strict-config — never a single combined generate-json-schema call with --strict-config.
-function testRunbookDocumentsTwoSeparateChecks() {
-  assert.match(runbook, /--strict-config is not supported for codex app-server generate-json-schema/, 'el runbook debe documentar el fallo real de --strict-config contra generate-json-schema');
-  assert.match(runbook, /initialize/, 'el runbook debe documentar que la verificación B usa el handshake initialize del App Server');
-  assert.doesNotMatch(
-    runbook,
-    /codex --strict-config -c 'model_reasoning_effort="low"' app-server generate-json-schema/,
-    'el runbook no debe describir --strict-config aplicado a generate-json-schema como un procedimiento válido',
-  );
+function testRunbookNeverMentionsAgt003() {
+  assert.doesNotMatch(runbook.toLowerCase(), /agt-003|agt003/, 'el runbook de AGT-002 nunca debe mencionar a AGT-003');
 }
 
-testRunbookListsEveryFileTheHotfixTouches();
+testRunbookListsEveryFileTheCutoverTouches();
 testRunbookListsEveryRootImportOfTheExecStartEntrypoint();
-testRunbookManualCommandRunsInTheRealServiceContext();
-testRunbookMentionsExecStartPreBlocksTheWholeService();
+testRunbookStatesProviderIsClaudeSonnet();
+testRunbookHasNoExecStartPreGate();
+testRunbookDocumentsRealPreRestartCheck();
+testRunbookDocumentsEffortAckWithoutApplication();
 testRunbookClarifiesBridgeClientIsNotDeployedToTheHost();
-testRunbookDocumentsTwoSeparateChecks();
+testRunbookNeverMentionsAgt003();
 console.log('agt002-hetzner-bridge-effort-capability-runbook.test.mjs OK');

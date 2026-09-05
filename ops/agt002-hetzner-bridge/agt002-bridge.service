@@ -8,8 +8,15 @@ Type=simple
 User=agt002-bridge
 Group=agt002-bridge
 EnvironmentFile=/etc/agt002-bridge/agt002-bridge.env
-Environment=CODEX_HOME=/opt/agt002-bridge/.codex
-ExecStartPre=/usr/bin/node /opt/agt002-bridge/ops/agt002-hetzner-bridge/check-codex-effort-capability.mjs
+# La sesión OAuth de Claude Code vive en un directorio propio bajo /opt y no en
+# $HOME: con ProtectHome=true cualquier credencial ubicada en $HOME sería
+# ilegible para el servicio.
+Environment=CLAUDE_CONFIG_DIR=/opt/agt002-bridge/.claude
+# `claude` y sus dependencias escriben en $HOME aunque CLAUDE_CONFIG_DIR esté
+# fijado. Con ProtectHome=true un HOME heredado (o vacío) haría fallar el spawn
+# con un error de escritura inútil: HOME apunta al mismo directorio del
+# servicio que ya está en ReadWritePaths.
+Environment=HOME=/opt/agt002-bridge
 ExecStart=/usr/bin/node /opt/agt002-bridge/ops/agt002-hetzner-bridge/run-server.mjs
 Restart=on-failure
 RestartSec=5
@@ -17,9 +24,12 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/opt/agt002-bridge/.codex /opt/agt002-bridge/var
+ReadWritePaths=/opt/agt002-bridge/.claude /opt/agt002-bridge/var
 CPUQuota=100%
-MemoryMax=512M
+# Un turno del proveedor con salida larga sostiene picos por encima de 512 MiB;
+# con el techo anterior el OOM killer mataría el subproceso a media respuesta y
+# el llamador recibiría un fallo indistinguible de un error del modelo.
+MemoryMax=1G
 
 [Install]
 WantedBy=multi-user.target

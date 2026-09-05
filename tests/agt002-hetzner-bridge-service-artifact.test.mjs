@@ -13,16 +13,29 @@ function testPrivateTmpIsEnabled() {
   assert.ok(lines.includes('PrivateTmp=true'), 'La unidad debe aislar /tmp con PrivateTmp=true.');
 }
 
-function testCodexHomeIsPinnedUnderOptNotHome() {
-  assert.match(unit, /^Environment=CODEX_HOME=\/opt\/agt002-bridge\/\.codex$/m, 'CODEX_HOME debe fijarse explícitamente bajo /opt/agt002-bridge, no depender de $HOME.');
+function testClaudeConfigDirIsPinnedUnderOptNotHome() {
+  assert.match(unit, /^Environment=CLAUDE_CONFIG_DIR=\/opt\/agt002-bridge\/\.claude$/m, 'CLAUDE_CONFIG_DIR debe fijarse explícitamente bajo /opt/agt002-bridge, no depender de $HOME.');
 }
 
-function testReadWritePathsCoversCodexHomeAndVar() {
+function testHomeIsPinnedUnderOpt() {
+  assert.match(unit, /^Environment=HOME=\/opt\/agt002-bridge$/m, 'HOME debe fijarse a /opt/agt002-bridge para que el CLI de Claude pueda escribir bajo ProtectHome=true.');
+}
+
+function testReadWritePathsCoversClaudeConfigDirAndVar() {
   const readWriteLine = serviceLines(unit).find(line => line.startsWith('ReadWritePaths='));
   assert.ok(readWriteLine, 'La unidad debe declarar ReadWritePaths.');
   const paths = readWriteLine.slice('ReadWritePaths='.length).split(/\s+/).filter(Boolean);
-  assert.ok(paths.includes('/opt/agt002-bridge/.codex'), 'ReadWritePaths debe permitir escritura en /opt/agt002-bridge/.codex (sesión Codex).');
+  assert.ok(paths.includes('/opt/agt002-bridge/.claude'), 'ReadWritePaths debe permitir escritura en /opt/agt002-bridge/.claude (sesión OAuth de Claude Code).');
   assert.ok(paths.includes('/opt/agt002-bridge/var'), 'ReadWritePaths debe permitir escritura en /opt/agt002-bridge/var.');
+}
+
+function testCodexHomeIsNoLongerReferenced() {
+  assert.doesNotMatch(unit, /CODEX_HOME/, 'la unidad ya no debe referenciar CODEX_HOME: AGT-002 dejó de invocar Codex.');
+}
+
+function testMemoryMaxAccountsForClaudeTurns() {
+  const lines = serviceLines(unit);
+  assert.ok(lines.includes('MemoryMax=1G'), 'un turno de Claude con salida larga sostiene picos por encima de 512 MiB.');
 }
 
 function testProtectSystemStrictStillPresent() {
@@ -36,28 +49,21 @@ function testCaddyUsesTheFixedLoopbackPort() {
   assert.doesNotMatch(caddyfile, /AGT002_BRIDGE_LISTEN_PORT/, 'Caddy no debe depender de una variable que su unidad systemd no recibe.');
 }
 
-// AGT-002 review blocker: the effort-capability gate must be mandatory, not a manual runbook step
-// an operator can forget. A bridge whose installed Codex binary lacks v2 TurnStartParams.effort
-// must fail to start at all, before it can ever route traffic with the stale reasoning-effort
-// timeout bug reintroduced silently.
-function testCapabilityCheckIsMandatoryBeforeStart() {
+// AGT-002 cut over from Codex to Claude Sonnet: the systemd unit no longer needs an
+// ExecStartPre capability gate for a Codex binary it never spawns anymore.
+function testNoExecStartPreRemainsForARemovedCodexGate() {
   const lines = serviceLines(unit);
   const execStartPre = lines.find(line => line.startsWith('ExecStartPre='));
-  assert.ok(execStartPre, 'La unidad debe declarar ExecStartPre para el gate de capacidad de effort.');
-  assert.equal(
-    execStartPre,
-    'ExecStartPre=/usr/bin/node /opt/agt002-bridge/ops/agt002-hetzner-bridge/check-codex-effort-capability.mjs',
-    'ExecStartPre debe invocar el script de verificación de capacidad de effort con la ruta absoluta desplegada.',
-  );
-  const execStartPreIndex = lines.indexOf(execStartPre);
-  const execStartIndex = lines.findIndex(line => line.startsWith('ExecStart='));
-  assert.ok(execStartPreIndex < execStartIndex, 'ExecStartPre debe ejecutarse antes de ExecStart, para bloquear el arranque si el binario de Codex no es compatible.');
+  assert.equal(execStartPre, undefined, 'La unidad no debe declarar un ExecStartPre para un gate de Codex que ya no existe.');
 }
 
 testPrivateTmpIsEnabled();
-testCodexHomeIsPinnedUnderOptNotHome();
-testReadWritePathsCoversCodexHomeAndVar();
+testClaudeConfigDirIsPinnedUnderOptNotHome();
+testHomeIsPinnedUnderOpt();
+testReadWritePathsCoversClaudeConfigDirAndVar();
+testCodexHomeIsNoLongerReferenced();
+testMemoryMaxAccountsForClaudeTurns();
 testProtectSystemStrictStillPresent();
 testCaddyUsesTheFixedLoopbackPort();
-testCapabilityCheckIsMandatoryBeforeStart();
+testNoExecStartPreRemainsForARemovedCodexGate();
 console.log('agt002-hetzner-bridge-service-artifact.test.mjs OK');
