@@ -1056,7 +1056,7 @@ test('el panel formal cuenta pendientes con la respuesta humana más reciente, n
   );
   assert.match(
     panelSource,
-    /if \(pendingConditions\.length > 0\) warnings\.push\('Hay condiciones pendientes de validar con la encargada\. Revise el brief de decisión\.'\);/,
+    /if \(pendingConditions\.length > 0\) warnings\.push\('Hay condiciones pendientes de validar con la encargada\. Revise la sección Análisis\.'\);/,
     'la advertencia de pendientes debe seguir condicionada exclusivamente por pendingConditions.length, sin lógica paralela que la reintroduzca al vaciarse la colección',
   );
 });

@@ -20,9 +20,14 @@ const experience = read('src/tenders/components/TenderDecisionExperience.tsx');
 assert.match(panel, /opportunityName/);
 assert.doesNotMatch(panel, /<dt>Oportunidad<\/dt>/, 'El modal no debe repetir datos ya visibles de la oportunidad.');
 
-for (const text of ['brief de decisión', 'Decisión humana', 'Registrar GO', 'Registrar NO GO', 'Comentario opcional']) {
+for (const text of ['Decisión humana', 'Registrar GO', 'Registrar NO GO', 'Comentario opcional']) {
   assert.match(panel, new RegExp(text, 'i'), `El panel debe mostrar ${text}.`);
 }
+assert.doesNotMatch(
+  panel,
+  /brief de decisión/i,
+  'El producto llama Análisis a esa lectura: el panel formal no puede reintroducir la copia obsoleta "brief de decisión".',
+);
 assert.match(panel, /role="dialog"|<dialog/, 'La decisión debe pedir confirmación accesible.');
 assert.match(panel, /recordTenderGoNoGoDecision/, 'La confirmación debe usar la API formal.');
 assert.match(panel, /analysis_run_id:\s*analysis\?\.run_id \|\| null/, 'Debe conservar el run disponible y registrar null cuando no existe análisis.');

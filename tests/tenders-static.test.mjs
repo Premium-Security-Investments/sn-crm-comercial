@@ -16,6 +16,7 @@ const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf
 const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
 const documentSection = readFileSync(new URL('../src/tenders/components/TenderDocumentSection.tsx', import.meta.url), 'utf8');
 const analysisSection = readFileSync(new URL('../src/tenders/components/TenderAnalysisSection.tsx', import.meta.url), 'utf8');
+const decisionBrief = readFileSync(new URL('../src/tenders/components/TenderDecisionBrief.tsx', import.meta.url), 'utf8');
 
 assert.ok(main.includes("'tenders'") && nav.includes("#/tenders?view=radar"), 'Frontend debe incluir la ruta y el catálogo central de Licitaciones.');
 assert.match(nav, /tenders: 'licitaciones'/, 'Licitaciones debe mapearse a su capability central.');
@@ -62,6 +63,8 @@ for (const marker of ['TenderDocumentReviewPanel', 'TenderOfferPreparationPanel'
 assert.ok(documentSection.includes('Documentos vigentes del proceso'), 'El detalle debe conservar la revisión documental extraída.');
 assert.ok(analysisSection.includes('Analizar con ${VIGIA_VISIBLE_NAMES.tenders}'), 'El detalle debe conservar la acción separada y canónica de Vig-IA Licitaciones.');
 assert.ok(!analysisSection.includes('Generar análisis preliminar'), 'El detalle no debe reintroducir la acción determinística alternativa.');
+assert.doesNotMatch(analysisSection, /brief de decisión/i, 'La validación humana no debe reintroducir la copia obsoleta "brief de decisión".');
+assert.doesNotMatch(decisionBrief, /brief de decisión/i, 'El brief de decisión no debe reintroducir la copia obsoleta "brief de decisión".');
 for (const handler of [server, api]) {
   assert.ok(handler.includes("if (!process.env.VERCEL)") && handler.includes('app.listen(port'), 'El handler debe arrancar localmente sin abrir un puerto dentro de Vercel.');
   assert.ok(handler.includes("app.post('/api/tender-convert'"), 'Backend debe conservar conversión protegida.');

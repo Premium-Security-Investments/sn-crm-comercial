@@ -58,8 +58,8 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
       if (analysis.status === 'failed') warnings.push('El análisis falló. Revise el expediente antes de decidir.');
       if (analysis.current === false) warnings.push('El análisis está obsoleto frente al expediente vigente.');
       if (analysis.decision_review) {
-        if (decisionBlockers.length > 0) warnings.push('Hay impedimentos materiales confirmados. Revise el brief de decisión antes de registrar.');
-        if (pendingConditions.length > 0) warnings.push('Hay condiciones pendientes de validar con la encargada. Revise el brief de decisión.');
+        if (decisionBlockers.length > 0) warnings.push('Hay impedimentos materiales confirmados. Revise la sección Análisis antes de registrar.');
+        if (pendingConditions.length > 0) warnings.push('Hay condiciones pendientes de validar con la encargada. Revise la sección Análisis.');
       } else if (!executiveProjectionAvailable) warnings.push('La clasificación ejecutiva de materialidad aún no está disponible; revise la trazabilidad técnica antes de decidir.');
       else if (executiveOpenIssueCount > 0) warnings.push(`Hay ${executiveOpenIssueCount} preguntas críticas abiertas.`);
       if (recommendationKind === 'pause') warnings.push('La lectura de evidencia está incompleta. Eso no clasifica el potencial comercial.');
@@ -232,10 +232,16 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
   };
 
   const current = payload.decision;
+  // La decisión vigente no puede volver a registrarse: duplicarla no aporta trazabilidad y en
+  // pantalla se leía como si el GO no hubiera quedado. Con una decisión vigente la única acción
+  // posible es la reversión explícita a la contraria, que el servidor registra como una decisión
+  // nueva que supersede la anterior (modelo auditable de 022, intacto).
+  const reversalDecision: Decision | null = current?.decision === 'go' ? 'no_go' : current?.decision === 'no_go' ? 'go' : null;
+  const isReversal = selectedDecision !== null && selectedDecision === reversalDecision;
   return <section className="tender-go-no-go-panel" aria-labelledby="tender-go-no-go-heading">
     <header className="tender-go-no-go-head"><div><span className="eyebrow">Control formal de licitación</span><h3 id="tender-go-no-go-heading">Decisión GO / NO GO</h3><p>{VIGIA_VISIBLE_NAMES.tenders} recomienda; la decisión y el avance operativo pertenecen a la persona autorizada.</p></div></header>
     <div className="tender-go-no-go-grid tender-go-no-go-summary">
-      <article className="tender-go-no-go-brief-pointer"><small>Control formal</small><strong>Aquí sólo se registra la decisión humana</strong><span>El brief de decisión precede este control. Esta sección no vuelve a listar impedimentos, capacidad ni preparación.</span></article>
+      <article className="tender-go-no-go-brief-pointer"><small>Control formal</small><strong>Aquí sólo se registra la decisión humana</strong><span>El análisis previo sigue disponible como apoyo. Esta sección no vuelve a listar impedimentos, capacidad ni preparación.</span></article>
       <TenderGoNoGoDecisionSummary loading={loading} current={current} />
       {current?.decision === 'go' && <article className="tender-go-no-go-next"><small>Estado operativo</small><strong>Preparación iniciada</strong><p><b>Siguiente paso:</b> completar el expediente y dejar la oferta lista para presentar.</p><button type="button" className="secondary" onClick={scrollToPreparation}>Abrir expediente de oferta</button></article>}
       {current?.decision === 'no_go' && <article className="tender-go-no-go-next"><small>Estado operativo</small><strong>Proceso cerrado por NO GO</strong><p><b>Siguiente paso:</b> conservar la decisión y su evidencia para consulta.</p></article>}
@@ -245,15 +251,23 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
     {status && <div className="notice" role="status">{status}</div>}
     {syncPending && <div className="tender-go-no-go-actions"><button type="button" className="secondary" onClick={() => void reconcile()} disabled={busy}>{busy ? 'Actualizando…' : 'Reintentar actualización'}</button></div>}
     {allowed ? <div id="tender-go-no-go-actions" className="tender-go-no-go-actions" tabIndex={-1}>
-      <button type="button" id="tender-decision-register-go" onClick={event => open('go', event.currentTarget)} disabled={!decisionGate.canGo || busy || loading || syncPending}>Registrar GO</button>
-      <button type="button" id="tender-decision-register-nogo" className="danger" onClick={event => open('no_go', event.currentTarget)} disabled={!decisionGate.canNoGo || busy || loading || syncPending}>Registrar NO GO</button>
+      {reversalDecision === null && <>
+        <button type="button" id="tender-decision-register-go" onClick={event => open('go', event.currentTarget)} disabled={!decisionGate.canGo || busy || loading || syncPending}>Registrar GO</button>
+        <button type="button" id="tender-decision-register-nogo" className="danger" onClick={event => open('no_go', event.currentTarget)} disabled={!decisionGate.canNoGo || busy || loading || syncPending}>Registrar NO GO</button>
+      </>}
+      {reversalDecision === 'no_go' && <button type="button" id="tender-decision-change-to-nogo" className="danger" onClick={event => open('no_go', event.currentTarget)} disabled={!decisionGate.canNoGo || busy || loading || syncPending}>Cambiar la decisión a NO GO</button>}
+      {reversalDecision === 'go' && <button type="button" id="tender-decision-change-to-go" onClick={event => open('go', event.currentTarget)} disabled={!decisionGate.canGo || busy || loading || syncPending}>Cambiar la decisión a GO</button>}
+      {reversalDecision !== null && <p className="muted">La decisión vigente no se borra: queda en el historial y la nueva decisión la sustituye de forma auditable.</p>}
       <p className="muted">{VIGIA_VISIBLE_NAMES.tenders} recomienda; la persona autorizada conserva la autoridad absoluta para GO o NO GO.</p>
     </div> : <p id="tender-go-no-go-actions" className="muted" tabIndex={-1}>Solo Admin, Gerencia o Dirección de Licitaciones con permiso pueden registrar una decisión. La decisión vigente permanece disponible en solo lectura.</p>}
     <details className="tender-go-no-go-history"><summary>Historial de decisiones</summary>{loading ? <p>Cargando historial…</p> : payload.history.length ? <ol>{payload.history.map(entry => <li key={entry.id}><strong>{decisionLabel(entry.decision)}</strong><span>{entry.psi_sales_profiles?.full_name || entry.decided_by} · {date(entry.decided_at)}</span>{entry.justification && <p>{entry.justification}</p>}</li>)}</ol> : <p>Sin entradas previas.</p>}</details>
     {selectedDecision && <div className="tender-go-no-go-backdrop" role="presentation" onMouseDown={close}>
       <div className="tender-go-no-go-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="tender-go-no-go-confirm-title" onMouseDown={event => event.stopPropagation()}>
-        <header><h4 id="tender-go-no-go-confirm-title" tabIndex={-1} ref={initialFocusRef}>Confirmar {selectedDecision === 'go' ? 'GO' : 'NO GO'}</h4><button type="button" className="secondary" onClick={close} disabled={busy} aria-label="Cerrar confirmación">Cerrar</button></header>
-        <p className="tender-go-no-go-confirmation"><strong>Decisión elegida:</strong> {selectedDecision === 'go' ? 'Registrar GO e iniciar la preparación de la oferta.' : 'Registrar NO GO y cerrar el proceso.'}</p>
+        <header><h4 id="tender-go-no-go-confirm-title" tabIndex={-1} ref={initialFocusRef}>Confirmar {isReversal ? 'cambio a ' : ''}{selectedDecision === 'go' ? 'GO' : 'NO GO'}</h4><button type="button" className="secondary" onClick={close} disabled={busy} aria-label="Cerrar confirmación">Cerrar</button></header>
+        <p className="tender-go-no-go-confirmation"><strong>Decisión elegida:</strong> {selectedDecision === 'go'
+          ? (isReversal ? 'Cambiar la decisión vigente a GO y retomar la preparación de la oferta.' : 'Registrar GO e iniciar la preparación de la oferta.')
+          : (isReversal ? 'Cambiar la decisión vigente a NO GO y cerrar el proceso.' : 'Registrar NO GO y cerrar el proceso.')}</p>
+        {isReversal && <p className="muted">La decisión vigente no se borra: queda en el historial y la nueva decisión la sustituye de forma auditable.</p>}
         {analysisWarnings.length > 0 && <div className="notice" role="alert"><ul>{analysisWarnings.map(warning => <li key={warning}>{warning}</li>)}</ul></div>}
         <label>Comentario opcional<textarea value={justification} onChange={event => setJustification(event.target.value)} disabled={busy} placeholder="Puede documentar brevemente el criterio de la decisión." /></label>
         <footer><button type="button" className="secondary" onClick={close} disabled={busy}>Cancelar</button><button type="button" className={selectedDecision === 'no_go' ? 'danger' : ''} onClick={() => void submit()} disabled={busy || syncPending}>{busy ? 'Registrando…' : 'Confirmar decisión'}</button></footer>
