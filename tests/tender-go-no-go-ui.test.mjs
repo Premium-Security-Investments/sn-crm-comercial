@@ -58,7 +58,11 @@ assert.match(main, /<TenderDecisionExperience[\s\S]*?opportunityId=\{o\.id\}[\s\
 assert.match(main, /key=\{`tender-preparation-\$\{o\.id\}-\$\{tenderRevision\}`\}/, 'La preparación debe recargar después de una decisión formal y aislarse por oportunidad.');
 assert.doesNotMatch(main, />Aprobar preparación de oferta</, 'No puede quedar el control legacy de preparación.');
 assert.doesNotMatch(main, /\/api\/tender-offer-preparation-approve/, 'La UI no puede invocar la aprobación legacy.');
-assert.match(main, /Registrar GO/, 'Sin preparación la UI debe dirigir al registro formal GO.');
+// El registro formal GO vive en un solo lugar: el panel formal dentro del eje de decisión. Antes de
+// GO, la preparación ya no repite un empty-state que vuelva a explicarlo.
+assert.match(panel, /Registrar GO/, 'El registro formal GO debe vivir en el panel formal.');
+assert.doesNotMatch(main, /Registrar GO/, 'El detalle no puede duplicar la ruta al registro formal fuera del panel.');
+assert.match(main, /<TenderOfferPreparationPanel/, 'La preparación post-GO debe seguir montándose en el detalle.');
 assert.doesNotMatch(panel, /Autorizar GO|GO autorizado/, 'La experiencia visible debe llamar Registrar GO sin cambiar los permisos backend.');
 assert.match(panel, /const submittedDecision = selectedDecision/, 'El submit debe capturar la decisión antes de limpiar el modal.');
 assert.match(panel, /setSelectedDecision\(null\);\s*setJustification\(''\);[\s\S]*?await load\(true, true\)/, 'Un éxito debe cerrar explícitamente el modal antes de sincronizar y conservar la vista optimista.');

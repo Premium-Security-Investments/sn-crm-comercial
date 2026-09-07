@@ -187,14 +187,17 @@ test('D1.4-D1.5 — tabla y dl conservan cinco campos y el banner usa aria-live 
   assert.ok(html.includes('aria-live="polite"'));
 });
 
-test('D1.6 — Decisión no duplica seis pendientes V3 y dirige a la lista completa en Análisis', () => {
+test('D1.6 — Decisión no duplica los pendientes V3 ni conserva ya un puntero propio a Análisis', () => {
   const html = render(analysisFixture({ paused: true }));
-  assert.ok(html.includes('Pendientes documentales en Análisis'));
-  assert.ok(html.includes('6 pendientes por revisar'));
+  // La lista completa vive en Análisis y la variante formal-primaria ya no la anuncia por su cuenta:
+  // el único contenido de esta superficie es el control formal humano.
+  assert.equal(html.includes('Pendientes documentales en Análisis'), false, 'el puntero propio de la variante formal-primaria debe haber desaparecido');
+  assert.equal(html.includes('pendientes por revisar'), false, 'la superficie no puede seguir contando los pendientes de Análisis');
+  assert.equal(html.includes('Revisar pendientes en Análisis'), false);
+  assert.equal(count(html, 'class="tender-decision-analysis-pointer"'), 0);
   assert.equal(count(html, 'class="tender-decision-operational-card"'), 0, 'Decisión no debe repetir las tarjetas completas');
-  assert.match(html, /href="#tender-analysis"/);
-  assert.ok(html.includes('Revisar pendientes en Análisis'));
-  assert.equal(count(html, 'No evaluado · 0'), 0, 'los chips vacíos deben ceder su lugar al puntero de Análisis');
+  assert.ok(html.includes('Decisión GO / NO GO'), 'el control formal humano sigue siendo la lectura de esta variante');
+  assert.equal(count(html, 'No evaluado · 0'), 0, 'los chips vacíos siguen sin montarse en la variante formal-primaria');
   assert.equal(html.includes('Favorable con evidencia'), false);
   assert.equal(html.includes('Sin impedimentos'), false);
   for (const duplicated of ['Presentación y causales de rechazo', 'Requisito operativo 1', 'Conocimiento documental 1.', 'Faltante documental 1.', 'Impacto comercial 1.', 'Acción humana 1.']) {
@@ -203,9 +206,6 @@ test('D1.6 — Decisión no duplica seis pendientes V3 y dirige a la lista compl
   for (const forbidden of ['Ver trazabilidad técnica', 'Ver respaldo técnico del análisis', 'UNIT-INTERNAL', 'REQ-INTERNAL', 'HASH-OFFSET-INTERNAL', 'financial_execution', '6 de 6.809', 'Cobertura: LISTA']) {
     assert.equal(html.includes(forbidden), false, `se filtró contenido técnico/prohibido: ${forbidden}`);
   }
-  const formalIndex = html.indexOf('Decisión GO / NO GO');
-  const pointerIndex = html.indexOf('Pendientes documentales en Análisis');
-  assert.ok(formalIndex >= 0 && pointerIndex > formalIndex, 'el control formal debe preceder al puntero secundario');
 });
 
 test('D1.7-D1.8 — la pregunta usa copy pendiente y la barra integra el control formal sin mostrar Mesa de ayuda antes de GO', () => {
@@ -301,7 +301,9 @@ test('D6 — antes de GO no existe ningún control de Mesa de ayuda (ready_for_h
   assert.equal(count(pausedHtml, 'class="tender-decision-axis-help"'), 0);
   assert.equal(pausedHtml.includes('Mesa de ayuda'), false, 'antes de GO no debe existir ningún control de Mesa de ayuda');
   assert.equal(count(pausedHtml, 'class="tender-decision-axis-cta"'), 1);
-  assert.ok(pausedHtml.includes('Revisar pendientes en Análisis'));
+  // En la variante formal-primaria la única CTA lleva al registro humano, no a un puntero propio
+  // hacia Análisis (que ya no existe en esta superficie).
+  assert.ok(pausedHtml.includes('Registrar decisión humana'));
 });
 
 test('D6 — NO GO humano registrado tampoco muestra ningún control de Mesa de ayuda', () => {

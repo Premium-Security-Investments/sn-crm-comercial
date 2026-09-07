@@ -32,18 +32,23 @@ for (const file of [server, api]) {
   assert(!/requireDb|\.from\(|\.rpc\(|storage/.test(alias[0]), 'El alias anterior no puede escribir ni acceder a BD/storage.');
 }
 
-assert(src.includes('Expediente de Oferta'), 'UI debe mostrar el Expediente de Oferta.');
-assert(src.includes('Registrar GO'), 'Sin expediente la UI debe dirigir al registro formal GO.');
+// El expediente operativo titulado es uno solo: TenderDossierWorkspacePanel. main.tsx ya no monta
+// un segundo Panel "Expediente de Oferta" ni repite el plan legado que aquel representa de verdad.
+assert(dossierPanel.includes('<h2>Expediente de oferta</h2>'), 'El expediente operativo canónico debe conservar su título.');
+assert(!src.includes('Expediente de Oferta'), 'main.tsx no puede montar un segundo expediente titulado.');
+assert(!src.includes('<Panel title="Expediente de Oferta">'), 'El panel de preparación no puede envolverse en un Panel titulado duplicado.');
 assert(!src.includes('Aprobar preparación de oferta'), 'La UI no puede conservar el control legacy de preparación.');
 assert(!src.includes('/api/tender-offer-preparation-approve'), 'La UI no puede invocar la ruta legacy de preparación.');
-assert(src.includes('Documentos por generar'), 'UI debe mostrar documentos planificados sin afirmar generación automática.');
-assert(src.includes('Requiere intervención humana'), 'UI debe mostrar pendientes humanos.');
-assert(src.includes('Carpeta SharePoint / OneDrive'), 'UI debe mostrar estado/enlace de carpeta SharePoint/OneDrive.');
-assert(src.includes('Nota interna de preparación'), 'UI debe tener espacio de nota interna para el equipo comercial.');
-assert(src.includes('/api/tender-offer-preparation-note'), 'UI debe permitir guardar notas del asistente.');
+for (const legacy of ['Plan inicial de preparación', 'Documentos por generar', 'Requiere intervención humana', 'Notas del sistema sobre el plan', 'Nota interna de preparación', 'Carpeta SharePoint / OneDrive']) {
+  assert(!src.includes(legacy), `El pseudo-expediente narrativo legado debe haberse retirado: ${legacy}`);
+}
+assert(!src.includes('/api/tender-offer-preparation-note'), 'Sin editor de notas la UI ya no invoca la ruta de notas (el endpoint permanece en el backend).');
+assert(src.includes('/api/tender-offer-preparation?id='), 'La lectura de preparación/decisión que alimenta la navegación debe conservarse.');
+assert(src.includes('<TenderOfferStatusPanel'), 'El control auditable de estado de oferta debe seguir montándose.');
 assert(/const authorizedPreparation\s*=\s*preparation\s*&&\s*payload\.decision\?\.decision\s*===\s*'go'/.test(src), 'Todo el expediente debe quedar oculto si GO ya no es la decisión vigente.');
-assert(/authorizedPreparation\s*\?\s*<div className="tender-document-panel">/.test(src), 'Encabezado, carpeta, notas y formulario solo deben montarse con preparación autorizada.');
+assert(/authorizedPreparation\s*\?\s*<div className="tender-document-panel">/.test(src), 'Carpeta y control de estado solo deben montarse con preparación autorizada.');
 assert(/if \(!enabled\) return null;/.test(dossierPanel), 'El workspace duplicado no debe renderizar ningún empty-state antes de GO.');
 assert(!/if \(!enabled\) return <section/.test(dossierPanel), 'Pre-GO debe dejar un solo estado compacto en TenderOfferPreparationPanel.');
+assert(!src.includes('Preparación pendiente de registrar GO'), 'Antes de GO no puede quedar otro empty-state verboso: la ruta a la decisión ya vive en el eje de decisión.');
 
 console.log('tender offer preparation static checks passed');

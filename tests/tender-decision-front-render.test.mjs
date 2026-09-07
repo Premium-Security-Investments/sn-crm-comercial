@@ -998,9 +998,11 @@ test('el CTA de pendientes sólo cuenta las condiciones cuyo estado sigue siendo
 });
 
 // ---------------------------------------------------------------------------------------------
-// 13b · Important fix · TenderGoNoGoDecisionPanel también debe contar sólo condiciones no
-//      resueltas para "Revisar pendientes en Análisis (N)": debe consumir questionResponses vía
-//      tenderDecisionConditions, igual que ya hace el brief (sección 13).
+// 13b · TenderGoNoGoDecisionPanel ya no muestra un puntero propio a los pendientes de Análisis (esa
+//      lectura vive una sola vez, en Análisis). Lo que sigue vigente es el contrato de derivación:
+//      el panel debe consumir questionResponses vía tenderDecisionConditions, igual que el brief
+//      (sección 13), para que la advertencia del modal refleje la respuesta humana más reciente y
+//      no el total gobernado.
 // ---------------------------------------------------------------------------------------------
 const TenderGoNoGoDecisionPanel = await loadReactComponent(
   'src/tenders/components/TenderGoNoGoDecisionPanel.tsx',
@@ -1030,24 +1032,23 @@ function renderPanel(overrides = {}) {
   });
 }
 
-test('el panel formal cuenta pendientes con la respuesta humana más reciente, no con el total gobernado', () => {
-  const pendingHtml = renderPanel({ questionResponses: [responseFor(CONDITION_PRESENTED_ID, 'pending')] });
-  assert.ok(
-    pendingHtml.includes('Revisar pendientes en Análisis (1)'),
-    'con la única condición aún pendiente el panel debe contar exactamente 1 pendiente',
-  );
-
-  const resolvedHtml = renderPanel({
-    questionResponses: [
-      // Desordenadas a propósito: gana la más reciente por responded_at, no el orden del arreglo.
+test('el panel formal deriva sus pendientes de la respuesta humana más reciente y ya no los apunta en pantalla', () => {
+  // El puntero duplicado desapareció: ninguna combinación de respuestas puede reintroducirlo.
+  for (const questionResponses of [
+    [responseFor(CONDITION_PRESENTED_ID, 'pending')],
+    // Desordenadas a propósito: gana la más reciente por responded_at, no el orden del arreglo.
+    [
       responseFor(CONDITION_PRESENTED_ID, 'resolved', { id: 'resp-nueva', responded_at: '2026-08-12T09:00:00.000Z' }),
       responseFor(CONDITION_PRESENTED_ID, 'pending', { id: 'resp-vieja', responded_at: '2026-08-10T15:00:00.000Z' }),
     ],
-  });
-  assert.ok(
-    !resolvedHtml.includes('Revisar pendientes en Análisis'),
-    'con la respuesta más reciente resuelta el panel no puede seguir anunciando pendientes',
-  );
+  ]) {
+    const html = renderPanel({ questionResponses });
+    assert.ok(
+      !html.includes('Revisar pendientes en Análisis'),
+      'el panel formal ya no puede anunciar los pendientes que Análisis ya lista',
+    );
+    assert.ok(!html.includes('tender-go-no-go-analysis-pointer'));
+  }
 
   assert.match(
     panelSource,

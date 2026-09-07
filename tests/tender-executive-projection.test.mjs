@@ -46,7 +46,7 @@ const analysisSection = readFileSync(new URL('../src/tenders/components/TenderAn
 const decisionBrief = readFileSync(new URL('../src/tenders/components/TenderDecisionBrief.tsx', import.meta.url), 'utf8');
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 assert.match(main, /<TenderDecisionExperience[\s\S]*analysis=\{tenderAnalysis\}/);
-assert.match(decisionBrief, /Brief de decisión/);
+assert.match(decisionBrief, /Análisis para decidir/);
 assert.match(analysisSection, /alertas materiales/i);
 assert.match(analysisSection, /Clasificación ejecutiva no disponible/);
 assert.match(analysisSection, /hallazgos técnicos[\s\S]*no se presentan como alertas materiales/i);

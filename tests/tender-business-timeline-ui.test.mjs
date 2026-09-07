@@ -38,7 +38,13 @@ assert.match(panel, /Preparación iniciada/, 'GO debe mostrar la transición ope
 assert.match(panel, /getElementById\('tender-preparation'\)[\s\S]*?scrollIntoView/, 'GO debe ofrecer acceso directo al expediente sin romper el hash router.');
 assert.match(panel, /<details className="tender-go-no-go-history"/, 'El historial inmutable debe quedar secundario y plegable.');
 assert.doesNotMatch(panel, /tender-go-no-go-warnings/, 'Las advertencias no deben duplicarse fuera del modal de confirmación.');
-assert.match(panel, /\{hasDecisionPending && <p className="tender-go-no-go-analysis-pointer"><a href="#tender-analysis">Revisar pendientes en Análisis \(\{decisionPendingCount\}\)<\/a><\/p>\}/, 'Cuando hay pendientes, debe dirigir a Análisis sin repetir las advertencias.');
+// Los pendientes de Análisis viven una sola vez, en la sección Análisis: el panel formal ya no los
+// vuelve a apuntar. Lo que no puede perderse es que esos pendientes sigan alimentando las
+// advertencias del modal de confirmación, que es donde una persona cambia la decisión.
+assert.doesNotMatch(panel, /tender-go-no-go-analysis-pointer/, 'El puntero duplicado a Análisis debe haber desaparecido del panel formal.');
+assert.doesNotMatch(panel, /Revisar pendientes en Análisis/, 'El copy del puntero duplicado no puede sobrevivir en el panel formal.');
+assert.match(panel, /if \(decisionBlockers\.length > 0\) warnings\.push\('Hay impedimentos materiales confirmados\./, 'Los impedimentos gobernados deben seguir alimentando las advertencias.');
+assert.match(panel, /if \(pendingConditions\.length > 0\) warnings\.push\('Hay condiciones pendientes de validar/, 'Las condiciones pendientes deben seguir alimentando las advertencias.');
 const confirmationModalStart = panel.indexOf('{selectedDecision && <div className="tender-go-no-go-backdrop"');
 assert.ok(confirmationModalStart >= 0, 'Debe existir el modal de confirmación de la decisión.');
 const confirmationModal = panel.slice(confirmationModalStart);

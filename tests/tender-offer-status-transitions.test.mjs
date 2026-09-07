@@ -57,7 +57,10 @@ assert.match(api, /loadTenderOfferStatus/);
 assert.match(api, /recordTenderOfferStatusTransition/);
 assert.match(panel, /TenderOfferStatusPanel/);
 assert.match(panel, /Confirmar cambio de estado/);
-assert.match(panel, /Historial auditable/);
+// El historial auditable sigue completo, pero secundario: sin eventos no se monta y con eventos
+// vive plegado dentro de un <details> con un resumen honesto.
+assert.match(panel, /\{payload\.history\.length > 0 && <details[^>]*><summary>Historial de estados<\/summary>/);
+assert.doesNotMatch(panel, /Sin cambios posteriores a la autorización GO/);
 assert.match(panel, /Nota opcional/);
 assert.match(panel, /canApproveTenderGoNoGo/);
 assert.match(panel, /busy/);

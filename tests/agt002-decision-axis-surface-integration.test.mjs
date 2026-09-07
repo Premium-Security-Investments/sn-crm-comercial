@@ -135,7 +135,7 @@ test('E1/E3 — el payload proyecta únicamente el literal server-owned en ambos
 
 test('E4.1/E4.2 — flag off conserva brief+panel; flag on monta una sola superficie y un solo panel formal', () => {
   const off = renderReactComponent(TenderDecisionExperience, { ...decisionProps, decisionAxisSurfaceEnabled: false });
-  assert.ok(off.includes('Brief de decisión'));
+  assert.ok(off.includes('Análisis para decidir'));
   assert.equal(off.includes('Cinco señales para una decisión humana'), false);
   assert.equal(count(off, 'Decisión GO / NO GO'), 1);
 
@@ -175,7 +175,7 @@ test('E4.3 — decisionSurfaceElsewhere suprime toda lectura competidora y conse
   assert.ok(historicalUnified.includes('Actualizar con'));
 });
 
-test('E4.3 — la lista V3 completa vive en Análisis y Decisión conserva sólo el puntero', () => {
+test('E4.3 — la lista V3 completa vive en Análisis y Decisión no la duplica ni la apunta', () => {
   const analysisHtml = renderReactComponent(TenderAnalysisSection, {
     ...analysisProps,
     analysis: operationalAnalysis,
@@ -193,8 +193,9 @@ test('E4.3 — la lista V3 completa vive en Análisis y Decisión conserva sólo
     decisionAxisSurfaceEnabled: true,
   });
   assert.equal(count(decisionHtml, 'class="tender-decision-operational-card"'), 0);
-  assert.ok(decisionHtml.includes('Pendientes documentales en Análisis'));
-  assert.match(decisionHtml, /href="#tender-analysis"/);
+  assert.equal(decisionHtml.includes('Pendientes documentales en Análisis'), false, 'Decisión ya no monta su propio puntero a la lista de Análisis');
+  assert.equal(count(decisionHtml, 'class="tender-decision-analysis-pointer"'), 0);
+  assert.ok(decisionHtml.includes('Decisión GO / NO GO'), 'la variante formal-primaria conserva el control formal humano');
   assert.equal(decisionHtml.includes('id="tender-decision-operational-pending"'), false);
 });
 

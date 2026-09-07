@@ -787,8 +787,14 @@ test('6 — los borradores locales sólo pueden perderse por cambio de oportunid
   const artifacts = readFileSync(new URL('../src/tenders/components/TenderDossierArtifacts.tsx', import.meta.url), 'utf8');
   const workbench = readFileSync(new URL('../src/tenders/components/TenderDossierVigiaWorkbench.tsx', import.meta.url), 'utf8');
 
-  // Los tres borradores en riesgo viven en estado local: sólo un remontaje los borra.
-  assert.match(main, /const \[note, setNote\] = useState\(''\)/, 'la nota interna de preparación es estado local del panel');
+  // Los borradores en riesgo viven en estado local: sólo un remontaje los borra. La nota interna de
+  // preparación se retiró con el pseudo-expediente narrativo, así que ya no hay un tercer borrador
+  // que proteger dentro de TenderOfferPreparationPanel.
+  assert.equal(
+    /const \[note, setNote\] = useState\(''\);[\s\S]{0,400}tender-offer-preparation-note/.test(main),
+    false,
+    'la nota interna de preparación ya no existe: no puede reintroducirse un borrador narrativo en el panel de preparación',
+  );
   assert.match(artifacts, /const \[drafts, setDrafts\] = useState/, 'los documentos del expediente mantienen borradores locales');
   assert.match(workbench, /useState/, 'la Mesa Vig-IA mantiene estado local dentro del expediente');
 

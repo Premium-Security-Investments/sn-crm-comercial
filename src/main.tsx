@@ -21,7 +21,6 @@ import { tenderAnalysisMethodLabel } from './tenders/tenderDecisionBrief';
 import { createTenderQuestionResponseActions } from './tenders/tenderQuestionResponseActions';
 import { loadTenderGoNoGoDecision, loadTenderOfferStatus, loadTrackingEvents, postActuation } from './tenders/api';
 import type { TenderDetailStatusSnapshot, TenderDocumentNavigationValue, TenderFollowUpNavigationValue, TenderPanelState, TenderPreparationNavigationValue } from './tenders/detailNavigationState';
-import { tenderSharePointStatusLabel } from './tenders/statusLabels';
 import { shouldReloadTenderArtifacts, tenderAnalysisCompletionMessage } from './tenders/processingStatus';
 import { AGT002_REANALYSIS_MAX_POLLS, AGT002_REANALYSIS_POLL_INTERVAL_MS, classifyAgt002ReanalysisPoll } from './tenders/agt002ReanalysisPolling';
 import type { Agt002ReanalysisJob, TenderDocumentAnalysis, TenderDocumentRefreshResult, TenderDocumentsPayload, TenderGoNoGoDecision, TenderModuleView, TenderOfferStatus, TenderOfferStatusTransition, TenderProcessingStatus, TenderQuestionResponse, TenderQuestionResponseInput, TenderTrackingEvent } from './tenders/types';
@@ -1188,11 +1187,13 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     </div>
   </>;
 }
-function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, onNavigationStateChanged, readinessRevision }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void>; onNavigationStateChanged?: (state: TenderPanelState<TenderPreparationNavigationValue>) => void; /** Señal de refresco del gate canónico tras mutar el expediente. Se transmite como prop (nunca como key) para no remontar este panel ni perder la nota interna en curso. */ readinessRevision?: number }) {
+function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, onNavigationStateChanged, readinessRevision }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void>; onNavigationStateChanged?: (state: TenderPanelState<TenderPreparationNavigationValue>) => void; /** Señal de refresco del gate canónico tras mutar el expediente. Se transmite como prop (nunca como key) para no remontar este panel ni perder el trabajo en curso del control de estado. */ readinessRevision?: number }) {
+  // El expediente operativo con contenido (readiness, checklist, documentos, Mesa de ayuda) es
+  // TenderDossierWorkspacePanel, y es el único titulado. Este panel conserva sólo lo que aquel no
+  // cubre: la lectura de preparación/decisión que alimenta el estado de navegación, el control
+  // auditable de estado de oferta y el acceso directo a la carpeta cuando existe de verdad.
   const [payload, setPayload] = useState<TenderOfferPreparationPayload>({ preparation: null, preparations: [], notes: [] });
   const [statusText, setStatusText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState('');
   const preparation = payload.preparation;
   const emitPreparationNavigationState = (data: TenderOfferPreparationPayload) => onNavigationStateChanged?.({
     phase: 'ready',
@@ -1210,38 +1211,17 @@ function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, o
   };
   useEffect(() => { loadPreparation().catch(err => { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }); }); }, [opportunity.id]);
 
-  const saveAssistantNote = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!note.trim()) return;
-    setBusy(true); setStatusText('Guardando nota para el asistente…');
-    try {
-      const data = await api<TenderOfferPreparationPayload>('/api/tender-offer-preparation-note', { method: 'POST', body: JSON.stringify({ opportunity_id: opportunity.id, note }) });
-      setPayload(data); emitPreparationNavigationState(data); setNote(''); setStatusText('Nota guardada en el expediente.');
-    } catch (err) { const message = err instanceof Error ? err.message : String(err); setStatusText(message); onNavigationStateChanged?.({ phase: 'error', message }); }
-    finally { setBusy(false); }
-  };
   const authorizedPreparation = preparation && payload.decision?.decision === 'go' ? preparation : null;
+  // Sólo un vínculo resuelto y accionable se ofrece. Sin carpeta no se muestra ninguna advertencia
+  // ni la taxonomía de carpetas: el trabajo documental vive en el expediente operativo.
   const sharePointUrl = resolveTenderSourceUrl(authorizedPreparation?.sharepoint_folder?.url);
-  return <Panel title="Expediente de Oferta">
-    {authorizedPreparation ? <div className="tender-document-panel">
-      <div className="document-review-head">
-        <div><span className="eyebrow">Preparación después de registrar GO</span><h3>Expediente de Oferta</h3><p>El registro formal GO genera automáticamente el paquete inicial, documentos genéricos y pendientes humanos. El asistente interviene donde falte criterio, archivos o aprobación.</p></div>
-        <div className="document-status-card"><small>Estado expediente</small><Badge tone="green">Preparación iniciada</Badge><strong>{authorizedPreparation.checklist_summary?.total || 0} ítems</strong></div>
-        <div className="document-risk-meter"><small>Carpeta SharePoint / OneDrive</small><strong>{tenderSharePointStatusLabel(authorizedPreparation.sharepoint_folder?.status)}</strong><span>{authorizedPreparation.sharepoint_folder?.root_name || 'Se creará al configurar integración Graph'}</span></div>
-      </div>
-      <div className="document-upload-row">{sharePointUrl ? <a className="button" href={sharePointUrl} target="_blank" rel="noopener noreferrer">Abrir carpeta</a> : <p className="muted">Carpeta de oferta aún no conectada. Mientras se habilita la integración, los documentos se gestionan directamente en el expediente.</p>}</div>
-      <TenderOfferStatusPanel opportunityId={opportunity.id} opportunityName={opportunity.company_name || 'Oportunidad de licitación'} currentProfile={currentProfile} request={api} readinessRevision={readinessRevision} onChanged={async () => { await loadPreparation(); await onChanged(); }} />
-      {statusText && <div className="notice">{statusText}</div>}
-      <div className="document-analysis-grid">
-        <section className="document-analysis-card"><small>Plan inicial de preparación</small><strong>{authorizedPreparation.control_message || 'Plan registrado'}</strong><p>Documentos oficiales: {authorizedPreparation.checklist_summary?.official_documents || 0} · Planificados: {authorizedPreparation.checklist_summary?.planned ?? authorizedPreparation.checklist_summary?.auto_generated ?? 0} · Requiere humano: {authorizedPreparation.checklist_summary?.human_required || 0}</p></section>
-        <section className="document-analysis-card"><small>Documentos por generar</small><ul>{(authorizedPreparation.planned_documents || authorizedPreparation.auto_generated_documents || []).map(doc => <li key={doc.key}><strong>{doc.name}</strong> · {doc.folder} · {doc.owner}</li>)}</ul></section>
-        <section className="document-analysis-card"><small>Requiere intervención humana</small><ul>{(authorizedPreparation.human_required_items || []).map(item => <li key={item.key}><strong>{item.title || item.name}</strong> · {item.owner}<br/><span className="muted">{item.reason}</span></li>)}</ul></section>
-        <section className="document-analysis-card"><small>Carpeta SharePoint / OneDrive</small><strong>{authorizedPreparation.sharepoint_folder?.root_name}</strong><div className="document-matrix">{(authorizedPreparation.sharepoint_folder?.folders || []).slice(0, 8).map(folder => <div key={folder}><Badge tone="blue">carpeta</Badge><span>{folder}</span></div>)}</div></section>
-        <section className="document-analysis-card"><small>Notas del sistema sobre el plan</small><ul>{(authorizedPreparation.assistant_notes || []).map(item => <li key={item}>{item}</li>)}</ul></section>
-        <section className="document-analysis-card"><small>Nota interna de preparación</small><p className="muted">Esta nota queda en el historial del expediente para el equipo. No es procesada ni respondida automáticamente por {VIGIA_VISIBLE_NAMES.tenders}.</p>{payload.notes?.length ? <div className="timeline">{payload.notes.slice(-4).map((n, idx) => <div className="event" key={`${n.created_at}-${idx}`}><strong>{n.status || 'nota'}</strong><span>{fmtDate(n.created_at)} · {n.created_by_name || n.created_by || 'Usuario'}</span><p>{n.note}</p></div>)}</div> : null}<form onSubmit={saveAssistantNote} className="form"><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="Ej: necesitamos que contabilidad confirme capital de trabajo y cargue estados financieros 2025…"/><button disabled={busy || !note.trim()}>Guardar nota interna</button></form></section>
-      </div>
-    </div> : <div className="document-empty-state"><strong>Preparación pendiente de registrar GO</strong><span>Registrar GO en la decisión formal para crear el expediente, documentos genéricos automáticos y pendientes humanos. Hasta entonces este panel es de solo lectura.</span>{statusText && <div className="notice">{statusText}</div>}</div>}
-  </Panel>;
+  // Antes de GO no hay nada honesto que decir aquí: el estado y la ruta a la decisión ya viven en el
+  // eje de decisión, y el expediente operativo tampoco se monta. Sólo se conserva el error de carga.
+  return authorizedPreparation ? <div className="tender-document-panel">
+    {sharePointUrl ? <a className="button" href={sharePointUrl} target="_blank" rel="noopener noreferrer">Abrir carpeta</a> : null}
+    <TenderOfferStatusPanel opportunityId={opportunity.id} opportunityName={opportunity.company_name || 'Oportunidad de licitación'} currentProfile={currentProfile} request={api} readinessRevision={readinessRevision} onChanged={async () => { await loadPreparation(); await onChanged(); }} />
+    {statusText && <div className="notice">{statusText}</div>}
+  </div> : statusText ? <div className="notice">{statusText}</div> : null;
 }
 function tenderDocumentTypeLabel(value: string) {
   return tenderDocumentTypeOptions.find(([code]) => code === value)?.[1] || 'Otro';

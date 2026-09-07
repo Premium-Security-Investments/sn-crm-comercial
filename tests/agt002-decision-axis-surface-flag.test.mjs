@@ -141,7 +141,7 @@ test('E3 — el front consume el literal del payload y nunca una variable de bui
 
 test('E4.1/E4.5 — flag off conserva exactamente el brief y el panel legados, sin ninguna cadena de la superficie nueva', () => {
   const html = renderReactComponent(TenderDecisionExperience, { ...experienceProps, decisionAxisSurfaceEnabled: false });
-  assert.ok(html.includes('Brief de decisión'));
+  assert.ok(html.includes('Análisis para decidir'));
   assert.equal(count(html, 'Decisión GO / NO GO'), 1);
   for (const nueva of [
     'Cinco señales para una decisión humana',
