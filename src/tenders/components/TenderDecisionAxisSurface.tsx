@@ -413,10 +413,8 @@ export function TenderDecisionAxisSurface(props: TenderDecisionAxisSurfaceProps)
       </div>}
       <div className="tender-decision-axis-final-bar">
         <p>{VIGIA_VISIBLE_NAMES.tenders} analiza y agrupa; la decisión GO / NO GO permanece humana.</p>
-        {/* Cuando la CTA primaria ya es "Abrir Mesa de ayuda" (post_go), el botón secundario al
-            mismo destino queda oculto: evita dos controles duplicados hacia la misma acción y
-            conserva una única CTA primaria al final del orden tabulable. */}
-        {primaryCta.id !== 'open_help_desk' && <button type="button" className="tender-decision-axis-help" onClick={onOpenHelpDesk}>Mesa de ayuda</button>}
+        {/* Antes de GO no existe ningún control hacia Mesa de ayuda (§13/§15): la única entrada a
+            ese destino es la CTA primaria "Abrir Mesa de ayuda", que sólo aparece en post_go. */}
         {primaryCta.id === 'coverage' && (useOperationalProjection
           ? <button type="button" className="tender-decision-axis-cta" disabled={decisionStateUnresolved} onClick={focusFormalDecision}>Registrar decisión humana</button>
           : <button type="button" className="tender-decision-axis-cta" onClick={focusDocumentAnalysis}>Revisar documentos pendientes</button>)}
