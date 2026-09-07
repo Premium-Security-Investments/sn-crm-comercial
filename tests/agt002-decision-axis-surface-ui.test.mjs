@@ -208,13 +208,14 @@ test('D1.6 — Decisión no duplica seis pendientes V3 y dirige a la lista compl
   assert.ok(formalIndex >= 0 && pointerIndex > formalIndex, 'el control formal debe preceder al puntero secundario');
 });
 
-test('D1.7-D1.8 — la pregunta usa copy pendiente y la barra integra Mesa de ayuda + control formal', () => {
+test('D1.7-D1.8 — la pregunta usa copy pendiente y la barra integra el control formal sin mostrar Mesa de ayuda antes de GO', () => {
   const html = render(analysisFixture());
   assert.ok(html.includes('pregunta material pendiente'));
   const questionRow = html.match(/Capital de trabajo mínimo[\s\S]*?Respuesta histórica \(reanaliza\)/)?.[0] || '';
   assert.ok(questionRow);
   assert.equal(/impediment/i.test(questionRow), false);
-  assert.ok(html.includes('Mesa de ayuda'));
+  assert.equal(html.includes('Mesa de ayuda'), false, 'antes de GO no debe existir ningún control de Mesa de ayuda');
+  assert.equal(count(html, 'class="tender-decision-axis-help"'), 0);
   assert.ok(html.includes('Decisión GO / NO GO'));
   assert.equal(count(html, 'class="tender-decision-axis-cta"'), 1);
 });
@@ -289,17 +290,40 @@ test('D6 — post_go muestra exactamente una acción de Mesa de ayuda y una sola
   assert.ok(html.includes('GO humano registrado'));
 });
 
-test('D6 — fuera de post_go se conserva el botón secundario Mesa de ayuda junto a la CTA primaria correspondiente', () => {
+test('D6 — antes de GO no existe ningún control de Mesa de ayuda (ready_for_human_review ni paused)', () => {
   const html = render(analysisFixture());
-  assert.equal(count(html, 'class="tender-decision-axis-help"'), 1);
+  assert.equal(count(html, 'class="tender-decision-axis-help"'), 0);
+  assert.equal(html.includes('Mesa de ayuda'), false, 'antes de GO no debe existir ningún control de Mesa de ayuda');
   assert.equal(count(html, 'class="tender-decision-axis-cta"'), 1);
-  assert.ok(html.includes('Mesa de ayuda'));
   assert.ok(html.includes('Resolver la pregunta prioritaria'));
 
   const pausedHtml = render(analysisFixture({ paused: true }));
-  assert.equal(count(pausedHtml, 'class="tender-decision-axis-help"'), 1);
+  assert.equal(count(pausedHtml, 'class="tender-decision-axis-help"'), 0);
+  assert.equal(pausedHtml.includes('Mesa de ayuda'), false, 'antes de GO no debe existir ningún control de Mesa de ayuda');
   assert.equal(count(pausedHtml, 'class="tender-decision-axis-cta"'), 1);
   assert.ok(pausedHtml.includes('Revisar pendientes en Análisis'));
+});
+
+test('D6 — NO GO humano registrado tampoco muestra ningún control de Mesa de ayuda', () => {
+  const html = render(analysisFixture(), {
+    decisionState: {
+      phase: 'ready',
+      value: {
+        id: 'decision-1',
+        opportunity_id: 'opportunity-1',
+        tender_id: 'tender-1',
+        decision: 'no_go',
+        analysis_interaction_id: null,
+        analysis_run_id: 'run-current',
+        justification: null,
+        decided_by: 'profile-1',
+        decided_at: '2026-08-20T00:00:00.000Z',
+      },
+    },
+  });
+  assert.equal(count(html, 'class="tender-decision-axis-help"'), 0, 'NO GO nunca debe mostrar el botón secundario de Mesa de ayuda');
+  assert.equal(html.includes('Mesa de ayuda'), false, 'NO GO nunca debe mostrar ningún control de Mesa de ayuda');
+  assert.ok(html.includes('NO GO humano registrado'));
 });
 
 // Un eje con lectura material (findings poblados) y, a la vez, una unidad V3 abierta de la misma
