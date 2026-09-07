@@ -74,14 +74,21 @@ test('el montaje con flag conserva brief + registro formal adyacentes en fallbac
   assert.match(summary, /psi_sales_profiles\?\.full_name \|\| current\.decided_by/);
 });
 
-test('el puntero compacto del panel deriva sólo de impedimentos y condiciones gobernadas; las advertencias detalladas permanecen en el modal', () => {
-  assert.match(panel, /const hasDecisionPending = decisionBlockers\.length \+ pendingConditions\.length > 0;/);
-  assert.match(panel, /\{hasDecisionPending && <p className="tender-go-no-go-analysis-pointer">/);
-  const pointerStart = panel.indexOf('{hasDecisionPending && <p className="tender-go-no-go-analysis-pointer">');
-  const pointerEnd = panel.indexOf('</p>}', pointerStart);
-  const pointer = panel.slice(pointerStart, pointerEnd);
-  assert.doesNotMatch(pointer, /analysisWarnings/);
+test('el panel ya no duplica el puntero a Análisis y los impedimentos/condiciones gobernados sólo alimentan el modal', () => {
+  // El puntero compacto desapareció: los pendientes documentales viven una sola vez, en Análisis.
+  assert.doesNotMatch(panel, /tender-go-no-go-analysis-pointer/);
+  assert.doesNotMatch(panel, /hasDecisionPending|decisionPendingCount/);
+  assert.doesNotMatch(panel, /Revisar pendientes en Análisis/);
+  // Lo que no puede debilitarse: ambos selectores gobernados siguen derivando las advertencias, y
+  // esas advertencias siguen viviendo exclusivamente en el modal de confirmación.
+  assert.match(panel, /const decisionBlockers = tenderDecisionBlockers\(analysis\?\.decision_review, questionResponses\);/);
+  assert.match(panel, /tenderDecisionConditions\(analysis\?\.decision_review, questionResponses\)/);
+  assert.match(panel, /if \(decisionBlockers\.length > 0\) warnings\.push\(/);
+  assert.match(panel, /if \(pendingConditions\.length > 0\) warnings\.push\(/);
   assert.match(panel, /\{analysisWarnings\.length > 0 && <div className="notice" role="alert">/);
+  const modalStart = panel.indexOf('{selectedDecision && <div className="tender-go-no-go-backdrop"');
+  assert.ok(modalStart >= 0, 'debe seguir existiendo el modal de confirmación');
+  assert.ok(panel.indexOf('{analysisWarnings.length > 0 && <div className="notice" role="alert">') > modalStart, 'las advertencias sólo pueden vivir dentro del modal');
 });
 
 test('los estilos conservan reglas compactas y responsivas para la superficie de decisión', () => {

@@ -349,16 +349,14 @@ export function TenderDecisionAxisSurface(props: TenderDecisionAxisSurfaceProps)
   />;
 
   return <section className={`tender-decision-axis-surface${useOperationalProjection ? ' is-formal-primary' : ''}`} aria-labelledby={useOperationalProjection ? 'tender-go-no-go-heading' : 'tender-decision-axis-title'}>
-    <header className="tender-decision-axis-hero">
-      {/* En formal-primary el panel embebido más abajo ya trae su propio encabezado "Decisión
-          GO / NO GO" (id="tender-go-no-go-heading"): repetirlo aquí duplicaría el título, por eso
-          este hero no vuelve a declarar un <h2>, y la sección se etiqueta directamente con el id
-          real del panel embebido. */}
-      <div><span className="eyebrow">{useOperationalProjection ? 'Control formal humano' : 'Cinco señales para una decisión humana'}</span>{!useOperationalProjection && <h2 id="tender-decision-axis-title">Análisis para decidir</h2>}<p>{useOperationalProjection
-        ? 'La persona autorizada puede registrar su decisión. Los pendientes documentales completos permanecen disponibles en Análisis como apoyo, sin bloquear este control.'
-        : 'Contrasta exigencia, evidencia, cruce, efecto y acción sin convertir el análisis en una decisión automática.'}</p></div>
-      {!useOperationalProjection && <strong className={`tender-decision-axis-coverage ${surfaceState.state === 'paused' ? 'is-paused' : 'is-ready'}`}>{`Cobertura: ${surfaceState.state === 'paused' ? 'PAUSADA' : 'LISTA'}`}</strong>}
-    </header>
+    {/* En formal-primary el panel embebido es la única lectura de la superficie y ya trae su propio
+        encabezado, su explicación de autoridad y su estado vigente (id="tender-go-no-go-heading",
+        con el que se etiqueta esta sección). Un hero adicional sólo repetiría ese texto, así que la
+        variante formal-primaria no monta ninguno. */}
+    {!useOperationalProjection && <header className="tender-decision-axis-hero">
+      <div><span className="eyebrow">Cinco señales para una decisión humana</span><h2 id="tender-decision-axis-title">Análisis para decidir</h2><p>Contrasta exigencia, evidencia, cruce, efecto y acción sin convertir el análisis en una decisión automática.</p></div>
+      <strong className={`tender-decision-axis-coverage ${surfaceState.state === 'paused' ? 'is-paused' : 'is-ready'}`}>{`Cobertura: ${surfaceState.state === 'paused' ? 'PAUSADA' : 'LISTA'}`}</strong>
+    </header>}
 
     {!useOperationalProjection && <div className={`tender-decision-axis-banner ${surfaceState.state}`} aria-live="polite">
       <div><strong>{bannerTitle}</strong>{surfaceState.state === 'paused'
@@ -371,15 +369,11 @@ export function TenderDecisionAxisSurface(props: TenderDecisionAxisSurfaceProps)
     </div>}
 
     {useOperationalProjection
-      ? <>
-        <div className="tender-decision-axis-formal tender-decision-axis-formal-primary">
-          {formalDecisionPanel}
-        </div>
-        <aside className="tender-decision-analysis-pointer" aria-labelledby="tender-decision-analysis-pointer-title">
-          <div><span className="eyebrow">Apoyo documental</span><h3 id="tender-decision-analysis-pointer-title">Pendientes documentales en Análisis</h3><p>La lista completa está en Análisis para evitar duplicidades en el expediente.</p></div>
-          <div className="tender-decision-analysis-pointer-action"><strong aria-live="polite">{openIntegralUnits.length} pendiente{openIntegralUnits.length === 1 ? '' : 's'} por revisar</strong><a href="#tender-analysis" onClick={event => { event.preventDefault(); focusDocumentAnalysis(); }}>Revisar pendientes en Análisis</a></div>
-        </aside>
-      </>
+      ? <div className="tender-decision-axis-formal tender-decision-axis-formal-primary">
+        {/* Los pendientes documentales completos son de Análisis y sólo de Análisis: esta variante
+            ya no monta un puntero propio hacia ellos (la navegación por secciones sigue intacta). */}
+        {formalDecisionPanel}
+      </div>
       : <>
         <nav className="tender-decision-axis-rail" aria-label="Ejes del análisis para decidir">{axes.map(axis => <button
           type="button"
@@ -397,8 +391,9 @@ export function TenderDecisionAxisSurface(props: TenderDecisionAxisSurfaceProps)
 
     {/* Los hallazgos ordinarios reclasificados a preparación (§7.2) no alimentan ningún eje ni
         bloquean la decisión: se conservan plegados para que esta lectura única no pierda contenido
-        gobernado que antes vivía en la sección Análisis. */}
-    {preparation.length > 0 && <details className="tender-decision-axis-preparation">
+        gobernado que antes vivía en la sección Análisis. En formal-primary no se muestran: ahí la
+        lectura documental completa vive en Análisis y repetirla sería otra duplicidad. */}
+    {!useOperationalProjection && preparation.length > 0 && <details className="tender-decision-axis-preparation">
       <summary>Preparación ordinaria registrada ({preparation.length}) — no impide decidir</summary>
       <ul>{preparation.map(item => <li key={item.key}><strong>{item.title}</strong><span>{item.actionRequired || MISSING_ACTION_COPY}</span></li>)}</ul>
     </details>}
@@ -412,7 +407,9 @@ export function TenderDecisionAxisSurface(props: TenderDecisionAxisSurfaceProps)
         {formalDecisionPanel}
       </div>}
       <div className="tender-decision-axis-final-bar">
-        <p>{VIGIA_VISIBLE_NAMES.tenders} analiza y agrupa; la decisión GO / NO GO permanece humana.</p>
+        {/* La frase de autoridad se enuncia una sola vez por superficie. En formal-primary quien la
+            enuncia es el panel formal embebido, así que la barra final no la repite. */}
+        {!useOperationalProjection && <p>{VIGIA_VISIBLE_NAMES.tenders} analiza y agrupa; la decisión GO / NO GO permanece humana.</p>}
         {/* Antes de GO no existe ningún control hacia Mesa de ayuda (§13/§15): la única entrada a
             ese destino es la CTA primaria "Abrir Mesa de ayuda", que sólo aparece en post_go. */}
         {primaryCta.id === 'coverage' && (useOperationalProjection

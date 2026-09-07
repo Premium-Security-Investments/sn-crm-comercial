@@ -69,8 +69,6 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
     }
     return warnings;
   }, [analysis, decisionBlockers.length, executiveOpenIssueCount, executiveProjectionAvailable, pendingConditions.length, recommendationKind, selectedDecision]);
-  const hasDecisionPending = decisionBlockers.length + pendingConditions.length > 0;
-  const decisionPendingCount = decisionBlockers.length + pendingConditions.length;
 
   const load = useCallback(async (preserveStatus = false, preservePayload = false): Promise<boolean> => {
     const requestVersion = ++requestVersionRef.current;
@@ -239,15 +237,18 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
   const reversalDecision: Decision | null = current?.decision === 'go' ? 'no_go' : current?.decision === 'no_go' ? 'go' : null;
   const isReversal = selectedDecision !== null && selectedDecision === reversalDecision;
   return <section className="tender-go-no-go-panel" aria-labelledby="tender-go-no-go-heading">
-    <header className="tender-go-no-go-head"><div><span className="eyebrow">Control formal de licitación</span><h3 id="tender-go-no-go-heading">Decisión GO / NO GO</h3><p>{VIGIA_VISIBLE_NAMES.tenders} recomienda; la decisión y el avance operativo pertenecen a la persona autorizada.</p></div></header>
+    {/* Una sola explicación de autoridad en todo el panel: se enuncia aquí, en el encabezado, y no
+        se repite junto a las acciones ni en una tarjeta puntero aparte. */}
+    <header className="tender-go-no-go-head"><div><span className="eyebrow">Registro formal</span><h3 id="tender-go-no-go-heading">Decisión GO / NO GO</h3><p>{VIGIA_VISIBLE_NAMES.tenders} recomienda; la decisión y el avance operativo pertenecen a la persona autorizada.</p></div></header>
     <div className="tender-go-no-go-grid tender-go-no-go-summary">
-      <article className="tender-go-no-go-brief-pointer"><small>Control formal</small><strong>Aquí sólo se registra la decisión humana</strong><span>El análisis previo sigue disponible como apoyo. Esta sección no vuelve a listar impedimentos, capacidad ni preparación.</span></article>
       <TenderGoNoGoDecisionSummary loading={loading} current={current} />
       {current?.decision === 'go' && <article className="tender-go-no-go-next"><small>Estado operativo</small><strong>Preparación iniciada</strong><p><b>Siguiente paso:</b> completar el expediente y dejar la oferta lista para presentar.</p><button type="button" className="secondary" onClick={scrollToPreparation}>Abrir expediente de oferta</button></article>}
       {current?.decision === 'no_go' && <article className="tender-go-no-go-next"><small>Estado operativo</small><strong>Proceso cerrado por NO GO</strong><p><b>Siguiente paso:</b> conservar la decisión y su evidencia para consulta.</p></article>}
     </div>
 
-    {hasDecisionPending && <p className="tender-go-no-go-analysis-pointer"><a href="#tender-analysis">Revisar pendientes en Análisis ({decisionPendingCount})</a></p>}
+    {/* Los pendientes de Análisis viven una sola vez, en la sección Análisis; este panel no vuelve
+        a apuntarlos. Los impedimentos y condiciones gobernados siguen alimentando `analysisWarnings`
+        dentro del modal de confirmación, que es donde cambian una decisión. */}
     {status && <div className="notice" role="status">{status}</div>}
     {syncPending && <div className="tender-go-no-go-actions"><button type="button" className="secondary" onClick={() => void reconcile()} disabled={busy}>{busy ? 'Actualizando…' : 'Reintentar actualización'}</button></div>}
     {allowed ? <div id="tender-go-no-go-actions" className="tender-go-no-go-actions" tabIndex={-1}>
@@ -258,7 +259,6 @@ export function TenderGoNoGoDecisionPanel({ opportunityId, opportunityName, anal
       {reversalDecision === 'no_go' && <button type="button" id="tender-decision-change-to-nogo" className="danger" onClick={event => open('no_go', event.currentTarget)} disabled={!decisionGate.canNoGo || busy || loading || syncPending}>Cambiar la decisión a NO GO</button>}
       {reversalDecision === 'go' && <button type="button" id="tender-decision-change-to-go" onClick={event => open('go', event.currentTarget)} disabled={!decisionGate.canGo || busy || loading || syncPending}>Cambiar la decisión a GO</button>}
       {reversalDecision !== null && <p className="muted">La decisión vigente no se borra: queda en el historial y la nueva decisión la sustituye de forma auditable.</p>}
-      <p className="muted">{VIGIA_VISIBLE_NAMES.tenders} recomienda; la persona autorizada conserva la autoridad absoluta para GO o NO GO.</p>
     </div> : <p id="tender-go-no-go-actions" className="muted" tabIndex={-1}>Solo Admin, Gerencia o Dirección de Licitaciones con permiso pueden registrar una decisión. La decisión vigente permanece disponible en solo lectura.</p>}
     <details className="tender-go-no-go-history"><summary>Historial de decisiones</summary>{loading ? <p>Cargando historial…</p> : payload.history.length ? <ol>{payload.history.map(entry => <li key={entry.id}><strong>{decisionLabel(entry.decision)}</strong><span>{entry.psi_sales_profiles?.full_name || entry.decided_by} · {date(entry.decided_at)}</span>{entry.justification && <p>{entry.justification}</p>}</li>)}</ol> : <p>Sin entradas previas.</p>}</details>
     {selectedDecision && <div className="tender-go-no-go-backdrop" role="presentation" onMouseDown={close}>

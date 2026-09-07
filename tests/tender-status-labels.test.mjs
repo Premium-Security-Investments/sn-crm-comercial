@@ -57,7 +57,9 @@ for (const unsafe of ['javascript:alert(1)', 'http://secop.gov.co/proceso', 'htt
 }
 assert.equal(ui.safePublicTenderSourceUrl('https://[2606:4700:4700::1111]/x'), 'https://[2606:4700:4700::1111]/x');
 const mainSource = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
-assert.match(mainSource, /tenderSharePointStatusLabel\(authorizedPreparation\.sharepoint_folder\?\.status\)/, 'El detalle debe humanizar el estado SharePoint.');
+// El estado narrativo de la carpeta se retiró con el pseudo-expediente: el detalle ya no muestra un
+// rótulo de integración pendiente, sólo un enlace cuando la URL existe y es segura.
+assert.doesNotMatch(mainSource, /tenderSharePointStatusLabel/, 'El detalle ya no rotula un estado de integración que la persona usuaria no puede accionar.');
 assert.match(mainSource, /resolveTenderSourceUrl\(authorizedPreparation\?\.sharepoint_folder\?\.url\)/, 'El detalle debe validar la URL de la carpeta antes de enlazarla.');
 assert.doesNotMatch(mainSource, /href=\{authorizedPreparation\.sharepoint_folder\.url\}/, 'El detalle no debe enlazar directamente una URL de SharePoint sin validar.');
 let active = new Set();
