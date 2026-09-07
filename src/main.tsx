@@ -774,6 +774,11 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   const [tenderDecisionNavigationState, setTenderDecisionNavigationState] = useState<TenderPanelState<TenderGoNoGoDecision | null>>({ phase: 'loading' });
   const [tenderPreparationNavigationState, setTenderPreparationNavigationState] = useState<TenderPanelState<TenderPreparationNavigationValue>>({ phase: 'loading' });
   const [tenderRevision, setTenderRevision] = useState(0);
+  // Canal de refresco de disponibilidad SIN remontaje: una mutación confirmada del expediente sólo
+  // debe hacer que el gate canónico de "Marcar lista para presentar" se relea. Va aparte de
+  // `tenderRevision` (que sí remonta) para no destruir borradores locales — nota interna de
+  // preparación, borradores de documentos del expediente y Mesa de ayuda — al mutar el expediente.
+  const [tenderDossierReadinessRevision, setTenderDossierReadinessRevision] = useState(0);
   const detailRequestRef = useRef(0);
   const activeDetailIdRef = useRef(id);
   activeDetailIdRef.current = id;
@@ -794,7 +799,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
   };
   useEffect(() => {
     activeDetailIdRef.current = id; detailRequestRef.current += 1;
-    setDetail(null); setError(null); setExitFeedback(null); setExitingTender(null); setTenderAnalysis(null); setTenderQuestionResponses([]); setTenderDecisionAxisSurfaceEnabled(false); setTenderRevision(0);
+    setDetail(null); setError(null); setExitFeedback(null); setExitingTender(null); setTenderAnalysis(null); setTenderQuestionResponses([]); setTenderDecisionAxisSurfaceEnabled(false); setTenderRevision(0); setTenderDossierReadinessRevision(0);
     tenderQuestionResponseSaveRef.current = null;
     setTenderDocumentNavigationState({ phase: 'loading' });
     setTenderAnalysisNavigationState({ phase: 'loading' });
@@ -881,7 +886,7 @@ function OpportunityDetail({ id, data, refresh }: { id: string; data: Bootstrap;
         commercialContext={{ amountLabel: fmtMoney(o.offer_value), closeLabel: fmtDateOnly(o.expected_close_date), city: o.quote_city, sector: o.economic_sector, commercialFitPositives: tenderAnalysis?.commercial_fit?.positives || [] }}
       />
     </div>}
-    {o.service_type_code === 'licitacion_publica' && <div id="tender-preparation" className="tender-detail-anchor" tabIndex={-1}><TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} currentProfile={data.currentProfile} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderPreparationNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /><TenderDossierWorkspacePanel key={`tender-dossier-${o.id}-${tenderRevision}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={can(data.currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE)} offerStatus={o.tender_offer_status || null} /></div>}
+    {o.service_type_code === 'licitacion_publica' && <div id="tender-preparation" className="tender-detail-anchor" tabIndex={-1}><TenderOfferPreparationPanel key={`tender-preparation-${o.id}-${tenderRevision}`} opportunity={o} currentProfile={data.currentProfile} readinessRevision={tenderDossierReadinessRevision} onNavigationStateChanged={state => { if (activeDetailIdRef.current === o.id) setTenderPreparationNavigationState(state); }} onChanged={async () => { await load(); await refresh(); if (activeDetailIdRef.current === o.id) setTenderRevision(revision => revision + 1); }} /><TenderDossierWorkspacePanel key={`tender-dossier-${o.id}-${tenderRevision}`} opportunityId={o.id} request={api} profiles={data.profiles} canApprove={can(data.currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE)} offerStatus={o.tender_offer_status || null} onChanged={() => { if (activeDetailIdRef.current === o.id) setTenderDossierReadinessRevision(revision => revision + 1); }} /></div>}
     <div id="tender-follow-up" className="tender-detail-anchor" tabIndex={-1}>{o.service_type_code === 'licitacion_publica' ? <PublicTenderFollowUp opportunity={o} profiles={data.profiles} currentProfile={data.currentProfile} /> : <>
       <h2 className="followup-section-title">Seguimiento comercial</h2>
       <div className="followup-section-grid">
@@ -1183,7 +1188,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
     </div>
   </>;
 }
-function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, onNavigationStateChanged }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void>; onNavigationStateChanged?: (state: TenderPanelState<TenderPreparationNavigationValue>) => void }) {
+function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, onNavigationStateChanged, readinessRevision }: { opportunity: Opportunity; currentProfile: Profile; onChanged: () => Promise<void>; onNavigationStateChanged?: (state: TenderPanelState<TenderPreparationNavigationValue>) => void; /** Señal de refresco del gate canónico tras mutar el expediente. Se transmite como prop (nunca como key) para no remontar este panel ni perder la nota interna en curso. */ readinessRevision?: number }) {
   const [payload, setPayload] = useState<TenderOfferPreparationPayload>({ preparation: null, preparations: [], notes: [] });
   const [statusText, setStatusText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1225,7 +1230,7 @@ function TenderOfferPreparationPanel({ opportunity, currentProfile, onChanged, o
         <div className="document-risk-meter"><small>Carpeta SharePoint / OneDrive</small><strong>{tenderSharePointStatusLabel(authorizedPreparation.sharepoint_folder?.status)}</strong><span>{authorizedPreparation.sharepoint_folder?.root_name || 'Se creará al configurar integración Graph'}</span></div>
       </div>
       <div className="document-upload-row">{sharePointUrl ? <a className="button" href={sharePointUrl} target="_blank" rel="noopener noreferrer">Abrir carpeta</a> : <p className="muted">Carpeta de oferta aún no conectada. Mientras se habilita la integración, los documentos se gestionan directamente en el expediente.</p>}</div>
-      <TenderOfferStatusPanel opportunityId={opportunity.id} opportunityName={opportunity.company_name || 'Oportunidad de licitación'} currentProfile={currentProfile} request={api} onChanged={async () => { await loadPreparation(); await onChanged(); }} />
+      <TenderOfferStatusPanel opportunityId={opportunity.id} opportunityName={opportunity.company_name || 'Oportunidad de licitación'} currentProfile={currentProfile} request={api} readinessRevision={readinessRevision} onChanged={async () => { await loadPreparation(); await onChanged(); }} />
       {statusText && <div className="notice">{statusText}</div>}
       <div className="document-analysis-grid">
         <section className="document-analysis-card"><small>Plan inicial de preparación</small><strong>{authorizedPreparation.control_message || 'Plan registrado'}</strong><p>Documentos oficiales: {authorizedPreparation.checklist_summary?.official_documents || 0} · Planificados: {authorizedPreparation.checklist_summary?.planned ?? authorizedPreparation.checklist_summary?.auto_generated ?? 0} · Requiere humano: {authorizedPreparation.checklist_summary?.human_required || 0}</p></section>

@@ -31,20 +31,25 @@ export function TenderDossierChecklist({ opportunityId, workspace, request, prof
   const [showNoAplica, setShowNoAplica] = useState<string | null>(null);
   const humanProfiles = profiles.filter(profile => profile.active !== false && profile.identity_type !== 'agent');
 
-  const draftFor = (item: TenderDossierItem): ItemDraft => drafts[item.id] || {
+  const baselineFor = (item: TenderDossierItem): ItemDraft => ({
     evidenceKind: 'texto', evidence: '', justification: '', targetDate: item.target_date || '',
-  };
+  });
+  const draftFor = (item: TenderDossierItem): ItemDraft => drafts[item.id] || baselineFor(item);
+  // El merge parte SIEMPRE del borrador vigente en `current`, nunca del capturado en el render:
+  // dos campos del mismo ítem editados en el mismo lote deben conservarse los dos.
   const setDraft = (item: TenderDossierItem, patch: Partial<ItemDraft>) => {
-    setDrafts(current => ({ ...current, [item.id]: { ...draftFor(item), ...patch } }));
+    setDrafts(current => ({ ...current, [item.id]: { ...(current[item.id] || baselineFor(item)), ...patch } }));
   };
-  const act = async (item: TenderDossierItem, action: Omit<TenderDossierItemActionInput, 'opportunity_id' | 'item_id'>) => {
+  const act = async (item: TenderDossierItem, action: Omit<TenderDossierItemActionInput, 'opportunity_id' | 'item_id'>): Promise<boolean> => {
     setBusyId(item.id);
     setError('');
     try {
       await appendTenderDossierItemAction(request, { opportunity_id: opportunityId, item_id: item.id, ...action });
       await onChanged();
+      return true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
+      return false;
     } finally {
       setBusyId(null);
     }
@@ -52,13 +57,13 @@ export function TenderDossierChecklist({ opportunityId, workspace, request, prof
   const attachEvidence = async (item: TenderDossierItem) => {
     const draft = draftFor(item);
     if (!draft.evidence.trim()) return setError('Debe registrar la evidencia antes de guardarla.');
-    await act(item, {
+    const succeeded = await act(item, {
       action_type: 'evidence_attached',
       evidence_kind: draft.evidenceKind,
       evidence_text: draft.evidenceKind === 'texto' ? draft.evidence : null,
       evidence_url: draft.evidenceKind === 'url' ? draft.evidence : null,
     });
-    setDraft(item, { evidence: '' });
+    if (succeeded) setDraft(item, { evidence: '' });
   };
   const markNotApplicable = async (item: TenderDossierItem) => {
     const justification = draftFor(item).justification.trim();

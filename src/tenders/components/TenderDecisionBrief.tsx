@@ -45,7 +45,7 @@ export function TenderDecisionBrief({ analysis, commercialContext = {}, question
   const potential = tenderCommercialPotential(commercialContext);
   const headline = tenderBriefHeadline({ blockers, conditions: pendingConditions, potential });
   return <section className="tender-v3-questions tender-decision-review tender-decision-brief-v3" aria-labelledby="tender-decision-review-title">
-    <header><div><span className="eyebrow">Lectura para decidir</span><h3 id="tender-decision-review-title">Brief de decisión</h3><p className="tender-decision-brief-headline">{headline}</p></div></header>
+    <header><div><span className="eyebrow">Lectura para decidir</span><h3 id="tender-decision-review-title">Análisis para decidir</h3><p className="tender-decision-brief-headline">{headline}</p></div></header>
 
     <div className="tender-decision-brief-axes" aria-label="Síntesis para decisión humana">
       <article>
