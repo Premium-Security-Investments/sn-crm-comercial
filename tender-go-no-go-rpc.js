@@ -2,7 +2,7 @@ import { ACTIONS, requireAction } from './access-control.js';
 import { buildTenderSnapshotInput, getCurrentTenderAnalysis } from './tender-analysis-foundation.js';
 import { buildTenderOfferPreparation } from './tender-offer-preparation.js';
 import { mergeTenderDocumentRecords } from './tender-document-versioning.js';
-import { deriveAgt002DossierHandoff } from './server/agt002-dossier-handoff.js';
+import { deriveAgt002DossierHandoff, evidenceCoverageStrictlyAbsent } from './server/agt002-dossier-handoff.js';
 import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from './agt002-integral-analysis-v3.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -142,6 +142,14 @@ function mapAgt002DossierHandoffItemToSqlShape(item) {
  * V3") para afirmar un hecho de lectura, de modo que cualquier corrida no canónica que llegara a
  * llevar ese sobre —por backfill, importación o regresión del escritor— se habría traspasado al
  * expediente como si fuera canónica.
+ *
+ * Aquí NUNCA se pasa `humanGoGranted`: el bypass legado del issue #187 (corrida V3 sin
+ * `result.evidence_coverage`) queda reservado a `syncTenderDossierFromAgt002`, donde el GO ya está
+ * persistido y vigente. Al REGISTRAR la decisión el GO todavía no existe, así que un lote legado
+ * sólo podría hacer daño: una unión inválida lanzaría y abortaría el registro de una decisión
+ * empresarial que la persona sí tomó. Un GO nuevo sobre una corrida legada se registra igual, con
+ * `p_agt002_items: null`; el traspaso se obtiene después por la ruta de recovery, que deriva el lote
+ * o falla 409 explícitamente.
  */
 function deriveAgt002ItemsForGoDecision(decision, canonicalAnalysis, anchoredAnalysisRunId) {
   if (decision !== 'go') return null;
@@ -266,6 +274,15 @@ function requireClosedAgt002DossierSyncBody(input) {
  * states while recording a decision), every one of those same states is an error here — a human
  * explicitly asked to sync an existing GO's checklist, so silently doing nothing would hide a real
  * problem instead of reporting it.
+ *
+ * Caso REAL de Cali (issue #187): el GO vigente puede haber quedado registrado con
+ * `analysis_run_id` NULL. Un rechazo inmediato dejaba ese expediente sin traspaso posible para
+ * siempre, así que la ausencia de anclaje se admite bajo un único caso legado ESTRICTO —la corrida
+ * canónica/completada/vigente AGT-002 (agent_ai) trae el sobre V3 estructurado, no tiene la
+ * propiedad propia `result.evidence_coverage`, y el selector server-owned produce un lote listo con
+ * `humanGoGranted: true`— y usando SIEMPRE el `run_id` que este servidor acaba de leer. Con anclaje
+ * presente la igualdad exacta se conserva sin cambios. En ningún caso se actualiza ni se reinserta
+ * la decisión: el recovery sólo siembra el expediente.
  */
 export async function syncTenderDossierFromAgt002(database, input, currentProfile) {
   requireClosedAgt002DossierSyncBody(input);
@@ -280,23 +297,59 @@ export async function syncTenderDossierFromAgt002(database, input, currentProfil
     .order('decided_at', { ascending: false }).order('id', { ascending: false }));
   const decision = currentDecisionFromHistory(history);
   if (decision?.decision !== 'go') throw goNoGoError('La oportunidad no tiene una decisión GO vigente.', 409);
-  const analysisRunId = decision.analysis_run_id || null;
-  if (!analysisRunId) throw goNoGoError('La decisión GO vigente no tiene un análisis anclado.', 409);
+  const anchoredAnalysisRunId = decision.analysis_run_id || null;
 
   const availableAnalysis = await getCurrentTenderAnalysis(database, opportunityId, null, { canonicalOnly: true });
-  const isExactCurrentCanonicalRun = availableAnalysis?.run_id === analysisRunId
+  const isCurrentCanonicalCompletedRun = Boolean(availableAnalysis?.run_id)
     && availableAnalysis.status === 'completed'
     && availableAnalysis.current === true
     && availableAnalysis.canonical === true;
-  if (!isExactCurrentCanonicalRun) throw goNoGoError('El análisis anclado a la decisión GO vigente ya no es el análisis vigente, canónico y completado.', 409);
+
+  if (anchoredAnalysisRunId) {
+    // Decisión con anclaje explícito: la igualdad exacta con el análisis vigente sigue siendo la
+    // única condición admitida, idéntica a la anterior. Un run distinto al anclado nunca sincroniza.
+    const isExactCurrentCanonicalRun = isCurrentCanonicalCompletedRun && availableAnalysis.run_id === anchoredAnalysisRunId;
+    if (!isExactCurrentCanonicalRun) throw goNoGoError('El análisis anclado a la decisión GO vigente ya no es el análisis vigente, canónico y completado.', 409);
+  } else {
+    // Caso REAL de Cali (issue #187): el GO vigente se registró SIN `analysis_run_id`, de modo que
+    // no existe anclaje contra el que comparar. No se repara la decisión (nunca se actualiza ni se
+    // reinserta): se admite un único caso legado ESTRICTO, en el que el run que sustenta el lote lo
+    // elige el servidor —la corrida canónica vigente— y jamás el cuerpo de la solicitud.
+    if (!isCurrentCanonicalCompletedRun) {
+      throw goNoGoError('La decisión GO vigente no tiene un análisis anclado y no hay un análisis vigente, canónico y completado que pueda sustentar el traspaso legado.', 409);
+    }
+    if (availableAnalysis.producer !== 'AGT-002' || availableAnalysis.method !== 'agent_ai') {
+      throw goNoGoError('La decisión GO vigente no tiene un análisis anclado y el análisis vigente no es una corrida AGT-002 (agent_ai).', 409);
+    }
+    // Misma regla de ausencia ESTRICTA que gobierna el bypass legado del selector: si la propiedad
+    // `evidence_coverage` existe —aunque valga null, {}, false, 0 o un string— hay una lectura de
+    // cobertura, la corrida NO es de las anteriores a ese bloque y este atajo no aplica.
+    if (!evidenceCoverageStrictlyAbsent(availableAnalysis.result)) {
+      throw goNoGoError('La decisión GO vigente no tiene un análisis anclado y el análisis vigente sí declara cobertura (evidence_coverage): sólo el caso legado estricto del issue #187 puede sincronizarse sin anclaje.', 409);
+    }
+  }
   if (!hasEligibleAgt002IntegralAnalysis(availableAnalysis.result)) throw goNoGoError('El análisis vigente no incluye un análisis integral V3 estructurado.', 409);
+  // Server-owned: el run del lote es el anclado por la decisión o, sólo en el caso legado estricto
+  // anterior, el de la corrida canónica vigente que este mismo servidor acaba de leer.
+  const analysisRunId = anchoredAnalysisRunId || availableAnalysis.run_id;
 
   // `availableAnalysis` ya viene de una lectura canonicalOnly y su `canonical === true` acaba de
-  // verificarse arriba: se pasa tal cual, sin sintetizar ningún campo.
+  // verificarse arriba: se pasa tal cual, sin sintetizar ningún campo. `humanGoGranted` refleja la
+  // decisión GO vigente y no superada que se acaba de leer, cuyo análisis anclado es exactamente
+  // esta corrida canónica o —caso legado sin anclaje— cuya corrida canónica vigente ya superó todas
+  // las condiciones estrictas de arriba: esta ruta re-siembra el expediente de un GO ya tomado,
+  // nunca reescribe la decisión empresarial. Ésta es la ÚNICA ruta que declara ese hecho: el
+  // registro de la decisión (deriveAgt002ItemsForGoDecision) nunca lo hace, porque allí el GO
+  // todavía no está persistido. El bypass sigue siendo fail-closed dentro del selector —cobertura
+  // estrictamente ausente, pausa exactamente por cobertura, sin omisiones materiales y unión 1:1
+  // exacta con la unidad V3—, y si no produce lote listo esta ruta responde 409 en lugar de sembrar
+  // a ciegas. La clasificación material pre-GO no interviene: los requisitos de un pliego real
+  // (`sreq:*`) no están en el catálogo global de requisitos gobernados de la empresa.
   const handoff = deriveAgt002DossierHandoff({
     currentAnalysis: availableAnalysis,
     result: availableAnalysis.result,
     questionResponses: [],
+    humanGoGranted: true,
   });
   if (!handoff.ready) throw goNoGoError('El análisis vigente todavía no está listo para el traspaso al expediente.', 409);
 

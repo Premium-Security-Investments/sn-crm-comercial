@@ -10,6 +10,9 @@ import { PGlite } from '@electric-sql/pglite';
 const m040 = readFileSync(new URL('../supabase/migrations/040_tender_dossier_workspace.sql', import.meta.url), 'utf8');
 const m041 = readFileSync(new URL('../supabase/migrations/041_tender_dossier_go_seed.sql', import.meta.url), 'utf8');
 const m082 = readFileSync(new URL('../supabase/migrations/082_tender_dossier_agt002_handoff.sql', import.meta.url), 'utf8');
+// 083 sólo reemplaza la RPC de sincronización; el cableado atómico del GO (overload de nueve
+// argumentos, fase 3A) debe comportarse exactamente igual con ella aplicada encima.
+const m083 = readFileSync(new URL('../supabase/migrations/083_tender_dossier_agt002_unanchored_go.sql', import.meta.url), 'utf8');
 
 const ACTOR = '11111111-1111-4111-8111-111111111111';
 const O = '22222222-2222-4222-8222-222222222222';
@@ -88,6 +91,7 @@ async function baseDb() {
     );
     create table public.psi_tender_analysis_runs (
       id uuid primary key, opportunity_id uuid, tender_id uuid, snapshot_id uuid,
+      producer text default 'AGT-002', method text default 'agent_ai',
       status text, canonical boolean default true, result jsonb
     );
     create table public.psi_tender_document_state (
@@ -136,6 +140,7 @@ async function baseDb() {
   await db.exec(m040);
   await db.exec(m041);
   await db.exec(m082);
+  await db.exec(m083);
   return db;
 }
 
@@ -158,6 +163,8 @@ function decideWithHandoff(db, { decision = 'go', runId = RUN_1, items = null, p
 await (async function migrationIsReexecutable() {
   const db = await baseDb();
   await db.exec(m082);
+  await db.exec(m083);
+  await db.exec(m083);
   await db.close();
 })();
 
