@@ -5,8 +5,8 @@ import { createAgt002PreviewEngine, AGT002_PREVIEW_POLICY } from '../agt002-prev
 
 const SECRET = 'a'.repeat(32);
 
-function syntheticSuccessCodexClient(modelOutput) {
-  // Mirrors the real codex client's effort acknowledgement contract: the engine always pins a
+function syntheticSuccessClaudeClient(modelOutput) {
+  // Mirrors the real Claude client's effort acknowledgement contract: the engine always pins a
   // real `effort`, and the bridge client now requires this exact echo before accepting output.
   return { run: async ({ effort } = {}) => ({ content: JSON.stringify(modelOutput), usage: { input_tokens: 12, output_tokens: 34 }, rate_limit: null, effort_ack: effort ?? null }) };
 }
@@ -16,11 +16,11 @@ async function testEngineProducesValidEnvelopeThroughSyntheticBridge() {
     recommendation: 'advance', summary: 'Resumen sintético.', strengths: [], weaknesses: [], blockers: [], questions: [], unverified: [],
     next_action: 'Continuar revisión humana.', human_review_required: true,
   };
-  const bridge = await startSyntheticAgt002HetznerBridge({ hmacSecret: SECRET, codexClient: syntheticSuccessCodexClient(modelOutput) });
+  const bridge = await startSyntheticAgt002HetznerBridge({ hmacSecret: SECRET, codexClient: syntheticSuccessClaudeClient(modelOutput) });
   try {
     const client = createAgt002HetznerBridgeClient({ url: bridge.url, hmacSecret: SECRET });
     const engine = createAgt002PreviewEngine({
-      client, model: 'gpt-x', policyVersion: 'agt002-preview-policy-v1', policyText: AGT002_PREVIEW_POLICY,
+      client, model: 'sonnet', policyVersion: 'agt002-preview-policy-v1', policyText: AGT002_PREVIEW_POLICY,
       timeoutMs: 5000, maxConcurrent: 1, dailyMaxRuns: 5, countDailyRuns: async () => 0,
     });
     const envelope = await engine.analyze({

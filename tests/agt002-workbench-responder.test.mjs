@@ -313,7 +313,7 @@ async function withBridge(codexClient, fn) {
 await withBridge(
   { run: async () => ({ content: JSON.stringify({ content_text: 'Faltan documentos.', source_links: [ids.sourceLink], missing_information: ['Certificado'], required_actions: ['Adjuntar certificado.'] }), usage: { input_tokens: 5, output_tokens: 7 }, rate_limit: null }) },
   async client => {
-    const responder = createAgt002WorkbenchResponder({ client, model: 'vigia-bridge-model', timeoutMs: 5000 });
+    const responder = createAgt002WorkbenchResponder({ client, model: 'sonnet', timeoutMs: 5000 });
     const envelope = await responder.respond(replyInput());
     assert.equal(envelope.kind, 'reply');
     validateAgt002WorkbenchResult(envelope, { input: replyInput() });
@@ -323,7 +323,7 @@ await withBridge(
 await withBridge(
   { run: async () => ({ content: JSON.stringify({ content_kind: 'markdown', content_text: '# V2', content_metadata: {}, source_links: [], missing_information: [], required_actions: [] }), usage: { input_tokens: 5, output_tokens: 7 }, rate_limit: null }) },
   async client => {
-    const responder = createAgt002WorkbenchResponder({ client, model: 'vigia-bridge-model', timeoutMs: 5000 });
+    const responder = createAgt002WorkbenchResponder({ client, model: 'sonnet', timeoutMs: 5000 });
     const envelope = await responder.respond(draftInput());
     assert.equal(envelope.kind, 'draft');
     assert.equal(envelope.artifact_id, ids.artifactLink);
@@ -334,7 +334,7 @@ await withBridge(
 await withBridge(
   { run: async () => ({ content: JSON.stringify({ proposal_type: 'pattern', proposed_rule: 'Regla propuesta.', scope: 'entity', valid_from: '2026-07-29T00:00:00.000Z', valid_until: null, source_links: [] }), usage: { input_tokens: 5, output_tokens: 7 }, rate_limit: null }) },
   async client => {
-    const responder = createAgt002WorkbenchResponder({ client, model: 'vigia-bridge-model', timeoutMs: 5000 });
+    const responder = createAgt002WorkbenchResponder({ client, model: 'sonnet', timeoutMs: 5000 });
     const envelope = await responder.respond(learningInput());
     assert.equal(envelope.kind, 'learning_proposal');
     validateAgt002WorkbenchResult(envelope, { input: learningInput() });
@@ -345,7 +345,7 @@ await withBridge(
 await withBridge(
   { run: async () => ({ content: 'this is not JSON at all', usage: { input_tokens: 1, output_tokens: 1 }, rate_limit: null }) },
   async client => {
-    const responder = createAgt002WorkbenchResponder({ client, model: 'vigia-bridge-model', timeoutMs: 5000 });
+    const responder = createAgt002WorkbenchResponder({ client, model: 'sonnet', timeoutMs: 5000 });
     await assert.rejects(() => responder.respond(replyInput()), error => error.code === 'AGT002_RESPONDER_INVALID_JSON');
   },
 );
@@ -354,7 +354,7 @@ await withBridge(
 await withBridge(
   { run: async () => ({ content: JSON.stringify({ content_text: 'x', source_links: [ids.forgedSource], missing_information: [], required_actions: [] }), usage: { input_tokens: 1, output_tokens: 1 }, rate_limit: null }) },
   async client => {
-    const responder = createAgt002WorkbenchResponder({ client, model: 'vigia-bridge-model', timeoutMs: 5000 });
+    const responder = createAgt002WorkbenchResponder({ client, model: 'sonnet', timeoutMs: 5000 });
     await assert.rejects(() => responder.respond(replyInput()), error => error.code === 'AGT002_RESPONDER_FORGED_SOURCE');
   },
 );
@@ -363,7 +363,7 @@ await withBridge(
 await withBridge(
   { run: async () => ({ content: JSON.stringify({ content_text: 'Firmaré el contrato en su nombre.', source_links: [], missing_information: [], required_actions: [] }), usage: { input_tokens: 1, output_tokens: 1 }, rate_limit: null }) },
   async client => {
-    const responder = createAgt002WorkbenchResponder({ client, model: 'vigia-bridge-model', timeoutMs: 5000 });
+    const responder = createAgt002WorkbenchResponder({ client, model: 'sonnet', timeoutMs: 5000 });
     await assert.rejects(() => responder.respond(replyInput()), error => error.code === 'AGT002_RESPONDER_INVALID_RESULT');
   },
 );
@@ -372,7 +372,7 @@ await withBridge(
 await withBridge(
   { run: () => new Promise(() => {}) },
   async client => {
-    const responder = createAgt002WorkbenchResponder({ client, model: 'vigia-bridge-model', timeoutMs: 1 });
+    const responder = createAgt002WorkbenchResponder({ client, model: 'sonnet', timeoutMs: 1 });
     await assert.rejects(() => responder.respond(replyInput()), error => /AGT002_CODEX_|AGT002_RESPONDER_/.test(error.code || ''));
   },
 );
