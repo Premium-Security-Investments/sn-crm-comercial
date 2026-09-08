@@ -15,8 +15,26 @@
 // elegible (o una unidad malformada, o un item_key resultante > 200 caracteres, o dos hallazgos que
 // colisionan en el mismo item_key) lanza y descarta el lote completo — nunca produce una salida
 // parcial silenciosa.
+//
+// Traspaso legado post-GO (issue #187): una corrida V3 anterior al bloque `result.evidence_coverage`
+// no puede alcanzar cobertura lista jamás, así que su superficie por eje queda `paused` para
+// siempre y el traspaso salía vacío incluso después de que una persona registrara el GO. Sólo
+// entonces —`humanGoGranted: true` (GO YA PERSISTIDO y vigente, verificado por el llamador
+// server-owned del recovery), cobertura ESTRICTAMENTE ausente (la propiedad `evidence_coverage` no
+// existe en `result`) y pausa exactamente por cobertura— el lote se deriva de los buckets
+// blockers/decision_questions/preparation del review genérico server-owned. Nunca se marca la
+// cobertura como lista, nunca se toca la superficie por eje ni la lectura pre-GO, y un
+// `evidence_coverage` presente —aunque sea `null`, `{}`, `false`, `0`, un string, o diga que no
+// está lista o declare omisiones— mantiene el fail-closed anterior.
+//
+// Post-GO la clasificación material/eje (`resolveAgt002RequirementMaterialPolicy`) NO participa:
+// es una ayuda de decisión PRE-GO sobre requisitos gobernados de la empresa, y los requisitos de un
+// pliego real (p. ej. `sreq:*` derivados del manifiesto del expediente) no están —ni deben estar—
+// en ese catálogo global. Con el GO ya persistido, los buckets server-owned del review
+// (blockers/decision_questions/preparation) son elegibles por sí mismos.
 
 import { deriveAgt002DecisionAnalysis } from '../agt002-decision-axis-analysis.js';
+import { deriveAgt002GenericDecisionReview } from '../agt002-generic-decision-review.js';
 import { buildActionableReviewIntegralUnitSource } from '../agt002-actionable-review-canonical.js';
 
 export const AGT002_DOSSIER_HANDOFF_ORIGIN = 'seed_agt002_post_go';
@@ -25,6 +43,17 @@ export const AGT002_DOSSIER_HANDOFF_ITEM_KEY_PREFIX = 'agt002_post_go:';
 export const AGT002_DOSSIER_HANDOFF_ITEM_KEY_MAX_LENGTH = 200;
 
 const ACTION_PRIORITY_RANK = Object.freeze({ critical: 0, high: 1, medium: 2, low: 3 });
+
+// Única pausa de la superficie por eje que un GO ya persistido puede sortear en una corrida legada.
+// Cualquier otra (`analysis_not_current`, `no_decision_review`, `material_policy_unclassified`)
+// sigue siendo fail-closed: no describe una cobertura que la corrida nunca pudo escribir, sino un
+// análisis que no es apto para traspasar.
+const LEGACY_POST_GO_BYPASSABLE_PAUSED_REASON = 'coverage_not_decision_ready';
+
+// Post-GO, la clasificación material/eje (una ayuda de decisión PRE-GO) ya no SELECCIONA: material u
+// ordinario, todo hallazgo abierto del review server-owned es un pendiente humano del expediente.
+// Sólo se excluyen `supported` y `not_applicable`, que no exigen trabajo de nadie.
+const LEGACY_POST_GO_ELIGIBLE_REVIEWED_STATUSES = Object.freeze(['blocker', 'decision_question', 'preparation']);
 
 function isRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -62,6 +91,39 @@ function collectCandidateFindings(decisionAnalysis) {
     .filter(finding => finding.reviewed_status === 'preparation');
 
   return [...axisFindings, ...preparationFindings];
+}
+
+// Cobertura ESTRICTAMENTE ausente: la corrida nunca escribió la propiedad `evidence_coverage`
+// (exportada: el llamador server-owned del recovery post-GO decide con esta MISMA regla si una
+// decisión GO sin `analysis_run_id` cae en el caso legado del issue #187; nunca se reimplementa)
+// (propiedad propia inexistente). Cualquier otro valor —incluido `null`, `{}`, `false`, `0`, un
+// string, o un bloque que dice `decision_ready:false`— es PRESENCIA: hay una lectura de cobertura
+// (aunque sea nula o inservible) y dice que no está lista, así que nunca habilita el traspaso
+// legado.
+export function evidenceCoverageStrictlyAbsent(result) {
+  if (!isRecord(result)) return false;
+  return !Object.prototype.hasOwnProperty.call(result, 'evidence_coverage');
+}
+
+// Omisiones materiales declaradas por el propio sobre V3: el análisis no vio todos sus insumos, de
+// modo que el lote sería incompleto sin que nadie lo advierta. Fail-closed: sin traspaso legado.
+function declaresMaterialOmissions(integralAnalysis) {
+  return isRecord(integralAnalysis)
+    && isRecord(integralAnalysis.coverage)
+    && integralAnalysis.coverage.material_omissions === true;
+}
+
+// Candidatos del traspaso legado: los tres buckets accionables del review genérico server-owned,
+// re-derivado aquí desde el análisis canónico. Nunca lee `result.decision_review` (JSON no confiable
+// del modelo) ni infiere nada por texto. La materialidad no interviene: post-GO no selecciona, y los
+// requisitos del pliego (`sreq:*`) viven en el manifiesto del expediente, no en el catálogo global
+// de requisitos gobernados de la empresa.
+function legacyPostGoCandidateFindings(currentAnalysis, result) {
+  const review = deriveAgt002GenericDecisionReview(currentAnalysis, result);
+  if (!isRecord(review)) return null;
+  return [review.blockers, review.decision_questions, review.preparation]
+    .flatMap(bucket => (Array.isArray(bucket) ? bucket : []))
+    .filter(finding => isRecord(finding) && LEGACY_POST_GO_ELIGIBLE_REVIEWED_STATUSES.includes(finding.reviewed_status));
 }
 
 // Unión exacta y cerrada: unidad V3 `tender_requirement`, mismo requirement_id, closure.status
@@ -159,6 +221,16 @@ function buildHandoffItem(finding, units) {
  * `decisionAnalysis.coverage.decision_ready === true`; en cualquier otro caso devuelve
  * `{ ready: false, items: [] }` sin lanzar (estado operativo normal, no un error).
  *
+ * `humanGoGranted: true` declara que el llamador server-owned ya verificó una decisión GO YA
+ * PERSISTIDA y vigente (issue #187). Es la ruta de recovery (`syncTenderDossierFromAgt002`) la única
+ * que lo pasa: al REGISTRAR una decisión GO el bypass no aplica, porque ahí el GO todavía no está
+ * persistido y un lote legado sólo podría abortar el registro de la decisión. Sólo en la primera
+ * forma de entrada, y sólo si además la propiedad `result.evidence_coverage` no existe (ni siquiera
+ * como `null`, `{}`, `false`, `0` o string) y la pausa es exactamente por cobertura, el lote se
+ * deriva del review genérico server-owned en lugar de la superficie por eje. Ese bypass nunca marca
+ * la cobertura como lista ni altera la superficie por eje que lee la UI pre-GO: sólo decide de dónde
+ * salen los candidatos de ESTE lote. Sin ese hecho, el comportamiento es idéntico al anterior.
+ *
  * Ante una unión inválida (unidad ausente/duplicada/malformada, item_key > 200 caracteres o dos
  * hallazgos que colisionan en el mismo item_key) lanza y descarta el lote completo.
  */
@@ -167,19 +239,27 @@ export function deriveAgt002DossierHandoff(input) {
 
   let decisionAnalysis;
   let integralAnalysis;
+  let legacyPostGoFindings = null;
   if (Object.hasOwn(input, 'decisionAnalysis')) {
     decisionAnalysis = input.decisionAnalysis;
     integralAnalysis = input.integralAnalysis;
   } else {
     decisionAnalysis = deriveAgt002DecisionAnalysis(input.currentAnalysis, input.result, input.questionResponses);
     integralAnalysis = isRecord(input.result) ? input.result.integral_analysis : undefined;
+    if (input.humanGoGranted === true
+      && decisionAnalysis.global_state === 'paused'
+      && decisionAnalysis.paused_reason === LEGACY_POST_GO_BYPASSABLE_PAUSED_REASON
+      && evidenceCoverageStrictlyAbsent(input.result)
+      && !declaresMaterialOmissions(integralAnalysis)) {
+      legacyPostGoFindings = legacyPostGoCandidateFindings(input.currentAnalysis, input.result);
+    }
   }
 
   const coverageReady = isRecord(decisionAnalysis)
     && decisionAnalysis.global_state === 'ready_for_human_review'
     && isRecord(decisionAnalysis.coverage)
     && decisionAnalysis.coverage.decision_ready === true;
-  if (!coverageReady) {
+  if (!coverageReady && !legacyPostGoFindings) {
     return Object.freeze({ ready: false, items: Object.freeze([]) });
   }
 
@@ -187,8 +267,9 @@ export function deriveAgt002DossierHandoff(input) {
     ? integralAnalysis.analysis_units
     : [];
 
+  const candidates = legacyPostGoFindings ?? collectCandidateFindings(decisionAnalysis);
   const seenItemKeys = new Set();
-  const items = collectCandidateFindings(decisionAnalysis).map((finding) => {
+  const items = candidates.map((finding) => {
     const item = buildHandoffItem(finding, units);
     if (seenItemKeys.has(item.item_key)) fail(`item_key duplicado entre hallazgos: "${item.item_key}"`);
     seenItemKeys.add(item.item_key);

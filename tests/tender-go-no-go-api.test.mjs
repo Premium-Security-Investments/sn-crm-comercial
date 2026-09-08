@@ -365,6 +365,94 @@ function v3Run(result, overrides = {}) {
   assert.equal(observed.rpc[0].args.p_agt002_items, null, 'a V3 analysis whose coverage is not decision_ready must send null');
 }
 
+// --- issue #187: corrida V3 LEGADA (sin `result.evidence_coverage`) al REGISTRAR un GO nuevo ---
+//
+// El bypass legado está reservado a `syncTenderDossierFromAgt002`, donde el GO ya está persistido y
+// vigente. Registrar la decisión nunca lo activa: un GO nuevo sobre una corrida legada se registra
+// igual, con `p_agt002_items: null`, y el traspaso se obtiene después por la ruta de recovery (que
+// deriva el lote o falla 409 explícitamente). Así una unión legada inválida nunca puede abortar el
+// registro de una decisión empresarial que la persona sí tomó.
+
+// Idéntica a `v3ReadyResult`, pero sin la clave `evidence_coverage`: las corridas V3 anteriores a
+// ese bloque nunca lo escribieron, así que su cobertura no puede quedar lista jamás.
+function v3LegacyResult(unitOverrides = {}, coverageOverrides = {}) {
+  const unit = { ...V3_UNIT_FINANCIAL, ...unitOverrides };
+  return {
+    integral_analysis: {
+      contract_version: 'agt002-integral-analysis-v3',
+      coverage: {
+        analyzed_requirement_ids: [unit.requirement_id],
+        expected_requirement_ids: [unit.requirement_id],
+        ...coverageOverrides,
+      },
+      analysis_units: [unit],
+    },
+  };
+}
+
+{
+  // GO nuevo sobre la corrida legada anclada: la decisión se registra con normalidad y SIN lote —
+  // el bypass legado no se activa al registrar, sólo en el recovery de un GO ya persistido.
+  const { database, observed } = fakeDatabase({ runs: [v3Run(v3LegacyResult())] });
+  await decide(database);
+  assert.equal(observed.rpc.length, 1, 'el GO nuevo sobre una corrida legada se registra igual');
+  assert.equal(observed.rpc[0].args.p_analysis_run_id, ANALYSIS_RUN_ID, 'el anclaje del run no cambia');
+  assert.equal(
+    observed.rpc[0].args.p_agt002_items, null,
+    'registrar un GO nuevo nunca deriva el lote legado: eso es exclusivo del recovery',
+  );
+}
+
+{
+  // Unión legada inválida (unidad que nunca puede unir): sin bypass al registrar, el selector ni
+  // siquiera llega a derivar candidatos legados, así que NO lanza y la decisión GO se registra.
+  const { database, observed } = fakeDatabase({ runs: [v3Run(v3LegacyResult({ unit_kind: 'strategic_consideration' }))] });
+  await decide(database);
+  assert.equal(observed.rpc.length, 1, 'una unión legada inválida no puede bloquear el registro del GO');
+  assert.equal(observed.rpc[0].args.p_agt002_items, null, 'y tampoco puede producir un lote parcial');
+}
+
+{
+  // Forma de producción (requisito DEL PLIEGO con prefijo `sreq:`, ajeno al catálogo global de
+  // materialidad): idem, la decisión se registra sin lote. El bypass legado vive únicamente en el
+  // recovery, donde el GO ya está persistido; aquí nunca se declara `humanGoGranted`.
+  const { database, observed } = fakeDatabase({ runs: [v3Run(v3LegacyResult({ requirement_id: 'sreq:001' }))] });
+  await decide(database);
+  assert.equal(observed.rpc.length, 1);
+  assert.equal(observed.rpc[0].args.p_agt002_items, null, 'registrar el GO nunca activa el bypass legado');
+}
+
+{
+  // NO-GO sobre la misma corrida legada: sigue fail-closed, sin lote.
+  const { database, observed } = fakeDatabase({ runs: [v3Run(v3LegacyResult())] });
+  await decide(database, { decision: 'no_go', justification: 'Riesgo no aceptable' });
+  assert.equal(observed.rpc.length, 1);
+  assert.equal(observed.rpc[0].args.p_agt002_items, null, 'NO-GO nunca traspasa una corrida legada');
+}
+
+{
+  // La corrida legada no canónica sigue sin traspasar: ninguna otra puerta se relaja.
+  const { database, observed } = fakeDatabase({ runs: [v3Run(v3LegacyResult(), { canonical: false })] });
+  await decide(database);
+  assert.equal(observed.rpc[0].args.p_agt002_items, null, 'una corrida legada no canónica nunca traspasa');
+}
+
+{
+  // La corrida legada que no es exactamente la que la decisión ancla tampoco traspasa.
+  const otherRun = '99999999-3333-4333-8333-33333333333c';
+  const { database, observed } = fakeDatabase({ runs: [v3Run(v3LegacyResult(), { id: otherRun })] });
+  await decide(database);
+  assert.equal(observed.rpc[0].args.p_analysis_run_id, null);
+  assert.equal(observed.rpc[0].args.p_agt002_items, null, 'una corrida legada no anclada nunca traspasa');
+}
+
+{
+  // Omisiones materiales declaradas por el propio sobre V3: fail-closed también al registrar el GO.
+  const { database, observed } = fakeDatabase({ runs: [v3Run(v3LegacyResult({}, { material_omissions: true }))] });
+  await decide(database);
+  assert.equal(observed.rpc[0].args.p_agt002_items, null, 'un sobre V3 con omisiones materiales nunca traspasa');
+}
+
 {
   // Malformed/ambiguous union: a finding-eligible unit whose unit_kind is not tender_requirement
   // can never satisfy deriveAgt002DossierHandoff's union — this must fail closed and MUST NOT

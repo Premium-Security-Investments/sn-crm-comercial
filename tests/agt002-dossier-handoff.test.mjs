@@ -7,6 +7,7 @@ import {
   AGT002_DOSSIER_HANDOFF_ITEM_TYPE,
 } from '../server/agt002-dossier-handoff.js';
 import { buildActionableReviewIntegralUnitSource } from '../agt002-actionable-review-canonical.js';
+import { deriveAgt002GenericDecisionReview } from '../agt002-generic-decision-review.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -100,6 +101,65 @@ function resultFixture(units, evidenceCoverage = COVERAGE_READY) {
       analysis_units: units,
     },
     evidence_coverage: evidenceCoverage,
+  };
+}
+
+// Corrida V3 LEGADA con la FORMA DE PRODUCCIÓN observada: estructuralmente completa y elegible para
+// el review genérico server-owned, pero anterior al bloque `result.evidence_coverage` — la clave
+// nunca se escribió. Sus cinco requisitos llevan el prefijo `sreq:` del manifiesto del expediente:
+// son requisitos DEL PLIEGO, no requisitos gobernados de la empresa, así que no están —ni deben
+// estar— en el catálogo global de materialidad. Post-GO eso es irrelevante: la clasificación
+// material/eje es una ayuda de decisión PRE-GO y no selecciona nada aquí. Los títulos son neutros a
+// propósito: el lote nunca se deriva del texto del pliego.
+const LEGACY_REQUIREMENT_IDS = Object.freeze([
+  'sreq:001',
+  'sreq:002',
+  'sreq:003',
+  'sreq:004',
+  'sreq:005',
+]);
+
+function legacyUnitFixture(requirementId, index, overrides = {}) {
+  const unitId = `unit-legacy-${index + 1}`;
+  return fullUnitFixture({
+    unit_id: unitId,
+    requirement_id: requirementId,
+    sequence: index + 1,
+    title: `Requisito del pliego ${index + 1}`,
+    actions: [{
+      action_id: `action-legacy-${index + 1}`,
+      action_type: 'verify_validity',
+      summary: `Revisar el requisito del pliego ${index + 1} con la persona responsable.`,
+      priority: 'critical',
+      suggested_role: 'legal',
+      basis_unit_id: unitId,
+      external_side_effect: false,
+    }],
+    ...overrides,
+  });
+}
+
+function legacyUnits() {
+  return LEGACY_REQUIREMENT_IDS.map((requirementId, index) => legacyUnitFixture(requirementId, index));
+}
+
+// Igual que `resultFixture`, pero SIN la clave `evidence_coverage`: ésa es exactamente la corrida
+// legada del issue #187. `extraResultKeys` permite añadir claves no confiables del resultado (p.ej.
+// un `decision_review` forjado por el modelo) sin tocar el resto del fixture.
+function legacyResultFixture(units, extraResultKeys = {}) {
+  const requirementIds = units.map(unit => unit.requirement_id);
+  return {
+    integral_analysis: {
+      contract_version: 'agt002-integral-analysis-v3',
+      coverage: {
+        analyzed_requirement_ids: requirementIds,
+        expected_requirement_ids: requirementIds,
+        material_omissions: false,
+        omission_reasons: [],
+      },
+      analysis_units: units,
+    },
+    ...extraResultKeys,
   };
 }
 
@@ -476,4 +536,310 @@ test('24. la salida es inmutable (congelada)', () => {
   const out = deriveAgt002DossierHandoff({ decisionAnalysis, integralAnalysis: { analysis_units: [unit] } });
   assert.throws(() => { out.items.push({}); }, TypeError);
   assert.throws(() => { out.items[0].status = 'pendiente'; }, TypeError);
+});
+
+// ---------------------------------------------------------------------------
+// Issue #187 — corrida V3 legada SIN `result.evidence_coverage` bajo un GO YA PERSISTIDO
+//
+// Una corrida anterior al bloque de cobertura no puede alcanzar `decision_ready` jamás: la
+// superficie por eje queda `paused` para siempre y el traspaso salía vacío incluso después de que
+// una persona registrara el GO. Sólo con `humanGoGranted: true` (lo declara únicamente la ruta de
+// recovery, donde el GO ya está persistido y vigente), cobertura ESTRICTAMENTE ausente y pausa
+// exactamente por cobertura, el lote se deriva de los buckets blockers/decision_questions/
+// preparation del review genérico server-owned. Todo lo demás sigue fail-closed.
+// ---------------------------------------------------------------------------
+
+test('25. legado sin GO ya persistido: fail-closed, sigue devolviendo 0 pendientes', () => {
+  const units = legacyUnits();
+  const input = { currentAnalysis: currentAnalysisFixture(), result: legacyResultFixture(units), questionResponses: [] };
+
+  assert.deepEqual(deriveAgt002DossierHandoff(input), { ready: false, items: [] });
+  assert.deepEqual(deriveAgt002DossierHandoff({ ...input, humanGoGranted: false }), { ready: false, items: [] });
+  assert.deepEqual(deriveAgt002DossierHandoff({ ...input, humanGoGranted: 'go' }), { ready: false, items: [] });
+  assert.deepEqual(deriveAgt002DossierHandoff({ ...input, humanGoGranted: 1 }), { ready: false, items: [] });
+});
+
+test('26. legado con GO ya persistido: las 5 unidades abiertas del pliego producen los 5 pendientes 1:1', () => {
+  const units = legacyUnits();
+  const out = deriveAgt002DossierHandoff({
+    currentAnalysis: currentAnalysisFixture(),
+    result: legacyResultFixture(units),
+    questionResponses: [],
+    humanGoGranted: true,
+  });
+
+  assert.equal(out.ready, true);
+  assert.equal(out.items.length, 5);
+  assert.equal(out.items.length, LEGACY_REQUIREMENT_IDS.length);
+  assert.deepEqual(
+    out.items.map(item => item.item_key),
+    LEGACY_REQUIREMENT_IDS.map(requirementId => `agt002_post_go:${requirementId}`),
+  );
+});
+
+test('27. cada pendiente legado conserva origen, tipo, estado humano y la identidad canónica de su unidad', () => {
+  const units = legacyUnits();
+  const out = deriveAgt002DossierHandoff({
+    currentAnalysis: currentAnalysisFixture(),
+    result: legacyResultFixture(units),
+    questionResponses: [],
+    humanGoGranted: true,
+  });
+
+  out.items.forEach((item, index) => {
+    const unit = units[index];
+    const expected = buildActionableReviewIntegralUnitSource(unit);
+    assert.equal(item.origin, AGT002_DOSSIER_HANDOFF_ORIGIN);
+    assert.equal(item.item_type, AGT002_DOSSIER_HANDOFF_ITEM_TYPE);
+    assert.equal(item.required, true);
+    assert.equal(item.status, 'pendiente');
+    assert.equal(item.presentation.title, unit.title);
+    assert.equal(item.presentation.instruction, unit.actions[0].summary);
+    assert.deepEqual(item.source, {
+      source_kind: 'integral_unit',
+      source_id: unit.unit_id,
+      requirement_id: unit.requirement_id,
+      source_hash: expected.sourceHash,
+    });
+  });
+});
+
+test('28. una unidad legada con impedimento se traspasa como bloqueado (el review genérico nunca se autocrea un blocker)', () => {
+  const units = legacyUnits();
+  units[0] = legacyUnitFixture(LEGACY_REQUIREMENT_IDS[0], 0, {
+    blocking: { effect: 'blocker', curability: 'no_subsanable', reason: 'Impedimento confirmado por la entidad.' },
+  });
+  const out = deriveAgt002DossierHandoff({
+    currentAnalysis: currentAnalysisFixture(),
+    result: legacyResultFixture(units),
+    questionResponses: [],
+    humanGoGranted: true,
+  });
+
+  assert.equal(out.items.length, 5);
+  assert.equal(out.items[0].status, 'bloqueado');
+  assert.deepEqual(out.items.slice(1).map(item => item.status), ['pendiente', 'pendiente', 'pendiente', 'pendiente']);
+});
+
+test('29. legado con GO: supported y not_applicable nunca se traspasan', () => {
+  const units = legacyUnits();
+  units[1] = legacyUnitFixture(LEGACY_REQUIREMENT_IDS[1], 1, {
+    assessment_mode: 'assessed',
+    conclusion: { status: 'supported_with_evidence', confidence: 'high', summary: 'Acreditado con evidencia.' },
+    blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin impedimento.' },
+    evidence_state: { applicability: 'applicable', compliance: 'supported_pending_human_review' },
+    missing_evidence: [],
+    closure: { status: 'evidence_satisfied', condition: 'Ya resuelto.', evidence_required: [] },
+    human_validation: { required: false, status: 'pending', reason: 'No requiere validación humana.' },
+  });
+  units[3] = legacyUnitFixture(LEGACY_REQUIREMENT_IDS[3], 3, {
+    assessment_mode: 'assessed',
+    conclusion: { status: 'not_applicable', confidence: 'high', summary: 'No aplica a esta modalidad.' },
+    blocking: { effect: 'non_blocking', curability: 'not_applicable', reason: 'Sin impedimento.' },
+    evidence_state: { applicability: 'not_applicable', compliance: 'not_applicable' },
+    missing_evidence: [],
+    human_validation: { required: false, status: 'pending', reason: 'No requiere validación humana.' },
+  });
+
+  const out = deriveAgt002DossierHandoff({
+    currentAnalysis: currentAnalysisFixture(),
+    result: legacyResultFixture(units),
+    questionResponses: [],
+    humanGoGranted: true,
+  });
+
+  assert.equal(out.ready, true);
+  assert.deepEqual(out.items.map(item => item.source.requirement_id), [
+    LEGACY_REQUIREMENT_IDS[0],
+    LEGACY_REQUIREMENT_IDS[2],
+    LEGACY_REQUIREMENT_IDS[4],
+  ]);
+});
+
+test('30. cobertura PRESENTE pero no lista nunca habilita el bypass, ni siquiera con GO humano explícito', () => {
+  const units = legacyUnits();
+  const result = { ...legacyResultFixture(units), evidence_coverage: COVERAGE_PAUSED };
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+  assert.deepEqual(out, { ready: false, items: [] });
+});
+
+test('31. cualquier evidence_coverage presente (aunque vacío o inservible) es presencia, no ausencia', () => {
+  const units = legacyUnits();
+  for (const evidenceCoverage of [
+    null,
+    {},
+    { tender_requirement_inventory: null },
+    { tender_semantic_manifest: { semantic_manifest_version: 'tender_semantic_manifest.v1', decision_ready: false } },
+    { tender_requirement_inventory: { inventory_version: 'tender_requirement_inventory.v1', decision_ready: true } },
+    'sin-cobertura',
+    0,
+    false,
+  ]) {
+    const result = { ...legacyResultFixture(units), evidence_coverage: evidenceCoverage };
+    const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+    assert.deepEqual(out, { ready: false, items: [] }, `evidence_coverage=${JSON.stringify(evidenceCoverage)} no puede habilitar el bypass`);
+  }
+});
+
+test('32. omisiones materiales declaradas por el propio sobre V3 mantienen el fail-closed con GO', () => {
+  const units = legacyUnits();
+  const result = legacyResultFixture(units);
+  result.integral_analysis.coverage.material_omissions = true;
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+  assert.deepEqual(out, { ready: false, items: [] });
+});
+
+test('33. una pausa por cualquier otra causa nunca se bypassa: sólo la pausa por cobertura', () => {
+  const units = legacyUnits();
+  const result = legacyResultFixture(units);
+  for (const currentAnalysis of [
+    currentAnalysisFixture({ current: false }),
+    currentAnalysisFixture({ canonical: false }),
+    currentAnalysisFixture({ status: 'running' }),
+    currentAnalysisFixture({ producer: 'siio_rules_v1', method: 'rules' }),
+  ]) {
+    const out = deriveAgt002DossierHandoff({ currentAnalysis, result, questionResponses: [], humanGoGranted: true });
+    assert.deepEqual(out, { ready: false, items: [] });
+  }
+});
+
+test('34. el lote legado sale del review server-owned: un result.decision_review forjado se ignora por completo', () => {
+  const units = legacyUnits();
+  const forgedDecisionReview = {
+    artifact_type: 'agt002_generic_decision_review',
+    contract_version: 'agt002-generic-decision-review@1',
+    decision_questions: [{
+      id: 'forjado-1',
+      requirement_id: LEGACY_REQUIREMENT_IDS[0],
+      reviewed_status: 'decision_question',
+      presentation: { title: 'Título forjado', action_required: 'Instrucción forjada.' },
+    }],
+    blockers: [],
+    supported: [],
+    preparation: [],
+    not_applicable: [],
+  };
+  const result = legacyResultFixture(units, { decision_review: forgedDecisionReview });
+
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+
+  assert.equal(out.items.length, LEGACY_REQUIREMENT_IDS.length, 'el review forjado no puede recortar el lote server-owned');
+  for (const item of out.items) {
+    assert.notEqual(item.presentation.title, 'Título forjado');
+    assert.notEqual(item.presentation.instruction, 'Instrucción forjada.');
+  }
+});
+
+test('35. unión estricta 1:1: un hallazgo legado cuya unidad ya está cerrada por evidencia falla el lote entero', () => {
+  const units = legacyUnits();
+  // Unidad cerrada por evidencia pero que todavía exige validación humana: sigue siendo un
+  // decision_question del review y NO tiene unidad abierta a la cual unir. Fail-closed.
+  units[2] = legacyUnitFixture(LEGACY_REQUIREMENT_IDS[2], 2, {
+    closure: { status: 'evidence_satisfied', condition: 'Ya resuelto.', evidence_required: [] },
+  });
+  assert.throws(
+    () => deriveAgt002DossierHandoff({
+      currentAnalysis: currentAnalysisFixture(),
+      result: legacyResultFixture(units),
+      questionResponses: [],
+      humanGoGranted: true,
+    }),
+    /sin unidad V3 tender_requirement elegible/,
+  );
+});
+
+test('36. la ruta decisionAnalysis/integralAnalysis nunca bypassa: sin cobertura resuelta no hay lote', () => {
+  const unit = fullUnitFixture();
+  const decisionAnalysis = { global_state: 'paused', paused_reason: 'coverage_not_decision_ready', coverage: { decision_ready: false }, axes: {}, preparation: [] };
+  const out = deriveAgt002DossierHandoff({ decisionAnalysis, integralAnalysis: { analysis_units: [unit] }, humanGoGranted: true });
+  assert.deepEqual(out, { ready: false, items: [] });
+});
+
+test('37. idempotencia y procedencia: el lote legado es estable y usa las mismas identidades que la ruta con cobertura lista', () => {
+  const units = legacyUnits();
+  const legacyInput = { currentAnalysis: currentAnalysisFixture(), result: legacyResultFixture(units), questionResponses: [], humanGoGranted: true };
+  const first = deriveAgt002DossierHandoff(legacyInput);
+  const second = deriveAgt002DossierHandoff(legacyInput);
+  assert.deepEqual(second, first, 'dos derivaciones del mismo análisis producen exactamente el mismo lote');
+
+  // La misma unidad, una vez con cobertura escrita y lista y otra sin ella, siembra exactamente el
+  // mismo pendiente: el bypass legado no puede fabricar una identidad distinta de la que sembraría
+  // la ruta normal (si lo hiciera, un re-análisis posterior duplicaría el pendiente humano).
+  const governedUnit = fullUnitFixture();
+  const legacyGoverned = deriveAgt002DossierHandoff({
+    currentAnalysis: currentAnalysisFixture(),
+    result: legacyResultFixture([governedUnit]),
+    questionResponses: [],
+    humanGoGranted: true,
+  });
+  const coveredGoverned = deriveAgt002DossierHandoff({
+    currentAnalysis: currentAnalysisFixture(),
+    result: resultFixture([governedUnit]),
+    questionResponses: [],
+  });
+  assert.equal(legacyGoverned.ready, true);
+  assert.equal(coveredGoverned.ready, true);
+  assert.deepEqual(legacyGoverned.items, coveredGoverned.items);
+});
+
+test('38. el bypass legado no muta las entradas y su salida es inmutable', () => {
+  const units = legacyUnits();
+  const currentAnalysis = deepFreezeFixture(currentAnalysisFixture());
+  const result = deepFreezeFixture(legacyResultFixture(units));
+  const before = JSON.stringify({ currentAnalysis, result });
+
+  const out = deriveAgt002DossierHandoff({ currentAnalysis, result, questionResponses: [], humanGoGranted: true });
+
+  assert.equal(out.ready, true);
+  assert.equal(JSON.stringify({ currentAnalysis, result }), before);
+  assert.throws(() => { out.items.push({}); }, TypeError);
+  assert.throws(() => { out.items[0].status = 'bloqueado'; }, TypeError);
+});
+
+// ---------------------------------------------------------------------------
+// Forma de PRODUCCIÓN del caso legado: cinco requisitos del pliego (`sreq:*`)
+//
+// Los requisitos de un pliego real viven en el manifiesto del expediente y NO están —ni deben
+// estar— en el catálogo global de materialidad por requisito gobernado de la empresa. Post-GO eso
+// no puede recortar nada: la clasificación material/eje es una ayuda de decisión PRE-GO y, con el
+// GO ya persistido, los tres buckets server-owned del review (blockers/decision_questions/
+// preparation) son elegibles por sí mismos. Un gate material aquí dejaría el expediente real sin
+// traspaso posible para siempre, que es exactamente el síntoma del issue #187.
+// ---------------------------------------------------------------------------
+
+test('39. forma producción: el review genérico server-owned produce exactamente 5 decision_questions', () => {
+  const units = legacyUnits();
+  const review = deriveAgt002GenericDecisionReview(currentAnalysisFixture(), legacyResultFixture(units));
+
+  assert.ok(review, 'la corrida legada es estructuralmente elegible para el review genérico');
+  assert.equal(review.decision_questions.length, 5);
+  assert.deepEqual(review.decision_questions.map(finding => finding.requirement_id), [...LEGACY_REQUIREMENT_IDS]);
+  assert.deepEqual([review.blockers.length, review.supported.length, review.preparation.length, review.not_applicable.length], [0, 0, 0, 0]);
+  assert.equal(review.decision_ready, false, 'con preguntas abiertas la cobertura del review nunca se declara lista');
+});
+
+test('40. forma producción: los 5 requisitos `sreq:` del pliego se traspasan 1:1 sin depender del catálogo global de materialidad', () => {
+  const units = legacyUnits();
+  const out = deriveAgt002DossierHandoff({
+    currentAnalysis: currentAnalysisFixture(),
+    result: legacyResultFixture(units),
+    questionResponses: [],
+    humanGoGranted: true,
+  });
+
+  assert.equal(out.ready, true);
+  assert.equal(out.items.length, 5, 'ninguna de las cinco unidades abiertas puede quedarse fuera del lote');
+  assert.deepEqual(
+    out.items.map(item => item.item_key),
+    ['sreq:001', 'sreq:002', 'sreq:003', 'sreq:004', 'sreq:005'].map(id => `agt002_post_go:${id}`),
+  );
+  out.items.forEach((item, index) => {
+    const unit = units[index];
+    assert.equal(item.source.source_id, unit.unit_id, 'identidad 1:1 con la unidad V3 de origen');
+    assert.equal(item.source.requirement_id, unit.requirement_id);
+    assert.equal(item.source.source_hash, buildActionableReviewIntegralUnitSource(unit).sourceHash);
+    assert.equal(item.status, 'pendiente');
+    assert.equal(item.presentation.title, unit.title);
+    assert.equal(item.presentation.instruction, unit.actions[0].summary);
+  });
 });

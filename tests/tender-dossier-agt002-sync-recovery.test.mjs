@@ -4,9 +4,12 @@ import { syncTenderDossierFromAgt002 } from '../tender-go-no-go-rpc.js';
 
 // Fase 3B: recovery server-owned de psi_sync_agt002_post_go_checklist para una decisión GO ya
 // registrada. A diferencia de deriveAgt002ItemsForGoDecision (que devuelve null como no-op
-// legítimo al registrar una decisión NO-GO o un análisis todavía no listo), esta ruta es
-// exclusivamente invocada por un humano que pide sincronizar un GO ya vigente: cada uno de esos
-// mismos estados debe fallar cerrado (409), nunca degradar en silencio.
+// legítimo al registrar una decisión NO-GO, un análisis todavía no listo o una corrida legada),
+// esta ruta es exclusivamente invocada por un humano que pide sincronizar un GO ya vigente: cada
+// uno de esos mismos estados debe fallar cerrado (409), nunca degradar en silencio.
+//
+// Es además la ÚNICA ruta que declara `humanGoGranted: true` al selector, porque aquí el GO ya está
+// persistido y vigente: el bypass legado del issue #187 no existe al registrar la decisión.
 
 const OPPORTUNITY_ID = '11111111-1111-4111-8111-111111111111';
 const TENDER_ID = '22222222-2222-4222-8222-222222222222';
@@ -166,6 +169,19 @@ function sync(database, input = {}, profile = directorProfile) {
   return syncTenderDossierFromAgt002(database, { opportunity_id: OPPORTUNITY_ID, ...input }, profile);
 }
 
+// Caso REAL de Cali (issue #187): el GO vigente quedó registrado SIN analysis_run_id.
+function unanchoredGoHistory() {
+  return [{
+    id: DECISION_ID,
+    opportunity_id: OPPORTUNITY_ID,
+    tender_id: TENDER_ID,
+    decision: 'go',
+    analysis_run_id: null,
+    supersedes_decision_id: null,
+    decided_at: '2026-07-10T00:00:00.000Z',
+  }];
+}
+
 // --- autorización antes de acceso a base de datos ---
 
 for (const profile of [
@@ -262,11 +278,11 @@ for (const forgedInput of [
   assert.equal(observed.rpc.length, 0, 'una decisión GO ya superada nunca puede sincronizar');
 }
 
-// --- GO vigente sin análisis anclado: fail-closed 409 ---
+// --- GO vigente sin análisis anclado sobre una corrida MODERNA (con evidence_coverage): el caso
+// legado estricto del issue #187 no aplica, así que sigue siendo fail-closed 409 ---
 
 {
-  const history = [{ id: DECISION_ID, opportunity_id: OPPORTUNITY_ID, tender_id: TENDER_ID, decision: 'go', analysis_run_id: null, supersedes_decision_id: null, decided_at: '2026-07-10T00:00:00.000Z' }];
-  const { database, observed } = fakeDatabase({ history });
+  const { database, observed } = fakeDatabase({ history: unanchoredGoHistory() });
   await assert.rejects(() => sync(database), error => error?.status === 409 && /análisis anclado/i.test(error.message));
   assert.equal(observed.rpc.length, 0);
 }
@@ -330,6 +346,299 @@ for (const forgedInput of [
     }],
   });
   await assert.rejects(() => sync(database), error => error?.status === 409 && /listo para el traspaso/i.test(error.message));
+  assert.equal(observed.rpc.length, 0);
+}
+
+// --- issue #187: recovery de una corrida V3 LEGADA (sin `result.evidence_coverage`) ---
+
+// Idéntica a `v3ReadyResult` pero sin la clave `evidence_coverage`: la corrida es anterior a ese
+// bloque, así que su cobertura no puede quedar lista jamás.
+function v3LegacyResult(coverageOverrides = {}) {
+  return {
+    integral_analysis: {
+      contract_version: 'agt002-integral-analysis-v3',
+      coverage: {
+        analyzed_requirement_ids: [V3_UNIT_FINANCIAL.requirement_id],
+        expected_requirement_ids: [V3_UNIT_FINANCIAL.requirement_id],
+        ...coverageOverrides,
+      },
+      analysis_units: [V3_UNIT_FINANCIAL],
+    },
+  };
+}
+
+// Forma de PRODUCCIÓN del expediente legado: cinco requisitos DEL PLIEGO con el prefijo `sreq:` del
+// manifiesto del expediente, cinco unidades V3 abiertas y, por tanto, cinco decision_questions
+// genéricas. Ninguno de esos ids está —ni debe estar— en el catálogo global de materialidad por
+// requisito gobernado de la empresa: el traspaso post-GO no depende de esa clasificación PRE-GO.
+// Los títulos son neutros a propósito: el lote nunca se deriva del texto del pliego.
+const PRODUCTION_REQUIREMENT_IDS = Object.freeze(['sreq:001', 'sreq:002', 'sreq:003', 'sreq:004', 'sreq:005']);
+
+function productionUnit(requirementId, index) {
+  const unitId = `unit-pliego-${index + 1}`;
+  return {
+    ...V3_UNIT_FINANCIAL,
+    unit_id: unitId,
+    requirement_id: requirementId,
+    sequence: index + 1,
+    title: `Requisito del pliego ${index + 1}`,
+    actions: [{
+      action_id: `action-pliego-${index + 1}`,
+      action_type: 'verify_validity',
+      summary: `Revisar el requisito del pliego ${index + 1} con la persona responsable.`,
+      priority: 'critical',
+      suggested_role: 'legal',
+      basis_unit_id: unitId,
+      external_side_effect: false,
+    }],
+  };
+}
+
+function productionUnits() {
+  return PRODUCTION_REQUIREMENT_IDS.map((requirementId, index) => productionUnit(requirementId, index));
+}
+
+// Igual que `v3LegacyResult` (sin la propiedad `evidence_coverage`), pero con las cinco unidades.
+function v3LegacyProductionResult(units = productionUnits()) {
+  const requirementIds = units.map(unit => unit.requirement_id);
+  return {
+    integral_analysis: {
+      contract_version: 'agt002-integral-analysis-v3',
+      coverage: {
+        analyzed_requirement_ids: requirementIds,
+        expected_requirement_ids: requirementIds,
+      },
+      analysis_units: units,
+    },
+  };
+}
+
+function legacyRun(result, overrides = {}) {
+  return {
+    id: ANALYSIS_RUN_ID,
+    snapshot_id: SNAPSHOT_ID,
+    opportunity_id: OPPORTUNITY_ID,
+    producer: 'AGT-002',
+    method: 'agent_ai',
+    status: 'completed',
+    canonical: true,
+    critical_open_count: 0,
+    result,
+    created_at: '2026-07-03T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+{
+  // GO vigente + corrida legada anclada: el recovery siembra el expediente con la misma forma
+  // cerrada de siempre y sólo invoca la RPC de sincronización — nunca reescribe la decisión.
+  const { database, observed } = fakeDatabase({ runs: [legacyRun(v3LegacyResult())] });
+  await sync(database);
+  assert.equal(observed.rpc.length, 1);
+  assert.equal(observed.rpc[0].name, 'psi_sync_agt002_post_go_checklist');
+  assert.deepEqual(observed.rpc[0].args, {
+    p_opportunity_id: OPPORTUNITY_ID,
+    p_actor_id: ACTOR_ID,
+    p_decision_id: DECISION_ID,
+    p_analysis_run_id: ANALYSIS_RUN_ID,
+    p_items: observed.rpc[0].args.p_items,
+  });
+  const items = observed.rpc[0].args.p_items;
+  assert.equal(items.length, 1);
+  assert.deepEqual(items[0], {
+    item_key: 'agt002_post_go:financial-working-capital',
+    required: true,
+    status: 'pendiente',
+    title: 'Capital de trabajo mínimo exigido',
+    instruction: 'Revisar los estados financieros y el capital de trabajo.',
+    source_kind: 'integral_unit',
+    source_id: 'unit-financial-1',
+    requirement_id: 'financial-working-capital',
+    source_hash: items[0].source_hash,
+  });
+  assert.match(items[0].source_hash, /^[0-9a-f]{64}$/);
+}
+
+{
+  // Sin GO vigente no hay recovery de la corrida legada: 409 fail-closed, sin RPC.
+  const noGo = [{
+    id: DECISION_ID, opportunity_id: OPPORTUNITY_ID, tender_id: TENDER_ID, decision: 'no_go',
+    analysis_run_id: null, supersedes_decision_id: null, decided_at: '2026-07-10T00:00:00.000Z',
+  }];
+  const { database, observed } = fakeDatabase({ history: noGo, runs: [legacyRun(v3LegacyResult())] });
+  await assert.rejects(() => sync(database), error => error?.status === 409 && /GO vigente/i.test(error.message));
+  assert.equal(observed.rpc.length, 0);
+}
+
+{
+  // El GO vigente debe anclar exactamente esta corrida canónica: otra corrida legada no sirve.
+  const { database, observed } = fakeDatabase({ runs: [legacyRun(v3LegacyResult(), { id: OTHER_RUN_ID })] });
+  await assert.rejects(() => sync(database), error => error?.status === 409 && /vigente, canónico y completado/i.test(error.message));
+  assert.equal(observed.rpc.length, 0);
+}
+
+{
+  // Corrida legada no canónica: 409 fail-closed.
+  const { database, observed } = fakeDatabase({ runs: [legacyRun(v3LegacyResult(), { canonical: false })] });
+  await assert.rejects(() => sync(database), error => error?.status === 409);
+  assert.equal(observed.rpc.length, 0);
+}
+
+{
+  // Corrida legada con omisiones materiales declaradas: 409 fail-closed, nunca un lote incompleto.
+  const { database, observed } = fakeDatabase({ runs: [legacyRun(v3LegacyResult({ material_omissions: true }))] });
+  await assert.rejects(() => sync(database), error => error?.status === 409 && /listo para el traspaso/i.test(error.message));
+  assert.equal(observed.rpc.length, 0);
+}
+
+// --- issue #187, caso REAL de Cali: GO vigente con analysis_run_id NULL ---
+
+{
+  // RED: antes, un GO sin anclaje se rechazaba de inmediato ("no tiene un análisis anclado") y ese
+  // expediente no podía sembrarse jamás. GREEN: con la corrida legada vigente (canónica, completada,
+  // AGT-002/agent_ai, V3 y sin la propiedad `evidence_coverage`), el recovery deriva el lote y llama
+  // a la RPC con el run que el propio servidor leyó — nunca uno recibido del cuerpo.
+  const { database, observed } = fakeDatabase({
+    history: unanchoredGoHistory(),
+    runs: [legacyRun(v3LegacyResult())],
+  });
+  await sync(database);
+  assert.equal(observed.rpc.length, 1);
+  assert.equal(observed.rpc[0].name, 'psi_sync_agt002_post_go_checklist');
+  assert.deepEqual(observed.rpc[0].args, {
+    p_opportunity_id: OPPORTUNITY_ID,
+    p_actor_id: ACTOR_ID,
+    p_decision_id: DECISION_ID,
+    p_analysis_run_id: ANALYSIS_RUN_ID,
+    p_items: observed.rpc[0].args.p_items,
+  });
+  const items = observed.rpc[0].args.p_items;
+  assert.equal(items.length, 1);
+  assert.deepEqual(items[0], {
+    item_key: 'agt002_post_go:financial-working-capital',
+    required: true,
+    status: 'pendiente',
+    title: 'Capital de trabajo mínimo exigido',
+    instruction: 'Revisar los estados financieros y el capital de trabajo.',
+    source_kind: 'integral_unit',
+    source_id: 'unit-financial-1',
+    requirement_id: 'financial-working-capital',
+    source_hash: items[0].source_hash,
+  });
+  assert.match(items[0].source_hash, /^[0-9a-f]{64}$/);
+}
+
+{
+  // Caso REAL de Cali con la FORMA DE PRODUCCIÓN: GO vigente con `analysis_run_id` NULL sobre una
+  // corrida legada con cinco requisitos `sreq:*` del pliego y cinco unidades abiertas. El recovery
+  // debe enviar los CINCO ítems, con identidad 1:1 con su unidad V3 y con el run que el propio
+  // servidor leyó. Ningún `sreq:*` está en el catálogo global de materialidad: si esa clasificación
+  // PRE-GO volviera a filtrar aquí, este expediente real se quedaría sin traspaso posible.
+  const units = productionUnits();
+  const { database, observed } = fakeDatabase({
+    history: unanchoredGoHistory(),
+    runs: [legacyRun(v3LegacyProductionResult(units))],
+  });
+  await sync(database);
+  assert.equal(observed.rpc.length, 1);
+  assert.equal(observed.rpc[0].name, 'psi_sync_agt002_post_go_checklist');
+  assert.equal(observed.rpc[0].args.p_decision_id, DECISION_ID);
+  assert.equal(observed.rpc[0].args.p_analysis_run_id, ANALYSIS_RUN_ID, 'el run del lote lo elige el servidor, no el cuerpo');
+  const items = observed.rpc[0].args.p_items;
+  assert.equal(items.length, 5, 'las cinco unidades abiertas se traspasan completas');
+  assert.deepEqual(items.map(entry => entry.item_key), PRODUCTION_REQUIREMENT_IDS.map(id => `agt002_post_go:${id}`));
+  items.forEach((entry, index) => {
+    const unit = units[index];
+    assert.deepEqual(entry, {
+      item_key: `agt002_post_go:${unit.requirement_id}`,
+      required: true,
+      status: 'pendiente',
+      title: unit.title,
+      instruction: unit.actions[0].summary,
+      source_kind: 'integral_unit',
+      source_id: unit.unit_id,
+      requirement_id: unit.requirement_id,
+      source_hash: entry.source_hash,
+    });
+    assert.match(entry.source_hash, /^[0-9a-f]{64}$/);
+  });
+  assert.equal(new Set(items.map(entry => entry.source_hash)).size, 5, 'cada unidad V3 aporta su propia identidad canónica');
+}
+
+{
+  // Misma forma de producción, pero con la propiedad `evidence_coverage` presente: la corrida sale
+  // del caso legado estricto y el GO sin anclaje vuelve a ser fail-closed.
+  const { database, observed } = fakeDatabase({
+    history: unanchoredGoHistory(),
+    runs: [legacyRun({ ...v3LegacyProductionResult(), evidence_coverage: null })],
+  });
+  await assert.rejects(() => sync(database), error => error?.status === 409 && /evidence_coverage/i.test(error.message));
+  assert.equal(observed.rpc.length, 0);
+}
+
+{
+  // Presencia de `evidence_coverage` —aunque su valor sea null— NO es el caso legado: fail-closed.
+  for (const presentCoverage of [{ evidence_coverage: null }, { evidence_coverage: {} }, { evidence_coverage: false }]) {
+    const { database, observed } = fakeDatabase({
+      history: unanchoredGoHistory(),
+      runs: [legacyRun({ ...v3LegacyResult(), ...presentCoverage })],
+    });
+    await assert.rejects(
+      () => sync(database),
+      error => error?.status === 409 && /evidence_coverage/i.test(error.message),
+    );
+    assert.equal(observed.rpc.length, 0, 'una cobertura presente nunca habilita el traspaso sin anclaje');
+  }
+}
+
+{
+  // Corrida vigente que no es AGT-002/agent_ai: fail-closed, aunque venga marcada como canónica.
+  const { database, observed } = fakeDatabase({
+    history: unanchoredGoHistory(),
+    runs: [legacyRun(v3LegacyResult(), { producer: 'siio_rules_v1', method: 'rules' })],
+  });
+  await assert.rejects(() => sync(database), error => error?.status === 409 && /AGT-002/.test(error.message));
+  assert.equal(observed.rpc.length, 0);
+}
+
+{
+  // Sin corrida canónica vigente (no canónica) no hay nada que pueda sustentar el traspaso legado.
+  const { database, observed } = fakeDatabase({
+    history: unanchoredGoHistory(),
+    runs: [legacyRun(v3LegacyResult(), { canonical: false })],
+  });
+  await assert.rejects(() => sync(database), error => error?.status === 409 && /vigente, canónico y completado/i.test(error.message));
+  assert.equal(observed.rpc.length, 0);
+}
+
+{
+  // Refresco documental en curso: la corrida deja de ser vigente, así que tampoco hay traspaso.
+  const { database, observed } = fakeDatabase({
+    history: unanchoredGoHistory(),
+    runs: [legacyRun(v3LegacyResult())],
+    states: [{ opportunity_id: OPPORTUNITY_ID, current_snapshot_id: SNAPSHOT_ID, refresh_in_progress: true }],
+  });
+  await assert.rejects(() => sync(database), error => error?.status === 409);
+  assert.equal(observed.rpc.length, 0);
+}
+
+{
+  // Corrida legada con omisiones materiales declaradas: el selector no produce lote listo, 409.
+  const { database, observed } = fakeDatabase({
+    history: unanchoredGoHistory(),
+    runs: [legacyRun(v3LegacyResult({ material_omissions: true }))],
+  });
+  await assert.rejects(() => sync(database), error => error?.status === 409 && /listo para el traspaso/i.test(error.message));
+  assert.equal(observed.rpc.length, 0);
+}
+
+{
+  // Análisis legado sin sobre V3 (reglas): 409, nunca un lote.
+  const { database, observed } = fakeDatabase({
+    history: unanchoredGoHistory(),
+    runs: [legacyRun({ recommendation: 'GO' })],
+  });
+  await assert.rejects(() => sync(database), error => error?.status === 409);
   assert.equal(observed.rpc.length, 0);
 }
 

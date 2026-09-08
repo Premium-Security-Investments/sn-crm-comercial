@@ -9,6 +9,9 @@ const m040 = readFileSync(new URL('../supabase/migrations/040_tender_dossier_wor
 const m041 = readFileSync(new URL('../supabase/migrations/041_tender_dossier_go_seed.sql', import.meta.url), 'utf8');
 const m042 = readFileSync(new URL('../supabase/migrations/042_tender_dossier_offer_gate.sql', import.meta.url), 'utf8');
 const m082 = readFileSync(new URL('../supabase/migrations/082_tender_dossier_agt002_handoff.sql', import.meta.url), 'utf8');
+// 083 reemplaza la RPC de sincronización (decisión GO sin anclaje, issue #187): todo el contrato de
+// 082 que este archivo fija debe seguir cumpliéndose EXACTAMENTE igual con 083 aplicada encima.
+const m083 = readFileSync(new URL('../supabase/migrations/083_tender_dossier_agt002_unanchored_go.sql', import.meta.url), 'utf8');
 
 const ACTOR = '11111111-1111-4111-8111-111111111111';
 const UNAUTHORIZED_ACTOR = '11111111-1111-4111-8111-111111111112';
@@ -94,6 +97,7 @@ async function baseDb() {
     );
     create table public.psi_tender_analysis_runs (
       id uuid primary key, opportunity_id uuid, tender_id uuid, snapshot_id uuid,
+      producer text default 'AGT-002', method text default 'agent_ai',
       status text, canonical boolean default true, result jsonb
     );
     create table public.psi_tender_document_state (
@@ -136,6 +140,7 @@ async function baseDb() {
   await db.exec(m041);
   await db.exec(m042);
   await db.exec(m082);
+  await db.exec(m083);
   return db;
 }
 
@@ -158,6 +163,10 @@ async function sync(db, { decisionId, runId, items, actorId = ACTOR }) {
 await (async function migrationIsReexecutable() {
   const db = await baseDb();
   await db.exec(m082);
+  // 082 vuelve a instalar su propia versión de la RPC, así que 083 debe reaplicarse después: ambas
+  // son reejecutables y el orden de aplicación (083 > 082) es el que gobierna.
+  await db.exec(m083);
+  await db.exec(m083);
   await db.close();
 })();
 
