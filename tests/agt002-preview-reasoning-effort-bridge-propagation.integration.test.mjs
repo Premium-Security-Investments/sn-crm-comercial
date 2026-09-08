@@ -2,18 +2,17 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { startSyntheticAgt002HetznerBridge } from './fixtures/agt002-hetzner-bridge-synthetic-server.mjs';
 import { createAgt002HetznerBridgeClient } from '../agt002-hetzner-bridge-client.js';
-import { createCodexAppServerClient } from '../agt002-preview-codex-client.js';
+import { createAgt002ClaudeClient } from '../agt002-claude-client.js';
 
-// AGT-002 root-cause fix, end to end: real HMAC-signed bridge client -> real HTTP bridge server
-// -> real Codex App Server client (fake spawn) -> turn/start.params.effort. Proves the value
-// travels the FULL transport hop, not just each layer in isolation (already covered by
-// tests/agt002-hetzner-bridge-client.test.mjs and tests/agt002-hetzner-bridge-server.test.mjs).
+// AGT-002 end to end: real HMAC-signed bridge client -> real HTTP bridge server
+// -> real Claude print-mode client (fake spawn). Claude has no effort flag, so
+// the requested low/medium value must be acknowledged without reaching argv.
 
 const SECRET = 'a'.repeat(32);
 
 function baseRunInput(overrides = {}) {
   return {
-    model: 'gpt-5.6-luna',
+    model: 'sonnet',
     policy: 'POLICY',
     input: { snapshot_id: 'snap-1' },
     outputSchema: { type: 'object', additionalProperties: false, required: ['ok'], properties: { ok: { type: 'boolean' } } },
@@ -23,79 +22,97 @@ function baseRunInput(overrides = {}) {
   };
 }
 
-function fakeCodexSpawnCapturingTurnStart(capture) {
-  return function fakeSpawn() {
+function fakeClaudeSpawn(capture) {
+  return function spawn(command, args, options) {
     const child = new EventEmitter();
-    child.stdin = { write: (data) => { queueMicrotask(() => onWrite(data)); }, end() {} };
     child.stdout = new EventEmitter();
     child.stderr = new EventEmitter();
-    child.kill = () => { child.killed = true; };
-    function onWrite(data) {
-      const message = JSON.parse(String(data).trim());
-      const respond = result => child.stdout.emit('data', Buffer.from(`${JSON.stringify({ id: message.id, result })}\n`));
-      if (message.method === 'initialize') { respond({ codexHome: '/tmp', platformFamily: 'unix', platformOs: 'linux', userAgent: 'fake/1.0' }); return; }
-      if (message.method === 'account/read') { respond({ account: { type: 'chatgpt', email: null, planType: 'team' }, requiresOpenaiAuth: false }); return; }
-      if (message.method === 'account/rateLimits/read') { respond({ rateLimits: { primary: { usedPercent: 1 } } }); return; }
-      if (message.method === 'thread/start') { respond({ thread: { id: 'thread-fake' }, approvalPolicy: 'never', approvalsReviewer: 'user', cwd: '/tmp', model: 'x', modelProvider: 'openai', sandbox: {} }); return; }
-      if (message.method === 'turn/start') {
-        capture.turnStartParams = message.params;
-        respond({ turn: { id: 'turn-fake', status: 'inProgress', items: [] } });
-        child.stdout.emit('data', Buffer.from(`${JSON.stringify({ method: 'item/completed', params: { threadId: 'thread-fake', turnId: 'turn-fake', completedAtMs: 0, item: { id: 'i1', type: 'agentMessage', text: JSON.stringify({ ok: true }) } } })}\n`));
-        child.stdout.emit('data', Buffer.from(`${JSON.stringify({ method: 'thread/tokenUsage/updated', params: { threadId: 'thread-fake', turnId: 'turn-fake', tokenUsage: { total: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 2 }, last: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 2 } } } })}\n`));
-        child.stdout.emit('data', Buffer.from(`${JSON.stringify({ method: 'turn/completed', params: { threadId: 'thread-fake', turn: { id: 'turn-fake', status: 'completed', items: [] } } })}\n`));
-        return;
-      }
-    }
+    child.killed = false;
+    child.kill = () => { child.killed = true; return true; };
+    child.stdin = {
+      chunks: [],
+      write(data) { this.chunks.push(String(data)); return true; },
+      end() {
+        capture.stdin = this.chunks.join('');
+        queueMicrotask(() => {
+          child.stdout.emit('data', Buffer.from(JSON.stringify({
+            type: 'result', subtype: 'success', is_error: false,
+            structured_output: { ok: true },
+            usage: { input_tokens: 1, output_tokens: 1 },
+          })));
+          child.emit('exit', 0, null);
+        });
+      },
+      on() {},
+    };
+    capture.calls.push({ command, args, options });
     return child;
   };
 }
 
-// `args: ['app-server']` is the real deployment argv (run-server.mjs's default): the client now
-// refuses to run a turn that requested an effort it cannot pin on the Codex process argv, so a
-// test double must carry the same subcommand token the production process does.
-async function testDefaultLowEffortReachesTurnStartAcrossTheRealBridgeHop() {
-  const capture = { turnStartParams: null };
-  const codexClient = createCodexAppServerClient({ spawn: fakeCodexSpawnCapturingTurnStart(capture), command: 'ignored', args: ['app-server'] });
-  const bridge = await startSyntheticAgt002HetznerBridge({ hmacSecret: SECRET, codexClient });
+async function withClaudeBridge(capture, fn) {
+  const claudeClient = createAgt002ClaudeClient({
+    spawn: fakeClaudeSpawn(capture), command: 'claude-fake', cwd: '/tmp', env: { PATH: '/usr/bin' },
+  });
+  const capturingClient = {
+    async run(options) {
+      capture.providerResult = await claudeClient.run(options);
+      return capture.providerResult;
+    },
+  };
+  const bridge = await startSyntheticAgt002HetznerBridge({ hmacSecret: SECRET, codexClient: capturingClient });
   try {
     const client = createAgt002HetznerBridgeClient({ url: bridge.url, hmacSecret: SECRET });
-    await client.run(baseRunInput({ effort: 'low' }));
-    assert.equal(capture.turnStartParams.effort, 'low', 'the default AGT-002 reasoning effort must reach turn/start.params.effort across the real HMAC bridge hop');
+    await fn(client);
   } finally {
     await bridge.close();
   }
 }
 
-async function testExplicitMediumEffortReachesTurnStart() {
-  const capture = { turnStartParams: null };
-  const codexClient = createCodexAppServerClient({ spawn: fakeCodexSpawnCapturingTurnStart(capture), command: 'ignored', args: ['app-server'] });
-  const bridge = await startSyntheticAgt002HetznerBridge({ hmacSecret: SECRET, codexClient });
-  try {
-    const client = createAgt002HetznerBridgeClient({ url: bridge.url, hmacSecret: SECRET });
-    await client.run(baseRunInput({ effort: 'medium', idempotencyKey: 'idem-reasoning-effort-medium' }));
-    assert.equal(capture.turnStartParams.effort, 'medium');
-  } finally {
-    await bridge.close();
-  }
+function assertClaudeInvocation(capture, expectedInput) {
+  assert.equal(capture.calls.length, 1);
+  const call = capture.calls[0];
+  assert.equal(call.command, 'claude-fake');
+  assert.equal(call.args[call.args.indexOf('--model') + 1], 'sonnet');
+  assert.equal(call.args.some(value => /effort|reasoning/i.test(String(value))), false, 'Claude argv must not receive an unsupported effort/reasoning flag');
+  assert.deepEqual(JSON.parse(capture.stdin), expectedInput, 'stdin must contain only the structured input');
+}
+
+async function testLowEffortIsAckedAcrossTheRealBridgeHop() {
+  const capture = { calls: [], providerResult: null, stdin: null };
+  const request = baseRunInput({ effort: 'low' });
+  await withClaudeBridge(capture, async client => {
+    const result = await client.run(request);
+    assert.deepEqual(JSON.parse(result.content), { ok: true });
+  });
+  assert.equal(capture.providerResult.effort_ack, 'low');
+  assertClaudeInvocation(capture, request.input);
+}
+
+async function testMediumEffortIsAckedAcrossTheRealBridgeHop() {
+  const capture = { calls: [], providerResult: null, stdin: null };
+  const request = baseRunInput({ effort: 'medium', idempotencyKey: 'idem-reasoning-effort-medium' });
+  await withClaudeBridge(capture, async client => {
+    const result = await client.run(request);
+    assert.deepEqual(JSON.parse(result.content), { ok: true });
+  });
+  assert.equal(capture.providerResult.effort_ack, 'medium');
+  assertClaudeInvocation(capture, request.input);
 }
 
 async function testUnsupportedEffortNeverReachesTheBridgeOrTheProvider() {
-  let codexClientInvoked = false;
-  const codexClient = { run: async () => { codexClientInvoked = true; return { content: '{"ok":true}', usage: { input_tokens: 1, output_tokens: 1 }, rate_limit: null }; } };
-  const bridge = await startSyntheticAgt002HetznerBridge({ hmacSecret: SECRET, codexClient });
-  try {
-    const client = createAgt002HetznerBridgeClient({ url: bridge.url, hmacSecret: SECRET });
+  const capture = { calls: [], providerResult: null, stdin: null };
+  await withClaudeBridge(capture, async client => {
     await assert.rejects(
       () => client.run(baseRunInput({ effort: 'high', idempotencyKey: 'idem-reasoning-effort-invalid' })),
       /esfuerzo de razonamiento/i,
     );
-    assert.equal(codexClientInvoked, false, 'a malformed effort must be rejected client-side, before any bridge/provider call');
-  } finally {
-    await bridge.close();
-  }
+  });
+  assert.equal(capture.calls.length, 0, 'a malformed effort must be rejected before spawning Claude');
+  assert.equal(capture.providerResult, null);
 }
 
-await testDefaultLowEffortReachesTurnStartAcrossTheRealBridgeHop();
-await testExplicitMediumEffortReachesTurnStart();
+await testLowEffortIsAckedAcrossTheRealBridgeHop();
+await testMediumEffortIsAckedAcrossTheRealBridgeHop();
 await testUnsupportedEffortNeverReachesTheBridgeOrTheProvider();
 console.log('agt002-preview-reasoning-effort-bridge-propagation.integration.test.mjs OK');

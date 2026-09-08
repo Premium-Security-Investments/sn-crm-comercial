@@ -1,23 +1,14 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { readFileSync, statSync } from 'node:fs';
 import { startSyntheticAgt002HetznerBridge } from './fixtures/agt002-hetzner-bridge-synthetic-server.mjs';
 import { createAgt002HetznerBridgeClient } from '../agt002-hetzner-bridge-client.js';
-import { createCodexAppServerClient } from '../agt002-preview-codex-client.js';
+import { createAgt002ClaudeClient } from '../agt002-claude-client.js';
 import { buildAgt002IntegralAnalysisV3OutputJsonSchema } from '../agt002-preview-contract.js';
 
-// Phase 5 remediation regression (v3_model_output_shape_mismatch).
-//
-// The failing corrected canary fit the context window but the model turn returned an
-// integral_analysis carrying server-owned keys beyond analysis_units. Before blaming the model we
-// must PROVE, end to end, that the closed wire schema built by
-// buildAgt002IntegralAnalysisV3OutputJsonSchema — which forbids exactly those keys
-// (additionalProperties:false, required:['analysis_units'] under integral_analysis) — is actually
-// forwarded UNCHANGED through the Hetzner bridge and reaches Codex `turn/start`, so its constraint
-// is really presented to the provider. The engine→client.run boundary is covered by
-// tests/agt002-preview-engine.test.mjs (the built schema exposes only analysis_units under
-// integral_analysis); the const→enum wire adaptation is covered by
-// tests/agt002-preview-codex-client.test.mjs. THIS test closes the previously-unasserted segment:
-// the real HMAC-signed HTTP hop through the bridge, all the way to the turn/start params.
+// Regression for the V3 model-output boundary. The closed schema must survive
+// the real signed HTTP hop unchanged and reach Claude as --json-schema (or the
+// mode-0600 --json-schema-file fallback) without acquiring server-owned keys.
 
 const SECRET = 'a'.repeat(32);
 
@@ -38,7 +29,7 @@ const VALIDATION_CONTEXT = {
 
 function baseRunInput() {
   return {
-    model: 'gpt-x',
+    model: 'sonnet',
     policy: 'POLICY',
     input: { snapshot_id: 'snap-1' },
     timeoutMs: 5000,
@@ -50,115 +41,106 @@ function successUsage(content) {
   return { content, usage: { input_tokens: 12, output_tokens: 34 }, rate_limit: null };
 }
 
-// ---------------------------------------------------------------------------
-// Part A — the bridge forwards the V3 outputSchema BYTE-IDENTICAL.
-// Real client → real HMAC-signed HTTP → real bridge server → capturing codexClient. The object the
-// codexClient receives must deep-equal the exact schema the caller built: the signed JSON round
-// trip preserves it with no reshaping, truncation or key drop.
-// ---------------------------------------------------------------------------
+function assertClosedIntegralShape(schema) {
+  assert.equal(schema.additionalProperties, false);
+  assert.deepEqual(schema.required, ['integral_analysis']);
+  const integral = schema.properties.integral_analysis;
+  assert.equal(integral.additionalProperties, false);
+  assert.deepEqual(integral.required, ['analysis_units']);
+  assert.deepEqual(Object.keys(integral.properties), ['analysis_units']);
+  for (const serverOwned of ['contract_version', 'coverage']) {
+    assert.equal(Object.hasOwn(integral.properties, serverOwned), false, `integral_analysis must not offer ${serverOwned} to Claude`);
+  }
+}
+
 async function testBridgeForwardsV3SchemaUnchanged() {
   const builtSchema = buildAgt002IntegralAnalysisV3OutputJsonSchema(VALIDATION_CONTEXT);
-  let receivedByCodex = null;
-  const capturingCodexClient = {
+  const serializedSchema = JSON.stringify(builtSchema);
+  let receivedByBridgeProvider = null;
+  const capturingClient = {
     async run(options) {
-      receivedByCodex = options.outputSchema;
+      receivedByBridgeProvider = options.outputSchema;
       return successUsage(JSON.stringify({ integral_analysis: { analysis_units: [] } }));
     },
   };
-  const bridge = await startSyntheticAgt002HetznerBridge({ hmacSecret: SECRET, codexClient: capturingCodexClient });
+  const bridge = await startSyntheticAgt002HetznerBridge({ hmacSecret: SECRET, codexClient: capturingClient });
   try {
     const client = createAgt002HetznerBridgeClient({ url: bridge.url, hmacSecret: SECRET });
     await client.run({ ...baseRunInput(), outputSchema: builtSchema });
-    assert.deepEqual(receivedByCodex, builtSchema, 'the Hetzner bridge must forward the V3 outputSchema byte-identical to the codex client');
-    // Explicit: the closed shape that forbids server-owned keys survives the transport intact.
-    assert.equal(receivedByCodex.additionalProperties, false);
-    assert.deepEqual(receivedByCodex.required, ['integral_analysis']);
-    assert.equal(receivedByCodex.properties.integral_analysis.additionalProperties, false);
-    assert.deepEqual(receivedByCodex.properties.integral_analysis.required, ['analysis_units']);
-    assert.deepEqual(Object.keys(receivedByCodex.properties.integral_analysis.properties), ['analysis_units']);
+    assert.equal(JSON.stringify(receivedByBridgeProvider), serializedSchema, 'the signed HTTP hop must preserve the serialized V3 schema byte-for-byte');
+    assert.deepEqual(receivedByBridgeProvider, builtSchema);
+    assertClosedIntegralShape(receivedByBridgeProvider);
   } finally {
     await bridge.close();
   }
 }
 
-// ---------------------------------------------------------------------------
-// Part B — end to end to Codex turn/start: the closed shape survives the wire adaptation.
-// Real client → real HTTP bridge → REAL codex client with a fake spawn capturing turn/start. The
-// turn/start outputSchema must still forbid every server-owned key: integral_analysis stays closed
-// (additionalProperties:false) and offers ONLY analysis_units, so contract_version / coverage have
-// no slot the provider could legitimately fill; const has been adapted to enum on the wire.
-// ---------------------------------------------------------------------------
-function fakeCodexSpawnCapturingTurnStart(capture) {
-  return function fakeSpawn() {
+function fakeClaudeSpawnCapturingSchema(capture) {
+  return function spawn(command, args, options) {
     const child = new EventEmitter();
-    child.stdin = { write: (data) => { queueMicrotask(() => onWrite(data)); }, end() {} };
     child.stdout = new EventEmitter();
     child.stderr = new EventEmitter();
-    child.kill = () => { child.killed = true; };
-    function onWrite(data) {
-      const message = JSON.parse(String(data).trim());
-      const respond = result => child.stdout.emit('data', Buffer.from(`${JSON.stringify({ id: message.id, result })}\n`));
-      if (message.method === 'initialize') { respond({ codexHome: '/tmp', platformFamily: 'unix', platformOs: 'linux', userAgent: 'fake/1.0' }); return; }
-      if (message.method === 'account/read') { respond({ account: { type: 'chatgpt', email: null, planType: 'team' }, requiresOpenaiAuth: false }); return; }
-      if (message.method === 'account/rateLimits/read') { respond({ rateLimits: { primary: { usedPercent: 1 } } }); return; }
-      if (message.method === 'thread/start') { respond({ thread: { id: 'thread-fake' }, approvalPolicy: 'never', approvalsReviewer: 'user', cwd: '/tmp', model: 'x', modelProvider: 'openai', sandbox: {} }); return; }
-      if (message.method === 'turn/start') {
-        capture.turnStartParams = message.params;
-        respond({ turn: { id: 'turn-fake', status: 'inProgress', items: [] } });
-        child.stdout.emit('data', Buffer.from(`${JSON.stringify({ method: 'item/completed', params: { threadId: 'thread-fake', turnId: 'turn-fake', completedAtMs: 0, item: { id: 'i1', type: 'agentMessage', text: JSON.stringify({ integral_analysis: { analysis_units: [] } }) } } })}\n`));
-        child.stdout.emit('data', Buffer.from(`${JSON.stringify({ method: 'thread/tokenUsage/updated', params: { threadId: 'thread-fake', turnId: 'turn-fake', tokenUsage: { total: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 2 }, last: { inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, reasoningOutputTokens: 0, totalTokens: 2 } } } })}\n`));
-        child.stdout.emit('data', Buffer.from(`${JSON.stringify({ method: 'turn/completed', params: { threadId: 'thread-fake', turn: { id: 'turn-fake', status: 'completed', items: [] } } })}\n`));
-        return;
-      }
+    child.killed = false;
+    child.kill = () => { child.killed = true; return true; };
+    child.stdin = {
+      chunks: [],
+      write(data) { this.chunks.push(String(data)); return true; },
+      end() {
+        capture.stdin = this.chunks.join('');
+        queueMicrotask(() => {
+          child.stdout.emit('data', Buffer.from(JSON.stringify({
+            type: 'result', subtype: 'success', is_error: false,
+            structured_output: { integral_analysis: { analysis_units: [] } },
+            usage: { input_tokens: 1, output_tokens: 1 },
+          })));
+          child.emit('exit', 0, null);
+        });
+      },
+      on() {},
+    };
+
+    const inlineIndex = args.indexOf('--json-schema');
+    const fileIndex = args.indexOf('--json-schema-file');
+    assert.notEqual(inlineIndex === -1, fileIndex === -1, 'Claude must receive exactly one schema transport flag');
+    if (inlineIndex !== -1) {
+      capture.schemaMode = 'argv';
+      capture.schema = JSON.parse(args[inlineIndex + 1]);
+    } else {
+      capture.schemaMode = 'file';
+      capture.schemaPath = args[fileIndex + 1];
+      capture.schemaFileMode = statSync(capture.schemaPath).mode & 0o777;
+      capture.schema = JSON.parse(readFileSync(capture.schemaPath, 'utf8'));
     }
+    capture.call = { command, args, options };
     return child;
   };
 }
 
-function assertNoConstAndClosed(node, path = '$') {
-  if (!node || typeof node !== 'object') return;
-  assert.equal(Object.hasOwn(node, 'const'), false, `${path} must have its const adapted to enum on the wire`);
-  if (node.type === 'object') {
-    assert.equal(node.additionalProperties, false, `${path} must stay closed (additionalProperties:false) on the wire`);
-    for (const [key, child] of Object.entries(node.properties || {})) assertNoConstAndClosed(child, `${path}.properties.${key}`);
-  }
-  if (node.type === 'array' && node.items) assertNoConstAndClosed(node.items, `${path}.items`);
-  for (const keyword of ['anyOf', 'oneOf', 'allOf']) {
-    node[keyword]?.forEach((child, index) => assertNoConstAndClosed(child, `${path}.${keyword}[${index}]`));
-  }
-}
-
-async function testV3SchemaReachesTurnStartClosed() {
+async function testV3SchemaReachesClaudeClosedAndUnchanged() {
   const builtSchema = buildAgt002IntegralAnalysisV3OutputJsonSchema(VALIDATION_CONTEXT);
-  const pristine = buildAgt002IntegralAnalysisV3OutputJsonSchema(VALIDATION_CONTEXT);
-  const capture = { turnStartParams: null };
-  const codexClient = createCodexAppServerClient({ spawn: fakeCodexSpawnCapturingTurnStart(capture), command: 'ignored', args: [], timeoutMs: 2000 });
-  const bridge = await startSyntheticAgt002HetznerBridge({ hmacSecret: SECRET, codexClient });
+  const pristine = structuredClone(builtSchema);
+  const capture = {};
+  const claudeClient = createAgt002ClaudeClient({
+    spawn: fakeClaudeSpawnCapturingSchema(capture), command: 'claude-fake', cwd: '/tmp', env: { PATH: '/usr/bin' },
+  });
+  const bridge = await startSyntheticAgt002HetznerBridge({ hmacSecret: SECRET, codexClient: claudeClient });
   try {
     const client = createAgt002HetznerBridgeClient({ url: bridge.url, hmacSecret: SECRET });
-    await client.run({ ...baseRunInput(), outputSchema: builtSchema });
+    const result = await client.run({ ...baseRunInput(), outputSchema: builtSchema });
+    assert.deepEqual(JSON.parse(result.content), { integral_analysis: { analysis_units: [] } });
 
-    const wire = capture.turnStartParams.outputSchema;
-    assert.ok(wire, 'turn/start must carry an outputSchema');
-    // Top level and integral_analysis stay closed and offer only the model-owned key.
-    assert.equal(wire.additionalProperties, false);
-    assert.deepEqual(wire.required, ['integral_analysis']);
-    assert.equal(wire.properties.integral_analysis.additionalProperties, false);
-    assert.deepEqual(wire.properties.integral_analysis.required, ['analysis_units']);
-    assert.deepEqual(Object.keys(wire.properties.integral_analysis.properties), ['analysis_units']);
-    // Server-owned keys have no slot the provider could legitimately fill.
-    for (const serverOwned of ['contract_version', 'coverage']) {
-      assert.equal(Object.hasOwn(wire.properties.integral_analysis.properties, serverOwned), false, `integral_analysis must not offer ${serverOwned} on the wire`);
-    }
-    // The whole schema is closed and const-free after the adaptation.
-    assertNoConstAndClosed(wire);
-    // The adaptation must not mutate the caller's schema object.
-    assert.deepEqual(builtSchema, pristine, 'the built V3 schema must not be mutated by transport or wire adaptation');
+    assert.equal(capture.call.command, 'claude-fake');
+    assert.equal(capture.call.args[capture.call.args.indexOf('--model') + 1], 'sonnet');
+    assert.deepEqual(JSON.parse(capture.stdin), baseRunInput().input, 'only the structured input may travel through stdin');
+    assert.deepEqual(capture.schema, builtSchema, 'the exact built V3 schema must reach Claude');
+    if (capture.schemaMode === 'file') assert.equal(capture.schemaFileMode, 0o600, 'the schema file must be private while Claude starts');
+    assertClosedIntegralShape(capture.schema);
+    assert.deepEqual(builtSchema, pristine, 'transport and Claude argv/file projection must not mutate the caller schema');
   } finally {
     await bridge.close();
   }
 }
 
 await testBridgeForwardsV3SchemaUnchanged();
-await testV3SchemaReachesTurnStartClosed();
+await testV3SchemaReachesClaudeClosedAndUnchanged();
 console.log('agt002-v3-bridge-schema-forwarding.integration.test.mjs OK');
