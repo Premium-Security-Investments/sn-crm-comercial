@@ -86,8 +86,10 @@ export function TenderDossierChecklist({ opportunityId, workspace, request, prof
                 <TenderStatusBadge label={STATUS_LABELS[item.status]} tone={STATUS_TONES[item.status]} />
                 {item.required && <TenderStatusBadge label="Requerido" tone="neutral" />}
                 {item.applicability === 'no_aplica' && <TenderStatusBadge label="No aplica" tone="neutral" />}
+                {item.analysis_source && <TenderStatusBadge label="Desde Análisis" tone="neutral" />}
               </div>
               <h3>{item.title}</h3>
+              {item.instruction && <p className="tender-dossier-instruction">{item.instruction}</p>}
               <p>{item.assignee_name ? `Responsable: ${item.assignee_name}` : 'Sin responsable'}{item.target_date ? ` · Fecha objetivo: ${item.target_date}` : ''}</p>
             </div>
           </div>

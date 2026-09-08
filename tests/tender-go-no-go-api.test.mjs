@@ -185,6 +185,7 @@ function decide(database, input = {}, profile = directorProfile) {
   assert.equal(Object.hasOwn(observed.rpc[0].args, 'p_analysis_interaction_id'), false, 'legacy interaction IDs are never write inputs');
   assert.equal(observed.rpc[0].args.p_justification, 'Margen y capacidad aprobados');
   assert.equal(result.preparation, observed.rpc[0].args.p_preparation, 'created preparation must return the payload submitted to the RPC');
+  assert.equal(observed.rpc[0].args.p_agt002_items, null, 'a legacy (non-V3) analysis must never derive an AGT-002 handoff batch');
 }
 
 {
@@ -202,6 +203,175 @@ function decide(database, input = {}, profile = directorProfile) {
   assert.equal(observed.rpc.length, 1);
   assert.equal(observed.rpc[0].args.p_preparation, null, 'NO GO must not build a preparation');
   assert.equal(observed.rpc[0].args.p_justification, 'Riesgo técnico no aceptable');
+  assert.equal(observed.rpc[0].args.p_agt002_items, null, 'NO GO must never derive an AGT-002 handoff batch');
+}
+
+// --- fase 3A: AGT-002 dossier handoff batch, derived server-side from the exact anchored run ---
+
+// Expone exactamente las 19 claves cerradas de la proyección §6.4 (necesarias para
+// buildActionableReviewIntegralUnitSource) y también las que exige la elegibilidad estructural de
+// deriveAgt002GenericDecisionReview — mismo patrón que tests/agt002-dossier-handoff.test.mjs.
+const V3_UNIT_FINANCIAL = Object.freeze({
+  unit_id: 'unit-financial-1',
+  unit_kind: 'tender_requirement',
+  requirement_id: 'financial-working-capital',
+  category: 'financial_execution',
+  sequence: 1,
+  title: 'Capital de trabajo mínimo exigido',
+  assessment_mode: 'abstained',
+  conclusion: { status: 'insufficient_evidence', confidence: 'unavailable', summary: 'El capital de trabajo debe revisarse.' },
+  blocking: { effect: 'undetermined', curability: 'undetermined', reason: 'La suficiencia financiera no está verificada.' },
+  evidence_state: { applicability: 'applicable', compliance: 'pending_review' },
+  evidence_refs: Object.freeze([{ source_type: 'tender_document', ref: 'evidence:chunk:doc-1:p1:s1:c0', purpose: 'requirement_basis' }]),
+  missing_evidence: Object.freeze([{
+    missing_id: 'missing-financial-review',
+    needed_source_type: 'company_evidence',
+    evidence_class_id: 'financial_statements',
+    reason: 'Estados financieros revisados por una persona autorizada.',
+    critical: true,
+  }]),
+  commercial_impact: { level: 'high', dimension: 'eligibility', summary: 'Puede impedir acreditar la capacidad financiera.' },
+  legal_assessment: null,
+  actions: Object.freeze([{
+    action_id: 'action-review-financials',
+    action_type: 'verify_validity',
+    summary: 'Revisar los estados financieros y el capital de trabajo.',
+    priority: 'critical',
+    suggested_role: 'financial',
+    basis_unit_id: 'unit-financial-1',
+    external_side_effect: false,
+  }]),
+  milestone: null,
+  escalation: null,
+  closure: { status: 'open', condition: 'Revisión humana satisfactoria.', evidence_required: ['Estados financieros'] },
+  human_validation: { required: true, status: 'pending', reason: 'Pendiente de revisión humana.' },
+});
+
+function v3ReadyResult(unitOverrides = {}, { decisionReady = true } = {}) {
+  const unit = { ...V3_UNIT_FINANCIAL, ...unitOverrides };
+  return {
+    integral_analysis: {
+      contract_version: 'agt002-integral-analysis-v3',
+      coverage: {
+        analyzed_requirement_ids: [unit.requirement_id],
+        expected_requirement_ids: [unit.requirement_id],
+      },
+      analysis_units: [unit],
+    },
+    evidence_coverage: {
+      tender_requirement_inventory: {
+        inventory_version: 'tender_requirement_inventory.v1',
+        decision_ready: decisionReady,
+        expedient_coverage: { total_source_units: 1, dispositioned_source_units: 1 },
+        analyzed_coverage: { total_source_units: 1, dispositioned_source_units: 1 },
+      },
+    },
+  };
+}
+
+// `canonical` es una columna real de psi_tender_analysis_runs, no un campo sintetizado por el
+// servidor: la derivación del traspaso hace su propia lectura canónica (canonicalOnly) y exige
+// canonical === true, así que el fixture debe declararlo igual que la fila de base de datos.
+function v3Run(result, overrides = {}) {
+  return {
+    id: ANALYSIS_RUN_ID,
+    snapshot_id: '66666666-6666-4666-8666-666666666666',
+    opportunity_id: OPPORTUNITY_ID,
+    producer: 'AGT-002',
+    method: 'agent_ai',
+    status: 'completed',
+    canonical: true,
+    critical_open_count: 0,
+    result,
+    created_at: '2026-07-03T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+{
+  // Ready V3 analysis: the RPC receives exactly the closed SQL shape, mapped from the pure
+  // deriveAgt002DossierHandoff item (presentation/source flattened, origin/item_type dropped).
+  const { database, observed } = fakeDatabase({ runs: [v3Run(v3ReadyResult())] });
+  await decide(database);
+  const items = observed.rpc[0].args.p_agt002_items;
+  assert.equal(Array.isArray(items), true, 'a ready V3 analysis must derive an explicit batch');
+  assert.equal(
+    observed.rpc[0].args.p_analysis_run_id, ANALYSIS_RUN_ID,
+    'a batch may only travel with the run the decision itself anchors — never alongside a null anchor',
+  );
+  assert.equal(items.length, 1);
+  assert.match(items[0].source_hash, /^[0-9a-f]{64}$/);
+  assert.deepEqual(items[0], {
+    item_key: 'agt002_post_go:financial-working-capital',
+    required: true,
+    status: 'pendiente',
+    title: 'Capital de trabajo mínimo exigido',
+    instruction: 'Revisar los estados financieros y el capital de trabajo.',
+    source_kind: 'integral_unit',
+    source_id: 'unit-financial-1',
+    requirement_id: 'financial-working-capital',
+    source_hash: items[0].source_hash,
+  });
+}
+
+{
+  // Trust boundary: a forged agt002_items/source_hash/title in the request body is never even
+  // read — the batch is derived exclusively server-side from the exact anchored analysis run.
+  const { database, observed } = fakeDatabase({ runs: [v3Run(v3ReadyResult())] });
+  await decide(database, {
+    agt002_items: [{ item_key: 'agt002_post_go:forged', title: 'Forjado', source_hash: 'f'.repeat(64) }],
+    source_hash: 'f'.repeat(64),
+    title: 'Forjado',
+  });
+  const items = observed.rpc[0].args.p_agt002_items;
+  assert.equal(items.length, 1);
+  assert.equal(items[0].item_key, 'agt002_post_go:financial-working-capital');
+  assert.notEqual(items[0].source_hash, 'f'.repeat(64));
+  assert.notEqual(items[0].title, 'Forjado');
+}
+
+{
+  // Trust boundary: the batch only ever comes from the run the RPC itself will bind
+  // (p_analysis_run_id === the submitted, exact-current run) — never a different run's payload.
+  const otherRun = '99999999-3333-4333-8333-33333333333c';
+  const { database, observed } = fakeDatabase({ runs: [v3Run(v3ReadyResult(), { id: otherRun })] });
+  await decide(database); // submits ANALYSIS_RUN_ID, but only otherRun exists as the current run.
+  assert.equal(observed.rpc[0].args.p_analysis_run_id, null, 'a non-matching submitted run must not bind');
+  assert.equal(observed.rpc[0].args.p_agt002_items, null, 'a batch must never be derived from a run other than the exact one being recorded');
+}
+
+{
+  // Non-canonical run: a run carrying a structurally complete, decision-ready V3 envelope but
+  // whose `canonical` column is not true must never derive a batch. Canonicity is read from the
+  // run, never inferred from the shape of its payload.
+  const { database, observed } = fakeDatabase({ runs: [v3Run(v3ReadyResult(), { canonical: false })] });
+  await decide(database);
+  assert.equal(observed.rpc.length, 1, 'the decision itself is still recorded');
+  assert.equal(observed.rpc[0].args.p_agt002_items, null, 'a non-canonical run must never derive an AGT-002 handoff batch');
+}
+
+{
+  // Same, for a run whose canonical column is simply absent/null: fail closed, never assume.
+  const { database, observed } = fakeDatabase({ runs: [v3Run(v3ReadyResult(), { canonical: null })] });
+  await decide(database);
+  assert.equal(observed.rpc[0].args.p_agt002_items, null, 'an unknown canonical flag must never derive a batch');
+}
+
+{
+  // Coverage not decision_ready: a structurally V3 analysis that has not reached
+  // ready_for_human_review must send null, exactly like a missing/legacy analysis.
+  const { database, observed } = fakeDatabase({ runs: [v3Run(v3ReadyResult({}, { decisionReady: false }))] });
+  await decide(database);
+  assert.equal(observed.rpc[0].args.p_agt002_items, null, 'a V3 analysis whose coverage is not decision_ready must send null');
+}
+
+{
+  // Malformed/ambiguous union: a finding-eligible unit whose unit_kind is not tender_requirement
+  // can never satisfy deriveAgt002DossierHandoff's union — this must fail closed and MUST NOT
+  // reach the RPC at all (no GO gets recorded on an unsafe derivation).
+  const { database, observed } = fakeDatabase({ runs: [v3Run(v3ReadyResult({ unit_kind: 'strategic_consideration' }))] });
+  await assert.rejects(() => decide(database), /sin unidad V3 tender_requirement elegible/i);
+  assert.equal(observed.rpc.length, 0, 'a malformed/ambiguous selector union must never register the GO decision');
 }
 
 {
@@ -307,7 +477,7 @@ for (const profile of [
 
 for (const path of ['../server/index.js', '../api/[...path].js']) {
   const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-  assert.match(source, /import \{ callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation \} from '\.\.\/tender-go-no-go-rpc\.js';/);
+  assert.match(source, /import \{ callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation, syncTenderDossierFromAgt002 \} from '\.\.\/tender-go-no-go-rpc\.js';/);
   assert.match(source, /app\.get\('\/api\/tender-go-no-go-decision'/);
   assert.match(source, /app\.post\('\/api\/tender-go-no-go-decision'/);
   const decisionRoute = source.match(/app\.post\('\/api\/tender-go-no-go-decision'[\s\S]*?\n}\);/);

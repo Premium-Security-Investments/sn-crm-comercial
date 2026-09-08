@@ -48,19 +48,30 @@ export type TenderDossierAssignee = { id: string; full_name: string; role: strin
 export type TenderDossierItemStatus = 'pendiente' | 'en_progreso' | 'listo' | 'bloqueado';
 export type TenderDossierItemApplicability = 'requerido' | 'no_aplica';
 export type TenderDossierItemType = 'documento' | 'pendiente_humano' | 'general';
+// `analysis_source` está presente sólo cuando el ítem fue sembrado o actualizado por el traspaso
+// AGT-002 post-GO (082 §5): identifica de forma no técnica la decisión GO, la corrida de análisis
+// y la unidad de origen que lo sustentan. Ausente en todo ítem `seed_go`/`human` ordinario.
+export type TenderDossierItemAnalysisSource = {
+  decision_id: string;
+  analysis_run_id: string;
+  source_id: string;
+  requirement_id: string | null;
+};
 export type TenderDossierItem = {
   id: string;
   item_key: string;
   title: string;
   item_type: TenderDossierItemType;
   required: boolean;
-  origin: 'seed_go' | 'human';
+  origin: 'seed_go' | 'human' | 'seed_agt002_post_go';
   status: TenderDossierItemStatus;
   applicability: TenderDossierItemApplicability;
   assignee_id: string | null;
   assignee_name: string | null;
   target_date: string | null;
   latest_evidence: { kind: 'texto' | 'url'; text: string | null; url: string | null; at: string } | null;
+  instruction: string | null;
+  analysis_source: TenderDossierItemAnalysisSource | null;
 };
 export type TenderDossierArtifactVersion = {
   id: string;

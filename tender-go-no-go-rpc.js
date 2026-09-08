@@ -2,6 +2,8 @@ import { ACTIONS, requireAction } from './access-control.js';
 import { buildTenderSnapshotInput, getCurrentTenderAnalysis } from './tender-analysis-foundation.js';
 import { buildTenderOfferPreparation } from './tender-offer-preparation.js';
 import { mergeTenderDocumentRecords } from './tender-document-versioning.js';
+import { deriveAgt002DossierHandoff } from './server/agt002-dossier-handoff.js';
+import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from './agt002-integral-analysis-v3.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -94,6 +96,69 @@ async function rpc(database, name, args) {
   return data;
 }
 
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+// Sólo un resultado con el sobre V3 estructurado (contract_version + analysis_units) es candidato
+// al traspaso AGT-002 -> expediente post-GO. Un análisis legado (reglas) o cualquier otro sobre
+// nunca invoca al selector: eso es simple incompatibilidad, nunca un caso "malformado".
+function hasEligibleAgt002IntegralAnalysis(result) {
+  const integralAnalysis = isRecord(result) ? result.integral_analysis : null;
+  return isRecord(integralAnalysis)
+    && integralAnalysis.contract_version === AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION
+    && Array.isArray(integralAnalysis.analysis_units);
+}
+
+// Mapea exactamente el lote cerrado de deriveAgt002DossierHandoff (presentation/source anidados)
+// al shape plano y cerrado que exige psi_sync_agt002_post_go_checklist (082/§4). Nunca reenvía
+// origin/item_type: esos son fijos del lado SQL y nunca viajan en el lote server->RPC.
+function mapAgt002DossierHandoffItemToSqlShape(item) {
+  return {
+    item_key: item.item_key,
+    required: item.required,
+    status: item.status,
+    title: item.presentation.title,
+    instruction: item.presentation.instruction,
+    source_kind: item.source.source_kind,
+    source_id: item.source.source_id,
+    requirement_id: item.source.requirement_id,
+    source_hash: item.source.source_hash,
+  };
+}
+
+/**
+ * Server-owned, fail-closed: sólo una decisión GO cuyo análisis exacto (mismo run que la decisión
+ * ancla: canónico, completado, vigente) trae el sobre V3 estructurado puede producir un lote. NO-GO
+ * y cualquier análisis no elegible/no listo devuelven null explícito (compatibilidad intencional,
+ * nunca un error). Nunca atrapa el error del selector (deriveAgt002DossierHandoff): una unión
+ * ambigua o inválida debe abortar el registro completo de la decisión, no degradar en silencio
+ * hacia null.
+ *
+ * `canonicalAnalysis` DEBE venir de una lectura canónica real (getCurrentTenderAnalysis con
+ * `canonicalOnly: true`), la única que expone la columna `canonical` de la corrida. Aquí se exige
+ * `canonical === true` como cualquier otro campo verificado: nunca se sintetiza. La síntesis
+ * anterior descansaba en un invariante de escritura ("sólo el registro canónico escribe el sobre
+ * V3") para afirmar un hecho de lectura, de modo que cualquier corrida no canónica que llegara a
+ * llevar ese sobre —por backfill, importación o regresión del escritor— se habría traspasado al
+ * expediente como si fuera canónica.
+ */
+function deriveAgt002ItemsForGoDecision(decision, canonicalAnalysis, anchoredAnalysisRunId) {
+  if (decision !== 'go') return null;
+  const isExactCurrentCanonicalRun = canonicalAnalysis?.run_id === anchoredAnalysisRunId
+    && canonicalAnalysis.status === 'completed'
+    && canonicalAnalysis.current === true
+    && canonicalAnalysis.canonical === true;
+  if (!isExactCurrentCanonicalRun || !hasEligibleAgt002IntegralAnalysis(canonicalAnalysis.result)) return null;
+
+  const handoff = deriveAgt002DossierHandoff({
+    currentAnalysis: canonicalAnalysis,
+    result: canonicalAnalysis.result,
+    questionResponses: [],
+  });
+  return handoff.ready ? handoff.items.map(mapAgt002DossierHandoffItemToSqlShape) : null;
+}
+
 /** Authoritative, RPC-mediated tender decision path. Authorization precedes every database access. */
 export async function callTenderGoNoGoDecision(database, input, currentProfile) {
   const opportunityId = requireUuid(input?.opportunity_id, 'una oportunidad válida');
@@ -115,6 +180,19 @@ export async function callTenderGoNoGoDecision(database, input, currentProfile) 
   const preparation = decision === 'go'
     ? buildTenderOfferPreparation(opportunity, records.documents, effectiveAnalysis, currentProfile)
     : null;
+  // La preparación y el anclaje de la decisión siguen leyendo `availableAnalysis` exactamente como
+  // antes (esa lectura no filtra por canonical y no cambia de comportamiento). El traspaso al
+  // expediente, en cambio, exige una lectura canónica server-owned propia: es la única que trae la
+  // columna `canonical` de la corrida, y sólo se hace para GO. La comparación es contra
+  // `effectiveAnalysisRunId`, no contra el run enviado: así el lote sólo puede existir cuando la
+  // decisión ANCLA exactamente ese mismo run, y nunca se envía un lote junto a un
+  // p_analysis_run_id null. Si la lectura canónica no coincide (otro run, no vigente, no
+  // completada o no canónica), el lote es null y la decisión se registra igual — compatible,
+  // nunca un error.
+  const canonicalAnalysis = decision === 'go'
+    ? await getCurrentTenderAnalysis(database, opportunityId, records.documents, { canonicalOnly: true })
+    : null;
+  const agt002Items = deriveAgt002ItemsForGoDecision(decision, canonicalAnalysis, effectiveAnalysisRunId);
   const result = await rpc(database, 'psi_record_tender_go_no_go', {
     p_opportunity_id: opportunityId,
     p_tender_id: tender.id,
@@ -124,6 +202,7 @@ export async function callTenderGoNoGoDecision(database, input, currentProfile) 
     p_justification: justification,
     p_preparation: preparation,
     p_document_hash: documentHash,
+    p_agt002_items: agt002Items,
   });
   const persistedPreparation = result.preparation_created
     ? preparation
@@ -163,4 +242,69 @@ export async function requireTenderGoForPreparation(database, opportunityId, cur
   const payload = await getTenderGoNoGoDecision(database, opportunityId, currentProfile);
   if (payload.decision?.decision !== 'go') throw goNoGoError('La preparación de oferta requiere una decisión GO vigente.', 409);
   return payload;
+}
+
+const AGT002_DOSSIER_SYNC_ALLOWED_KEYS = new Set(['opportunity_id']);
+
+function requireClosedAgt002DossierSyncBody(input) {
+  const extraKeys = Object.keys(input || {}).filter(key => !AGT002_DOSSIER_SYNC_ALLOWED_KEYS.has(key));
+  if (extraKeys.length) throw goNoGoError('El cuerpo de la solicitud sólo puede incluir opportunity_id.');
+}
+
+/**
+ * Recovery path for `psi_sync_agt002_post_go_checklist` (fase 3B): re-derives and re-submits the
+ * AGT-002 handoff batch for an opportunity whose GO decision is already recorded, server-owned and
+ * fail-closed just like the atomic 9-arg path. It never decides or records GO/NO-GO itself.
+ *
+ * Every input the client could otherwise forge (item/source/hash/title) is rejected before any
+ * database access: the closed body accepts exactly `opportunity_id`, and the batch is always
+ * re-derived here from the current, canonical, completed analysis run bound to the current
+ * unsuperseded GO decision — never from anything the request body carries.
+ *
+ * Fail-closed, not a compatibility no-op: unlike `deriveAgt002ItemsForGoDecision` (which returns
+ * null for an ineligible/not-ready analysis because NO-GO and "not yet ready" are legitimate
+ * states while recording a decision), every one of those same states is an error here — a human
+ * explicitly asked to sync an existing GO's checklist, so silently doing nothing would hide a real
+ * problem instead of reporting it.
+ */
+export async function syncTenderDossierFromAgt002(database, input, currentProfile) {
+  requireClosedAgt002DossierSyncBody(input);
+  const opportunityId = requireUuid(input?.opportunity_id, 'una oportunidad válida');
+  const actorId = requireUuid(currentProfile?.id, 'un actor válido');
+  requireAction(currentProfile, ACTIONS.LICITACIONES_GO_NO_GO_APPROVE);
+
+  const { tender } = await resolveTenderContext(database, opportunityId);
+  const history = await must(database.from('psi_tender_go_no_go_decisions')
+    .select('id,decision,analysis_run_id,supersedes_decision_id')
+    .eq('opportunity_id', opportunityId).eq('tender_id', tender.id)
+    .order('decided_at', { ascending: false }).order('id', { ascending: false }));
+  const decision = currentDecisionFromHistory(history);
+  if (decision?.decision !== 'go') throw goNoGoError('La oportunidad no tiene una decisión GO vigente.', 409);
+  const analysisRunId = decision.analysis_run_id || null;
+  if (!analysisRunId) throw goNoGoError('La decisión GO vigente no tiene un análisis anclado.', 409);
+
+  const availableAnalysis = await getCurrentTenderAnalysis(database, opportunityId, null, { canonicalOnly: true });
+  const isExactCurrentCanonicalRun = availableAnalysis?.run_id === analysisRunId
+    && availableAnalysis.status === 'completed'
+    && availableAnalysis.current === true
+    && availableAnalysis.canonical === true;
+  if (!isExactCurrentCanonicalRun) throw goNoGoError('El análisis anclado a la decisión GO vigente ya no es el análisis vigente, canónico y completado.', 409);
+  if (!hasEligibleAgt002IntegralAnalysis(availableAnalysis.result)) throw goNoGoError('El análisis vigente no incluye un análisis integral V3 estructurado.', 409);
+
+  // `availableAnalysis` ya viene de una lectura canonicalOnly y su `canonical === true` acaba de
+  // verificarse arriba: se pasa tal cual, sin sintetizar ningún campo.
+  const handoff = deriveAgt002DossierHandoff({
+    currentAnalysis: availableAnalysis,
+    result: availableAnalysis.result,
+    questionResponses: [],
+  });
+  if (!handoff.ready) throw goNoGoError('El análisis vigente todavía no está listo para el traspaso al expediente.', 409);
+
+  return rpc(database, 'psi_sync_agt002_post_go_checklist', {
+    p_opportunity_id: opportunityId,
+    p_actor_id: actorId,
+    p_decision_id: decision.id,
+    p_analysis_run_id: analysisRunId,
+    p_items: handoff.items.map(mapAgt002DossierHandoffItemToSqlShape),
+  });
 }
