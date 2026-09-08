@@ -289,17 +289,26 @@ const api = readFileSync(new URL('api/[...path].js', root), 'utf8');
     assert.doesNotMatch(source, /createSignedUrl\(doc\.storage_path/, 'no puede quedar ninguna firma masiva por documento');
     assert.doesNotMatch(source, /getPublicUrl\(/, 'ningun documento del expediente puede exponerse por URL publica de bucket');
 
-    // Solo tres firmas en todo el backend, cada una para UN objeto ya autorizado:
-    // ficha empresarial, adjunto de respuesta humana y descarga documental.
+    // Solo cuatro firmas en todo el backend, cada una para UN objeto ya autorizado:
+    // ficha empresarial, adjunto de respuesta humana, descarga documental y
+    // descarga de adjunto de revision accionable.
     assert.equal(
       source.split('createSignedUrl(').length - 1,
-      3,
-      'solo la ficha empresarial, el adjunto de respuesta y la descarga documental pueden firmar',
+      4,
+      'solo la ficha empresarial, el adjunto de respuesta, la descarga documental y el adjunto de revision accionable pueden firmar',
     );
 
     // Contrato ajeno que no se toca: los adjuntos de respuestas humanas siguen
     // descargandose por su propia URL firmada.
     assert.match(source, /createSignedUrl\(tenderQuestionResponseAttachmentBucketRelativePath/, 'los adjuntos de respuestas humanas conservan su contrato');
+
+    // Contrato ajeno que no se toca: el adjunto de revision accionable sigue
+    // firmandose por su propia ruta y su propio TTL, no por el de la descarga documental.
+    assert.match(
+      source,
+      /createSignedUrl\(attachment\.storage_path, ACTIONABLE_REVIEW_ATTACHMENT_DOWNLOAD_TTL_SECONDS, \{ download: attachment\.name \}\)/,
+      'el adjunto de revision accionable conserva su contrato de descarga',
+    );
 
     // El endpoint de descarga: existe, y hace las cosas en el unico orden seguro.
     assert.match(source, /const TENDER_DOCUMENT_DOWNLOAD_TTL_SECONDS = 120;/, 'la capacidad de descarga dura 120 segundos');

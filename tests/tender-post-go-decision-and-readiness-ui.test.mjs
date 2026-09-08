@@ -969,3 +969,66 @@ test('8 — evidencia y fecha objetivo editadas en el mismo lote conservan ambos
     await view.unmount();
   }
 });
+
+// --- 9) El ítem sembrado por AGT-002 post-GO muestra su procedencia y su instrucción ---
+
+function mountChecklistWithItem(item) {
+  const { request, calls } = makeRequest([
+    { path: '/api/tender-dossier-item-action', method: 'POST', reply: () => { throw new Error('ninguna acción debía enviarse en esta prueba'); } },
+  ]);
+  const view = mountWithJsdom(TenderDossierChecklist, {
+    opportunityId: 'opportunity-cali',
+    workspace: checklistWorkspace(item),
+    request,
+    profiles: [],
+    canApprove: true,
+    onChanged: async () => {},
+  });
+  return { view, calls };
+}
+
+test('9 — un ítem con analysis_source muestra el badge "Desde Análisis" y su instrucción bajo el título', async () => {
+  const item = checklistItem({
+    title: 'Capital de trabajo mínimo exigido',
+    instruction: 'Revisar los estados financieros y el capital de trabajo.',
+    analysis_source: {
+      decision_id: 'decision-1',
+      analysis_run_id: 'run-1',
+      source_id: 'unit-financial-1',
+      requirement_id: 'financial-working-capital',
+    },
+  });
+  const { view } = mountChecklistWithItem(item);
+  try {
+    await settle(view);
+    assert.ok(
+      [...view.container.querySelectorAll('.badge')].some(badge => badge.textContent.trim() === 'Desde Análisis'),
+      'el ítem sembrado por AGT-002 debe declarar su procedencia con un badge',
+    );
+    const instruction = view.container.querySelector('.tender-dossier-instruction');
+    assert.ok(instruction, 'la instrucción debe mostrarse bajo el título');
+    assert.equal(instruction.textContent, 'Revisar los estados financieros y el capital de trabajo.');
+    assert.doesNotMatch(
+      view.container.innerHTML,
+      /decision-1|run-1|unit-financial-1|financial-working-capital/,
+      'ningún identificador técnico de analysis_source puede quedar visible en el DOM',
+    );
+  } finally {
+    await view.unmount();
+  }
+});
+
+test('9 — un ítem ordinario (sin analysis_source ni instruction) no muestra badge ni instrucción', async () => {
+  const { view } = mountChecklistWithItem(checklistItem());
+  try {
+    await settle(view);
+    assert.equal(
+      [...view.container.querySelectorAll('.badge')].some(badge => badge.textContent.trim() === 'Desde Análisis'),
+      false,
+      'un ítem seed_go/human ordinario nunca declara procedencia AGT-002',
+    );
+    assert.equal(view.container.querySelector('.tender-dossier-instruction'), null, 'sin instruction no puede renderizarse el párrafo de instrucción');
+  } finally {
+    await view.unmount();
+  }
+});

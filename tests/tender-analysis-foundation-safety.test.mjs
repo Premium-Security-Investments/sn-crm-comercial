@@ -83,6 +83,7 @@ for (const path of backendPaths) {
     ['post', '/api/tender-documents-import'],
     ['get', '/api/tender-go-no-go-decision'],
     ['post', '/api/tender-go-no-go-decision'],
+    ['post', '/api/tender-dossier-agt002-sync'],
   ]) assert.match(routeBlock(source, method, route), /await requireTenderAnalysisFoundation\(database\);/, `${method.toUpperCase()} ${route} debe cerrar antes de continuar.`);
 
   const upload = routeBlock(source, 'post', '/api/tender-documents-upload');

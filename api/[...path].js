@@ -13,7 +13,7 @@ import { dispatchTenderProcessingAfterConversion } from '../tender-processing-di
 import { appendTenderProcessingEvent, claimTenderProcessingJob, getTenderProcessingJobActor, recordTenderDocumentChunk, recordTenderImportItem, updateTenderProcessingJob } from '../tender-processing-worker-rpc.js';
 import { buildAgt002DocumentChunks } from '../agt002-document-chunks.js';
 import { runInConcurrentChunks } from '../tender-concurrency.js';
-import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation } from '../tender-go-no-go-rpc.js';
+import { callTenderGoNoGoDecision, getTenderGoNoGoDecision, requireTenderGoForPreparation, syncTenderDossierFromAgt002 } from '../tender-go-no-go-rpc.js';
 import { callTenderOfferStatusTransition, getTenderOfferStatus } from '../tender-offer-status-rpc.js';
 import {
   getTenderDossierWorkspace,
@@ -3960,6 +3960,15 @@ app.post('/api/tender-go-no-go-decision', async (req, res) => {
     const database = requireDb();
     await requireTenderAnalysisFoundation(database);
     res.status(201).json(await callTenderGoNoGoDecision(database, req.body || {}, currentProfile));
+  } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+app.post('/api/tender-dossier-agt002-sync', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    const database = requireDb();
+    await requireTenderAnalysisFoundation(database);
+    res.status(201).json(await syncTenderDossierFromAgt002(database, req.body || {}, currentProfile));
   } catch (error) { sendError(res, error, error?.status || 400); }
 });
 
