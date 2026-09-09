@@ -1,6 +1,8 @@
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { syncTenderDossierFromAgt002 } from '../tender-go-no-go-rpc.js';
+import { AGT002_INTEGRAL_ENVELOPE_SCHEMA_VERSION } from '../agt002-preview-contract.js';
+import { AGT002_INTEGRAL_V3_POLICY_VERSION } from '../agt002-preview-runtime.js';
 
 // Fase 3B: recovery server-owned de psi_sync_agt002_post_go_checklist para una decisión GO ya
 // registrada. A diferencia de deriveAgt002ItemsForGoDecision (que devuelve null como no-op
@@ -88,6 +90,31 @@ function v3ReadyResult(unitOverrides = {}, { decisionReady = true } = {}) {
   };
 }
 
+const AGT002_DOSSIER_SYNC_STAGE = 'agt002_dossier_sync';
+const RUN_CREATED_AT = '2026-07-03T00:00:00.000Z';
+
+// Corrida AGT-002 V3 válida por defecto: canónica, completada y vigente. Toda corrida usada como
+// una corrida V3 válida en estos fixtures declara explícitamente su propia schema_version/
+// policy_version y un completed_at igual a created_at — nunca los deja implícitos.
+function baseValidRun(overrides = {}) {
+  return {
+    id: ANALYSIS_RUN_ID,
+    snapshot_id: SNAPSHOT_ID,
+    opportunity_id: OPPORTUNITY_ID,
+    producer: 'AGT-002',
+    method: 'agent_ai',
+    status: 'completed',
+    canonical: true,
+    critical_open_count: 0,
+    result: v3ReadyResult(),
+    created_at: RUN_CREATED_AT,
+    schema_version: AGT002_INTEGRAL_ENVELOPE_SCHEMA_VERSION,
+    policy_version: AGT002_INTEGRAL_V3_POLICY_VERSION,
+    completed_at: RUN_CREATED_AT,
+    ...overrides,
+  };
+}
+
 function comparable(value) {
   return value == null ? '' : String(value);
 }
@@ -130,18 +157,7 @@ function fakeDatabase({
   }],
   snapshots = [{ id: SNAPSHOT_ID, opportunity_id: OPPORTUNITY_ID, document_hash: '0'.repeat(64), created_at: '2026-07-03T00:00:00.000Z' }],
   states = [{ opportunity_id: OPPORTUNITY_ID, current_snapshot_id: SNAPSHOT_ID, refresh_in_progress: false }],
-  runs = [{
-    id: ANALYSIS_RUN_ID,
-    snapshot_id: SNAPSHOT_ID,
-    opportunity_id: OPPORTUNITY_ID,
-    producer: 'AGT-002',
-    method: 'agent_ai',
-    status: 'completed',
-    canonical: true,
-    critical_open_count: 0,
-    result: v3ReadyResult(),
-    created_at: '2026-07-03T00:00:00.000Z',
-  }],
+  runs = [baseValidRun()],
   rpcResult = { opportunity_id: OPPORTUNITY_ID, decision_id: DECISION_ID, analysis_run_id: ANALYSIS_RUN_ID, items: [] },
 } = {}) {
   const observed = { rpc: [], targetAccesses: 0, tables: [] };
@@ -246,6 +262,41 @@ for (const forgedInput of [
   });
 }
 
+// --- RED: la identidad de versión y la completitud de la corrida seleccionada nunca se asumen ---
+// Ninguno de estos campos se valida todavía en el servidor: cada caso debe fallar 409 ANTES de
+// invocar la RPC, con `error.stage`/`error.code` estructurados — nunca degradar en silencio hacia
+// un lote sintetizado sobre una corrida cuya versión o completitud no puede confirmarse.
+
+{
+  // schema_version distinto de la V3 vigente: un payload que no se autoidentifica como la V3
+  // vigente nunca puede sustentar el traspaso, aunque el resto de la corrida luzca válida.
+  const { database, observed } = fakeDatabase({ runs: [baseValidRun({ schema_version: '2.0.0' })] });
+  await assert.rejects(() => sync(database), error => error?.status === 409
+    && error?.stage === AGT002_DOSSIER_SYNC_STAGE
+    && error?.code === 'schema_version_mismatch');
+  assert.equal(observed.rpc.length, 0, 'un schema_version distinto nunca puede sincronizar');
+}
+
+{
+  // policy_version distinto de la política vigente: la corrida pudo completarse bajo una política
+  // ya reemplazada, así que tampoco puede sustentar el traspaso sin verificarlo primero.
+  const { database, observed } = fakeDatabase({ runs: [baseValidRun({ policy_version: 'agt002-integral-v3-policy-v4' })] });
+  await assert.rejects(() => sync(database), error => error?.status === 409
+    && error?.stage === AGT002_DOSSIER_SYNC_STAGE
+    && error?.code === 'policy_version_mismatch');
+  assert.equal(observed.rpc.length, 0, 'un policy_version distinto nunca puede sincronizar');
+}
+
+for (const invalidCompletedAt of [null, 'no-es-una-fecha']) {
+  // completed_at ausente o inválido: sin una fecha de finalización verificable no hay forma segura
+  // de anclar el análisis a un instante concreto, mucho menos de compararlo contra el GO.
+  const { database, observed } = fakeDatabase({ runs: [baseValidRun({ completed_at: invalidCompletedAt })] });
+  await assert.rejects(() => sync(database), error => error?.status === 409
+    && error?.stage === AGT002_DOSSIER_SYNC_STAGE
+    && error?.code === 'completed_at_invalid');
+  assert.equal(observed.rpc.length, 0, 'completed_at ausente o inválido nunca puede sincronizar');
+}
+
 // --- no-go vigente: fail-closed 409, sin RPC ---
 
 {
@@ -291,10 +342,7 @@ for (const forgedInput of [
 
 {
   const { database, observed } = fakeDatabase({
-    runs: [{
-      id: OTHER_RUN_ID, snapshot_id: SNAPSHOT_ID, opportunity_id: OPPORTUNITY_ID, producer: 'AGT-002', method: 'agent_ai',
-      status: 'completed', canonical: true, critical_open_count: 0, result: v3ReadyResult(), created_at: '2026-07-03T00:00:00.000Z',
-    }],
+    runs: [baseValidRun({ id: OTHER_RUN_ID })],
   });
   await assert.rejects(() => sync(database), error => error?.status === 409 && /vigente, canónico y completado/i.test(error.message));
   assert.equal(observed.rpc.length, 0, 'un run distinto al anclado por la decisión nunca puede sincronizar');
@@ -314,10 +362,7 @@ for (const forgedInput of [
 
 {
   const { database, observed } = fakeDatabase({
-    runs: [{
-      id: ANALYSIS_RUN_ID, snapshot_id: SNAPSHOT_ID, opportunity_id: OPPORTUNITY_ID, producer: 'AGT-002', method: 'agent_ai',
-      status: 'completed', canonical: false, critical_open_count: 0, result: v3ReadyResult(), created_at: '2026-07-03T00:00:00.000Z',
-    }],
+    runs: [baseValidRun({ canonical: false })],
   });
   await assert.rejects(() => sync(database), error => error?.status === 409);
   assert.equal(observed.rpc.length, 0);
@@ -340,10 +385,7 @@ for (const forgedInput of [
 
 {
   const { database, observed } = fakeDatabase({
-    runs: [{
-      id: ANALYSIS_RUN_ID, snapshot_id: SNAPSHOT_ID, opportunity_id: OPPORTUNITY_ID, producer: 'AGT-002', method: 'agent_ai',
-      status: 'completed', canonical: true, critical_open_count: 0, result: v3ReadyResult({}, { decisionReady: false }), created_at: '2026-07-03T00:00:00.000Z',
-    }],
+    runs: [baseValidRun({ result: v3ReadyResult({}, { decisionReady: false }) })],
   });
   await assert.rejects(() => sync(database), error => error?.status === 409 && /listo para el traspaso/i.test(error.message));
   assert.equal(observed.rpc.length, 0);
@@ -360,6 +402,8 @@ function v3LegacyResult(coverageOverrides = {}) {
       coverage: {
         analyzed_requirement_ids: [V3_UNIT_FINANCIAL.requirement_id],
         expected_requirement_ids: [V3_UNIT_FINANCIAL.requirement_id],
+        material_omissions: false,
+        omission_reasons: [],
         ...coverageOverrides,
       },
       analysis_units: [V3_UNIT_FINANCIAL],
@@ -407,6 +451,10 @@ function v3LegacyProductionResult(units = productionUnits()) {
       coverage: {
         analyzed_requirement_ids: requirementIds,
         expected_requirement_ids: requirementIds,
+        // Forma REAL de Cali: la corrida de producción sí declara una omisión material, y la única
+        // razón autorizada por el bypass legado (`lower_relevance`).
+        material_omissions: true,
+        omission_reasons: ['lower_relevance'],
       },
       analysis_units: units,
     },
@@ -424,7 +472,10 @@ function legacyRun(result, overrides = {}) {
     canonical: true,
     critical_open_count: 0,
     result,
-    created_at: '2026-07-03T00:00:00.000Z',
+    created_at: RUN_CREATED_AT,
+    schema_version: AGT002_INTEGRAL_ENVELOPE_SCHEMA_VERSION,
+    policy_version: AGT002_INTEGRAL_V3_POLICY_VERSION,
+    completed_at: RUN_CREATED_AT,
     ...overrides,
   };
 }
@@ -642,15 +693,79 @@ function legacyRun(result, overrides = {}) {
   assert.equal(observed.rpc.length, 0);
 }
 
+// --- RED: contrato temporal seguro del bypass legado sin anclaje — el análisis debe haberse
+// completado a más tardar cuando el humano otorgó el GO, nunca después. Sin anclaje explícito el
+// servidor elige la corrida canónica vigente por sí mismo, así que debe probar que esa corrida ya
+// existía (completada) en el instante del GO; nunca puede atar una decisión humana pasada a un
+// análisis que, de hecho, es posterior a ella. ---
+
+{
+  const { database, observed } = fakeDatabase({
+    history: unanchoredGoHistory(),
+    runs: [legacyRun(v3LegacyResult(), { completed_at: '2026-07-11T00:00:00.000Z' })],
+  });
+  await assert.rejects(() => sync(database), error => error?.status === 409
+    && error?.stage === AGT002_DOSSIER_SYNC_STAGE
+    && error?.code === 'unanchored_run_completed_after_go');
+  assert.equal(observed.rpc.length, 0, 'una corrida sin anclaje completada después del GO nunca puede sincronizar');
+}
+
+// --- RED: columnas seleccionadas de psi_tender_analysis_runs. El fake query de este archivo no
+// registra los argumentos de `.select(...)` (ver `query()` arriba: `select()` ignora su argumento),
+// así que esta garantía se prueba a nivel de fuente contra la única función que arma esa lista de
+// columnas para la lectura de la corrida vigente.
+{
+  const source = readFileSync(new URL('../tender-analysis-foundation.js', import.meta.url), 'utf8');
+  const columns = source.match(/function currentAnalysisRunColumns\([\s\S]*?\n\}/)?.[0] || '';
+  assert.ok(columns, 'currentAnalysisRunColumns debe seguir declarada en tender-analysis-foundation.js');
+  for (const column of ['schema_version', 'policy_version', 'completed_at']) {
+    assert.match(columns, new RegExp(`'${column}'`), `la lectura de la corrida vigente debe seleccionar ${column}`);
+  }
+}
+
+// --- RED: guardia de deriva de constantes. schema_version/policy_version deben leerse de sus
+// módulos canónicos (agt002-integral-analysis-contract.js / agt002-preview-runtime.js) — nunca
+// de una copia local, que puede desincronizarse en silencio de la versión vigente real. ---
+
+{
+  const source = readFileSync(new URL('../tender-go-no-go-rpc.js', import.meta.url), 'utf8');
+  assert.match(
+    source,
+    /import\s*\{[^}]*\bAGT002_INTEGRAL_ENVELOPE_SCHEMA_VERSION\b[^}]*\}\s*from\s*['"]\.\/agt002-preview-contract\.js['"]/,
+    'tender-go-no-go-rpc.js debe importar AGT002_INTEGRAL_ENVELOPE_SCHEMA_VERSION desde su módulo canónico',
+  );
+  assert.match(
+    source,
+    /import\s*\{[^}]*\bAGT002_INTEGRAL_V3_POLICY_VERSION\b[^}]*\}\s*from\s*['"]\.\/agt002-preview-runtime\.js['"]/,
+    'tender-go-no-go-rpc.js debe importar AGT002_INTEGRAL_V3_POLICY_VERSION desde su módulo canónico',
+  );
+  assert.match(
+    source,
+    /run\?\.schema_version\s*!==\s*AGT002_INTEGRAL_ENVELOPE_SCHEMA_VERSION/,
+    'la verificación de metadata debe comparar contra la constante canónica de schema_version',
+  );
+  assert.match(
+    source,
+    /run\?\.policy_version\s*!==\s*AGT002_INTEGRAL_V3_POLICY_VERSION/,
+    'la verificación de metadata debe comparar contra la constante canónica de policy_version',
+  );
+  assert.doesNotMatch(
+    source,
+    /const\s+AGT002_V3_SCHEMA_VERSION\s*=/,
+    'tender-go-no-go-rpc.js no puede declarar una copia local de AGT002_V3_SCHEMA_VERSION',
+  );
+  assert.doesNotMatch(
+    source,
+    /const\s+AGT002_V3_POLICY_VERSION\s*=/,
+    'tender-go-no-go-rpc.js no puede declarar una copia local de AGT002_V3_POLICY_VERSION',
+  );
+}
+
 // --- unión malformada/ambigua: el error propio del selector propaga sin envolverse en 409 ---
 
 {
   const { database, observed } = fakeDatabase({
-    runs: [{
-      id: ANALYSIS_RUN_ID, snapshot_id: SNAPSHOT_ID, opportunity_id: OPPORTUNITY_ID, producer: 'AGT-002', method: 'agent_ai',
-      status: 'completed', canonical: true, critical_open_count: 0,
-      result: v3ReadyResult({ unit_kind: 'strategic_consideration' }), created_at: '2026-07-03T00:00:00.000Z',
-    }],
+    runs: [baseValidRun({ result: v3ReadyResult({ unit_kind: 'strategic_consideration' }) })],
   });
   await assert.rejects(() => sync(database), /sin unidad V3 tender_requirement elegible/i);
   assert.equal(observed.rpc.length, 0);

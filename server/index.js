@@ -326,6 +326,7 @@ function sendError(res, error, status = 500) {
     console.warn('tender_analysis_foundation_unavailable', { event: 'tender_analysis_foundation_unavailable' });
     return res.status(503).json({ error: 'La fundación de análisis documental no está disponible.', code: 'TENDER_ANALYSIS_FOUNDATION_UNAVAILABLE' });
   }
+  if (error?.stage && error?.code) return res.status(status).json({ error: error.message, stage: error.stage, code: error.code });
   console.error(error);
   return res.status(status).json({ error: error?.message || String(error) });
 }

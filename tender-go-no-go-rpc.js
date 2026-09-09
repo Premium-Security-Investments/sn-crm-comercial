@@ -4,12 +4,23 @@ import { buildTenderOfferPreparation } from './tender-offer-preparation.js';
 import { mergeTenderDocumentRecords } from './tender-document-versioning.js';
 import { deriveAgt002DossierHandoff, evidenceCoverageStrictlyAbsent } from './server/agt002-dossier-handoff.js';
 import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from './agt002-integral-analysis-v3.js';
+import { AGT002_INTEGRAL_ENVELOPE_SCHEMA_VERSION } from './agt002-preview-contract.js';
+import { AGT002_INTEGRAL_V3_POLICY_VERSION } from './agt002-preview-runtime.js';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function goNoGoError(message, status = 400) {
   const error = new Error(message);
   error.status = status;
+  return error;
+}
+
+// Attaches a stable stage/code pair to an existing goNoGoError without altering its
+// status/message: callers that need to branch on `error.code` (tests, clients) get a stable
+// contract while every existing status/message assertion keeps working unchanged.
+function withStageCode(error, stage, code) {
+  error.stage = stage;
+  error.code = code;
   return error;
 }
 
@@ -252,6 +263,41 @@ export async function requireTenderGoForPreparation(database, opportunityId, cur
   return payload;
 }
 
+const AGT002_DOSSIER_SYNC_STAGE = 'agt002_dossier_sync';
+
+// Fail-closed identity/completeness gate for the run the recovery is about to hand off: a run
+// whose schema_version/policy_version do not self-identify as the V3 policy currently in force,
+// or whose completed_at cannot be parsed into a real instant, can never sustain the traspaso —
+// regardless of how valid the rest of the run otherwise looks. Returns the parsed completed_at
+// (ms) so callers that also need the chronology check never re-parse it.
+function requireAgt002V3RunIdentity(run) {
+  if (run?.schema_version !== AGT002_INTEGRAL_ENVELOPE_SCHEMA_VERSION) {
+    throw withStageCode(goNoGoError('La corrida vigente no declara el schema_version V3 vigente.', 409), AGT002_DOSSIER_SYNC_STAGE, 'schema_version_mismatch');
+  }
+  if (run?.policy_version !== AGT002_INTEGRAL_V3_POLICY_VERSION) {
+    throw withStageCode(goNoGoError('La corrida vigente no declara el policy_version vigente.', 409), AGT002_DOSSIER_SYNC_STAGE, 'policy_version_mismatch');
+  }
+  const completedAtMs = run?.completed_at ? Date.parse(run.completed_at) : NaN;
+  if (!Number.isFinite(completedAtMs)) {
+    throw withStageCode(goNoGoError('La corrida vigente no tiene un completed_at válido.', 409), AGT002_DOSSIER_SYNC_STAGE, 'completed_at_invalid');
+  }
+  return completedAtMs;
+}
+
+// Caso REAL de Cali (issue #187) sin anclaje: la cronología real es análisis -> GO, nunca al
+// revés. Sin un `analysis_run_id` explícito el servidor elige la corrida canónica vigente por sí
+// mismo, así que debe probar que esa corrida ya existía (completada) en el instante del GO; nunca
+// puede atar una decisión humana pasada a un análisis que, de hecho, es posterior a ella.
+function requireUnanchoredRunNotAfterGo(completedAtMs, decision) {
+  const decidedAtMs = decision?.decided_at ? Date.parse(decision.decided_at) : NaN;
+  if (!Number.isFinite(decidedAtMs)) {
+    throw withStageCode(goNoGoError('La decisión GO vigente no tiene una fecha decided_at válida.', 409), AGT002_DOSSIER_SYNC_STAGE, 'decided_at_invalid');
+  }
+  if (completedAtMs > decidedAtMs) {
+    throw withStageCode(goNoGoError('La corrida vigente sin anclaje se completó después de la decisión GO vigente.', 409), AGT002_DOSSIER_SYNC_STAGE, 'unanchored_run_completed_after_go');
+  }
+}
+
 const AGT002_DOSSIER_SYNC_ALLOWED_KEYS = new Set(['opportunity_id']);
 
 function requireClosedAgt002DossierSyncBody(input) {
@@ -292,7 +338,7 @@ export async function syncTenderDossierFromAgt002(database, input, currentProfil
 
   const { tender } = await resolveTenderContext(database, opportunityId);
   const history = await must(database.from('psi_tender_go_no_go_decisions')
-    .select('id,decision,analysis_run_id,supersedes_decision_id')
+    .select('id,decision,analysis_run_id,supersedes_decision_id,decided_at')
     .eq('opportunity_id', opportunityId).eq('tender_id', tender.id)
     .order('decided_at', { ascending: false }).order('id', { ascending: false }));
   const decision = currentDecisionFromHistory(history);
@@ -329,6 +375,10 @@ export async function syncTenderDossierFromAgt002(database, input, currentProfil
     }
   }
   if (!hasEligibleAgt002IntegralAnalysis(availableAnalysis.result)) throw goNoGoError('El análisis vigente no incluye un análisis integral V3 estructurado.', 409);
+  // Identidad de versión y completitud de la corrida seleccionada: nunca se asumen, se verifican
+  // antes de derivar cualquier lote o invocar la RPC, tanto para el caso anclado como el legado.
+  const completedAtMs = requireAgt002V3RunIdentity(availableAnalysis);
+  if (!anchoredAnalysisRunId) requireUnanchoredRunNotAfterGo(completedAtMs, decision);
   // Server-owned: el run del lote es el anclado por la decisión o, sólo en el caso legado estricto
   // anterior, el de la corrida canónica vigente que este mismo servidor acaba de leer.
   const analysisRunId = anchoredAnalysisRunId || availableAnalysis.run_id;
@@ -341,7 +391,8 @@ export async function syncTenderDossierFromAgt002(database, input, currentProfil
   // nunca reescribe la decisión empresarial. Ésta es la ÚNICA ruta que declara ese hecho: el
   // registro de la decisión (deriveAgt002ItemsForGoDecision) nunca lo hace, porque allí el GO
   // todavía no está persistido. El bypass sigue siendo fail-closed dentro del selector —cobertura
-  // estrictamente ausente, pausa exactamente por cobertura, sin omisiones materiales y unión 1:1
+  // estrictamente ausente, pausa exactamente por cobertura, sin omisiones materiales o con la única
+  // omisión material autorizada (`lower_relevance`, sola en `omission_reasons`), y unión 1:1
   // exacta con la unidad V3—, y si no produce lote listo esta ruta responde 409 en lugar de sembrar
   // a ciegas. La clasificación material pre-GO no interviene: los requisitos de un pliego real
   // (`sreq:*`) no están en el catálogo global de requisitos gobernados de la empresa.
