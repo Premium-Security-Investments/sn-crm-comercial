@@ -583,6 +583,13 @@ for (const path of ['../server/index.js', '../api/[...path].js']) {
   const noteRoute = source.match(/app\.post\('\/api\/tender-offer-preparation-note'[\s\S]*?\n}\);/);
   assert.ok(noteRoute, 'preparation-note route must remain available');
   assert.match(noteRoute[0], /await requireTenderGoForPreparation\(database, opportunityId, currentProfile\)/, 'preparation notes must validate the current GO before insert');
+  const sendErrorFn = source.match(/function sendError\([\s\S]*?\n\}/);
+  assert.ok(sendErrorFn, 'sendError must remain defined');
+  assert.match(
+    sendErrorFn[0],
+    /if \(error\?\.stage && error\?\.code\) return res\.status\(status\)\.json\(\{ error: error\.message, stage: error\.stage, code: error\.code \}\);/,
+    'typed fail-closed diagnostics must reach API clients in both runtimes',
+  );
 }
 
 console.log('tender go/no-go API checks passed');

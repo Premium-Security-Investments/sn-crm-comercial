@@ -145,8 +145,11 @@ function legacyUnits() {
 
 // Igual que `resultFixture`, pero SIN la clave `evidence_coverage`: ésa es exactamente la corrida
 // legada del issue #187. `extraResultKeys` permite añadir claves no confiables del resultado (p.ej.
-// un `decision_review` forjado por el modelo) sin tocar el resto del fixture.
-function legacyResultFixture(units, extraResultKeys = {}) {
+// un `decision_review` forjado por el modelo) sin tocar el resto del fixture. `coverageOverrides`
+// permite sobrescribir puntualmente claves de `coverage` (p.ej. la forma real permitida de
+// `material_omissions:true` + `omission_reasons`, o un desacuerdo expected/analyzed) sin reconstruir
+// el resto del fixture a mano.
+function legacyResultFixture(units, extraResultKeys = {}, coverageOverrides = {}) {
   const requirementIds = units.map(unit => unit.requirement_id);
   return {
     integral_analysis: {
@@ -156,6 +159,7 @@ function legacyResultFixture(units, extraResultKeys = {}) {
         expected_requirement_ids: requirementIds,
         material_omissions: false,
         omission_reasons: [],
+        ...coverageOverrides,
       },
       analysis_units: units,
     },
@@ -547,23 +551,78 @@ test('24. la salida es inmutable (congelada)', () => {
 // recovery, donde el GO ya está persistido y vigente), cobertura ESTRICTAMENTE ausente y pausa
 // exactamente por cobertura, el lote se deriva de los buckets blockers/decision_questions/
 // preparation del review genérico server-owned. Todo lo demás sigue fail-closed.
+//
+// Toda negativa fail-closed de este bypass (`ready:false`/`items:[]`) expone
+// `diagnostic.stage === 'legacy_post_go_handoff'` y un `diagnostic.code` explícito no vacío —
+// `assertSafeLegacyRejection` — y toda unión inválida que lanza expone las mismas `stage`/`code`
+// en el propio error — `assertLegacyRejectionThrows` — para que el llamador pueda distinguir el
+// motivo sin parsear el mensaje de texto libre.
 // ---------------------------------------------------------------------------
+
+// Toda negativa "segura" (sin lanzar) del bypass legado debe traer diagnóstico explícito, no sólo
+// `{ready:false, items:[]}`: el llamador necesita distinguir GO faltante de cobertura presente de
+// omisión inválida de conjunto malformado sin parsear texto libre.
+function assertSafeLegacyRejection(out, expectedCode) {
+  assert.equal(out.ready, false);
+  assert.deepEqual(out.items, []);
+  assert.ok(isRecord(out.diagnostic), 'la salida fail-closed del bypass legado debe traer diagnostic');
+  assert.equal(out.diagnostic.stage, 'legacy_post_go_handoff');
+  assert.equal(typeof out.diagnostic.code, 'string');
+  assert.ok(out.diagnostic.code.trim().length > 0, 'diagnostic.code debe ser explícito y no vacío');
+  assert.equal(out.diagnostic.code, expectedCode);
+}
+
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+// Igual que `assertSafeLegacyRejection`, pero para las uniones inválidas del bypass legado que
+// lanzan en vez de devolver un lote vacío: el error también debe exponer el mismo `stage` y un
+// `code` no vacío, no sólo un `message` de texto libre.
+function assertLegacyRejectionThrows(fn, messagePattern) {
+  assert.throws(fn, (error) => {
+    assert.match(error.message, messagePattern);
+    assert.equal(error.stage, 'legacy_post_go_handoff');
+    assert.equal(typeof error.code, 'string');
+    assert.ok(error.code.trim().length > 0, 'error.code debe ser explícito y no vacío');
+    return true;
+  });
+}
+
+// Única forma real permitida y AUTORIZADA de una omisión material declarada por el propio sobre
+// V3 (ver 26b y el bloque de comentario antes de 32a): `material_omissions:true` con
+// `omission_reasons` igual EXACTAMENTE a `['lower_relevance']`. Toda negativa de conjunto/unidad de
+// esta sección rebasa sobre esta forma para ejercer el bypass real, no la ruta
+// `material_omissions:false` accidental.
+const STRICT_LOWER_RELEVANCE_OMISSION = Object.freeze({
+  material_omissions: true,
+  omission_reasons: Object.freeze(['lower_relevance']),
+});
+
+// Igual que `legacyResultFixture`, pero con la forma estricta autorizada del bypass (ver 26b) ya
+// aplicada: `material_omissions:true` + `omission_reasons:['lower_relevance']`.
+function legacyLowerRelevanceResultFixture(units) {
+  return legacyResultFixture(units, {}, STRICT_LOWER_RELEVANCE_OMISSION);
+}
 
 test('25. legado sin GO ya persistido: fail-closed, sigue devolviendo 0 pendientes', () => {
   const units = legacyUnits();
   const input = { currentAnalysis: currentAnalysisFixture(), result: legacyResultFixture(units), questionResponses: [] };
 
-  assert.deepEqual(deriveAgt002DossierHandoff(input), { ready: false, items: [] });
-  assert.deepEqual(deriveAgt002DossierHandoff({ ...input, humanGoGranted: false }), { ready: false, items: [] });
-  assert.deepEqual(deriveAgt002DossierHandoff({ ...input, humanGoGranted: 'go' }), { ready: false, items: [] });
-  assert.deepEqual(deriveAgt002DossierHandoff({ ...input, humanGoGranted: 1 }), { ready: false, items: [] });
+  assertSafeLegacyRejection(deriveAgt002DossierHandoff(input), 'human_go_required');
+  assertSafeLegacyRejection(deriveAgt002DossierHandoff({ ...input, humanGoGranted: false }), 'human_go_required');
+  assertSafeLegacyRejection(deriveAgt002DossierHandoff({ ...input, humanGoGranted: 'go' }), 'human_go_required');
+  assertSafeLegacyRejection(deriveAgt002DossierHandoff({ ...input, humanGoGranted: 1 }), 'human_go_required');
 });
 
 test('26. legado con GO ya persistido: las 5 unidades abiertas del pliego producen los 5 pendientes 1:1', () => {
   const units = legacyUnits();
+  const result = legacyResultFixture(units);
+  assert.equal(Object.prototype.hasOwnProperty.call(result, 'evidence_coverage'), false, 'la corrida legada nunca escribió evidence_coverage');
+
   const out = deriveAgt002DossierHandoff({
     currentAnalysis: currentAnalysisFixture(),
-    result: legacyResultFixture(units),
+    result,
     questionResponses: [],
     humanGoGranted: true,
   });
@@ -571,6 +630,34 @@ test('26. legado con GO ya persistido: las 5 unidades abiertas del pliego produc
   assert.equal(out.ready, true);
   assert.equal(out.items.length, 5);
   assert.equal(out.items.length, LEGACY_REQUIREMENT_IDS.length);
+  assert.deepEqual(
+    out.items.map(item => item.item_key),
+    LEGACY_REQUIREMENT_IDS.map(requirementId => `agt002_post_go:${requirementId}`),
+  );
+  out.items.forEach((item, index) => {
+    const unit = units[index];
+    const expected = buildActionableReviewIntegralUnitSource(unit);
+    assert.deepEqual(item.source, {
+      source_kind: 'integral_unit',
+      source_id: unit.unit_id,
+      requirement_id: unit.requirement_id,
+      source_hash: expected.sourceHash,
+    });
+  });
+});
+
+test('26b. legado con GO ya persistido y omisión material declarada en la forma estricta autorizada (material_omissions:true + omission_reasons:["lower_relevance"]) produce el mismo lote de 5 pendientes: es la forma autorizada del bypass, no una excepción adicional que deba fallar', () => {
+  const units = legacyUnits();
+  const result = legacyResultFixture(units, {}, STRICT_LOWER_RELEVANCE_OMISSION);
+  const out = deriveAgt002DossierHandoff({
+    currentAnalysis: currentAnalysisFixture(),
+    result,
+    questionResponses: [],
+    humanGoGranted: true,
+  });
+
+  assert.equal(out.ready, true);
+  assert.equal(out.items.length, 5);
   assert.deepEqual(
     out.items.map(item => item.item_key),
     LEGACY_REQUIREMENT_IDS.map(requirementId => `agt002_post_go:${requirementId}`),
@@ -660,7 +747,7 @@ test('30. cobertura PRESENTE pero no lista nunca habilita el bypass, ni siquiera
   const units = legacyUnits();
   const result = { ...legacyResultFixture(units), evidence_coverage: COVERAGE_PAUSED };
   const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
-  assert.deepEqual(out, { ready: false, items: [] });
+  assertSafeLegacyRejection(out, 'evidence_coverage_present');
 });
 
 test('31. cualquier evidence_coverage presente (aunque vacío o inservible) es presencia, no ausencia', () => {
@@ -677,16 +764,199 @@ test('31. cualquier evidence_coverage presente (aunque vacío o inservible) es p
   ]) {
     const result = { ...legacyResultFixture(units), evidence_coverage: evidenceCoverage };
     const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
-    assert.deepEqual(out, { ready: false, items: [] }, `evidence_coverage=${JSON.stringify(evidenceCoverage)} no puede habilitar el bypass`);
+    assertSafeLegacyRejection(out, 'evidence_coverage_present');
   }
 });
 
-test('32. omisiones materiales declaradas por el propio sobre V3 mantienen el fail-closed con GO', () => {
+// La única forma real permitida y AUTORIZADA de una omisión material declarada por el propio sobre
+// V3 es `material_omissions:true` con `omission_reasons` igual EXACTAMENTE a `['lower_relevance']`
+// (el mismo catálogo de razones que AGT002_RETRIEVAL_OMISSION_REASONS): 26b prueba esa forma exacta
+// como POSITIVA — el traspaso legado procede igual que sin omisión declarada, porque es la
+// excepción estricta autorizada, no una omisión cualquiera. Cualquier desviación de esa forma
+// exacta (razón ausente/vacía/distinta/adicional/duplicada) NO está autorizada y sigue fail-closed:
+// el bypass no se relaja para "cualquier omisión declarada", sólo para esa forma cerrada. Se
+// mantienen las mismas cinco unidades/IDs `sreq:*` abiertas: sólo cambia `coverage`.
+test('32a. omission_reasons ausente (clave eliminada) junto a material_omissions:true sigue fail-closed (no es la forma estricta autorizada)', () => {
   const units = legacyUnits();
-  const result = legacyResultFixture(units);
-  result.integral_analysis.coverage.material_omissions = true;
+  const result = legacyResultFixture(units, {}, { material_omissions: true, omission_reasons: ['lower_relevance'] });
+  delete result.integral_analysis.coverage.omission_reasons;
   const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
-  assert.deepEqual(out, { ready: false, items: [] });
+  assertSafeLegacyRejection(out, 'omission_declaration_invalid');
+});
+
+test('32b. omission_reasons vacío junto a material_omissions:true sigue fail-closed (no es la forma estricta autorizada)', () => {
+  const units = legacyUnits();
+  const result = legacyResultFixture(units, {}, { material_omissions: true, omission_reasons: [] });
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+  assertSafeLegacyRejection(out, 'omission_declaration_invalid');
+});
+
+test('32c. omission_reasons con una razón distinta a la autorizada sigue fail-closed (no es la forma estricta autorizada)', () => {
+  const units = legacyUnits();
+  const result = legacyResultFixture(units, {}, { material_omissions: true, omission_reasons: ['budget_exhausted'] });
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+  assertSafeLegacyRejection(out, 'omission_declaration_invalid');
+});
+
+test('32d. omission_reasons con una razón adicional además de la autorizada sigue fail-closed (no es la forma estricta autorizada)', () => {
+  const units = legacyUnits();
+  const result = legacyResultFixture(units, {}, { material_omissions: true, omission_reasons: ['lower_relevance', 'budget_exhausted'] });
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+  assertSafeLegacyRejection(out, 'omission_declaration_invalid');
+});
+
+test('32e. omission_reasons con la misma razón duplicada sigue fail-closed (no es la forma estricta autorizada)', () => {
+  const units = legacyUnits();
+  const result = legacyResultFixture(units, {}, { material_omissions: true, omission_reasons: ['lower_relevance', 'lower_relevance'] });
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+  assertSafeLegacyRejection(out, 'omission_declaration_invalid');
+});
+
+// Semántica de conjuntos: `expected_requirement_ids` y `analyzed_requirement_ids` pueden diferir en
+// ORDEN sin que eso sea una divergencia — sólo importa que su conjunto normalizado (strings no
+// vacíos, únicos) sea idéntico entre sí y frente al conjunto real de `analysis_units`. 32f prueba
+// esa reordenación como POSITIVA, rebasando sobre la forma estricta autorizada de 26b
+// (`legacyLowerRelevanceResultFixture`) para ejercer el bypass real. Las negativas reales de esta
+// familia (32g en adelante) rebasan sobre la misma forma por el mismo motivo, no la ruta
+// `material_omissions:false` por accidente.
+test('32f. expected_requirement_ids/analyzed_requirement_ids en distinto orden siguen siendo el mismo conjunto normalizado: el orden distinto no rompe elegibilidad', () => {
+  const units = legacyUnits();
+  const requirementIds = units.map(unit => unit.requirement_id);
+  const result = legacyLowerRelevanceResultFixture(units);
+  result.integral_analysis.coverage.analyzed_requirement_ids = [...requirementIds].reverse();
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+  assert.equal(out.ready, true);
+  assert.equal(out.items.length, 5);
+  assert.deepEqual(
+    out.items.map(item => item.item_key),
+    LEGACY_REQUIREMENT_IDS.map(requirementId => `agt002_post_go:${requirementId}`),
+  );
+});
+
+test('32g. un requirement_id duplicado entre unidades falla cerrado (review server-owned inelegible)', () => {
+  const units = legacyUnits();
+  units[1] = legacyUnitFixture(LEGACY_REQUIREMENT_IDS[0], 1);
+  const result = legacyResultFixture(units, {}, STRICT_LOWER_RELEVANCE_OMISSION);
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+  assertSafeLegacyRejection(out, 'requirement_id_set_mismatch');
+});
+
+test('32h. un requirement_id vacío en una unidad falla cerrado (review server-owned inelegible)', () => {
+  const units = legacyUnits();
+  units[2] = legacyUnitFixture(LEGACY_REQUIREMENT_IDS[2], 2, { requirement_id: '' });
+  const result = legacyResultFixture(units, {}, STRICT_LOWER_RELEVANCE_OMISSION);
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+  assertSafeLegacyRejection(out, 'requirement_id_set_mismatch');
+});
+
+test('32i. el conjunto de unidades no coincide con el conjunto declarado por coverage falla cerrado (unit set mismatch, server-owned vs. coverage)', () => {
+  const units = legacyUnits();
+  const requirementIds = units.map(unit => unit.requirement_id);
+  const declaredIds = [...requirementIds.slice(0, 4), 'sreq:999'];
+  const result = legacyResultFixture(units, {}, {
+    ...STRICT_LOWER_RELEVANCE_OMISSION,
+    expected_requirement_ids: declaredIds,
+    analyzed_requirement_ids: declaredIds,
+  });
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+  assertSafeLegacyRejection(out, 'requirement_id_set_mismatch');
+});
+
+test('32j. analyzed_requirement_ids omite contenido presente en expected_requirement_ids/unidades falla cerrado (contenido faltante, no sólo orden)', () => {
+  const units = legacyUnits();
+  const requirementIds = units.map(unit => unit.requirement_id);
+  const result = legacyResultFixture(units, {}, {
+    ...STRICT_LOWER_RELEVANCE_OMISSION,
+    analyzed_requirement_ids: requirementIds.slice(0, 4),
+  });
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+  assertSafeLegacyRejection(out, 'requirement_id_set_mismatch');
+});
+
+test('32k. analyzed_requirement_ids trae contenido adicional ausente de expected_requirement_ids/unidades falla cerrado (contenido extra, no sólo orden)', () => {
+  const units = legacyUnits();
+  const requirementIds = units.map(unit => unit.requirement_id);
+  const result = legacyResultFixture(units, {}, {
+    ...STRICT_LOWER_RELEVANCE_OMISSION,
+    analyzed_requirement_ids: [...requirementIds, 'sreq:999'],
+  });
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+  assertSafeLegacyRejection(out, 'requirement_id_set_mismatch');
+});
+
+test('32l. analyzed_requirement_ids con un id duplicado dentro del propio arreglo falla cerrado, aunque el conjunto único resultante coincida', () => {
+  const units = legacyUnits();
+  const requirementIds = units.map(unit => unit.requirement_id);
+  const result = legacyResultFixture(units, {}, {
+    ...STRICT_LOWER_RELEVANCE_OMISSION,
+    analyzed_requirement_ids: [...requirementIds, requirementIds[0]],
+  });
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+  assertSafeLegacyRejection(out, 'requirement_id_set_mismatch');
+});
+
+test('32m. analyzed_requirement_ids con un id en blanco falla cerrado', () => {
+  const units = legacyUnits();
+  const requirementIds = units.map(unit => unit.requirement_id);
+  const result = legacyResultFixture(units, {}, {
+    ...STRICT_LOWER_RELEVANCE_OMISSION,
+    analyzed_requirement_ids: [...requirementIds.slice(0, 4), '   '],
+  });
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+  assertSafeLegacyRejection(out, 'requirement_id_set_mismatch');
+});
+
+test('32n. expected_requirement_ids que no es un arreglo falla cerrado', () => {
+  const units = legacyUnits();
+  const result = legacyResultFixture(units, {}, {
+    ...STRICT_LOWER_RELEVANCE_OMISSION,
+    expected_requirement_ids: 'sreq:001,sreq:002,sreq:003,sreq:004,sreq:005',
+  });
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+  assertSafeLegacyRejection(out, 'requirement_id_set_mismatch');
+});
+
+test('32o. expected_requirement_ids no coincide con lo que realmente cubren las unidades/hallazgos server-owned, aunque analyzed_requirement_ids sí coincida: falla cerrado (server-owned actionable findings set vs. coverage set)', () => {
+  const units = legacyUnits();
+  const requirementIds = units.map(unit => unit.requirement_id);
+  const declaredExpected = [...requirementIds.slice(0, 4), 'sreq:999'];
+  const result = legacyResultFixture(units, {}, {
+    ...STRICT_LOWER_RELEVANCE_OMISSION,
+    expected_requirement_ids: declaredExpected,
+  });
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+  assertSafeLegacyRejection(out, 'requirement_id_set_mismatch');
+});
+
+test('32p. dos unidades distintas comparten unit_id falla cerrado, aunque sus requirement_id sean distintos (duplicate unit_id)', () => {
+  const units = legacyUnits();
+  units[1] = legacyUnitFixture(LEGACY_REQUIREMENT_IDS[1], 1, { unit_id: units[0].unit_id });
+  const result = legacyResultFixture(units, {}, STRICT_LOWER_RELEVANCE_OMISSION);
+  const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+  assertSafeLegacyRejection(out, 'legacy_units_invalid');
+});
+
+test('32q. closure.status ausente o inválido en una unidad falla cerrado', () => {
+  for (const closureOverride of [
+    { condition: 'Revisión humana satisfactoria.', evidence_required: ['Estados financieros'] },
+    { status: 'no_es_un_estado_valido', condition: 'Revisión humana satisfactoria.', evidence_required: ['Estados financieros'] },
+  ]) {
+    const units = legacyUnits();
+    units[3] = legacyUnitFixture(LEGACY_REQUIREMENT_IDS[3], 3, { closure: closureOverride });
+    const result = legacyResultFixture(units, {}, STRICT_LOWER_RELEVANCE_OMISSION);
+    const out = deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true });
+    assertSafeLegacyRejection(out, 'legacy_units_invalid');
+  }
+});
+
+test('32r. una unidad legada con unit_kind distinto de tender_requirement falla el lote entero (unión imposible), igual que en la ruta con cobertura lista', () => {
+  const units = legacyUnits();
+  units[4] = legacyUnitFixture(LEGACY_REQUIREMENT_IDS[4], 4, { unit_kind: 'strategic_consideration' });
+  const result = legacyResultFixture(units, {}, STRICT_LOWER_RELEVANCE_OMISSION);
+  assertLegacyRejectionThrows(
+    () => deriveAgt002DossierHandoff({ currentAnalysis: currentAnalysisFixture(), result, questionResponses: [], humanGoGranted: true }),
+    /sin unidad V3 tender_requirement elegible/,
+  );
 });
 
 test('33. una pausa por cualquier otra causa nunca se bypassa: sólo la pausa por cobertura', () => {
@@ -699,7 +969,7 @@ test('33. una pausa por cualquier otra causa nunca se bypassa: sólo la pausa po
     currentAnalysisFixture({ producer: 'siio_rules_v1', method: 'rules' }),
   ]) {
     const out = deriveAgt002DossierHandoff({ currentAnalysis, result, questionResponses: [], humanGoGranted: true });
-    assert.deepEqual(out, { ready: false, items: [] });
+    assertSafeLegacyRejection(out, 'paused_reason_not_bypassable');
   }
 });
 
@@ -737,10 +1007,11 @@ test('35. unión estricta 1:1: un hallazgo legado cuya unidad ya está cerrada p
   units[2] = legacyUnitFixture(LEGACY_REQUIREMENT_IDS[2], 2, {
     closure: { status: 'evidence_satisfied', condition: 'Ya resuelto.', evidence_required: [] },
   });
-  assert.throws(
+  const result = legacyResultFixture(units, {}, STRICT_LOWER_RELEVANCE_OMISSION);
+  assertLegacyRejectionThrows(
     () => deriveAgt002DossierHandoff({
       currentAnalysis: currentAnalysisFixture(),
-      result: legacyResultFixture(units),
+      result,
       questionResponses: [],
       humanGoGranted: true,
     }),

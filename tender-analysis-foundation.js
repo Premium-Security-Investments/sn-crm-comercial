@@ -205,7 +205,7 @@ function currentAnalysisRunColumns({ canonicalOnly, includeResult }) {
   return [
     'id', 'snapshot_id', 'producer', 'method', 'status',
     ...(includeResult ? ['result'] : []),
-    'critical_open_count', 'created_at', 'completed_at',
+    'critical_open_count', 'created_at', 'completed_at', 'schema_version', 'policy_version',
     ...(canonicalOnly ? ['canonical'] : []),
   ].join(',');
 }
@@ -278,6 +278,8 @@ export async function getCurrentTenderAnalysis(database, opportunityId, currentD
     critical_open_count: run.critical_open_count ?? 0,
     created_at: run.created_at || null,
     completed_at: run.completed_at || null,
+    schema_version: run.schema_version || null,
+    policy_version: run.policy_version || null,
   };
 }
 
