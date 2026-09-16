@@ -131,6 +131,7 @@ import { generateTenderKnowledgeCandidate } from '../agt002-knowledge-candidate-
 import { publishTenderKnowledgeVersion } from '../agt002-knowledge-sharepoint.js';
 import { createTenderKnowledgeSharePointGraphAdapter } from '../agt002-knowledge-sharepoint-graph-adapter.js';
 import { createAgt003ClaudeClient } from '../agt003-claude-client.js';
+import { buildAgt002StakeholderBriefPreview } from '../agt002-stakeholder-brief-preview.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -3826,10 +3827,21 @@ function buildTenderProcessingWorkerDeps(database) {
           } : {}),
         });
         const envelope = await engine.analyze({ opportunity, documents: analysisDocuments, documentGaps, companyProfile, deepAnalysis, snapshotId, canonicalOnly, contextV2Sections: { ...contextV2Sections, company_dossier: companyDossierV2 } }, { idempotencyKey });
+        let stakeholderBriefPreview;
+        try {
+          stakeholderBriefPreview = buildAgt002StakeholderBriefPreview({
+            enabled: agt002AnalysisConfig.AGT002_STAKEHOLDER_BRIEF_PREVIEW,
+            opportunityId,
+            envelope,
+            governedInput: null,
+          });
+        } catch {
+          stakeholderBriefPreview = { status: 'unavailable', stakeholder_brief: null, missing_inputs: [] };
+        }
         await renewAgt002PreviewClaim(database, { idempotencyKey, claimId, leaseSeconds: config.leaseSeconds });
         const registeredRun = await registerAgt002PreviewAnalysis(database, { opportunity_id: opportunityId, tender_id: tenderId, snapshot_id: snapshotId, envelope, canonicalOnly, context_version_id: contextVersion?.id, expectedManifestScope: engine.manifestScope ?? null, expectedIdempotencyKey: idempotencyKey, requireTenderRequirementInventory: documentRetrieval, semanticSourceDocuments: analysisDocuments, evidenceIdentity: integralV3Governance?.evidenceIdentity ?? null });
         if (canonicalOnly) await appendAttempt(idempotencyKey, 'completed', { analysis_run_id: registeredRun.run_id });
-        return { status: 'completed', analysisRunId: registeredRun.run_id };
+        return { status: 'completed', analysisRunId: registeredRun.run_id, stakeholderBriefPreview };
       } catch (error) {
         if (canonicalOnly && attemptStarted && idempotencyKey) {
           try { await appendAttempt(idempotencyKey, 'unavailable', { error_code: error?.code || 'AGT002_UNAVAILABLE', error_message: 'Vig-IA no completó el análisis; se reintentará.' }); }

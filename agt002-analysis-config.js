@@ -13,6 +13,7 @@ export const ANALYSIS_FLAG_NAMES = Object.freeze([
   'AGT002_RADAR_GATE',
   'AGT002_RADAR_VISIBILITY',
   'AGT002_DECISION_AXIS_SURFACE',
+  'AGT002_STAKEHOLDER_BRIEF_PREVIEW',
 ]);
 
 // Banderas cuyo parseo es MÁS ESTRICTO que TRUE_LITERALS: sólo el literal exacto `true`
@@ -20,7 +21,10 @@ export const ANALYSIS_FLAG_NAMES = Object.freeze([
 // superficie de decisión ve una persona antes de un GO/NO-GO, así que un '1' heredado de otro
 // ambiente, un 'TRUE' copiado a mano o un ' true ' con espacios nunca deben encenderla por
 // accidente — §17 y AC22 de docs/superpowers/specs/2026-08-25-agt002-analisis-para-decidir.md.
-const STRICT_TRUE_LITERAL_FLAG_NAMES = Object.freeze(['AGT002_DECISION_AXIS_SURFACE']);
+const STRICT_TRUE_LITERAL_FLAG_NAMES = Object.freeze([
+  'AGT002_DECISION_AXIS_SURFACE',
+  'AGT002_STAKEHOLDER_BRIEF_PREVIEW',
+]);
 
 const TRUE_LITERALS = new Set(['true', '1']);
 
@@ -73,6 +77,14 @@ export function buildAgt002AnalysisConfig(environment = process.env) {
 
   if (flags.AGT002_RADAR_VISIBILITY && !flags.AGT002_RADAR_GATE) {
     throw new Error('agt002-analysis-config: AGT002_RADAR_VISIBILITY requires AGT002_RADAR_GATE to be enabled.');
+  }
+
+  // AGT002_STAKEHOLDER_BRIEF_PREVIEW renders a preview of the governed v3 envelope; without
+  // AGT002_INTEGRAL_CONTRACT_V3 there is no governed envelope to preview, so it fails closed.
+  if (flags.AGT002_STAKEHOLDER_BRIEF_PREVIEW && !flags.AGT002_INTEGRAL_CONTRACT_V3) {
+    throw new Error(
+      'agt002-analysis-config: AGT002_STAKEHOLDER_BRIEF_PREVIEW requires AGT002_INTEGRAL_CONTRACT_V3 to be enabled.',
+    );
   }
 
   return Object.freeze({ ...flags });

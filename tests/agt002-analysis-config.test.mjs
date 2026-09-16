@@ -31,8 +31,9 @@ function run() {
   //    AGT002_INTEGRAL_CONTRACT_V3 requiere AGT002_CANONICAL_ONLY + AGT002_CONTEXT_V2 +
   //    AGT002_DOCUMENT_RETRIEVAL (ver caso 4), así que cada una se activa aquí junto a su
   //    dependencia para aislar solo el parseo del literal.
-  //    AGT002_DECISION_AXIS_SURFACE queda fuera de este lote a propósito: su parseo es más
-  //    estricto (sólo el literal exacto 'true') y se verifica en el caso 3b.
+  //    AGT002_DECISION_AXIS_SURFACE y AGT002_STAKEHOLDER_BRIEF_PREVIEW quedan fuera de este
+  //    lote a propósito: su parseo es más estricto (sólo el literal exacto 'true') y se
+  //    verifica en los casos 3b y 3c respectivamente.
   {
     const requiredBaseByFlag = {
       AGT002_DOCUMENT_RETRIEVAL: { AGT002_CONTEXT_V2: 'true' },
@@ -45,7 +46,7 @@ function run() {
       AGT002_RADAR_VISIBILITY: { AGT002_RADAR_GATE: 'true' },
     };
     for (const name of ANALYSIS_FLAG_NAMES) {
-      if (name === 'AGT002_DECISION_AXIS_SURFACE') continue;
+      if (name === 'AGT002_DECISION_AXIS_SURFACE' || name === 'AGT002_STAKEHOLDER_BRIEF_PREVIEW') continue;
       const base = requiredBaseByFlag[name] || {};
 
       const literalTrue = buildAgt002AnalysisConfig({ ...base, [name]: 'true' });
@@ -78,6 +79,74 @@ function run() {
     const enabled = buildAgt002AnalysisConfig({ AGT002_DECISION_AXIS_SURFACE: 'true' });
     assert.equal(enabled.AGT002_DECISION_AXIS_SURFACE, true, "AGT002_DECISION_AXIS_SURFACE='true' debe habilitar");
     assert.equal(enabled.AGT002_INTEGRAL_CONTRACT_V3, false, 'la superficie no arrastra ninguna otra bandera');
+  }
+
+  // 3c) AGT002_STAKEHOLDER_BRIEF_PREVIEW (integración de runtime del stakeholder brief, primer
+  //     corte — ver .hermes/plans/agt002-stakeholder-brief-runtime-integration.md): apagada por
+  //     defecto, activada EXCLUSIVAMENTE por el literal exacto 'true' (nunca '1', nunca sin
+  //     distinción de mayúsculas, nunca con espacios) y con una dependencia dura sobre la cadena
+  //     completa de AGT002_INTEGRAL_CONTRACT_V3 (que a su vez exige AGT002_CANONICAL_ONLY +
+  //     AGT002_CONTEXT_V2 + AGT002_DOCUMENT_RETRIEVAL). Encenderla sin esa cadena completa debe
+  //     fallar cerrado (`throw`), igual que las demás dependencias duras de este módulo.
+  {
+    assert.equal(
+      buildAgt002AnalysisConfig({}).AGT002_STAKEHOLDER_BRIEF_PREVIEW,
+      false,
+      'AGT002_STAKEHOLDER_BRIEF_PREVIEW debe estar apagada por defecto',
+    );
+
+    const stakeholderBriefPreviewRequiredBase = {
+      AGT002_CANONICAL_ONLY: 'true',
+      AGT002_CONTEXT_V2: 'true',
+      AGT002_DOCUMENT_RETRIEVAL: 'true',
+      AGT002_INTEGRAL_CONTRACT_V3: 'true',
+    };
+
+    for (const rawValue of ['1', 'TRUE', 'True', ' true ', 'yes', 'on', '', undefined, null, true]) {
+      assert.equal(
+        buildAgt002AnalysisConfig({
+          ...stakeholderBriefPreviewRequiredBase,
+          AGT002_STAKEHOLDER_BRIEF_PREVIEW: rawValue,
+        }).AGT002_STAKEHOLDER_BRIEF_PREVIEW,
+        false,
+        `AGT002_STAKEHOLDER_BRIEF_PREVIEW=${JSON.stringify(rawValue)} NO debe habilitar (sólo el literal 'true'), incluso con toda la cadena V3 encendida`,
+      );
+    }
+
+    assert.throws(
+      () => buildAgt002AnalysisConfig({ AGT002_STAKEHOLDER_BRIEF_PREVIEW: 'true' }),
+      /AGT002_INTEGRAL_CONTRACT_V3/,
+      'AGT002_STAKEHOLDER_BRIEF_PREVIEW sin ninguna dependencia V3 debe rechazarse',
+    );
+    assert.throws(
+      () => buildAgt002AnalysisConfig({
+        AGT002_STAKEHOLDER_BRIEF_PREVIEW: 'true',
+        AGT002_CANONICAL_ONLY: 'true',
+        AGT002_CONTEXT_V2: 'true',
+        AGT002_DOCUMENT_RETRIEVAL: 'true',
+      }),
+      /AGT002_INTEGRAL_CONTRACT_V3/,
+      'AGT002_STAKEHOLDER_BRIEF_PREVIEW con la base de V3 pero sin AGT002_INTEGRAL_CONTRACT_V3 encendida debe rechazarse',
+    );
+    assert.throws(
+      () => buildAgt002AnalysisConfig({
+        AGT002_STAKEHOLDER_BRIEF_PREVIEW: 'true',
+        AGT002_INTEGRAL_CONTRACT_V3: 'true',
+      }),
+      /AGT002_CANONICAL_ONLY|AGT002_CONTEXT_V2|AGT002_DOCUMENT_RETRIEVAL/,
+      'AGT002_STAKEHOLDER_BRIEF_PREVIEW con AGT002_INTEGRAL_CONTRACT_V3 pero sin su propia cadena de dependencias debe rechazarse',
+    );
+
+    const enabled = buildAgt002AnalysisConfig({
+      ...stakeholderBriefPreviewRequiredBase,
+      AGT002_STAKEHOLDER_BRIEF_PREVIEW: 'true',
+    });
+    assert.equal(
+      enabled.AGT002_STAKEHOLDER_BRIEF_PREVIEW,
+      true,
+      "AGT002_STAKEHOLDER_BRIEF_PREVIEW='true' con toda la cadena V3 encendida debe habilitar",
+    );
+    assert.equal(enabled.AGT002_INTEGRAL_CONTRACT_V3, true);
   }
 
   // 4) estados contradictorios se rechazan: retrieval o legal corpus sin context v2;
