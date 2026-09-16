@@ -191,7 +191,12 @@ function inspectOoxmlPackage(buffer) {
   let entries;
   try {
     entries = new AdmZip(buffer).getEntries();
-  } catch {
+  } catch (error) {
+    // adm-zip >=0.6.1 detecta duplicados durante el propio parseo y lanza en vez
+    // de exponerlos como entradas; el nombre hostil no se devuelve ni se registra.
+    if (String(error?.message ?? '').startsWith('ADM-ZIP: Duplicate entry name')) {
+      return { reason: 'duplicate_entry_name' };
+    }
     return { reason: 'invalid_container' };
   }
   if (!Array.isArray(entries) || entries.length === 0) return { reason: 'invalid_container' };

@@ -42,6 +42,14 @@ class TenderDocumentGapError extends Error {
   }
 }
 
+// adm-zip >=0.6.1 detects duplicate entry names while parsing a ZIP's central
+// directory and throws a plain Error whose message embeds the raw declared
+// entry name. That raw name is never persisted or logged — only this fixed,
+// name-free prefix is ever compared against.
+function isDuplicateArchiveEntryNameError(error) {
+  return String(error?.message ?? '').startsWith('ADM-ZIP: Duplicate entry name');
+}
+
 // Pure, unit-testable archive safety checks. Exported with an injectable
 // `policy` param so tests can prove the boundary logic with tiny synthetic
 // entries/limits (no OOM-scale fixtures needed); production call sites below
@@ -585,7 +593,9 @@ async function extractArchiveEntry(entry) {
       text,
     };
   } catch (error) {
-    return gapEntry(error instanceof TenderDocumentGapError ? error.gapReason : 'extraction_error');
+    if (error instanceof TenderDocumentGapError) return gapEntry(error.gapReason);
+    if (isDuplicateArchiveEntryNameError(error)) return gapEntry('duplicate_entry_name');
+    return gapEntry('extraction_error');
   }
 }
 
@@ -649,6 +659,12 @@ export async function extractTenderDocumentText(buffer, filename, mime = '') {
     if (parsed) return finalizeSuccess(parsed);
     return gapResult({ parser: 'unsupported', gapReason: 'unsupported_type' });
   } catch (error) {
+    // The duplicate-name message embeds the hostile declared entry name, so it
+    // is mapped to a typed gap with no `error` text instead of going through
+    // sanitizeExtractionErrorMessage (which only redacts known-shaped substrings).
+    if (isDuplicateArchiveEntryNameError(error)) {
+      return gapResult({ parser: kind, gapReason: 'duplicate_entry_name' });
+    }
     const gapReason = error instanceof TenderDocumentGapError ? error.gapReason : 'extraction_error';
     return gapResult({ parser: kind, gapReason, error: sanitizeExtractionErrorMessage(error) });
   }
