@@ -74,6 +74,28 @@ function docxZipFromBody(bodyXml) {
   return zip.toBuffer();
 }
 
+// Patches every occurrence of oldName's bytes to newName's bytes (same byte
+// length, so no offset in the ZIP local header or central directory shifts)
+// inside a copy of zipBuffer. A ZIP written with distinct entry names can be
+// turned, purely at the byte level, into one carrying a duplicate entry name
+// that the original writer never actually produced — simulating a package
+// crafted directly against the format instead of through any zip library.
+function forceDuplicateZipEntryName(zipBuffer, oldName, newName) {
+  const oldNameBytes = Buffer.from(oldName, 'utf8');
+  const newNameBytes = Buffer.from(newName, 'utf8');
+  assert.equal(oldNameBytes.length, newNameBytes.length, 'el nombre hostil debe tener la misma longitud en bytes que el nombre objetivo');
+  const buffer = Buffer.from(zipBuffer);
+  let replacements = 0;
+  let index = buffer.indexOf(oldNameBytes);
+  while (index !== -1) {
+    newNameBytes.copy(buffer, index);
+    replacements += 1;
+    index = buffer.indexOf(oldNameBytes, index + oldNameBytes.length);
+  }
+  assert.ok(replacements >= 2, `se esperaban al menos 2 apariciones (encabezado local + directorio central), se obtuvieron ${replacements}`);
+  return buffer;
+}
+
 async function buildLongDocxBuffer(targetChars) {
   // mammoth only needs a minimal valid docx; build one with many paragraphs
   // via a tiny in-memory zip rather than depending on a fixture binary.
@@ -460,6 +482,23 @@ async function run() {
     assert.equal(sanitizedWithStack.includes('.js:'), false, 'no debe filtrar rastro de pila (stack)');
     const multiline = sanitizeExtractionErrorMessage(new Error('linea uno\nlinea dos'));
     assert.equal(multiline.includes('\n'), false);
+  }
+
+  // 19) DOCX con nombre de entrada duplicado a nivel de bytes (aceptado por el
+  // escritor original, rechazado por adm-zip 0.6.1 al analizarlo) produce un
+  // gap tipado `duplicate_entry_name`, sin persistir el nombre hostil en
+  // metadata.error.
+  {
+    const hostilePlaceholderName = 'word/hostile1.xml';
+    assert.equal(hostilePlaceholderName.length, 'word/document.xml'.length, 'el nombre hostil debe igualar en longitud a word/document.xml');
+    const baseZip = new AdmZip(docxZipFromBody('<w:p/>'));
+    baseZip.addFile(hostilePlaceholderName, Buffer.from('<hostile/>', 'utf8'));
+    const duplicateNameDocx = forceDuplicateZipEntryName(baseZip.toBuffer(), hostilePlaceholderName, 'word/document.xml');
+    const result = await extractTenderDocumentText(duplicateNameDocx, 'duplicado.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    assert.equal(result.status, 'gap');
+    assert.equal(result.parser, 'docx');
+    assert.equal(result.metadata.gap_reason, 'duplicate_entry_name');
+    assert.equal(result.metadata.error, null, 'el nombre de entrada duplicado hostil no debe persistir en metadata.error');
   }
 
   console.log('tender-document-text-extraction.test.mjs OK');
