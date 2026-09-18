@@ -57,6 +57,14 @@ function testNoExecStartPreRemainsForARemovedCodexGate() {
   assert.equal(execStartPre, undefined, 'La unidad no debe declarar un ExecStartPre para un gate de Codex que ya no existe.');
 }
 
+// El bare-metal bajo systemd nunca debe forzar AGT002_BRIDGE_LISTEN_HOST fuera del
+// default de loopback (127.0.0.1): sólo la imagen Docker fija 0.0.0.0, porque el
+// contenedor necesita aceptar conexiones dentro de su propia red. La unidad debe
+// depender del default resuelto por agt002-bridge-host.js, no de un override propio.
+function testUnitDoesNotOverrideListenHostAwayFromLoopbackDefault() {
+  assert.doesNotMatch(unit, /AGT002_BRIDGE_LISTEN_HOST/, 'La unidad systemd no debe fijar AGT002_BRIDGE_LISTEN_HOST: debe depender del default 127.0.0.1.');
+}
+
 testPrivateTmpIsEnabled();
 testClaudeConfigDirIsPinnedUnderOptNotHome();
 testHomeIsPinnedUnderOpt();
@@ -66,4 +74,5 @@ testMemoryMaxAccountsForClaudeTurns();
 testProtectSystemStrictStillPresent();
 testCaddyUsesTheFixedLoopbackPort();
 testNoExecStartPreRemainsForARemovedCodexGate();
+testUnitDoesNotOverrideListenHostAwayFromLoopbackDefault();
 console.log('agt002-hetzner-bridge-service-artifact.test.mjs OK');
