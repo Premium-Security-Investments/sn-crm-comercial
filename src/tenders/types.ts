@@ -636,6 +636,26 @@ export type Agt002ReanalysisJob = {
   completed_at?: string | null;
   updated_at?: string | null;
 };
+// Closed request/response contract for POST /api/tender-agt002-governed-document-worksets
+// (.hermes/plans/2026-09-17-agt002-governed-document-worksets.md, Phase 4). The UI narrows the
+// backend's broader source_classification vocabulary to these three closed values; the server
+// still owns final validation.
+export type Agt002GovernedWorksetSourceClassification = 'official' | 'corporate' | 'draft';
+export type Agt002GovernedWorksetMemberInput = {
+  document_version_id: string;
+  source_classification: Agt002GovernedWorksetSourceClassification;
+  inclusion_reason: string;
+};
+// The sanitized six-field projection the endpoint always returns — never the frozen engine
+// input, extracted text, hashes or any other server-internal identity.
+export type Agt002GovernedDocumentWorksetFreezeResponse = {
+  status: 'created' | 'existing';
+  workset_id: string;
+  run_id: string;
+  reanalysis_job_id: string;
+  member_count: number;
+  selection_hash: string;
+};
 export type TenderDocumentsPayload = Partial<TenderDocumentRefreshResult> & {
   import_error?: { kind?: string; source?: string | null; created_at?: string | null; failure_marker?: string | null } | null;
   documents: TenderDocumentRecord[];

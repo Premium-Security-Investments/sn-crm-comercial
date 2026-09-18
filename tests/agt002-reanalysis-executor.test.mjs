@@ -3,6 +3,8 @@ import test from 'node:test';
 import { createAgt002ReanalysisExecutor } from '../agt002-reanalysis-executor.js';
 import { AGT002_POST_BRIDGE_ERROR_CODES } from '../agt002-post-bridge-observability.js';
 import { AGT002_PREVIEW_ALLOWED_MODELS } from '../agt002-preview-allowed-models.js';
+import { computeAgt002GovernedWorksetIdempotencyKey } from '../agt002-governed-document-workset-api.js';
+import { computeAgt002WorksetSelectionHash, freezeAgt002WorksetEvidence } from '../agt002-governed-document-worksets.js';
 
 const JOB = Object.freeze({
   jobId: 'job-1', leaseId: 'lease-1', opportunityId: 'opp-1', tenderId: 'tender-1',
@@ -296,6 +298,26 @@ test('rejects malformed, over-budget, or identity-mismatched frozen input before
   assert.equal(calls.runtime.length, 0);
 });
 
+// Contract: validFrozenInput accepts a frozen model only if it is an EXACT, case-sensitive
+// member of AGT002_PREVIEW_ALLOWED_MODELS — a tampered/corrupted durable governed job carrying
+// any other value (including one that was once valid, or a mis-cased/padded variant) must be
+// rejected before any claim or runtime construction, never merely logged and executed anyway.
+test('rejects a tampered durable governed job whose frozen model is not an exact allowlisted value, before any claim or runtime construction', async () => {
+  assert.equal(AGT002_PREVIEW_ALLOWED_MODELS.includes('gpt-agt002-preview'), false);
+  for (const model of ['gpt-agt002-preview', 'Sonnet', ' sonnet', '']) {
+    const tamperedJob = {
+      ...JOB,
+      executionMode: 'durable_batched_v1',
+      frozenEngineInput: { ...JOB.frozenEngineInput, engine_identity: { ...JOB.frozenEngineInput.engine_identity, model } },
+    };
+    const { executor, calls } = harness();
+    const result = await executor({ kind: 'db' }, tamperedJob);
+    assert.deepEqual(result, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false }, `model ${JSON.stringify(model)} must be rejected`);
+    assert.equal(calls.claim.length, 0);
+    assert.equal(calls.runtime.length, 0);
+  }
+});
+
 // AGT-002 root-cause fix: an explicit, valid frozen effort reconstructs the worker's runtime
 // environment exactly, and an unsupported/corrupted frozen effort is refused fail-closed before
 // any provider claim — exactly like every other malformed engine_identity field above.
@@ -310,27 +332,6 @@ test('forwards an explicit frozen reasoning effort to the reconstructed runtime 
   const { executor, calls } = harness();
   await executor({ kind: 'db' }, job);
   assert.equal(calls.runtime[0].environment.AGT002_PREVIEW_REASONING_EFFORT, 'medium');
-});
-
-// Shared contract: a durably queued job frozen before the allowlist narrowed to ['sonnet']
-// (e.g. a legacy Codex-era model alias) must be rejected before any claim/createRuntime, exactly
-// like every other malformed engine_identity field — never merely trusted because it was already
-// durable.
-test('rejects a legacy frozen model outside the shared allowlist before any provider claim', async () => {
-  assert.deepEqual(AGT002_PREVIEW_ALLOWED_MODELS, ['sonnet'], 'precondition: the shared contract is sonnet-only');
-  const job = {
-    ...JOB,
-    frozenEngineInput: {
-      ...JOB.frozenEngineInput,
-      engine_identity: { ...JOB.frozenEngineInput.engine_identity, model: 'codex-legacy' },
-    },
-  };
-  const { executor, calls } = harness();
-  const result = await executor({ kind: 'db' }, job);
-  assert.deepEqual(result, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false });
-  assert.equal(calls.claim.length, 0, 'a legacy invalid model must never reach claimPreviewRun');
-  assert.equal(calls.runtime.length, 0, 'a legacy invalid model must never reach createRuntime');
-  assert.equal(calls.post.length, 0);
 });
 
 test('rejects an unsupported frozen reasoning effort before any provider claim', async () => {
@@ -558,6 +559,600 @@ test('rejects schema_version 0, 3, the string "2", absent, or null before any pr
     assert.equal(calls.claim.length, 0);
     assert.equal(calls.runtime.length, 0);
     assert.equal(calls.post.length, 0);
+  }
+});
+
+// Defense in depth: the governed document-workset extension (agt002-reanalysis-input.js's
+// buildAgt002FrozenEngineInput / validateAgt002GovernedWorksetExtension) is only ever composed
+// onto a schema_version 2 frozen input — the builder always freezes schema_version 2 whenever a
+// governedWorksetExtension is supplied. A durable job whose frozen input pairs schema_version 1
+// with a syntactically plausible `document_workset_identity` + `governed_workset_members` can
+// never come from any real builder and must still fail closed here, before any preview claim or
+// runtime construction, exactly like every other malformed/tampered frozen-input combination
+// above — never merely logged and executed anyway. Legacy schema_version 1 WITHOUT the extension
+// present must keep succeeding unchanged (see the pre-existing tests above using the bare JOB
+// fixture, none of which are touched by this test).
+test('rejects a durable job pairing schema_version 1 with a syntactically plausible governed workset extension, before any preview claim or runtime construction', async () => {
+  const governedExtension = {
+    document_workset_identity: {
+      opportunity_id: '11111111-1111-1111-1111-111111111111',
+      tender_id: '22222222-2222-2222-2222-222222222222',
+      snapshot_id: '33333333-3333-3333-3333-333333333333',
+      context_version_id: '44444444-4444-4444-4444-444444444444',
+      selection_hash: 'a'.repeat(64),
+    },
+    governed_workset_members: [
+      {
+        document_version_id: '55555555-5555-5555-5555-555555555555',
+        source_classification: 'official',
+        inclusion_reason: 'required by pliego',
+      },
+    ],
+  };
+  const durableJob = {
+    ...JOB,
+    executionMode: 'durable_batched_v1',
+    frozenEngineInput: {
+      ...JOB.frozenEngineInput,
+      schema_version: 1,
+      ...governedExtension,
+    },
+  };
+  const { executor, calls } = harness();
+  const result = await executor({ kind: 'db' }, durableJob);
+  assert.deepEqual(result, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false });
+  assert.equal(calls.claim.length, 0, 'a tampered schema_version/governed-extension combination must never reach claimPreviewRun');
+  assert.equal(calls.runtime.length, 0, 'a tampered schema_version/governed-extension combination must never reach createRuntime');
+  assert.equal(calls.post.length, 0, 'a tampered schema_version/governed-extension combination must never reach runPostBridgeAnalysis');
+});
+
+// Focused/table-driven: the SAME syntactically valid governed workset extension the schema-
+// pairing test above uses, this time correctly paired with schema_version 2 — the only shape any
+// real builder (agt002-reanalysis-input.js's buildAgt002FrozenEngineInput /
+// validateAgt002GovernedWorksetExtension) ever produces. The valid shape must still be accepted;
+// every malformed variant below must fail closed the same way as every other malformed/tampered
+// frozen-input combination above — before any preview claim or runtime construction. Defense in
+// depth: the executor re-validates the governed extension's own shape, never trusting a durable
+// value verbatim.
+test('a schema_version 2 durable job\'s governed workset extension: the valid shape is accepted, and each malformed variant is rejected before any preview claim or runtime construction', async () => {
+  // Base fixtures for the malformed-SHAPE table below only — kept as a single member so each
+  // shape mutation below stays byte-identical to its pre-existing form. The scope/projection
+  // table further below uses its OWN independent two-member fixtures (BASE_IDENTITY/BASE_MEMBERS)
+  // so neither table can contaminate the other.
+  const validExtension = Object.freeze({
+    document_workset_identity: Object.freeze({
+      opportunity_id: '11111111-1111-1111-1111-111111111111',
+      tender_id: '22222222-2222-2222-2222-222222222222',
+      snapshot_id: '33333333-3333-3333-3333-333333333333',
+      context_version_id: '44444444-4444-4444-4444-444444444444',
+      selection_hash: 'a'.repeat(64),
+    }),
+    governed_workset_members: Object.freeze([
+      Object.freeze({
+        document_version_id: '55555555-5555-5555-5555-555555555555',
+        source_classification: 'official',
+        inclusion_reason: 'required by pliego',
+      }),
+    ]),
+  });
+
+  function buildJob(extension) {
+    return {
+      ...JOB,
+      executionMode: 'durable_batched_v1',
+      frozenEngineInput: { ...JOB.frozenEngineInput, schema_version: 2, ...extension },
+    };
+  }
+
+  const variants = [
+    ['identity missing opportunity_id', ext => {
+      const { opportunity_id, ...rest } = ext.document_workset_identity;
+      return { ...ext, document_workset_identity: rest };
+    }],
+    ['identity opportunity_id is not a UUID', ext => ({
+      ...ext, document_workset_identity: { ...ext.document_workset_identity, opportunity_id: 'not-a-uuid' },
+    })],
+    ['identity selection_hash is not 64 hex chars', ext => ({
+      ...ext, document_workset_identity: { ...ext.document_workset_identity, selection_hash: 'short' },
+    })],
+    ['governed_workset_members is empty', ext => ({ ...ext, governed_workset_members: [] })],
+    ['member missing inclusion_reason', ext => ({
+      ...ext,
+      governed_workset_members: [{
+        document_version_id: ext.governed_workset_members[0].document_version_id,
+        source_classification: ext.governed_workset_members[0].source_classification,
+      }],
+    })],
+    ['member carries an unexpected extra key', ext => ({
+      ...ext, governed_workset_members: [{ ...ext.governed_workset_members[0], extra: 'unexpected' }],
+    })],
+    ['member document_version_id is not a UUID', ext => ({
+      ...ext, governed_workset_members: [{ ...ext.governed_workset_members[0], document_version_id: 'not-a-uuid' }],
+    })],
+    ['member source_classification is not an allowlisted value', ext => ({
+      ...ext, governed_workset_members: [{ ...ext.governed_workset_members[0], source_classification: 'bogus' }],
+    })],
+    ['member inclusion_reason is blank', ext => ({
+      ...ext, governed_workset_members: [{ ...ext.governed_workset_members[0], inclusion_reason: '   ' }],
+    })],
+  ];
+
+  for (const [label, mutate] of variants) {
+    const extension = mutate(validExtension);
+    const { executor, calls } = harness({ getOrCreateWorkset: async () => ({ status: 'created', worksetId: 'workset-1', published: false }) });
+    const result = await executor({ kind: 'db' }, buildJob(extension));
+    assert.deepEqual(result, SAFE_CONFIG_REJECTION, `${label} must be rejected`);
+    assert.equal(calls.claim.length, 0, `${label} must never reach claimPreviewRun`);
+    assert.equal(calls.runtime.length, 0, `${label} must never reach createRuntime`);
+  }
+});
+
+// RED: the governed workset extension is not merely a syntactically-valid identity/member
+// shape (covered above) — it must also be SCOPE-CONSISTENT with the job it rides on (the
+// document_workset_identity is the frozen claim of what the analysis is FOR; a durable job whose
+// own opportunityId/tenderId/snapshotId/contextVersionId disagree with that claim, even by one
+// field, can never be trusted) and the analysis_context.documents the engine actually reads must
+// be an EXACT deep projection — same members, same fields, same order — of governed_workset_members,
+// never a superset, subset, reordering or per-field divergence. None of this is validated by
+// validFrozenInput or validateAgt002GovernedWorksetExtension today: every case below is expected
+// to fail (RED) until that scope/projection check is added.
+test('a schema_version 2 durable job\'s governed workset extension: the valid shape is scope-consistent with the job, and each scope/projection violation is rejected before any preview claim, runtime construction or post-bridge call', async () => {
+  const BASE_OPPORTUNITY_ID = '11111111-1111-1111-1111-111111111111';
+  const BASE_TENDER_ID = '22222222-2222-2222-2222-222222222222';
+  const MEMBER_A = Object.freeze({
+    document_version_id: '55555555-5555-5555-5555-555555555555',
+    source_classification: 'official',
+    inclusion_reason: 'required by pliego',
+    content_hash: 'a'.repeat(64),
+    extraction_id: 'aaaaaaaa-1111-1111-1111-111111111111',
+    extraction_text_hash: 'b'.repeat(64),
+  });
+  const MEMBER_B = Object.freeze({
+    document_version_id: '66666666-6666-6666-6666-666666666666',
+    source_classification: 'corporate',
+    inclusion_reason: 'supporting annex',
+    content_hash: 'c'.repeat(64),
+    extraction_id: 'bbbbbbbb-2222-2222-2222-222222222222',
+    extraction_text_hash: 'd'.repeat(64),
+  });
+  const BASE_MEMBERS = Object.freeze([MEMBER_A, MEMBER_B]); // canonically ordered: 55… < 66…
+  // The real executor recomputes the selection hash from the six-field members and requires an
+  // exact match against document_workset_identity.selection_hash, so this fixture (unlike the
+  // malformed-shape table above, which only expects rejection) must carry the actual computed
+  // hash for its valid/scope-consistent base case to be accepted.
+  const BASE_IDENTITY = Object.freeze({
+    opportunity_id: BASE_OPPORTUNITY_ID,
+    tender_id: BASE_TENDER_ID,
+    snapshot_id: '33333333-3333-3333-3333-333333333333',
+    context_version_id: '44444444-4444-4444-4444-444444444444',
+    selection_hash: computeAgt002WorksetSelectionHash({ opportunityId: BASE_OPPORTUNITY_ID, tenderId: BASE_TENDER_ID, members: BASE_MEMBERS }),
+  });
+  const BASE_EXTENSION = Object.freeze({ document_workset_identity: BASE_IDENTITY, governed_workset_members: BASE_MEMBERS });
+
+  function projectDocuments(members) {
+    return members.map(({ document_version_id, source_classification, inclusion_reason }) => (
+      { document_version_id, source_classification, inclusion_reason }
+    ));
+  }
+
+  function buildJob({
+    extension = BASE_EXTENSION,
+    opportunityId = BASE_IDENTITY.opportunity_id,
+    tenderId = BASE_IDENTITY.tender_id,
+    snapshotId = BASE_IDENTITY.snapshot_id,
+    contextVersionId = BASE_IDENTITY.context_version_id,
+    documents = projectDocuments(BASE_MEMBERS),
+  } = {}) {
+    // The job's own idempotency key and its frozen engine identity's idempotency_key must both be
+    // the SAME server-computed key (computeAgt002GovernedWorksetIdempotencyKey) a real governed-
+    // workset freeze would have produced for this job scope + selection_hash — never an arbitrary
+    // literal — so this valid base job stays valid regardless of any selection-hash/idempotency
+    // consistency check the executor may enforce.
+    const idempotencyKey = computeAgt002GovernedWorksetIdempotencyKey({
+      opportunityId, tenderId, snapshotId, contextVersionId, selectionHash: BASE_IDENTITY.selection_hash,
+    });
+    return {
+      ...JOB,
+      opportunityId,
+      tenderId,
+      snapshotId,
+      contextVersionId,
+      idempotencyKey,
+      executionMode: 'durable_batched_v1',
+      frozenEngineInput: {
+        ...JOB.frozenEngineInput,
+        schema_version: 2,
+        engine_identity: { ...JOB.frozenEngineInput.engine_identity, idempotency_key: idempotencyKey },
+        analysis_context: {
+          ...JOB.frozenEngineInput.analysis_context,
+          opportunity: { id: opportunityId },
+          snapshotId,
+          documents,
+        },
+        ...extension,
+      },
+    };
+  }
+
+  {
+    const { executor, calls } = harness({ getOrCreateWorkset: async () => ({ status: 'created', worksetId: 'workset-1', published: false }) });
+    const result = await executor({ kind: 'db' }, buildJob());
+    assert.deepEqual(
+      result,
+      { status: 'completed', analysis_run_id: 'run-1', error_code: null, reused: false, queue_finalized: true },
+      'a governed extension whose identity exactly matches the job scope, with a canonically ordered exact documents projection, must be accepted',
+    );
+    assert.equal(calls.claim.length, 1, 'the scope-consistent valid path must claim exactly once');
+    assert.equal(calls.runtime.length, 1, 'the scope-consistent valid path must reach runtime construction exactly once');
+    assert.equal(calls.post.length, 1, 'the scope-consistent valid path must complete exactly once');
+  }
+
+  const variants = [
+    ['document_workset_identity.opportunity_id is a valid UUID but differs from job.opportunityId', () => ({
+      extension: {
+        ...BASE_EXTENSION,
+        document_workset_identity: { ...BASE_IDENTITY, opportunity_id: '77777777-7777-7777-7777-777777777777' },
+      },
+    })],
+    ['document_workset_identity.tender_id differs from job.tenderId', () => ({
+      extension: {
+        ...BASE_EXTENSION,
+        document_workset_identity: { ...BASE_IDENTITY, tender_id: '88888888-8888-8888-8888-888888888888' },
+      },
+    })],
+    ['document_workset_identity.snapshot_id differs from job.snapshotId', () => ({
+      extension: {
+        ...BASE_EXTENSION,
+        document_workset_identity: { ...BASE_IDENTITY, snapshot_id: '99999999-9999-9999-9999-999999999999' },
+      },
+    })],
+    ['document_workset_identity.context_version_id differs from job.contextVersionId', () => ({
+      extension: {
+        ...BASE_EXTENSION,
+        document_workset_identity: { ...BASE_IDENTITY, context_version_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa' },
+      },
+    })],
+    ['analysis_context.documents carries an extra, unselected, valid-looking document', () => ({
+      documents: [
+        ...projectDocuments(BASE_MEMBERS),
+        { document_version_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', source_classification: 'draft', inclusion_reason: 'not actually selected' },
+      ],
+    })],
+    ['analysis_context.documents omits a selected governed member', () => ({
+      documents: [projectDocuments(BASE_MEMBERS)[0]],
+    })],
+    ['analysis_context.documents order is reversed relative to governed_workset_members', () => ({
+      documents: [...projectDocuments(BASE_MEMBERS)].reverse(),
+    })],
+    ['an analysis_context.documents member diverges from its governed_workset_members projection (source_classification)', () => {
+      const documents = projectDocuments(BASE_MEMBERS);
+      documents[0] = { ...documents[0], source_classification: 'draft' };
+      return { documents };
+    }],
+    ['governed_workset_members contains a duplicate document_version_id', () => {
+      const duplicateMembers = [MEMBER_A, { ...MEMBER_B, document_version_id: MEMBER_A.document_version_id }];
+      return {
+        extension: { ...BASE_EXTENSION, governed_workset_members: duplicateMembers },
+        documents: projectDocuments(duplicateMembers),
+      };
+    }],
+    ['a governed_workset_members inclusion_reason is 501 characters', () => {
+      const members = [{ ...MEMBER_A, inclusion_reason: 'x'.repeat(501) }, MEMBER_B];
+      return {
+        extension: { ...BASE_EXTENSION, governed_workset_members: members },
+        documents: projectDocuments(members),
+      };
+    }],
+  ];
+
+  for (const [label, makeOverrides] of variants) {
+    const { executor, calls } = harness({ getOrCreateWorkset: async () => ({ status: 'created', worksetId: 'workset-1', published: false }) });
+    const result = await executor({ kind: 'db' }, buildJob(makeOverrides()));
+    assert.deepEqual(result, SAFE_CONFIG_REJECTION, `${label} must be rejected`);
+    assert.equal(calls.claim.length, 0, `${label} must never reach claimPreviewRun`);
+    assert.equal(calls.runtime.length, 0, `${label} must never reach createRuntime`);
+    assert.equal(calls.post.length, 0, `${label} must never reach runPostBridgeAnalysis`);
+  }
+});
+
+// RED: a governed workset extension's document_workset_identity.selection_hash is not merely a
+// syntactically-well-formed 64-hex string (already covered above) — it is part of the very
+// identity computeAgt002GovernedWorksetIdempotencyKey binds into the job's own idempotencyKey (and
+// the frozen engine_identity.idempotency_key mirroring it) at freeze time. A durable job whose
+// selection_hash was altered afterward — while its opportunity/tender/snapshot/context scope,
+// governed_workset_members and analysis_context.documents projection all stay otherwise valid —
+// can never come from any real builder (the idempotency key would no longer match) and must still
+// fail closed here, before any preview claim, runtime construction or post-bridge call, exactly
+// like every other tampered frozen-input combination above. None of this is validated by
+// validFrozenInput today: this case is expected to fail (RED) until that selection-hash/identity
+// consistency check is added.
+test('a schema_version 2 durable job whose document_workset_identity.selection_hash was altered after freezing (scope, members and documents otherwise valid) is rejected, before any preview claim, runtime construction or post-bridge call', async () => {
+  const IDENTITY = Object.freeze({
+    opportunity_id: '11111111-1111-1111-1111-111111111111',
+    tender_id: '22222222-2222-2222-2222-222222222222',
+    snapshot_id: '33333333-3333-3333-3333-333333333333',
+    context_version_id: '44444444-4444-4444-4444-444444444444',
+    selection_hash: 'a'.repeat(64),
+  });
+  const MEMBER = Object.freeze({
+    document_version_id: '55555555-5555-5555-5555-555555555555',
+    source_classification: 'official',
+    inclusion_reason: 'required by pliego',
+  });
+  // The job's own idempotencyKey/engine_identity.idempotency_key are the SAME server-computed key
+  // a real freeze would have produced for the ORIGINAL selection_hash — never recomputed for the
+  // tampered one below.
+  const idempotencyKey = computeAgt002GovernedWorksetIdempotencyKey({
+    opportunityId: IDENTITY.opportunity_id,
+    tenderId: IDENTITY.tender_id,
+    snapshotId: IDENTITY.snapshot_id,
+    contextVersionId: IDENTITY.context_version_id,
+    selectionHash: IDENTITY.selection_hash,
+  });
+  const tamperedIdentity = { ...IDENTITY, selection_hash: 'b'.repeat(64) };
+  const durableJob = {
+    ...JOB,
+    opportunityId: IDENTITY.opportunity_id,
+    tenderId: IDENTITY.tender_id,
+    snapshotId: IDENTITY.snapshot_id,
+    contextVersionId: IDENTITY.context_version_id,
+    idempotencyKey,
+    executionMode: 'durable_batched_v1',
+    frozenEngineInput: {
+      ...JOB.frozenEngineInput,
+      schema_version: 2,
+      engine_identity: { ...JOB.frozenEngineInput.engine_identity, idempotency_key: idempotencyKey },
+      analysis_context: {
+        ...JOB.frozenEngineInput.analysis_context,
+        opportunity: { id: IDENTITY.opportunity_id },
+        snapshotId: IDENTITY.snapshot_id,
+        documents: [MEMBER],
+      },
+      document_workset_identity: tamperedIdentity,
+      governed_workset_members: [MEMBER],
+    },
+  };
+  const { executor, calls } = harness();
+  const result = await executor({ kind: 'db' }, durableJob);
+  assert.deepEqual(result, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false });
+  assert.equal(calls.claim.length, 0, 'an altered selection_hash must never reach claimPreviewRun');
+  assert.equal(calls.runtime.length, 0, 'an altered selection_hash must never reach createRuntime');
+  assert.equal(calls.post.length, 0, 'an altered selection_hash must never reach runPostBridgeAnalysis');
+});
+
+// RED: governed_workset_members and analysis_context.documents jointly reordered stay a valid
+// EXACT projection of each other (same members, same fields, same order relative to one another —
+// already covered above), but a real freeze always orders governed_workset_members by ascending
+// lexical lowercase document_version_id, and that canonical order is itself part of the frozen
+// identity. A durable job whose members/documents are jointly reordered OUTSIDE that canonical
+// order can never come from any real builder and must still fail closed here, before any preview
+// claim, runtime construction or post-bridge call. None of this is validated by validFrozenInput
+// today: this case is expected to fail (RED) until that canonical-order check is added.
+test('a schema_version 2 durable job whose governed_workset_members and analysis_context.documents are jointly reordered outside ascending lexical lowercase document_version_id canonical order is rejected, before any preview claim, runtime construction or post-bridge call', async () => {
+  const IDENTITY = Object.freeze({
+    opportunity_id: '11111111-1111-1111-1111-111111111111',
+    tender_id: '22222222-2222-2222-2222-222222222222',
+    snapshot_id: '33333333-3333-3333-3333-333333333333',
+    context_version_id: '44444444-4444-4444-4444-444444444444',
+    selection_hash: 'a'.repeat(64),
+  });
+  const MEMBER_A = Object.freeze({
+    document_version_id: '55555555-5555-5555-5555-555555555555',
+    source_classification: 'official',
+    inclusion_reason: 'required by pliego',
+  });
+  const MEMBER_B = Object.freeze({
+    document_version_id: '66666666-6666-6666-6666-666666666666',
+    source_classification: 'corporate',
+    inclusion_reason: 'supporting annex',
+  });
+  const idempotencyKey = computeAgt002GovernedWorksetIdempotencyKey({
+    opportunityId: IDENTITY.opportunity_id,
+    tenderId: IDENTITY.tender_id,
+    snapshotId: IDENTITY.snapshot_id,
+    contextVersionId: IDENTITY.context_version_id,
+    selectionHash: IDENTITY.selection_hash,
+  });
+  function projectDocument({ document_version_id, source_classification, inclusion_reason }) {
+    return { document_version_id, source_classification, inclusion_reason };
+  }
+  // 66… sorts after 55… in ascending lexical lowercase order, so [B, A] is a joint reordering
+  // outside canonical order even though members and documents stay in lockstep with each other.
+  const reorderedMembers = [MEMBER_B, MEMBER_A];
+  const durableJob = {
+    ...JOB,
+    opportunityId: IDENTITY.opportunity_id,
+    tenderId: IDENTITY.tender_id,
+    snapshotId: IDENTITY.snapshot_id,
+    contextVersionId: IDENTITY.context_version_id,
+    idempotencyKey,
+    executionMode: 'durable_batched_v1',
+    frozenEngineInput: {
+      ...JOB.frozenEngineInput,
+      schema_version: 2,
+      engine_identity: { ...JOB.frozenEngineInput.engine_identity, idempotency_key: idempotencyKey },
+      analysis_context: {
+        ...JOB.frozenEngineInput.analysis_context,
+        opportunity: { id: IDENTITY.opportunity_id },
+        snapshotId: IDENTITY.snapshot_id,
+        documents: reorderedMembers.map(projectDocument),
+      },
+      document_workset_identity: IDENTITY,
+      governed_workset_members: reorderedMembers,
+    },
+  };
+  const { executor, calls } = harness();
+  const result = await executor({ kind: 'db' }, durableJob);
+  assert.deepEqual(result, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false });
+  assert.equal(calls.claim.length, 0, 'a canonical-order violation must never reach claimPreviewRun');
+  assert.equal(calls.runtime.length, 0, 'a canonical-order violation must never reach createRuntime');
+  assert.equal(calls.post.length, 0, 'a canonical-order violation must never reach runPostBridgeAnalysis');
+});
+
+// Security remediation: a governed extension's inclusion_reason mutated identically in BOTH
+// governed_workset_members and analysis_context.documents stays an internally-consistent exact
+// projection of itself, but no longer matches the content the ORIGINAL selection_hash/idempotency
+// key were computed over. Retaining the original selection_hash/idempotency key while tampering
+// the member content this way can never come from any real freeze and must fail closed here,
+// before any preview claim, runtime construction or post-bridge call.
+test('mutating inclusion_reason in both governed_workset_members and analysis_context.documents while keeping the original selection_hash/idempotency key fails closed before any claim/runtime/post', async () => {
+  const GOV_OPPORTUNITY_ID = '11111111-1111-1111-1111-111111111111';
+  const GOV_TENDER_ID = '22222222-2222-2222-2222-222222222222';
+  const GOV_SNAPSHOT_ID = '33333333-3333-3333-3333-333333333333';
+  const GOV_CONTEXT_VERSION_ID = '44444444-4444-4444-4444-444444444444';
+  const GOV_DOCUMENT_VERSION_ID = '55555555-5555-5555-5555-555555555555';
+  const GOV_EXTRACTION_ID = '66666666-6666-6666-6666-666666666666';
+
+  const evidenceRow = {
+    document_version_id: GOV_DOCUMENT_VERSION_ID,
+    opportunity_id: GOV_OPPORTUNITY_ID,
+    tender_id: GOV_TENDER_ID,
+    current: true,
+    extraction_status: 'ok',
+    content_hash: 'c'.repeat(64),
+    extraction_id: GOV_EXTRACTION_ID,
+    extraction_text_hash: 'd'.repeat(64),
+  };
+  const requestedMember = {
+    document_version_id: GOV_DOCUMENT_VERSION_ID,
+    source_classification: 'official',
+    inclusion_reason: 'required by pliego',
+  };
+  // A real, fully consistent full member (all six evidence fields) built the same way a real
+  // freeze builds one — never a hand-rolled/partial shape.
+  const frozen = freezeAgt002WorksetEvidence({
+    opportunityId: GOV_OPPORTUNITY_ID, tenderId: GOV_TENDER_ID, requestedMembers: [requestedMember], evidenceRows: [evidenceRow],
+  });
+  const documents = [{ document_version_id: GOV_DOCUMENT_VERSION_ID, source_classification: 'official', inclusion_reason: 'required by pliego' }];
+  const idempotencyKey = computeAgt002GovernedWorksetIdempotencyKey({
+    opportunityId: GOV_OPPORTUNITY_ID, tenderId: GOV_TENDER_ID, snapshotId: GOV_SNAPSHOT_ID, contextVersionId: GOV_CONTEXT_VERSION_ID, selectionHash: frozen.selectionHash,
+  });
+
+  function buildGovernedJob({ members, documents: jobDocuments }) {
+    return {
+      ...JOB,
+      opportunityId: GOV_OPPORTUNITY_ID,
+      tenderId: GOV_TENDER_ID,
+      snapshotId: GOV_SNAPSHOT_ID,
+      contextVersionId: GOV_CONTEXT_VERSION_ID,
+      idempotencyKey,
+      executionMode: 'durable_batched_v1',
+      frozenEngineInput: {
+        ...JOB.frozenEngineInput,
+        schema_version: 2,
+        engine_identity: { ...JOB.frozenEngineInput.engine_identity, idempotency_key: idempotencyKey },
+        analysis_context: {
+          ...JOB.frozenEngineInput.analysis_context,
+          opportunity: { id: GOV_OPPORTUNITY_ID },
+          snapshotId: GOV_SNAPSHOT_ID,
+          documents: jobDocuments,
+        },
+        document_workset_identity: {
+          opportunity_id: GOV_OPPORTUNITY_ID, tender_id: GOV_TENDER_ID, snapshot_id: GOV_SNAPSHOT_ID,
+          context_version_id: GOV_CONTEXT_VERSION_ID, selection_hash: frozen.selectionHash,
+        },
+        governed_workset_members: members,
+      },
+    };
+  }
+
+  // Sanity: the untampered valid job reaches claim/runtime/post exactly once.
+  {
+    const { executor, calls } = harness({ getOrCreateWorkset: async () => ({ status: 'created', worksetId: 'workset-1', published: false }) });
+    const result = await executor({ kind: 'db' }, buildGovernedJob({ members: frozen.members, documents }));
+    assert.deepEqual(result, { status: 'completed', analysis_run_id: 'run-1', error_code: null, reused: false, queue_finalized: true });
+    assert.equal(calls.claim.length, 1);
+    assert.equal(calls.runtime.length, 1);
+    assert.equal(calls.post.length, 1);
+  }
+
+  const tamperedReason = 'tampered inclusion reason, never part of the original freeze';
+  const tamperedMembers = frozen.members.map((m) => ({ ...m, inclusion_reason: tamperedReason }));
+  const tamperedDocuments = documents.map((d) => ({ ...d, inclusion_reason: tamperedReason }));
+  const { executor, calls } = harness({ getOrCreateWorkset: async () => ({ status: 'created', worksetId: 'workset-1', published: false }) });
+  const result = await executor({ kind: 'db' }, buildGovernedJob({ members: tamperedMembers, documents: tamperedDocuments }));
+
+  assert.deepEqual(result, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false });
+  assert.equal(calls.claim.length, 0, 'a tampered inclusion_reason under the original selection_hash/idempotency key must never reach claimPreviewRun');
+  assert.equal(calls.runtime.length, 0, 'a tampered inclusion_reason under the original selection_hash/idempotency key must never reach createRuntime');
+  assert.equal(calls.post.length, 0, 'a tampered inclusion_reason under the original selection_hash/idempotency key must never reach runPostBridgeAnalysis');
+});
+
+// Security remediation: a governed extension's engine_identity.idempotency_key is REQUIRED (never
+// merely present-if-supplied like the legacy schema_version 1/2 idempotency check) — an absent or
+// explicitly null idempotency_key must fail closed before any preview claim, runtime construction
+// or post-bridge call, even though every other field of the extension is otherwise valid.
+test('a governed schema_version 2 job with engine_identity.idempotency_key absent or null fails closed before any claim/runtime/post', async () => {
+  const GOV_OPPORTUNITY_ID = '11111111-1111-1111-1111-111111111111';
+  const GOV_TENDER_ID = '22222222-2222-2222-2222-222222222222';
+  const GOV_SNAPSHOT_ID = '33333333-3333-3333-3333-333333333333';
+  const GOV_CONTEXT_VERSION_ID = '44444444-4444-4444-4444-444444444444';
+  const GOV_DOCUMENT_VERSION_ID = '55555555-5555-5555-5555-555555555555';
+  const GOV_EXTRACTION_ID = '66666666-6666-6666-6666-666666666666';
+
+  const evidenceRow = {
+    document_version_id: GOV_DOCUMENT_VERSION_ID,
+    opportunity_id: GOV_OPPORTUNITY_ID,
+    tender_id: GOV_TENDER_ID,
+    current: true,
+    extraction_status: 'ok',
+    content_hash: 'c'.repeat(64),
+    extraction_id: GOV_EXTRACTION_ID,
+    extraction_text_hash: 'd'.repeat(64),
+  };
+  const requestedMember = {
+    document_version_id: GOV_DOCUMENT_VERSION_ID,
+    source_classification: 'official',
+    inclusion_reason: 'required by pliego',
+  };
+  const frozen = freezeAgt002WorksetEvidence({
+    opportunityId: GOV_OPPORTUNITY_ID, tenderId: GOV_TENDER_ID, requestedMembers: [requestedMember], evidenceRows: [evidenceRow],
+  });
+  const documents = [{ document_version_id: GOV_DOCUMENT_VERSION_ID, source_classification: 'official', inclusion_reason: 'required by pliego' }];
+  const idempotencyKey = computeAgt002GovernedWorksetIdempotencyKey({
+    opportunityId: GOV_OPPORTUNITY_ID, tenderId: GOV_TENDER_ID, snapshotId: GOV_SNAPSHOT_ID, contextVersionId: GOV_CONTEXT_VERSION_ID, selectionHash: frozen.selectionHash,
+  });
+
+  for (const idempotencyKeyValue of [undefined, null]) {
+    const engineIdentity = { ...JOB.frozenEngineInput.engine_identity };
+    if (idempotencyKeyValue === undefined) delete engineIdentity.idempotency_key;
+    else engineIdentity.idempotency_key = idempotencyKeyValue;
+
+    const durableJob = {
+      ...JOB,
+      opportunityId: GOV_OPPORTUNITY_ID,
+      tenderId: GOV_TENDER_ID,
+      snapshotId: GOV_SNAPSHOT_ID,
+      contextVersionId: GOV_CONTEXT_VERSION_ID,
+      idempotencyKey,
+      executionMode: 'durable_batched_v1',
+      frozenEngineInput: {
+        ...JOB.frozenEngineInput,
+        schema_version: 2,
+        engine_identity: engineIdentity,
+        analysis_context: {
+          ...JOB.frozenEngineInput.analysis_context,
+          opportunity: { id: GOV_OPPORTUNITY_ID },
+          snapshotId: GOV_SNAPSHOT_ID,
+          documents,
+        },
+        document_workset_identity: {
+          opportunity_id: GOV_OPPORTUNITY_ID, tender_id: GOV_TENDER_ID, snapshot_id: GOV_SNAPSHOT_ID,
+          context_version_id: GOV_CONTEXT_VERSION_ID, selection_hash: frozen.selectionHash,
+        },
+        governed_workset_members: frozen.members,
+      },
+    };
+    const { executor, calls } = harness({ getOrCreateWorkset: async () => ({ status: 'created', worksetId: 'workset-1', published: false }) });
+    const result = await executor({ kind: 'db' }, durableJob);
+    assert.deepEqual(
+      result,
+      { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false },
+      `engine_identity.idempotency_key ${JSON.stringify(idempotencyKeyValue)} must be rejected`,
+    );
+    assert.equal(calls.claim.length, 0, `idempotency_key ${JSON.stringify(idempotencyKeyValue)} must never reach claimPreviewRun`);
+    assert.equal(calls.runtime.length, 0, `idempotency_key ${JSON.stringify(idempotencyKeyValue)} must never reach createRuntime`);
+    assert.equal(calls.post.length, 0, `idempotency_key ${JSON.stringify(idempotencyKeyValue)} must never reach runPostBridgeAnalysis`);
   }
 });
 
