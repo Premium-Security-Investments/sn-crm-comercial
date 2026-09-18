@@ -3,11 +3,17 @@ import { createNonceStore } from './agt002-hetzner-bridge-nonce-store.js';
 import { authenticateBridgeRequest } from './agt002-hetzner-bridge-auth.js';
 import { logBridgeEvent } from './agt002-hetzner-bridge-log.js';
 import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
+import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
 
 const BRIDGE_PATH = '/v1/agt002-preview/run';
 export const AGT002_BRIDGE_MAX_BODY_BYTES = 1_048_576;
-/** El puente decide qué modelos existen: nada fuera de la lista llega al argv del proveedor. */
-export const AGT002_BRIDGE_ALLOWED_MODELS = Object.freeze(['sonnet']);
+/**
+ * El puente decide qué modelos existen: nada fuera de la lista llega al argv del proveedor.
+ * Re-exporta el contrato compartido (agt002-preview-allowed-models.js) en vez de mantener su
+ * propia copia, para que el puente y el límite de configuración server-owned del runtime
+ * (getAgt002PreviewRuntimeConfig) nunca puedan divergir.
+ */
+export const AGT002_BRIDGE_ALLOWED_MODELS = AGT002_PREVIEW_ALLOWED_MODELS;
 
 const CODE_TO_STATUS = {
   AGT002_CODEX_TIMEOUT: 504,
@@ -50,16 +56,15 @@ export function createAgt002BridgeServer({
   nonceStore = createNonceStore(),
   now = () => Math.floor(Date.now() / 1000),
   maxBodyBytes = AGT002_BRIDGE_MAX_BODY_BYTES,
-  allowedModels = AGT002_BRIDGE_ALLOWED_MODELS,
+  // Deliberately not a constructor option: the allowlist is never a caller/environment value.
+  // The bridge decides which model aliases exist at all, and the only allowlist it may ever
+  // enforce is the shared frozen contract re-exported as AGT002_BRIDGE_ALLOWED_MODELS above —
+  // never a value a caller injects, never one derived from process.env.
 }) {
   if (typeof hmacSecret !== 'string' || hmacSecret.length < 32) throw new Error('El puente AGT-002 requiere un secreto HMAC de al menos 32 bytes.');
   if (!codexClient || typeof codexClient.run !== 'function') throw new Error('El puente AGT-002 requiere un cliente inyectado con un método run().');
-  if (!Array.isArray(allowedModels) || allowedModels.length === 0
-    || !allowedModels.every(entry => typeof entry === 'string' && entry.trim().length > 0)) {
-    throw new Error('El puente AGT-002 requiere una allowlist de modelos no vacía de cadenas.');
-  }
   // Coincidencia exacta: ni recorte de espacios ni normalización de mayúsculas.
-  const allowedModelSet = new Set(allowedModels);
+  const allowedModelSet = new Set(AGT002_BRIDGE_ALLOWED_MODELS);
 
   return function requestListener(req, res) {
     if (req.method !== 'POST') return sendError(res, 405, 'AGT002_BRIDGE_METHOD_NOT_ALLOWED');

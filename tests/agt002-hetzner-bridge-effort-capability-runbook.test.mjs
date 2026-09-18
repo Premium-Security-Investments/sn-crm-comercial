@@ -15,6 +15,7 @@ const REQUIRED_DEPLOYED_FILES = [
   'agt002-hetzner-bridge-nonce-store.js',
   'agt002-hetzner-bridge-log.js',
   'agt002-preview-reasoning-effort.js',
+  'agt002-preview-allowed-models.js',
   'agt002-bridge-host.js',
   'ops/agt002-hetzner-bridge/run-server.mjs',
   'ops/agt002-hetzner-bridge/agt002-bridge.service',

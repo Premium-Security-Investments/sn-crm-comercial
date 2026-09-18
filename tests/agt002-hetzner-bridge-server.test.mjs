@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { readFileSync } from 'node:fs';
 import { createAgt002BridgeServer, AGT002_BRIDGE_MAX_BODY_BYTES, AGT002_BRIDGE_ALLOWED_MODELS } from '../agt002-hetzner-bridge-server.js';
 import { sha256Hex, buildCanonicalString, signCanonicalString } from '../agt002-hetzner-bridge-signing.js';
+import { AGT002_PREVIEW_ALLOWED_MODELS } from '../agt002-preview-allowed-models.js';
 
 const SECRET = 'a'.repeat(32);
 const PATH = '/v1/agt002-preview/run';
@@ -260,12 +262,34 @@ function testDefaultAllowedModelsIsSonnetOnly() {
   assert.deepEqual(AGT002_BRIDGE_ALLOWED_MODELS, ['sonnet']);
 }
 
-async function testInjectedAllowedModelsOverridesTheDefault() {
+function testAllowedModelsIsTheSharedContractReexportedUnchanged() {
+  // The bridge must consume/re-export the shared contract (agt002-preview-allowed-models.js)
+  // rather than keep its own copy, so the bridge and the runtime's config boundary
+  // (getAgt002PreviewRuntimeConfig) can never diverge on which alias is allowed.
+  assert.equal(AGT002_BRIDGE_ALLOWED_MODELS, AGT002_PREVIEW_ALLOWED_MODELS, 'must be the same frozen array reference, not a copy');
+  assert.equal(Object.isFrozen(AGT002_BRIDGE_ALLOWED_MODELS), true);
+}
+
+// Security fix: an injected allowlist must never widen which model aliases the bridge accepts.
+// The bridge is the last line of defense before a provider argv is built; the only allowlist
+// that may ever govern it is the shared frozen contract (AGT002_PREVIEW_ALLOWED_MODELS).
+async function testInjectedAllowedModelsIsIgnored() {
   await withServer(fakeSuccessClient, async (base) => {
     const payload = { model: 'custom-alias', policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-model-2' };
     const body = JSON.stringify(payload);
     const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
-    assert.equal(response.status, 200, 'una allowlist inyectada debe poder aceptar otros alias de modelo');
+    assert.equal(response.status, 400, 'una allowlist inyectada por el caller nunca debe ampliar los alias aceptados');
+    const result = await response.json();
+    assert.equal(result.error.code, 'AGT002_BRIDGE_BAD_REQUEST');
+  }, { allowedModels: ['custom-alias'] });
+}
+
+async function testAllowedModelIsAlwaysTheFrozenSharedContract() {
+  await withServer(fakeSuccessClient, async (base) => {
+    const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-model-3' };
+    const body = JSON.stringify(payload);
+    const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+    assert.equal(response.status, 200, 'sonnet siempre debe seguir permitido, aun con una allowlist inyectada distinta');
   }, { allowedModels: ['custom-alias'] });
 }
 
@@ -459,8 +483,10 @@ await testSuccessLogNeverLeaksAMismatchedEffortAck();
 await testEffortIsRecordedOnErrorSafeLog();
 await testUnsupportedEffortRejectedWithBadRequest();
 testDefaultAllowedModelsIsSonnetOnly();
+testAllowedModelsIsTheSharedContractReexportedUnchanged();
 await testUnsupportedModelRejectedByDefaultAllowlist();
-await testInjectedAllowedModelsOverridesTheDefault();
+await testInjectedAllowedModelsIsIgnored();
+await testAllowedModelIsAlwaysTheFrozenSharedContract();
 await testClaudeErrorCodesMapOntoExistingCodexWireCodes();
 await testCwdInBodyRejected();
 await testConcurrentRequestsAreAccepted();
@@ -469,4 +495,11 @@ await testLoginRequiredMappedTo503();
 await testSynchronousThrowInCodexClientReleasesBusyAndFailsClosed();
 await testCompletedRequestBodyDoesNotCancelRun();
 await testClientDisconnectStillCancelsRun();
+
+// The ops runner must never build an allowlist from the environment: the only allowlist
+// the bridge may ever enforce is the shared frozen contract re-exported above.
+const runner = readFileSync(new URL('../ops/agt002-hetzner-bridge/run-server.mjs', import.meta.url), 'utf8');
+assert.doesNotMatch(runner, /AGT002_BRIDGE_ALLOWED_MODELS/, 'el runner nunca debe leer una allowlist de modelos desde el entorno');
+assert.doesNotMatch(runner, /allowedModels/, 'el runner nunca debe inyectar una allowlist propia al puente');
+
 console.log('agt002-hetzner-bridge-server.test.mjs Step 5 OK');

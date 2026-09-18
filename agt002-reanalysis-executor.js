@@ -14,6 +14,7 @@ import { AGT002_MAX_PREVIEW_CLAIM_LEASE_SECONDS, agt002RequiredPreviewClaimLease
 import { classifyAgt002ReanalysisWorkerError } from './agt002-reanalysis-worker.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { validateAgt002CompanyEvidenceIdentity, validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
+import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
 import {
   createAgt002AnalysisCheckpointAdapter,
   computeAgt002FrozenEngineInputHash,
@@ -45,7 +46,10 @@ function validFrozenInput(job) {
   const flags = input?.analysis_flags;
   const context = input?.analysis_context;
   if (!isObject(input) || (input.schema_version !== 1 && input.schema_version !== 2) || !isObject(identity) || !isObject(flags) || !isObject(context)) return null;
-  if (typeof identity.model !== 'string' || !identity.model.trim()
+  // Shared contract: even a durably queued job must carry a model the bridge would still run —
+  // a legacy job frozen before this contract narrowed to ['sonnet'] is rejected here, before any
+  // claim or runtime construction, exactly like every other malformed engine_identity field.
+  if (typeof identity.model !== 'string' || !AGT002_PREVIEW_ALLOWED_MODELS.includes(identity.model)
     || typeof identity.policy_version !== 'string' || !identity.policy_version.trim()
     || !Number.isInteger(identity.timeout_ms) || identity.timeout_ms <= 0 || identity.timeout_ms > 480_000
     || !Number.isInteger(identity.daily_max_runs) || identity.daily_max_runs <= 0

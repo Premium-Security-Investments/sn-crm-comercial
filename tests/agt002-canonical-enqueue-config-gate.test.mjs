@@ -27,7 +27,7 @@ import { buildAgt002FrozenEngineInput, isAgt002QueueableTimeoutMs } from '../agt
 function configuredEnv(overrides = {}) {
   return {
     TENDER_ANALYSIS_ENGINE: 'agt002_codex_preview',
-    AGT002_PREVIEW_MODEL: 'synthetic-codex-model',
+    AGT002_PREVIEW_MODEL: 'sonnet',
     AGT002_HETZNER_BRIDGE_URL: 'https://agt002.5-78-140-24.sslip.io/v1/agt002-preview/run',
     AGT002_HETZNER_BRIDGE_HMAC_SECRET: 'a'.repeat(32),
     ...overrides,
@@ -63,6 +63,13 @@ test('an absent configuration keeps its own code, and a usable one does not bloc
   assert.equal(agt002CanonicalEnqueueBlockCode(configuredEnv({ AGT002_PREVIEW_TIMEOUT_MS: '165000' })), null);
 });
 
+test('a model alias the bridge would reject is blocked here, before a canonical run is ever claimed/enqueued', () => {
+  const environment = configuredEnv({ AGT002_PREVIEW_MODEL: 'gpt-5.6-luna' });
+  assert.equal(isAgt002PreviewConfigured(environment), true, 'nothing required is missing — the alias itself is the problem');
+  assert.throws(() => getAgt002PreviewRuntimeConfig(environment), /no está configurado/i);
+  assert.equal(agt002CanonicalEnqueueBlockCode(environment), AGT002_RUNTIME_CONFIG_INVALID_CODE);
+});
+
 test('the enqueue gate stops exactly at the timeout the worker can fund, so no doomed corrida is reserved', () => {
   // The worker rejects an unfundable two-turn lease before claiming (2*t+30 > 600), so anything
   // above 285_000ms would be queued and then die on its first cycle without reaching the provider.
@@ -75,7 +82,7 @@ test('the enqueue gate stops exactly at the timeout the worker can fund, so no d
 
 test('the frozen queue contract refuses what the worker refuses', () => {
   const source = {
-    runtimeConfig: { model: 'm', policyVersion: 'p', timeoutMs: 285_000, dailyMaxRuns: 20, maxConcurrent: 2 },
+    runtimeConfig: { model: 'sonnet', policyVersion: 'p', timeoutMs: 285_000, dailyMaxRuns: 20, maxConcurrent: 2 },
     analysisConfig: { AGT002_CANONICAL_ONLY: true, AGT002_CONTEXT_V2: true, AGT002_DOCUMENT_RETRIEVAL: true, AGT002_LEGAL_CORPUS: false, AGT002_INTEGRAL_CONTRACT_V3: false },
     analysisContext: { opportunity: { id: 'opp' }, documents: [], snapshotId: 'snap', canonicalOnly: true },
     idempotencyKey: 'key',
