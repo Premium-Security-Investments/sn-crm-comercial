@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildAgt002FrozenEngineInput } from '../agt002-reanalysis-input.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT } from '../agt002-preview-reasoning-effort.js';
+import { AGT002_PREVIEW_ALLOWED_MODELS } from '../agt002-preview-allowed-models.js';
 import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
 import { AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION } from '../agt002-company-evidence-sharepoint-catalog.js';
 
@@ -37,7 +38,7 @@ const FIXTURE_INVENTORY_SNAPSHOT = Object.freeze({
 // a later test's assertions.
 function createSource() {
   return {
-    runtimeConfig: { model: 'm', policyVersion: 'p', timeoutMs: 165000, dailyMaxRuns: 20, maxConcurrent: 2 },
+    runtimeConfig: { model: 'sonnet', policyVersion: 'p', timeoutMs: 165000, dailyMaxRuns: 20, maxConcurrent: 2 },
     analysisConfig: { AGT002_CANONICAL_ONLY: true, AGT002_CONTEXT_V2: true, AGT002_DOCUMENT_RETRIEVAL: true, AGT002_LEGAL_CORPUS: false, AGT002_INTEGRAL_CONTRACT_V3: true },
     analysisContext: { opportunity: { id: 'opp' }, documents: [{ id: 'doc' }], snapshotId: 'snap', canonicalOnly: true },
     legalCorpusContext: null,
@@ -108,6 +109,23 @@ test('rejects an unsupported reasoning effort instead of freezing it', () => {
     ...source,
     runtimeConfig: { ...source.runtimeConfig, effort: 'Low' },
   }), /frozen input is invalid/i, 'must be exact-case, never coerced');
+});
+
+// Shared contract: buildAgt002FrozenEngineInput must never freeze a model outside the bridge's
+// own allowlist, even though production always sources runtimeConfig.model from
+// getAgt002PreviewRuntimeConfig (which already enforces it) — a caller that assembles
+// runtimeConfig directly must never be able to widen the contract this module freezes.
+test('rejects a model outside the shared allowlist instead of freezing it', () => {
+  const source = createSource();
+  assert.throws(() => buildAgt002FrozenEngineInput({
+    ...source,
+    runtimeConfig: { ...source.runtimeConfig, model: 'gpt-5.6-luna' },
+  }), /frozen input is invalid/i);
+  assert.throws(() => buildAgt002FrozenEngineInput({
+    ...source,
+    runtimeConfig: { ...source.runtimeConfig, model: 'Sonnet' },
+  }), /frozen input is invalid/i, 'must be exact-case, never coerced');
+  assert.deepEqual(AGT002_PREVIEW_ALLOWED_MODELS, ['sonnet'], 'precondition: the shared contract is sonnet-only');
 });
 
 test('fails closed when canonical identity/config are incomplete or exceed the worker lease budget', () => {

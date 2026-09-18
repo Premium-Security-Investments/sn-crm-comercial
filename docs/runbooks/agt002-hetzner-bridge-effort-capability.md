@@ -81,6 +81,8 @@ confirmar que estos archivos están presentes y actualizados en el host (rutas r
 - `agt002-hetzner-bridge-log.js` — sanitizador de logs (allowlist de `effort`).
 - `agt002-preview-reasoning-effort.js` — módulo puro con la validación/valor por defecto de `effort`;
   importado directamente por `agt002-hetzner-bridge-server.js` y `agt002-hetzner-bridge-log.js`.
+- `agt002-preview-allowed-models.js` — contrato compartido, congelado, de la allowlist de modelos
+  (`['sonnet']`); importado directamente por `agt002-hetzner-bridge-server.js`.
 - `ops/agt002-hetzner-bridge/agt002-bridge.service` — unidad systemd (reinstalar con
   `systemctl daemon-reload` tras copiarla, antes de `systemctl restart`).
 

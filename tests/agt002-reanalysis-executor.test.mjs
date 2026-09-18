@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createAgt002ReanalysisExecutor } from '../agt002-reanalysis-executor.js';
 import { AGT002_POST_BRIDGE_ERROR_CODES } from '../agt002-post-bridge-observability.js';
+import { AGT002_PREVIEW_ALLOWED_MODELS } from '../agt002-preview-allowed-models.js';
 
 const JOB = Object.freeze({
   jobId: 'job-1', leaseId: 'lease-1', opportunityId: 'opp-1', tenderId: 'tender-1',
   snapshotId: 'snapshot-1', contextVersionId: 'context-1', idempotencyKey: 'key-1', requestedBy: 'actor-1',
   frozenEngineInput: {
     schema_version: 1,
-    engine_identity: { model: 'model-1', policy_version: 'policy-1', timeout_ms: 165000, daily_max_runs: 20, max_concurrent: 2 },
+    engine_identity: { model: 'sonnet', policy_version: 'policy-1', timeout_ms: 165000, daily_max_runs: 20, max_concurrent: 2 },
     analysis_flags: { AGT002_CANONICAL_ONLY: true, AGT002_CONTEXT_V2: true, AGT002_DOCUMENT_RETRIEVAL: true, AGT002_LEGAL_CORPUS: false, AGT002_INTEGRAL_CONTRACT_V3: true },
     analysis_context: { opportunity: { id: 'opp-1' }, documents: [], snapshotId: 'snapshot-1', canonicalOnly: true },
     legal_corpus_context: null,
@@ -71,7 +72,7 @@ test('reconstructs runtime from frozen non-secret input and invokes the real orc
   assert.equal(calls.runtime.length, 1);
   assert.equal(calls.post.length, 1, 'zero retry/fallback: one orchestrator call');
   const runtimeOptions = calls.runtime[0];
-  assert.equal(runtimeOptions.environment.AGT002_PREVIEW_MODEL, 'model-1');
+  assert.equal(runtimeOptions.environment.AGT002_PREVIEW_MODEL, 'sonnet');
   assert.equal(runtimeOptions.environment.AGT002_PREVIEW_POLICY_VERSION, 'policy-1');
   assert.equal(runtimeOptions.environment.AGT002_INTEGRAL_CONTRACT_V3, 'true');
   // AGT-002 root-cause fix: a legacy frozen job (no `engine_identity.effort` — created before
@@ -309,6 +310,27 @@ test('forwards an explicit frozen reasoning effort to the reconstructed runtime 
   const { executor, calls } = harness();
   await executor({ kind: 'db' }, job);
   assert.equal(calls.runtime[0].environment.AGT002_PREVIEW_REASONING_EFFORT, 'medium');
+});
+
+// Shared contract: a durably queued job frozen before the allowlist narrowed to ['sonnet']
+// (e.g. a legacy Codex-era model alias) must be rejected before any claim/createRuntime, exactly
+// like every other malformed engine_identity field — never merely trusted because it was already
+// durable.
+test('rejects a legacy frozen model outside the shared allowlist before any provider claim', async () => {
+  assert.deepEqual(AGT002_PREVIEW_ALLOWED_MODELS, ['sonnet'], 'precondition: the shared contract is sonnet-only');
+  const job = {
+    ...JOB,
+    frozenEngineInput: {
+      ...JOB.frozenEngineInput,
+      engine_identity: { ...JOB.frozenEngineInput.engine_identity, model: 'codex-legacy' },
+    },
+  };
+  const { executor, calls } = harness();
+  const result = await executor({ kind: 'db' }, job);
+  assert.deepEqual(result, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false });
+  assert.equal(calls.claim.length, 0, 'a legacy invalid model must never reach claimPreviewRun');
+  assert.equal(calls.runtime.length, 0, 'a legacy invalid model must never reach createRuntime');
+  assert.equal(calls.post.length, 0);
 });
 
 test('rejects an unsupported frozen reasoning effort before any provider claim', async () => {

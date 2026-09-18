@@ -2,6 +2,7 @@ import { ANALYSIS_FLAG_NAMES } from './agt002-analysis-config.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { validateAgt002CompanyEvidenceIdentity, validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
 import { validateAgt002CompanyEvidenceInventorySnapshot } from './agt002-company-evidence-sharepoint-catalog.js';
+import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
 
 function object(value) {
   return value != null && typeof value === 'object' && !Array.isArray(value);
@@ -76,7 +77,10 @@ export function buildAgt002FrozenEngineInput({
   // no `effort` field at all (a job created before this field existed).
   const resolvedEffort = runtimeConfig?.effort === undefined ? AGT002_PREVIEW_DEFAULT_REASONING_EFFORT : runtimeConfig.effort;
   if (!object(runtimeConfig)
-    || typeof runtimeConfig.model !== 'string' || !runtimeConfig.model.trim()
+    // Shared contract: the model this NEW job freezes must be one the bridge itself would ever
+    // run — never merely a nonempty string — so a caller that builds runtimeConfig without going
+    // through getAgt002PreviewRuntimeConfig can never freeze an alias the bridge would reject.
+    || typeof runtimeConfig.model !== 'string' || !AGT002_PREVIEW_ALLOWED_MODELS.includes(runtimeConfig.model)
     || typeof runtimeConfig.policyVersion !== 'string' || !runtimeConfig.policyVersion.trim()
     || !isAgt002QueueableTimeoutMs(runtimeConfig.timeoutMs)
     || !Number.isInteger(runtimeConfig.dailyMaxRuns) || runtimeConfig.dailyMaxRuns <= 0

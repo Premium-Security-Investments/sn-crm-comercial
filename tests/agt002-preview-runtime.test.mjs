@@ -6,11 +6,12 @@ import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT } from '../agt002-preview-reaso
 import { AGT002_COMPANY_EVIDENCE_CLASS_IDS } from '../agt002-company-evidence-classes.js';
 import { AGT002_COMPANY_EVIDENCE_INVENTORY_VERSION } from '../agt002-company-evidence-sharepoint-catalog.js';
 import { AGT002_V3_PROMPT_DEFAULT_MAX_INPUT_TOKENS } from '../agt002-v3-prompt-budget.js';
+import { AGT002_PREVIEW_ALLOWED_MODELS } from '../agt002-preview-allowed-models.js';
 
 function baseEnv(overrides = {}) {
   return {
     TENDER_ANALYSIS_ENGINE: 'agt002_codex_preview',
-    AGT002_PREVIEW_MODEL: 'synthetic-codex-model',
+    AGT002_PREVIEW_MODEL: 'sonnet',
     AGT002_HETZNER_BRIDGE_URL: 'https://agt002.5-78-140-24.sslip.io/v1/agt002-preview/run',
     AGT002_HETZNER_BRIDGE_HMAC_SECRET: 'a'.repeat(32),
     ...overrides,
@@ -28,6 +29,36 @@ assert.equal(isAgt002PreviewConfigured(baseEnv()), true);
 // Fails closed when unconfigured; never constructs a client/spawns anything.
 assert.throws(() => createAgt002PreviewRuntime({ environment: {} }), /no está configurado/i);
 assert.throws(() => createAgt002PreviewRuntime({ environment: baseEnv({ AGT002_PREVIEW_MODEL: undefined }) }), /no está configurado/i);
+
+// The bridge decides which model aliases exist at all — getAgt002PreviewRuntimeConfig is the
+// earliest server-owned boundary before a canonical run is ever claimed/enqueued, so it must
+// reject exactly the same aliases the bridge would reject, before any config/job is built.
+assert.equal(AGT002_PREVIEW_ALLOWED_MODELS.includes('sonnet'), true, 'sanity: the shared contract used by this test must actually allow sonnet');
+assert.equal(getAgt002PreviewRuntimeConfig(baseEnv({ AGT002_PREVIEW_MODEL: 'sonnet' })).model, 'sonnet');
+assert.throws(
+  () => getAgt002PreviewRuntimeConfig(baseEnv({ AGT002_PREVIEW_MODEL: 'gpt-5.6-luna' })),
+  /no está configurado/i,
+  'an explicit unsupported model alias must fail closed here, before a canonical run is ever claimed/enqueued',
+);
+assert.throws(
+  () => createAgt002PreviewRuntime({ environment: baseEnv({ AGT002_PREVIEW_MODEL: 'gpt-5.6-luna' }), countDailyRuns: async () => 0 }),
+  /no está configurado/i,
+  'the runtime factory must fail closed on an unsupported model exactly like getAgt002PreviewRuntimeConfig does',
+);
+
+// The bridge does an exact-match allowlist check ("Coincidencia exacta: ni recorte de espacios ni
+// normalización de mayúsculas" — agt002-hetzner-bridge-server.js) — this boundary must reject the
+// same padded alias the bridge would reject, not silently trim it into a valid one first.
+assert.throws(
+  () => getAgt002PreviewRuntimeConfig(baseEnv({ AGT002_PREVIEW_MODEL: ' sonnet ' })),
+  /no está configurado/i,
+  'a whitespace-padded alias must fail closed exactly like the bridge would reject it, never be trimmed into an allowed alias',
+);
+assert.throws(
+  () => createAgt002PreviewRuntime({ environment: baseEnv({ AGT002_PREVIEW_MODEL: ' sonnet ' }), countDailyRuns: async () => 0 }),
+  /no está configurado/i,
+  'the runtime factory must fail closed on a whitespace-padded alias exactly like getAgt002PreviewRuntimeConfig does',
+);
 
 // When configured, returns a usable engine without eagerly spawning (construction is cheap/safe).
 {
@@ -455,7 +486,7 @@ function testConfiguredRequiresHetznerBridgeUrlAndSecret() {
 function testRuntimeBuildsHetznerBridgeClientNotLocalSpawn() {
   const environment = {
     TENDER_ANALYSIS_ENGINE: 'agt002_codex_preview',
-    AGT002_PREVIEW_MODEL: 'gpt-x',
+    AGT002_PREVIEW_MODEL: 'sonnet',
     AGT002_HETZNER_BRIDGE_URL: 'https://agt002.5-78-140-24.sslip.io/v1/agt002-preview/run',
     AGT002_HETZNER_BRIDGE_HMAC_SECRET: 'a'.repeat(32),
   };
