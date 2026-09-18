@@ -55,6 +55,30 @@ function testRunbookRequiredFilesCoverEveryDirectLocalImportOfBridgeRuntimeFiles
   }
 }
 
+function testDockerfileCopiesAgt002BridgeHostModule() {
+  const copied = dockerfileCopiedRootFiles();
+  assert.ok(copied.has('agt002-bridge-host.js'), "el Dockerfile debe COPY 'agt002-bridge-host.js' porque run-server.mjs lo importa");
+}
+
+function testDockerfileFixesContainerListenHostToWildcard() {
+  assert.match(dockerfile, /^ENV AGT002_BRIDGE_LISTEN_HOST=0\.0\.0\.0$/m, "el Dockerfile debe fijar ENV AGT002_BRIDGE_LISTEN_HOST=0.0.0.0 para aceptar conexiones dentro del contenedor");
+}
+
+function testEnvExampleDocumentsBareMetalDefaultAndDockerPublishing() {
+  const envExample = read('ops/agt002-hetzner-bridge/env.example');
+  assert.match(envExample, /127\.0\.0\.1/, 'env.example debe documentar el default bare-metal 127.0.0.1');
+  assert.match(envExample, /127\.0\.0\.1:\$\{HOST_PORT\}:\$\{CONTAINER_PORT\}/, 'env.example debe documentar la publicación Docker limitada a loopback del host');
+  const bareWildcardLines = envExample.split('\n').filter(
+    line => /-p \$\{HOST_PORT\}:\$\{CONTAINER_PORT\}/.test(line) && !line.includes('127.0.0.1'),
+  );
+  for (const line of bareWildcardLines) {
+    assert.match(line, /nunca/i, `toda mención de publicar el puerto sin loopback debe marcarse explícitamente como prohibida: "${line}"`);
+  }
+}
+
 testDockerfileCopiesEveryDirectLocalImportOfBridgeRuntimeFiles();
 testRunbookRequiredFilesCoverEveryDirectLocalImportOfBridgeRuntimeFiles();
+testDockerfileCopiesAgt002BridgeHostModule();
+testDockerfileFixesContainerListenHostToWildcard();
+testEnvExampleDocumentsBareMetalDefaultAndDockerPublishing();
 console.log('agt002-hetzner-bridge-dockerfile-packaging.test.mjs OK');
