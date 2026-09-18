@@ -132,6 +132,13 @@ import { publishTenderKnowledgeVersion } from '../agt002-knowledge-sharepoint.js
 import { createTenderKnowledgeSharePointGraphAdapter } from '../agt002-knowledge-sharepoint-graph-adapter.js';
 import { createAgt003ClaudeClient } from '../agt003-claude-client.js';
 import { buildAgt002StakeholderBriefPreview } from '../agt002-stakeholder-brief-preview.js';
+import {
+  AGT002_GOVERNED_WORKSET_CAPACITY_REJECTED_CODE,
+  AGT002_GOVERNED_WORKSET_CAPACITY_UNAVAILABLE_CODE,
+  freezeAgt002GovernedDocumentWorkset,
+  projectAgt002GovernedWorksetFreezeResult,
+  validateAgt002GovernedWorksetFreezeRequest,
+} from '../agt002-governed-document-workset-api.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -379,6 +386,7 @@ export const HTTP_ACTION_MATRIX = Object.freeze({
   'GET /api/tenders': ['tenders', ACTIONS.LICITACIONES_VIEW],
   'POST /api/tender-documents-analyze-agent-preview': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/agt002-reanalysis-status': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
+  'POST /api/tender-agt002-governed-document-worksets': ['tenders', ACTIONS.AI_ANALYSIS_RUN],
   'GET /api/users': ['users', ACTIONS.USERS_MANAGE],
   'GET /api/access-catalog': ['users', ACTIONS.USERS_MANAGE],
 
@@ -4585,6 +4593,81 @@ app.get('/api/agt002-reanalysis-status', async (req, res) => {
     const job = await findLatestAgt002ReanalysisStatusForOpportunity(database, opportunityId);
     return res.json(presentAgt002ReanalysisStatus(job));
   } catch (error) { sendError(res, error, error?.status || 400); }
+});
+
+// AGT-002 governed document worksets — the canonical frozen-engine-input SOURCE this route
+// freezes into every newly queued governed job. Server-owned config/governance only, exactly
+// like enqueueAgt002CanonicalReanalysis — the browser can never influence model, policy, effort
+// or governance through this route: runtimeConfig comes from
+// getAgt002PreviewRuntimeConfig(process.env), analysisConfig from the module-level
+// agt002AnalysisConfig, and the optional legal/v3 governance values load through the SAME
+// loaders the canonical enqueue flow uses. `documents` is derived ONLY from the already-frozen
+// workset members handed back by freezeAgt002GovernedDocumentWorkset — never an
+// all-current-documents listing.
+async function buildAgt002GovernedWorksetFrozenEngineInputSource(database, {
+  opportunityId, tenderId, snapshotId, contextVersionId, idempotencyKey, frozen,
+}) {
+  const config = getAgt002PreviewRuntimeConfig(process.env);
+  const integralV3Governance = await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId);
+  const governedLegalCorpusContext = await loadAgt002LegalCorpusContextIfEnabled(database);
+  const policyVersion = agt002AnalysisConfig.AGT002_INTEGRAL_CONTRACT_V3
+    ? AGT002_INTEGRAL_V3_POLICY_VERSION
+    : config.policyVersion;
+  const analysisContext = {
+    opportunity: { id: opportunityId },
+    documents: frozen.members.map((member) => ({
+      document_version_id: member.document_version_id,
+      source_classification: member.source_classification,
+      inclusion_reason: member.inclusion_reason,
+    })),
+    snapshotId,
+    canonicalOnly: true,
+  };
+  return buildAgt002FrozenEngineInput({
+    runtimeConfig: { ...config, policyVersion },
+    analysisConfig: agt002AnalysisConfig,
+    analysisContext,
+    legalCorpusContext: governedLegalCorpusContext,
+    integralV3Governance,
+    idempotencyKey,
+  });
+}
+
+// AGT-002 governed document worksets — Phase 3 of
+// .hermes/plans/2026-09-17-agt002-governed-document-worksets.md. Body is closed to exactly
+// {opportunity_id, documents[]}; the browser has no reliable tender_id before the first AGT-002
+// run, so tender_id is never accepted from the client — it is always resolved server-side via
+// getTenderIdForOpportunity. Every document identity/hash is server-resolved through migration
+// 084's RPCs, never trusted from the client. Before any freeze/enqueue RPC, the server-owned
+// operational batch-capacity preflight (agt002-governed-workset-capacity.js) evaluates the
+// server-resolved package size and fails closed (422 NO_APTO, 503 unavailable) before anything is
+// queued. The response is the sanitized seven-field summary only — never the frozen engine input,
+// extracted text or a raw DB error.
+app.post('/api/tender-agt002-governed-document-worksets', async (req, res) => {
+  try {
+    const { profile: currentProfile } = await getAuthContext(req);
+    requireAction(currentProfile, ACTIONS.AI_ANALYSIS_RUN);
+    const database = requireDb();
+    const { opportunityId, requestedMembers } = validateAgt002GovernedWorksetFreezeRequest(req.body);
+    await ensureTenderOpportunity(database, opportunityId, currentProfile);
+    const tenderId = await getTenderIdForOpportunity(database, opportunityId);
+    const result = await freezeAgt002GovernedDocumentWorkset(database, {
+      opportunityId, tenderId, actorProfileId: currentProfile.id, requestedMembers,
+      buildFrozenEngineInputSource: (identity) => buildAgt002GovernedWorksetFrozenEngineInputSource(database, {
+        opportunityId, tenderId, ...identity,
+      }),
+    });
+    res.set('Cache-Control', 'private, no-store');
+    res.status(result.status === 'created' ? 202 : 200).json(projectAgt002GovernedWorksetFreezeResult(result));
+  } catch (error) {
+    // Operational batch-capacity preflight errors carry their own safe report (code, criterion,
+    // predicted/max batch counts, source char count) and must surface it as-is — scoped to this
+    // route only, never folded into the shared sendError() other routes rely on.
+    if (error?.code === AGT002_GOVERNED_WORKSET_CAPACITY_REJECTED_CODE || error?.code === AGT002_GOVERNED_WORKSET_CAPACITY_UNAVAILABLE_CODE) {
+      return res.status(error.status).json({ error: error.message, code: error.code, report: error.report });
+    }
+    sendError(res, error, error?.status || 400);
+  }
 });
 
 app.post('/api/tender-documents-import', async (req, res) => {

@@ -10,11 +10,12 @@ import {
   releaseAgt002PreviewClaim,
 } from './agt002-preview-persistence.js';
 import { createAgt002PreviewRuntime } from './agt002-preview-runtime.js';
-import { AGT002_MAX_PREVIEW_CLAIM_LEASE_SECONDS, agt002RequiredPreviewClaimLeaseSeconds } from './agt002-reanalysis-input.js';
+import { AGT002_MAX_PREVIEW_CLAIM_LEASE_SECONDS, agt002RequiredPreviewClaimLeaseSeconds, validateAgt002GovernedWorksetExtension } from './agt002-reanalysis-input.js';
+import { computeAgt002GovernedWorksetIdempotencyKey, computeAgt002WorksetSelectionHash } from './agt002-governed-document-worksets.js';
+import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
 import { classifyAgt002ReanalysisWorkerError } from './agt002-reanalysis-worker.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { validateAgt002CompanyEvidenceIdentity, validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
-import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
 import {
   createAgt002AnalysisCheckpointAdapter,
   computeAgt002FrozenEngineInputHash,
@@ -46,10 +47,7 @@ function validFrozenInput(job) {
   const flags = input?.analysis_flags;
   const context = input?.analysis_context;
   if (!isObject(input) || (input.schema_version !== 1 && input.schema_version !== 2) || !isObject(identity) || !isObject(flags) || !isObject(context)) return null;
-  // Shared contract: even a durably queued job must carry a model the bridge would still run —
-  // a legacy job frozen before this contract narrowed to ['sonnet'] is rejected here, before any
-  // claim or runtime construction, exactly like every other malformed engine_identity field.
-  if (typeof identity.model !== 'string' || !AGT002_PREVIEW_ALLOWED_MODELS.includes(identity.model)
+  if (!AGT002_PREVIEW_ALLOWED_MODELS.includes(identity.model)
     || typeof identity.policy_version !== 'string' || !identity.policy_version.trim()
     || !Number.isInteger(identity.timeout_ms) || identity.timeout_ms <= 0 || identity.timeout_ms > 480_000
     || !Number.isInteger(identity.daily_max_runs) || identity.daily_max_runs <= 0
@@ -72,6 +70,71 @@ function validFrozenInput(job) {
     || flags.AGT002_CANONICAL_ONLY !== true) return null;
   if (flags.AGT002_INTEGRAL_CONTRACT_V3 === true && !validAgt002FrozenGovernance(input.integral_v3_governance)) return null;
   if (flags.AGT002_LEGAL_CORPUS === true && !isObject(input.legal_corpus_context)) return null;
+  // Governed document worksets are a schema_version 2-only extension: a frozen input carrying
+  // either governed field always requires schema_version === 2 and re-validates BOTH fields
+  // through the same shared validator the enqueue side used to freeze them — never trusted
+  // verbatim here either. Legacy/non-governed schema_version 1 input is untouched.
+  if (Object.hasOwn(input, 'document_workset_identity') || Object.hasOwn(input, 'governed_workset_members')) {
+    if (input.schema_version !== 2) return null;
+    let validatedExtension;
+    try {
+      validatedExtension = validateAgt002GovernedWorksetExtension({
+        document_workset_identity: input.document_workset_identity,
+        governed_workset_members: input.governed_workset_members,
+      });
+    } catch {
+      return null;
+    }
+    // Defense in depth: the frozen identity must be exactly the job it rides on, and the engine's
+    // own analysis_context.documents must be an exact ordered three-field projection of the
+    // governed members — never a superset, subset, reordering or per-field divergence.
+    const identityScope = validatedExtension.document_workset_identity;
+    if (identityScope.opportunity_id !== job.opportunityId
+      || identityScope.tender_id !== job.tenderId
+      || identityScope.snapshot_id !== job.snapshotId
+      || identityScope.context_version_id !== job.contextVersionId) return null;
+    // A governed job's engine_identity.idempotency_key is REQUIRED (never merely
+    // present-if-supplied like the legacy check above) and must equal exactly the job's own
+    // idempotencyKey — a governed extension can never ride on a job whose frozen identity is
+    // silent about which job it belongs to.
+    if (typeof identity.idempotency_key !== 'string' || !identity.idempotency_key.trim()
+      || identity.idempotency_key !== job.idempotencyKey) return null;
+    // Governed jobs' idempotency is re-derived from the validated document_workset_identity
+    // scope fields plus selection_hash (never recomputed from the 3-field members projection —
+    // the stored selection_hash also binds content/extraction hashes this frozen input does not
+    // carry) and must equal exactly the job's own idempotencyKey — never merely present/absent
+    // like the legacy engine_identity.idempotency_key check above.
+    const expectedGovernedIdempotencyKey = computeAgt002GovernedWorksetIdempotencyKey({
+      opportunityId: identityScope.opportunity_id,
+      tenderId: identityScope.tender_id,
+      snapshotId: identityScope.snapshot_id,
+      contextVersionId: identityScope.context_version_id,
+      selectionHash: identityScope.selection_hash,
+    });
+    if (expectedGovernedIdempotencyKey !== job.idempotencyKey) return null;
+    const members = validatedExtension.governed_workset_members;
+    // The identity's own selection_hash is never trusted verbatim either: it is re-derived here
+    // from the re-validated six-field members, byte-for-byte via the same canonical hash
+    // freezeAgt002WorksetEvidence() computed at freeze time, and must match exactly — a durable
+    // job whose selection_hash was altered after freezing (even if every other field stays
+    // internally consistent) is rejected here, before any claim.
+    const recomputedSelectionHash = computeAgt002WorksetSelectionHash({
+      opportunityId: identityScope.opportunity_id,
+      tenderId: identityScope.tender_id,
+      members,
+    });
+    if (recomputedSelectionHash !== identityScope.selection_hash) return null;
+    const documents = context.documents;
+    if (!Array.isArray(documents) || documents.length !== members.length) return null;
+    for (let i = 0; i < members.length; i += 1) {
+      const member = members[i];
+      const document = documents[i];
+      if (!isObject(document) || Object.keys(document).length !== 3
+        || document.document_version_id !== member.document_version_id
+        || document.source_classification !== member.source_classification
+        || document.inclusion_reason !== member.inclusion_reason) return null;
+    }
+  }
   return input;
 }
 

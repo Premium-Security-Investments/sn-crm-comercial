@@ -2,10 +2,92 @@ import { ANALYSIS_FLAG_NAMES } from './agt002-analysis-config.js';
 import { AGT002_PREVIEW_DEFAULT_REASONING_EFFORT, isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 import { validateAgt002CompanyEvidenceIdentity, validateAgt002CompanyEvidenceAsOf } from './agt002-company-evidence-identity.js';
 import { validateAgt002CompanyEvidenceInventorySnapshot } from './agt002-company-evidence-sharepoint-catalog.js';
+import { AGT002_WORKSET_SOURCE_CLASSIFICATIONS } from './agt002-governed-document-worksets.js';
 import { AGT002_PREVIEW_ALLOWED_MODELS } from './agt002-preview-allowed-models.js';
 
 function object(value) {
   return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+const GOVERNED_WORKSET_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const GOVERNED_WORKSET_HEX64_RE = /^[0-9a-f]{64}$/i;
+const GOVERNED_WORKSET_IDENTITY_KEYS = ['opportunity_id', 'tender_id', 'snapshot_id', 'context_version_id', 'selection_hash'];
+// Exactly the six fields freezeAgt002WorksetEvidence()/computeAgt002WorksetSelectionHash()
+// freeze per member — the full evidence-bearing shape, never the public three-field projection
+// analysis_context.documents carries.
+const GOVERNED_WORKSET_MEMBER_KEYS = new Set([
+  'document_version_id', 'source_classification', 'inclusion_reason',
+  'content_hash', 'extraction_id', 'extraction_text_hash',
+]);
+
+/**
+ * Narrowly-scoped optional extension the governed document-workset freeze route composes onto
+ * an otherwise-canonical frozen engine input: exactly `document_workset_identity` (the frozen
+ * package's own opportunity/tender/snapshot/context/selection identity) and
+ * `governed_workset_members` (the already-bounded, already-evidence-verified frozen member
+ * list) — re-validated here, never trusted verbatim, so a corrupted/hostile extension can never
+ * reach a queued job.
+ */
+export function validateAgt002GovernedWorksetExtension(extension) {
+  if (!object(extension)) throw new Error('AGT-002 reanalysis governed workset extension must be an object.');
+  const extraKeys = Object.keys(extension).filter((key) => key !== 'document_workset_identity' && key !== 'governed_workset_members');
+  if (extraKeys.length > 0) throw new Error('AGT-002 reanalysis governed workset extension carries unexpected key(s).');
+
+  const identity = extension.document_workset_identity;
+  if (!object(identity) || Object.keys(identity).length !== GOVERNED_WORKSET_IDENTITY_KEYS.length
+    || GOVERNED_WORKSET_IDENTITY_KEYS.some((key) => !Object.hasOwn(identity, key))
+    || !GOVERNED_WORKSET_UUID_RE.test(identity.opportunity_id)
+    // Canonical lowercase UUID only, exactly like the member document_version_id/extraction_id
+    // checks below — a merely case-insensitively-valid identity UUID is never accepted.
+    || identity.opportunity_id !== identity.opportunity_id.toLowerCase()
+    || !GOVERNED_WORKSET_UUID_RE.test(identity.tender_id)
+    || identity.tender_id !== identity.tender_id.toLowerCase()
+    || !GOVERNED_WORKSET_UUID_RE.test(identity.snapshot_id)
+    || identity.snapshot_id !== identity.snapshot_id.toLowerCase()
+    || !GOVERNED_WORKSET_UUID_RE.test(identity.context_version_id)
+    || identity.context_version_id !== identity.context_version_id.toLowerCase()
+    || typeof identity.selection_hash !== 'string' || !GOVERNED_WORKSET_HEX64_RE.test(identity.selection_hash)) {
+    throw new Error('AGT-002 reanalysis governed workset document identity is invalid.');
+  }
+
+  const members = extension.governed_workset_members;
+  if (!Array.isArray(members) || members.length === 0 || members.length > 12) {
+    throw new Error('AGT-002 reanalysis governed workset members are invalid.');
+  }
+  const seenDocumentVersionIds = new Set();
+  let previousDocumentVersionId = null;
+  for (const member of members) {
+    if (!object(member) || Object.keys(member).length !== GOVERNED_WORKSET_MEMBER_KEYS.size
+      || Object.keys(member).some((key) => !GOVERNED_WORKSET_MEMBER_KEYS.has(key))
+      || typeof member.document_version_id !== 'string' || !GOVERNED_WORKSET_UUID_RE.test(member.document_version_id)
+      // Canonical lowercase UUID only — never merely case-insensitively valid — so a frozen
+      // input can never carry a non-canonical-case document_version_id undetected.
+      || member.document_version_id !== member.document_version_id.toLowerCase()
+      || !AGT002_WORKSET_SOURCE_CLASSIFICATIONS.has(member.source_classification)
+      || typeof member.inclusion_reason !== 'string' || !member.inclusion_reason.trim()
+      || member.inclusion_reason.length > 500
+      || typeof member.content_hash !== 'string' || !GOVERNED_WORKSET_HEX64_RE.test(member.content_hash)
+      || member.content_hash !== member.content_hash.toLowerCase()
+      || typeof member.extraction_id !== 'string' || !GOVERNED_WORKSET_UUID_RE.test(member.extraction_id)
+      || member.extraction_id !== member.extraction_id.toLowerCase()
+      || typeof member.extraction_text_hash !== 'string' || !GOVERNED_WORKSET_HEX64_RE.test(member.extraction_text_hash)
+      || member.extraction_text_hash !== member.extraction_text_hash.toLowerCase()) {
+      throw new Error('AGT-002 reanalysis governed workset member is invalid.');
+    }
+    if (seenDocumentVersionIds.has(member.document_version_id)) {
+      throw new Error('AGT-002 reanalysis governed workset member is invalid.');
+    }
+    seenDocumentVersionIds.add(member.document_version_id);
+    // Members must already be frozen in strictly ascending lexical/C order by
+    // document_version_id — this never sorts/reorders the input itself, it only rejects input
+    // that was not already in canonical order.
+    if (previousDocumentVersionId !== null && member.document_version_id <= previousDocumentVersionId) {
+      throw new Error('AGT-002 reanalysis governed workset members must be strictly ascending by document_version_id.');
+    }
+    previousDocumentVersionId = member.document_version_id;
+  }
+
+  return { document_workset_identity: identity, governed_workset_members: members };
 }
 
 /** Hard ceiling the durable preview reservation accepts for a single claim lease. */
@@ -68,6 +150,7 @@ export function buildAgt002FrozenEngineInput({
   integralV3Governance = null,
   manizalesManifestSource = null,
   idempotencyKey,
+  governedWorksetExtension = null,
 } = {}) {
   // AGT-002 root-cause fix: the reasoning effort a NEW job freezes always resolves to a real,
   // explicit, allowlisted value — absence defaults to the fastest operationally-validated level
@@ -77,10 +160,7 @@ export function buildAgt002FrozenEngineInput({
   // no `effort` field at all (a job created before this field existed).
   const resolvedEffort = runtimeConfig?.effort === undefined ? AGT002_PREVIEW_DEFAULT_REASONING_EFFORT : runtimeConfig.effort;
   if (!object(runtimeConfig)
-    // Shared contract: the model this NEW job freezes must be one the bridge itself would ever
-    // run — never merely a nonempty string — so a caller that builds runtimeConfig without going
-    // through getAgt002PreviewRuntimeConfig can never freeze an alias the bridge would reject.
-    || typeof runtimeConfig.model !== 'string' || !AGT002_PREVIEW_ALLOWED_MODELS.includes(runtimeConfig.model)
+    || !AGT002_PREVIEW_ALLOWED_MODELS.includes(runtimeConfig.model)
     || typeof runtimeConfig.policyVersion !== 'string' || !runtimeConfig.policyVersion.trim()
     || !isAgt002QueueableTimeoutMs(runtimeConfig.timeoutMs)
     || !Number.isInteger(runtimeConfig.dailyMaxRuns) || runtimeConfig.dailyMaxRuns <= 0
@@ -108,13 +188,16 @@ export function buildAgt002FrozenEngineInput({
   if (analysisConfig.AGT002_LEGAL_CORPUS === true && !object(legalCorpusContext)) {
     throw new Error('AGT-002 reanalysis frozen legal corpus is required.');
   }
+  const validatedGovernedWorksetExtension = governedWorksetExtension === null
+    ? null
+    : validateAgt002GovernedWorksetExtension(governedWorksetExtension);
 
   const flags = {};
   for (const name of ANALYSIS_FLAG_NAMES) flags[name] = analysisConfig[name] === true;
   return deepFreezeJson(cloneJson({
     schema_version: 2,
     engine_identity: {
-      model: runtimeConfig.model.trim(),
+      model: runtimeConfig.model,
       policy_version: runtimeConfig.policyVersion.trim(),
       timeout_ms: runtimeConfig.timeoutMs,
       daily_max_runs: runtimeConfig.dailyMaxRuns,
@@ -127,5 +210,9 @@ export function buildAgt002FrozenEngineInput({
     legal_corpus_context: legalCorpusContext,
     integral_v3_governance: integralV3Governance,
     manizales_manifest_source: manizalesManifestSource,
+    ...(validatedGovernedWorksetExtension ? {
+      document_workset_identity: validatedGovernedWorksetExtension.document_workset_identity,
+      governed_workset_members: validatedGovernedWorksetExtension.governed_workset_members,
+    } : {}),
   }, 'input'));
 }
