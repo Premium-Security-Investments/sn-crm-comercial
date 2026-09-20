@@ -189,3 +189,20 @@ export async function projectAgt002RadarLearningObservations(database, { limit =
   precedents.sort((a, b) => a.observation_id.localeCompare(b.observation_id));
   return { schema_version: 'agt002-radar-learning-observations-v1', precedents };
 }
+
+export const AGT002_RADAR_LEARNING_OBSERVATION_PRECEDENCE = Object.freeze(['offer_outcome', 'human_decision', 'converted_tender', 'canonical_analysis']);
+export function collapseAgt002RadarLearningObservationsByTender(precedents) {
+  const rank = id => { const i = AGT002_RADAR_LEARNING_OBSERVATION_PRECEDENCE.indexOf(String(id).split(':')[0]); return i === -1 ? AGT002_RADAR_LEARNING_OBSERVATION_PRECEDENCE.length : i; };
+  const winners = new Map();
+  for (const item of precedents) {
+    const current = winners.get(item.tender_id);
+    if (!current) { winners.set(item.tender_id, item); continue; }
+    const [a, b] = [rank(item.observation_id), rank(current.observation_id)];
+    if (a < b) { winners.set(item.tender_id, item); continue; }
+    if (a > b) continue;
+    const [d1, d2] = [item.decided_at || '', current.decided_at || ''];
+    if (d1 !== d2) { if (d1 > d2) winners.set(item.tender_id, item); continue; }
+    if (item.observation_id > current.observation_id) winners.set(item.tender_id, item);
+  }
+  return [...winners.values()].sort((a, b) => a.observation_id.localeCompare(b.observation_id));
+}

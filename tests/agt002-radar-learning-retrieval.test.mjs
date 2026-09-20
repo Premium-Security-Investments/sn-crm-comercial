@@ -43,7 +43,7 @@ const fake={from:table=>{readCalls.push(table);const tableCalls=[];const track=(
  },
 };return query;}};
 const projected=await projectAgt002RadarLearningObservations(fake,{limit:10});
-assert.deepEqual(projected.precedents.map(item=>item.observation_id),['human_decision:decision-current','offer_outcome:transition-relevant']);
+assert.deepEqual(projected.precedents.map(item=>item.observation_id).sort(),['human_decision:decision-current','offer_outcome:transition-relevant'],'la proyección devuelve los precedentes crudos: human_decision y offer_outcome del mismo tender conviven, el colapso lo aplica el consumidor');
 assert.equal(readCalls.length,5,'cuatro fuentes más la resolución acotada de la arista inversa de supersesión');
 assert.ok(queryCalls.some(call=>call.table==='psi_public_tenders'&&call.method==='eq'&&call.column==='internal_status'&&call.value==='convertida_oportunidad'),'sólo las conversiones manuales pueden originar converted_tender');
 assert.ok(queryCalls.some(call=>call.table==='psi_tender_analysis_runs'&&call.method==='eq'&&call.column==='canonical'&&call.value===true),'sólo el análisis canónico puede originar canonical_analysis');

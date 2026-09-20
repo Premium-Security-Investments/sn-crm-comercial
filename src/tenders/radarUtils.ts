@@ -117,20 +117,30 @@ export function filterRadarTenders(tenders: PublicTender[], filters: RadarFilter
   return tenders.filter(tender => {
     const internal = tender.internal_status || 'nueva';
     const amount = Number(tender.value || 0);
-    const fit = Number(tender.score || 0);
+    const fitBand = tender.fit?.band;
+    const legacyFit = Number(tender.score || 0);
+    const scoreMatches = filters.score === 'todas' || (
+      fitBand
+        ? fitBand === filters.score
+        : filters.score !== 'por_validar' && (
+            filters.score === 'alto' && legacyFit >= 70 ||
+            filters.score === 'medio' && legacyFit >= 40 && legacyFit < 70 ||
+            filters.score === 'bajo' && legacyFit < 40
+          )
+    );
     return (filters.section === 'todas' || tender.section === filters.section) &&
       (filters.internalStatus === 'todas' || internal === filters.internalStatus) &&
       (filters.source === 'todas' || tender.source === filters.source) &&
       tenderMatchesRegion(tender, filters.region) &&
       (filters.deadline === 'todas' || tenderDeadlineBucket(tender) === filters.deadline) &&
       (filters.value === 'todas' || filters.value === 'sin_valor' && amount <= 0 || filters.value === 'lt_50m' && amount > 0 && amount < 50_000_000 || filters.value === '50m_500m' && amount >= 50_000_000 && amount < 500_000_000 || filters.value === '500m_plus' && amount >= 500_000_000 || filters.value === '1000m_plus' && amount >= 1_000_000_000) &&
-      (filters.score === 'todas' || filters.score === 'alto' && fit >= 70 || filters.score === 'medio' && fit >= 40 && fit < 70 || filters.score === 'bajo' && fit < 40) &&
+      scoreMatches &&
       (!filters.query || `${tender.entity} ${tender.city || ''} ${tender.dept || ''} ${tender.title} ${tender.ref || ''} ${tender.source}`.toLowerCase().includes(filters.query.toLowerCase()));
   });
 }
 
 export function sortTenderCards(rows: PublicTender[], key: TenderSortKey, direction: 'asc' | 'desc'): PublicTender[] {
-  const value = (tender: PublicTender): string | number => key === 'deadline' ? tender.deadline || '9999-12-31' : key === 'value' ? Number(tender.value || 0) : key === 'score' ? Number(tender.score || 0) : key === 'entity' ? tender.entity : tender.source;
+  const value = (tender: PublicTender): string | number => key === 'deadline' ? tender.deadline || '9999-12-31' : key === 'value' ? Number(tender.value || 0) : key === 'score' ? Number(tender.fit?.score ?? tender.score ?? 0) : key === 'entity' ? tender.entity : tender.source;
   return [...rows].sort((left, right) => {
     const a = value(left); const b = value(right);
     const comparison = typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b), 'es');
