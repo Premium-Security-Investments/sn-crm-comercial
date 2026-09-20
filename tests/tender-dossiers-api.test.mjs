@@ -182,6 +182,15 @@ async function listen(server) {
   return server.address().port;
 }
 
+const isoUtcRe = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+function withNormalizedFitEvaluatedAt(rows) {
+  const clone = structuredClone(rows);
+  for (const row of clone) {
+    if (row.fit) row.fit.evaluated_at = 'NORMALIZED';
+  }
+  return clone;
+}
+
 function requestJson(port, path, token = null) {
   return new Promise((resolve, reject) => {
     const request = http.request({ hostname: '127.0.0.1', port, path, headers: token ? { authorization: `Bearer ${token}` } : {} }, response => {
@@ -392,7 +401,11 @@ try {
   const legacyAlias = await requestJson(appPort, '/api/tender-dossiers?filter=go_authorized&limit=50&offset=0', 'manager-token');
   assert.equal(newEndpoint.status, 200);
   assert.equal(legacyAlias.status, 200);
-  assert.deepEqual(newEndpoint.body, legacyAlias.body, 'el alias y el endpoint nuevo delegan al mismo servicio');
+  for (const row of [...newEndpoint.body, ...legacyAlias.body]) {
+    assert.match(row.fit?.evaluated_at, isoUtcRe, 'fit.evaluated_at debe ser ISO UTC canonico');
+    assert.equal(new Date(row.fit.evaluated_at).toISOString(), row.fit.evaluated_at, 'fit.evaluated_at debe ser canonico');
+  }
+  assert.deepEqual(withNormalizedFitEvaluatedAt(newEndpoint.body), withNormalizedFitEvaluatedAt(legacyAlias.body), 'el alias y el endpoint nuevo delegan al mismo servicio');
 
   assert.deepEqual(newEndpoint.body.map(row => row.opportunity_id), ['good']);
   assert.equal(newEndpoint.body[0].decision, 'go');

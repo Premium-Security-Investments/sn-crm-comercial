@@ -93,6 +93,27 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'radar-service-key';
 process.env.VERCEL = '1';
 const originalFlags = { gate: process.env.AGT002_RADAR_GATE, visibility: process.env.AGT002_RADAR_VISIBILITY };
 
+const isoUtcRe = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+function assertSharedCanonicalEvaluatedAt(body, backend) {
+  const tenders = body.tenders || [];
+  assert.ok(tenders.length > 0, `${backend} debe devolver tenders para validar fit.evaluated_at`);
+  const timestamps = new Set();
+  for (const tender of tenders) {
+    const evaluatedAt = tender.fit?.evaluated_at;
+    assert.match(evaluatedAt, isoUtcRe, `${backend} fit.evaluated_at debe ser ISO UTC canonico`);
+    assert.equal(new Date(evaluatedAt).toISOString(), evaluatedAt, `${backend} fit.evaluated_at debe ser canonico`);
+    timestamps.add(evaluatedAt);
+  }
+  assert.equal(timestamps.size, 1, `${backend} todos los tenders de una misma lectura deben compartir un unico nowIso`);
+}
+function withNormalizedFitEvaluatedAt(body) {
+  const clone = structuredClone(body);
+  for (const tender of clone.tenders || []) {
+    if (tender.fit) tender.fit.evaluated_at = 'NORMALIZED';
+  }
+  return clone;
+}
+
 async function runBackend(backend, suffix, env) {
   if (env.gate === undefined) delete process.env.AGT002_RADAR_GATE; else process.env.AGT002_RADAR_GATE = env.gate;
   if (env.visibility === undefined) delete process.env.AGT002_RADAR_VISIBILITY; else process.env.AGT002_RADAR_VISIBILITY = env.visibility;
@@ -113,7 +134,9 @@ try {
 
     const gateOnly = await runBackend(backend, `${backendIndex}-gate-only`, { gate: 'true' });
     assert.equal(gateOnly.status, 200);
-    assert.deepEqual(gateOnly.body, off.body, `${backend} debe conservar payload byte-equivalente sin visibility`);
+    assertSharedCanonicalEvaluatedAt(off.body, backend);
+    assertSharedCanonicalEvaluatedAt(gateOnly.body, backend);
+    assert.deepEqual(withNormalizedFitEvaluatedAt(gateOnly.body), withNormalizedFitEvaluatedAt(off.body), `${backend} debe conservar payload byte-equivalente sin visibility`);
     assert.equal(scenario.ledgerQueries, 0);
 
     const on = await runBackend(backend, `${backendIndex}-on`, { gate: 'true', visibility: 'true' });

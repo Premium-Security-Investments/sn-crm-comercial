@@ -4,6 +4,7 @@ import { createAgt002RadarPipeline } from '../agt002-radar-pipeline.js';
 import { createAgt002RadarWorker } from '../agt002-radar-worker.js';
 import { classifyAgt002RadarPreanalysisError } from '../agt002-radar-preanalysis-worker.js';
 import { AGT002_RADAR_PREANALYSIS_POLICY_VERSION } from '../agt002-radar-preanalysis-contract.js';
+import { AGT002_PREVIEW_SONNET_MODEL } from '../agt002-preview-allowed-models.js';
 
 // ---------------------------------------------------------------------------
 // Issue #136 · La medición del puente es la fuente autoritativa de tokens/modelo/costo.
@@ -17,7 +18,7 @@ import { AGT002_RADAR_PREANALYSIS_POLICY_VERSION } from '../agt002-radar-preanal
 
 const ENV = {
   AGT002_RADAR_GATE: 'true',
-  AGT002_RADAR_PREANALYSIS_MODEL: 'radar-model-solicitado',
+  AGT002_RADAR_PREANALYSIS_MODEL: AGT002_PREVIEW_SONNET_MODEL,
   AGT002_HETZNER_BRIDGE_URL: 'https://bridge.example.test/run',
   AGT002_HETZNER_BRIDGE_HMAC_SECRET: 'x'.repeat(48),
 };
@@ -54,8 +55,8 @@ const runOnce = runtime => runtime.runOnce({ tenderRow: TENDER, gateEvaluation: 
 {
   const { runtime, sent } = runtimeFor({ input_tokens: 12, output_tokens: 7 });
   const output = await runOnce(runtime);
-  assert.equal(sent().model, 'radar-model-solicitado', 'el modelo solicitado es el que se firma hacia el puente');
-  assert.deepEqual(output.usage, { provider: 'hetzner_bridge', model: 'radar-model-solicitado', input_tokens: 12, output_tokens: 7, cost_usd: null },
+  assert.equal(sent().model, AGT002_PREVIEW_SONNET_MODEL, 'el modelo solicitado es el que se firma hacia el puente');
+  assert.deepEqual(output.usage, { provider: 'hetzner_bridge', model: AGT002_PREVIEW_SONNET_MODEL, input_tokens: 12, output_tokens: 7, cost_usd: null },
     'el usage del envelope debe ser el medido por el puente, no el auto-reportado por el modelo, y el costo ausente debe ser null, no 0');
   assert.equal(output.tender_id, TENDER.id, 'el resto del contrato de output/provenance no cambia');
   assert.equal(output.policy_version, AGT002_RADAR_PREANALYSIS_POLICY_VERSION);
@@ -68,7 +69,7 @@ const runOnce = runtime => runtime.runOnce({ tenderRow: TENDER, gateEvaluation: 
   const output = await runOnce(runtimeFor({ input_tokens: 0, output_tokens: 0 }).runtime);
   assert.equal(output.usage.input_tokens, 0, '0 tokens de entrada medidos son 0, no "ausente"');
   assert.equal(output.usage.output_tokens, 0, '0 tokens de salida medidos son 0, no "ausente"');
-  assert.equal(output.usage.model, 'radar-model-solicitado');
+  assert.equal(output.usage.model, AGT002_PREVIEW_SONNET_MODEL);
   assert.equal(output.usage.cost_usd, null, 'costo no informado por el puente: null, nunca 0 inventado');
 }
 
@@ -77,7 +78,7 @@ const runOnce = runtime => runtime.runOnce({ tenderRow: TENDER, gateEvaluation: 
 {
   const { runtime, sent } = runtimeFor({ input_tokens: 3, output_tokens: 4, model: 'radar-model-resuelto-2026-05-01', cost_usd: 0.42 });
   const output = await runOnce(runtime);
-  assert.equal(sent().model, 'radar-model-solicitado', 'el modelo solicitado no cambia');
+  assert.equal(sent().model, AGT002_PREVIEW_SONNET_MODEL, 'el modelo solicitado no cambia');
   assert.equal(output.usage.model, 'radar-model-resuelto-2026-05-01', 'el modelo persistido es el resuelto por el puente');
   assert.equal(output.usage.cost_usd, 0.42, 'el costo medido por el puente se conserva cuando existe y es positivo');
 }
@@ -94,7 +95,7 @@ const runOnce = runtime => runtime.runOnce({ tenderRow: TENDER, gateEvaluation: 
 //    nunca el que el JSON del modelo declara. Tampoco informó costo: null, no 0.
 {
   const output = await runOnce(runtimeFor({ input_tokens: 1, output_tokens: 1, model: null }).runtime);
-  assert.equal(output.usage.model, 'radar-model-solicitado');
+  assert.equal(output.usage.model, AGT002_PREVIEW_SONNET_MODEL);
   assert.notEqual(output.usage.model, SELF_REPORTED_USAGE.model);
   assert.equal(output.usage.cost_usd, null);
 }
@@ -134,7 +135,7 @@ for (const [label, modelUsage] of [['omitido', undefined], ['roto', { input_toke
   const envelope = modelEnvelope();
   if (modelUsage === undefined) delete envelope.usage; else envelope.usage = modelUsage;
   const output = await runOnce(runtimeFor({ input_tokens: 5, output_tokens: 6 }, { envelope }).runtime);
-  assert.deepEqual(output.usage, { provider: 'hetzner_bridge', model: 'radar-model-solicitado', input_tokens: 5, output_tokens: 6, cost_usd: null }, `usage ${label} en el JSON del modelo`);
+  assert.deepEqual(output.usage, { provider: 'hetzner_bridge', model: AGT002_PREVIEW_SONNET_MODEL, input_tokens: 5, output_tokens: 6, cost_usd: null }, `usage ${label} en el JSON del modelo`);
   assert.deepEqual(Object.keys(output).sort(), Object.keys(modelEnvelope()).sort(), `usage ${label}: el envelope conserva su forma cerrada`);
 }
 
