@@ -30,6 +30,9 @@ const migration065 = strip(migration065Raw)
 const migration051 = migrationSource('051_agt002_context_versions.sql');
 const migration068 = migrationSource('068_agt002_reanalysis_jobs.sql');
 const migration084 = migrationSource('084_agt002_governed_document_worksets.sql');
+// RED: not yet authored. Exercises the future public.psi_backfill_legacy_tender_document_extraction
+// RPC's atomic superseded-version guard on top of the real, untouched 026/057/065 registers.
+const migration085 = migrationSource('085_legacy_extraction_backfill_guard.sql');
 
 const O = '10000000-0000-4000-8000-000000000001';
 const T = '10000000-0000-4000-8000-000000000002';
@@ -121,6 +124,7 @@ async function freshDb() {
   await pg.exec(migration026);
   await pg.exec(migration057);
   await pg.exec(migration065);
+  await pg.exec(migration085);
   await pg.exec(migration051);
   await pg.exec(migration068);
   await pg.exec(migration084);
@@ -167,6 +171,19 @@ async function recordExtraction(pg, overrides = {}) {
     p_char_count: opts.status === 'ok' ? text.length : 0,
     p_text_byte_count: opts.status === 'ok' ? Buffer.byteLength(text, 'utf8') : 0,
     p_metadata: opts.metadata, p_gap_reason: opts.status === 'gap' ? opts.gapReason : null, p_actor_id: opts.actorId,
+  });
+}
+
+/** RED: calls the future public.psi_backfill_legacy_tender_document_extraction RPC, which
+ * must record a legacy-column extraction (extractor_version 'legacy-version-register@1',
+ * parser 'legacy-version-column') only when p_document_version_id is still the current
+ * version — atomically rejecting a superseded one. */
+async function backfillLegacyExtraction(pg, { opportunityId = O, tenderId = T, documentVersionId, extractedText, actorId = ACTOR }) {
+  return callRpc(pg, 'psi_backfill_legacy_tender_document_extraction', {
+    p_opportunity_id: opportunityId, p_tender_id: tenderId, p_document_version_id: documentVersionId,
+    p_extracted_text: extractedText, p_text_hash: hash(extractedText),
+    p_char_count: Array.from(extractedText).length, p_text_byte_count: Buffer.byteLength(extractedText, 'utf8'),
+    p_actor_id: actorId,
   });
 }
 
@@ -1012,6 +1029,77 @@ test('freeze succeeds with a full valid frozen engine input, and the queued job 
     assert.deepEqual(stored.analysis_flags, DEFAULT_ANALYSIS_FLAGS);
     assert.deepEqual(stored.analysis_context, canonicalAnalysisContext(O, S1, members));
     assert.deepEqual(stored.governed_workset_members, canonicalGovernedWorksetMembersSix(members));
+  } finally {
+    await pg.close();
+  }
+});
+
+// ---------------------------------------------------------------------------------------
+// Migration 085 (RED): public.psi_backfill_legacy_tender_document_extraction does not exist yet.
+// ---------------------------------------------------------------------------------------
+
+test('psi_backfill_legacy_tender_document_extraction rejects a superseded document version atomically', async () => {
+  const pg = await freshDb();
+  try {
+    const v1 = await recordDocumentVersion(pg, {
+      sourceDocumentId: 'doc-backfill-1', name: 'Documento backfill.pdf',
+      contentHash: hash('contenido-backfill-v1'), extractedText: 'Texto legado backfill v1.',
+    });
+    // A new version under the SAME normalized name supersedes it (057/065's logical identity).
+    await recordDocumentVersion(pg, {
+      sourceDocumentId: 'doc-backfill-2', name: 'Documento backfill.pdf',
+      contentHash: hash('contenido-backfill-v2'), extractedText: 'Texto legado backfill v2.',
+    });
+
+    await assert.rejects(
+      backfillLegacyExtraction(pg, { documentVersionId: v1.id, extractedText: 'Texto legado backfill v1.' }),
+      /vigente|current/i,
+    );
+
+    const rows = (await pg.query(
+      `select count(*)::int n from public.psi_tender_document_extractions
+       where document_version_id = '${v1.id}' and extractor_version = 'legacy-version-register@1'`,
+    )).rows[0];
+    assert.equal(rows.n, 0, 'a rejected backfill on a superseded version must leave zero legacy extraction rows behind');
+  } finally {
+    await pg.close();
+  }
+});
+
+// ---------------------------------------------------------------------------------------
+// Rollback for migration 085 (RED): supabase/rollbacks/085_legacy_extraction_backfill_guard_rollback.sql
+// does not exist yet. Read lazily inside the test (not as a module-level const like the
+// migrations above) so this single test fails on its own instead of crashing every other
+// test in this file with an unreadable-file error.
+// ---------------------------------------------------------------------------------------
+
+test('rollback 085 disables the legacy backfill RPC but leaves every already-backfilled legacy extraction row intact', async () => {
+  const pg = await freshDb();
+  try {
+    const version = await recordDocumentVersion(pg, {
+      sourceDocumentId: 'doc-rollback-085', name: 'Documento rollback 085.pdf',
+      contentHash: hash('contenido-rollback-085'), extractedText: 'Texto de version rollback 085.',
+    });
+    const legacyText = 'Texto legado backfill rollback 085.';
+    const backfill = await backfillLegacyExtraction(pg, { documentVersionId: version.id, extractedText: legacyText });
+
+    const rollback085 = readFileSync(new URL('../supabase/rollbacks/085_legacy_extraction_backfill_guard_rollback.sql', import.meta.url), 'utf8');
+    await pg.exec(rollback085);
+
+    const fn = (await pg.query(
+      `select to_regprocedure('public.psi_backfill_legacy_tender_document_extraction(uuid,uuid,uuid,text,text,integer,integer,uuid)') is null as removed`,
+    )).rows[0];
+    assert.equal(fn.removed, true, 'the rollback must disable the legacy backfill write RPC');
+
+    const row = (await pg.query(
+      `select extractor_version, parser, status, extracted_text
+       from public.psi_tender_document_extractions where id = '${backfill.id}'`,
+    )).rows[0];
+    assert.ok(row, 'a legacy extraction row already backfilled before rollback must survive rollback: rollback disables the write path, never the stored evidence');
+    assert.equal(row.extractor_version, 'legacy-version-register@1');
+    assert.equal(row.parser, 'legacy-version-column');
+    assert.equal(row.status, 'ok');
+    assert.equal(row.extracted_text, legacyText);
   } finally {
     await pg.close();
   }
