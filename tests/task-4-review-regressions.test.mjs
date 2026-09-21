@@ -21,7 +21,7 @@ assert.equal(can(director, ACTIONS.MODULE_SIIO_VIEW), false, 'sin elegibilidad d
 const payload = {
   summary: [{ stage_code: 'prospecto' }],
   opportunities: [{ id: 'own', owner_id: 'director', area_code: 'comercial', subarea_code: 'norte' }, { id: 'other', owner_id: 'other', area_code: 'comercial', subarea_code: 'sur' }],
-  profiles: [{ id: 'director', full_name: 'Directora', microsoft_email: 'secret@example.test', role: 'director', active: true, permissions: ['x'], areas: [{ area_code: 'comercial' }] }, { id: 'other', full_name: 'Otra', microsoft_email: 'other@example.test', role: 'comercial', active: true }],
+  profiles: [{ id: 'director', full_name: 'Directora', microsoft_email: 'secret@example.test', role: 'director', active: true, can_own_opportunities: false, permissions: ['x'], areas: [{ area_code: 'comercial' }] }, { id: 'other', full_name: 'Otra', microsoft_email: 'other@example.test', role: 'comercial', active: true, can_own_opportunities: false }, { id: 'admin-owner', full_name: 'Admin owner', microsoft_email: 'admin@example.test', role: 'admin', active: true, can_own_opportunities: true }],
   profileAssignments: [{ profile_id: 'director', area_code: 'comercial', subarea_code: 'norte' }, { profile_id: 'other', area_code: 'comercial', subarea_code: 'sur' }],
   stages: [], services: [], lossReasons: [], stalled: [{ id: 'other', owner_id: 'other' }], topClosing: [{ id: 'other', owner_id: 'other' }], monthlyKpis: [{ owner_id: 'other' }], goals: [{ user_id: 'other' }], totals: { count: 1 },
 };
@@ -37,9 +37,10 @@ const adminScoped = filterBootstrapForProfile(payload, admin);
 assert.deepEqual(adminScoped.profiles, [
   { id: 'director', full_name: 'Directora', is_commercial: false },
   { id: 'other', full_name: 'Otra', is_commercial: true },
+  { id: 'admin-owner', full_name: 'Admin owner', is_commercial: true },
 ], 'bootstrap expone sólo el indicador comercial derivado y conserva el DTO sin PII');
 
-assert.match(source, /const BOOTSTRAP_PROFILE_SELECT = 'id,full_name,role,active';/, 'bootstrap consulta internamente sólo los campos necesarios para clasificar comerciales');
+assert.match(source, /const BOOTSTRAP_PROFILE_SELECT = 'id,full_name,role,active,can_own_opportunities';/, 'bootstrap consulta internamente sólo los campos necesarios para clasificar comerciales');
 assert.doesNotMatch(source.slice(source.indexOf("app.get('/api/bootstrap'"), source.indexOf("app.get('/api/opportunities/:id'")), /microsoft_email|can_edit_customer_segment/, 'bootstrap no consulta PII/configuración de perfiles');
 assert.match(source, /psi_profile_area_assignments'\)\.select\('profile_id,area_code,subarea_code'\)/, 'bootstrap deriva el scope de owners desde asignaciones canónicas del servidor');
 assert.match(source, /export const HTTP_ACTION_MATRIX = Object\.freeze\(/, 'HTTP method+route matrix canónica es auditable');
