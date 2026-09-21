@@ -12,6 +12,14 @@ function nonEmptyString(value) {
   return trimmed || null;
 }
 
+// Cuenta puntos de código Unicode (no unidades UTF-16 de `.length`), la misma
+// semántica que `char_length` en PostgreSQL: `Array.from`/la iteración de
+// cadenas de JS recorre por punto de código, así que un emoji fuera del BMP
+// (par sustituto en UTF-16) cuenta como un solo carácter, igual que en la base.
+function unicodeCodePointCount(text) {
+  return Array.from(text).length;
+}
+
 /**
  * Normalizes a typed extraction result (tender-document-text-extraction.js's
  * extractTenderDocumentText output) into the exact params for the
@@ -46,7 +54,7 @@ export function buildTenderDocumentExtractionRpcParams(extraction, { opportunity
       p_opportunity_id: opportunityId, p_tender_id: tenderId, p_document_version_id: documentVersionId,
       p_extractor_version: extractorVersion, p_status: 'ok', p_parser: parser,
       p_extracted_text: text, p_text_hash: textHash,
-      p_char_count: text.length, p_text_byte_count: Buffer.byteLength(text, 'utf8'),
+      p_char_count: unicodeCodePointCount(text), p_text_byte_count: Buffer.byteLength(text, 'utf8'),
       p_metadata: metadata, p_gap_reason: null, p_actor_id: actorId,
     };
   }
@@ -68,7 +76,7 @@ function isWellFormedExtractionRow(row) {
       && typeof row.text_hash === 'string' && /^[0-9a-f]{64}$/.test(row.text_hash)
       && row.text_hash === createHash('sha256').update(row.extracted_text, 'utf8').digest('hex')
       && Number.isInteger(row.char_count) && row.char_count > 0
-      && row.char_count === row.extracted_text.length;
+      && row.char_count === unicodeCodePointCount(row.extracted_text);
   }
   if (row.status === 'gap') return true;
   return false;
