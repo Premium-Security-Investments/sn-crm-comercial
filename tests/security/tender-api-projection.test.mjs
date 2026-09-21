@@ -76,6 +76,20 @@ function assertSameOrigin(url, message) {
     extraction_parser: 'pdf-parse',
     extraction_char_count: 4211,
     extraction_text_hash: hash(SECRET_TEXT),
+    // AGT-002 "Sugerido por Vig-IA": el resumen seguro que calcula el servidor
+    // debe salir intacto, pero un extra malicioso colado DENTRO de el (no en el
+    // nivel superior del documento) tiene que despojarse igual que en cualquier
+    // otro campo anidado.
+    analysis_suggestion: {
+      recommended: true,
+      confidence: 'high',
+      reason_code: 'document_type_and_name_match',
+      reason: 'El tipo documental y el nombre de archivo coinciden con el pliego vigente.',
+      policy_version: 'agt002-document-relevance-v1',
+      extracted_text: SECRET_TEXT,
+      source_url: TOKENIZED_SOURCE_URL,
+      token: 'ANALYSIS-SUGGESTION-TOKEN-SECRETO',
+    },
     // --- lo que NUNCA puede salir ---
     signed_url: SIGNED_URL,
     storage_path: STORAGE_PATH,
@@ -106,6 +120,16 @@ function assertSameOrigin(url, message) {
   assert.equal(projected.extraction_char_count, 4211);
   assert.equal(projected.extraction_text_hash, hash(SECRET_TEXT));
 
+  // analysis_suggestion sobrevive, pero sólo con sus cinco claves seguras: los
+  // extras maliciosos anidados adentro se despojan, no se propagan.
+  assert.deepEqual(projected.analysis_suggestion, {
+    recommended: true,
+    confidence: 'high',
+    reason_code: 'document_type_and_name_match',
+    reason: 'El tipo documental y el nombre de archivo coinciden con el pliego vigente.',
+    policy_version: 'agt002-document-relevance-v1',
+  }, 'analysis_suggestion debe conservar exactos sus campos seguros y despojar cualquier extra anidado');
+
   // Detalles de almacenamiento, bypasses de descarga y capacidades: fuera.
   for (const field of ['signed_url', 'storage_path', 'source_url', 'extracted_text', 'metadata', 'error']) {
     assert.equal(field in projected, false, `la proyeccion publica nunca puede exponer ${field}`);
@@ -115,6 +139,7 @@ function assertSameOrigin(url, message) {
   for (const secret of [
     SIGNED_URL, STORAGE_PATH, TOKENIZED_SOURCE_URL, SECRET_TEXT,
     'FIRMA-SECRETA-1234', 'CAPACIDAD-FILTRADA', `tender-documents/${OPPORTUNITY_ID}`,
+    'ANALYSIS-SUGGESTION-TOKEN-SECRETO',
   ]) {
     assert.equal(serialized.includes(secret), false, `la proyeccion publica no puede serializar ${secret}`);
   }
@@ -271,12 +296,13 @@ const api = readFileSync(new URL('api/[...path].js', root), 'utf8');
   assert.equal(server, api, 'los dos backends deben permanecer byte-identical');
 
   for (const source of [server, api]) {
-    // La respuesta publica pasa siempre por la proyeccion, y la proyeccion recibe
-    // la oportunidad ya autorizada: la ruta de descarga es server-owned.
+    // La respuesta publica pasa siempre por la proyeccion, la proyeccion recibe
+    // la oportunidad ya autorizada (server-owned), y la sugerencia de relevancia
+    // se deriva del documento interno completo, no de un subconjunto expuesto.
     assert.match(
       source,
-      /documents: includeExtractedText \? compatibleDocuments : compatibleDocuments\.map\(document => publicTenderDocumentProjection\(document, \{ opportunityId \}\)\)/,
-      'la respuesta publica debe proyectarse con la oportunidad ya autorizada',
+      /documents: includeExtractedText \? compatibleDocuments : compatibleDocuments\.map\(document => publicTenderDocumentProjection\(\{ \.\.\.document, analysis_suggestion: suggestAgt002DocumentRelevance\(document\) \}, \{ opportunityId \}\)\)/,
+      'la respuesta publica debe proyectarse con la oportunidad ya autorizada y la sugerencia server-owned del documento completo',
     );
 
     // Ni el listado ni ninguna lectura interna acunan URLs firmadas: la capacidad

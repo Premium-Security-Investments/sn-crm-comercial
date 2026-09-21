@@ -609,6 +609,17 @@ export type TenderDocumentAnalysis = {
 // servidor y que no concede acceso por sí misma —el endpoint al que apunta vuelve a
 // autenticar al usuario y a autorizar la oportunidad antes de firmar nada—. Es
 // `null` cuando el registro no tiene identidad suficiente para construirla.
+// AGT-002 / Vig-IA — server-computed, never-a-decision suggestion for whether a
+// document likely belongs in the governed workset. See suggestAgt002DocumentRelevance
+// (.hermes/plans/2026-09-21-vigia-document-preselection.md): a closed five-key shape,
+// never echoing extracted_text, always safe to render as-is.
+export type Agt002DocumentRelevanceSuggestion = {
+  recommended: boolean;
+  confidence: 'high' | 'medium' | 'low';
+  reason_code: string;
+  reason: string;
+  policy_version: 'agt002-document-relevance-v1';
+};
 export type TenderDocumentRecord = {
   id: string;
   name: string;
@@ -621,6 +632,7 @@ export type TenderDocumentRecord = {
   download_url?: string | null;
   extraction_status?: string | null;
   extraction_gap_reason?: string | null;
+  analysis_suggestion?: Agt002DocumentRelevanceSuggestion | null;
 };
 export type TenderAnalysisAttempt = {
   event_id: string;

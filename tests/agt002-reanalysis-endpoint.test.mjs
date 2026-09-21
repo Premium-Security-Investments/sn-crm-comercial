@@ -8,17 +8,11 @@ const vercel = fs.readFileSync(path.join(root, 'api/[...path].js'), 'utf8');
 
 assert.equal(server, vercel, 'Express and Vercel backends must remain byte-identical');
 
-const routeStart = server.indexOf("app.post('/api/tender-documents-analyze-agent-preview'");
-const routeEnd = server.indexOf("app.get('/api/agt002-reanalysis-status'", routeStart);
-assert.ok(routeStart >= 0 && routeEnd > routeStart, 'canonical enqueue and status routes must exist');
-const route = server.slice(routeStart, routeEnd);
-const canonicalStart = route.indexOf('if (canonicalOnly)');
-const legacyStart = route.indexOf('// canonicalOnly always returns above');
-assert.ok(canonicalStart >= 0 && legacyStart > canonicalStart);
-const canonicalBranch = route.slice(canonicalStart, legacyStart);
-assert.match(canonicalBranch, /enqueueAgt002CanonicalReanalysis/);
-assert.match(canonicalBranch, /res\.status\(202\)/);
-assert.doesNotMatch(canonicalBranch, /createAgt002PreviewRuntime|runAgt002PostBridgeAnalysis|claimAgt002PreviewRun/);
+assert.match(
+  server,
+  /app\.post\(\s*['"]\/api\/tender-documents-analyze-agent-preview['"]\s*,\s*rejectUngovernedAgt002Route\s*\)/,
+  'the preview-analyze route must be registered directly to the governed-retirement helper, executing no canonical/legacy work',
+);
 
 const humanStart = server.indexOf('async function reanalyzeAgt002AfterHumanAnswer');
 const humanEnd = server.indexOf('\nasync function getTenderOfferPreparationRecords', humanStart);

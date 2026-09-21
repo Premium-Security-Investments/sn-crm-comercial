@@ -234,6 +234,7 @@ const PUBLIC_TENDER_DOCUMENT_FIELDS = Object.freeze([
   'opportunity_id', 'source', 'source_document_id', 'version', 'content_hash',
   'extraction_status', 'extraction_version', 'extraction_parser',
   'extraction_char_count', 'extraction_text_hash', 'extraction_gap_reason',
+  'analysis_suggestion',
 ]);
 
 const normalizeDocumentKey = key => String(key).toLowerCase().replace(/[^a-z0-9]/g, '');
