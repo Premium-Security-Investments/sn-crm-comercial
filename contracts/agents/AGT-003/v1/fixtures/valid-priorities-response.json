@@ -3,7 +3,7 @@
   "capability_id": "agt003.priorities.read",
   "correlation_id": "syn-corr-priorities-001",
   "run_id": "syn-run-priorities-001",
-  "policy_version": "gate0-v1.0",
+  "policy_version": "gate0-v1.1",
   "source": {
     "system": "SIIO",
     "dataset": "v_psi_sales_opportunity_enriched",
@@ -27,7 +27,7 @@
       "as_of": "2030-02-01T09:59:00Z"
     },
     "policy": {
-      "version": "gate0-v1.0",
+      "version": "gate0-v1.1",
       "read_only": true,
       "human_review_required": true
     },

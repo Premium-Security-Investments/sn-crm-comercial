@@ -50,7 +50,7 @@ export function guardSyntheticAgentCapability(delegation, request, serverContext
 
   if (safeDelegation.agent_id !== 'AGT-003' || safeDelegation.capability !== 'agt003.priorities.read') return denied('unsupported_capability');
   if (safeRequest.contract_version !== '1.0.0' || safeRequest.capability_id !== 'agt003.priorities.read') return denied('contract_drift');
-  if (safeContext.policy_version !== 'gate0-v1.0') return denied('policy_drift');
+  if (safeContext.policy_version !== 'gate0-v1.1') return denied('policy_drift');
   if (
     typeof safeDelegation.correlation_id !== 'string'
     || safeDelegation.correlation_id !== safeRequest.correlation_id

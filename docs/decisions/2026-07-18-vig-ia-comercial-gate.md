@@ -130,22 +130,22 @@ Las señales de la misma familia son mutuamente excluyentes; se aplica solo la d
 | Cierre esperado vencido | 25 |
 | Cierre cercano (0–14 días) | 10 |
 | Alto valor | 15 |
-| Valor no registrado | 10 |
-| Regional pendiente | 5 |
+| Valor no registrado | 0 |
+| Regional pendiente | 0 |
 
 Reglas de no duplicación:
 
 - `Sin próxima acción` y `Próxima acción vencida` no se suman.
 - `Estancamiento preventivo` y `Estancamiento crítico` no se suman.
 - `Cierre esperado vencido` y `Cierre cercano` no se suman.
-- “Valor no registrado” es señal de calidad de datos; no equivale a bajo valor.
+- “Valor no registrado” y “Regional pendiente” son señales de calidad de datos visibles con 0 puntos; no escalan la prioridad.
 
 ### Niveles
 
 - **Alto:** score ≥ 60.
 - **Medio:** score 30–59.
-- **Bajo:** score 1–29.
-- **Sin prioridad:** score 0 o etapa terminal.
+- **Bajo:** score 0–29; score 0 se conserva cuando hay señales de calidad de datos.
+- **Sin prioridad:** solo etapa terminal o fila activa sin señales.
 
 El score ordena revisión; no predice probabilidad de venta ni modifica la probabilidad oficial de la etapa.
 
@@ -220,3 +220,8 @@ Fuera de alcance:
 **Aprobación:** aprobada.
 **Aprobado por:** Juan Botero.
 **Fecha de aprobación:** 2026-07-18.
+
+## 11. Corrección de política v1.1 (2026-09-21)
+
+- gate0-v1.1 mantiene visibles value_missing y regional_missing como alertas de calidad con 0 puntos.
+- Una oportunidad activa que sólo presenta esas alertas sigue en la bandeja con score 0 y nivel bajo; no se oculta ni recibe prioridad artificial.

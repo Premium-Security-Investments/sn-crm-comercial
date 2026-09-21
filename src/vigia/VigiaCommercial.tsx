@@ -152,7 +152,7 @@ export function VigiaCommercial({ canOpenOpportunity, commercialOwners }: { canO
     <section className="centinel-topline"><h2>Prioridades Comerciales</h2><p>Una sola bandeja para decidir dónde intervenir en el pipeline comercial.</p></section>
     <section className="vigia-command-hero">
       <div><span className="eyebrow">Impulsado por {VIGIA_VISIBLE_NAMES.commercial}</span><h2>Prioridades explicables del CRM</h2><p>Consolida agenda, vencimientos, estancamiento, etapa, cierre y calidad de datos con reglas determinísticas.</p><strong>Requiere validación humana; no ejecuta acciones.</strong></div>
-      <div className="vigia-source-status"><small>Motor de priorización</small><strong>{VIGIA_VISIBLE_NAMES.commercial}</strong><span>Fuente de datos: {payload?.source.id || 'CRM-F1'}</span><span>Corte: {displayDate(payload?.source.as_of || null)}</span><span>Política: {payload?.policy.version || 'gate0-v1.0'} · Solo lectura</span></div>
+      <div className="vigia-source-status"><small>Motor de priorización</small><strong>{VIGIA_VISIBLE_NAMES.commercial}</strong><span>Fuente de datos: {payload?.source.id || 'CRM-F1'}</span><span>Corte: {displayDate(payload?.source.as_of || null)}</span><span>Política: {payload?.policy.version || 'gate0-v1.1'} · Solo lectura</span></div>
     </section>
 
     {summary && <section className="priority-filter-tabs" aria-label="Categorías operativas">

@@ -18,7 +18,7 @@ const expectedManifest = {
   capability: 'agt003.priorities.read',
   contract_version: '1.0.0',
   request_schema_sha256: '8ee87729790a1bac067d704016fa9f9a1e2c46c423e4599b38871adcfa18ef58',
-  response_schema_sha256: '7a2cbff1d9f4f0ae8ff8e82652535e22d1e6a981c569b89fac32f1add1e7603e',
+  response_schema_sha256: '85c9d52cb861d59521d00a3719271ddb591c68a70c2573084654fbb7bf3a9ef1',
 };
 assert.ok(existsSync(manifestPath), 'P3B.2 must add the canonical P3A.2 adapter pin');
 assert.equal(readFileSync(manifestPath, 'utf8'), `${JSON.stringify(expectedManifest, null, 2)}\n`, 'adapter manifest must be byte-for-byte canonical');
@@ -39,7 +39,7 @@ const decision = Object.freeze({
   capability: 'agt003.priorities.read',
   correlation_id: 'syn-correlation-001',
   resolved_scope_digest: 'sha256:syn-resolved-scope-001',
-  policy_version: 'gate0-v1.0',
+  policy_version: 'gate0-v1.1',
 });
 const request = Object.freeze({ contract_version: '1.0.0', capability_id: 'agt003.priorities.read', correlation_id: 'syn-correlation-001', query: Object.freeze({}) });
 const metadata = Object.freeze({

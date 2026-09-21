@@ -107,7 +107,7 @@ function validateProjectedPriority(priority) {
     || !finiteNumber(priority.offer_value, 0)
     || !finiteNumber(priority.weighted_pipeline_value, 0)
     || !finiteNumber(priority.stage_order)
-    || !finiteNumber(priority.score, 1)
+    || !finiteNumber(priority.score, 0)
     || !PRIORITY_LEVELS.has(priority.level)
     || !arrayIsArray(priority.signal_codes)
     || priority.signal_codes.length < 1
