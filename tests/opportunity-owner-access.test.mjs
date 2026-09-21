@@ -37,29 +37,39 @@ await assert.rejects(
   'missing owner must fail explicitly before assignments or action authorization',
 );
 await assert.rejects(
-  () => requireOpportunityAction(database({ owner: { id: ownerId, active: false } }), admin, ownerId, ACTIONS.CRM_OPPORTUNITY_CREATE),
+  () => requireOpportunityAction(database({ owner: { id: ownerId, active: false, role: 'comercial', can_own_opportunities: false } }), admin, ownerId, ACTIONS.CRM_OPPORTUNITY_CREATE),
   error => error?.status === 400 && /activo/i.test(error.message),
   'inactive owner must fail explicitly before assignments or action authorization',
 );
 
-for (const profile of [admin, gerencia]) {
-  const db = database({ owner: { id: ownerId, active: true }, assignments: [] });
-  assert.equal(await requireOpportunityAction(db, profile, ownerId, ACTIONS.CRM_OPPORTUNITY_CREATE), true, `${profile.role} may act on an active owner`);
-  assert.deepEqual(db.calls, ['psi_sales_profiles', 'psi_profile_area_assignments'], `${profile.role} resolves the active owner server-side before assignment policy`);
+await assert.rejects(
+  () => requireOpportunityAction(database({ owner: { id: ownerId, active: true, role: 'admin', can_own_opportunities: false } }), admin, ownerId, ACTIONS.CRM_OPPORTUNITY_CREATE),
+  error => error?.status === 400 && /habilitado/i.test(error.message),
+  'an active non-commercial profile without the explicit capability cannot own opportunities',
+);
+
+for (const [profile, owner] of [
+  [admin, { id: ownerId, active: true, role: 'comercial', can_own_opportunities: false }],
+  [gerencia, { id: ownerId, active: true, role: 'admin', can_own_opportunities: true }],
+]) {
+  const db = database({ owner, assignments: [] });
+  assert.equal(await requireOpportunityAction(db, profile, ownerId, ACTIONS.CRM_OPPORTUNITY_CREATE), true, `${profile.role} may act on an eligible active owner`);
+  assert.deepEqual(db.calls, ['psi_sales_profiles', 'psi_profile_area_assignments'], `${profile.role} resolves owner eligibility server-side before assignment policy`);
 }
 
 await assert.rejects(
-  () => requireOpportunityAction(database({ owner: { id: ownerId, active: true }, assignments: [{ area_code: 'comercial', subarea_code: 'sur' }] }), directorNorth, ownerId, ACTIONS.CRM_OPPORTUNITY_REASSIGN),
+  () => requireOpportunityAction(database({ owner: { id: ownerId, active: true, role: 'comercial', can_own_opportunities: false }, assignments: [{ area_code: 'comercial', subarea_code: 'sur' }] }), directorNorth, ownerId, ACTIONS.CRM_OPPORTUNITY_REASSIGN),
   error => error?.status === 403,
   'director outside owner scope cannot reassign',
 );
 assert.equal(
-  await requireOpportunityAction(database({ owner: { id: ownerId, active: true }, assignments: [{ area_code: 'comercial', subarea_code: 'norte' }] }), directorNorth, ownerId, ACTIONS.CRM_OPPORTUNITY_REASSIGN),
+  await requireOpportunityAction(database({ owner: { id: ownerId, active: true, role: 'comercial', can_own_opportunities: false }, assignments: [{ area_code: 'comercial', subarea_code: 'norte' }] }), directorNorth, ownerId, ACTIONS.CRM_OPPORTUNITY_REASSIGN),
   true,
   'director in owner scope can reassign',
 );
 
 const source = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
+assert.match(source, /select\('id,active,role,can_own_opportunities'\)/, 'owner resolution must fetch the server-side eligibility fields');
 for (const route of ["app.post('/api/opportunities'", "app.put('/api/opportunities/:id'", "app.put('/api/opportunity'"]) {
   const start = source.indexOf(route);
   const end = source.indexOf('\n});', start);

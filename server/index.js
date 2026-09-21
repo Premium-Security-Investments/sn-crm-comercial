@@ -882,7 +882,7 @@ export function bootstrapCapabilities(profile) {
     vigia: can(profile, ACTIONS.MODULE_VIGIA_VIEW),
   });
 }
-const BOOTSTRAP_PROFILE_SELECT = 'id,full_name,role,active';
+const BOOTSTRAP_PROFILE_SELECT = 'id,full_name,role,active,can_own_opportunities';
 function crmResource(ownerId, assignment = {}) {
   return { area_code: assignment.area_code || 'comercial', subarea_code: assignment.subarea_code ?? null, owner_id: ownerId };
 }
@@ -938,10 +938,10 @@ export function filterBootstrapForProfile(payload, currentProfile, environment =
   const goals = capabilities.goals || capabilities.dashboard || capabilities.alerts || capabilities.vigia ? scopedGoals : [];
   const profiles = (needsProfiles
     ? (globalScope ? payload.profiles : payload.profiles.filter(p => visibleOwnerIds.has(p.id)))
-    : []).map(({ id, full_name, role, active }) => ({
+    : []).map(({ id, full_name, role, active, can_own_opportunities }) => ({
       id,
       full_name,
-      is_commercial: role === 'comercial' && active !== false,
+      is_commercial: active !== false && (role === 'comercial' || can_own_opportunities === true),
     }));
   const totals = opportunities.reduce((acc, o) => {
     acc.count += 1;
@@ -959,13 +959,16 @@ function opportunityOwnerError(message, status) {
 }
 async function resolveActiveOpportunityOwner(database, ownerId) {
   if (!ownerId) throw opportunityOwnerError('El comercial responsable es obligatorio.', 400);
-  const { data: owner, error } = await database.from('psi_sales_profiles').select('id,active').eq('id', ownerId).single();
+  const { data: owner, error } = await database.from('psi_sales_profiles').select('id,active,role,can_own_opportunities').eq('id', ownerId).single();
   if (error) {
     if (error.code === 'PGRST116') throw opportunityOwnerError('El comercial responsable no existe.', 404);
     throw error;
   }
   if (!owner) throw opportunityOwnerError('El comercial responsable no existe.', 404);
   if (!owner.active) throw opportunityOwnerError('El comercial responsable debe estar activo.', 400);
+  if (owner.role !== 'comercial' && owner.can_own_opportunities !== true) {
+    throw opportunityOwnerError('El comercial responsable debe estar habilitado para ser propietario de oportunidades.', 400);
+  }
   return owner;
 }
 async function requireExistingOpportunityAction(database, profile, ownerId, action) {
