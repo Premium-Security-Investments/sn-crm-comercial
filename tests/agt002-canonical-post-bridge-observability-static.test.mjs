@@ -8,17 +8,11 @@ const executor = readFileSync(new URL('../agt002-reanalysis-executor.js', import
 assert.equal(server, api, 'production backends must remain byte-identical');
 
 for (const [label, source] of [['server/index.js', server], ['api/[...path].js', api]]) {
-  const routeStart = source.indexOf("app.post('/api/tender-documents-analyze-agent-preview'");
-  const routeEnd = source.indexOf("\napp.post('/api/tender-documents-import'", routeStart);
-  assert.ok(routeStart >= 0 && routeEnd > routeStart, `${label}: canonical route must exist`);
-  const route = source.slice(routeStart, routeEnd);
-  const canonicalStart = route.indexOf('if (canonicalOnly) {');
-  const legacyStart = route.indexOf('// canonicalOnly always returns above', canonicalStart);
-  assert.ok(canonicalStart >= 0 && legacyStart > canonicalStart, `${label}: durable canonical branch must precede isolated legacy branch`);
-  const canonical = route.slice(canonicalStart, legacyStart);
-  assert.match(canonical, /enqueueAgt002CanonicalReanalysis\(database,/);
-  assert.match(canonical, /res\.status\(202\)\.json/);
-  assert.doesNotMatch(canonical, /runAgt002PostBridgeAnalysis|engine\.analyze|claimAgt002PreviewRun|registerAgt002PreviewAnalysis/);
+  assert.match(
+    source,
+    /app\.post\(\s*['"]\/api\/tender-documents-analyze-agent-preview['"]\s*,\s*rejectUngovernedAgt002Route\s*\)/,
+    `${label}: the preview-analyze route must be registered directly to the governed-retirement helper, executing no canonical/legacy work`,
+  );
 }
 
 assert.match(executor, /const bridgeTelemetry = \{ invocationStarted: false, responseReceived: false, invocationCount: 0, responseCount: 0 \};/);

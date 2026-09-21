@@ -98,3 +98,40 @@ export function buildAgt002GovernedWorksetMembers(entries: Agt002GovernedWorkset
 export function agt002GovernedWorksetSelectionCountLabel(count: number): string {
   return `${count} de ${AGT002_GOVERNED_WORKSET_MAX_MEMBERS} documentos seleccionados (mínimo ${AGT002_GOVERNED_WORKSET_MIN_MEMBERS}).`;
 }
+
+// AGT-002 / Vig-IA server-owned preselection (.hermes/plans/2026-09-21-vigia-document-preselection.md).
+// Confidence rank used only to order the preselection: high before medium, never a tiebreak signal
+// on its own — ties keep the candidate list's own input order.
+const AGT002_DOCUMENT_RELEVANCE_CONFIDENCE_RANK: Record<string, number> = { high: 0, medium: 1, low: 2 };
+
+// Server-typed as a string, but this reads server JSON at a UI boundary, so a malformed
+// (non-string) or blank reason is ignored — never thrown, never interpolated as "[object Object]".
+function agt002SafeRecommendationReason(suggestion: TenderDocumentRecord['analysis_suggestion']): string {
+  const reason = suggestion?.reason;
+  return typeof reason === 'string' ? reason.trim() : '';
+}
+
+/**
+ * Turns the current, extraction-eligible, Vig-IA-recommended documents (already annotated with
+ * `analysis_suggestion` by the server) into a preselected draft of governed workset members —
+ * never excluding a nonrecommended document from the full candidate list itself, only choosing
+ * which of the eligible candidates start out checked. High confidence sorts before medium,
+ * preserving input order among ties; the result never exceeds AGT002_GOVERNED_WORKSET_MAX_MEMBERS.
+ */
+export function buildAgt002RecommendedWorksetSelection(documents: TenderDocumentRecord[]): Agt002GovernedWorksetMemberInput[] {
+  const recommended = currentAgt002GovernedWorksetDocuments(documents)
+    .map((document, index) => ({ document, index }))
+    .filter(({ document }) => document.analysis_suggestion?.recommended === true && tenderDocumentExtractionEligibility(document).eligible);
+
+  const ordered = recommended.slice().sort((a, b) => {
+    const rankA = AGT002_DOCUMENT_RELEVANCE_CONFIDENCE_RANK[a.document.analysis_suggestion?.confidence ?? 'low'] ?? 2;
+    const rankB = AGT002_DOCUMENT_RELEVANCE_CONFIDENCE_RANK[b.document.analysis_suggestion?.confidence ?? 'low'] ?? 2;
+    return rankA !== rankB ? rankA - rankB : a.index - b.index;
+  });
+
+  return ordered.slice(0, AGT002_GOVERNED_WORKSET_MAX_MEMBERS).map(({ document }) => ({
+    document_version_id: document.id,
+    source_classification: 'official',
+    inclusion_reason: `Preseleccionado por Vig-IA: ${agt002SafeRecommendationReason(document.analysis_suggestion)}`,
+  }));
+}

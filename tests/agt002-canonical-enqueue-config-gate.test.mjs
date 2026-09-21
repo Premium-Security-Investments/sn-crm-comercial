@@ -97,14 +97,6 @@ const backends = [
   ['api/[...path].js', readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8')],
 ];
 
-function canonicalBranch(source) {
-  const routeStart = source.indexOf("app.post('/api/tender-documents-analyze-agent-preview'");
-  const branchStart = source.indexOf('if (canonicalOnly) {', routeStart);
-  const branchEnd = source.indexOf('// canonicalOnly always returns above', branchStart);
-  assert.ok(routeStart >= 0 && branchStart > routeStart && branchEnd > branchStart, 'canonical branch must exist');
-  return source.slice(branchStart, branchEnd);
-}
-
 function humanAnswerHelper(source) {
   const start = source.indexOf('async function reanalyzeAgt002AfterHumanAnswer');
   const end = source.indexOf('\n}\n', start);
@@ -112,20 +104,21 @@ function humanAnswerHelper(source) {
   return source.slice(start, end);
 }
 
-test('both production backends classify the configuration before reserving, and never leak the runtime message', () => {
+test('the ungoverned preview-analyze route is retired directly to the governed-retirement helper', () => {
   for (const [label, source] of backends) {
-    const canonical = canonicalBranch(source);
-    const gateIndex = canonical.indexOf('agt002CanonicalEnqueueBlockCode(process.env)');
-    const enqueueIndex = canonical.indexOf('enqueueAgt002CanonicalReanalysis(database,');
-    assert.ok(gateIndex >= 0, `${label}: the canonical branch must classify the configuration through the shared gate`);
-    assert.ok(enqueueIndex > gateIndex, `${label}: nothing may be reserved before the configuration is classified`);
-    assert.match(canonical, /error_code: configBlockCode/, `${label}: the closed code must reach the unavailable attempt row`);
-    assert.match(canonical, /sendCanonicalState\(503, 'unavailable', 'not_configured'\)/, `${label}: an unusable configuration is an operator state, not a client error`);
-    assert.doesNotMatch(canonical, /error\.message|error\.stack|getAgt002PreviewRuntimeConfig/, `${label}: no runtime message or raw config resolution may live in this branch`);
+    assert.match(
+      source,
+      /app\.post\(\s*['"]\/api\/tender-documents-analyze-agent-preview['"]\s*,\s*rejectUngovernedAgt002Route\s*\)/,
+      `${label}: the preview-analyze route must be registered directly to the governed-retirement helper`,
+    );
+  }
+});
 
+test('the human-answer reanalysis still classifies the configuration before reserving', () => {
+  for (const [label, source] of backends) {
     const helper = humanAnswerHelper(source);
     const helperGate = helper.indexOf('agt002CanonicalEnqueueBlockCode(process.env)');
-    assert.ok(helperGate >= 0, `${label}: the human-answer reanalysis must use the same gate`);
+    assert.ok(helperGate >= 0, `${label}: the human-answer reanalysis must use the shared gate`);
     assert.ok(helper.indexOf('enqueueAgt002CanonicalReanalysis(database,') > helperGate, `${label}: a recorded human answer must never fail on an unusable configuration`);
   }
 });

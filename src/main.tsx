@@ -8,6 +8,7 @@ import { bogotaToday, followUpDateToIso } from './followUpDate';
 import { canAccessRoute, canManageUsers as navCanManageUsers, canViewTenders as navCanViewTenders, getVisibleNavGroups, isInitialAppHash, isManagementRole as navIsManagementRole, preferredLandingRoute } from './navPermissions';
 import { api, apiDownload, exitTenderOpportunity, setApiAccessToken } from './apiClient';
 import { CAPABILITY_PERMISSION_CODES, CAPABILITY_PERMISSIONS, MODULE_PERMISSION_CODES, MODULE_PERMISSIONS, eligibleModulePermissions, isModulePermissionEligible } from '../module-access.js';
+import { agt002UnavailableMessage } from '../agt002-reanalysis-error-message.js';
 import { SiioDashboard } from './siio/SiioDashboard';
 import { TendersModule } from './tenders/TendersModule';
 import { TenderAnalysisSection } from './tenders/components/TenderAnalysisSection';
@@ -1060,7 +1061,7 @@ function TenderDocumentReviewPanel({ opportunity, currentProfile, onReload, onAn
         }
         if (job.status === 'unavailable') {
           setAnalysisStatus({
-            message: `${VIGIA_VISIBLE_NAMES.tenders} no pudo completar el análisis. El análisis canónico anterior se conserva; puede solicitar uno nuevo manualmente después de verificar la disponibilidad del servicio.`,
+            message: agt002UnavailableMessage(job.error_code),
             tone: decision.tone,
           });
           return job;

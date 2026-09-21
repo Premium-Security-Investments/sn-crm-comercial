@@ -19,6 +19,7 @@ const {
   agt002GovernedWorksetSelectionErrors,
   buildAgt002GovernedWorksetMembers,
   agt002GovernedWorksetSelectionCountLabel,
+  buildAgt002RecommendedWorksetSelection,
 } = await import(moduleUrl);
 
 // --- Closed classification vocabulary. ----------------------------------------------------------
@@ -87,5 +88,84 @@ assert.throws(() => buildAgt002GovernedWorksetMembers([entry({ inclusion_reason:
 // --- Count label explains the 1..12 bound in plain language. -------------------------------------
 assert.equal(agt002GovernedWorksetSelectionCountLabel(0), '0 de 12 documentos seleccionados (mínimo 1).');
 assert.equal(agt002GovernedWorksetSelectionCountLabel(3), '3 de 12 documentos seleccionados (mínimo 1).');
+
+// --- buildAgt002RecommendedWorksetSelection: Vig-IA server-owned preselection (RED). --------------
+// (.hermes/plans/2026-09-21-vigia-document-preselection.md) It receives the full candidate list
+// already annotated with `analysis_suggestion` (as produced by agt002-document-relevance-
+// suggestion.js) and turns only the recommended, extraction-eligible, current documents into
+// draft members — never excluding a nonrecommended document from the full candidate list itself.
+function suggestionDoc(overrides = {}) {
+  return {
+    id: 'doc-suggestion-default',
+    current: true,
+    extraction_status: 'ok',
+    extraction_gap_reason: null,
+    analysis_suggestion: {
+      recommended: true,
+      confidence: 'high',
+      reason_code: 'pliego_by_type',
+      reason: 'El tipo documental y el nombre del archivo coinciden con el pliego vigente.',
+      policy_version: 'agt002-document-relevance-v1',
+    },
+    ...overrides,
+  };
+}
+
+const recommendedHigh = suggestionDoc({ id: 'doc-pliego' });
+const recommendedMedium = suggestionDoc({
+  id: 'doc-anexo',
+  analysis_suggestion: {
+    recommended: true,
+    confidence: 'medium',
+    reason_code: 'strong_headings',
+    reason: 'El texto extraído contiene al menos dos encabezados fuertes (requisitos habilitantes, especificaciones técnicas).',
+    policy_version: 'agt002-document-relevance-v1',
+  },
+});
+const notRecommendedEligible = suggestionDoc({
+  id: 'doc-foto',
+  analysis_suggestion: {
+    recommended: false,
+    confidence: 'low',
+    reason_code: 'no_signal',
+    reason: 'No se detectaron señales positivas; Licitaciones puede incluirlo manualmente si lo considera pertinente.',
+    policy_version: 'agt002-document-relevance-v1',
+  },
+});
+const extractionGapRecommended = suggestionDoc({ id: 'doc-gap', extraction_status: 'gap', extraction_gap_reason: 'Archivo dañado.' });
+const historicalRecommended = suggestionDoc({ id: 'doc-historical', current: false });
+
+const mixedCandidates = [recommendedMedium, recommendedHigh, notRecommendedEligible, extractionGapRecommended, historicalRecommended];
+const preselection = buildAgt002RecommendedWorksetSelection(mixedCandidates);
+
+// high before medium, preserving input order otherwise; nonrecommended/ineligible/historical excluded
+assert.deepEqual(preselection.map(m => m.document_version_id), ['doc-pliego', 'doc-anexo'], 'must order high confidence before medium, then input order among ties');
+assert.equal(preselection.find(m => m.document_version_id === 'doc-pliego').inclusion_reason, `Preseleccionado por Vig-IA: ${recommendedHigh.analysis_suggestion.reason}`);
+assert.equal(preselection.find(m => m.document_version_id === 'doc-anexo').inclusion_reason, `Preseleccionado por Vig-IA: ${recommendedMedium.analysis_suggestion.reason}`);
+for (const member of preselection) {
+  assert.equal(member.source_classification, 'official');
+  assert.match(member.inclusion_reason, /^Preseleccionado por Vig-IA:/);
+  assert.deepEqual(Object.keys(member).sort(), ['document_version_id', 'inclusion_reason', 'source_classification']);
+}
+
+// a nonrecommended-but-eligible document is never force-added to the preselection...
+assert.ok(!preselection.some(m => m.document_version_id === 'doc-foto'), 'a nonrecommended document must never be preselected');
+// ...yet it must remain a fully selectable candidate through the existing helper (suggestion never excludes).
+assert.ok(currentAgt002GovernedWorksetDocuments(mixedCandidates).some(d => d.id === 'doc-foto'), 'a nonrecommended document must still be a manually selectable current candidate');
+
+// extraction-ineligible and historical documents are excluded even when recommended
+assert.ok(!preselection.some(m => m.document_version_id === 'doc-gap'), 'an extraction gap must never be preselected regardless of the suggestion');
+assert.ok(!preselection.some(m => m.document_version_id === 'doc-historical'), 'a historical (non-current) document must never be preselected');
+
+// capped at AGT002_GOVERNED_WORKSET_MAX_MEMBERS (12), taking the first 12 in input order among equal confidence
+const manyHigh = Array.from({ length: 13 }, (_, i) => suggestionDoc({ id: `doc-high-${i}` }));
+const cappedPreselection = buildAgt002RecommendedWorksetSelection(manyHigh);
+assert.equal(cappedPreselection.length, AGT002_GOVERNED_WORKSET_MAX_MEMBERS, 'the preselection must never exceed the unchanged 1..12 bound');
+assert.deepEqual(cappedPreselection.map(m => m.document_version_id), manyHigh.slice(0, 12).map(d => d.id));
+
+// no recommendations at all => empty preselection, never throws, never force-picks a fallback
+const noneRecommended = [notRecommendedEligible, suggestionDoc({ id: 'doc-foto-2', analysis_suggestion: { ...notRecommendedEligible.analysis_suggestion } })];
+assert.deepEqual(buildAgt002RecommendedWorksetSelection(noneRecommended), []);
+assert.deepEqual(buildAgt002RecommendedWorksetSelection([]), []);
 
 console.log('AGT-002 governed document workset pure model contract passed');

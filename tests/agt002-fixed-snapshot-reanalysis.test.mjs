@@ -64,15 +64,21 @@ async function rejectsStatus(value, status) {
   await assert.rejects(() => runAgt002FixedSnapshotReanalysis(value), error => error?.status === status);
 }
 
-test('wires the same secret-protected route in both backends without the reserved internal prefix', () => {
-  const route = "app.post('/api/agt002-reanalyze-fixed-snapshot', runAgt002FixedSnapshotOperator);";
+test('retires the fixed-snapshot route directly to the governed-retirement helper, executing no canonical/legacy work', () => {
   const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
   const api = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
   for (const source of [server, api]) {
-    assert.equal(source.includes(route), true);
+    assert.match(
+      source,
+      /app\.post\(\s*['"]\/api\/agt002-reanalyze-fixed-snapshot['"]\s*,\s*rejectUngovernedAgt002Route\s*\)/,
+      'the fixed-snapshot route must be registered directly to the governed-retirement helper',
+    );
+    assert.doesNotMatch(
+      source,
+      /app\.post\(\s*['"]\/api\/agt002-reanalyze-fixed-snapshot['"]\s*,\s*runAgt002FixedSnapshotOperator\s*\)/,
+      'the fixed-snapshot route must no longer be wired to the retired operator',
+    );
     assert.equal(source.includes("/api/internal/agt002/reanalyze-fixed-snapshot"), false);
-    assert.match(source, /authorize: \(\) => isTenderWorkerSchedulerAuthorized\(req\)/);
-    assert.match(source, /sanitizeAgt002FixedSnapshotError\(error\)/);
   }
 });
 

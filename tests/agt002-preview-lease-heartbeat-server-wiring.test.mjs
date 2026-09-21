@@ -2,23 +2,24 @@
 //
 // tests/agt002-preview-claim-lease-heartbeat.test.mjs pins the adapter and
 // tests/agt002-preview-lease-heartbeat-runtime.test.mjs pins the runtime/engine/post-bridge halves.
-// Both leave a hole: the TWO flows in server/index.js that still drive `engine.analyze` and
-// `registerAgt002PreviewAnalysis` directly (never through runAgt002PostBridgeAnalysis) hold a preview
-// claim from `claimAgt002PreviewRun` and then:
+// Both leave a hole: the processing-job step `requestAgt002` in server/index.js, which still drives
+// `engine.analyze` and `registerAgt002PreviewAnalysis` directly (never through
+// runAgt002PostBridgeAnalysis), holds a preview claim from `claimAgt002PreviewRun` and then:
 //
 //   - build the runtime WITHOUT `database`/`previewClaim`, so the engine can never receive the
 //     stage-boundary hook the runtime test already specifies, and
 //   - persist WITHOUT renewing, so a V7 run whose N provider turns outlive the two-turn lease writes
 //     under a reservation another worker may already own.
 //
-// The two flows are the processing-job step `requestAgt002` and the legacy (non-canonical) branch of
-// POST /api/tender-documents-analyze-agent-preview.
+// The legacy (non-canonical) branch of POST /api/tender-documents-analyze-agent-preview has since been
+// retired: the route is now registered directly to `rejectUngovernedAgt002Route`, so it no longer
+// claims, analyzes or persists anything and is asserted separately below.
 //
-// This is a STATIC test: it reads the shipped source, slices exactly those two flows, and asserts the
-// ordered wiring. Nothing is imported, executed, mocked or networked — the file only asserts the
-// shape of code that already exists, which is why it can fail for the absence of the wiring and for
-// nothing else. Positions are asserted as ordered semantic tokens, never as line numbers or
-// whitespace.
+// This is a STATIC test: it reads the shipped source, slices exactly the remaining direct flow, and
+// asserts the ordered wiring. Nothing is imported, executed, mocked or networked — the file only
+// asserts the shape of code that already exists, which is why it can fail for the absence of the
+// wiring and for nothing else. Positions are asserted as ordered semantic tokens, never as line
+// numbers or whitespace.
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -33,17 +34,12 @@ const ANALYZE = 'engine.analyze(';
 const PERSIST = 'registerAgt002PreviewAnalysis(';
 const RUNTIME = 'createAgt002PreviewRuntime({';
 
-/** The two flows that persist directly, i.e. without runAgt002PostBridgeAnalysis owning the frontier. */
+/** The one flow that persists directly, i.e. without runAgt002PostBridgeAnalysis owning the frontier. */
 const DIRECT_FLOWS = [
   {
     label: 'processing job step requestAgt002',
     from: '    requestAgt002: async ({',
     to: '\nexport async function buildTenderOpportunitySummary',
-  },
-  {
-    label: 'legacy branch of POST /api/tender-documents-analyze-agent-preview',
-    from: '// canonicalOnly always returns above',
-    to: "\napp.get('/api/agt002-reanalysis-status'",
   },
 ];
 
@@ -95,10 +91,18 @@ test('the preview persistence module is imported with the renewal adapter', () =
   );
 });
 
-test('exactly the two direct flows renew, and only after a claim exists', () => {
+test('the legacy preview route is retired directly to rejectUngovernedAgt002Route', () => {
+  assert.match(
+    server,
+    /app\.post\('\/api\/tender-documents-analyze-agent-preview',\s*rejectUngovernedAgt002Route\);/,
+    'the legacy branch is gone: the route must be wired straight to rejectUngovernedAgt002Route, never to a handler that claims, analyzes or persists',
+  );
+});
+
+test('exactly the one direct flow renews, and only after a claim exists', () => {
   assert.equal(
     count(server, RENEW), DIRECT_FLOWS.length,
-    'exactly two direct-persistence flows may renew: no duplicated heartbeat, no third call site, no unconditional renewal outside a claimed flow',
+    'exactly one direct-persistence flow may renew: no duplicated heartbeat, no second call site, no unconditional renewal outside a claimed flow',
   );
   assert.equal(
     count(server, `await ${RENEW}`), DIRECT_FLOWS.length,

@@ -89,7 +89,7 @@ for (const relativePath of ['../api/[...path].js', '../server/index.js']) {
   assert.doesNotMatch(source, /documentGaps:\s*\[\]/, `${relativePath} must never erase durable/extraction gaps at an inventory boundary`);
   assert.match(source, /import \{ loadAgt002TenderRequirementDocumentGaps \} from '\.\.\/agt002-tender-requirement-gaps\.js';/);
   const claimIndexes = [...source.matchAll(/await claimAgt002PreviewRun\(/g)].map(match => match.index);
-  assert.equal(claimIndexes.length, 2, `${relativePath} must keep both direct AGT-002 claim paths covered`);
+  assert.equal(claimIndexes.length, 1, `${relativePath} must keep the one remaining direct AGT-002 claim path covered`);
   for (const claimIndex of claimIndexes) {
     const preClaim = source.slice(Math.max(0, claimIndex - 2_400), claimIndex);
     assert.match(preClaim, /tenderRequirementInventoryIdentity\(buildAgt002TenderRequirementInventory\(/);
@@ -144,7 +144,7 @@ for (const relativePath of ['../api/[...path].js', '../server/index.js']) {
   // The requirement at the persistence boundary is the SAME signal, never a hardcoded true:
   // a hardcoded true rejects every legitimate retrieval-off run before any RPC.
   const directRegistrations = source.match(/registerAgt002PreviewAnalysis\(database, \{[^\n]+\}\)/g) ?? [];
-  assert.equal(directRegistrations.length, 2, `${relativePath} must guard both direct persistence paths`);
+  assert.equal(directRegistrations.length, 1, `${relativePath} must guard the one remaining direct persistence path`);
   for (const registration of directRegistrations) {
     assert.match(registration, /requireTenderRequirementInventory: documentRetrieval/, `${relativePath} must gate the inventory requirement on the retrieval signal`);
     // Blocker 5: claim -> persist identity enforcement is never dropped from a production path.

@@ -143,6 +143,7 @@ export function TenderAnalysisSection({ analysis, documents, busy, canRunPreview
         documents={documents}
         busy={busy}
         canRun={canRunPreview && processingPresentation.primaryAction !== 'disabled'}
+        selectionScopeKey={opportunityId}
         onFreeze={onFreezeGovernedWorkset}
         onUploadFiles={onUploadGovernedFiles}
       />}
