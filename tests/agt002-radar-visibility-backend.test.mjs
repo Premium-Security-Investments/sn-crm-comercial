@@ -41,10 +41,13 @@ const staleHash = row('55555555-5555-4555-8555-555555555555', 'stale-hash');
 const stalePolicy = row('66666666-6666-4666-8666-666666666666', 'stale-policy');
 const staleContext = row('77777777-7777-4777-8777-777777777777', 'stale-context');
 const missing = row('88888888-8888-4888-8888-888888888888', 'missing');
-// BLOCKER A2: canonico positivo y fresco, pero la fecha de cierre ya paso. El gate determinista se
-// reevalua en lectura, asi que esta fila no puede seguir visible por inercia del canonico.
+// `expired` ya cruzo su fecha de cierre, pero AGT-002 nunca gobierna visibilidad: sigue siendo un
+// candidato rastreable como cualquier otro y debe permanecer en el Radar igual que en flags OFF.
 const expired = row('99999999-9999-4999-8999-999999999999', 'expired', { deadline_at: '2020-01-01T00:00:00.000Z' });
 const activeRows = [visible, converted, hidden, inconclusive, staleHash, stalePolicy, staleContext, missing, expired];
+// Los veredictos canonicos abajo son deliberadamente hostiles (no_mostrar_en_radar, no_concluyente,
+// hashes/policy/context obsoletos) para probar que el Radar principal los ignora por completo: el
+// preanalisis AGT-002 puede anotar/informar, pero nunca debe ocultar un candidato rastreable.
 const canonicalRows = [
   { tender_id: visible.id, canonical: true, visibility_verdict: 'mostrar_en_radar', source_row_hash: computeAgt002RadarSourceRowHash(visible), policy_version: AGT002_RADAR_GATE_POLICY_VERSION, context_version: AGT002_RADAR_GATE_CONTEXT_VERSION },
   { tender_id: hidden.id, canonical: true, visibility_verdict: 'no_mostrar_en_radar', source_row_hash: computeAgt002RadarSourceRowHash(hidden), policy_version: AGT002_RADAR_GATE_POLICY_VERSION, context_version: AGT002_RADAR_GATE_CONTEXT_VERSION },
@@ -54,10 +57,6 @@ const canonicalRows = [
   { tender_id: staleContext.id, canonical: true, visibility_verdict: 'mostrar_en_radar', source_row_hash: computeAgt002RadarSourceRowHash(staleContext), policy_version: AGT002_RADAR_GATE_POLICY_VERSION, context_version: 'old-context' },
   { tender_id: expired.id, canonical: true, visibility_verdict: 'mostrar_en_radar', source_row_hash: computeAgt002RadarSourceRowHash(expired), policy_version: AGT002_RADAR_GATE_POLICY_VERSION, context_version: AGT002_RADAR_GATE_CONTEXT_VERSION },
 ];
-// El hash de la fila fuente no depende del reloj de ingesta: el unico eje que oculta a `expired` es
-// el veredicto vigente del gate, no una supuesta falta de frescura.
-assert.equal(computeAgt002RadarSourceRowHash(expired), computeAgt002RadarSourceRowHash({ ...expired, last_seen_at: '2026-08-26T23:00:00.000Z' }));
-assert.equal(computeAgt002RadarSourceRowHash(visible), computeAgt002RadarSourceRowHash({ ...visible, last_seen_at: '2026-08-26T23:00:00.000Z' }));
 let scenario = { ledgerError: false, ledgerQueries: 0 };
 const fakeSupabase = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
@@ -94,7 +93,7 @@ process.env.VERCEL = '1';
 const originalFlags = { gate: process.env.AGT002_RADAR_GATE, visibility: process.env.AGT002_RADAR_VISIBILITY };
 
 const isoUtcRe = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
-function assertSharedCanonicalEvaluatedAt(body, backend) {
+function assertSharedEvaluatedAt(body, backend) {
   const tenders = body.tenders || [];
   assert.ok(tenders.length > 0, `${backend} debe devolver tenders para validar fit.evaluated_at`);
   const timestamps = new Set();
@@ -132,27 +131,23 @@ try {
     assert.deepEqual(off.body.tenders.map(item => item.stable_key).sort(), activeRows.map(item => item.stable_key).sort());
     assert.equal(scenario.ledgerQueries, 0, `${backend} no debe consultar el ledger con flags OFF`);
 
-    const gateOnly = await runBackend(backend, `${backendIndex}-gate-only`, { gate: 'true' });
-    assert.equal(gateOnly.status, 200);
-    assertSharedCanonicalEvaluatedAt(off.body, backend);
-    assertSharedCanonicalEvaluatedAt(gateOnly.body, backend);
-    assert.deepEqual(withNormalizedFitEvaluatedAt(gateOnly.body), withNormalizedFitEvaluatedAt(off.body), `${backend} debe conservar payload byte-equivalente sin visibility`);
-    assert.equal(scenario.ledgerQueries, 0);
-
+    // Flags ON (gate + visibility) no debe diferir de flags OFF: AGT-002 puede anotar/informar el
+    // preanalisis, pero jamas debe gobernar que candidatos rastreables aparecen en el Radar.
     const on = await runBackend(backend, `${backendIndex}-on`, { gate: 'true', visibility: 'true' });
     assert.equal(on.status, 200);
-    // `visible` sigue vigente (cierre 2030); `expired` tiene canonico positivo y fresco pero ya
-    // cruzo su cierre; `converted` esta cancelada y vencida y aun asi se muestra siempre.
-    assert.deepEqual(on.body.tenders.map(item => item.stable_key).sort(), ['converted', 'visible']);
-    assert.equal(on.body.tenders.some(item => item.stable_key === 'expired'), false, `${backend} debe ocultar un positivo canonico ya vencido`);
-    assert.equal(on.body.tenders.some(item => item.stable_key === 'converted'), true, `${backend} debe mostrar siempre las convertidas`);
-    assert.deepEqual(Object.keys(on.body.tenders.find(item => item.stable_key === 'visible')).sort(), Object.keys(off.body.tenders.find(item => item.stable_key === 'visible')).sort());
-    assert.equal(scenario.ledgerQueries, 1);
+    assertSharedEvaluatedAt(off.body, backend);
+    assertSharedEvaluatedAt(on.body, backend);
+    assert.deepEqual(on.body.tenders.map(item => item.stable_key).sort(), activeRows.map(item => item.stable_key).sort(), `${backend} no debe ocultar candidatos rastreables aunque el veredicto canonico sea negativo`);
+    assert.deepEqual(withNormalizedFitEvaluatedAt(on.body), withNormalizedFitEvaluatedAt(off.body), `${backend} debe conservar payload byte-equivalente entre flags ON y flags OFF`);
+    assert.equal(scenario.ledgerQueries, 0, `${backend} no debe consultar el ledger de preanalisis aunque AGT002_RADAR_VISIBILITY este en true`);
 
+    // Un error simulado en el ledger no puede degradar el Radar principal a 503: la lectura de
+    // psi_agt002_radar_preanalysis_runs no debe ocurrir, asi que su disponibilidad es irrelevante.
     scenario.ledgerError = true;
-    const unavailable = await runBackend(backend, `${backendIndex}-unavailable`, { gate: 'true', visibility: 'true' });
-    assert.equal(unavailable.status, 503);
-    assert.equal(unavailable.body.code, 'AGT002_RADAR_VISIBILITY_LEDGER_UNAVAILABLE');
+    const withLedgerDown = await runBackend(backend, `${backendIndex}-ledger-down`, { gate: 'true', visibility: 'true' });
+    assert.equal(withLedgerDown.status, 200, `${backend} no debe devolver 503 por un ledger de preanalisis que nunca deberia leer`);
+    assert.deepEqual(withNormalizedFitEvaluatedAt(withLedgerDown.body), withNormalizedFitEvaluatedAt(off.body), `${backend} debe seguir siendo byte-equivalente a flags OFF con el ledger caido`);
+    assert.equal(scenario.ledgerQueries, 0, `${backend} no debe haber intentado leer el ledger caido`);
   }
 
   const serverSource = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
@@ -165,4 +160,4 @@ try {
   await new Promise(resolve => fakeSupabase.close(resolve));
 }
 
-console.log('AGT-002 Radar backend visibility is byte-shape stable and fails closed at 503');
+console.log('AGT-002 Radar backend never governs visibility: flags ON is byte-equivalent to flags OFF and never reads the preanalysis ledger');
