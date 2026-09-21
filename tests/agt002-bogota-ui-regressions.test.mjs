@@ -33,6 +33,7 @@ const v3Css = readFileSync(new URL('src/tenders/components/tender-integral-analy
 const globalCss = readFileSync(new URL('src/styles.css', root), 'utf8');
 const technicalViewSource = readFileSync(new URL('src/tenders/components/TenderIntegralAnalysisV3View.tsx', root), 'utf8');
 const mainSource = readFileSync(new URL('src/main.tsx', root), 'utf8');
+const analysisSectionSource = readFileSync(new URL('src/tenders/components/TenderAnalysisSection.tsx', root), 'utf8');
 
 // ---------------------------------------------------------------------------------------------
 // 1 · Copy de cierre: helper puro, comprobable por comportamiento (patrón esbuild de
@@ -159,23 +160,26 @@ test('main.tsx deriva el cierre del helper y del análisis recién recargado, nu
     'el mensaje debe derivarse del análisis recién recargado, no del estado de React del render',
   );
 
-  // Éxito inmediato sin job: se deriva del análisis que acaba de devolver el backend.
+  // El congelamiento del paquete gobernado nunca resuelve un análisis inmediato: siempre encola un
+  // job de reanálisis y el cierre se deriva únicamente de sondearlo hasta completarse.
   assert.match(
     mainSource,
-    /tenderAnalysisCompletionMessage\(data\.analysis\)/,
-    'el éxito inmediato debe derivarse del análisis devuelto por la petición, no de un literal',
+    /await pollAgt002Reanalysis\(data\.reanalysis_job_id, requestedOpportunityId\)/,
+    'el congelamiento del paquete gobernado debe entregar el reanalysis_job_id al sondeo, nunca resolver un análisis inmediato',
   );
 
-  // Fallback y no disponibilidad se conservan intactos.
+  // Fallback y no disponibilidad se conservan, aunque el copy vive ahora donde realmente se
+  // decide: el fallback determinístico en TenderAnalysisSection y la no disponibilidad del job de
+  // reanálisis en el mensaje clasificado de agt002-reanalysis-error-message.
   assert.match(
-    mainSource,
-    /\$\{VIGIA_VISIBLE_NAMES\.tenders\} no estuvo disponible; se aplicó fallback seguro por reglas\./,
-    'el copy de fallback seguro por reglas se conserva',
+    analysisSectionSource,
+    /\{VIGIA_VISIBLE_NAMES\.tenders\} no estuvo disponible \(/,
+    'el copy de fallback seguro por reglas debe nombrar a Vig-IA Licitaciones',
   );
   assert.match(
     mainSource,
-    /\$\{VIGIA_VISIBLE_NAMES\.tenders\} no pudo completar el análisis\./,
-    'el copy de no disponibilidad se conserva',
+    /agt002UnavailableMessage\(job\.error_code\)/,
+    'la no disponibilidad del job de reanálisis debe derivarse del mensaje clasificado, no de un literal incrustado',
   );
 });
 

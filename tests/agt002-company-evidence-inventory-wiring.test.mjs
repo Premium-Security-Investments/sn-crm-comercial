@@ -121,12 +121,13 @@ assert.equal(
 }
 
 // Every flow still loads governance exactly once, before the idempotency reservation, so the
-// snapshot is necessarily bound before any run identity is computed or claimed.
+// snapshot is necessarily bound before any run identity is computed or claimed. The legacy
+// non-canonical preview and fixed-snapshot routes are retired (410 governed_workset_required,
+// tests/agt002-governed-route-retirement.test.mjs) and never load this governance at all.
 assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 3);
 for (const [label, startToken, endToken] of [
   ['flow1 (enqueueAgt002CanonicalReanalysis)', 'async function enqueueAgt002CanonicalReanalysis(database, {', 'function sendError(res, error, status = 500) {'],
   ['flow2 (requestAgt002)', 'requestAgt002: async ({ jobId, tenderId, opportunityId, snapshotId }) => {', 'export async function buildTenderOpportunitySummary('],
-  ['flow3 (legacy preview)', "app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {", "app.get('/api/agt002-reanalysis-status'"],
 ]) {
   const flow = slice(server, startToken, endToken, label);
   assertOrder(flow, [
@@ -135,12 +136,33 @@ for (const [label, startToken, endToken] of [
   ], `${label}: governance (and its snapshot) must be loaded before the idempotency key`);
 }
 
+// Flow 3 — the governed document workset frozen-input builder: it never computes its own
+// idempotency key (the caller already computed one via computeAgt002GovernedWorksetIdempotencyKey
+// and hands it in), but governance must still precede the frozen engine input it builds.
+{
+  const flow3 = slice(
+    server,
+    'async function buildAgt002GovernedWorksetFrozenEngineInputSource(database, {',
+    "app.post('/api/tender-agt002-governed-document-worksets', async (req, res) => {",
+    'flow3 (governed document workset frozen-input builder)',
+  );
+  assertOrder(flow3, [
+    'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)',
+    'return buildAgt002FrozenEngineInput({',
+  ], 'flow3: governance (and its snapshot) must be loaded before the frozen engine input is built');
+  assert.match(
+    flow3,
+    /integralV3Governance,\s*\n\s*idempotencyKey,\s*\n\s*\}\);/,
+    'flow3 must forward the full governance object (carrying the loaded snapshot) into the frozen engine input, never exploded/re-derived',
+  );
+}
+
 // ===========================================================================
 // 3. Every preview path carries the SAME snapshot into runtime construction.
 // ===========================================================================
 assert.equal(
-  count(server, 'companyEvidenceInventorySnapshot: integralV3Governance.companyEvidenceInventorySnapshot,'), 2,
-  'both direct createAgt002PreviewRuntime call sites must forward the loaded snapshot',
+  count(server, 'companyEvidenceInventorySnapshot: integralV3Governance.companyEvidenceInventorySnapshot,'), 1,
+  'the one direct createAgt002PreviewRuntime call site must forward the loaded snapshot',
 );
 assert.doesNotMatch(
   server,

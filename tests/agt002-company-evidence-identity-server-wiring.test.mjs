@@ -12,13 +12,16 @@ import { registerAgt002PreviewAnalysis } from '../agt002-preview-persistence.js'
 // (buildAgt002CompanyEvidenceIdentity, agt002-company-evidence-identity.js), loaded BEFORE
 // the context version is registered and BEFORE the idempotency reservation is
 // computed/claimed/found in all three real analysis flows (durable canonical enqueue,
-// requestAgt002 processing worker, legacy non-canonical preview) — never reloaded within a
-// flow. It must then reach the idempotency key (as an atomic triple, alongside the
-// preexisting legal/contract/inventory identity), the durable context version registration,
-// the frozen governance object, the durable worker's post-bridge orchestrator, and both
-// direct registerAgt002PreviewAnalysis registrations. As with the governed-data wiring, no
-// unit test can observe server/index.js's inline route handlers directly, so this is a
-// source-text contract, verified once per canonical flow.
+// requestAgt002 processing worker — the one remaining direct internal runtime call site, and
+// the governed document workset frozen-input builder) — never reloaded within a flow. The
+// legacy non-canonical preview and fixed-snapshot routes are retired (410
+// governed_workset_required, tests/agt002-governed-route-retirement.test.mjs) and never touch
+// this governance at all. The identity must then reach the idempotency key (as an atomic
+// triple, alongside the preexisting legal/contract/inventory identity), the durable context
+// version registration, the frozen governance object, the durable worker's post-bridge
+// orchestrator, and the one remaining direct registerAgt002PreviewAnalysis registration. As
+// with the governed-data wiring, no unit test can observe server/index.js's inline route
+// handlers directly, so this is a source-text contract, verified once per canonical flow.
 // ---------------------------------------------------------------------------
 
 const server = readFileSync(new URL('../server/index.js', import.meta.url), 'utf8');
@@ -69,20 +72,21 @@ assert.match(server, /boundaryError\.runtime_boundary_code = 'AGT002_RUNTIME_COM
 assert.match(server, /error\?\.runtime_boundary_code === 'AGT002_RUNTIME_COMPANY_EVIDENCE_INVALID'/);
 assert.match(server, /code: 'AGT002_RUNTIME_COMPANY_EVIDENCE_INVALID' \}\)/);
 
-// A5: both direct server runtime calls forward the SAME frozen evidenceAsOf into engine
-// construction alongside the registry rows — never re-derived, never the wall clock.
-assert.equal(count(server, 'companyEvidenceAsOf: integralV3Governance.evidenceAsOf,'), 2, 'both direct createAgt002PreviewRuntime call sites must forward evidenceAsOf');
+// A5: the one remaining direct server runtime call forwards the SAME frozen evidenceAsOf into
+// engine construction alongside the registry rows — never re-derived, never the wall clock.
+assert.equal(count(server, 'companyEvidenceAsOf: integralV3Governance.evidenceAsOf,'), 1, 'the one direct createAgt002PreviewRuntime call site must forward evidenceAsOf');
 
-// Reusable mapper: exactly one definition, reused (never duplicated) at all three
-// idempotency-key call sites below.
+// Reusable mapper: exactly one definition, reused (never duplicated) at both remaining
+// idempotency-key call sites below (the governed workset builder never recomputes the
+// idempotency key from evidence identity params at all — it receives an already-computed key).
 assert.equal(count(server, 'function agt002EvidenceIdentityKeyParams(evidenceIdentity)'), 1);
-assert.equal(count(server, 'agt002EvidenceIdentityKeyParams(integralV3Governance?.evidenceIdentity)'), 3, 'las tres compute keys deben usar el mismo mapper reusable');
+assert.equal(count(server, 'agt002EvidenceIdentityKeyParams(integralV3Governance?.evidenceIdentity)'), 2, 'las dos compute keys restantes deben usar el mismo mapper reusable');
 
 // Exactly one governance load per real flow (mirrors the governed-data wiring contract),
-// and exactly two direct registerAgt002PreviewAnalysis registrations carry evidenceIdentity.
+// and exactly one direct registerAgt002PreviewAnalysis registration carries evidenceIdentity.
 assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 3);
 assert.equal(count(server, 'company_evidence_identity: integralV3Governance?.evidenceIdentity ?? null,'), 2, 'las dos flujos con context version deben incluir sólo company_evidence_identity');
-assert.equal(count(server, 'evidenceIdentity: integralV3Governance?.evidenceIdentity ?? null'), 2, 'los dos registros directos deben pasar evidenceIdentity');
+assert.equal(count(server, 'evidenceIdentity: integralV3Governance?.evidenceIdentity ?? null'), 1, 'el único registro directo debe pasar evidenceIdentity');
 
 // Flow 1 — durable canonical enqueue: governance load precedes the context version
 // registration, which precedes the idempotency key computation and the durable find.
@@ -121,23 +125,33 @@ assertOrder(flow2, [
 ], 'flow2');
 assert.equal(count(flow2, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 1, 'flow2: exactamente una carga, sin releer');
 
-// Flow 3 — legacy non-canonical preview: no context version exists here at all, but
-// governance must still precede the idempotency key computation and the claim/find.
+// Flow 3 — the governed document workset frozen-input builder (the governed frozen-input
+// builder/executor path a client reaches through POST /api/tender-agt002-governed-document-
+// worksets): no NEW context version is registered here at all — the route reuses the most
+// recently registered one via findLatestAgt002GovernedWorksetContextVersionId — but governance
+// must still precede the frozen engine input it hands back to
+// freezeAgt002GovernedDocumentWorkset for enqueueing.
 const flow3 = slice(
   server,
-  "app.post('/api/tender-documents-analyze-agent-preview', async (req, res) => {",
-  "app.get('/api/agt002-reanalysis-status'",
-  'flow3 (legacy preview)',
+  'async function buildAgt002GovernedWorksetFrozenEngineInputSource(database, {',
+  "app.post('/api/tender-agt002-governed-document-worksets', async (req, res) => {",
+  'flow3 (governed document workset frozen-input builder)',
 );
-assert.doesNotMatch(flow3, /await registerAgt002ContextVersion\(/, 'flow3 nunca registra una versión de contexto');
+assert.doesNotMatch(flow3, /await registerAgt002ContextVersion\(/, 'flow3 nunca registra una versión de contexto: reutiliza la más reciente');
 assertOrder(flow3, [
   'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)',
-  'idempotencyKey = computeAgt002PreviewIdempotencyKey({',
-  'agt002EvidenceIdentityKeyParams(integralV3Governance?.evidenceIdentity)',
-  'await claimAgt002PreviewRun(database,',
-  'evidenceIdentity: integralV3Governance?.evidenceIdentity ?? null });',
+  'return buildAgt002FrozenEngineInput({',
 ], 'flow3');
 assert.equal(count(flow3, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 1, 'flow3: exactamente una carga, sin releer');
+// The full governance object (carrying evidenceIdentity and evidenceAsOf) and the loaded legal
+// corpus context reach the frozen engine input verbatim — never exploded/re-derived field by
+// field, and never dropped.
+assert.match(flow3, /legalCorpusContext: governedLegalCorpusContext,/, 'flow3 debe pasar el contexto legal cargado al frozen engine input');
+assert.match(
+  flow3,
+  /integralV3Governance,\s*\n\s*idempotencyKey,\s*\n\s*\}\);/,
+  'flow3 debe pasar la gobernanza v3 completa (identidad + evidenceAsOf) al frozen engine input',
+);
 
 // The frozen governance object handed to the durable job (flow 1) is the SAME object the
 // loader returned — it is never rebuilt, so evidenceIdentity necessarily survives freezing.
@@ -184,21 +198,20 @@ assert.match(
   'the registration call must go through the injected persistAnalysis seam and reuse the SAME persistenceParams object on every retry',
 );
 
-// B: the legacy non-canonical preview flow (flow3) must check the fail-closed boundary code
-// BEFORE ever falling back to rules_fallback — a degraded evidence registry must never
-// silently produce a rules-based analysis.
-{
-  const catchStart = flow3.indexOf('} catch (error) {');
-  assert.ok(catchStart !== -1, 'legacy preview catch: start anchor not found');
-  const catchEnd = flow3.indexOf('} finally {', catchStart);
-  assert.ok(catchEnd !== -1 && catchEnd > catchStart, 'legacy preview catch: end anchor not found after start');
-  const legacyPreviewCatch = flow3.slice(catchStart, catchEnd);
-  assertOrder(legacyPreviewCatch, [
-    "error?.runtime_boundary_code === 'AGT002_RUNTIME_COMPANY_EVIDENCE_INVALID'",
-    'return sendError(res, error);',
-    "return useRulesFallback('preview_unavailable');",
-  ], 'legacyPreviewCatch');
-}
+// B: the retired legacy non-canonical preview and fixed-snapshot routes must reject every
+// request directly to the governed-retirement helper — they never construct or touch the
+// company evidence identity/governance at all, so a degraded evidence registry can never even
+// be reached through them.
+assert.match(
+  server,
+  /app\.post\(\s*['"]\/api\/tender-documents-analyze-agent-preview['"]\s*,\s*rejectUngovernedAgt002Route\s*\)/,
+  'the retired preview-analyze route must reject before any evidence-identity governance is loaded',
+);
+assert.match(
+  server,
+  /app\.post\(\s*['"]\/api\/agt002-reanalyze-fixed-snapshot['"]\s*,\s*rejectUngovernedAgt002Route\s*\)/,
+  'the retired fixed-snapshot route must reject before any evidence-identity governance is loaded',
+);
 
 // ---------------------------------------------------------------------------
 // Real consumption, not just plumbing: the defect this fixes had server/api pass
