@@ -32,6 +32,7 @@ import { isTenderAnalysisFoundationUnavailable, requireTenderAnalysisFoundation 
 import { buildTenderDeepAnalysis } from '../tender-deep-analysis.js';
 import { can, requireAction } from '../access-control.js';
 import { ACTIONS } from '../access-control.js';
+import { regionalForOpportunityWrite } from '../src/regional-options.js';
 import { MODULE_PERMISSION_CODES, isModulePermissionEligible } from '../module-access.js';
 import { buildAgt003PrioritiesData } from '../agt003-priorities-service.js';
 import { createAgt003CopilotApi } from '../agt003-copilot-api.js';
@@ -978,7 +979,7 @@ export async function requireOpportunityAction(database, profile, ownerId, actio
   return requireExistingOpportunityAction(database, profile, owner.id, action);
 }
 async function ensureOpportunityAccess(database, id, profile, action = ACTIONS.CRM_OPPORTUNITY_DETAIL_VIEW) {
-  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,customer_segment').eq('id', id).single());
+  const opportunity = await must(database.from('psi_sales_opportunities').select('id,owner_id,customer_segment,regional_nombre').eq('id', id).single());
   await requireExistingOpportunityAction(database, profile, opportunity.owner_id, action);
   return opportunity;
 }
@@ -4699,7 +4700,7 @@ app.post('/api/tender-opportunity-exit', async (req, res) => {
   }
 });
 
-function cleanOpportunity(body) {
+function cleanOpportunity(body, existingRegional = null) {
   const payload = {
     company_name: String(body.company_name || '').trim(),
     owner_id: body.owner_id || null,
@@ -4717,7 +4718,7 @@ function cleanOpportunity(body) {
     next_action_at: body.next_action_at || null,
     expected_close_date: body.expected_close_date || null,
     commission_rate: Number(body.commission_rate || 0),
-    regional_nombre: body.regional_nombre || null,
+    regional_nombre: regionalForOpportunityWrite(body.regional_nombre, existingRegional),
     sede: body.sede || null,
     tipo_producto_original: body.tipo_producto_original || null,
     observaciones: body.observaciones || null,
@@ -4752,7 +4753,7 @@ app.put('/api/opportunities/:id', async (req, res) => {
     requireModuleAction(currentProfile, 'opportunities');
     const database = requireDb();
     const existing = await ensureOpportunityAccess(database, req.params.id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
-    const payload = cleanOpportunity(req.body);
+    const payload = cleanOpportunity(req.body, existing.regional_nombre);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
     if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
     if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }
@@ -4867,7 +4868,7 @@ app.put('/api/opportunity', async (req, res) => {
     const id = String(req.query.id || '');
     if (!id) throw new Error('Debe indicar la oportunidad.');
     const existing = await ensureOpportunityAccess(database, id, currentProfile, ACTIONS.CRM_OPPORTUNITY_EDIT);
-    const payload = cleanOpportunity(req.body);
+    const payload = cleanOpportunity(req.body, existing.regional_nombre);
     if (currentProfile.role === 'comercial') payload.owner_id = currentProfile.id;
     if (payload.owner_id !== existing.owner_id) await requireOpportunityAction(database, currentProfile, payload.owner_id, ACTIONS.CRM_OPPORTUNITY_REASSIGN);
     if ((payload.customer_segment || null) !== (existing.customer_segment || null) && !canEditCustomerSegment(currentProfile, existing)) { const error = new Error('No tiene permiso para cambiar Cliente Nuevo / Cliente Actual en oportunidades ya creadas.'); error.status = 403; throw error; }

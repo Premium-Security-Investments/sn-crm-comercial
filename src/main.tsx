@@ -9,6 +9,7 @@ import { canAccessRoute, canManageUsers as navCanManageUsers, canViewTenders as 
 import { api, apiDownload, exitTenderOpportunity, setApiAccessToken } from './apiClient';
 import { CAPABILITY_PERMISSION_CODES, CAPABILITY_PERMISSIONS, MODULE_PERMISSION_CODES, MODULE_PERMISSIONS, eligibleModulePermissions, isModulePermissionEligible } from '../module-access.js';
 import { agt002UnavailableMessage } from '../agt002-reanalysis-error-message.js';
+import { REGIONAL_OPTIONS, isValidRegionalOption } from './regional-options.js';
 import { SiioDashboard } from './siio/SiioDashboard';
 import { TendersModule } from './tenders/TendersModule';
 import { TenderAnalysisSection } from './tenders/components/TenderAnalysisSection';
@@ -741,8 +742,8 @@ function scoreLabel(score?: number) {
   if (value >= 40) return 'Medio';
   return 'Bajo / validar';
 }
-function Select({ id, value, onChange, options, empty, disabled = false }: { id?: string; value: string; onChange: (value: string) => void; options: string[][]; empty: string; disabled?: boolean }) {
-  return <select id={id} value={value} disabled={disabled} onChange={event => onChange(event.target.value)}>{empty ? <option value="">{empty}</option> : null}{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>;
+function Select({ id, value, onChange, options, empty, disabled = false, required = false }: { id?: string; value: string; onChange: (value: string) => void; options: string[][]; empty: string; disabled?: boolean; required?: boolean }) {
+  return <select id={id} value={value} disabled={disabled} required={required} onChange={event => onChange(event.target.value)}>{empty ? <option value="">{empty}</option> : null}{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>;
 }
 function Badge({ children, tone }: { children: React.ReactNode; tone?: string }) { return <span className={`badge ${tone ? `badge-${tone}` : ''}`}>{children}</span>; }
 function MyDayGroup({ title, alerts, total, tone, empty }: { title: string; alerts: MyDayAlert[]; total: number; tone: string; empty: string }) {
@@ -1336,6 +1337,10 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
   const canEditSegment = canEditOpportunitySegment(data.currentProfile, existing);
   const creationDateValue = existing?.created_at ? String(existing.created_at).slice(0,10) : todayDateInputValue();
   const set = (key: keyof OpportunityPayload, value: string) => setForm(prev => ({ ...prev, [key]: value }));
+  const regionalOptions: string[][] = [
+    ...(existing?.regional_nombre && !isValidRegionalOption(existing.regional_nombre) ? [[existing.regional_nombre, `${existing.regional_nombre} (histórico)`]] : []),
+    ...REGIONAL_OPTIONS.map(r => [r, r]),
+  ];
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus('Guardando…');
@@ -1363,7 +1368,7 @@ function OpportunityForm({ data, id, refresh }: { data: Bootstrap; id?: string; 
       <label>Valor oferta<input type="number" min="0" required value={String(form.offer_value || 0)} onChange={e=>set('offer_value', e.target.value)}/></label>
       <label>Cierre estimado<input type="date" value={String(form.expected_close_date || '')} onChange={e=>set('expected_close_date', e.target.value)}/></label>
       <label>Próxima acción<input type="datetime-local" value={String(form.next_action_at || '').slice(0,16)} onChange={e=>set('next_action_at', e.target.value)}/></label>
-      <label>Regional<input value={String(form.regional_nombre || '')} onChange={e=>set('regional_nombre', e.target.value)}/></label>
+      <label>Regional<Select value={String(form.regional_nombre || '')} onChange={v=>set('regional_nombre', v)} options={regionalOptions} empty="Seleccione una regional" required/></label>
       <label>Sede<input value={String(form.sede || '')} onChange={e=>set('sede', e.target.value)}/></label>
       <label>Ciudad<input value={String(form.quote_city || '')} onChange={e=>set('quote_city', e.target.value)}/></label>
       <label>Sector<input value={String(form.economic_sector || '')} onChange={e=>set('economic_sector', e.target.value)}/></label>

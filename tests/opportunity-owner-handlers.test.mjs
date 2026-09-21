@@ -67,7 +67,7 @@ const owners = {
   'owner-current': { id: 'owner-current', active: false },
   'owner-inactive': { id: 'owner-inactive', active: false },
 };
-const existing = { id: 'opportunity-existing', owner_id: 'owner-current', customer_segment: 'cliente_nuevo' };
+const existing = { id: 'opportunity-existing', owner_id: 'owner-current', customer_segment: 'cliente_nuevo', regional_nombre: ' Nariño ' };
 const observed = [];
 
 function record(req, url, body = undefined) {
@@ -128,6 +128,7 @@ function opportunityPayload(ownerId) {
     service_type_code: 'vigilancia',
     stage_code: 'prospecto',
     customer_segment: 'cliente_nuevo',
+    regional_nombre: 'Nariño',
   };
 }
 
@@ -165,6 +166,13 @@ try {
     assert.deepEqual(ownerLookups().map(call => call.query.id), [`eq.${ownerId}`], `create resolves ${ownerId} before any opportunity write`);
   }
 
+  for (const regionalNombre of ['', 'Bogotá']) {
+    resetObserved();
+    const response = await requestJson(appPort, '/api/opportunities', 'admin-token', 'POST', { ...opportunityPayload('owner-active'), regional_nombre: regionalNombre });
+    assert.equal(response.status, 400, `create rejects regional_nombre ${JSON.stringify(regionalNombre)}`);
+    assert.equal(salesWrites().length, 0, `create with regional_nombre ${JSON.stringify(regionalNombre)} performs no opportunity write`);
+  }
+
   for (const route of [
     { path: '/api/opportunities/opportunity-existing', token: 'admin-token', label: 'canonical' },
     { path: '/api/opportunity?id=opportunity-existing', token: 'gerencia-token', label: 'alias' },
@@ -191,6 +199,39 @@ try {
     assert.equal(ownerLookups().length, 0, `${route.label} edit without reassignment does not re-resolve or revalidate the current owner`);
     assert.equal(salesWrites().length, 1, `${route.label} edit without reassignment reaches its authorized opportunity update`);
     assert.equal(salesWrites()[0].method, 'PATCH');
+  }
+
+  for (const route of [
+    { path: '/api/opportunities/opportunity-existing', token: 'admin-token', label: 'canonical' },
+    { path: '/api/opportunity?id=opportunity-existing', token: 'gerencia-token', label: 'alias' },
+  ]) {
+    resetObserved();
+    const legacyResponse = await requestJson(appPort, route.path, route.token, 'PUT', { ...opportunityPayload('owner-current'), regional_nombre: ' Nariño ' });
+    assert.equal(legacyResponse.status, 200, `${route.label} accepts exact legacy regional_nombre whitespace`);
+    const legacyWrites = salesWrites();
+    assert.equal(legacyWrites.length, 1, `${route.label} legacy regional_nombre update reaches its authorized opportunity update`);
+    assert.equal(legacyWrites[0].method, 'PATCH');
+    assert.equal(legacyWrites[0].body.regional_nombre, ' Nariño ', `${route.label} legacy regional_nombre PATCH body preserves exact whitespace`);
+
+    resetObserved();
+    const invalidResponse = await requestJson(appPort, route.path, route.token, 'PUT', { ...opportunityPayload('owner-current'), regional_nombre: 'Bogotá' });
+    assert.equal(invalidResponse.status, 400, `${route.label} rejects regional_nombre Bogotá`);
+    assert.equal(salesWrites().length, 0, `${route.label} regional_nombre Bogotá performs no opportunity update`);
+  }
+
+  for (const route of [
+    { path: '/api/opportunities/opportunity-existing', token: 'admin-token', label: 'canonical' },
+    { path: '/api/opportunity?id=opportunity-existing', token: 'gerencia-token', label: 'alias' },
+  ]) {
+    existing.regional_nombre = ' Bogotá ';
+    try {
+      resetObserved();
+      const response = await requestJson(appPort, route.path, route.token, 'PUT', { ...opportunityPayload('owner-current'), regional_nombre: 'Bogotá' });
+      assert.equal(response.status, 400, `${route.label} rejects regional_nombre Bogotá even when the existing opportunity already stores whitespace-padded Bogotá`);
+      assert.equal(salesWrites().length, 0, `${route.label} regional_nombre Bogotá performs no opportunity write when the existing opportunity already stores whitespace-padded Bogotá`);
+    } finally {
+      existing.regional_nombre = ' Nariño ';
+    }
   }
 } finally {
   console.error = originalConsoleError;
