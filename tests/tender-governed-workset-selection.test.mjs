@@ -20,6 +20,7 @@ const {
   buildAgt002GovernedWorksetMembers,
   agt002GovernedWorksetSelectionCountLabel,
   buildAgt002RecommendedWorksetSelection,
+  orderAgt002GovernedWorksetCandidates,
 } = await import(moduleUrl);
 
 // --- Closed classification vocabulary. ----------------------------------------------------------
@@ -167,5 +168,26 @@ assert.deepEqual(cappedPreselection.map(m => m.document_version_id), manyHigh.sl
 const noneRecommended = [notRecommendedEligible, suggestionDoc({ id: 'doc-foto-2', analysis_suggestion: { ...notRecommendedEligible.analysis_suggestion } })];
 assert.deepEqual(buildAgt002RecommendedWorksetSelection(noneRecommended), []);
 assert.deepEqual(buildAgt002RecommendedWorksetSelection([]), []);
+
+// --- orderAgt002GovernedWorksetCandidates: stable grouping (RED). --------------------------------
+// (.hermes/plans/2026-09-21-vigia-document-preselection.md) Groups the already-selected candidates
+// first — preserving their relative order — followed by the rest, also preserving their relative
+// order, so a Licitaciones user reviewing a long candidate list sees their picks together at the
+// top without the list ever reshuffling within either group. Must never mutate the source array.
+{
+  const a = { id: 'a' };
+  const b = { id: 'b' };
+  const c = { id: 'c' };
+  const d = { id: 'd' };
+  const source = [a, b, c, d];
+  const ordered = orderAgt002GovernedWorksetCandidates(source, ['b', 'd']);
+  assert.deepEqual(
+    ordered.map(candidate => candidate.id),
+    ['b', 'd', 'a', 'c'],
+    'los candidatos seleccionados deben agruparse primero, preservando el orden relativo dentro de cada grupo',
+  );
+  assert.deepEqual(source.map(candidate => candidate.id), ['a', 'b', 'c', 'd'], 'no debe mutar el arreglo fuente');
+  assert.notEqual(ordered, source, 'debe devolver un arreglo nuevo');
+}
 
 console.log('AGT-002 governed document workset pure model contract passed');

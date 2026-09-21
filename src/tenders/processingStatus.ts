@@ -32,7 +32,7 @@ type AnalysisPresentationStatus = {
   generated_at?: string | null;
 };
 
-const TERMINAL_STATUSES = new Set(['no_job', 'completed', 'cancelled', 'needs_attention']);
+const TERMINAL_STATUSES = new Set(['no_job', 'completed', 'cancelled', 'needs_attention', 'awaiting_analysis_authorization']);
 const SUPERSEDEABLE_PRESENTATION_STATUSES = new Set([
   'completed',
   'cancelled',
@@ -48,6 +48,7 @@ const STATUS_LABELS: Record<string, string> = {
   importing_documents: 'Importando y verificando documentos',
   building_snapshot: 'Construyendo el snapshot documental',
   waiting_agent_capacity: `${VIGIA_VISIBLE_NAMES.tenders} no está disponible todavía; el análisis permanece en cola`,
+  awaiting_analysis_authorization: 'Documentos listos: revise la selección y congele el paquete para continuar',
   analyzing: `${VIGIA_VISIBLE_NAMES.tenders} está analizando el expediente`,
   retry_wait: 'En espera de reintento automático',
   needs_attention: 'Requiere intervención humana',
@@ -104,6 +105,16 @@ export function deriveTenderProcessingPresentation(
       tone: 'status',
       message: `${VIGIA_VISIBLE_NAMES.tenders} está esperando capacidad disponible; el análisis continuará automáticamente en cuanto haya cupo, sin necesidad de una nueva acción.`,
       primaryAction: 'disabled',
+      showRetry: false,
+    };
+  }
+
+  if (status === 'awaiting_analysis_authorization') {
+    return {
+      visible: true,
+      tone: 'status',
+      message: 'Documentos listos: revise la selección de documentos y congele el paquete para continuar con el análisis.',
+      primaryAction: 'normal',
       showRetry: false,
     };
   }

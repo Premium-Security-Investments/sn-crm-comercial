@@ -14,6 +14,7 @@ assert.equal(isTenderProcessingActive('retry_wait'), true);
 assert.equal(isTenderProcessingActive('needs_attention'), false);
 assert.equal(isTenderProcessingActive('completed'), false);
 assert.equal(isTenderProcessingActive('no_job'), false);
+assert.equal(isTenderProcessingActive('awaiting_analysis_authorization'), false, 'espera una acción humana explícita (congelar el paquete), no debe seguir siendo polling activo.');
 
 assert.equal(shouldReloadTenderArtifacts(null, status('completed'), null), false, 'initial load already fetches persisted artifacts');
 assert.equal(shouldReloadTenderArtifacts(status('analyzing'), status('completed'), null), true);
@@ -27,6 +28,7 @@ assert.match(tenderProcessingLabel('waiting_agent_capacity'), /Vig-IA Licitacion
 assert.match(tenderProcessingLabel('needs_attention'), /intervención humana/);
 assert.match(tenderProcessingLabel('completed'), /completado/);
 assert.match(tenderProcessingLabel('unknown_state'), /unknown_state/);
+assert.match(tenderProcessingLabel('awaiting_analysis_authorization'), /documentos listos/i, 'el label humano debe anunciar que los documentos están listos para revisión.');
 
 // deriveTenderProcessingPresentation collapses the durable job plus the current analysis into
 // the single body signal TenderAnalysisSection may show: never raw counts/step/ids, never a
@@ -87,6 +89,20 @@ for (const active of ['queued', 'discovering_documents', 'importing_documents', 
   const withoutKey = deriveTenderProcessingPresentation(job({ status: 'retry_wait', idempotency_key: null }), null);
   assert.equal(withoutKey.showRetry, false, 'Sin idempotency_key no puede ofrecer un reintento accionable.');
   assert.equal(withoutKey.primaryAction, 'hidden', 'Aun sin reintento accionable no debe reaparecer una acción de análisis duplicada.');
+}
+
+{
+  // Human freeze authorization: once the durable pipeline has a snapshot ready, it must stop and
+  // wait for a human to review the governed document selection and explicitly freeze it — this is
+  // not an automatic step, so it must read as a normal, actionable CTA rather than a disabled or
+  // error state.
+  const awaitingAuthorization = deriveTenderProcessingPresentation(job({ status: 'awaiting_analysis_authorization' }), null);
+  assert.equal(awaitingAuthorization.visible, true, 'debe mostrar una señal cuando el paquete de documentos espera revisión humana.');
+  assert.equal(awaitingAuthorization.tone, 'status');
+  assert.match(awaitingAuthorization.message, /revis/i, 'debe indicar que revise la selección de documentos.');
+  assert.match(awaitingAuthorization.message, /congel/i, 'debe indicar que debe congelar el paquete para continuar.');
+  assert.equal(awaitingAuthorization.primaryAction, 'normal', 'la acción pendiente es humana: no debe deshabilitar ni ocultar el CTA.');
+  assert.equal(awaitingAuthorization.showRetry, false, 'no es un estado de error ni de reintento.');
 }
 
 {
