@@ -17,6 +17,10 @@ assert.match(component, /import \{[^}]*\buseRef\b[^}]*\} from 'react'/s, "debe i
 // --- imports/uses the future preselection builder. ------------------------------------------------
 assert.match(component, /buildAgt002RecommendedWorksetSelection/, 'debe importar y usar buildAgt002RecommendedWorksetSelection');
 
+// --- imports/uses the future stable-grouping helper (RED): selected candidates must render grouped
+// first without reshuffling the underlying candidate list itself. ---------------------------------
+assert.match(component, /orderAgt002GovernedWorksetCandidates/, 'debe importar y usar orderAgt002GovernedWorksetCandidates para agrupar los documentos seleccionados primero');
+
 // --- a ref-based guard proves the preselection is applied at most once per loaded package. -------
 const effectStart = component.indexOf('useEffect(');
 assert.notEqual(effectStart, -1, 'debe existir un useEffect que aplique la preselección de Vig-IA');

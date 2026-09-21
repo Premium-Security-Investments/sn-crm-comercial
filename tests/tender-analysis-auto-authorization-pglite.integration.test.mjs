@@ -9,15 +9,19 @@ const m033 = strip(readFileSync(new URL('../supabase/migrations/033_tender_track
 const m034 = strip(readFileSync(new URL('../supabase/migrations/034_tender_processing_rpc.sql', import.meta.url), 'utf8'));
 const m035 = strip(readFileSync(new URL('../supabase/migrations/035_tender_analysis_authorization.sql', import.meta.url), 'utf8'));
 const m036 = strip(readFileSync(new URL('../supabase/migrations/036_tender_processing_job_auto_authorization.sql', import.meta.url), 'utf8'));
+// (.hermes/plans/2026-09-21-vigia-document-preselection.md) 087 replaces 036's auto-authorization
+// at conversion time with the explicit human freeze of the governed document workset: creation no
+// longer stamps analysis_authorized_by/at, and applying it must never touch a job a human already
+// authorized under the old (036) contract.
+const m087 = strip(readFileSync(new URL('../supabase/migrations/087_tender_processing_human_freeze_authorization.sql', import.meta.url), 'utf8'));
 
 const T = '33333333-3333-4333-8333-333333333333';
 const T2 = '44444444-4444-4444-8444-444444444444';
 const O = '55555555-5555-4555-8555-555555555555';
 const O2 = '77777777-7777-4777-8777-777777777777';
 const U = '11111111-1111-4111-8111-111111111111';
-const SNAP = '66666666-6666-4666-8666-666666666666';
 
-async function db({ applyM036 } = { applyM036: true }) {
+async function db({ apply087 } = { apply087: true }) {
   const pg = new PGlite();
   await pg.exec(`
     create role authenticated; create role service_role; create role anon;
@@ -37,37 +41,36 @@ async function db({ applyM036 } = { applyM036: true }) {
     insert into public.psi_public_tenders (id, stable_key, internal_status, converted_opportunity_id) values
       ('${T}', 'k1', 'nueva', null),
       ('${T2}', 'k2', 'convertida_oportunidad', '${O2}');
-    insert into public.psi_tender_document_snapshots (id, tender_id, opportunity_id) values ('${SNAP}', '${T2}', '${O2}');
   `);
   await pg.exec(m017);
   await pg.exec(m032);
   await pg.exec(m033);
   await pg.exec(m034);
   await pg.exec(m035);
-  if (applyM036) await pg.exec(m036);
+  await pg.exec(m036);
+  if (apply087) await pg.exec(m087);
   return pg;
 }
 
 async function run() {
-  // 1) Una conversión manual válida (psi_create_tender_processing_job) debe
-  // autorizar automáticamente el análisis: sin llamar a
-  // psi_authorize_tender_analysis, el job creado ya debe traer
-  // analysis_authorized_by/analysis_authorized_at fijados al mismo actor que
-  // convirtió (mismo gate de custodia que exige AI_ANALYSIS_RUN). Este es el
-  // "segundo clic" redundante que se elimina.
+  // 1) Con todas las migraciones vigentes (incluida 087), una conversión manual
+  // válida (psi_create_tender_processing_job) YA NO autoriza el análisis por sí
+  // sola: el job nace en 'queued' con analysis_authorized_by/analysis_authorized_at
+  // en null. La autorización humana ahora ocurre al congelar el paquete gobernado
+  // de documentos, no en el momento de la conversión.
   {
     const pg = await db();
     const created = (await pg.query(`select public.psi_create_tender_processing_job('${T2}','${O2}','v1','k-auto-1','${U}') as r`)).rows[0].r;
     const jobId = created.job_id;
     const row = (await pg.query(`select analysis_authorized_by, analysis_authorized_at, status from public.psi_tender_processing_jobs where id='${jobId}'`)).rows[0];
-    assert.equal(row.analysis_authorized_by, U, 'la conversión manual debe autorizar el análisis automáticamente, sin un segundo clic humano');
-    assert.ok(row.analysis_authorized_at, 'debe registrar cuándo quedó autorizado');
+    assert.equal(row.analysis_authorized_by, null, 'la conversión manual ya no debe autorizar el análisis automáticamente: eso ahora exige congelar el paquete gobernado.');
+    assert.equal(row.analysis_authorized_at, null, 'sin congelamiento humano no debe registrarse una autorización.');
     assert.equal(row.status, 'queued');
   }
 
-  // 1b) Fail-closed real: conocer tender_id/opportunity_id no basta. Si el
+  // 2) Fail-closed preservado: conocer tender_id/opportunity_id no basta. Si el
   // Radar no fue convertido manualmente y no enlaza ambas filas, la función
-  // SECURITY DEFINER debe rechazar el job antes de autoautorizarlo.
+  // SECURITY DEFINER debe rechazar el job igual que antes de 087.
   {
     const pg = await db();
     await assert.rejects(
@@ -78,44 +81,27 @@ async function run() {
     assert.equal(count, 0, 'un caso no convertido no debe crear job ni autorización');
   }
 
-  // 2) El backfill real: aplicar 036 contra una fila histórica ya varada
-  // (creada antes del fix, sin analysis_authorized_by) debe avanzarla a
-  // waiting_agent_capacity y fijar analysis_authorized_by = requested_by,
-  // sin crear filas nuevas.
+  // 3) No destructivo: un job histórico ya autorizado bajo el contrato de 036
+  // (analysis_authorized_by/at fijados en la conversión) debe conservar
+  // exactamente su estado y su autorización al aplicar 087. 087 solo cambia el
+  // comportamiento de las conversiones futuras, nunca reescribe el historial.
   {
-    const pg = await db({ applyM036: false });
-    await pg.exec(`
-      insert into public.psi_tender_processing_jobs
-        (id, tender_id, opportunity_id, pipeline_version, idempotency_key, status, current_step, requested_by, snapshot_id)
-      values
-        ('99999999-9999-4999-8999-999999999999', '${T2}', '${O2}', 'v1', 'k-historic-2', 'awaiting_analysis_authorization', 'analysis', '${U}', '${SNAP}');
-    `);
-    const beforeCount = (await pg.query(`select count(*)::int c from public.psi_tender_processing_jobs`)).rows[0].c;
-    await pg.exec(m036);
-    const afterCount = (await pg.query(`select count(*)::int c from public.psi_tender_processing_jobs`)).rows[0].c;
-    assert.equal(beforeCount, afterCount, 'el backfill no debe crear jobs ni runs duplicados');
-    const row = (await pg.query(`select status, analysis_authorized_by, analysis_authorized_at from public.psi_tender_processing_jobs where id='99999999-9999-4999-8999-999999999999'`)).rows[0];
-    assert.equal(row.status, 'waiting_agent_capacity', 'el job histórico varado debe avanzar sin un segundo clic humano');
-    assert.equal(row.analysis_authorized_by, U);
-    assert.ok(row.analysis_authorized_at);
+    const pg = await db({ apply087: false });
+    const created = (await pg.query(`select public.psi_create_tender_processing_job('${T2}','${O2}','v1','k-historic-auth','${U}') as r`)).rows[0].r;
+    const jobId = created.job_id;
+    const before = (await pg.query(`select analysis_authorized_by, analysis_authorized_at, status from public.psi_tender_processing_jobs where id='${jobId}'`)).rows[0];
+    assert.equal(before.analysis_authorized_by, U, 'precondición: bajo 036 la conversión sí autorizaba automáticamente.');
+    assert.ok(before.analysis_authorized_at, 'precondición: bajo 036 debía registrar cuándo quedó autorizado.');
+    assert.equal(before.status, 'queued');
+
+    await pg.exec(m087);
+
+    const after = (await pg.query(`select analysis_authorized_by, analysis_authorized_at, status from public.psi_tender_processing_jobs where id='${jobId}'`)).rows[0];
+    assert.equal(after.analysis_authorized_by, before.analysis_authorized_by, '087 no debe borrar una autorización humana histórica.');
+    assert.equal(String(after.analysis_authorized_at), String(before.analysis_authorized_at), '087 no debe alterar el timestamp histórico de autorización.');
+    assert.equal(after.status, before.status, '087 no debe mover el estado de un job histórico ya autorizado.');
   }
 
-  // 3) Fail-closed preservado: un job histórico sin snapshot vigente (aún
-  // importando documentos) NO debe avanzar de estado por el backfill, aunque
-  // se le complete analysis_authorized_by para auditoría.
-  {
-    const pg = await db({ applyM036: false });
-    await pg.exec(`
-      insert into public.psi_tender_processing_jobs
-        (id, tender_id, opportunity_id, pipeline_version, idempotency_key, status, current_step, requested_by, snapshot_id)
-      values
-        ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', '${T2}', '${O2}', 'v1', 'k-historic-3', 'importing_documents', 'documents', '${U}', null);
-    `);
-    await pg.exec(m036);
-    const row = (await pg.query(`select status from public.psi_tender_processing_jobs where id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'`)).rows[0];
-    assert.equal(row.status, 'importing_documents', 'sin snapshot vigente el job debe seguir fail-closed, sin saltar a análisis');
-  }
-
-  console.log('tender-analysis-auto-authorization pglite integration passed');
+  console.log('tender-analysis-human-freeze-authorization pglite integration passed');
 }
 run();

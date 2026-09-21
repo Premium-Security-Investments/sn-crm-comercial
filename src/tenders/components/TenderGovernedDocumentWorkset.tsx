@@ -10,6 +10,7 @@ import {
   buildAgt002GovernedWorksetMembers,
   buildAgt002RecommendedWorksetSelection,
   currentAgt002GovernedWorksetDocuments,
+  orderAgt002GovernedWorksetCandidates,
   tenderDocumentExtractionEligibility,
   type Agt002GovernedWorksetDraftEntry,
 } from '../governedWorksetSelection';
@@ -37,7 +38,7 @@ export function TenderGovernedDocumentWorkset({ documents, busy, canRun, selecti
   const [selection, setSelection] = useState<Record<string, Agt002GovernedWorksetDraftEntry>>({});
   const [confirmed, setConfirmed] = useState(false);
 
-  const candidates = currentAgt002GovernedWorksetDocuments(documents);
+  const currentDocuments = currentAgt002GovernedWorksetDocuments(documents);
 
   // AGT-002 / Vig-IA (.hermes/plans/2026-09-21-vigia-document-preselection.md): tracks the scope
   // (opportunity) the draft selection currently belongs to, and the scope the Vig-IA preselection
@@ -55,8 +56,8 @@ export function TenderGovernedDocumentWorkset({ documents, busy, canRun, selecti
       setSelection({});
       setConfirmed(false);
     }
-    if (preselectionAppliedForScopeRef.current === selectionScopeKey || !candidates.length) return;
-    const preselected = buildAgt002RecommendedWorksetSelection(candidates);
+    if (preselectionAppliedForScopeRef.current === selectionScopeKey || !currentDocuments.length) return;
+    const preselected = buildAgt002RecommendedWorksetSelection(currentDocuments);
     preselectionAppliedForScopeRef.current = selectionScopeKey;
     if (!preselected.length) return;
     setSelection(current => {
@@ -66,12 +67,15 @@ export function TenderGovernedDocumentWorkset({ documents, busy, canRun, selecti
       }
       return next;
     });
-  }, [candidates, selectionScopeKey]);
+  }, [currentDocuments, selectionScopeKey]);
 
   const entries = Object.values(selection);
   const errors = agt002GovernedWorksetSelectionErrors(entries, confirmed);
   const canFreeze = errors.length === 0 && canRun && !busy;
   const atMaxMembers = entries.length >= AGT002_GOVERNED_WORKSET_MAX_MEMBERS;
+  // Selected candidates render grouped first (stable within each group) so a long candidate list
+  // keeps the reviewer's picks visible at the top, without reshuffling currentDocuments itself.
+  const candidates = orderAgt002GovernedWorksetCandidates(currentDocuments, Object.keys(selection));
 
   const toggleDocument = (documentVersionId: string) => {
     setSelection(current => {
@@ -101,7 +105,7 @@ export function TenderGovernedDocumentWorkset({ documents, busy, canRun, selecti
   };
 
   const handleFreeze = () => {
-    if (errors.length !== 0) return;
+    if (!canFreeze) return;
     void onFreeze(buildAgt002GovernedWorksetMembers(entries));
   };
 
@@ -116,7 +120,7 @@ export function TenderGovernedDocumentWorkset({ documents, busy, canRun, selecti
     <fieldset className="tender-governed-document-workset-fieldset" disabled={busy}>
       <legend>Documentos candidatos</legend>
       <p aria-live="polite" className="tender-governed-document-workset-count">{agt002GovernedWorksetSelectionCountLabel(entries.length)}</p>
-      {!candidates.length && <p className="muted">No hay documentos vigentes disponibles para seleccionar.</p>}
+      {!currentDocuments.length && <p className="muted">No hay documentos vigentes disponibles para seleccionar.</p>}
       {candidates.map(document => {
         const eligibility = tenderDocumentExtractionEligibility(document);
         const checked = document.id in selection;

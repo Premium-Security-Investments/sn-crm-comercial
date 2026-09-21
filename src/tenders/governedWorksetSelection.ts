@@ -135,3 +135,21 @@ export function buildAgt002RecommendedWorksetSelection(documents: TenderDocument
     inclusion_reason: `Preseleccionado por Vig-IA: ${agt002SafeRecommendationReason(document.analysis_suggestion)}`,
   }));
 }
+
+/**
+ * Stable-partitions candidates into already-selected first, then the rest, preserving relative
+ * order within each group and never mutating the source array — so a Licitaciones user reviewing
+ * a long candidate list sees their picks grouped at the top without the list ever reshuffling.
+ */
+export function orderAgt002GovernedWorksetCandidates<T extends { id: string }>(
+  documents: T[],
+  selectedDocumentVersionIds: Iterable<string>,
+): T[] {
+  const selectedIds = new Set(selectedDocumentVersionIds);
+  const selected: T[] = [];
+  const unselected: T[] = [];
+  for (const document of documents) {
+    (selectedIds.has(document.id) ? selected : unselected).push(document);
+  }
+  return [...selected, ...unselected];
+}

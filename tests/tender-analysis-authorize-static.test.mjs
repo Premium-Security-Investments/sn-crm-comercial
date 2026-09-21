@@ -6,35 +6,56 @@ const serverSource = readFileSync(new URL('../server/index.js', import.meta.url)
 const apiSource = readFileSync(new URL('../api/[...path].js', import.meta.url), 'utf8');
 const serverBuffer = readFileSync(new URL('../server/index.js', import.meta.url));
 const apiBuffer = readFileSync(new URL('../api/[...path].js', import.meta.url));
+const migrationSource = readFileSync(
+  new URL('../supabase/migrations/087_tender_processing_human_freeze_authorization.sql', import.meta.url),
+  'utf8',
+);
 
-function extractRouteHandler(source, marker) {
-  const markerIndex = source.indexOf(marker);
-  assert.ok(markerIndex >= 0, `no se encontró la ruta ${marker}`);
-  const braceStart = source.indexOf('{', markerIndex);
-  let depth = 0;
-  for (let i = braceStart; i < source.length; i += 1) {
-    if (source[i] === '{') depth += 1;
-    else if (source[i] === '}') {
-      depth -= 1;
-      if (depth === 0) return source.slice(markerIndex, i + 1);
-    }
-  }
-  throw new Error(`no se pudo balancear el handler de ${marker}`);
-}
+const RETIRED_ROUTE_PATTERN = /app\.post\(\s*['"]\/api\/tender-analysis-authorize['"]\s*,\s*rejectUngovernedAgt002Route\s*\)\s*;/;
 
 function assertBackend(source, label) {
   assert.ok(!source.includes('Katherine'), `${label}: no debe hardcodear el nombre Katherine`);
   assert.ok(!source.includes('Juan Botero'), `${label}: no debe hardcodear el nombre Juan Botero`);
 
-  const handler = extractRouteHandler(source, "app.post('/api/tender-analysis-authorize'");
-  assert.ok(handler.includes('ACTIONS.AI_ANALYSIS_RUN'), `${label}: falta el guard de custodia AI_ANALYSIS_RUN`);
-  assert.ok(handler.includes('psi_authorize_tender_analysis'), `${label}: debe llamar a psi_authorize_tender_analysis`);
-  assert.ok(!handler.includes('go_no_go') && !handler.includes('GoNoGo') && !handler.includes('GO_NO_GO'), `${label}: no debe tocar el flujo GO/NO GO`);
+  assert.match(
+    source,
+    RETIRED_ROUTE_PATTERN,
+    `${label}: /api/tender-analysis-authorize debe registrarse exactamente como app.post('/api/tender-analysis-authorize', rejectUngovernedAgt002Route);`,
+  );
+  assert.ok(
+    !source.includes("rpc('psi_authorize_tender_analysis'"),
+    `${label}: ningún handler inline debe seguir invocando psi_authorize_tender_analysis; ese flujo quedó retirado`,
+  );
+}
+
+function assertMigrationRevokesLegacyRpc(source) {
+  const revokeRegex = /revoke\s+(?:all|execute)\s+on\s+function\s+public\.psi_authorize_tender_analysis\s*\(\s*uuid\s*,\s*uuid\s*\)\s+from\s+([^;]+);/gi;
+  const revokedRoles = new Set();
+  let match = revokeRegex.exec(source);
+  while (match !== null) {
+    match[1]
+      .split(',')
+      .map(role => role.trim().toLowerCase())
+      .forEach(role => revokedRoles.add(role));
+    match = revokeRegex.exec(source);
+  }
+
+  assert.ok(
+    revokedRoles.size > 0,
+    'la migración 087 debe revocar EXECUTE sobre public.psi_authorize_tender_analysis(uuid, uuid)',
+  );
+  for (const role of ['public', 'anon', 'authenticated', 'service_role']) {
+    assert.ok(
+      revokedRoles.has(role),
+      `la migración 087 debe revocar public.psi_authorize_tender_analysis(uuid, uuid) de ${role}`,
+    );
+  }
 }
 
 function run() {
   assertBackend(serverSource, 'server/index.js');
   assertBackend(apiSource, 'api/[...path].js');
+  assertMigrationRevokesLegacyRpc(migrationSource);
   assert.ok(buffersAreEqual(serverBuffer, apiBuffer), 'server/index.js y api/[...path].js deben ser byte-idénticos');
   console.log('tender-analysis-authorize-static passed');
 }
