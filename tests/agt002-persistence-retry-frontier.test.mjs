@@ -22,6 +22,7 @@ import { AGT002_EVIDENCE_STATE_SAFE_UNKNOWN } from '../agt002-evidence-state-man
 import { createAgt002AnalysisObservability } from '../agt002-analysis-observability.js';
 import { runAgt002PostBridgeAnalysis } from '../agt002-post-bridge-observability.js';
 import { claimAgt002PreviewRun, releaseAgt002PreviewClaim } from '../agt002-preview-persistence.js';
+import { AGT002_PREVIEW_SONNET_MODEL } from '../agt002-preview-allowed-models.js';
 import {
   AGT002_PERSISTENCE_RETRY_DEFAULTS,
   AGT002_PERSISTENCE_SUBCODES,
@@ -111,7 +112,7 @@ function governanceProvenanceFixture() {
 
 function v3EngineOptions(overrides = {}) {
   return {
-    model: 'synthetic-codex-model',
+    model: AGT002_PREVIEW_SONNET_MODEL,
     policyVersion: 'agt002-preview-policy-v1',
     timeoutMs: 2000,
     maxConcurrent: 2,
@@ -671,7 +672,7 @@ test('the executor derives the persistence retry deadline from the very lease it
     frozenEngineInput: {
       schema_version: 1,
       engine_identity: {
-        model: 'synthetic-codex-model', policy_version: 'agt002-preview-policy-v1', timeout_ms: timeoutMs,
+        model: AGT002_PREVIEW_SONNET_MODEL, policy_version: 'agt002-preview-policy-v1', timeout_ms: timeoutMs,
         daily_max_runs: 5, max_concurrent: 2, idempotency_key: 'b'.repeat(64),
       },
       analysis_flags: { AGT002_CANONICAL_ONLY: true },

@@ -1,10 +1,29 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createHash } from 'node:crypto';
 import { createAgt002ReanalysisExecutor } from '../agt002-reanalysis-executor.js';
 import { AGT002_POST_BRIDGE_ERROR_CODES } from '../agt002-post-bridge-observability.js';
 import { AGT002_PREVIEW_ALLOWED_MODELS } from '../agt002-preview-allowed-models.js';
 import { computeAgt002GovernedWorksetIdempotencyKey } from '../agt002-governed-document-workset-api.js';
 import { computeAgt002WorksetSelectionHash, freezeAgt002WorksetEvidence } from '../agt002-governed-document-worksets.js';
+
+function sha256Hex(text) {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+// A stand-in for the real governed document resolver: echoes back exactly the identity fields
+// the frozen member already carries (content_hash/extraction_id/extraction_text_hash) alongside
+// the text whose sha256 re-derives that member's own extraction_text_hash, exactly the contract
+// validateAgt002GovernedResolvedDocument enforces in agt002-reanalysis-executor.js.
+function buildGovernedDocumentResolver(textByDocumentVersionId) {
+  return async ({ member }) => ({
+    document_version_id: member.document_version_id,
+    content_hash: member.content_hash,
+    extraction_id: member.extraction_id,
+    extraction_text_hash: member.extraction_text_hash,
+    text: textByDocumentVersionId[member.document_version_id],
+  });
+}
 
 const JOB = Object.freeze({
   jobId: 'job-1', leaseId: 'lease-1', opportunityId: 'opp-1', tenderId: 'tender-1',
@@ -35,6 +54,7 @@ function harness({
   finalizeDurableAnalysis = undefined,
   registerPreviewAnalysis = undefined,
   runPostBridgeAnalysis: runPostBridgeAnalysisOverride = undefined,
+  governedDocumentResolver = undefined,
 } = {}) {
   const calls = { claim: [], find: [], release: [], runtime: [], post: [], count: [] };
   const executor = createAgt002ReanalysisExecutor({
@@ -53,6 +73,7 @@ function harness({
     ...(computeFrozenInputHash ? { computeFrozenInputHash } : {}),
     ...(finalizeDurableAnalysis ? { finalizeDurableAnalysis } : {}),
     ...(registerPreviewAnalysis ? { registerPreviewAnalysis } : {}),
+    ...(governedDocumentResolver ? { governedDocumentResolver } : {}),
   });
   return { executor, calls };
 }
@@ -699,13 +720,15 @@ test('a schema_version 2 durable job\'s governed workset extension: the valid sh
 test('a schema_version 2 durable job\'s governed workset extension: the valid shape is scope-consistent with the job, and each scope/projection violation is rejected before any preview claim, runtime construction or post-bridge call', async () => {
   const BASE_OPPORTUNITY_ID = '11111111-1111-1111-1111-111111111111';
   const BASE_TENDER_ID = '22222222-2222-2222-2222-222222222222';
+  const MEMBER_A_TEXT = 'Member A governed document text.';
+  const MEMBER_B_TEXT = 'Member B governed document text.';
   const MEMBER_A = Object.freeze({
     document_version_id: '55555555-5555-5555-5555-555555555555',
     source_classification: 'official',
     inclusion_reason: 'required by pliego',
     content_hash: 'a'.repeat(64),
     extraction_id: 'aaaaaaaa-1111-1111-1111-111111111111',
-    extraction_text_hash: 'b'.repeat(64),
+    extraction_text_hash: sha256Hex(MEMBER_A_TEXT),
   });
   const MEMBER_B = Object.freeze({
     document_version_id: '66666666-6666-6666-6666-666666666666',
@@ -713,9 +736,13 @@ test('a schema_version 2 durable job\'s governed workset extension: the valid sh
     inclusion_reason: 'supporting annex',
     content_hash: 'c'.repeat(64),
     extraction_id: 'bbbbbbbb-2222-2222-2222-222222222222',
-    extraction_text_hash: 'd'.repeat(64),
+    extraction_text_hash: sha256Hex(MEMBER_B_TEXT),
   });
   const BASE_MEMBERS = Object.freeze([MEMBER_A, MEMBER_B]); // canonically ordered: 55… < 66…
+  const BASE_GOVERNED_DOCUMENT_RESOLVER = buildGovernedDocumentResolver({
+    [MEMBER_A.document_version_id]: MEMBER_A_TEXT,
+    [MEMBER_B.document_version_id]: MEMBER_B_TEXT,
+  });
   // The real executor recomputes the selection hash from the six-field members and requires an
   // exact match against document_workset_identity.selection_hash, so this fixture (unlike the
   // malformed-shape table above, which only expects rejection) must carry the actual computed
@@ -775,7 +802,10 @@ test('a schema_version 2 durable job\'s governed workset extension: the valid sh
   }
 
   {
-    const { executor, calls } = harness({ getOrCreateWorkset: async () => ({ status: 'created', worksetId: 'workset-1', published: false }) });
+    const { executor, calls } = harness({
+      getOrCreateWorkset: async () => ({ status: 'created', worksetId: 'workset-1', published: false }),
+      governedDocumentResolver: BASE_GOVERNED_DOCUMENT_RESOLVER,
+    });
     const result = await executor({ kind: 'db' }, buildJob());
     assert.deepEqual(
       result,
@@ -1003,6 +1033,7 @@ test('mutating inclusion_reason in both governed_workset_members and analysis_co
   const GOV_DOCUMENT_VERSION_ID = '55555555-5555-5555-5555-555555555555';
   const GOV_EXTRACTION_ID = '66666666-6666-6666-6666-666666666666';
 
+  const GOV_DOCUMENT_TEXT = 'Governed evidence document text for the inclusion-reason-mutation fixture.';
   const evidenceRow = {
     document_version_id: GOV_DOCUMENT_VERSION_ID,
     opportunity_id: GOV_OPPORTUNITY_ID,
@@ -1011,7 +1042,7 @@ test('mutating inclusion_reason in both governed_workset_members and analysis_co
     extraction_status: 'ok',
     content_hash: 'c'.repeat(64),
     extraction_id: GOV_EXTRACTION_ID,
-    extraction_text_hash: 'd'.repeat(64),
+    extraction_text_hash: sha256Hex(GOV_DOCUMENT_TEXT),
   };
   const requestedMember = {
     document_version_id: GOV_DOCUMENT_VERSION_ID,
@@ -1023,6 +1054,7 @@ test('mutating inclusion_reason in both governed_workset_members and analysis_co
   const frozen = freezeAgt002WorksetEvidence({
     opportunityId: GOV_OPPORTUNITY_ID, tenderId: GOV_TENDER_ID, requestedMembers: [requestedMember], evidenceRows: [evidenceRow],
   });
+  const governedDocumentResolver = buildGovernedDocumentResolver({ [GOV_DOCUMENT_VERSION_ID]: GOV_DOCUMENT_TEXT });
   const documents = [{ document_version_id: GOV_DOCUMENT_VERSION_ID, source_classification: 'official', inclusion_reason: 'required by pliego' }];
   const idempotencyKey = computeAgt002GovernedWorksetIdempotencyKey({
     opportunityId: GOV_OPPORTUNITY_ID, tenderId: GOV_TENDER_ID, snapshotId: GOV_SNAPSHOT_ID, contextVersionId: GOV_CONTEXT_VERSION_ID, selectionHash: frozen.selectionHash,
@@ -1058,7 +1090,10 @@ test('mutating inclusion_reason in both governed_workset_members and analysis_co
 
   // Sanity: the untampered valid job reaches claim/runtime/post exactly once.
   {
-    const { executor, calls } = harness({ getOrCreateWorkset: async () => ({ status: 'created', worksetId: 'workset-1', published: false }) });
+    const { executor, calls } = harness({
+      getOrCreateWorkset: async () => ({ status: 'created', worksetId: 'workset-1', published: false }),
+      governedDocumentResolver,
+    });
     const result = await executor({ kind: 'db' }, buildGovernedJob({ members: frozen.members, documents }));
     assert.deepEqual(result, { status: 'completed', analysis_run_id: 'run-1', error_code: null, reused: false, queue_finalized: true });
     assert.equal(calls.claim.length, 1);

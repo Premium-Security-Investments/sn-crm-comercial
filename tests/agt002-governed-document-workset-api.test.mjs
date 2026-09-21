@@ -2,9 +2,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 import {
-  AGT002_GOVERNED_WORKSET_CAPACITY_REJECTED_CODE,
   AGT002_GOVERNED_WORKSET_CAPACITY_UNAVAILABLE_CODE,
   buildAgt002GovernedWorksetFrozenEngineInput,
   computeAgt002GovernedWorksetIdempotencyKey,
@@ -33,6 +33,9 @@ function uuid(label) {
 function hex64(label) {
   const base = Buffer.from(String(label)).toString('hex');
   return base.repeat(Math.ceil(64 / base.length)).slice(0, 64);
+}
+function sha256Hex(text) {
+  return crypto.createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
 const OPPORTUNITY_ID = uuid('opportunity-1');
@@ -432,18 +435,27 @@ describe('buildAgt002GovernedWorksetFrozenEngineInput — worker/job payload ide
 });
 
 describe('buildAgt002GovernedWorksetFrozenEngineInput — integration regression: the governed worker payload must carry a canonical frozen engine input source through to the real executor', () => {
+  // Real document text per member: the real executor's governed document resolver re-derives
+  // extraction_text_hash as sha256(text) and rejects any mismatch, so these fixtures (unlike the
+  // structural-shape-only tests above, which never resolve text) must carry a hash that is
+  // actually the sha256 of the resolved text, not an arbitrary hex64 placeholder.
+  const GOVERNED_MEMBER_TEXTS = [
+    'Texto extraído del documento 0 para el conjunto gobernado.',
+    'Texto extraído del documento 1 para el conjunto gobernado.',
+    'Texto extraído del documento 2 para el conjunto gobernado.',
+  ];
   const frozenMembers = [
     {
       document_version_id: DOC_IDS[0], source_classification: 'official', inclusion_reason: 'r0',
-      content_hash: CONTENT_HASHES[0], extraction_id: EXTRACTION_IDS[0], extraction_text_hash: TEXT_HASHES[0],
+      content_hash: CONTENT_HASHES[0], extraction_id: EXTRACTION_IDS[0], extraction_text_hash: sha256Hex(GOVERNED_MEMBER_TEXTS[0]),
     },
     {
       document_version_id: DOC_IDS[1], source_classification: 'official', inclusion_reason: 'r1',
-      content_hash: CONTENT_HASHES[1], extraction_id: EXTRACTION_IDS[1], extraction_text_hash: TEXT_HASHES[1],
+      content_hash: CONTENT_HASHES[1], extraction_id: EXTRACTION_IDS[1], extraction_text_hash: sha256Hex(GOVERNED_MEMBER_TEXTS[1]),
     },
     {
       document_version_id: DOC_IDS[2], source_classification: 'official', inclusion_reason: 'r2',
-      content_hash: CONTENT_HASHES[2], extraction_id: EXTRACTION_IDS[2], extraction_text_hash: TEXT_HASHES[2],
+      content_hash: CONTENT_HASHES[2], extraction_id: EXTRACTION_IDS[2], extraction_text_hash: sha256Hex(GOVERNED_MEMBER_TEXTS[2]),
     },
   ];
   // The real executor recomputes the selection hash from the six-field members and requires an
@@ -519,6 +531,13 @@ describe('buildAgt002GovernedWorksetFrozenEngineInput — integration regression
       runPostBridgeAnalysis: async (...args) => { calls.post.push(args); return { status: 'completed', analysis_run_id: 'run-governed-1', error_code: null }; },
       createCorrelationId: () => 'governed-correlation-1',
       observability: { record() {} },
+      governedDocumentResolver: async ({ member }) => ({
+        document_version_id: member.document_version_id,
+        content_hash: member.content_hash,
+        extraction_id: member.extraction_id,
+        extraction_text_hash: member.extraction_text_hash,
+        text: GOVERNED_MEMBER_TEXTS[frozenMembers.findIndex((m) => m.document_version_id === member.document_version_id)],
+      }),
     });
 
     const result = await executor({ kind: 'db' }, job);
@@ -712,6 +731,72 @@ describe('evaluateAgt002GovernedWorksetFreezeCapacityPreflight', () => {
     assert.equal(result.predicted_batch_count, 1);
     assert.equal(result.verdict, 'APTO');
   });
+
+  it('flips an oversized durable_batched_v1 + checkpointing package from NO_APTO to APTO, carrying the durable-checkpointing evidence', () => {
+    const evidenceRows = [
+      candidateFor(0, { extracted_text_char_count: 919_595 }),
+      candidateFor(1, { extracted_text_char_count: 919_595 }),
+      candidateFor(2, { extracted_text_char_count: 919_595 }),
+      candidateFor(3, { extracted_text_char_count: 919_596 }),
+    ];
+    const result = evaluateAgt002GovernedWorksetFreezeCapacityPreflight(evidenceRows, {
+      executionMode: 'durable_batched_v1',
+      checkpointing: true,
+    });
+    assert.equal(result.verdict, 'APTO');
+    assert.equal(result.predicted_batch_count, 184);
+    assert.equal(result.max_batch_count, 64);
+    assert.equal(result.durable_max_batch_count, 184, 'must report the durable policy ceiling that governed this verdict');
+    assert.equal(result.effective_max_batch_count, 184, 'the effective ceiling applied under durable checkpointed execution must be the durable ceiling');
+    assert.equal(result.source_char_count, 3_678_381);
+    assert.equal(result.document_count, 4);
+    assert.equal(result.execution_mode, 'durable_batched_v1');
+    assert.equal(result.checkpointing, true);
+    assert.equal(result.durable_checkpointing_required, true);
+  });
+
+  it('rejects a durable_batched_v1 + checkpointing package that exceeds even the durable ceiling of 184 batches', () => {
+    // ceil(3,680,001 / 20,000) = 185 predicted batches — one over the durable policy's 184-batch
+    // cap for this route, so the durable ceiling must still reject it.
+    const evidenceRows = [
+      candidateFor(0, { extracted_text_char_count: 920_001 }),
+      candidateFor(1, { extracted_text_char_count: 920_000 }),
+      candidateFor(2, { extracted_text_char_count: 920_000 }),
+      candidateFor(3, { extracted_text_char_count: 920_000 }),
+    ];
+    assert.throws(
+      () => evaluateAgt002GovernedWorksetFreezeCapacityPreflight(evidenceRows, {
+        executionMode: 'durable_batched_v1',
+        checkpointing: true,
+      }),
+      (error) => {
+        assert.equal(error.status, 422);
+        assert.equal(error.code, 'agt002_governed_workset_capacity_rejected');
+        assert.equal(error.report.criterion, 'NO_APTO');
+        assert.equal(error.report.predicted_batch_count, 185);
+        assert.equal(error.report.max_batch_count, 64, 'the rejected-package report still carries the classic ceiling for context');
+        return true;
+      },
+    );
+  });
+
+  it('never honors a caller-supplied policy/durablePolicy override passed inside options — the closed server-owned ceilings always govern', () => {
+    const evidenceRows = [
+      candidateFor(0, { extracted_text_char_count: 919_595 }),
+      candidateFor(1, { extracted_text_char_count: 919_595 }),
+      candidateFor(2, { extracted_text_char_count: 919_595 }),
+      candidateFor(3, { extracted_text_char_count: 919_596 }),
+    ];
+    const result = evaluateAgt002GovernedWorksetFreezeCapacityPreflight(evidenceRows, {
+      executionMode: 'durable_batched_v1',
+      checkpointing: true,
+      policy: { [AGT002_GOVERNED_WORKSET_FREEZE_ROUTE]: 999_999 },
+      durablePolicy: { [AGT002_GOVERNED_WORKSET_FREEZE_ROUTE]: 999_999 },
+    });
+    assert.equal(result.max_batch_count, 64);
+    assert.equal(result.durable_max_batch_count, 184);
+    assert.equal(result.effective_max_batch_count, 184);
+  });
 });
 
 describe('freezeAgt002GovernedDocumentWorkset — full orchestration', () => {
@@ -762,6 +847,8 @@ describe('freezeAgt002GovernedDocumentWorkset — full orchestration', () => {
     assert.equal(result.capacity_preflight.verdict, 'APTO', 'a successful freeze projection must carry the APTO capacity preflight evidence');
     assert.equal(result.capacity_preflight.source_char_count, 2_000, 'source_char_count must be the sum of the server-resolved candidates\' extracted_text_char_count');
     assert.equal(result.capacity_preflight.max_batch_count, AGT002_GOVERNED_WORKSET_MAX_BATCHES[AGT002_GOVERNED_WORKSET_FREEZE_ROUTE]);
+    assert.equal(result.capacity_preflight.durable_max_batch_count, 184, 'must report the durable ceiling alongside the classic one, even for a package this small');
+    assert.equal(result.capacity_preflight.effective_max_batch_count, 184, 'the default execution mode for this route is durable checkpointed, so the effective ceiling is the durable one');
 
     const freezeCall = db.calls.rpc.find((c) => c.name === 'psi_freeze_agt002_governed_document_workset');
     assert.ok(freezeCall, 'must call the freeze RPC exactly once');
@@ -949,37 +1036,39 @@ describe('freezeAgt002GovernedDocumentWorkset — full orchestration', () => {
     assert.equal(db.calls.from.length, 0, 'must never look up snapshot/context without a server-owned source factory');
   });
 
-  it('the operational batch-capacity preflight rejects an oversized package with a safe 422 and never calls the freeze RPC / provider queue', async () => {
+  it('the operational batch-capacity preflight defaults to durable_batched_v1 checkpointed execution, so a package oversized only for classic batching still passes as APTO and reaches the freeze RPC', async () => {
     const perDocumentCharCount = 1_000_000; // 2 docs -> 2,000,000 chars -> ceil(2,000,000 / 20,000) = 100 > 64
-    const db = fakeDb({
+    const db = happyDb({
       rpcResults: {
         psi_resolve_agt002_governed_document_candidate: [
           { data: candidateFor(0, { extracted_text_char_count: perDocumentCharCount }), error: null },
           { data: candidateFor(1, { extracted_text_char_count: perDocumentCharCount }), error: null },
         ],
-      },
-      fromResults: {
-        psi_tender_document_snapshots: { data: { id: SNAPSHOT_ID }, error: null },
-        psi_agt002_context_versions: { data: { id: CONTEXT_VERSION_ID }, error: null },
+        psi_freeze_agt002_governed_document_workset: { data: frozenResultShape({ member_count: 2 }), error: null },
       },
     });
     const requestedMembers = [requestedMember(0), requestedMember(1)];
-    await assert.rejects(
-      freezeAgt002GovernedDocumentWorkset(db, {
-        opportunityId: OPPORTUNITY_ID, tenderId: TENDER_ID, actorProfileId: ACTOR_ID, requestedMembers,
-        buildFrozenEngineInputSource: canonicalBuildFrozenEngineInputSource(),
-      }),
-      (error) => {
-        assert.equal(error.status, 422);
-        assert.equal(error.code, AGT002_GOVERNED_WORKSET_CAPACITY_REJECTED_CODE);
-        assert.equal(error.report.criterion, 'NO_APTO');
-        assert.equal(error.report.predicted_batch_count, 100);
-        assert.equal(error.report.max_batch_count, AGT002_GOVERNED_WORKSET_MAX_BATCHES[AGT002_GOVERNED_WORKSET_FREEZE_ROUTE]);
-        assert.equal(error.report.source_char_count, 2_000_000);
-        return true;
-      },
+    const result = await freezeAgt002GovernedDocumentWorkset(db, {
+      opportunityId: OPPORTUNITY_ID, tenderId: TENDER_ID, actorProfileId: ACTOR_ID, requestedMembers,
+      buildFrozenEngineInputSource: canonicalBuildFrozenEngineInputSource(),
+    });
+    assert.equal(result.status, 'created');
+    assert.equal(
+      db.calls.rpc.filter((c) => c.name === 'psi_freeze_agt002_governed_document_workset').length,
+      1,
+      'must call the freeze RPC exactly once',
     );
-    assert.equal(db.calls.rpc.some((c) => c.name === 'psi_freeze_agt002_governed_document_workset'), false, 'an oversized package must never reach the freeze/enqueue RPC');
+
+    const capacity = result.capacity_preflight;
+    assert.equal(capacity.verdict, 'APTO');
+    assert.equal(capacity.predicted_batch_count, 100);
+    assert.equal(capacity.max_batch_count, AGT002_GOVERNED_WORKSET_MAX_BATCHES[AGT002_GOVERNED_WORKSET_FREEZE_ROUTE]);
+    assert.equal(capacity.durable_max_batch_count, 184, 'must report the durable ceiling that governed this verdict');
+    assert.equal(capacity.effective_max_batch_count, 184, 'the effective ceiling applied under the default durable checkpointed execution must be the durable ceiling');
+    assert.equal(capacity.source_char_count, 2_000_000);
+    assert.equal(capacity.execution_mode, 'durable_batched_v1');
+    assert.equal(capacity.checkpointing, true);
+    assert.equal(capacity.durable_checkpointing_required, true);
   });
 
   for (const badCount of [undefined, null, 'a lot', -1, 0, 1.5]) {

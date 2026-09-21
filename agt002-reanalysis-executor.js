@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { ANALYSIS_FLAG_NAMES } from './agt002-analysis-config.js';
 import { createAgt002AnalysisObservability } from './agt002-analysis-observability.js';
 import { AGT002_POST_BRIDGE_ERROR_CODES, runAgt002PostBridgeAnalysis } from './agt002-post-bridge-observability.js';
@@ -34,6 +34,28 @@ function isObject(value) {
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function sha256HexUtf8(text) {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+// The governed document resolver seam is never trusted verbatim: its reported identity must
+// equal the frozen governed_workset_members evidence it was called with, byte-for-byte, and its
+// own text must re-derive the extraction_text_hash it reports. Any divergence throws with a
+// `code` classifyAgt002ReanalysisWorkerError maps onto invalid_output.
+function validateAgt002GovernedResolvedDocument(resolved, member) {
+  if (!isObject(resolved)
+    || !isNonEmptyString(resolved.text)
+    || resolved.document_version_id !== member.document_version_id
+    || resolved.content_hash !== member.content_hash
+    || resolved.extraction_id !== member.extraction_id
+    || resolved.extraction_text_hash !== member.extraction_text_hash
+    || sha256HexUtf8(resolved.text) !== resolved.extraction_text_hash) {
+    const error = new Error('AGT-002 governed document resolver: invalid resolved document output.');
+    error.code = 'AGT002_GOVERNED_DOCUMENT_RESOLVER_INVALID_OUTPUT';
+    throw error;
+  }
 }
 
 /** The frozen job's own identity always wins; a legacy input with no `effort` gets the current safe default. */
@@ -378,6 +400,11 @@ export function createAgt002ReanalysisExecutor({
   getOrCreateWorkset = getOrCreateAgt002AnalysisWorkset,
   finalizeDurableAnalysis = finalizeAgt002DurableBatchedAnalysis,
   registerPreviewAnalysis = registerAgt002PreviewAnalysis,
+  // Governed document-workset content rehydration seam: invoked ONLY for a frozen input that
+  // carries a validated document_workset_identity + governed_workset_members (validFrozenInput
+  // already re-validated both), once per exact frozen member, before runPostBridgeAnalysis. A
+  // frozen input with no governed workset never calls this, byte-for-byte unchanged from before.
+  governedDocumentResolver,
 } = {}) {
   return async function executeAgt002Reanalysis(database, job, { beforeProviderCall: jobLeaseHeartbeat } = {}) {
     const input = validFrozenInput(job);
@@ -436,6 +463,38 @@ export function createAgt002ReanalysisExecutor({
         checkpointHooks = createCheckpointAdapter(database, { jobId: job.jobId, leaseId: job.leaseId, worksetId });
         persistAnalysis = createAgt002DurablePersistAnalysis({ database, job, worksetId, finalizeDurableAnalysis, registerPreviewAnalysis, jobLeaseHeartbeat });
       }
+
+      // Transient rehydration of governed document content: never mutates job.frozenEngineInput
+      // or input.analysis_context — a brand-new analysisContext object is built for this one
+      // execution only, and its resolved text never flows back into anything persisted as
+      // frozen_engine_input.
+      let effectiveAnalysisContext = input.analysis_context;
+      const isGovernedWorkset = Object.hasOwn(input, 'document_workset_identity') && Object.hasOwn(input, 'governed_workset_members');
+      if (isGovernedWorkset) {
+        if (typeof governedDocumentResolver !== 'function') {
+          const error = new Error('AGT-002 governed document resolver: no resolver available for a governed workset job.');
+          error.code = 'AGT002_GOVERNED_DOCUMENT_RESOLVER_INVALID_OUTPUT';
+          throw error;
+        }
+        const identityScope = input.document_workset_identity;
+        const members = input.governed_workset_members;
+        const documents = input.analysis_context.documents;
+        const resolvedDocuments = await Promise.all(members.map(async (member, index) => {
+          const resolved = await governedDocumentResolver({
+            opportunityId: identityScope.opportunity_id,
+            tenderId: identityScope.tender_id,
+            snapshotId: identityScope.snapshot_id,
+            contextVersionId: identityScope.context_version_id,
+            documentVersionId: member.document_version_id,
+            member,
+          });
+          validateAgt002GovernedResolvedDocument(resolved, member);
+          const { document_version_id, source_classification, inclusion_reason } = documents[index];
+          return { document_version_id, source_classification, inclusion_reason, text: resolved.text };
+        }));
+        effectiveAnalysisContext = { ...input.analysis_context, documents: resolvedDocuments };
+      }
+
       const engine = createRuntime({
         environment: frozenEnvironment(environment, input),
         countDailyRuns: () => countDailyRuns(database),
@@ -491,7 +550,7 @@ export function createAgt002ReanalysisExecutor({
       }, {
         engine,
         observability,
-        analysisContext: input.analysis_context,
+        analysisContext: effectiveAnalysisContext,
         bridgeTelemetry,
         integralContractV3: input.analysis_flags.AGT002_INTEGRAL_CONTRACT_V3 === true,
         // Hard lease guard for the bounded in-memory persistence retry: no re-attempt may START
