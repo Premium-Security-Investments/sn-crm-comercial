@@ -103,7 +103,8 @@ const analysisSectionProps = {
   documents: [{ id: 'doc-1', current: true }],
   busy: false,
   canRunPreview: true,
-  onAnalyzePreview: () => {},
+  onFreezeGovernedWorkset: () => {},
+  onUploadGovernedFiles: () => {},
   questionResponses: [],
   canAnswerQuestions: false,
 };
@@ -182,7 +183,8 @@ test('E4.3 — decisionSurfaceElsewhere suprime la lectura competidora y el mont
   }
   // Conserva los controles de corrida y el disclosure de productor.
   assert.ok(suppressed.includes('tender-analysis-actions'));
-  assert.ok(suppressed.includes('tender-analysis-primary-cta'));
+  assert.ok(suppressed.includes('class="tender-governed-document-workset"'), 'el selector gobernado de documentos sigue disponible con el flag encendido');
+  assert.ok(suppressed.includes('Congelar paquete y ejecutar AGT-002'), 'la CTA técnica aprobada del paquete gobernado sigue disponible');
   // Por defecto es false: el render con el flag apagado es idéntico al de hoy.
   assert.match(analysisSectionSource, /decisionSurfaceElsewhere = false/);
   // La lectura V3 duplicada ya no se monta en main: la superficie para decidir es única.
@@ -194,10 +196,15 @@ test('E4.4 — el panel documental propaga el literal y el saver sin duplicar la
   assert.match(main, /onDecisionSurfaceFlagChanged\?\.\(data\.decision_axis_surface_enabled === true\)/);
   assert.equal(
     count(main, 'onDecisionSurfaceFlagChanged?.(data.decision_axis_surface_enabled === true)'),
-    4,
-    'carga, upload, análisis preview e import deben repropagar el literal server-owned',
+    3,
+    'carga, upload e import deben repropagar el literal server-owned; el congelamiento gobernado no resuelve un TenderDocumentsPayload',
   );
   assert.match(main, /decisionSurfaceElsewhere=\{payload\.decision_axis_surface_enabled === true\}/);
   assert.match(main, /onQuestionResponseSaverReady\?\.\(saveQuestionResponse\)/);
   assert.equal(count(main, 'createTenderQuestionResponseActions('), 1, 'las acciones de respuesta se construyen una sola vez');
+
+  // El congelamiento gobernado nunca resuelve un análisis inmediato: sondea el job de reanálisis
+  // hasta completarse y sólo entonces recarga el expediente real (documentos + análisis).
+  assert.match(main, /await pollAgt002Reanalysis\(data\.reanalysis_job_id, requestedOpportunityId\)/);
+  assert.match(main, /await Promise\.all\(\[loadDocuments\(\), onReload\?\.\(\)\]\)/);
 });

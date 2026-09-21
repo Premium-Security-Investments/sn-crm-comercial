@@ -33,16 +33,18 @@ assert.match(server, /if \(!agt002AnalysisConfig\.AGT002_INTEGRAL_CONTRACT_V3\) 
 assert.match(server, /loadAgt002CompanyEvidenceRegistryEntries\(database\)/);
 assert.match(server, /loadAgt002IntegralGovernanceOverrides\(database, opportunityId\)/);
 
-// All three preparation flows load the same governed data. Two legacy direct-runtime
-// paths forward it in the server; the durable canonical path freezes the complete
-// governance object and the direct-host executor reconstructs the third runtime.
+// All three preparation flows load the same governed data. The one remaining direct-runtime
+// path (requestAgt002) forwards it in the server; the durable canonical path and the governed
+// document workset builder both freeze the complete governance object into the frozen engine
+// input instead, and the durable executor/direct-host executor reconstructs the durable runtime
+// from that frozen object.
 assert.equal(count(server, 'await loadAgt002IntegralV3GovernanceIfEnabled(database, opportunityId)'), 3, 'los tres flujos deben cargar la gobernanza v3');
 for (const token of [
   'companyEvidenceRegistryEntries: integralV3Governance.companyEvidenceRegistryEntries,',
   'categoryOverrides: integralV3Governance.categoryOverrides,',
   'evidenceClassLinkByRequirementId: integralV3Governance.evidenceClassLinkByRequirementId,',
   'governanceProvenance: integralV3Governance.governanceProvenance,',
-]) assert.equal(count(server, token), 2, `dos runtimes legacy deben recibir ${token}`);
+]) assert.equal(count(server, token), 1, `el único runtime directo debe recibir ${token}`);
 const executor = readFileSync(new URL('../agt002-reanalysis-executor.js', import.meta.url), 'utf8');
 assert.match(executor, /companyEvidenceRegistryEntries: governance\.companyEvidenceRegistryEntries/);
 assert.match(executor, /categoryOverrides: governance\.categoryOverrides/);

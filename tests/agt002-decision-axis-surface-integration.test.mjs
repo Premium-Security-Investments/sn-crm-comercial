@@ -89,7 +89,8 @@ const analysisProps = {
   documents: [{ id: 'doc-1', name: 'Pliego.pdf', current: true }],
   busy: false,
   canRunPreview: true,
-  onAnalyzePreview: () => {},
+  onFreezeGovernedWorkset: () => {},
+  onUploadGovernedFiles: () => {},
   questionResponses: [],
 };
 
@@ -161,7 +162,7 @@ test('E4.3 — decisionSurfaceElsewhere suprime toda lectura competidora y conse
   ]) {
     assert.equal(unified.includes(forbidden), false, `la lectura competidora debe ocultar: ${forbidden}`);
   }
-  assert.ok(unified.includes('Actualizar con'));
+  assert.ok(unified.includes('class="tender-governed-document-workset"'), 'los controles de corrida (selector gobernado) se conservan');
 
   const historicalAnalysis = { ...analysis, integral_analysis: undefined, decision_review: null };
   const historicalUnified = renderReactComponent(TenderAnalysisSection, {
@@ -172,7 +173,7 @@ test('E4.3 — decisionSurfaceElsewhere suprime toda lectura competidora y conse
   for (const forbidden of ['Fortalezas', 'Debilidades y bloqueadores', 'Dudas abiertas', 'Información no verificada']) {
     assert.equal(historicalUnified.includes(forbidden), false, `el brief histórico tampoco debe competir: ${forbidden}`);
   }
-  assert.ok(historicalUnified.includes('Actualizar con'));
+  assert.ok(historicalUnified.includes('class="tender-governed-document-workset"'), 'los controles de corrida (selector gobernado) se conservan');
 });
 
 test('E4.3 — la lista V3 completa vive en Análisis y Decisión no la duplica ni la apunta', () => {
@@ -229,7 +230,7 @@ test('E4.3 — cobertura parcial se comunica sólo en la superficie única, no t
     false,
     'flag on deja el estado de cobertura exclusivamente en Análisis para decidir',
   );
-  assert.ok(unified.includes('Actualizar con'), 'los controles de corrida se conservan');
+  assert.ok(unified.includes('class="tender-governed-document-workset"'), 'los controles de corrida se conservan');
 });
 
 test('E4.4/E6 — main propaga flag+saver, no duplica acciones y navega a la preparación existente', () => {
@@ -240,6 +241,11 @@ test('E4.4/E6 — main propaga flag+saver, no duplica acciones y navega a la pre
   assert.equal(count(main, 'createTenderQuestionResponseActions({'), 1);
   assert.ok(main.includes("focusTenderDetailSection(document.getElementById('tender-preparation'))"));
   assert.equal(main.includes('import.meta.env.VITE_AGT002_DECISION_AXIS_SURFACE'), false);
+
+  // El congelamiento gobernado nunca resuelve un análisis inmediato: sondea el job de reanálisis
+  // hasta completarse y sólo entonces recarga el expediente real (documentos + análisis).
+  assert.ok(main.includes('await pollAgt002Reanalysis(data.reanalysis_job_id, requestedOpportunityId)'));
+  assert.ok(main.includes('await Promise.all([loadDocuments(), onReload?.()])'));
 });
 
 test('E4.5 — el montaje único queda encapsulado en TenderDecisionExperience y la superficie integra el panel', () => {
