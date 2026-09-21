@@ -4,6 +4,7 @@ import { formatDateOnly } from '../dateOnly';
 import { VIGIA_VISIBLE_NAMES } from './agentIdentity';
 import { filtersFromAlertsHash, filterCommercialPriorities, priorityContextSummary, priorityHashFiltersAreValid, summarizeCommercialPriorities } from './priority-filters.js';
 import { humanizeVigiaText, DB_KEY_LABEL } from './text-sanitizer';
+import { mergeCommercialOwnerOptions, type CommercialOwnerOption } from './owner-options.js';
 
 type VigiaLevel = 'alto' | 'medio' | 'bajo' | 'sin_prioridad';
 type VigiaSignal = { code: string; label: string; points: number; evidence: string };
@@ -63,7 +64,7 @@ function uniqueOptions(rows: VigiaPriority[], value: (row: VigiaPriority) => str
   return [...options.entries()].sort((a, b) => a[1].localeCompare(b[1], 'es'));
 }
 
-export function VigiaCommercial({ canOpenOpportunity }: { canOpenOpportunity: boolean }) {
+export function VigiaCommercial({ canOpenOpportunity, commercialOwners }: { canOpenOpportunity: boolean; commercialOwners: CommercialOwnerOption[] }) {
   const initialHashFilters = useMemo(() => filtersFromAlertsHash(window.location.hash), []);
   const [payload, setPayload] = useState<VigiaPayload | null>(null);
   const [status, setStatus] = useState('Cargando prioridades del CRM…');
@@ -128,7 +129,7 @@ export function VigiaCommercial({ canOpenOpportunity }: { canOpenOpportunity: bo
     level,
   }), [payload, query, category, invalidLink, owner, regional, stage, service, customerSegment, level]);
   const visible = filtered.slice(0, PRIORITY_INBOX_LIMIT);
-  const ownerOptions = useMemo(() => uniqueOptions(priorities, row => row.owner_id, row => row.owner_name), [priorities]);
+  const ownerOptions = useMemo(() => mergeCommercialOwnerOptions(commercialOwners, priorities), [commercialOwners, priorities]);
   const regionalOptions = useMemo(() => uniqueOptions(priorities, row => row.regional_nombre, row => row.regional_nombre), [priorities]);
   const stageOptions = useMemo(() => uniqueOptions(priorities, row => row.stage_code, row => row.stage_name), [priorities]);
   const serviceOptions = useMemo(() => uniqueOptions(priorities, row => row.service_type_code, row => row.service_type_name), [priorities]);

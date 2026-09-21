@@ -484,6 +484,7 @@ function RouterView({ route, data, refresh }: { route: Route; data: Bootstrap; r
   if (route.page === 'consultant' && route.id) return <ConsultantDetail data={data} ownerId={route.id} />;
   if (route.page === 'goals') return <GoalsCompliance data={data} refresh={refresh} />;
   if (route.page === 'alerts') return <VigiaCommercial
+    commercialOwners={data.profiles.filter(isCommercialProfile).map(profile => ({ id: profile.id, full_name: profile.full_name }))}
     canOpenOpportunity={isModulePermissionEligible(data.currentProfile.role, 'modulo_oportunidades') && Boolean(data.currentProfile.permissions?.includes('modulo_oportunidades'))}
   />;
   if (route.page === 'users') return <UsersAdmin currentProfile={data.currentProfile} />;
