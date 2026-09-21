@@ -18,7 +18,7 @@ import {
   AGT002_GOVERNED_WORKSET_APTO,
   AGT002_GOVERNED_WORKSET_CHARS_PER_BATCH,
   AGT002_GOVERNED_WORKSET_FREEZE_ROUTE,
-  evaluateAgt002GovernedWorksetCapacity,
+  preflightAgt002GovernedWorksetCapacity,
 } from './agt002-governed-workset-capacity.js';
 
 // Re-exported for backward compatibility: this used to be defined locally in this module.
@@ -97,16 +97,27 @@ function deriveAgt002GovernedWorksetCapacityEvidence(evidenceRows) {
 
 /**
  * Evaluates the route's operational batch-capacity preflight against server-resolved candidate
- * evidence. Fails closed with a safe 503 when the evidence or the module's policy is
+ * evidence. Defaults to durable_batched_v1 checkpointed execution (this route's real operational
+ * mode) when no `options` are supplied; an explicitly supplied `options.executionMode`/
+ * `options.checkpointing` are honored instead — but `options` may never override the server-derived
+ * route/evidence, and preflightAgt002GovernedWorksetCapacity itself never honors a `policy`/
+ * `durablePolicy` override regardless, so only these two execution-mode fields are ever read out of
+ * `options`. Fails closed with a safe 503 when the evidence or the module's policy is
  * unavailable/malformed; rejects with a safe 422 (carrying the closed capacity report) when the
  * package is NO_APTO. Returns the closed, safe capacity result on APTO.
  */
-export function evaluateAgt002GovernedWorksetFreezeCapacityPreflight(evidenceRows) {
+export function evaluateAgt002GovernedWorksetFreezeCapacityPreflight(evidenceRows, options) {
   const evidence = deriveAgt002GovernedWorksetCapacityEvidence(evidenceRows);
   if (!evidence) throw governedWorksetCapacityUnavailableError();
+  const preflightOptions = options !== undefined ? options : { executionMode: 'durable_batched_v1', checkpointing: true };
   let capacity;
   try {
-    capacity = evaluateAgt002GovernedWorksetCapacity({ route: AGT002_GOVERNED_WORKSET_FREEZE_ROUTE, evidence });
+    capacity = preflightAgt002GovernedWorksetCapacity({
+      executionMode: preflightOptions?.executionMode,
+      checkpointing: preflightOptions?.checkpointing,
+      route: AGT002_GOVERNED_WORKSET_FREEZE_ROUTE,
+      evidence,
+    });
   } catch {
     throw governedWorksetCapacityUnavailableError();
   }

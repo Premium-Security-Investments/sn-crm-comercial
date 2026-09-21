@@ -26,6 +26,7 @@ const NO_SNAPSHOT_TENDER_ID = uuid('http-tender-no-snapshot');
 const DOC_A = uuid('http-doc-a');
 const DOC_B = uuid('http-doc-b');
 const DOC_HUGE = uuid('http-doc-huge');
+const DOC_OVER_DURABLE = uuid('http-doc-over-durable');
 const DOC_BAD_EVIDENCE = uuid('http-doc-bad-evidence');
 const SNAPSHOT_ID = uuid('http-snapshot-1');
 const CONTEXT_VERSION_ID = uuid('http-context-1');
@@ -40,7 +41,7 @@ const TEST_SERVICE_KEY = 'test-service-key';
 {
   const scenarioIds = {
     OPPORTUNITY_ID, TENDER_ID, NO_SNAPSHOT_OPPORTUNITY_ID, NO_SNAPSHOT_TENDER_ID,
-    DOC_A, DOC_B, DOC_HUGE, DOC_BAD_EVIDENCE, SNAPSHOT_ID, CONTEXT_VERSION_ID, CUSTODY_ID, NO_CUSTODY_ID, AGENT_ID,
+    DOC_A, DOC_B, DOC_HUGE, DOC_OVER_DURABLE, DOC_BAD_EVIDENCE, SNAPSHOT_ID, CONTEXT_VERSION_ID, CUSTODY_ID, NO_CUSTODY_ID, AGENT_ID,
   };
   const entries = Object.entries(scenarioIds);
   const seen = new Map();
@@ -176,6 +177,9 @@ const fakeSupabase = http.createServer((req, res) => {
         // A single document whose server-resolved size alone exceeds the route's operational
         // batch-capacity ceiling: ceil(2,000,000 / 20,000) = 100 predicted batches > 64.
         if (args.p_document_version_id === DOC_HUGE) return json(res, 200, candidateEvidence(args.p_opportunity_id, args.p_tender_id, DOC_HUGE, 2, { extracted_text_char_count: 2_000_000 }));
+        // A single document whose server-resolved size exceeds even the durable policy's own
+        // 184-batch ceiling: ceil(3,680,001 / 20,000) = 185 predicted batches > 184.
+        if (args.p_document_version_id === DOC_OVER_DURABLE) return json(res, 200, candidateEvidence(args.p_opportunity_id, args.p_tender_id, DOC_OVER_DURABLE, 4, { extracted_text_char_count: 3_680_001 }));
         if (args.p_document_version_id === DOC_BAD_EVIDENCE) return json(res, 200, candidateEvidence(args.p_opportunity_id, args.p_tender_id, DOC_BAD_EVIDENCE, 3, { extracted_text_char_count: null }));
         return json(res, 404, { code: 'P0002', message: 'La versión documental no existe.' });
       }
@@ -268,6 +272,9 @@ try {
       assert.equal(ok.body.member_count, 2);
       assert.equal(ok.body.capacity_preflight.verdict, 'APTO', `backend ${index}: a successful freeze response must carry the APTO capacity preflight evidence`);
       assert.equal(ok.body.capacity_preflight.source_char_count, 1_000, `backend ${index}: source_char_count must be the sum of the server-resolved candidates' char counts`);
+      assert.equal(ok.body.capacity_preflight.max_batch_count, 64, `backend ${index}: the classic ceiling must be reported for context`);
+      assert.equal(ok.body.capacity_preflight.durable_max_batch_count, 184, `backend ${index}: the durable ceiling must be reported for context`);
+      assert.equal(ok.body.capacity_preflight.effective_max_batch_count, 184, `backend ${index}: the default execution mode for this route is durable checkpointed, so the effective ceiling is the durable one`);
 
       const freezeCall = state.rpcCalls.find((c) => c.name === 'psi_freeze_agt002_governed_document_workset');
       assert.ok(freezeCall, `backend ${index}: must call the freeze RPC`);
@@ -299,18 +306,48 @@ try {
         [DOC_A, DOC_B].sort(),
       );
 
+      // DOC_HUGE's server-resolved evidence (extracted_text_char_count: 2_000_000, see the fake
+      // Supabase RPC above) predicts ceil(2_000_000 / 20_000) = 100 batches, which exceeds the
+      // classic single-turn cap of 64. That honest count is never rounded down or hidden: the
+      // route must retain predicted_batch_count 100 and max_batch_count 64 byte-for-byte, and the
+      // package is accepted only because it is routed through durable checkpointing
+      // (execution_mode 'durable_batched_v1', checkpointing true) — durable_checkpointing_required
+      // makes that overage-covered-by-checkpointing reasoning explicit in the response.
       state.rpcCalls.length = 0;
       state.freezeEnqueueCalls = 0;
-      const oversized = await requestJson(port, ROUTE, 'custody-token', 'POST', twoDocumentsBody({
+      const huge = await requestJson(port, ROUTE, 'custody-token', 'POST', twoDocumentsBody({
         documents: [{ document_version_id: DOC_HUGE, source_classification: 'official', inclusion_reason: 'Documento voluminoso.' }],
       }));
-      assert.equal(oversized.status, 422, `backend ${index}: an oversized governed package must be rejected by the operational batch-capacity preflight`);
-      assert.equal(oversized.body.code, 'agt002_governed_workset_capacity_rejected');
-      assert.equal(oversized.body.report.criterion, 'NO_APTO');
-      assert.ok(oversized.body.report.predicted_batch_count > oversized.body.report.max_batch_count, `backend ${index}: report must carry predicted/max batch counts proving the rejection`);
-      assert.equal(oversized.body.report.source_char_count, 2_000_000);
-      assert.equal(state.rpcCalls.some((c) => c.name === 'psi_freeze_agt002_governed_document_workset'), false, `backend ${index}: an oversized package must never reach the freeze/enqueue RPC`);
-      assert.equal(state.freezeEnqueueCalls, 0, `backend ${index}: an oversized package must never actually enqueue via the freeze RPC`);
+      assert.equal(huge.status, 202, `backend ${index}: an oversized governed package must be accepted once durable checkpointing covers the overage`);
+      assert.equal(huge.body.status, 'created');
+      assert.equal(huge.body.capacity_preflight.verdict, 'APTO', `backend ${index}: durable checkpointing must flip the overage verdict to APTO`);
+      assert.equal(huge.body.capacity_preflight.predicted_batch_count, 100, `backend ${index}: the honest predicted batch count must be retained even once accepted`);
+      assert.equal(huge.body.capacity_preflight.max_batch_count, 64, `backend ${index}: the classic max batch count must be retained even once accepted`);
+      assert.equal(huge.body.capacity_preflight.durable_max_batch_count, 184, `backend ${index}: the durable ceiling that governed this verdict must be reported`);
+      assert.equal(huge.body.capacity_preflight.effective_max_batch_count, 184, `backend ${index}: the effective ceiling actually applied must be the durable ceiling, not the classic one`);
+      assert.equal(huge.body.capacity_preflight.source_char_count, 2_000_000);
+      assert.equal(huge.body.capacity_preflight.execution_mode, 'durable_batched_v1');
+      assert.equal(huge.body.capacity_preflight.checkpointing, true);
+      assert.equal(huge.body.capacity_preflight.durable_checkpointing_required, true);
+      const hugeFreezeCall = state.rpcCalls.find((c) => c.name === 'psi_freeze_agt002_governed_document_workset');
+      assert.ok(hugeFreezeCall, `backend ${index}: an oversized package accepted via durable checkpointing must still reach the freeze RPC`);
+      assert.equal(state.freezeEnqueueCalls, 1, `backend ${index}: an oversized package accepted via durable checkpointing must enqueue exactly once via the freeze RPC`);
+
+      // Even durable checkpointed execution is bounded: a single document whose server-resolved
+      // size predicts 185 batches — one over the durable policy's own 184-batch ceiling for this
+      // route — must still be rejected, never silently accepted as an unlimited escape hatch.
+      state.rpcCalls.length = 0;
+      state.freezeEnqueueCalls = 0;
+      const overDurable = await requestJson(port, ROUTE, 'custody-token', 'POST', twoDocumentsBody({
+        documents: [{ document_version_id: DOC_OVER_DURABLE, source_classification: 'official', inclusion_reason: 'Documento que excede el techo durable.' }],
+      }));
+      assert.equal(overDurable.status, 422, `backend ${index}: a package exceeding even the durable ceiling must be rejected`);
+      assert.equal(overDurable.body.code, 'agt002_governed_workset_capacity_rejected');
+      assert.equal(overDurable.body.report.criterion, 'NO_APTO');
+      assert.equal(overDurable.body.report.predicted_batch_count, 185);
+      assert.equal(overDurable.body.report.max_batch_count, 64);
+      assert.equal(state.rpcCalls.some((c) => c.name === 'psi_freeze_agt002_governed_document_workset'), false, `backend ${index}: a package exceeding the durable ceiling must never reach the freeze/enqueue RPC`);
+      assert.equal(state.freezeEnqueueCalls, 0, `backend ${index}: a package exceeding the durable ceiling must never actually enqueue`);
 
       state.rpcCalls.length = 0;
       state.freezeEnqueueCalls = 0;
