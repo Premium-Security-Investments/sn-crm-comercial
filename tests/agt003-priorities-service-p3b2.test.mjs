@@ -11,7 +11,7 @@ const data = buildAgt003PrioritiesData(rows, { now });
 assert.deepEqual(Object.keys(data), ['generated_at', 'source', 'policy', 'totals', 'priorities']);
 assert.equal(data.generated_at, now);
 assert.deepEqual(data.source, { id: 'CRM-F1', label: 'CRM comercial', as_of: '2030-02-01T09:59:00.000Z' });
-assert.deepEqual(data.policy, { version: 'gate0-v1.0', read_only: true, human_review_required: true });
+assert.deepEqual(data.policy, { version: 'gate0-v1.1', read_only: true, human_review_required: true });
 assert.deepEqual(data.totals, { source_rows: 2, visible_active: 1, prioritized: 1, high: 1, medium: 0, low: 0 });
 assert.equal(data.priorities[0].id, 'syn-opportunity-critical');
 assert.equal(data.priorities[0].score, 110);

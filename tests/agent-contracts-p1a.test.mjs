@@ -257,6 +257,8 @@ for (const field of ['id', 'owner_id', 'owner_name', 'company_name', 'customer_s
 }
 assert.deepEqual(vigiaItem.properties.level.enum, ['alto', 'medio', 'bajo'], 'priorities must exclude sin_prioridad');
 assert.equal(vigiaItem.oneOf?.length, 3, 'AGT-003 must encode score-to-level thresholds');
+assert.equal(vigiaItem.properties.score.minimum, 0, 'data-quality-only priorities may retain score zero');
+assert.equal(vigiaItem.oneOf[2].properties.score.minimum, 0, 'score zero maps to the low priority level');
 const canonicalRecommendations = [
   'Revisar la gestión vencida y validar el siguiente paso.',
   'Programar la próxima gestión con validación del responsable.',
@@ -270,7 +272,7 @@ const canonicalSignalPoints = {
   invalid_next_action: 0, missing_next_action: 25, next_action_overdue: 30,
   invalid_activity: 0, stalled_critical: 30, stalled_warning: 15,
   critical_stage: 15, invalid_expected_close: 0, close_overdue: 25,
-  close_soon: 10, high_value: 15, value_missing: 10, regional_missing: 5,
+  close_soon: 10, high_value: 15, value_missing: 0, regional_missing: 0,
 };
 const signalVariants = vigiaItem.properties.signals.items.oneOf;
 assert.equal(signalVariants?.length, Object.keys(canonicalSignalPoints).length, 'all canonical signals need exact variants');
@@ -281,8 +283,8 @@ for (const [code, points] of Object.entries(canonicalSignalPoints)) {
 }
 assert.ok(!vigiaItem.properties.opportunity_id, 'AGT-003 must preserve canonical id instead of inventing opportunity_id');
 assert.ok(!vigiaItem.properties.calculation_evidence, 'AGT-003 must preserve canonical evidence field name');
-assert.equal(vigiaData.properties.policy.properties.version.const, 'gate0-v1.0');
-assert.match(vigiaRuntime, /version: 'gate0-v1\.0'/, 'contract policy version must exist in Vigía runtime');
+assert.equal(vigiaData.properties.policy.properties.version.const, 'gate0-v1.1');
+assert.match(vigiaRuntime, /version: 'gate0-v1\.1'/, 'contract policy version must exist in Vigía runtime');
 for (const code of vigiaItem.properties.signal_codes.items.enum) {
   assert.ok(vigiaRuntime.includes(`code: '${code}'`), `AGT-003 signal ${code} must exist in vigia-engine.js`);
 }

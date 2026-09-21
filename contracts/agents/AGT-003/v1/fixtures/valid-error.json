@@ -3,7 +3,7 @@
   "capability_id": "agt003.priorities.read",
   "correlation_id": "syn-corr-agt003-error",
   "run_id": null,
-  "policy_version": "gate0-v1.0",
+  "policy_version": "gate0-v1.1",
   "source": {
     "system": "SIIO",
     "dataset": "v_psi_sales_opportunity_enriched",

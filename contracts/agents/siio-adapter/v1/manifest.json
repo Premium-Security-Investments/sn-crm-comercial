@@ -10,5 +10,5 @@
   "capability": "agt003.priorities.read",
   "contract_version": "1.0.0",
   "request_schema_sha256": "8ee87729790a1bac067d704016fa9f9a1e2c46c423e4599b38871adcfa18ef58",
-  "response_schema_sha256": "7a2cbff1d9f4f0ae8ff8e82652535e22d1e6a981c569b89fac32f1add1e7603e"
+  "response_schema_sha256": "85c9d52cb861d59521d00a3719271ddb591c68a70c2573084654fbb7bf3a9ef1"
 }

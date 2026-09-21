@@ -31,7 +31,7 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$"
     },
     "policy_version": {
-      "const": "gate0-v1.0"
+      "const": "gate0-v1.1"
     },
     "source": {
       "type": "object",

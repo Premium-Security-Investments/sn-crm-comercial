@@ -166,7 +166,7 @@ const validContext = Object.freeze({
   correlation_id: 'syn-correlation-001',
   resolved_scope_digest: 'sha256:syn-resolved-scope-001',
   request_scope_digest: 'sha256:syn-resolved-scope-001',
-  policy_version: 'gate0-v1.0',
+  policy_version: 'gate0-v1.1',
 });
 
 const allowed = guardSyntheticAgentCapability(verified, validRequest, validContext);
@@ -176,7 +176,7 @@ assert.deepEqual(allowed, {
   capability: 'agt003.priorities.read',
   correlation_id: 'syn-correlation-001',
   resolved_scope_digest: 'sha256:syn-resolved-scope-001',
-  policy_version: 'gate0-v1.0',
+  policy_version: 'gate0-v1.1',
 });
 assert.ok(Object.isFrozen(allowed), 'guard output must be immutable');
 
@@ -190,7 +190,7 @@ assertGuardDenied({ ...verified, agent_id: 'AGT-002', capability: 'agt002.radar.
 assertGuardDenied({ ...verified, capability: 'agt003.priorities.write' });
 assertGuardDenied(verified, { ...validRequest, capability_id: 'agt003.priorities.write' });
 assertGuardDenied(verified, { ...validRequest, contract_version: '1.0.1' });
-assertGuardDenied(verified, validRequest, { ...validContext, policy_version: 'gate0-v1.1' });
+assertGuardDenied(verified, validRequest, { ...validContext, policy_version: 'gate0-v1.0' });
 assertGuardDenied(verified, { ...validRequest, correlation_id: 'syn-correlation-other' });
 assertGuardDenied(verified, validRequest, { ...validContext, correlation_id: 'syn-correlation-other' });
 assertGuardDenied(verified, validRequest, { ...validContext, request_scope_digest: 'sha256:syn-widened-scope' });

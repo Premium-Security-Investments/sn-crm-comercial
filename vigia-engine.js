@@ -1,7 +1,7 @@
 const DAY_MS = 86_400_000;
 
 export const VIGIA_CONFIG = Object.freeze({
-  version: 'gate0-v1.0',
+  version: 'gate0-v1.1',
   sourceId: 'CRM-F1',
   staleWarningDays: 14,
   staleCriticalDays: 30,
@@ -86,7 +86,7 @@ function levelFor(score) {
   if (score >= VIGIA_CONFIG.highScore) return 'alto';
   if (score >= VIGIA_CONFIG.mediumScore) return 'medio';
   if (score > 0) return 'bajo';
-  return 'sin_prioridad';
+  return 'bajo';
 }
 
 function recommendationFor(signals) {
@@ -133,13 +133,13 @@ export function prioritizeVigiaOpportunities(rows, options = {}) {
 
     const offerValue = Number(row.offer_value || 0);
     if (offerValue >= VIGIA_CONFIG.highValueCop) signals.push({ code: 'high_value', label: 'Alto valor', points: 15, evidence: `Valor registrado: ${offerValue} COP.` });
-    else if (!(offerValue > 0)) signals.push({ code: 'value_missing', label: 'Valor no registrado', points: 10, evidence: 'La oportunidad no tiene valor positivo registrado.' });
+    else if (!(offerValue > 0)) signals.push({ code: 'value_missing', label: 'Valor no registrado', points: 0, evidence: 'La oportunidad no tiene valor positivo registrado.' });
 
     const regional = normalizeVigiaRegion(row.regional_nombre);
-    if (!regional) signals.push({ code: 'regional_missing', label: 'Regional pendiente', points: 5, evidence: 'La oportunidad no tiene regional registrada.' });
+    if (!regional) signals.push({ code: 'regional_missing', label: 'Regional pendiente', points: 0, evidence: 'La oportunidad no tiene regional registrada.' });
 
     const score = signals.reduce((sum, signal) => sum + signal.points, 0);
-    if (score === 0) continue;
+    if (signals.length === 0) continue;
     priorities.push({
       ...row,
       regional_nombre: regional,

@@ -2,7 +2,7 @@ import { buildAgt003PrioritiesData, deepFreeze, snapshotPlainInput } from './agt
 
 const CONTRACT_VERSION = '1.0.0';
 const CAPABILITY = 'agt003.priorities.read';
-const POLICY_VERSION = 'gate0-v1.0';
+const POLICY_VERSION = 'gate0-v1.1';
 const AGENT_ID = 'AGT-003';
 const DATASET = 'v_psi_sales_opportunity_enriched';
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{4,127}$/;

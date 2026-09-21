@@ -11,7 +11,7 @@ const base = {
   updated_at: '2026-07-17T12:00:00.000Z', created_at: '2026-06-01T12:00:00.000Z', expected_close_date: '2026-08-10T12:00:00.000Z',
 };
 
-assert.equal(VIGIA_CONFIG.version, 'gate0-v1.0');
+assert.equal(VIGIA_CONFIG.version, 'gate0-v1.1');
 assert.equal(VIGIA_CONFIG.highValueCop, 75_000_000);
 
 const [critical] = prioritizeVigiaOpportunities([{
@@ -32,11 +32,20 @@ assert.equal(critical.source.id, 'CRM-F1');
 assert.equal(critical.evidence.activity_basis, 'last_interaction_at');
 
 const [missingData] = prioritizeVigiaOpportunities([{ ...base, id: 'missing', offer_value: 0, regional_nombre: null, next_action_at: null, last_interaction_at: null }], { now });
-assert.equal(missingData.score, 40, 'agenda 25 + valor ausente 10 + regional 5');
-assert.equal(missingData.level, 'medio');
+assert.equal(missingData.score, 25, 'sólo la agenda ausente suma puntos; calidad de datos queda visible sin inflar prioridad');
+assert.equal(missingData.level, 'bajo');
 assert.equal(missingData.evidence.activity_basis, 'updated_at');
-assert.ok(missingData.signal_codes.includes('value_missing'));
-assert.ok(missingData.signal_codes.includes('regional_missing'));
+assert.deepEqual(
+  missingData.signals.filter(signal => ['value_missing', 'regional_missing'].includes(signal.code)).map(signal => [signal.code, signal.points]),
+  [['value_missing', 0], ['regional_missing', 0]],
+  'valor y regional ausentes se conservan como alertas de calidad sin puntos',
+);
+
+const [dataQualityOnly] = prioritizeVigiaOpportunities([{ ...base, id: 'data-quality-only', offer_value: 0, regional_nombre: null }], { now });
+assert.equal(dataQualityOnly.score, 0, 'sólo las alertas de calidad de datos no crean prioridad');
+assert.equal(dataQualityOnly.level, 'bajo', 'las alertas sin puntos permanecen en la bandeja como bajo');
+assert.deepEqual(dataQualityOnly.signal_codes, ['value_missing', 'regional_missing']);
+assert.deepEqual(dataQualityOnly.signals.map(signal => [signal.code, signal.points]), [['value_missing', 0], ['regional_missing', 0]]);
 
 const [overdue] = prioritizeVigiaOpportunities([{ ...base, id: 'overdue', next_action_at: '2026-07-17T10:00:00.000Z' }], { now });
 assert.equal(overdue.score, 30);
