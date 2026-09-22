@@ -3899,7 +3899,7 @@ export const buildTenderDossierSummary = buildTenderOpportunitySummary;
 const tenderDossierDefaultLimit = 50;
 const tenderDossierMaxLimit = 50;
 const tenderDossierMaxOffset = 10000;
-const tenderOpportunityFilters = new Set(['all', 'pending_decision', 'go_authorized', 'in_preparation', 'submitted', 'closed']);
+const tenderOpportunityFilters = new Set(['all', 'por_decidir', 'en_curso', 'cerradas', 'pending_decision', 'go_authorized', 'in_preparation', 'submitted', 'closed']);
 
 function parseTenderDossierPage(query = {}) {
   const parse = (value, fallback, maximum, label) => {

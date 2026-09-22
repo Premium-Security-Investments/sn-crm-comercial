@@ -6,6 +6,7 @@ const moduleSource = readFileSync(new URL('../src/tenders/TendersModule.tsx', im
 const tracking = readFileSync(new URL('../src/tenders/TenderTrackingView.tsx', import.meta.url), 'utf8');
 const radar = readFileSync(new URL('../src/tenders/TenderRadarView.tsx', import.meta.url), 'utf8');
 const opportunities = readFileSync(new URL('../src/tenders/TenderOpportunitiesView.tsx', import.meta.url), 'utf8');
+const opportunityStage = readFileSync(new URL('../src/tenders/opportunityStage.ts', import.meta.url), 'utf8');
 const configuration = readFileSync(new URL('../src/tenders/TenderConfigurationView.tsx', import.meta.url), 'utf8');
 const apiSource = readFileSync(new URL('../src/tenders/api.ts', import.meta.url), 'utf8');
 const tabsSource = readFileSync(new URL('../src/tenders/components/TenderModuleTabs.tsx', import.meta.url), 'utf8');
@@ -49,7 +50,12 @@ assert.match(opportunities, /\/api\/tender-documents-import/);
 assert.match(opportunities, /loadTenderOpportunities/);
 assert.doesNotMatch(opportunities, /\/api\/tender-opportunities/, 'La vista debe depender del loader y no duplicar el contrato HTTP.');
 assert.match(apiSource, /loadTenderOpportunities[\s\S]*?\/api\/tender-opportunities/);
-for (const label of ['Todas', 'Pendiente de decisión', 'GO registrado', 'En preparación', 'Presentadas', 'Cerradas']) assert.ok(opportunities.includes(label), `Oportunidades debe mostrar filtro ${label}`);
+// Los filtros primarios son exactamente cuatro y viven en una sola lista (opportunityStage.ts);
+// el detalle GO/preparación/presentada/adjudicada se conserva íntegro en la tarjeta, no en el
+// selector. Ver tests/tender-opportunity-primary-filter.test.mjs para la semántica completa.
+assert.match(opportunities, /OPPORTUNITY_PRIMARY_FILTER_OPTIONS\.map/, 'Oportunidades debe renderizar el selector desde la lista de filtros primarios.');
+for (const label of ['Todas', 'Por decidir', 'En curso', 'Cerradas']) assert.ok(opportunityStage.includes(`label: '${label}'`), `Oportunidades debe ofrecer el filtro primario ${label}`);
+for (const retired of ['Pendiente de decisión', 'GO registrado', 'Presentadas']) assert.ok(!opportunities.includes(retired), `Oportunidades ya no debe ofrecer el filtro ${retired}`);
 assert.match(opportunities, /setFilter\([\s\S]*?setPage\(1\)/, 'Cambiar filtro debe reiniciar la página.');
 assert.match(opportunities, /dossier_error/);
 assert.doesNotMatch(opportunities, /<dt>GO \/ NO GO<\/dt>/, 'La recomendación ya cubre el dictamen; no debe duplicarse una fila legacy.');

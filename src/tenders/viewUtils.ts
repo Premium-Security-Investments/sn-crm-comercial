@@ -1,10 +1,16 @@
+import { isOpportunityPrimaryFilter, matchesOpportunityPrimaryFilter, type TenderOpportunityPrimaryFilter } from './opportunityStage';
 import type { TenderModuleView, TenderOpportunityFilter, TenderOpportunitySummary } from './types';
 
 const tenderOpportunityFilters: readonly TenderOpportunityFilter[] = ['all', 'pending_decision', 'go_authorized', 'in_preparation', 'submitted', 'closed'];
 
-export function filterOpportunitySummaries(rows: TenderOpportunitySummary[], filter: TenderOpportunityFilter): TenderOpportunitySummary[] {
+/**
+ * Acepta el vocabulario primario (`all` / `por_decidir` / `en_curso` / `cerradas`), que es una
+ * partición y delega en el clasificador puro, y además el vocabulario del backend, que sigue vivo
+ * porque el RPC 023 y `/api/tender-opportunities` no cambian y sus predicados se solapan entre sí.
+ */
+export function filterOpportunitySummaries(rows: TenderOpportunitySummary[], filter: TenderOpportunityFilter | TenderOpportunityPrimaryFilter): TenderOpportunitySummary[] {
+  if (isOpportunityPrimaryFilter(filter)) return filter === 'all' ? rows : rows.filter(row => matchesOpportunityPrimaryFilter(row, filter));
   if (!tenderOpportunityFilters.includes(filter)) throw new Error('Filtro de oportunidades inválido.');
-  if (filter === 'all') return rows;
   return rows.filter(row => {
     const status = row.tender_offer_status || 'pendiente_decision';
     if (filter === 'pending_decision') return status === 'pendiente_decision' && !row.decision;
