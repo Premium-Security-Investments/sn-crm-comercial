@@ -3,6 +3,7 @@ import { spawn as defaultSpawn } from 'node:child_process';
 import { isAbsolute, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { writeFileSync, unlinkSync } from 'node:fs';
+import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 
 /**
  * Cliente OAuth propio de AGT-002 en modo impresión de Claude Code (preview/
@@ -144,6 +145,9 @@ export function createAgt002ClaudeClient({
       if (!isRecord(input)) return Promise.reject(new Error('AGT-002 requiere una entrada estructurada.'));
       if (!isRecord(outputSchema)) return Promise.reject(new Error('AGT-002 requiere un outputSchema cerrado.'));
       if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) return Promise.reject(new Error('El timeout de AGT-002 no es válido.'));
+      if (effort !== undefined && !isAgt002PreviewReasoningEffort(effort)) {
+        return Promise.reject(new Error('El nivel de esfuerzo de razonamiento de AGT-002 no es válido.'));
+      }
       if (signal?.aborted) return Promise.reject(failure('La ejecución de AGT-002 fue cancelada.', 'AGT002_CLAUDE_CANCELLED'));
       void idempotencyKey; // el protocolo no tiene idempotencia de wire; la deduplicación es del llamador.
       void callerCwd; // se acepta y se descarta: el cwd nunca lo elige la petición.
@@ -174,6 +178,7 @@ export function createAgt002ClaudeClient({
       const args = [
         '-p',
         '--model', model,
+        ...(effort !== undefined ? ['--effort', effort] : []),
         '--output-format', 'json',
         ...schemaArgs,
         // Sin herramientas, sin sesión persistida y en modo seguro: el turno no
@@ -269,11 +274,8 @@ export function createAgt002ClaudeClient({
             content: JSON.stringify(structured),
             usage: { input_tokens: inputTokens, output_tokens: outputTokens },
             rate_limit: null,
-            // El modo `claude -p` no tiene esfuerzo de razonamiento de Codex: se
-            // ignora para el CLI, pero si el llamador pidió uno se confirma
-            // igual, para que agt002-hetzner-bridge-client.js no lo rechace como
-            // obsoleto (AGT002_BRIDGE_STALE_EFFORT_ACK). Sin petición de effort
-            // no se inventa una confirmación.
+            // El ack sólo existe cuando el valor allowlisted se aplicó realmente
+            // al proceso mediante `--effort`; sin petición no se inventa.
             ...(effort !== undefined ? { effort_ack: effort } : {}),
           });
         };

@@ -350,12 +350,11 @@ async function testSchemaAtOrBelowTheCeilingStaysOnArgv() {
 }
 
 // ---------------------------------------------------------------------------
-// effort: el modo `claude -p` no tiene esfuerzo de razonamiento de Codex. Se
-// ignora para el CLI, pero se confirma (effort_ack) si el llamador lo pidió,
-// para que agt002-hetzner-bridge-client.js no lo rechace como obsoleto.
+// effort: el bridge sólo puede confirmar un esfuerzo que realmente aplicó al
+// proceso de Claude. Los valores no soportados fallan antes de crear el hijo.
 // ---------------------------------------------------------------------------
 
-async function testEffortIsIgnoredForClaudeCliButAckedWhenRequested() {
+async function testEffortIsForwardedToClaudeCliAndAckedWhenRequested() {
   const { client, calls, children } = harness();
   const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: SCHEMA, timeoutMs: 5000, effort: 'low' });
   await settleSoon(() => {
@@ -363,18 +362,31 @@ async function testEffortIsIgnoredForClaudeCliButAckedWhenRequested() {
     children[0].emit('exit', 0, null);
   });
   const result = await pending;
-  assert.equal(result.effort_ack, 'low', 'un effort pedido debe confirmarse aunque el CLI de Claude lo ignore');
-  assert.equal(JSON.stringify(calls[0].args).toLowerCase().includes('effort'), false, 'el CLI de Claude en modo print no tiene bandera de effort');
+  const effortIndex = calls[0].args.indexOf('--effort');
+  assert.notEqual(effortIndex, -1, 'un effort pedido debe llegar al CLI');
+  assert.deepEqual(calls[0].args.slice(effortIndex, effortIndex + 2), ['--effort', 'low']);
+  assert.equal(calls[0].args.filter(arg => arg === '--effort').length, 1, 'la bandera se pasa exactamente una vez');
+  assert.equal(result.effort_ack, 'low', 'sólo se confirma el effort aplicado al CLI');
+}
+
+async function testUnsupportedEffortIsRejectedBeforeSpawn() {
+  const { client, calls } = harness();
+  await assert.rejects(
+    client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: SCHEMA, timeoutMs: 5000, effort: 'ultra' }),
+    /effort|esfuerzo/i,
+  );
+  assert.equal(calls.length, 0, 'un effort no soportado nunca debe lanzar el proveedor');
 }
 
 async function testEffortOmittedNeverInventsAnAck() {
-  const { client, children } = harness();
+  const { client, calls, children } = harness();
   const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: SCHEMA, timeoutMs: 5000 });
   await settleSoon(() => {
     children[0].stdout.emit('data', successPayload());
     children[0].emit('exit', 0, null);
   });
   const result = await pending;
+  assert.equal(calls[0].args.includes('--effort'), false, 'sin effort pedido no se debe agregar la bandera');
   assert.equal(Object.hasOwn(result, 'effort_ack'), false, 'sin effort pedido no debe inventarse una confirmación');
 }
 
@@ -401,6 +413,7 @@ await testOversizedSchemaTempFileCleanedUpOnFailure();
 await testSchemaAtOrBelowTheCeilingStaysOnArgv();
 console.log('agt002-claude-client.test.mjs Paso 3 OK');
 
-await testEffortIsIgnoredForClaudeCliButAckedWhenRequested();
+await testEffortIsForwardedToClaudeCliAndAckedWhenRequested();
+await testUnsupportedEffortIsRejectedBeforeSpawn();
 await testEffortOmittedNeverInventsAnAck();
 console.log('agt002-claude-client.test.mjs Paso 4 OK');
