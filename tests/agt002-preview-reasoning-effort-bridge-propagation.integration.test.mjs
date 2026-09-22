@@ -5,8 +5,9 @@ import { createAgt002HetznerBridgeClient } from '../agt002-hetzner-bridge-client
 import { createAgt002ClaudeClient } from '../agt002-claude-client.js';
 
 // AGT-002 end to end: real HMAC-signed bridge client -> real HTTP bridge server
-// -> real Claude print-mode client (fake spawn). Claude has no effort flag, so
-// the requested low/medium value must be acknowledged without reaching argv.
+// -> real Claude print-mode client (fake spawn). Claude's `--effort` flag
+// (origin/main #211) carries the requested low/medium value into argv exactly
+// once, and the provider acknowledges it back through effort_ack.
 
 const SECRET = 'a'.repeat(32);
 
@@ -69,12 +70,15 @@ async function withClaudeBridge(capture, fn) {
   }
 }
 
-function assertClaudeInvocation(capture, expectedInput) {
+function assertClaudeInvocation(capture, expectedInput, expectedEffort) {
   assert.equal(capture.calls.length, 1);
   const call = capture.calls[0];
   assert.equal(call.command, 'claude-fake');
   assert.equal(call.args[call.args.indexOf('--model') + 1], 'sonnet');
-  assert.equal(call.args.some(value => /effort|reasoning/i.test(String(value))), false, 'Claude argv must not receive an unsupported effort/reasoning flag');
+  const effortOccurrences = call.args.filter(value => value === '--effort').length;
+  assert.equal(effortOccurrences, 1, 'Claude argv must receive --effort exactly once');
+  assert.equal(call.args[call.args.indexOf('--effort') + 1], expectedEffort);
+  assert.equal(call.args.some(value => value === '--reasoning-effort'), false, 'Claude argv must not receive --reasoning-effort');
   assert.deepEqual(JSON.parse(capture.stdin), expectedInput, 'stdin must contain only the structured input');
 }
 
@@ -86,7 +90,7 @@ async function testLowEffortIsAckedAcrossTheRealBridgeHop() {
     assert.deepEqual(JSON.parse(result.content), { ok: true });
   });
   assert.equal(capture.providerResult.effort_ack, 'low');
-  assertClaudeInvocation(capture, request.input);
+  assertClaudeInvocation(capture, request.input, 'low');
 }
 
 async function testMediumEffortIsAckedAcrossTheRealBridgeHop() {
@@ -97,7 +101,7 @@ async function testMediumEffortIsAckedAcrossTheRealBridgeHop() {
     assert.deepEqual(JSON.parse(result.content), { ok: true });
   });
   assert.equal(capture.providerResult.effort_ack, 'medium');
-  assertClaudeInvocation(capture, request.input);
+  assertClaudeInvocation(capture, request.input, 'medium');
 }
 
 async function testUnsupportedEffortNeverReachesTheBridgeOrTheProvider() {

@@ -15,6 +15,7 @@ const REQUIRED_ENV_KEYS = ['AGT002_PREVIEW_MODEL', 'AGT002_HETZNER_BRIDGE_URL', 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_CONCURRENT = 2;
 const DEFAULT_DAILY_MAX_RUNS = 20;
+const DEFAULT_SEMANTIC_BATCH_CONCURRENCY = 1;
 export const AGT002_PREVIEW_DEFAULT_POLICY_VERSION = 'agt002-preview-policy-v2';
 // v3: AGT002_INTEGRAL_V3_POLICY now states the milestone relationships already enforced
 // fail-closed by validateAgt002IntegralAnalysisV3: verified requires non-null at/source_ref,
@@ -137,6 +138,27 @@ export function getAgt002PreviewRuntimeConfig(environment = process.env) {
   if (!AGT002_PREVIEW_ALLOWED_MODELS.includes(model)) {
     throw new Error('AGT-002 Preview no está configurado.');
   }
+  // Bounded batch concurrency for the semantic-discovery stage's own per-batch provider turns
+  // (discoverTenderSemanticManifest's `batchConcurrency` — tender-semantic-discovery.js). This is
+  // deliberately NOT `maxConcurrent` above: `maxConcurrent` bounds how many WHOLE AGT-002 jobs run
+  // at once, while this bounds how many of ONE job's own discovery batches may be in flight at
+  // once. Absent, it defaults to the sequential behaviour every caller already has; present, it
+  // fails closed unless it is exactly the integer 1 or 2 — never silently coerced or clamped —
+  // mirroring every other AGT002_PREVIEW_* numeric override in this module. Named
+  // AGT002_PREVIEW_DISCOVERY_BATCH_CONCURRENCY (not *_SEMANTIC_*): this only tunes how many of a
+  // run's discovery batches execute concurrently — it is not a gate on whether semantic discovery
+  // itself runs, which stays decided solely by the V3 wiring above.
+  const rawSemanticBatchConcurrency = environment.AGT002_PREVIEW_DISCOVERY_BATCH_CONCURRENCY;
+  let semanticBatchConcurrency;
+  if (rawSemanticBatchConcurrency === undefined) {
+    semanticBatchConcurrency = DEFAULT_SEMANTIC_BATCH_CONCURRENCY;
+  } else if (rawSemanticBatchConcurrency === '1') {
+    semanticBatchConcurrency = 1;
+  } else if (rawSemanticBatchConcurrency === '2') {
+    semanticBatchConcurrency = 2;
+  } else {
+    throw new Error('AGT-002 Preview no está configurado.');
+  }
   return {
     model,
     policyVersion: nonEmpty(environment.AGT002_PREVIEW_POLICY_VERSION) ? environment.AGT002_PREVIEW_POLICY_VERSION.trim() : AGT002_PREVIEW_DEFAULT_POLICY_VERSION,
@@ -146,6 +168,7 @@ export function getAgt002PreviewRuntimeConfig(environment = process.env) {
     leaseSeconds,
     effort,
     promptMaxInputTokens,
+    semanticBatchConcurrency,
   };
 }
 
@@ -308,7 +331,9 @@ export function createAgt002PreviewRuntime({
       // always a production run, and a production run must derive its frontier from the process's
       // own expediente. Direct engine callers (unit tests, canary scripts) leave the provider unset
       // and keep the legacy fixed-matrix frontier.
-      semanticDiscoveryProvider: discoverTenderSemanticManifest,
+      semanticDiscoveryProvider: options => discoverTenderSemanticManifest({
+        ...options, batchConcurrency: config.semanticBatchConcurrency,
+      }),
       categoryOverrides: categoryOverrides ?? {},
       evidenceClassLinkByRequirementId: evidenceClassLinkByRequirementId ?? {},
       governanceProvenance: governanceProvenance ?? {},

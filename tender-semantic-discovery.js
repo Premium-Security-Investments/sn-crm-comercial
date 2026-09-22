@@ -333,6 +333,14 @@ export const TENDER_SEMANTIC_DISCOVERY_MAX_SOURCE_CHARS = 20_000;
 // the very first attempt, exactly as before this constant existed.
 export const TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS = 3;
 
+// A provider structured-output-retry-exhaustion condition is transient in the same sense as a
+// timeout: the request itself was not malformed, the provider simply failed to converge on a
+// schema-valid answer within its own internal retry budget. `AGT002_CODEX_STRUCTURED_OUTPUT_RETRY_EXHAUSTED`
+// is its own dedicated wire code for exactly that provider condition, so it shares the same bounded
+// retry as a timeout, within the same TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS bound. The
+// generic AGT002_CODEX_PROVIDER_ERROR remains terminal on the first attempt.
+const RETRYABLE_BATCH_ERROR_CODES = new Set(['AGT002_CODEX_TIMEOUT', 'AGT002_CODEX_STRUCTURED_OUTPUT_RETRY_EXHAUSTED']);
+
 // Closed, privacy-safe internal codes for a rejection that happens AFTER a real bridge response
 // (schema-valid or not) reaches this module: the provider answered, but the answer failed one of
 // this module's own local semantic gates — citation anchoring, source_unit uniqueness, or a
@@ -1184,6 +1192,13 @@ export async function discoverTenderSemanticManifest({
   // or explicitly `undefined` option normalizes to) keeps every existing caller's behaviour
   // byte-identical: no checkpoint lookup or store of any kind, ever.
   checkpointHooks = null,
+  // Bounded batch concurrency (AGT-002 durable resumed job): how many of this run's own planned
+  // batches may have a provider call in flight at once. Defaults to 1, which keeps every existing
+  // caller's behaviour byte-identical to the plain sequential loop this option replaced — batch N+1
+  // is never even started until batch N's own compute has fully settled. Fails closed for anything
+  // other than the literal integer 1 or 2 (never coerced from a numeric-looking string, never
+  // clamped): those are the only two window sizes this module has ever been asked to support.
+  batchConcurrency = 1,
 } = {}) {
   if (!client || typeof client.run !== 'function' || typeof model !== 'string' || !model.trim()
     || !Number.isInteger(timeoutMs) || timeoutMs <= 0 || typeof idempotencyKey !== 'string' || !idempotencyKey.trim()
@@ -1194,7 +1209,8 @@ export async function discoverTenderSemanticManifest({
       typeof checkpointHooks !== 'object'
       || typeof checkpointHooks.loadCheckpoint !== 'function'
       || typeof checkpointHooks.storeCheckpoint !== 'function'
-    ))) {
+    ))
+    || (batchConcurrency !== 1 && batchConcurrency !== 2)) {
     throw new Error('El descubridor semántico AGT-002 no está configurado.');
   }
   const hooksEnabled = checkpointHooks !== null;
@@ -1266,11 +1282,22 @@ export async function discoverTenderSemanticManifest({
 
   const batchOutputs = [];
   const completedLedgerEntries = [];
-  for (const batch of batches) {
-    // Number of client.run attempts actually made for THIS batch, visible to both the success path
-    // (completedLedgerEntries) and the failure path (the catch below) so `attempt_count` can be
-    // attached only when it is more than one — a catalog/preflight failure before the first
-    // client.run leaves this at 0 and never carries the field.
+
+  // Requirement (AGT-002 durable resumed job — bounded batch concurrency): up to `batchConcurrency`
+  // batches may have their own provider round computed concurrently, but every side effect a batch
+  // COMMITS — its checkpoint store and its ledger/batchOutputs entry — is applied in strict
+  // batch_index order below, never in the order the provider actually answered. A lower-index
+  // batch's failure discards (never checkpoints, never surfaces as completed) any higher-index
+  // batch already computed, though that computation is still awaited to completion here so it can
+  // never become an unhandled rejection.
+  //
+  // `computeBatchOutcome` is the part that may run concurrently: checkpoint lookup, request build,
+  // retried client.run, parse and canonicalize — every side-effect-free step. It never touches
+  // `batchOutputs`/`completedLedgerEntries` and never stores a checkpoint.
+  async function computeBatchOutcome(batch) {
+    // Number of client.run attempts actually made for THIS batch, attached to a thrown error (via
+    // `__clientAttemptCount`) so the strictly-ordered commit loop below can still report it even
+    // though the retry loop itself runs inside this per-batch async function.
     let clientAttemptCount = 0;
     try {
       // Built BEFORE this batch's provider call, from only this batch's own units, so a batch this
@@ -1317,178 +1344,275 @@ export async function discoverTenderSemanticManifest({
         })
         : null;
 
-      let canonicalBatch;
-      let batchUsage;
       if (checkpointHit && checkpointHit.hit) {
-        canonicalBatch = checkpointHit.output;
-        batchUsage = checkpointHit.usage;
-      } else {
-        const input = {
-          discovery_policy_version: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-          snapshot_id: validatedInventory.snapshot_id,
-          snapshot_hash: validatedInventory.snapshot_hash,
-          inventory_hash: validatedInventory.inventory_hash,
-          batch: { index: batch.batch_index, count: batches.length },
-          // `source_text` (the unredacted text) is stripped here alongside the internal ordering index:
-          // the provider only ever sees the redacted `text`, exactly as before this change.
-          source_units: batch.units.map(({ index: _index, source_text: _sourceText, ...unit }) => unit),
-        };
-        // Batches are deliberately sequential (not Promise.all): the request order itself must be
-        // deterministic and reproducible, matching the batch_index each idempotency key already encodes.
-        // The heartbeat renews immediately before EVERY attempt at this batch's call, never after: a
-        // rejection here must stop that attempt's provider call from ever happening, and must never
-        // itself be retried as though it were a provider failure.
-        //
-        // `request` is built exactly once and reused, by the same object reference, on every attempt —
-        // including the same `idempotencyKey` — so a retry can never diverge from the request the batch
-        // plan committed to, byte-for-byte.
-        const request = {
-          model,
-          policy: TENDER_SEMANTIC_DISCOVERY_POLICY,
-          input,
-          outputSchema: outputSchema(batch.units.map(unit => unit.source_unit_id), labelCatalog.candidates),
-          timeoutMs,
-          idempotencyKey: tenderSemanticDiscoveryBatchIdempotencyKey({ idempotencyKey, batchIndex: batch.batch_index, batchHash }),
-          signal,
-          effort,
-        };
-        let raw;
-        for (let attempt = 1; attempt <= TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS; attempt += 1) {
-          if (beforeProviderCall) await beforeProviderCall();
-          clientAttemptCount += 1;
-          try {
-            raw = await client.run(request);
-            break;
-          } catch (runError) {
-            // The ONLY retryable failure: the bridge's own exact transport-timeout code, which the real
-            // Procuraduria v9 run showed can be transient/stalled rather than a symptom of an oversized
-            // request. Every other client.run rejection — a different provider error, cancellation/
-            // abort, or anything else — still fails this batch (and therefore the whole run) closed on
-            // the very first attempt, exactly as before this loop existed.
-            if (runError?.code === 'AGT002_CODEX_TIMEOUT' && attempt < TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS) {
-              continue;
-            }
-            throw runError;
+        // Loaded from a checkpoint hit: nothing to store, since this exact output was already
+        // durably persisted on the run that computed it.
+        return { canonicalBatch: checkpointHit.output, batchUsage: checkpointHit.usage, clientAttemptCount, needsStore: false };
+      }
+
+      const input = {
+        discovery_policy_version: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
+        snapshot_id: validatedInventory.snapshot_id,
+        snapshot_hash: validatedInventory.snapshot_hash,
+        inventory_hash: validatedInventory.inventory_hash,
+        batch: { index: batch.batch_index, count: batches.length },
+        // `source_text` (the unredacted text) is stripped here alongside the internal ordering index:
+        // the provider only ever sees the redacted `text`, exactly as before this change.
+        source_units: batch.units.map(({ index: _index, source_text: _sourceText, ...unit }) => unit),
+      };
+      // Up to `batchConcurrency` batches may have their OWN request in flight at once (the pool
+      // below), but the request itself, and the idempotency key it carries, is still exactly the
+      // one this batch's own deterministic plan/hash committed to — concurrency never changes what
+      // is asked for, only how many of those asks may be outstanding at the same time.
+      // The heartbeat renews immediately before EVERY attempt at this batch's call, never after: a
+      // rejection here must stop that attempt's provider call from ever happening, and must never
+      // itself be retried as though it were a provider failure.
+      //
+      // `request` is built exactly once and reused, by the same object reference, on every attempt —
+      // including the same `idempotencyKey` — so a retry can never diverge from the request the batch
+      // plan committed to, byte-for-byte.
+      const request = {
+        model,
+        policy: TENDER_SEMANTIC_DISCOVERY_POLICY,
+        input,
+        outputSchema: outputSchema(batch.units.map(unit => unit.source_unit_id), labelCatalog.candidates),
+        timeoutMs,
+        idempotencyKey: tenderSemanticDiscoveryBatchIdempotencyKey({ idempotencyKey, batchIndex: batch.batch_index, batchHash }),
+        signal,
+        effort,
+      };
+      let raw;
+      for (let attempt = 1; attempt <= TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS; attempt += 1) {
+        if (beforeProviderCall) await beforeProviderCall();
+        clientAttemptCount += 1;
+        try {
+          raw = await client.run(request);
+          break;
+        } catch (runError) {
+          // The ONLY retryable failures: the bridge's own exact transport-timeout code and its
+          // dedicated structured-output-retry-exhausted code (see RETRYABLE_BATCH_ERROR_CODES above),
+          // both known to be transient in production. Every other client.run rejection — a
+          // different (generic) provider error, cancellation/abort, or anything else — still fails
+          // this batch (and therefore the whole run) closed on the very first attempt, exactly as
+          // before this loop existed.
+          if (RETRYABLE_BATCH_ERROR_CODES.has(runError?.code) && attempt < TENDER_SEMANTIC_DISCOVERY_MAX_BATCH_ATTEMPTS) {
+            continue;
           }
-        }
-        if (typeof raw?.content !== 'string' || !raw.content.trim()) {
-          throw discoveryError(
-            'El proveedor no devolvió una propuesta semántica utilizable.',
-            AGT002_OUTPUT_REJECTION_STAGES.CONTENT_EXTRACTION, 'v4_discovery_missing_content',
-          );
-        }
-        let parsed;
-        try { parsed = JSON.parse(raw.content); } catch {
-          throw discoveryError(
-            'El proveedor devolvió una propuesta semántica que no es JSON válido.',
-            AGT002_OUTPUT_REJECTION_STAGES.JSON_PARSE, 'v4_discovery_invalid_json',
-          );
-        }
-        try {
-          batchUsage = requireUsage(raw);
-        } catch (error) {
-          throw discoveryError(error.message, AGT002_OUTPUT_REJECTION_STAGES.USAGE, 'v4_discovery_invalid_usage');
-        }
-        try {
-          canonicalBatch = canonicalizeBatchProposal(parsed, { units: batch.units, labelCandidates, labelOwners });
-        } catch (error) {
-          throw discoveryError(
-            error.message, AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, classifySemanticDiscoveryInvariant(error.message),
-          );
-        }
-        if (hooksEnabled) {
-          // Stored ONLY after parse + current validation + canonicalization succeed: the canonical
-          // structured output this module itself derived (ids/hashes/labels), a deterministic sha256
-          // of it, this batch's own safe normalized usage and its own provider idempotency key —
-          // never the raw prompt, the raw provider response or the source document text.
-          await checkpointHooks.storeCheckpoint({
-            stage: 'semantic_discovery_batch',
-            batchIndex: batch.batch_index,
-            requestHash: batchHash,
-            stageContractVersion: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-            output: canonicalBatch,
-            outputSha256: sha256(stableJson(canonicalBatch)),
-            usage: batchUsage,
-            providerIdempotencyKey: request.idempotencyKey,
-            progressPhase: 'semantic_discovery',
-            completedBatchCount: batch.batch_index + 1,
-            totalBatchCount: batches.length + 1,
-          });
+          throw runError;
         }
       }
-      // Any batch failure above throws and fails the WHOLE discovery closed — this module never
-      // continues into a merged, decision-relevant manifest built from only some of the batches.
-      batchOutputs.push({ batchIndex: batch.batch_index, usage: batchUsage, ...canonicalBatch });
-      completedLedgerEntries.push({
-        ...plainLedgerBatchEntry(batch, 'completed'),
-        // Safe usage only — tokens and cost, never source text or model content — and always derived
-        // from `raw`, i.e. the one ACCEPTED response: a timed-out attempt never reaches `raw` at all,
-        // so a retried batch's usage is never inflated by its failed attempts.
-        usage: { input_tokens: batchUsage.input_tokens, output_tokens: batchUsage.output_tokens, cost_usd: batchUsage.cost_usd },
-        // v8: how many units of this batch had every explicit disposition retracted for
-        // contradicting another disposition or a server-derived citation. A COUNT, never an id or a
-        // reason, so a batch that contradicted itself is diagnosable without the raw answer — which
-        // is never stored — and without the ledger carrying anything it did not already carry.
-        retracted_disposition_units: canonicalBatch.retracted_disposition_units,
-        // Only present when this batch needed more than one client.run attempt to succeed, so an
-        // ordinary one-attempt batch's ledger shape is byte-identical to before this retry existed.
-        ...(clientAttemptCount > 1 ? { attempt_count: clientAttemptCount } : {}),
-      });
-    } catch (error) {
-      // FAIL-CLOSED: no partial semantic manifest is ever returned for a per-batch failure. What the
-      // caller gets instead, attached to the very error thrown, is a deterministic and SAFE ledger up
-      // to the point of failure — every earlier batch that did complete, the failed batch tagged with
-      // only a closed structural {stage, code} (never the raw message, which may embed provider
-      // content or document text), and every later planned batch this run never attempted, marked
-      // `pending`. A preexisting error that reaches here without its own closed stage/code (the two
-      // label-catalog refusals above) maps to the same generic fallback
-      // classifySemanticDiscoveryInvariant already uses for an unrecognized message, rather than
-      // leaving the ledger entry empty or copying anything arbitrary — the error object thrown to the
-      // caller is otherwise untouched, so its own `.message`/`.stage`/`.code` behave exactly as before.
-      // Requirement 10: a checkpoint adapter's own closed AGT002_CHECKPOINT_* code (persistence
-      // conflict, lease loss, malformed resolver response, ...) names an infrastructure/fencing
-      // failure, never a model/semantic-content rejection -- so it must never fall through to the
-      // semantic_validation default below, and must never be written into the ledger `code` field
-      // reserved for TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES. Exact membership in the imported
-      // closed set is the only test: an unrelated error whose code merely shares the prefix by
-      // coincidence is not in the set and is classified exactly as before.
-      const isCheckpointPersistenceError = typeof error.code === 'string' && AGT002_CHECKPOINT_ERROR_CODE_SET.has(error.code);
-      const stage = isCheckpointPersistenceError ? 'checkpoint_persistence' : (error.stage ?? AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION);
-      const code = isCheckpointPersistenceError ? undefined : (error.code ?? 'v4_discovery_invariant_violation');
-      const pendingEntries = batches
-        .filter(other => other.batch_index > batch.batch_index)
-        .map(other => plainLedgerBatchEntry(other, 'pending'));
-      error.discoveryLedger = {
-        planner_version: TENDER_SEMANTIC_DISCOVERY_BATCH_PLANNER_VERSION,
-        policy_version: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
-        status: 'failed',
-        decision_ready: false,
-        batch_count: plannerLedger.batch_count,
-        total_source_units: plannerLedger.total_source_units,
-        assigned_source_units: plannerLedger.assigned_source_units,
-        failed_source_units: plannerLedger.failed_source_units,
-        batches: [
-          ...completedLedgerEntries,
-          {
-            ...plainLedgerBatchEntry(batch, 'failed'),
-            stage,
-            ...(code !== undefined ? { code } : {}),
-            // The adapter's own closed code, preserved unchanged and only here -- never merged into
-            // `code` above, so a checkpoint-store failure stays distinguishable from a semantic one
-            // without ever overloading the semantic-validation catalog with a foreign value.
-            ...(isCheckpointPersistenceError ? { checkpoint_code: error.code } : {}),
-            // Same rule as the completed shape above: only present when client.run was actually
-            // attempted more than once for this batch, so a preflight/catalog failure (0 attempts)
-            // or an ordinary single-attempt failure (1 attempt) keep the exact ledger shape they had
-            // before this retry existed.
-            ...(clientAttemptCount > 1 ? { attempt_count: clientAttemptCount } : {}),
-          },
-          ...pendingEntries,
-        ],
+      if (typeof raw?.content !== 'string' || !raw.content.trim()) {
+        throw discoveryError(
+          'El proveedor no devolvió una propuesta semántica utilizable.',
+          AGT002_OUTPUT_REJECTION_STAGES.CONTENT_EXTRACTION, 'v4_discovery_missing_content',
+        );
+      }
+      let parsed;
+      try { parsed = JSON.parse(raw.content); } catch {
+        throw discoveryError(
+          'El proveedor devolvió una propuesta semántica que no es JSON válido.',
+          AGT002_OUTPUT_REJECTION_STAGES.JSON_PARSE, 'v4_discovery_invalid_json',
+        );
+      }
+      let batchUsage;
+      try {
+        batchUsage = requireUsage(raw);
+      } catch (error) {
+        throw discoveryError(error.message, AGT002_OUTPUT_REJECTION_STAGES.USAGE, 'v4_discovery_invalid_usage');
+      }
+      let canonicalBatch;
+      try {
+        canonicalBatch = canonicalizeBatchProposal(parsed, { units: batch.units, labelCandidates, labelOwners });
+      } catch (error) {
+        throw discoveryError(
+          error.message, AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION, classifySemanticDiscoveryInvariant(error.message),
+        );
+      }
+      // Whether the checkpoint store for this batch is needed is decided here, from only this
+      // batch's own compute outcome; the store call itself happens later, in `commitBatchOutcome`,
+      // strictly in batch_index order — never here, where two batches could otherwise store
+      // out of order relative to each other.
+      return {
+        canonicalBatch, batchUsage, clientAttemptCount,
+        needsStore: hooksEnabled, providerIdempotencyKey: request.idempotencyKey,
       };
+    } catch (error) {
+      error.__clientAttemptCount = clientAttemptCount;
       throw error;
     }
   }
+
+  // Strictly-ordered commit of one already-computed, successful batch outcome: the checkpoint
+  // store (only when this outcome was not itself loaded from a checkpoint) and the ledger/
+  // batchOutputs append. Never called for a batch whose own or an earlier batch's compute failed.
+  async function commitBatchOutcome(batch, outcome) {
+    const { canonicalBatch, batchUsage, clientAttemptCount, needsStore, providerIdempotencyKey } = outcome;
+    if (needsStore) {
+      // Stored ONLY after parse + current validation + canonicalization succeeded (in
+      // computeBatchOutcome above): the canonical structured output this module itself derived
+      // (ids/hashes/labels), a deterministic sha256 of it, this batch's own safe normalized usage
+      // and its own provider idempotency key — never the raw prompt, the raw provider response or
+      // the source document text.
+      await checkpointHooks.storeCheckpoint({
+        stage: 'semantic_discovery_batch',
+        batchIndex: batch.batch_index,
+        requestHash: batchHashes[batch.batch_index],
+        stageContractVersion: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
+        output: canonicalBatch,
+        outputSha256: sha256(stableJson(canonicalBatch)),
+        usage: batchUsage,
+        providerIdempotencyKey,
+        progressPhase: 'semantic_discovery',
+        completedBatchCount: batch.batch_index + 1,
+        totalBatchCount: batches.length + 1,
+      });
+    }
+    // Any batch failure fails the WHOLE discovery closed — this module never continues into a
+    // merged, decision-relevant manifest built from only some of the batches.
+    batchOutputs.push({ batchIndex: batch.batch_index, usage: batchUsage, ...canonicalBatch });
+    completedLedgerEntries.push({
+      ...plainLedgerBatchEntry(batch, 'completed'),
+      // Safe usage only — tokens and cost, never source text or model content — and always derived
+      // from `raw`, i.e. the one ACCEPTED response: a timed-out attempt never reaches `raw` at all,
+      // so a retried batch's usage is never inflated by its failed attempts.
+      usage: { input_tokens: batchUsage.input_tokens, output_tokens: batchUsage.output_tokens, cost_usd: batchUsage.cost_usd },
+      // v8: how many units of this batch had every explicit disposition retracted for
+      // contradicting another disposition or a server-derived citation. A COUNT, never an id or a
+      // reason, so a batch that contradicted itself is diagnosable without the raw answer — which
+      // is never stored — and without the ledger carrying anything it did not already carry.
+      retracted_disposition_units: canonicalBatch.retracted_disposition_units,
+      // Only present when this batch needed more than one client.run attempt to succeed, so an
+      // ordinary one-attempt batch's ledger shape is byte-identical to before this retry existed.
+      ...(clientAttemptCount > 1 ? { attempt_count: clientAttemptCount } : {}),
+    });
+  }
+
+  // Same closed-code classification and safe deterministic-ledger attachment the pre-concurrency
+  // catch block always applied to a per-batch failure — unchanged in content, only relocated so the
+  // strictly-ordered commit loop below can apply it to EITHER a compute failure or a commit
+  // (checkpoint-store) failure, at the exact batch index that failed.
+  function annotateBatchFailure(error, batch, clientAttemptCount) {
+    // FAIL-CLOSED: no partial semantic manifest is ever returned for a per-batch failure. What the
+    // caller gets instead, attached to the very error thrown, is a deterministic and SAFE ledger up
+    // to the point of failure — every earlier batch that did complete, the failed batch tagged with
+    // only a closed structural {stage, code} (never the raw message, which may embed provider
+    // content or document text), and every later planned batch this run never attempted, marked
+    // `pending`. A preexisting error that reaches here without its own closed stage/code (the two
+    // label-catalog refusals above) maps to the same generic fallback
+    // classifySemanticDiscoveryInvariant already uses for an unrecognized message, rather than
+    // leaving the ledger entry empty or copying anything arbitrary — the error object thrown to the
+    // caller is otherwise untouched, so its own `.message`/`.stage`/`.code` behave exactly as before.
+    // Requirement 10: a checkpoint adapter's own closed AGT002_CHECKPOINT_* code (persistence
+    // conflict, lease loss, malformed resolver response, ...) names an infrastructure/fencing
+    // failure, never a model/semantic-content rejection -- so it must never fall through to the
+    // semantic_validation default below, and must never be written into the ledger `code` field
+    // reserved for TENDER_SEMANTIC_DISCOVERY_VALIDATION_CODES. Exact membership in the imported
+    // closed set is the only test: an unrelated error whose code merely shares the prefix by
+    // coincidence is not in the set and is classified exactly as before.
+    const isCheckpointPersistenceError = typeof error.code === 'string' && AGT002_CHECKPOINT_ERROR_CODE_SET.has(error.code);
+    const stage = isCheckpointPersistenceError ? 'checkpoint_persistence' : (error.stage ?? AGT002_OUTPUT_REJECTION_STAGES.SEMANTIC_VALIDATION);
+    const code = isCheckpointPersistenceError ? undefined : (error.code ?? 'v4_discovery_invariant_violation');
+    const pendingEntries = batches
+      .filter(other => other.batch_index > batch.batch_index)
+      .map(other => plainLedgerBatchEntry(other, 'pending'));
+    error.discoveryLedger = {
+      planner_version: TENDER_SEMANTIC_DISCOVERY_BATCH_PLANNER_VERSION,
+      policy_version: TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION,
+      status: 'failed',
+      decision_ready: false,
+      batch_count: plannerLedger.batch_count,
+      total_source_units: plannerLedger.total_source_units,
+      assigned_source_units: plannerLedger.assigned_source_units,
+      failed_source_units: plannerLedger.failed_source_units,
+      batches: [
+        ...completedLedgerEntries,
+        {
+          ...plainLedgerBatchEntry(batch, 'failed'),
+          stage,
+          ...(code !== undefined ? { code } : {}),
+          // The adapter's own closed code, preserved unchanged and only here -- never merged into
+          // `code` above, so a checkpoint-store failure stays distinguishable from a semantic one
+          // without ever overloading the semantic-validation catalog with a foreign value.
+          ...(isCheckpointPersistenceError ? { checkpoint_code: error.code } : {}),
+          // Same rule as the completed shape above: only present when client.run was actually
+          // attempted more than once for this batch, so a preflight/catalog failure (0 attempts)
+          // or an ordinary single-attempt failure (1 attempt) keep the exact ledger shape they had
+          // before this retry existed.
+          ...(clientAttemptCount > 1 ? { attempt_count: clientAttemptCount } : {}),
+        },
+        ...pendingEntries,
+      ],
+    };
+    return error;
+  }
+
+  // Bounded pool: at most `batchConcurrency` batches computed at once (the `pendingComputes.size`
+  // window), never more — but committed (checkpointed, appended to the ledger) strictly in
+  // batch_index order below, regardless of which one's provider call actually resolved first.
+  // `batchConcurrency` defaults to 1, which keeps every existing caller's request order and timing
+  // byte-for-byte sequential: batch N+1 is never even started until batch N's own compute has
+  // fully settled — deliberately not Promise.all over all of `batches` at once.
+  const computedResults = new Array(batches.length);
+  const pendingComputes = new Map();
+  let nextToStart = 0;
+  let stopStarting = false;
+
+  function startMoreBatches() {
+    while (!stopStarting && pendingComputes.size < batchConcurrency && nextToStart < batches.length) {
+      const batch = batches[nextToStart];
+      const batchIndex = nextToStart;
+      const running = computeBatchOutcome(batch).then(
+        value => ({ success: true, value }),
+        error => ({ success: false, error }),
+      ).then(outcome => {
+        computedResults[batchIndex] = outcome;
+        pendingComputes.delete(batchIndex);
+      });
+      pendingComputes.set(batchIndex, running);
+      nextToStart += 1;
+    }
+  }
+
+  startMoreBatches();
+
+  let discoveryFailure = null;
+  for (let commitIndex = 0; commitIndex < batches.length; commitIndex += 1) {
+    if (commitIndex >= nextToStart) {
+      // Never started — an earlier batch's failure stopped the window before this one's turn. There
+      // is nothing running to await, and this batch already appears as `pending` in the failure's
+      // own ledger (built by `annotateBatchFailure`'s `pendingEntries`).
+      continue;
+    }
+    while (computedResults[commitIndex] === undefined) {
+      await Promise.race(Array.from(pendingComputes.values()));
+    }
+    const outcome = computedResults[commitIndex];
+    const batch = batches[commitIndex];
+    if (discoveryFailure) {
+      // An earlier, lower-index batch already failed. This outcome — success or not — was awaited
+      // above so it can never dangle as an unhandled rejection, but it is never checkpointed and
+      // never appended to the ledger: only a discovery run whose EVERY batch, up to and including
+      // this one, is valid may ever be committed.
+      continue;
+    }
+    if (!outcome.success) {
+      discoveryFailure = annotateBatchFailure(outcome.error, batch, outcome.error.__clientAttemptCount ?? 0);
+      stopStarting = true;
+      continue;
+    }
+    try {
+      await commitBatchOutcome(batch, outcome.value);
+    } catch (commitError) {
+      discoveryFailure = annotateBatchFailure(commitError, batch, outcome.value.clientAttemptCount ?? 0);
+      stopStarting = true;
+      continue;
+    }
+    startMoreBatches();
+  }
+  // Drains any batch still computing when the failure was discovered (e.g. a higher-index batch
+  // already started under the old window) so its promise is always awaited, never left dangling.
+  await Promise.all(Array.from(pendingComputes.values()));
+  if (discoveryFailure) throw discoveryFailure;
 
   // input_tokens/output_tokens are always known and summed. cost_usd is summed ONLY when every batch
   // reported a numeric cost; an absent cost on any single batch — a real, honest billing gap — makes
