@@ -85,6 +85,12 @@ export const AGT002_INTEGRAL_V3_POLICY = [
   // infer that a ledger it cannot see means there is nothing left to analyse. The model-facing input
   // and this policy both changed, so AGT002_INTEGRAL_V3_POLICY_VERSION is bumped in the runtime.
   'Cuando la frontera de este proceso fue descubierta por el servidor, recibes semantic_frontier_summary —un resumen estructural derivado por el servidor— en lugar de los libros de auditoría completos (inventario de unidades fuente y manifiesto semántico): debes analizar cada requisito de requirement_manifest sin excepción, y tratar material_omissions y unresolved_count como contexto de pausa y abstención, nunca como evidencia ni como permiso para omitir un requisito.',
+  // v6 (restates v3_material_omissions_abstention_required, never a new server rule): the validator
+  // already fail-closes any run where coverage.material_omissions is true and some unit is not
+  // "abstained". This sentence states that same closed rule in the instructions so the model abstains
+  // on every unit up front instead of producing a mix the server then rejects. AGT002_INTEGRAL_V3_POLICY
+  // is therefore materially different again, so AGT002_INTEGRAL_V3_POLICY_VERSION is bumped in the runtime.
+  'Cuando material_omissions sea true, toda unidad de análisis, sin excepción, debe usar assessment_mode "abstained"; ninguna unidad puede usar otro assessment_mode.',
   // Phase 5 remediation (v3_model_output_shape_mismatch): the corrected real canary fit the context
   // window but the model turn returned an integral_analysis carrying server-owned keys beyond
   // analysis_units. The closed wire schema (buildAgt002IntegralAnalysisV3OutputJsonSchema) and the

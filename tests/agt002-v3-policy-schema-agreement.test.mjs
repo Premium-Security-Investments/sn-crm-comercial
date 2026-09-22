@@ -170,4 +170,34 @@ function buildMinimalV3IntegralAnalysis() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 4. The policy text and the runtime validator AGREE on the material_omissions invariant: when
+//    material_omissions is true, validateAgt002PreviewModelOutputV3Batch rejects any unit that is
+//    not assessment_mode "abstained" (v3_material_omissions_abstention_required, see
+//    agt002-preview-contract.js). The policy must state that invariant explicitly, in one sentence,
+//    naming assessment_mode "abstained" for EVERY analysis unit, without exception, and stating that
+//    no unit may use another assessment_mode — not merely vague pause/abstention language like the
+//    existing semantic_frontier_summary sentence, and with no missing_evidence requirement (the
+//    runtime invariant does not require it).
+// ---------------------------------------------------------------------------
+{
+  const sentences = AGT002_INTEGRAL_V3_POLICY.split(/(?<=\.)\s+/);
+  const materialOmissionsAbstentionSentence = sentences.find(sentence => (
+    /material_omissions/.test(sentence)
+    && /\b(toda|cada)\b/i.test(sentence)
+    && /(unidad|unit)/i.test(sentence)
+    && /sin excepci[oó]n|without exception/i.test(sentence)
+    && /assessment_mode\s*"abstained"/.test(sentence)
+    && /ninguna unidad puede usar otro assessment_mode|no unit may use another assessment_mode/i.test(sentence)
+    && !/missing_evidence/i.test(sentence)
+  ));
+  assert.ok(
+    materialOmissionsAbstentionSentence,
+    'policy must contain one explicit sentence stating that when material_omissions is true, EVERY '
+    + 'analysis unit, without exception, must use assessment_mode "abstained" and that no unit may use '
+    + 'another assessment_mode (not vague pause/abstention wording, and with no missing_evidence '
+    + 'requirement), matching the runtime validator invariant v3_material_omissions_abstention_required',
+  );
+}
+
 console.log('agt002-v3-policy-schema-agreement.test.mjs OK');
