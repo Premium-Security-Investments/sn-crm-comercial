@@ -31,9 +31,12 @@ const base = {
 };
 const row = (id, stableKey, extra = {}) => ({ id, stable_key: stableKey, ...base, ...extra });
 const visible = row('11111111-1111-4111-8111-111111111111', 'visible');
+// Convertida con estado oficial terminal pero cierre vigente: sigue visible porque la conversión
+// cortocircuita la rastreabilidad. Su cierre debe ser vigente, porque el Radar no muestra ningún
+// proceso vencido (ver tests/tender-radar-hide-expired.test.mjs) y aquí se prueba otra regla.
 const converted = row('22222222-2222-4222-8222-222222222222', 'converted', {
   internal_status: 'convertida_oportunidad', converted_opportunity_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-  status: 'cancelado', deadline_at: '2025-01-01T00:00:00.000Z',
+  status: 'cancelado', deadline_at: '2030-06-30T23:59:59.000Z',
 });
 const hidden = row('33333333-3333-4333-8333-333333333333', 'hidden');
 const inconclusive = row('44444444-4444-4444-8444-444444444444', 'inconclusive');
@@ -41,10 +44,13 @@ const staleHash = row('55555555-5555-4555-8555-555555555555', 'stale-hash');
 const stalePolicy = row('66666666-6666-4666-8666-666666666666', 'stale-policy');
 const staleContext = row('77777777-7777-4777-8777-777777777777', 'stale-context');
 const missing = row('88888888-8888-4888-8888-888888888888', 'missing');
-// `expired` ya cruzo su fecha de cierre, pero AGT-002 nunca gobierna visibilidad: sigue siendo un
-// candidato rastreable como cualquier otro y debe permanecer en el Radar igual que en flags OFF.
+// `expired` ya cruzo su fecha de cierre: la regla de producto lo oculta en flags ON y OFF por igual
+// (ver tests/tender-radar-hide-expired.test.mjs). Abajo recibe ademas un veredicto canonico
+// `mostrar_en_radar` para probar la otra mitad del contrato: AGT-002 tampoco puede *mostrar* lo que
+// la regla de vencimiento oculta, igual que no puede ocultar un candidato rastreable vigente.
 const expired = row('99999999-9999-4999-8999-999999999999', 'expired', { deadline_at: '2020-01-01T00:00:00.000Z' });
 const activeRows = [visible, converted, hidden, inconclusive, staleHash, stalePolicy, staleContext, missing, expired];
+const visibleStableKeys = activeRows.filter(item => item !== expired).map(item => item.stable_key).sort();
 // Los veredictos canonicos abajo son deliberadamente hostiles (no_mostrar_en_radar, no_concluyente,
 // hashes/policy/context obsoletos) para probar que el Radar principal los ignora por completo: el
 // preanalisis AGT-002 puede anotar/informar, pero nunca debe ocultar un candidato rastreable.
@@ -128,7 +134,7 @@ try {
     scenario = { ledgerError: false, ledgerQueries: 0 };
     const off = await runBackend(backend, `${backendIndex}-off`, {});
     assert.equal(off.status, 200);
-    assert.deepEqual(off.body.tenders.map(item => item.stable_key).sort(), activeRows.map(item => item.stable_key).sort());
+    assert.deepEqual(off.body.tenders.map(item => item.stable_key).sort(), visibleStableKeys);
     assert.equal(scenario.ledgerQueries, 0, `${backend} no debe consultar el ledger con flags OFF`);
 
     // Flags ON (gate + visibility) no debe diferir de flags OFF: AGT-002 puede anotar/informar el
@@ -137,7 +143,7 @@ try {
     assert.equal(on.status, 200);
     assertSharedEvaluatedAt(off.body, backend);
     assertSharedEvaluatedAt(on.body, backend);
-    assert.deepEqual(on.body.tenders.map(item => item.stable_key).sort(), activeRows.map(item => item.stable_key).sort(), `${backend} no debe ocultar candidatos rastreables aunque el veredicto canonico sea negativo`);
+    assert.deepEqual(on.body.tenders.map(item => item.stable_key).sort(), visibleStableKeys, `${backend} no debe ocultar candidatos rastreables vigentes aunque el veredicto canonico sea negativo, ni mostrar un vencido con veredicto positivo`);
     assert.deepEqual(withNormalizedFitEvaluatedAt(on.body), withNormalizedFitEvaluatedAt(off.body), `${backend} debe conservar payload byte-equivalente entre flags ON y flags OFF`);
     assert.equal(scenario.ledgerQueries, 0, `${backend} no debe consultar el ledger de preanalisis aunque AGT002_RADAR_VISIBILITY este en true`);
 

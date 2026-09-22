@@ -188,7 +188,8 @@ const operationalRunbook = readFileSync(new URL('../docs/runbooks/agt002-radar-p
 for (const required of [
   'AGT002_RADAR_GATE', 'AGT002_RADAR_VISIBILITY', 'uncovered_visible_tenders = 0',
   'no_mostrar_en_radar', 'no_concluyente', 'source_row_hash', 'policy_version', 'context_version',
-  'convertidas históricas se muestran siempre', 'no persiste el resultado ni modifica Supabase',
+  'convertidas históricas nunca se ocultan por preanálisis', 'no muestra ningún proceso vencido',
+  'no persiste el resultado ni modifica Supabase',
 ]) assert.ok(operationalRunbook.includes(required), required);
 
 console.log('AGT-002 historical audit and dry-run scripts are deterministic and read-only');

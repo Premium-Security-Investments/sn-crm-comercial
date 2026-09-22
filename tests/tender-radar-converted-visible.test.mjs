@@ -86,6 +86,10 @@ const activeRows = Array.from({ length: 250 }, (_, index) => ({
   internal_status: 'nueva',
   score: 80,
 }));
+// Queda fuera de la ventana de 250 filas activas por su `last_seen_at` antiguo, que es lo que esta
+// regresión protege. Su cierre debe seguir vigente: el Radar no muestra procesos vencidos ni
+// convertidos (ver tests/tender-radar-hide-expired.test.mjs), así que una fecha pasada aquí
+// probaría la regla de vencimiento, no la de paginación.
 const oldConvertedRow = {
   stable_key: 'old-converted-outside-active-window',
   source: 'SECOP II',
@@ -93,7 +97,7 @@ const oldConvertedRow = {
   entity: 'Entidad convertida',
   title: 'Proceso histórico convertido',
   status: 'terminado',
-  deadline_at: '2025-01-01T00:00:00.000Z',
+  deadline_at: '2030-06-30T23:59:59.000Z',
   last_seen_at: '2025-01-01T00:00:00.000Z',
   internal_status: 'convertida_oportunidad',
   converted_opportunity_id: '22222222-2222-4222-8222-222222222222',
