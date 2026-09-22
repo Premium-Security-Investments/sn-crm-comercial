@@ -188,6 +188,67 @@ function testReadmeDocumentsTheManualOperation() {
   assert.ok(/no (instala|aplica|despliega)/i.test(readme), 'el README debe declarar que estos artefactos no se aplican automáticamente');
 }
 
+// El binario y el cwd del subproceso `claude` deben fijarse en el
+// EnvironmentFile, no adivinarse: un cwd relativo o ausente rompe el
+// aislamiento de ProtectSystem=strict, y un binario resuelto por PATH deja
+// que cualquier `claude` que aparezca primero en el PATH del servicio
+// suplante al binario real. AGT003_CLAUDE_CLI_BIN es el nombre antiguo del
+// mismo propósito y no debe sobrevivir junto al nuevo par de variables.
+function testEnvExampleDeclaresTheClaudeBinaryAndCwd() {
+  const entries = lines(envExample).filter(line => !line.startsWith('#') && line.includes('='));
+  const byKey = new Map(entries.map(line => [line.slice(0, line.indexOf('=')), line.slice(line.indexOf('=') + 1)]));
+  assert.equal(byKey.get('AGT003_CLAUDE_BIN'), '/usr/bin/claude', 'el ejemplo debe fijar la ruta absoluta del binario claude');
+  assert.equal(byKey.get('AGT003_CLAUDE_CWD'), '/opt/agt003-bridge/var', 'el ejemplo debe fijar el cwd absoluto del subproceso claude');
+}
+
+// requireEnv por sí solo sólo exige *presencia*: un AGT003_CLAUDE_BIN relativo
+// o vacío-con-espacios pasaría intacto y createAgt003ClaudeClient lo usaría
+// como command/cwd sin más validación. El helper absolutePathEnv debe exigir
+// además que la ruta sea absoluta y fallar cerrado si no lo es.
+function testRunServerRequiresTheClaudeBinaryAndCwd() {
+  const absolutePathEnvMatch = runServer.match(/function\s+absolutePathEnv\s*\(\s*name\s*\)\s*\{([\s\S]*?)\n\}/);
+  assert.ok(absolutePathEnvMatch, 'el runner debe declarar un helper absolutePathEnv(name) fail-closed de ruta absoluta');
+  const absolutePathEnvBody = absolutePathEnvMatch[1];
+  assert.match(absolutePathEnvBody, /requireEnv\(name\)/, 'absolutePathEnv debe apoyarse en requireEnv para exigir la variable');
+  assert.match(
+    absolutePathEnvBody,
+    /isAbsolute\(|\^\\\/|startsWith\('\/'\)|startsWith\("\/"\)/,
+    'absolutePathEnv debe verificar que el valor sea una ruta absoluta antes de devolverlo',
+  );
+  assert.match(absolutePathEnvBody, /throw new Error/, 'absolutePathEnv debe fallar cerrado si la ruta no es absoluta');
+
+  assert.match(
+    runServer,
+    /createAgt003ClaudeClient\(\s*\{[^}]*command:\s*absolutePathEnv\('AGT003_CLAUDE_BIN'\)[^}]*\}\s*\)/s,
+    "el runner debe usar absolutePathEnv('AGT003_CLAUDE_BIN') como command al construir createAgt003ClaudeClient",
+  );
+  assert.match(
+    runServer,
+    /createAgt003ClaudeClient\(\s*\{[^}]*cwd:\s*absolutePathEnv\('AGT003_CLAUDE_CWD'\)[^}]*\}\s*\)/s,
+    "el runner debe usar absolutePathEnv('AGT003_CLAUDE_CWD') como cwd al construir createAgt003ClaudeClient",
+  );
+  assert.equal(runServer.includes('AGT003_CLAUDE_CLI_BIN'), false, 'el runner ya no debe leer la variable antigua AGT003_CLAUDE_CLI_BIN');
+}
+
+// Un valor con espacios (" /usr/bin/claude") es "truthy" tras el trim de la
+// comprobación de presencia, pero si requireEnv devuelve el crudo sin recortar,
+// ese espacio viaja hasta command/cwd del subproceso. requireEnv debe normalizar
+// con value.trim() antes de devolver, no sólo al comprobar que no esté vacío.
+function testRequireEnvTrimsTheValue() {
+  const requireEnvMatch = runServer.match(/function\s+requireEnv\s*\(\s*name\s*\)\s*\{([\s\S]*?)\n\}/);
+  assert.ok(requireEnvMatch, 'el runner debe declarar requireEnv(name)');
+  assert.match(
+    requireEnvMatch[1],
+    /return\s+value\.trim\(\)\s*;/,
+    'requireEnv debe devolver value.trim(), no el valor crudo con posibles espacios',
+  );
+}
+
+function testReadmeDocumentsTheClaudeBinaryAndCwd() {
+  assert.ok(readme.includes('AGT003_CLAUDE_BIN'), 'el README debe documentar AGT003_CLAUDE_BIN');
+  assert.ok(readme.includes('AGT003_CLAUDE_CWD'), 'el README debe documentar AGT003_CLAUDE_CWD');
+}
+
 testUnitRunsAsTheDedicatedUser();
 testUnitIsHardened();
 testClaudeConfigDirIsPinnedUnderOpt();
@@ -207,4 +268,8 @@ testReadmeDocumentsTheOperationalCeilings();
 testReadmeCreatesTheUserWithTheServiceHome();
 testReadmeKeepsThePortOnLoopback();
 testReadmeDocumentsTheManualOperation();
+testEnvExampleDeclaresTheClaudeBinaryAndCwd();
+testRunServerRequiresTheClaudeBinaryAndCwd();
+testRequireEnvTrimsTheValue();
+testReadmeDocumentsTheClaudeBinaryAndCwd();
 console.log('agt003-claude-bridge-ops-artifact.test.mjs OK');
