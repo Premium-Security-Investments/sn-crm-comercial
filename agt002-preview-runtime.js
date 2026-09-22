@@ -31,7 +31,13 @@ export const AGT002_PREVIEW_DEFAULT_POLICY_VERSION = 'agt002-preview-policy-v2';
 // derived `semantic_frontier_summary` of their arithmetic, while the durable envelope keeps both
 // ledgers complete. What the model is shown and told is therefore materially different from a v4
 // run, so the persisted policy version must tell the two apart. The OUTPUT contract is unchanged.
-export const AGT002_INTEGRAL_V3_POLICY_VERSION = 'agt002-integral-v3-policy-v5';
+// v6: AGT002_INTEGRAL_V3_POLICY now spells out, in one explicit Spanish sentence, the abstention rule
+// already enforced fail-closed by the server validator (v3_material_omissions_abstention_required):
+// when material_omissions is true, every analysis unit without exception must use assessment_mode
+// "abstained" and no unit may use another assessment_mode. This restates the existing validator and
+// changes no server contract, but the policy text is materially different, so the persisted version
+// is bumped again.
+export const AGT002_INTEGRAL_V3_POLICY_VERSION = 'agt002-integral-v3-policy-v6';
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;
