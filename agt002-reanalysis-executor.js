@@ -27,6 +27,7 @@ import { TENDER_SEMANTIC_DISCOVERY_POLICY_VERSION } from './tender-semantic-disc
 import { TENDER_SEMANTIC_DISCOVERY_BATCH_PLANNER_VERSION } from './tender-semantic-discovery-batches.js';
 import { AGT002_INTEGRAL_ANALYSIS_CONTRACT_VERSION } from './agt002-integral-analysis-v3.js';
 import { AGT002_INTEGRAL_ANALYSIS_BATCH_PLANNER_VERSION } from './agt002-integral-analysis-batches.js';
+import { computeAgt002StableContentHash } from './tender-analysis-foundation.js';
 
 function isObject(value) {
   return value != null && typeof value === 'object' && !Array.isArray(value);
@@ -64,6 +65,40 @@ function validateAgt002GovernedResolvedDocument(resolved, member, identityScope)
     const error = new Error('AGT-002 governed document resolver: invalid resolved document output.');
     error.code = 'AGT002_GOVERNED_DOCUMENT_RESOLVER_INVALID_OUTPUT';
     throw error;
+  }
+}
+
+const CONTEXT_V2_REQUIRED_SECTION_KEYS = Object.freeze(['opportunity', 'company_dossier', 'commercial_context', 'human_evidence']);
+const HEX64_LOWER_RE = /^[0-9a-f]{64}$/;
+
+function hasCompleteContextV2Sections(sections) {
+  return isObject(sections) && CONTEXT_V2_REQUIRED_SECTION_KEYS.every(key => Object.hasOwn(sections, key));
+}
+
+function throwContextVersionRehydrationFailed(message) {
+  const error = new Error(message);
+  error.code = 'AGT002_CONTEXT_VERSION_REHYDRATION_FAILED';
+  throw error;
+}
+
+// The governed context-version resolver seam is never trusted verbatim either: its reported
+// identity must equal the job's own immutable opportunity/tender/snapshot scope, its own context
+// blob must re-derive its claimed content_hash byte-for-byte (the same stable-key-sorted-JSON
+// sha256 scheme registerAgt002ContextVersion used to write it), the blob's own embedded
+// snapshot_id must agree with that same scope, and the blob must carry all four required
+// contextV2Sections. Any divergence throws AGT002_CONTEXT_VERSION_REHYDRATION_FAILED.
+function validateAgt002ResolvedContextVersion(resolved, job) {
+  if (!isObject(resolved)
+    || resolved.opportunity_id !== job.opportunityId
+    || resolved.tender_id !== job.tenderId
+    || resolved.snapshot_id !== job.snapshotId
+    || !isObject(resolved.context)
+    || resolved.context.snapshot_id !== job.snapshotId
+    || typeof resolved.content_hash !== 'string'
+    || !HEX64_LOWER_RE.test(resolved.content_hash)
+    || computeAgt002StableContentHash(resolved.context) !== resolved.content_hash
+    || !hasCompleteContextV2Sections(resolved.context)) {
+    throwContextVersionRehydrationFailed('AGT-002 context version resolver: invalid resolved context version output.');
   }
 }
 
@@ -414,6 +449,12 @@ export function createAgt002ReanalysisExecutor({
   // already re-validated both), once per exact frozen member, before runPostBridgeAnalysis. A
   // frozen input with no governed workset never calls this, byte-for-byte unchanged from before.
   governedDocumentResolver,
+  // Governed context-version rehydration seam: invoked ONLY for a contextV2 job (analysis_flags.
+  // AGT002_CONTEXT_V2 === true) whose frozen analysis_context lacks a structurally complete
+  // contextV2Sections (all four of opportunity/company_dossier/commercial_context/human_evidence
+  // present). A job whose frozen sections are already complete, or whose contextV2 flag is off,
+  // never calls this, byte-for-byte unchanged from before.
+  governedContextVersionResolver,
 } = {}) {
   return async function executeAgt002Reanalysis(database, job, { beforeProviderCall: jobLeaseHeartbeat } = {}) {
     const input = validFrozenInput(job);
@@ -514,6 +555,29 @@ export function createAgt002ReanalysisExecutor({
           };
         }));
         effectiveAnalysisContext = { ...input.analysis_context, documents: resolvedDocuments };
+      }
+
+      // Fail-closed rehydration of a contextV2 job's contextV2Sections: never mutates
+      // job.frozenEngineInput or input.analysis_context — a brand-new analysisContext object is
+      // built for this one execution only, injecting ONLY contextV2Sections. A job whose frozen
+      // sections are already structurally complete never calls the resolver at all.
+      if (input.analysis_flags.AGT002_CONTEXT_V2 === true && !hasCompleteContextV2Sections(effectiveAnalysisContext?.contextV2Sections)) {
+        if (typeof governedContextVersionResolver !== 'function') {
+          throwContextVersionRehydrationFailed('AGT-002 context version resolver: no resolver available for a contextV2 job needing rehydration.');
+        }
+        const resolvedContextVersion = await governedContextVersionResolver({
+          database,
+          contextVersionId: job.contextVersionId,
+          opportunityId: job.opportunityId,
+          tenderId: job.tenderId,
+          snapshotId: job.snapshotId,
+        });
+        validateAgt002ResolvedContextVersion(resolvedContextVersion, job);
+        const { opportunity, company_dossier, commercial_context, human_evidence } = resolvedContextVersion.context;
+        effectiveAnalysisContext = {
+          ...effectiveAnalysisContext,
+          contextV2Sections: { opportunity, company_dossier, commercial_context, human_evidence },
+        };
       }
 
       const engine = createRuntime({

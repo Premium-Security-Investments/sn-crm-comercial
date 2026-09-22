@@ -31,6 +31,14 @@ function sha256(value) {
   return createHash('sha256').update(JSON.stringify(stable(value))).digest('hex');
 }
 
+// The same stable-key-sorted-JSON sha256 hex scheme registerAgt002ContextVersion uses to derive
+// psi_agt002_context_versions.context_hash — exported so any reader of that same row (e.g. the
+// governed context-version rehydration seam in agt002-reanalysis-executor.js) can re-derive and
+// verify it byte-for-byte, rather than duplicating the hashing scheme.
+export function computeAgt002StableContentHash(value) {
+  return sha256(value);
+}
+
 function contentSha256(content) {
   return createHash('sha256').update(content).digest('hex');
 }

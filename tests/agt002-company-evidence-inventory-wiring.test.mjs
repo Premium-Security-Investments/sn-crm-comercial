@@ -283,7 +283,13 @@ function frozenSource(governanceOverrides = {}) {
   return {
     runtimeConfig: { model: 'sonnet', policyVersion: 'p', timeoutMs: 165000, dailyMaxRuns: 20, maxConcurrent: 2 },
     analysisConfig: { AGT002_CANONICAL_ONLY: true, AGT002_CONTEXT_V2: true, AGT002_DOCUMENT_RETRIEVAL: true, AGT002_LEGAL_CORPUS: false, AGT002_INTEGRAL_CONTRACT_V3: true },
-    analysisContext: { opportunity: { id: 'opp' }, documents: [{ id: 'doc' }], snapshotId: 'snap', canonicalOnly: true },
+    analysisContext: {
+      opportunity: { id: 'opp' },
+      documents: [{ id: 'doc' }],
+      snapshotId: 'snap',
+      canonicalOnly: true,
+      contextV2Sections: { opportunity: {}, company_dossier: {}, commercial_context: {}, human_evidence: [] },
+    },
     legalCorpusContext: null,
     integralV3Governance: {
       companyEvidenceRegistryEntries: [], categoryOverrides: {}, evidenceClassLinkByRequirementId: {}, governanceProvenance: {},

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { createAgt002ReanalysisExecutor } from '../../agt002-reanalysis-executor.js';
 import { createAgt002ReanalysisWorker } from '../../agt002-reanalysis-worker.js';
 import { resolveAgt002GovernedDocumentForExecution } from '../../agt002-governed-document-rehydration.js';
+import { resolveAgt002GovernedContextVersionForExecution } from '../../agt002-governed-context-version-rehydration.js';
 
 const supabaseUrl = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
 const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
@@ -16,6 +17,7 @@ const database = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSess
 const executeJob = createAgt002ReanalysisExecutor({
   environment: process.env,
   governedDocumentResolver: args => resolveAgt002GovernedDocumentForExecution(database, args),
+  governedContextVersionResolver: resolveAgt002GovernedContextVersionForExecution,
 });
 const worker = createAgt002ReanalysisWorker({ database, executeJob, leaseSeconds: 600 });
 

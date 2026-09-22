@@ -119,6 +119,9 @@ const GOVERNED_JOB = Object.freeze({
       documents: Object.freeze([GOVERNED_DOCUMENT_PROJECTION]),
       snapshotId: SNAPSHOT_ID,
       canonicalOnly: true,
+      contextV2Sections: Object.freeze({
+        opportunity: Object.freeze({}), company_dossier: Object.freeze({}), commercial_context: Object.freeze({}), human_evidence: Object.freeze([]),
+      }),
     }),
     legal_corpus_context: null,
     integral_v3_governance: null,
