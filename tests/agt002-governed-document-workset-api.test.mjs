@@ -531,9 +531,16 @@ describe('buildAgt002GovernedWorksetFrozenEngineInput — integration regression
       runPostBridgeAnalysis: async (...args) => { calls.post.push(args); return { status: 'completed', analysis_run_id: 'run-governed-1', error_code: null }; },
       createCorrelationId: () => 'governed-correlation-1',
       observability: { record() {} },
-      governedDocumentResolver: async ({ member }) => ({
+      governedDocumentResolver: async ({ opportunityId, tenderId, member }) => ({
+        document_id: `doc-${member.document_version_id}`,
         document_version_id: member.document_version_id,
+        opportunity_id: opportunityId,
+        tender_id: tenderId,
+        version: 1,
+        name: `Document ${member.document_version_id}`,
         content_hash: member.content_hash,
+        document_type: 'pliego',
+        current: true,
         extraction_id: member.extraction_id,
         extraction_text_hash: member.extraction_text_hash,
         text: GOVERNED_MEMBER_TEXTS[frozenMembers.findIndex((m) => m.document_version_id === member.document_version_id)],

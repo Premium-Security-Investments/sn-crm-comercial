@@ -14,9 +14,13 @@ function isHex64(value) {
   return typeof value === 'string' && HEX64.test(value);
 }
 
+function isPositiveInteger(value) {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
 // Reads EXACTLY the one immutable document version row and EXACTLY the one 'ok' extraction row a
 // frozen governed_workset_members entry identifies — by primary key plus tenant/tender scope,
-// never by ordering or "latest" — and maps them onto the narrow 5-field shape the executor
+// never by ordering or "latest" — and maps them onto the narrow shape the executor
 // (agt002-reanalysis-executor.js) already cross-checks byte-for-byte against the frozen member.
 // Text hash recomputation/validation happens there, not here.
 export async function resolveAgt002GovernedDocumentForExecution(database, args) {
@@ -30,7 +34,7 @@ export async function resolveAgt002GovernedDocumentForExecution(database, args) 
 
   const { data: versionRow, error: versionError } = await database
     .from('psi_tender_document_versions')
-    .select('id,content_hash')
+    .select('id,opportunity_id,tender_id,source_document_id,version,name,content_hash,document_type,current')
     .eq('id', documentVersionId)
     .eq('opportunity_id', opportunityId)
     .eq('tender_id', tenderId)
@@ -39,6 +43,13 @@ export async function resolveAgt002GovernedDocumentForExecution(database, args) 
   if (versionError) throw invalid('AGT002_GOVERNED_DOCUMENT_INVALID: document version read failed');
   if (!versionRow) throw invalid('AGT002_GOVERNED_DOCUMENT_INVALID: document version row not found');
   if (versionRow.id !== documentVersionId) throw invalid('AGT002_GOVERNED_DOCUMENT_INVALID: document version id mismatch');
+  if (versionRow.opportunity_id !== opportunityId) throw invalid('AGT002_GOVERNED_DOCUMENT_INVALID: document version opportunity_id mismatch');
+  if (versionRow.tender_id !== tenderId) throw invalid('AGT002_GOVERNED_DOCUMENT_INVALID: document version tender_id mismatch');
+  if (!isNonBlankString(versionRow.source_document_id)) throw invalid('AGT002_GOVERNED_DOCUMENT_INVALID: document version source_document_id blank');
+  if (!isNonBlankString(versionRow.name)) throw invalid('AGT002_GOVERNED_DOCUMENT_INVALID: document version name blank');
+  if (!isNonBlankString(versionRow.document_type)) throw invalid('AGT002_GOVERNED_DOCUMENT_INVALID: document version document_type blank');
+  if (!isPositiveInteger(versionRow.version)) throw invalid('AGT002_GOVERNED_DOCUMENT_INVALID: document version version malformed');
+  if (typeof versionRow.current !== 'boolean') throw invalid('AGT002_GOVERNED_DOCUMENT_INVALID: document version current malformed');
   if (!isHex64(versionRow.content_hash)) throw invalid('AGT002_GOVERNED_DOCUMENT_INVALID: document version content_hash malformed');
 
   const { data: extractionRow, error: extractionError } = await database
@@ -59,8 +70,15 @@ export async function resolveAgt002GovernedDocumentForExecution(database, args) 
   if (!isNonBlankString(extractionRow.extracted_text)) throw invalid('AGT002_GOVERNED_DOCUMENT_INVALID: extraction extracted_text blank');
 
   return {
+    document_id: versionRow.source_document_id,
     document_version_id: versionRow.id,
+    opportunity_id: versionRow.opportunity_id,
+    tender_id: versionRow.tender_id,
+    version: versionRow.version,
+    name: versionRow.name,
     content_hash: versionRow.content_hash,
+    document_type: versionRow.document_type,
+    current: versionRow.current,
     extraction_id: extractionRow.id,
     extraction_text_hash: extractionRow.text_hash,
     text: extractionRow.extracted_text,

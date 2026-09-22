@@ -41,16 +41,25 @@ function sha256HexUtf8(text) {
 }
 
 // The governed document resolver seam is never trusted verbatim: its reported identity must
-// equal the frozen governed_workset_members evidence it was called with, byte-for-byte, and its
-// own text must re-derive the extraction_text_hash it reports. Any divergence throws with a
-// `code` classifyAgt002ReanalysisWorkerError maps onto invalid_output.
-function validateAgt002GovernedResolvedDocument(resolved, member) {
+// equal the frozen governed_workset_members evidence it was called with, byte-for-byte, its
+// opportunity_id/tender_id must equal the frozen document_workset_identity scope it was called
+// with, its own text must re-derive the extraction_text_hash it reports, and its remaining
+// engine-bound metadata (name/document_type/version/current) must be well-formed. Any divergence
+// throws with a `code` classifyAgt002ReanalysisWorkerError maps onto invalid_output.
+function validateAgt002GovernedResolvedDocument(resolved, member, identityScope) {
   if (!isObject(resolved)
+    || !isNonEmptyString(resolved.document_id)
+    || !isNonEmptyString(resolved.name)
+    || !isNonEmptyString(resolved.document_type)
     || !isNonEmptyString(resolved.text)
     || resolved.document_version_id !== member.document_version_id
     || resolved.content_hash !== member.content_hash
     || resolved.extraction_id !== member.extraction_id
     || resolved.extraction_text_hash !== member.extraction_text_hash
+    || resolved.opportunity_id !== identityScope.opportunity_id
+    || resolved.tender_id !== identityScope.tender_id
+    || !Number.isInteger(resolved.version) || resolved.version <= 0
+    || typeof resolved.current !== 'boolean'
     || sha256HexUtf8(resolved.text) !== resolved.extraction_text_hash) {
     const error = new Error('AGT-002 governed document resolver: invalid resolved document output.');
     error.code = 'AGT002_GOVERNED_DOCUMENT_RESOLVER_INVALID_OUTPUT';
@@ -478,8 +487,7 @@ export function createAgt002ReanalysisExecutor({
         }
         const identityScope = input.document_workset_identity;
         const members = input.governed_workset_members;
-        const documents = input.analysis_context.documents;
-        const resolvedDocuments = await Promise.all(members.map(async (member, index) => {
+        const resolvedDocuments = await Promise.all(members.map(async member => {
           const resolved = await governedDocumentResolver({
             opportunityId: identityScope.opportunity_id,
             tenderId: identityScope.tender_id,
@@ -488,9 +496,22 @@ export function createAgt002ReanalysisExecutor({
             documentVersionId: member.document_version_id,
             member,
           });
-          validateAgt002GovernedResolvedDocument(resolved, member);
-          const { document_version_id, source_classification, inclusion_reason } = documents[index];
-          return { document_version_id, source_classification, inclusion_reason, text: resolved.text };
+          validateAgt002GovernedResolvedDocument(resolved, member, identityScope);
+          // Projected into EXACTLY the 10 keys agt002-document-chunks.js accepts — never
+          // source_classification/inclusion_reason, which remain governed evidence in the frozen
+          // members/workset only, never reaching the engine.
+          return {
+            document_id: resolved.document_id,
+            document_version_id: resolved.document_version_id,
+            opportunity_id: identityScope.opportunity_id,
+            snapshot_id: identityScope.snapshot_id,
+            document_type: resolved.document_type,
+            name: resolved.name,
+            version: resolved.version,
+            content_hash: resolved.content_hash,
+            current: resolved.current,
+            extracted_text: resolved.text,
+          };
         }));
         effectiveAnalysisContext = { ...input.analysis_context, documents: resolvedDocuments };
       }

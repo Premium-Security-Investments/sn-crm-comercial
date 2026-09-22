@@ -6,8 +6,9 @@ import {
   computeAgt002GovernedWorksetIdempotencyKey,
   computeAgt002WorksetSelectionHash,
 } from '../agt002-governed-document-worksets.js';
+import { buildAgt002TenderRequirementInventory } from '../agt002-preview-input.js';
 
-// RED slice for the governed document-workset EXECUTION gap: a claimed durable_batched_v1 job's
+// GREEN slice for the governed document-workset EXECUTION gap: a claimed durable_batched_v1 job's
 // frozen_engine_input.analysis_context.documents (and its governed_workset_members) carry only
 // governed, immutable IDENTITY metadata — document_version_id, source_classification,
 // inclusion_reason (the exact 3-field projection agt002-reanalysis-executor.js's
@@ -15,22 +16,26 @@ import {
 // plus content_hash/extraction identity on governed_workset_members and a
 // document_workset_identity (the workset identity) at the top level. None of that frozen shape
 // carries extracted TEXT — current validation forbids a 4th key on analysis_context.documents —
-// so today's engine has no governed document content to analyze at all. This test proves the
-// executor is expected to accept an injected `governedDocumentResolver` seam, call it once per
-// frozen governed document with its exact frozen identity, and rehydrate the resolver's
-// transient extracted text into the analysis input reaching the existing runPostBridgeAnalysis /
-// runtime.analyze path — before that call is made. createAgt002ReanalysisExecutor has no such
-// seam today, so the resolver is never invoked and this is expected to fail RED.
+// so the engine has no governed document content to analyze without rehydration. This test
+// proves the executor accepts an injected `governedDocumentResolver` seam, calls it once per
+// frozen governed document with its exact frozen identity, and rehydrates the resolver's
+// transient extracted text (plus its engine-bound metadata) into the analysis input reaching the
+// existing runPostBridgeAnalysis / runtime.analyze path — before that call is made.
 //
-// This file also strengthens that contract with a closed, fail-safe boundary: the executor must
+// This file also enforces that contract with a closed, fail-safe boundary: the executor must
 // never trust the resolver's rehydrated content verbatim. A resolver whose reported identity
 // (document_version_id/content_hash/extraction_id/extraction_text_hash) diverges from the frozen
-// governed_workset_members evidence it was called with, or whose text's own SHA-256 does not
-// equal the extraction_text_hash it reports, must fail the WHOLE execution closed — status
-// unavailable / analysis_run_id null / error_code invalid_output / reused false — strictly
-// BEFORE runPostBridgeAnalysis (and therefore runtime.analyze) is ever reached, while still
-// releasing the already-acquired preview claim exactly once. None of this validation exists in
-// createAgt002ReanalysisExecutor today, so every negative case below is also expected to fail RED.
+// governed_workset_members evidence it was called with, whose opportunity_id/tender_id diverges
+// from the frozen document_workset_identity scope it was called with, whose name/document_type/
+// version/current metadata is malformed, or whose text's own SHA-256 does not equal the
+// extraction_text_hash it reports, must fail the WHOLE execution closed — status unavailable /
+// analysis_run_id null / error_code invalid_output / reused false — strictly BEFORE
+// runPostBridgeAnalysis (and therefore runtime.analyze) is ever reached, while still releasing
+// the already-acquired preview claim exactly once. The resolver's validated output is then
+// projected into EXACTLY the 10 keys agt002-document-chunks.js accepts — document_id,
+// document_version_id, opportunity_id, snapshot_id, document_type, name, version, content_hash,
+// current, extracted_text — never source_classification/inclusion_reason, which remain governed
+// evidence in the frozen members/workset only.
 
 function sha256Hex(text) {
   return createHash('sha256').update(text, 'utf8').digest('hex');
@@ -41,6 +46,10 @@ const TENDER_ID = '22222222-2222-2222-2222-222222222222';
 const SNAPSHOT_ID = '33333333-3333-3333-3333-333333333333';
 const CONTEXT_VERSION_ID = '44444444-4444-4444-4444-444444444444';
 const DOCUMENT_VERSION_ID = '55555555-5555-5555-5555-555555555555';
+const RESOLVED_DOCUMENT_ID = 'document-55555555';
+const RESOLVED_DOCUMENT_NAME = 'Pliego de condiciones';
+const RESOLVED_DOCUMENT_TYPE = 'pliego';
+const RESOLVED_DOCUMENT_VERSION = 3;
 
 const EXTRACTED_TEXT = 'EXTRACTED PLIEGO TEXT FOR DOCUMENT 55555555-...';
 const EXTRACTED_TEXT_HASH = sha256Hex(EXTRACTED_TEXT);
@@ -50,6 +59,8 @@ const WRONG_CONTENT_HASH = 'c'.repeat(64);
 const WRONG_EXTRACTION_ID = 'cccccccc-1111-1111-1111-111111111111';
 const WRONG_EXTRACTION_TEXT_HASH = 'd'.repeat(64);
 const TAMPERED_TEXT = 'TAMPERED TEXT THAT DOES NOT MATCH THE FROZEN EXTRACTION HASH';
+const WRONG_OPPORTUNITY_ID = '77777777-7777-7777-7777-777777777777';
+const WRONG_TENDER_ID = '88888888-8888-8888-8888-888888888888';
 
 const GOVERNED_MEMBER = Object.freeze({
   document_version_id: DOCUMENT_VERSION_ID,
@@ -123,13 +134,24 @@ const GOVERNED_JOB = Object.freeze({
   }),
 });
 
-// Exactly the 5 fields a resolver success output must explicitly carry — the executor is
-// expected to cross-check every one of them against the frozen governed_workset_members
-// evidence (plus re-derive extraction_text_hash from `text` itself) before trusting it.
+// The real resolver's full success output shape — document_id (mapped source_document_id),
+// document_version_id, opportunity_id, tender_id, version, name, content_hash, document_type,
+// current, extraction_id, extraction_text_hash, text. The executor is expected to cross-check
+// every byte-for-byte-comparable field against the frozen governed_workset_members evidence and
+// the frozen document_workset_identity scope (plus re-derive extraction_text_hash from `text`
+// itself), and to require document_id/name/document_type/text as nonblank strings, version as a
+// positive integer and current as a boolean, before trusting any of it.
 function validResolvedDocument() {
   return {
+    document_id: RESOLVED_DOCUMENT_ID,
     document_version_id: DOCUMENT_VERSION_ID,
+    opportunity_id: OPPORTUNITY_ID,
+    tender_id: TENDER_ID,
+    version: RESOLVED_DOCUMENT_VERSION,
+    name: RESOLVED_DOCUMENT_NAME,
     content_hash: GOVERNED_MEMBER.content_hash,
+    document_type: RESOLVED_DOCUMENT_TYPE,
+    current: true,
     extraction_id: GOVERNED_MEMBER.extraction_id,
     extraction_text_hash: GOVERNED_MEMBER.extraction_text_hash,
     text: EXTRACTED_TEXT,
@@ -223,7 +245,7 @@ test('rehydrates a governed frozen document with extracted text via an injected 
   const analysisDocuments = deps.analysisContext?.documents;
   assert.ok(Array.isArray(analysisDocuments) && analysisDocuments.length === 1);
   assert.equal(
-    analysisDocuments[0].text,
+    analysisDocuments[0].extracted_text,
     EXTRACTED_TEXT,
     'the resolver\'s transient extracted text must be present in the analysis context used by the existing runtime.analyze path before it is invoked',
   );
@@ -247,7 +269,7 @@ test('rehydrates a governed frozen document with extracted text via an injected 
   );
 });
 
-// Table-driven RED coverage: an executor that rehydrates governed document content must never
+// Table-driven GREEN coverage: an executor that rehydrates governed document content must never
 // trust the resolver's reported identity/text verbatim. Any divergence from the frozen
 // governed_workset_members evidence — or a text whose own SHA-256 does not equal the
 // extraction_text_hash the resolver reports — must fail the whole execution closed, strictly
@@ -305,6 +327,52 @@ test('fails closed before runtime creation and runPostBridgeAnalysis when a GOVE
   assert.equal(calls.release[0][1]?.claimId, 'preview-lease-1', 'the release must target the exact claim this execution acquired');
 });
 
+// GREEN regression: the governed document reaching runPostBridgeAnalysis must be projected into
+// EXACTLY the 10 keys agt002-document-chunks.js accepts — document_id, document_version_id,
+// opportunity_id, snapshot_id, document_type, name, version, content_hash, current,
+// extracted_text — never source_classification/inclusion_reason (which remain governed evidence
+// in the frozen members/workset only) and never the resolver's own tender_id/extraction_id/
+// extraction_text_hash. This test captures the exact analysisContext.documents the executor
+// hands to runPostBridgeAnalysis, asserts that closed 10-key shape, then feeds it straight into
+// buildAgt002TenderRequirementInventory and requires a nonempty source_units result.
+test('rehydrated governed documents reaching runPostBridgeAnalysis carry the canonical downstream shape buildAgt002TenderRequirementInventory requires', async () => {
+  const resolverImpl = async () => validResolvedDocument();
+
+  const { executor, calls } = harness({ governedDocumentResolver: resolverImpl });
+  const outcome = await executor({ kind: 'db' }, GOVERNED_JOB);
+  assert.equal(outcome.status, 'completed');
+
+  const [, , deps] = calls.post[0];
+  const analysisDocuments = deps.analysisContext?.documents;
+  assert.ok(Array.isArray(analysisDocuments) && analysisDocuments.length === 1);
+
+  const rehydrated = analysisDocuments[0];
+  assert.deepEqual(
+    Object.keys(rehydrated).sort(),
+    ['content_hash', 'current', 'document_id', 'document_type', 'document_version_id', 'extracted_text', 'name', 'opportunity_id', 'snapshot_id', 'version'],
+    'the rehydrated document reaching runPostBridgeAnalysis must carry exactly the 10 keys agt002-document-chunks.js accepts — never source_classification/inclusion_reason and never the resolver\'s own tender_id/extraction_id/extraction_text_hash',
+  );
+  assert.equal(rehydrated.document_id, RESOLVED_DOCUMENT_ID);
+  assert.equal(rehydrated.document_version_id, DOCUMENT_VERSION_ID);
+  assert.equal(rehydrated.opportunity_id, OPPORTUNITY_ID);
+  assert.equal(rehydrated.snapshot_id, SNAPSHOT_ID);
+  assert.equal(rehydrated.document_type, RESOLVED_DOCUMENT_TYPE);
+  assert.equal(rehydrated.name, RESOLVED_DOCUMENT_NAME);
+  assert.equal(rehydrated.version, RESOLVED_DOCUMENT_VERSION);
+  assert.equal(rehydrated.content_hash, GOVERNED_MEMBER.content_hash);
+  assert.equal(rehydrated.current, true);
+  assert.equal(rehydrated.extracted_text, EXTRACTED_TEXT);
+
+  const inventory = buildAgt002TenderRequirementInventory({
+    snapshotId: SNAPSHOT_ID,
+    documents: analysisDocuments,
+  });
+  assert.ok(
+    Array.isArray(inventory.source_units) && inventory.source_units.length > 0,
+    'buildAgt002TenderRequirementInventory must produce a nonempty source_units result from the rehydrated governed documents',
+  );
+});
+
 for (const { name, build } of INVALID_RESOLVER_OUTPUT_CASES) {
   test(`fails closed before runPostBridgeAnalysis when the governedDocumentResolver returns ${name}`, async () => {
     const resolved = build();
@@ -347,5 +415,113 @@ for (const { name, build } of INVALID_RESOLVER_OUTPUT_CASES) {
       ['document_version_id', 'inclusion_reason', 'source_classification'],
       'the frozen input\'s own document projection must remain untouched even on the fail-closed path',
     );
+  });
+}
+
+// Focused GREEN coverage: document_id carries no frozen counterpart on governed_workset_members,
+// so it can never be byte-for-byte cross-checked like the other five resolver fields — but it
+// must still be required as a nonblank string, since it is the sole identity the downstream
+// canonical projection (and buildAgt002TenderRequirementInventory) relies on to cite this
+// document. Kept out of INVALID_RESOLVER_OUTPUT_CASES/its shared fixture-sanity check, which
+// only reasons about the frozen-identity fields document_id has none of.
+const MISSING_OR_BLANK_DOCUMENT_ID_CASES = [
+  {
+    name: 'missing document_id',
+    build: () => {
+      const { document_id, ...rest } = validResolvedDocument();
+      return rest;
+    },
+  },
+  { name: 'blank document_id', build: () => ({ ...validResolvedDocument(), document_id: '   ' }) },
+  { name: 'non-string document_id', build: () => ({ ...validResolvedDocument(), document_id: 42 }) },
+];
+
+for (const { name, build } of MISSING_OR_BLANK_DOCUMENT_ID_CASES) {
+  test(`fails closed before runPostBridgeAnalysis when the governedDocumentResolver returns ${name}`, async () => {
+    const { executor, calls, callOrder } = harness({
+      governedDocumentResolver: async () => build(),
+    });
+
+    const outcome = await executor({ kind: 'db' }, GOVERNED_JOB);
+
+    assert.deepEqual(
+      outcome,
+      { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false },
+      'a resolver output with a missing/blank/non-string document_id must produce the standard fail-closed unavailable/invalid_output outcome',
+    );
+    assert.equal(calls.resolver.length, 1, 'the resolver is still invoked exactly once before its output is validated');
+    assert.equal(calls.post.length, 0, 'runPostBridgeAnalysis (and therefore runtime.analyze) must never be reached when document_id fails validation');
+    assert.ok(!callOrder.includes('post'), 'no post-bridge call may occur, in any order, on the fail-closed path');
+    assert.equal(calls.release.length, 1, 'the already-acquired preview claim must be released exactly once on the fail-closed path');
+    assert.equal(calls.release[0][1]?.idempotencyKey, IDEMPOTENCY_KEY, 'the release must be fenced by this job\'s own idempotency key');
+    assert.equal(calls.release[0][1]?.claimId, 'preview-lease-1', 'the release must target the exact claim this execution acquired');
+  });
+}
+
+// Focused GREEN coverage: opportunity_id/tender_id carry no per-field frozen counterpart on
+// governed_workset_members (they are validated against the frozen document_workset_identity
+// scope instead), and name/document_type/version/current carry no frozen counterpart at all —
+// but each must still be validated (scope fields exactly, metadata fields well-formed) before the
+// resolver's rehydrated content is trusted, since all four now flow straight into the 10-key
+// projection reaching the engine. Kept out of INVALID_RESOLVER_OUTPUT_CASES/its shared
+// fixture-sanity check, which only reasons about frozen-identity-vs-hash divergence.
+const INVALID_RESOLVER_SCOPE_AND_METADATA_CASES = [
+  { name: 'mismatched opportunity_id', build: () => ({ ...validResolvedDocument(), opportunity_id: WRONG_OPPORTUNITY_ID }) },
+  { name: 'mismatched tender_id', build: () => ({ ...validResolvedDocument(), tender_id: WRONG_TENDER_ID }) },
+  { name: 'blank name', build: () => ({ ...validResolvedDocument(), name: '   ' }) },
+  {
+    name: 'missing name',
+    build: () => {
+      const { name, ...rest } = validResolvedDocument();
+      return rest;
+    },
+  },
+  { name: 'blank document_type', build: () => ({ ...validResolvedDocument(), document_type: '   ' }) },
+  {
+    name: 'missing document_type',
+    build: () => {
+      const { document_type, ...rest } = validResolvedDocument();
+      return rest;
+    },
+  },
+  { name: 'zero version', build: () => ({ ...validResolvedDocument(), version: 0 }) },
+  { name: 'negative version', build: () => ({ ...validResolvedDocument(), version: -1 }) },
+  { name: 'non-integer version', build: () => ({ ...validResolvedDocument(), version: 1.5 }) },
+  {
+    name: 'missing version',
+    build: () => {
+      const { version, ...rest } = validResolvedDocument();
+      return rest;
+    },
+  },
+  { name: 'non-boolean current', build: () => ({ ...validResolvedDocument(), current: 'true' }) },
+  {
+    name: 'missing current',
+    build: () => {
+      const { current, ...rest } = validResolvedDocument();
+      return rest;
+    },
+  },
+];
+
+for (const { name, build } of INVALID_RESOLVER_SCOPE_AND_METADATA_CASES) {
+  test(`fails closed before runPostBridgeAnalysis when the governedDocumentResolver returns ${name}`, async () => {
+    const { executor, calls, callOrder } = harness({
+      governedDocumentResolver: async () => build(),
+    });
+
+    const outcome = await executor({ kind: 'db' }, GOVERNED_JOB);
+
+    assert.deepEqual(
+      outcome,
+      { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false },
+      'a resolver output with an invalid scope or metadata field must produce the standard fail-closed unavailable/invalid_output outcome',
+    );
+    assert.equal(calls.resolver.length, 1, 'the resolver is still invoked exactly once before its output is validated');
+    assert.equal(calls.post.length, 0, 'runPostBridgeAnalysis (and therefore runtime.analyze) must never be reached when the resolver output fails validation');
+    assert.ok(!callOrder.includes('post'), 'no post-bridge call may occur, in any order, on the fail-closed path');
+    assert.equal(calls.release.length, 1, 'the already-acquired preview claim must be released exactly once on the fail-closed path');
+    assert.equal(calls.release[0][1]?.idempotencyKey, IDEMPOTENCY_KEY, 'the release must be fenced by this job\'s own idempotency key');
+    assert.equal(calls.release[0][1]?.claimId, 'preview-lease-1', 'the release must target the exact claim this execution acquired');
   });
 }
