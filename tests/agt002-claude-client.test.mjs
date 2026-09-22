@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   AGT002_CLAUDE_FORBIDDEN_ENV_KEYS,
   AGT002_CLAUDE_MAX_SCHEMA_BYTES,
@@ -294,8 +295,11 @@ async function testInvalidArgumentsRejectedBeforeSpawn() {
 }
 
 // ---------------------------------------------------------------------------
-// Esquemas > 64 KiB: el V3 de AGT-002 SÍ puede superar el techo de AGT-003.
-// Deben salir del argv (E2BIG) hacia un archivo temporal 0600 bajo el cwd fijo.
+// Esquemas grandes: Claude Code 2.1.263 sólo soporta --json-schema inline, no
+// --json-schema-file ni archivos temporales. Por debajo o igual al techo
+// seguro de argv (AGT002_CLAUDE_MAX_SCHEMA_BYTES = 120 000 bytes UTF-8, por
+// debajo de MAX_ARG_STRLEN = 131072) el esquema viaja literal en argv; por
+// encima, el turno se rechaza antes de invocar spawn.
 // ---------------------------------------------------------------------------
 
 function schemaOfExactBytes(targetBytes) {
@@ -306,46 +310,31 @@ function schemaOfExactBytes(targetBytes) {
   return schema;
 }
 
-async function testOversizedSchemaNeverThrowsAndNeverReachesArgv() {
-  const bigSchema = schemaOfExactBytes(AGT002_CLAUDE_MAX_SCHEMA_BYTES + 1);
+async function testSchemaAboveOldFileCeilingStaysInlineNeverFile() {
+  const schemaAround68KiB = schemaOfExactBytes(68 * 1024);
   const { client, calls, children } = harness();
-  const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: bigSchema, timeoutMs: 5000 });
+  const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: schemaAround68KiB, timeoutMs: 5000 });
 
-  assert.equal(calls.length, 1, 'un esquema grande sigue lanzando el proveedor, nunca se rechaza');
+  assert.equal(calls.length, 1, 'un esquema de ~68 KiB debe lanzar el proveedor');
   const [call] = calls;
-  assert.equal(call.args.includes('--json-schema'), false, 'un esquema grande nunca debe viajar como --json-schema en argv');
-  const fileFlagIndex = call.args.indexOf('--json-schema-file');
-  assert.notEqual(fileFlagIndex, -1, 'un esquema grande debe viajar por --json-schema-file');
-  const schemaFilePath = call.args[fileFlagIndex + 1];
-  assert.equal(JSON.stringify(call.args).includes('"pad"'), false, 'el contenido del esquema nunca debe aparecer en argv');
-  assert.equal(existsSync(schemaFilePath), true, 'el archivo temporal debe existir mientras corre el turno');
-  assert.equal(statSync(schemaFilePath).mode & 0o777, 0o600, 'el archivo temporal del esquema debe ser 0600');
-  assert.deepEqual(JSON.parse(readFileSync(schemaFilePath, 'utf8')), bigSchema);
+  assert.equal(call.args.includes('--json-schema-file'), false, 'Claude Code 2.1.263 no soporta --json-schema-file: un esquema >65536B debe seguir viajando inline');
+  const schemaFlagIndex = call.args.indexOf('--json-schema');
+  assert.notEqual(schemaFlagIndex, -1, 'el esquema debe viajar por --json-schema literal en argv');
+  assert.equal(call.args[schemaFlagIndex + 1], JSON.stringify(schemaAround68KiB), 'el esquema serializado debe viajar inline, tal cual, en argv');
 
   await settleSoon(() => {
     children[0].stdout.emit('data', successPayload());
     children[0].emit('exit', 0, null);
   });
   await pending;
-  assert.equal(existsSync(schemaFilePath), false, 'el archivo temporal debe borrarse al terminar el turno');
 }
 
-async function testOversizedSchemaTempFileCleanedUpOnFailure() {
-  const bigSchema = schemaOfExactBytes(AGT002_CLAUDE_MAX_SCHEMA_BYTES + 1);
+async function testSchemaAtSafeInlineCapStaysOnArgv() {
   const { client, calls, children } = harness();
-  const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: bigSchema, timeoutMs: 5000 });
-  const schemaFilePath = calls[0].args[calls[0].args.indexOf('--json-schema-file') + 1];
-  assert.equal(existsSync(schemaFilePath), true);
-  await settleSoon(() => children[0].emit('error', new Error('ENOENT')));
-  await assert.rejects(pending, error => error.code === 'AGT002_CLAUDE_TRANSPORT_ERROR');
-  assert.equal(existsSync(schemaFilePath), false, 'el archivo temporal debe borrarse incluso si el proveedor falla');
-}
-
-async function testSchemaAtOrBelowTheCeilingStaysOnArgv() {
-  const { client, calls, children } = harness();
-  const atLimit = schemaOfExactBytes(AGT002_CLAUDE_MAX_SCHEMA_BYTES);
-  const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: atLimit, timeoutMs: 5000 });
-  assert.equal(calls[0].args.includes('--json-schema-file'), false, 'el techo exacto todavía cabe en argv');
+  const atCap = schemaOfExactBytes(AGT002_CLAUDE_MAX_SCHEMA_BYTES);
+  const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: atCap, timeoutMs: 5000 });
+  assert.equal(calls.length, 1, 'el techo exacto todavía debe lanzar el proveedor');
+  assert.equal(calls[0].args.includes('--json-schema-file'), false, 'Claude Code 2.1.263 no soporta --json-schema-file');
   const schemaArg = calls[0].args[calls[0].args.indexOf('--json-schema') + 1];
   assert.equal(Buffer.byteLength(schemaArg, 'utf8'), AGT002_CLAUDE_MAX_SCHEMA_BYTES);
   await settleSoon(() => {
@@ -353,6 +342,40 @@ async function testSchemaAtOrBelowTheCeilingStaysOnArgv() {
     children[0].emit('exit', 0, null);
   });
   await pending;
+}
+
+async function testSchemaAboveSafeInlineCapFailsClosedBeforeSpawn() {
+  const oversizedSchema = schemaOfExactBytes(AGT002_CLAUDE_MAX_SCHEMA_BYTES + 1);
+  const { client, calls } = harness();
+  const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: oversizedSchema, timeoutMs: 5000 });
+  assert.equal(calls.length, 0, 'un esquema por encima del techo seguro de argv nunca debe lanzar el proveedor');
+  await assert.rejects(pending, error => {
+    assert.equal(error.code, 'AGT002_CLAUDE_SCHEMA_TOO_LARGE');
+    assert.equal(JSON.stringify(error, Object.getOwnPropertyNames(error)).includes('"pad"'), false, 'el contenido del esquema nunca debe aparecer en el error');
+    return true;
+  });
+}
+
+async function testNoTempFileArtifactsEverForLargeSchemas() {
+  const bigSchema = schemaOfExactBytes(AGT002_CLAUDE_MAX_SCHEMA_BYTES);
+  // A private, exclusively-owned directory (never the shared OS tmpdir) so the no-artifact
+  // assertions below can check for emptiness directly, with no risk of unrelated concurrent
+  // processes writing into the same shared tmpdir racing the before/after diff.
+  const cwd = mkdtempSync(join(tmpdir(), 'agt002-claude-client-test-'));
+  try {
+    const { client, calls, children } = harness({ cwd });
+    const pending = client.run({ model: MODEL, policy: POLICY, input: INPUT, outputSchema: bigSchema, timeoutMs: 5000 });
+    assert.equal(calls[0].args.includes('--json-schema-file'), false, 'la bandera --json-schema-file no existe en Claude Code 2.1.263');
+    assert.deepEqual(readdirSync(cwd), [], 'ningún archivo temporal de esquema debe escribirse en el cwd');
+    await settleSoon(() => {
+      children[0].stdout.emit('data', successPayload());
+      children[0].emit('exit', 0, null);
+    });
+    await pending;
+    assert.deepEqual(readdirSync(cwd), [], 'ningún archivo temporal de esquema debe quedar tras el turno');
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -414,9 +437,10 @@ await testSpawnFailureFailsClosed();
 await testInvalidArgumentsRejectedBeforeSpawn();
 console.log('agt002-claude-client.test.mjs Paso 2 OK');
 
-await testOversizedSchemaNeverThrowsAndNeverReachesArgv();
-await testOversizedSchemaTempFileCleanedUpOnFailure();
-await testSchemaAtOrBelowTheCeilingStaysOnArgv();
+await testSchemaAboveOldFileCeilingStaysInlineNeverFile();
+await testSchemaAtSafeInlineCapStaysOnArgv();
+await testSchemaAboveSafeInlineCapFailsClosedBeforeSpawn();
+await testNoTempFileArtifactsEverForLargeSchemas();
 console.log('agt002-claude-client.test.mjs Paso 3 OK');
 
 await testEffortIsForwardedToClaudeCliAndAckedWhenRequested();
