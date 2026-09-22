@@ -12,13 +12,21 @@ function sha256Hex(text) {
 }
 
 // A stand-in for the real governed document resolver: echoes back exactly the identity fields
-// the frozen member already carries (content_hash/extraction_id/extraction_text_hash) alongside
-// the text whose sha256 re-derives that member's own extraction_text_hash, exactly the contract
-// validateAgt002GovernedResolvedDocument enforces in agt002-reanalysis-executor.js.
+// the frozen member/scope already carry (content_hash/extraction_id/extraction_text_hash/
+// opportunity_id/tender_id) alongside well-formed engine-bound metadata (name/document_type/
+// version/current) and text whose sha256 re-derives the member's own extraction_text_hash —
+// exactly the contract validateAgt002GovernedResolvedDocument enforces in agt002-reanalysis-executor.js.
 function buildGovernedDocumentResolver(textByDocumentVersionId) {
-  return async ({ member }) => ({
+  return async ({ opportunityId, tenderId, member }) => ({
+    document_id: `doc-${member.document_version_id}`,
     document_version_id: member.document_version_id,
+    opportunity_id: opportunityId,
+    tender_id: tenderId,
+    version: 1,
+    name: `Document ${member.document_version_id}`,
     content_hash: member.content_hash,
+    document_type: 'pliego',
+    current: true,
     extraction_id: member.extraction_id,
     extraction_text_hash: member.extraction_text_hash,
     text: textByDocumentVersionId[member.document_version_id],

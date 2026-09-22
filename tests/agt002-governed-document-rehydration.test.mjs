@@ -12,11 +12,17 @@ import { resolveAgt002GovernedDocumentForExecution } from '../agt002-governed-do
 // specifies the actual production resolver: it must read EXACTLY the one immutable document
 // version row and EXACTLY the one 'ok' extraction row this frozen member identifies — by
 // primary key plus tenant/tender scope, never by ordering or "latest" — and map them onto the
-// narrow 5-field shape the executor already cross-checks. The module does not exist yet, so
-// this whole file is expected to fail RED at import time (ERR_MODULE_NOT_FOUND).
+// shape the executor already cross-checks, including the immutable document_id (mapped from the
+// real psi_tender_document_versions.source_document_id column — that table has no document_id
+// column of its own, see supabase/migrations/026_tender_document_versions.sql).
 
 function sha256Hex(text) {
   return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+function omit(obj, key) {
+  const { [key]: _omitted, ...rest } = obj;
+  return rest;
 }
 
 const OPPORTUNITY_ID = '11111111-1111-1111-1111-111111111111';
@@ -25,10 +31,16 @@ const SNAPSHOT_ID = '33333333-3333-3333-3333-333333333333';
 const CONTEXT_VERSION_ID = '44444444-4444-4444-4444-444444444444';
 const DOCUMENT_VERSION_ID = '55555555-5555-5555-5555-555555555555';
 const EXTRACTION_ID = '66666666-6666-6666-6666-666666666666';
+const DOCUMENT_ID = '77777777-7777-7777-7777-777777777777';
+const OTHER_OPPORTUNITY_ID = '88888888-8888-8888-8888-888888888888';
+const OTHER_TENDER_ID = '99999999-9999-9999-9999-999999999999';
 
 const CONTENT_HASH = 'a'.repeat(64);
 const EXTRACTED_TEXT = 'REAL EXTRACTED TEXT FOR DOCUMENT 55555555-...';
 const TEXT_HASH = sha256Hex(EXTRACTED_TEXT);
+const VERSION_NUMBER = 3;
+const DOCUMENT_NAME = 'Pliego de condiciones';
+const DOCUMENT_TYPE = 'pliego';
 
 // Only the fields a real governed_workset_members entry carries — the resolver must never
 // need anything else off `member` besides `extraction_id`.
@@ -91,8 +103,20 @@ function eqObject(call) {
   return Object.fromEntries(call.eq.map(([column, value]) => [column, value]));
 }
 
+// psi_tender_document_versions (migration 026) has no document_id column — the document's
+// immutable identity is source_document_id.
 function validVersionRow() {
-  return { id: DOCUMENT_VERSION_ID, content_hash: CONTENT_HASH };
+  return {
+    id: DOCUMENT_VERSION_ID,
+    opportunity_id: OPPORTUNITY_ID,
+    tender_id: TENDER_ID,
+    source_document_id: DOCUMENT_ID,
+    version: VERSION_NUMBER,
+    name: DOCUMENT_NAME,
+    content_hash: CONTENT_HASH,
+    document_type: DOCUMENT_TYPE,
+    current: true,
+  };
 }
 
 function validExtractionRow() {
@@ -107,8 +131,8 @@ test('reads the exact document version and ok extraction rows by primary key plu
   assert.equal(database.calls.version.table, 'psi_tender_document_versions');
   assert.equal(
     database.calls.version.select,
-    'id,content_hash',
-    'the document version read must select only id and content_hash',
+    'id,opportunity_id,tender_id,source_document_id,version,name,content_hash,document_type,current',
+    'the document version read must select exactly the real migration 026 columns it needs',
   );
   assert.deepEqual(
     eqObject(database.calls.version),
@@ -133,18 +157,38 @@ test('reads the exact document version and ok extraction rows by primary key plu
   assert.deepEqual(
     result,
     {
+      document_id: DOCUMENT_ID,
       document_version_id: DOCUMENT_VERSION_ID,
+      opportunity_id: OPPORTUNITY_ID,
+      tender_id: TENDER_ID,
+      version: VERSION_NUMBER,
+      name: DOCUMENT_NAME,
       content_hash: CONTENT_HASH,
+      document_type: DOCUMENT_TYPE,
+      current: true,
       extraction_id: EXTRACTION_ID,
       extraction_text_hash: TEXT_HASH,
       text: EXTRACTED_TEXT,
     },
-    'success must return exactly the 5-field shape mapped from the two rows read',
+    'success must return exactly the mapped shape, with document_id sourced from source_document_id',
   );
   assert.deepEqual(
     Object.keys(result).sort(),
-    ['content_hash', 'document_version_id', 'extraction_id', 'extraction_text_hash', 'text'],
-    'success must never return a superset of the 5 fields the executor cross-checks',
+    [
+      'content_hash',
+      'current',
+      'document_id',
+      'document_type',
+      'document_version_id',
+      'extraction_id',
+      'extraction_text_hash',
+      'name',
+      'opportunity_id',
+      'tender_id',
+      'text',
+      'version',
+    ],
+    'success must never return a superset of the fields the executor cross-checks',
   );
 });
 
@@ -184,12 +228,34 @@ function isInvalidError(error) {
 const INVALID_VERSION_READ_CASES = [
   { name: 'missing document version row', db: { versionRow: null } },
   { name: 'errored document version read', db: { versionError: { message: 'db unavailable' } } },
-  { name: 'document version row missing content_hash', db: { versionRow: { id: DOCUMENT_VERSION_ID } } },
-  { name: 'document version row with non-string content_hash', db: { versionRow: { id: DOCUMENT_VERSION_ID, content_hash: 123 } } },
+  { name: 'document version row missing content_hash', db: { versionRow: omit(validVersionRow(), 'content_hash') } },
+  { name: 'document version row with non-string content_hash', db: { versionRow: { ...validVersionRow(), content_hash: 123 } } },
   {
     name: 'document version row whose id does not match the requested documentVersionId',
-    db: { versionRow: { id: 'aaaaaaaa-0000-0000-0000-000000000000', content_hash: CONTENT_HASH } },
+    db: { versionRow: { ...validVersionRow(), id: 'aaaaaaaa-0000-0000-0000-000000000000' } },
   },
+  {
+    name: 'document version row whose opportunity_id does not match the requested opportunityId',
+    db: { versionRow: { ...validVersionRow(), opportunity_id: OTHER_OPPORTUNITY_ID } },
+  },
+  {
+    name: 'document version row whose tender_id does not match the requested tenderId',
+    db: { versionRow: { ...validVersionRow(), tender_id: OTHER_TENDER_ID } },
+  },
+  { name: 'document version row missing source_document_id', db: { versionRow: omit(validVersionRow(), 'source_document_id') } },
+  { name: 'document version row with blank source_document_id', db: { versionRow: { ...validVersionRow(), source_document_id: '   ' } } },
+  { name: 'document version row with non-string source_document_id', db: { versionRow: { ...validVersionRow(), source_document_id: 123 } } },
+  { name: 'document version row missing name', db: { versionRow: omit(validVersionRow(), 'name') } },
+  { name: 'document version row with blank name', db: { versionRow: { ...validVersionRow(), name: '   ' } } },
+  { name: 'document version row missing document_type', db: { versionRow: omit(validVersionRow(), 'document_type') } },
+  { name: 'document version row with blank document_type', db: { versionRow: { ...validVersionRow(), document_type: '   ' } } },
+  { name: 'document version row missing version', db: { versionRow: omit(validVersionRow(), 'version') } },
+  { name: 'document version row with zero version', db: { versionRow: { ...validVersionRow(), version: 0 } } },
+  { name: 'document version row with negative version', db: { versionRow: { ...validVersionRow(), version: -1 } } },
+  { name: 'document version row with non-integer version', db: { versionRow: { ...validVersionRow(), version: 1.5 } } },
+  { name: 'document version row with non-numeric version', db: { versionRow: { ...validVersionRow(), version: '3' } } },
+  { name: 'document version row missing current', db: { versionRow: omit(validVersionRow(), 'current') } },
+  { name: 'document version row with non-boolean current', db: { versionRow: { ...validVersionRow(), current: 'true' } } },
 ];
 
 for (const { name, db } of INVALID_VERSION_READ_CASES) {
