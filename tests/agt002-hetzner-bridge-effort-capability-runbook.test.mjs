@@ -66,13 +66,13 @@ function testRunbookDocumentsRealPreRestartCheck() {
   assert.match(runbook, /AGT002_CLAUDE_CLI_BIN/, 'el runbook debe mencionar la variable que permite fijar el binario de claude');
 }
 
-// Regression: the Vercel client still requires effort_ack or it throws AGT002_BRIDGE_STALE_EFFORT_ACK,
-// but the Claude CLI print mode ignores `effort` entirely — the runbook must document both facts so an
-// operator does not conclude effort is applied to the model.
-function testRunbookDocumentsEffortAckWithoutApplication() {
-  assert.match(runbook, /effort_ack/, 'el runbook debe documentar que la respuesta sigue trayendo effort_ack');
-  assert.match(runbook, /AGT002_BRIDGE_STALE_EFFORT_ACK/, 'el runbook debe explicar por qué effort_ack se sigue emitiendo (evitar AGT002_BRIDGE_STALE_EFFORT_ACK)');
-  assert.match(runbook, /ignora\s+`effort`|no aplica\s+`effort`/, 'el runbook debe aclarar que `effort` no se aplica al CLI de Claude');
+// Regression: the caller requires an exact effort_ack, so the runbook must state that the bridge
+// applies the validated value to Claude's argv before acknowledging it — never an ack-only shim.
+function testRunbookDocumentsAppliedEffortAck() {
+  assert.match(runbook, /effort_ack/, 'el runbook debe documentar que la respuesta trae effort_ack');
+  assert.match(runbook, /AGT002_BRIDGE_STALE_EFFORT_ACK/, 'el runbook debe conservar el fallo cerrado del caller');
+  assert.match(runbook, /--effort\s+<valor>/, 'el runbook debe documentar la bandera aplicada al CLI');
+  assert.doesNotMatch(runbook, /ignora\s+`effort`|no aplica\s+`effort`/, 'el runbook no debe describir el comportamiento obsoleto');
 }
 
 function testRunbookClarifiesBridgeClientIsNotDeployedToTheHost() {
@@ -89,7 +89,7 @@ testRunbookListsEveryRootImportOfTheExecStartEntrypoint();
 testRunbookStatesProviderIsClaudeSonnet();
 testRunbookHasNoExecStartPreGate();
 testRunbookDocumentsRealPreRestartCheck();
-testRunbookDocumentsEffortAckWithoutApplication();
+testRunbookDocumentsAppliedEffortAck();
 testRunbookClarifiesBridgeClientIsNotDeployedToTheHost();
 testRunbookNeverMentionsAgt003();
 console.log('agt002-hetzner-bridge-effort-capability-runbook.test.mjs OK');

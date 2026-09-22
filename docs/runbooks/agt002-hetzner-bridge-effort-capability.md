@@ -14,13 +14,11 @@ mecanismos vigentes son:
    que la respuesta incluya `effort_ack` idéntico al `effort` solicitado. Si `effort` fue enviado y el
    bridge (o el cliente que hay detrás) nunca lo reconoce, el cliente falla cerrado con
    `AGT002_BRIDGE_STALE_EFFORT_ACK` en vez de aceptar el resultado silenciosamente.
-2. **Al arrancar cada turno:** `agt002-hetzner-bridge-server.js` sigue validando `effort` contra el
-   allowlist de `agt002-preview-reasoning-effort.js` (`low` | `medium`) antes de invocar al cliente del
-   proveedor, y `agt002-claude-client.js` echoa `effort_ack` igual al `effort` recibido — **pero el CLI
-   `claude -p` no tiene un parámetro de esfuerzo de razonamiento equivalente al de Codex y lo ignora
-   `effort` por completo**: `effort_ack` confirma únicamente que el wire fue validado y reconocido, para
-   que `agt002-hetzner-bridge-client.js` no lo rechace como obsoleto; no prueba, ni puede probar, que el
-   modelo razonó con ese nivel. No hay override real que aplicar a `claude -p` en este proveedor.
+2. **Al arrancar cada turno:** `agt002-hetzner-bridge-server.js` valida `effort` contra el allowlist de
+   `agt002-preview-reasoning-effort.js` (`low` | `medium`) antes de invocar al cliente del proveedor.
+   `agt002-claude-client.js` pasa ese valor al proceso como `--effort <valor>` y sólo entonces devuelve
+   `effort_ack` idéntico. Así, el ack confirma que el override solicitado llegó al CLI; un valor no
+   soportado falla antes de crear el subproceso y nunca produce un ack falso.
 3. **Antes de reiniciar el servicio, manualmente:** este procedimiento.
 
 ## Procedimiento — antes de reiniciar el servicio
