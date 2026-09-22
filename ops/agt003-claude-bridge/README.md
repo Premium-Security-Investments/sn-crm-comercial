@@ -46,8 +46,9 @@ automáticamente**. La renovación es manual y humana:
 
 ```sh
 sudo -u agt003-bridge \
+  HOME=/opt/agt003-bridge \
   CLAUDE_CONFIG_DIR=/opt/agt003-bridge/.claude \
-  claude /login
+  /usr/bin/claude /login
 # Alternativa no interactiva equivalente, si la versión instalada la ofrece:
 #   claude setup-token
 sudo systemctl restart agt003-bridge
@@ -103,6 +104,15 @@ inválida, el servicio **no arranca**.
 | `AGT003_BRIDGE_MAX_CONCURRENCY` | `1` | Turnos del proveedor en vuelo a la vez. El que sobra recibe `429 AGT003_BRIDGE_BUSY` y **no** lanza ningún proceso. |
 | `AGT003_BRIDGE_MAX_TIMEOUT_MS` | `120000` | Techo del `timeoutMs` de la petición. Por encima se rechaza con `400`, no se recorta en silencio. |
 | `AGT003_BRIDGE_ALLOWED_MODELS` | `sonnet` | Lista separada por comas, de coincidencia exacta. Un modelo fuera de ella se rechaza con `400` antes de tocar el argv del proveedor. |
+
+El binario y el cwd del subproceso `claude` también se fijan en el
+`EnvironmentFile`, sin valor por defecto: si faltan, el servidor falla cerrado
+al arrancar en vez de adivinarlos.
+
+| Variable | Efecto |
+| --- | --- |
+| `AGT003_CLAUDE_BIN` | Ruta absoluta del binario `claude`. Evita que un `claude` resuelto por `PATH` suplante al binario real del subproceso. |
+| `AGT003_CLAUDE_CWD` | Cwd absoluto del subproceso `claude`. Un cwd relativo o ausente rompe el aislamiento de `ProtectSystem=strict`. |
 
 A estos se suman los techos de socket, que acotan lo que un cliente puede
 retener del proceso **antes** de que exista un turno, para que nadie agote los

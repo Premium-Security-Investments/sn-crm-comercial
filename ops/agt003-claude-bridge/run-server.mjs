@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import { isAbsolute } from 'node:path';
 import { agt003BridgeRunUrl, resolveAgt003BridgeHost } from '../../agt003-claude-bridge-host.js';
 import {
   AGT003_BRIDGE_ALLOWED_MODELS,
@@ -11,6 +12,12 @@ import { createAgt003ClaudeClient } from '../../agt003-claude-client.js';
 function requireEnv(name) {
   const value = process.env[name];
   if (typeof value !== 'string' || !value.trim()) throw new Error(`Falta la variable de entorno requerida: ${name}`);
+  return value.trim();
+}
+
+function absolutePathEnv(name) {
+  const value = requireEnv(name);
+  if (!isAbsolute(value)) throw new Error(`${name} debe ser una ruta absoluta.`);
   return value;
 }
 
@@ -47,7 +54,7 @@ const requestTimeoutMs = positiveIntEnv('AGT003_BRIDGE_REQUEST_TIMEOUT_MS', 15_0
 
 // El cliente no recibe ninguna credencial: el subproceso lee su propia sesión
 // OAuth desde CLAUDE_CONFIG_DIR, que fija la unidad systemd.
-const claudeClient = createAgt003ClaudeClient({ command: process.env.AGT003_CLAUDE_CLI_BIN || 'claude' });
+const claudeClient = createAgt003ClaudeClient({ command: absolutePathEnv('AGT003_CLAUDE_BIN'), cwd: absolutePathEnv('AGT003_CLAUDE_CWD') });
 
 // Sólo loopback: el TLS y la exposición pública los aporta Caddy.
 const server = createServer(createAgt003BridgeServer({ hmacSecret, claudeClient, maxConcurrency, maxTimeoutMs, allowedModels }));
