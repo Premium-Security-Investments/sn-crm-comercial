@@ -9,7 +9,7 @@ const ui = `${main}\n${component}\n${copilotComponent}`;
 const css = fs.readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
 const markers = [
-  'function VigiaCommercial({ canOpenOpportunity }',
+  'function VigiaCommercial({ canOpenOpportunity, commercialOwners }',
   "api<VigiaPayload>('/api/vigia/priorities')",
   'Prioridades Comerciales',
   'Prioridades explicables del CRM',
@@ -37,6 +37,9 @@ const copilotWithoutApprovedEmptyCopy = copilotComponent
   .replace('Inferencias de Vig-IA · por confirmar', '');
 assert.doesNotMatch(copilotWithoutApprovedEmptyCopy, /Vig-IA(?! Comercial)/);
 assert.ok(!component.includes('AGT-003'), 'Vig-IA UI must not expose the internal AGT-003 identifier');
+assert.ok(component.includes('Puntaje de riesgo'), 'priority card must label the score as Puntaje de riesgo');
+assert.ok(component.includes('Más alto = mayor urgencia'), 'priority card must show the risk score helper copy');
+assert.ok(!component.includes('<small>Score</small>'), 'priority card must not expose the old Score label');
 assert.ok(main.includes('parseVigiaDashboardFilters(window.location.hash'), 'dashboard consumes validated Vig-IA hash filters');
 assert.ok(parser.includes("params.get('owner')") && parser.includes("params.get('stage')") && parser.includes("params.get('service')"), 'dashboard deep-link parser applies governed filters');
 assert.ok(parser.includes('VIGIA_DASHBOARD_FILTER_KEYS') && parser.includes("__invalid_vigia_filter__"), 'dashboard deep-link rejects unknown or malformed filters to empty scope');
