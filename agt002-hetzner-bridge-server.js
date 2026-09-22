@@ -22,6 +22,7 @@ const CODE_TO_STATUS = {
   AGT002_CODEX_PROVIDER_ERROR: 502,
   AGT002_CODEX_TRANSPORT_ERROR: 502,
   AGT002_CODEX_INVALID_RESPONSE: 422,
+  AGT002_CODEX_STRUCTURED_OUTPUT_RETRY_EXHAUSTED: 502,
 };
 
 // AGT-002 cambió su proveedor de Codex a Claude Sonnet, pero el wire hacia el
@@ -38,6 +39,9 @@ const CLAUDE_TO_CODEX_CODE = {
   // AGT-002 wire has no dedicated session-limit code; a temporary Claude
   // session limit is reported the same way as any other provider error.
   AGT002_CLAUDE_SESSION_LIMIT: 'AGT002_CODEX_PROVIDER_ERROR',
+  // Its own dedicated wire code (not the generic provider-error one) so the
+  // worker/tender-semantic-discovery retry loop can single it out.
+  AGT002_CLAUDE_STRUCTURED_OUTPUT_RETRY_EXHAUSTED: 'AGT002_CODEX_STRUCTURED_OUTPUT_RETRY_EXHAUSTED',
 };
 
 function sendJson(res, status, payload) {
