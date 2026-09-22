@@ -189,9 +189,15 @@ preanalizada como visible el lunes puede haber cruzado su cierre el martes sin q
 `source_row_hash` ni ninguna versión. La lectura reevalúa el gate con **un único reloj para toda la
 página** —determinista, sin reloj por fila— y oculta lo que ya no sobrevive.
 
-Las **convertidas históricas se muestran siempre**, cortocircuitando las cinco condiciones —la
-reevaluación del gate incluida—: no se ocultan por hash rezagado, por versión vieja, por cierre
-vencido ni por no tener preanálisis alguno.
+Las **convertidas históricas nunca se ocultan por preanálisis**, cortocircuitando las cinco
+condiciones: no se ocultan por hash rezagado, por versión vieja ni por no tener preanálisis alguno.
+
+El **cierre vencido sí las oculta**, y no por AGT-002 sino por regla de producto del Radar: el
+Radar **no muestra ningún proceso vencido**, convertido o no. La conversión no es un salvoconducto
+de visibilidad; el proceso vencido sigue íntegro en Oportunidades y en su expediente, y la fila
+reaparece sola si la fuente oficial vuelve a publicar una fecha de cierre vigente. La regla vive en
+`isExpiredRadarProcess` (un único seam compartido por la ruta viva y la persistida de
+`GET /api/tenders`) y está cubierta por `tests/tender-radar-hide-expired.test.mjs`.
 
 Si el reloj o el evaluador no están disponibles, la lectura **no** degrada a "mostrar igual": falla
 cerrado en el mismo borde 503 del §8.

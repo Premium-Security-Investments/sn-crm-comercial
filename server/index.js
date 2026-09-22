@@ -1262,6 +1262,16 @@ function tenderMoney(value) { const n = Number(String(value || '0').replace(/[^0
 function tenderDate(value) { if (!value) return null; const d = new Date(value); return Number.isNaN(d.getTime()) ? null : d; }
 function tenderDaysUntil(value) { const d = tenderDate(value); if (!d) return null; const today = new Date(); today.setHours(0,0,0,0); d.setHours(0,0,0,0); return Math.round((d.getTime() - today.getTime()) / 86400000); }
 function tenderWindow(days) { if (days === null) return 'sin fecha de cierre reportada'; if (days <= 7) return 'urgente (0-7 días)'; if (days <= 15) return 'revisar rápido (8-15 días)'; if (days <= 30) return 'buena ventana (16-30 días)'; return 'ventana amplia'; }
+// Regla de producto del Radar: no se muestra NINGÚN proceso vencido, ni siquiera uno convertido en
+// oportunidad. La conversión archiva el proceso en Oportunidades/expediente (que siguen intactos),
+// no lo mantiene visible aquí. Este es el único seam de vencimiento y lo comparten la ruta viva
+// (ítem ya normalizado, con `days`) y la persistida (fila de psi_public_tenders, con `deadline_at`),
+// para que no puedan divergir. Sin fecha de cierre reportada no hay evidencia de vencimiento, así
+// que la fila permanece visible; si la fuente oficial republica una fecha vigente, reaparece sola.
+export function isExpiredRadarProcess(item) {
+  const days = item?.days === undefined ? tenderDaysUntil(item?.deadline_at ?? item?.deadline ?? null) : item.days;
+  return days !== null && days !== undefined && days < 0;
+}
 function tenderText(row) { return normTenderText(Object.values(row || {}).filter(v => typeof v === 'string').join(' ')); }
 // Scoped to the objeto/título/descripción-like fields declared per source (tenderSources[*].nameFields)
 // instead of every string in the raw row, so an entity/department name or an unrelated field can never
@@ -1482,7 +1492,7 @@ async function fetchTvecEvents() {
       if (seen.has(key)) continue;
       seen.add(key);
       const tender = normalizeTvecEvent(cells, aggregation, baseScore, url);
-      if (tender.days !== null && tender.days < 0) continue;
+      if (isExpiredRadarProcess(tender)) continue;
       candidates.push(tender);
     }
   }
@@ -1501,7 +1511,7 @@ async function fetchEsuDatosGovProcesses() {
       for (const row of rows) {
         if (!isEsuEntityRow(row, source)) continue;
         const tender = normalizeEsuDatosGovProcess(row, source);
-        if ((tender.days !== null && tender.days < 0) || !isTenderTrackable(tender)) continue;
+        if (isExpiredRadarProcess(tender) || !isTenderTrackable(tender)) continue;
         const key = `${tender.source_origin}:${tender.ref}:${tender.title}`;
         if (seen.has(key)) continue;
         seen.add(key);
@@ -1525,7 +1535,7 @@ async function fetchPublicTenderRadar() {
     const source = tasks[index].source;
     if (result.status === 'fulfilled') {
       batches.push(result.value);
-      const visibleCount = result.value.filter(t => (t.days === null || t.days >= 0) && isTenderTrackable(t)).length;
+      const visibleCount = result.value.filter(t => !isExpiredRadarProcess(t) && isTenderTrackable(t)).length;
       diagnostics.push({ source, status: 'ok', count: visibleCount, message: visibleCount ? `${visibleCount} candidato(s)` : 'Sin candidatos relevantes hoy' });
     } else {
       const message = source === 'TVEC'
@@ -1542,7 +1552,7 @@ async function fetchPublicTenderRadar() {
     if (seen.has(key)) return false;
     seen.add(key); return true;
   });
-  const tenders = deduplicateTenderProcesses(persistenceTenders.filter(t => (t.days === null || t.days >= 0) && isTenderTrackable(t))).sort((a,b) => {
+  const tenders = deduplicateTenderProcesses(persistenceTenders.filter(t => !isExpiredRadarProcess(t) && isTenderTrackable(t))).sort((a,b) => {
     const sectionOrder = { hacer: 0, revisar: 1, prioridad_baja: 2 };
     return sectionOrder[a.section] - sectionOrder[b.section] || b.score - a.score || (a.days ?? 999) - (b.days ?? 999);
   });
@@ -1676,7 +1686,9 @@ async function readPersistedTenderRadar(database) {
     throw convertedError;
   }
   const mergedRows = Array.from(new Map([...(data || []), ...convertedRows].map((row, index) => [row.stable_key || row.id || `radar-row-${index}`, row])).values());
-  const trackableRows = mergedRows.filter(row => isConvertedTenderRecord(row) || isTenderTrackable(row));
+  // El vencimiento se aplica antes que cualquier otra regla de visibilidad: una convertida vencida
+  // sale del Radar igual que una no convertida, sin tocar su oportunidad ni su expediente.
+  const trackableRows = mergedRows.filter(row => !isExpiredRadarProcess(row) && (isConvertedTenderRecord(row) || isTenderTrackable(row)));
   // AGT-002's preanalysis ledger may annotate/inform candidates, but it must never govern which
   // trackable candidates the main Radar shows: visibleRows is always every trackable row.
   const visibleRows = trackableRows;

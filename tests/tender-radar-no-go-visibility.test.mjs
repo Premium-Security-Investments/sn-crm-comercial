@@ -2,9 +2,12 @@ import { strict as assert } from 'node:assert';
 import http from 'node:http';
 
 // Business contract: the main Radar (/api/tenders) must hide a converted tender whose linked
-// opportunity's current decision is NO-GO, while keeping GO/pending decisions and merely-expired
-// tenders visible. NO-GO is archival, not deletion: this test only asserts on the read payload of
+// opportunity's current decision is NO-GO, while keeping GO/pending/closed-non-NO-GO decisions
+// visible. NO-GO is archival, not deletion: this test only asserts on the read payload of
 // the Radar endpoint, never on writes to psi_public_tenders or psi_sales_opportunities.
+// Expiry is a separate, independent rule (tests/tender-radar-hide-expired.test.mjs): the Radar
+// shows no expired process at all, so every fixture that must stay visible here carries a current
+// deadline and the expired one is asserted hidden for expiry, not for NO-GO.
 
 function json(res, status, value) {
   res.writeHead(status, { 'content-type': 'application/json' });
@@ -45,7 +48,8 @@ const convertedGo = converted('22222222-2222-4222-8222-222222222222', 'converted
 const convertedPending = converted('33333333-3333-4333-8333-333333333333', 'converted-pending', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
 // Converted with a current NO-GO decision: must be excluded from the main Radar.
 const convertedNoGo = converted('44444444-4444-4444-8444-444444444444', 'converted-no-go', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc');
-// Converted, GO decision, but the deadline is in the past: expiry alone must NOT hide it.
+// Converted, GO decision, but the deadline is in the past: expiry hides it on its own, without any
+// NO-GO decision and without touching the opportunity or its expediente.
 const convertedExpiredGo = converted('55555555-5555-4555-8555-555555555555', 'converted-expired-go', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', { deadline_at: '2020-01-01T00:00:00.000Z' });
 // Converted with a NO-GO later reversed to GO: the current (non-superseded) decision governs, so it must remain visible.
 const convertedReversedToGo = converted('66666666-6666-4666-8666-666666666666', 'converted-reversed-go', 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee');
@@ -102,7 +106,8 @@ try {
       assert.equal(response.status, 200, `${backend} debe responder correctamente.`);
       const stableKeys = response.body.tenders.map(item => item.stable_key).sort();
       assert.equal(stableKeys.includes('converted-no-go'), false, `${backend} debe ocultar una convertida con decisión NO-GO vigente.`);
-      assert.deepEqual(stableKeys, ['active-new', 'converted-awarded', 'converted-expired-go', 'converted-go', 'converted-pending', 'converted-reversed-go'].sort(), `${backend} debe conservar activas, pendientes, GO, vencidas no-NO-GO y adjudicadas.`);
+      assert.equal(stableKeys.includes('converted-expired-go'), false, `${backend} debe ocultar una convertida vencida aunque su decisión sea GO.`);
+      assert.deepEqual(stableKeys, ['active-new', 'converted-awarded', 'converted-go', 'converted-pending', 'converted-reversed-go'].sort(), `${backend} debe conservar activas, pendientes, GO y adjudicadas vigentes.`);
     } finally {
       await new Promise(resolve => appServer.close(resolve));
     }
@@ -112,4 +117,4 @@ try {
   await new Promise(resolve => fakeSupabase.close(resolve));
 }
 
-console.log('Main Radar hides NO-GO opportunities and keeps GO/pending/expired-non-NO-GO visible');
+console.log('Main Radar hides NO-GO opportunities and keeps current GO/pending/awarded visible');
