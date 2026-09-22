@@ -201,10 +201,12 @@ test(
 //
 // This phase only builds the schema up through the real, unmodified migration chain (the same
 // minimal fixture tables/functions createBaseDatabase() uses in the PGlite suite, then migrations
-// 050/051/053/056/063/067/068/076/077/028/079/081/089 in that exact order) and asserts that
+// 050/051/053/056/063/067/068/076/077/028/079/081/089/090 in that exact order) and asserts that
 // migration 089's objects exist: the audit table, the authorize function, and the jobs table's
-// operator_recovery_id column. It does not yet drive any job/recovery/role flow through those
-// objects -- that is later phases' job.
+// operator_recovery_id column -- and, layered on top, that migration 090's objects exist too: the
+// context-recovery audit table, the jobs table's context_recovery_id column, and the
+// psi_authorize_agt002_context_recovery(uuid,uuid,integer,text,text) function. It does not yet drive
+// any job/recovery/role flow through those objects -- that is later phases' job.
 //
 // Unlike the two-session suite above (which only ever touches its own uniquely named, disposable
 // schema), this suite resets the entire `public` schema: the real migrations create
@@ -254,6 +256,7 @@ const DESTRUCTIVE_MIGRATIONS_SQL = [
   '079_agt002_lease_heartbeat.sql',
   '081_agt002_durable_batched_analysis.sql',
   '089_agt002_operator_recovery_slot.sql',
+  '090_agt002_context_recovery_slot.sql',
 ].map(readMigration).join('\n\n');
 
 // Fixed, synthetic-only identifiers: the exact same literal ids the PGlite 089 suite's
@@ -315,13 +318,22 @@ async function resetPublicSchema() {
 // plus \gset chaining), the exact real RPC signatures instead of a hand-shaped fixture. All ids are
 // the same fixed, synthetic D_* constants the migration-089-objects check above already uses.
 const DEFECT_COMMIT_SHA_EXPR = "repeat('deadbeef', 5)"; // 40 lowercase hex chars, same as the PGlite suite's DEFECT_SHA
+const CONTEXT_HASH_EXPR = "repeat('a1b2c3d4', 8)"; // 64 lowercase hex chars: both the real context_hash recorded on the fixture's governed context version and the expected_context_hash a real context-recovery authorize call must reproduce
+const REPAIR_COMMIT_SHA_EXPR = "repeat('cafebabe', 5)"; // 40 lowercase hex chars, migration 090's repair_commit_sha, distinct from DEFECT_COMMIT_SHA_EXPR
+const WRONG_CONTEXT_HASH_EXPR = "repeat('f9e8d7c6', 8)"; // 64 lowercase hex chars, well-formed but distinct from CONTEXT_HASH_EXPR: proves a mismatched expected_context_hash denies context recovery
 
 /** The owner-session setup portion: everything through failing the job with error_code=timeout,
  * leaving it 'unavailable' at the automatic resume_count cap of 5 with two contiguous
  * semantic_discovery_batch checkpoints -- but stopping short of authorization, so callers that
  * need to race something else against the authorize call (below) can drive it themselves. Every
  * \gset variable it sets (job_id, workset_id, lease_id, owner_session_user, ...) is scoped to this
- * one psql session. */
+ * one psql session. The governed context version's own root shape (context_version/snapshot_id/
+ * opportunity/company_dossier/commercial_context/human_evidence) and its context_hash
+ * (CONTEXT_HASH_EXPR) are the exact production shape migration 090's authorize function requires;
+ * the job's frozen_engine_input carries an analysis_context without contextV2Sections and
+ * analysis_flags.AGT002_CONTEXT_V2 = true, the exact 090 context-recovery precondition -- so this
+ * same setup underlies both the 089-only tests below and the 090 context-recovery tests further
+ * down. */
 function buildOperatorRecoverySetupSql() {
   return `
     set statement_timeout = '${DESTRUCTIVE_CHILD_TIMEOUT_MS}ms';
@@ -330,8 +342,15 @@ function buildOperatorRecoverySetupSql() {
 
     select (public.psi_record_agt002_context_version(
       '${D_OPPORTUNITY_ID}'::uuid, '${D_TENDER_ID}'::uuid, '${D_SNAPSHOT_ID}'::uuid, 2,
-      jsonb_build_object('snapshot_id', '${D_SNAPSHOT_ID}', 'human_evidence', '[]'::jsonb),
-      'context-hash-1', 0, 'context-key-1', '${D_PROFILE_ID}'::uuid
+      jsonb_build_object(
+        'context_version', 2,
+        'snapshot_id', '${D_SNAPSHOT_ID}',
+        'opportunity', '{}'::jsonb,
+        'company_dossier', '{}'::jsonb,
+        'commercial_context', '{}'::jsonb,
+        'human_evidence', '[]'::jsonb
+      ),
+      ${CONTEXT_HASH_EXPR}, 0, 'context-key-1', '${D_PROFILE_ID}'::uuid
     )) ->> 'id' as context_version_id \\gset
 
     select (public.psi_get_or_create_agt002_analysis_workset(
@@ -347,7 +366,13 @@ function buildOperatorRecoverySetupSql() {
 
     select (public.psi_create_agt002_reanalysis_job(
       '${D_OPPORTUNITY_ID}'::uuid, '${D_TENDER_ID}'::uuid, '${D_SNAPSHOT_ID}'::uuid, :'context_version_id'::uuid,
-      'workset-key-1', jsonb_build_object('manifest', 'v1'), '${D_PROFILE_ID}'::uuid
+      'workset-key-1',
+      jsonb_build_object(
+        'manifest', 'v1',
+        'analysis_context', jsonb_build_object('note', 'legacy synthetic context'),
+        'analysis_flags', jsonb_build_object('AGT002_CONTEXT_V2', true)
+      ),
+      '${D_PROFILE_ID}'::uuid
     )) ->> 'job_id' as job_id \\gset
 
     select (public.psi_claim_agt002_reanalysis_job(600)) ->> 'lease_id' as lease_id \\gset
@@ -433,6 +458,33 @@ function buildOperatorRecoverySetupOnlySql() {
   `;
 }
 
+/** Setup-only variant for migration 090's context-recovery race test below: extends the owner
+ * script through a real 089 operator recovery (buildOperatorRecoveryScriptSql), then claims the
+ * requeued job again, completes the final unit of semantic-discovery work with a semantic_manifest
+ * checkpoint (batch_index 0, completed_batch_count/total_batch_count both 3, i.e. N/N), and fails
+ * the job a SECOND time with invalid_output -- leaving it 'unavailable' at the same automatic cap
+ * (resume_count=5), still bound to its 089 operator_recovery_id, with context_recovery_id still
+ * null: the exact real 090 context-recovery precondition. Reports job_id/workset_id/the prior
+ * operator_recovery_id instead of authorizing -- the race test authorizes context recovery
+ * separately, from its own second session. */
+function buildContextRecoverySetupOnlySql() {
+  return buildOperatorRecoveryScriptSql() + `
+    select (public.psi_claim_agt002_reanalysis_job(600)) ->> 'lease_id' as lease_id \\gset
+
+    select public.psi_record_agt002_analysis_checkpoint(
+      :'job_id'::uuid, :'lease_id'::uuid, :'workset_id'::uuid, 'semantic_manifest', 0,
+      repeat('d', 64), 'manifest-contract-v1',
+      jsonb_build_object('manifest', true), repeat('e', 64),
+      jsonb_build_object('input_tokens', 5, 'output_tokens', 1), 'provider-key-v1-manifest',
+      'semantic_discovery', 3, 3
+    );
+
+    select public.psi_fail_agt002_reanalysis_job(:'job_id'::uuid, :'lease_id'::uuid, 'invalid_output');
+
+    select concat_ws('|', :'job_id', :'workset_id', :'operator_recovery_id');
+  `;
+}
+
 /** Builds the owner-session script for this phase: destructive `public` schema reset, pgcrypto +
  * roles (service_role BYPASSRLS), the minimal fixture DDL above, then the real migration chain.
  * No job/recovery/role flow is driven yet: this phase only proves migration 089's own objects
@@ -473,7 +525,7 @@ function buildDestructiveSetupSql() {
 }
 
 test(
-  'real PostgreSQL, real migration chain: migration 089 creates the operator-recovery audit table, authorize function, and jobs.operator_recovery_id column',
+  'real PostgreSQL, real migration chain: migration 089 creates the operator-recovery audit table, authorize function, and jobs.operator_recovery_id column; migration 090 creates the context-recovery audit table, authorize function, and jobs.context_recovery_id column',
   { skip: DESTRUCTIVE_ALLOWED ? false : DESTRUCTIVE_SKIP_REASON },
   async () => {
     try {
@@ -501,6 +553,28 @@ test(
         `select exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'psi_agt002_reanalysis_jobs' and column_name = 'operator_recovery_id')::text;`,
       );
       assert.equal(operatorRecoveryColumnExists, 'true', 'migration 089 must add jobs.operator_recovery_id');
+
+      const contextAuditTableExists = await queryScalar(
+        POSTGRES_URL,
+        `select (to_regclass('public.psi_agt002_context_recoveries') is not null)::text;`,
+      );
+      assert.equal(contextAuditTableExists, 'true', 'migration 090 must create the context-recovery audit table');
+
+      const contextAuthorizeFunctionExists = await queryScalar(
+        POSTGRES_URL,
+        `select (to_regprocedure('public.psi_authorize_agt002_context_recovery(uuid,uuid,integer,text,text)') is not null)::text;`,
+      );
+      assert.equal(
+        contextAuthorizeFunctionExists,
+        'true',
+        'migration 090 must create the psi_authorize_agt002_context_recovery function',
+      );
+
+      const contextRecoveryColumnExists = await queryScalar(
+        POSTGRES_URL,
+        `select exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'psi_agt002_reanalysis_jobs' and column_name = 'context_recovery_id')::text;`,
+      );
+      assert.equal(contextRecoveryColumnExists, 'true', 'migration 090 must add jobs.context_recovery_id');
 
       // Drive a real recovery through the real RPCs (one owner-session psql script), then assert
       // the full role contract: the owner-only authorize function actually queues the job and
@@ -556,6 +630,52 @@ test(
         serviceRoleAuthorizeAttempt.stderr,
         /permission denied/i,
         `service_role must be rejected with permission denied: ${serviceRoleAuthorizeAttempt.stderr}`,
+      );
+
+      // Migration 090's own role contract, layered on top of 089's: service_role may SELECT the
+      // context-recovery audit table (BYPASSRLS covers row visibility; these has_table_privilege
+      // checks cover the table-level grants themselves) but has no write privilege on it at all --
+      // migration 090 revokes everything first and grants back only SELECT.
+      const contextAuditPrivileges = await queryScalar(
+        POSTGRES_URL,
+        `
+          select concat_ws('|',
+            has_table_privilege('service_role', 'public.psi_agt002_context_recoveries', 'SELECT')::text,
+            has_table_privilege('service_role', 'public.psi_agt002_context_recoveries', 'INSERT')::text,
+            has_table_privilege('service_role', 'public.psi_agt002_context_recoveries', 'UPDATE')::text,
+            has_table_privilege('service_role', 'public.psi_agt002_context_recoveries', 'DELETE')::text
+          );
+        `,
+        { timeoutMs: DESTRUCTIVE_CHILD_TIMEOUT_MS },
+      );
+      const [
+        contextAuditCanSelect, contextAuditCanInsert, contextAuditCanUpdate, contextAuditCanDelete,
+      ] = contextAuditPrivileges.split('|');
+      assert.equal(contextAuditCanSelect, 'true', 'migration 090 must grant service_role SELECT on the context-recovery audit table');
+      assert.equal(contextAuditCanInsert, 'false', 'migration 090 must not grant service_role INSERT on the context-recovery audit table');
+      assert.equal(contextAuditCanUpdate, 'false', 'migration 090 must not grant service_role UPDATE on the context-recovery audit table');
+      assert.equal(contextAuditCanDelete, 'false', 'migration 090 must not grant service_role DELETE on the context-recovery audit table');
+
+      // Migration 090 revokes execute on the context-recovery authorize function from every role,
+      // including service_role: unlike the audit table (readable), no application-facing role may
+      // ever invoke this owner-only SECURITY DEFINER function directly.
+      const serviceRoleContextAuthorizeAttempt = await runPsqlOnce(
+        POSTGRES_URL,
+        `
+          set role service_role;
+          select public.psi_authorize_agt002_context_recovery('${jobId}'::uuid, '${worksetId}'::uuid, 2, ${CONTEXT_HASH_EXPR}, ${DEFECT_COMMIT_SHA_EXPR});
+        `,
+        { timeoutMs: DESTRUCTIVE_CHILD_TIMEOUT_MS },
+      );
+      assert.notEqual(
+        serviceRoleContextAuthorizeAttempt.code,
+        0,
+        'service_role invoking the context-recovery authorize function directly must fail',
+      );
+      assert.match(
+        serviceRoleContextAuthorizeAttempt.stderr,
+        /permission denied/i,
+        `service_role must be rejected with permission denied: ${serviceRoleContextAuthorizeAttempt.stderr}`,
       );
     } finally {
       try {
@@ -704,6 +824,176 @@ test(
         await resetPublicSchema();
       } catch (error) {
         console.error('failed to reset public schema after the AGT-002 authorization-vs-rollback race integration test:', error);
+      }
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------------------------
+// Fourth suite (Phase 4): the same real-PostgreSQL, real-migration-chain, real-rollback-file
+// authorization-vs-rollback race regression as the third suite above, but for migration 090's
+// context recovery instead of 089's operator recovery -- proving rollback 090's own pair of
+// pre-drop `lock table ... in access exclusive mode` statements defend against exactly the same
+// race: a concurrent rollback 090 must wait for an in-flight, not-yet-committed context-recovery
+// authorization to finish before its own exists-checks run, so those checks always see the
+// authorizer's final, committed state instead of a stale pre-commit snapshot.
+//
+// This phase reuses buildContextRecoverySetupOnlySql() (above) to build a real job that already
+// carries a genuine 089 operator_recovery_id and has since failed a SECOND time with
+// invalid_output at the same automatic cap -- the exact real 090 context-recovery precondition --
+// but stops before context-recovery authorization. It first proves a mismatched (but well-formed)
+// expected_context_hash is denied outright, leaving no evidence at all. It then drives the actual
+// context-recovery authorize RPC from one psql session (A) inside an open, uncommitted
+// transaction, held open for ~1.2s, while a second psql session (B) runs the real
+// supabase/rollbacks/090_agt002_context_recovery_slot_rollback.sql file verbatim against the same
+// database. Like the third suite, this requires AGT002_TEST_POSTGRES_DESTRUCTIVE opt-in plus a
+// loopback-only URL, and always resets `public` in a finally block.
+const MARKER_CONTEXT_AUTH_UNCOMMITTED = 'AGT002_CTX_AUTH_UNCOMMITTED';
+
+const ROLLBACK_090_SQL = readFileSync(
+  new URL('../supabase/rollbacks/090_agt002_context_recovery_slot_rollback.sql', import.meta.url),
+  'utf8',
+);
+
+/** Session A: opens a transaction, calls the real context-recovery authorize RPC against the
+ * already-set-up, second-failure job/workset (job_id/workset_id are real, server-generated uuids
+ * validated by the caller before being interpolated here, so this is always a safe literal), emits
+ * a marker once the function has returned but while the transaction (and its audit-row/job-update
+ * evidence) is still uncommitted, holds the transaction open for ~1.2s, then commits. */
+function buildContextRecoveryAuthorizeRaceSessionSql(jobId, worksetId) {
+  return `
+    set statement_timeout = '10s';
+    begin;
+    select (public.psi_authorize_agt002_context_recovery(
+      '${jobId}'::uuid, '${worksetId}'::uuid, 3, ${CONTEXT_HASH_EXPR}, ${REPAIR_COMMIT_SHA_EXPR}
+    )) ->> 'context_recovery_id' as context_recovery_id \\gset
+    \\echo ${MARKER_CONTEXT_AUTH_UNCOMMITTED}
+    select pg_sleep(1.2);
+    commit;
+    select :'context_recovery_id';
+  `;
+}
+
+test(
+  'real PostgreSQL, real migration chain, real rollback file: migration 090 context-recovery authorization-vs-rollback race is fixed by the rollback\'s pre-drop locks',
+  { skip: DESTRUCTIVE_ALLOWED ? false : DESTRUCTIVE_SKIP_REASON },
+  async () => {
+    try {
+      const setup = await runPsqlOnce(POSTGRES_URL, buildDestructiveSetupSql(), { timeoutMs: DESTRUCTIVE_CHILD_TIMEOUT_MS });
+      assert.equal(setup.code, 0, `fixture/migration setup script must succeed: ${setup.stderr}`);
+
+      // Owner-session setup only: builds the real, already-089-recovered job that has since
+      // failed a second time with invalid_output at the automatic cap, but stops before
+      // context-recovery authorization.
+      const jobSetup = await runPsqlOnce(POSTGRES_URL, buildContextRecoverySetupOnlySql(), { timeoutMs: DESTRUCTIVE_CHILD_TIMEOUT_MS });
+      assert.equal(jobSetup.code, 0, `owner-session context-recoverable job setup script must succeed: ${jobSetup.stderr}`);
+
+      const jobSetupLines = jobSetup.stdout.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+      const [jobId, worksetId, priorOperatorRecoveryId] = (jobSetupLines[jobSetupLines.length - 1] ?? '').split('|');
+      assert.match(jobId, /^[0-9a-f-]{36}$/i, `setup must report a well-formed job id; stdout: ${jobSetup.stdout}`);
+      assert.match(worksetId, /^[0-9a-f-]{36}$/i, `setup must report a well-formed workset id; stdout: ${jobSetup.stdout}`);
+      assert.match(priorOperatorRecoveryId, /^[0-9a-f-]{36}$/i, `setup must report the prior 089 operator_recovery_id; stdout: ${jobSetup.stdout}`);
+
+      // A well-formed but mismatched expected_context_hash must be denied outright, and must
+      // never create any context-recovery evidence at all.
+      const wrongHashAttempt = await runPsqlOnce(
+        POSTGRES_URL,
+        `
+          set statement_timeout = '10s';
+          select public.psi_authorize_agt002_context_recovery(
+            '${jobId}'::uuid, '${worksetId}'::uuid, 3, ${WRONG_CONTEXT_HASH_EXPR}, ${REPAIR_COMMIT_SHA_EXPR}
+          );
+        `,
+        { timeoutMs: DESTRUCTIVE_CHILD_TIMEOUT_MS },
+      );
+      assert.notEqual(wrongHashAttempt.code, 0, 'a mismatched (but well-formed) expected_context_hash must be rejected');
+
+      const auditCountAfterWrongHash = await queryScalar(
+        POSTGRES_URL,
+        `select count(*)::text from public.psi_agt002_context_recoveries where job_id = '${jobId}'::uuid;`,
+      );
+      assert.equal(auditCountAfterWrongHash, '0', 'a rejected mismatched-hash attempt must never create a context-recovery audit row');
+
+      const jobRowAfterWrongHash = await queryScalar(
+        POSTGRES_URL,
+        `select concat_ws('|', status, (context_recovery_id is not null)::text) from public.psi_agt002_reanalysis_jobs where id = '${jobId}'::uuid;`,
+      );
+      const [statusAfterWrongHash, isContextBoundAfterWrongHash] = jobRowAfterWrongHash.split('|');
+      assert.equal(statusAfterWrongHash, 'unavailable', 'a rejected mismatched-hash attempt must leave the job exactly as it was');
+      assert.equal(isContextBoundAfterWrongHash, 'false', 'a rejected mismatched-hash attempt must never bind context_recovery_id');
+
+      // Session A: authorize the context recovery with the correct hash, but hold the transaction
+      // open (uncommitted) for ~1.2s after the function itself has returned.
+      const sessionA = spawnPsql(POSTGRES_URL, buildContextRecoveryAuthorizeRaceSessionSql(jobId, worksetId), { timeoutMs: RACE_CHILD_TIMEOUT_MS });
+      await sessionA.waitForMarker(MARKER_CONTEXT_AUTH_UNCOMMITTED);
+
+      // Session B starts only once A's authorization evidence exists but is still uncommitted:
+      // it runs the actual rollback 090 file, unmodified. If the fix (the two pre-drop
+      // `lock table ... in access exclusive mode` statements) is in place, B must block until A's
+      // commit, then its exists-checks see the now-committed evidence and refuse to proceed.
+      const tBeforeB = Date.now();
+      const sessionBDone = runPsqlOnce(POSTGRES_URL, ROLLBACK_090_SQL, { timeoutMs: RACE_CHILD_TIMEOUT_MS });
+
+      const [resultA, resultB] = await Promise.all([sessionA.done, sessionBDone]);
+      const tAfterB = Date.now();
+
+      assert.equal(resultA.code, 0, `session A (context-recovery authorizer) must commit successfully: ${resultA.stderr}`);
+      assert.notEqual(resultB.code, 0, 'session B (rollback) must fail once evidence exists for the context-recovered job');
+      assert.match(
+        resultB.stderr,
+        /bloqueado/i,
+        `rollback must refuse with its audit-evidence guard message: ${resultB.stderr}`,
+      );
+      assert.ok(
+        tAfterB - tBeforeB >= 900,
+        `session B must have blocked on the rollback's pre-drop lock until session A committed (took ${tAfterB - tBeforeB}ms)`,
+      );
+
+      // The rollback must not have dropped anything: migration 090's objects, the one context
+      // audit row, and the job's bindings (both the prior 089 one and the new 090 one) must all
+      // still be intact.
+      const contextAuditTableExists = await queryScalar(
+        POSTGRES_URL,
+        `select (to_regclass('public.psi_agt002_context_recoveries') is not null)::text;`,
+      );
+      assert.equal(contextAuditTableExists, 'true', 'the context-recovery audit table must still exist after the refused rollback');
+
+      const contextAuthorizeFunctionExists = await queryScalar(
+        POSTGRES_URL,
+        `select (to_regprocedure('public.psi_authorize_agt002_context_recovery(uuid,uuid,integer,text,text)') is not null)::text;`,
+      );
+      assert.equal(
+        contextAuthorizeFunctionExists,
+        'true',
+        'the psi_authorize_agt002_context_recovery function must still exist after the refused rollback',
+      );
+
+      const contextRecoveryColumnExists = await queryScalar(
+        POSTGRES_URL,
+        `select exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'psi_agt002_reanalysis_jobs' and column_name = 'context_recovery_id')::text;`,
+      );
+      assert.equal(contextRecoveryColumnExists, 'true', 'jobs.context_recovery_id must still exist after the refused rollback');
+
+      const contextAuditCount = await queryScalar(
+        POSTGRES_URL,
+        `select count(*)::text from public.psi_agt002_context_recoveries where job_id = '${jobId}'::uuid;`,
+      );
+      assert.equal(contextAuditCount, '1', 'exactly one context-recovery audit row must still exist for the recovered job');
+
+      const jobRow = await queryScalar(
+        POSTGRES_URL,
+        `select concat_ws('|', status, resume_count::text, operator_recovery_id::text, (context_recovery_id is not null)::text) from public.psi_agt002_reanalysis_jobs where id = '${jobId}'::uuid;`,
+      );
+      const [finalStatus, finalResumeCount, finalOperatorRecoveryId, isContextBound] = jobRow.split('|');
+      assert.equal(finalStatus, 'queued', 'the job must remain queued: the refused rollback must not have unwound the context recovery');
+      assert.equal(finalResumeCount, '5', 'resume_count must remain exactly at the unchanged automatic-reclaim cap');
+      assert.equal(finalOperatorRecoveryId, priorOperatorRecoveryId, 'the prior 089 operator_recovery_id binding must remain unchanged by the context recovery');
+      assert.equal(isContextBound, 'true', 'the job must remain bound to its context_recovery_id after the refused rollback');
+    } finally {
+      try {
+        await resetPublicSchema();
+      } catch (error) {
+        console.error('failed to reset public schema after the AGT-002 context-recovery authorization-vs-rollback race integration test:', error);
       }
     }
   },
