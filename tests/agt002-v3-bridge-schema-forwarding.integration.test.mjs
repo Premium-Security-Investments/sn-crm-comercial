@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { readFileSync, statSync } from 'node:fs';
 import { startSyntheticAgt002HetznerBridge } from './fixtures/agt002-hetzner-bridge-synthetic-server.mjs';
 import { createAgt002HetznerBridgeClient } from '../agt002-hetzner-bridge-client.js';
 import { createAgt002ClaudeClient } from '../agt002-claude-client.js';
 import { buildAgt002IntegralAnalysisV3OutputJsonSchema } from '../agt002-preview-contract.js';
 
 // Regression for the V3 model-output boundary. The closed schema must survive
-// the real signed HTTP hop unchanged and reach Claude as --json-schema (or the
-// mode-0600 --json-schema-file fallback) without acquiring server-owned keys.
+// the real signed HTTP hop unchanged and reach Claude as --json-schema with
+// literal JSON, without acquiring server-owned keys. Claude Code 2.1.263 no
+// longer supports the --json-schema-file fallback.
 
 const SECRET = 'a'.repeat(32);
 
@@ -100,17 +100,9 @@ function fakeClaudeSpawnCapturingSchema(capture) {
     };
 
     const inlineIndex = args.indexOf('--json-schema');
-    const fileIndex = args.indexOf('--json-schema-file');
-    assert.notEqual(inlineIndex === -1, fileIndex === -1, 'Claude must receive exactly one schema transport flag');
-    if (inlineIndex !== -1) {
-      capture.schemaMode = 'argv';
-      capture.schema = JSON.parse(args[inlineIndex + 1]);
-    } else {
-      capture.schemaMode = 'file';
-      capture.schemaPath = args[fileIndex + 1];
-      capture.schemaFileMode = statSync(capture.schemaPath).mode & 0o777;
-      capture.schema = JSON.parse(readFileSync(capture.schemaPath, 'utf8'));
-    }
+    assert.notEqual(inlineIndex, -1, 'Claude must receive the schema via --json-schema');
+    assert.equal(args.indexOf('--json-schema-file'), -1, 'the obsolete --json-schema-file flag must not be used');
+    capture.schema = JSON.parse(args[inlineIndex + 1]);
     capture.call = { command, args, options };
     return child;
   };
@@ -133,7 +125,6 @@ async function testV3SchemaReachesClaudeClosedAndUnchanged() {
     assert.equal(capture.call.args[capture.call.args.indexOf('--model') + 1], 'sonnet');
     assert.deepEqual(JSON.parse(capture.stdin), baseRunInput().input, 'only the structured input may travel through stdin');
     assert.deepEqual(capture.schema, builtSchema, 'the exact built V3 schema must reach Claude');
-    if (capture.schemaMode === 'file') assert.equal(capture.schemaFileMode, 0o600, 'the schema file must be private while Claude starts');
     assertClosedIntegralShape(capture.schema);
     assert.deepEqual(builtSchema, pristine, 'transport and Claude argv/file projection must not mutate the caller schema');
   } finally {
@@ -141,6 +132,46 @@ async function testV3SchemaReachesClaudeClosedAndUnchanged() {
   }
 }
 
+function schemaOfExactBytes(targetBytes) {
+  const schema = { type: 'object', additionalProperties: false, properties: { pad: { type: 'string', description: '' } } };
+  const overhead = Buffer.byteLength(JSON.stringify(schema), 'utf8');
+  schema.properties.pad.description = 'x'.repeat(targetBytes - overhead);
+  assert.equal(Buffer.byteLength(JSON.stringify(schema), 'utf8'), targetBytes);
+  return schema;
+}
+
+// Regression: a valid schema sized above the OLD (now-removed) 65,536-byte inline ceiling but
+// below the current AGT002_CLAUDE_MAX_SCHEMA_BYTES cap (120,000) must still forward unchanged
+// through the full signed HTTP -> server -> Claude-client hop, literal on argv via --json-schema.
+// Claude Code 2.1.263 has no --json-schema-file fallback, so there is no size band in which the
+// bridge may silently switch transport — every accepted schema takes the exact same inline path.
+async function testSchemaAbove65536BelowSchemaCapForwardsUnchangedThroughSignedHttpToClaude() {
+  const schemaAround68KiB = schemaOfExactBytes(68 * 1024);
+  const serializedBytes = Buffer.byteLength(JSON.stringify(schemaAround68KiB), 'utf8');
+  assert.ok(serializedBytes > 65_536, 'the fixture must exceed the old inline ceiling');
+  assert.ok(serializedBytes < 120_000, 'the fixture must stay below the current safe inline cap');
+  const serializedSchema = JSON.stringify(schemaAround68KiB);
+  const pristine = structuredClone(schemaAround68KiB);
+  const capture = {};
+  const claudeClient = createAgt002ClaudeClient({
+    spawn: fakeClaudeSpawnCapturingSchema(capture), command: 'claude-fake', cwd: '/tmp', env: { PATH: '/usr/bin' },
+  });
+  const bridge = await startSyntheticAgt002HetznerBridge({ hmacSecret: SECRET, codexClient: claudeClient });
+  try {
+    const client = createAgt002HetznerBridgeClient({ url: bridge.url, hmacSecret: SECRET });
+    const result = await client.run({ ...baseRunInput(), outputSchema: schemaAround68KiB });
+    assert.deepEqual(JSON.parse(result.content), { integral_analysis: { analysis_units: [] } });
+
+    assert.deepEqual(capture.schema, schemaAround68KiB, 'the ~68 KiB schema must reach Claude unchanged across the signed HTTP hop');
+    assert.equal(JSON.stringify(capture.schema), serializedSchema, 'the serialized schema bytes must forward exactly, byte for byte');
+    assert.equal(capture.call.args.includes('--json-schema-file'), false, 'Claude Code 2.1.263 does not support --json-schema-file; the old file fallback must never resurface');
+    assert.deepEqual(schemaAround68KiB, pristine, 'transport and Claude argv projection must not mutate the caller schema');
+  } finally {
+    await bridge.close();
+  }
+}
+
 await testBridgeForwardsV3SchemaUnchanged();
 await testV3SchemaReachesClaudeClosedAndUnchanged();
+await testSchemaAbove65536BelowSchemaCapForwardsUnchangedThroughSignedHttpToClaude();
 console.log('agt002-v3-bridge-schema-forwarding.integration.test.mjs OK');

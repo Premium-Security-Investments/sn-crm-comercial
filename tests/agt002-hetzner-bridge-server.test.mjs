@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createAgt002BridgeServer, AGT002_BRIDGE_MAX_BODY_BYTES, AGT002_BRIDGE_ALLOWED_MODELS } from '../agt002-hetzner-bridge-server.js';
 import { sha256Hex, buildCanonicalString, signCanonicalString } from '../agt002-hetzner-bridge-signing.js';
 import { AGT002_PREVIEW_ALLOWED_MODELS } from '../agt002-preview-allowed-models.js';
+import { createAgt002HetznerBridgeClient } from '../agt002-hetzner-bridge-client.js';
 
 const SECRET = 'a'.repeat(32);
 const PATH = '/v1/agt002-preview/run';
@@ -319,6 +320,35 @@ async function testClaudeErrorCodesMapOntoExistingCodexWireCodes() {
   }
 }
 
+// Regression: the Claude client rejects an oversized --json-schema payload with its own native
+// AGT002_CLAUDE_SCHEMA_TOO_LARGE code (agt002-claude-client.js). That native code must never reach
+// the caller as-is: it has to land on the SAME safe terminal wire code and status the bridge already
+// uses for a malformed/invalid response (AGT002_CODEX_INVALID_RESPONSE, 422), exactly like
+// AGT002_CLAUDE_INVALID_RESPONSE does above. No dedicated wire code exists for this native code, so
+// mapping it to anything else — or letting it leak verbatim — is the bug this guards against.
+async function testSchemaTooLargeMapsToInvalidResponseWithoutLeakingNativeCode() {
+  const client = { run: async () => { const error = new Error('esquema de salida demasiado grande'); error.code = 'AGT002_CLAUDE_SCHEMA_TOO_LARGE'; throw error; } };
+  await withServer(client, async (base) => {
+    const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-schema-too-large-1' };
+    const body = JSON.stringify(payload);
+    const response = await fetch(`${base}${PATH}`, { method: 'POST', headers: signedHeaders(body), body });
+    assert.equal(response.status, 422, 'AGT002_CLAUDE_SCHEMA_TOO_LARGE must use the existing status for AGT002_CODEX_INVALID_RESPONSE');
+    const result = await response.json();
+    assert.equal(result.error.code, 'AGT002_CODEX_INVALID_RESPONSE', 'the native Claude code must translate onto the existing safe terminal wire code');
+    assert.equal(JSON.stringify(result).includes('AGT002_CLAUDE_SCHEMA_TOO_LARGE'), false, 'the native Claude code must never leak to the caller');
+
+    const bridgeClient = createAgt002HetznerBridgeClient({ url: `${base}${PATH}`, hmacSecret: SECRET });
+    await assert.rejects(
+      bridgeClient.run({ ...payload, idempotencyKey: 'idem-schema-too-large-2' }),
+      error => {
+        assert.equal(error.code, 'AGT002_CODEX_INVALID_RESPONSE', 'the bridge client must forward the same translated wire code');
+        assert.equal(String(error.message).includes('AGT002_CLAUDE_SCHEMA_TOO_LARGE'), false, 'the bridge client must never leak the native Claude code either');
+        return true;
+      },
+    );
+  });
+}
+
 async function testCwdInBodyRejected() {
   await withServer(fakeSuccessClient, async (base) => {
     const payload = { model: MODEL, policy: 'p', input: {}, outputSchema: {}, timeoutMs: 5000, idempotencyKey: 'idem-2', cwd: '/etc' };
@@ -528,6 +558,7 @@ await testUnsupportedModelRejectedByDefaultAllowlist();
 await testInjectedAllowedModelsIsIgnored();
 await testAllowedModelIsAlwaysTheFrozenSharedContract();
 await testClaudeErrorCodesMapOntoExistingCodexWireCodes();
+await testSchemaTooLargeMapsToInvalidResponseWithoutLeakingNativeCode();
 await testCwdInBodyRejected();
 await testConcurrentRequestsAreAccepted();
 await testProviderErrorMappedTo502();

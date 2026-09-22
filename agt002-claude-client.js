@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { spawn as defaultSpawn } from 'node:child_process';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
-import { writeFileSync, unlinkSync } from 'node:fs';
 import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effort.js';
 
 /**
@@ -26,14 +25,15 @@ import { isAgt002PreviewReasoningEffort } from './agt002-preview-reasoning-effor
 export const AGT002_CLAUDE_MAX_STDOUT_BYTES = 262_144;
 
 /**
- * Techo del `--json-schema` en argv, medido en bytes UTF-8. Linux limita cada
- * argumento de `execve` a MAX_ARG_STRLEN (32 páginas = 131072 bytes). A
- * diferencia de AGT-003, el esquema V3 de AGT-002 SÍ puede superar este
- * techo: por encima de él el esquema no se rechaza, se escribe en un archivo
- * temporal 0600 bajo el cwd fijo y se pasa por --json-schema-file, nunca por
- * argv.
+ * Techo seguro del `--json-schema` inline en argv, medido en bytes UTF-8.
+ * Linux limita cada argumento de `execve` a MAX_ARG_STRLEN (32 páginas =
+ * 131072 bytes); este techo deja margen por debajo de ese límite duro. El
+ * Claude Code instalado (2.1.263) no soporta `--json-schema-file`, así que
+ * no existe ruta de archivo temporal: por debajo o igual al techo el
+ * esquema viaja literal por `--json-schema`; por encima, el turno se
+ * rechaza antes de invocar spawn.
  */
-export const AGT002_CLAUDE_MAX_SCHEMA_BYTES = 65_536;
+export const AGT002_CLAUDE_MAX_SCHEMA_BYTES = 120_000;
 
 /**
  * Claves que jamás pueden llegar al subproceso: credenciales directas y
@@ -162,23 +162,14 @@ export function createAgt002ClaudeClient({
       catch { return Promise.reject(new Error('AGT-002 requiere un outputSchema cerrado.')); }
       if (typeof serializedSchema !== 'string') return Promise.reject(new Error('AGT-002 requiere un outputSchema cerrado.'));
 
-      // El esquema V3 de AGT-002 puede superar el techo de argv (a diferencia
-      // de AGT-003): por encima del techo se escribe en un archivo temporal
-      // 0600 bajo el cwd fijo y se pasa por --json-schema-file, nunca se
-      // rechaza el turno por su tamaño.
-      let schemaArgs;
-      let schemaFilePath = null;
+      // Claude Code 2.1.263 no soporta --json-schema-file: el esquema sólo
+      // puede viajar literal por --json-schema en argv. Por encima del techo
+      // seguro el turno se rechaza antes de invocar spawn; nunca se escribe
+      // en disco.
       if (Buffer.byteLength(serializedSchema, 'utf8') > AGT002_CLAUDE_MAX_SCHEMA_BYTES) {
-        schemaFilePath = join(cwd, `.agt002-claude-schema-${randomUUID()}.json`);
-        try {
-          writeFileSync(schemaFilePath, serializedSchema, { mode: 0o600 });
-        } catch {
-          return Promise.reject(failure('El servicio de AGT-002 no está disponible.', 'AGT002_CLAUDE_TRANSPORT_ERROR'));
-        }
-        schemaArgs = ['--json-schema-file', schemaFilePath];
-      } else {
-        schemaArgs = ['--json-schema', serializedSchema];
+        return Promise.reject(failure('El esquema de salida de AGT-002 excede el tamaño permitido.', 'AGT002_CLAUDE_SCHEMA_TOO_LARGE'));
       }
+      const schemaArgs = ['--json-schema', serializedSchema];
 
       const args = [
         '-p',
@@ -196,16 +187,10 @@ export function createAgt002ClaudeClient({
       ];
 
       return new Promise((resolve, reject) => {
-        const cleanupSchemaFile = () => {
-          if (!schemaFilePath) return;
-          try { unlinkSync(schemaFilePath); } catch { /* best effort */ }
-        };
-
         let child;
         try {
           child = spawn(command, args, { cwd, env: baseEnv, stdio: ['pipe', 'pipe', 'pipe'] });
         } catch {
-          cleanupSchemaFile();
           reject(failure('El servicio de AGT-002 no está disponible.', 'AGT002_CLAUDE_TRANSPORT_ERROR'));
           return;
         }
@@ -233,7 +218,6 @@ export function createAgt002ClaudeClient({
             const killer = setTimeout(() => { try { if (!child.killed) child.kill('SIGKILL'); } catch { /* best effort */ } }, KILL_GRACE_MS);
             killer.unref?.();
           }
-          cleanupSchemaFile();
           fn(value);
         };
 

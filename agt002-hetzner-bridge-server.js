@@ -42,6 +42,10 @@ const CLAUDE_TO_CODEX_CODE = {
   // Its own dedicated wire code (not the generic provider-error one) so the
   // worker/tender-semantic-discovery retry loop can single it out.
   AGT002_CLAUDE_STRUCTURED_OUTPUT_RETRY_EXHAUSTED: 'AGT002_CODEX_STRUCTURED_OUTPUT_RETRY_EXHAUSTED',
+  // An oversized server-built schema is a closed invalid-response/config
+  // boundary, not a provider fault: map to the existing safe terminal wire
+  // code so the native Claude code never leaks and this never becomes retryable.
+  AGT002_CLAUDE_SCHEMA_TOO_LARGE: 'AGT002_CODEX_INVALID_RESPONSE',
 };
 
 function sendJson(res, status, payload) {
