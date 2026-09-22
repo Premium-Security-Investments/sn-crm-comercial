@@ -187,7 +187,7 @@ export function VigiaCommercial({ canOpenOpportunity, commercialOwners }: { canO
 
     <section className="vigia-priority-grid">
       {visible.map(priority => <article className={`vigia-priority-card level-${priority.level}`} key={priority.id}>
-        <header><div><span className={`vigia-level level-${priority.level}`}>{levelLabel[priority.level]}</span><h3>{priority.company_name}</h3><p>{priority.owner_name || 'Sin comercial'} · {priority.stage_name} · {priority.regional_nombre || 'Regional pendiente'}</p></div><div className="vigia-score"><small>Score</small><strong>{priority.score}</strong></div></header>
+        <header><div><span className={`vigia-level level-${priority.level}`}>{levelLabel[priority.level]}</span><h3>{priority.company_name}</h3><p>{priority.owner_name || 'Sin comercial'} · {priority.stage_name} · {priority.regional_nombre || 'Regional pendiente'}</p></div><div className="vigia-score"><small>Puntaje de riesgo</small><strong>{priority.score}</strong><small>Más alto = mayor urgencia</small></div></header>
         <div className="vigia-card-value"><small>Valor registrado</small><strong>{Number(priority.offer_value) > 0 ? `${money.format(priority.offer_value)} COP` : 'Valor no registrado'}</strong></div>
         <ul className="vigia-signal-list">{priority.signals.map(signal => <li key={signal.code}><div><strong>{signal.label}</strong><span>{humanizeVigiaText(signal.evidence)}</span></div><b>{signal.points > 0 ? `+${signal.points}` : 'Dato'}</b></li>)}</ul>
         <div className="vigia-recommendation"><small>Acción sugerida</small><strong>{priority.recommendation}</strong><p>{priority.explanation}</p></div>
