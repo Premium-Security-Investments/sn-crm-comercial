@@ -52,6 +52,13 @@ const PERSISTENCE_FAILURE_ERROR_CODES = new Set([
 // the heuristic below looks for and would be misattributed to the provider.
 const V3_SAFE_VALIDATION_CODE_SET = new Set(AGT002_V3_SAFE_VALIDATION_CODES);
 
+// The governed context-version rehydration seam's own native failure code
+// (agt002-governed-context-version-rehydration.js / agt002-reanalysis-executor.js): a fail-closed
+// rejection of a missing resolver, a mismatched identity, a malformed/mismatched hash, or an
+// incomplete context blob. It names none of the substrings the heuristic below matches, so it is
+// classified by exact membership instead — always invalid_output, never provider_error.
+const CONTEXT_VERSION_REHYDRATION_FAILED_CODE = 'AGT002_CONTEXT_VERSION_REHYDRATION_FAILED';
+
 export function classifyAgt002ReanalysisWorkerError(error) {
   const rawCode = error?.runtime_boundary_code || error?.code || '';
   const code = String(rawCode).toUpperCase();
@@ -60,6 +67,7 @@ export function classifyAgt002ReanalysisWorkerError(error) {
   if (LEASE_LOST_ERROR_CODES.has(code)) return 'lease_lost';
   if (typeof rawCode === 'string' && V3_SAFE_VALIDATION_CODE_SET.has(rawCode)) return 'invalid_output';
   if (code.includes('CAPACITY') || code.includes('SATURAT') || code.includes('QUOTA')) return 'capacity_unavailable';
+  if (code === CONTEXT_VERSION_REHYDRATION_FAILED_CODE) return 'invalid_output';
   if (code.includes('INVALID') || code.includes('VALIDATION') || code.includes('JSON') || code.includes('CONTENT') || code.includes('ENVELOPE')) return 'invalid_output';
   return 'provider_error';
 }

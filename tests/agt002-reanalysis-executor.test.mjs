@@ -6,6 +6,7 @@ import { AGT002_POST_BRIDGE_ERROR_CODES } from '../agt002-post-bridge-observabil
 import { AGT002_PREVIEW_ALLOWED_MODELS } from '../agt002-preview-allowed-models.js';
 import { computeAgt002GovernedWorksetIdempotencyKey } from '../agt002-governed-document-workset-api.js';
 import { computeAgt002WorksetSelectionHash, freezeAgt002WorksetEvidence } from '../agt002-governed-document-worksets.js';
+import { classifyAgt002ReanalysisWorkerError } from '../agt002-reanalysis-worker.js';
 
 function sha256Hex(text) {
   return createHash('sha256').update(text, 'utf8').digest('hex');
@@ -33,6 +34,18 @@ function buildGovernedDocumentResolver(textByDocumentVersionId) {
   });
 }
 
+// AGT-002 context v2 fail-closed rehydration fixture: the ordinary/current shape of a contextV2
+// job's frozen analysis_context.contextV2Sections — structurally complete (all four required
+// sections present) so no rehydration is ever triggered for it. Only its structural completeness
+// matters at this layer (the executor gates rehydration on presence, not deep per-field schema —
+// buildAgt002ContextV2/agt002-preview-input.js owns that downstream, inside the mocked runtime).
+const COMPLETE_CONTEXT_V2_SECTIONS = Object.freeze({
+  opportunity: Object.freeze({}),
+  company_dossier: Object.freeze({}),
+  commercial_context: Object.freeze({}),
+  human_evidence: Object.freeze([]),
+});
+
 const JOB = Object.freeze({
   jobId: 'job-1', leaseId: 'lease-1', opportunityId: 'opp-1', tenderId: 'tender-1',
   snapshotId: 'snapshot-1', contextVersionId: 'context-1', idempotencyKey: 'key-1', requestedBy: 'actor-1',
@@ -40,7 +53,10 @@ const JOB = Object.freeze({
     schema_version: 1,
     engine_identity: { model: 'sonnet', policy_version: 'policy-1', timeout_ms: 165000, daily_max_runs: 20, max_concurrent: 2 },
     analysis_flags: { AGT002_CANONICAL_ONLY: true, AGT002_CONTEXT_V2: true, AGT002_DOCUMENT_RETRIEVAL: true, AGT002_LEGAL_CORPUS: false, AGT002_INTEGRAL_CONTRACT_V3: true },
-    analysis_context: { opportunity: { id: 'opp-1' }, documents: [], snapshotId: 'snapshot-1', canonicalOnly: true },
+    analysis_context: {
+      opportunity: { id: 'opp-1' }, documents: [], snapshotId: 'snapshot-1', canonicalOnly: true,
+      contextV2Sections: COMPLETE_CONTEXT_V2_SECTIONS,
+    },
     legal_corpus_context: null,
     integral_v3_governance: { companyEvidenceRegistryEntries: [], categoryOverrides: {}, evidenceClassLinkByRequirementId: {}, governanceProvenance: {} },
     manizales_manifest_source: null,
@@ -63,6 +79,10 @@ function harness({
   registerPreviewAnalysis = undefined,
   runPostBridgeAnalysis: runPostBridgeAnalysisOverride = undefined,
   governedDocumentResolver = undefined,
+  // AGT-002 context v2 fail-closed rehydration (RED): the seam the executor is expected to call
+  // when a contextV2 job's frozen analysis_context lacks complete contextV2Sections. Left
+  // undefined by default so every pre-existing call to harness() stays byte-identical.
+  governedContextVersionResolver = undefined,
 } = {}) {
   const calls = { claim: [], find: [], release: [], runtime: [], post: [], count: [] };
   const executor = createAgt002ReanalysisExecutor({
@@ -82,6 +102,7 @@ function harness({
     ...(finalizeDurableAnalysis ? { finalizeDurableAnalysis } : {}),
     ...(registerPreviewAnalysis ? { registerPreviewAnalysis } : {}),
     ...(governedDocumentResolver ? { governedDocumentResolver } : {}),
+    ...(governedContextVersionResolver ? { governedContextVersionResolver } : {}),
   });
   return { executor, calls };
 }
@@ -1572,4 +1593,270 @@ test('a durable_batched_v1 job\'s persistenceRetry policy never carries the stal
     'the existing legacy/single-turn deadline behavior — bounding the in-memory retry by the real claim lease — must be preserved unchanged',
   );
   assert.equal(typeof legacyDeps.persistenceRetry?.now, 'function');
+});
+
+// ---------------------------------------------------------------------------------------------
+// AGT-002 context v2 fail-closed rehydration (RED — historical job 084: analysis_flags.
+// AGT002_CONTEXT_V2 is true and the job carries an immutable contextVersionId, but its frozen
+// engineInput.analysis_context lacks a complete contextV2Sections). Today the executor forwards
+// that incomplete analysis_context straight through to buildAgt002PreviewInput /
+// buildContextV2Input (agt002-preview-input.js) — which only runs deep inside the real runtime's
+// engine.analyze(), AFTER semantic discovery has already spent a provider turn — and throws
+// "AGT-002 Preview con contexto v2 requiere contextV2Sections completo."
+//
+// The fix: when AGT002_CONTEXT_V2 is enabled and the frozen analysis_context's own
+// contextV2Sections is missing or structurally incomplete (any of the four required sections —
+// opportunity, company_dossier, commercial_context, human_evidence — absent), the executor must
+// rehydrate it fail-closed from the job's own immutable context_version row via an injected
+// `governedContextVersionResolver` seam, exactly like the existing governedDocumentResolver seam
+// rehydrates governed document content. The resolver is called with the SAME database this
+// execution was given, the job's own immutable contextVersionId, and the job's own
+// opportunityId/tenderId/snapshotId; its reported identity must equal those verbatim, its own
+// context blob must re-derive its claimed content_hash (sha256 hex of the stably-key-sorted JSON
+// of the full context blob — the same scheme tender-analysis-foundation.js's
+// registerAgt002ContextVersion already uses to write psi_agt002_context_versions.context_hash),
+// and that blob must carry all four required sections. The rehydrated sections are injected into
+// a brand-new transient context object for this one execution only — never into
+// job.frozenEngineInput or input.analysis_context, and never anything beyond contextV2Sections
+// itself.
+//
+// A job whose frozen contextV2Sections is already structurally complete must never call the
+// resolver at all (JOB itself — used everywhere else in this file — is exactly this ordinary/
+// current case; see COMPLETE_CONTEXT_V2_SECTIONS above), and a non-contextV2 job must never call
+// it regardless of what analysis_context happens to carry.
+// ---------------------------------------------------------------------------------------------
+
+function stableSortForHash(value) {
+  if (Array.isArray(value)) return value.map(stableSortForHash);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().map(key => [key, stableSortForHash(value[key])]));
+  }
+  return value;
+}
+
+function sha256HexStable(value) {
+  return sha256Hex(JSON.stringify(stableSortForHash(value)));
+}
+
+function buildContextV2Blob({ snapshotId = 'snapshot-ctx-1', overrides = {} } = {}) {
+  return {
+    context_version: 2,
+    snapshot_id: snapshotId,
+    opportunity: {},
+    company_dossier: {},
+    commercial_context: {},
+    human_evidence: [],
+    ...overrides,
+  };
+}
+
+function buildResolvedContextVersion({ opportunityId, tenderId, snapshotId, blob, contentHash }) {
+  const context = blob ?? buildContextV2Blob({ snapshotId });
+  return {
+    opportunity_id: opportunityId,
+    tender_id: tenderId,
+    snapshot_id: snapshotId,
+    context,
+    content_hash: contentHash ?? sha256HexStable(context),
+  };
+}
+
+function buildContextV2RehydrationJob({ frozenAnalysisContext }) {
+  return Object.freeze({
+    ...JOB,
+    opportunityId: 'opp-ctx-1',
+    tenderId: 'tender-ctx-1',
+    snapshotId: 'snapshot-ctx-1',
+    contextVersionId: 'context-version-ctx-1',
+    frozenEngineInput: Object.freeze({ ...JOB.frozenEngineInput, analysis_context: frozenAnalysisContext }),
+  });
+}
+
+function frozenAnalysisContextMissingSections(overrides = {}) {
+  return Object.freeze({
+    opportunity: Object.freeze({ id: 'opp-ctx-1' }), documents: Object.freeze([]),
+    snapshotId: 'snapshot-ctx-1', canonicalOnly: true,
+    ...overrides,
+  });
+}
+
+test('a contextV2 job whose frozen analysis_context lacks complete contextV2Sections calls the injected governedContextVersionResolver with the database, the job\'s immutable contextVersionId and its exact opportunityId/tenderId/snapshotId, injects ONLY the rehydrated contextV2Sections into a transient context, never mutates the frozen input, and reaches the real orchestrator', async () => {
+  const database = { kind: 'db', marker: 'the-real-database' };
+  const frozenAnalysisContext = frozenAnalysisContextMissingSections(); // no contextV2Sections at all — job 084's shape
+  const job = buildContextV2RehydrationJob({ frozenAnalysisContext });
+
+  const resolverCalls = [];
+  const resolved = buildResolvedContextVersion({
+    opportunityId: 'opp-ctx-1', tenderId: 'tender-ctx-1', snapshotId: 'snapshot-ctx-1',
+    blob: buildContextV2Blob({
+      snapshotId: 'snapshot-ctx-1',
+      overrides: {
+        opportunity: { rehydrated: true }, company_dossier: { rehydrated: true },
+        commercial_context: { rehydrated: true }, human_evidence: [{ rehydrated: true }],
+      },
+    }),
+  });
+  const governedContextVersionResolver = async (args) => { resolverCalls.push(args); return resolved; };
+
+  const { executor, calls } = harness({ governedContextVersionResolver });
+  const result = await executor(database, job);
+
+  assert.deepEqual(result, { status: 'completed', analysis_run_id: 'run-1', error_code: null, reused: false });
+  assert.equal(resolverCalls.length, 1, 'the resolver must be called exactly once');
+  assert.equal(resolverCalls[0].database, database, 'the resolver must receive the SAME database this execution was given');
+  assert.equal(resolverCalls[0].contextVersionId, 'context-version-ctx-1', 'the resolver must receive the job\'s own immutable contextVersionId');
+  assert.equal(resolverCalls[0].opportunityId, 'opp-ctx-1');
+  assert.equal(resolverCalls[0].tenderId, 'tender-ctx-1');
+  assert.equal(resolverCalls[0].snapshotId, 'snapshot-ctx-1');
+
+  const [, , deps] = calls.post[0];
+  assert.notEqual(deps.analysisContext, frozenAnalysisContext, 'the effective analysis context must be a brand-new object, never the frozen one');
+  assert.deepEqual(
+    deps.analysisContext,
+    {
+      opportunity: { id: 'opp-ctx-1' }, documents: [], snapshotId: 'snapshot-ctx-1', canonicalOnly: true,
+      contextV2Sections: {
+        opportunity: { rehydrated: true }, company_dossier: { rehydrated: true },
+        commercial_context: { rehydrated: true }, human_evidence: [{ rehydrated: true }],
+      },
+    },
+    'ONLY contextV2Sections is injected; every other field of the frozen analysis_context is carried through unchanged',
+  );
+  assert.equal(Object.hasOwn(frozenAnalysisContext, 'contextV2Sections'), false, 'the frozen analysis_context object itself must never be mutated');
+  assert.equal(calls.runtime.length, 1);
+  assert.equal(calls.post.length, 1, 'the real orchestrator (which calls engine.analyze) must be reached exactly once');
+});
+
+test('a contextV2 job whose frozen contextV2Sections is present but missing a required section still triggers rehydration', async () => {
+  const incompleteSections = Object.freeze({ opportunity: {}, company_dossier: {}, commercial_context: {} }); // missing human_evidence
+  const frozenAnalysisContext = frozenAnalysisContextMissingSections({ contextV2Sections: incompleteSections });
+  const job = buildContextV2RehydrationJob({ frozenAnalysisContext });
+
+  const resolverCalls = [];
+  const resolved = buildResolvedContextVersion({ opportunityId: 'opp-ctx-1', tenderId: 'tender-ctx-1', snapshotId: 'snapshot-ctx-1' });
+  const governedContextVersionResolver = async (args) => { resolverCalls.push(args); return resolved; };
+
+  const { executor, calls } = harness({ governedContextVersionResolver });
+  const result = await executor({ kind: 'db' }, job);
+
+  assert.equal(resolverCalls.length, 1, 'a present-but-incomplete contextV2Sections must still trigger rehydration, not just a wholly absent one');
+  assert.deepEqual(result, { status: 'completed', analysis_run_id: 'run-1', error_code: null, reused: false });
+  assert.equal(calls.post.length, 1);
+});
+
+test('a contextV2 job whose frozen analysis_context.contextV2Sections is already structurally complete never calls governedContextVersionResolver, and the effective analysis context stays byte-identical to the frozen one', async () => {
+  const governedContextVersionResolver = async () => { throw new Error('must never be called: contextV2Sections is already complete'); };
+  const { executor, calls } = harness({ governedContextVersionResolver });
+  const result = await executor({ kind: 'db' }, JOB);
+  assert.deepEqual(result, { status: 'completed', analysis_run_id: 'run-1', error_code: null, reused: false });
+  const [, , deps] = calls.post[0];
+  assert.equal(deps.analysisContext, JOB.frozenEngineInput.analysis_context, 'no rehydration means the SAME frozen analysis_context object reaches the orchestrator');
+});
+
+test('a contextV2 job needing rehydration with no governedContextVersionResolver injected fails closed as invalid_output before any runtime construction, and releases the claimed lease', async () => {
+  const frozenAnalysisContext = frozenAnalysisContextMissingSections();
+  const job = buildContextV2RehydrationJob({ frozenAnalysisContext });
+  const { executor, calls } = harness();
+  const result = await executor({ kind: 'db' }, job);
+  assert.deepEqual(result, { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false });
+  assert.equal(calls.claim.length, 1, 'the preview lease was already claimed before rehydration and must still be released');
+  assert.equal(calls.runtime.length, 0);
+  assert.equal(calls.post.length, 0);
+  assert.equal(calls.release.length, 1);
+});
+
+// Table-driven: missing / mismatched / unhashed / incomplete resolver results must all fail
+// closed as the deterministic, existing invalid-input wire classification ('invalid_output') —
+// never as a retryable transport/provider error ('timeout'/'provider_error') — before any runtime
+// construction or orchestrator call, releasing the already-claimed preview lease exactly once.
+const CONTEXT_V2_RESOLVER_INVALID_CASES = [
+  ['missing (null) resolver result', () => null],
+  ['missing (undefined) resolver result', () => undefined],
+  ['mismatched opportunity_id', () => buildResolvedContextVersion({ opportunityId: 'other-opp', tenderId: 'tender-ctx-1', snapshotId: 'snapshot-ctx-1' })],
+  ['mismatched tender_id', () => buildResolvedContextVersion({ opportunityId: 'opp-ctx-1', tenderId: 'other-tender', snapshotId: 'snapshot-ctx-1' })],
+  ['mismatched snapshot_id', () => buildResolvedContextVersion({ opportunityId: 'opp-ctx-1', tenderId: 'tender-ctx-1', snapshotId: 'other-snapshot' })],
+  ['unhashed: content_hash missing', () => {
+    const resolved = buildResolvedContextVersion({ opportunityId: 'opp-ctx-1', tenderId: 'tender-ctx-1', snapshotId: 'snapshot-ctx-1' });
+    delete resolved.content_hash;
+    return resolved;
+  }],
+  ['unhashed: content_hash is not a hex64 string', () => ({
+    ...buildResolvedContextVersion({ opportunityId: 'opp-ctx-1', tenderId: 'tender-ctx-1', snapshotId: 'snapshot-ctx-1' }),
+    content_hash: 'not-a-hash',
+  })],
+  ['unhashed: content_hash does not re-derive from the returned context blob', () => ({
+    ...buildResolvedContextVersion({ opportunityId: 'opp-ctx-1', tenderId: 'tender-ctx-1', snapshotId: 'snapshot-ctx-1' }),
+    content_hash: 'a'.repeat(64),
+  })],
+  ['incomplete: context blob missing company_dossier', () => {
+    const blob = buildContextV2Blob({ snapshotId: 'snapshot-ctx-1' });
+    delete blob.company_dossier;
+    return buildResolvedContextVersion({ opportunityId: 'opp-ctx-1', tenderId: 'tender-ctx-1', snapshotId: 'snapshot-ctx-1', blob });
+  }],
+  ['incomplete: context blob missing human_evidence', () => {
+    const blob = buildContextV2Blob({ snapshotId: 'snapshot-ctx-1' });
+    delete blob.human_evidence;
+    return buildResolvedContextVersion({ opportunityId: 'opp-ctx-1', tenderId: 'tender-ctx-1', snapshotId: 'snapshot-ctx-1', blob });
+  }],
+  ['embedded blob snapshot_id disagrees with the job scope', () => buildResolvedContextVersion({
+    opportunityId: 'opp-ctx-1', tenderId: 'tender-ctx-1', snapshotId: 'snapshot-ctx-1',
+    blob: buildContextV2Blob({ snapshotId: 'a-different-snapshot' }),
+  })],
+];
+
+for (const [label, buildResolved] of CONTEXT_V2_RESOLVER_INVALID_CASES) {
+  test(`a resolver result that is ${label} fails closed as invalid_output before any runtime construction or orchestrator call, never as a retryable transport/provider error`, async () => {
+    const frozenAnalysisContext = frozenAnalysisContextMissingSections();
+    const job = buildContextV2RehydrationJob({ frozenAnalysisContext });
+    const governedContextVersionResolver = async () => buildResolved();
+    const { executor, calls } = harness({ governedContextVersionResolver });
+    const result = await executor({ kind: 'db' }, job);
+    assert.deepEqual(
+      result,
+      { status: 'unavailable', analysis_run_id: null, error_code: 'invalid_output', reused: false },
+      `${label} must fail closed as invalid_output, never as a retryable transport/provider error`,
+    );
+    assert.equal(calls.claim.length, 1, 'the preview lease was already claimed before rehydration and must still be released');
+    assert.equal(calls.runtime.length, 0, `${label} must never reach createRuntime`);
+    assert.equal(calls.post.length, 0, `${label} must never reach runPostBridgeAnalysis`);
+    assert.equal(calls.release.length, 1, `${label} must release the claimed preview lease exactly once`);
+  });
+}
+
+// RED: every fail-closed rehydration case above asserts the queue-level `invalid_output`
+// projection, but never pins down WHICH native `.code` the executor is expected to throw to get
+// there. The proposed native code is `AGT002_CONTEXT_VERSION_REHYDRATION_FAILED` — mirroring
+// `AGT002_GOVERNED_DOCUMENT_RESOLVER_INVALID_OUTPUT`'s role for the sibling governed-document
+// rehydration seam. classifyAgt002ReanalysisWorkerError's existing heuristic only recognizes
+// codes containing INVALID/VALIDATION/JSON/CONTENT/ENVELOPE (or exact-matches a closed set); it
+// does not yet know this proposed code, so this documents the exact contract the production
+// change must satisfy — either by teaching classify() this code, or naming it so the existing
+// heuristic already covers it.
+test('the proposed native AGT002_CONTEXT_VERSION_REHYDRATION_FAILED code classifies as the queue\'s invalid_output error code', () => {
+  const error = Object.assign(
+    new Error('AGT-002 context version resolver: invalid resolved context version output.'),
+    { code: 'AGT002_CONTEXT_VERSION_REHYDRATION_FAILED' },
+  );
+  assert.equal(classifyAgt002ReanalysisWorkerError(error), 'invalid_output');
+});
+
+test('a non-contextV2 job never calls governedContextVersionResolver, regardless of what analysis_context.contextV2Sections carries', async () => {
+  const governedContextVersionResolver = async () => { throw new Error('must never be called for a non-contextV2 job'); };
+  const nonContextV2Job = {
+    ...JOB,
+    frozenEngineInput: {
+      ...JOB.frozenEngineInput,
+      analysis_flags: { ...JOB.frozenEngineInput.analysis_flags, AGT002_CONTEXT_V2: false },
+      // No contextV2Sections at all — must still never trigger rehydration, since the flag is off.
+      analysis_context: { opportunity: { id: 'opp-1' }, documents: [], snapshotId: 'snapshot-1', canonicalOnly: true },
+    },
+  };
+  const { executor, calls } = harness({ governedContextVersionResolver });
+  const result = await executor({ kind: 'db' }, nonContextV2Job);
+  assert.deepEqual(result, { status: 'completed', analysis_run_id: 'run-1', error_code: null, reused: false });
+  const [, , deps] = calls.post[0];
+  assert.equal(
+    deps.analysisContext, nonContextV2Job.frozenEngineInput.analysis_context,
+    'a non-contextV2 job must reach the orchestrator with the exact frozen analysis_context object, unchanged',
+  );
 });
