@@ -419,9 +419,10 @@ for (const badAsOf of ['2026-08-29T00:00:00.000+00:00', '2026-08-29T08:30:00.000
   assert.deepEqual(capturedOptions.categoryOverrides, categoryOverrides);
   assert.equal(capturedOptions.manizalesManifestSource, manizalesManifestSource, 'the runtime must forward the exact server-owned manifest source to the engine');
   assert.equal(capturedOptions.policyText, AGT002_INTEGRAL_V3_POLICY, 'V3 runtime must use the V3 wire policy, never the legacy preview policy');
-  // v6: the policy now spells out the explicit material_omissions all-units-abstained rule, so
-  // the persisted provenance must distinguish it from a v5 run.
-  assert.equal(AGT002_INTEGRAL_V3_POLICY_VERSION, 'agt002-integral-v3-policy-v6', 'a materially different model-facing input/policy requires a distinct persisted policy version');
+  // v7: the policy now names the exact blocking.effect/blocking.curability/evidence_refs field and
+  // value rules of the blocking-action invariant, so the persisted provenance must distinguish it
+  // from a v6 run.
+  assert.equal(AGT002_INTEGRAL_V3_POLICY_VERSION, 'agt002-integral-v3-policy-v7', 'a materially different model-facing input/policy requires a distinct persisted policy version');
   assert.equal(capturedOptions.policyVersion, AGT002_INTEGRAL_V3_POLICY_VERSION, 'persisted policy version must identify the V3 policy actually used');
   assert.notEqual(capturedOptions.policyText, AGT002_PREVIEW_POLICY);
   assert.notEqual(capturedOptions.policyVersion, AGT002_PREVIEW_DEFAULT_POLICY_VERSION);

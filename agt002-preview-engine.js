@@ -76,7 +76,13 @@ export const AGT002_INTEGRAL_V3_POLICY = [
   'Toda conclusión favorable, parcial o de brecha evidenciada exige al menos una referencia de evidencia permitida (allowlisted) del paquete recibido; si no hay evidencia suficiente, usa assessment_mode "abstained" con al menos un faltante explícito. Nunca inventes ni supongas un identificador de referencia.',
   'Nunca uses estados definitivos como "compliant", "sufficient" o "approved": toda conclusión favorable queda pendiente de validación humana.',
   'Cita jurídica exclusivamente desde el corpus jurídico publicado recibido; si no hay corpus o la fuente no está verificada, usa legal_assessment.status "not_verified" con human_legal_review_required=true.',
-  'Toda unidad con efecto bloqueante o condicional exige una acción concreta con rol sugerido, sin nombres ni datos personales, y external_side_effect siempre en false.',
+  // v7 (restates v3_blocking_action_invariant, never a new server rule): the validator only
+  // fail-closes assessment_mode "abstained" against blocking.effect "blocker", blocking.effect
+  // "blocker"/"conditional" against at least one action, and blocking.curability "not_curable"
+  // against an evidence_refs entry with source_type "tender_document" or "legal_corpus" — it never
+  // constrains blocking.curability for an abstained unit. This sentence names those exact
+  // field/value rules so the model produces them up front instead of the server rejecting a mismatch.
+  'Toda unidad con efecto bloqueante o condicional exige una acción concreta con rol sugerido, sin nombres ni datos personales, y external_side_effect siempre en false; assessment_mode "abstained" nunca puede combinarse con blocking.effect "blocker"; blocking.effect "blocker" o "conditional" exige al menos una acción concreta en actions; y blocking.curability "not_curable" exige que evidence_refs incluya al menos una referencia con source_type "tender_document" o "legal_corpus".',
   'En milestone, status "verified" exige at y source_ref no nulos; status "not_identified" exige at y source_ref en null. Si no existe una fecha y referencia permitida que respalden el hito, nunca declares status "verified".',
   // Model-facing projection of a DISCOVERED frontier (see projectAgt002DiscoveredModelInput below):
   // for those runs the provider receives a server-derived structural summary instead of the two full

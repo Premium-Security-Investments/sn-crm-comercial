@@ -37,7 +37,14 @@ export const AGT002_PREVIEW_DEFAULT_POLICY_VERSION = 'agt002-preview-policy-v2';
 // "abstained" and no unit may use another assessment_mode. This restates the existing validator and
 // changes no server contract, but the policy text is materially different, so the persisted version
 // is bumped again.
-export const AGT002_INTEGRAL_V3_POLICY_VERSION = 'agt002-integral-v3-policy-v6';
+// v7: AGT002_INTEGRAL_V3_POLICY now names, in the blocking-action sentence, the exact field/value
+// rules already enforced fail-closed by the server validator (v3_blocking_action_invariant):
+// assessment_mode "abstained" must never combine with blocking.effect "blocker"; blocking.effect
+// "blocker"/"conditional" requires at least one action; and blocking.curability "not_curable"
+// requires an evidence_refs entry with source_type "tender_document" or "legal_corpus". The
+// validator never constrains blocking.curability for an abstained unit, so the policy does not
+// claim otherwise. This restates the existing validator and changes no server contract.
+export const AGT002_INTEGRAL_V3_POLICY_VERSION = 'agt002-integral-v3-policy-v7';
 
 function nonEmpty(value) {
   return typeof value === 'string' && value.trim().length > 0;

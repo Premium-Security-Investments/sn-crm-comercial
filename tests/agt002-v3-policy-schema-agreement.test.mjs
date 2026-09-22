@@ -200,4 +200,79 @@ function buildMinimalV3IntegralAnalysis() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// 5. The policy text and the runtime validator (agt002-integral-analysis-v3.js) AGREE on three
+//    blocking/curability invariants that are otherwise invisible in the closed JSON schema:
+//      (a) assessment_mode "abstained" is incompatible with blocking.effect "blocker" (the
+//          validator does not constrain blocking.curability for an abstained unit);
+//      (b) blocking.effect "blocker" or "conditional" requires at least one action;
+//      (c) blocking.curability "not_curable" requires an evidence_refs entry whose source_type is
+//          "tender_document" or "legal_corpus".
+//    The policy must name each invariant explicitly so a best-effort structured decoder is steered
+//    toward the same closed relationships the validator enforces fail-closed.
+// ---------------------------------------------------------------------------
+{
+  const sentences = AGT002_INTEGRAL_V3_POLICY.split(/(?<=\.)\s+/);
+
+  const abstainedBlockingSentence = sentences.find(sentence => (
+    /assessment_mode\s*"abstained"/.test(sentence)
+    && /blocking\.effect/i.test(sentence)
+    && /"blocker"/.test(sentence)
+  ));
+  assert.ok(
+    abstainedBlockingSentence,
+    'policy must state that assessment_mode "abstained" is incompatible with blocking.effect '
+    + '"blocker", matching the runtime validator invariant (v3_blocking_action_invariant)',
+  );
+
+  const abstainedBlockingClauses = abstainedBlockingSentence.split(/\s*;\s*/);
+  const abstainedBlockingClause = abstainedBlockingClauses.find(clause => (
+    /assessment_mode\s*"abstained"/.test(clause)
+    && /blocking\.effect/i.test(clause)
+    && /"blocker"/.test(clause)
+  ));
+  assert.ok(
+    abstainedBlockingClause,
+    'policy must state that assessment_mode "abstained" is incompatible with blocking.effect '
+    + '"blocker" within a single clause, matching the runtime validator invariant '
+    + '(v3_blocking_action_invariant)',
+  );
+  assert.equal(
+    /blocking\.curability/i.test(abstainedBlockingClause),
+    false,
+    'the validator does not constrain blocking.curability for abstained units, so the '
+    + 'abstained/blocker clause must not mention blocking.curability',
+  );
+  assert.equal(
+    /undetermined/i.test(abstainedBlockingClause),
+    false,
+    'the abstained/blocker clause must not require "undetermined"',
+  );
+
+  const blockingActionSentence = sentences.find(sentence => (
+    /blocking\.effect/i.test(sentence)
+    && /"blocker"/.test(sentence)
+    && /"conditional"/.test(sentence)
+    && /(acci[oó]n|action)/i.test(sentence)
+  ));
+  assert.ok(
+    blockingActionSentence,
+    'policy must state that blocking.effect "blocker" or "conditional" requires at least one action, '
+    + 'matching the runtime validator invariant (v3_blocking_action_invariant)',
+  );
+
+  const notCurableSentence = sentences.find(sentence => (
+    /blocking\.curability/i.test(sentence)
+    && /"not_curable"/.test(sentence)
+    && /tender_document/.test(sentence)
+    && /legal_corpus/.test(sentence)
+  ));
+  assert.ok(
+    notCurableSentence,
+    'policy must state that blocking.curability "not_curable" requires an evidence_refs entry whose '
+    + 'source_type is tender_document or legal_corpus, matching the runtime validator invariant '
+    + '(v3_blocking_action_invariant)',
+  );
+}
+
 console.log('agt002-v3-policy-schema-agreement.test.mjs OK');
