@@ -1,0 +1,63 @@
+{
+  "gate_id": "GATE_FX_0015",
+  "schema_version": "agt002-phase01-gate/1.0.0",
+  "type": "PHASE_AUDIT",
+  "authority": {
+    "principal": {
+      "principal_id": "f1c70000-0000-0000-0000-000000000301",
+      "principal_kind": "synthetic",
+      "durable_ref": {
+        "source": "fixture_registry",
+        "locator": "fixture://principal/f1c70000-0000-0000-0000-000000000301",
+        "verifiable": true
+      },
+      "display_label": "Fixture Gate Principal"
+    },
+    "grant_id": "GRANT-P1-0001",
+    "delegation": null
+  },
+  "objective": "Verify scope resource_ids outside the granted resource_ids is rejected",
+  "environment": "isolated_fixture",
+  "synthetic": true,
+  "scope": {
+    "resource_kind": "fixture_resource",
+    "resource_ids": ["f1c70000-0000-0000-0000-000000000299"],
+    "actions": ["read"]
+  },
+  "preconditions": [
+    {
+      "precondition_id": "PRE-FX-0015",
+      "statement": "Fixture precondition statement for gate-invalid-scope-ids-out-of-grant",
+      "verdict": "VALID",
+      "evidence_ids": ["EVID-FX-0015"]
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "EVID-FX-0015",
+      "kind": "fixture_record",
+      "locator": "fixture://evidence/0015",
+      "durable": true,
+      "content_hash": "fixture-content-hash-0015",
+      "captured_at_utc": "2026-09-20T00:00:00Z"
+    }
+  ],
+  "expires_at_utc": "2026-09-24T00:00:00Z",
+  "consumption_policy": {
+    "max_consumptions": 1,
+    "receipt_required": true,
+    "idempotency_key": "idempotency-key-fx-0015"
+  },
+  "rollback": {
+    "supported": false,
+    "procedure": "Compensate via fixture rollback procedure",
+    "locator": "fixture://rollback/0015"
+  },
+  "issued_at_utc": "2026-09-20T00:00:00Z",
+  "status": "OPEN",
+  "outcome": null,
+  "consumption": null,
+  "revocation": null,
+  "artifact_set_hash": "46c79254cb8d7b3cd04b2587f38b0eb638e0a10b253011090310f465d317ed03",
+  "active_case": null
+}

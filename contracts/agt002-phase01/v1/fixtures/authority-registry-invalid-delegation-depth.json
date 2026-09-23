@@ -1,0 +1,32 @@
+{
+  "schema_version": "agt002-phase01-authority-registry/1.0.0",
+  "registry_version": 1,
+  "supersedes_registry_version": null,
+  "issued_at_utc": "2026-09-01T00:00:00Z",
+  "grants": [
+    {
+      "grant_id": "GRANT-FIXTURE-DELEGATE-0001",
+      "gate_type": "AUTHORITY_DELEGATION",
+      "principal": {
+        "principal_id": "f1c70000-0000-0000-0000-000000000433",
+        "principal_kind": "synthetic",
+        "durable_ref": {
+          "source": "fixture_registry",
+          "locator": "fixture://principal/f1c70000-0000-0000-0000-000000000433",
+          "verifiable": true
+        },
+        "display_label": "Fixture Delegation Depth Grant Owner"
+      },
+      "delegate_of": "GRANT-FIXTURE-DELEGATE-PARENT-0001",
+      "valid_from_utc": "2026-09-01T00:00:00Z",
+      "valid_until_utc": "2027-09-01T00:00:00Z",
+      "scope": {
+        "environments": ["isolated_fixture"],
+        "resource_kind": "fixture_resource",
+        "resource_ids": ["f1c70000-0000-0000-0000-000000000432"],
+        "actions": ["read"]
+      },
+      "revoked_at_utc": null
+    }
+  ]
+}

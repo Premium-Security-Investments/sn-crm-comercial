@@ -1,0 +1,368 @@
+{
+  "gate-base": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "authority_registry_ref": "contracts/agt002-phase01/v1/authority-registry.json",
+    "authority_registry_schema_ref": "contracts/agt002-phase01/v1/authority-registry.schema.json",
+    "consumption_ledger": []
+  },
+  "gate-consumption-duplicate-receipt": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "authority_registry_ref": "contracts/agt002-phase01/v1/authority-registry.json",
+    "authority_registry_schema_ref": "contracts/agt002-phase01/v1/authority-registry.schema.json",
+    "consumption_ledger": [
+      {
+        "gate_id": "GATE_OTHER_EXISTING_0001",
+        "receipt_id": "RCPT-FX-0007",
+        "consumed_at_utc": "2026-09-22T00:00:00Z"
+      }
+    ]
+  },
+  "gate-consumption-second-consumption": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "authority_registry_ref": "contracts/agt002-phase01/v1/authority-registry.json",
+    "authority_registry_schema_ref": "contracts/agt002-phase01/v1/authority-registry.schema.json",
+    "consumption_ledger": [
+      {
+        "gate_id": "GATE_FX_0008",
+        "receipt_id": "RCPT-PRIOR-0001",
+        "consumed_at_utc": "2026-09-22T00:00:00Z"
+      }
+    ]
+  },
+  "gate-consumed-no-ledger": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "gap_id": "AGT002-P1-GAP-0003",
+    "authority_registry_ref": "contracts/agt002-phase01/v1/authority-registry.json",
+    "authority_registry_schema_ref": "contracts/agt002-phase01/v1/authority-registry.schema.json"
+  },
+  "gate-no-authority": {
+    "now_utc": "2026-09-23T18:00:00Z"
+  },
+  "gate-authority-delegation-expired": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "authority_registry_schema_ref": "contracts/agt002-phase01/v1/authority-registry.schema.json",
+    "authority_registry": {
+      "schema_version": "agt002-phase01-authority-registry/1.0.0",
+      "registry_version": 1,
+      "supersedes_registry_version": null,
+      "issued_at_utc": "2026-09-01T00:00:00Z",
+      "grants": [
+        {
+          "grant_id": "GRANT-P1-BASE-DELEGATION",
+          "gate_type": "AUTHORITY_DELEGATION",
+          "principal": {
+            "principal_id": "f1c70000-0000-0000-0000-000000000301",
+            "principal_kind": "synthetic",
+            "durable_ref": {
+              "source": "fixture_registry",
+              "locator": "fixture://principal/f1c70000-0000-0000-0000-000000000301",
+              "verifiable": true
+            },
+            "display_label": "Fixture Delegation Base Principal"
+          },
+          "delegate_of": null,
+          "valid_from_utc": "2026-09-01T00:00:00Z",
+          "valid_until_utc": "2027-09-01T00:00:00Z",
+          "scope": {
+            "environments": ["isolated_fixture"],
+            "resource_kind": "fixture_resource",
+            "resource_ids": ["f1c70000-0000-0000-0000-000000000302"],
+            "actions": ["read"]
+          },
+          "revoked_at_utc": null
+        },
+        {
+          "grant_id": "GRANT-P1-DELEGATE-EXPIRED",
+          "gate_type": "AUTHORITY_DELEGATION",
+          "principal": {
+            "principal_id": "f1c70000-0000-0000-0000-000000000303",
+            "principal_kind": "synthetic",
+            "durable_ref": {
+              "source": "fixture_registry",
+              "locator": "fixture://principal/f1c70000-0000-0000-0000-000000000303",
+              "verifiable": true
+            },
+            "display_label": "Fixture Delegation Expired Principal"
+          },
+          "delegate_of": "GRANT-P1-BASE-DELEGATION",
+          "valid_from_utc": "2026-09-01T00:00:00Z",
+          "valid_until_utc": "2026-09-10T00:00:00Z",
+          "scope": {
+            "environments": ["isolated_fixture"],
+            "resource_kind": "fixture_resource",
+            "resource_ids": ["f1c70000-0000-0000-0000-000000000302"],
+            "actions": ["read"]
+          },
+          "revoked_at_utc": null
+        }
+      ]
+    }
+  },
+  "authority-registry-valid": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "authority_registry_schema_ref": "contracts/agt002-phase01/v1/authority-registry.schema.json",
+    "authority_request": {
+      "gate_type": "PHASE_AUDIT",
+      "environment": "isolated_fixture",
+      "grant_id": "GRANT-FIXTURE-VALID-0001",
+      "delegation": null,
+      "principal": {
+        "principal_id": "f1c70000-0000-0000-0000-000000000401",
+        "principal_kind": "synthetic",
+        "durable_ref": {
+          "source": "fixture_registry",
+          "locator": "fixture://principal/f1c70000-0000-0000-0000-000000000401",
+          "verifiable": true
+        },
+        "display_label": "Fixture Authority Registry Valid Principal"
+      },
+      "resource_ids": ["f1c70000-0000-0000-0000-000000000402"],
+      "actions": ["read"]
+    }
+  },
+  "authority-registry-structural-only": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "authority_registry_schema_ref": "contracts/agt002-phase01/v1/authority-registry.schema.json"
+  },
+  "authority-registry-role-principal": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "authority_registry_schema_ref": "contracts/agt002-phase01/v1/authority-registry.schema.json",
+    "authority_request": {
+      "gate_type": "PHASE_AUDIT",
+      "environment": "isolated_fixture",
+      "grant_id": "GRANT-FIXTURE-ROLE-0001",
+      "delegation": null,
+      "principal": {
+        "principal_id": "gerencia",
+        "principal_kind": "human",
+        "durable_ref": {
+          "source": "psi_sales_profiles",
+          "locator": "fixture://principal/gerencia",
+          "verifiable": true
+        },
+        "display_label": "Fixture Role Principal"
+      },
+      "resource_ids": ["f1c70000-0000-0000-0000-000000000411"],
+      "actions": ["read"]
+    }
+  },
+  "authority-registry-synthetic-production": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "authority_registry_schema_ref": "contracts/agt002-phase01/v1/authority-registry.schema.json",
+    "authority_request": {
+      "gate_type": "PRODUCTION_ACTION",
+      "environment": "production",
+      "grant_id": "GRANT-FIXTURE-SYNTH-PROD-0001",
+      "delegation": null,
+      "principal": {
+        "principal_id": "f1c70000-0000-0000-0000-000000000421",
+        "principal_kind": "synthetic",
+        "durable_ref": {
+          "source": "fixture_registry",
+          "locator": "fixture://principal/f1c70000-0000-0000-0000-000000000421",
+          "verifiable": true
+        },
+        "display_label": "Fixture Synthetic Production Principal"
+      },
+      "resource_ids": ["f1c70000-0000-0000-0000-000000000422"],
+      "actions": ["read"]
+    }
+  },
+  "authority-registry-delegation-depth": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "authority_registry_schema_ref": "contracts/agt002-phase01/v1/authority-registry.schema.json",
+    "authority_request": {
+      "gate_type": "AUTHORITY_DELEGATION",
+      "environment": "isolated_fixture",
+      "grant_id": "GRANT-FIXTURE-DELEGATE-0001",
+      "delegation": {
+        "grant_id": "GRANT-FIXTURE-SUBDELEGATE-0001",
+        "delegated_by": "f1c70000-0000-0000-0000-000000000431",
+        "delegate_of": null
+      },
+      "principal": {
+        "principal_id": "f1c70000-0000-0000-0000-000000000431",
+        "principal_kind": "synthetic",
+        "durable_ref": {
+          "source": "fixture_registry",
+          "locator": "fixture://principal/f1c70000-0000-0000-0000-000000000431",
+          "verifiable": true
+        },
+        "display_label": "Fixture Delegate Principal"
+      },
+      "resource_ids": ["f1c70000-0000-0000-0000-000000000432"],
+      "actions": ["read"]
+    }
+  },
+  "authority-registry-schema-absent": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "gap_id": "AGT002-P1-GAP-0004",
+    "authority_request": {
+      "gate_type": "PHASE_AUDIT",
+      "environment": "isolated_fixture",
+      "grant_id": "GRANT-FIXTURE-VALID-0001",
+      "delegation": null,
+      "principal": {
+        "principal_id": "f1c70000-0000-0000-0000-000000000401",
+        "principal_kind": "synthetic",
+        "durable_ref": {
+          "source": "fixture_registry",
+          "locator": "fixture://principal/f1c70000-0000-0000-0000-000000000401",
+          "verifiable": true
+        },
+        "display_label": "Fixture Authority Registry Valid Principal"
+      },
+      "resource_ids": ["f1c70000-0000-0000-0000-000000000402"],
+      "actions": ["read"]
+    }
+  },
+  "link-base": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "binding_registry_ref": "contracts/agt002-phase01/v1/binding-registry.json",
+    "observation": {
+      "rows": [
+        {
+          "tender_id": "f1c70000-0000-0000-0000-000000000501",
+          "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+          "internal_status": "convertida_oportunidad"
+        }
+      ],
+      "query": {
+        "paginated": true,
+        "truncated": false,
+        "pages_fetched": 2,
+        "page_size": 50,
+        "rows_total_declared": 1
+      },
+      "authoritative": true,
+      "opportunity": {
+        "stage_code": "activo",
+        "tender_offer_status": "en_preparacion"
+      }
+    }
+  },
+  "link-cardinality-zero": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "binding_registry_ref": "contracts/agt002-phase01/v1/binding-registry.json",
+    "observation": {
+      "rows": [],
+      "query": {
+        "paginated": true,
+        "truncated": false,
+        "pages_fetched": 1,
+        "page_size": 50,
+        "rows_total_declared": 0
+      },
+      "authoritative": true,
+      "opportunity": {
+        "stage_code": "activo",
+        "tender_offer_status": "en_preparacion"
+      }
+    }
+  },
+  "link-cardinality-multiple": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "binding_registry_ref": "contracts/agt002-phase01/v1/binding-registry.json",
+    "observation": {
+      "rows": [
+        {
+          "tender_id": "f1c70000-0000-0000-0000-000000000501",
+          "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+          "internal_status": "convertida_oportunidad"
+        },
+        {
+          "tender_id": "f1c70000-0000-0000-0000-000000000501",
+          "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000503",
+          "internal_status": "convertida_oportunidad"
+        }
+      ],
+      "query": {
+        "paginated": true,
+        "truncated": false,
+        "pages_fetched": 1,
+        "page_size": 50,
+        "rows_total_declared": 2
+      },
+      "authoritative": true,
+      "opportunity": {
+        "stage_code": "activo",
+        "tender_offer_status": "en_preparacion"
+      }
+    }
+  },
+  "link-identity-conflict": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "binding_registry_ref": "contracts/agt002-phase01/v1/binding-registry.json",
+    "observation": {
+      "rows": [
+        {
+          "tender_id": "f1c70000-0000-0000-0000-000000000501",
+          "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000599",
+          "internal_status": "convertida_oportunidad"
+        }
+      ],
+      "query": {
+        "paginated": true,
+        "truncated": false,
+        "pages_fetched": 1,
+        "page_size": 50,
+        "rows_total_declared": 1
+      },
+      "authoritative": true,
+      "opportunity": {
+        "stage_code": "activo",
+        "tender_offer_status": "en_preparacion"
+      }
+    }
+  },
+  "link-opportunity-closed": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "binding_registry_ref": "contracts/agt002-phase01/v1/binding-registry.json",
+    "observation": {
+      "rows": [
+        {
+          "tender_id": "f1c70000-0000-0000-0000-000000000501",
+          "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+          "internal_status": "convertida_oportunidad"
+        }
+      ],
+      "query": {
+        "paginated": true,
+        "truncated": false,
+        "pages_fetched": 1,
+        "page_size": 50,
+        "rows_total_declared": 1
+      },
+      "authoritative": true,
+      "opportunity": {
+        "stage_code": "activo",
+        "tender_offer_status": "cerrada_no_go"
+      }
+    }
+  },
+  "link-query-not-exhaustive": {
+    "now_utc": "2026-09-23T18:00:00Z",
+    "binding_registry_ref": "contracts/agt002-phase01/v1/binding-registry.json",
+    "observation": {
+      "rows": [
+        {
+          "tender_id": "f1c70000-0000-0000-0000-000000000501",
+          "converted_opportunity_id": "f1c70000-0000-0000-0000-000000000502",
+          "internal_status": "convertida_oportunidad"
+        }
+      ],
+      "query": {
+        "paginated": true,
+        "truncated": true,
+        "pages_fetched": 1,
+        "page_size": 50,
+        "rows_total_declared": 1
+      },
+      "authoritative": true,
+      "opportunity": {
+        "stage_code": "activo",
+        "tender_offer_status": "en_preparacion"
+      }
+    }
+  }
+}

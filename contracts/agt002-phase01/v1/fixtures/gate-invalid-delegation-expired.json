@@ -1,0 +1,67 @@
+{
+  "gate_id": "GATE_FX_0014",
+  "schema_version": "agt002-phase01-gate/1.0.0",
+  "type": "AUTHORITY_DELEGATION",
+  "authority": {
+    "principal": {
+      "principal_id": "f1c70000-0000-0000-0000-000000000303",
+      "principal_kind": "synthetic",
+      "durable_ref": {
+        "source": "fixture_registry",
+        "locator": "fixture://principal/f1c70000-0000-0000-0000-000000000303",
+        "verifiable": true
+      },
+      "display_label": "Fixture Delegation Expired Principal"
+    },
+    "grant_id": "GRANT-P1-BASE-DELEGATION",
+    "delegation": {
+      "grant_id": "GRANT-P1-DELEGATE-EXPIRED",
+      "delegated_by": "f1c70000-0000-0000-0000-000000000301",
+      "delegate_of": null
+    }
+  },
+  "objective": "Verify a delegation referencing an expired delegate grant is rejected",
+  "environment": "isolated_fixture",
+  "synthetic": true,
+  "scope": {
+    "resource_kind": "fixture_resource",
+    "resource_ids": ["f1c70000-0000-0000-0000-000000000302"],
+    "actions": ["read"]
+  },
+  "preconditions": [
+    {
+      "precondition_id": "PRE-FX-0014",
+      "statement": "Fixture precondition statement for gate-invalid-delegation-expired",
+      "verdict": "VALID",
+      "evidence_ids": ["EVID-FX-0014"]
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "EVID-FX-0014",
+      "kind": "fixture_record",
+      "locator": "fixture://evidence/0014",
+      "durable": true,
+      "content_hash": "fixture-content-hash-0014",
+      "captured_at_utc": "2026-09-20T00:00:00Z"
+    }
+  ],
+  "expires_at_utc": "2026-09-24T00:00:00Z",
+  "consumption_policy": {
+    "max_consumptions": 1,
+    "receipt_required": true,
+    "idempotency_key": "idempotency-key-fx-0014"
+  },
+  "rollback": {
+    "supported": false,
+    "procedure": "Compensate via fixture rollback procedure",
+    "locator": "fixture://rollback/0014"
+  },
+  "issued_at_utc": "2026-09-20T00:00:00Z",
+  "status": "OPEN",
+  "outcome": null,
+  "consumption": null,
+  "revocation": null,
+  "artifact_set_hash": "5eecc3a5409a6e54632ea6a93a260ab9dd615f127d1a311f7d32c8e7f00146c9",
+  "active_case": null
+}

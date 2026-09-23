@@ -1,0 +1,32 @@
+{
+  "schema_version": "agt002-phase01-authority-registry/1.0.0",
+  "registry_version": 1,
+  "supersedes_registry_version": null,
+  "issued_at_utc": "2026-09-01T00:00:00Z",
+  "grants": [
+    {
+      "grant_id": "GRANT-FIXTURE-ROLE-0001",
+      "gate_type": "PHASE_AUDIT",
+      "principal": {
+        "principal_id": "f1c70000-0000-0000-0000-000000000412",
+        "principal_kind": "synthetic",
+        "durable_ref": {
+          "source": "fixture_registry",
+          "locator": "fixture://principal/f1c70000-0000-0000-0000-000000000412",
+          "verifiable": true
+        },
+        "display_label": "Fixture Role Grant Owner Principal"
+      },
+      "delegate_of": null,
+      "valid_from_utc": "2026-09-01T00:00:00Z",
+      "valid_until_utc": "2027-09-01T00:00:00Z",
+      "scope": {
+        "environments": ["isolated_fixture"],
+        "resource_kind": "fixture_resource",
+        "resource_ids": ["f1c70000-0000-0000-0000-000000000411"],
+        "actions": ["read"]
+      },
+      "revoked_at_utc": null
+    }
+  ]
+}

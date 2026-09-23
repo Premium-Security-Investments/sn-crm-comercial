@@ -1,0 +1,134 @@
+{
+  "$id": "https://seguridadnacional.internal/contracts/agt002-phase01/v1/binding-registry.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "registry_version", "bindings"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "agt002-phase01-binding-registry/1.0.0"
+    },
+    "registry_version": {
+      "type": "number"
+    },
+    "bindings": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "binding_id",
+          "logical_term",
+          "status",
+          "table",
+          "column",
+          "gap_id",
+          "unique_constraint",
+          "on_delete",
+          "live_endpoint",
+          "notes",
+          "cutoff_utc",
+          "verified_at_utc",
+          "live_metadata_get",
+          "evidence"
+        ],
+        "properties": {
+          "binding_id": {
+            "type": "string",
+            "pattern": "^BIND-[A-Z0-9-]{3,64}$"
+          },
+          "logical_term": {
+            "type": "string",
+            "enum": ["A", "B"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["confirmed_durable", "absent_live"]
+          },
+          "table": {
+            "type": ["string", "null"]
+          },
+          "column": {
+            "type": ["string", "null"]
+          },
+          "gap_id": {
+            "type": ["string", "null"]
+          },
+          "unique_constraint": {
+            "type": ["string", "null"]
+          },
+          "on_delete": {
+            "type": ["string", "null"]
+          },
+          "live_endpoint": {
+            "type": ["string", "null"]
+          },
+          "notes": {
+            "type": ["string", "null"]
+          },
+          "cutoff_utc": {
+            "type": "string"
+          },
+          "verified_at_utc": {
+            "type": "string"
+          },
+          "live_metadata_get": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["method", "artifact", "observed_at_utc"],
+            "properties": {
+              "method": {
+                "type": "string",
+                "const": "GET"
+              },
+              "artifact": {
+                "type": "string",
+                "enum": ["attached", "not_attached"]
+              },
+              "observed_at_utc": {
+                "type": ["string", "null"]
+              }
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["evidence_id", "kind", "fact_id", "locator", "line_start", "line_end", "snippet"],
+              "properties": {
+                "evidence_id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": ["migration_locator"]
+                },
+                "fact_id": {
+                  "type": "string",
+                  "pattern": "^AGT002-P1-FACT-[0-9]{4}$"
+                },
+                "locator": {
+                  "type": "string"
+                },
+                "line_start": {
+                  "type": "number"
+                },
+                "line_end": {
+                  "type": "number"
+                },
+                "snippet": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

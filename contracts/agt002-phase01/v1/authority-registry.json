@@ -1,0 +1,128 @@
+{
+  "schema_version": "agt002-phase01-authority-registry/1.0.0",
+  "registry_version": 1,
+  "supersedes_registry_version": null,
+  "issued_at_utc": "2026-09-01T00:00:00Z",
+  "grants": [
+    {
+      "grant_id": "GRANT-P1-0001",
+      "gate_type": "PHASE_AUDIT",
+      "principal": {
+        "principal_id": "f1c70000-0000-0000-0000-000000000301",
+        "principal_kind": "synthetic",
+        "durable_ref": {
+          "source": "fixture_registry",
+          "locator": "fixture://principal/f1c70000-0000-0000-0000-000000000301",
+          "verifiable": true
+        },
+        "display_label": "Fixture Gate Principal"
+      },
+      "delegate_of": null,
+      "valid_from_utc": "2026-09-01T00:00:00Z",
+      "valid_until_utc": "2027-09-01T00:00:00Z",
+      "scope": {
+        "environments": ["isolated_fixture"],
+        "resource_kind": "fixture_resource",
+        "resource_ids": ["f1c70000-0000-0000-0000-000000000201"],
+        "actions": ["read"]
+      },
+      "revoked_at_utc": null
+    },
+    {
+      "grant_id": "GRANT-P1-0002",
+      "gate_type": "LINK_VERIFICATION",
+      "principal": {
+        "principal_id": "f1c70000-0000-0000-0000-000000000102",
+        "principal_kind": "synthetic",
+        "durable_ref": {
+          "source": "fixture_registry",
+          "locator": "fixture://principal/f1c70000-0000-0000-0000-000000000102",
+          "verifiable": true
+        },
+        "display_label": "Fixture Link Verification Principal"
+      },
+      "delegate_of": null,
+      "valid_from_utc": "2026-09-01T00:00:00Z",
+      "valid_until_utc": "2027-09-01T00:00:00Z",
+      "scope": {
+        "environments": ["isolated_fixture"],
+        "resource_kind": "fixture_resource",
+        "resource_ids": ["f1c70000-0000-0000-0000-000000000202"],
+        "actions": ["read"]
+      },
+      "revoked_at_utc": null
+    },
+    {
+      "grant_id": "GRANT-P1-0003",
+      "gate_type": "AUTHORITY_DELEGATION",
+      "principal": {
+        "principal_id": "f1c70000-0000-0000-0000-000000000103",
+        "principal_kind": "synthetic",
+        "durable_ref": {
+          "source": "fixture_registry",
+          "locator": "fixture://principal/f1c70000-0000-0000-0000-000000000103",
+          "verifiable": true
+        },
+        "display_label": "Fixture Authority Delegation Principal"
+      },
+      "delegate_of": null,
+      "valid_from_utc": "2026-09-01T00:00:00Z",
+      "valid_until_utc": "2027-09-01T00:00:00Z",
+      "scope": {
+        "environments": ["isolated_fixture"],
+        "resource_kind": "fixture_resource",
+        "resource_ids": ["f1c70000-0000-0000-0000-000000000203"],
+        "actions": ["read"]
+      },
+      "revoked_at_utc": null
+    },
+    {
+      "grant_id": "GRANT-P1-0004",
+      "gate_type": "STORAGE_DESIGN_REVIEW",
+      "principal": {
+        "principal_id": "f1c70000-0000-0000-0000-000000000104",
+        "principal_kind": "synthetic",
+        "durable_ref": {
+          "source": "fixture_registry",
+          "locator": "fixture://principal/f1c70000-0000-0000-0000-000000000104",
+          "verifiable": true
+        },
+        "display_label": "Fixture Storage Design Review Principal"
+      },
+      "delegate_of": null,
+      "valid_from_utc": "2026-09-01T00:00:00Z",
+      "valid_until_utc": "2027-09-01T00:00:00Z",
+      "scope": {
+        "environments": ["isolated_fixture"],
+        "resource_kind": "fixture_resource",
+        "resource_ids": ["f1c70000-0000-0000-0000-000000000204"],
+        "actions": ["read"]
+      },
+      "revoked_at_utc": null
+    },
+    {
+      "grant_id": "GRANT-P1-0005",
+      "gate_type": "PRODUCTION_ACTION",
+      "principal": {
+        "principal_id": "f1c70000-0000-0000-0000-000000000105",
+        "principal_kind": "synthetic",
+        "durable_ref": {
+          "source": "fixture_registry",
+          "locator": "fixture://principal/f1c70000-0000-0000-0000-000000000105",
+          "verifiable": true
+        },
+        "display_label": "Fixture Production Action Principal"
+      },
+      "delegate_of": null,
+      "valid_from_utc": "2026-09-01T00:00:00Z",
+      "valid_until_utc": "2027-09-01T00:00:00Z",
+      "scope": {
+        "environments": ["isolated_fixture"],
+        "resource_kind": "fixture_resource",
+        "resource_ids": ["f1c70000-0000-0000-0000-000000000205"],
+        "actions": ["read"]
+      },
+      "revoked_at_utc": null
+    }
+  ]
+}

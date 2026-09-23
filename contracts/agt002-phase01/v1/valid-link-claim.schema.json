@@ -1,0 +1,120 @@
+{
+  "$id": "https://seguridadnacional.internal/contracts/agt002-phase01/v1/valid-link-claim.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "claim_id",
+    "terms",
+    "source_id",
+    "target_id",
+    "evidence"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "agt002-phase01-valid-link-claim/1.0.0"
+    },
+    "claim_id": {
+      "type": "string",
+      "pattern": "^CLAIM-[A-Z0-9-]{3,64}$"
+    },
+    "terms": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "binding_registered",
+          "query_exhaustive",
+          "authoritative_source",
+          "cardinality_exactly_one",
+          "identity_no_conflict",
+          "state_live",
+          "opportunity_open",
+          "evidence_durable",
+          "term_a_entity_l",
+          "term_b_logical"
+        ]
+      }
+    },
+    "source_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "target_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "term_a": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "claimed_entity": {
+          "type": "string"
+        }
+      }
+    },
+    "term_b": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "binding_id": {
+          "type": "string"
+        },
+        "direction": {
+          "type": "string",
+          "enum": ["forward", "inverse"]
+        },
+        "claimed_table": {
+          "type": "string"
+        },
+        "claimed_column": {
+          "type": "string"
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "evidence_id",
+          "kind",
+          "locator",
+          "durable",
+          "content_hash",
+          "captured_at_utc"
+        ],
+        "properties": {
+          "evidence_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "repo_file",
+              "migration_locator",
+              "openapi_metadata",
+              "fixture_record"
+            ]
+          },
+          "locator": {
+            "type": "string"
+          },
+          "durable": {
+            "type": "boolean"
+          },
+          "content_hash": {
+            "type": ["string", "null"]
+          },
+          "captured_at_utc": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

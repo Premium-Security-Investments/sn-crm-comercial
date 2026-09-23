@@ -1,0 +1,168 @@
+{
+  "schema_version": "agt002-phase01-binding-registry/1.0.0",
+  "registry_version": 1,
+  "bindings": [
+    {
+      "binding_id": "BIND-TENDER-OPPORTUNITY-INVERSE",
+      "logical_term": "B",
+      "status": "confirmed_durable",
+      "table": "psi_public_tenders",
+      "column": "converted_opportunity_id",
+      "gap_id": null,
+      "unique_constraint": "psi_public_tenders_converted_opportunity_id_unique",
+      "on_delete": "set_null",
+      "live_endpoint": "/rest/v1/psi_public_tenders",
+      "notes": "Live column public.psi_public_tenders.converted_opportunity_id references public.psi_sales_opportunities(id) on delete set null, with a partial unique index enforcing at most one tender per opportunity. Confirmed durable against the real migration tree.",
+      "cutoff_utc": "2026-09-23T00:00:00Z",
+      "verified_at_utc": "2026-09-23T09:00:00Z",
+      "live_metadata_get": {
+        "method": "GET",
+        "artifact": "not_attached",
+        "observed_at_utc": null
+      },
+      "evidence": [
+        {
+          "evidence_id": "EVID-P1-0001",
+          "kind": "migration_locator",
+          "fact_id": "AGT002-P1-FACT-0001",
+          "locator": "migration://supabase/migrations/005_public_tenders_radar.sql",
+          "line_start": 27,
+          "line_end": 27,
+          "snippet": "converted_opportunity_id uuid references public.psi_sales_opportunities(id) on delete set null"
+        },
+        {
+          "evidence_id": "EVID-P1-0002",
+          "kind": "migration_locator",
+          "fact_id": "AGT002-P1-FACT-0002",
+          "locator": "migration://supabase/migrations/018_tender_tracking_rpc.sql",
+          "line_start": 42,
+          "line_end": 44,
+          "snippet": "psi_public_tenders_converted_opportunity_id_unique"
+        }
+      ]
+    },
+    {
+      "binding_id": "BIND-ENTITY-L",
+      "logical_term": "A",
+      "status": "absent_live",
+      "table": null,
+      "column": null,
+      "gap_id": "AGT002-P1-GAP-0001",
+      "unique_constraint": null,
+      "on_delete": null,
+      "live_endpoint": null,
+      "notes": "Live schema sweep across supabase/migrations found no column, table, or view instantiating a first-class entity_l identity distinct from the existing profile/role/permission surface (psi_sales_profiles roles and psi area permission codes). Treated as absent_live pending an explicit live definition; the evidence below documents the identity/permission surface that was actually inspected during the sweep, not a live entity_l implementation.",
+      "cutoff_utc": "2026-09-23T00:00:00Z",
+      "verified_at_utc": "2026-09-23T09:00:00Z",
+      "live_metadata_get": {
+        "method": "GET",
+        "artifact": "not_attached",
+        "observed_at_utc": null
+      },
+      "evidence": [
+        {
+          "evidence_id": "EVID-P1-0007",
+          "kind": "migration_locator",
+          "fact_id": "AGT002-P1-FACT-0007",
+          "locator": "migration://supabase/migrations/022_tender_go_no_go_workflow.sql",
+          "line_start": 38,
+          "line_end": 41,
+          "snippet": "identity_type is null or identity_type in ('human', 'agent')"
+        },
+        {
+          "evidence_id": "EVID-P1-0008",
+          "kind": "migration_locator",
+          "fact_id": "AGT002-P1-FACT-0008",
+          "locator": "migration://supabase/migrations/019_profile_area_permissions.sql",
+          "line_start": 23,
+          "line_end": 23,
+          "snippet": "'admin', 'gerencia', 'director', 'comercial', 'colaborador', 'junta'"
+        },
+        {
+          "evidence_id": "EVID-P1-0009",
+          "kind": "migration_locator",
+          "fact_id": "AGT002-P1-FACT-0009",
+          "locator": "migration://supabase/migrations/019_profile_area_permissions.sql",
+          "line_start": 144,
+          "line_end": 150,
+          "snippet": "primary key (profile_id, permission_code)"
+        },
+        {
+          "evidence_id": "EVID-P1-0010",
+          "kind": "migration_locator",
+          "fact_id": "AGT002-P1-FACT-0010",
+          "locator": "migration://supabase/migrations/019_profile_area_permissions.sql",
+          "line_start": 119,
+          "line_end": 125,
+          "snippet": "code text primary key"
+        }
+      ]
+    },
+    {
+      "binding_id": "BIND-OPPORTUNITY-TENDER-ID-FORWARD",
+      "logical_term": "B",
+      "status": "absent_live",
+      "table": null,
+      "column": null,
+      "gap_id": "AGT002-P1-GAP-0002",
+      "unique_constraint": null,
+      "on_delete": null,
+      "live_endpoint": null,
+      "notes": "Live schema sweep found no forward foreign key column on psi_sales_opportunities.tender_id; only the inverse column public.psi_public_tenders.converted_opportunity_id exists live, confirmed separately by BIND-TENDER-OPPORTUNITY-INVERSE. The evidence below documents the tender lifecycle state machine and radar gate surface that was actually inspected during the sweep, not a live forward column.",
+      "cutoff_utc": "2026-09-23T00:00:00Z",
+      "verified_at_utc": "2026-09-23T09:00:00Z",
+      "live_metadata_get": {
+        "method": "GET",
+        "artifact": "not_attached",
+        "observed_at_utc": null
+      },
+      "evidence": [
+        {
+          "evidence_id": "EVID-P1-0003",
+          "kind": "migration_locator",
+          "fact_id": "AGT002-P1-FACT-0003",
+          "locator": "migration://supabase/migrations/005_public_tenders_radar.sql",
+          "line_start": 26,
+          "line_end": 26,
+          "snippet": "internal_status text not null default 'nueva' check (internal_status in ('nueva','en_revision','descartada','convertida_oportunidad'))"
+        },
+        {
+          "evidence_id": "EVID-P1-0004",
+          "kind": "migration_locator",
+          "fact_id": "AGT002-P1-FACT-0004",
+          "locator": "migration://supabase/migrations/022_tender_go_no_go_workflow.sql",
+          "line_start": 42,
+          "line_end": 48,
+          "snippet": "'presentada', 'adjudicada', 'no_adjudicada', 'cerrada_no_go'"
+        },
+        {
+          "evidence_id": "EVID-P1-0005",
+          "kind": "migration_locator",
+          "fact_id": "AGT002-P1-FACT-0005",
+          "locator": "migration://supabase/migrations/018_tender_tracking_rpc.sql",
+          "line_start": 427,
+          "line_end": 427,
+          "snippet": "stage_code = 'descartado'"
+        },
+        {
+          "evidence_id": "EVID-P1-0006",
+          "kind": "migration_locator",
+          "fact_id": "AGT002-P1-FACT-0006",
+          "locator": "migration://supabase/migrations/088_tender_opportunity_primary_stage_filters.sql",
+          "line_start": 48,
+          "line_end": 48,
+          "snippet": "in ('cerrada_no_go', 'adjudicada', 'no_adjudicada')"
+        },
+        {
+          "evidence_id": "EVID-P1-0011",
+          "kind": "migration_locator",
+          "fact_id": "AGT002-P1-FACT-0011",
+          "locator": "migration://supabase/migrations/071_agt002_radar_gate.sql",
+          "line_start": 4,
+          "line_end": 4,
+          "snippet": "psi_agt002_radar_gate_evaluations"
+        }
+      ]
+    }
+  ]
+}
