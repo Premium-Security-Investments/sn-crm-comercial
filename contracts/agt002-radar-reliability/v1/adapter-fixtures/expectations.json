@@ -1,0 +1,66 @@
+[
+  {
+    "file": "complete-promotable.json",
+    "expected_adapter_status": "ADAPTED",
+    "expected_verdict": "VALID",
+    "expected_promotable": true,
+    "expected_reasons": [],
+    "expected_missing_fields": []
+  },
+  {
+    "file": "partial-run.json",
+    "expected_adapter_status": "ADAPTED",
+    "expected_verdict": "INVALID",
+    "expected_promotable": false,
+    "expected_reasons": ["scan.status.invalid"],
+    "expected_missing_fields": []
+  },
+  {
+    "file": "expired-run.json",
+    "expected_adapter_status": "ADAPTED",
+    "expected_verdict": "INVALID",
+    "expected_promotable": false,
+    "expected_reasons": ["freshness.stale"],
+    "expected_missing_fields": []
+  },
+  {
+    "file": "incomplete-coverage.json",
+    "expected_adapter_status": "ADAPTED",
+    "expected_verdict": "UNVERIFIED",
+    "expected_promotable": false,
+    "expected_reasons": ["coverage.partial"],
+    "expected_missing_fields": []
+  },
+  {
+    "file": "missing-evidence.json",
+    "expected_adapter_status": "ADAPTED",
+    "expected_verdict": "UNVERIFIED",
+    "expected_promotable": false,
+    "expected_reasons": ["evidence.absent"],
+    "expected_missing_fields": []
+  },
+  {
+    "file": "invalid-source-persistence-lineage.json",
+    "expected_adapter_status": "ADAPTED",
+    "expected_verdict": "INVALID",
+    "expected_promotable": false,
+    "expected_reasons": ["traceability.source_persistence_mismatch"],
+    "expected_missing_fields": []
+  },
+  {
+    "file": "persistence-presentation-mismatch.json",
+    "expected_adapter_status": "ADAPTED",
+    "expected_verdict": "INVALID",
+    "expected_promotable": false,
+    "expected_reasons": ["traceability.persistence_ui_mismatch"],
+    "expected_missing_fields": []
+  },
+  {
+    "file": "missing-required-source-hash.json",
+    "expected_adapter_status": "REJECTED",
+    "expected_verdict": "INVALID",
+    "expected_promotable": false,
+    "expected_reasons": ["adapter.legacy.missing_required_field"],
+    "expected_missing_fields": ["source.snapshot_sha256"]
+  }
+]

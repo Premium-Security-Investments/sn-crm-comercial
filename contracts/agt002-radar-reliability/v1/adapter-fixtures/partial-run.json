@@ -1,0 +1,41 @@
+{
+  "legacy_schema_version": "agt002-radar-legacy-synthetic-v1",
+  "run": {
+    "id": "synthetic-run-partial-run-0001",
+    "status": "partial",
+    "started_at": "2026-09-20T05:00:00Z",
+    "finished_at": "2026-09-20T05:30:00Z"
+  },
+  "source": {
+    "pages_fetched": 2,
+    "total_pages": 2,
+    "exhaustive": true,
+    "claims_absence": false,
+    "snapshot_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "record_count": 2
+  },
+  "persistence": {
+    "record_count": 2,
+    "snapshot_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "committed_at": "2026-09-20T05:35:00Z"
+  },
+  "presentation": {
+    "record_count": 2,
+    "snapshot_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "rendered_at": "2026-09-20T05:40:00Z"
+  },
+  "evidence": [
+    {
+      "id": "synthetic-evidence-partial-run-0001",
+      "kind": "scan_manifest",
+      "uri": "fixture://agt002-radar-reliability/adapter/partial-run/evidence-0001",
+      "captured_at": "2026-09-20T05:30:00Z",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "freshness": {
+    "evaluated_at": "2026-09-20T12:00:00Z",
+    "data_as_of": "2026-09-20T05:30:00Z",
+    "max_calendar_days": 1
+  }
+}
